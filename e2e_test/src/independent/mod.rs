@@ -4,5 +4,4 @@ mod chaos_tests;
 #[cfg(test)]
 mod coordinator_tests;
 mod https_api_tests;
-#[cfg(feature = "not_passed")]
 mod restart_tests;

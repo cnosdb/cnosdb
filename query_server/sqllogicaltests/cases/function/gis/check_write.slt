@@ -5,6 +5,27 @@
 statement ok
 alter database public set ttl '1000000d';
 
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Semantic error: Unexpected data type geometry\(bigint, 0\) of loc, sub_type must be POINT, LINESTRING, POLYGON, MULTIPOINT, MULTILINESTRING, MULTIPOLYGON, GEOMETRYCOLLECTION", *
+CREATE TABLE IF NOT EXISTS check_write_invalid(loc geometry(bigint, 0));
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Semantic error: Unexpected data type geometry\(point, 1\) of loc, currently only supports 0, Cartesian coordinate system", *
+CREATE TABLE IF NOT EXISTS check_write_invalid(loc geometry(point, 1));
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Semantic error: Unexpected data type geometry\(point\) of loc, format: GEOMETRY\(<sub_type>, <srid>\)",*
+CREATE TABLE IF NOT EXISTS check_write_invalid(loc geometry(point));
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Semantic error: Unexpected data type geometry\(1\) of loc, format: GEOMETRY\(<sub_type>, <srid>\)", *
+CREATE TABLE IF NOT EXISTS check_write_invalid(loc geometry(1));
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Semantic error: Unexpected data type geometry of loc, format: GEOMETRY\(<sub_type>, <srid>\)", *
+CREATE TABLE IF NOT EXISTS check_write_invalid(loc geometry());
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Semantic error: Unexpected data type geometry\(point, 0, 1\) of loc, format: GEOMETRY\(<sub_type>, <srid>\)", *
+CREATE TABLE IF NOT EXISTS check_write_invalid(loc geometry(point, 0, 1));
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Semantic error: Unexpected data type geometrys\(point, 0\) of loc, ", *
+CREATE TABLE IF NOT EXISTS check_write_invalid(loc geometrys(point, 0));
+
 statement ok
 drop table if exists check_write_point;
 

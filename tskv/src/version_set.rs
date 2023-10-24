@@ -12,7 +12,7 @@ use tokio::sync::RwLock;
 use utils::BloomFilter;
 
 use crate::compaction::{CompactTask, FlushReq};
-use crate::database::Database;
+use crate::database::{Database, DatabaseFactory};
 use crate::error::{MetaSnafu, Result};
 use crate::index::ts_index::TSIndex;
 use crate::summary::VersionEdit;
@@ -21,41 +21,41 @@ use crate::{ColumnFileId, Options, TseriesFamilyId};
 
 #[derive(Debug)]
 pub struct VersionSet {
-    opt: Arc<Options>,
     /// Maps DBName -> DB
     dbs: HashMap<String, Arc<RwLock<Database>>>,
     runtime: Arc<Runtime>,
-    memory_pool: MemoryPoolRef,
-    metrics_register: Arc<MetricsRegister>,
+    db_factory: DatabaseFactory,
 }
 
 impl VersionSet {
-    pub fn runtime(&self) -> Arc<Runtime> {
-        self.runtime.clone()
-    }
-
     pub fn empty(
+        meta: MetaRef,
         opt: Arc<Options>,
         runtime: Arc<Runtime>,
         memory_pool: MemoryPoolRef,
         metrics_register: Arc<MetricsRegister>,
     ) -> Self {
+        let db_factory = DatabaseFactory::new(meta, memory_pool.clone(), metrics_register, opt);
+
         Self {
-            opt,
             dbs: HashMap::new(),
             runtime,
-            memory_pool,
-            metrics_register,
+            db_factory,
         }
     }
 
+    #[cfg(test)]
     pub fn build_empty_test(runtime: Arc<Runtime>) -> Self {
+        use meta::model::meta_admin::AdminMeta;
+        let opt = Arc::new(Options::from(&config::Config::default()));
+        let register = Arc::new(MetricsRegister::default());
+        let memory_pool = Arc::new(memory_pool::GreedyMemoryPool::default());
+        let meta = Arc::new(AdminMeta::mock());
+        let db_factory = DatabaseFactory::new(meta, memory_pool, register, opt);
         Self {
             dbs: HashMap::new(),
-            opt: Arc::new(Options::from(&config::Config::default())),
-            metrics_register: Arc::new(MetricsRegister::default()),
-            memory_pool: Arc::new(memory_pool::GreedyMemoryPool::default()),
             runtime,
+            db_factory,
         }
     }
 
@@ -71,6 +71,8 @@ impl VersionSet {
         metrics_register: Arc<MetricsRegister>,
     ) -> Result<Self> {
         let mut dbs = HashMap::new();
+        let db_factory = DatabaseFactory::new(meta.clone(), memory_pool, metrics_register, opt);
+
         for ver in ver_set.into_values() {
             let owner = ver.tenant_database().to_string();
             let (tenant, database) = split_owner(&owner);
@@ -84,19 +86,12 @@ impl VersionSet {
             };
 
             let db: &mut Arc<RwLock<Database>> = dbs.entry(owner).or_insert(Arc::new(RwLock::new(
-                Database::new(
-                    schema,
-                    opt.clone(),
-                    runtime.clone(),
-                    meta.clone(),
-                    memory_pool.clone(),
-                    metrics_register.clone(),
-                )
-                .await?,
+                db_factory.create_database(schema).await?,
             )));
 
             let tf_id = ver.tf_id();
             db.write().await.open_tsfamily(
+                runtime.clone(),
                 ver,
                 flush_task_sender.clone(),
                 compact_task_sender.clone(),
@@ -106,40 +101,17 @@ impl VersionSet {
 
         Ok(Self {
             dbs,
-            opt,
             runtime,
-            memory_pool,
-            metrics_register,
+            db_factory,
         })
     }
 
-    pub fn options(&self) -> Arc<Options> {
-        self.opt.clone()
-    }
-
-    pub async fn create_db(
-        &mut self,
-        schema: DatabaseSchema,
-        meta: MetaRef,
-        memory_pool: MemoryPoolRef,
-    ) -> Result<Arc<RwLock<Database>>> {
-        let sub_register = self.metrics_register.sub_register([
-            ("tenant", schema.tenant_name()),
-            ("database", schema.database_name()),
-        ]);
+    pub async fn create_db(&mut self, schema: DatabaseSchema) -> Result<Arc<RwLock<Database>>> {
         let db = self
             .dbs
             .entry(schema.owner())
             .or_insert(Arc::new(RwLock::new(
-                Database::new(
-                    schema,
-                    self.opt.clone(),
-                    self.runtime.clone(),
-                    meta.clone(),
-                    memory_pool,
-                    sub_register,
-                )
-                .await?,
+                self.db_factory.create_database(schema).await?,
             )))
             .clone();
         Ok(db)
@@ -182,6 +154,7 @@ impl VersionSet {
     }
 
     pub async fn get_tsfamily_by_tf_id(&self, tf_id: u32) -> Option<Arc<RwLock<TseriesFamily>>> {
+        // FIXME: add tsf_id -> db HashTable
         for db in self.dbs.values() {
             if let Some(v) = db.read().await.get_tsfamily(tf_id) {
                 return Some(v);
@@ -248,7 +221,7 @@ impl VersionSet {
             let db = db.read().await;
             for tsf in db.ts_families().values() {
                 let tsf = tsf.read().await;
-                r.insert(tsf.tf_id(), tsf.super_version().version.last_seq);
+                r.insert(tsf.tf_id(), tsf.super_version().version.last_seq());
             }
         }
         r

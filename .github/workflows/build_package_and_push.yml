@@ -18,6 +18,9 @@ env:
 
 jobs:
   build:
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
     strategy:
       matrix:
         target:
@@ -25,44 +28,73 @@ jobs:
           - x86_64-unknown-linux-gnu
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
-    - name: Install Build Dependencies
-      shell: bash
+    - name: Get tag
+      id: get-tag
       run: |
-        TARGETPLATFORM="linux/amd64" bash ./.github/tools/install_dependencies.sh
+        if [[ "${{ github.event_name }}" = "workflow_dispatch" ]]; then
+          echo "TAG=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+        else
+          echo "TAG=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+        fi
+    - uses: actions/checkout@v3
+    - name: Prepare Rust Builder
+      uses: ./.github/actions/setup-builder
     - name: Install build tools
+      shell: bash
       run: |
         sudo gem install fpm
-      shell: bash
-    - name: Preparing the Compilation Environment
-      uses: taiki-e/setup-cross-toolchain-action@v1
-      with:
-        target: ${{ matrix.target }}
     - name: Compiler
       run: |
-        cargo build --workspace --bins --release --target ${{ matrix.target }}
+        if [[ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]]; then
+          sudo apt install gcc-aarch64-linux-gnu
+          rustup target add aarch64-unknown-linux-gnu
+          RUSTFLAGS="-C linker=aarch64-linux-gnu-gcc" cargo build --workspace --bins --release --target aarch64-unknown-linux-gnu
+        else
+          cargo build --workspace --bins --release --target x86_64-unknown-linux-gnu
+        fi
     - name: Package
-      if: github.event_name != 'workflow_dispatch'
       run: |
-        bash -x ./packages/build_package.sh -n cnosdb -v ${{ github.ref_name }} -b release -t ${{ matrix.target }}
-        bash -x ./packages/build_package.sh -n cnosdb-meta -v ${{ github.ref_name }} -b release -t ${{ matrix.target }}
-    - name: Package manually
-      if: github.event_name == 'workflow_dispatch'
-      run: |
-        bash -x ./packages/build_package.sh -n cnosdb -v ${{ github.event.inputs.tag }} -b release -t ${{ matrix.target }}
-        bash -x ./packages/build_package.sh -n cnosdb-meta -v ${{ github.event.inputs.tag }} -b release -t ${{ matrix.target }}
+        bash -x ./packages/build_package.sh -n cnosdb -v ${{ steps.get-tag.outputs.TAG }} -b release -t ${{ matrix.target }}
+        bash -x ./packages/build_package.sh -n cnosdb-meta -v ${{ steps.get-tag.outputs.TAG }} -b release -t ${{ matrix.target }}
     - name: Release
       uses: softprops/action-gh-release@v1
-      if: github.event_name != 'workflow_dispatch'
       with:
         files: |
           *.deb
           *.rpm
-    - name: Release manually
-      if: github.event_name == 'workflow_dispatch'
+        tag_name: ${{ steps.get-tag.outputs.TAG }}
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+    - name: Get tag
+      id: get-tag
+      shell: bash
+      run: |
+        if [[ "${{ github.event_name }}" = "workflow_dispatch" ]]; then
+          echo "TAG=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+        else
+          echo "TAG=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+        fi
+    - uses: actions/checkout@v3
+    - name: Install Dependencies
+      shell: bash
+      run: |
+        TARGETPLATFORM="windows/amd64" bash ./.github/tools/install_dependencies.sh
+    - name: Compiler
+      run: cargo build --workspace --bins --release --target x86_64-pc-windows-msvc
+    - name: Package
+      run: |
+        New-Item -ItemType Directory -Path .\windows
+        Copy-Item -Path .\target\x86_64-pc-windows-msvc\release\cnosdb.exe -Destination .\windows\cnosdb.exe
+        Copy-Item -Path .\target\x86_64-pc-windows-msvc\release\cnosdb-meta.exe -Destination .\windows\cnosdb-meta.exe
+        Copy-Item -Path .\target\x86_64-pc-windows-msvc\release\cnosdb-cli.exe -Destination .\windows\cnosdb-cli.exe
+        Copy-Item -Path .\config\config.toml -Destination .\windows\cnosdb.conf
+        Copy-Item -Path .\meta\config\config.toml -Destination .\windows\cnosdb-meta.conf
+        Compress-Archive -Path .\windows\* -Destination .\cnosdb-community-${{ steps.get-tag.outputs.TAG }}-windows_x86_64.zip
+    - name: Release
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          *.deb
-          *.rpm
-        tag_name: ${{ github.event.inputs.tag }}
+          *windows_x86_64.zip
+        tag_name: ${{ steps.get-tag.outputs.TAG }}

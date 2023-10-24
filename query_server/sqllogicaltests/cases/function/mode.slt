@@ -9,6 +9,7 @@ VALUES
     ('1999-12-31 01:10:00.031', 555, 555, 'tag14', 'tag23'),
     ('1999-12-31 02:00:00.035', null, 555, 'tag14', 'tag24');
 
+
 ##########
 ## Query
 ##########
@@ -50,3 +51,81 @@ query
 select mode(null);
 ----
 NULL
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Internal error: Create physical name does not support wildcard\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", *
+select mode(*) from func_tb3;
+
+query 
+select mode(time) from func_tb3 where time in ('1999-12-31T00:00:00.045');
+----
+1999-12-31T00:00:00.045
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function \\"mode\\" expects 1 arguments, but 0 were provided", *
+select mode();
+
+
+query 
+select mode(f0_bigint) from func_tb3 where f0_bigint in (1);
+----
+1
+
+query 
+select mode(f1_bigint_unsign) from func_tb3 where f1_bigint_unsign in (1);
+----
+1
+
+query 
+select mode(f2_boolean) from func_tb3 where f2_boolean in (true);
+----
+true
+
+query 
+select mode(f3_string) from func_tb3 where f3_string in ('string000');
+----
+string000
+
+query 
+select mode(f4_double) from func_tb3 where f4_double in (3.1415926);
+----
+3.1415926
+
+query 
+select mode(loc0_point) from func_tb3 where loc0_point in ('POINT(4 0)');
+----
+POINT(4 0)
+
+query 
+select mode(loc1_LINESTRING) from func_tb3 where loc1_LINESTRING in ('LINESTRING (30 13, 10 32, 41 44)');
+----
+LINESTRING (30 13, 10 32, 41 44)
+
+query 
+select mode(loc2_POLYGON) from func_tb3 where loc2_POLYGON in ('POLYGON ((302 102, 402 402, 202 402, 102 220, 230 120))');
+----
+POLYGON ((302 102, 402 402, 202 402, 102 220, 230 120))
+
+query 
+select mode(loc3_MULTIPOINT) from func_tb3 where loc3_MULTIPOINT in ('MULTIPOINT ((10 40), (40 630), (20 20), (30 10))');
+----
+MULTIPOINT ((10 40), (40 630), (20 20), (30 10))
+
+query 
+select mode(loc4_MULTILINESTRING) from func_tb3 where loc4_MULTILINESTRING in ('MULTILINESTRING ((10 10, 20 20, 10 40),(40 40, 30 30, 40 20, 30 140))');
+----
+MULTILINESTRING ((10 10, 20 20, 10 40),(40 40, 30 30, 40 20, 30 140))
+
+query 
+select mode(loc5_MULTIPOLYGON) from func_tb3 where  loc5_MULTIPOLYGON in ('MULTIPOLYGON (((30 20, 45 40, 10 40, 30 20)),((15 5, 4 10, 10 20, 5 10, 15 5)))');
+----
+MULTIPOLYGON (((30 20, 45 40, 10 40, 30 20)),((15 5, 4 10, 10 20, 5 10, 15 5)))
+
+query 
+select mode(loc6_GEOMETRYCOLLECTION) from func_tb3 where loc6_GEOMETRYCOLLECTION in ('GEOMETRYCOLLECTION (POINT (40 10),LINESTRING (10 10, 20 20, 10 40),POLYGON ((40 40, 20 45, 45 130, 40 40)))');
+----
+GEOMETRYCOLLECTION (POINT (40 10),LINESTRING (10 10, 20 20, 10 40),POLYGON ((40 40, 20 45, 45 130, 40 40)))
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Invalid function 'modes'\.\\nDid you mean *
+select modes(f0_bigint) from func_tb3 where f0_bigint in (1);
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function \\"mode\\" expects 1 arguments, but 2 were provided", *
+select mode(f0_bigint, f0_bigint) from func_tb3;

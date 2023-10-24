@@ -134,6 +134,12 @@ pub trait Coordinator: Send + Sync {
 
     async fn broadcast_command(&self, req: AdminCommandRequest) -> CoordinatorResult<()>;
 
+    async fn broadcast_command_by_vnode(
+        &self,
+        req: AdminCommandRequest,
+        shards: Vec<ReplicationSet>,
+    ) -> CoordinatorResult<()>;
+
     /// A manager to manage vnode.
     async fn vnode_manager(
         &self,

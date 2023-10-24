@@ -1,3 +1,6 @@
+include ./setup.slt
+
+
 query 
 select ST_GeomFromWKB(st_AsBinary('POINT(0 0)'));
 ----
@@ -20,3 +23,180 @@ MULTIPOLYGON(((40 40,20 45,45 30,40 40)),((20 35,10 30,10 10,30 5,45 20,20 35),(
 
 query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'st_GeomFromWKB\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tst_GeomFromWKB\(Binary\)", .*
 select ST_GeomFromWKB('invalid');
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function \\"st_GeomFromWKB\\" expects 1 arguments, but 0 were provided", *
+select ST_GeomFromWKB();
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function \\"st_GeomFromWKB\\" expects 1 arguments, but 0 were provided", *
+select ST_GeomFromWKB() from gis_loc_all order by time;
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'st_GeomFromWKB\(Timestamp\(Nanosecond, None\)\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tst_GeomFromWKB\(Binary\)",*
+select ST_GeomFromWKB(time) from gis_loc_all order by time;
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'st_GeomFromWKB\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tst_GeomFromWKB\(Binary\)", *
+select ST_GeomFromWKB(t0) from gis_loc_all order by time;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'st_GeomFromWKB\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tst_GeomFromWKB\(Binary\)", *
+select ST_GeomFromWKB(t1) from gis_loc_all order by time;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'st_GeomFromWKB\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tst_GeomFromWKB\(Binary\)", *
+select ST_GeomFromWKB(t2) from gis_loc_all order by time;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'st_GeomFromWKB\(Int64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tst_GeomFromWKB\(Binary\)", *
+select ST_GeomFromWKB(f0_bigint) from gis_loc_all order by time;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'st_GeomFromWKB\(UInt64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tst_GeomFromWKB\(Binary\)", *
+select ST_GeomFromWKB(f1_bigint_unsign) from gis_loc_all order by time;
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'st_GeomFromWKB\(Boolean\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tst_GeomFromWKB\(Binary\)", *
+select ST_GeomFromWKB(f2_boolean) from gis_loc_all order by time;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'st_GeomFromWKB\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tst_GeomFromWKB\(Binary\)", *
+select ST_GeomFromWKB(f3_string) from gis_loc_all order by time;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'st_GeomFromWKB\(Float64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tst_GeomFromWKB\(Binary\)", *
+select ST_GeomFromWKB(f4_double) from gis_loc_all order by time;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'st_GeomFromWKB\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tst_GeomFromWKB\(Binary\)", *
+select ST_GeomFromWKB(loc0_point) from gis_loc_all order by time;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'st_GeomFromWKB\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tst_GeomFromWKB\(Binary\)", *
+select ST_GeomFromWKB(loc1_LINESTRING) from gis_loc_all order by time;
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'st_GeomFromWKB\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tst_GeomFromWKB\(Binary\)", *
+select ST_GeomFromWKB(loc2_POLYGON) from gis_loc_all order by time;
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'st_GeomFromWKB\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tst_GeomFromWKB\(Binary\)", *
+select ST_GeomFromWKB(loc3_MULTIPOINT) from gis_loc_all order by time;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'st_GeomFromWKB\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tst_GeomFromWKB\(Binary\)", *
+select ST_GeomFromWKB(loc4_MULTILINESTRING) from gis_loc_all order by time;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'st_GeomFromWKB\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tst_GeomFromWKB\(Binary\)", *
+select ST_GeomFromWKB(loc5_MULTIPOLYGON) from gis_loc_all order by time;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'st_GeomFromWKB\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tst_GeomFromWKB\(Binary\)", *
+select ST_GeomFromWKB(loc6_GEOMETRYCOLLECTION) from gis_loc_all order by time;
+
+query 
+select ST_GeomFromWKB(st_AsBinary(loc0_point)) from gis_loc_all order by time;
+----
+POINT(0 0)
+POINT(0 1)
+POINT(1 0)
+POINT(4 0)
+POINT(1 3)
+POINT(5 6)
+POINT(10 0)
+POINT(0 20)
+POINT(111 342)
+POINT(34 22)
+
+query 
+select ST_GeomFromWKB(st_AsBinary(loc1_LINESTRING)) from gis_loc_all order by time;
+----
+LINESTRING(301 101,101 301,401 401)
+LINESTRING(303 103,103 303,403 403)
+LINESTRING(302 101,102 302,44 45)
+LINESTRING(301 30,50 34,42 45)
+LINESTRING(35 18,19 34,30 420)
+LINESTRING(33 12,12 36,60 30)
+LINESTRING(34 30,70 60,45 70)
+LINESTRING(30 13,10 32,41 44)
+LINESTRING(31 20,13 36,50 10)
+LINESTRING(30 10,10 30,40 40)
+
+query 
+select ST_GeomFromWKB(st_AsBinary(loc2_POLYGON)) from gis_loc_all order by time;
+----
+POLYGON((302 102,402 402,202 402,102 220,230 120))
+POLYGON((130 120,430 404,2035 406,108 290,380 130))
+POLYGON((304 101,401 401,201 401,101 201,301 101))
+POLYGON((306 130,440 402,205 403,150 202,3045 102))
+POLYGON((230 210,410 420,210 420,120 220,302 102))
+POLYGON((320 130,404 406,203 402,130 240,310 105))
+POLYGON((302 103,420 404,520 140,410 220,330 102))
+POLYGON((330 1450,460 430,202 402,130 240,302 103))
+POLYGON((302 130,430 440,420 450,150 2560,3067 10))
+POLYGON((30 10,40 40,20 40,10 20,30 10))
+
+query 
+select ST_GeomFromWKB(st_AsBinary(loc3_MULTIPOINT)) from gis_loc_all order by time;
+----
+MULTIPOINT(102 40,40 30,20 20,30 10)
+MULTIPOINT(10 40,40 30,20 20,30 10)
+MULTIPOINT(10 40,40 30,20 203,30 10)
+MULTIPOINT(10 40,40 350,20 20,30 10)
+MULTIPOINT(10 40,40 630,20 20,30 10)
+MULTIPOINT(10 40,40 30,20 20,30 410)
+MULTIPOINT(10 40,40 30,120 20,30 10)
+MULTIPOINT(10 40,40 30,220 20,30 10)
+MULTIPOINT(10 40,440 30,20 20,30 10)
+MULTIPOINT(10 40,40 30,20 20,30 140)
+
+query 
+select ST_GeomFromWKB(st_AsBinary(loc4_MULTILINESTRING)) from gis_loc_all order by time;
+----
+MULTILINESTRING((10 10,20 20,10 40),(440 40,30 30,40 20,30 10))
+MULTILINESTRING((10 10,20 20,10 40),(440 40,30 30,40 20,30 10))
+MULTILINESTRING((10 10,20 20,10 440),(40 40,30 30,40 20,30 10))
+MULTILINESTRING((10 10,20 20,10 40),(40 40,30 30,40 20,30 140))
+MULTILINESTRING((10 10,20 20,140 40),(40 40,30 30,40 20,30 10))
+MULTILINESTRING((10 10,20 20,10 40),(40 40,30 30,40 20,30 140))
+MULTILINESTRING((10 10,20 20,10 40),(40 40,30 430,40 20,30 10))
+MULTILINESTRING((10 10,20 20,10 40),(40 40,30 30,440 20,30 10))
+MULTILINESTRING((10 10,240 20,10 40),(40 40,30 30,40 20,30 10))
+MULTILINESTRING((10 10,20 20,10 40),(40 40,30 30,40 20,30 140))
+
+query 
+select ST_GeomFromWKB(st_AsBinary(loc5_MULTIPOLYGON)) from gis_loc_all order by time;
+----
+MULTIPOLYGON(((30 20,45 40,10 40,340 20)),((15 5,40 10,10 20,5 10,15 52)))
+MULTIPOLYGON(((30 20,45 40,10 40,30 20)),((15 5,4 10,10 20,5 10,15 5)))
+MULTIPOLYGON(((30 20,45 40,10 40,30 2)),((15 5,40 10,10 20,5 10,15 5)))
+MULTIPOLYGON(((30 20,45 40,10 40,30 20)),((15 5,4 10,10 20,5 10,15 5)))
+MULTIPOLYGON(((30 20,45 40,10 40,0 20)),((15 5,40 10,10 20,5 10,15 5)))
+MULTIPOLYGON(((30 20,45 40,10 40,30 20)),((15 35,40 10,10 20,5 10,15 5)))
+MULTIPOLYGON(((30 20,45 40,10 10,30 20)),((15 5,40 10,10 20,5 10,15 5)))
+MULTIPOLYGON(((30 24,45 40,10 40,30 20)),((15 5,40 10,10 20,5 10,15 5)))
+MULTIPOLYGON(((30 20,45 40,10 40,30 26)),((15 5,40 10,10 20,5 10,15 5)))
+MULTIPOLYGON(((30 20,45 40,10 40,30 20)),((15 5,40 10,10 240,5 10,15 5)))
+
+query 
+select ST_GeomFromWKB(st_AsBinary(loc6_GEOMETRYCOLLECTION)) from gis_loc_all order by time;
+----
+GEOMETRYCOLLECTION(POINT(40 10),LINESTRING(10 10,20 20,10 40),POLYGON((40 40,20 45,45 130,40 40)))
+GEOMETRYCOLLECTION(POINT(40 10),LINESTRING(10 10,20 20,10 40),POLYGON((40 40,20 45,45 30,240 40)))
+GEOMETRYCOLLECTION(POINT(40 10),LINESTRING(10 1,20 20,10 40),POLYGON((40 40,20 45,45 30,40 4)))
+GEOMETRYCOLLECTION(POINT(40 10),LINESTRING(17 10,20 20,10 40),POLYGON((40 40,20 45,45 30,40 40)))
+GEOMETRYCOLLECTION(POINT(40 10),LINESTRING(10 0,20 20,10 40),POLYGON((40 40,20 45,45 30,40 40)))
+GEOMETRYCOLLECTION(POINT(40 10),LINESTRING(10 10,20 20,10 450),POLYGON((40 40,20 45,45 30,40 40)))
+GEOMETRYCOLLECTION(POINT(402 10),LINESTRING(10 10,20 20,10 40),POLYGON((40 40,20 45,45 30,40 40)))
+GEOMETRYCOLLECTION(POINT(40 10),LINESTRING(10 10,20 20,150 40),POLYGON((40 40,20 45,45 30,40 40)))
+GEOMETRYCOLLECTION(POINT(40 130),LINESTRING(10 10,220 20,10 40),POLYGON((40 40,20 45,45 30,40 40)))
+GEOMETRYCOLLECTION(POINT(40 10),LINESTRING(10 10,230 20,10 40),POLYGON((40 40,20 45,45 30,40 40)))
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function \\"st_GeomFromWKB\\" expects 1 arguments, but 2 were provided", *
+select ST_GeomFromWKB(st_AsBinary(loc0_point), st_AsBinary(loc0_point)) from gis_loc_all order by time;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Schema error: No field named \\"010100000000000000000000000000000000000000\\"\. Valid fields are gis_loc_all\.time, gis_loc_all\.t0, gis_loc_all\.t1, gis_loc_all\.t2, gis_loc_all\.t3, gis_loc_all\.f0_bigint, gis_loc_all\.f1_bigint_unsign, gis_loc_all\.f2_boolean, gis_loc_all\.f3_string, gis_loc_all\.f4_double, gis_loc_all\.loc0_point, gis_loc_all\.loc1_linestring, gis_loc_all\.loc2_polygon, gis_loc_all\.loc3_multipoint, gis_loc_all\.loc4_multilinestring, gis_loc_all\.loc5_multipolygon, gis_loc_all\.loc6_geometrycollection\.", *
+select ST_GeomFromWKB("010100000000000000000000000000000000000000") from gis_loc_all order by time;
+
+query 
+select ST_GeomFromWKB(st_AsBinary(f0_bigint)) from gis_loc_all order by time;
+----
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL

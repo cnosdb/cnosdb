@@ -3,7 +3,6 @@ use std::mem::size_of;
 use std::sync::Arc;
 
 use flatbuffers::{ForwardsUOffset, Vector};
-use lru_cache::asynchronous::ShardedCache;
 use memory_pool::MemoryPoolRef;
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
@@ -23,10 +22,10 @@ use crate::context::GlobalContext;
 use crate::error::{Result, SchemaSnafu};
 use crate::index::{self, IndexResult};
 use crate::kv_option::{Options, INDEX_PATH};
-use crate::memcache::{MemCache, RowData, RowGroup};
+use crate::memcache::{RowData, RowGroup};
 use crate::schema::schemas::DBschemas;
 use crate::summary::{SummaryTask, VersionEdit};
-use crate::tseries_family::{LevelInfo, TseriesFamily, Version};
+use crate::tseries_family::{LevelInfo, TseriesFamily, TsfFactory, Version};
 use crate::Error::{self};
 use crate::{file_utils, ColumnFileId, TseriesFamilyId};
 
@@ -41,29 +40,67 @@ pub struct Database {
     schemas: Arc<DBschemas>,
     ts_indexes: HashMap<TseriesFamilyId, Arc<index::ts_index::TSIndex>>,
     ts_families: HashMap<TseriesFamilyId, Arc<RwLock<TseriesFamily>>>,
-    runtime: Arc<Runtime>,
+    tsf_factory: TsfFactory,
+}
+
+#[derive(Debug)]
+pub struct DatabaseFactory {
+    meta: MetaRef,
     memory_pool: MemoryPoolRef,
     metrics_register: Arc<MetricsRegister>,
+    opt: Arc<Options>,
+}
+
+impl DatabaseFactory {
+    pub fn new(
+        meta: MetaRef,
+        memory_pool: MemoryPoolRef,
+        metrics_register: Arc<MetricsRegister>,
+        opt: Arc<Options>,
+    ) -> Self {
+        Self {
+            meta,
+            memory_pool,
+            metrics_register,
+            opt,
+        }
+    }
+
+    pub async fn create_database(&self, schema: DatabaseSchema) -> Result<Database> {
+        Database::new(
+            schema,
+            self.opt.clone(),
+            self.meta.clone(),
+            self.memory_pool.clone(),
+            self.metrics_register.clone(),
+        )
+        .await
+    }
 }
 
 impl Database {
     pub async fn new(
         schema: DatabaseSchema,
         opt: Arc<Options>,
-        runtime: Arc<Runtime>,
         meta: MetaRef,
         memory_pool: MemoryPoolRef,
         metrics_register: Arc<MetricsRegister>,
     ) -> Result<Self> {
+        let owner = Arc::new(schema.owner());
+        let tsf_factory = TsfFactory::new(
+            owner.clone(),
+            opt.clone(),
+            memory_pool.clone(),
+            metrics_register.clone(),
+        );
+
         let db = Self {
             opt,
             owner: Arc::new(schema.owner()),
             schemas: Arc::new(DBschemas::new(schema, meta).await.context(SchemaSnafu)?),
             ts_indexes: HashMap::new(),
             ts_families: HashMap::new(),
-            runtime,
-            memory_pool,
-            metrics_register,
+            tsf_factory,
         };
 
         Ok(db)
@@ -71,30 +108,16 @@ impl Database {
 
     pub fn open_tsfamily(
         &mut self,
+        runtime: Arc<Runtime>,
         ver: Arc<Version>,
         flush_task_sender: Sender<FlushReq>,
         compact_task_sender: Sender<CompactTask>,
     ) {
-        let tf = TseriesFamily::new(
-            ver.tf_id(),
-            ver.tenant_database(),
-            MemCache::new(
-                ver.tf_id(),
-                self.opt.cache.max_buffer_size,
-                self.opt.cache.partition,
-                ver.last_seq,
-                &self.memory_pool,
-            ),
-            ver.clone(),
-            self.opt.cache.clone(),
-            self.opt.storage.clone(),
-            flush_task_sender,
-            compact_task_sender,
-            self.memory_pool.clone(),
-            &self.metrics_register,
-        );
-        tf.schedule_compaction(self.runtime.clone());
-
+        let tf_id = ver.tf_id();
+        let tf =
+            self.tsf_factory
+                .create_tsf(tf_id, ver.clone(), flush_task_sender, compact_task_sender);
+        tf.schedule_compaction(runtime);
         self.ts_families
             .insert(ver.tf_id(), Arc::new(RwLock::new(tf)));
     }
@@ -103,7 +126,7 @@ impl Database {
     #[allow(clippy::too_many_arguments)]
     pub async fn add_tsfamily(
         &mut self,
-        tsf_id: u32,
+        tsf_id: TseriesFamilyId,
         version_edit: Option<VersionEdit>,
         summary_task_sender: Sender<SummaryTask>,
         flush_task_sender: Sender<FlushReq>,
@@ -155,6 +178,9 @@ impl Database {
             ),
         };
 
+        let cache =
+            cache::ShardedAsyncCache::create_lru_sharded_cache(self.opt.storage.max_cached_readers);
+
         let ver = Arc::new(Version::new(
             tsf_id,
             self.owner.clone(),
@@ -162,29 +188,15 @@ impl Database {
             seq_no,
             LevelInfo::init_levels(self.owner.clone(), tsf_id, self.opt.storage.clone()),
             i64::MIN,
-            Arc::new(ShardedCache::with_capacity(
-                self.opt.storage.max_cached_readers,
-            )),
+            cache.into(),
         ));
-        let tf = TseriesFamily::new(
+
+        let tf = self.tsf_factory.create_tsf(
             tsf_id,
-            self.owner.clone(),
-            MemCache::new(
-                tsf_id,
-                self.opt.cache.max_buffer_size,
-                self.opt.cache.partition,
-                seq_no,
-                &self.memory_pool,
-            ),
-            ver,
-            self.opt.cache.clone(),
-            self.opt.storage.clone(),
+            ver.clone(),
             flush_task_sender,
             compact_task_sender,
-            self.memory_pool.clone(),
-            &self.metrics_register,
         );
-
         let tf = Arc::new(RwLock::new(tf));
         if let Some(tsf) = self.ts_families.get(&tsf_id) {
             return Ok(tsf.clone());

@@ -9,6 +9,7 @@ use protos::raft_service::raft_service_server::RaftServiceServer;
 use replication::network_grpc::RaftCBServer;
 use tokio::runtime::Runtime;
 use tokio::sync::oneshot;
+use tonic::codec::CompressionEncoding;
 use tonic::transport::{Identity, Server, ServerTlsConfig};
 use trace_http::ctx::SpanContextExtractor;
 use trace_http::tower_layer::TraceLayer;
@@ -83,6 +84,8 @@ impl Service for GrpcService {
             coord: self.coord.clone(),
             metrics_register: self.metrics_register.clone(),
         })
+        .accept_compressed(CompressionEncoding::Gzip)
+        .send_compressed(CompressionEncoding::Gzip)
         .max_decoding_message_size(100 * 1024 * 1024);
 
         let multi_raft = self.coord.raft_manager().multi_raft();
