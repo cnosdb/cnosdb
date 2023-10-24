@@ -14,7 +14,7 @@ use models::meta_data::{VnodeId, VnodeStatus};
 use models::predicate::domain::{ColumnDomains, ResolvedPredicate, TimeRange, TimeRanges};
 use models::schema::{make_owner, split_owner, DatabaseSchema, Precision, TableColumn};
 use models::utils::unite_id;
-use models::{ColumnId, SeriesId, SeriesKey, TagKey, TagValue, Timestamp};
+use models::{ColumnId, SeriesId, SeriesKey, TagKey, TagValue};
 use protos::kv_service::{WritePointsRequest, WritePointsResponse};
 use protos::models as fb_models;
 use snafu::ResultExt;
@@ -24,6 +24,7 @@ use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::sync::{oneshot, RwLock};
 use trace::{debug, error, info, warn, SpanContext, SpanExt, SpanRecorder};
 
+use crate::compaction::job::{CompactJob, FlushJob};
 use crate::compaction::{
     self, check, run_flush_memtable_job, CompactTask, FlushReq, LevelCompactionPicker, Picker,
 };
@@ -61,6 +62,8 @@ pub struct TsKv {
     wal_sender: Sender<WalTask>,
     flush_task_sender: Sender<FlushReq>,
     compact_task_sender: Sender<CompactTask>,
+    compact_job: CompactJob,
+    flush_job: FlushJob,
     summary_task_sender: Sender<SummaryTask>,
     close_sender: BroadcastSender<Sender<()>>,
     metrics: Arc<MetricsRegister>,
@@ -94,10 +97,27 @@ impl TsKv {
             metrics.clone(),
         )
         .await;
+        let global_ctx = summary.global_context();
+
+        let compact_job = CompactJob::new(
+            runtime.clone(),
+            shared_options.storage.clone(),
+            version_set.clone(),
+            global_ctx.clone(),
+            summary_task_sender.clone(),
+        );
+
+        let flush_job = FlushJob::new(
+            runtime.clone(),
+            version_set.clone(),
+            global_ctx.clone(),
+            summary_task_sender.clone(),
+            compact_task_sender.clone(),
+        );
 
         let core = Self {
             options: shared_options.clone(),
-            global_ctx: summary.global_context(),
+            global_ctx,
             version_set,
             meta_manager,
             runtime: runtime.clone(),
@@ -105,29 +125,21 @@ impl TsKv {
             wal_sender,
             flush_task_sender: flush_task_sender.clone(),
             compact_task_sender: compact_task_sender.clone(),
+            compact_job,
+            flush_job,
             summary_task_sender: summary_task_sender.clone(),
             close_sender,
             metrics,
         };
 
         let wal_manager = core.recover_wal().await;
-        core.run_wal_job(wal_manager, wal_receiver);
-        core.run_flush_job(
-            flush_task_receiver,
-            summary.global_context(),
-            summary.version_set(),
-            summary_task_sender.clone(),
-            compact_task_sender.clone(),
-        );
-        compaction::job::run(
-            shared_options.storage.clone(),
-            runtime,
-            compact_task_receiver,
-            summary.global_context(),
-            summary.version_set(),
-            summary_task_sender.clone(),
-        );
         core.run_summary_job(summary, summary_task_receiver);
+        core.compact_job
+            .start_merge_compact_task_job(compact_task_receiver)
+            .await;
+        core.compact_job.start_vnode_compaction_job().await;
+        core.flush_job.start_vnode_flush_job(flush_task_receiver);
+        core.run_wal_job(wal_manager, wal_receiver);
         Ok(core)
     }
 
@@ -379,32 +391,6 @@ impl TsKv {
         });
     }
 
-    fn run_flush_job(
-        &self,
-        mut receiver: Receiver<FlushReq>,
-        ctx: Arc<GlobalContext>,
-        version_set: Arc<RwLock<VersionSet>>,
-        summary_task_sender: Sender<SummaryTask>,
-        compact_task_sender: Sender<CompactTask>,
-    ) {
-        let runtime = self.runtime.clone();
-        let f = async move {
-            while let Some(x) = receiver.recv().await {
-                // TODO(zipper): this make config `flush_req_channel_cap` wasted
-                // Run flush job and trigger compaction.
-                runtime.spawn(run_flush_memtable_job(
-                    x,
-                    ctx.clone(),
-                    version_set.clone(),
-                    summary_task_sender.clone(),
-                    Some(compact_task_sender.clone()),
-                ));
-            }
-        };
-        self.runtime.spawn(f);
-        info!("Flush task handler started");
-    }
-
     fn run_summary_job(&self, summary: Summary, mut summary_task_receiver: Receiver<SummaryTask>) {
         let f = async move {
             let mut summary_processor = SummaryProcessor::new(Box::new(summary));
@@ -495,10 +481,6 @@ impl TsKv {
                 column_ids.len()
             );
 
-            let time_range = &TimeRange {
-                min_ts: Timestamp::MIN,
-                max_ts: Timestamp::MAX,
-            };
             if let Some(vnode_id) = vnode_id {
                 if let Some(ts_family) = db_rlock.ts_families().get(&vnode_id) {
                     self.tsf_delete_table(
@@ -506,7 +488,6 @@ impl TsKv {
                         vnode_id,
                         ts_family.clone(),
                         table,
-                        time_range,
                         &column_ids,
                     )
                     .await?;
@@ -520,7 +501,6 @@ impl TsKv {
                         *ts_family_id,
                         ts_family.clone(),
                         table,
-                        time_range,
                         &column_ids,
                     )
                     .await?;
@@ -537,7 +517,6 @@ impl TsKv {
         ts_family_id: TseriesFamilyId,
         ts_family: Arc<RwLock<TseriesFamily>>,
         table: &str,
-        time_range: &TimeRange,
         column_ids: &[ColumnId],
     ) -> Result<()>
     where
@@ -549,7 +528,7 @@ impl TsKv {
             ts_family
                 .write()
                 .await
-                .delete_series(&series_ids, time_range);
+                .delete_series(&series_ids, &TimeRange::all());
 
             let field_ids: Vec<u64> = series_ids
                 .iter()
@@ -561,9 +540,9 @@ impl TsKv {
             );
 
             let version = ts_family.read().await.super_version();
-            for column_file in version.version.column_files(&field_ids, time_range) {
-                column_file.add_tombstone(&field_ids, time_range).await?;
-            }
+            version
+                .add_tsm_tombstone(&field_ids, &TimeRanges::all())
+                .await?;
 
             info!(
                 "Drop table: index {ts_family_id} deleting {} fields in table: {db_owner}.{table}",
@@ -598,10 +577,7 @@ impl TsKv {
                 }
             }
 
-            let time_range = &TimeRange {
-                min_ts: Timestamp::MIN,
-                max_ts: Timestamp::MAX,
-            };
+            let time_ranges = TimeRanges::all();
             for (ts_family_id, ts_family) in database.read().await.ts_families().iter() {
                 // TODO: Concurrent delete on ts_family.
                 // TODO: Limit parallel delete to 1.
@@ -618,9 +594,7 @@ impl TsKv {
                     ts_family.write().await.drop_columns(&field_ids);
 
                     let version = ts_family.read().await.super_version();
-                    for column_file in version.version.column_files(&field_ids, time_range) {
-                        column_file.add_tombstone(&field_ids, time_range).await?;
-                    }
+                    version.add_tsm_tombstone(&field_ids, &time_ranges).await?;
                 } else {
                     continue;
                 }
@@ -858,11 +832,12 @@ impl TsKv {
                 );
 
                 let version = vnode.super_version();
-                for time_range in time_ranges.time_ranges() {
-                    for column_file in version.version.column_files(&field_ids, time_range) {
-                        column_file.add_tombstone(&field_ids, time_range).await?;
-                    }
-                }
+
+                // Stop compaction when doing delete
+                let compaction_guard = self.compact_job.prepare_stop_vnode_compaction_job().await;
+                compaction_guard.wait().await;
+
+                version.add_tsm_tombstone(&field_ids, time_ranges).await?;
             }
         }
 
@@ -1340,9 +1315,7 @@ impl Engine for TsKv {
 
         // 执行delete，删除缓存 & 写墓碑文件
         self.delete(tenant, database, table, vnode_id, &series_ids, &time_ranges)
-            .await?;
-
-        Ok(())
+            .await
     }
 
     async fn get_series_id_by_filter(

@@ -1,13 +1,15 @@
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize};
+use std::sync::{atomic, Arc};
 use std::time::{Duration, Instant};
 
+use flush::run_flush_memtable_job;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::{Receiver, Sender};
-use tokio::sync::{oneshot, RwLock, Semaphore};
+use tokio::sync::{oneshot, RwLock, RwLockWriteGuard, Semaphore};
 use trace::{error, info};
 
-use crate::compaction::{flush, CompactTask, LevelCompactionPicker, Picker};
+use crate::compaction::{flush, CompactTask, FlushReq, LevelCompactionPicker, Picker};
 use crate::context::GlobalContext;
 use crate::kv_option::StorageOptions;
 use crate::summary::SummaryTask;
@@ -41,143 +43,362 @@ impl Default for CompactProcessor {
     }
 }
 
-pub fn run(
-    storage_opt: Arc<StorageOptions>,
+pub struct CompactJob {
+    inner: Arc<RwLock<CompactJobInner>>,
+}
+
+impl CompactJob {
+    pub fn new(
+        runtime: Arc<Runtime>,
+        storage_opt: Arc<StorageOptions>,
+        version_set: Arc<RwLock<VersionSet>>,
+        global_context: Arc<GlobalContext>,
+        summary_task_sender: Sender<SummaryTask>,
+    ) -> Self {
+        Self {
+            inner: Arc::new(RwLock::new(CompactJobInner::new(
+                runtime,
+                storage_opt,
+                version_set,
+                global_context,
+                summary_task_sender,
+            ))),
+        }
+    }
+
+    pub async fn start_merge_compact_task_job(&self, compact_task_receiver: Receiver<CompactTask>) {
+        self.inner
+            .read()
+            .await
+            .start_merge_compact_task_job(compact_task_receiver);
+    }
+
+    pub async fn start_vnode_compaction_job(&self) {
+        self.inner.read().await.start_vnode_compaction_job();
+    }
+
+    pub async fn prepare_stop_vnode_compaction_job(&self) -> StartVnodeCompactionGuard {
+        info!("StopCompactionGuard(create):prepare stop vnode compaction job");
+        let inner = self.inner.write().await;
+        inner
+            .enable_compaction
+            .store(false, atomic::Ordering::SeqCst);
+        StartVnodeCompactionGuard { inner }
+    }
+}
+
+impl std::fmt::Debug for CompactJob {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CompactJob").finish()
+    }
+}
+
+struct CompactJobInner {
     runtime: Arc<Runtime>,
-    mut receiver: Receiver<CompactTask>,
-    ctx: Arc<GlobalContext>,
+    storage_opt: Arc<StorageOptions>,
     version_set: Arc<RwLock<VersionSet>>,
+    global_context: Arc<GlobalContext>,
     summary_task_sender: Sender<SummaryTask>,
-) {
-    let runtime_inner = runtime.clone();
-    let compact_processor = Arc::new(RwLock::new(CompactProcessor::default()));
-    let compact_batch_processor = compact_processor.clone();
-    runtime.spawn(async move {
-        // TODO: Concurrent compactions should not over argument $cpu.
-        let compaction_limit = Arc::new(Semaphore::new(
-            storage_opt.max_concurrent_compaction as usize,
-        ));
-        let mut check_interval =
-            tokio::time::interval(Duration::from_secs(COMPACT_BATCH_CHECKING_SECONDS));
 
-        loop {
-            check_interval.tick().await;
-            let processor = compact_batch_processor.read().await;
-            if processor.vnode_ids.is_empty() {
-                continue;
-            }
-            drop(processor);
-            let vnode_ids = compact_batch_processor.write().await.take();
-            let vnode_ids_for_debug = vnode_ids.clone();
-            let now = Instant::now();
-            info!("Compacting on vnode(job start): {:?}", &vnode_ids_for_debug);
-            for (vnode_id, flush_vnode) in vnode_ids {
-                let ts_family = version_set
-                    .read()
+    compact_processor: Arc<RwLock<CompactProcessor>>,
+    enable_compaction: Arc<AtomicBool>,
+    running_compactions: Arc<AtomicUsize>,
+}
+
+impl CompactJobInner {
+    fn new(
+        runtime: Arc<Runtime>,
+        storage_opt: Arc<StorageOptions>,
+        version_set: Arc<RwLock<VersionSet>>,
+        global_context: Arc<GlobalContext>,
+        summary_task_sender: Sender<SummaryTask>,
+    ) -> Self {
+        let compact_processor = Arc::new(RwLock::new(CompactProcessor::default()));
+
+        Self {
+            runtime,
+            storage_opt,
+            version_set,
+            global_context,
+            summary_task_sender,
+            compact_processor,
+            enable_compaction: Arc::new(AtomicBool::new(true)),
+            running_compactions: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    fn start_merge_compact_task_job(&self, mut compact_task_receiver: Receiver<CompactTask>) {
+        info!("Compaction: start merge compact task job");
+        let compact_processor = self.compact_processor.clone();
+        self.runtime.spawn(async move {
+            while let Some(compact_task) = compact_task_receiver.recv().await {
+                // Vnode id to compact & whether vnode be flushed before compact
+                let (vnode_id, flush_vnode) = match compact_task {
+                    CompactTask::Vnode(id) => (id, false),
+                    CompactTask::ColdVnode(id) => (id, true),
+                };
+                compact_processor
+                    .write()
                     .await
-                    .get_tsfamily_by_tf_id(vnode_id)
-                    .await;
-                if let Some(tsf) = ts_family {
-                    info!("Starting compaction on ts_family {}", vnode_id);
-                    let start = Instant::now();
-                    if !tsf.read().await.can_compaction() {
-                        info!("forbidden compaction on moving vnode {}", vnode_id);
-                        return;
-                    }
-                    let picker = LevelCompactionPicker::new(storage_opt.clone());
-                    let version = tsf.read().await.version();
-                    let compact_req = picker.pick_compaction(version);
-                    if let Some(req) = compact_req {
-                        let database = req.database.clone();
-                        let compact_ts_family = req.ts_family_id;
-                        let out_level = req.out_level;
+                    .insert(vnode_id, flush_vnode);
+            }
+        });
+    }
 
-                        let ctx_inner = ctx.clone();
-                        let version_set_inner = version_set.clone();
-                        let summary_task_sender_inner = summary_task_sender.clone();
+    fn start_vnode_compaction_job(&self) {
+        info!("Compaction: start vnode compaction job");
+        if self
+            .enable_compaction
+            .compare_exchange(
+                false,
+                true,
+                atomic::Ordering::Acquire,
+                atomic::Ordering::Relaxed,
+            )
+            .is_err()
+        {
+            info!("Compaction: enable_compaction is false, later to start vnode compaction job");
+            return;
+        }
 
-                        // Method acquire_owned() will return AcquireError if the semaphore has been closed.
-                        let permit = compaction_limit.clone().acquire_owned().await.unwrap();
-                        runtime_inner.spawn(async move {
-                            if flush_vnode {
-                                let mut tsf_wlock = tsf.write().await;
-                                tsf_wlock.switch_to_immutable();
-                                let flush_req = tsf_wlock.build_flush_req(true);
-                                drop(tsf_wlock);
-                                if let Some(req) = flush_req {
-                                    if let Err(e) = flush::run_flush_memtable_job(
-                                        req,
-                                        ctx_inner.clone(),
-                                        version_set_inner,
-                                        summary_task_sender_inner.clone(),
-                                        None,
-                                    )
-                                    .await
-                                    {
-                                        error!("Failed to flush vnode {}: {:?}", vnode_id, e);
+        let runtime_inner = self.runtime.clone();
+        let storage_opt = self.storage_opt.clone();
+        let version_set = self.version_set.clone();
+        let global_context = self.global_context.clone();
+        let summary_task_sender = self.summary_task_sender.clone();
+        let compact_processor = Arc::new(RwLock::new(CompactProcessor::default()));
+        let enable_compaction = self.enable_compaction.clone();
+        let running_compaction = self.running_compactions.clone();
+
+        self.runtime.spawn(async move {
+            // TODO: Concurrent compactions should not over argument $cpu.
+            let compaction_limit = Arc::new(Semaphore::new(
+                storage_opt.max_concurrent_compaction as usize,
+            ));
+            let mut check_interval =
+                tokio::time::interval(Duration::from_secs(COMPACT_BATCH_CHECKING_SECONDS));
+
+            loop {
+                check_interval.tick().await;
+                if !enable_compaction.load(atomic::Ordering::SeqCst) {
+                    break;
+                }
+                let processor = compact_processor.read().await;
+                if processor.vnode_ids.is_empty() {
+                    continue;
+                }
+                drop(processor);
+                let vnode_ids = compact_processor.write().await.take();
+                let vnode_ids_for_debug = vnode_ids.clone();
+                let now = Instant::now();
+                info!("Compacting on vnode(job start): {:?}", &vnode_ids_for_debug);
+                for (vnode_id, flush_vnode) in vnode_ids {
+                    let ts_family = version_set
+                        .read()
+                        .await
+                        .get_tsfamily_by_tf_id(vnode_id)
+                        .await;
+                    if let Some(tsf) = ts_family {
+                        info!("Starting compaction on ts_family {}", vnode_id);
+                        let start = Instant::now();
+                        if !tsf.read().await.can_compaction() {
+                            info!("forbidden compaction on moving vnode {}", vnode_id);
+                            return;
+                        }
+                        let picker = LevelCompactionPicker::new(storage_opt.clone());
+                        let version = tsf.read().await.version();
+                        let compact_req = picker.pick_compaction(version);
+                        if let Some(req) = compact_req {
+                            let database = req.database.clone();
+                            let compact_ts_family = req.ts_family_id;
+                            let out_level = req.out_level;
+
+                            let ctx_inner = global_context.clone();
+                            let version_set_inner = version_set.clone();
+                            let summary_task_sender_inner = summary_task_sender.clone();
+
+                            // Method acquire_owned() will return AcquireError if the semaphore has been closed.
+                            let permit = compaction_limit.clone().acquire_owned().await.unwrap();
+                            let enable_compaction = enable_compaction.clone();
+                            let running_compaction = running_compaction.clone();
+                            runtime_inner.spawn(async move {
+                                // Check enable compaction
+                                if !enable_compaction.load(atomic::Ordering::SeqCst) {
+                                    return;
+                                }
+                                // Edit running_compation
+                                running_compaction.fetch_add(1, atomic::Ordering::SeqCst);
+                                let _sub_running_compaction_guard = DeferGuard(Some(|| {
+                                    running_compaction.fetch_sub(1, atomic::Ordering::SeqCst);
+                                }));
+
+                                if flush_vnode {
+                                    let mut tsf_wlock = tsf.write().await;
+                                    tsf_wlock.switch_to_immutable();
+                                    let flush_req = tsf_wlock.build_flush_req(true);
+                                    drop(tsf_wlock);
+                                    if let Some(req) = flush_req {
+                                        if let Err(e) = flush::run_flush_memtable_job(
+                                            req,
+                                            ctx_inner.clone(),
+                                            version_set_inner,
+                                            summary_task_sender_inner.clone(),
+                                            None,
+                                        )
+                                        .await
+                                        {
+                                            error!("Failed to flush vnode {}: {:?}", vnode_id, e);
+                                        }
                                     }
                                 }
-                            }
 
-                            match super::run_compaction_job(req, ctx_inner).await {
-                                Ok(Some((version_edit, file_metas))) => {
-                                    metrics::incr_compaction_success();
-                                    let (summary_tx, _summary_rx) = oneshot::channel();
-                                    let _ = summary_task_sender_inner
-                                        .send(SummaryTask::new(
-                                            vec![version_edit],
-                                            Some(file_metas),
-                                            None,
-                                            summary_tx,
-                                        ))
-                                        .await;
+                                match super::run_compaction_job(req, ctx_inner).await {
+                                    Ok(Some((version_edit, file_metas))) => {
+                                        metrics::incr_compaction_success();
+                                        let (summary_tx, _summary_rx) = oneshot::channel();
+                                        let _ = summary_task_sender_inner
+                                            .send(SummaryTask::new(
+                                                vec![version_edit],
+                                                Some(file_metas),
+                                                None,
+                                                summary_tx,
+                                            ))
+                                            .await;
 
-                                    metrics::sample_tskv_compaction_duration(
-                                        database.as_str(),
-                                        compact_ts_family.to_string().as_str(),
-                                        out_level.to_string().as_str(),
-                                        start.elapsed().as_secs_f64(),
-                                    )
-                                    // TODO Handle summary result using summary_rx.
+                                        metrics::sample_tskv_compaction_duration(
+                                            database.as_str(),
+                                            compact_ts_family.to_string().as_str(),
+                                            out_level.to_string().as_str(),
+                                            start.elapsed().as_secs_f64(),
+                                        )
+                                        // TODO Handle summary result using summary_rx.
+                                    }
+                                    Ok(None) => {
+                                        info!("There is nothing to compact.");
+                                    }
+                                    Err(e) => {
+                                        metrics::incr_compaction_failed();
+                                        error!("Compaction job failed: {:?}", e);
+                                    }
                                 }
-                                Ok(None) => {
-                                    info!("There is nothing to compact.");
-                                }
-                                Err(e) => {
-                                    metrics::incr_compaction_failed();
-                                    error!("Compaction job failed: {:?}", e);
-                                }
-                            }
-                            drop(permit);
-                        });
+                                drop(permit);
+                            });
+                        }
                     }
                 }
+                info!(
+                    "Compacting on vnode(job start): {:?} costs {} sec",
+                    vnode_ids_for_debug,
+                    now.elapsed().as_secs()
+                );
             }
-            info!(
-                "Compacting on vnode(job start): {:?} costs {} sec",
-                vnode_ids_for_debug,
-                now.elapsed().as_secs()
-            );
-        }
-    });
+        });
+    }
 
-    runtime.spawn(async move {
-        while let Some(compact_task) = receiver.recv().await {
-            // Vnode id to compact & whether vnode be flushed before compact
-            let (vnode_id, flush_vnode) = match compact_task {
-                CompactTask::Vnode(id) => (id, false),
-                CompactTask::ColdVnode(id) => (id, true),
-            };
-            compact_processor
-                .write()
-                .await
-                .insert(vnode_id, flush_vnode);
+    pub async fn prepare_stop_vnode_compaction_job(&self) {
+        self.enable_compaction
+            .store(false, atomic::Ordering::SeqCst);
+    }
+
+    async fn wait_stop_vnode_compaction_job(&self) {
+        let mut check_interval = tokio::time::interval(Duration::from_millis(100));
+        loop {
+            check_interval.tick().await;
+            if self.running_compactions.load(atomic::Ordering::SeqCst) == 0 {
+                return;
+            }
         }
-    });
+    }
+}
+
+pub struct StartVnodeCompactionGuard<'a> {
+    inner: RwLockWriteGuard<'a, CompactJobInner>,
+}
+
+impl<'a> StartVnodeCompactionGuard<'a> {
+    pub async fn wait(&self) {
+        info!("StopCompactionGuard(wait): wait vnode compaction job to stop");
+        self.inner.wait_stop_vnode_compaction_job().await
+    }
+}
+
+impl<'a> Drop for StartVnodeCompactionGuard<'a> {
+    fn drop(&mut self) {
+        info!("StopCompactionGuard(drop): start vnode compaction job");
+        self.inner.start_vnode_compaction_job();
+    }
+}
+
+pub struct DeferGuard<F: FnOnce()>(Option<F>);
+
+impl<F: FnOnce()> Drop for DeferGuard<F> {
+    fn drop(&mut self) {
+        if let Some(f) = self.0.take() {
+            f()
+        }
+    }
+}
+
+pub struct FlushJob {
+    runtime: Arc<Runtime>,
+    version_set: Arc<RwLock<VersionSet>>,
+    global_context: Arc<GlobalContext>,
+    summary_task_sender: Sender<SummaryTask>,
+    compact_task_sender: Sender<CompactTask>,
+}
+
+impl FlushJob {
+    pub fn new(
+        runtime: Arc<Runtime>,
+        version_set: Arc<RwLock<VersionSet>>,
+        global_context: Arc<GlobalContext>,
+        summary_task_sender: Sender<SummaryTask>,
+        compact_task_sender: Sender<CompactTask>,
+    ) -> Self {
+        Self {
+            runtime,
+            version_set,
+            global_context,
+            summary_task_sender,
+            compact_task_sender,
+        }
+    }
+
+    pub fn start_vnode_flush_job(&self, mut flush_req_receiver: Receiver<FlushReq>) {
+        let runtime_inner = self.runtime.clone();
+        let version_set = self.version_set.clone();
+        let global_context = self.global_context.clone();
+        let summary_task_sender = self.summary_task_sender.clone();
+        let compact_task_sender = self.compact_task_sender.clone();
+        self.runtime.spawn(async move {
+            while let Some(x) = flush_req_receiver.recv().await {
+                // TODO(zipper): this make config `flush_req_channel_cap` wasted
+                // Run flush job and trigger compaction.
+                runtime_inner.spawn(run_flush_memtable_job(
+                    x,
+                    global_context.clone(),
+                    version_set.clone(),
+                    summary_task_sender.clone(),
+                    Some(compact_task_sender.clone()),
+                ));
+            }
+        });
+        info!("Flush task handler started");
+    }
+}
+
+impl std::fmt::Debug for FlushJob {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FlushJob").finish()
+    }
 }
 
 #[cfg(test)]
 mod test {
+    use std::sync::atomic::{self, AtomicI32};
+    use std::sync::Arc;
+
+    use super::DeferGuard;
     use crate::compaction::job::CompactProcessor;
     use crate::TseriesFamilyId;
 
@@ -201,5 +422,30 @@ mod test {
         assert_eq!(vnode_ids.get(&1), Some(&true));
         assert_eq!(vnode_ids.get(&2), Some(&false));
         assert_eq!(vnode_ids.get(&3), Some(&true));
+    }
+
+    #[test]
+    fn test_defer_guard() {
+        let a = Arc::new(AtomicI32::new(0));
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .build()
+            .unwrap();
+        {
+            let a = a.clone();
+            let jh = runtime.spawn(async move {
+                a.fetch_add(1, atomic::Ordering::SeqCst);
+                let _guard = DeferGuard(Some(|| {
+                    a.fetch_sub(1, atomic::Ordering::SeqCst);
+                }));
+                a.fetch_add(1, atomic::Ordering::SeqCst);
+                a.fetch_add(1, atomic::Ordering::SeqCst);
+
+                assert_eq!(a.load(atomic::Ordering::SeqCst), 3);
+            });
+            let _ = runtime.block_on(jh);
+        }
+        assert_eq!(a.load(atomic::Ordering::SeqCst), 2);
     }
 }

@@ -13,10 +13,14 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use models::predicate::domain::TimeRange;
 use models::FieldId;
+use parking_lot::Mutex;
+use tokio::sync::Mutex as AsyncMutex;
 use trace::error;
+use utils::BloomFilter;
 
 use super::DataBlock;
 use crate::file_system::file_manager;
@@ -44,11 +48,15 @@ pub struct Tombstone {
 /// - - max: i64 8 bytes
 /// - loop end
 pub struct TsmTombstone {
-    tombstones: HashMap<FieldId, Vec<TimeRange>>,
+    /// Tombstone caches.
+    tombstones: Mutex<HashMap<FieldId, Vec<TimeRange>>>,
 
     path: PathBuf,
-    writer: Option<record_file::Writer>,
-    write_buf: [u8; ENTRY_LEN],
+    /// Async record file writer.
+    ///
+    /// If you want to use self::writer and self::tombstones at the same time,
+    /// lock writer first then tombstones.
+    writer: Arc<AsyncMutex<Option<record_file::Writer>>>,
 }
 
 impl TsmTombstone {
@@ -68,10 +76,9 @@ impl TsmTombstone {
         }
 
         Ok(Self {
-            tombstones,
+            tombstones: Mutex::new(tombstones),
             path,
-            writer,
-            write_buf: [0_u8; ENTRY_LEN],
+            writer: Arc::new(AsyncMutex::new(writer)),
         })
     }
 
@@ -114,29 +121,44 @@ impl TsmTombstone {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.tombstones.is_empty()
+        self.tombstones.lock().is_empty()
     }
 
-    pub async fn add_range(&mut self, field_ids: &[FieldId], time_range: &TimeRange) -> Result<()> {
-        if self.writer.is_none() {
-            self.writer =
+    pub async fn add_range(
+        &self,
+        field_ids: &[FieldId],
+        time_range: &TimeRange,
+        bloom_filter: Option<Arc<BloomFilter>>,
+    ) -> Result<()> {
+        let mut writer_lock = self.writer.lock().await;
+        if writer_lock.is_none() {
+            *writer_lock =
                 Some(record_file::Writer::open(&self.path, RecordDataType::Tombstone).await?);
         }
-        let writer = self.writer.as_mut().expect("initialized file");
+        let writer = writer_lock
+            .as_mut()
+            .expect("initialized record file writer");
 
+        let mut write_buf = [0_u8; ENTRY_LEN];
         for field_id in field_ids.iter() {
-            self.write_buf[0..8].copy_from_slice((*field_id).to_be_bytes().as_slice());
-            self.write_buf[8..16].copy_from_slice(time_range.min_ts.to_be_bytes().as_slice());
-            self.write_buf[16..24].copy_from_slice(time_range.max_ts.to_be_bytes().as_slice());
+            write_buf[0..8].copy_from_slice((*field_id).to_be_bytes().as_slice());
+            if let Some(filter) = bloom_filter.as_ref() {
+                if !filter.contains(&write_buf[0..8]) {
+                    continue;
+                }
+            }
+            write_buf[8..16].copy_from_slice(time_range.min_ts.to_be_bytes().as_slice());
+            write_buf[16..24].copy_from_slice(time_range.max_ts.to_be_bytes().as_slice());
             writer
                 .write_record(
                     RecordDataVersion::V1 as u8,
                     RecordDataType::Tombstone as u8,
-                    &[&self.write_buf],
+                    &[&write_buf],
                 )
                 .await?;
 
             self.tombstones
+                .lock()
                 .entry(*field_id)
                 .or_default()
                 .push(*time_range);
@@ -144,8 +166,8 @@ impl TsmTombstone {
         Ok(())
     }
 
-    pub async fn flush(&mut self) -> Result<()> {
-        if let Some(w) = self.writer.as_mut() {
+    pub async fn flush(&self) -> Result<()> {
+        if let Some(w) = self.writer.lock().await.as_mut() {
             w.sync().await?;
         }
         Ok(())
@@ -153,11 +175,11 @@ impl TsmTombstone {
 
     /// Returns all TimeRanges for a FieldId cloned from TsmTombstone.
     pub(crate) fn get_cloned_time_ranges(&self, field_id: FieldId) -> Option<Vec<TimeRange>> {
-        self.tombstones.get(&field_id).cloned()
+        self.tombstones.lock().get(&field_id).cloned()
     }
 
     pub fn overlaps(&self, field_id: FieldId, time_range: &TimeRange) -> bool {
-        if let Some(time_ranges) = self.tombstones.get(&field_id) {
+        if let Some(time_ranges) = self.tombstones.lock().get(&field_id) {
             for t in time_ranges.iter() {
                 if t.overlaps(time_range) {
                     return true;
@@ -175,7 +197,7 @@ impl TsmTombstone {
         field_id: FieldId,
         time_range: &TimeRange,
     ) -> Option<Vec<TimeRange>> {
-        if let Some(time_ranges) = self.tombstones.get(&field_id) {
+        if let Some(time_ranges) = self.tombstones.lock().get(&field_id) {
             let mut trs = Vec::new();
             for t in time_ranges.iter() {
                 if t.overlaps(time_range) {
@@ -194,7 +216,7 @@ impl TsmTombstone {
     pub fn data_block_exclude_tombstones(&self, field_id: FieldId, data_block: &mut DataBlock) {
         if let Some(tr_tuple) = data_block.time_range() {
             let time_range: &TimeRange = &tr_tuple.into();
-            if let Some(time_ranges) = self.tombstones.get(&field_id) {
+            if let Some(time_ranges) = self.tombstones.lock().get(&field_id) {
                 time_ranges
                     .iter()
                     .filter(|t| t.overlaps(time_range))
@@ -210,8 +232,8 @@ impl TsmTombstone {
         data_block: &DataBlock,
     ) -> Option<DataBlock> {
         let block_tr: TimeRange = data_block.time_range()?.into();
-        let tombstone = self
-            .tombstones
+        let tombstone_lock = self.tombstones.lock();
+        let tombstone = tombstone_lock
             .get(&field_id)?
             .iter()
             .filter(|tr| tr.overlaps(&block_tr))
@@ -239,10 +261,9 @@ mod test {
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
         }
-        let mut tombstone = TsmTombstone::open(&dir, 1).await.unwrap();
-        // tsm_tombstone.load().unwrap();
+        let tombstone = TsmTombstone::open(&dir, 1).await.unwrap();
         tombstone
-            .add_range(&[0], &TimeRange::new(0, 0))
+            .add_range(&[0], &TimeRange::new(0, 0), None)
             .await
             .unwrap();
         tombstone.flush().await.unwrap();
@@ -266,10 +287,10 @@ mod test {
             std::fs::create_dir_all(&dir).unwrap();
         }
 
-        let mut tombstone = TsmTombstone::open(&dir, 1).await.unwrap();
+        let tombstone = TsmTombstone::open(&dir, 1).await.unwrap();
         // tsm_tombstone.load().unwrap();
         tombstone
-            .add_range(&[1, 2, 3], &TimeRange::new(1, 100))
+            .add_range(&[1, 2, 3], &TimeRange::new(1, 100), None)
             .await
             .unwrap();
         tombstone.flush().await.unwrap();
@@ -307,13 +328,14 @@ mod test {
             std::fs::create_dir_all(&dir).unwrap();
         }
 
-        let mut tombstone = TsmTombstone::open(&dir, 1).await.unwrap();
+        let tombstone = TsmTombstone::open(&dir, 1).await.unwrap();
         // tsm_tombstone.load().unwrap();
         for i in 0..10000 {
             tombstone
                 .add_range(
                     &[3 * i as u64 + 1, 3 * i as u64 + 2, 3 * i as u64 + 3],
                     &TimeRange::new(i as i64 * 2, i as i64 * 2 + 100),
+                    None,
                 )
                 .await
                 .unwrap();
