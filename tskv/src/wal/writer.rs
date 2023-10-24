@@ -311,9 +311,10 @@ impl WalWriter {
 
     pub async fn close(&mut self) -> Result<usize> {
         trace::info!(
-            "Closing wal with sequence: [{}, {})",
+            "Wal '{}' closing with sequence: [{}, {})",
+            self.path.display(),
             self.min_sequence,
-            self.max_sequence
+            self.max_sequence,
         );
         let mut footer = build_footer(self.min_sequence, self.max_sequence);
         let size = self.inner.write_footer(&mut footer).await?;
@@ -354,7 +355,6 @@ impl WalWriter {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-
 pub enum Task {
     Write(WriteTask),
     DeleteVnode(DeleteVnodeTask),
@@ -587,7 +587,7 @@ mod test {
         #[rustfmt::skip]
         let entries = vec![
             Block::Write(WriteBlock::build(
-                1,  "cnosdb", 3, Precision::NS, vec![1, 2, 3],
+                1, "cnosdb", 3, Precision::NS, vec![1, 2, 3],
             )),
             Block::DeleteVnode(DeleteVnodeBlock::build(2, "cnosdb", "public", 6)),
             Block::DeleteTable(DeleteTableBlock::build(3, "cnosdb", "public", "table")),

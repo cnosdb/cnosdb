@@ -353,7 +353,7 @@ impl VnodeWal {
             let new_file_id = self.current_wal.id() + 1;
             let new_file_name = file_utils::make_wal_file(&self.wal_dir, new_file_id);
 
-            let new_file = writer::WalWriter::open(
+            let new_file = WalWriter::open(
                 self.config.clone(),
                 new_file_id,
                 new_file_name,
@@ -367,6 +367,7 @@ impl VnodeWal {
             } else {
                 old_file.set_max_sequence(old_file.max_sequence() - 1);
             }
+            old_file.close().await?;
 
             trace::info!(
                 "WAL '{}' starts write at seq {}",
@@ -825,48 +826,55 @@ mod test {
         (fbb.finished_data().to_vec(), map)
     }
 
+    /// Check wal files in a directory by comparing wal blocks in file with data_expected.
+    /// - When wal reader returns Ok(Some(blk)), it compares blk.points() with expected data.
+    /// - When wal reader returns Ok(None), it goes to the next wal, but, if expected data is not
+    ///   vec![], it panics.
     async fn check_wal_files(
         wal_dir: impl AsRef<Path>,
-        data: Vec<Vec<u8>>,
-        is_flatbuffers: bool,
+        data_expected: Vec<Vec<u8>>,
+        is_flatbuffer_points: bool,
     ) -> Result<()> {
         let wal_dir = wal_dir.as_ref();
         let wal_files = list_file_names(wal_dir);
-        let mut data_iter = data.iter();
+        let mut data_iter = data_expected.iter();
         for wal_file in wal_files {
-            let path = wal_dir.join(wal_file);
+            let path = wal_dir.join(&wal_file);
 
             let mut reader = WalReader::open(&path).await.unwrap();
             let decoder = get_str_codec(Encoding::Zstd);
-            println!("Reading data from wal file '{}'", path.display());
             loop {
+                let ori_data = match data_iter.next() {
+                    Some(d) => d,
+                    None => {
+                        panic!("Unexpected data to compare that is less than file count.")
+                    }
+                };
                 match reader.next_wal_entry().await {
                     Ok(Some(entry_block)) => {
                         println!("Reading entry from wal file '{}'", path.display());
                         match entry_block.block {
                             Block::Write(entry) => {
                                 let ety_data = entry.points();
-                                let ori_data = match data_iter.next() {
-                                    Some(d) => d,
-                                    None => {
-                                        panic!("unexpected data to compare that is less than file count.")
-                                    }
-                                };
-                                if is_flatbuffers {
+                                if is_flatbuffer_points {
                                     let mut data_buf = Vec::new();
                                     decoder.decode(ety_data, &mut data_buf).unwrap();
-                                    assert_eq!(data_buf[0].as_slice(), ori_data.as_slice());
+                                    assert_eq!(
+                                        data_buf[0].as_slice(),
+                                        ori_data.as_slice(),
+                                        "in '{wal_file}'"
+                                    );
                                     if let Err(e) =
                                         flatbuffers::root::<fb_models::Points>(&data_buf[0])
                                     {
                                         panic!(
-                                            "unexpected data in wal file, ignored file '{}' because '{}'",
+                                            "Unexpected data in wal file, ignored file '{}' because '{}'",
                                             wal_dir.display(),
                                             e
                                         );
                                     }
                                 } else {
-                                    assert_eq!(ety_data, ori_data.as_slice());
+                                    assert_eq!(ety_data, ori_data.as_slice(), "in '{wal_file}'");
                                 }
                             }
                             Block::DeleteVnode(_) => todo!(),
@@ -878,7 +886,10 @@ mod test {
                         }
                     }
                     Ok(None) => {
-                        println!("Reae none from wal file '{}'", path.display());
+                        println!("Read none from wal file '{}'", path.display());
+                        if !ori_data.is_empty() {
+                            panic!("Read none but {ori_data:?} expected in file '{wal_file}'");
+                        }
                         break;
                     }
                     Err(Error::WalTruncated) => {
@@ -927,6 +938,7 @@ mod test {
                 let (seq, _) = rx.await.unwrap().unwrap();
                 assert_eq!(i, seq)
             }
+            data_vec.push(vec![]);
             mgr.close().await.unwrap();
 
             check_wal_files(&dest_dir, data_vec, false).await.unwrap();
@@ -952,8 +964,8 @@ mod test {
         let tenant = "cnosdb";
         let database = "test";
         let vnode_id = 0;
-        let owner = make_owner(tenant, database);
-        let dest_dir = wal_config.wal_dir(&owner, vnode_id);
+        let tenant_database = make_owner(tenant, database);
+        let wal_dir = wal_config.wal_dir(&tenant_database, vnode_id);
 
         let runtime = Arc::new(tokio::runtime::Runtime::new().unwrap());
         let feature = async {
@@ -964,12 +976,9 @@ mod test {
             .await
             .unwrap();
             let mut data_vec: Vec<Vec<u8>> = Vec::new();
+            data_vec.push(vec![]); // _000000.wal will be skipped.
             for seq in 1..=10 {
                 let data = format!("{}", seq).into_bytes();
-                // if seq >= min_seq_no {
-                //     // Data in file_id that less than version_set_min_seq_no will be deleted.
-                //
-                // }
                 data_vec.push(data.clone());
                 let (wal_task, rx) = WalTask::new_write(
                     tenant.to_string(),
@@ -980,13 +989,13 @@ mod test {
                 );
                 mgr.write(wal_task).await.unwrap();
                 let (write_seq, _) = rx.await.unwrap().unwrap();
-                assert_eq!(seq, write_seq)
+                assert_eq!(seq, write_seq);
+                // there will be only 1 wal block in wal file.
+                data_vec.push(vec![]);
             }
-            // assert_eq!(mgr.total_file_size(), 364);
-            // assert!(mgr.is_total_file_size_exceed());
             mgr.close().await.unwrap();
 
-            check_wal_files(dest_dir, data_vec, false).await.unwrap();
+            check_wal_files(wal_dir, data_vec, false).await.unwrap();
         };
         runtime.block_on(feature);
     }
