@@ -305,14 +305,6 @@ impl Error {
             _ => self,
         }
     }
-
-    pub fn vnode_broken_code(code: &str) -> bool {
-        let e = Self::ReadTsm {
-            source: ReadTsmError::CrcCheck,
-        };
-
-        e.code() == code
-    }
 }
 
 // default conversion from CoordinatorError to tonic treats everything

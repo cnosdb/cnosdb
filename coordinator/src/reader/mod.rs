@@ -137,7 +137,7 @@ impl<O: VnodeOpener> CheckedCoordinatorRecordBatchStream<O> {
                                 );
                             }
                             Err(err) => {
-                                if tskv::Error::vnode_broken_code(err.error_code().code()) {
+                                if vnode_broken_err(err.to_string(), err.error_code().code()) {
                                     let id = self.vnode.id;
                                     let meta = self.meta.clone();
                                     let tenant = self.option.tenant_name();
@@ -193,6 +193,26 @@ impl<O: VnodeOpener> Stream for CheckedCoordinatorRecordBatchStream<O> {
         }
         poll
     }
+}
+
+pub fn vnode_broken_err(msg: String, code: &str) -> bool {
+    let e = tskv::error::Error::ReadTsm {
+        source: tskv::tsm::ReadTsmError::CrcCheck,
+    };
+
+    if models::error_code::ErrorCode::code(&e) == code {
+        return true;
+    }
+
+    if msg.contains("File Not Found") {
+        return true;
+    }
+
+    if msg.contains("No such file or directory") {
+        return true;
+    }
+
+    false
 }
 
 pub async fn change_vnode_to_broken(
