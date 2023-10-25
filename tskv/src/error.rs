@@ -250,6 +250,14 @@ pub enum Error {
     CreateDatabase {
         msg: String,
     },
+    #[error_code(code = 52)]
+    #[snafu(display("Column {} not found", column))]
+    ColumnNotFound {
+        column: String,
+    },
+
+    #[snafu(display("Columns of FlatBufferTable is missing"))]
+    FlatBufColumnsMiss,
 }
 
 impl From<PointsError> for Error {

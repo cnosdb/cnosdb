@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::{HashMap, LinkedList};
 use std::mem::size_of;
 use std::sync::Arc;
@@ -7,8 +8,8 @@ use memory_pool::MemoryPoolRef;
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::predicate::domain::TimeRange;
-use models::schema::{DatabaseSchema, Precision, TskvTableSchema, TskvTableSchemaRef};
-use models::{SchemaId, SeriesId, SeriesKey};
+use models::schema::{DatabaseSchema, Precision, TskvTableSchemaRef};
+use models::{SeriesId, SeriesKey};
 use protos::models::{Column, ColumnType, FieldType, Table};
 use snafu::ResultExt;
 use tokio::runtime::Runtime;
@@ -228,34 +229,14 @@ impl Database {
 
     pub async fn build_write_group(
         &self,
-        db_name: &str,
         precision: Precision,
         tables: FlatBufferTable<'_>,
         ts_index: Arc<index::ts_index::TSIndex>,
         recover_from_wal: bool,
-    ) -> Result<HashMap<(SeriesId, SchemaId), RowGroup>> {
-        if self.opt.storage.strict_write {
-            self.build_write_group_strict_mode(precision, tables, ts_index, recover_from_wal)
-                .await
-        } else {
-            self.build_write_group_loose_mode(
-                db_name,
-                precision,
-                tables,
-                ts_index,
-                recover_from_wal,
-            )
-            .await
-        }
-    }
+        strict_write: Option<bool>,
+    ) -> Result<HashMap<SeriesId, RowGroup>> {
+        let strict_write = strict_write.unwrap_or(self.opt.storage.strict_write);
 
-    pub async fn build_write_group_strict_mode(
-        &self,
-        precision: Precision,
-        tables: FlatBufferTable<'_>,
-        ts_index: Arc<index::ts_index::TSIndex>,
-        recover_from_wal: bool,
-    ) -> Result<HashMap<(SeriesId, SchemaId), RowGroup>> {
         // (series id, schema id) -> RowGroup
         let mut map = HashMap::new();
         for table in tables {
@@ -263,158 +244,88 @@ impl Database {
             let columns = table.columns().ok_or(Error::CommonError {
                 reason: "table missing columns".to_string(),
             })?;
-            let fb_schema = FbSchema::from_fb_column(columns)?;
             let num_rows = table.num_rows() as usize;
-            let sids = Self::build_index(
-                table_name,
-                &columns,
-                &fb_schema.tag_indexes,
-                num_rows,
-                ts_index.clone(),
-                recover_from_wal,
-            )
-            .await?;
 
-            for i in 0..num_rows {
-                self.build_row_data(
-                    &mut map,
-                    table_name,
-                    precision,
-                    &columns,
-                    &fb_schema.field_indexes,
-                    fb_schema.time_index,
-                    i,
-                    &sids,
-                    false,
-                )
-                .await?;
-            }
-        }
-        Ok(map)
-    }
-
-    pub async fn build_write_group_loose_mode(
-        &self,
-        db_name: &str,
-        precision: Precision,
-        tables: FlatBufferTable<'_>,
-        ts_index: Arc<index::ts_index::TSIndex>,
-        recover_from_wal: bool,
-    ) -> Result<HashMap<(SeriesId, SchemaId), RowGroup>> {
-        let mut map = HashMap::new();
-        for table in tables {
-            let table_name = table.tab_ext()?;
-            let columns = table.columns().ok_or(Error::CommonError {
-                reason: "table missing columns".to_string(),
-            })?;
-            let fb_schema = FbSchema::from_fb_column(columns)?;
-            let num_rows = table.num_rows() as usize;
-            let sids = Self::build_index(
-                table_name,
-                &columns,
-                &fb_schema.tag_indexes,
-                num_rows,
-                ts_index.clone(),
-                recover_from_wal,
-            )
-            .await?;
-
-            for i in 0..num_rows {
-                let mut schema_change_or_create = false;
-                if self
+            let fb_schema = FbSchema::from_fb_column(table_name, columns)?;
+            let (schema, fb_schema) = if strict_write {
+                let schema = self.schemas.get_table_schema(fb_schema.table)?;
+                let schema = schema.ok_or_else(|| Error::TableNotFound {
+                    table: fb_schema.table.to_string(),
+                })?;
+                (schema, fb_schema)
+            } else {
+                let schema = self
                     .schemas
-                    .check_field_type_from_cache(
-                        table_name,
-                        &fb_schema.tag_names,
-                        &fb_schema.field_names,
-                        &fb_schema.field_types,
-                    )
-                    .is_err()
-                {
-                    schema_change_or_create = self
-                        .schemas
-                        .check_field_type_or_else_add(
-                            db_name,
-                            table_name,
-                            &fb_schema.tag_names,
-                            &fb_schema.field_names,
-                            &fb_schema.field_types,
-                        )
-                        .await?;
-                }
-                self.build_row_data(
-                    &mut map,
-                    table_name,
-                    precision,
-                    &columns,
-                    &fb_schema.field_indexes,
-                    fb_schema.time_index,
-                    i,
-                    &sids,
-                    schema_change_or_create,
-                )
-                .await?;
-            }
+                    .check_field_type_or_else_add(&fb_schema)
+                    .await?;
+                (schema, fb_schema)
+            };
+
+            let sids = Self::build_index(
+                &fb_schema,
+                &columns,
+                num_rows,
+                ts_index.clone(),
+                recover_from_wal,
+            )
+            .await?;
+            // every row produces a sid
+            debug_assert_eq!(num_rows, sids.len());
+            self.build_row_data(
+                &fb_schema,
+                &columns,
+                schema.clone(),
+                &mut map,
+                precision,
+                &sids,
+            )?;
         }
         Ok(map)
     }
 
-    async fn build_row_data(
+    fn build_row_data(
         &self,
-        map: &mut HashMap<(SeriesId, SchemaId), RowGroup>,
-        table_name: &str,
+        fb_schema: &FbSchema<'_>,
+        columns: &Vector<ForwardsUOffset<Column>>,
+        table_schema: TskvTableSchemaRef,
+        map: &mut HashMap<SeriesId, RowGroup>,
         precision: Precision,
-        columns: &Vector<'_, ForwardsUOffset<Column<'_>>>,
-        fields_idx: &[usize],
-        ts_idx: usize,
-        row_count: usize,
         sids: &[u32],
-        schema_change_or_create: bool,
     ) -> Result<()> {
-        let table_schema = if schema_change_or_create {
-            self.schemas.get_table_schema_by_meta(table_name).await?
-        } else {
-            self.schemas.get_table_schema(table_name)?
-        };
-        let table_schema = match table_schema {
-            Some(v) => v,
-            None => return Ok(()),
-        };
-
-        let row = RowData::point_to_row_data(
-            &table_schema,
-            precision,
-            columns,
-            fields_idx,
-            ts_idx,
-            row_count,
-        )?;
-        let schema_size = table_schema.size();
-        let schema_id = table_schema.schema_id;
-        let entry = map.entry((sids[row_count], schema_id)).or_insert(RowGroup {
-            schema: Arc::new(TskvTableSchema::default()),
-            rows: LinkedList::new(),
-            range: TimeRange {
-                min_ts: i64::MAX,
-                max_ts: i64::MIN,
-            },
-            size: size_of::<RowGroup>(),
-        });
-        entry.schema = table_schema;
-        entry.size += schema_size;
-        entry.range.merge(&TimeRange {
-            min_ts: row.ts,
-            max_ts: row.ts,
-        });
-        entry.size += row.size();
-        entry.rows.push_back(row);
+        let mut sid_map: HashMap<u32, Vec<usize>> = HashMap::new();
+        for (row_count, sid) in sids.iter().enumerate() {
+            let row_idx = sid_map.entry(*sid).or_default();
+            row_idx.push(row_count);
+        }
+        for (sid, row_idx) in sid_map.into_iter() {
+            let rows = RowData::point_to_row_data(
+                table_schema.as_ref(),
+                precision,
+                columns,
+                fb_schema,
+                row_idx,
+            )?;
+            let mut row_group = RowGroup {
+                schema: table_schema.clone(),
+                rows: LinkedList::new(),
+                range: TimeRange::none(),
+                size: size_of::<RowGroup>(),
+            };
+            for row in rows {
+                row_group.range.merge(&TimeRange::new(row.ts, row.ts));
+                row_group.size += row.size();
+                row_group.rows.push_back(row);
+            }
+            let res = map.insert(sid, row_group);
+            // every sid of different table is different
+            debug_assert!(res.is_none())
+        }
         Ok(())
     }
 
-    async fn build_index(
-        tab_name: &str,
-        columns: &Vector<'_, ForwardsUOffset<Column<'_>>>,
-        tag_idx: &[usize],
+    async fn build_index<'a>(
+        fb_schema: &'a FbSchema<'a>,
+        columns: &Vector<'a, ForwardsUOffset<Column<'a>>>,
         row_num: usize,
         ts_index: Arc<index::ts_index::TSIndex>,
         recover_from_wal: bool,
@@ -422,10 +333,15 @@ impl Database {
         let mut res_sids = Vec::with_capacity(row_num);
         let mut series_keys = Vec::with_capacity(row_num);
         for row_count in 0..row_num {
-            let series_key = SeriesKey::build_series_key(tab_name, columns, tag_idx, row_count)
-                .map_err(|e| Error::CommonError {
-                    reason: e.to_string(),
-                })?;
+            let series_key = SeriesKey::build_series_key(
+                fb_schema.table,
+                columns,
+                &fb_schema.tag_indexes,
+                row_count,
+            )
+            .map_err(|e| Error::CommonError {
+                reason: e.to_string(),
+            })?;
             if let Some(id) = ts_index.get_series_id(&series_key).await? {
                 res_sids.push(Some(id));
                 continue;
@@ -567,17 +483,19 @@ impl Database {
     }
 }
 
-struct FbSchema<'a> {
-    time_index: usize,
-    tag_indexes: Vec<usize>,
-    tag_names: Vec<&'a str>,
-    field_indexes: Vec<usize>,
-    field_names: Vec<&'a str>,
-    field_types: Vec<FieldType>,
+pub struct FbSchema<'a> {
+    pub table: &'a str,
+    pub time_index: usize,
+    pub tag_indexes: Vec<usize>,
+    pub tag_names: Vec<Cow<'a, str>>,
+    pub field_indexes: Vec<usize>,
+    pub field_names: Vec<&'a str>,
+    pub field_types: Vec<FieldType>,
 }
 
 impl<'a> FbSchema<'a> {
     pub fn from_fb_column(
+        table: &'a str,
         columns: Vector<'a, ForwardsUOffset<Column<'a>>>,
     ) -> Result<FbSchema<'a>> {
         let mut time_index = usize::MAX;
@@ -594,9 +512,11 @@ impl<'a> FbSchema<'a> {
                 }
                 ColumnType::Tag => {
                     tag_indexes.push(index);
-                    tag_names.push(column.name().ok_or(Error::CommonError {
+                    let column_name = column.name().ok_or(Error::CommonError {
                         reason: "Tag column name not found in flatbuffer columns".to_string(),
-                    })?);
+                    })?;
+
+                    tag_names.push(Cow::Borrowed(column_name));
                 }
                 ColumnType::Field => {
                     field_indexes.push(index);
@@ -622,6 +542,7 @@ impl<'a> FbSchema<'a> {
         }
 
         Ok(Self {
+            table,
             time_index,
             tag_indexes,
             tag_names,

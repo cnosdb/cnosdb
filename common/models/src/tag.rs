@@ -4,11 +4,7 @@ use std::hash::Hash;
 use serde::{Deserialize, Serialize};
 use utils::BkdrHasher;
 
-use crate::errors::{Error, Result};
-use crate::{TagKey, TagValue};
-
-const TAG_KEY_MAX_LEN: usize = 512;
-const TAG_VALUE_MAX_LEN: usize = 4096;
+use crate::{ColumnId, TagKey, TagValue};
 
 pub fn sort_tags(tags: &mut [Tag]) {
     tags.sort_by(|a, b| -> Ordering { a.key.partial_cmp(&b.key).unwrap() })
@@ -32,11 +28,31 @@ pub struct Tag {
 }
 
 impl Tag {
+    pub fn new_with_column_id(key: ColumnId, value: TagValue) -> Self {
+        Self {
+            key: format!("{key}").into_bytes(),
+            value,
+        }
+    }
+
     pub fn new(key: TagKey, value: TagValue) -> Self {
         Self { key, value }
     }
 
-    pub fn check(&self) -> Result<()> {
+    #[cfg(test)]
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(self.key.len() + self.value.len() + 1);
+        buf.extend_from_slice(&self.key);
+        buf.extend_from_slice(b"=");
+        buf.extend_from_slice(&self.value);
+        buf
+    }
+
+    #[cfg(test)]
+    pub fn check(&self) -> crate::Result<()> {
+        const TAG_KEY_MAX_LEN: usize = 512;
+        const TAG_VALUE_MAX_LEN: usize = 4096;
+        use crate::Error;
         if self.key.is_empty() {
             return Err(Error::InvalidTag {
                 err: "Tag key cannot be empty".to_string(),
@@ -62,32 +78,6 @@ impl Tag {
         }
         Ok(())
     }
-
-    pub fn to_bytes(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(self.key.len() + self.value.len());
-        buf.extend_from_slice(&self.key);
-        buf.extend_from_slice(&self.value);
-        buf
-    }
-}
-
-pub trait TagFromParts<T1, T2> {
-    fn from_parts(key: T1, value: T2) -> Self;
-}
-
-impl TagFromParts<&str, &str> for Tag {
-    fn from_parts(key: &str, value: &str) -> Self {
-        Tag {
-            key: key.as_bytes().to_vec(),
-            value: value.as_bytes().to_vec(),
-        }
-    }
-}
-
-impl TagFromParts<TagKey, TagValue> for Tag {
-    fn from_parts(key: TagKey, value: TagValue) -> Self {
-        Tag { key, value }
-    }
 }
 
 #[cfg(test)]
@@ -97,7 +87,7 @@ mod tests_tag {
     #[test]
     fn test_tag_bytes() {
         let tag = Tag::new(b"hello".to_vec(), b"123".to_vec());
-        assert_eq!(tag.to_bytes(), Vec::from("hello123"));
+        assert_eq!(tag.to_bytes(), Vec::from("hello=123"));
     }
 
     #[test]

@@ -662,6 +662,7 @@ impl ColumnType {
             Self::Field(ValueType::Float) => "F64",
             Self::Field(ValueType::Boolean) => "BOOL",
             Self::Field(ValueType::String) => "STRING",
+            Self::Field(ValueType::Geometry(..)) => "GEOMETRY",
             _ => "Error filed type not supported",
         }
     }
@@ -685,8 +686,8 @@ impl ColumnType {
         }
     }
 
-    pub fn from_i32(field_type: i32) -> Self {
-        match field_type {
+    pub fn from_proto_field_type(field_type: protos::models::FieldType) -> Self {
+        match field_type.0 {
             0 => Self::Field(ValueType::Float),
             1 => Self::Field(ValueType::Integer),
             2 => Self::Field(ValueType::Unsigned),
@@ -748,6 +749,12 @@ impl ColumnType {
 
     pub fn is_field(&self) -> bool {
         matches!(self, ColumnType::Field(_))
+    }
+
+    pub fn matches_type(&self, other: &ColumnType) -> bool {
+        self.eq(other)
+            || (matches!(self, ColumnType::Field(ValueType::Geometry(..)))
+                && matches!(other, ColumnType::Field(ValueType::String)))
     }
 }
 
