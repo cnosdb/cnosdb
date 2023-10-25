@@ -54,7 +54,7 @@
 -- EXECUTE SQL: select * from cluster_schema.tenants where tenant_name in ('test_ts_tenant1'); --
 200 OK
 tenant_name,tenant_options
-test_ts_tenant1,"{""comment"":null,""limiter_config"":null,""tenant_is_hidden"":false}"
+test_ts_tenant1,"{""comment"":null,""limiter_config"":null,""after"":null,""tenant_is_hidden"":false}"
 
 -- EXECUTE SQL: alter tenant test_ts_tenant1 set comment='Ig.UZn꓃DH~Bgc.ᵵh7uaV*1lE/}\,J씟\h#f^Kr잿z'; --
 200 OK
@@ -63,7 +63,7 @@ test_ts_tenant1,"{""comment"":null,""limiter_config"":null,""tenant_is_hidden"":
 -- EXECUTE SQL: select * from cluster_schema.tenants where tenant_name in ('test_ts_tenant1'); --
 200 OK
 tenant_name,tenant_options
-test_ts_tenant1,"{""comment"":""Ig.UZn꓃DH~Bgc.ᵵh7uaV*1lE/}\\,J씟\\h#f^Kr잿z"",""limiter_config"":null,""tenant_is_hidden"":false}"
+test_ts_tenant1,"{""comment"":""Ig.UZn꓃DH~Bgc.ᵵh7uaV*1lE/}\\,J씟\\h#f^Kr잿z"",""limiter_config"":null,""after"":null,""tenant_is_hidden"":false}"
 
 -- EXECUTE SQL: ALTER TENANT test_ts_tenant1 unSET COMMENT; --
 200 OK
@@ -72,7 +72,7 @@ test_ts_tenant1,"{""comment"":""Ig.UZn꓃DH~Bgc.ᵵh7uaV*1lE/}\\,J씟\\h#f^�
 -- EXECUTE SQL: select * from cluster_schema.tenants where tenant_name in ('test_ts_tenant1'); --
 200 OK
 tenant_name,tenant_options
-test_ts_tenant1,"{""comment"":null,""limiter_config"":null,""tenant_is_hidden"":false}"
+test_ts_tenant1,"{""comment"":null,""limiter_config"":null,""after"":null,""tenant_is_hidden"":false}"
 
 -- EXECUTE SQL: create user if not exists test_ts_u1; --
 200 OK
@@ -102,7 +102,7 @@ test_ts_tenant1,"{""comment"":null,""limiter_config"":null,""tenant_is_hidden"":
 -- AFTER_SORT --
 200 OK
 tenant_name,tenant_options
-test_ts_tenant1,"{""comment"":null,""limiter_config"":null,""tenant_is_hidden"":false}"
+test_ts_tenant1,"{""comment"":null,""limiter_config"":null,""after"":null,""tenant_is_hidden"":false}"
 
 -- EXECUTE SQL: drop tenant cnosdb; --
 422 Unprocessable Entity
@@ -126,7 +126,7 @@ test_ts_tenant1,"{""comment"":null,""limiter_config"":null,""tenant_is_hidden"":
 -- AFTER_SORT --
 200 OK
 tenant_name,tenant_options
-test_ts_tenant1,"{""comment"":""hello world"",""limiter_config"":{""object_config"":{""max_users_number"":1,""max_databases"":3,""max_shard_number"":2,""max_replicate_number"":2,""max_retention_time"":30},""request_config"":{""coord_data_in"":{""remote_bucket"":{""max"":100,""initial"":0,""refill"":100,""interval"":100},""local_bucket"":{""max"":100,""initial"":0}},""coord_data_out"":{""remote_bucket"":{""max"":100,""initial"":0,""refill"":100,""interval"":100},""local_bucket"":{""max"":100,""initial"":0}},""coord_queries"":null,""coord_writes"":null,""http_data_in"":null,""http_data_out"":null,""http_queries"":null,""http_writes"":null}},""tenant_is_hidden"":false}"
+test_ts_tenant1,"{""comment"":""hello world"",""limiter_config"":{""object_config"":{""max_users_number"":1,""max_databases"":3,""max_shard_number"":2,""max_replicate_number"":2,""max_retention_time"":30},""request_config"":{""coord_data_in"":{""remote_bucket"":{""max"":100,""initial"":0,""refill"":100,""interval"":100},""local_bucket"":{""max"":100,""initial"":0}},""coord_data_out"":{""remote_bucket"":{""max"":100,""initial"":0,""refill"":100,""interval"":100},""local_bucket"":{""max"":100,""initial"":0}},""coord_queries"":null,""coord_writes"":null,""http_data_in"":null,""http_data_out"":null,""http_queries"":null,""http_writes"":null}},""after"":null,""tenant_is_hidden"":false}"
 
 -- EXECUTE SQL: alter tenant test_ts_tenant1 unset comment; --
 200 OK
@@ -140,7 +140,7 @@ test_ts_tenant1,"{""comment"":""hello world"",""limiter_config"":{""object_confi
 -- AFTER_SORT --
 200 OK
 tenant_name,tenant_options
-test_ts_tenant1,"{""comment"":null,""limiter_config"":null,""tenant_is_hidden"":false}"
+test_ts_tenant1,"{""comment"":null,""limiter_config"":null,""after"":null,""tenant_is_hidden"":false}"
 
 -- EXECUTE SQL: select * from cluster_schema.tenants where tenant_name in ('test_ts_tenant1'); --
 -- AFTER_SORT --
