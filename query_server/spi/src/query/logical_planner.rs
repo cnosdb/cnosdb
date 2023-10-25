@@ -45,6 +45,7 @@ use crate::{ParserSnafu, QueryError, Result};
 
 pub const TENANT_OPTION_LIMITER: &str = "_limiter";
 pub const TENANT_OPTION_COMMENT: &str = "comment";
+pub const TENANT_OPTION_DROP_AFTER: &str = "drop_after";
 
 lazy_static! {
     static ref TABLE_WRITE_UDF: Arc<ScalarUDF> = Arc::new(ScalarUDF::new(
@@ -396,10 +397,18 @@ pub fn sql_option_to_alter_tenant_action(
             tenant_options_builder.limiter_config(config);
             Privilege::Global(GlobalPrivilege::System)
         }
+        TENANT_OPTION_DROP_AFTER => {
+            let after_str = parse_string_value(value).context(ParserSnafu)?;
+            let after = Duration::new(&after_str).ok_or_else(|| QueryError::Parser {
+                source: ParserError::ParserError(format!("{} is not a valid duration", after_str)),
+            })?;
+            tenant_options_builder.after(after);
+            Privilege::Global(GlobalPrivilege::Tenant(Some(tenant_id)))
+        }
         _ => {
             return Err(QueryError::Parser {
                 source: ParserError::ParserError(format!(
-                "Expected option [{TENANT_OPTION_COMMENT}], [{TENANT_OPTION_LIMITER}] found [{}]",
+                "Expected option [{TENANT_OPTION_COMMENT}], [{TENANT_OPTION_LIMITER}], [{TENANT_OPTION_DROP_AFTER}] found [{}]",
                 name
             )),
             })
@@ -426,10 +435,17 @@ pub fn sql_options_to_tenant_options(options: Vec<SqlOption>) -> Result<TenantOp
                 )?;
                 builder.limiter_config(config);
             }
+            TENANT_OPTION_DROP_AFTER => {
+                let after_str = parse_string_value(value).context(ParserSnafu)?;
+                let after = Duration::new(&after_str).ok_or_else(|| QueryError::Parser {
+                    source: ParserError::ParserError(format!("{} is not a valid duration", after_str)),
+                })?;
+                builder.after(after);
+            }
             _ => {
                 return Err(QueryError::Parser {
                     source: ParserError::ParserError(format!(
-                        "Expected option [{TENANT_OPTION_COMMENT}], [{TENANT_OPTION_LIMITER}] found [{}]",
+                        "Expected option [{TENANT_OPTION_COMMENT}], [{TENANT_OPTION_LIMITER}], [{TENANT_OPTION_DROP_AFTER}] found [{}]",
                         name
                     )),
                 })
