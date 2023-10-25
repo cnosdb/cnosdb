@@ -301,10 +301,9 @@ impl SessionContext {
 
                 Ok(ResultSet::Bytes((body.to_vec(), 0)))
             }
-            _ => {
+            code => {
                 let body = resp.text().await?;
-
-                Ok(ResultSet::Bytes((body.into(), 0)))
+                Err(anyhow!("{}, body: {}", code, body))
             }
         }
     }
