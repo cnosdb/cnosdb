@@ -9,8 +9,7 @@ use bytes::BufMut;
 use datafusion::arrow::datatypes::DataType;
 use datafusion::scalar::ScalarValue;
 use models::predicate::domain::{utf8_from, ColumnDomains, Domain, Range};
-use models::tag::{self, TagFromParts};
-use models::{utils, SeriesId, SeriesKey, Tag, TagKey, TagValue};
+use models::{tag, utils, SeriesId, SeriesKey, Tag, TagKey, TagValue};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::sync::RwLock;
 use trace::{debug, error, info};
@@ -403,14 +402,14 @@ impl TSIndex {
             return self.get_series_id_list(tab, &[]).await;
         }
 
-        if tag_domains.is_none() {
-            // Does not match any record, return null
-            debug!("pushed tags filter is None.");
-            return Ok(vec![]);
-        }
-
-        // safe: tag_domains is not empty
-        let domains = unsafe { tag_domains.domains_unsafe() };
+        let domains = match tag_domains.domains() {
+            None => {
+                // Does not match any record, return null
+                debug!("pushed tags filter is None.");
+                return Ok(vec![]);
+            }
+            Some(domains) => domains,
+        };
 
         debug!("Index get sids: pushed tag_domains: {:?}", domains);
         let mut series_ids = vec![];
@@ -434,6 +433,7 @@ impl TSIndex {
         Ok(result)
     }
 
+    /// if tags == [] return all
     pub async fn get_series_id_list(&self, tab: &str, tags: &[Tag]) -> IndexResult<Vec<u32>> {
         let res = self.get_series_id_bitmap(tab, tags).await?.iter().collect();
         Ok(res)
@@ -791,8 +791,11 @@ pub fn tag_value_to_index_key(tab: &str, tag_key: &str, v: &ScalarValue) -> Vec<
     assert_eq!(DataType::Utf8, v.get_datatype());
 
     // Convert a string to an inverted index key
-    let generate_index_key = |tag_val| {
-        let tag = Tag::from_parts(tag_key, tag_val);
+    let generate_index_key = |tag_val: &str| {
+        let tag = Tag::new(
+            tag_key.to_string().into_bytes(),
+            tag_val.to_string().into_bytes(),
+        );
         encode_inverted_index_key(tab, &tag.key, &tag.value)
     };
 
