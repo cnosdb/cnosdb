@@ -28,7 +28,7 @@ impl ResourceManager {
         resourceinfo.set_status(dest_status);
         resourceinfo.set_comment(comment);
         admin_meta
-            .write_resourceinfo(resourceinfo.get_names(), resourceinfo.clone())
+            .write_resourceinfo(resourceinfo.get_name(), resourceinfo.clone())
             .await
             .map_err(|err| CoordinatorError::Meta { source: err })?;
         Ok(true)
@@ -52,7 +52,7 @@ impl ResourceManager {
             loop {
                 let resourceinfos = coord
                     .meta_manager()
-                    .read_resourceinfos(&[])
+                    .read_resourceinfos()
                     .await
                     .map_err(|err| CoordinatorError::Meta { source: err })?;
                 let now = now_timestamp_nanos();
@@ -66,7 +66,7 @@ impl ResourceManager {
                         resourceinfo.set_status(ResourceStatus::Executing);
                         if let Err(meta_err) = coord
                             .meta_manager()
-                            .write_resourceinfo(resourceinfo.get_names(), resourceinfo.clone())
+                            .write_resourceinfo(resourceinfo.get_name(), resourceinfo.clone())
                             .await
                         {
                             error!("{}", meta_err.to_string());
@@ -114,11 +114,12 @@ impl ResourceManager {
             ResourceOperator::DropTable(tenant_name, db_name, table_name) => {
                 ResourceManager::drop_table(coord.clone(), tenant_name, db_name, table_name).await
             }
-            ResourceOperator::AddColumn(tenant_name, ..)
-            | ResourceOperator::DropColumn(tenant_name, ..)
-            | ResourceOperator::AlterColumn(tenant_name, ..)
-            | ResourceOperator::RenameTagName(tenant_name, ..) => {
-                ResourceManager::alter_table(coord.clone(), &resourceinfo, tenant_name).await
+            ResourceOperator::AddColumn(table_schema, _)
+            | ResourceOperator::DropColumn(_, table_schema)
+            | ResourceOperator::AlterColumn(_, table_schema, _)
+            | ResourceOperator::RenameTagName(.., table_schema) => {
+                ResourceManager::alter_table(coord.clone(), &resourceinfo, &table_schema.tenant)
+                    .await
             }
             ResourceOperator::UpdateTagValue(
                 tenant_name,
@@ -272,7 +273,7 @@ impl ResourceManager {
                 })?;
 
         let req = match resourceinfo.get_operator() {
-            ResourceOperator::AddColumn(_, table_schema, table_column) => Some((
+            ResourceOperator::AddColumn(table_schema, table_column) => Some((
                 table_schema,
                 AdminCommandRequest {
                     tenant: tenant_name.to_string(),
@@ -283,7 +284,7 @@ impl ResourceManager {
                     })),
                 },
             )),
-            ResourceOperator::DropColumn(_, drop_column_name, table_schema) => Some((
+            ResourceOperator::DropColumn(drop_column_name, table_schema) => Some((
                 table_schema,
                 AdminCommandRequest {
                     tenant: tenant_name.to_string(),
@@ -294,21 +295,19 @@ impl ResourceManager {
                     })),
                 },
             )),
-            ResourceOperator::AlterColumn(_, alter_column_name, table_schema, table_column) => {
-                Some((
-                    table_schema,
-                    AdminCommandRequest {
-                        tenant: tenant_name.to_string(),
-                        command: Some(Command::AlterColumn(AlterColumnRequest {
-                            db: table_schema.db.to_owned(),
-                            table: table_schema.name.to_string(),
-                            name: alter_column_name.clone(),
-                            column: table_column.encode()?,
-                        })),
-                    },
-                ))
-            }
-            ResourceOperator::RenameTagName(_, old_column_name, new_column_name, table_schema) => {
+            ResourceOperator::AlterColumn(alter_column_name, table_schema, table_column) => Some((
+                table_schema,
+                AdminCommandRequest {
+                    tenant: tenant_name.to_string(),
+                    command: Some(Command::AlterColumn(AlterColumnRequest {
+                        db: table_schema.db.to_owned(),
+                        table: table_schema.name.to_string(),
+                        name: alter_column_name.clone(),
+                        column: table_column.encode()?,
+                    })),
+                },
+            )),
+            ResourceOperator::RenameTagName(old_column_name, new_column_name, table_schema) => {
                 Some((
                     table_schema,
                     AdminCommandRequest {
@@ -375,18 +374,18 @@ impl ResourceManager {
         coord: Arc<dyn Coordinator>,
         mut resourceinfo: ResourceInfo,
     ) -> CoordinatorResult<bool> {
-        let resourceinfos = coord.meta_manager().read_resourceinfos(&[]).await?;
+        let resourceinfos = coord.meta_manager().read_resourceinfos().await?;
         let mut resourceinfos_map: HashMap<String, ResourceInfo> = HashMap::default();
         for resourceinfo in resourceinfos {
-            resourceinfos_map.insert(resourceinfo.get_names().join("/"), resourceinfo);
+            resourceinfos_map.insert(resourceinfo.get_name().to_string(), resourceinfo);
         }
 
-        let name = resourceinfo.get_names().join("/");
-        if !resourceinfos_map.contains_key(&name)
-            || *resourceinfos_map[&name].get_status() == ResourceStatus::Schedule
-            || *resourceinfos_map[&name].get_status() == ResourceStatus::Successed
-            || *resourceinfos_map[&name].get_status() == ResourceStatus::Cancel
-            || *resourceinfos_map[&name].get_status() == ResourceStatus::Fatal
+        let name = resourceinfo.get_name();
+        if !resourceinfos_map.contains_key(name)
+            || *resourceinfos_map[name].get_status() == ResourceStatus::Schedule
+            || *resourceinfos_map[name].get_status() == ResourceStatus::Successed
+            || *resourceinfos_map[name].get_status() == ResourceStatus::Cancel
+            || *resourceinfos_map[name].get_status() == ResourceStatus::Fatal
         {
             if *resourceinfo.get_status() == ResourceStatus::Executing {
                 resourceinfo.increase_try_count();
@@ -395,7 +394,7 @@ impl ResourceManager {
             // write to meta
             coord
                 .meta_manager()
-                .write_resourceinfo(resourceinfo.get_names(), resourceinfo.clone())
+                .write_resourceinfo(resourceinfo.get_name(), resourceinfo.clone())
                 .await?;
 
             if *resourceinfo.get_status() == ResourceStatus::Executing {

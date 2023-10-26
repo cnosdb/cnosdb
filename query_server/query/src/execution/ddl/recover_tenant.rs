@@ -41,8 +41,8 @@ impl DDLDefinitionTask for RecoverTenantTask {
 
         // first, cancel drop task
         let mut resourceinfo = ResourceInfo::new(
-            *tenant_meta.tenant().id(),
-            vec![tenant_name.clone()],
+            (*tenant_meta.tenant().id(), "".to_string()),
+            tenant_name.clone(),
             ResourceOperator::DropTenant(tenant_name.clone()),
             &None,
         );
@@ -50,7 +50,7 @@ impl DDLDefinitionTask for RecoverTenantTask {
         resourceinfo.set_comment("");
         query_state_machine
             .meta
-            .write_resourceinfo(resourceinfo.get_names(), resourceinfo.clone())
+            .write_resourceinfo(resourceinfo.get_name(), resourceinfo.clone())
             .await?;
 
         // second, set hidden to FALSE

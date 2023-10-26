@@ -919,11 +919,11 @@ pub mod test {
         let resp = client
             .post(
                 "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "select name,action,try_count,status from information_schema.resource_status where name = 'cnosdb/db1'",
+                "select name,action,try_count,status from information_schema.resource_status where name = 'cnosdb-db1'",
             ).unwrap();
         assert_eq!(resp.status(), status_code::OK);
         let expect_res =
-            Regex::new(r"name,action,try_count,status\ncnosdb/db1,DropDatabase,\d+,Failed\n")
+            Regex::new(r"name,action,try_count,status\ncnosdb-db1,DropDatabase,\d+,Failed\n")
                 .unwrap();
         let actual_res = resp.text().unwrap();
         assert!(expect_res.find(&actual_res).is_some());
@@ -933,11 +933,11 @@ pub mod test {
         let resp = client
             .post(
                 "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "select name,action,try_count,status from information_schema.resource_status where name = 'cnosdb/db1'",
+                "select name,action,try_count,status from information_schema.resource_status where name = 'cnosdb-db1'",
             ).unwrap();
         assert_eq!(resp.status(), status_code::OK);
         let expect_res =
-            Regex::new(r"name,action,try_count,status\ncnosdb/db1,DropDatabase,\d+,Successed\n")
+            Regex::new(r"name,action,try_count,status\ncnosdb-db1,DropDatabase,\d+,Successed\n")
                 .unwrap();
         let actual_res = resp.text().unwrap();
         assert!(expect_res.find(&actual_res).is_some());

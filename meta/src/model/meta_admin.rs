@@ -693,20 +693,16 @@ impl AdminMeta {
 
     /******************** Tenant Limiter Operation End *********************/
 
-    pub async fn write_resourceinfo(
-        &self,
-        names: &[String],
-        res_info: ResourceInfo,
-    ) -> MetaResult<()> {
-        let req = command::WriteCommand::ResourceInfo(self.cluster(), names.to_owned(), res_info);
+    pub async fn write_resourceinfo(&self, name: &str, res_info: ResourceInfo) -> MetaResult<()> {
+        let req = command::WriteCommand::ResourceInfo(self.cluster(), name.to_string(), res_info);
 
         self.client.write::<()>(&req).await?;
 
         Ok(())
     }
 
-    pub async fn read_resourceinfos(&self, names: &[String]) -> MetaResult<Vec<ResourceInfo>> {
-        let req = command::ReadCommand::ResourceInfos(self.cluster(), names.to_owned());
+    pub async fn read_resourceinfos(&self) -> MetaResult<Vec<ResourceInfo>> {
+        let req = command::ReadCommand::ResourceInfos(self.cluster());
 
         self.client.read::<Vec<ResourceInfo>>(&req).await
     }

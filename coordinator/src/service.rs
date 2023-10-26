@@ -26,6 +26,7 @@ use metrics::metric::Metric;
 use metrics::metric_register::MetricsRegister;
 use models::meta_data::{ExpiredBucketInfo, ReplicationSet, ReplicationSetId, VnodeStatus};
 use models::object_reference::ResolvedTable;
+use models::oid::Identifier;
 use models::predicate::domain::{ResolvedPredicate, ResolvedPredicateRef, TimeRange, TimeRanges};
 use models::schema::{
     timestamp_convert, ColumnType, Precision, ResourceInfo, ResourceOperator, TskvTableSchema,
@@ -1068,6 +1069,14 @@ impl Coordinator for CoordService {
         let db = &table_schema.db;
         let table_name = &table_schema.name;
 
+        let tenant_meta =
+            self.meta
+                .tenant_meta(tenant)
+                .await
+                .ok_or(CoordinatorError::TenantNotFound {
+                    name: tenant.to_string(),
+                })?;
+
         let mut min_ts = i64::MIN;
         let mut max_ts = i64::MAX;
         let mut series_keys = vec![];
@@ -1148,13 +1157,8 @@ impl Coordinator for CoordService {
             .collect();
 
         let resourceinfo = ResourceInfo::new(
-            0,
-            vec![
-                tenant.to_string(),
-                db.to_string(),
-                table_name.to_string(),
-                "UpdateTagsValue-".to_owned() + &table_schema.schema_id.to_string(),
-            ],
+            (*tenant_meta.tenant().id(), db.to_string()),
+            tenant.to_string() + "-" + db + "-" + table_name + "-" + "UpdateTagsValue",
             ResourceOperator::UpdateTagValue(
                 tenant.to_string(),
                 db.to_string(),

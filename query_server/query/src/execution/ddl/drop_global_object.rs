@@ -81,8 +81,8 @@ impl DDLDefinitionTask for DropGlobalObjectTask {
 
                         // second, add drop task
                         let resourceinfo = ResourceInfo::new(
-                            *tm.tenant().id(),
-                            vec![name.clone()],
+                            (*tm.tenant().id(), "".to_string()),
+                            name.clone(),
                             ResourceOperator::DropTenant(name.clone()),
                             &after,
                         );
