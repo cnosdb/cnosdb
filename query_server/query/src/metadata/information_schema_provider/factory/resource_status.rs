@@ -80,20 +80,19 @@ impl TableProvider for InformationSchemaResourceStatusTable {
         let mut builder = InformationSchemaResourceStatusBuilder::default();
 
         if let Ok(resourceinfos) =
-            self.metadata.read_resourceinfos(&[]).await.map_err(|e| {
+            self.metadata.read_resourceinfos().await.map_err(|e| {
                 DataFusionError::Internal(format!("Failed to read resourceinfo: {}", e))
             })
         {
             //resourceinfos.retain(|resourceinfo| resourceinfo.names().get(0).unwrap() == tenant_name);
             for resourceinfo in resourceinfos {
                 // Check if the current user has at least read permission on this db, skip if not
-                let names = resourceinfo.get_names();
-                let tenant_id = resourceinfo.get_tenant_id();
-                if !self.user.can_access_role(tenant_id)
-                    || (names.len() > 1
+                let tenant_id_and_db = resourceinfo.get_tenant_id_and_db();
+                if !self.user.can_access_role(tenant_id_and_db.0)
+                    || (!tenant_id_and_db.1.is_empty()
                         && !self
                             .user
-                            .can_read_database(tenant_id, names.get(1).unwrap()))
+                            .can_read_database(tenant_id_and_db.0, &tenant_id_and_db.1))
                 {
                     continue;
                 }
@@ -106,7 +105,7 @@ impl TableProvider for InformationSchemaResourceStatusTable {
 
                 builder.append_row(
                     time_str,
-                    resourceinfo.get_names().join("/"),
+                    resourceinfo.get_name(),
                     resourceinfo.get_operator().to_string(),
                     resourceinfo.get_try_count().to_string(),
                     resourceinfo.get_status().to_string(),

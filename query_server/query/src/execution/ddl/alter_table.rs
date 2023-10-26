@@ -50,7 +50,7 @@ impl DDLDefinitionTask for AlterTableTask {
 
                 Some((
                     table_column.name.clone(),
-                    ResourceOperator::AddColumn(tenant.to_string(), schema.clone(), table_column),
+                    ResourceOperator::AddColumn(schema.clone(), table_column),
                 ))
             }
 
@@ -60,11 +60,7 @@ impl DDLDefinitionTask for AlterTableTask {
 
                 Some((
                     column_name.clone(),
-                    ResourceOperator::DropColumn(
-                        tenant.to_string(),
-                        column_name.clone(),
-                        schema.clone(),
-                    ),
+                    ResourceOperator::DropColumn(column_name.clone(), schema.clone()),
                 ))
             }
 
@@ -84,7 +80,6 @@ impl DDLDefinitionTask for AlterTableTask {
                 Some((
                     column_name.clone(),
                     ResourceOperator::AlterColumn(
-                        tenant.to_string(),
                         column_name.clone(),
                         schema.clone(),
                         new_column.clone(),
@@ -140,7 +135,6 @@ impl DDLDefinitionTask for AlterTableTask {
                         Some((
                             old_column_name.clone(),
                             ResourceOperator::RenameTagName(
-                                tenant.to_string(),
                                 old_column_name.clone(),
                                 new_name.clone(),
                                 schema.clone(),
@@ -157,13 +151,14 @@ impl DDLDefinitionTask for AlterTableTask {
 
         if let Some(info) = operator_info {
             let resourceinfo = ResourceInfo::new(
-                *client.tenant().id(),
-                vec![
-                    table_name.tenant().to_string(),
-                    table_name.database().to_string(),
-                    table_name.table().to_string(),
-                    info.0,
-                ],
+                (*client.tenant().id(), table_name.database().to_string()),
+                table_name.tenant().to_string()
+                    + "-"
+                    + table_name.database()
+                    + "-"
+                    + table_name.table()
+                    + "-"
+                    + &info.0,
                 info.1,
                 &None,
             );

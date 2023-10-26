@@ -394,8 +394,8 @@ impl StateMachine {
                 let path = KeyPath::tenant_schema_name(cluster, tenant_name, db_name, table_name);
                 response_encode(self.get_struct::<TableSchema>(&path))
             }
-            ReadCommand::ResourceInfos(cluster, names) => {
-                response_encode(self.process_read_resourceinfos(cluster, names))
+            ReadCommand::ResourceInfos(cluster) => {
+                response_encode(self.process_read_resourceinfos(cluster))
             }
             ReadCommand::ResourceInfosMark(cluster) => {
                 response_encode(self.process_read_resourceinfos_mark(cluster))
@@ -501,12 +501,8 @@ impl StateMachine {
         Ok(members)
     }
 
-    pub fn process_read_resourceinfos(
-        &self,
-        cluster: &str,
-        names: &[String],
-    ) -> MetaResult<Vec<ResourceInfo>> {
-        let path = KeyPath::resourceinfos(cluster, names);
+    pub fn process_read_resourceinfos(&self, cluster: &str) -> MetaResult<Vec<ResourceInfo>> {
+        let path = KeyPath::resourceinfos(cluster, "");
         let resourceinfos: Vec<ResourceInfo> = self
             .children_data::<ResourceInfo>(&path)?
             .into_values()
@@ -651,8 +647,8 @@ impl StateMachine {
                 tenant,
                 request,
             } => response_encode(self.process_limiter_request(cluster, tenant, request)),
-            WriteCommand::ResourceInfo(cluster, names, res_info) => {
-                response_encode(self.process_write_resourceinfo(cluster, names, res_info))
+            WriteCommand::ResourceInfo(cluster, name, res_info) => {
+                response_encode(self.process_write_resourceinfo(cluster, name, res_info))
             }
             WriteCommand::ResourceInfosMark(cluster, node_id, is_lock) => {
                 response_encode(self.process_write_resourceinfos_mark(cluster, *node_id, *is_lock))
@@ -1445,10 +1441,10 @@ impl StateMachine {
     fn process_write_resourceinfo(
         &self,
         cluster: &str,
-        names: &[String],
+        name: &str,
         res_info: &ResourceInfo,
     ) -> MetaResult<()> {
-        let key = KeyPath::resourceinfos(cluster, names);
+        let key = KeyPath::resourceinfos(cluster, name);
         self.insert(&key, &value_encode(&res_info)?)
     }
 

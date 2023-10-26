@@ -57,12 +57,12 @@ impl DDLDefinitionTask for DropDatabaseObjectTask {
                 }
 
                 let resourceinfo = ResourceInfo::new(
-                    *client.tenant().id(),
-                    vec![
-                        object_name.tenant().to_string(),
-                        object_name.database().to_string(),
-                        object_name.table().to_string(),
-                    ],
+                    (*client.tenant().id(), object_name.database().to_string()),
+                    object_name.tenant().to_string()
+                        + "-"
+                        + object_name.database()
+                        + "-"
+                        + object_name.table(),
                     ResourceOperator::DropTable(
                         object_name.tenant().to_string(),
                         object_name.database().to_string(),
