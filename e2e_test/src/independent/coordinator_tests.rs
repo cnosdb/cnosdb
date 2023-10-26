@@ -134,9 +134,9 @@ impl CnosdbData {
 fn start_cluster(runtime: Arc<Runtime>) -> (CnosdbMeta, CnosdbData) {
     let crate_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let workspace_dir = crate_dir.parent().unwrap();
-    let mut meta = CnosdbMeta::new(runtime.clone(), workspace_dir);
+    let mut meta = CnosdbMeta::new(runtime, workspace_dir);
     meta.run_cluster();
-    let mut data = CnosdbData::new(runtime, workspace_dir);
+    let mut data = CnosdbData::new(workspace_dir);
     data.run_cluster();
     (meta, data)
 }

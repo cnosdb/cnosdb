@@ -1,14 +1,7 @@
-#[cfg(feature = "coordinator_e2e_test")]
-#[cfg(test)]
-mod coordinator_tests;
-mod flight_sql;
-mod http_api_tests;
-mod https_api_tests;
-mod kv_service_tests;
-mod prom;
+mod independent;
+mod reliant;
 #[cfg(test)]
 mod utils;
-mod vector_service_test;
 
 #[derive(Debug)]
 pub enum E2eError {

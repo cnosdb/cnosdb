@@ -1055,16 +1055,18 @@ mod test {
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
-        let expected = ["+---------------+---------------------------------------------------------------------------------------------------------------------------------------+",
-            "| plan_type     | plan                                                                                                                                  |",
-            "+---------------+---------------------------------------------------------------------------------------------------------------------------------------+",
-            "| logical_plan  | Filter: m0.t0 = Utf8(NULL)                                                                                                            |",
-            "|               |   TableScan: m0 projection=[time, t0, t1, f0, f1, f2, f3, f4], partial_filters=[m0.t0 = Utf8(NULL)]                                   |",
-            "| physical_plan | CoalesceBatchesExec: target_batch_size=8192                                                                                           |",
-            "|               |   FilterExec: t0@1 = NULL                                                                                                             |",
-            "|               |     TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, split_num=5, projection=[time,t0,t1,f0,f1,f2,f3,f4] |",
-            "|               |                                                                                                                                       |",
-            "+---------------+---------------------------------------------------------------------------------------------------------------------------------------+"];
+        let expected = [
+            "+---------------+-----------------------------------------------------------------------------------------------------------------------------------------+",
+            "| plan_type     | plan                                                                                                                                    |",
+            "+---------------+-----------------------------------------------------------------------------------------------------------------------------------------+",
+            "| logical_plan  | Filter: m0.t0 = Utf8(NULL)                                                                                                              |",
+            "|               |   TableScan: m0 projection=[time, t0, t1, f0, f1, f2, f3, f4], partial_filters=[m0.t0 = Utf8(NULL)]                                     |",
+            "| physical_plan | CoalesceBatchesExec: target_batch_size=8192                                                                                             |",
+            "|               |   FilterExec: t0@1 = NULL                                                                                                               |",
+            "|               |     RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=5                                                                |",
+            "|               |       TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, split_num=5, projection=[time,t0,t1,f0,f1,f2,f3,f4] |",
+            "|               |                                                                                                                                         |",
+            "+---------------+-----------------------------------------------------------------------------------------------------------------------------------------+",];
         assert_batches_eq!(expected, &actual);
 
         let flight_info = client
@@ -1075,16 +1077,18 @@ mod test {
             .await
             .unwrap();
         let actual = fetch_result_and_print(flight_info, &mut client).await;
-        let expected = ["+---------------+---------------------------------------------------------------------------------------------------------------------------------------+",
-            "| plan_type     | plan                                                                                                                                  |",
-            "+---------------+---------------------------------------------------------------------------------------------------------------------------------------+",
-            "| logical_plan  | Filter: m0.t0 > Utf8(NULL)                                                                                                            |",
-            "|               |   TableScan: m0 projection=[time, t0, t1, f0, f1, f2, f3, f4], partial_filters=[m0.t0 > Utf8(NULL)]                                   |",
-            "| physical_plan | CoalesceBatchesExec: target_batch_size=8192                                                                                           |",
-            "|               |   FilterExec: t0@1 > NULL                                                                                                             |",
-            "|               |     TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, split_num=5, projection=[time,t0,t1,f0,f1,f2,f3,f4] |",
-            "|               |                                                                                                                                       |",
-            "+---------------+---------------------------------------------------------------------------------------------------------------------------------------+"];
+        let expected = [
+        "+---------------+-----------------------------------------------------------------------------------------------------------------------------------------+",
+        "| plan_type     | plan                                                                                                                                    |",
+        "+---------------+-----------------------------------------------------------------------------------------------------------------------------------------+",
+        "| logical_plan  | Filter: m0.t0 > Utf8(NULL)                                                                                                              |",
+        "|               |   TableScan: m0 projection=[time, t0, t1, f0, f1, f2, f3, f4], partial_filters=[m0.t0 > Utf8(NULL)]                                     |",
+        "| physical_plan | CoalesceBatchesExec: target_batch_size=8192                                                                                             |",
+        "|               |   FilterExec: t0@1 > NULL                                                                                                               |",
+        "|               |     RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=5                                                                |",
+        "|               |       TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, split_num=5, projection=[time,t0,t1,f0,f1,f2,f3,f4] |",
+        "|               |                                                                                                                                         |",
+        "+---------------+-----------------------------------------------------------------------------------------------------------------------------------------+",];
         assert_batches_eq!(expected, &actual);
 
         // clean env
@@ -1452,21 +1456,6 @@ mod test {
         //clean env
         clean_env(&mut client, db_name).await;
         client.close().await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn test_flight_sql_test() {
-        // create flight client
-        let mut client = authed_client().await;
-
-        // clean env
-        let db_name = "update_test";
-        clean_env(&mut client, db_name).await;
-
-        let close_info = client.close().await;
-        assert!(close_info.is_ok());
-        //clean env
-        clean_env(&mut client, db_name).await;
     }
 
     #[tokio::test]

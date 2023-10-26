@@ -8,7 +8,7 @@ mod test {
     use protos::prompb::remote::{Query, QueryResult, ReadRequest, ReadResponse, WriteRequest};
     use protos::prompb::types::{label_matcher, Label, LabelMatcher, Sample, TimeSeries};
 
-    use crate::http_api_tests::test::client;
+    use crate::reliant::http_api_tests::test::client;
 
     const SQL_PATH: &str = "/api/v1/sql";
     const PROM_WRITE_PATH: &str = "/api/v1/prom/write";
