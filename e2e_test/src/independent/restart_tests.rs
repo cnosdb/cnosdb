@@ -7,14 +7,13 @@ pub mod test {
     use http_protocol::status_code;
     use regex::Regex;
 
-    use crate::utils::{clean_env, start_cluster, Client};
+    use crate::utils::{clean_env, start_cluster, start_singleton, Client};
 
-    #[cfg(feature = "not_passed")]
     #[test]
     fn case1() {
         println!("Test begin restart_test_case_1");
         clean_env();
-        let mut data = start_singleton("config_8902.toml");
+        let mut data = start_singleton("config_8902.toml", "127.0.0.1:8902");
 
         let client = Client::new("root".to_string(), Some(String::new()));
 
@@ -31,7 +30,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart_singleton("config_8902.toml");
+        data.restart_singleton("config_8902.toml", "127.0.0.1:8902");
 
         let resp = client
             .post("http://127.0.0.1:8902/api/v1/sql?db=public", "SHOW TABLES")
@@ -59,7 +58,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart_singleton("config_8902.toml");
+        data.restart_singleton("config_8902.toml", "127.0.0.1:8902");
 
         let resp = client
             .post(
@@ -91,7 +90,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart_singleton("config_8902.toml");
+        data.restart_singleton("config_8902.toml", "127.0.0.1:8902");
 
         let resp = client
             .post("http://127.0.0.1:8902/api/v1/sql?db=public", "SHOW TABLES")
@@ -103,12 +102,11 @@ pub mod test {
         println!("Test complete restart_test_case_1");
     }
 
-    #[cfg(feature = "not_passed")]
     #[test]
     fn case2() {
         println!("Test begin restart_test_case_2");
         clean_env();
-        let mut data = start_singleton("config_8902.toml");
+        let mut data = start_singleton("config_8902.toml", "127.0.0.1:8902");
 
         let client = Client::new("root".to_string(), Some(String::new()));
 
@@ -134,7 +132,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart_singleton("config_8902.toml");
+        data.restart_singleton("config_8902.toml", "127.0.0.1:8902");
 
         let resp = client
             .post(
@@ -176,7 +174,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart_singleton("config_8902.toml");
+        data.restart_singleton("config_8902.toml", "127.0.0.1:8902");
 
         let resp = client
             .post(
@@ -218,7 +216,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart_singleton("config_8902.toml");
+        data.restart_singleton("config_8902.toml", "127.0.0.1:8902");
 
         let resp = client
             .post(
@@ -259,7 +257,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart_singleton("config_8902.toml");
+        data.restart_singleton("config_8902.toml", "127.0.0.1:8902");
 
         let resp = client
             .post(
@@ -295,12 +293,11 @@ pub mod test {
         println!("Test complete restart_test_case_2");
     }
 
-    #[cfg(feature = "not_passed")]
     #[test]
     fn case3() {
         println!("Test begin restart_test_case_3");
         clean_env();
-        let mut data = start_singleton("config_8902.toml");
+        let mut data = start_singleton("config_8902.toml", "127.0.0.1:8902");
 
         let client = Client::new("root".to_string(), Some(String::new()));
 
@@ -313,7 +310,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart_singleton("config_8902.toml");
+        data.restart_singleton("config_8902.toml", "127.0.0.1:8902");
 
         let resp = client
             .post(
@@ -347,7 +344,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart_singleton("config_8902.toml");
+        data.restart_singleton("config_8902.toml", "127.0.0.1:8902");
 
         let resp = client
             .post(
@@ -378,7 +375,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart_singleton("config_8902.toml");
+        data.restart_singleton("config_8902.toml", "127.0.0.1:8902");
 
         let resp = client
             .post(
@@ -406,12 +403,11 @@ pub mod test {
         println!("Test complete restart_test_case_3");
     }
 
-    #[cfg(feature = "not_passed")]
     #[test]
     fn case4() {
         println!("Test begin restart_test_case_4");
         clean_env();
-        let mut data = start_singleton("config_8902.toml");
+        let mut data = start_singleton("config_8902.toml", "127.0.0.1:8902");
 
         let client = Client::new("root".to_string(), Some(String::new()));
 
@@ -424,7 +420,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart_singleton("config_8902.toml");
+        data.restart_singleton("config_8902.toml", "127.0.0.1:8902");
 
         let resp = client
             .post(
@@ -454,7 +450,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart_singleton("config_8902.toml");
+        data.restart_singleton("config_8902.toml", "127.0.0.1:8902");
 
         let resp = client
             .post(
@@ -484,7 +480,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart_singleton("config_8902.toml");
+        data.restart_singleton("config_8902.toml", "127.0.0.1:8902");
 
         let resp = client
             .post(
@@ -514,7 +510,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart_singleton("config_8902.toml");
+        data.restart_singleton("config_8902.toml", "127.0.0.1:8902");
 
         let resp = client
             .post(
@@ -544,7 +540,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart_singleton("config_8902.toml");
+        data.restart_singleton("config_8902.toml", "127.0.0.1:8902");
 
         let resp = client
             .post(
@@ -565,7 +561,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart_singleton("config_8902.toml");
+        data.restart_singleton("config_8902.toml", "127.0.0.1:8902");
 
         let resp = client
             .post(
@@ -595,7 +591,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart_singleton("config_8902.toml");
+        data.restart_singleton("config_8902.toml", "127.0.0.1:8902");
 
         let resp = client
             .post(
@@ -634,7 +630,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart_singleton("config_8902.toml");
+        data.restart_singleton("config_8902.toml", "127.0.0.1:8902");
 
         let resp = client
             .post(
@@ -658,12 +654,11 @@ pub mod test {
         println!("Test complete restart_test_case_4");
     }
 
-    #[cfg(feature = "not_passed")]
     #[test]
     fn case5() {
         println!("Test begin restart_test_case_5");
         clean_env();
-        let mut data = start_singleton("config_8902.toml");
+        let mut data = start_singleton("config_8902.toml", "127.0.0.1:8902");
 
         let client = Client::new("root".to_string(), Some(String::new()));
         let tester_client = Client::new("tester".to_string(), Some(String::new()));
@@ -695,7 +690,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart_singleton("config_8902.toml");
+        data.restart_singleton("config_8902.toml", "127.0.0.1:8902");
 
         let resp = client
             .post(
@@ -722,7 +717,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart_singleton("config_8902.toml");
+        data.restart_singleton("config_8902.toml", "127.0.0.1:8902");
 
         let resp = tester_client
             .post("http://127.0.0.1:8902/api/v1/sql?tenant=test", "SELECT 1")
@@ -746,7 +741,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart_singleton("config_8902.toml");
+        data.restart_singleton("config_8902.toml", "127.0.0.1:8902");
 
         let resp = tester_client
             .post("http://127.0.0.1:8902/api/v1/sql?tenant=test", "SELECT 1")
@@ -775,7 +770,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart_singleton("config_8902.toml");
+        data.restart_singleton("config_8902.toml", "127.0.0.1:8902");
 
         let resp = client
             .post(
@@ -805,7 +800,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart_singleton("config_8902.toml");
+        data.restart_singleton("config_8902.toml", "127.0.0.1:8902");
 
         let resp = client
             .post(
@@ -835,7 +830,7 @@ pub mod test {
 
         assert_eq!(resp.status(), status_code::OK);
 
-        data.restart_singleton("config_8902.toml");
+        data.restart_singleton("config_8902.toml", "127.0.0.1:8902");
 
         let resp = client
             .post(
@@ -880,9 +875,9 @@ pub mod test {
         let runtime = Arc::new(runtime);
 
         clean_env();
-        let (_meta, mut data) = start_cluster(runtime);
+        let (_meta, mut data) = start_cluster(runtime, 3, 2);
 
-        thread::sleep(Duration::from_secs(10));
+        thread::sleep(Duration::from_secs(30));
 
         let client = Client::new("root".to_string(), Some(String::new()));
         let resp = client
@@ -933,7 +928,7 @@ pub mod test {
         let actual_res = resp.text().unwrap();
         assert!(expect_res.find(&actual_res).is_some());
 
-        data.start_process("config_8912.toml");
+        data.start_process("config_8912.toml", false);
 
         let resp = client
             .post(

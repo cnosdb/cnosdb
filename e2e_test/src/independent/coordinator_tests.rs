@@ -156,7 +156,7 @@ mod self_tests {
 
         clean_env();
         {
-            let (meta, data) = start_cluster(runtime);
+            let (meta, data) = start_cluster(runtime, 3, 2);
             meta.prepare_test_data();
             data.prepare_test_data().unwrap();
 
@@ -189,7 +189,7 @@ fn test_multi_tenants_write_data() {
 
     clean_env();
     {
-        let (meta, data) = start_cluster(runtime);
+        let (meta, data) = start_cluster(runtime, 3, 2);
         meta.prepare_test_data();
         data.prepare_test_data().unwrap();
 
@@ -227,7 +227,7 @@ fn test_replica() {
 
     clean_env();
     {
-        let (meta, _data) = start_cluster(runtime.clone());
+        let (meta, _data) = start_cluster(runtime.clone(), 3, 2);
 
         let tenant_name = "cnosdb";
         let database_name = "db_test_replica";
@@ -290,7 +290,7 @@ fn test_shard() {
 
     clean_env();
     {
-        let (meta, _data) = start_cluster(runtime.clone());
+        let (meta, _data) = start_cluster(runtime.clone(), 3, 2);
 
         let tenant_name = "cnosdb";
         let database_name = "db_test_shard";
@@ -353,7 +353,7 @@ fn test_ttl() {
 
     clean_env();
     {
-        let (meta, data) = start_cluster(runtime.clone());
+        let (meta, data) = start_cluster(runtime.clone(), 3, 2);
 
         let tenant_name = "cnosdb";
         let database_name = "db_test_ttl";
@@ -450,7 +450,7 @@ fn test_balance() {
 
     clean_env();
     {
-        let (meta, data) = start_cluster(runtime.clone());
+        let (meta, data) = start_cluster(runtime.clone(), 3, 2);
 
         let tenant_name = "cnosdb";
         let database_name = "db_test_balance";
