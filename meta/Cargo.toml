@@ -36,6 +36,7 @@ sled = { workspace = true }
 snafu = { workspace = true }
 sys-info = { workspace = true }
 tokio = { workspace = true }
+tokio-stream = { workspace = true }
 toml = { workspace = true }
 tonic = { workspace = true }
 tracing = { workspace = true }

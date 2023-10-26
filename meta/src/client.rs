@@ -12,7 +12,7 @@ use crate::store::key_path::KeyPath;
 #[derive(Debug, Clone)]
 pub struct MetaHttpClient {
     inner: Arc<reqwest::Client>,
-    addrs: Vec<String>,
+    pub addrs: Arc<RwLock<Vec<String>>>,
     pub leader: Arc<RwLock<String>>,
 }
 
@@ -24,8 +24,8 @@ impl MetaHttpClient {
         let leader_addr = addrs[0].clone();
 
         Self {
-            addrs,
             inner: Arc::new(reqwest::Client::new()),
+            addrs: Arc::new(RwLock::new(addrs)),
             leader: Arc::new(RwLock::new(leader_addr)),
         }
     }
@@ -52,7 +52,10 @@ impl MetaHttpClient {
         })?
     }
 
-    pub async fn watch<T>(&self, req: &(String, String, HashSet<String>, u64)) -> MetaResult<T>
+    pub async fn watch<T>(
+        &self,
+        req: &(String, String, HashSet<String>, u64, Vec<String>),
+    ) -> MetaResult<T>
     where
         T: for<'a> Deserialize<'a>,
     {
@@ -80,11 +83,11 @@ impl MetaHttpClient {
     async fn switch_leader(&self) {
         let mut t = self.leader.write();
 
-        if let Ok(index) = self.addrs.binary_search(&t) {
-            let index = (index + 1) % self.addrs.len();
-            *t = self.addrs[index].clone();
+        if let Ok(index) = self.addrs.read().binary_search(&t) {
+            let index = (index + 1) % self.addrs.read().len();
+            *t = self.addrs.read()[index].clone();
         } else {
-            *t = self.addrs[0].clone();
+            *t = self.addrs.read()[0].clone();
         }
     }
 
@@ -256,6 +259,7 @@ mod test {
             "cluster_xx".to_string(),
             HashSet::from(["tenant_xx".to_string()]),
             0,
+            vec![],
         );
 
         let client = MetaHttpClient::new("127.0.0.1:8901");

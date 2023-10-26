@@ -311,6 +311,7 @@ impl StateMachine {
             entry_logs: vec![],
             min_ver: self.watch.min_version().unwrap_or(0),
             max_ver: self.watch.max_version().unwrap_or(0),
+            member_info: None,
         };
 
         if base_ver == self.version().unwrap_or(0) {

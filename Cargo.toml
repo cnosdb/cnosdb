@@ -122,7 +122,7 @@ tikv-jemalloc-sys = { version = "0.5", features = [
 tikv-jemallocator = "0.5.0"
 time = { version = "0.3.7" }
 tokio = { version = "1.21" }
-tokio-stream = "0.1"
+tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-util = { version = "0.7.0" }
 toml = "0.5.9"
 tonic = { version = "0.9", features = ["gzip"] }

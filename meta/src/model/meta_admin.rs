@@ -294,13 +294,25 @@ impl AdminMeta {
         let base_ver = admin.watch_version.load(Ordering::Relaxed);
 
         let client_id = format!("watch.{}", admin.node_id());
-        let mut request = (client_id, admin.cluster(), tenants, base_ver);
+        let mut request = (
+            client_id,
+            admin.cluster(),
+            tenants,
+            base_ver,
+            admin.client.addrs.read().clone(),
+        );
 
         let cluster_meta = admin.meta_addrs();
         let client = MetaHttpClient::new(&cluster_meta);
         loop {
+            request.4 = admin.client.addrs.read().clone();
             let watch_rsp = client.watch::<command::WatchData>(&request).await;
             if let Ok(watch_data) = watch_rsp {
+                if let Some(new_addrs) = watch_data.member_info.clone() {
+                    let mut w_addrs = admin.client.addrs.write();
+                    *w_addrs = new_addrs;
+                }
+
                 if watch_data.full_sync {
                     let base_ver = admin.process_full_sync().await;
                     admin.watch_version.store(base_ver, Ordering::Relaxed);

@@ -3,9 +3,11 @@ use std::convert::Infallible as StdInfallible;
 use std::sync::Arc;
 use std::time::Duration;
 
+use futures::{FutureExt, StreamExt};
 use replication::network_http::RaftHttpAdmin;
 use replication::raft_node::RaftNode;
 use replication::ApplyStorage;
+use tokio_stream::wrappers::WatchStream;
 use trace::info;
 use warp::{hyper, Filter};
 
@@ -111,9 +113,10 @@ impl HttpServer {
         warp::path!("watch")
             .and(warp::body::bytes())
             .and(self.with_storage())
+            .and(self.with_raft_node())
             .and_then(
-                |req: hyper::body::Bytes, storage: Arc<StateMachine>| async move {
-                    let data = Self::process_watch(req, storage)
+                |req: hyper::body::Bytes, storage: Arc<StateMachine>, node: Arc<RaftNode>| async move {
+                    let data = Self::process_watch(req, storage, node)
                         .await
                         .map_err(warp::reject::custom)?;
 
@@ -226,21 +229,35 @@ impl HttpServer {
     pub async fn process_watch(
         req: hyper::body::Bytes,
         storage: Arc<StateMachine>,
+        node: Arc<RaftNode>,
     ) -> MetaResult<String> {
-        let req: (String, String, HashSet<String>, u64) = serde_json::from_slice(&req)?;
-        let (client, cluster, tenants, base_ver) = req;
+        let req: (String, String, HashSet<String>, u64, Vec<String>) =
+            serde_json::from_slice(&req)?;
+        let (client, cluster, tenants, base_ver, addrs) = req;
         info!(
-            "watch all  args: client-id: {}, cluster: {}, tenants: {:?}, version: {}",
-            client, cluster, tenants, base_ver
+            "watch all  args: client-id: {}, cluster: {}, tenants: {:?}, version: {}, addrs: {:?}",
+            client, cluster, tenants, base_ver, addrs
         );
 
-        let mut notify = {
-            let watch_data = storage.read_change_logs(&cluster, &tenants, base_ver);
-            if watch_data.need_return(base_ver) {
+        let (mut notify, mut watch_metrics) = {
+            let mut watch_data = storage.read_change_logs(&cluster, &tenants, base_ver);
+            let nodes = node
+                .raft_metrics()
+                .membership_config
+                .membership()
+                .nodes()
+                .map(|(_key, value)| value.address.clone())
+                .collect::<Vec<String>>();
+
+            let mut diff = nodes.clone();
+            diff.retain(|x| !addrs.contains(x));
+
+            if watch_data.need_return(base_ver) || !diff.is_empty() {
+                watch_data.member_info = Some(nodes);
                 return Ok(crate::store::storage::response_encode(Ok(watch_data)));
             }
-
-            storage.watch.subscribe()
+            let watch_metrics = WatchStream::from_changes(node.raw_raft().metrics());
+            (storage.watch.subscribe(), watch_metrics)
         };
 
         let mut follow_ver = base_ver;
@@ -248,9 +265,25 @@ impl HttpServer {
         loop {
             let _ = tokio::time::timeout(Duration::from_secs(20), notify.recv()).await;
 
-            let watch_data = storage.read_change_logs(&cluster, &tenants, follow_ver);
+            let mut watch_data = storage.read_change_logs(&cluster, &tenants, follow_ver);
             info!("watch notify {} {}.{}", client, base_ver, follow_ver);
             if watch_data.need_return(base_ver) || now.elapsed() > Duration::from_secs(30) {
+                if watch_metrics.next().now_or_never().is_some() {
+                    if let Some(metrics) = watch_metrics.next().await {
+                        let node_addrs = metrics
+                            .membership_config
+                            .membership()
+                            .nodes()
+                            .map(|(_key, value)| value.address.clone())
+                            .collect::<Vec<String>>();
+                        // because metrics contain many data, It will frequently change, need filter
+                        let mut diff = node_addrs.clone();
+                        diff.retain(|x| !addrs.contains(x));
+                        if !diff.is_empty() {
+                            watch_data.member_info = Some(node_addrs);
+                        }
+                    }
+                }
                 return Ok(crate::store::storage::response_encode(Ok(watch_data)));
             }
 

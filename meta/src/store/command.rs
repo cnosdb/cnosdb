@@ -194,6 +194,7 @@ pub struct WatchData {
     pub min_ver: u64,
     pub max_ver: u64,
     pub entry_logs: Vec<EntryLog>,
+    pub member_info: Option<Vec<String>>,
 }
 
 impl WatchData {
