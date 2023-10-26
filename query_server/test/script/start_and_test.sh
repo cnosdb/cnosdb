@@ -47,27 +47,29 @@ while [[ $# -gt 0 ]]; do
 done
 
 function start_cnosdb() {
-  if [ -e ${EXE_PATH} ];then
+  if [ -e ${EXE_PATH} ]; then
     # nohup ./target/test-ci/cnosdb run --config ./config/config_8902.toml > /tmp/cnosdb/logs/start_and_test.data_node.8902.log 2>&1&
-    nohup ${EXE_RUN_CMD} --config ${CFG_PATH} > ${LOG_PATH} 2>&1&
+    nohup ${EXE_RUN_CMD} --config ${CFG_PATH} >${LOG_PATH} 2>&1 &
   else
     # nohup cargo run --profile test-ci -- run --config ./config/config_8902.toml > /tmp/cnosdb/logs/start_and_test.data_node.8902.log 2>&1&
-    nohup ${CARGO_RUN_CMD} --config ${CFG_PATH} > ${LOG_PATH} 2>&1&
+    nohup ${CARGO_RUN_CMD} --config ${CFG_PATH} >${LOG_PATH} 2>&1 &
   fi
   echo $!
 }
 
 function wait_start() {
-    while [ "$(curl -s ${URL})" == "" ] && kill -0 ${PID}; do
-        sleep 2;
-    done
+  while [ "$(curl -s ${URL})" == "" ] && kill -0 ${PID}; do
+    sleep 2
+  done
 }
 # cargo run --package test -- --query-url http://127.0.0.1:8902 --storage-url http://127.0.0.1:7777
 function test() {
-    echo "Testing query/test" && \
-    cargo run --package test && \
-    echo "Testing sqllogicaltests" && \
-    cargo run --package sqllogicaltests
+  echo "Testing query/test" &&
+    cargo run --package test &&
+    echo "Testing sqllogicaltests" &&
+    cargo run --package sqllogicaltests &&
+    echo "Testing e2e_test" &&
+    cargo test --package e2e_test --lib -- reliant:: --nocapture
 }
 
 echo "Starting cnosdb"

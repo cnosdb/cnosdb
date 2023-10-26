@@ -11,6 +11,10 @@ meta = { path = "../meta" }
 models = { path = "../common/models" }
 protos = { path = "../common/protos", features = ["test"] }
 sysinfo = { workspace = true, optional = false }
+regex = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+rand = { workspace = true }
 
 [dev-dependencies]
 config = { path = "../config" }
@@ -22,7 +26,7 @@ datafusion = { workspace = true }
 flatbuffers = { workspace = true }
 futures = { workspace = true, default-features = false, features = ["alloc"] }
 protobuf = { workspace = true }
-reqwest = { workspace = true, features = ["blocking"]}
+reqwest = { workspace = true, features = ["blocking"] }
 serial_test = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tokio-stream = { workspace = true }
