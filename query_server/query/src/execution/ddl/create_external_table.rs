@@ -80,13 +80,13 @@ async fn create_exernal_table(
     stmt: &CreateExternalTable,
     query_state_machine: QueryStateMachineRef,
 ) -> Result<()> {
-    let state = query_state_machine.session.inner().state();
+    let state = query_state_machine.session.inner();
 
     let schema = build_table_schema(
         stmt,
         query_state_machine.session.tenant().to_string(),
         query_state_machine.session.default_database().to_string(),
-        &state,
+        state,
     )
     .await?;
 

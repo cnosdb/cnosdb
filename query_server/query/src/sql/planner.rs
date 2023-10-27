@@ -36,7 +36,7 @@ use datafusion::logical_expr::{
 use datafusion::optimizer::analyzer::type_coercion::TypeCoercionRewriter;
 use datafusion::optimizer::simplify_expressions::ConstEvaluator;
 use datafusion::physical_expr::execution_props::ExecutionProps;
-use datafusion::prelude::{col, SessionConfig};
+use datafusion::prelude::col;
 use datafusion::scalar::ScalarValue;
 use datafusion::sql::parser::CreateExternalTable as AstCreateExternalTable;
 use datafusion::sql::planner::{object_name_to_table_reference, PlannerContext, SqlToRel};
@@ -2086,7 +2086,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         build_and_register_object_store(
             &table_path,
             connection_options,
-            session.inner().runtime_env(),
+            session.inner().runtime_env().as_ref(),
         )?;
 
         // 2. Get the metadata of the target table
@@ -2116,7 +2116,6 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             table_path,
             default_schema,
             file_format_options,
-            session.inner().copied_config(),
         )
         .await?;
 
@@ -2145,7 +2144,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         build_and_register_object_store(
             &table_path,
             connection_options,
-            session.inner().runtime_env(),
+            session.inner().runtime_env().as_ref(),
         )?;
 
         // 2. build source plan
@@ -2158,7 +2157,6 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             table_path,
             Some(source_schem),
             file_format_options,
-            session.inner().copied_config(),
         )
         .await?;
 
@@ -2278,7 +2276,7 @@ fn build_copy_into_table_plan(
 fn build_and_register_object_store(
     table_path: &ListingTableUrl,
     connection_options: Vec<SqlOption>,
-    runtime_env: Arc<RuntimeEnv>,
+    runtime_env: &RuntimeEnv,
 ) -> Result<()> {
     let url: &Url = table_path.as_ref();
     let bucket = url.host_str();
@@ -2321,16 +2319,14 @@ async fn build_external_location_table_source(
     table_path: ListingTableUrl,
     default_schema: Option<SchemaRef>,
     file_format_options: FileFormatOptions,
-    session_config: SessionConfig,
 ) -> datafusion::common::Result<Arc<dyn TableSource>> {
     let (file_extension, file_format) = build_file_extension_and_format(file_format_options)?;
     let external_location_table = build_listing_table(
-        &ctx.inner().state(),
+        ctx.inner(),
         table_path,
         default_schema,
         file_extension,
         file_format,
-        session_config,
     )
     .await?;
 
@@ -2350,12 +2346,11 @@ async fn build_listing_table(
     default_schema: Option<SchemaRef>,
     file_extension: String,
     file_format: Arc<dyn FileFormat>,
-    session_config: SessionConfig,
 ) -> datafusion::common::Result<Arc<ListingTable>> {
     let options = ListingOptions::new(file_format)
-        .with_collect_stat(session_config.collect_statistics())
+        .with_collect_stat(ctx.config().collect_statistics())
         .with_file_extension(file_extension)
-        .with_target_partitions(session_config.target_partitions());
+        .with_target_partitions(ctx.config().target_partitions());
 
     let schema = if let Some(schema) = default_schema {
         schema
@@ -2922,7 +2917,7 @@ mod tests {
         let context = ContextBuilder::new(user).build();
         let pool = UnboundedMemoryPool::default();
         SessionCtxFactory::default()
-            .create_session_ctx("", context, 0_u128, Arc::new(pool), None)
+            .create_session_ctx("", &context, 0_u128, Arc::new(pool), None)
             .unwrap()
     }
 

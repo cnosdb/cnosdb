@@ -6,23 +6,25 @@ use datafusion::execution::context::SessionState;
 use datafusion::execution::memory_pool::MemoryPool;
 use datafusion::execution::runtime_env::{RuntimeConfig, RuntimeEnv};
 use datafusion::prelude::{SessionConfig, SessionContext};
+use datafusion::variable::VarType;
 use models::auth::user::User;
 use models::oid::Oid;
 use trace::{SpanContext, SpanExt, SpanRecorder};
 
 use super::config::StreamTriggerInterval;
+use super::variable::VarProviderRef;
 use crate::service::protocol::Context;
 use crate::Result;
 
 #[derive(Clone)]
 pub struct SessionCtx {
     desc: Arc<SessionCtxDesc>,
-    inner: SessionContext,
+    inner: SessionState,
     span_ctx: Option<SpanContext>,
 }
 
 impl SessionCtx {
-    pub fn inner(&self) -> &SessionContext {
+    pub fn inner(&self) -> &SessionState {
         &self.inner
     }
 
@@ -79,12 +81,17 @@ pub struct SessionCtxDesc {
 
 #[derive(Default)]
 pub struct SessionCtxFactory {
+    sys_var_provider: Option<VarProviderRef>,
     query_dedicated_hidden_dir: PathBuf,
 }
 
 impl SessionCtxFactory {
-    pub fn new(query_dedicated_hidden_dir: PathBuf) -> Self {
+    pub fn new(
+        sys_var_provider: Option<VarProviderRef>,
+        query_dedicated_hidden_dir: PathBuf,
+    ) -> Self {
         Self {
+            sys_var_provider,
             query_dedicated_hidden_dir,
         }
     }
@@ -92,23 +99,17 @@ impl SessionCtxFactory {
     pub fn create_session_ctx(
         &self,
         session_id: impl Into<String>,
-        context: Context,
+        context: &Context,
         tenant_id: Oid,
         memory_pool: Arc<dyn MemoryPool>,
         span_ctx: Option<SpanContext>,
     ) -> Result<SessionCtx> {
-        let mut ctx = context.session_config().to_owned();
-        if let Some(span_ctx) = &span_ctx {
-            // inject span context into datafusion session config, so that it can be used in execution
-            ctx.inner = ctx.inner.with_extension(Arc::new(span_ctx.clone()));
-        }
-
-        let mut rt_config = RuntimeConfig::new();
-        rt_config.memory_pool = Some(memory_pool);
-        let rt = RuntimeEnv::new(rt_config)?;
-        let df_session_state = SessionState::with_config_rt(ctx.inner, Arc::new(rt))
-            .with_session_id(session_id.into());
-        let df_session_ctx = SessionContext::with_state(df_session_state);
+        let df_session_ctx = self.build_df_session_context(
+            session_id,
+            context.session_config().to_df_config(),
+            memory_pool,
+            &span_ctx,
+        )?;
 
         Ok(SessionCtx {
             desc: Arc::new(SessionCtxDesc {
@@ -118,9 +119,35 @@ impl SessionCtxFactory {
                 default_database: context.database().to_owned(),
                 query_dedicated_hidden_dir: self.query_dedicated_hidden_dir.clone(),
             }),
-            inner: df_session_ctx,
+            inner: df_session_ctx.state(),
             span_ctx,
         })
+    }
+
+    fn build_df_session_context(
+        &self,
+        session_id: impl Into<String>,
+        config: &SessionConfig,
+        memory_pool: Arc<dyn MemoryPool>,
+        span_ctx: &Option<SpanContext>,
+    ) -> Result<SessionContext> {
+        let mut config = config.clone();
+        if let Some(span_ctx) = span_ctx {
+            // inject span context into datafusion session config, so that it can be used in execution
+            config = config.with_extension(Arc::new(span_ctx.clone()))
+        }
+
+        let rt_config = RuntimeConfig::new().with_memory_pool(memory_pool);
+        let rt = RuntimeEnv::new(rt_config)?;
+        let df_session_state =
+            SessionState::with_config_rt(config, Arc::new(rt)).with_session_id(session_id.into());
+        let df_session_ctx = SessionContext::with_state(df_session_state);
+        // register built-in system variables
+        if let Some(p) = self.sys_var_provider.as_ref() {
+            df_session_ctx.register_variable(VarType::System, p.clone());
+        }
+
+        Ok(df_session_ctx)
     }
 }
 

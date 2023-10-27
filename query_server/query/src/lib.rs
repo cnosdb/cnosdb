@@ -14,3 +14,4 @@ pub mod prom;
 pub mod sql;
 pub mod stream;
 mod utils;
+pub mod variable;

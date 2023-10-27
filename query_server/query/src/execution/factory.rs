@@ -90,7 +90,7 @@ impl QueryExecutionFactory for SqlQueryExecutionFactory {
                 }
 
                 // 流操作
-                let options = state_machine.session.inner().state().config().into();
+                let options = state_machine.session.inner().config().into();
                 let exec = MicroBatchStreamExecutionBuilder::new(MicroBatchStreamExecutionDesc {
                     plan: Arc::new(query_plan),
                     options,
