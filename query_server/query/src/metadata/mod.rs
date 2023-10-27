@@ -9,8 +9,10 @@ use datafusion::config::ConfigOptions;
 use datafusion::datasource::TableProvider;
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::{AggregateUDF, ScalarUDF, TableSource, WindowUDF};
+use datafusion::physical_expr::var_provider::is_system_variables;
 use datafusion::sql::planner::ContextProvider;
 use datafusion::sql::TableReference;
+use datafusion::variable::{VarProvider, VarType};
 pub use information_schema_provider::{
     COLUMNS_COLUMN_NAME, COLUMNS_COLUMN_TYPE, COLUMNS_COMPRESSION_CODEC, COLUMNS_DATABASE_NAME,
     COLUMNS_DATA_TYPE, COLUMNS_TABLE_NAME, DATABASES_DATABASE_NAME, DATABASES_PRECISION,
@@ -68,6 +70,7 @@ pub trait ContextProviderExtension: ContextProvider {
 }
 
 pub type TableHandleProviderRef = Arc<dyn TableHandleProvider + Send + Sync>;
+pub type VarProviderRef = Arc<dyn VarProvider + Send + Sync>;
 
 pub trait TableHandleProvider {
     fn build_table_handle(&self, ddatabase_name: &str, table_name: &str) -> DFResult<TableHandle>;
@@ -102,7 +105,7 @@ impl MetadataProvider {
             current_session_table_provider,
             coord,
             // TODO refactor
-            config_options: session.inner().state().config_options().clone(),
+            config_options: session.inner().config_options().clone(),
             session,
             meta_client,
             func_manager,
@@ -294,9 +297,22 @@ impl ContextProvider for MetadataProvider {
         self.func_manager.udaf(name).ok()
     }
 
-    fn get_variable_type(&self, _variable_names: &[String]) -> Option<DataType> {
-        // TODO
-        None
+    fn get_variable_type(&self, variable_names: &[String]) -> Option<DataType> {
+        if variable_names.is_empty() {
+            return None;
+        }
+
+        let var_type = if is_system_variables(variable_names) {
+            VarType::System
+        } else {
+            VarType::UserDefined
+        };
+
+        self.session
+            .inner()
+            .execution_props()
+            .get_var_provider(var_type)
+            .and_then(|p| p.get_type(variable_names))
     }
 
     fn options(&self) -> &ConfigOptions {

@@ -202,7 +202,7 @@ impl QueryStateMachine {
 
         use super::session::SessionCtxFactory;
 
-        let factory = SessionCtxFactory::new("/tmp".into());
+        let factory = SessionCtxFactory::new(None, "/tmp".into());
         let ctx = query.context().clone();
         QueryStateMachine::begin(
             QueryId::next_id(),
@@ -210,7 +210,7 @@ impl QueryStateMachine {
             factory
                 .create_session_ctx(
                     "session_id",
-                    ctx,
+                    &ctx,
                     0,
                     Arc::new(UnboundedMemoryPool::default()),
                     span_context,

@@ -170,7 +170,7 @@ impl QueryDispatcher for SimpleQueryDispatcher {
     ) -> Result<Arc<QueryStateMachine>> {
         let session = self.session_factory.create_session_ctx(
             query_id.to_string(),
-            query.context().clone(),
+            query.context(),
             tenant_id,
             self.memory_pool.clone(),
             span_ctx.cloned(),
