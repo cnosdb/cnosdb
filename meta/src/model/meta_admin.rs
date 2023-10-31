@@ -11,7 +11,7 @@ use models::meta_data::*;
 use models::node_info::NodeStatus;
 use models::oid::{Identifier, Oid, UuidGenerator};
 use models::schema::{ResourceInfo, Tenant, TenantOptions};
-use models::utils::{build_address, now_timestamp_secs};
+use models::utils::{build_address_with_optional_addr, now_timestamp_secs};
 use parking_lot::RwLock;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tonic::transport::{Channel, Endpoint};
@@ -404,6 +404,11 @@ impl AdminMeta {
 
     /******************** Data Node Operation Begin *********************/
     pub async fn add_data_node(&self) -> MetaResult<()> {
+        let grpc_addr = build_address_with_optional_addr(
+            &self.config.host,
+            self.config.cluster.grpc_listen_port,
+        );
+
         let mut attribute = NodeAttribute::default();
         if self.config.node_basic.cold_data_server {
             attribute = NodeAttribute::Cold;
@@ -412,14 +417,7 @@ impl AdminMeta {
         let node = NodeInfo {
             attribute,
             id: self.config.node_basic.node_id,
-            grpc_addr: build_address(
-                self.config.host.clone(),
-                self.config.cluster.grpc_listen_port,
-            ),
-            http_addr: build_address(
-                self.config.host.clone(),
-                self.config.cluster.http_listen_port,
-            ),
+            grpc_addr,
         };
 
         let cluster_name = self.config.cluster.name.clone();

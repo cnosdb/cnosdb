@@ -168,6 +168,10 @@ pub enum MetaError {
     ))]
     #[error_code(code = 53)]
     ValidNodeNotEnough { need: u64, valid_node_num: u32 },
+
+    #[error_code(code = 54)]
+    #[snafu(display("Invalid configuration: {msg}"))]
+    InvalidInitialConfig { msg: String },
 }
 
 impl MetaError {
