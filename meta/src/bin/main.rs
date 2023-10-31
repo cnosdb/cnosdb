@@ -79,7 +79,7 @@ pub async fn start_service(opt: Opt) -> std::io::Result<()> {
     let raft = RaftStore::new(opt.id, config.clone(), network, store.clone());
 
     let meta_ip = DEFAULT_META_IP.to_owned();
-    let addr = build_address(opt.host.clone(), opt.port);
+    let addr = build_address(&opt.host, opt.port);
     let app = Data::new(MetaApp {
         id: opt.id,
         http_addr: addr.clone(),
@@ -117,7 +117,7 @@ pub async fn start_service(opt: Opt) -> std::io::Result<()> {
     })
     .keep_alive(Duration::from_secs(5));
 
-    let x = server.bind(build_address(meta_ip, opt.port))?;
+    let x = server.bind(build_address(&meta_ip, opt.port))?;
 
     x.run().await
 }
