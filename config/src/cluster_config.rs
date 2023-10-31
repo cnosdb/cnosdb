@@ -13,15 +13,15 @@ pub struct ClusterConfig {
     #[serde(default = "ClusterConfig::default_meta_service_addr")]
     pub meta_service_addr: Vec<String>,
 
-    #[serde(default = "ClusterConfig::default_http_listen_port")]
-    pub http_listen_port: u16,
-    #[serde(default = "ClusterConfig::default_grpc_listen_port")]
-    pub grpc_listen_port: u16,
-    #[serde(default = "ClusterConfig::default_flight_rpc_listen_port")]
-    pub flight_rpc_listen_port: u16,
-    #[serde(default = "ClusterConfig::default_tcp_listen_port")]
-    pub tcp_listen_port: u16,
-    #[serde(default = "ClusterConfig::default_vector_listen_port")]
+    #[serde(default)]
+    pub http_listen_port: Option<u16>,
+    #[serde(default)]
+    pub grpc_listen_port: Option<u16>,
+    #[serde(default)]
+    pub flight_rpc_listen_port: Option<u16>,
+    #[serde(default)]
+    pub tcp_listen_port: Option<u16>,
+    #[serde(default)]
     pub vector_listen_port: Option<u16>,
 }
 
@@ -34,20 +34,20 @@ impl ClusterConfig {
         vec!["127.0.0.1:8901".to_string()]
     }
 
-    fn default_http_listen_port() -> u16 {
-        8902
+    fn default_http_listen_port() -> Option<u16> {
+        Some(8902)
     }
 
-    fn default_grpc_listen_port() -> u16 {
-        8903
+    fn default_grpc_listen_port() -> Option<u16> {
+        Some(8903)
     }
 
-    fn default_flight_rpc_listen_port() -> u16 {
-        8904
+    fn default_flight_rpc_listen_port() -> Option<u16> {
+        Some(8904)
     }
 
-    fn default_tcp_listen_port() -> u16 {
-        8905
+    fn default_tcp_listen_port() -> Option<u16> {
+        Some(8905)
     }
 
     fn default_vector_listen_port() -> Option<u16> {
@@ -68,19 +68,19 @@ impl ClusterConfig {
         }
 
         if let Ok(port) = std::env::var("CNOSDB_HTTP_LISTEN_PORT") {
-            self.http_listen_port = port.parse::<u16>().unwrap();
+            self.http_listen_port = Some(port.parse::<u16>().unwrap());
         }
 
         if let Ok(port) = std::env::var("CNOSDB_GRPC_LISTEN_PORT") {
-            self.grpc_listen_port = port.parse::<u16>().unwrap();
+            self.grpc_listen_port = Some(port.parse::<u16>().unwrap());
         }
 
         if let Ok(port) = std::env::var("CNOSDB_FLIGHT_RPC_LISTEN_PORT") {
-            self.flight_rpc_listen_port = port.parse::<u16>().unwrap();
+            self.flight_rpc_listen_port = Some(port.parse::<u16>().unwrap());
         }
 
         if let Ok(port) = std::env::var("CNOSDB_TCP_LISTEN_PORT") {
-            self.flight_rpc_listen_port = port.parse::<u16>().unwrap();
+            self.flight_rpc_listen_port = Some(port.parse::<u16>().unwrap());
         }
 
         if let Ok(port) = std::env::var("CNOSDB_VECTOR_LISTEN_PORT") {
@@ -126,31 +126,37 @@ impl CheckConfig for ClusterConfig {
             }
         }
 
-        let default_http_addr = format!("{}:{}", &config.host, self.http_listen_port);
-        if let Err(e) = default_http_addr.to_socket_addrs() {
-            ret.add_error(CheckConfigItemResult {
-                config: config_name.clone(),
-                item: default_http_addr,
-                message: format!("Cannot resolve 'http_listen_addr': {}", e),
-            });
+        if let Some(port) = self.http_listen_port {
+            let default_http_addr = format!("{}:{}", &config.host, port);
+            if let Err(e) = default_http_addr.to_socket_addrs() {
+                ret.add_error(CheckConfigItemResult {
+                    config: config_name.clone(),
+                    item: default_http_addr,
+                    message: format!("Cannot resolve 'http_listen_addr': {}", e),
+                });
+            }
         }
 
-        let default_grpc_addr = format!("{}:{}", &config.host, self.grpc_listen_port);
-        if let Err(e) = default_grpc_addr.to_socket_addrs() {
-            ret.add_error(CheckConfigItemResult {
-                config: config_name.clone(),
-                item: default_grpc_addr,
-                message: format!("Cannot resolve 'grpc_listen_addr': {}", e),
-            });
+        if let Some(port) = self.grpc_listen_port {
+            let default_grpc_addr = format!("{}:{}", &config.host, port);
+            if let Err(e) = default_grpc_addr.to_socket_addrs() {
+                ret.add_error(CheckConfigItemResult {
+                    config: config_name.clone(),
+                    item: default_grpc_addr,
+                    message: format!("Cannot resolve 'grpc_listen_addr': {}", e),
+                });
+            }
         }
 
-        let default_flight_rpc_addr = format!("{}:{}", &config.host, self.flight_rpc_listen_port);
-        if let Err(e) = default_flight_rpc_addr.to_socket_addrs() {
-            ret.add_error(CheckConfigItemResult {
-                config: config_name.clone(),
-                item: default_flight_rpc_addr,
-                message: format!("Cannot resolve 'flight_rpc_listen_addr': {}", e),
-            });
+        if let Some(port) = self.flight_rpc_listen_port {
+            let default_flight_rpc_addr = format!("{}:{}", &config.host, port);
+            if let Err(e) = default_flight_rpc_addr.to_socket_addrs() {
+                ret.add_error(CheckConfigItemResult {
+                    config: config_name.clone(),
+                    item: default_flight_rpc_addr,
+                    message: format!("Cannot resolve 'flight_rpc_listen_addr': {}", e),
+                });
+            }
         }
 
         let default_vector_addr = self

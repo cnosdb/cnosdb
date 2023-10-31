@@ -174,6 +174,10 @@ pub enum MetaError {
     #[snafu(display("Create limiter fail: {}", msg))]
     #[error_code(code = 35)]
     LimiterCreate { msg: String },
+
+    #[error_code(code = 54)]
+    #[snafu(display("Invalid configuration: {msg}"))]
+    InvalidInitialConfig { msg: String },
 }
 
 impl MetaError {

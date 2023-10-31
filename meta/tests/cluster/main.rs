@@ -38,7 +38,6 @@ mod tests {
         let output = backup();
         assert_eq!(output.status.code(), std::option::Option::Some(0));
         let stdout = String::from_utf8(output.stdout).unwrap();
-        assert!(stdout.contains("127.0.0.1:8888"));
         assert!(stdout.contains("test_add_tenant001"));
         // print!("output: {:?}", output.stdout);
         kill_cnosdb_meta_process("cnosdb-meta");
@@ -197,19 +196,16 @@ mod tests {
         let output = check_meta_info("8901".to_string());
         assert_eq!(output.status.code(), std::option::Option::Some(0));
         let stdout = String::from_utf8(output.stdout).unwrap();
-        assert!(stdout.contains("127.0.0.1:8888"));
         assert!(stdout.contains("test_add_tenant001"));
         // check second meta node log
         let output = check_meta_info("8911".to_string());
         assert_eq!(output.status.code(), std::option::Option::Some(0));
         let stdout = String::from_utf8(output.stdout).unwrap();
-        assert!(stdout.contains("127.0.0.1:8888"));
         assert!(stdout.contains("test_add_tenant001"));
         // check third meta node log
         let output = check_meta_info("8921".to_string());
         assert_eq!(output.status.code(), std::option::Option::Some(0));
         let stdout = String::from_utf8(output.stdout).unwrap();
-        assert!(stdout.contains("127.0.0.1:8888"));
         assert!(stdout.contains("test_add_tenant001"));
         // clean env
         kill_cnosdb_meta_process("cnosdb-meta");
@@ -270,7 +266,6 @@ mod tests {
         let output = check_meta_info("8931".to_string());
         assert_eq!(output.status.code(), std::option::Option::Some(0));
         let stdout = String::from_utf8(output.stdout).unwrap();
-        assert!(stdout.contains("127.0.0.1:8888"));
         assert!(stdout.contains("test_add_tenant001"));
         // clean env
         kill_cnosdb_meta_process("cnosdb-meta");
@@ -289,7 +284,6 @@ mod tests {
         let output = check_meta_info("8901".to_string());
         assert_eq!(output.status.code(), std::option::Option::Some(0));
         let stdout = String::from_utf8(output.stdout).unwrap();
-        assert!(stdout.contains("127.0.0.1:8888"));
         assert!(stdout.contains("test_add_tenant001"));
         // sleep 3 seconds
         thread::sleep(time::Duration::from_secs(3));
@@ -297,7 +291,6 @@ mod tests {
         let output = check_meta_info("8901".to_string());
         assert_eq!(output.status.code(), std::option::Option::Some(0));
         let stdout = String::from_utf8(output.stdout).unwrap();
-        assert!(stdout.contains("127.0.0.1:8888"));
         assert!(stdout.contains("test_add_tenant001"));
         // sleep 3 seconds
         thread::sleep(time::Duration::from_secs(3));
@@ -305,7 +298,6 @@ mod tests {
         let output = check_meta_info("8901".to_string());
         assert_eq!(output.status.code(), std::option::Option::Some(0));
         let stdout = String::from_utf8(output.stdout).unwrap();
-        assert!(stdout.contains("127.0.0.1:8888"));
         assert!(stdout.contains("test_add_tenant001"));
         // clean env
         kill_cnosdb_meta_process("cnosdb-meta");
@@ -373,7 +365,6 @@ async fn write_data_to_meta() {
     let node = NodeInfo {
         id: 111,
         grpc_addr: "".to_string(),
-        http_addr: "127.0.0.1:8888".to_string(),
         attribute: NodeAttribute::Hot,
     };
     let req = command::WriteCommand::AddDataNode("cluster_xxx".to_string(), node);

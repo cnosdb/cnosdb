@@ -65,7 +65,6 @@ impl From<String> for NodeAttribute {
 pub struct NodeInfo {
     pub id: NodeId,
     pub grpc_addr: String,
-    pub http_addr: String,
     pub attribute: NodeAttribute,
 }
 
