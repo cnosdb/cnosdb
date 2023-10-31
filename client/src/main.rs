@@ -7,6 +7,8 @@ use client::ctx::{SessionConfig, SessionContext};
 use client::print_format::PrintFormat;
 use client::print_options::PrintOptions;
 use client::{exec, CNOSDB_CLI_VERSION};
+use fly_accept_encoding::Encoding;
+use http_protocol::encoding::EncodingExt;
 
 #[derive(Debug, Parser, PartialEq)]
 #[command(author, version, about, long_about= None)]
@@ -62,6 +64,14 @@ struct Args {
     /// Path to your data, default to current directory
     #[arg(long, value_parser = try_parse_data_dir)]
     data_path: Option<String>,
+
+    /// HTTP response encoding. Support deflate, gzip, br, zstd.
+    #[arg(long,  value_parser = try_parse_encoding)]
+    receive_data_encoding: Option<Encoding>,
+
+    /// HTTP request encoding. Support deflate, gzip, br, zstd.
+    #[arg(long,  value_parser = try_parse_encoding)]
+    send_data_encoding: Option<Encoding>,
 
     // #[arg(
     //     long,
@@ -144,6 +154,8 @@ pub async fn main() -> Result<(), anyhow::Error> {
         .with_database(args.database)
         .with_target_partitions(args.target_partitions)
         .with_stream_trigger_interval(args.stream_trigger_interval)
+        .with_accept_encoding(args.receive_data_encoding)
+        .with_content_encoding(args.send_data_encoding)
         .with_result_format(args.format)
         .with_precision(args.precision)
         .with_ssl(args.use_ssl)
@@ -216,5 +228,12 @@ fn try_parse_target_partitions(size: &str) -> std::result::Result<usize, String>
     match size.parse::<usize>() {
         Ok(s) if s > 0 => Ok(s),
         _ => Err(format!("target-partitions is not in 1..={}", usize::MAX)),
+    }
+}
+
+fn try_parse_encoding(encoding: &str) -> std::result::Result<Encoding, String> {
+    match Encoding::from_str(encoding) {
+        Some(encoding) => Ok(encoding),
+        _ => Err(format!("encoding not support: {}", encoding)),
     }
 }
