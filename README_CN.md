@@ -101,6 +101,19 @@ $ cmake -G "Xcode" -DCMAKE_BUILD_TYPE=Release
 $ sudo make install
 ```
 
+4. 安装Protobuf
+
+```shell
+# Arch Linux
+pacman -S protobuf
+# Fedora
+dnf install protobuf
+# Ubuntu
+snap install protobuf
+# macOS
+brew install protobuf
+```
+
 ### **编译**
 
 ```shell
