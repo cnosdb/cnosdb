@@ -775,7 +775,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
     ) -> Result<PlanCreateExternalTable> {
         let definition = Some(statement.to_string());
         let AstCreateExternalTable {
-            name,
+            name: _,
             columns,
             file_type,
             has_header,

@@ -1111,7 +1111,7 @@ impl Domain {
         ranges.sort_by(|l, r| l.low.cmp(&r.low));
 
         // at least one element
-        let mut current = ranges.get(0).unwrap().to_owned();
+        let mut current = ranges.first().unwrap().to_owned();
 
         let mut low_indexed_ranges: BTreeMap<Marker, Range> = BTreeMap::default();
 
