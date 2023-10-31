@@ -7,14 +7,23 @@ use super::Error as HttpError;
 #[derive(Debug, Clone)]
 pub struct Header {
     accept: Option<String>,
+    accept_encoding: Option<String>,
+    content_encoding: Option<String>,
     authorization: String,
     private_key: Option<String>,
 }
 
 impl Header {
-    pub fn with(accept: Option<String>, authorization: String) -> Self {
+    pub fn with(
+        accept: Option<String>,
+        accept_encoding: Option<String>,
+        content_encoding: Option<String>,
+        authorization: String,
+    ) -> Self {
         Self {
             accept,
+            accept_encoding,
+            content_encoding,
             authorization,
             private_key: None,
         }
@@ -22,11 +31,15 @@ impl Header {
 
     pub fn with_private_key(
         accept: Option<String>,
+        accept_encoding: Option<String>,
+        content_encoding: Option<String>,
         authorization: String,
         private_key: Option<String>,
     ) -> Self {
         Self {
             accept,
+            accept_encoding,
+            content_encoding,
             authorization,
             private_key,
         }
@@ -34,6 +47,14 @@ impl Header {
 
     pub fn get_accept(&self) -> &str {
         self.accept.as_deref().unwrap_or(APPLICATION_CSV)
+    }
+
+    pub fn get_accept_encoding(&self) -> Option<&str> {
+        self.accept_encoding.as_deref()
+    }
+
+    pub fn get_content_encoding(&self) -> Option<&str> {
+        self.content_encoding.as_deref()
     }
 
     pub fn try_get_basic_auth(&self) -> Result<UserInfo, HttpError> {
@@ -153,25 +174,25 @@ mod tests {
     fn test_header_auth() {
         let auth = base64::encode("xx:");
         let valid_auth_without_passwd = format!("{}{}", BASIC_PREFIX, auth);
-        let header = Header::with(None, valid_auth_without_passwd);
+        let header = Header::with(None, None, None, valid_auth_without_passwd);
         let user_info = header.try_get_basic_auth().unwrap();
         assert_eq!(&user_info.user, "xx");
         assert_eq!(&user_info.password, "");
 
         let auth = base64::encode("xx:xx");
         let valid_auth_with_passwd = format!("{}{}", BASIC_PREFIX, auth);
-        let header = Header::with(None, valid_auth_with_passwd);
+        let header = Header::with(None, None, None, valid_auth_with_passwd);
         let user_info = header.try_get_basic_auth().unwrap();
         assert_eq!(&user_info.user, "xx");
         assert_eq!(&user_info.password, "xx");
 
         let auth = base64::encode("xx");
         let invalid_auth_1 = format!("{}{}", BASIC_PREFIX, auth);
-        let header = Header::with(None, invalid_auth_1);
+        let header = Header::with(None, None, None, invalid_auth_1);
         assert!(header.try_get_basic_auth().is_err());
 
         let auth = base64::encode("xx");
-        let header = Header::with(None, auth);
+        let header = Header::with(None, None, None, auth);
         assert!(header.try_get_basic_auth().is_err());
     }
 }

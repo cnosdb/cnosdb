@@ -9,9 +9,14 @@ edition.workspace = true
 error_code = { path = "../error_code" }
 
 async-backtrace = { workspace = true, optional = true }
+brotli = { workspace = true }
+bytes = { workspace = true }
+flate2 = { workspace = true }
+fly-accept-encoding = { workspace = true }
 reqwest = { workspace = true, features = ["rustls-tls"] }
 serde = { workspace = true }
 snafu = { workspace = true }
+zstd = { workspace = true }
 
 [features]
 default = []

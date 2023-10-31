@@ -847,9 +847,9 @@ dependencies = [
 
 [[package]]
 name = "brotli"
-version = "3.3.4"
+version = "3.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1a0b1dbcc8ae29329621f8d4f0d835787c1c38bb1401979b49d13b0b305ff68"
+checksum = "516074a47ef4bce09577a3b379392300159ce5b1ba2e501ff1c819950066100f"
 dependencies = [
  "alloc-no-stdlib",
  "alloc-stdlib",
@@ -858,9 +858,9 @@ dependencies = [
 
 [[package]]
 name = "brotli-decompressor"
-version = "2.3.4"
+version = "2.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4b6561fd3f895a11e8f72af2cb7d22e08366bebc2b6b57f7744c4bda27034744"
+checksum = "4e2e4afe60d7dd600fdd3de8d0f08c2b7ec039712e3b6137ff98b7004e82de4f"
 dependencies = [
  "alloc-no-stdlib",
  "alloc-stdlib",
@@ -1129,7 +1129,9 @@ dependencies = [
  "datafusion",
  "dirs",
  "env_logger",
+ "fly-accept-encoding",
  "http_protocol",
+ "reqwest",
  "rustyline",
  "tokio",
  "walkdir",
@@ -1947,6 +1949,7 @@ dependencies = [
  "config",
  "datafusion",
  "flatbuffers 22.12.6",
+ "fly-accept-encoding",
  "futures",
  "http_protocol",
  "meta",
@@ -2177,6 +2180,17 @@ name = "float_next_after"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8bf7cc16383c4b8d58b9905a8509f02926ce3058053c056376248d958c9df1e8"
+
+[[package]]
+name = "fly-accept-encoding"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a3afa7516fdcfd8e5e93a938f8fec857785ced190a1f62d842d1fe1ffbe22ba8"
+dependencies = [
+ "http",
+ "itertools 0.10.5",
+ "thiserror",
+]
 
 [[package]]
 name = "fnv"
@@ -2647,10 +2661,15 @@ name = "http_protocol"
 version = "2.4.0"
 dependencies = [
  "async-backtrace",
+ "brotli",
+ "bytes",
  "error_code",
+ "flate2",
+ "fly-accept-encoding",
  "reqwest",
  "serde",
  "snafu",
+ "zstd",
 ]
 
 [[package]]
@@ -3195,6 +3214,7 @@ dependencies = [
  "datafusion-proto",
  "dateparser",
  "flatbuffers 22.12.6",
+ "fly-accept-encoding",
  "futures",
  "http_protocol",
  "lazy_static",

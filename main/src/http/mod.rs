@@ -11,6 +11,7 @@ use warp::{reject, Rejection};
 use self::response::ResponseBuilder;
 
 mod api_type;
+mod encoding;
 pub mod header;
 pub mod http_service;
 mod metrics;
@@ -89,6 +90,18 @@ pub enum Error {
     #[error_code(code = 12)]
     TraceHttp {
         source: trace_http::ctx::ContextError,
+    },
+
+    #[snafu(display("Error decode request: {}", source))]
+    #[error_code(code = 13)]
+    DecodeRequest {
+        source: std::io::Error,
+    },
+
+    #[snafu(display("Error encode response: {}", source))]
+    #[error_code(code = 14)]
+    EncodeResponse {
+        source: std::io::Error,
     },
 }
 
