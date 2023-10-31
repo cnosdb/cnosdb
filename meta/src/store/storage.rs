@@ -779,9 +779,7 @@ impl StateMachine {
             .children_data::<NodeInfo>(&KeyPath::data_nodes(cluster))?
             .values()
         {
-            if value.id != node.id
-                && (value.http_addr == node.http_addr || value.grpc_addr == node.grpc_addr)
-            {
+            if value.id != node.id && value.grpc_addr == node.grpc_addr {
                 error!(
                     "ip address has been added, add node failed, the added node is : {:?}",
                     value
@@ -795,7 +793,7 @@ impl StateMachine {
     fn process_add_date_node(&self, cluster: &str, node: &NodeInfo) -> MetaResult<()> {
         if !self.check_node_ip_address(cluster, node)? {
             return Err(MetaError::DataNodeExist {
-                addr: format! {"{} {}", node.grpc_addr,node.http_addr},
+                addr: node.grpc_addr.clone(),
             });
         }
         let key = KeyPath::data_node_id(cluster, node.id);

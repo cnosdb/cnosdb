@@ -172,7 +172,9 @@ impl CoordService {
             meta.clone(),
             kv_inst.clone(),
         ));
-        raft_manager.start_all_raft_node().await.unwrap();
+        if raft_manager.enabled() {
+            raft_manager.start_all_raft_node().await.unwrap();
+        }
 
         let raft_writer = Arc::new(RaftWriter::new(
             meta.clone(),

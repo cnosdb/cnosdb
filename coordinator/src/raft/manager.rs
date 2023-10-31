@@ -17,7 +17,7 @@ use replication::{ApplyStorageRef, EntryStorageRef, RaftNodeId, RaftNodeInfo};
 use tokio::sync::RwLock;
 use tonic::transport;
 use tower::timeout::Timeout;
-use tracing::info;
+use tracing::{error, info};
 use tskv::{wal, EngineRef};
 
 use crate::errors::*;
@@ -29,8 +29,12 @@ pub struct RaftWriteRequest {
 }
 
 pub struct RaftNodesManager {
-    meta: MetaRef,
     config: config::Config,
+    /// Unrapped config.cluster.grpc_listen_port.
+    grpc_listen_port: u16,
+    /// Is config.cluster.grpc_listen_port a Some(_).
+    enabled: bool,
+    meta: MetaRef,
     kv_inst: Option<EngineRef>,
     raft_state: Arc<StateStorage>,
     raft_nodes: Arc<RwLock<MultiRaft>>,
@@ -40,14 +44,22 @@ impl RaftNodesManager {
     pub fn new(config: config::Config, meta: MetaRef, kv_inst: Option<EngineRef>) -> Self {
         let path = PathBuf::from(config.storage.path.clone()).join("raft-state");
         let state = StateStorage::open(path).unwrap();
+        let grpc_listen_port = config.cluster.grpc_listen_port.unwrap_or(0);
+        let enabled = config.cluster.grpc_listen_port.is_some();
 
         Self {
-            meta,
             config,
+            grpc_listen_port,
+            enabled,
+            meta,
             kv_inst,
             raft_state: Arc::new(state),
             raft_nodes: Arc::new(RwLock::new(MultiRaft::new())),
         }
+    }
+
+    pub fn enabled(&self) -> bool {
+        self.enabled
     }
 
     pub fn node_id(&self) -> u64 {
@@ -402,17 +414,19 @@ impl RaftNodesManager {
         vnode_id: VnodeId,
         group_id: ReplicationSetId,
     ) -> CoordinatorResult<Arc<RaftNode>> {
-        info!("open local raft node: {}.{}", group_id, vnode_id);
+        if !self.enabled {
+            error!("Trying open local raft node that disabled grpc service: {group_id}.{vnode_id}");
+            return Err(CoordinatorError::InvalidInitialConfig {
+                msg: "grpc_listen_port is not set".to_string(),
+            });
+        }
+        info!("Opening local raft node: {group_id}.{vnode_id}");
 
         let entry = self
             .raft_node_logs(tenant, db_name, vnode_id, group_id)
             .await?;
         let engine = self.raft_node_engine(tenant, db_name, vnode_id).await?;
-
-        let grpc_addr = models::utils::build_address(
-            self.config.host.clone(),
-            self.config.cluster.grpc_listen_port,
-        );
+        let grpc_addr = models::utils::build_address(&self.config.host, self.grpc_listen_port);
         let info = RaftNodeInfo {
             group_id,
             address: grpc_addr,
