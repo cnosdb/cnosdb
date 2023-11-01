@@ -18,6 +18,52 @@ env:
 
 jobs:
   build:
+    strategy:
+      matrix:
+        target:
+          - x86_64-unknown-linux-gnu
+    runs-on: ubuntu-latest
+    container:
+      image: cnosdb/rust:centos7
+      credentials:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+    steps:
+    - name: Get tag
+      id: get-tag
+      run: |
+        if [[ "${{ github.event_name }}" = "workflow_dispatch" ]]; then
+          echo "TAG=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+        else
+          echo "TAG=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+        fi
+    - uses: actions/checkout@v3
+    - name: Install fpm
+      shell: bash
+      run: |
+        yum install which -y
+        yum -y install ruby rubygems ruby-devel
+        curl -sSL https://rvm.io/pkuczynski.asc | gpg2 --import
+        curl -L http://get.rvm.io | bash -s stable
+        source /usr/local/rvm/scripts/rvm
+        rvm install 2.5.0
+        gem install fpm
+    - name: Compiler
+      run: |
+        cargo build --workspace --bins --release --target x86_64-unknown-linux-gnu
+    - name: Package
+      run: |
+        bash -x ./packages/build_package.sh -n cnosdb -v ${{ steps.get-tag.outputs.TAG }} -b release -t ${{ matrix.target }}
+        bash -x ./packages/build_package.sh -n cnosdb-meta -v ${{ steps.get-tag.outputs.TAG }} -b release -t ${{ matrix.target }}
+    - name: Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          *.deb
+          *.rpm
+        tag_name: ${{ steps.get-tag.outputs.TAG }}
+
+  build_arm:
     env:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
@@ -25,7 +71,6 @@ jobs:
       matrix:
         target:
           - aarch64-unknown-linux-gnu
-          - x86_64-unknown-linux-gnu
     runs-on: ubuntu-latest
     steps:
     - name: Get tag

@@ -1,0 +1,60 @@
+FROM centos:7
+
+RUN yum -y update \
+  # openssl
+  && yum -y install perl-IPC-Cmd openssl openssl-devel \
+  && yum -y install unzip zip wget \
+  && yum -y group install "Development Tools" \
+  && yum -y install clang \
+  && yum -y install git \
+  && yum -y install glibc.i686
+
+# cmake
+RUN wget https://github.com/Kitware/CMake/releases/download/v3.26.5/cmake-3.26.5-linux-x86_64.tar.gz \
+  && tar -zxf cmake-3.26.5-linux-x86_64.tar.gz  \
+  && ln -s `pwd`/cmake-3.26.5-linux-x86_64/bin/cmake /usr/bin/cmake \
+  && rm -rf cmake-3.26.5-linux-x86_64.tar.gz
+
+# Obtain dependencies for cross compiling
+# The only prebuilt glibc was done by third party Computational
+#RUN yum -y install epel-release \
+#  # See https://centos.pkgs.org/7/epel-aarch64/gcc-aarch64-linux-gnu-4.8.5-16.el7.1.aarch64.rpm.html
+#  # and https://centos.pkgs.org/7/epel-aarch64/gcc-c++-aarch64-linux-gnu-4.8.5-16.el7.1.aarch64.rpm.html:
+#  # "Support for cross-building user space programs is not currently provided as that would massively multiply
+#  # the number of packages."
+#  && yum -y install gcc-aarch64-linux-gnu gcc-c++-aarch64-linux-gnu \
+#  && yum install -y http://springdale.princeton.edu/data/springdale/7/x86_64/os/Computational/glibc-aarch64-linux-gnu-2.24-2.sdl7.2.noarch.rpm \
+#  && yum install -y http://springdale.princeton.edu/data/springdale/7/x86_64/os/Computational/glibc-aarch64-linux-gnu-devel-2.24-2.sdl7.2.noarch.rpm 
+
+# flatc
+RUN mkdir -p /tmp/flatbuffers && cd /tmp/flatbuffers \
+  && git clone -b v22.9.29 --depth 1 https://github.com/google/flatbuffers.git && cd flatbuffers \
+  && CC=/usr/bin/clang CXX=/usr/bin/clang++ /usr/bin/cmake . -DCMAKE_BUILD_TYPE=Release -DFLATBUFFERS_CXX_FLAGS="-w" \
+  && make \
+  && make install \
+  && cd - && rm -rf /tmp/flatbuffers
+
+# protoc
+RUN mkdir -p /tmp/protobuf && cd /tmp/protobuf \
+  && git clone -b v3.15.8 --depth 1 https://github.com/protocolbuffers/protobuf.git && cd protobuf \
+  && chmod +x autogen.sh \
+  && ./autogen.sh \
+  && chmod +x configure \
+  && ./configure -prefix=/usr/local/ \
+  && make && make install \
+  && cd - && rm -rf /tmp/protobuf
+
+# rust
+ENV RUSTUP_HOME=/usr/local/rustup \
+  CARGO_HOME=/usr/local/cargo \
+  PATH=${CARGO_HOME}/bin:$PATH
+
+RUN curl -L https://sh.rustup.rs -o rustup-init\
+  && chmod +x rustup-init \
+  && ./rustup-init -y --no-modify-path --default-toolchain nightly \
+  && rm rustup-init \
+  && chmod -R a+w $RUSTUP_HOME $CARGO_HOME \ 
+  && source ${CARGO_HOME}/env \
+  && rustup --version \
+  && cargo --version \
+  && rustc --version
