@@ -1128,10 +1128,15 @@ impl StateMachine {
     }
 
     fn process_drop_user(&self, cluster: &str, user_name: &str) -> MetaResult<bool> {
-        let key = KeyPath::user(cluster, user_name);
-
-        if self.contains_key(&key)? {
-            self.remove(&key)?;
+        let user_key = KeyPath::user(cluster, user_name);
+        let tenants_key = KeyPath::tenants(cluster);
+        if let Some(user) = self.get_struct::<UserDesc>(&user_key)? {
+            // first delete member of tenant
+            for tenant in self.children_data::<Tenant>(&tenants_key)?.into_values() {
+                let member_key = KeyPath::member(tenant.name(), tenant.name(), user.id());
+                self.remove(&member_key)?;
+            }
+            self.remove(&user_key)?;
             Ok(true)
         } else {
             Ok(false)
