@@ -508,7 +508,7 @@ impl AdminMeta {
     pub async fn drop_user(&self, name: &str) -> MetaResult<bool> {
         let req = command::WriteCommand::DropUser(self.cluster(), name.to_string());
 
-        self.client.write::<()>(&req).await?;
+        self.client.write::<bool>(&req).await?;
         Ok(true)
     }
 
