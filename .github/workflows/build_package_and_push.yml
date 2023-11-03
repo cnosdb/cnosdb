@@ -56,6 +56,16 @@ jobs:
       run: |
         bash -x ./packages/build_package.sh -n cnosdb -v ${{ steps.get-tag.outputs.TAG }} -b release -t ${{ matrix.target }}
         bash -x ./packages/build_package.sh -n cnosdb-meta -v ${{ steps.get-tag.outputs.TAG }} -b release -t ${{ matrix.target }}
+    - name: Setup Ossutil
+      uses: manyuanrong/setup-ossutil@v3.0
+      with:
+        endpoint: "oss-cn-beijing.aliyuncs.com"
+        access-key-id: ${{ secrets.PACKAGING_OSS_ACCESS_KEY }}
+        access-key-secret: ${{ secrets.PACKAGING_OSS_ACCESS_KEY_SECRET }}
+    - name: Upload to Oss
+      shell: bash
+      run: |
+        ossutil cp -rf ./ oss://tk3stzc21/temp/ --include "*.rpm" --include "*.deb"
     - name: Release
       uses: softprops/action-gh-release@v1
       with:
