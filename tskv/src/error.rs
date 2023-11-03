@@ -246,6 +246,10 @@ pub enum Error {
         table: String,
     },
 
+    #[snafu(display("Table name can't be empty"))]
+    #[error_code(code = 52)]
+    InvalidPointTable,
+
     #[snafu(display("Create TskvDatabase Failed, {msg}"))]
     CreateDatabase {
         msg: String,

@@ -36,6 +36,7 @@ pub struct Database {
     //tenant_name.database_name => owner
     owner: Arc<String>,
     opt: Arc<Options>,
+    db_name: Arc<String>,
 
     schemas: Arc<DBschemas>,
     ts_indexes: HashMap<TseriesFamilyId, Arc<index::ts_index::TSIndex>>,
@@ -96,7 +97,9 @@ impl Database {
 
         let db = Self {
             opt,
+
             owner: Arc::new(schema.owner()),
+            db_name: Arc::new(schema.database_name().to_owned()),
             schemas: Arc::new(DBschemas::new(schema, meta).await.context(SchemaSnafu)?),
             ts_indexes: HashMap::new(),
             ts_families: HashMap::new(),
@@ -228,7 +231,6 @@ impl Database {
 
     pub async fn build_write_group(
         &self,
-        db_name: &str,
         precision: Precision,
         tables: FlatBufferTable<'_>,
         ts_index: Arc<index::ts_index::TSIndex>,
@@ -238,14 +240,8 @@ impl Database {
             self.build_write_group_strict_mode(precision, tables, ts_index, recover_from_wal)
                 .await
         } else {
-            self.build_write_group_loose_mode(
-                db_name,
-                precision,
-                tables,
-                ts_index,
-                recover_from_wal,
-            )
-            .await
+            self.build_write_group_loose_mode(precision, tables, ts_index, recover_from_wal)
+                .await
         }
     }
 
@@ -295,7 +291,6 @@ impl Database {
 
     pub async fn build_write_group_loose_mode(
         &self,
-        db_name: &str,
         precision: Precision,
         tables: FlatBufferTable<'_>,
         ts_index: Arc<index::ts_index::TSIndex>,
@@ -334,7 +329,7 @@ impl Database {
                     schema_change_or_create = self
                         .schemas
                         .check_field_type_or_else_add(
-                            db_name,
+                            &self.db_name,
                             table_name,
                             &fb_schema.tag_names,
                             &fb_schema.field_names,

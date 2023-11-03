@@ -144,7 +144,9 @@ impl ServiceBuilder {
         let kv_inst = self
             .create_tskv(meta.clone(), self.runtime.clone(), self.memory_pool.clone())
             .await;
-        let coord = self.create_coord(meta, Some(kv_inst.clone())).await;
+        let coord = self
+            .create_coord(meta, Some(kv_inst.clone()), self.memory_pool.clone())
+            .await;
         let dbms = self
             .create_dbms(coord.clone(), self.memory_pool.clone())
             .await;
@@ -167,7 +169,9 @@ impl ServiceBuilder {
 
     pub async fn build_query_server(&self, server: &mut Server) -> Option<EngineRef> {
         let meta = self.create_meta().await;
-        let coord = self.create_coord(meta, None).await;
+        let coord = self
+            .create_coord(meta, None, self.memory_pool.clone())
+            .await;
         let dbms = self
             .create_dbms(coord.clone(), self.memory_pool.clone())
             .await;
@@ -193,7 +197,9 @@ impl ServiceBuilder {
         let kv_inst = self
             .create_tskv(meta.clone(), self.runtime.clone(), self.memory_pool.clone())
             .await;
-        let coord = self.create_coord(meta, Some(kv_inst.clone())).await;
+        let coord = self
+            .create_coord(meta, Some(kv_inst.clone()), self.memory_pool.clone())
+            .await;
         let dbms = self
             .create_dbms(coord.clone(), self.memory_pool.clone())
             .await;
@@ -266,7 +272,12 @@ impl ServiceBuilder {
         dbms
     }
 
-    async fn create_coord(&self, meta: MetaRef, kv: Option<EngineRef>) -> CoordinatorRef {
+    async fn create_coord(
+        &self,
+        meta: MetaRef,
+        kv: Option<EngineRef>,
+        memory_pool: MemoryPoolRef,
+    ) -> CoordinatorRef {
         let _options = tskv::Options::from(&self.config);
 
         let coord: CoordinatorRef = CoordService::new(
@@ -274,6 +285,7 @@ impl ServiceBuilder {
             kv,
             meta,
             self.config.clone(),
+            memory_pool,
             self.metrics_register.clone(),
         )
         .await;

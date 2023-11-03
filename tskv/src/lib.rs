@@ -8,14 +8,18 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 pub use compaction::check::vnode_table_checksum_schema;
+use database::Database;
 use datafusion::arrow::record_batch::RecordBatch;
+use index::ts_index::TSIndex;
 use models::meta_data::{NodeId, VnodeId};
 use models::predicate::domain::{ColumnDomains, ResolvedPredicate};
 use models::schema::{Precision, TableColumn};
 use models::{SeriesId, SeriesKey, TagKey, TagValue, Timestamp};
 use protos::kv_service::{WritePointsRequest, WritePointsResponse};
 use serde::{Deserialize, Serialize};
+use tokio::sync::RwLock;
 use trace::SpanContext;
+use tseries_family::TseriesFamily;
 
 pub use crate::error::{Error, Result};
 pub use crate::kv_option::Options;
@@ -64,6 +68,13 @@ pub struct UpdateSetValue<K, V> {
     pub value: Option<V>,
 }
 
+#[derive(Clone)]
+pub struct VnodeStorage {
+    pub db: Arc<RwLock<Database>>,
+    pub ts_index: Arc<TSIndex>,
+    pub ts_family: Arc<RwLock<TseriesFamily>>,
+}
+
 #[async_trait]
 pub trait Engine: Send + Sync + Debug {
     /// Tskv engine write the gRPC message `WritePointsRequest`(which contains
@@ -86,10 +97,9 @@ pub trait Engine: Send + Sync + Debug {
     async fn write_memcache(
         &self,
         index: u64,
-        tenant: &str,
         points: Vec<u8>,
-        vnode_id: VnodeId,
         precision: Precision,
+        vnode: Arc<VnodeStorage>,
         span_ctx: Option<&SpanContext>,
     ) -> Result<WritePointsResponse>;
 
@@ -99,6 +109,14 @@ pub trait Engine: Send + Sync + Debug {
 
     /// Delete all data of a table.
     async fn drop_table(&self, tenant: &str, database: &str, table: &str) -> Result<()>;
+
+    /// open a tsfamily, if already exist just return.
+    async fn open_tsfamily(
+        &self,
+        tenant: &str,
+        db_name: &str,
+        vnode_id: VnodeId,
+    ) -> Result<VnodeStorage>;
 
     /// Remove the storage unit(caches and files) managed by engine,
     /// then remove directory of the storage unit.

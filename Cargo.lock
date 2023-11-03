@@ -1296,6 +1296,7 @@ dependencies = [
  "flatbuffers 22.12.6",
  "futures",
  "md-5",
+ "memory_pool",
  "meta",
  "metrics",
  "models",

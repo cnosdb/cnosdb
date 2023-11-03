@@ -471,12 +471,14 @@ impl RaftNodesManager {
             node_id: self.node_id(),
         })?;
 
+        let vnode = storage.open_tsfamily(tenant, db_name, vnode_id).await?;
         let engine = super::TskvEngineStorage::open(
             self.node_id(),
             tenant,
             db_name,
             vnode_id,
             self.meta.clone(),
+            Arc::new(vnode),
             storage,
         );
         let engine: ApplyStorageRef = Arc::new(engine);
