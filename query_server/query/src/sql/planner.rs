@@ -772,6 +772,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
     fn df_external_table_to_plan(
         &self,
         statement: AstCreateExternalTable,
+        name: OwnedTableReference,
     ) -> Result<PlanCreateExternalTable> {
         let definition = Some(statement.to_string());
         let AstCreateExternalTable {
@@ -813,8 +814,6 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
                 .build_order_by(order_exprs, &df_schema, &mut PlannerContext::new())?;
 
         // External tables do not support schemas at the moment, so the name is just a table name
-        let name = OwnedTableReference::bare(name);
-
         Ok(PlanCreateExternalTable {
             schema: df_schema,
             name,
@@ -838,17 +837,19 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         statement: AstCreateExternalTable,
         session: &SessionCtx,
     ) -> Result<PlanWithPrivileges> {
-        let table_name = statement.name.clone();
-        let (database_name, _) = extract_database_table_name(table_name.as_str(), session);
-
-        let logical_plan = self.df_external_table_to_plan(statement)?;
+        let name = extract_database_table_name(statement.name.as_str(), session);
+        // External tables do not support schemas at the moment, so the name is just a table name
+        let logical_plan = self.df_external_table_to_plan(statement, name.clone())?;
 
         let plan = Plan::DDL(DDLPlan::CreateExternalTable(logical_plan));
         // privileges
         Ok(PlanWithPrivileges {
             plan,
             privileges: vec![Privilege::TenantObject(
-                TenantObjectPrivilege::Database(DatabasePrivilege::Full, Some(database_name)),
+                TenantObjectPrivilege::Database(
+                    DatabasePrivilege::Full,
+                    name.schema().map(|s| s.to_string()),
+                ),
                 Some(*session.tenant_id()),
             )],
         })
@@ -2593,13 +2594,17 @@ fn databases_privileges(
         .collect()
 }
 
-fn extract_database_table_name(full_name: &str, session: &SessionCtx) -> (String, String) {
-    let table_ref = TableReference::from(full_name);
-    let resloved_table = table_ref.resolve(session.tenant(), session.default_database());
-    let table_name = resloved_table.table.to_string();
-    let database_name = resloved_table.schema.to_string();
-
-    (database_name, table_name)
+fn extract_database_table_name<'a>(
+    full_name: &'a str,
+    session: &'a SessionCtx,
+) -> OwnedTableReference {
+    let table_ref = TableReference::from(full_name).to_owned_reference();
+    let resolved = table_ref.resolve(session.tenant(), session.default_database());
+    OwnedTableReference::full(
+        resolved.catalog.to_string(),
+        resolved.schema.to_string(),
+        resolved.table.to_string(),
+    )
 }
 
 fn object_name_to_resolved_table(

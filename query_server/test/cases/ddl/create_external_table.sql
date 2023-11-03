@@ -17,3 +17,19 @@ CREATE EXTERNAL TABLE
     LOCATION 'query_server/query/tests/data/csv/decimal_data.csv';
 
 DESCRIBE TABLE create_external_table.cpu;
+
+drop table cpu;
+
+CREATE EXTERNAL TABLE
+    "create_external_table"."cpu" (
+        cpu_hz  DECIMAL(10,6) NOT NULL,
+        temp  DOUBLE NOT NULL,
+        version_num  BIGINT NOT NULL,
+        is_old  BOOLEAN NOT NULL,
+        weight  DECIMAL(12,7) NOT NULL
+    )
+    STORED AS CSV
+    WITH HEADER ROW
+    LOCATION 'query_server/query/tests/data/csv/decimal_data.csv';
+
+show tables on create_external_table;
