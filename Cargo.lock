@@ -6155,6 +6155,7 @@ name = "tskv"
 version = "2.4.0"
 dependencies = [
  "async-backtrace",
+ "async-recursion",
  "async-trait",
  "bincode",
  "blake3",

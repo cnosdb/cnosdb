@@ -134,7 +134,7 @@ impl PhysicalPlanner for DefaultPhysicalPlanner {
         // 将扩展的物理计划优化规则注入df 的 session state
         let new_state = session
             .inner()
-            .state()
+            .clone()
             .with_physical_optimizer_rules(self.ext_physical_optimizer_rules.clone());
 
         // 通过扩展的物理计划转换规则构造df 的 Physical Planner

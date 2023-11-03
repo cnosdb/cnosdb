@@ -246,14 +246,22 @@ pub enum Error {
         table: String,
     },
 
-    #[snafu(display("Table name can't be empty"))]
-    #[error_code(code = 52)]
-    InvalidPointTable,
-
     #[snafu(display("Create TskvDatabase Failed, {msg}"))]
     CreateDatabase {
         msg: String,
     },
+    #[error_code(code = 52)]
+    #[snafu(display("Column {} not found", column))]
+    ColumnNotFound {
+        column: String,
+    },
+
+    #[snafu(display("Table name can't be empty"))]
+    #[error_code(code = 53)]
+    InvalidPointTable,
+
+    #[snafu(display("Columns of FlatBufferTable is missing"))]
+    FlatBufColumnsMiss,
 }
 
 impl From<PointsError> for Error {

@@ -12,7 +12,7 @@ use metrics::metric_register::MetricsRegister;
 use models::meta_data::VnodeStatus;
 use models::predicate::domain::{TimeRange, TimeRanges};
 use models::schema::{split_owner, TableColumn};
-use models::{FieldId, SchemaId, SeriesId, Timestamp};
+use models::{FieldId, SeriesId, Timestamp};
 use parking_lot::RwLock;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Sender;
@@ -954,18 +954,14 @@ impl TseriesFamily {
         }
     }
 
-    pub fn put_points(
-        &self,
-        seq: u64,
-        points: HashMap<(SeriesId, SchemaId), RowGroup>,
-    ) -> Result<u64> {
+    pub fn put_points(&self, seq: u64, points: HashMap<SeriesId, RowGroup>) -> Result<u64> {
         if self.status == VnodeStatus::Copying {
             return Err(CommonError {
                 reason: "vnode is moving please retry later".to_string(),
             });
         }
         let mut res = 0;
-        for ((sid, _schema_id), group) in points {
+        for (sid, group) in points {
             let mem = self.mut_cache.read();
             res += group.rows.len();
             mem.write_group(sid, seq, group)?;
@@ -1539,7 +1535,7 @@ pub mod test_tseries_family {
             size: size_of::<RowGroup>() + 3 * size_of::<u32>() + size_of::<Option<FieldVal>>() + 8,
         };
         let mut points = HashMap::new();
-        points.insert((0, 0), row_group);
+        points.insert(0, row_group);
         let _ = tsf.put_points(0, points);
 
         let mut cached_data = vec![];

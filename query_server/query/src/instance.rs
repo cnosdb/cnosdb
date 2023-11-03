@@ -32,10 +32,12 @@ use crate::dispatcher::query_tracker::QueryTracker;
 use crate::execution::factory::SqlQueryExecutionFactory;
 use crate::execution::scheduler::local::LocalScheduler;
 use crate::extension::expr::load_all_functions;
+use crate::extension::variable::load_all_system_vars;
 use crate::function::simple_func_manager::SimpleFunctionMetadataManager;
 use crate::metadata::BaseTableProvider;
 use crate::sql::optimizer::CascadeOptimizerBuilder;
 use crate::sql::parser::DefaultParser;
+use crate::variable::simple_sys_var_manager::SimpleSystemVarManager;
 
 pub const DEFAULT_CNOSDB_PATH: &str = ".cnosdb";
 pub const DEFAULT_CNOSDB_QUERY_DIRECTORY_NAME: &str = "query";
@@ -165,17 +167,23 @@ pub async fn make_cnosdbms(
         .join(DEFAULT_CNOSDB_PATH)
         .join(DEFAULT_CNOSDB_QUERY_DIRECTORY_NAME);
 
+    // init Function Manager
+    let mut func_manager = SimpleFunctionMetadataManager::default();
+    load_all_functions(&mut func_manager)?;
+    // init System Variable Manager
+    let mut var_manager = SimpleSystemVarManager::default();
+    load_all_system_vars(&mut var_manager)?;
+
     let split_manager = Arc::new(SplitManager::new(coord.clone()));
     // TODO session config need load global system config
-    let session_factory = Arc::new(SessionCtxFactory::new(query_dedicated_hidden_dir.clone()));
+    let session_factory = Arc::new(SessionCtxFactory::new(
+        Some(Arc::new(var_manager)),
+        query_dedicated_hidden_dir.clone(),
+    ));
     let parser = Arc::new(DefaultParser::default());
     let optimizer = Arc::new(CascadeOptimizerBuilder::default().build());
     // TODO wrap, and num_threads configurable
     let scheduler = Arc::new(LocalScheduler {});
-
-    // init Function Manager
-    let mut func_manager = SimpleFunctionMetadataManager::default();
-    load_all_functions(&mut func_manager)?;
 
     // init stream provider manager
     let mut stream_provider_manager = StreamProviderManager::default();

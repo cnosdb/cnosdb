@@ -1,0 +1,26 @@
+
+##########
+## Query
+##########
+
+query 
+select @@server_version;
+----
+2.4.0
+
+query 
+select @@server_versiON;
+----
+2.4.0
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: variable \[\\"@@server_versi\\"\] has no type information",.*
+select @@server_versi;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: variable \[\\"@@\\"\] has no type information",.*
+select @@;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: variable \[\\"@server_version\\"\] has no type information",.*
+select @server_version;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Schema error: No field named server_version\.",.*
+select server_version;

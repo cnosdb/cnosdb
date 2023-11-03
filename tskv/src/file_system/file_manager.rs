@@ -88,12 +88,12 @@ impl FileManager {
         self.open_file_with(p, opt).await
     }
 
-    /// Open a file to read or write(append mode), if file does not exists then create it.
+    /// Open a file to read or write, if file does not exists then create it.
     pub async fn open_create_file(&self, path: impl AsRef<Path>) -> Result<AsyncFile> {
         let p = path.as_ref();
         Self::create_dir_if_not_exists(p.parent())?;
         let mut opt = OpenOptions::new();
-        opt.read(true).write(true).create(true).append(true);
+        opt.read(true).write(true).create(true);
         self.open_file_with(path, opt).await
     }
 }
@@ -171,7 +171,7 @@ pub async fn create_file(path: impl AsRef<Path>) -> Result<AsyncFile> {
     get_file_manager().create_file(path).await
 }
 
-/// Open a file to read or write(append mode), if file does not exists then create it.
+/// Open a file to read or write, if file does not exists then create it.
 #[inline(always)]
 pub async fn open_create_file(path: impl AsRef<Path>) -> Result<AsyncFile> {
     get_file_manager().open_create_file(path).await

@@ -132,7 +132,7 @@ impl LogicalOptimizer for DefaultLogicalOptimizer {
             let mut span_recorder = session.get_child_span_recorder("optimize logical plan");
             session
                 .inner()
-                .state()
+                .clone()
                 .with_optimizer_rules(self.rules.clone())
                 .optimize(&analyzed_plan)
                 .map(|p| {

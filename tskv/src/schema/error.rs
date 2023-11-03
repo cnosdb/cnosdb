@@ -1,4 +1,5 @@
 use meta::error::MetaError;
+use models::schema::ColumnType;
 use snafu::Snafu;
 
 pub type Result<T> = std::result::Result<T, SchemaError>;
@@ -17,9 +18,16 @@ pub enum SchemaError {
         table: String,
     },
 
-    #[snafu(display("unrecognized field type {}", field))]
-    FieldType {
-        field: String,
+    #[snafu(display(
+        "Column '{}' type error, found {} expected {}",
+        column,
+        found,
+        expected
+    ))]
+    ColumnTypeError {
+        column: String,
+        found: ColumnType,
+        expected: ColumnType,
     },
 
     #[snafu(display("field '{database}.{table}'.'{}' not found", field))]

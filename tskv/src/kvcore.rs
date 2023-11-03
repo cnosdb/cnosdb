@@ -687,13 +687,14 @@ impl TsKv {
         let write_group = db
             .read()
             .await
-            .build_write_group_strict_mode(
+            .build_write_group(
                 precision,
                 fb_points.tables().ok_or(Error::CommonError {
                     reason: "points missing table".to_string(),
                 })?,
                 ts_index,
                 true,
+                Some(true),
             )
             .await?;
         tsf.read().await.put_points(seq, write_group)?;
@@ -874,7 +875,7 @@ impl Engine for TsKv {
             let mut span_recorder = span_recorder.child("build write group");
             db.read()
                 .await
-                .build_write_group(precision, tables, ts_index, false)
+                .build_write_group(precision, tables, ts_index, false, None)
                 .await
                 .map_err(|err| {
                     span_recorder.error(err.to_string());
@@ -931,7 +932,7 @@ impl Engine for TsKv {
                 .db
                 .read()
                 .await
-                .build_write_group(precision, tables, vnode.ts_index.clone(), false)
+                .build_write_group(precision, tables, vnode.ts_index.clone(), false, None)
                 .await
                 .map_err(|err| {
                     span_recorder.error(err.to_string());
