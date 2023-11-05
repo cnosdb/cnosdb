@@ -578,7 +578,7 @@ pub mod test {
                 .collect::<Vec<_>>(),
             vec![
                 "tenant_name,tenant_options",
-                r#"test,"{""comment"":null,""limiter_config"":null,""tenant_is_hidden"":false}""#
+                "test,\"{\"\"comment\"\":null,\"\"limiter_config\"\":null,\"\"after\"\":null,\"\"tenant_is_hidden\"\":false}\""
             ]
         );
 
@@ -608,7 +608,7 @@ pub mod test {
                 .collect::<Vec<_>>(),
             vec![
                 "tenant_name,tenant_options",
-                r#"test,"{""comment"":""abc"",""limiter_config"":null,""tenant_is_hidden"":false}""#
+                "test,\"{\"\"comment\"\":\"\"abc\"\",\"\"limiter_config\"\":null,\"\"after\"\":null,\"\"tenant_is_hidden\"\":false}\""
             ]
         );
 
