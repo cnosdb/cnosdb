@@ -480,7 +480,7 @@ impl TryFrom<ScalarValue> for DurationStates {
         match value {
             ScalarValue::List(list, f) => {
                 let (state_data_type, time_data_type) = match f.data_type() {
-                    DataType::Struct(fs) => match (fs.get(0), fs.get(1)) {
+                    DataType::Struct(fs) => match (fs.first(), fs.get(1)) {
                         (Some(a), Some(b)) => (a.data_type().clone(), b.data_type().clone()),
                         (_, _) => return Err(error()),
                     },

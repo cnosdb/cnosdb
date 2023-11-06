@@ -30,10 +30,9 @@ pub fn get_content_encoding_from_header(header: &Header) -> Result<Option<Encodi
     match header.get_content_encoding() {
         Some(s) => match Encoding::from_str(s) {
             Some(encoding) => Ok(Some(encoding)),
-            None => Err(HttpError::InvalidHeader {
+            None => Err(reject::custom(HttpError::InvalidHeader {
                 reason: format!("content encoding not support: {}", s),
-            })
-            .map_err(reject::custom),
+            })),
         },
         None => Ok(None),
     }
