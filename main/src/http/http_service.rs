@@ -337,9 +337,11 @@ impl HttpService {
                     };
 
                     // when drop tenant delay, tenant is hidden
-                    let _ = meta
-                        .tenant(query.context().tenant())
+                    meta.tenant(query.context().tenant())
                         .await
+                        .map_err(|_| MetaError::TenantNotFound {
+                            tenant: query.context().tenant().to_string(),
+                        })
                         .map_err(meta_err_to_reject)?;
 
                     // when drop database delay, database is hidden
