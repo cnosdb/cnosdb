@@ -150,12 +150,16 @@ impl From<&Error> for Response {
             Error::Query { .. }
             | Error::FetchResult { .. }
             | Error::Tskv { .. }
-            | Error::Coordinator { .. } => {
+            | Error::Coordinator { .. }
+            | Error::Meta { .. }
+            | Error::NotFoundTenant { .. } => {
                 ResponseBuilder::new(UNPROCESSABLE_ENTITY).json(&error_resp)
             }
-            Error::InvalidHeader { .. } | Error::ParseAuth { .. } | Error::TraceHttp { .. } => {
-                ResponseBuilder::bad_request(&error_resp)
-            }
+            Error::InvalidHeader { .. }
+            | Error::ParseAuth { .. }
+            | Error::TraceHttp { .. }
+            | Error::ParseOpentsdbProtocol { .. }
+            | Error::ParseOpentsdbJsonProtocol { .. } => ResponseBuilder::bad_request(&error_resp),
             _ => ResponseBuilder::internal_server_error(),
         }
     }
