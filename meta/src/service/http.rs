@@ -28,6 +28,7 @@ impl HttpServer {
             .or(self.read())
             .or(self.write())
             .or(self.watch())
+            .or(self.watch_meta_membership())
             .or(self.dump())
             .or(self.restore())
             .or(self.debug())
@@ -120,6 +121,52 @@ impl HttpServer {
                     let res: Result<String, warp::Rejection> = Ok(data);
                     res
                 },
+            )
+    }
+
+    fn watch_meta_membership(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        warp::path!("watch_meta_membership")
+            .and(self.with_raft_node())
+            .and_then(
+                |node: Arc<RaftNode>| async move {
+                    match node.raw_raft().is_leader().await {
+                        Ok(_) => {
+                            let data = Self::process_watch_meta_membership(node)
+                                .await
+                                .map_err(warp::reject::custom)?;
+                            let resp = warp::reply::with_status(
+                                data.into_bytes(),
+                                http::StatusCode::OK,
+                            );
+
+                            let res: Result<warp::reply::WithStatus<Vec<u8>>, warp::Rejection> = Ok(resp);
+                            res
+                        }
+                        Err(err) => {
+                            if let Some(openraft::error::ForwardToLeader {
+                                leader_id: Some(_leader_id),
+                                leader_node: Some(leader_node),
+                            }) = err.forward_to_leader() {
+                                let resp = warp::reply::with_status(
+                                    leader_node.address.clone().into_bytes(),
+                                    http::StatusCode::PERMANENT_REDIRECT,
+                                );
+                                let res: Result<warp::reply::WithStatus<Vec<u8>>, warp::Rejection> =
+                                    Ok(resp);
+                                res
+                            } else {
+                                let resp = warp::reply::with_status(
+                                    err.to_string().into_bytes(),
+                                    http::StatusCode::INTERNAL_SERVER_ERROR,
+                                );
+                                let res: Result<warp::reply::WithStatus<Vec<u8>>, warp::Rejection> =
+                                    Ok(resp);
+                                res
+                            }
+                        }
+                    }
+                    
+                }
             )
     }
 
@@ -258,6 +305,20 @@ impl HttpServer {
                 follow_ver = watch_data.max_ver;
             }
         }
+    }
+
+    pub async fn process_watch_meta_membership(
+        node: Arc<RaftNode>,
+    ) -> MetaResult<String> {
+        let nodes = node
+                .raft_metrics()
+                .membership_config
+                .membership()
+                .nodes()
+                .map(|(_key, value)| value.address.clone())
+                .collect::<Vec<String>>();
+
+        return Ok(crate::store::storage::response_encode(Ok(nodes)));
     }
 
     async fn process_cpu_pprof() -> String {
