@@ -119,6 +119,7 @@ impl AdminMeta {
         admin.watch_version.store(base_ver, Ordering::Relaxed);
 
         tokio::spawn(AdminMeta::watch_task_manager(admin.clone(), receiver));
+        tokio::spawn(AdminMeta::watch_meta_node_change(admin.clone()));
 
         admin
     }
@@ -252,6 +253,32 @@ impl AdminMeta {
         Ok(())
     }
 
+    async fn watch_meta_node_change(admin: Arc<AdminMeta>) {
+        loop {
+            let res = admin.client.watch_meta_membership().await;
+            if let Ok(mut new_addrs) = res {
+                let r_addrs = admin.client.addrs.read();
+                let mut old_addr = (*r_addrs).clone();
+                drop(r_addrs);
+                old_addr.sort();
+                new_addrs.sort();
+                
+                if !old_addr.eq(&new_addrs) {
+                    admin.client.change_meta_membership(new_addrs.clone());
+                    let w_tenants = admin.tenants.write();
+                    w_tenants.values().for_each(|tenant_meta| {
+                        tenant_meta.client.change_meta_membership(new_addrs.clone());
+                    });
+                }
+
+            } else {
+                info!("watch meta node change wrong {:?}", res);
+            }
+
+            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+        }
+    }
+
     async fn watch_task_manager(admin: Arc<AdminMeta>, mut receiver: Receiver<UseTenantInfo>) {
         let mut task_handle: Option<tokio::task::JoinHandle<()>>;
 
@@ -296,10 +323,8 @@ impl AdminMeta {
         let client_id = format!("watch.{}", admin.node_id());
         let mut request = (client_id, admin.cluster(), tenants, base_ver);
 
-        let cluster_meta = admin.meta_addrs();
-        let client = MetaHttpClient::new(&cluster_meta);
         loop {
-            let watch_rsp = client.watch::<command::WatchData>(&request).await;
+            let watch_rsp = admin.client.watch::<command::WatchData>(&request).await;
             if let Ok(watch_data) = watch_rsp {
                 if watch_data.full_sync {
                     let base_ver = admin.process_full_sync().await;

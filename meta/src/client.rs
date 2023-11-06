@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
+use tracing::info;
 
 use crate::error::{MetaError, MetaResult};
 use crate::limiter::local_request_limiter::{LocalBucketRequest, LocalBucketResponse};
@@ -12,7 +13,7 @@ use crate::store::key_path::KeyPath;
 #[derive(Debug, Clone)]
 pub struct MetaHttpClient {
     inner: Arc<reqwest::Client>,
-    addrs: Vec<String>,
+    pub addrs: Arc<RwLock<Vec<String>>>,
     pub leader: Arc<RwLock<String>>,
 }
 
@@ -24,8 +25,8 @@ impl MetaHttpClient {
         let leader_addr = addrs[0].clone();
 
         Self {
-            addrs,
             inner: Arc::new(reqwest::Client::new()),
+            addrs: Arc::new(RwLock::new(addrs)),
             leader: Arc::new(RwLock::new(leader_addr)),
         }
     }
@@ -63,6 +64,14 @@ impl MetaHttpClient {
         })?
     }
 
+    pub async fn watch_meta_membership(&self) -> MetaResult<Vec<String>> {
+        let rsp = self.try_send_to_leader("watch_meta_membership", &String::new()).await?;
+
+        serde_json::from_str::<MetaResult<Vec<String>>>(&rsp).map_err(|err| MetaError::SerdeMsgInvalid {
+            err: err.to_string(),
+        })?
+    }
+
     pub async fn meta_leader(&self) -> MetaResult<String> {
         let command = WriteCommand::Set {
             key: KeyPath::test_alive(),
@@ -77,14 +86,20 @@ impl MetaHttpClient {
     }
 
     // ----------------------------------------------------------- //
+    pub fn change_meta_membership(&self, new_addrs: Vec<String>) {
+        let mut w_address = self.addrs.write();
+        info!("old_address: {:?}, new_address: {:?}", w_address, new_addrs);
+        *w_address = new_addrs;
+    }
+
     async fn switch_leader(&self) {
         let mut t = self.leader.write();
-
-        if let Ok(index) = self.addrs.binary_search(&t) {
-            let index = (index + 1) % self.addrs.len();
-            *t = self.addrs[index].clone();
+        let r_addrs = self.addrs.read();
+        if let Ok(index) = r_addrs.binary_search(&t) {
+            let index = (index + 1) % r_addrs.len();
+            *t = r_addrs[index].clone();
         } else {
-            *t = self.addrs[0].clone();
+            *t = r_addrs[0].clone();
         }
     }
 

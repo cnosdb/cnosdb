@@ -30,7 +30,7 @@ pub struct TenantMeta {
     meta_url: String,
 
     data: RwLock<TenantMetaData>,
-    client: MetaHttpClient,
+    pub client: MetaHttpClient,
 }
 
 impl TenantMeta {
