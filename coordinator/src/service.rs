@@ -8,7 +8,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
-use std::vec;
+use std::{mem, vec};
 
 use config::Config;
 use datafusion::arrow::array::{
@@ -18,6 +18,9 @@ use datafusion::arrow::array::{
 use datafusion::arrow::compute::take;
 use datafusion::arrow::datatypes::{DataType, TimeUnit};
 use datafusion::arrow::record_batch::RecordBatch;
+use datafusion::physical_plan::SendableRecordBatchStream;
+use futures::StreamExt;
+use md5::digest::generic_array::arr;
 use meta::error::MetaError;
 use meta::model::{MetaClientRef, MetaRef};
 use metrics::count::U64Counter;
@@ -32,7 +35,7 @@ use models::schema::{
     timestamp_convert, ColumnType, Precision, ResourceInfo, ResourceOperator, TskvTableSchema,
     TskvTableSchemaRef, DEFAULT_CATALOG, TIME_FIELD,
 };
-use models::{record_batch_decode, SeriesKey, Tag};
+use models::{record_batch_decode, ColumnId, SeriesKey, Tag};
 use protocol_parser::lines_convert::{
     arrow_array_to_points, line_to_batches, mutable_batches_to_point,
 };
@@ -45,7 +48,7 @@ use tokio::sync::mpsc;
 use tonic::transport::Channel;
 use tower::timeout::Timeout;
 use trace::{debug, error, info, SpanContext, SpanExt, SpanRecorder};
-use tskv::EngineRef;
+use tskv::{EngineRef, Error};
 use utils::BkdrHasher;
 
 use crate::errors::*;
@@ -1069,7 +1072,7 @@ impl Coordinator for CoordService {
     async fn update_tags_value(
         &self,
         table_schema: TskvTableSchemaRef,
-        new_tags: Vec<UpdateSetValue>,
+        mut new_tags: Vec<UpdateSetValue>,
         record_batches: Vec<RecordBatch>,
     ) -> CoordinatorResult<()> {
         let tenant = &table_schema.tenant;
@@ -1087,6 +1090,16 @@ impl Coordinator for CoordService {
         let mut min_ts = i64::MIN;
         let mut max_ts = i64::MAX;
         let mut series_keys = vec![];
+        for new_tag in new_tags.iter_mut() {
+            let key = mem::take(&mut new_tag.key);
+            let tag_name = unsafe { String::from_utf8_unchecked(key) };
+
+            let id = table_schema
+                .column(&tag_name)
+                .ok_or({ Error::ColumnNotFound { column: tag_name } })?
+                .id;
+            new_tag.key = format!("{id}").into_bytes();
+        }
 
         for record_batch in record_batches {
             let num_rows = record_batch.num_rows();
@@ -1122,10 +1135,10 @@ impl Coordinator for CoordService {
                                 }
                             }
                         }
-                        tags.push(Tag {
-                            key: name.as_bytes().to_vec(),
-                            value: value.as_bytes().to_vec(),
-                        });
+                        tags.push(Tag::new_with_column_id(
+                            tskv_schema_column.id,
+                            value.as_bytes().to_vec(),
+                        ));
                     }
                 }
 
@@ -1141,7 +1154,7 @@ impl Coordinator for CoordService {
 
         // find all shard/ReplicationSet/node_id
         // send only one request to each kv node
-        let time_ranges = TimeRanges::new(vec![TimeRange::new(min_ts, max_ts)]);
+        let time_ranges = TimeRanges::new(vec![TimeRange::all()]);
         let shards = self.prune_shards(tenant, db, &time_ranges).await?;
 
         let update_tags_request = UpdateTagsRequest {

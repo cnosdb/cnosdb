@@ -77,9 +77,6 @@ pub enum ResourceOperator {
     // column_name, table_schema, new_table_column
     AlterColumn(String, TskvTableSchema, TableColumn),
 
-    // old_column_name, new_column_name, table_schema
-    RenameTagName(String, String, TskvTableSchema),
-
     // tenant_name, db_name, new_tags_vec, series_keys, shards
     UpdateTagValue(
         String,
@@ -98,7 +95,6 @@ impl fmt::Display for ResourceOperator {
             ResourceOperator::DropColumn(..) => write!(f, "DropColumn"),
             ResourceOperator::AddColumn(..) => write!(f, "AddColumn"),
             ResourceOperator::AlterColumn(..) => write!(f, "AlterColumn"),
-            ResourceOperator::RenameTagName(..) => write!(f, "RenameTagName"),
             ResourceOperator::UpdateTagValue(..) => write!(f, "UpdateTagValue"),
         }
     }
@@ -397,6 +393,10 @@ impl TskvTableSchema {
         self.columns_index
             .get(name)
             .map(|idx| unsafe { self.columns.get_unchecked(*idx) })
+    }
+
+    pub fn column_id_column_map(&self) -> HashMap<ColumnId, &TableColumn> {
+        self.columns.iter().map(|c| (c.id, c)).collect()
     }
 
     pub fn time_column_precision(&self) -> Precision {

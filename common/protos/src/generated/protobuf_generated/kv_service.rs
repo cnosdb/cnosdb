@@ -167,20 +167,6 @@ pub struct AlterColumnRequest {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct RenameColumnRequest {
-    #[prost(string, tag = "1")]
-    pub db: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub table: ::prost::alloc::string::String,
-    #[prost(string, tag = "3")]
-    pub old_name: ::prost::alloc::string::String,
-    #[prost(string, tag = "4")]
-    pub new_name: ::prost::alloc::string::String,
-    #[prost(bool, tag = "5")]
-    pub dry_run: bool,
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateSetValue {
     #[prost(bytes = "vec", tag = "1")]
     pub key: ::prost::alloc::vec::Vec<u8>,
@@ -234,7 +220,7 @@ pub struct AdminCommandRequest {
     pub tenant: ::prost::alloc::string::String,
     #[prost(
         oneof = "admin_command_request::Command",
-        tags = "2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15"
+        tags = "2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15"
     )]
     pub command: ::core::option::Option<admin_command_request::Command>,
 }
@@ -261,8 +247,6 @@ pub mod admin_command_request {
         AddColumn(super::AddColumnRequest),
         #[prost(message, tag = "10")]
         AlterColumn(super::AlterColumnRequest),
-        #[prost(message, tag = "11")]
-        RenameColumn(super::RenameColumnRequest),
         #[prost(message, tag = "12")]
         UpdateTags(super::UpdateTagsRequest),
         #[prost(message, tag = "13")]
@@ -397,7 +381,7 @@ pub struct RaftWriteCommand {
     pub db_name: ::prost::alloc::string::String,
     #[prost(uint32, tag = "3")]
     pub replica_id: u32,
-    #[prost(oneof = "raft_write_command::Command", tags = "4, 5, 6, 7, 8, 9, 10")]
+    #[prost(oneof = "raft_write_command::Command", tags = "4, 5, 6, 7, 8, 10")]
     pub command: ::core::option::Option<raft_write_command::Command>,
 }
 /// Nested message and enum types in `RaftWriteCommand`.
@@ -415,8 +399,6 @@ pub mod raft_write_command {
         AddColumn(super::AddColumnRequest),
         #[prost(message, tag = "8")]
         AlterColumn(super::AlterColumnRequest),
-        #[prost(message, tag = "9")]
-        RenameColumn(super::RenameColumnRequest),
         #[prost(message, tag = "10")]
         UpdateTags(super::UpdateTagsRequest),
     }
