@@ -124,7 +124,7 @@ impl AdminMeta {
         admin
     }
 
-    fn cluster(&self) -> String {
+    pub fn cluster(&self) -> String {
         self.config.cluster.name.clone()
     }
 

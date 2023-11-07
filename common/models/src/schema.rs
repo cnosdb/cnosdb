@@ -712,7 +712,7 @@ impl ColumnType {
         }
     }
 
-    pub fn to_sql_type_str(&self) -> Cow<'static, str> {
+    pub fn to_sql_type_str_with_unit(&self) -> Cow<'static, str> {
         match self {
             Self::Tag => "STRING".into(),
             Self::Time(unit) => match unit {

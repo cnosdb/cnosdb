@@ -38,6 +38,18 @@ impl ValueType {
             Self::Geometry(_) => PhysicalDType::String,
         }
     }
+
+    pub fn to_sql_type_str(&self) -> &'static str {
+        match self {
+            Self::Unknown => "UNKNOWN",
+            Self::Float => "DOUBLE",
+            Self::Integer => "BIGINT",
+            Self::Unsigned => "BIGINT UNSIGNED",
+            Self::Boolean => "BOOLEAN",
+            Self::String => "STRING",
+            Self::Geometry(_) => "GEOMETRY",
+        }
+    }
 }
 
 impl Display for PhysicalDType {

@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 use std::sync::Arc;
 
@@ -106,6 +107,15 @@ impl TryFrom<&str> for SystemTenantRole {
     }
 }
 
+impl Display for SystemTenantRole {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SystemTenantRole::Owner => write!(f, "owner"),
+            SystemTenantRole::Member => write!(f, "member"),
+        }
+    }
+}
+
 impl SystemTenantRole {
     pub fn to_privileges<T>(&self, tenant_id: &T) -> HashSet<Privilege<T>>
     where
@@ -174,7 +184,7 @@ impl<T> CustomTenantRole<T> {
         &self.system_role
     }
 
-    pub fn additiona_privileges(&self) -> &HashMap<String, DatabasePrivilege> {
+    pub fn additional_privileges(&self) -> &HashMap<String, DatabasePrivilege> {
         &self.additional_privileges
     }
 }
