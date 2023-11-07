@@ -22,6 +22,8 @@ pub const DEFAULT_PRECISION: &str = "NS";
 pub const DEFAULT_USE_SSL: bool = false;
 pub const DEFAULT_USE_UNSAFE_SSL: bool = false;
 pub const DEFAULT_CHUNKED: bool = false;
+pub const DEFAULT_PROCESS_CLI_COMMAND: bool = false;
+pub const DEFAULT_ERROR_STOP: bool = false;
 
 pub const API_V1_SQL_PATH: &str = "/api/v1/sql";
 pub const API_V1_WRITE_PATH: &str = "/api/v1/write";
@@ -41,6 +43,8 @@ pub struct SessionConfig {
     pub use_ssl: bool,
     pub use_unsafe_ssl: bool,
     pub chunked: bool,
+    pub process_cli_command: bool,
+    pub error_stop: bool,
 }
 
 impl SessionConfig {
@@ -63,6 +67,8 @@ impl SessionConfig {
             use_ssl: DEFAULT_USE_SSL,
             use_unsafe_ssl: DEFAULT_USE_UNSAFE_SSL,
             chunked: DEFAULT_CHUNKED,
+            process_cli_command: DEFAULT_PROCESS_CLI_COMMAND,
+            error_stop: DEFAULT_ERROR_STOP,
         }
     }
 
@@ -164,6 +170,18 @@ impl SessionConfig {
 
         self
     }
+
+    pub fn with_process_cli_command(mut self, process_cli_command: bool) -> Self {
+        self.process_cli_command = process_cli_command;
+
+        self
+    }
+
+    pub fn with_error_stop(mut self, error_stop: bool) -> Self {
+        self.error_stop = error_stop;
+
+        self
+    }
 }
 
 pub struct UserInfo {
@@ -221,8 +239,20 @@ impl SessionContext {
         self.session_config.database = name.to_string();
     }
 
+    pub fn set_tenant(&mut self, tenant: String) {
+        self.session_config.tenant = tenant
+    }
+
     pub fn get_database(&self) -> &str {
         self.session_config.database.as_str()
+    }
+
+    pub fn get_session_config(&self) -> &SessionConfig {
+        &self.session_config
+    }
+
+    pub fn get_mut_session_config(&mut self) -> &mut SessionConfig {
+        &mut self.session_config
     }
 
     pub async fn sql(&self, sql: String) -> Result<ResultSet> {
