@@ -31,6 +31,7 @@ pub enum Command {
     QuietMode(Option<bool>),
     OutputFormat(Option<String>),
     WriteLineProtocol(String),
+    ChangeTenant(String),
 }
 
 pub enum OutputFormat {
@@ -96,6 +97,10 @@ impl Command {
                 let result_set = ResultSet::Bytes((vec![], 0));
                 print_options.print_batches(&result_set, now)
             }
+            Self::ChangeTenant(tenant) => {
+                ctx.set_tenant(tenant.to_owned());
+                Ok(())
+            }
         }
     }
 
@@ -112,6 +117,7 @@ impl Command {
             Self::QuietMode(_) => ("\\quiet (true|false)?", "print or set quiet mode"),
             Self::OutputFormat(_) => ("\\pset [NAME [VALUE]]", "set table output option\n(format)"),
             Self::WriteLineProtocol(_) => ("\\w path", "line protocol"),
+            Self::ChangeTenant(_) => ("\\change_tenant <TenantName>", "change tenant."),
         }
     }
 }
