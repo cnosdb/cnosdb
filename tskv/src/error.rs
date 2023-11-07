@@ -20,6 +20,7 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 #[snafu(visibility(pub))]
 #[error_code(mod_code = "02")]
 pub enum Error {
+    #[snafu(display("Invalid http error response: {}", error))]
     ErrorResponse {
         error: ErrorResponse,
     },
