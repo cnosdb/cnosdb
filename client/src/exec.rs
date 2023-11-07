@@ -5,6 +5,7 @@ use std::io::prelude::*;
 use std::io::BufReader;
 use std::time::Instant;
 
+use anyhow::bail;
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 
@@ -19,7 +20,7 @@ pub async fn exec_from_lines(
     ctx: &mut SessionContext,
     reader: &mut BufReader<File>,
     print_options: &PrintOptions,
-) {
+) -> Result<()> {
     let mut query = "".to_owned();
 
     for line in reader.lines() {
@@ -27,13 +28,37 @@ pub async fn exec_from_lines(
             Ok(line) if line.starts_with("--") => {
                 continue;
             }
+            Ok(line) if line.trim().starts_with("\\change_tenant") => {
+                let tenant = line.trim().trim_start_matches("\\change_tenant").trim();
+                if ctx.get_session_config().process_cli_command {
+                    ctx.set_tenant(tenant.to_string());
+                } else {
+                    bail!("Can't process \"\\change_tenant {}\", please add arg --process_cli_command", tenant)
+                }
+            }
+            Ok(line) if line.starts_with("\\c") => {
+                let database = line.trim_start_matches("\\c").trim();
+                if ctx.get_session_config().process_cli_command {
+                    ctx.set_database(database);
+                } else {
+                    bail!(
+                        "Can't process \"\\c {}\", please add arg --process_cli_command",
+                        database
+                    )
+                }
+            }
             Ok(line) => {
                 let line = line.trim_end();
                 query.push_str(line);
                 if line.ends_with(';') {
-                    match exec_and_print(ctx, print_options, query).await {
+                    match exec_and_print(ctx, print_options, query.clone()).await {
                         Ok(_) => {}
-                        Err(err) => println!("{:?}", err),
+                        Err(err) => {
+                            eprintln!("{:?}", err);
+                            if ctx.get_session_config().error_stop {
+                                bail!("{} execute fail, STOP!", query)
+                            }
+                        }
                     }
                     query = "".to_owned();
                 } else {
@@ -48,26 +73,36 @@ pub async fn exec_from_lines(
 
     // run the left over query if the last statement doesn't contain ‘;’
     if !query.is_empty() {
-        match exec_and_print(ctx, print_options, query).await {
+        match exec_and_print(ctx, print_options, query.clone()).await {
             Ok(_) => {}
-            Err(err) => println!("{:?}", err),
+            Err(err) => {
+                eprintln!("{:?}", err);
+                if ctx.get_session_config().error_stop {
+                    bail!("{} execute fail, STOP!", query)
+                }
+            }
         }
     }
+    Ok(())
 }
 
 pub async fn exec_from_files(
     files: Vec<String>,
     ctx: &mut SessionContext,
     print_options: &PrintOptions,
-) {
+) -> Result<()> {
     let files = files
         .into_iter()
-        .map(|file_path| File::open(file_path).unwrap())
+        .map(|file_path| File::open(&file_path).map(|f| (file_path, f)))
         .collect::<Vec<_>>();
     for file in files {
+        let (path, file) = file?;
         let mut reader = BufReader::new(file);
-        exec_from_lines(ctx, &mut reader, print_options).await;
+        if let Err(e) = exec_from_lines(ctx, &mut reader, print_options).await {
+            bail!("Execute file {} fail, Error: {}", path, e)
+        };
     }
+    Ok(())
 }
 
 /// run and execute SQL statements and commands against a context with the given print options
@@ -113,7 +148,7 @@ pub async fn exec_from_repl(ctx: &mut SessionContext, print_options: &mut PrintO
             Ok(line) if parse_use_database(&line).is_some() => {
                 if let Some(db) = parse_use_database(&line) {
                     if connect_database(&db, ctx).await.is_err() {
-                        println!("Cannot use database {}.", db);
+                        eprintln!("Cannot use database {}.", db);
                     }
                 }
             }
