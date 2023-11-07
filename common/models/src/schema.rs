@@ -7,6 +7,7 @@
 //!         - Column #3
 //!         - Column #4
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt::{self, Display};
 use std::mem::size_of_val;
@@ -562,7 +563,7 @@ impl ColumnType {
         }
     }
 
-    pub fn to_sql_type_str(&self) -> &'static str {
+    pub fn to_sql_type_str_with_unit(&self) -> Cow<'static, str> {
         match self {
             Self::Tag => "STRING",
             Self::Time(unit) => match unit {
@@ -580,6 +581,7 @@ impl ColumnType {
                 ValueType::Unknown => "UNKNOWN",
             },
         }
+        .into()
     }
 }
 

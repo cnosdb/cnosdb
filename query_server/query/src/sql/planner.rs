@@ -1029,7 +1029,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         } = stmt;
 
         let name = normalize_ident(name);
-        if is_system_database(session.tenant(), name.as_str()) {
+        if is_system_database(session.tenant(), name.as_str()) && !if_not_exists {
             return Err(QueryError::Meta {
                 source: MetaError::DatabaseAlreadyExists { database: name },
             });

@@ -70,7 +70,7 @@ impl DDLDefinitionTask for CreateRoleTask {
                 //     tenant_id: &Oid,
                 //     role_name: String,
                 //     system_role: SystemTenantRole,
-                //     additiona_privileges: HashMap<String, DatabasePrivilege>,
+                //     additional_privileges: HashMap<String, DatabasePrivilege>,
                 // ) -> Result<()>;
                 debug!(
                     "Create role {} of tenant {} inherit {:?}",
