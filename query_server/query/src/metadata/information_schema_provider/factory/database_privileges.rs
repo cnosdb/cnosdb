@@ -96,7 +96,7 @@ impl TableProvider for InformationDatabasePrivilegesTable {
             for role in self.metadata.custom_roles().await.map_err(|e| {
                 DataFusionError::Internal(format!("Failed to get custom roles, cause: {:?}", e))
             })? {
-                for (database_name, privilege) in role.additiona_privileges() {
+                for (database_name, privilege) in role.additional_privileges() {
                     builder.append_row(tenant_name, database_name, privilege.as_str(), role.name())
                 }
             }
@@ -118,7 +118,7 @@ impl TableProvider for InformationDatabasePrivilegesTable {
                                 ))
                             })?
                         {
-                            for (database_name, privilege) in role.additiona_privileges() {
+                            for (database_name, privilege) in role.additional_privileges() {
                                 builder.append_row(
                                     tenant_name,
                                     database_name,
