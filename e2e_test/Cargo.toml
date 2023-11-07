@@ -21,6 +21,7 @@ http_protocol = { path = "../common/http_protocol", features = ["http_client"] }
 arrow-flight = { workspace = true, features = ["flight-sql-experimental"] }
 chrono = { workspace = true }
 datafusion = { workspace = true }
+diff = { workspace = true }
 flatbuffers = { workspace = true }
 futures = { workspace = true, default-features = false, features = ["alloc"] }
 protobuf = { workspace = true }

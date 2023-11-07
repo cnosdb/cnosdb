@@ -49,6 +49,9 @@ pub enum Error {
 
     #[snafu(display("RecordBatch is None"))]
     NoneRecordBatch,
+
+    #[snafu(display("Dump Error: {}", msg))]
+    DumpError { msg: String },
 }
 
 impl From<io::Error> for Error {

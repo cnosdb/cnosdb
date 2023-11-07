@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+pub use datafusion::sql::sqlparser::ast::Value as SqlParserValue;
 pub use error_code;
 pub use errors::{Error, Result};
 use parking_lot::RwLock;
@@ -31,6 +32,7 @@ pub mod predicate;
 pub mod record_batch;
 pub mod runtime;
 pub mod snappy;
+pub mod sql;
 
 pub type ShardId = u64;
 pub type CatalogId = u64;
