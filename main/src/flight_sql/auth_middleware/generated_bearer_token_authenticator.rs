@@ -150,6 +150,7 @@ mod test {
             let options = unsafe {
                 UserOptionsBuilder::default()
                     .password("123456")
+                    .unwrap_unchecked()
                     .build()
                     .unwrap_unchecked()
             };
