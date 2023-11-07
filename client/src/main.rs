@@ -12,7 +12,7 @@ use http_protocol::encoding::EncodingExt;
 
 #[derive(Debug, Parser, PartialEq)]
 #[command(author, version, about, long_about= None)]
-struct Args {
+struct CliArgs {
     /// Host of CnosDB server.
     #[arg(
         short = 'H', long,
@@ -122,12 +122,18 @@ struct Args {
 
     #[arg(long, default_value = "false")]
     chunked: bool,
+
+    #[arg(long, default_value = "false")]
+    error_stop: bool,
+
+    #[arg(long, default_value = "false")]
+    process_cli_command: bool,
 }
 
 #[tokio::main]
 pub async fn main() -> Result<(), anyhow::Error> {
     env_logger::init();
-    let args = Args::parse();
+    let args = CliArgs::parse();
 
     if !args.quiet {
         println!("CnosDB CLI v{}", CNOSDB_CLI_VERSION);
@@ -161,7 +167,9 @@ pub async fn main() -> Result<(), anyhow::Error> {
         .with_ssl(args.use_ssl)
         .with_unsafe_ssl(args.use_unsafe_ssl)
         .with_ca_certs(args.cacert)
-        .with_chunked(args.chunked);
+        .with_chunked(args.chunked)
+        .with_process_cli_command(args.process_cli_command)
+        .with_error_stop(args.error_stop);
 
     let mut ctx = SessionContext::new(session_config);
     if let Some(ref path) = args.write_line_protocol {
@@ -174,7 +182,7 @@ pub async fn main() -> Result<(), anyhow::Error> {
         quiet: args.quiet,
     };
 
-    let files = args.file;
+    let files = args.file.clone();
     let rc = match args.rc {
         Some(file) => file,
         None => {
@@ -190,10 +198,10 @@ pub async fn main() -> Result<(), anyhow::Error> {
         }
     };
     if !files.is_empty() {
-        exec::exec_from_files(files, &mut ctx, &print_options).await
+        exec::exec_from_files(files, &mut ctx, &print_options).await?;
     } else {
         if !rc.is_empty() {
-            exec::exec_from_files(rc, &mut ctx, &print_options).await
+            exec::exec_from_files(rc, &mut ctx, &print_options).await?;
         }
         exec::exec_from_repl(&mut ctx, &mut print_options).await;
     }
