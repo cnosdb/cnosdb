@@ -37,17 +37,12 @@ impl LocalTskvTagScanStream {
                 option.table_schema.name.as_str(),
             );
 
-            let mut keys = Vec::new();
-
-            for series_id in kv
+            let series_ids = kv
                 .get_series_id_by_filter(tenant, db, table, vnode_id, option.split.tags_filter())
-                .await?
-                .into_iter()
-            {
-                if let Some(key) = kv.get_series_key(tenant, db, vnode_id, series_id).await? {
-                    keys.push(key)
-                }
-            }
+                .await?;
+            let keys = kv
+                .get_series_key(tenant, db, table, vnode_id, &series_ids)
+                .await?;
 
             let mut batches = vec![];
             for chunk in keys.chunks(option.batch_size) {

@@ -1324,10 +1324,12 @@ impl SeriesGroupRowIterator {
             .get_series_key(
                 &self.query_option.table_schema.tenant,
                 &self.query_option.table_schema.db,
+                &self.query_option.table_schema.name,
                 self.vnode_id,
-                series_id,
+                &[series_id],
             )
             .await?
+            .pop()
         {
             self.columns.clear();
             for item in self.query_option.table_schema.columns() {

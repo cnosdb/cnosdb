@@ -90,18 +90,6 @@ impl Engine for MockEngine {
         Ok(())
     }
 
-    async fn rename_tag(
-        &self,
-        tenant: &str,
-        database: &str,
-        table: &str,
-        tag_name: &str,
-        new_tag_name: &str,
-        dry_run: bool,
-    ) -> Result<()> {
-        Ok(())
-    }
-
     async fn update_tags_value(
         &self,
         tenant: &str,
@@ -138,11 +126,12 @@ impl Engine for MockEngine {
     async fn get_series_key(
         &self,
         tenant: &str,
-        db: &str,
-        vnode_id: u32,
-        sid: u32,
-    ) -> Result<Option<SeriesKey>> {
-        Ok(None)
+        database: &str,
+        table: &str,
+        vnode_id: VnodeId,
+        series_id: &[SeriesId],
+    ) -> Result<Vec<SeriesKey>> {
+        Ok(vec![])
     }
 
     async fn get_db_version(

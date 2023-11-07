@@ -175,8 +175,6 @@ impl ApplyStorage for TskvEngineStorage {
 
                 raft_write_command::Command::AlterColumn(_request) => {}
 
-                raft_write_command::Command::RenameColumn(_request) => {}
-
                 raft_write_command::Command::UpdateTags(_request) => {}
             }
         }
