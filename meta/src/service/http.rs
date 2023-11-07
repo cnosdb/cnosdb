@@ -11,6 +11,7 @@ use warp::{hyper, Filter};
 
 use crate::error::{MetaError, MetaResult};
 use crate::store::command::*;
+use crate::store::dump::dump_impl;
 use crate::store::storage::{BtreeMapSnapshotData, StateMachine};
 
 pub struct HttpServer {
@@ -30,6 +31,7 @@ impl HttpServer {
             .or(self.watch())
             .or(self.watch_meta_membership())
             .or(self.dump())
+            .or(self.dump_sql())
             .or(self.restore())
             .or(self.debug())
             .or(self.debug_pprof())
@@ -191,6 +193,25 @@ impl HttpServer {
 
                 let res: Result<String, warp::Rejection> = Ok(rsp);
                 res
+            },
+        )
+    }
+
+    fn dump_sql(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        let opt = warp::path::param::<String>()
+            .map(Some)
+            .or_else(|_| async { Ok::<(Option<String>,), std::convert::Infallible>((None,)) });
+        let prefix = warp::path!("dump" / "sql" / "ddl" / String / ..);
+
+        let route = prefix.and(opt).and(warp::path::end());
+        route.and(self.with_storage()).and_then(
+            |cluster: String, tenant: Option<String>, storage: Arc<StateMachine>| async move {
+                let res = dump_impl(&cluster, tenant.as_deref(), &storage)
+                    .await
+                    .map_err(warp::reject::custom)?;
+                Ok::<String, warp::Rejection>(res)
             },
         )
     }

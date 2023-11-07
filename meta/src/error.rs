@@ -1,4 +1,5 @@
 use error_code::{ErrorCode, ErrorCoder};
+use models::Error;
 use serde::{Deserialize, Serialize};
 use snafu::Snafu;
 
@@ -206,6 +207,14 @@ impl From<replication::errors::ReplicationError> for MetaError {
     fn from(err: replication::errors::ReplicationError) -> Self {
         MetaError::ReplicationErr {
             err: err.to_string(),
+        }
+    }
+}
+
+impl From<models::Error> for MetaError {
+    fn from(value: Error) -> Self {
+        Self::CommonError {
+            msg: value.to_string(),
         }
     }
 }
