@@ -143,7 +143,7 @@ fn append_tskv_table(
             idx as u64,
             "NULL",
             col.nullable(),
-            col.column_type.to_sql_type_str(),
+            col.column_type.to_sql_type_str_with_unit(),
             Some(col.encoding.as_str()),
         );
     }
