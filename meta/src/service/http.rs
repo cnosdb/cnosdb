@@ -124,50 +124,49 @@ impl HttpServer {
             )
     }
 
-    fn watch_meta_membership(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+    fn watch_meta_membership(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
         warp::path!("watch_meta_membership")
             .and(self.with_raft_node())
-            .and_then(
-                |node: Arc<RaftNode>| async move {
-                    match node.raw_raft().is_leader().await {
-                        Ok(_) => {
-                            let data = Self::process_watch_meta_membership(node)
-                                .await
-                                .map_err(warp::reject::custom)?;
-                            let resp = warp::reply::with_status(
-                                data.into_bytes(),
-                                http::StatusCode::OK,
-                            );
+            .and_then(|node: Arc<RaftNode>| async move {
+                match node.raw_raft().is_leader().await {
+                    Ok(_) => {
+                        let data = Self::process_watch_meta_membership(node)
+                            .await
+                            .map_err(warp::reject::custom)?;
+                        let resp =
+                            warp::reply::with_status(data.into_bytes(), http::StatusCode::OK);
 
-                            let res: Result<warp::reply::WithStatus<Vec<u8>>, warp::Rejection> = Ok(resp);
+                        let res: Result<warp::reply::WithStatus<Vec<u8>>, warp::Rejection> =
+                            Ok(resp);
+                        res
+                    }
+                    Err(err) => {
+                        if let Some(openraft::error::ForwardToLeader {
+                            leader_id: Some(_leader_id),
+                            leader_node: Some(leader_node),
+                        }) = err.forward_to_leader()
+                        {
+                            let resp = warp::reply::with_status(
+                                leader_node.address.clone().into_bytes(),
+                                http::StatusCode::PERMANENT_REDIRECT,
+                            );
+                            let res: Result<warp::reply::WithStatus<Vec<u8>>, warp::Rejection> =
+                                Ok(resp);
+                            res
+                        } else {
+                            let resp = warp::reply::with_status(
+                                err.to_string().into_bytes(),
+                                http::StatusCode::INTERNAL_SERVER_ERROR,
+                            );
+                            let res: Result<warp::reply::WithStatus<Vec<u8>>, warp::Rejection> =
+                                Ok(resp);
                             res
                         }
-                        Err(err) => {
-                            if let Some(openraft::error::ForwardToLeader {
-                                leader_id: Some(_leader_id),
-                                leader_node: Some(leader_node),
-                            }) = err.forward_to_leader() {
-                                let resp = warp::reply::with_status(
-                                    leader_node.address.clone().into_bytes(),
-                                    http::StatusCode::PERMANENT_REDIRECT,
-                                );
-                                let res: Result<warp::reply::WithStatus<Vec<u8>>, warp::Rejection> =
-                                    Ok(resp);
-                                res
-                            } else {
-                                let resp = warp::reply::with_status(
-                                    err.to_string().into_bytes(),
-                                    http::StatusCode::INTERNAL_SERVER_ERROR,
-                                );
-                                let res: Result<warp::reply::WithStatus<Vec<u8>>, warp::Rejection> =
-                                    Ok(resp);
-                                res
-                            }
-                        }
                     }
-                    
                 }
-            )
+            })
     }
 
     // curl -XPOST http://127.0.0.1:8901/dump --o ./meta_dump.data
@@ -307,18 +306,16 @@ impl HttpServer {
         }
     }
 
-    pub async fn process_watch_meta_membership(
-        node: Arc<RaftNode>,
-    ) -> MetaResult<String> {
+    pub async fn process_watch_meta_membership(node: Arc<RaftNode>) -> MetaResult<String> {
         let nodes = node
-                .raft_metrics()
-                .membership_config
-                .membership()
-                .nodes()
-                .map(|(_key, value)| value.address.clone())
-                .collect::<Vec<String>>();
+            .raft_metrics()
+            .membership_config
+            .membership()
+            .nodes()
+            .map(|(_key, value)| value.address.clone())
+            .collect::<Vec<String>>();
 
-        return Ok(crate::store::storage::response_encode(Ok(nodes)));
+        Ok(crate::store::storage::response_encode(Ok(nodes)))
     }
 
     async fn process_cpu_pprof() -> String {
