@@ -4,9 +4,7 @@ use config::QueryConfig;
 use futures::TryStreamExt;
 use meta::model::MetaRef;
 use models::meta_data::VnodeInfo;
-use protos::kv_service::tskv_service_client::TskvServiceClient;
-use tonic::transport::Channel;
-use tower::timeout::Timeout;
+use protos::{tskv_service_time_out_client, DEFAULT_GRPC_SERVER_MESSAGE_LEN};
 use trace::{SpanContext, SpanExt, SpanRecorder};
 use trace_http::ctx::append_trace_context;
 use tskv::reader::tag_scan::LocalTskvTagScanStream;
@@ -91,9 +89,11 @@ impl VnodeOpener for TemporaryTagScanOpener {
                             error: error.to_string(),
                         }
                     })?;
-                    let timeout_channel =
-                        Timeout::new(channel, Duration::from_millis(config.read_timeout_ms));
-                    let mut client = TskvServiceClient::<Timeout<Channel>>::new(timeout_channel);
+                    let mut client = tskv_service_time_out_client(
+                        channel,
+                        Duration::from_millis(config.read_timeout_ms),
+                        DEFAULT_GRPC_SERVER_MESSAGE_LEN,
+                    );
                     client
                         .tag_scan(request)
                         .await

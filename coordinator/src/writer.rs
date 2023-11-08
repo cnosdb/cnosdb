@@ -12,6 +12,7 @@ use models::schema::Precision;
 use models::utils::{now_timestamp_millis, now_timestamp_nanos};
 use protos::kv_service::tskv_service_client::TskvServiceClient;
 use protos::kv_service::{DeleteFromTableRequest, Meta, WritePointsRequest, WriteVnodeRequest};
+use protos::{tskv_service_time_out_client, DEFAULT_GRPC_SERVER_MESSAGE_LEN};
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot;
 use tonic::codec::CompressionEncoding;
@@ -29,7 +30,7 @@ use crate::status_response_to_result;
 #[derive(Debug)]
 pub struct PointWriter {
     node_id: u64,
-    timeout_ms: u64,
+    timeout: Duration,
     kv_inst: Option<EngineRef>,
     meta_manager: MetaRef,
     hh_sender: Sender<HintedOffWriteReq>,
@@ -43,10 +44,11 @@ impl PointWriter {
         meta_manager: MetaRef,
         hh_sender: Sender<HintedOffWriteReq>,
     ) -> Self {
+        let timeout = Duration::from_millis(timeout_ms);
         Self {
             node_id,
             kv_inst,
-            timeout_ms,
+            timeout,
             meta_manager,
             hh_sender,
         }
@@ -168,10 +170,10 @@ impl PointWriter {
                 id: node_id,
                 error: error.to_string(),
             })?;
-        let timeout_channel = Timeout::new(channel, Duration::from_millis(self.timeout_ms));
-        let mut client = TskvServiceClient::<Timeout<Channel>>::new(timeout_channel)
-            .accept_compressed(CompressionEncoding::Gzip)
-            .send_compressed(CompressionEncoding::Gzip);
+        let mut client =
+            tskv_service_time_out_client(channel, self.timeout, DEFAULT_GRPC_SERVER_MESSAGE_LEN)
+                .accept_compressed(CompressionEncoding::Gzip)
+                .send_compressed(CompressionEncoding::Gzip);
 
         let mut cmd = tonic::Request::new(WriteVnodeRequest {
             vnode_id,
@@ -295,8 +297,8 @@ impl PointWriter {
                 id: node_id,
                 error: error.to_string(),
             })?;
-        let timeout_channel = Timeout::new(channel, Duration::from_millis(self.timeout_ms));
-        let mut client = TskvServiceClient::<Timeout<Channel>>::new(timeout_channel);
+        let mut client =
+            tskv_service_time_out_client(channel, self.timeout, DEFAULT_GRPC_SERVER_MESSAGE_LEN);
 
         let cmd = tonic::Request::new(DeleteFromTableRequest {
             vnode_id,
