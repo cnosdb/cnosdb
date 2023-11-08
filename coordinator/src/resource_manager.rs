@@ -192,24 +192,22 @@ impl ResourceManager {
         db_name: &str,
         is_need_hidden: bool,
     ) -> CoordinatorResult<bool> {
-        let tenant =
-            if is_need_hidden {
-                coord
-                    .tenant_meta(tenant_name)
-                    .await
-                    .ok_or(CoordinatorError::TenantNotFound {
-                        name: tenant_name.to_string(),
-                    })?
-            } else {
-                coord
-                    .meta_manager()
-                    .tenant_meta_for_special(tenant_name)
-                    .await
-                    .ok_or(CoordinatorError::TenantNotFound {
-                        name: tenant_name.to_string(),
-                    })?
-            };
-            
+        let tenant = if is_need_hidden {
+            coord
+                .tenant_meta(tenant_name)
+                .await
+                .ok_or(CoordinatorError::TenantNotFound {
+                    name: tenant_name.to_string(),
+                })?
+        } else {
+            coord
+                .meta_manager()
+                .tenant_meta_for_special(tenant_name)
+                .await
+                .ok_or(CoordinatorError::TenantNotFound {
+                    name: tenant_name.to_string(),
+                })?
+        };
 
         let req = AdminCommandRequest {
             tenant: tenant_name.to_string(),
