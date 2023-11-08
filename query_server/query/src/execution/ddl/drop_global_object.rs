@@ -70,7 +70,7 @@ impl DDLDefinitionTask for DropGlobalObjectTask {
                 // ) -> Result<bool>;
                 debug!("Drop tenant {}", name);
 
-                match meta.tenant_meta(name).await {
+                match meta.tenant_meta_for_special(name).await {
                     Some(tm) => {
                         // first, set hidden to TRUE
                         meta.set_tenant_is_hidden(name, true).await?;
