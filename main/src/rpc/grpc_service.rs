@@ -6,6 +6,7 @@ use coordinator::service::CoordinatorRef;
 use metrics::metric_register::MetricsRegister;
 use protos::kv_service::tskv_service_server::TskvServiceServer;
 use protos::raft_service::raft_service_server::RaftServiceServer;
+use protos::DEFAULT_GRPC_SERVER_MESSAGE_LEN;
 use replication::network_grpc::RaftCBServer;
 use tokio::runtime::Runtime;
 use tokio::sync::oneshot;
@@ -86,11 +87,11 @@ impl Service for GrpcService {
         })
         .accept_compressed(CompressionEncoding::Gzip)
         .send_compressed(CompressionEncoding::Gzip)
-        .max_decoding_message_size(100 * 1024 * 1024);
+        .max_decoding_message_size(DEFAULT_GRPC_SERVER_MESSAGE_LEN);
 
         let multi_raft = self.coord.raft_manager().multi_raft();
         let raft_grpc_service = RaftServiceServer::new(RaftCBServer::new(multi_raft))
-            .max_decoding_message_size(100 * 1024 * 1024);
+            .max_decoding_message_size(DEFAULT_GRPC_SERVER_MESSAGE_LEN);
 
         let mut grpc_builder =
             build_grpc_server!(&self.tls_config, self.span_context_extractor.clone());

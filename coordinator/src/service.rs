@@ -67,6 +67,8 @@ use crate::{
 pub type CoordinatorRef = Arc<dyn Coordinator>;
 
 use models::schema::USAGE_SCHEMA;
+use protos::{tskv_service_time_out_client, DEFAULT_GRPC_SERVER_MESSAGE_LEN};
+
 #[derive(Clone)]
 pub struct CoordService {
     node_id: u64,
@@ -310,9 +312,11 @@ impl CoordService {
     ) -> CoordinatorResult<()> {
         let channel = self.meta.get_node_conn(node_id).await?;
 
-        let timeout_channel = Timeout::new(channel, Duration::from_secs(60 * 60));
-
-        let mut client = TskvServiceClient::<Timeout<Channel>>::new(timeout_channel);
+        let mut client = tskv_service_time_out_client(
+            channel,
+            Duration::from_secs(60 * 60),
+            DEFAULT_GRPC_SERVER_MESSAGE_LEN,
+        );
         let request = tonic::Request::new(req.clone());
 
         let response = client
@@ -362,11 +366,12 @@ impl CoordService {
     ) -> CoordinatorResult<RecordBatch> {
         let channel = self.meta.get_node_conn(node_id).await?;
 
-        let timeout_channel = Timeout::new(channel, Duration::from_secs(60 * 60));
-
-        let mut client = TskvServiceClient::<Timeout<Channel>>::new(timeout_channel);
         let request = tonic::Request::new(req.clone());
-
+        let mut client = tskv_service_time_out_client(
+            channel,
+            Duration::from_secs(60 * 60),
+            DEFAULT_GRPC_SERVER_MESSAGE_LEN,
+        );
         let response = client
             .exec_admin_fetch_command(request)
             .await

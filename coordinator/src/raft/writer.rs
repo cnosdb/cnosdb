@@ -3,12 +3,10 @@ use std::time::Duration;
 
 use meta::model::MetaRef;
 use models::meta_data::*;
-use protos::kv_service::tskv_service_client::TskvServiceClient;
 use protos::kv_service::RaftWriteCommand;
 use protos::models_helper::to_prost_bytes;
+use protos::{tskv_service_time_out_client, DEFAULT_GRPC_SERVER_MESSAGE_LEN};
 use replication::raft_node::RaftNode;
-use tonic::transport;
-use tower::timeout::Timeout;
 use trace::{debug, info, SpanContext, SpanRecorder};
 use tskv::EngineRef;
 
@@ -164,8 +162,11 @@ impl RaftWriter {
             }
         })?;
         let timeout = self.config.query.write_timeout_ms;
-        let timeout_channel = Timeout::new(channel, Duration::from_millis(timeout));
-        let mut client = TskvServiceClient::<Timeout<transport::Channel>>::new(timeout_channel);
+        let mut client = tskv_service_time_out_client(
+            channel,
+            Duration::from_millis(timeout),
+            DEFAULT_GRPC_SERVER_MESSAGE_LEN,
+        );
 
         let mut cmd = tonic::Request::new(request);
         trace_http::ctx::append_trace_context(span_ctx, cmd.metadata_mut()).map_err(|_| {

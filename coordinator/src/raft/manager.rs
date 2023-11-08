@@ -7,16 +7,14 @@ use meta::model::MetaRef;
 use models::meta_data::*;
 use models::schema::Precision;
 use openraft::SnapshotPolicy;
-use protos::kv_service::tskv_service_client::TskvServiceClient;
 use protos::kv_service::*;
+use protos::{tskv_service_time_out_client, DEFAULT_GRPC_SERVER_MESSAGE_LEN};
 use replication::multi_raft::MultiRaft;
 use replication::node_store::NodeStorage;
 use replication::raft_node::RaftNode;
 use replication::state_store::{RaftNodeSummary, StateStorage};
 use replication::{ApplyStorageRef, EntryStorageRef, RaftNodeId, RaftNodeInfo};
 use tokio::sync::RwLock;
-use tonic::transport;
-use tower::timeout::Timeout;
 use tracing::{error, info};
 use tskv::{wal, EngineRef};
 
@@ -507,8 +505,12 @@ impl RaftNodesManager {
         replica_id: ReplicationSetId,
     ) -> CoordinatorResult<()> {
         let channel = self.meta.get_node_conn(vnode.node_id).await?;
-        let timeout_channel = Timeout::new(channel, Duration::from_secs(5));
-        let mut client = TskvServiceClient::<Timeout<transport::Channel>>::new(timeout_channel);
+        let mut client = tskv_service_time_out_client(
+            channel,
+            Duration::from_secs(5),
+            DEFAULT_GRPC_SERVER_MESSAGE_LEN,
+        );
+
         let cmd = tonic::Request::new(DropRaftNodeRequest {
             replica_id,
             vnode_id: vnode.id,
@@ -540,8 +542,11 @@ impl RaftNodesManager {
         );
 
         let channel = self.meta.get_node_conn(vnode.node_id).await?;
-        let timeout_channel = Timeout::new(channel, Duration::from_secs(5));
-        let mut client = TskvServiceClient::<Timeout<transport::Channel>>::new(timeout_channel);
+        let mut client = tskv_service_time_out_client(
+            channel,
+            Duration::from_secs(5),
+            DEFAULT_GRPC_SERVER_MESSAGE_LEN,
+        );
         let cmd = tonic::Request::new(OpenRaftNodeRequest {
             replica_id,
             vnode_id: vnode.id,
