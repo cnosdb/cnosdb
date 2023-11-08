@@ -65,10 +65,14 @@ impl MetaHttpClient {
     }
 
     pub async fn watch_meta_membership(&self) -> MetaResult<Vec<String>> {
-        let rsp = self.try_send_to_leader("watch_meta_membership", &String::new()).await?;
+        let rsp = self
+            .try_send_to_leader("watch_meta_membership", &String::new())
+            .await?;
 
-        serde_json::from_str::<MetaResult<Vec<String>>>(&rsp).map_err(|err| MetaError::SerdeMsgInvalid {
-            err: err.to_string(),
+        serde_json::from_str::<MetaResult<Vec<String>>>(&rsp).map_err(|err| {
+            MetaError::SerdeMsgInvalid {
+                err: err.to_string(),
+            }
         })?
     }
 

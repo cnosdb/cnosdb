@@ -262,7 +262,7 @@ impl AdminMeta {
                 drop(r_addrs);
                 old_addr.sort();
                 new_addrs.sort();
-                
+
                 if !old_addr.eq(&new_addrs) {
                     admin.client.change_meta_membership(new_addrs.clone());
                     let w_tenants = admin.tenants.write();
@@ -270,7 +270,6 @@ impl AdminMeta {
                         tenant_meta.client.change_meta_membership(new_addrs.clone());
                     });
                 }
-
             } else {
                 info!("watch meta node change wrong {:?}", res);
             }
