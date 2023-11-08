@@ -24,7 +24,7 @@ pub struct DBschemas {
 impl DBschemas {
     pub async fn new(db_schema: DatabaseSchema, meta: MetaRef) -> Result<Self> {
         let client =
-            meta.tenant_meta(db_schema.tenant_name())
+            meta.tenant_meta_for_special(db_schema.tenant_name())
                 .await
                 .ok_or(SchemaError::TenantNotFound {
                     tenant: db_schema.tenant_name().to_string(),

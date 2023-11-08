@@ -41,7 +41,7 @@ impl LocalRequestLimiterFactory {
 impl LimiterFactory for LocalRequestLimiterFactory {
     async fn create_default(&self, key: LimiterKey) -> MetaResult<Arc<dyn RequestLimiter>> {
         let LimiterKey(_, tenant_name) = key;
-        let command = ReadCommand::Tenant(self.cluster_name.clone(), tenant_name.clone());
+        let command = ReadCommand::Tenant(self.cluster_name.clone(), tenant_name.clone(), true);
         let tenant = self
             .meta_http_client
             .read::<Option<Tenant>>(&command)

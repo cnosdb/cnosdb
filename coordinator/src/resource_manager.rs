@@ -160,13 +160,13 @@ impl ResourceManager {
         coord: Arc<dyn Coordinator>,
         tenant_name: &str,
     ) -> CoordinatorResult<bool> {
-        let tenant =
-            coord
-                .tenant_meta(tenant_name)
-                .await
-                .ok_or(CoordinatorError::TenantNotFound {
-                    name: tenant_name.to_string(),
-                })?;
+        let tenant = coord
+            .meta_manager()
+            .tenant_meta_for_special(tenant_name)
+            .await
+            .ok_or(CoordinatorError::TenantNotFound {
+                name: tenant_name.to_string(),
+            })?;
 
         // drop database in the tenant
         let all_dbs = tenant

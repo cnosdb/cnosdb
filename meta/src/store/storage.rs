@@ -386,8 +386,8 @@ impl StateMachine {
                 response_encode(self.get_struct::<UserDesc>(&path))
             }
             ReadCommand::Users(cluster) => response_encode(self.process_read_users(cluster)),
-            ReadCommand::Tenant(cluster, tenant_name) => {
-                response_encode(self.process_read_tenant(cluster, tenant_name))
+            ReadCommand::Tenant(cluster, tenant_name, is_need_hidden) => {
+                response_encode(self.process_read_tenant(cluster, tenant_name, *is_need_hidden))
             }
             ReadCommand::Tenants(cluster) => response_encode(self.process_read_tenants(cluster)),
             ReadCommand::TableSchema(cluster, tenant_name, db_name, table_name) => {
@@ -432,7 +432,12 @@ impl StateMachine {
         Ok(users)
     }
 
-    pub fn process_read_tenant(&self, cluster: &str, tenant_name: &str) -> MetaResult<Tenant> {
+    pub fn process_read_tenant(
+        &self,
+        cluster: &str,
+        tenant_name: &str,
+        is_need_hidden: bool,
+    ) -> MetaResult<Tenant> {
         let path = KeyPath::tenant(cluster, tenant_name);
         let tenant = match self.get_struct::<Tenant>(&path)? {
             Some(t) => t,
@@ -442,7 +447,7 @@ impl StateMachine {
                 });
             }
         };
-        if !tenant.options().get_tenant_is_hidden() {
+        if !is_need_hidden || !tenant.options().get_tenant_is_hidden() {
             Ok(tenant)
         } else {
             Err(MetaError::TenantNotFound {

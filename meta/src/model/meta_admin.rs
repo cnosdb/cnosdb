@@ -610,7 +610,17 @@ impl AdminMeta {
             }
         }
 
-        let req = command::ReadCommand::Tenant(self.cluster(), name.to_string());
+        let req = command::ReadCommand::Tenant(self.cluster(), name.to_string(), true);
+        self.client.read::<Option<Tenant>>(&req).await
+    }
+
+    // for drop/recover tenant and restart case
+    pub async fn tenant_for_special(&self, name: &str) -> MetaResult<Option<Tenant>> {
+        if let Some(client) = self.tenants.read().get(name) {
+            return Ok(Some(client.tenant().clone()));
+        }
+
+        let req = command::ReadCommand::Tenant(self.cluster(), name.to_string(), false);
         self.client.read::<Option<Tenant>>(&req).await
     }
 
@@ -659,10 +669,25 @@ impl AdminMeta {
 
     pub async fn tenant_meta(&self, tenant: &str) -> Option<MetaClientRef> {
         if let Some(client) = self.tenants.read().get(tenant) {
-            return Some(client.clone());
+            if !client.tenant().options().get_tenant_is_hidden() {
+                return Some(client.clone());
+            }
         }
 
         if let Ok(Some(tenant_info)) = self.tenant(tenant).await {
+            return self.create_tenant_meta(tenant_info).await.ok();
+        }
+
+        None
+    }
+
+    // for drop/recover tenant and restart case
+    pub async fn tenant_meta_for_special(&self, tenant: &str) -> Option<MetaClientRef> {
+        if let Some(client) = self.tenants.read().get(tenant) {
+            return Some(client.clone());
+        }
+
+        if let Ok(Some(tenant_info)) = self.tenant_for_special(tenant).await {
             return self.create_tenant_meta(tenant_info).await.ok();
         }
 
