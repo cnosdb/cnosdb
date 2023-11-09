@@ -70,18 +70,18 @@ impl DDLDefinitionTask for DropGlobalObjectTask {
                 // ) -> Result<bool>;
                 debug!("Drop tenant {}", name);
 
-                match meta.tenant_meta_for_special(name).await {
-                    Some(tm) => {
+                match meta.tenant(name).await {
+                    Ok(Some(tenant_schema)) => {
                         // first, set hidden to TRUE
                         meta.set_tenant_is_hidden(name, true).await?;
 
                         if after.is_none() {
-                            after = tm.tenant().options().get_after();
+                            after = tenant_schema.options().get_after();
                         }
 
                         // second, add drop task
                         let resourceinfo = ResourceInfo::new(
-                            (*tm.tenant().id(), "".to_string()),
+                            (*tenant_schema.id(), "".to_string()),
                             name.clone(),
                             ResourceOperator::DropTenant(name.clone()),
                             &after,
@@ -93,17 +93,27 @@ impl DDLDefinitionTask for DropGlobalObjectTask {
                         .await?;
                         Ok(Output::Nil(()))
                     }
-                    None => {
-                        if !if_exist {
-                            return Err(QueryError::Meta {
+                    Ok(None) => {
+                        if *if_exist {
+                            Ok(Output::Nil(()))
+                        } else {
+                            Err(QueryError::Meta {
                                 source: MetaError::TenantNotFound {
                                     tenant: name.to_string(),
                                 },
-                            });
-                        } else {
-                            Ok(Output::Nil(()))
+                            })
                         }
                     }
+                    Err(err) => match err {
+                        MetaError::TenantNotFound { .. } => {
+                            if *if_exist {
+                                Ok(Output::Nil(()))
+                            } else {
+                                Err(QueryError::Meta { source: err })
+                            }
+                        }
+                        _ => Err(QueryError::Meta { source: err }),
+                    },
                 }
             }
         }

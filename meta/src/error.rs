@@ -172,6 +172,10 @@ pub enum MetaError {
     #[error_code(code = 54)]
     #[snafu(display("Invalid configuration: {msg}"))]
     InvalidInitialConfig { msg: String },
+
+    #[error_code(code = 55)]
+    #[snafu(display("resourceinfo mark is lock by: {node_id}"))]
+    ResourceInfosMarkIsLock { node_id: u64 },
 }
 
 impl MetaError {

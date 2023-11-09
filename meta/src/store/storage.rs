@@ -1462,6 +1462,13 @@ impl StateMachine {
         node_id: NodeId,
         is_lock: bool,
     ) -> MetaResult<()> {
+        let (old_node_id, old_is_lock) = self.process_read_resourceinfos_mark(cluster)?;
+        if (is_lock && old_is_lock) || (!is_lock && old_node_id != node_id) {
+            return Err(MetaError::ResourceInfosMarkIsLock {
+                node_id: old_node_id,
+            });
+        }
+
         let key = KeyPath::resourceinfosmark(cluster);
         self.insert(&key, &value_encode(&(node_id, is_lock))?)
     }
