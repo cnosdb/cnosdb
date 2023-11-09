@@ -5,8 +5,10 @@ use std::task::Poll;
 
 use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::record_batch::RecordBatch;
+use fly_accept_encoding::Encoding;
 use futures::future::BoxFuture;
 use futures::{ready, FutureExt, Stream, StreamExt};
+use http_protocol::encoding::EncodingExt;
 use http_protocol::header::{APPLICATION_JSON, CONTENT_TYPE};
 use http_protocol::response::ErrorResponse;
 use http_protocol::status_code::{
@@ -14,6 +16,7 @@ use http_protocol::status_code::{
 };
 use meta::limiter::RequestLimiter;
 use metrics::count::U64Counter;
+use reqwest::header::CONTENT_ENCODING;
 use serde::Serialize;
 use spi::query::execution::Output;
 use spi::QueryError;
@@ -123,6 +126,7 @@ pub enum HttpResponseStreamState {
 pub struct HttpResponse {
     result: Output,
     format: ResultFormat,
+    encoding: Option<Encoding>,
     schema: Option<SchemaRef>,
     http_query_data_out: U64Counter,
     limiter: Arc<dyn RequestLimiter>,
@@ -133,6 +137,7 @@ impl HttpResponse {
     pub fn new(
         result: Output,
         format: ResultFormat,
+        encoding: Option<Encoding>,
         http_query_data_out: U64Counter,
         limiter: Arc<dyn RequestLimiter>,
     ) -> Self {
@@ -140,6 +145,7 @@ impl HttpResponse {
         Self {
             result,
             format,
+            encoding,
             schema: Some(schema),
             limiter,
             stream_state: HttpResponseStreamState::PollNext,
@@ -149,13 +155,20 @@ impl HttpResponse {
 
     pub async fn wrap_batches_to_response(self) -> Result<Response, HttpError> {
         let actual = self.result.chunk_result().await?;
-        self.format
-            .wrap_batches_to_response(&actual, true, self.http_query_data_out.clone())
+        self.format.wrap_batches_to_response(
+            &actual,
+            true,
+            self.http_query_data_out.clone(),
+            self.encoding,
+        )
     }
     pub fn wrap_stream_to_response(self) -> Result<Response, HttpError> {
-        let resp = ResponseBuilder::new(OK)
-            .insert_header((CONTENT_TYPE, self.format.get_http_content_type()))
-            .build_stream_response(self);
+        let mut builder = ResponseBuilder::new(OK)
+            .insert_header((CONTENT_TYPE, self.format.get_http_content_type()));
+        if let Some(encoding) = self.encoding {
+            builder = builder.insert_header((CONTENT_ENCODING, encoding.to_header_value()));
+        }
+        let resp = builder.build_stream_response(self);
         Ok(resp)
     }
 
@@ -168,15 +181,21 @@ impl HttpResponse {
                 if let Some(schema) = self.schema.take() {
                     let has_headers = !schema.fields().is_empty();
                     let rb = RecordBatch::new_empty(schema);
-                    let buffer = self
-                        .format
-                        .format_batches(&[rb], has_headers)
-                        .map_err(|e| HttpError::FetchResult {
-                            reason: format!("{}", e),
-                        })?;
+                    let mut buffer =
+                        self.format
+                            .format_batches(&[rb], has_headers)
+                            .map_err(|e| HttpError::FetchResult {
+                                reason: format!("{}", e),
+                            })?;
+                    if let Some(encoding) = self.encoding {
+                        buffer = encoding
+                            .encode(buffer)
+                            .map_err(|e| HttpError::EncodeResponse { source: e })?;
+                    }
                     self.schema = None;
                     let limiter = self.limiter.clone();
                     let buffer_len = buffer.len();
+                    self.http_query_data_out.inc(buffer_len as u64);
                     let future = async move {
                         limiter
                             .check_http_data_out(buffer_len)
@@ -194,12 +213,17 @@ impl HttpResponse {
             }
             Some(Ok(rb)) => {
                 if rb.num_rows() > 0 {
-                    let buffer = self
+                    let mut buffer = self
                         .format
                         .format_batches(&[rb], self.schema.is_some())
                         .map_err(|e| HttpError::FetchResult {
                             reason: format!("{}", e),
                         })?;
+                    if let Some(encoding) = self.encoding.as_ref() {
+                        buffer = encoding
+                            .encode(buffer)
+                            .map_err(|e| HttpError::EncodeResponse { source: e })?;
+                    }
                     self.http_query_data_out.inc(buffer.len() as u64);
                     self.schema = None;
 

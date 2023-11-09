@@ -1,3 +1,4 @@
+pub mod encoding;
 pub mod header;
 #[cfg(feature = "http_client")]
 pub mod http_client;

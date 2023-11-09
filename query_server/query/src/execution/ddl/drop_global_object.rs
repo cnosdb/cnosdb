@@ -30,8 +30,8 @@ impl DDLDefinitionTask for DropGlobalObjectTask {
             ref name,
             ref if_exist,
             ref obj_type,
-            ref after,
-        } = self.stmt;
+            mut after,
+        } = self.stmt.clone();
 
         let meta = query_state_machine.meta.clone();
 
@@ -75,12 +75,16 @@ impl DDLDefinitionTask for DropGlobalObjectTask {
                         // first, set hidden to TRUE
                         meta.set_tenant_is_hidden(name, true).await?;
 
+                        if after.is_none() {
+                            after = tm.tenant().options().get_after();
+                        }
+
                         // second, add drop task
                         let resourceinfo = ResourceInfo::new(
-                            *tm.tenant().id(),
-                            vec![name.clone()],
+                            (*tm.tenant().id(), "".to_string()),
+                            name.clone(),
                             ResourceOperator::DropTenant(name.clone()),
-                            after,
+                            &after,
                         );
                         ResourceManager::add_resource_task(
                             query_state_machine.coord.clone(),

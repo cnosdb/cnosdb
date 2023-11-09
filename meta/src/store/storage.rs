@@ -394,8 +394,8 @@ impl StateMachine {
                 let path = KeyPath::tenant_schema_name(cluster, tenant_name, db_name, table_name);
                 response_encode(self.get_struct::<TableSchema>(&path))
             }
-            ReadCommand::ResourceInfos(cluster, names) => {
-                response_encode(self.process_read_resourceinfos(cluster, names))
+            ReadCommand::ResourceInfos(cluster) => {
+                response_encode(self.process_read_resourceinfos(cluster))
             }
             ReadCommand::ResourceInfosMark(cluster) => {
                 response_encode(self.process_read_resourceinfos_mark(cluster))
@@ -432,23 +432,20 @@ impl StateMachine {
         Ok(users)
     }
 
-    pub fn process_read_tenant(&self, cluster: &str, tenant_name: &str) -> MetaResult<Tenant> {
+    pub fn process_read_tenant(
+        &self,
+        cluster: &str,
+        tenant_name: &str,
+    ) -> MetaResult<Option<Tenant>> {
         let path = KeyPath::tenant(cluster, tenant_name);
-        let tenant = match self.get_struct::<Tenant>(&path)? {
-            Some(t) => t,
-            None => {
-                return Err(MetaError::TenantNotFound {
-                    tenant: tenant_name.to_string(),
-                });
+        let res = self.get_struct::<Tenant>(&path)?.and_then(|t| {
+            if t.options().get_tenant_is_hidden() {
+                None
+            } else {
+                Some(t)
             }
-        };
-        if !tenant.options().get_tenant_is_hidden() {
-            Ok(tenant)
-        } else {
-            Err(MetaError::TenantNotFound {
-                tenant: tenant_name.to_string(),
-            })
-        }
+        });
+        Ok(res)
     }
 
     pub fn process_read_tenants(&self, cluster: &str) -> MetaResult<Vec<Tenant>> {
@@ -501,12 +498,8 @@ impl StateMachine {
         Ok(members)
     }
 
-    pub fn process_read_resourceinfos(
-        &self,
-        cluster: &str,
-        names: &[String],
-    ) -> MetaResult<Vec<ResourceInfo>> {
-        let path = KeyPath::resourceinfos(cluster, names);
+    pub fn process_read_resourceinfos(&self, cluster: &str) -> MetaResult<Vec<ResourceInfo>> {
+        let path = KeyPath::resourceinfos(cluster, "");
         let resourceinfos: Vec<ResourceInfo> = self
             .children_data::<ResourceInfo>(&path)?
             .into_values()
@@ -651,8 +644,8 @@ impl StateMachine {
                 tenant,
                 request,
             } => response_encode(self.process_limiter_request(cluster, tenant, request)),
-            WriteCommand::ResourceInfo(cluster, names, res_info) => {
-                response_encode(self.process_write_resourceinfo(cluster, names, res_info))
+            WriteCommand::ResourceInfo(cluster, name, res_info) => {
+                response_encode(self.process_write_resourceinfo(cluster, name, res_info))
             }
             WriteCommand::ResourceInfosMark(cluster, node_id, is_lock) => {
                 response_encode(self.process_write_resourceinfos_mark(cluster, *node_id, *is_lock))
@@ -779,9 +772,7 @@ impl StateMachine {
             .children_data::<NodeInfo>(&KeyPath::data_nodes(cluster))?
             .values()
         {
-            if value.id != node.id
-                && (value.http_addr == node.http_addr || value.grpc_addr == node.grpc_addr)
-            {
+            if value.id != node.id && value.grpc_addr == node.grpc_addr {
                 error!(
                     "ip address has been added, add node failed, the added node is : {:?}",
                     value
@@ -795,7 +786,7 @@ impl StateMachine {
     fn process_add_date_node(&self, cluster: &str, node: &NodeInfo) -> MetaResult<()> {
         if !self.check_node_ip_address(cluster, node)? {
             return Err(MetaError::DataNodeExist {
-                addr: format! {"{} {}", node.grpc_addr,node.http_addr},
+                addr: node.grpc_addr.clone(),
             });
         }
         let key = KeyPath::data_node_id(cluster, node.id);
@@ -1450,10 +1441,10 @@ impl StateMachine {
     fn process_write_resourceinfo(
         &self,
         cluster: &str,
-        names: &[String],
+        name: &str,
         res_info: &ResourceInfo,
     ) -> MetaResult<()> {
-        let key = KeyPath::resourceinfos(cluster, names);
+        let key = KeyPath::resourceinfos(cluster, name);
         self.insert(&key, &value_encode(&res_info)?)
     }
 

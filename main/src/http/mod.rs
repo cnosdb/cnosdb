@@ -11,6 +11,7 @@ use warp::{reject, Rejection};
 use self::response::ResponseBuilder;
 
 mod api_type;
+mod encoding;
 pub mod header;
 pub mod http_service;
 mod metrics;
@@ -90,6 +91,18 @@ pub enum Error {
     TraceHttp {
         source: trace_http::ctx::ContextError,
     },
+
+    #[snafu(display("Error decode request: {}", source))]
+    #[error_code(code = 13)]
+    DecodeRequest {
+        source: std::io::Error,
+    },
+
+    #[snafu(display("Error encode response: {}", source))]
+    #[error_code(code = 14)]
+    EncodeResponse {
+        source: std::io::Error,
+    },
 }
 
 impl From<tskv::Error> for Error {
@@ -150,12 +163,18 @@ impl From<&Error> for Response {
             Error::Query { .. }
             | Error::FetchResult { .. }
             | Error::Tskv { .. }
-            | Error::Coordinator { .. } => {
+            | Error::Coordinator { .. }
+            | Error::Meta { .. }
+            | Error::NotFoundTenant { .. }
+            | Error::EncodeResponse { .. } => {
                 ResponseBuilder::new(UNPROCESSABLE_ENTITY).json(&error_resp)
             }
-            Error::InvalidHeader { .. } | Error::ParseAuth { .. } | Error::TraceHttp { .. } => {
-                ResponseBuilder::bad_request(&error_resp)
-            }
+            Error::InvalidHeader { .. }
+            | Error::ParseAuth { .. }
+            | Error::TraceHttp { .. }
+            | Error::DecodeRequest { .. }
+            | Error::ParseOpentsdbProtocol { .. }
+            | Error::ParseOpentsdbJsonProtocol { .. } => ResponseBuilder::bad_request(&error_resp),
             _ => ResponseBuilder::internal_server_error(),
         }
     }

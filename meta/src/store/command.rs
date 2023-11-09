@@ -136,8 +136,8 @@ pub enum WriteCommand {
         tenant: String,
         request: LocalBucketRequest,
     },
-    // cluster, [tenant, db, table,...], ResourceInfo
-    ResourceInfo(String, Vec<String>, ResourceInfo),
+    // cluster, resource_name, ResourceInfo
+    ResourceInfo(String, String, ResourceInfo),
     // cluster, node_id, is_lock
     ResourceInfosMark(String, NodeId, bool),
 }
@@ -168,8 +168,8 @@ pub enum ReadCommand {
     Tenants(String),
     // cluster, tenant, db, table
     TableSchema(String, String, String, String),
-    // cluster, [tenant, db, table,...]
-    ResourceInfos(String, Vec<String>),
+    // cluster
+    ResourceInfos(String),
     // cluster
     ResourceInfosMark(String),
 }

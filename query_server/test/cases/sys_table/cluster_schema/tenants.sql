@@ -70,3 +70,8 @@ select * from cluster_schema.tenants where tenant_name in ('test_ts_tenant1');
 --#USER_NAME=test_ts_u2
 --#SORT=true
 select * from cluster_schema.tenants where tenant_name in ('test_ts_tenant1');
+
+
+--#TENANT=tenant_not_exists
+--#USER_NAME=root
+select 1;

@@ -128,13 +128,12 @@ async fn regular_report_node_metrics(meta: MetaRef, heartbeat_interval: u64) {
 }
 
 fn build_default_address(port: u16) -> String {
-    build_address(DEFAULT_NODE_IP.to_owned(), port)
+    build_address(DEFAULT_NODE_IP, port)
 }
 
 impl ServiceBuilder {
     pub async fn build_storage_server(&self, server: &mut Server) -> Option<EngineRef> {
         let meta = self.create_meta().await;
-
         meta.add_data_node().await.unwrap();
         tokio::spawn(regular_report_node_metrics(
             meta.clone(),
@@ -150,19 +149,26 @@ impl ServiceBuilder {
         let dbms = self
             .create_dbms(coord.clone(), self.memory_pool.clone())
             .await;
-        let http_service =
-            Box::new(self.create_http(dbms.clone(), coord.clone(), ServerMode::Store));
-        let grpc_service = Box::new(self.create_grpc(kv_inst.clone(), coord.clone()));
-        if let Some(port) = self.config.cluster.vector_listen_port {
-            let vector_service =
-                Box::new(self.create_vector_grpc(coord.clone(), dbms.clone(), port));
-            server.add_service(vector_service);
-        }
-        let tcp_service = Box::new(self.create_tcp(coord.clone()));
 
-        server.add_service(http_service);
-        server.add_service(grpc_service);
-        server.add_service(tcp_service);
+        if let Some(http_service) =
+            self.create_http_if_enabled(dbms.clone(), coord.clone(), ServerMode::Store)
+        {
+            server.add_service(Box::new(http_service));
+        }
+
+        if let Some(grpc_service) = self.create_grpc_if_enabled(kv_inst.clone(), coord.clone()) {
+            server.add_service(Box::new(grpc_service));
+        }
+
+        if let Some(tcp_service) = self.create_tcp_if_enabled(coord.clone()) {
+            server.add_service(Box::new(tcp_service));
+        }
+
+        if let Some(vector_service) =
+            self.create_vector_grpc_if_enabled(coord.clone(), dbms.clone())
+        {
+            server.add_service(Box::new(vector_service));
+        }
 
         Some(kv_inst)
     }
@@ -175,19 +181,22 @@ impl ServiceBuilder {
         let dbms = self
             .create_dbms(coord.clone(), self.memory_pool.clone())
             .await;
-        let http_service =
-            Box::new(self.create_http(dbms.clone(), coord.clone(), ServerMode::Query));
-        let flight_sql_service = Box::new(self.create_flight_sql(dbms.clone()));
 
-        server.add_service(http_service);
-        server.add_service(flight_sql_service);
+        if let Some(http_service) =
+            self.create_http_if_enabled(dbms.clone(), coord.clone(), ServerMode::Query)
+        {
+            server.add_service(Box::new(http_service));
+        }
+
+        if let Some(flight_sql_service) = self.create_flight_sql_if_enabled(dbms.clone()) {
+            server.add_service(Box::new(flight_sql_service));
+        }
 
         None
     }
 
     pub async fn build_query_storage(&self, server: &mut Server) -> Option<EngineRef> {
         let meta = self.create_meta().await;
-
         meta.add_data_node().await.unwrap();
         tokio::spawn(regular_report_node_metrics(
             meta.clone(),
@@ -203,21 +212,30 @@ impl ServiceBuilder {
         let dbms = self
             .create_dbms(coord.clone(), self.memory_pool.clone())
             .await;
-        let flight_sql_service = Box::new(self.create_flight_sql(dbms.clone()));
-        let grpc_service = Box::new(self.create_grpc(kv_inst.clone(), coord.clone()));
-        if let Some(port) = self.config.cluster.vector_listen_port {
-            let vector_service =
-                Box::new(self.create_vector_grpc(coord.clone(), dbms.clone(), port));
-            server.add_service(vector_service);
-        }
-        let http_service =
-            Box::new(self.create_http(dbms.clone(), coord.clone(), ServerMode::Bundle));
-        let tcp_service = Box::new(self.create_tcp(coord.clone()));
 
-        server.add_service(http_service);
-        server.add_service(grpc_service);
-        server.add_service(flight_sql_service);
-        server.add_service(tcp_service);
+        if let Some(http_service) =
+            self.create_http_if_enabled(dbms.clone(), coord.clone(), ServerMode::Bundle)
+        {
+            server.add_service(Box::new(http_service));
+        }
+
+        if let Some(grpc_service) = self.create_grpc_if_enabled(kv_inst.clone(), coord.clone()) {
+            server.add_service(Box::new(grpc_service));
+        }
+
+        if let Some(flight_sql_service) = self.create_flight_sql_if_enabled(dbms.clone()) {
+            server.add_service(Box::new(flight_sql_service));
+        }
+
+        if let Some(tcp_service) = self.create_tcp_if_enabled(coord.clone()) {
+            server.add_service(Box::new(tcp_service));
+        }
+
+        if let Some(vector_service) =
+            self.create_vector_grpc_if_enabled(coord.clone(), dbms.clone())
+        {
+            server.add_service(Box::new(vector_service));
+        }
 
         Some(kv_inst)
     }
@@ -293,8 +311,16 @@ impl ServiceBuilder {
         coord
     }
 
-    fn create_http(&self, dbms: DBMSRef, coord: CoordinatorRef, mode: ServerMode) -> HttpService {
-        let default_http_addr = build_default_address(self.config.cluster.http_listen_port);
+    fn create_http_if_enabled(
+        &self,
+        dbms: DBMSRef,
+        coord: CoordinatorRef,
+        mode: ServerMode,
+    ) -> Option<HttpService> {
+        let default_http_addr = match self.config.cluster.http_listen_port {
+            Some(port) => build_default_address(port),
+            None => return None,
+        };
 
         let addr = default_http_addr
             .to_socket_addrs()
@@ -310,7 +336,7 @@ impl ServiceBuilder {
             .copied()
             .expect("Config http_listen_addr cannot be empty.");
 
-        HttpService::new(
+        Some(HttpService::new(
             dbms,
             coord,
             addr,
@@ -320,11 +346,14 @@ impl ServiceBuilder {
             mode,
             self.metrics_register.clone(),
             self.span_context_extractor.clone(),
-        )
+        ))
     }
 
-    fn create_grpc(&self, kv: EngineRef, coord: CoordinatorRef) -> GrpcService {
-        let default_grpc_addr = build_default_address(self.config.cluster.grpc_listen_port);
+    fn create_grpc_if_enabled(&self, kv: EngineRef, coord: CoordinatorRef) -> Option<GrpcService> {
+        let default_grpc_addr = match self.config.cluster.grpc_listen_port {
+            Some(port) => build_default_address(port),
+            None => return None,
+        };
 
         let addr = default_grpc_addr
             .to_socket_addrs()
@@ -340,7 +369,7 @@ impl ServiceBuilder {
             .copied()
             .expect("Config grpc_listen_addr cannot be empty.");
 
-        GrpcService::new(
+        Some(GrpcService::new(
             self.runtime.clone(),
             kv,
             coord,
@@ -348,16 +377,18 @@ impl ServiceBuilder {
             None,
             self.metrics_register.clone(),
             self.span_context_extractor.clone(),
-        )
+        ))
     }
 
-    fn create_vector_grpc(
+    fn create_vector_grpc_if_enabled(
         &self,
         coord: CoordinatorRef,
         dbms: DBMSRef,
-        port: u16,
-    ) -> VectorGrpcService {
-        let default_vector_grpc_addr = build_default_address(port);
+    ) -> Option<VectorGrpcService> {
+        let default_vector_grpc_addr = match self.config.cluster.vector_listen_port {
+            Some(port) => build_default_address(port),
+            None => return None,
+        };
 
         let addr = default_vector_grpc_addr
             .to_socket_addrs()
@@ -373,26 +404,31 @@ impl ServiceBuilder {
             .copied()
             .expect("Config vector_grpc_listen_addr cannot be empty.");
 
-        VectorGrpcService::new(
+        Some(VectorGrpcService::new(
             coord,
             dbms,
             addr,
             None,
             self.metrics_register.clone(),
             self.span_context_extractor.clone(),
-        )
+        ))
     }
 
-    fn create_tcp(&self, coord: CoordinatorRef) -> TcpService {
-        let default_tcp_addr = build_default_address(self.config.cluster.tcp_listen_port);
+    fn create_tcp_if_enabled(&self, coord: CoordinatorRef) -> Option<TcpService> {
+        let default_tcp_addr = match self.config.cluster.tcp_listen_port {
+            Some(port) => build_default_address(port),
+            None => return None,
+        };
 
-        TcpService::new(coord, default_tcp_addr)
+        Some(TcpService::new(coord, default_tcp_addr))
     }
 
-    fn create_flight_sql(&self, dbms: DBMSRef) -> FlightSqlServiceAdapter {
+    fn create_flight_sql_if_enabled(&self, dbms: DBMSRef) -> Option<FlightSqlServiceAdapter> {
+        let default_flight_sql_addr = match self.config.cluster.flight_rpc_listen_port {
+            Some(port) => build_default_address(port),
+            None => return None,
+        };
         let tls_config = self.config.security.tls_config.clone();
-        let default_flight_sql_addr =
-            build_default_address(self.config.cluster.flight_rpc_listen_port);
 
         let addr = default_flight_sql_addr
             .to_socket_addrs()
@@ -408,6 +444,11 @@ impl ServiceBuilder {
             .copied()
             .expect("Config flight_rpc_listen_addr cannot be empty.");
 
-        FlightSqlServiceAdapter::new(dbms, addr, tls_config, self.span_context_extractor.clone())
+        Some(FlightSqlServiceAdapter::new(
+            dbms,
+            addr,
+            tls_config,
+            self.span_context_extractor.clone(),
+        ))
     }
 }

@@ -59,13 +59,28 @@ pub const DEFAULT_PRECISION: &str = "NS";
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ResourceOperator {
+    // tenant_name
     DropTenant(String),
+
+    // tenant_name, db_name
     DropDatabase(String, String),
+
+    // tenant_name, db_name, table_name
     DropTable(String, String, String),
-    AddColumn(String, TskvTableSchema, TableColumn),
-    DropColumn(String, String, TskvTableSchema),
-    AlterColumn(String, String, TskvTableSchema, TableColumn),
-    RenameTagName(String, String, String, TskvTableSchema),
+
+    // table_schema, new_table_column
+    AddColumn(TskvTableSchema, TableColumn),
+
+    // drop_table_column_name, table_schema
+    DropColumn(String, TskvTableSchema),
+
+    // column_name, table_schema, new_table_column
+    AlterColumn(String, TskvTableSchema, TableColumn),
+
+    // old_column_name, new_column_name, table_schema
+    RenameTagName(String, String, TskvTableSchema),
+
+    // tenant_name, db_name, new_tags_vec, series_keys, shards
     UpdateTagValue(
         String,
         String,
@@ -114,8 +129,8 @@ impl fmt::Display for ResourceStatus {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ResourceInfo {
     time: i64,
-    tenant_id: Oid,
-    names: Vec<String>,
+    tenant_id_and_db: (Oid, String),
+    name: String,
     operator: ResourceOperator,
     try_count: u64,
     after: Option<Duration>, // None means now
@@ -125,15 +140,15 @@ pub struct ResourceInfo {
 
 impl ResourceInfo {
     pub fn new(
-        tenant_id: Oid,
-        names: Vec<String>,
+        tenant_id_and_db: (Oid, String),
+        name: String,
         operator: ResourceOperator,
         after: &Option<Duration>,
     ) -> Self {
         let mut res_info = ResourceInfo {
             time: now_timestamp_nanos(),
-            tenant_id,
-            names,
+            tenant_id_and_db,
+            name,
             operator,
             try_count: 0,
             after: after.clone(),
@@ -154,12 +169,12 @@ impl ResourceInfo {
         self.time
     }
 
-    pub fn get_tenant_id(&self) -> Oid {
-        self.tenant_id
+    pub fn get_tenant_id_and_db(&self) -> &(Oid, String) {
+        &self.tenant_id_and_db
     }
 
-    pub fn get_names(&self) -> &[String] {
-        &self.names
+    pub fn get_name(&self) -> &str {
+        &self.name
     }
 
     pub fn get_operator(&self) -> &ResourceOperator {
@@ -1193,17 +1208,21 @@ impl Tenant {
 pub struct TenantOptions {
     pub comment: Option<String>,
     pub limiter_config: Option<TenantLimiterConfig>,
+    after: Option<Duration>, // None means now
     tenant_is_hidden: bool,
 }
 
 impl From<TenantOptions> for TenantOptionsBuilder {
     fn from(value: TenantOptions) -> Self {
         let mut builder = TenantOptionsBuilder::default();
-        if let Some(comment) = value.comment {
+        if let Some(comment) = value.comment.clone() {
             builder.comment(comment);
         }
-        if let Some(config) = value.limiter_config {
+        if let Some(config) = value.limiter_config.clone() {
             builder.limiter_config(config);
+        }
+        if let Some(after) = value.get_after() {
+            builder.after(after);
         }
         builder.tenant_is_hidden(false);
         builder
@@ -1216,6 +1235,9 @@ impl TenantOptionsBuilder {
     }
     pub fn unset_limiter_config(&mut self) {
         self.limiter_config = None
+    }
+    pub fn unset_after(&mut self) {
+        self.after = None;
     }
 }
 
@@ -1240,6 +1262,14 @@ impl TenantOptions {
 
     pub fn set_tenant_is_hidden(&mut self, tenant_is_hidden: bool) {
         self.tenant_is_hidden = tenant_is_hidden;
+    }
+
+    pub fn get_after(&self) -> Option<Duration> {
+        self.after.clone()
+    }
+
+    pub fn set_after(&mut self, after: &Option<Duration>) {
+        self.after = after.clone();
     }
 }
 

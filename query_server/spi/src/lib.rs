@@ -553,6 +553,10 @@ impl From<DataFusionError> for QueryError {
                 }
             }
 
+            DataFusionError::External(e) if e.downcast_ref::<DataFusionError>().is_some() => {
+                QueryError::from(*e.downcast::<DataFusionError>().unwrap())
+            }
+
             DataFusionError::External(e) if e.downcast_ref::<ArrowError>().is_some() => {
                 let arrow_error = *e.downcast::<ArrowError>().unwrap();
                 arrow_error.into()

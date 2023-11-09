@@ -337,14 +337,14 @@ mod tests {
 
     #[test]
     fn test_kvcore_snapshot_create_apply_delete() {
-        let dir = PathBuf::from("/tmp/test/kvcore/test_kvcore_snapshot_create_apply_delete");
+        let dir = PathBuf::from("/tmp/test/kvcore/kvcore_snapshot_create_apply_delete");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
 
         init_default_global_tracing(dir.join("log"), "tskv.log", "debug");
         let tenant = "cnosdb";
-        let database = "test_db";
-        let table = "test_tab";
+        let database = "db_test_snapshot";
+        let table = "tab_test_snapshot";
         let vnode_id = 11;
 
         let (runtime, tskv) = get_tskv(&dir, None);

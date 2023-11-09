@@ -224,13 +224,15 @@ impl Reader {
         // TODO: Check if data_size is too large.
         let data_pos = header_pos + RECORD_HEADER_LEN;
         self.set_pos(data_pos).await?;
+
+        let file_len = self.len();
         let data = match self.read_buf(data_size as usize).await {
             Ok(record_bytes) => {
                 let record_data = record_bytes.to_vec();
                 if record_bytes.len() < data_size as usize {
                     trace::error!(
-                        "Record file: Failed to read data: Data size ({}) at pos {} is greater than bytes readed ({})",
-                        data_size, data_pos, record_bytes.len()
+                        "Record file: Failed to read data: file_size: {}, Data size ({}) at pos {} is greater than bytes readed ({})",
+                        file_len, data_size, data_pos, record_bytes.len()
                     );
                     return Err(Error::RecordFileInvalidDataSize {
                         pos: header_pos as u64,
@@ -311,7 +313,7 @@ impl Reader {
     }
 
     async fn read_buf(&mut self, size: usize) -> Result<&[u8]> {
-        if self.buf.capacity() < size {
+        if self.buf.len() < size {
             self.buf.resize(size, 0_u8);
         }
         if self.buf_len - self.buf_use < size {

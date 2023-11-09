@@ -204,7 +204,6 @@ mod test {
             id: 111,
             attribute: NodeAttribute::Hot,
             grpc_addr: "".to_string(),
-            http_addr: "127.0.0.1:8888".to_string(),
         };
 
         let client = reqwest::Client::new();
@@ -233,7 +232,6 @@ mod test {
             id: 111,
             attribute: NodeAttribute::Hot,
             grpc_addr: "".to_string(),
-            http_addr: "127.0.0.1:8888".to_string(),
         };
 
         let req = command::WriteCommand::AddDataNode(cluster.clone(), node);

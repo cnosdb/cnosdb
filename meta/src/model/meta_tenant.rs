@@ -904,21 +904,17 @@ impl TenantMeta {
         format!("{:#?}", self.data.read())
     }
 
-    pub async fn write_resourceinfo(
-        &self,
-        names: &[String],
-        res_info: ResourceInfo,
-    ) -> MetaResult<()> {
+    pub async fn write_resourceinfo(&self, name: String, res_info: ResourceInfo) -> MetaResult<()> {
         let req =
-            command::WriteCommand::ResourceInfo(self.cluster.clone(), names.to_owned(), res_info);
+            command::WriteCommand::ResourceInfo(self.cluster.clone(), name.to_string(), res_info);
 
         self.client.write::<ResourceInfo>(&req).await?;
 
         Ok(())
     }
 
-    pub async fn read_resourceinfos(&self, names: &[String]) -> MetaResult<Vec<ResourceInfo>> {
-        let req = command::ReadCommand::ResourceInfos(self.cluster.clone(), names.to_owned());
+    pub async fn read_resourceinfos(&self) -> MetaResult<Vec<ResourceInfo>> {
+        let req = command::ReadCommand::ResourceInfos(self.cluster.clone());
 
         self.client.read::<Vec<ResourceInfo>>(&req).await
     }

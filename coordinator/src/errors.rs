@@ -220,6 +220,12 @@ pub enum CoordinatorError {
     RaftNodeNotFound {
         id: ReplicationSetId,
     },
+
+    #[error_code(code = 31)]
+    #[snafu(display("Invalid configuration: {msg}"))]
+    InvalidInitialConfig {
+        msg: String,
+    },
 }
 
 impl From<PointsError> for CoordinatorError {

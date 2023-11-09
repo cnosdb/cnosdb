@@ -204,7 +204,7 @@ mod test {
         let data = parser.parse(lines).unwrap();
         assert_eq!(data.len(), 2);
 
-        let data_1 = data.get(0).unwrap();
+        let data_1 = data.first().unwrap();
         assert_eq!(
             *data_1,
             Line {
