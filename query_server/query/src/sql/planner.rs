@@ -1031,7 +1031,15 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         let table_name = table_ref
             .clone()
             .resolve_object(session.tenant(), session.default_database())?;
-        let table_schema = self.get_tskv_schema(table_ref)?;
+        let handle = self.get_table_handle(table_ref)?;
+        let table_schema = match handle {
+            TableHandle::Tskv(t) => t.table_schema(),
+            _ => {
+                return Err(QueryError::NotImplemented {
+                    err: "only tskv table support alter".to_string(),
+                })
+            }
+        };
 
         let time_unit = if let ColumnType::Time(ref unit) = table_schema
             .column(TIME_FIELD)
@@ -1978,10 +1986,14 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         })
     }
 
-    fn get_tskv_schema(&self, table_ref: TableReference) -> Result<TskvTableSchemaRef> {
+    fn get_table_handle(&self, table_ref: TableReference) -> Result<TableHandle> {
         let source = self.get_table_source(table_ref.clone())?;
         let adapter = source_downcast_adapter(&source)?;
-        let result = match adapter.table_handle() {
+        Ok(adapter.table_handle().clone())
+    }
+
+    fn get_tskv_schema(&self, table_ref: TableReference) -> Result<TskvTableSchemaRef> {
+        let result = match self.get_table_handle(table_ref.clone())? {
             TableHandle::Tskv(e) => Ok(e.table_schema()),
             _ => Err(MetaError::TableNotFound {
                 table: table_ref.to_string(),
