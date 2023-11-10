@@ -1,12 +1,12 @@
 use std::path::PathBuf;
 
-use reqwest::{Certificate, RequestBuilder};
-use snafu::ResultExt;
+use reqwest::blocking::RequestBuilder;
+use reqwest::Certificate;
 
-use crate::{BuildHttpClientSnafu, Error};
+use crate::Error;
 
 pub struct HttpClient {
-    client: reqwest::Client,
+    client: reqwest::blocking::Client,
     addr: String,
 }
 
@@ -18,7 +18,7 @@ impl HttpClient {
         use_unsafe_ssl: bool,
         cert_files: &[String],
     ) -> Result<HttpClient, Error> {
-        let mut client_builder = reqwest::Client::builder();
+        let mut client_builder = reqwest::blocking::Client::builder();
         let addr = if use_ssl || use_unsafe_ssl {
             client_builder = client_builder.use_rustls_tls();
             format!("https://{}:{}", host, port)
@@ -52,7 +52,10 @@ impl HttpClient {
             client_builder = client_builder.add_root_certificate(cert);
         }
 
-        let client = client_builder.build().context(BuildHttpClientSnafu)?;
+        let client = client_builder
+            .build()
+            .map_err(|e| crate::Error::BuildHttpClient { source: e })?;
+
         Ok(HttpClient { client, addr })
     }
 

@@ -1,10 +1,9 @@
 #[cfg(test)]
 pub mod test {
     use fly_accept_encoding::Encoding;
+    use http_protocol::blocking::{HttpClient, Response};
     use http_protocol::encoding::EncodingExt;
     use http_protocol::header::{HeaderValue, ACCEPT, CONTENT_TYPE};
-    use http_protocol::http_client::HttpClient;
-    use http_protocol::response::Response;
     use http_protocol::status_code;
     use reqwest::header::{ACCEPT_ENCODING, CONTENT_ENCODING};
 
@@ -28,7 +27,6 @@ pub mod test {
             .basic_auth::<&str, &str>(username, None)
             .body(body)
             .send()
-            .await
             .unwrap();
         assert_eq!(resp.status(), status_code::OK);
         assert_eq!(
@@ -44,19 +42,12 @@ pub mod test {
             .bearer_auth(username)
             .body(body)
             .send()
-            .await
             .unwrap();
         assert_eq!(resp.status(), status_code::BAD_REQUEST);
 
         // lost auth
         let body = "select 1;";
-        let resp: Response = client
-            .post(path)
-            .query(param)
-            .body(body)
-            .send()
-            .await
-            .unwrap();
+        let resp: Response = client.post(path).query(param).body(body).send().unwrap();
         assert_eq!(resp.status(), status_code::BAD_REQUEST);
 
         // accept: application/csv
@@ -68,7 +59,6 @@ pub mod test {
             .header(ACCEPT, "application/csv")
             .body(body)
             .send()
-            .await
             .unwrap();
         assert_eq!(resp.status(), status_code::OK);
         assert_eq!(
@@ -85,7 +75,6 @@ pub mod test {
             .header(ACCEPT, "application/json")
             .body(body)
             .send()
-            .await
             .unwrap();
         assert_eq!(resp.status(), status_code::OK);
         assert_eq!(
@@ -102,7 +91,6 @@ pub mod test {
             .header(ACCEPT, "application/nd-json")
             .body(body)
             .send()
-            .await
             .unwrap();
         assert_eq!(resp.status(), status_code::OK);
         assert_eq!(
@@ -119,7 +107,6 @@ pub mod test {
             .header(ACCEPT, "application/*")
             .body(body)
             .send()
-            .await
             .unwrap();
         assert_eq!(resp.status(), status_code::OK);
         assert_eq!(
@@ -136,7 +123,6 @@ pub mod test {
             .header(ACCEPT, "*/*")
             .body(body)
             .send()
-            .await
             .unwrap();
         assert_eq!(resp.status(), status_code::OK);
         assert_eq!(
@@ -153,7 +139,6 @@ pub mod test {
             .header(ACCEPT, "*")
             .body(body)
             .send()
-            .await
             .unwrap();
         assert_eq!(resp.status(), status_code::BAD_REQUEST);
 
@@ -166,7 +151,6 @@ pub mod test {
             .header(ACCEPT, "xx")
             .body(body)
             .send()
-            .await
             .unwrap();
         assert_eq!(resp.status(), status_code::BAD_REQUEST);
 
@@ -177,7 +161,6 @@ pub mod test {
             .basic_auth::<&str, &str>(username, None)
             .body(body)
             .send()
-            .await
             .unwrap();
         assert_eq!(resp.status(), status_code::OK);
 
@@ -189,7 +172,6 @@ pub mod test {
             .basic_auth::<&str, &str>(username, None)
             .body(body)
             .send()
-            .await
             .unwrap();
         assert_eq!(resp.status(), status_code::NOT_FOUND);
 
@@ -201,7 +183,6 @@ pub mod test {
             .basic_auth::<&str, &str>(username, None)
             .body(body)
             .send()
-            .await
             .unwrap();
         assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
 
@@ -213,7 +194,6 @@ pub mod test {
             .basic_auth::<&str, &str>(username, None)
             .body(body)
             .send()
-            .await
             .unwrap();
         assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
 
@@ -225,7 +205,6 @@ pub mod test {
             .basic_auth::<&str, &str>(username, None)
             .body(body)
             .send()
-            .await
             .unwrap();
         assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
 
@@ -237,7 +216,6 @@ pub mod test {
             .basic_auth::<&str, &str>(username, None)
             .body(body)
             .send()
-            .await
             .unwrap();
         assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
 
@@ -249,7 +227,6 @@ pub mod test {
             .basic_auth::<&str, &str>(username, None)
             .body(body)
             .send()
-            .await
             .unwrap();
         assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
     }
@@ -270,18 +247,11 @@ pub mod test {
             .basic_auth::<&str, &str>(username, None)
             .body(body)
             .send()
-            .await
             .unwrap();
         assert_eq!(resp.status(), status_code::OK);
 
         // lost username
-        let resp: Response = client
-            .post(path)
-            .query(param)
-            .body(body)
-            .send()
-            .await
-            .unwrap();
+        let resp: Response = client.post(path).query(param).body(body).send().unwrap();
         assert_eq!(resp.status(), status_code::BAD_REQUEST);
 
         // method error
@@ -291,7 +261,6 @@ pub mod test {
             .basic_auth::<&str, &str>(username, None)
             .body(body)
             .send()
-            .await
             .unwrap();
         assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
 
@@ -301,7 +270,6 @@ pub mod test {
             .basic_auth::<&str, &str>(username, None)
             .body(body)
             .send()
-            .await
             .unwrap();
         assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
 
@@ -311,7 +279,6 @@ pub mod test {
             .basic_auth::<&str, &str>(username, None)
             .body(body)
             .send()
-            .await
             .unwrap();
         assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
 
@@ -321,7 +288,6 @@ pub mod test {
             .basic_auth::<&str, &str>(username, None)
             .body(body)
             .send()
-            .await
             .unwrap();
         assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
 
@@ -331,7 +297,6 @@ pub mod test {
             .basic_auth::<&str, &str>(username, None)
             .body(body)
             .send()
-            .await
             .unwrap();
         assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
     }
@@ -342,22 +307,22 @@ pub mod test {
 
         let client = client();
 
-        let resp: Response = client.get(path).send().await.unwrap();
+        let resp: Response = client.get(path).send().unwrap();
         assert_eq!(resp.status(), status_code::OK);
 
-        let resp: Response = client.head(path).send().await.unwrap();
+        let resp: Response = client.head(path).send().unwrap();
         assert_eq!(resp.status(), status_code::OK);
 
-        let resp: Response = client.post(path).send().await.unwrap();
+        let resp: Response = client.post(path).send().unwrap();
         assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
 
-        let resp: Response = client.put(path).send().await.unwrap();
+        let resp: Response = client.put(path).send().unwrap();
         assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
 
-        let resp: Response = client.patch(path).send().await.unwrap();
+        let resp: Response = client.patch(path).send().unwrap();
         assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
 
-        let resp: Response = client.delete(path).send().await.unwrap();
+        let resp: Response = client.delete(path).send().unwrap();
         assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
     }
 
@@ -378,13 +343,12 @@ pub mod test {
                 .query(param)
                 .header(CONTENT_ENCODING, content_encoding.to_header_value())
                 .header(ACCEPT_ENCODING, accept_encoding.to_header_value())
-                .body(content_encoding.encode(data.clone()).unwrap())
+                .body(content_encoding.encode(data).unwrap())
                 .send()
-                .await
                 .unwrap();
             String::from_utf8(
                 accept_encoding
-                    .decode(resp.bytes().await.unwrap())
+                    .decode(resp.bytes().unwrap())
                     .unwrap()
                     .to_vec(),
             )

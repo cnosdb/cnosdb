@@ -1963,6 +1963,7 @@ dependencies = [
  "sysinfo",
  "tokio",
  "tokio-stream",
+ "toml",
  "tonic",
  "walkdir",
 ]

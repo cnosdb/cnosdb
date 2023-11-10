@@ -13,7 +13,7 @@ brotli = { workspace = true }
 bytes = { workspace = true }
 flate2 = { workspace = true }
 fly-accept-encoding = { workspace = true }
-reqwest = { workspace = true, features = ["rustls-tls"] }
+reqwest = { workspace = true, features = ["rustls-tls", "blocking"] }
 serde = { workspace = true }
 snafu = { workspace = true }
 zstd = { workspace = true }

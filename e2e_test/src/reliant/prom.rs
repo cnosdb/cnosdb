@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod test {
-    use http_protocol::response::Response;
+    use http_protocol::blocking::Response;
     use http_protocol::status_code;
     use models::snappy::SnappyCodec;
     use protobuf::Message;
@@ -120,8 +120,8 @@ mod test {
         }
     }
 
-    #[tokio::test]
-    async fn test_prom() {
+    #[test]
+    fn test_prom() {
         let param = &[("db", "public")];
         let username = "root";
 
@@ -135,7 +135,6 @@ mod test {
             .basic_auth::<&str, &str>(username, None)
             .body(body)
             .send()
-            .await
             .unwrap();
         assert_eq!(resp.status(), status_code::OK);
 
@@ -147,7 +146,6 @@ mod test {
             .basic_auth::<&str, &str>(username, None)
             .body(body)
             .send()
-            .await
             .unwrap();
         assert_eq!(resp.status(), status_code::OK);
 
@@ -159,12 +157,11 @@ mod test {
             .basic_auth::<&str, &str>(username, None)
             .body(body)
             .send()
-            .await
             .unwrap();
 
         assert_eq!(resp.status(), status_code::OK);
 
-        let resp: ReadResponse = deserialize(&resp.bytes().await.unwrap());
+        let resp: ReadResponse = deserialize(&resp.bytes().unwrap());
 
         assert_eq!(resp, test_read_resp());
     }
