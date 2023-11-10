@@ -3349,6 +3349,7 @@ dependencies = [
  "byteorder",
  "clap",
  "config",
+ "ctrlc",
  "dashmap",
  "error_code",
  "futures",
