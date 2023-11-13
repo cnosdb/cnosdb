@@ -21,7 +21,7 @@ use crate::metadata::information_schema_provider::builder::queries::{
 };
 use crate::metadata::information_schema_provider::InformationSchemaTableFactory;
 
-const INFORMATION_SCHEMA_QUERIES: &str = "QUERIES";
+pub const INFORMATION_SCHEMA_QUERIES: &str = "QUERIES";
 
 /// This view shows real-time snapshots of SQL statements for real-time monitoring of SQL jobs
 ///
