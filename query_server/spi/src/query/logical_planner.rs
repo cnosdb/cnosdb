@@ -582,14 +582,8 @@ pub enum AlterTableAction {
     },
     RenameColumn {
         old_column_name: String,
-        new_column_name: RenameColumnAction,
+        new_column_name: String,
     },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RenameColumnAction {
-    RenameTag(String),
-    RenameField(String),
 }
 
 #[async_trait]

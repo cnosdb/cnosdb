@@ -1,9 +1,9 @@
 use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
+use std::panic;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
-use std::{mem, panic};
 
 use datafusion::arrow::record_batch::RecordBatch;
 use memory_pool::{MemoryPool, MemoryPoolRef};
@@ -1326,38 +1326,15 @@ impl Engine for TsKv {
         &self,
         tenant: &str,
         database: &str,
-        table: &str,
+        _table: &str,
         vnode_id: VnodeId,
         series_id: &[SeriesId],
     ) -> Result<Vec<SeriesKey>> {
-        let mut res = vec![];
         if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
-            let table_schema = if let Some(schema) = db.read().await.get_table_schema(table)? {
-                schema
-            } else {
-                return Ok(res);
-            };
-
-            let map = table_schema.column_id_column_map();
-            for mut key in db.read().await.get_series_key(vnode_id, series_id).await? {
-                for tag in key.tags.iter_mut() {
-                    let key = mem::take(&mut tag.key);
-                    let id = unsafe {
-                        let str = String::from_utf8_unchecked(key);
-                        println!("{}", str);
-
-                        str.parse::<ColumnId>().unwrap_unchecked()
-                    };
-                    let column = map.get(&id).ok_or_else(|| Error::ColumnIdNotFound {
-                        column: id.to_string(),
-                    })?;
-                    tag.key = column.name.to_owned().into_bytes()
-                }
-                res.push(key)
-            }
+            Ok(db.read().await.get_series_key(vnode_id, series_id).await?)
+        } else {
+            Ok(vec![])
         }
-
-        Ok(res)
     }
 
     async fn get_db_version(

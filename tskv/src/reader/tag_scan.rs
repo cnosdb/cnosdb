@@ -10,12 +10,13 @@ use futures::{ready, Stream, StreamExt, TryFutureExt};
 use models::arrow::stream::MemoryRecordBatchStream;
 use models::arrow_array::build_arrow_array_builders;
 use models::meta_data::VnodeId;
+use models::schema::TskvTableSchemaRef;
 use models::SeriesKey;
 use trace::SpanRecorder;
 
 use crate::error::Result;
 use crate::reader::{QueryOption, SendableTskvRecordBatchStream};
-use crate::EngineRef;
+use crate::{EngineRef, Error};
 
 pub struct LocalTskvTagScanStream {
     state: StreamState,
@@ -46,7 +47,11 @@ impl LocalTskvTagScanStream {
 
             let mut batches = vec![];
             for chunk in keys.chunks(option.batch_size) {
-                let record_batch = series_keys_to_record_batch(option.df_schema.clone(), chunk)?;
+                let record_batch = series_keys_to_record_batch(
+                    option.table_schema.clone(),
+                    option.df_schema.clone(),
+                    chunk,
+                )?;
                 batches.push(record_batch)
             }
 
@@ -92,15 +97,22 @@ enum StreamState {
 }
 
 fn series_keys_to_record_batch(
+    tskv_table_schema: TskvTableSchemaRef,
     schema: SchemaRef,
     series_keys: &[SeriesKey],
-) -> Result<RecordBatch, ArrowError> {
+) -> Result<RecordBatch, Error> {
     let tag_key_array = schema.fields.iter().map(|f| f.name()).collect::<Vec<_>>();
     let mut array_builders = build_arrow_array_builders(&schema, series_keys.len())?;
     for key in series_keys {
         for (k, array_builder) in tag_key_array.iter().zip(&mut array_builders) {
+            let c = tskv_table_schema
+                .column(k.as_str())
+                .ok_or_else(|| Error::ColumnNotFound {
+                    column: k.to_string(),
+                })?;
+
             let tag_value = key
-                .tag_string_val(k)
+                .tag_string_val(c.id.to_string().as_str())
                 .map_err(|e| ArrowError::ExternalError(Box::new(e)))?;
 
             let builder = array_builder

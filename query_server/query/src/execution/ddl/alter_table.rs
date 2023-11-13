@@ -6,7 +6,7 @@ use meta::error::MetaError;
 use models::oid::Identifier;
 use models::schema::{ResourceInfo, ResourceOperator, TableColumn, TableSchema, TskvTableSchema};
 use spi::query::execution::{Output, QueryStateMachineRef};
-use spi::query::logical_planner::{AlterTable, AlterTableAction, RenameColumnAction};
+use spi::query::logical_planner::{AlterTable, AlterTableAction};
 use spi::{QueryError, Result};
 
 // use crate::execution::ddl::query::spi::MetaSnafu;
@@ -108,16 +108,8 @@ impl DDLDefinitionTask for AlterTableTask {
                         Ok(())
                     };
 
-                match new_column_name {
-                    RenameColumnAction::RenameTag(new_name) => {
-                        alter_schema_func(&mut schema, old_column_name, new_name)?;
-                        None
-                    }
-                    RenameColumnAction::RenameField(new_name) => {
-                        alter_schema_func(&mut schema, old_column_name, new_name)?;
-                        None
-                    }
-                }
+                alter_schema_func(&mut schema, old_column_name, new_column_name)?;
+                None
             }
         };
 
