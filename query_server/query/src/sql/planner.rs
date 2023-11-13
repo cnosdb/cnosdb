@@ -103,8 +103,8 @@ use crate::metadata::{
     COLUMNS_COLUMN_TYPE, COLUMNS_COMPRESSION_CODEC, COLUMNS_DATABASE_NAME, COLUMNS_DATA_TYPE,
     COLUMNS_TABLE_NAME, DATABASES_DATABASE_NAME, DATABASES_PRECISION, DATABASES_REPLICA,
     DATABASES_SHARD, DATABASES_TTL, DATABASES_VNODE_DURATION, INFORMATION_SCHEMA,
-    INFORMATION_SCHEMA_COLUMNS, INFORMATION_SCHEMA_DATABASES, INFORMATION_SCHEMA_TABLES,
-    TABLES_TABLE_DATABASE, TABLES_TABLE_NAME,
+    INFORMATION_SCHEMA_COLUMNS, INFORMATION_SCHEMA_DATABASES, INFORMATION_SCHEMA_QUERIES,
+    INFORMATION_SCHEMA_TABLES, TABLES_TABLE_DATABASE, TABLES_TABLE_NAME,
 };
 
 /// CnosDB SQL query planner
@@ -184,14 +184,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             ExtStatement::AlterUser(stmt) => self.alter_user_to_plan(stmt).await,
             ExtStatement::GrantRevoke(stmt) => self.grant_revoke_to_plan(stmt, session),
             // system statement
-            ExtStatement::ShowQueries => {
-                let plan = Plan::SYSTEM(SYSPlan::ShowQueries);
-                // TODO privileges
-                Ok(PlanWithPrivileges {
-                    plan,
-                    privileges: vec![],
-                })
-            }
+            ExtStatement::ShowQueries => self.show_queries_to_plan(session),
             ExtStatement::Copy(stmt) => self.copy_to_plan(stmt, session).await,
             // vnode statement
             ExtStatement::DropVnode(stmt) => self.drop_vnode_to_plan(stmt),
@@ -1877,6 +1870,31 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         }));
 
         Ok(PlanWithPrivileges { plan, privileges })
+    }
+
+    fn show_queries_to_plan(&self, session: &SessionCtx) -> Result<PlanWithPrivileges> {
+        // QUERY_SCHEMA: query_id, query_type, query_text, user_name, tenant_name, state, duration
+        let projections = vec![0, 1, 2, 4, 6, 7, 8];
+
+        let table_ref = TableReference::partial(INFORMATION_SCHEMA, INFORMATION_SCHEMA_QUERIES);
+
+        let table_source = self.get_table_source(table_ref.clone())?;
+
+        let df_plan =
+            LogicalPlanBuilder::scan(table_ref, table_source, Some(projections))?.build()?;
+
+        let plan = Plan::Query(QueryPlan { df_plan });
+
+        // privileges
+        let tenant_id = *session.tenant_id();
+        let privilege = Privilege::TenantObject(
+            TenantObjectPrivilege::Database(DatabasePrivilege::Read, None),
+            Some(tenant_id),
+        );
+        Ok(PlanWithPrivileges {
+            plan,
+            privileges: vec![privilege],
+        })
     }
 
     fn drop_vnode_to_plan(&self, stmt: ASTDropVnode) -> Result<PlanWithPrivileges> {

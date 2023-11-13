@@ -214,22 +214,12 @@ pub struct DeleteFromTable {
 
 #[derive(Debug, Clone)]
 pub enum SYSPlan {
-    ShowQueries,
     KillQuery(QueryId),
 }
 
 impl SYSPlan {
     pub fn schema(&self) -> SchemaRef {
-        match self {
-            SYSPlan::ShowQueries => Arc::new(Schema::new(vec![
-                Field::new("query_id", DataType::Utf8, false),
-                Field::new("user", DataType::Utf8, false),
-                Field::new("query", DataType::Utf8, false),
-                Field::new("state", DataType::Utf8, false),
-                Field::new("duration", DataType::UInt64, false),
-            ])),
-            _ => Arc::new(Schema::empty()),
-        }
+        Arc::new(Schema::empty())
     }
 }
 
