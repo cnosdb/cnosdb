@@ -88,3 +88,8 @@ insert into readings_agg
   select time, name, elevation
   from TskvTable 
   order by time, name;
+
+# select
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: This feature is not implemented: Stream table can only be used as source table in insert select statements\.", .*
+select *
+  from TskvTable;
