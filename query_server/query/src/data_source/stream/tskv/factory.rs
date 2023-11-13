@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use coordinator::service::CoordinatorRef;
@@ -65,9 +66,16 @@ impl SchemaChecker<StreamTable> for TskvStreamProviderFactory {
             })?;
 
         // Make sure that the columns specified in [`StreamTable`] must be included in the target table
+        let mut duplicated_cols = HashSet::new();
         let target_schema = target_table.to_arrow_schema();
         for f in table.schema().fields() {
             target_schema.field_with_name(f.name())?;
+            // check same col name
+            if !duplicated_cols.insert(f.name()) {
+                return Err(QueryError::SameColumnName {
+                    column: f.name().to_string(),
+                });
+            }
         }
 
         // check 'event_time_column'
