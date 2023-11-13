@@ -5,10 +5,17 @@ pub mod prompb;
 pub mod test_helper;
 
 use std::fmt::{Display, Formatter};
+use std::time::Duration;
 
+use crate::kv_service::tskv_service_client::TskvServiceClient;
 use crate::models::{Column, Points, Table};
 use flatbuffers::{ForwardsUOffset, Vector};
 use snafu::Snafu;
+use tonic::transport::Channel;
+use tower::timeout::Timeout;
+
+// Default 100 MB
+pub const DEFAULT_GRPC_SERVER_MESSAGE_LEN: usize = 100 * 1024 * 1024;
 
 type PointsResult<T> = Result<T, PointsError>;
 
@@ -234,6 +241,17 @@ impl<'a> Display for Table<'a> {
         }
         Ok(())
     }
+}
+
+pub fn tskv_service_time_out_client(
+    channel: Channel,
+    time_out: Duration,
+    max_message_size: usize,
+) -> TskvServiceClient<Timeout<Channel>> {
+    let timeout_channel = Timeout::new(channel, time_out);
+    let client = TskvServiceClient::<Timeout<Channel>>::new(timeout_channel);
+    let client = TskvServiceClient::max_decoding_message_size(client, max_message_size);
+    TskvServiceClient::max_encoding_message_size(client, max_message_size)
 }
 
 #[cfg(test)]

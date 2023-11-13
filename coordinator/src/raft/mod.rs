@@ -11,6 +11,7 @@ use protos::kv_service::{
     WriteDataRequest,
 };
 use protos::models_helper::parse_prost_bytes;
+use protos::{tskv_service_time_out_client, DEFAULT_GRPC_SERVER_MESSAGE_LEN};
 use replication::errors::{ReplicationError, ReplicationResult};
 use replication::{ApplyContext, ApplyStorage};
 use tonic::transport::Channel;
@@ -58,8 +59,11 @@ impl TskvEngineStorage {
 
     pub async fn download_snapshot(&self, snapshot: &VnodeSnapshot) -> CoordinatorResult<()> {
         let channel = self.meta.get_node_conn(snapshot.node_id).await?;
-        let timeout_channel = Timeout::new(channel, Duration::from_secs(60 * 60));
-        let mut client = TskvServiceClient::<Timeout<Channel>>::new(timeout_channel);
+        let mut client = tskv_service_time_out_client(
+            channel,
+            Duration::from_secs(60 * 60),
+            DEFAULT_GRPC_SERVER_MESSAGE_LEN,
+        );
 
         let owner = models::schema::make_owner(&snapshot.tenant, &snapshot.database);
         let path = self.storage.get_storage_options().snapshot_sub_dir(

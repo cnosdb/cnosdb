@@ -3350,6 +3350,7 @@ dependencies = [
  "byteorder",
  "clap",
  "config",
+ "ctrlc",
  "dashmap",
  "error_code",
  "futures",
@@ -4446,6 +4447,7 @@ dependencies = [
  "snafu",
  "tonic",
  "tonic-build",
+ "tower",
  "utils",
 ]
 

@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use clap::Parser;
+use meta::signal;
 use meta::store::{self};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
@@ -34,4 +35,6 @@ async fn main() {
     meta::service::server::start_raft_node(options)
         .await
         .unwrap();
+
+    signal::block_waiting_ctrl_c();
 }
