@@ -1344,7 +1344,7 @@ impl SeriesGroupRowIterator {
                     }
 
                     ColumnType::Tag => {
-                        let tag_val = key.tag_val(&item.name);
+                        let tag_val = key.tag_val(item.id.to_string().as_str());
                         Box::new(TagCursor::new(item.name.clone(), tag_val))
                     }
 

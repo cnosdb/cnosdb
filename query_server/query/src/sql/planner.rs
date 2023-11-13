@@ -86,8 +86,7 @@ use spi::query::logical_planner::{
     CreateUser, DDLPlan, DMLPlan, DatabaseObjectType, DeleteFromTable, DropDatabaseObject,
     DropGlobalObject, DropTenantObject, DropVnode, FileFormatOptions, FileFormatOptionsBuilder,
     GlobalObjectType, GrantRevoke, LogicalPlanner, MoveVnode, Plan, PlanWithPrivileges, QueryPlan,
-    RecoverDatabase, RecoverTenant, RenameColumnAction, SYSPlan, TenantObjectType,
-    TENANT_OPTION_LIMITER,
+    RecoverDatabase, RecoverTenant, SYSPlan, TenantObjectType, TENANT_OPTION_LIMITER,
 };
 use spi::query::session::SessionCtx;
 use spi::{QueryError, Result};
@@ -1133,14 +1132,10 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
                     });
                 }
 
-                let new_column_name = match column.column_type {
-                    ColumnType::Time(_) => {
-                        return Err(QueryError::NotImplemented {
-                            err: "rename time column".to_string(),
-                        })
-                    }
-                    ColumnType::Tag => RenameColumnAction::RenameTag(new_column_name),
-                    ColumnType::Field(_) => RenameColumnAction::RenameField(new_column_name),
+                if let ColumnType::Time(_) = column.column_type {
+                    return Err(QueryError::NotImplemented {
+                        err: "rename time column".to_string(),
+                    });
                 };
 
                 AlterTableAction::RenameColumn {
