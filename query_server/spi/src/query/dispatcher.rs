@@ -64,6 +64,7 @@ pub struct QueryInfo {
 
     tenant_id: Oid,
     tenant_name: String,
+    database_name: String,
     user: UserDesc,
 }
 
@@ -73,6 +74,7 @@ impl QueryInfo {
         query: String,
         tenant_id: Oid,
         tenant_name: String,
+        database_name: String,
         user: UserDesc,
     ) -> Self {
         Self {
@@ -80,6 +82,7 @@ impl QueryInfo {
             query,
             tenant_id,
             tenant_name,
+            database_name,
             user,
         }
     }
@@ -98,6 +101,10 @@ impl QueryInfo {
 
     pub fn tenant_name(&self) -> &str {
         &self.tenant_name
+    }
+
+    pub fn database_name(&self) -> &str {
+        &self.database_name
     }
 
     pub fn user_desc(&self) -> &UserDesc {
