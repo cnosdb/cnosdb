@@ -268,6 +268,7 @@ mod tests {
                 "test".to_string(),
                 0_u128,
                 "tenant".to_string(),
+                "db".to_string(),
                 desc,
             )
         }
