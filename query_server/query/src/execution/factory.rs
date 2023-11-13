@@ -75,34 +75,44 @@ impl QueryExecutionFactory for SqlQueryExecutionFactory {
                 // 获取执行计划中所有涉及到的stream source
                 let stream_providers = extract_stream_providers(&query_plan);
 
-                // 纯批操作
-                // 1. 没有stream source
-                // 2. explain
-                // 3. 非dml
-                if stream_providers.is_empty() || query_plan.is_explain() || !is_dml(&query_plan) {
-                    return Ok(Arc::new(SqlQueryExecution::new(
+                // (含有流表, explain, dml)
+                match (
+                    !stream_providers.is_empty(),
+                    query_plan.is_explain(),
+                    is_dml(&query_plan),
+                ) {
+                    (false, _, _) | (true, true, _) => Ok(Arc::new(SqlQueryExecution::new(
                         state_machine,
                         query_plan,
                         self.optimizer.clone(),
                         self.scheduler.clone(),
-                    )));
+                    ))),
+                    (true, false, true) => {
+                        // 流操作
+                        // stream source + dml + !explain
+                        let options = state_machine.session.inner().state().config().into();
+                        let exec =
+                            MicroBatchStreamExecutionBuilder::new(MicroBatchStreamExecutionDesc {
+                                plan: Arc::new(query_plan),
+                                options,
+                            })
+                            .with_stream_providers(stream_providers)
+                            .build(
+                                state_machine,
+                                self.scheduler.clone(),
+                                self.trigger_executor_factory.clone(),
+                                self.runtime.clone(),
+                            )?;
+
+                        Ok(Arc::new(exec))
+                    }
+                    (true, false, false) => {
+                        // stream source + !dml + !explain
+                        Err(QueryError::NotImplemented {
+                            err: "Stream table can only be used as source table in insert select statements.".to_string(),
+                        })
+                    }
                 }
-
-                // 流操作
-                let options = state_machine.session.inner().state().config().into();
-                let exec = MicroBatchStreamExecutionBuilder::new(MicroBatchStreamExecutionDesc {
-                    plan: Arc::new(query_plan),
-                    options,
-                })
-                .with_stream_providers(stream_providers)
-                .build(
-                    state_machine,
-                    self.scheduler.clone(),
-                    self.trigger_executor_factory.clone(),
-                    self.runtime.clone(),
-                )?;
-
-                Ok(Arc::new(exec))
             }
             Plan::DDL(ddl_plan) => Ok(Arc::new(DDLExecution::new(
                 state_machine,
