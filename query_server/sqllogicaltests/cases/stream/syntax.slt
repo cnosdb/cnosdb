@@ -86,6 +86,20 @@ CREATE STREAM TABLE TskvTable (
   event_time_column = 'time'
 ) engine = xxx;
 
+# same col name
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Semantic error: Field or Tag have the same name time", .*
+CREATE STREAM TABLE TskvTable (
+  time TIMESTAMP,
+  time TIMESTAMP,
+  name STRING,
+  driver STRING,
+  elevation DOUBLE
+) WITH (
+  db = 'public',
+  table = 'readings_kv',
+  event_time_column = 'time'
+) engine = tskv;
+
 # event_time_column does not match
 statement error .*Schema error: Unable to get field named \\"timex\\"\. Valid fields: \[\\"time\\", \\"name\\", \\"fleet\\", \\"driver\\", \\"model\\", \\"device_version\\", \\"latitude\\", \\"longitude\\", \\"elevation\\", \\"velocity\\", \\"heading\\", \\"grade\\", \\"fuel_consumption\\", \\"load_capacity\\", \\"fuel_capacity\\", \\"nominal_fuel_consumption\\"\]", .*
 CREATE STREAM TABLE TskvTable (
