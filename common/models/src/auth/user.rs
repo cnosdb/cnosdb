@@ -8,7 +8,7 @@ use super::privilege::{
     DatabasePrivilege, GlobalPrivilege, Privilege, PrivilegeChecker, TenantObjectPrivilege,
 };
 use super::role::UserRole;
-use super::{rsa_utils, AuthError, Result};
+use super::{bcrypt_verify, rsa_utils, AuthError, Result};
 use crate::oid::{Identifier, Oid};
 
 pub const ROOT: &str = "root";
@@ -205,7 +205,8 @@ impl<'a> AuthType<'a> {
         match self {
             Self::Password(e) => {
                 let password = e.ok_or_else(|| AuthError::PasswordNotSet)?;
-                if password != user_info.password {
+
+                if !bcrypt_verify(&user_info.password, password)? {
                     return Err(AuthError::AccessDenied {
                         user_name: user_name.to_string(),
                         auth_type: "password".to_string(),

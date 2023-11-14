@@ -19,6 +19,7 @@ use datafusion::prelude::{col, Expr};
 use datafusion::sql::sqlparser::ast::{Ident, ObjectName, SqlOption, Value};
 use datafusion::sql::sqlparser::parser::ParserError;
 use lazy_static::lazy_static;
+use models::auth::bcrypt_hash;
 use models::auth::privilege::{DatabasePrivilege, GlobalPrivilege, Privilege};
 use models::auth::role::{SystemTenantRole, TenantRoleIdentifier};
 use models::auth::user::{UserOptions, UserOptionsBuilder};
@@ -411,7 +412,10 @@ pub fn sql_options_to_user_options(
     for SqlOption { ref name, value } in with_options {
         match normalize_ident(name).as_str() {
             "password" => {
-                builder.password(parse_string_value(value)?);
+                let password = parse_string_value(value)?;
+                let hash_password = bcrypt_hash(password.as_str())
+                    .map_err(|e| ParserError::ParserError(e.to_string()))?;
+                builder.password(hash_password);
             }
             "must_change_password" => {
                 builder.must_change_password(parse_bool_value(value)?);
