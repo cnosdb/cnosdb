@@ -119,7 +119,7 @@ fn next_measurement(buf: &str) -> Option<(&str, usize)> {
     let mut exists_measurement = false;
     let (mut tok_begin, mut tok_end) = (0, buf.len());
     let mut i = 0;
-    for (_, c) in buf.chars().enumerate() {
+    for c in buf.chars() {
         // Measurement begin character
         if c == '\\' {
             escaped = true;
@@ -161,7 +161,7 @@ fn next_metric(buf: &str) -> Option<(&str, usize)> {
     let mut exists_metric = false;
     let (mut tok_begin, mut tok_end) = (0, buf.len());
     let mut i = 0;
-    for (_, c) in buf.chars().enumerate() {
+    for c in buf.chars() {
         // Measurement begin character
         if c == '\\' {
             escaped = true;
@@ -210,7 +210,7 @@ fn next_tag_set(buf: &str) -> NextTagRes {
 
     let mut tag_set: Vec<(&str, &str)> = Vec::new();
     let mut i = 0;
-    for (_, c) in buf.chars().enumerate() {
+    for c in buf.chars() {
         // TagSet begin character
         if !escaped && c == '\\' {
             escaped = true;
@@ -294,7 +294,7 @@ fn next_field_set(buf: &str) -> Result<Option<(FieldSet, usize)>> {
 
     let mut field_set: FieldSet = Vec::new();
     let mut i = 0;
-    for (_, c) in buf.chars().enumerate() {
+    for c in buf.chars() {
         // TagSet begin character
         if c == '\\' {
             escaped = true;

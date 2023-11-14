@@ -37,10 +37,10 @@ pub enum Error {
     NotFoundDBMS { backtrace: Backtrace },
 
     #[snafu(display("Ensure the format of certificate and private_key is correct."))]
-    IdentityFormatError,
+    IdentityFormat,
 
     #[snafu(display("Ensure the TLS configuration is correct"))]
-    TLSConfigError,
+    TLSConfig,
 
     #[snafu(display("Server Common Error : {}", reason))]
     Common { reason: String },
@@ -48,13 +48,13 @@ pub enum Error {
 
 impl From<tonic::transport::Error> for Error {
     fn from(_: tonic::transport::Error) -> Self {
-        Self::IdentityFormatError
+        Self::IdentityFormat
     }
 }
 
 impl From<std::io::Error> for Error {
     fn from(_: std::io::Error) -> Self {
-        Self::TLSConfigError
+        Self::TLSConfig
     }
 }
 
