@@ -239,7 +239,7 @@ pub fn get_file_id_range(dir: impl AsRef<Path>, suffix: &str) -> Option<(u64, u6
     let mut max_id = 0;
     let mut min_id = u64::MAX;
     let mut is_found = false;
-    for (_i, file_name) in file_names.iter().enumerate() {
+    for file_name in file_names.iter() {
         if let Ok(id) = get_file_id(file_name) {
             is_found = true;
             if max_id < id {
