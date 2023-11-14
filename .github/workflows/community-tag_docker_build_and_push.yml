@@ -1,10 +1,13 @@
 name: community-tag docker build and push
 
 on:
+  push:
+    tags:
+      - v[0-9]+.*
   workflow_dispatch:
     inputs:
       tag:
-        description: 'tag'
+        description: 'tag(without "v")'
         required: true
 
 env:
@@ -21,6 +24,16 @@ jobs:
     runs-on: ubuntu-latest
     if: github.repository_owner == 'cnosdb' && github.repository == 'cnosdb/cnosdb' && github.ref == 'refs/heads/LTS/2.3'
     steps:
+      - name: Get tag
+        id: get-tag
+        run: |
+          if [[ "${{ github.event_name }}" = "workflow_dispatch" ]]; then
+            echo "TAG=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            ref_name=${{ github.ref_name }}
+            tag=${ref_name: 1}
+            echo "TAG=$tag" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/checkout@v3
       - name: Prepare Rust Builder
         uses: ./.github/actions/setup-builder
@@ -64,10 +77,10 @@ jobs:
         run: |
           if [[ "${{ matrix.image }}" = "cnosdb" ]]; then
             docker buildx build -f docker/Dockerfile --platform linux/amd64,linux/arm64 \
-              -t cnosdb/${{matrix.image}}:community-${{ github.event.inputs.tag }} \
+              -t cnosdb/${{matrix.image}}:community-${{ steps.get-tag.outputs.TAG }} \
               --build-arg="git_hash=${{ github.sha }}" . --push
           else
             docker buildx build -f docker/Dockerfile_meta --platform linux/amd64,linux/arm64 \
-              -t cnosdb/${{matrix.image}}:community-${{ github.event.inputs.tag }} \
+              -t cnosdb/${{matrix.image}}:community-${{ steps.get-tag.outputs.TAG }} \
               --build-arg="git_hash=${{ github.sha }}" . --push
           fi
