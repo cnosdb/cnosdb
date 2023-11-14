@@ -85,3 +85,29 @@ CREATE STREAM TABLE TskvTable (
   table = 'readings_kv',
   event_time_column = 'time'
 ) engine = xxx;
+
+# event_time_column does not match
+statement error .*Schema error: Unable to get field named \\"timex\\"\. Valid fields: \[\\"time\\", \\"name\\", \\"fleet\\", \\"driver\\", \\"model\\", \\"device_version\\", \\"latitude\\", \\"longitude\\", \\"elevation\\", \\"velocity\\", \\"heading\\", \\"grade\\", \\"fuel_consumption\\", \\"load_capacity\\", \\"fuel_capacity\\", \\"nominal_fuel_consumption\\"\]", .*
+CREATE STREAM TABLE TskvTable (
+  time TIMESTAMP,
+  name STRING,
+  driver STRING,
+  elevation DOUBLE
+) WITH (
+  db = 'public',
+  table = 'readings_kv',
+  event_time_column = 'timex'
+) engine = tskv;
+
+# data type of event_time_column does not match
+statement error .*Invalid option \[event_time_column\] of table tskvtable: The data type of column 'latitude' is not timestamp.*
+CREATE STREAM TABLE TskvTable (
+  time TIMESTAMP,
+  name STRING,
+  driver STRING,
+  elevation DOUBLE
+) WITH (
+  db = 'public',
+  table = 'readings_kv',
+  event_time_column = 'latitude'
+) engine = tskv;
