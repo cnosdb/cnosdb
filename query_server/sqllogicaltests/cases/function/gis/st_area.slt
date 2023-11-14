@@ -21,11 +21,9 @@ select 'emptyLineArea', st_area('LINESTRING EMPTY');
 ----
 emptyLineArea 0.0
 
-query T
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: processing geometry `The input was an empty Point, but the output doesn't support empty Points`".*
 -- Area of an empty point
 select 'emptyPointArea', st_area('POINT EMPTY');
-----
-emptyPointArea NULL
 
 query T
 -- Area of an empty multipolygon
@@ -56,78 +54,23 @@ select st_area('POLYGON((0 0,0 1,1 1,1 0,0 0))');
 ----
 1.0
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function \\"st_Area\\" expects 1 arguments, but 0 were provided", *
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function \\"ST_Area\\" expects 1 arguments, but 0 were provided".*
 select st_area();
 
-query 
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Datafusion: Execution error: processing geometry `Invalid WKT format`".*
 select st_area(f0_bigint) from gis_loc_all order by time;
-----
-NULL
-NULL
-NULL
-NULL
-NULL
-NULL
-NULL
-NULL
-NULL
-NULL
 
-query 
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Datafusion: Execution error: processing geometry `Invalid WKT format`".*
 select st_area(f1_bigint_unsign) from gis_loc_all order by time;
-----
-NULL
-NULL
-NULL
-NULL
-NULL
-NULL
-NULL
-NULL
-NULL
-NULL
 
-query 
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Datafusion: Execution error: processing geometry `Invalid WKT format`".*
 select st_area(f2_boolean) from gis_loc_all order by time;
-----
-NULL
-NULL
-NULL
-NULL
-NULL
-NULL
-NULL
-NULL
-NULL
-NULL
 
-query 
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Datafusion: Execution error: processing geometry `Invalid type encountered`".*
 select st_area(f3_string) from gis_loc_all order by time;
-----
-NULL
-NULL
-NULL
-NULL
-NULL
-NULL
-NULL
-NULL
-NULL
-NULL
 
-query 
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Datafusion: Execution error: processing geometry `Invalid WKT format`".*
 select st_area(f4_double) from gis_loc_all order by time;
-----
-NULL
-NULL
-NULL
-NULL
-NULL
-NULL
-NULL
-NULL
-NULL
-NULL
 
 query 
 select st_area(loc0_point) from gis_loc_all order by time;
@@ -230,35 +173,13 @@ select st_area(loc6_GEOMETRYCOLLECTION) from gis_loc_all order by time;
 87.5
 
 
-query 
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Datafusion: Execution error: processing geometry `Invalid type encountered`".*
 select st_area(t0) from gis_loc_all;
-----
-NULL
-NULL
-NULL
-NULL
-NULL
-NULL
-NULL
-NULL
-NULL
-NULL
 
-query 
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Datafusion: Execution error: processing geometry `Unable to parse input number as the desired output type`".*
 select st_area(TIME) from gis_loc_all order by time;
-----
-NULL
-NULL
-NULL
-NULL
-NULL
-NULL
-NULL
-NULL
-NULL
-NULL
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function \\"st_Area\\" expects 1 arguments, but 2 were provided", *
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function \\"ST_Area\\" expects 1 arguments, but 2 were provided".*
 select st_area(loc2_POLYGON, loc2_POLYGON) from gis_loc_all order by time;
 
 query 
