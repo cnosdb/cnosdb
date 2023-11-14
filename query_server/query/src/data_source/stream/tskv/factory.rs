@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use coordinator::service::CoordinatorRef;
+use datafusion::logical_expr::type_coercion::is_timestamp;
 use meta::error::MetaError;
 use meta::model::MetaClientRef;
 use models::schema::StreamTable;
@@ -12,6 +13,7 @@ use super::provider::TskvStreamProvider;
 use super::{get_target_db_name, get_target_table_name, STREAM_DB_KEY, STREAM_TABLE_KEY};
 use crate::data_source::batch::tskv::ClusterTable;
 use crate::data_source::split::SplitManagerRef;
+use crate::data_source::stream::EVENT_TIME_COLUMN_OPTION;
 
 pub const TSKV_STREAM_PROVIDER: &str = "tskv";
 
@@ -66,6 +68,19 @@ impl SchemaChecker<StreamTable> for TskvStreamProviderFactory {
         let target_schema = target_table.to_arrow_schema();
         for f in table.schema().fields() {
             target_schema.field_with_name(f.name())?;
+        }
+
+        // check 'event_time_column'
+        let field = target_schema.field_with_name(&table.watermark().column)?;
+        if !is_timestamp(field.data_type()) {
+            return Err(QueryError::InvalidTableOption {
+                option_name: EVENT_TIME_COLUMN_OPTION.to_string(),
+                table_name: table_name.to_string(),
+                reason: format!(
+                    "The data type of column '{}' is not timestamp.",
+                    table.watermark().column
+                ),
+            });
         }
 
         Ok(())
