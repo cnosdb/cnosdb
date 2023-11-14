@@ -1,73 +1,22 @@
-use std::sync::Arc;
-
 use datafusion::arrow::array::{downcast_array, ArrayRef, Float64Builder, StringArray};
 use datafusion::arrow::datatypes::DataType;
 use datafusion::common::Result as DFResult;
 use datafusion::error::DataFusionError;
-use datafusion::logical_expr::{ReturnTypeFunction, ScalarUDF, Signature, Volatility};
+use datafusion::logical_expr::ScalarUDF;
 use datafusion::physical_plan::functions::make_scalar_function;
 use geo::{
     EuclideanDistance, Geometry, Line, LineString, MultiLineString, MultiPoint, MultiPolygon,
     Point, Polygon, Triangle,
 };
-use geozero::wkt::WktStr;
-use geozero::ToGeo;
 use spi::query::function::FunctionMetadataManager;
 use spi::Result;
 
+use crate::geometry_binary_op;
+
 pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> Result<ScalarUDF> {
-    let udf = new();
+    let udf = geometry_binary_op!("ST_Distance", distance, DataType::Float64, Float64Builder);
     func_manager.register_udf(udf.clone())?;
     Ok(udf)
-}
-
-fn new() -> ScalarUDF {
-    let fun = make_scalar_function(func);
-
-    let signature = Signature::exact(vec![DataType::Utf8, DataType::Utf8], Volatility::Immutable);
-    let return_type: ReturnTypeFunction = Arc::new(move |_| Ok(Arc::new(DataType::Float64)));
-
-    ScalarUDF::new("st_distance", &signature, &return_type, &fun)
-}
-
-fn func(args: &[ArrayRef]) -> DFResult<ArrayRef> {
-    let geo1 = args[0].as_ref();
-    let geo2 = args[1].as_ref();
-
-    let mut builder = Float64Builder::with_capacity(geo1.len());
-
-    let geo1 = downcast_array::<StringArray>(geo1);
-    let geo2 = downcast_array::<StringArray>(geo2);
-
-    geo1.iter()
-        .zip(geo2.iter())
-        .try_for_each(|(l, r)| {
-            match (l, r) {
-                (None, _) | (_, None) => builder.append_null(),
-                (Some(l), Some(r)) => {
-                    let wkt_l = WktStr(l);
-                    let wkt_r = WktStr(r);
-
-                    let geo_l = wkt_l
-                        .to_geo()
-                        .map_err(|err| DataFusionError::Execution(err.to_string()))?;
-                    let geo_r = wkt_r
-                        .to_geo()
-                        .map_err(|err| DataFusionError::Execution(err.to_string()))?;
-
-                    let distance = distance(&geo_l, &geo_r)?;
-
-                    builder.append_value(distance)
-                }
-            };
-
-            Ok::<(), DataFusionError>(())
-        })
-        .map_err(|err| DataFusionError::Execution(err.to_string()))?;
-
-    let result = builder.finish();
-
-    Ok(Arc::new(result))
 }
 
 fn distance(geo_l: &Geometry, geo_r: &Geometry) -> DFResult<f64> {
