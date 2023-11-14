@@ -16,6 +16,7 @@ arrow-schema = { workspace = true, features = ["serde"] }
 async-backtrace = { workspace = true, optional = true }
 async-trait = { workspace = true }
 bincode = { workspace = true }
+bcrypt = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
 datafusion = { workspace = true }
 datafusion-proto = { workspace = true }

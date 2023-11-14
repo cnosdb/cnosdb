@@ -1,6 +1,6 @@
 use meta::model::MetaRef;
-use models::auth::user::{AuthType, User, UserInfo};
-use models::auth::AuthError;
+use models::auth::user::{AuthType, User, UserInfo, UserOptionsBuilder};
+use models::auth::{bcrypt_hash, AuthError};
 use models::oid::{Identifier, Oid};
 use spi::query::auth::AccessControl;
 use trace::warn;
@@ -24,8 +24,29 @@ impl AccessControl for AccessControlImpl {
         let user = self.inner.access_check(user_info, tenant_name).await?;
 
         let user_options = user.desc().options();
-        // access check
-        AuthType::from(user_options).access_check(user_info)?;
+        if let Some(password) = user_options.password() {
+            if password.eq(user_info.password.as_str()) {
+                let new_user_option = UserOptionsBuilder::default()
+                    .password(bcrypt_hash(password)?)
+                    .build()
+                    .map_err(|e| AuthError::Internal {
+                        err: format!("build user_info error: {}", e),
+                    })?
+                    .merge(user_options.clone());
+                self.inner
+                    .meta_manager
+                    .alter_user(user.desc().name(), new_user_option.clone())
+                    .await
+                    .map_err(|e| AuthError::Internal {
+                        err: format!("alter user failed: {}", e),
+                    })?;
+                AuthType::from(&new_user_option).access_check(user_info)?;
+            } else {
+                AuthType::from(user_options).access_check(user_info)?;
+            }
+        } else {
+            AuthType::from(user_options).access_check(user_info)?;
+        }
 
         Ok(user)
     }
