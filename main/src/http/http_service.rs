@@ -695,7 +695,7 @@ impl HttpService {
                 info!("debug pprof: {:?}", res);
                 match res {
                     Ok(v) => Ok(v),
-                    Err(e) => Err(reject::custom(HttpError::PProfError { reason: e })),
+                    Err(e) => Err(reject::custom(HttpError::PProf { reason: e })),
                 }
             }
             #[cfg(not(unix))]
@@ -715,7 +715,7 @@ impl HttpService {
                 info!("debug jeprof: {:?}", res);
                 match res {
                     Ok(v) => Ok(v),
-                    Err(e) => Err(reject::custom(HttpError::PProfError { reason: e })),
+                    Err(e) => Err(reject::custom(HttpError::PProf { reason: e })),
                 }
             }
             #[cfg(not(unix))]
