@@ -7,7 +7,7 @@ use fly_accept_encoding::Encoding;
 use http_protocol::encoding::EncodingExt;
 use http_protocol::header::{ACCEPT, PRIVATE_KEY};
 use http_protocol::http_client::HttpClient;
-use http_protocol::parameter::{SqlParam, WriteParam};
+use http_protocol::parameter::{DumpParam, SqlParam, WriteParam};
 use http_protocol::status_code::OK;
 use reqwest::header::{ACCEPT_ENCODING, CONTENT_ENCODING};
 
@@ -22,9 +22,12 @@ pub const DEFAULT_PRECISION: &str = "NS";
 pub const DEFAULT_USE_SSL: bool = false;
 pub const DEFAULT_USE_UNSAFE_SSL: bool = false;
 pub const DEFAULT_CHUNKED: bool = false;
+pub const DEFAULT_PROCESS_CLI_COMMAND: bool = false;
+pub const DEFAULT_ERROR_STOP: bool = false;
 
 pub const API_V1_SQL_PATH: &str = "/api/v1/sql";
 pub const API_V1_WRITE_PATH: &str = "/api/v1/write";
+pub const API_V1_DUMP_SQL_DDL_PATH: &str = "/api/v1/dump/sql/ddl";
 
 pub struct SessionConfig {
     pub user_info: UserInfo,
@@ -41,6 +44,8 @@ pub struct SessionConfig {
     pub use_ssl: bool,
     pub use_unsafe_ssl: bool,
     pub chunked: bool,
+    pub process_cli_command: bool,
+    pub error_stop: bool,
 }
 
 impl SessionConfig {
@@ -63,6 +68,8 @@ impl SessionConfig {
             use_ssl: DEFAULT_USE_SSL,
             use_unsafe_ssl: DEFAULT_USE_UNSAFE_SSL,
             chunked: DEFAULT_CHUNKED,
+            process_cli_command: DEFAULT_PROCESS_CLI_COMMAND,
+            error_stop: DEFAULT_ERROR_STOP,
         }
     }
 
@@ -164,6 +171,18 @@ impl SessionConfig {
 
         self
     }
+
+    pub fn with_process_cli_command(mut self, process_cli_command: bool) -> Self {
+        self.process_cli_command = process_cli_command;
+
+        self
+    }
+
+    pub fn with_error_stop(mut self, error_stop: bool) -> Self {
+        self.error_stop = error_stop;
+
+        self
+    }
 }
 
 pub struct UserInfo {
@@ -221,8 +240,20 @@ impl SessionContext {
         self.session_config.database = name.to_string();
     }
 
+    pub fn set_tenant(&mut self, tenant: String) {
+        self.session_config.tenant = tenant
+    }
+
     pub fn get_database(&self) -> &str {
         self.session_config.database.as_str()
+    }
+
+    pub fn get_session_config(&self) -> &SessionConfig {
+        &self.session_config
+    }
+
+    pub fn get_mut_session_config(&mut self) -> &mut SessionConfig {
+        &mut self.session_config
     }
 
     pub async fn sql(&self, sql: String) -> Result<ResultSet> {
@@ -364,6 +395,29 @@ impl SessionContext {
             self.write_line_protocol_file(dir_entry.path()).await?;
         }
         Ok(())
+    }
+
+    pub async fn dump(&self, tenant: Option<String>) -> Result<String> {
+        let user_info = &self.session_config.user_info;
+
+        let param = DumpParam { tenant };
+
+        let mut builder = self
+            .http_client
+            .get(API_V1_DUMP_SQL_DDL_PATH)
+            .basic_auth::<&str, &str>(&user_info.user, user_info.password.as_deref());
+        builder = if let Some(key) = &user_info.private_key {
+            let key = base64::encode(key);
+            builder.header(PRIVATE_KEY, key)
+        } else {
+            builder
+        }
+        .query(&param);
+
+        let resp = builder.send().await?;
+
+        let res = resp.text().await?;
+        Ok(res)
     }
 }
 

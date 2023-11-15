@@ -473,7 +473,9 @@ pub fn sql_options_to_user_options(
     for SqlOption { ref name, value } in with_options {
         match normalize_ident(name).as_str() {
             "password" => {
-                builder.password(parse_string_value(value)?);
+                builder
+                    .password(parse_string_value(value)?)
+                    .map_err(|e| ParserError::ParserError(e.to_string()))?;
             }
             "must_change_password" => {
                 builder.must_change_password(parse_bool_value(value)?);
@@ -486,6 +488,9 @@ pub fn sql_options_to_user_options(
             }
             "granted_admin" => {
                 builder.granted_admin(parse_bool_value(value)?);
+            }
+            "hash_password" => {
+                builder.hash_password(parse_string_value(value)?);
             }
             _ => {
                 return Err(ParserError::ParserError(format!(
@@ -582,14 +587,8 @@ pub enum AlterTableAction {
     },
     RenameColumn {
         old_column_name: String,
-        new_column_name: RenameColumnAction,
+        new_column_name: String,
     },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RenameColumnAction {
-    RenameTag(String),
-    RenameField(String),
 }
 
 #[async_trait]

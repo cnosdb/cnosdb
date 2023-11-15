@@ -144,26 +144,6 @@ impl TskvServiceImpl {
         }
     }
 
-    async fn admin_rename_column(
-        &self,
-        tenant: &str,
-        request: &RenameColumnRequest,
-    ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
-        let RenameColumnRequest {
-            db,
-            table,
-            old_name,
-            new_name,
-            dry_run,
-        } = request;
-
-        self.kv_inst
-            .rename_tag(tenant, db, table, old_name, new_name, *dry_run)
-            .await?;
-
-        self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
-    }
-
     async fn admin_update_tags(
         &self,
         tenant: &str,
@@ -586,9 +566,6 @@ impl TskvService for TskvServiceImpl {
                 }
                 admin_command_request::Command::AlterColumn(command) => {
                     self.admin_alter_column(&inner.tenant, command).await
-                }
-                admin_command_request::Command::RenameColumn(command) => {
-                    self.admin_rename_column(&inner.tenant, command).await
                 }
                 admin_command_request::Command::UpdateTags(command) => {
                     self.admin_update_tags(&inner.tenant, command).await

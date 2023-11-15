@@ -21,6 +21,12 @@ pub struct WriteParam {
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
+pub struct DumpParam {
+    pub tenant: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub struct DebugParam {
     pub id: Option<u32>,
 }

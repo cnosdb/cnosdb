@@ -261,6 +261,12 @@ pub enum Error {
     #[error_code(code = 53)]
     InvalidPointTable,
 
+    #[error_code(code = 54)]
+    #[snafu(display("ColumnId {} not found", column))]
+    ColumnIdNotFound {
+        column: String,
+    },
+
     #[snafu(display("Columns of FlatBufferTable is missing"))]
     FlatBufColumnsMiss,
 }

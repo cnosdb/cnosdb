@@ -11,6 +11,7 @@ use warp::{hyper, Filter};
 
 use crate::error::{MetaError, MetaResult};
 use crate::store::command::*;
+use crate::store::dump::dump_impl;
 use crate::store::storage::{BtreeMapSnapshotData, StateMachine};
 
 pub struct HttpServer {
@@ -28,7 +29,9 @@ impl HttpServer {
             .or(self.read())
             .or(self.write())
             .or(self.watch())
+            .or(self.watch_meta_membership())
             .or(self.dump())
+            .or(self.dump_sql())
             .or(self.restore())
             .or(self.debug())
             .or(self.debug_pprof())
@@ -123,6 +126,51 @@ impl HttpServer {
             )
     }
 
+    fn watch_meta_membership(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        warp::path!("watch_meta_membership")
+            .and(self.with_raft_node())
+            .and_then(|node: Arc<RaftNode>| async move {
+                match node.raw_raft().is_leader().await {
+                    Ok(_) => {
+                        let data = Self::process_watch_meta_membership(node)
+                            .await
+                            .map_err(warp::reject::custom)?;
+                        let resp =
+                            warp::reply::with_status(data.into_bytes(), http::StatusCode::OK);
+
+                        let res: Result<warp::reply::WithStatus<Vec<u8>>, warp::Rejection> =
+                            Ok(resp);
+                        res
+                    }
+                    Err(err) => {
+                        if let Some(openraft::error::ForwardToLeader {
+                            leader_id: Some(_leader_id),
+                            leader_node: Some(leader_node),
+                        }) = err.forward_to_leader()
+                        {
+                            let resp = warp::reply::with_status(
+                                leader_node.address.clone().into_bytes(),
+                                http::StatusCode::PERMANENT_REDIRECT,
+                            );
+                            let res: Result<warp::reply::WithStatus<Vec<u8>>, warp::Rejection> =
+                                Ok(resp);
+                            res
+                        } else {
+                            let resp = warp::reply::with_status(
+                                err.to_string().into_bytes(),
+                                http::StatusCode::INTERNAL_SERVER_ERROR,
+                            );
+                            let res: Result<warp::reply::WithStatus<Vec<u8>>, warp::Rejection> =
+                                Ok(resp);
+                            res
+                        }
+                    }
+                }
+            })
+    }
+
     // curl -XPOST http://127.0.0.1:8901/dump --o ./meta_dump.data
     // curl -XPOST http://127.0.0.1:8901/restore --data-binary "@./meta_dump.data"
     fn dump(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
@@ -145,6 +193,25 @@ impl HttpServer {
 
                 let res: Result<String, warp::Rejection> = Ok(rsp);
                 res
+            },
+        )
+    }
+
+    fn dump_sql(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        let opt = warp::path::param::<String>()
+            .map(Some)
+            .or_else(|_| async { Ok::<(Option<String>,), std::convert::Infallible>((None,)) });
+        let prefix = warp::path!("dump" / "sql" / "ddl" / String / ..);
+
+        let route = prefix.and(opt).and(warp::path::end());
+        route.and(self.with_storage()).and_then(
+            |cluster: String, tenant: Option<String>, storage: Arc<StateMachine>| async move {
+                let res = dump_impl(&cluster, tenant.as_deref(), &storage)
+                    .await
+                    .map_err(warp::reject::custom)?;
+                Ok::<String, warp::Rejection>(res)
             },
         )
     }
@@ -258,6 +325,18 @@ impl HttpServer {
                 follow_ver = watch_data.max_ver;
             }
         }
+    }
+
+    pub async fn process_watch_meta_membership(node: Arc<RaftNode>) -> MetaResult<String> {
+        let nodes = node
+            .raft_metrics()
+            .membership_config
+            .membership()
+            .nodes()
+            .map(|(_key, value)| value.address.clone())
+            .collect::<Vec<String>>();
+
+        Ok(crate::store::storage::response_encode(Ok(nodes)))
     }
 
     async fn process_cpu_pprof() -> String {

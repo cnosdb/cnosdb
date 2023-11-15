@@ -1186,40 +1186,6 @@ impl Engine for TsKv {
         Ok(())
     }
 
-    async fn rename_tag(
-        &self,
-        tenant: &str,
-        database: &str,
-        table: &str,
-        tag_name: &str,
-        new_tag_name: &str,
-        dry_run: bool,
-    ) -> Result<()> {
-        let tag_name = tag_name.as_bytes().to_vec();
-        let new_tag_name = new_tag_name.as_bytes().to_vec();
-
-        let db = match self.get_db(tenant, database).await {
-            Some(db) => db,
-            None => return Ok(()),
-        };
-
-        for ts_index in db.read().await.ts_indexes().values() {
-            ts_index
-                .rename_tag(table, &tag_name, &new_tag_name, dry_run)
-                .await
-                .map_err(|err| {
-                    error!(
-                        "Rename tag of TSIndex({}): {}",
-                        ts_index.path().display(),
-                        err
-                    );
-                    err
-                })?;
-        }
-
-        Ok(())
-    }
-
     async fn update_tags_value(
         &self,
         tenant: &str,
@@ -1296,13 +1262,21 @@ impl Engine for TsKv {
                 None => return Ok(()),
             };
 
-            let vnode_index = match database_ref.read().await.get_ts_index(vnode_id) {
+            let db = database_ref.read().await;
+
+            let table_schema = match db.get_table_schema(table)? {
+                None => return Ok(()),
+                Some(schema) => schema,
+            };
+
+            let vnode_index = match db.get_ts_index(vnode_id) {
                 Some(vnode) => vnode,
                 None => return Ok(()),
             };
+            drop(db);
 
             vnode_index
-                .get_series_ids_by_domains(table, tag_domains)
+                .get_series_ids_by_domains(table_schema.as_ref(), tag_domains)
                 .await?
         };
 
@@ -1339,15 +1313,23 @@ impl Engine for TsKv {
         vnode_id: VnodeId,
         filter: &ColumnDomains<String>,
     ) -> Result<Vec<SeriesId>> {
-        let ts_index = match self.version_set.read().await.get_db(tenant, database) {
-            Some(db) => match db.read().await.get_ts_index(vnode_id) {
-                Some(ts_index) => ts_index,
-                None => return Ok(vec![]),
-            },
+        let (schema, ts_index) = match self.version_set.read().await.get_db(tenant, database) {
+            Some(db) => {
+                let db = db.read().await;
+                let schema = match db.get_table_schema(tab)? {
+                    None => return Ok(vec![]),
+                    Some(schema) => schema,
+                };
+                let ts_index = match db.get_ts_index(vnode_id) {
+                    Some(ts_index) => ts_index,
+                    None => return Ok(vec![]),
+                };
+                (schema, ts_index)
+            }
             None => return Ok(vec![]),
         };
 
-        let res = ts_index.get_series_ids_by_domains(tab, filter).await?;
+        let res = ts_index.get_series_ids_by_domains(&schema, filter).await?;
 
         Ok(res)
     }
@@ -1356,14 +1338,15 @@ impl Engine for TsKv {
         &self,
         tenant: &str,
         database: &str,
+        _table: &str,
         vnode_id: VnodeId,
-        series_id: SeriesId,
-    ) -> Result<Option<SeriesKey>> {
+        series_id: &[SeriesId],
+    ) -> Result<Vec<SeriesKey>> {
         if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
-            return Ok(db.read().await.get_series_key(vnode_id, series_id).await?);
+            Ok(db.read().await.get_series_key(vnode_id, series_id).await?)
+        } else {
+            Ok(vec![])
         }
-
-        Ok(None)
     }
 
     async fn get_db_version(

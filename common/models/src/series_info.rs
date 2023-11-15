@@ -5,6 +5,7 @@ use utils::bitset::ImmutBitSet;
 use utils::BkdrHasher;
 
 use crate::errors::{Error, Result};
+use crate::schema::TskvTableSchema;
 use crate::{tag, Tag, TagValue};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Hash, PartialEq, Eq)]
@@ -63,26 +64,10 @@ impl SeriesKey {
         }
     }
 
-    /// Returns a string with format `{table}[,{tag.key}={tag.value}]`.
-    pub fn string(&self) -> String {
-        let buf_len = self.tags.iter().fold(self.table.len(), |acc, tag| {
-            acc + tag.key.len() + tag.value.len() + 2 // ,{key}={value}
-        });
-        let mut buf = Vec::with_capacity(buf_len);
-        buf.extend_from_slice(self.table.as_bytes());
-        for tag in self.tags.iter() {
-            buf.extend(b",");
-            buf.extend_from_slice(&tag.key);
-            buf.extend_from_slice(b"=");
-            buf.extend_from_slice(&tag.value);
-        }
-
-        String::from_utf8(buf).unwrap()
-    }
-
     pub fn build_series_key(
         tab_name: &str,
         columns: &Vector<ForwardsUOffset<Column>>,
+        table_schema: &TskvTableSchema,
         tag_idx: &[usize],
         row_count: usize,
     ) -> Result<Self> {
@@ -108,10 +93,14 @@ impl SeriesKey {
             let tag_key = column.name().ok_or(Error::InvalidTag {
                 err: "missing column name".to_string(),
             })?;
-            tags.push(Tag::new(
-                tag_key.as_bytes().to_vec(),
-                tag_value.as_bytes().to_vec(),
-            ));
+            let id = table_schema
+                .column(tag_key)
+                .ok_or_else(|| Error::InvalidTag {
+                    err: format!("tag not found {}", tag_key),
+                })?
+                .id;
+
+            tags.push(Tag::new_with_column_id(id, tag_value.as_bytes().to_vec()));
         }
 
         tag::sort_tags(&mut tags);

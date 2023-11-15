@@ -45,3 +45,4 @@ default = []
 backtrace = ["async-backtrace"]
 [dev-dependencies]
 flatbuffers = { workspace = true }
+toml = { workspace = true }

@@ -145,7 +145,6 @@ impl RaftWriter {
                 raft_write_command::Command::DropColumn(_request) => {}
                 raft_write_command::Command::AddColumn(_request) => {}
                 raft_write_command::Command::AlterColumn(_request) => {}
-                raft_write_command::Command::RenameColumn(_request) => {}
                 raft_write_command::Command::UpdateTags(_request) => {}
             }
         }

@@ -54,6 +54,7 @@ impl DatabaseManagerSystem for DatabaseManagerSystemMock {
         let options = unsafe {
             UserOptionsBuilder::default()
                 .password(user_info.password.clone())
+                .unwrap_unchecked()
                 .build()
                 .unwrap_unchecked()
         };

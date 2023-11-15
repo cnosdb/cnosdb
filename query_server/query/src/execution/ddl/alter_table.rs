@@ -5,10 +5,8 @@ use coordinator::resource_manager::ResourceManager;
 use meta::error::MetaError;
 use models::oid::Identifier;
 use models::schema::{ResourceInfo, ResourceOperator, TableColumn, TableSchema, TskvTableSchema};
-use protos::kv_service::admin_command_request::Command;
-use protos::kv_service::{AdminCommandRequest, RenameColumnRequest};
 use spi::query::execution::{Output, QueryStateMachineRef};
-use spi::query::logical_planner::{AlterTable, AlterTableAction, RenameColumnAction};
+use spi::query::logical_planner::{AlterTable, AlterTableAction};
 use spi::{QueryError, Result};
 
 // use crate::execution::ddl::query::spi::MetaSnafu;
@@ -110,42 +108,8 @@ impl DDLDefinitionTask for AlterTableTask {
                         Ok(())
                     };
 
-                match new_column_name {
-                    RenameColumnAction::RenameTag(new_name) => {
-                        alter_schema_func(&mut schema, old_column_name, new_name)?;
-
-                        // construct check req
-                        let rename_check_req = RenameColumnRequest {
-                            db: schema.db.to_owned(),
-                            table: schema.name.to_string(),
-                            old_name: old_column_name.to_owned(),
-                            new_name: new_name.to_owned(),
-                            dry_run: true,
-                        };
-                        let check_req = AdminCommandRequest {
-                            tenant: tenant.to_string(),
-                            command: Some(Command::RenameColumn(rename_check_req.clone())),
-                        };
-                        // check conflict
-                        query_state_machine
-                            .coord
-                            .broadcast_command(check_req)
-                            .await?;
-
-                        Some((
-                            old_column_name.clone(),
-                            ResourceOperator::RenameTagName(
-                                old_column_name.clone(),
-                                new_name.clone(),
-                                schema.clone(),
-                            ),
-                        ))
-                    }
-                    RenameColumnAction::RenameField(new_name) => {
-                        alter_schema_func(&mut schema, old_column_name, new_name)?;
-                        None
-                    }
-                }
+                alter_schema_func(&mut schema, old_column_name, new_column_name)?;
+                None
             }
         };
 
