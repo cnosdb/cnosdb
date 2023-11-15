@@ -128,7 +128,7 @@ fn extract_args(expr: &Expr) -> Result<(Expr, usize)> {
         }
 
         let field_expr = args
-            .get(0)
+            .first()
             .ok_or_else(|| DataFusionError::Plan(INVALID_ARGUMENTS.to_string()))?;
         let k_expr = args
             .get(1)
