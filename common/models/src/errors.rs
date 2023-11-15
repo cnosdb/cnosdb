@@ -52,6 +52,9 @@ pub enum Error {
 
     #[snafu(display("Dump Error: {}", msg))]
     DumpError { msg: String },
+
+    #[snafu(display("{msg}"))]
+    Common { msg: String },
 }
 
 impl From<io::Error> for Error {
