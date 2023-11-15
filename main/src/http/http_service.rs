@@ -211,26 +211,6 @@ impl HttpService {
         warp::any().map(move || meta.clone())
     }
 
-    fn routes_bundle(
-        &self,
-    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-        self.ping()
-            .or(self.query())
-            .or(self.write_line_protocol())
-            .or(self.metrics())
-            .or(self.print_meta())
-            .or(self.meta_leader_addr())
-            .or(self.debug_pprof())
-            .or(self.debug_jeprof())
-            .or(self.prom_remote_read())
-            .or(self.prom_remote_write())
-            .or(self.backtrace())
-            .or(self.write_open_tsdb())
-            .or(self.put_open_tsdb())
-            .or(self.print_raft())
-            .or(self.dump_ddl_sql())
-    }
-
     fn routes_query(
         &self,
     ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
@@ -245,21 +225,21 @@ impl HttpService {
             .or(self.backtrace())
             .or(self.print_raft())
             .or(self.dump_ddl_sql())
+            .or(self.prom_remote_write())
+            .or(self.write_open_tsdb())
+            .or(self.put_open_tsdb())
+            .or(self.write_line_protocol())
     }
 
     fn routes_store(
         &self,
     ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
         self.ping()
-            .or(self.write_line_protocol())
             .or(self.metrics())
             .or(self.print_meta())
             .or(self.meta_leader_addr())
             .or(self.debug_pprof())
             .or(self.debug_jeprof())
-            .or(self.prom_remote_write())
-            .or(self.write_open_tsdb())
-            .or(self.put_open_tsdb())
             .or(self.backtrace())
             .or(self.print_raft())
             .or(self.dump_ddl_sql())
@@ -1041,7 +1021,7 @@ impl Service for HttpService {
                     tokio::spawn(server)
                 }
                 ServerMode::Bundle => {
-                    let routes = self.routes_bundle().recover(handle_rejection);
+                    let routes = self.routes_query().recover(handle_rejection);
                     let (addr, server) = warp::serve(routes)
                         .tls()
                         .cert_path(certificate)
@@ -1068,7 +1048,7 @@ impl Service for HttpService {
                     tokio::spawn(server)
                 }
                 ServerMode::Bundle => {
-                    let routes = self.routes_bundle().recover(handle_rejection);
+                    let routes = self.routes_query().recover(handle_rejection);
                     let (addr, server) =
                         warp::serve(routes).bind_with_graceful_shutdown(self.addr, signal);
                     info!("http server start addr: {}, {}", addr, self.mode);
