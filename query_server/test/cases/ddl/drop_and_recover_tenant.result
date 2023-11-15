@@ -15,7 +15,8 @@
 
 
 -- EXECUTE SQL: SHOW DATABASES; --
-200 OK
+422 Unprocessable Entity
+{"error_code":"010016","error_message":"Auth error: The tenant not found"}
 
 
 -- EXECUTE SQL: select name,action,try_count,status from information_schema.resource_status where name = 'tenant_delay'; --

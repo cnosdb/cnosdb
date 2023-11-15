@@ -439,18 +439,9 @@ impl StateMachine {
         is_need_hidden: bool,
     ) -> MetaResult<Option<Tenant>> {
         let path = KeyPath::tenant(cluster, tenant_name);
-        let res = match self.get_struct::<Tenant>(&path)? {
-            Some(t) => {
-                if !is_need_hidden || !t.options().get_tenant_is_hidden() {
-                    Some(t)
-                } else {
-                    None
-                }
-            },
-            None => {
-                None
-            }
-        };
+        let res = self
+            .get_struct::<Tenant>(&path)?
+            .filter(|t| !is_need_hidden || !t.options().get_tenant_is_hidden());
         Ok(res)
     }
 
