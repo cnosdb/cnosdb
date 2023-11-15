@@ -5,6 +5,7 @@ use config::TLSConfig;
 use coordinator::service::CoordinatorRef;
 use metrics::metric_register::MetricsRegister;
 use protos::kv_service::tskv_service_server::TskvServiceServer;
+use protos::DEFAULT_GRPC_SERVER_MESSAGE_LEN;
 use tokio::runtime::Runtime;
 use tokio::sync::oneshot;
 use tonic::transport::{Identity, Server, ServerTlsConfig};
@@ -81,7 +82,7 @@ impl Service for GrpcService {
             coord: self.coord.clone(),
             metrics_register: self.metrics_register.clone(),
         })
-        .max_decoding_message_size(100 * 1024 * 1024);
+        .max_decoding_message_size(DEFAULT_GRPC_SERVER_MESSAGE_LEN);
 
         let mut grpc_builder =
             build_grpc_server!(&self.tls_config, self.span_context_extractor.clone());

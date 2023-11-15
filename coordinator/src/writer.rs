@@ -7,19 +7,16 @@ use meta::model::{MetaClientRef, MetaRef};
 use models::meta_data::*;
 use models::schema::{timestamp_convert, Precision};
 use models::utils::{now_timestamp_millis, now_timestamp_nanos};
-use protos::kv_service::tskv_service_client::TskvServiceClient;
 use protos::kv_service::{Meta, WritePointsRequest, WriteVnodeRequest};
-use protos::models as fb_models;
 use protos::models::{
     FieldBuilder, Point, PointBuilder, Points, PointsArgs, Schema, SchemaBuilder, TableBuilder,
     TagBuilder,
 };
+use protos::{models as fb_models, tskv_service_time_out_client, DEFAULT_GRPC_SERVER_MESSAGE_LEN};
 use snafu::ResultExt;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot;
-use tonic::transport::Channel;
 use tonic::Code;
-use tower::timeout::Timeout;
 use trace::{debug, info, SpanContext, SpanExt, SpanRecorder};
 use trace_http::ctx::append_trace_context;
 use tskv::EngineRef;
@@ -254,7 +251,7 @@ impl<'a> Default for VnodeMapping<'a> {
 #[derive(Debug)]
 pub struct PointWriter {
     node_id: u64,
-    timeout_ms: u64,
+    timeout: Duration,
     kv_inst: Option<EngineRef>,
     meta_manager: MetaRef,
     hh_sender: Sender<HintedOffWriteReq>,
@@ -268,10 +265,11 @@ impl PointWriter {
         meta_manager: MetaRef,
         hh_sender: Sender<HintedOffWriteReq>,
     ) -> Self {
+        let timeout = Duration::from_millis(timeout_ms);
         Self {
             node_id,
             kv_inst,
-            timeout_ms,
+            timeout,
             meta_manager,
             hh_sender,
         }
@@ -473,8 +471,8 @@ impl PointWriter {
                 id: node_id,
                 error: error.to_string(),
             })?;
-        let timeout_channel = Timeout::new(channel, Duration::from_millis(self.timeout_ms));
-        let mut client = TskvServiceClient::<Timeout<Channel>>::new(timeout_channel);
+        let mut client =
+            tskv_service_time_out_client(channel, self.timeout, DEFAULT_GRPC_SERVER_MESSAGE_LEN);
 
         let mut cmd = tonic::Request::new(WriteVnodeRequest {
             vnode_id,
