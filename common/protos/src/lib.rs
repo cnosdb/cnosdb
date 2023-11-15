@@ -7,15 +7,23 @@ pub mod test_helper;
 
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
+use std::time::Duration;
 
-use flatbuffers::{FlatBufferBuilder, ForwardsUOffset, WIPOffset};
+use flatbuffers::{FlatBufferBuilder, WIPOffset};
 use generated::models::Point;
 use snafu::Snafu;
 use utils::{bitset::BitSet, BkdrHasher};
 
+use crate::kv_service::tskv_service_client::TskvServiceClient;
 use crate::models::{
     Field, FieldBuilder, FieldType, Points, Schema, SchemaBuilder, Table, Tag, TagBuilder,
 };
+use flatbuffers::ForwardsUOffset;
+use tonic::transport::Channel;
+use tower::timeout::Timeout;
+
+// Default 100 MB
+pub const DEFAULT_GRPC_SERVER_MESSAGE_LEN: usize = 100 * 1024 * 1024;
 
 type PointsResult<T> = Result<T, PointsError>;
 
@@ -653,6 +661,17 @@ pub fn insert_field<'a, 'fbb: 'mut_fbb, 'mut_fbb>(
     fields[field_index] = field_builder.finish();
 
     field_nullbits.set(field_index);
+}
+
+pub fn tskv_service_time_out_client(
+    channel: Channel,
+    time_out: Duration,
+    max_message_size: usize,
+) -> TskvServiceClient<Timeout<Channel>> {
+    let timeout_channel = Timeout::new(channel, time_out);
+    let client = TskvServiceClient::<Timeout<Channel>>::new(timeout_channel);
+    let client = TskvServiceClient::max_decoding_message_size(client, max_message_size);
+    TskvServiceClient::max_encoding_message_size(client, max_message_size)
 }
 
 #[cfg(test)]

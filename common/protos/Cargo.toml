@@ -12,7 +12,8 @@ flatbuffers = { workspace = true }
 prost = { workspace = true }
 rand = { workspace = true }
 snafu = { workspace = true }
-tonic = { workspace = true }
+tonic = { workspace = true, features = ["transport", "tls"] }
+tower = { workspace = true }
 protobuf = { workspace = true }
 async-backtrace = { workspace = true, optional = true }
 
