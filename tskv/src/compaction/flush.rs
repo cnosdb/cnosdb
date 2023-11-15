@@ -540,7 +540,7 @@ pub mod flush_tests {
             .unwrap();
 
         assert_eq!(version_edits.len(), 1);
-        let ve = version_edits.get(0).unwrap();
+        let ve = version_edits.first().unwrap();
         assert_eq!(ve.max_level_ts, test_case.max_level_ts_after);
         assert_eq!(ve.add_files.len(), test_case.add_files_num());
         assert_eq!(
