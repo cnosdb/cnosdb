@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 
 use meta::model::MetaRef;
@@ -16,7 +17,7 @@ use replication::{ApplyContext, ApplyStorage};
 use tonic::transport::Channel;
 use tower::timeout::Timeout;
 use tracing::info;
-use tskv::VnodeSnapshot;
+use tskv::{VnodeSnapshot, VnodeStorage};
 
 use crate::errors::{CoordinatorError, CoordinatorResult};
 use crate::file_info::get_file_info;
@@ -31,6 +32,7 @@ pub struct TskvEngineStorage {
     db_name: String,
     vnode_id: VnodeId,
     meta: MetaRef,
+    vnode: Arc<VnodeStorage>,
     storage: tskv::EngineRef,
 }
 
@@ -41,6 +43,7 @@ impl TskvEngineStorage {
         db_name: &str,
         vnode_id: VnodeId,
         meta: MetaRef,
+        vnode: Arc<VnodeStorage>,
         storage: tskv::EngineRef,
     ) -> Self {
         Self {
@@ -48,6 +51,7 @@ impl TskvEngineStorage {
             node_id,
             vnode_id,
             storage,
+            vnode,
             tenant: tenant.to_owned(),
             db_name: db_name.to_owned(),
         }
@@ -139,15 +143,9 @@ impl TskvEngineStorage {
         ctx: &ApplyContext,
         request: WriteDataRequest,
     ) -> ReplicationResult<Vec<u8>> {
+        let precision = Precision::from(request.precision as u8);
         self.storage
-            .write_memcache(
-                ctx.index,
-                &self.tenant,
-                request.data,
-                self.vnode_id,
-                Precision::from(request.precision as u8),
-                None,
-            )
+            .write_memcache(ctx.index, request.data, precision, self.vnode.clone(), None)
             .await
             .map_err(|err| ReplicationError::ApplyEngineErr {
                 msg: err.to_string(),

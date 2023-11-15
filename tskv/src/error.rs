@@ -257,7 +257,11 @@ pub enum Error {
         column: String,
     },
 
+    #[snafu(display("Table name can't be empty"))]
     #[error_code(code = 53)]
+    InvalidPointTable,
+
+    #[error_code(code = 54)]
     #[snafu(display("ColumnId {} not found", column))]
     ColumnIdNotFound {
         column: String,

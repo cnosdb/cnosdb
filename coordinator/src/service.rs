@@ -21,6 +21,7 @@ use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::physical_plan::SendableRecordBatchStream;
 use futures::StreamExt;
 use md5::digest::generic_array::arr;
+use memory_pool::MemoryPoolRef;
 use meta::error::MetaError;
 use meta::model::{MetaClientRef, MetaRef};
 use metrics::count::U64Counter;
@@ -150,6 +151,7 @@ impl CoordService {
         kv_inst: Option<EngineRef>,
         meta: MetaRef,
         config: Config,
+        memory_pool: MemoryPoolRef,
         metrics_register: Arc<MetricsRegister>,
     ) -> Arc<Self> {
         let node_id = config.node_basic.node_id;
@@ -186,6 +188,7 @@ impl CoordService {
             meta.clone(),
             config.clone(),
             kv_inst.clone(),
+            memory_pool,
             raft_manager.clone(),
         ));
 

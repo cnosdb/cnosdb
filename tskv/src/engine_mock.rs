@@ -17,7 +17,7 @@ use crate::error::Result;
 use crate::kv_option::StorageOptions;
 use crate::summary::VersionEdit;
 use crate::tseries_family::SuperVersion;
-use crate::{Engine, TseriesFamilyId, UpdateSetValue, VnodeSnapshot};
+use crate::{Engine, TseriesFamilyId, UpdateSetValue, VnodeSnapshot, VnodeStorage};
 
 #[derive(Debug, Default)]
 pub struct MockEngine {}
@@ -43,12 +43,20 @@ impl Engine for MockEngine {
     async fn write_memcache(
         &self,
         index: u64,
-        tenant: &str,
         points: Vec<u8>,
-        vnode_id: VnodeId,
         precision: Precision,
+        vnode: Arc<VnodeStorage>,
         span_ctx: Option<&SpanContext>,
     ) -> Result<WritePointsResponse> {
+        todo!()
+    }
+
+    async fn open_tsfamily(
+        &self,
+        tenant: &str,
+        db_name: &str,
+        vnode_id: VnodeId,
+    ) -> Result<crate::VnodeStorage> {
         todo!()
     }
 

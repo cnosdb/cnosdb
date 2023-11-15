@@ -1,9 +1,10 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use memory_pool::MemoryPoolRef;
 use meta::model::MetaRef;
 use models::meta_data::*;
-use protos::kv_service::RaftWriteCommand;
+use protos::kv_service::{raft_write_command, RaftWriteCommand};
 use protos::models_helper::to_prost_bytes;
 use protos::{tskv_service_time_out_client, DEFAULT_GRPC_SERVER_MESSAGE_LEN};
 use replication::raft_node::RaftNode;
@@ -17,6 +18,7 @@ pub struct RaftWriter {
     meta: MetaRef,
     config: config::Config,
     kv_inst: Option<EngineRef>,
+    memory_pool: MemoryPoolRef,
     raft_manager: Arc<RaftNodesManager>,
 }
 
@@ -25,12 +27,14 @@ impl RaftWriter {
         meta: MetaRef,
         config: config::Config,
         kv_inst: Option<EngineRef>,
+        memory_pool: MemoryPoolRef,
         raft_manager: Arc<RaftNodesManager>,
     ) -> Self {
         Self {
             meta,
             config,
             kv_inst,
+            memory_pool,
             raft_manager,
         }
     }
@@ -100,6 +104,7 @@ impl RaftWriter {
             .get_node_or_build(&request.tenant, &request.db_name, replica)
             .await?;
 
+        self.pre_check_write_to_raft(&request).await?;
         let raft_data = to_prost_bytes(request.clone());
         let result = self.write_to_raft(raft, raft_data).await;
         if let Err(CoordinatorError::ForwardToLeader {
@@ -112,6 +117,39 @@ impl RaftWriter {
         } else {
             result
         }
+    }
+
+    async fn pre_check_write_to_raft(&self, request: &RaftWriteCommand) -> CoordinatorResult<()> {
+        if let Some(command) = &request.command {
+            match command {
+                raft_write_command::Command::WriteData(request) => {
+                    let fb_points = flatbuffers::root::<protos::models::Points>(&request.data)
+                        .map_err(|err| CoordinatorError::TskvError {
+                            source: tskv::Error::InvalidFlatbuffer { source: err },
+                        })?;
+
+                    let _ = fb_points.tables().ok_or(CoordinatorError::TskvError {
+                        source: tskv::Error::InvalidPointTable,
+                    })?;
+
+                    let total_memory = self.config.deployment.memory * 1024 * 1024 * 1024;
+                    if request.data.len() > total_memory.saturating_sub(self.memory_pool.reserved())
+                    {
+                        return Err(CoordinatorError::TskvError {
+                            source: tskv::Error::MemoryExhausted,
+                        });
+                    }
+                }
+
+                raft_write_command::Command::DropTab(_request) => {}
+                raft_write_command::Command::DropColumn(_request) => {}
+                raft_write_command::Command::AddColumn(_request) => {}
+                raft_write_command::Command::AlterColumn(_request) => {}
+                raft_write_command::Command::UpdateTags(_request) => {}
+            }
+        }
+
+        Ok(())
     }
 
     async fn process_leader_change(
