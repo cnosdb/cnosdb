@@ -154,7 +154,7 @@ heed = "0.11.0"
 heed-traits = "0.8.0"
 http-body = "0.4.5"
 run_script = "0.10.1"
-geo = "0.26.0"
+geo = "0.27.0"
 geozero = "0.11.0"
 
 [workspace.package]

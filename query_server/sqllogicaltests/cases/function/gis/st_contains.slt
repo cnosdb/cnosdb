@@ -1,0 +1,59 @@
+query T
+select ST_Contains('POLYGON((0 0,0 3,3 0,0 0))', 'POLYGON((0 0,0 1,1 0,0 0))');
+----
+true
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function \\"ST_Contains\\" expects 2 arguments, but 0 were provided".*
+select ST_Contains();
+
+# polygon contains polygon
+query T
+select ST_Contains(
+    'POLYGON((150 350, 100 350, 210 160, 290 350, 250 350, 200 250, 150 350))',
+    'POLYGON((250 310, 150 310, 150 280, 250 280, 250 310))'
+);
+----
+false
+
+# linestring fully contained in polygon
+query T
+select ST_Contains(
+    'POLYGON((0 0, 5 0, 5 6, 0 6, 0 0 ))',
+    'LINESTRING (3 0.5, 3 3.5)'
+);
+----
+true
+
+# empty linestring
+query T
+select ST_Contains(
+    'LINESTRING EMPTY',
+    'POINT (2 1)'
+);
+----
+false
+
+# linestring point is vertex
+query T
+select ST_Contains(
+    'LINESTRING (0 0, 2 0, 2 2)',
+    'POINT (2 0)'
+);
+----
+true
+
+query T
+select ST_Contains(
+    'LINESTRING (0 0, 2 0, 2 2)',
+    'POINT (0 0)'
+);
+----
+false
+
+query T
+select ST_Contains(
+    'LINESTRING (0 0, 2 0, 2 2)',
+    'POINT (2 2)'
+);
+----
+false
