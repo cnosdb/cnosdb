@@ -86,8 +86,7 @@ use spi::query::logical_planner::{
     CreateUser, DDLPlan, DMLPlan, DatabaseObjectType, DeleteFromTable, DropDatabaseObject,
     DropGlobalObject, DropTenantObject, DropVnode, FileFormatOptions, FileFormatOptionsBuilder,
     GlobalObjectType, GrantRevoke, LogicalPlanner, MoveVnode, Plan, PlanWithPrivileges, QueryPlan,
-    RecoverDatabase, RecoverTenant, RenameColumnAction, SYSPlan, TenantObjectType,
-    TENANT_OPTION_LIMITER,
+    RecoverDatabase, RecoverTenant, SYSPlan, TenantObjectType, TENANT_OPTION_LIMITER,
 };
 use spi::query::session::SessionCtx;
 use spi::{QueryError, Result};
@@ -104,8 +103,8 @@ use crate::metadata::{
     COLUMNS_COLUMN_TYPE, COLUMNS_COMPRESSION_CODEC, COLUMNS_DATABASE_NAME, COLUMNS_DATA_TYPE,
     COLUMNS_TABLE_NAME, DATABASES_DATABASE_NAME, DATABASES_PRECISION, DATABASES_REPLICA,
     DATABASES_SHARD, DATABASES_TTL, DATABASES_VNODE_DURATION, INFORMATION_SCHEMA,
-    INFORMATION_SCHEMA_COLUMNS, INFORMATION_SCHEMA_DATABASES, INFORMATION_SCHEMA_TABLES,
-    TABLES_TABLE_DATABASE, TABLES_TABLE_NAME,
+    INFORMATION_SCHEMA_COLUMNS, INFORMATION_SCHEMA_DATABASES, INFORMATION_SCHEMA_QUERIES,
+    INFORMATION_SCHEMA_TABLES, TABLES_TABLE_DATABASE, TABLES_TABLE_NAME,
 };
 
 /// CnosDB SQL query planner
@@ -185,14 +184,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             ExtStatement::AlterUser(stmt) => self.alter_user_to_plan(stmt).await,
             ExtStatement::GrantRevoke(stmt) => self.grant_revoke_to_plan(stmt, session),
             // system statement
-            ExtStatement::ShowQueries => {
-                let plan = Plan::SYSTEM(SYSPlan::ShowQueries);
-                // TODO privileges
-                Ok(PlanWithPrivileges {
-                    plan,
-                    privileges: vec![],
-                })
-            }
+            ExtStatement::ShowQueries => self.show_queries_to_plan(session),
             ExtStatement::Copy(stmt) => self.copy_to_plan(stmt, session).await,
             // vnode statement
             ExtStatement::DropVnode(stmt) => self.drop_vnode_to_plan(stmt),
@@ -1032,7 +1024,15 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         let table_name = table_ref
             .clone()
             .resolve_object(session.tenant(), session.default_database())?;
-        let table_schema = self.get_tskv_schema(table_ref)?;
+        let handle = self.get_table_handle(table_ref)?;
+        let table_schema = match handle {
+            TableHandle::Tskv(t) => t.table_schema(),
+            _ => {
+                return Err(QueryError::NotImplemented {
+                    err: "only tskv table support alter".to_string(),
+                })
+            }
+        };
 
         let time_unit = if let ColumnType::Time(ref unit) = table_schema
             .column(TIME_FIELD)
@@ -1133,14 +1133,10 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
                     });
                 }
 
-                let new_column_name = match column.column_type {
-                    ColumnType::Time(_) => {
-                        return Err(QueryError::NotImplemented {
-                            err: "rename time column".to_string(),
-                        })
-                    }
-                    ColumnType::Tag => RenameColumnAction::RenameTag(new_column_name),
-                    ColumnType::Field(_) => RenameColumnAction::RenameField(new_column_name),
+                if let ColumnType::Time(_) = column.column_type {
+                    return Err(QueryError::NotImplemented {
+                        err: "rename time column".to_string(),
+                    });
                 };
 
                 AlterTableAction::RenameColumn {
@@ -1348,7 +1344,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         } = stmt;
 
         let name = normalize_ident(name);
-        if is_system_database(session.tenant(), name.as_str()) {
+        if is_system_database(session.tenant(), name.as_str()) && !if_not_exists {
             return Err(QueryError::Meta {
                 source: MetaError::DatabaseAlreadyExists { database: name },
             });
@@ -1876,6 +1872,31 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         Ok(PlanWithPrivileges { plan, privileges })
     }
 
+    fn show_queries_to_plan(&self, session: &SessionCtx) -> Result<PlanWithPrivileges> {
+        // QUERY_SCHEMA: query_id, query_type, query_text, user_name, tenant_name, state, duration
+        let projections = vec![0, 1, 2, 4, 6, 7, 8];
+
+        let table_ref = TableReference::partial(INFORMATION_SCHEMA, INFORMATION_SCHEMA_QUERIES);
+
+        let table_source = self.get_table_source(table_ref.clone())?;
+
+        let df_plan =
+            LogicalPlanBuilder::scan(table_ref, table_source, Some(projections))?.build()?;
+
+        let plan = Plan::Query(QueryPlan { df_plan });
+
+        // privileges
+        let tenant_id = *session.tenant_id();
+        let privilege = Privilege::TenantObject(
+            TenantObjectPrivilege::Database(DatabasePrivilege::Read, None),
+            Some(tenant_id),
+        );
+        Ok(PlanWithPrivileges {
+            plan,
+            privileges: vec![privilege],
+        })
+    }
+
     fn drop_vnode_to_plan(&self, stmt: ASTDropVnode) -> Result<PlanWithPrivileges> {
         let ASTDropVnode { vnode_id } = stmt;
 
@@ -1983,10 +2004,14 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         })
     }
 
-    fn get_tskv_schema(&self, table_ref: TableReference) -> Result<TskvTableSchemaRef> {
+    fn get_table_handle(&self, table_ref: TableReference) -> Result<TableHandle> {
         let source = self.get_table_source(table_ref.clone())?;
         let adapter = source_downcast_adapter(&source)?;
-        let result = match adapter.table_handle() {
+        Ok(adapter.table_handle().clone())
+    }
+
+    fn get_tskv_schema(&self, table_ref: TableReference) -> Result<TskvTableSchemaRef> {
+        let result = match self.get_table_handle(table_ref.clone())? {
             TableHandle::Tskv(e) => Ok(e.table_schema()),
             _ => Err(MetaError::TableNotFound {
                 table: table_ref.to_string(),

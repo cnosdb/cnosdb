@@ -249,6 +249,7 @@ impl QueryExecution for MicroBatchStreamExecution {
             qsm.query.content().to_string(),
             *qsm.session.tenant_id(),
             qsm.session.tenant().to_string(),
+            qsm.session.default_database().to_string(),
             qsm.session.user().desc().clone(),
         )
     }

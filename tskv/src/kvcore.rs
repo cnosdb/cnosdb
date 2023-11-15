@@ -44,6 +44,7 @@ use crate::wal::{
 };
 use crate::{
     file_utils, Engine, Error, SnapshotFileMeta, TseriesFamilyId, UpdateSetValue, VnodeSnapshot,
+    VnodeStorage,
 };
 
 // TODO: A small summay channel capacity can cause a block
@@ -868,9 +869,7 @@ impl Engine for TsKv {
             .get_ts_index_or_else_create(db.clone(), vnode_id)
             .await?;
 
-        let tables = fb_points.tables().ok_or(Error::CommonError {
-            reason: "points missing table".to_string(),
-        })?;
+        let tables = fb_points.tables().ok_or(Error::InvalidPointTable)?;
 
         let write_group = {
             let mut span_recorder = span_recorder.child("build write group");
@@ -915,10 +914,9 @@ impl Engine for TsKv {
     async fn write_memcache(
         &self,
         index: u64,
-        tenant: &str,
         points: Vec<u8>,
-        vnode_id: VnodeId,
         precision: Precision,
+        vnode: Arc<VnodeStorage>,
         span_ctx: Option<&SpanContext>,
     ) -> Result<WritePointsResponse> {
         let span_recorder = SpanRecorder::new(span_ctx.child_span("tskv engine write cache"));
@@ -926,21 +924,15 @@ impl Engine for TsKv {
         let fb_points = flatbuffers::root::<fb_models::Points>(&points)
             .context(error::InvalidFlatbufferSnafu)?;
 
-        let db_name = fb_points.db_ext()?;
-        let db = self.get_db_or_else_create(tenant, db_name).await?;
-        let ts_index = self
-            .get_ts_index_or_else_create(db.clone(), vnode_id)
-            .await?;
-
-        let tables = fb_points.tables().ok_or(Error::CommonError {
-            reason: "points missing table".to_string(),
-        })?;
+        let tables = fb_points.tables().ok_or(Error::InvalidPointTable)?;
 
         let write_group = {
             let mut span_recorder = span_recorder.child("build write group");
-            db.read()
+            vnode
+                .db
+                .read()
                 .await
-                .build_write_group(precision, tables, ts_index, false, None)
+                .build_write_group(precision, tables, vnode.ts_index.clone(), false, None)
                 .await
                 .map_err(|err| {
                     span_recorder.error(err.to_string());
@@ -948,13 +940,9 @@ impl Engine for TsKv {
                 })?
         };
 
-        let tsf = self
-            .get_tsfamily_or_else_create(vnode_id, None, db.clone())
-            .await?;
-
         let res = {
             let mut span_recorder = span_recorder.child("put points");
-            match tsf.read().await.put_points(index, write_group) {
+            match vnode.ts_family.read().await.put_points(index, write_group) {
                 Ok(points_number) => Ok(WritePointsResponse { points_number }),
                 Err(err) => {
                     span_recorder.error(err.to_string());
@@ -962,7 +950,9 @@ impl Engine for TsKv {
                 }
             }
         };
-        tsf.write().await.check_to_flush().await;
+
+        vnode.ts_family.write().await.check_to_flush().await;
+
         res
     }
 
@@ -1015,6 +1005,28 @@ impl Engine for TsKv {
         }
 
         Ok(())
+    }
+
+    async fn open_tsfamily(
+        &self,
+        tenant: &str,
+        db_name: &str,
+        vnode_id: VnodeId,
+    ) -> Result<VnodeStorage> {
+        let db = self.get_db_or_else_create(tenant, db_name).await?;
+        let ts_index = self
+            .get_ts_index_or_else_create(db.clone(), vnode_id)
+            .await?;
+
+        let ts_family = self
+            .get_tsfamily_or_else_create(vnode_id, None, db.clone())
+            .await?;
+
+        Ok(VnodeStorage {
+            db,
+            ts_index,
+            ts_family,
+        })
     }
 
     async fn remove_tsfamily(&self, tenant: &str, database: &str, vnode_id: VnodeId) -> Result<()> {
@@ -1174,40 +1186,6 @@ impl Engine for TsKv {
         Ok(())
     }
 
-    async fn rename_tag(
-        &self,
-        tenant: &str,
-        database: &str,
-        table: &str,
-        tag_name: &str,
-        new_tag_name: &str,
-        dry_run: bool,
-    ) -> Result<()> {
-        let tag_name = tag_name.as_bytes().to_vec();
-        let new_tag_name = new_tag_name.as_bytes().to_vec();
-
-        let db = match self.get_db(tenant, database).await {
-            Some(db) => db,
-            None => return Ok(()),
-        };
-
-        for ts_index in db.read().await.ts_indexes().values() {
-            ts_index
-                .rename_tag(table, &tag_name, &new_tag_name, dry_run)
-                .await
-                .map_err(|err| {
-                    error!(
-                        "Rename tag of TSIndex({}): {}",
-                        ts_index.path().display(),
-                        err
-                    );
-                    err
-                })?;
-        }
-
-        Ok(())
-    }
-
     async fn update_tags_value(
         &self,
         tenant: &str,
@@ -1284,13 +1262,21 @@ impl Engine for TsKv {
                 None => return Ok(()),
             };
 
-            let vnode_index = match database_ref.read().await.get_ts_index(vnode_id) {
+            let db = database_ref.read().await;
+
+            let table_schema = match db.get_table_schema(table)? {
+                None => return Ok(()),
+                Some(schema) => schema,
+            };
+
+            let vnode_index = match db.get_ts_index(vnode_id) {
                 Some(vnode) => vnode,
                 None => return Ok(()),
             };
+            drop(db);
 
             vnode_index
-                .get_series_ids_by_domains(table, tag_domains)
+                .get_series_ids_by_domains(table_schema.as_ref(), tag_domains)
                 .await?
         };
 
@@ -1327,15 +1313,23 @@ impl Engine for TsKv {
         vnode_id: VnodeId,
         filter: &ColumnDomains<String>,
     ) -> Result<Vec<SeriesId>> {
-        let ts_index = match self.version_set.read().await.get_db(tenant, database) {
-            Some(db) => match db.read().await.get_ts_index(vnode_id) {
-                Some(ts_index) => ts_index,
-                None => return Ok(vec![]),
-            },
+        let (schema, ts_index) = match self.version_set.read().await.get_db(tenant, database) {
+            Some(db) => {
+                let db = db.read().await;
+                let schema = match db.get_table_schema(tab)? {
+                    None => return Ok(vec![]),
+                    Some(schema) => schema,
+                };
+                let ts_index = match db.get_ts_index(vnode_id) {
+                    Some(ts_index) => ts_index,
+                    None => return Ok(vec![]),
+                };
+                (schema, ts_index)
+            }
             None => return Ok(vec![]),
         };
 
-        let res = ts_index.get_series_ids_by_domains(tab, filter).await?;
+        let res = ts_index.get_series_ids_by_domains(&schema, filter).await?;
 
         Ok(res)
     }
@@ -1344,14 +1338,15 @@ impl Engine for TsKv {
         &self,
         tenant: &str,
         database: &str,
+        _table: &str,
         vnode_id: VnodeId,
-        series_id: SeriesId,
-    ) -> Result<Option<SeriesKey>> {
+        series_id: &[SeriesId],
+    ) -> Result<Vec<SeriesKey>> {
         if let Some(db) = self.version_set.read().await.get_db(tenant, database) {
-            return Ok(db.read().await.get_series_key(vnode_id, series_id).await?);
+            Ok(db.read().await.get_series_key(vnode_id, series_id).await?)
+        } else {
+            Ok(vec![])
         }
-
-        Ok(None)
     }
 
     async fn get_db_version(

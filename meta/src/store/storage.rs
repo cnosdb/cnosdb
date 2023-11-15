@@ -437,23 +437,21 @@ impl StateMachine {
         cluster: &str,
         tenant_name: &str,
         is_need_hidden: bool,
-    ) -> MetaResult<Tenant> {
+    ) -> MetaResult<Option<Tenant>> {
         let path = KeyPath::tenant(cluster, tenant_name);
-        let tenant = match self.get_struct::<Tenant>(&path)? {
-            Some(t) => t,
+        let res = match self.get_struct::<Tenant>(&path)? {
+            Some(t) => {
+                if !is_need_hidden || !t.options().get_tenant_is_hidden() {
+                    Some(t)
+                } else {
+                    None
+                }
+            },
             None => {
-                return Err(MetaError::TenantNotFound {
-                    tenant: tenant_name.to_string(),
-                });
+                None
             }
         };
-        if !is_need_hidden || !tenant.options().get_tenant_is_hidden() {
-            Ok(tenant)
-        } else {
-            Err(MetaError::TenantNotFound {
-                tenant: tenant_name.to_string(),
-            })
-        }
+        Ok(res)
     }
 
     pub fn process_read_tenants(&self, cluster: &str) -> MetaResult<Vec<Tenant>> {

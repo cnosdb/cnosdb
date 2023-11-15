@@ -8,14 +8,18 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 pub use compaction::check::vnode_table_checksum_schema;
+use database::Database;
 use datafusion::arrow::record_batch::RecordBatch;
+use index::ts_index::TSIndex;
 use models::meta_data::{NodeId, VnodeId};
 use models::predicate::domain::{ColumnDomains, ResolvedPredicate};
 use models::schema::{Precision, TableColumn};
 use models::{SeriesId, SeriesKey, TagKey, TagValue, Timestamp};
 use protos::kv_service::{WritePointsRequest, WritePointsResponse};
 use serde::{Deserialize, Serialize};
+use tokio::sync::RwLock;
 use trace::SpanContext;
+use tseries_family::TseriesFamily;
 
 pub use crate::error::{Error, Result};
 pub use crate::kv_option::Options;
@@ -64,6 +68,13 @@ pub struct UpdateSetValue<K, V> {
     pub value: Option<V>,
 }
 
+#[derive(Clone)]
+pub struct VnodeStorage {
+    pub db: Arc<RwLock<Database>>,
+    pub ts_index: Arc<TSIndex>,
+    pub ts_family: Arc<RwLock<TseriesFamily>>,
+}
+
 #[async_trait]
 pub trait Engine: Send + Sync + Debug {
     /// Tskv engine write the gRPC message `WritePointsRequest`(which contains
@@ -86,10 +97,9 @@ pub trait Engine: Send + Sync + Debug {
     async fn write_memcache(
         &self,
         index: u64,
-        tenant: &str,
         points: Vec<u8>,
-        vnode_id: VnodeId,
         precision: Precision,
+        vnode: Arc<VnodeStorage>,
         span_ctx: Option<&SpanContext>,
     ) -> Result<WritePointsResponse>;
 
@@ -99,6 +109,14 @@ pub trait Engine: Send + Sync + Debug {
 
     /// Delete all data of a table.
     async fn drop_table(&self, tenant: &str, database: &str, table: &str) -> Result<()>;
+
+    /// open a tsfamily, if already exist just return.
+    async fn open_tsfamily(
+        &self,
+        tenant: &str,
+        db_name: &str,
+        vnode_id: VnodeId,
+    ) -> Result<VnodeStorage>;
 
     /// Remove the storage unit(caches and files) managed by engine,
     /// then remove directory of the storage unit.
@@ -141,27 +159,6 @@ pub trait Engine: Send + Sync + Debug {
         table: &str,
         column_name: &str,
         new_column: TableColumn,
-    ) -> Result<()>;
-
-    /// Modify the name of the tag type column of the specified table
-    ///
-    /// # Parameters
-    /// - `tenant` - The tenant name.
-    /// - `database` - The database name.
-    /// - `table` - The table name.
-    /// - `tag_name` - The old tag name.
-    /// - `new_tag_name` - The new tag name.
-    /// - `dry_run` - Whether to only check if the `rename_tag` is successful, if it is true, the update will not be performed.
-    ///
-    /// TODO Could specify vnode id, because the current interface may include modifying multiple vnodes, but atomicity cannot be guaranteed.
-    async fn rename_tag(
-        &self,
-        tenant: &str,
-        database: &str,
-        table: &str,
-        tag_name: &str,
-        new_tag_name: &str,
-        dry_run: bool,
     ) -> Result<()>;
 
     /// Update the value of the tag type columns of the specified table
@@ -235,9 +232,10 @@ pub trait Engine: Send + Sync + Debug {
         &self,
         tenant: &str,
         database: &str,
+        table: &str,
         vnode_id: VnodeId,
-        series_id: SeriesId,
-    ) -> Result<Option<SeriesKey>>;
+        series_id: &[SeriesId],
+    ) -> Result<Vec<SeriesKey>>;
 
     /// Get a `SuperVersion` that contains the latest version of caches and files
     /// of the storage unit.

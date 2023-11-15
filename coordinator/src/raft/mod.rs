@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 
 use meta::model::MetaRef;
@@ -10,12 +11,13 @@ use protos::kv_service::{
     WriteDataRequest,
 };
 use protos::models_helper::parse_prost_bytes;
+use protos::{tskv_service_time_out_client, DEFAULT_GRPC_SERVER_MESSAGE_LEN};
 use replication::errors::{ReplicationError, ReplicationResult};
 use replication::{ApplyContext, ApplyStorage};
 use tonic::transport::Channel;
 use tower::timeout::Timeout;
 use tracing::info;
-use tskv::VnodeSnapshot;
+use tskv::{VnodeSnapshot, VnodeStorage};
 
 use crate::errors::{CoordinatorError, CoordinatorResult};
 use crate::file_info::get_file_info;
@@ -30,6 +32,7 @@ pub struct TskvEngineStorage {
     db_name: String,
     vnode_id: VnodeId,
     meta: MetaRef,
+    vnode: Arc<VnodeStorage>,
     storage: tskv::EngineRef,
 }
 
@@ -40,6 +43,7 @@ impl TskvEngineStorage {
         db_name: &str,
         vnode_id: VnodeId,
         meta: MetaRef,
+        vnode: Arc<VnodeStorage>,
         storage: tskv::EngineRef,
     ) -> Self {
         Self {
@@ -47,6 +51,7 @@ impl TskvEngineStorage {
             node_id,
             vnode_id,
             storage,
+            vnode,
             tenant: tenant.to_owned(),
             db_name: db_name.to_owned(),
         }
@@ -54,8 +59,11 @@ impl TskvEngineStorage {
 
     pub async fn download_snapshot(&self, snapshot: &VnodeSnapshot) -> CoordinatorResult<()> {
         let channel = self.meta.get_node_conn(snapshot.node_id).await?;
-        let timeout_channel = Timeout::new(channel, Duration::from_secs(60 * 60));
-        let mut client = TskvServiceClient::<Timeout<Channel>>::new(timeout_channel);
+        let mut client = tskv_service_time_out_client(
+            channel,
+            Duration::from_secs(60 * 60),
+            DEFAULT_GRPC_SERVER_MESSAGE_LEN,
+        );
 
         let owner = models::schema::make_owner(&snapshot.tenant, &snapshot.database);
         let path = self.storage.get_storage_options().snapshot_sub_dir(
@@ -135,15 +143,9 @@ impl TskvEngineStorage {
         ctx: &ApplyContext,
         request: WriteDataRequest,
     ) -> ReplicationResult<Vec<u8>> {
+        let precision = Precision::from(request.precision as u8);
         self.storage
-            .write_memcache(
-                ctx.index,
-                &self.tenant,
-                request.data,
-                self.vnode_id,
-                Precision::from(request.precision as u8),
-                None,
-            )
+            .write_memcache(ctx.index, request.data, precision, self.vnode.clone(), None)
             .await
             .map_err(|err| ReplicationError::ApplyEngineErr {
                 msg: err.to_string(),
@@ -174,8 +176,6 @@ impl ApplyStorage for TskvEngineStorage {
                 raft_write_command::Command::AddColumn(_request) => {}
 
                 raft_write_command::Command::AlterColumn(_request) => {}
-
-                raft_write_command::Command::RenameColumn(_request) => {}
 
                 raft_write_command::Command::UpdateTags(_request) => {}
             }

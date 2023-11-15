@@ -1,5 +1,4 @@
 mod kill_query;
-mod show_queries;
 
 use std::sync::Arc;
 
@@ -10,7 +9,6 @@ use spi::query::logical_planner::SYSPlan;
 use spi::Result;
 
 use self::kill_query::KillQueryTask;
-use self::show_queries::ShowQueriesTask;
 use crate::dispatcher::query_tracker::QueryTracker;
 
 pub struct SystemExecution {
@@ -64,6 +62,7 @@ impl QueryExecution for SystemExecution {
             qsm.query.content().to_string(),
             *qsm.session.tenant_id(),
             qsm.session.tenant().to_string(),
+            qsm.session.default_database().to_string(),
             qsm.session.user().desc().clone(),
         )
     }
@@ -90,10 +89,6 @@ struct SystemTaskFactory {
 impl SystemTaskFactory {
     fn create_task(&self) -> Box<dyn SystemTask> {
         match &self.plan {
-            SYSPlan::ShowQueries => Box::new(ShowQueriesTask::new(
-                self.query_tracker.clone(),
-                self.plan.schema(),
-            )),
             SYSPlan::KillQuery(query_id) => {
                 Box::new(KillQueryTask::new(self.query_tracker.clone(), *query_id))
             }

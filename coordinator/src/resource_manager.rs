@@ -8,7 +8,7 @@ use models::utils::now_timestamp_nanos;
 use protos::kv_service::admin_command_request::Command::{self, DropDb, DropTab, UpdateTags};
 use protos::kv_service::{
     AddColumnRequest, AdminCommandRequest, AlterColumnRequest, DropColumnRequest, DropDbRequest,
-    DropTableRequest, RenameColumnRequest, UpdateSetValue, UpdateTagsRequest,
+    DropTableRequest, UpdateSetValue, UpdateTagsRequest,
 };
 use tracing::{debug, error, info};
 
@@ -116,8 +116,7 @@ impl ResourceManager {
             }
             ResourceOperator::AddColumn(table_schema, _)
             | ResourceOperator::DropColumn(_, table_schema)
-            | ResourceOperator::AlterColumn(_, table_schema, _)
-            | ResourceOperator::RenameTagName(.., table_schema) => {
+            | ResourceOperator::AlterColumn(_, table_schema, _) => {
                 ResourceManager::alter_table(coord.clone(), &resourceinfo, &table_schema.tenant)
                     .await
             }
@@ -317,21 +316,6 @@ impl ResourceManager {
                     })),
                 },
             )),
-            ResourceOperator::RenameTagName(old_column_name, new_column_name, table_schema) => {
-                Some((
-                    table_schema,
-                    AdminCommandRequest {
-                        tenant: tenant_name.to_string(),
-                        command: Some(Command::RenameColumn(RenameColumnRequest {
-                            db: table_schema.db.to_owned(),
-                            table: table_schema.name.to_string(),
-                            old_name: old_column_name.clone(),
-                            new_name: new_column_name.clone(),
-                            dry_run: false,
-                        })),
-                    },
-                ))
-            }
             _ => None,
         };
 

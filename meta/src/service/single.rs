@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::convert::Infallible as StdInfallible;
 use std::net::SocketAddr;
+use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -11,6 +12,7 @@ use warp::{hyper, Filter};
 
 use crate::error::{MetaError, MetaResult};
 use crate::store::command::*;
+use crate::store::dump::dump_impl;
 use crate::store::storage::{BtreeMapSnapshotData, StateMachine};
 
 pub async fn start_singe_meta_server(path: String, cluster_name: String, addr: String) {
@@ -51,6 +53,7 @@ impl SingleServer {
             .or(self.write())
             .or(self.watch())
             .or(self.dump())
+            .or(self.dump_sql())
             .or(self.restore())
             .or(self.debug())
     }
@@ -136,6 +139,29 @@ impl SingleServer {
                 res
             },
         )
+    }
+
+    fn dump_sql(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        let opt = warp::path::param::<String>()
+            .map(Some)
+            .or_else(|_| async { Ok::<(Option<String>,), std::convert::Infallible>((None,)) });
+        let prefix = warp::path!("dump" / "sql" / "ddl" / String / ..);
+
+        let route = prefix.and(opt).and(warp::path::end());
+
+        route
+            .and(self.with_storage())
+            .and_then(
+                |cluster: String, tenant: Option<String>, storage: Arc<RwLock<StateMachine>>| async move {
+                    let machine = storage.read().await;
+                    let res = dump_impl(&cluster, tenant.as_deref(), machine.deref())
+                        .await
+                        .map_err(warp::reject::custom)?;
+                    Ok::<String, warp::Rejection>(res)
+                },
+            )
     }
 
     fn restore(

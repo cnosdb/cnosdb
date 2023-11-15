@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::{env, fs};
 
 use clap::builder::PossibleValuesParser;
-use clap::{value_parser, Parser};
+use clap::{value_parser, Args, Parser, Subcommand};
 use client::ctx::{SessionConfig, SessionContext};
 use client::print_format::PrintFormat;
 use client::print_options::PrintOptions;
@@ -12,7 +12,10 @@ use http_protocol::encoding::EncodingExt;
 
 #[derive(Debug, Parser, PartialEq)]
 #[command(author, version, about, long_about= None)]
-struct Args {
+struct CliArgs {
+    #[command(subcommand)]
+    subcommand: Option<CliCommand>,
+
     /// Host of CnosDB server.
     #[arg(
         short = 'H', long,
@@ -122,14 +125,42 @@ struct Args {
 
     #[arg(long, default_value = "false")]
     chunked: bool,
+
+    #[arg(long, default_value = "false")]
+    error_stop: bool,
+
+    #[arg(long, default_value = "false")]
+    process_cli_command: bool,
+}
+
+#[derive(Debug, Subcommand, PartialOrd, PartialEq)]
+enum CliCommand {
+    DumpDDL(DumpDDL),
+
+    RestoreDumpDDL(RestoreDumpDDL),
+}
+
+#[derive(Debug, Args, PartialOrd, PartialEq)]
+struct DumpDDL {
+    #[arg(short, long)]
+    tenant: Option<String>,
+}
+
+#[derive(Debug, Args, PartialOrd, PartialEq)]
+struct RestoreDumpDDL {
+    #[arg(short, long)]
+    tenant: Option<String>,
+
+    #[arg()]
+    files: Vec<String>,
 }
 
 #[tokio::main]
 pub async fn main() -> Result<(), anyhow::Error> {
     env_logger::init();
-    let args = Args::parse();
+    let args = CliArgs::parse();
 
-    if !args.quiet {
+    if !args.quiet && args.subcommand.is_none() {
         println!("CnosDB CLI v{}", CNOSDB_CLI_VERSION);
         println!("Input arguments: {:?}", args);
     }
@@ -161,7 +192,9 @@ pub async fn main() -> Result<(), anyhow::Error> {
         .with_ssl(args.use_ssl)
         .with_unsafe_ssl(args.use_unsafe_ssl)
         .with_ca_certs(args.cacert)
-        .with_chunked(args.chunked);
+        .with_chunked(args.chunked)
+        .with_process_cli_command(args.process_cli_command)
+        .with_error_stop(args.error_stop);
 
     let mut ctx = SessionContext::new(session_config);
     if let Some(ref path) = args.write_line_protocol {
@@ -174,7 +207,24 @@ pub async fn main() -> Result<(), anyhow::Error> {
         quiet: args.quiet,
     };
 
-    let files = args.file;
+    match args.subcommand {
+        Some(CliCommand::DumpDDL(d)) => {
+            let res = ctx.dump(d.tenant).await?;
+            println!("{}", res);
+            return Ok(());
+        }
+        Some(CliCommand::RestoreDumpDDL(r)) => {
+            ctx.get_mut_session_config().process_cli_command = true;
+            if let Some(t) = r.tenant {
+                ctx.set_tenant(t)
+            }
+            let files = r.files;
+            return exec::exec_from_files(files, &mut ctx, &print_options).await;
+        }
+        None => {}
+    }
+
+    let files = args.file.clone();
     let rc = match args.rc {
         Some(file) => file,
         None => {
@@ -189,11 +239,12 @@ pub async fn main() -> Result<(), anyhow::Error> {
             files
         }
     };
+
     if !files.is_empty() {
-        exec::exec_from_files(files, &ctx, &print_options).await
+        exec::exec_from_files(files, &mut ctx, &print_options).await?;
     } else {
         if !rc.is_empty() {
-            exec::exec_from_files(rc, &ctx, &print_options).await
+            exec::exec_from_files(rc, &mut ctx, &print_options).await?;
         }
         exec::exec_from_repl(&mut ctx, &print_options).await;
     }

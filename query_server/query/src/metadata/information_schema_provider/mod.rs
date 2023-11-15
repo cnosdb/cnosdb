@@ -17,6 +17,7 @@ pub use builder::tables::{
 use datafusion::datasource::TableProvider;
 pub use factory::columns::INFORMATION_SCHEMA_COLUMNS;
 pub use factory::databases::INFORMATION_SCHEMA_DATABASES;
+pub use factory::queries::INFORMATION_SCHEMA_QUERIES;
 pub use factory::tables::INFORMATION_SCHEMA_TABLES;
 use meta::error::MetaError;
 use meta::model::MetaClientRef;

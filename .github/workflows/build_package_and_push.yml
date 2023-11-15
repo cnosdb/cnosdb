@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'tag'
+        description: 'tag(with "v")'
         required: true
 
 env:
@@ -105,7 +105,9 @@ jobs:
         Copy-Item -Path .\target\x86_64-pc-windows-msvc\release\cnosdb-cli.exe -Destination .\windows\cnosdb-cli.exe
         Copy-Item -Path .\config\config.toml -Destination .\windows\cnosdb.conf
         Copy-Item -Path .\meta\config\config.toml -Destination .\windows\cnosdb-meta.conf
-        Compress-Archive -Path .\windows\* -Destination .\cnosdb-community-${{ steps.get-tag.outputs.TAG }}-windows_x86_64.zip
+        $tag = "${{ steps.get-tag.outputs.TAG }}"
+        $version = $tag.substring(1)
+        Compress-Archive -Path .\windows\* -Destination .\cnosdb-community-${version}-windows_x86_64.zip
     - name: Release
       uses: softprops/action-gh-release@v1
       with:

@@ -82,7 +82,7 @@ pub async fn start_raft_node(opt: store::config::Opt) -> MetaResult<()> {
     ));
 
     let bind_addr = models::utils::build_address("0.0.0.0", opt.port);
-    start_warp_grpc_server(bind_addr, node, engine).await?;
+    tokio::spawn(start_warp_grpc_server(bind_addr, node, engine));
 
     Ok(())
 }

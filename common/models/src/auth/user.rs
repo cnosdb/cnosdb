@@ -121,7 +121,7 @@ impl Identifier<Oid> for UserDesc {
 }
 
 #[derive(Debug, Default, Clone, Builder, Serialize, Deserialize)]
-#[builder(setter(into, strip_option), default, build_fn(name = "final_build"))]
+#[builder(setter(into, strip_option), default)]
 pub struct UserOptions {
     hash_password: Option<String>,
     #[builder(default = "Some(false)")]
@@ -166,18 +166,14 @@ impl UserOptions {
 }
 
 impl UserOptionsBuilder {
-    pub fn build(&mut self) -> Result<UserOptions, UserOptionsBuilderError> {
-        if let Some(Some(p)) = self.hash_password.as_ref() {
-            let hash_password =
-                bcrypt_hash(p).map_err(|e| UserOptionsBuilderError::from(e.to_string()))?;
-            self.hash_password(hash_password);
-        }
-        self.final_build()
-    }
-
-    pub fn password(&mut self, password: impl Into<String>) -> &mut Self {
-        self.hash_password(password.into());
-        self
+    pub fn password(
+        &mut self,
+        password: impl Into<String>,
+    ) -> Result<&mut Self, UserOptionsBuilderError> {
+        let hash_password = bcrypt_hash(&password.into())
+            .map_err(|e| UserOptionsBuilderError::from(e.to_string()))?;
+        self.hash_password(hash_password);
+        Ok(self)
     }
 }
 

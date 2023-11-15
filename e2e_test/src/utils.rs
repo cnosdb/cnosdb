@@ -633,6 +633,22 @@ pub fn modify_config_file(file_content: &str, pattern: &str, new: &str) -> Strin
     reg.replace_all(file_content, new).to_string()
 }
 
+pub fn change_config_file(config_path: &PathBuf, replace_table: Vec<(&str, &str)>) -> String {
+    let config_old = std::fs::read_to_string(config_path).unwrap();
+    let mut config_new = config_old.clone();
+
+    for (from, to) in replace_table {
+        config_new = config_new.replace(from, to)
+    }
+    std::fs::write(config_path, config_new).unwrap();
+    config_old
+}
+
+pub fn workspace_dir() -> PathBuf {
+    let crate_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    crate_dir.parent().unwrap().into()
+}
+
 pub struct ConfigFile {
     path: PathBuf,
     original_content: String,

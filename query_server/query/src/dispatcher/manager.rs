@@ -56,12 +56,14 @@ impl QueryDispatcher for SimpleQueryDispatcher {
         for query in queries {
             let query_id = query.query_id();
             let sql = query.query();
+            let database_name = query.database_name();
             let tenant_name = query.tenant_name();
             let tenant_id = query.tenant_id();
             let user_desc = query.user_desc();
             let user = admin_user(user_desc.to_owned());
             let ctx = ContextBuilder::new(user)
                 .with_tenant(Some(tenant_name.to_owned()))
+                .with_database(Some(database_name.to_owned()))
                 .build();
             let query = Query::new(ctx, sql.to_owned());
             let span_context = self.trace_collector.clone().map(SpanContext::new);

@@ -9,6 +9,7 @@ use protos::kv_service::{
     AdminCommandRequest, DeleteVnodeRequest, DownloadFileRequest, FetchVnodeSummaryRequest,
     GetFilesMetaResponse, GetVnodeFilesMetaRequest,
 };
+use protos::{tskv_service_time_out_client, DEFAULT_GRPC_SERVER_MESSAGE_LEN};
 use tokio::io::AsyncWriteExt;
 use tokio_stream::StreamExt;
 use tonic::transport::Channel;
@@ -79,8 +80,11 @@ impl VnodeManager {
         let path = self.kv_inst.get_storage_options().move_dir(&owner, new_id);
 
         let channel = self.meta.get_node_conn(all_info.node_id).await?;
-        let timeout_channel = Timeout::new(channel, Duration::from_secs(60 * 60));
-        let mut client = TskvServiceClient::<Timeout<Channel>>::new(timeout_channel);
+        let mut client = tskv_service_time_out_client(
+            channel,
+            Duration::from_secs(60 * 60 * 60),
+            DEFAULT_GRPC_SERVER_MESSAGE_LEN,
+        );
 
         if let Err(err) = self
             .download_vnode_files(&all_info, &path, &mut client)
@@ -171,8 +175,11 @@ impl VnodeManager {
         };
 
         let channel = self.meta.get_node_conn(node_id).await?;
-        let timeout_channel = Timeout::new(channel, Duration::from_secs(60 * 60));
-        let mut client = TskvServiceClient::<Timeout<Channel>>::new(timeout_channel);
+        let mut client = tskv_service_time_out_client(
+            channel,
+            Duration::from_secs(60 * 60),
+            DEFAULT_GRPC_SERVER_MESSAGE_LEN,
+        );
         let request = tonic::Request::new(cmd);
 
         let response = client

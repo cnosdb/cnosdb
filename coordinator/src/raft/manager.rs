@@ -7,16 +7,14 @@ use meta::model::MetaRef;
 use models::meta_data::*;
 use models::schema::Precision;
 use openraft::SnapshotPolicy;
-use protos::kv_service::tskv_service_client::TskvServiceClient;
 use protos::kv_service::*;
+use protos::{tskv_service_time_out_client, DEFAULT_GRPC_SERVER_MESSAGE_LEN};
 use replication::multi_raft::MultiRaft;
 use replication::node_store::NodeStorage;
 use replication::raft_node::RaftNode;
 use replication::state_store::{RaftNodeSummary, StateStorage};
 use replication::{ApplyStorageRef, EntryStorageRef, RaftNodeId, RaftNodeInfo};
 use tokio::sync::RwLock;
-use tonic::transport;
-use tower::timeout::Timeout;
 use tracing::{error, info};
 use tskv::{wal, EngineRef};
 
@@ -395,7 +393,7 @@ impl RaftNodesManager {
     fn raft_config(&self) -> openraft::Config {
         let logs_to_keep = self.config.raft_logs_to_keep;
 
-        let heartbeat = 3000;
+        let heartbeat = 10000;
         openraft::Config {
             heartbeat_interval: heartbeat,
             election_timeout_min: 3 * heartbeat,
@@ -422,10 +420,11 @@ impl RaftNodesManager {
         }
         info!("Opening local raft node: {group_id}.{vnode_id}");
 
-        let entry = self
-            .raft_node_logs(tenant, db_name, vnode_id, group_id)
-            .await?;
         let engine = self.raft_node_engine(tenant, db_name, vnode_id).await?;
+        let entry = self
+            .raft_node_logs(tenant, db_name, vnode_id, group_id, engine.clone())
+            .await?;
+
         let grpc_addr = models::utils::build_address(&self.config.host, self.grpc_listen_port);
         let info = RaftNodeInfo {
             group_id,
@@ -461,6 +460,7 @@ impl RaftNodesManager {
         db_name: &str,
         vnode_id: VnodeId,
         group_id: ReplicationSetId,
+        engine: ApplyStorageRef,
     ) -> CoordinatorResult<EntryStorageRef> {
         let owner = models::schema::make_owner(tenant, db_name);
         let wal_option = tskv::kv_option::WalOptions::from(&self.config);
@@ -469,7 +469,7 @@ impl RaftNodesManager {
         let raft_logs = wal::raft_store::RaftEntryStorage::new(wal);
 
         let _apply_id = self.raft_state.get_last_applied_log(group_id)?;
-        raft_logs.recover().await?;
+        raft_logs.recover(engine).await?;
 
         Ok(Arc::new(raft_logs))
     }
@@ -485,12 +485,14 @@ impl RaftNodesManager {
             node_id: self.node_id(),
         })?;
 
+        let vnode = storage.open_tsfamily(tenant, db_name, vnode_id).await?;
         let engine = super::TskvEngineStorage::open(
             self.node_id(),
             tenant,
             db_name,
             vnode_id,
             self.meta.clone(),
+            Arc::new(vnode),
             storage,
         );
         let engine: ApplyStorageRef = Arc::new(engine);
@@ -505,8 +507,12 @@ impl RaftNodesManager {
         replica_id: ReplicationSetId,
     ) -> CoordinatorResult<()> {
         let channel = self.meta.get_node_conn(vnode.node_id).await?;
-        let timeout_channel = Timeout::new(channel, Duration::from_secs(5));
-        let mut client = TskvServiceClient::<Timeout<transport::Channel>>::new(timeout_channel);
+        let mut client = tskv_service_time_out_client(
+            channel,
+            Duration::from_secs(5),
+            DEFAULT_GRPC_SERVER_MESSAGE_LEN,
+        );
+
         let cmd = tonic::Request::new(DropRaftNodeRequest {
             replica_id,
             vnode_id: vnode.id,
@@ -538,8 +544,11 @@ impl RaftNodesManager {
         );
 
         let channel = self.meta.get_node_conn(vnode.node_id).await?;
-        let timeout_channel = Timeout::new(channel, Duration::from_secs(5));
-        let mut client = TskvServiceClient::<Timeout<transport::Channel>>::new(timeout_channel);
+        let mut client = tskv_service_time_out_client(
+            channel,
+            Duration::from_secs(5),
+            DEFAULT_GRPC_SERVER_MESSAGE_LEN,
+        );
         let cmd = tonic::Request::new(OpenRaftNodeRequest {
             replica_id,
             vnode_id: vnode.id,

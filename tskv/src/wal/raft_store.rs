@@ -3,10 +3,12 @@ use std::fmt::Write;
 use std::ops::RangeBounds;
 use std::sync::Arc;
 
+use openraft::EntryPayload;
 use replication::errors::{ReplicationError, ReplicationResult};
-use replication::{EntryStorage, RaftNodeId, RaftNodeInfo, TypeConfig};
+use replication::{ApplyStorageRef, EntryStorage, RaftNodeId, RaftNodeInfo, TypeConfig};
 use tokio::sync::Mutex;
 
+use super::reader::WalRecordData;
 use crate::byte_utils::decode_be_u64;
 use crate::file_system::file_manager;
 use crate::wal::reader::{Block, WalReader};
@@ -50,9 +52,9 @@ impl RaftEntryStorage {
     }
 
     /// Read WAL files to recover
-    pub async fn recover(&self) -> Result<()> {
+    pub async fn recover(&self, engine: ApplyStorageRef) -> Result<()> {
         let mut inner = self.inner.lock().await;
-        inner.recover().await
+        inner.recover(engine).await
     }
 }
 
@@ -239,7 +241,7 @@ impl RaftEntryStorageInner {
     }
 
     /// Read WAL files to recover `Self::seq_wal_pos_index`.
-    pub async fn recover(&mut self) -> Result<()> {
+    pub async fn recover(&mut self, engine: ApplyStorageRef) -> Result<()> {
         let wal_files = file_manager::list_file_names(self.wal.wal_dir());
         for file_name in wal_files {
             // If file name cannot be parsed to wal id, skip that file.
@@ -260,6 +262,17 @@ impl RaftEntryStorageInner {
                             continue;
                         }
                         let seq = decode_be_u64(&r.data[1..9]);
+                        let wal_entry = WalRecordData::new(r.data);
+                        if let Block::RaftLog(entry) = wal_entry.block {
+                            if let EntryPayload::Normal(ref req) = entry.payload {
+                                let ctx = replication::ApplyContext {
+                                    index: entry.log_id.index,
+                                    raft_id: self.wal.vnode_id as u64,
+                                };
+                                engine.apply(&ctx, req).await.unwrap();
+                            }
+                        }
+
                         (r.pos, seq)
                     }
                     Err(Error::Eof) => {
@@ -373,21 +386,5 @@ mod test {
             trace::error!("{e}");
             panic!("{e:?}");
         }
-    }
-
-    #[tokio::test]
-    #[ignore = "deprecated"]
-    async fn test_wal_raft_storage() {
-        let dir = PathBuf::from("/tmp/test/wal/raft/2");
-        // let _ = std::fs::remove_dir_all(&dir);
-        // std::fs::create_dir_all(&dir).unwrap();
-
-        trace::init_default_global_tracing(&dir, "test_wal_raft_storage", "debug");
-
-        let wal = get_vnode_wal(&dir).await.unwrap();
-        let storage = RaftEntryStorage::new(wal);
-        storage.recover().await.unwrap();
-        let inner = storage.inner.lock().await;
-        println!("recover finished: {}", inner.format_seq_wal_pos_index());
     }
 }

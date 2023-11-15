@@ -12,7 +12,8 @@ use datafusion::physical_plan::memory::MemoryExec;
 use datafusion::physical_plan::ExecutionPlan;
 use meta::model::MetaClientRef;
 use models::auth::user::User;
-use models::oid::Identifier;
+use models::oid::{Identifier, Oid};
+use spi::query::execution::QueryExecutionRef;
 
 use crate::dispatcher::query_tracker::QueryTracker;
 use crate::metadata::information_schema_provider::builder::queries::{
@@ -20,7 +21,7 @@ use crate::metadata::information_schema_provider::builder::queries::{
 };
 use crate::metadata::information_schema_provider::InformationSchemaTableFactory;
 
-const INFORMATION_SCHEMA_QUERIES: &str = "QUERIES";
+pub const INFORMATION_SCHEMA_QUERIES: &str = "QUERIES";
 
 /// This view shows real-time snapshots of SQL statements for real-time monitoring of SQL jobs
 ///
@@ -88,22 +89,11 @@ impl TableProvider for InformationQueriesTable {
     ) -> datafusion::common::Result<Arc<dyn ExecutionPlan>> {
         let mut builder = InformationSchemaQueriesBuilder::default();
 
-        let user_id = self.user.desc().id();
+        let user_id = *self.user.desc().id();
         let tenant_id = *self.metadata.tenant().id();
+        let all_queries = self.query_tracker.running_queries();
 
-        let queries_of_tenant = self
-            .query_tracker
-            .running_queries()
-            .into_iter()
-            .filter(|e| e.info().tenant_id() == tenant_id);
-
-        let running_queries = if !self.user.can_access_system(tenant_id) {
-            queries_of_tenant
-                .filter(|e| e.info().user_id() == *user_id)
-                .collect::<Vec<_>>()
-        } else {
-            queries_of_tenant.collect::<Vec<_>>()
-        };
+        let running_queries = filter_running_queries(user_id, tenant_id, &self.user, all_queries);
 
         for query in running_queries {
             let info = query.info();
@@ -143,4 +133,31 @@ impl TableProvider for InformationQueriesTable {
             projection.cloned(),
         )?))
     }
+}
+
+fn filter_running_queries(
+    user_id: Oid,
+    tenant_id: Oid,
+    user: &User,
+    all_queries: Vec<QueryExecutionRef>,
+) -> Vec<QueryExecutionRef> {
+    if user.desc().is_admin() {
+        // Then user with admin permissions: can see all queries in the cluster
+        return all_queries;
+    }
+
+    // only current tenant
+    let all_queries_of_tenant = all_queries
+        .into_iter()
+        .filter(|e| e.info().tenant_id() == tenant_id);
+
+    if user.can_access_system(tenant_id) {
+        // The tenant owner: see all queries under the current tenant
+        return all_queries_of_tenant.collect::<Vec<_>>();
+    }
+
+    // Common user: see the SQL executed by themselves under the current tenant
+    all_queries_of_tenant
+        .filter(|e| e.info().user_id() == user_id)
+        .collect::<Vec<_>>()
 }

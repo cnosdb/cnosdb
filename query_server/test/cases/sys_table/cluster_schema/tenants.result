@@ -169,3 +169,9 @@ test_ts_tenant1,"{""comment"":null,""limiter_config"":null,""after"":null,""tena
 422 Unprocessable Entity
 {"error_code":"010001","error_message":"Datafusion: Error during planning: Table not found, tenant: test_ts_tenant1 db: cluster_schema, table: tenants"}
 -- ERROR:  --
+
+-- EXECUTE SQL: select 1; --
+-- AFTER_SORT --
+422 Unprocessable Entity
+{"error_code":"030010","error_message":"The tenant tenant_not_exists not found"}
+-- ERROR:  --

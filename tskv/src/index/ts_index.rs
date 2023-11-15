@@ -9,6 +9,7 @@ use bytes::BufMut;
 use datafusion::arrow::datatypes::DataType;
 use datafusion::scalar::ScalarValue;
 use models::predicate::domain::{utf8_from, ColumnDomains, Domain, Range};
+use models::schema::TskvTableSchema;
 use models::{tag, utils, SeriesId, SeriesKey, Tag, TagKey, TagValue};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::sync::RwLock;
@@ -21,7 +22,7 @@ use crate::file_system::file::IFile;
 use crate::file_system::file_manager;
 use crate::index::binlog::{BinlogReader, BinlogWriter};
 use crate::index::ts_index::fmt::Debug;
-use crate::{byte_utils, file_utils, UpdateSetValue};
+use crate::{byte_utils, file_utils, Error, UpdateSetValue};
 
 const SERIES_ID_PREFIX: &str = "_id_";
 const SERIES_KEY_PREFIX: &str = "_key_";
@@ -393,13 +394,14 @@ impl TSIndex {
 
     pub async fn get_series_ids_by_domains(
         &self,
-        tab: &str,
+        table_schema: &TskvTableSchema,
         tag_domains: &ColumnDomains<String>,
-    ) -> IndexResult<Vec<u32>> {
+    ) -> Result<Vec<u32>, Error> {
+        let tab = table_schema.name.as_str();
         if tag_domains.is_all() {
             // Match all records
             debug!("pushed tags filter is All.");
-            return self.get_series_id_list(tab, &[]).await;
+            return Ok(self.get_series_id_list(tab, &[]).await?);
         }
 
         let domains = match tag_domains.domains() {
@@ -414,7 +416,14 @@ impl TSIndex {
         debug!("Index get sids: pushed tag_domains: {:?}", domains);
         let mut series_ids = vec![];
         for (k, v) in domains.iter() {
-            let rb = self.get_series_ids_by_domain(tab, k, v).await?;
+            let id = table_schema
+                .column(k)
+                .ok_or_else(|| Error::ColumnNotFound {
+                    column: k.to_string(),
+                })?
+                .id;
+            let k = format!("{}", id);
+            let rb = self.get_series_ids_by_domain(tab, &k, v).await?;
             series_ids.push(rb);
         }
 

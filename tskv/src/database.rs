@@ -8,7 +8,7 @@ use memory_pool::MemoryPoolRef;
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::predicate::domain::TimeRange;
-use models::schema::{DatabaseSchema, Precision, TskvTableSchemaRef};
+use models::schema::{DatabaseSchema, Precision, TskvTableSchema, TskvTableSchemaRef};
 use models::{SeriesId, SeriesKey};
 use protos::models::{Column, ColumnType, FieldType, Table};
 use snafu::ResultExt;
@@ -37,6 +37,7 @@ pub struct Database {
     //tenant_name.database_name => owner
     owner: Arc<String>,
     opt: Arc<Options>,
+    db_name: Arc<String>,
 
     schemas: Arc<DBschemas>,
     ts_indexes: HashMap<TseriesFamilyId, Arc<index::ts_index::TSIndex>>,
@@ -97,7 +98,9 @@ impl Database {
 
         let db = Self {
             opt,
+
             owner: Arc::new(schema.owner()),
+            db_name: Arc::new(schema.database_name().to_owned()),
             schemas: Arc::new(DBschemas::new(schema, meta).await.context(SchemaSnafu)?),
             ts_indexes: HashMap::new(),
             ts_families: HashMap::new(),
@@ -247,23 +250,22 @@ impl Database {
             let num_rows = table.num_rows() as usize;
 
             let fb_schema = FbSchema::from_fb_column(table_name, columns)?;
-            let (schema, fb_schema) = if strict_write {
+            let schema = if strict_write {
                 let schema = self.schemas.get_table_schema(fb_schema.table)?;
-                let schema = schema.ok_or_else(|| Error::TableNotFound {
+
+                schema.ok_or_else(|| Error::TableNotFound {
                     table: fb_schema.table.to_string(),
-                })?;
-                (schema, fb_schema)
+                })?
             } else {
-                let schema = self
-                    .schemas
+                self.schemas
                     .check_field_type_or_else_add(&fb_schema)
-                    .await?;
-                (schema, fb_schema)
+                    .await?
             };
 
             let sids = Self::build_index(
                 &fb_schema,
                 &columns,
+                &schema,
                 num_rows,
                 ts_index.clone(),
                 recover_from_wal,
@@ -326,6 +328,7 @@ impl Database {
     async fn build_index<'a>(
         fb_schema: &'a FbSchema<'a>,
         columns: &Vector<'a, ForwardsUOffset<Column<'a>>>,
+        table_column: &TskvTableSchema,
         row_num: usize,
         ts_index: Arc<index::ts_index::TSIndex>,
         recover_from_wal: bool,
@@ -336,6 +339,7 @@ impl Database {
             let series_key = SeriesKey::build_series_key(
                 fb_schema.table,
                 columns,
+                table_column,
                 &fb_schema.tag_indexes,
                 row_count,
             )
@@ -402,12 +406,21 @@ impl Database {
         }
     }
 
-    pub async fn get_series_key(&self, vnode_id: u32, sid: u32) -> IndexResult<Option<SeriesKey>> {
+    pub async fn get_series_key(
+        &self,
+        vnode_id: u32,
+        sids: &[SeriesId],
+    ) -> IndexResult<Vec<SeriesKey>> {
+        let mut res = vec![];
         if let Some(idx) = self.get_ts_index(vnode_id) {
-            return idx.get_series_key(sid).await;
+            for sid in sids {
+                if let Some(key) = idx.get_series_key(*sid).await? {
+                    res.push(key)
+                }
+            }
         }
 
-        Ok(None)
+        Ok(res)
     }
 
     pub fn get_table_schema(&self, table_name: &str) -> Result<Option<TskvTableSchemaRef>> {
@@ -483,6 +496,7 @@ impl Database {
     }
 }
 
+#[derive(Debug)]
 pub struct FbSchema<'a> {
     pub table: &'a str,
     pub time_index: usize,

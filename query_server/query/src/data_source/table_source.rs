@@ -188,6 +188,7 @@ impl UpdateExecExt for TableSourceAdapter {
     }
 }
 
+#[derive(Clone)]
 pub enum TableHandle {
     TableProvider(Arc<dyn TableProvider>),
     External(Arc<ListingTable>),

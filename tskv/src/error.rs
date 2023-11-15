@@ -20,6 +20,7 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 #[snafu(visibility(pub))]
 #[error_code(mod_code = "02")]
 pub enum Error {
+    #[snafu(display("Invalid http error response: {}", error))]
     ErrorResponse {
         error: ErrorResponse,
     },
@@ -253,6 +254,16 @@ pub enum Error {
     #[error_code(code = 52)]
     #[snafu(display("Column {} not found", column))]
     ColumnNotFound {
+        column: String,
+    },
+
+    #[snafu(display("Table name can't be empty"))]
+    #[error_code(code = 53)]
+    InvalidPointTable,
+
+    #[error_code(code = 54)]
+    #[snafu(display("ColumnId {} not found", column))]
+    ColumnIdNotFound {
         column: String,
     },
 
