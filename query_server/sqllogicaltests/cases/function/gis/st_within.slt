@@ -1,0 +1,10 @@
+query T
+select ST_Within(
+    'POLYGON((1 1, 1 2, 2 2, 2 1, 1 1))',
+    'POLYGON((0 0, 0 3, 3 3, 3 0, 0 0))'
+);
+----
+true
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function \\"ST_Within\\" expects 2 arguments, but 0 were provided",.*
+select ST_Within();

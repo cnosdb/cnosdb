@@ -1,5 +1,6 @@
 mod st_area;
 mod st_asbinary;
+mod st_binary_op;
 mod st_distance;
 mod st_geomfromwkb;
 
@@ -15,6 +16,7 @@ pub fn register_udfs(func_manager: &mut dyn FunctionMetadataManager) -> Result<(
     st_geomfromwkb::register_udf(func_manager)?;
     st_asbinary::register_udf(func_manager)?;
     st_area::register_udf(func_manager)?;
+    st_binary_op::register_udf(func_manager)?;
     Ok(())
 }
 
@@ -35,8 +37,10 @@ macro_rules! geometry_unary_op {
     $RES_ARRAY_BUILDER: ident) => {{
         use std::sync::Arc;
 
+        use datafusion::arrow::array::{downcast_array, ArrayRef, StringArray};
         use datafusion::common::DataFusionError;
         use datafusion::logical_expr::{ReturnTypeFunction, ScalarUDF, Signature, Volatility};
+        use datafusion::physical_expr::functions::make_scalar_function;
         use $crate::extension::expr::scalar_function::gis::str_to_geo;
 
         let return_type_fn: ReturnTypeFunction = Arc::new(|_| Ok(Arc::new($RES_TYPE)));
@@ -81,7 +85,9 @@ macro_rules! geometry_binary_op {
     $RES_ARRAY_BUILDER: ident) => {{
         use std::sync::Arc;
 
+        use datafusion::arrow::array::{downcast_array, ArrayRef, StringArray};
         use datafusion::logical_expr::{ReturnTypeFunction, ScalarUDF, Signature, Volatility};
+        use datafusion::physical_expr::functions::make_scalar_function;
         use $crate::extension::expr::scalar_function::gis::str_to_geo;
 
         let return_type_fn: ReturnTypeFunction = Arc::new(|_| Ok(Arc::new($RES_TYPE)));

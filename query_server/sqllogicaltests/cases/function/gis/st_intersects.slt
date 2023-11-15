@@ -1,0 +1,26 @@
+query T
+select ST_Intersects(
+    'LINESTRING(-43.23456 72.4567,-43.23456 72.4568)',
+    'POINT(-43.23456 72.4567772)'
+);
+----
+true
+
+query T
+select ST_Intersects(
+    'LINESTRING(3 2, 7 6)',
+    'LINESTRING(3 4, 8 4)'
+);
+----
+true
+
+query T
+select ST_Intersects(
+    'POLYGON((0 0, 5 0, 5 6, 0 6, 0 0))',
+    'LINESTRING(2 2, 3 3)'
+);
+----
+true
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function \\"ST_Intersects\\" expects 2 arguments, but 0 were provided",.*
+select ST_Intersects();

@@ -1,9 +1,8 @@
-use datafusion::arrow::array::{downcast_array, ArrayRef, Float64Builder, StringArray};
+use datafusion::arrow::array::Float64Builder;
 use datafusion::arrow::datatypes::DataType;
 use datafusion::common::Result as DFResult;
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::ScalarUDF;
-use datafusion::physical_plan::functions::make_scalar_function;
 use geo::{
     EuclideanDistance, Geometry, Line, LineString, MultiLineString, MultiPoint, MultiPolygon,
     Point, Polygon, Triangle,

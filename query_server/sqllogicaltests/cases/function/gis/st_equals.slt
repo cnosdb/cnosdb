@@ -1,0 +1,7 @@
+query T
+select ST_Equals('LINESTRING(0 0, 10 10)', 'LINESTRING(0 0, 5 5, 10 10)');
+----
+true
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function \\"ST_Equals\\" expects 2 arguments, but 0 were provided",.*
+select ST_Equals();

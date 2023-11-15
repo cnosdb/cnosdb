@@ -1,8 +1,7 @@
-use datafusion::arrow::array::{downcast_array, ArrayRef, Float64Builder, StringArray};
+use datafusion::arrow::array::Float64Builder;
 use datafusion::arrow::datatypes::DataType;
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::ScalarUDF;
-use datafusion::physical_plan::functions::make_scalar_function;
 use geo::{Area, Geometry};
 use spi::query::function::FunctionMetadataManager;
 use spi::Result;

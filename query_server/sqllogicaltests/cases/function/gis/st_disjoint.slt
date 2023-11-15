@@ -1,0 +1,7 @@
+query T
+select ST_Disjoint('LINESTRING(0 0,-3 -3)', 'LINESTRING(0 1,1 0)');
+----
+true
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function \\"ST_Disjoint\\" expects 2 arguments, but 0 were provided",.*
+select ST_Disjoint();
