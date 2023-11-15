@@ -6,9 +6,7 @@ use models::oid::{Identifier, Oid};
 use models::schema::{
     DatabaseSchema, TableSchema, Tenant, DEFAULT_CATALOG, DEFAULT_DATABASE, USAGE_SCHEMA,
 };
-use models::sql::{
-    add_member_to_sql, create_table_sqls, database_to_sql, role_to_sql, tenant_to_sql, user_to_sql,
-};
+use models::sql::{add_member_to_sql, create_table_sqls, role_to_sql, ToDDLSql};
 
 use crate::error::MetaResult;
 use crate::store::key_path::KeyPath;
@@ -58,7 +56,7 @@ pub async fn dump_impl(
             continue;
         }
         if tenant_filter.is_some_and(|f| tenant.name().eq(f)) || tenant_filter.is_none() {
-            res.push(tenant_to_sql(tenant)?)
+            res.push(tenant.to_ddl_sql(true)?)
         }
     }
 
@@ -71,9 +69,9 @@ pub async fn dump_impl(
         }
 
         if tenant_filter.is_none() {
-            res.push(user_to_sql(&u, false))
+            res.push(u.to_ddl_sql(false)?);
         } else if tenant_filter.is_some() && users_used.contains(u.name()) {
-            res.push(user_to_sql(&u, true));
+            res.push(u.to_ddl_sql(true)?);
         }
     }
 
@@ -106,7 +104,7 @@ pub fn dump_tenant(
         {
             continue;
         }
-        res.push(database_to_sql(db))
+        res.push(db.to_ddl_sql(true)?)
     }
 
     // dump role
@@ -116,7 +114,7 @@ pub fn dump_tenant(
         .into_iter()
         .collect::<BTreeMap<_, _>>();
     for (_, role) in roles.iter() {
-        res.append(&mut role_to_sql(role))
+        res.append(&mut role_to_sql(role)?)
     }
 
     // dump member
