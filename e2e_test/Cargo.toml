@@ -32,6 +32,7 @@ tokio = { workspace = true, features = ["full"] }
 tokio-stream = { workspace = true }
 tonic = { workspace = true, features = ["tls", "transport"] }
 walkdir = { workspace = true }
+fly-accept-encoding = { workspace = true }
 
 [features]
 default = []

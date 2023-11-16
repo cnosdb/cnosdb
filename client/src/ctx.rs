@@ -3,10 +3,13 @@ use std::path::Path;
 
 use anyhow::anyhow;
 use datafusion::arrow::record_batch::RecordBatch;
+use fly_accept_encoding::Encoding;
+use http_protocol::encoding::EncodingExt;
 use http_protocol::header::{ACCEPT, PRIVATE_KEY};
 use http_protocol::http_client::HttpClient;
 use http_protocol::parameter::{SqlParam, WriteParam};
 use http_protocol::status_code::OK;
+use reqwest::header::{ACCEPT_ENCODING, CONTENT_ENCODING};
 
 use crate::config::ConfigOptions;
 use crate::print_format::PrintFormat;
@@ -31,6 +34,8 @@ pub struct SessionConfig {
     pub precision: String,
     pub target_partitions: Option<usize>,
     pub stream_trigger_interval: Option<String>,
+    pub accept_encoding: Option<Encoding>,
+    pub content_encoding: Option<Encoding>,
     pub fmt: PrintFormat,
     pub config_options: ConfigOptions,
     pub use_ssl: bool,
@@ -51,6 +56,8 @@ impl SessionConfig {
             precision: DEFAULT_PRECISION.to_string(),
             target_partitions: None,
             stream_trigger_interval: None,
+            accept_encoding: None,
+            content_encoding: None,
             config_options,
             fmt: PrintFormat::Csv,
             use_ssl: DEFAULT_USE_SSL,
@@ -95,6 +102,16 @@ impl SessionConfig {
 
     pub fn with_stream_trigger_interval(mut self, stream_trigger_interval: Option<String>) -> Self {
         self.stream_trigger_interval = stream_trigger_interval;
+        self
+    }
+
+    pub fn with_accept_encoding(mut self, accept_encoding: Option<Encoding>) -> Self {
+        self.accept_encoding = accept_encoding;
+        self
+    }
+
+    pub fn with_content_encoding(mut self, content_encoding: Option<Encoding>) -> Self {
+        self.content_encoding = content_encoding;
         self
     }
 
@@ -209,6 +226,7 @@ impl SessionContext {
     }
 
     pub async fn sql(&self, sql: String) -> Result<ResultSet> {
+        let mut sql = sql.into_bytes();
         let user_info = &self.session_config.user_info;
 
         let tenant = self.session_config.tenant.clone();
@@ -231,6 +249,15 @@ impl SessionContext {
             .basic_auth::<&str, &str>(&user_info.user, user_info.password.as_deref())
             .header(ACCEPT, self.session_config.fmt.get_http_content_type());
 
+        if let Some(encoding) = self.session_config.accept_encoding {
+            builder = builder.header(ACCEPT_ENCODING, encoding.to_header_value());
+        }
+
+        if let Some(encoding) = self.session_config.content_encoding {
+            builder = builder.header(CONTENT_ENCODING, encoding.to_header_value());
+            sql = encoding.encode(sql)?;
+        }
+
         builder = if let Some(key) = &user_info.private_key {
             let key = base64::encode(key);
             builder.header(PRIVATE_KEY, key)
@@ -242,9 +269,19 @@ impl SessionContext {
 
         match resp.status() {
             OK => {
-                let body = resp.bytes().await?;
+                let body = if let Some(content_encoding) = resp.headers().get(CONTENT_ENCODING) {
+                    let encoding_str = content_encoding.to_str()?;
+                    let encoding = match Encoding::from_str(encoding_str) {
+                        Some(encoding) => Ok(encoding),
+                        None => Err(anyhow!("encoding not support: {}", encoding_str)),
+                    }?;
+                    encoding.decode(resp.bytes().await?)?
+                } else {
+                    resp.bytes().await?
+                }
+                .to_vec();
 
-                Ok(ResultSet::Bytes((body.to_vec(), 0)))
+                Ok(ResultSet::Bytes((body, 0)))
             }
             _ => {
                 let status = resp.status().to_string();
@@ -273,7 +310,7 @@ impl SessionContext {
         Ok(ResultSet::Bytes(("".into(), 0)))
     }
 
-    pub async fn write_line_protocol(&self, body: Vec<u8>) -> Result<ResultSet> {
+    pub async fn write_line_protocol(&self, mut body: Vec<u8>) -> Result<ResultSet> {
         let user_info = &self.session_config.user_info;
 
         let tenant = self.session_config.tenant.clone();
@@ -286,14 +323,18 @@ impl SessionContext {
             db: Some(db),
         };
 
-        let resp = self
+        let mut builder = self
             .http_client
             .post(API_V1_WRITE_PATH)
             .basic_auth::<&str, &str>(&user_info.user, user_info.password.as_deref())
-            .query(&param)
-            .body(body)
-            .send()
-            .await?;
+            .query(&param);
+
+        if let Some(encoding) = self.session_config.content_encoding {
+            builder = builder.header(CONTENT_ENCODING, encoding.to_header_value());
+            body = encoding.encode(body)?;
+        }
+
+        let resp = builder.body(body).send().await?;
 
         match resp.status() {
             OK => {

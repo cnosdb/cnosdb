@@ -11,6 +11,8 @@ use std::time::Instant;
 use chrono::Local;
 use config::TLSConfig;
 use coordinator::service::CoordinatorRef;
+use fly_accept_encoding::Encoding;
+use http_protocol::encoding::EncodingExt;
 use http_protocol::header::{ACCEPT, AUTHORIZATION, PRIVATE_KEY};
 use http_protocol::parameter::{SqlParam, WriteParam};
 use http_protocol::response::ErrorResponse;
@@ -32,6 +34,7 @@ use protocol_parser::open_tsdb::open_tsdb_to_lines;
 use protocol_parser::{DataPoint, Line};
 use protos::kv_service::WritePointsRequest;
 use query::prom::remote_server::PromRemoteSqlServer;
+use reqwest::header::{ACCEPT_ENCODING, CONTENT_ENCODING};
 use snafu::ResultExt;
 use spi::query::config::StreamTriggerInterval;
 use spi::server::dbms::DBMSRef;
@@ -51,6 +54,7 @@ use warp::{header, reject, Filter, Rejection, Reply};
 use super::header::Header;
 use super::Error as HttpError;
 use crate::http::api_type::{metrics_record_db, HttpApiType};
+use crate::http::encoding::{get_accept_encoding_from_header, get_content_encoding_from_header};
 use crate::http::metrics::HttpMetrics;
 use crate::http::response::{HttpResponse, ResponseBuilder};
 use crate::http::result_format::{get_result_format_from_header, ResultFormat};
@@ -135,13 +139,22 @@ impl HttpService {
     /// Accept
     fn handle_header(&self) -> impl Filter<Extract = (Header,), Error = warp::Rejection> + Clone {
         header::optional::<String>(ACCEPT.as_str())
+            .and(header::optional::<String>(ACCEPT_ENCODING.as_str()))
+            .and(header::optional::<String>(CONTENT_ENCODING.as_str()))
             .and(header::<String>(AUTHORIZATION.as_str()))
             .and(header::optional::<String>(PRIVATE_KEY))
-            .and_then(|accept, authorization, private_key| async move {
-                let res: Result<Header, warp::Rejection> =
-                    Ok(Header::with_private_key(accept, authorization, private_key));
-                res
-            })
+            .and_then(
+                |accept, accept_encoding, content_encoding, authorization, private_key| async move {
+                    let res: Result<Header, warp::Rejection> = Ok(Header::with_private_key(
+                        accept,
+                        accept_encoding,
+                        content_encoding,
+                        authorization,
+                        private_key,
+                    ));
+                    res
+                },
+            )
     }
 
     fn handle_span_header(
@@ -267,7 +280,7 @@ impl HttpService {
             .and(self.handle_span_header())
             // construct_query
             .and_then(
-                |req: Bytes,
+                |mut req: Bytes,
                  header: Header,
                  param: SqlParam,
                  dbms: DBMSRef,
@@ -284,6 +297,13 @@ impl HttpService {
                         SpanRecorder::new(parent_span_ctx.child_span("rest sql request"));
                     let span_context = span_recorder.span_ctx();
                     let req_len = req.len();
+                    let content_encoding = get_content_encoding_from_header(&header)?;
+                    if let Some(encoding) = content_encoding {
+                        req = encoding.decode(req).map_err(|e| {
+                            trace::error!("Failed to decode request, err: {}", e);
+                            reject::custom(HttpError::DecodeRequest { source: e })
+                        })?;
+                    }
                     let query = {
                         let mut span_recorder =
                             SpanRecorder::new(span_context.child_span("authenticate"));
@@ -297,6 +317,7 @@ impl HttpService {
                     };
 
                     let result_fmt = get_result_format_from_header(&header)?;
+                    let result_encoding = get_accept_encoding_from_header(&header)?;
                     http_limiter_check_query(&meta, query.context().tenant(), req_len)
                         .await
                         .map_err(reject::custom)?;
@@ -323,6 +344,7 @@ impl HttpService {
                             &query,
                             &dbms,
                             result_fmt,
+                            result_encoding,
                             span_recorder.span_ctx(),
                             limiter,
                             http_data_out,
@@ -364,7 +386,7 @@ impl HttpService {
             .and(self.with_hostaddr())
             .and(self.handle_span_header())
             .and_then(
-                |req: Bytes,
+                |mut req: Bytes,
                  header: Header,
                  param: WriteParam,
                  dbms: DBMSRef,
@@ -376,6 +398,15 @@ impl HttpService {
                     let span_recorder =
                         SpanRecorder::new(parent_span_ctx.child_span("rest line protocol write"));
                     let span_context = span_recorder.span_ctx();
+
+                    let req_len = req.len();
+                    let content_encoding = get_content_encoding_from_header(&header)?;
+                    if let Some(encoding) = content_encoding {
+                        req = encoding.decode(req).map_err(|e| {
+                            trace::error!("Failed to decode request, err: {}", e);
+                            reject::custom(HttpError::DecodeRequest { source: e })
+                        })?;
+                    }
 
                     let ctx = {
                         let mut span_recorder =
@@ -391,12 +422,10 @@ impl HttpService {
                         span_recorder.record(ctx)
                     };
 
-                    let req_len = req.len();
                     http_limiter_check_write(&coord.meta_manager(), ctx.tenant(), req_len).await?;
 
                     let precision = Precision::new(ctx.precision()).unwrap_or(Precision::NS);
 
-                    let req_len = req.len();
                     let write_points_req = {
                         let mut span_recorder = SpanRecorder::new(
                             span_context.child_span("construct write lines points request"),
@@ -444,7 +473,7 @@ impl HttpService {
             .and(self.with_hostaddr())
             .and(self.handle_span_header())
             .and_then(
-                |req: Bytes,
+                |mut req: Bytes,
                  header: Header,
                  param: WriteParam,
                  dbms: DBMSRef,
@@ -456,6 +485,15 @@ impl HttpService {
                     let span_recorder =
                         SpanRecorder::new(parent_span_ctx.child_span("rest open tsdb write"));
                     let span_context = span_recorder.span_ctx();
+
+                    let req_len = req.len();
+                    let content_encoding = get_content_encoding_from_header(&header)?;
+                    if let Some(encoding) = content_encoding {
+                        req = encoding.decode(req).map_err(|e| {
+                            trace::error!("Failed to decode request, err: {}", e);
+                            reject::custom(HttpError::DecodeRequest { source: e })
+                        })?;
+                    }
 
                     let ctx = {
                         let mut span_recorder =
@@ -473,7 +511,6 @@ impl HttpService {
 
                     let precision = Precision::new(ctx.precision()).unwrap_or(Precision::NS);
 
-                    let req_len = req.len();
                     http_limiter_check_write(&coord.meta_manager(), ctx.tenant(), req_len)
                         .await
                         .map_err(reject::custom)?;
@@ -523,7 +560,7 @@ impl HttpService {
             .and(self.with_hostaddr())
             .and(self.handle_span_header())
             .and_then(
-                |req: Bytes,
+                |mut req: Bytes,
                  header: Header,
                  param: WriteParam,
                  dbms: DBMSRef,
@@ -535,6 +572,15 @@ impl HttpService {
                     let span_recorder =
                         SpanRecorder::new(parent_span_ctx.child_span("rest open tsdb put"));
                     let span_context = span_recorder.span_ctx();
+
+                    let req_len = req.len();
+                    let content_encoding = get_content_encoding_from_header(&header)?;
+                    if let Some(encoding) = content_encoding {
+                        req = encoding.decode(req).map_err(|e| {
+                            trace::error!("Failed to decode request, err: {}", e);
+                            reject::custom(HttpError::DecodeRequest { source: e })
+                        })?;
+                    }
 
                     let ctx = {
                         let mut span_recorder =
@@ -552,7 +598,6 @@ impl HttpService {
 
                     let precision = Precision::new(ctx.precision()).unwrap_or(Precision::NS);
 
-                    let req_len = req.len();
                     http_limiter_check_write(&coord.meta_manager(), ctx.tenant(), req_len)
                         .await
                         .map_err(reject::custom)?;
@@ -1132,6 +1177,7 @@ async fn sql_handle(
     query: &Query,
     dbms: &DBMSRef,
     fmt: ResultFormat,
+    encoding: Option<Encoding>,
     span_ctx: Option<&SpanContext>,
     limiter: Arc<dyn RequestLimiter>,
     http_query_data_out: U64Counter,
@@ -1152,6 +1198,7 @@ async fn sql_handle(
     let resp = HttpResponse::new(
         out,
         fmt.clone(),
+        encoding,
         http_query_data_out.clone(),
         limiter.clone(),
     );
@@ -1173,8 +1220,13 @@ async fn sql_handle(
                         })?
                 };
                 let out = handle.result();
-                let resp =
-                    HttpResponse::new(out, fmt, http_query_data_out.clone(), limiter.clone());
+                let resp = HttpResponse::new(
+                    out,
+                    fmt,
+                    encoding,
+                    http_query_data_out.clone(),
+                    limiter.clone(),
+                );
                 return resp.wrap_batches_to_response().await;
             }
         }
