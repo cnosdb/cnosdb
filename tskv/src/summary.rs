@@ -27,6 +27,7 @@ use crate::record_file::{Reader, RecordDataType, RecordDataVersion, Writer};
 use crate::tseries_family::{ColumnFile, LevelInfo, Version};
 use crate::tsm::TsmReader;
 use crate::version_set::VersionSet;
+use crate::wal::WalTask;
 use crate::{byte_utils, file_utils, ColumnFileId, LevelId, TseriesFamilyId};
 
 const MAX_BATCH_SIZE: usize = 64;
@@ -297,6 +298,7 @@ pub struct Summary {
     writer: Writer,
     opt: Arc<Options>,
     runtime: Arc<Runtime>,
+    wal_sender: Sender<WalTask>,
     metrics_register: Arc<MetricsRegister>,
 }
 
@@ -307,6 +309,7 @@ impl Summary {
         runtime: Arc<Runtime>,
         meta: MetaRef,
         memory_pool: MemoryPoolRef,
+        wal_sender: Sender<WalTask>,
         metrics_register: Arc<MetricsRegister>,
     ) -> Result<Self> {
         let db = VersionEdit::default();
@@ -336,6 +339,7 @@ impl Summary {
             writer: w,
             opt,
             runtime,
+            wal_sender,
             metrics_register,
         })
     }
@@ -353,6 +357,7 @@ impl Summary {
         flush_task_sender: Sender<FlushReq>,
         compact_task_sender: Sender<CompactTask>,
         load_field_filter: bool,
+        wal_sender: Sender<WalTask>,
         metrics_register: Arc<MetricsRegister>,
     ) -> Result<Self> {
         let summary_path = opt.storage.summary_dir();
@@ -386,6 +391,7 @@ impl Summary {
             writer,
             opt,
             runtime,
+            wal_sender,
             metrics_register,
         })
     }
@@ -577,10 +583,25 @@ impl Summary {
                     &mut file_metas,
                     min_seq.copied(),
                 );
+
+                let last_seq = new_version.last_seq();
                 let flushed_mem_cahces = mem_caches.get(&tsf_id);
                 tsf.write()
                     .await
                     .new_version(new_version, flushed_mem_cahces);
+
+                if !self.opt.raft_mode {
+                    let (task, rx) = WalTask::new_clear_wal_entry(
+                        tsf.read().await.tenant_database().to_string(),
+                        tsf_id,
+                        last_seq,
+                    );
+
+                    if self.wal_sender.send(task).await.is_ok() {
+                        let _ = rx.await;
+                    }
+                }
+
                 trace::info!("Applied new version for ts_family {}.", tsf_id);
             }
         }
@@ -822,6 +843,7 @@ mod test {
     use crate::kv_option::Options;
     use crate::kvcore::{COMPACT_REQ_CHANNEL_CAP, SUMMARY_REQ_CHANNEL_CAP};
     use crate::summary::{CompactMeta, Summary, SummaryTask, VersionEdit};
+    use crate::wal::WalTask;
 
     #[test]
     fn test_version_edit() {
@@ -968,12 +990,15 @@ mod test {
         if !file_manager::try_exists(&summary_dir) {
             std::fs::create_dir_all(&summary_dir).unwrap();
         }
+
+        let (wal_sender, _) = mpsc::channel::<WalTask>(1024);
         let memory_pool = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
         let mut summary = Summary::new(
             opt.clone(),
             runtime.clone(),
             meta_manager.clone(),
             memory_pool.clone(),
+            wal_sender.clone(),
             Arc::new(MetricsRegister::default()),
         )
         .await
@@ -991,6 +1016,7 @@ mod test {
             flush_task_sender,
             compact_task_sender,
             false,
+            wal_sender,
             Arc::new(MetricsRegister::default()),
         )
         .await
@@ -1016,11 +1042,13 @@ mod test {
             std::fs::create_dir_all(&summary_dir).unwrap();
         }
         let memory_pool = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
+        let (wal_sender, _) = mpsc::channel::<WalTask>(1024);
         let mut summary = Summary::new(
             opt.clone(),
             runtime.clone(),
             meta_manager.clone(),
             memory_pool.clone(),
+            wal_sender.clone(),
             Arc::new(MetricsRegister::default()),
         )
         .await
@@ -1039,6 +1067,7 @@ mod test {
             flush_task_sender.clone(),
             compact_task_sender.clone(),
             false,
+            wal_sender.clone(),
             Arc::new(MetricsRegister::default()),
         )
         .await
@@ -1057,6 +1086,7 @@ mod test {
             flush_task_sender,
             compact_task_sender,
             false,
+            wal_sender,
             Arc::new(MetricsRegister::default()),
         )
         .await
@@ -1086,12 +1116,14 @@ mod test {
             std::fs::create_dir_all(&summary_dir).unwrap();
         }
         let memory_pool = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
+        let (wal_sender, _) = mpsc::channel::<WalTask>(1024);
         let global = Arc::new(GlobalContext::new());
         let mut summary = Summary::new(
             opt.clone(),
             runtime.clone(),
             meta_manager.clone(),
             memory_pool.clone(),
+            wal_sender.clone(),
             Arc::new(MetricsRegister::default()),
         )
         .await
@@ -1144,6 +1176,7 @@ mod test {
             flush_task_sender.clone(),
             compact_task_sender,
             false,
+            wal_sender,
             Arc::new(MetricsRegister::default()),
         )
         .await
@@ -1175,11 +1208,13 @@ mod test {
         if !file_manager::try_exists(&summary_dir) {
             std::fs::create_dir_all(&summary_dir).unwrap();
         }
+        let (wal_sender, _) = mpsc::channel::<WalTask>(1024);
         let mut summary = Summary::new(
             opt.clone(),
             runtime.clone(),
             meta_manager.clone(),
             memory_pool.clone(),
+            wal_sender.clone(),
             Arc::new(MetricsRegister::default()),
         )
         .await
@@ -1264,6 +1299,7 @@ mod test {
             flush_task_sender,
             compact_task_sender,
             false,
+            wal_sender,
             Arc::new(MetricsRegister::default()),
         )
         .await

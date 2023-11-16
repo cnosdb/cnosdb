@@ -57,7 +57,8 @@ use tokio::time::timeout;
 
 use self::reader::WalReader;
 use self::writer::{
-    DeleteTableTask, DeleteTask, DeleteVnodeTask, UpdateSeriesKeys, WalWriter, WriteTask,
+    ClearWalEntry, DeleteTableTask, DeleteTask, DeleteVnodeTask, UpdateSeriesKeys, WalWriter,
+    WriteTask,
 };
 use crate::file_system::file_manager;
 use crate::kv_option::WalOptions;
@@ -99,6 +100,7 @@ pub enum WalType {
     DeleteTable = 21,
     UpdateSeriesKeys = 22,
     Delete = 23,
+    ClearWalEntry = 50,
     RaftBlankLog = 101,
     RaftNormalLog = 102,
     RaftMembershipLog = 103,
@@ -113,6 +115,7 @@ impl From<u8> for WalType {
             21 => WalType::DeleteTable,
             22 => WalType::UpdateSeriesKeys,
             23 => WalType::Delete,
+            50 => WalType::ClearWalEntry,
             101 => WalType::RaftBlankLog,
             102 => WalType::RaftNormalLog,
             103 => WalType::RaftMembershipLog,
@@ -129,6 +132,7 @@ impl Display for WalType {
             WalType::DeleteTable => write!(f, "delete_table"),
             WalType::UpdateSeriesKeys => write!(f, "update_series_keys"),
             WalType::Delete => write!(f, "delete"),
+            WalType::ClearWalEntry => write!(f, "clear_wal_entry"),
             WalType::RaftBlankLog => write!(f, "raft_log_blank"),
             WalType::RaftNormalLog => write!(f, "raft_log_normal"),
             WalType::RaftMembershipLog => write!(f, "raft_log_membership"),
@@ -246,6 +250,28 @@ impl WalTask {
         )
     }
 
+    pub fn new_clear_wal_entry(
+        tenant_database: String,
+        vnode_id: VnodeId,
+        sequence: u64,
+    ) -> (WalTask, WriteResultReceiver) {
+        let task = writer::Task::ClearWalEntry(ClearWalEntry {
+            tenant_database,
+            vnode_id,
+            sequence,
+        });
+
+        let (cb, rx) = oneshot::channel();
+        (
+            Self {
+                seq: 0,
+                task,
+                result_sender: cb,
+            },
+            rx,
+        )
+    }
+
     pub fn new_from(wal_task: &WalTask, cb: WriteResultSender) -> WalTask {
         WalTask {
             seq: wal_task.seq,
@@ -261,6 +287,7 @@ impl WalTask {
             writer::Task::DeleteTable { .. } => WalType::DeleteTable,
             writer::Task::UpdateSeriesKeys { .. } => WalType::UpdateSeriesKeys,
             writer::Task::Delete { .. } => WalType::UpdateSeriesKeys,
+            writer::Task::ClearWalEntry { .. } => WalType::ClearWalEntry,
         }
     }
 
@@ -386,7 +413,7 @@ impl VnodeWal {
             self.wal_reader_index.remove(wal_id);
             self.wal_location_index.remove(wal_id);
 
-            let file_path = file_utils::make_wal_file(&self.config.path, *wal_id);
+            let file_path = file_utils::make_wal_file(self.wal_dir(), *wal_id);
             trace::debug!("Removing wal file '{}'", file_path.display());
             if let Err(e) = tokio::fs::remove_file(&file_path).await {
                 trace::error!("Failed to remove file '{}': {:?}", file_path.display(), e);
@@ -412,10 +439,10 @@ impl VnodeWal {
     }
 
     async fn write_inner_task(&mut self, task: &writer::Task) -> Result<(u64, usize)> {
-        if let Err(e) = self.roll_wal_file(self.config.max_file_size).await {
-            trace::error!("Failed to roll WAL file: {}", e);
-            return Err(e);
+        if let Err(err) = self.roll_wal_file(self.config.max_file_size).await {
+            trace::warn!("roll wal file failed: {}", err);
         }
+
         match task {
             writer::Task::Write(WriteTask {
                 tenant,
@@ -473,14 +500,53 @@ impl VnodeWal {
                     .delete(tenant, database, table, *vnode_id, series_ids, time_ranges)
                     .await
             }
+            writer::Task::ClearWalEntry(ClearWalEntry {
+                tenant_database,
+                sequence,
+                vnode_id,
+                ..
+            }) => {
+                let mut delete_ids = vec![];
+                let wal_files = file_manager::list_file_names(self.wal_dir());
+                for file_name in wal_files {
+                    // If file name cannot be parsed to wal id, skip that file.
+                    let wal_id = match file_utils::get_wal_file_id(&file_name) {
+                        Ok(id) => id,
+                        Err(_) => continue,
+                    };
+
+                    let path = self.wal_dir().join(&file_name);
+                    if let Ok(reader) = WalReader::open(&path).await {
+                        if reader.max_sequence() < *sequence {
+                            delete_ids.push(wal_id);
+                        }
+                    }
+                }
+
+                trace::info!(
+                    "Clear WAL files: {}.{} before seq: {}, file ids: {:?} ",
+                    tenant_database,
+                    vnode_id,
+                    sequence,
+                    delete_ids
+                );
+
+                self.delete_wal_files(&delete_ids).await;
+                Ok((0, 0))
+            }
         }
     }
 
-    async fn write_raft_entry(
-        &mut self,
-        raft_entry: &raft_store::RaftEntry,
-    ) -> Result<(u64, usize)> {
-        self.current_wal.append_raft_entry(raft_entry).await
+    async fn write_raft_entry(&mut self, raft_entry: &raft_store::RaftEntry) -> Result<(u64, u64)> {
+        if let Err(err) = self.roll_wal_file(self.config.max_file_size).await {
+            trace::warn!("roll wal file failed: {}", err);
+        }
+
+        let wal_id = self.current_wal_id();
+        let pos = self.current_wal_size();
+        self.current_wal.append_raft_entry(raft_entry).await?;
+
+        Ok((wal_id, pos))
     }
 
     pub async fn read(&mut self, wal_id: u64, pos: u64) -> Result<Option<reader::Block>> {

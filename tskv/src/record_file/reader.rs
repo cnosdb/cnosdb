@@ -204,8 +204,8 @@ impl Reader {
         if (self.pos + RECORD_HEADER_LEN) as u64 >= self.footer_pos {
             return Err(Error::Eof);
         }
-        let (header_pos, header) = self.find_record_header().await?;
 
+        let (header_pos, header) = self.find_record_header().await?;
         let mut p = RECORD_MAGIC_NUMBER_LEN;
         let data_version = header[p];
         p += RECORD_DATA_VERSION_LEN;
