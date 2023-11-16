@@ -34,6 +34,9 @@ select * from cluster_schema.users where user_name in ('root', 'test_au_u1', 'te
 --#SORT=true
 alter user test_au_u2 set granted_admin = true;
 
+--#USER_NAME=test_au_u2
+alter user test_au_u2 set must_change_password = true;
+
 --#TENANT=cnosdb
 --#USER_NAME=root
 --#SORT=true
