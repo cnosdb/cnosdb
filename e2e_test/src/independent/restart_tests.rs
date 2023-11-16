@@ -432,7 +432,7 @@ pub mod test {
                 .collect::<Vec<_>>(),
             vec![
                 "user_name,is_admin,user_options",
-                r#"tester,false,"{""hash_password"":""*****"",""must_change_password"":false,""granted_admin"":false}""#
+                r#"tester,false,"{""hash_password"":""*****""}""#
             ]
         );
 
@@ -462,7 +462,7 @@ pub mod test {
                 .collect::<Vec<_>>(),
             vec![
                 "user_name,is_admin,user_options",
-                r#"tester,true,"{""hash_password"":""*****"",""must_change_password"":false,""granted_admin"":true}""#
+                r#"tester,true,"{""hash_password"":""*****"",""granted_admin"":true}""#
             ]
         );
 
@@ -492,7 +492,7 @@ pub mod test {
                 .collect::<Vec<_>>(),
             vec![
                 "user_name,is_admin,user_options",
-                r#"tester,false,"{""hash_password"":""*****"",""must_change_password"":false,""granted_admin"":false}""#
+                r#"tester,false,"{""hash_password"":""*****"",""granted_admin"":false}""#
             ]
         );
 
@@ -522,7 +522,7 @@ pub mod test {
                 .collect::<Vec<_>>(),
             vec![
                 "user_name,is_admin,user_options",
-                r#"tester,false,"{""hash_password"":""*****"",""must_change_password"":false,""comment"":""bbb"",""granted_admin"":false}""#
+                r#"tester,false,"{""hash_password"":""*****"",""comment"":""bbb"",""granted_admin"":false}""#
             ]
         );
 
