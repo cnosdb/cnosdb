@@ -162,8 +162,8 @@ pub enum ReadCommand {
     User(String, String),
     // cluster
     Users(String),
-    // cluster, tenant_name
-    Tenant(String, String),
+    // cluster, tenant_name, is_need_hidden
+    Tenant(String, String, bool),
     // cluster
     Tenants(String),
     // cluster, tenant, db, table

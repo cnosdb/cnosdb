@@ -31,7 +31,7 @@ impl DDLDefinitionTask for RecoverTenantTask {
 
         let meta = query_state_machine.meta.clone();
         let tenant_meta = meta
-            .tenant_meta(tenant_name)
+            .tenant_meta_for_special(tenant_name)
             .await
             .ok_or_else(|| QueryError::Meta {
                 source: MetaError::TenantNotFound {

@@ -386,8 +386,8 @@ impl StateMachine {
                 response_encode(self.get_struct::<UserDesc>(&path))
             }
             ReadCommand::Users(cluster) => response_encode(self.process_read_users(cluster)),
-            ReadCommand::Tenant(cluster, tenant_name) => {
-                response_encode(self.process_read_tenant(cluster, tenant_name))
+            ReadCommand::Tenant(cluster, tenant_name, is_need_hidden) => {
+                response_encode(self.process_read_tenant(cluster, tenant_name, *is_need_hidden))
             }
             ReadCommand::Tenants(cluster) => response_encode(self.process_read_tenants(cluster)),
             ReadCommand::TableSchema(cluster, tenant_name, db_name, table_name) => {
@@ -436,15 +436,12 @@ impl StateMachine {
         &self,
         cluster: &str,
         tenant_name: &str,
+        is_need_hidden: bool,
     ) -> MetaResult<Option<Tenant>> {
         let path = KeyPath::tenant(cluster, tenant_name);
-        let res = self.get_struct::<Tenant>(&path)?.and_then(|t| {
-            if t.options().get_tenant_is_hidden() {
-                None
-            } else {
-                Some(t)
-            }
-        });
+        let res = self
+            .get_struct::<Tenant>(&path)?
+            .filter(|t| !is_need_hidden || !t.options().get_tenant_is_hidden());
         Ok(res)
     }
 
@@ -1454,6 +1451,13 @@ impl StateMachine {
         node_id: NodeId,
         is_lock: bool,
     ) -> MetaResult<()> {
+        let (old_node_id, old_is_lock) = self.process_read_resourceinfos_mark(cluster)?;
+        if (is_lock && old_is_lock) || (!is_lock && old_node_id != node_id) {
+            return Err(MetaError::ResourceInfosMarkIsLock {
+                node_id: old_node_id,
+            });
+        }
+
         let key = KeyPath::resourceinfosmark(cluster);
         self.insert(&key, &value_encode(&(node_id, is_lock))?)
     }
