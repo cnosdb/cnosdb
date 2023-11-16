@@ -1,9 +1,12 @@
 #[cfg(test)]
 pub mod test {
+    use fly_accept_encoding::Encoding;
+    use http_protocol::encoding::EncodingExt;
     use http_protocol::header::{HeaderValue, ACCEPT, CONTENT_TYPE};
     use http_protocol::http_client::HttpClient;
     use http_protocol::response::Response;
     use http_protocol::status_code;
+    use reqwest::header::{ACCEPT_ENCODING, CONTENT_ENCODING};
 
     pub fn client() -> HttpClient {
         HttpClient::new("127.0.0.1", 8902, false, false, &[]).unwrap()
@@ -356,5 +359,79 @@ pub mod test {
 
         let resp: Response = client.delete(path).send().await.unwrap();
         assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
+    }
+
+    #[tokio::test]
+    async fn test_compression() {
+        async fn send_encoded_request(
+            client: &HttpClient,
+            path: &str,
+            data: Vec<u8>,
+            content_encoding: Encoding,
+            accept_encoding: Encoding,
+        ) -> String {
+            let username = "root";
+            let param = &[("db", "public")];
+            let resp = client
+                .post(path)
+                .basic_auth::<&str, &str>(username, None)
+                .query(param)
+                .header(CONTENT_ENCODING, content_encoding.to_header_value())
+                .header(ACCEPT_ENCODING, accept_encoding.to_header_value())
+                .body(content_encoding.encode(data.clone()).unwrap())
+                .send()
+                .await
+                .unwrap();
+            String::from_utf8(
+                accept_encoding
+                    .decode(resp.bytes().await.unwrap())
+                    .unwrap()
+                    .to_vec(),
+            )
+            .unwrap()
+        }
+
+        let client = client();
+
+        let path = "/api/v1/sql";
+
+        for &encoding_a in Encoding::iterator() {
+            for &encoding_b in Encoding::iterator() {
+                let response = send_encoded_request(
+                    &client,
+                    path,
+                    b"select 1;".to_vec(),
+                    encoding_a,
+                    encoding_b,
+                )
+                .await;
+                assert_eq!(response, "Int64(1)\n1\n");
+            }
+        }
+
+        let path = "/api/v1/write";
+
+        for &encoding in Encoding::iterator() {
+            send_encoded_request(
+                &client,
+                path,
+                b"test_v1_write_path_compression,ta=a1,tb=b1 fa=1,fb=2".to_vec(),
+                encoding,
+                Encoding::Identity,
+            )
+            .await;
+        }
+
+        let path = "/api/v1/opentsdb/write";
+        for &encoding in Encoding::iterator() {
+            send_encoded_request(
+                &client,
+                path,
+                b"test_v1_opentsdb_write_path_compression 1 1 ta=a1 tb=b1 fa=1 fb=2".to_vec(),
+                encoding,
+                Encoding::Identity,
+            )
+            .await;
+        }
     }
 }
