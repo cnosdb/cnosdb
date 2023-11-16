@@ -30,19 +30,21 @@ pub async fn start_singe_meta_server(path: String, cluster_name: String, addr: S
     };
     super::init::init_meta(&storage, init_data).await;
 
-    let storage = Arc::new(RwLock::new(storage));
-    let server = SingleServer { storage };
     tracing::info!("single meta http server start addr: {}", addr);
-    tokio::spawn(async move { server.start(addr).await });
+    let storage = Arc::new(RwLock::new(storage));
+    let server = SingleServer { addr, storage };
+
+    tokio::spawn(async move { server.start().await });
 }
 
 pub struct SingleServer {
+    pub addr: String,
     pub storage: Arc<RwLock<StateMachine>>,
 }
 
 impl SingleServer {
-    pub async fn start(&self, addr: String) {
-        let addr: SocketAddr = addr.parse().unwrap();
+    pub async fn start(&self) {
+        let addr: SocketAddr = self.addr.parse().unwrap();
         warp::serve(self.routes()).run(addr).await;
     }
 
@@ -55,7 +57,13 @@ impl SingleServer {
             .or(self.dump())
             .or(self.dump_sql())
             .or(self.restore())
+            .or(self.watch_meta_membership())
             .or(self.debug())
+    }
+
+    fn with_addr(&self) -> impl Filter<Extract = (String,), Error = StdInfallible> + Clone {
+        let addr = self.addr.clone();
+        warp::any().map(move || addr.clone())
     }
 
     fn with_storage(
@@ -63,6 +71,22 @@ impl SingleServer {
     ) -> impl Filter<Extract = (Arc<RwLock<StateMachine>>,), Error = StdInfallible> + Clone {
         let storage = self.storage.clone();
         warp::any().map(move || storage.clone())
+    }
+
+    fn watch_meta_membership(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        warp::path!("watch_meta_membership")
+            .and(warp::body::bytes())
+            .and(self.with_addr())
+            .and_then(|_req: hyper::body::Bytes, addr: String| async move {
+                let nodes = vec![addr];
+                let data = crate::store::storage::response_encode(Ok(nodes));
+
+                let res: Result<String, warp::Rejection> = Ok(data);
+
+                res
+            })
     }
 
     fn read(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
