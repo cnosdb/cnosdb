@@ -273,10 +273,7 @@ impl WalWriter {
         Ok((seq, written_size))
     }
 
-    pub async fn append_raft_entry(
-        &mut self,
-        raft_entry: &raft_store::RaftEntry,
-    ) -> Result<(u64, usize)> {
+    pub async fn append_raft_entry(&mut self, raft_entry: &raft_store::RaftEntry) -> Result<usize> {
         let wal_type = match raft_entry.payload {
             openraft::EntryPayload::Blank => WalType::RaftNormalLog,
             openraft::EntryPayload::Normal(_) => WalType::RaftNormalLog,
@@ -302,7 +299,7 @@ impl WalWriter {
         // write & fsync succeed
         self.max_sequence = seq + 1;
         self.size += written_size as u64;
-        Ok((seq, written_size))
+        Ok(written_size)
     }
 
     pub async fn sync(&self) -> Result<()> {
@@ -361,6 +358,7 @@ pub enum Task {
     DeleteTable(DeleteTableTask),
     UpdateSeriesKeys(UpdateSeriesKeys),
     Delete(DeleteTask),
+    ClearWalEntry(ClearWalEntry),
 }
 
 impl Task {
@@ -449,6 +447,9 @@ impl Task {
             Self::Delete(DeleteTask {
                 tenant, database, ..
             }) => make_owner(tenant, database),
+            Self::ClearWalEntry(ClearWalEntry {
+                tenant_database, ..
+            }) => tenant_database.to_string(),
         }
     }
 
@@ -460,6 +461,7 @@ impl Task {
             Self::DeleteTable(DeleteTableTask { .. }) => None,
             Self::UpdateSeriesKeys(UpdateSeriesKeys { vnode_id, .. }) => Some(*vnode_id),
             Self::Delete(DeleteTask { vnode_id, .. }) => Some(*vnode_id),
+            Self::ClearWalEntry(ClearWalEntry { vnode_id, .. }) => Some(*vnode_id),
         }
     }
 }
@@ -561,6 +563,13 @@ pub struct DeleteTask {
     pub vnode_id: VnodeId,
     pub series_ids: Vec<SeriesId>,
     pub time_ranges: TimeRanges,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClearWalEntry {
+    pub tenant_database: String,
+    pub vnode_id: VnodeId,
+    pub sequence: u64,
 }
 
 #[cfg(test)]

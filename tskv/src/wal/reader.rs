@@ -212,6 +212,7 @@ impl WalRecordData {
                 }
             },
             WalType::Unknown => Block::Unknown,
+            WalType::ClearWalEntry => Block::Unknown,
         };
         Self {
             typ: entry_type,
