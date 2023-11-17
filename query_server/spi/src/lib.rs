@@ -520,6 +520,12 @@ pub enum QueryError {
     ForbiddenLimitTenant {
         tenant: String,
     },
+
+    #[snafu(display("Couldn't Drop System Role {}", role))]
+    #[error_code(code = 76)]
+    ForbiddenDropSystemRole {
+        role: String,
+    },
 }
 
 impl From<ParserError> for QueryError {

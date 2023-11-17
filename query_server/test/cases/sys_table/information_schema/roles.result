@@ -70,3 +70,13 @@ role_name,role_type,inherit_role
 member,system,
 owner,system,
 test_rs_role1,custom,member
+
+-- EXECUTE SQL: drop role owner; --
+422 Unprocessable Entity
+{"error_code":"010076","error_message":"Couldn't Drop System Role owner"}
+-- ERROR:  --
+
+-- EXECUTE SQL: drop role member; --
+422 Unprocessable Entity
+{"error_code":"010076","error_message":"Couldn't Drop System Role member"}
+-- ERROR:  --
