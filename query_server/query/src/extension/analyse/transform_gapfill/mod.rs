@@ -3,7 +3,7 @@
 
 pub mod range_predicate;
 
-use std::collections::HashSet;
+use std::collections::{hash_map, HashMap, HashSet};
 use std::ops::{Bound, Range};
 use std::sync::Arc;
 
@@ -12,6 +12,7 @@ use datafusion::common::tree_node::{
 };
 use datafusion::config::ConfigOptions;
 use datafusion::error::{DataFusionError, Result};
+use datafusion::logical_expr::expr::ScalarUDF;
 use datafusion::logical_expr::utils::expr_to_columns;
 use datafusion::logical_expr::{
     expr, Aggregate, Extension, GetIndexedField, LogicalPlan, Projection,
@@ -391,6 +392,16 @@ fn udf_to_fill_strategy(name: &str) -> Option<FillStrategy> {
     }
 }
 
+fn fill_strategy_to_udf(fs: &FillStrategy) -> Result<&'static str> {
+    match fs {
+        FillStrategy::PrevNullAsMissing => Ok(LOCF),
+        FillStrategy::LinearInterpolate => Ok(INTERPOLATE),
+        _ => Err(DataFusionError::Internal(format!(
+            "unknown UDF for fill strategy {fs:?}"
+        ))),
+    }
+}
+
 fn handle_projection(proj: &Projection) -> Result<Option<LogicalPlan>> {
     let Projection {
         input,
@@ -407,50 +418,31 @@ fn handle_projection(proj: &Projection) -> Result<Option<LogicalPlan>> {
         return Ok(None);
     };
 
-    let fill_cols: Vec<(&Expr, FillStrategy, &str)> = proj_exprs
+    let mut fill_fn_rewriter = FillFnRewriter {
+        aggr_col_fill_map: HashMap::new(),
+    };
+    let new_proj_exprs = proj_exprs
         .iter()
-        .filter_map(|e| match e {
-            Expr::ScalarUDF(expr::ScalarUDF { fun, args }) => {
-                if let Some(strategy) = udf_to_fill_strategy(&fun.name) {
-                    let col = &args[0];
-                    Some((col, strategy, fun.name.as_str()))
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        })
-        .collect();
-    if fill_cols.is_empty() {
-        // No special gap-filling functions, nothing to do.
+        .map(|e| e.clone().rewrite(&mut fill_fn_rewriter))
+        .collect::<Result<Vec<Expr>>>()?;
+
+    let FillFnRewriter { aggr_col_fill_map } = fill_fn_rewriter;
+    if aggr_col_fill_map.is_empty() {
         return Ok(None);
     }
 
     // Clone the existing GapFill node, then modify it in place
     // to reflect the new fill strategy.
     let mut new_gapfill = child_gapfill.clone();
-    for (e, fs, fn_name) in fill_cols {
-        if new_gapfill.replace_fill_strategy(e, fs).is_none() {
+    for (e, fs) in aggr_col_fill_map {
+        let udf = fill_strategy_to_udf(&fs)?;
+        if new_gapfill.replace_fill_strategy(&e, fs).is_none() {
             // There was a gap filling function called on a non-aggregate column.
             return Err(DataFusionError::Plan(format!(
-                "{fn_name} must be called on an aggregate column in a gap-filling query"
+                "{udf} must be called on an aggregate column in a gap-filling query",
             )));
         }
     }
-
-    // Remove the gap filling functions from the projection.
-    let new_proj_exprs: Vec<Expr> = proj_exprs
-        .iter()
-        .cloned()
-        .map(|e| match e {
-            Expr::ScalarUDF(expr::ScalarUDF { fun, mut args })
-                if udf_to_fill_strategy(&fun.name).is_some() =>
-            {
-                args.remove(0)
-            }
-            _ => e,
-        })
-        .collect();
 
     let new_proj = {
         let mut proj = proj.clone();
@@ -463,6 +455,60 @@ fn handle_projection(proj: &Projection) -> Result<Option<LogicalPlan>> {
     };
 
     Ok(Some(new_proj))
+}
+
+/// Implements `TreeNodeRewriter`:
+/// - Traverses over the expressions in a projection node
+/// - If it finds `locf(col)` or `interpolate(col)`,
+///   it replaces them with `col AS <original name>`
+/// - Collects into [`Self::aggr_col_fill_map`] which correlates
+///   aggregate columns to their [`FillStrategy`].
+struct FillFnRewriter {
+    aggr_col_fill_map: HashMap<Expr, FillStrategy>,
+}
+
+impl TreeNodeRewriter for FillFnRewriter {
+    type N = Expr;
+    fn pre_visit(&mut self, expr: &Expr) -> Result<RewriteRecursion> {
+        match expr {
+            Expr::ScalarUDF(ScalarUDF { fun, .. }) if udf_to_fill_strategy(&fun.name).is_some() => {
+                Ok(RewriteRecursion::Mutate)
+            }
+            _ => Ok(RewriteRecursion::Continue),
+        }
+    }
+
+    fn mutate(&mut self, expr: Expr) -> Result<Expr> {
+        let orig_name = expr.display_name()?;
+        match expr {
+            Expr::ScalarUDF(ScalarUDF { ref fun, .. })
+                if udf_to_fill_strategy(&fun.name).is_none() =>
+            {
+                Ok(expr)
+            }
+            Expr::ScalarUDF(ScalarUDF { fun, mut args }) => {
+                let fs = udf_to_fill_strategy(&fun.name).expect("must be a fill fn");
+                let arg = args.remove(0);
+                self.add_fill_strategy(arg.clone(), fs)?;
+                Ok(arg.alias(orig_name))
+            }
+            _ => Ok(expr),
+        }
+    }
+}
+
+impl FillFnRewriter {
+    fn add_fill_strategy(&mut self, e: Expr, fs: FillStrategy) -> Result<()> {
+        match self.aggr_col_fill_map.entry(e) {
+            hash_map::Entry::Occupied(_) => Err(DataFusionError::NotImplemented(
+                "multiple fill strategies for the same column".to_string(),
+            )),
+            hash_map::Entry::Vacant(ve) => {
+                ve.insert(fs);
+                Ok(())
+            }
+        }
+    }
 }
 
 fn count_udf(e: &Expr, name: &str) -> Result<usize> {
