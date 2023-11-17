@@ -233,7 +233,7 @@ impl<'a> ExtParser<'a> {
             expecting_statement_delimiter = true;
         }
 
-        debug!("Parser sql: {}, stmts: {:#?}", sql, stmts);
+        // debug!("Parser sql: {}, stmts: {:#?}", sql, stmts);
 
         Ok(stmts)
     }
