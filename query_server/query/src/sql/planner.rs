@@ -636,6 +636,11 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             }
             TenantObjectType::Role => {
                 let role_name = normalize_ident(object_name);
+
+                if SystemTenantRole::try_from(role_name.as_str()).is_ok() {
+                    return Err(QueryError::ForbiddenDropSystemRole { role: role_name });
+                }
+
                 (
                     DDLPlan::DropTenantObject(DropTenantObject {
                         tenant_name: tenant_name.to_string(),
