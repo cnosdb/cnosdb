@@ -1225,7 +1225,7 @@ async fn sql_handle(
     limiter: Arc<dyn RequestLimiter>,
     http_query_data_out: U64Counter,
 ) -> Result<Response, HttpError> {
-    debug!("prepare to execute: {:?}", query.content());
+    // debug!("prepare to execute: {:?}", query.content());
     let handle = {
         let mut execute_span_recorder = SpanRecorder::new(span_ctx.child_span("execute"));
         dbms.execute(query, execute_span_recorder.span_ctx())
