@@ -1,14 +1,16 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::mem::MaybeUninit;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
+use arrow_array::RecordBatch;
 use lru_cache::asynchronous::ShardedCache;
 use memory_pool::MemoryPoolRef;
 use metrics::gauge::U64Gauge;
 use metrics::metric_register::MetricsRegister;
+use models::field_value::{DataType, FieldVal};
 use models::meta_data::VnodeStatus;
 use models::predicate::domain::{TimeRange, TimeRanges};
 use models::schema::{split_owner, TableColumn};
@@ -25,9 +27,11 @@ use crate::compaction::{CompactTask, FlushReq};
 use crate::error::Result;
 use crate::file_utils::{make_delta_file_name, make_tsm_file_name};
 use crate::kv_option::{CacheOptions, StorageOptions};
-use crate::memcache::{DataType, FieldVal, MemCache, RowGroup};
+use crate::memcache::{MemCache, MemCacheStatistics, RowGroup};
 use crate::summary::{CompactMeta, VersionEdit};
 use crate::tsm::{DataBlock, TsmReader, TsmTombstone};
+use crate::tsm2::page::PageMeta;
+use crate::tsm2::reader::TSM2Reader;
 use crate::Error::CommonError;
 use crate::{ColumnFileId, LevelId, TseriesFamilyId};
 
@@ -43,7 +47,7 @@ pub struct ColumnFile {
     compacting: AtomicBool,
 
     path: PathBuf,
-    tsm_reader_cache: Weak<ShardedCache<String, Arc<TsmReader>>>,
+    tsm_reader_cache: Weak<ShardedCache<String, Arc<TSM2Reader>>>,
 }
 
 impl ColumnFile {
@@ -51,7 +55,7 @@ impl ColumnFile {
         meta: &CompactMeta,
         path: impl AsRef<Path>,
         field_id_filter: Arc<BloomFilter>,
-        tsm_reader_cache: Weak<ShardedCache<String, Arc<TsmReader>>>,
+        tsm_reader_cache: Weak<ShardedCache<String, Arc<TSM2Reader>>>,
     ) -> Self {
         Self {
             file_id: meta.file_id,
@@ -252,7 +256,7 @@ impl LevelInfo {
         &mut self,
         compact_meta: &CompactMeta,
         field_filter: Arc<BloomFilter>,
-        tsm_reader_cache: Weak<ShardedCache<String, Arc<TsmReader>>>,
+        tsm_reader_cache: Weak<ShardedCache<String, Arc<TSM2Reader>>>,
     ) {
         let file_path = if compact_meta.is_delta {
             let base_dir = self.storage_opt.delta_dir(&self.database, self.tsf_id);
@@ -370,6 +374,7 @@ pub struct Version {
     pub max_level_ts: i64,
     pub levels_info: [LevelInfo; 5],
     pub tsm_reader_cache: Arc<ShardedCache<String, Arc<TsmReader>>>,
+    pub tsm2_reader_cache: Arc<ShardedCache<String, Arc<TSM2Reader>>>,
 }
 
 impl Version {
@@ -381,7 +386,7 @@ impl Version {
         last_seq: u64,
         levels_info: [LevelInfo; 5],
         max_level_ts: i64,
-        tsm_reader_cache: Arc<ShardedCache<String, Arc<TsmReader>>>,
+        tsm2_reader_cache: Arc<ShardedCache<String, Arc<TSM2Reader>>>,
     ) -> Self {
         Self {
             ts_family_id,
@@ -390,7 +395,8 @@ impl Version {
             last_seq,
             max_level_ts,
             levels_info,
-            tsm_reader_cache,
+            tsm_reader_cache: Arc::new(ShardedCache::with_capacity(16)),
+            tsm2_reader_cache,
         }
     }
 
@@ -421,7 +427,7 @@ impl Version {
             self.ts_family_id,
             self.storage_opt.clone(),
         );
-        let weak_tsm_reader_cache = Arc::downgrade(&self.tsm_reader_cache);
+        let weak_tsm_reader_cache = Arc::downgrade(&self.tsm2_reader_cache);
         for level in self.levels_info.iter() {
             for file in level.files.iter() {
                 if deleted_files[file.level as usize].contains(&file.file_id) {
@@ -449,6 +455,7 @@ impl Version {
             max_level_ts: self.max_level_ts,
             levels_info: new_levels,
             tsm_reader_cache: self.tsm_reader_cache.clone(),
+            tsm2_reader_cache: self.tsm2_reader_cache.clone(),
         };
         new_version.update_max_level_ts();
         new_version
@@ -527,6 +534,24 @@ impl Version {
         Ok(tsm_reader)
     }
 
+    pub async fn get_tsm_reader2(&self, path: impl AsRef<Path>) -> Result<Arc<TSM2Reader>> {
+        let path = path.as_ref().display().to_string();
+        let tsm_reader = match self.tsm2_reader_cache.get(&path).await {
+            Some(val) => val.clone(),
+            None => {
+                let mut lock = self.tsm2_reader_cache.lock_shard(&path).await;
+                match lock.get(&path) {
+                    Some(val) => val.clone(),
+                    None => {
+                        let tsm_reader = TSM2Reader::open(&path).await?;
+                        lock.insert(path, Arc::new(tsm_reader)).unwrap().clone()
+                    }
+                }
+            }
+        };
+        Ok(tsm_reader)
+    }
+
     // return: l0 , l1-l4 files
     pub fn get_level_files(
         &self,
@@ -544,6 +569,26 @@ impl Version {
             }
         }
         unsafe { MaybeUninit::array_assume_init(res) }
+    }
+
+    pub async fn statistics(
+        &self,
+        series_ids: &[SeriesId],
+        time_predicate: TimeRange,
+    ) -> BTreeMap<u64, BTreeMap<SeriesId, Vec<PageMeta>>> {
+        let mut result = BTreeMap::new();
+        for level in self.levels_info.iter() {
+            for file in level.files.iter() {
+                if file.is_deleted() || !file.overlap(&time_predicate) {
+                    continue;
+                }
+                let reader = self.get_tsm_reader2(file.file_path()).await.unwrap();
+                let fid = reader.file_id();
+                let sts = reader.statistics(series_ids, time_predicate).await.unwrap();
+                result.insert(fid, sts);
+            }
+        }
+        result
     }
 }
 
@@ -593,6 +638,30 @@ impl CacheGroup {
             .read()
             .read_series_timestamps(series_ids, time_predicate, &mut handle_data);
     }
+    /// todo：原来的实现里面 memcache中的数据被copy了出来，在cache中命中的数据较多且查询的并发量大的时候，会引发oom的问题。
+    /// 内存结构变成一种按照时间排序的结构，查询的时候就返回引用，支持 stream 迭代。
+    pub fn stream_read(
+        _series_ids: &[SeriesId],
+        _project: &[usize],
+        _time_predicate: impl FnMut(Timestamp) -> bool,
+    ) -> Option<RecordBatch> {
+        None
+    }
+
+    pub fn cache_statistics(
+        &self,
+        series_ids: &[SeriesId],
+        time_predicate: TimeRange,
+    ) -> BTreeMap<u64, MemCacheStatistics> {
+        let mut result = BTreeMap::new();
+        let sts = self.mut_cache.read().statistics(series_ids, time_predicate);
+        result.insert(sts.seq_no(), sts);
+        self.immut_cache.iter().for_each(|m| {
+            let sts = m.read().statistics(series_ids, time_predicate);
+            result.insert(sts.seq_no(), sts);
+        });
+        result
+    }
 }
 
 #[derive(Debug)]
@@ -635,6 +704,23 @@ impl SuperVersion {
             }
         }
         files
+    }
+
+    pub fn cache_group(&self) -> &CacheGroup {
+        &self.caches
+    }
+
+    pub async fn statistics(
+        &self,
+        series_ids: &[SeriesId],
+        time_predicate: TimeRange,
+    ) -> (
+        BTreeMap<u64, MemCacheStatistics>,
+        BTreeMap<u64, BTreeMap<SeriesId, Vec<PageMeta>>>,
+    ) {
+        let cache = self.caches.cache_statistics(series_ids, time_predicate);
+        let sts = self.version.statistics(series_ids, time_predicate).await;
+        (cache, sts)
     }
 }
 
@@ -1055,6 +1141,7 @@ pub mod test_tseries_family {
     use meta::model::meta_admin::AdminMeta;
     use meta::model::MetaRef;
     use metrics::metric_register::MetricsRegister;
+    use models::field_value::FieldVal;
     use models::schema::{DatabaseSchema, TenantOptions};
     use models::Timestamp;
     use parking_lot::RwLock;
@@ -1068,7 +1155,7 @@ pub mod test_tseries_family {
     use crate::file_utils::make_tsm_file_name;
     use crate::kv_option::{Options, StorageOptions};
     use crate::kvcore::{COMPACT_REQ_CHANNEL_CAP, SUMMARY_REQ_CHANNEL_CAP};
-    use crate::memcache::{FieldVal, MemCache, RowData, RowGroup};
+    use crate::memcache::{MemCache, RowData, RowGroup};
     use crate::summary::{CompactMeta, SummaryTask, VersionEdit};
     use crate::tseries_family::{TimeRange, TseriesFamily, Version};
     use crate::tsm::TsmTombstone;

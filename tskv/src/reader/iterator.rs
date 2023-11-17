@@ -15,6 +15,7 @@ use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::physical_plan::metrics::{self, ExecutionPlanMetricsSet, MetricBuilder};
 use futures::future::join_all;
 use minivec::MiniVec;
+use models::field_value::DataType;
 use models::meta_data::VnodeId;
 use models::predicate::domain::{self, QueryArgs, QueryExpr, TimeRanges};
 use models::predicate::PlacedSplit;
@@ -30,7 +31,6 @@ use trace::{debug, error, SpanRecorder};
 
 use crate::compute::count::count_column_non_null_values;
 use crate::error::Result;
-use crate::memcache::DataType;
 use crate::reader::Cursor;
 use crate::tseries_family::{ColumnFile, SuperVersion, Version};
 use crate::tsm::{BlockMetaIterator, DataBlockReader, TsmReader};

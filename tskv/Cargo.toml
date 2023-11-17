@@ -16,6 +16,8 @@ trace = { path = "../common/trace" }
 utils = { path = "../common/utils" }
 http_protocol = { path = "../common/http_protocol" }
 
+arrow = { workspace = true }
+arrow-array = { workspace = true }
 async-backtrace = { workspace = true, optional = true }
 async-trait = { workspace = true }
 bincode = { workspace = true }
@@ -47,6 +49,7 @@ regex = { workspace = true }
 roaring = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+skiplist = { workspace = true }
 sled = { workspace = true }
 snafu = { workspace = true }
 snap = { workspace = true }

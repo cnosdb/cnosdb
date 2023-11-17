@@ -31,6 +31,10 @@ pub enum Error {
         source: MetaError,
     },
 
+    OutOfSpec {
+        reason: String, // When the tsm file is known to be out of spec.
+    },
+
     #[snafu(display("Invalid flatbuffers: {}", source))]
     #[error_code(code = 1)]
     InvalidFlatbuffer {
@@ -159,7 +163,7 @@ pub enum Error {
     },
 
     /// This error is handled by the caller of record_file::Reader::read_record()
-    #[snafu(display("Record data at [{pos}..{}] is invalid", pos + *len as u64))]
+    #[snafu(display("Record data at [{pos}..{}] is invalid", pos + * len as u64))]
     RecordFileInvalidDataSize {
         pos: u64,
         len: u32,
@@ -220,6 +224,18 @@ pub enum Error {
     InvalidUtf8 {
         message: String,
         source: std::str::Utf8Error,
+    },
+
+    // Internal Error
+    #[snafu(display("{}", source))]
+    Serialize {
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
+
+    // Internal Error
+    #[snafu(display("{}", source))]
+    Deserialize {
+        source: Box<dyn std::error::Error + Send + Sync>,
     },
 }
 

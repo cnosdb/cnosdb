@@ -1,3 +1,5 @@
+#![feature(hash_raw_entry)]
+
 use std::sync::Arc;
 
 pub use error_code;
@@ -24,7 +26,9 @@ pub mod arrow_array;
 pub mod arrow;
 pub mod auth;
 pub mod duration;
+pub mod field_value;
 pub mod gis;
+pub mod mutable_batch;
 pub mod object_reference;
 pub mod oid;
 pub mod predicate;

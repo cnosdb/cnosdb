@@ -1,3 +1,4 @@
+use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::fs::{remove_file, rename};
@@ -267,8 +268,7 @@ impl VersionEdit {
         }
         self.has_file_id = true;
         self.file_id = self.file_id.max(compact_meta.file_id);
-        self.max_level_ts = max_level_ts;
-        self.tsf_id = compact_meta.tsf_id;
+        self.max_level_ts = max(self.max_level_ts, max_level_ts);
         self.add_files.push(compact_meta);
     }
 
@@ -1275,7 +1275,7 @@ mod test {
                 &mut HashMap::new(),
                 None,
             );
-            let tsm_reader_cache = Arc::downgrade(&version.tsm_reader_cache);
+            let tsm_reader_cache = Arc::downgrade(&version.tsm2_reader_cache);
 
             summary.ctx.set_last_seq(1);
             let mut edit = VersionEdit::new(10);

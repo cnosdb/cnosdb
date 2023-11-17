@@ -17,38 +17,58 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 #[snafu(visibility(pub))]
 pub enum Error {
     #[snafu(display("Invalid point: {}", err))]
-    InvalidPoint { err: String },
+    InvalidPoint {
+        err: String,
+    },
 
     #[snafu(display("Invalid tag: {}", err))]
-    InvalidTag { err: String },
+    InvalidTag {
+        err: String,
+    },
 
     #[snafu(display("Invalid field: {}", err))]
-    InvalidField { err: String },
+    InvalidField {
+        err: String,
+    },
 
     #[snafu(display("Invalid flatbuffer message: {}", err))]
-    InvalidFlatbufferMessage { err: String },
+    InvalidFlatbufferMessage {
+        err: String,
+    },
 
     #[snafu(display("Invalid serde message: {}", err))]
-    InvalidSerdeMessage { err: String },
+    InvalidSerdeMessage {
+        err: String,
+    },
 
     #[snafu(display("Invalid query expr message: {}", err))]
-    InvalidQueryExprMsg { err: String },
+    InvalidQueryExprMsg {
+        err: String,
+    },
 
     #[snafu(display(
         "Internal error: {}. This was likely caused by a bug in Cnosdb's \
     code and we would welcome that you file an bug report in our issue tracker",
         err
     ))]
-    Internal { err: String },
+    Internal {
+        err: String,
+    },
 
     #[snafu(display("IO operator: {}", err))]
-    IOErrors { err: String },
+    IOErrors {
+        err: String,
+    },
 
     #[snafu(display("Failed to convert vec to string"))]
     EncodingError,
 
     #[snafu(display("RecordBatch is None"))]
     NoneRecordBatch,
+
+    Common {
+        content: String,
+    },
 }
 
 impl From<io::Error> for Error {

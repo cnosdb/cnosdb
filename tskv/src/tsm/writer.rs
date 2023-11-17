@@ -96,6 +96,12 @@ struct IndexBuf {
     bloom_filter: BloomFilter,
 }
 
+impl Default for IndexBuf {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl IndexBuf {
     pub fn new() -> Self {
         Self {

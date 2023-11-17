@@ -6,6 +6,7 @@ use datafusion::arrow::array::{
 };
 use datafusion::arrow::datatypes::{SchemaRef, TimeUnit};
 use flatbuffers::{FlatBufferBuilder, WIPOffset};
+use models::mutable_batch::{ColumnData, MutableBatch};
 use models::schema::{PhysicalCType as ColumnType, TskvTableSchemaRef};
 use models::PhysicalDType as ValueType;
 use protos::models::{
@@ -15,125 +16,6 @@ use protos::models::{
 use utils::bitset::BitSet;
 
 use crate::{Error, FieldValue, Line, Result};
-
-#[derive(Debug, Default, Clone)]
-pub struct MutableBatch {
-    /// Map of column name to index in `MutableBatch::columns`
-    column_names: HashMap<String, usize>,
-
-    /// Columns contained within this MutableBatch
-    columns: Vec<Column>,
-
-    /// The number of rows in this MutableBatch
-    row_count: usize,
-}
-
-impl MutableBatch {
-    pub fn new() -> Self {
-        Self {
-            column_names: Default::default(),
-            columns: Default::default(),
-            row_count: 0,
-        }
-    }
-
-    pub fn column_mut(&mut self, name: &str, col_type: ColumnType) -> Result<&mut Column> {
-        let columns_len = self.columns.len();
-        let column_idx = self
-            .column_names
-            .raw_entry_mut()
-            .from_key(name)
-            .or_insert_with(|| (name.to_string(), columns_len))
-            .1;
-        if *column_idx == columns_len {
-            self.columns.push(Column::new(self.row_count, col_type)?);
-        }
-
-        Ok(&mut self.columns[*column_idx] as _)
-    }
-
-    pub fn finish(&mut self) {
-        for column in self.columns.iter_mut() {
-            if column.valid.len() < self.row_count {
-                column
-                    .valid
-                    .append_unset(self.row_count - column.valid.len());
-                match column.data {
-                    ColumnData::F64(ref mut value) => {
-                        if !value.is_empty() {
-                            value.append(&mut vec![0.0; self.row_count - value.len()]);
-                        }
-                    }
-                    ColumnData::I64(ref mut value) => {
-                        if !value.is_empty() {
-                            value.append(&mut vec![0; self.row_count - value.len()]);
-                        }
-                    }
-                    ColumnData::U64(ref mut value) => {
-                        if !value.is_empty() {
-                            value.append(&mut vec![0; self.row_count - value.len()]);
-                        }
-                    }
-                    ColumnData::String(ref mut value) => {
-                        if !value.is_empty() {
-                            value.append(&mut vec![String::new(); self.row_count - value.len()]);
-                        }
-                    }
-                    ColumnData::Bool(ref mut value) => {
-                        if !value.is_empty() {
-                            value.append(&mut vec![false; self.row_count - value.len()]);
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Column {
-    pub(crate) column_type: ColumnType,
-    pub(crate) valid: BitSet,
-    pub(crate) data: ColumnData,
-}
-
-impl Column {
-    pub fn new(row_count: usize, column_type: ColumnType) -> Result<Column> {
-        let mut valid = BitSet::new();
-        valid.append_unset(row_count);
-
-        let data = match column_type {
-            ColumnType::Tag => ColumnData::String(vec![String::new(); row_count]),
-            ColumnType::Time(_) => ColumnData::I64(vec![0; row_count]),
-            ColumnType::Field(field_type) => match field_type {
-                ValueType::Unknown => {
-                    return Err(Error::Common {
-                        content: "Unknown field type".to_string(),
-                    });
-                }
-                ValueType::Float => ColumnData::F64(vec![0.0; row_count]),
-                ValueType::Integer => ColumnData::I64(vec![0; row_count]),
-                ValueType::Unsigned => ColumnData::U64(vec![0; row_count]),
-                ValueType::Boolean => ColumnData::Bool(vec![false; row_count]),
-                ValueType::String => ColumnData::String(vec![String::new(); row_count]),
-            },
-        };
-        Ok(Self {
-            column_type,
-            valid,
-            data,
-        })
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum ColumnData {
-    F64(Vec<f64>),
-    I64(Vec<i64>),
-    U64(Vec<u64>),
-    String(Vec<String>),
-    Bool(Vec<bool>),
-}
 
 pub fn line_to_batches(lines: &[Line]) -> Result<HashMap<String, MutableBatch>> {
     let mut batches = HashMap::new();
@@ -145,7 +27,11 @@ pub fn line_to_batches(lines: &[Line]) -> Result<HashMap<String, MutableBatch>> 
             .or_insert_with(|| (table.to_string(), MutableBatch::new()));
         let row_count = batch.row_count;
         for (tag_key, tag_value) in line.tags.iter() {
-            let col = batch.column_mut(tag_key, ColumnType::Tag)?;
+            let col = batch
+                .column_mut(tag_key, ColumnType::Tag)
+                .map_err(|e| Error::Common {
+                    content: format!("Error getting column: {}", e),
+                })?;
             match &mut col.data {
                 ColumnData::String(data) => {
                     data.resize(row_count + 1, String::new());
@@ -163,8 +49,11 @@ pub fn line_to_batches(lines: &[Line]) -> Result<HashMap<String, MutableBatch>> 
         for (field_key, field_value) in line.fields.iter() {
             match field_value {
                 FieldValue::U64(value) => {
-                    let col =
-                        batch.column_mut(field_key, ColumnType::Field(ValueType::Unsigned))?;
+                    let col = batch
+                        .column_mut(field_key, ColumnType::Field(ValueType::Unsigned))
+                        .map_err(|e| Error::Common {
+                            content: format!("Error getting column: {}", e),
+                        })?;
                     match &mut col.data {
                         ColumnData::U64(data) => {
                             data.resize(row_count + 1, 0);
@@ -180,7 +69,11 @@ pub fn line_to_batches(lines: &[Line]) -> Result<HashMap<String, MutableBatch>> 
                     }
                 }
                 FieldValue::I64(value) => {
-                    let col = batch.column_mut(field_key, ColumnType::Field(ValueType::Integer))?;
+                    let col = batch
+                        .column_mut(field_key, ColumnType::Field(ValueType::Integer))
+                        .map_err(|e| Error::Common {
+                            content: format!("Error getting column: {}", e),
+                        })?;
                     match &mut col.data {
                         ColumnData::I64(data) => {
                             data.resize(row_count + 1, 0);
@@ -196,7 +89,11 @@ pub fn line_to_batches(lines: &[Line]) -> Result<HashMap<String, MutableBatch>> 
                     }
                 }
                 FieldValue::Str(value) => {
-                    let col = batch.column_mut(field_key, ColumnType::Field(ValueType::String))?;
+                    let col = batch
+                        .column_mut(field_key, ColumnType::Field(ValueType::String))
+                        .map_err(|e| Error::Common {
+                            content: format!("Error getting column: {}", e),
+                        })?;
                     match &mut col.data {
                         ColumnData::String(data) => {
                             data.resize(row_count + 1, String::new());
@@ -212,7 +109,11 @@ pub fn line_to_batches(lines: &[Line]) -> Result<HashMap<String, MutableBatch>> 
                     }
                 }
                 FieldValue::F64(value) => {
-                    let col = batch.column_mut(field_key, ColumnType::Field(ValueType::Float))?;
+                    let col = batch
+                        .column_mut(field_key, ColumnType::Field(ValueType::Float))
+                        .map_err(|e| Error::Common {
+                            content: format!("Error getting column: {}", e),
+                        })?;
                     match &mut col.data {
                         ColumnData::F64(data) => {
                             data.resize(row_count + 1, 0.0);
@@ -228,7 +129,11 @@ pub fn line_to_batches(lines: &[Line]) -> Result<HashMap<String, MutableBatch>> 
                     }
                 }
                 FieldValue::Bool(value) => {
-                    let col = batch.column_mut(field_key, ColumnType::Field(ValueType::Boolean))?;
+                    let col = batch
+                        .column_mut(field_key, ColumnType::Field(ValueType::Boolean))
+                        .map_err(|e| Error::Common {
+                            content: format!("Error getting column: {}", e),
+                        })?;
                     match &mut col.data {
                         ColumnData::Bool(data) => {
                             data.resize(row_count + 1, false);
@@ -247,7 +152,11 @@ pub fn line_to_batches(lines: &[Line]) -> Result<HashMap<String, MutableBatch>> 
         }
 
         let time = line.timestamp;
-        let col = batch.column_mut("time", ColumnType::default_time())?;
+        let col = batch
+            .column_mut("time", ColumnType::default_time())
+            .map_err(|e| Error::Common {
+                content: format!("Error getting column: {}", e),
+            })?;
         match col.data {
             ColumnData::I64(ref mut data) => {
                 data.resize(row_count + 1, 0);
@@ -377,7 +286,7 @@ pub fn arrow_array_to_points(
                 ValueType::Unknown => {
                     return Err(Error::Common {
                         content: format!("column {} type is unknown", col_name),
-                    })
+                    });
                 }
                 ValueType::Float => build_f64_column(column, col_name, &mut fbb)?,
                 ValueType::Integer => build_i64_column(column, col_name, &mut fbb)?,
@@ -457,7 +366,7 @@ pub fn build_timestamp_column<'a>(
         TimeUnit::Second => {
             return Err(Error::Common {
                 content: "time column not support second".to_string(),
-            })
+            });
         }
         TimeUnit::Millisecond => {
             let values = column

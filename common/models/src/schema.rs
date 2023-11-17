@@ -8,6 +8,7 @@
 //!         - Column #4
 
 use std::borrow::Cow;
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fmt::{self, Display};
 use std::mem::size_of_val;
@@ -133,7 +134,7 @@ impl ExternalTableSchema {
             FileType::ARROW => {
                 return Err(DataFusionError::NotImplemented(
                     "Arrow external table.".to_string(),
-                ))
+                ));
             }
         };
 
@@ -158,11 +159,23 @@ pub struct TskvTableSchema {
     columns_index: HashMap<String, usize>,
 }
 
+impl PartialOrd for TskvTableSchema {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.schema_id.cmp(&other.schema_id))
+    }
+}
+
+impl Ord for TskvTableSchema {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.schema_id.cmp(&other.schema_id)
+    }
+}
+
 impl Default for TskvTableSchema {
     fn default() -> Self {
         Self {
-            tenant: "cnosdb".to_string(),
-            db: "public".to_string(),
+            tenant: DEFAULT_CATALOG.to_string(),
+            db: DEFAULT_DATABASE.to_string(),
             name: "template".to_string(),
             schema_id: 0,
             next_column_id: 0,
@@ -365,7 +378,7 @@ pub fn is_time_column(field: &ArrowField) -> bool {
     TIME_FIELD_NAME == field.name()
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct TableColumn {
     pub id: ColumnId,
     pub name: String,
@@ -501,7 +514,7 @@ impl From<ColumnType> for ArrowDataType {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub enum ColumnType {
     Tag,
     Time(TimeUnit),

@@ -17,7 +17,8 @@ use tokio::sync::RwLock;
 use crate::compaction::CompactIterator;
 use crate::error::{Error, Result};
 use crate::tseries_family::TseriesFamily;
-use crate::tsm::{DataBlock, TsmReader};
+use crate::tsm::DataBlock;
+use crate::tsm2::reader::TSM2Reader;
 use crate::TseriesFamilyId;
 
 const DEFAULT_DURATION: i64 = 24 * 60 * 60 * 1_000_000_000;
@@ -227,14 +228,14 @@ pub(crate) async fn vnode_hash_tree(
         let vnode_rlock = vnode.read().await;
         (vnode_rlock.version(), vnode_rlock.tf_id())
     };
-    let mut readers: Vec<Arc<TsmReader>> = Vec::new();
+    let mut readers: Vec<Arc<TSM2Reader>> = Vec::new();
     let tsm_paths: Vec<&PathBuf> = version
         .levels_info()
         .iter()
         .flat_map(|l| l.files.iter().map(|f| f.file_path()))
         .collect();
     for p in tsm_paths {
-        let r = version.get_tsm_reader(p).await?;
+        let r = version.get_tsm_reader2(p).await?;
         readers.push(r);
     }
 

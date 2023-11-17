@@ -1606,7 +1606,7 @@ dependencies = [
 [[package]]
 name = "datafusion"
 version = "27.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=27.0.0#c7379ecc59f4674496bdffa7a6ad953fbd491c00"
+source = "git+https://github.com/Subsegment/arrow-datafusion.git?branch=syk-pub#de7cdc08d71e9fc423fe5b9c8d0ba5592f717c34"
 dependencies = [
  "ahash 0.8.3",
  "arrow",
@@ -1654,7 +1654,7 @@ dependencies = [
 [[package]]
 name = "datafusion-common"
 version = "27.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=27.0.0#c7379ecc59f4674496bdffa7a6ad953fbd491c00"
+source = "git+https://github.com/Subsegment/arrow-datafusion.git?branch=syk-pub#de7cdc08d71e9fc423fe5b9c8d0ba5592f717c34"
 dependencies = [
  "arrow",
  "arrow-array",
@@ -1668,7 +1668,7 @@ dependencies = [
 [[package]]
 name = "datafusion-execution"
 version = "27.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=27.0.0#c7379ecc59f4674496bdffa7a6ad953fbd491c00"
+source = "git+https://github.com/Subsegment/arrow-datafusion.git?branch=syk-pub#de7cdc08d71e9fc423fe5b9c8d0ba5592f717c34"
 dependencies = [
  "dashmap",
  "datafusion-common",
@@ -1685,7 +1685,7 @@ dependencies = [
 [[package]]
 name = "datafusion-expr"
 version = "27.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=27.0.0#c7379ecc59f4674496bdffa7a6ad953fbd491c00"
+source = "git+https://github.com/Subsegment/arrow-datafusion.git?branch=syk-pub#de7cdc08d71e9fc423fe5b9c8d0ba5592f717c34"
 dependencies = [
  "ahash 0.8.3",
  "arrow",
@@ -1699,7 +1699,7 @@ dependencies = [
 [[package]]
 name = "datafusion-optimizer"
 version = "27.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=27.0.0#c7379ecc59f4674496bdffa7a6ad953fbd491c00"
+source = "git+https://github.com/Subsegment/arrow-datafusion.git?branch=syk-pub#de7cdc08d71e9fc423fe5b9c8d0ba5592f717c34"
 dependencies = [
  "arrow",
  "async-trait",
@@ -1716,7 +1716,7 @@ dependencies = [
 [[package]]
 name = "datafusion-physical-expr"
 version = "27.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=27.0.0#c7379ecc59f4674496bdffa7a6ad953fbd491c00"
+source = "git+https://github.com/Subsegment/arrow-datafusion.git?branch=syk-pub#de7cdc08d71e9fc423fe5b9c8d0ba5592f717c34"
 dependencies = [
  "ahash 0.8.3",
  "arrow",
@@ -1748,7 +1748,7 @@ dependencies = [
 [[package]]
 name = "datafusion-proto"
 version = "27.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=27.0.0#c7379ecc59f4674496bdffa7a6ad953fbd491c00"
+source = "git+https://github.com/Subsegment/arrow-datafusion.git?branch=syk-pub#de7cdc08d71e9fc423fe5b9c8d0ba5592f717c34"
 dependencies = [
  "arrow",
  "chrono",
@@ -1762,7 +1762,7 @@ dependencies = [
 [[package]]
 name = "datafusion-row"
 version = "27.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=27.0.0#c7379ecc59f4674496bdffa7a6ad953fbd491c00"
+source = "git+https://github.com/Subsegment/arrow-datafusion.git?branch=syk-pub#de7cdc08d71e9fc423fe5b9c8d0ba5592f717c34"
 dependencies = [
  "arrow",
  "datafusion-common",
@@ -1773,7 +1773,7 @@ dependencies = [
 [[package]]
 name = "datafusion-sql"
 version = "27.0.0"
-source = "git+https://github.com/cnosdb/arrow-datafusion.git?branch=27.0.0#c7379ecc59f4674496bdffa7a6ad953fbd491c00"
+source = "git+https://github.com/Subsegment/arrow-datafusion.git?branch=syk-pub#de7cdc08d71e9fc423fe5b9c8d0ba5592f717c34"
 dependencies = [
  "arrow",
  "arrow-schema",
@@ -3367,6 +3367,7 @@ dependencies = [
  "async-trait",
  "bcrypt",
  "bincode",
+ "byteorder",
  "chrono",
  "config",
  "datafusion",
@@ -3376,6 +3377,7 @@ dependencies = [
  "flatbuffers 22.12.6",
  "futures",
  "libc",
+ "minivec",
  "openssl",
  "parking_lot 0.12.1",
  "pin-project",
@@ -5085,6 +5087,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "skiplist"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0eec25f46463fcdc5e02f388c2780b1b58e01be81a8378e62ec60931beccc3f6"
+dependencies = [
+ "rand",
+]
+
+[[package]]
 name = "slab"
 version = "0.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5990,6 +6001,8 @@ checksum = "3528ecfd12c466c6f163363caf2d02a71161dd5e1cc6ae7b34207ea2d42d81ed"
 name = "tskv"
 version = "2.3.2"
 dependencies = [
+ "arrow",
+ "arrow-array",
  "async-backtrace",
  "async-trait",
  "bincode",
@@ -6033,6 +6046,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serial_test",
+ "skiplist",
  "sled",
  "snafu",
  "snap",
@@ -6182,6 +6196,7 @@ dependencies = [
  "libc",
  "pprof",
  "rand",
+ "serde",
  "tikv-jemalloc-ctl",
  "tokio",
  "trace",

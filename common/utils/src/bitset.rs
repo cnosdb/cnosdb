@@ -9,6 +9,15 @@ impl BitSet {
         Self::default()
     }
 
+    pub fn to_vec(&self) -> Vec<bool> {
+        let boolset = self
+            .buffer
+            .iter()
+            .flat_map(|&byte| (0..8).map(move |i| (byte >> i) & 1 != 0))
+            .collect::<Vec<_>>();
+        boolset
+    }
+
     pub fn new_without_check(len: usize, buffer: Vec<u8>) -> Self {
         Self { buffer, len }
     }
@@ -146,7 +155,7 @@ impl BitSet {
 
     pub fn is_all_set(&self) -> bool {
         if self.len == 0 {
-            return false;
+            return true;
         }
 
         let full_blocks = (self.len / 8).saturating_sub(1);

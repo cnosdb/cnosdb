@@ -45,6 +45,7 @@ mod schema;
 mod summary;
 mod tseries_family;
 pub mod tsm;
+mod tsm2;
 mod version_set;
 mod wal;
 

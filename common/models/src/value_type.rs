@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::gis::data_type::Geometry;
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Copy, Clone, Eq, Hash)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Copy, Clone, Eq, Hash, Ord, PartialOrd)]
 pub enum ValueType {
     Unknown,
     Float,
@@ -16,7 +16,7 @@ pub enum ValueType {
 }
 
 /// data type for tskv
-#[derive(Serialize, Deserialize, Debug, PartialEq, Copy, Clone, Eq, Hash)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Copy, Clone, Eq, Hash, Ord, PartialOrd)]
 pub enum PhysicalDType {
     Unknown,
     Float,

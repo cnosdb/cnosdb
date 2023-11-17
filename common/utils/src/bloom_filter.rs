@@ -1,6 +1,8 @@
+use serde::{Deserialize, Serialize};
+
 use crate::bkdr_hash::BkdrHasher;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BloomFilter {
     b: Vec<u8>,
     mask: u64,

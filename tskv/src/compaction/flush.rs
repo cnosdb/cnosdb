@@ -1,9 +1,11 @@
+use std::cmp::max;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
 use models::codec::Encoding;
+use models::field_value::FieldVal;
 use models::{
     utils as model_utils, ColumnId, FieldId, PhysicalDType as ValueType, SeriesId, Timestamp,
 };
@@ -18,11 +20,12 @@ use utils::BloomFilter;
 use crate::compaction::{CompactTask, FlushReq};
 use crate::context::{GlobalContext, GlobalSequenceContext};
 use crate::error::{self, Result};
-use crate::memcache::{FieldVal, MemCache, SeriesData};
+use crate::memcache::{MemCache, SeriesData};
 use crate::summary::{CompactMeta, CompactMetaBuilder, SummaryTask, VersionEdit};
 use crate::tseries_family::Version;
 use crate::tsm::codec::DataBlockEncoding;
 use crate::tsm::{self, DataBlock, TsmWriter};
+use crate::tsm2::writer::Tsm2Writer;
 use crate::version_set::VersionSet;
 use crate::{ColumnFileId, TseriesFamilyId};
 
@@ -55,6 +58,64 @@ impl FlushTask {
             path_tsm: path_tsm.as_ref().into(),
             path_delta: path_delta.as_ref().into(),
         }
+    }
+
+    pub async fn tsm2_run(
+        self,
+        version: Arc<Version>,
+        version_edits: &mut Vec<VersionEdit>,
+        file_metas: &mut HashMap<ColumnFileId, Arc<BloomFilter>>,
+    ) -> Result<()> {
+        let mut tsm_writer =
+            Tsm2Writer::open(&self.path_tsm, self.global_context.file_id_next(), 0).await?;
+        let mut delta_writer =
+            Tsm2Writer::open(&self.path_delta, self.global_context.file_id_next(), 0).await?;
+        for memcache in self.mem_caches {
+            let (group, delta_group) = memcache.read().to_chunk_group(version.clone())?;
+            for data in group {
+                tsm_writer.write_data(data).await?;
+            }
+            for data in delta_group {
+                delta_writer.write_data(data).await?;
+            }
+        }
+        tsm_writer.finish().await?;
+        delta_writer.finish().await?;
+
+        file_metas.insert(
+            tsm_writer.file_id(),
+            Arc::new(tsm_writer.series_bloom_filter().clone()),
+        );
+        file_metas.insert(
+            delta_writer.file_id(),
+            Arc::new(delta_writer.series_bloom_filter().clone()),
+        );
+
+        let compact_meta_builder = CompactMetaBuilder::new(self.ts_family_id);
+        let tsm_meta = compact_meta_builder.build(
+            tsm_writer.file_id(),
+            tsm_writer.size() as u64,
+            1,
+            tsm_writer.min_ts(),
+            tsm_writer.max_ts(),
+        );
+        let delta_meta = compact_meta_builder.build(
+            delta_writer.file_id(),
+            delta_writer.size() as u64,
+            0,
+            delta_writer.min_ts(),
+            delta_writer.max_ts(),
+        );
+
+        let mut edit = VersionEdit::new(self.ts_family_id);
+        let mut max_level_ts = version.max_level_ts;
+        max_level_ts = max(max_level_ts, tsm_meta.max_ts);
+        max_level_ts = max(max_level_ts, delta_meta.max_ts);
+        edit.add_file(tsm_meta, max_level_ts);
+        edit.add_file(delta_meta, max_level_ts);
+        version_edits.push(edit);
+
+        Ok(())
     }
 
     pub async fn run(
@@ -230,7 +291,7 @@ pub async fn run_flush_memtable_job(
         );
 
         flush_task
-            .run(version, &mut version_edits, &mut file_metas)
+            .tsm2_run(version, &mut version_edits, &mut file_metas)
             .await?;
 
         tsf.read().await.update_last_modified().await;
@@ -452,6 +513,7 @@ pub mod flush_tests {
     use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
     use minivec::mini_vec;
     use models::codec::Encoding;
+    use models::field_value::FieldVal;
     use models::schema::{ColumnType, TableColumn, TskvTableSchema};
     use models::{utils as model_utils, ColumnId, FieldId, Timestamp, ValueType};
     use parking_lot::RwLock;
@@ -463,7 +525,7 @@ pub mod flush_tests {
     use crate::file_utils;
     use crate::kv_option::Options;
     use crate::memcache::test::put_rows_to_cache;
-    use crate::memcache::{FieldVal, MemCache};
+    use crate::memcache::MemCache;
     use crate::tseries_family::{LevelInfo, Version};
     use crate::tsm::codec::DataBlockEncoding;
     use crate::tsm::tsm_reader_tests::read_and_check;
@@ -531,6 +593,7 @@ pub mod flush_tests {
             max_level_ts: test_case.max_level_ts_before,
             levels_info: LevelInfo::init_levels(database, 0, options.storage),
             tsm_reader_cache: Arc::new(ShardedCache::with_capacity(1)),
+            tsm2_reader_cache: Arc::new(ShardedCache::with_capacity(1)),
         });
         let flush_task =
             FlushTask::new(test_case.caches(), 1, global_context, &tsm_dir, &delta_dir);
