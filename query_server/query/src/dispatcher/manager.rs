@@ -130,7 +130,7 @@ impl QueryDispatcher for SimpleQueryDispatcher {
 
         let logical_planner = DefaultLogicalPlanner::new(&scheme_provider);
 
-        let mut span_recorder = session.get_child_span_recorder("parse sql");
+        let span_recorder = session.get_child_span_recorder("parse sql");
         let statements = self.parser.parse(query.content())?;
 
         // not allow multi statement
@@ -145,7 +145,7 @@ impl QueryDispatcher for SimpleQueryDispatcher {
             Some(stmt) => stmt.clone(),
             None => return Ok(None),
         };
-        span_recorder.set_metadata("statement", format!("{:?}", stmt));
+
         drop(span_recorder);
 
         let logical_plan = self
