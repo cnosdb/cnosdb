@@ -141,11 +141,10 @@ impl RaftWriter {
                     }
                 }
 
-                raft_write_command::Command::DropTab(_request) => {}
+                raft_write_command::Command::DropTable(_request) => {}
                 raft_write_command::Command::DropColumn(_request) => {}
-                raft_write_command::Command::AddColumn(_request) => {}
-                raft_write_command::Command::AlterColumn(_request) => {}
                 raft_write_command::Command::UpdateTags(_request) => {}
+                raft_write_command::Command::DeleteFromTable(_request) => {}
             }
         }
 

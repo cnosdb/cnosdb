@@ -594,7 +594,6 @@ mod test {
     };
     use crate::compaction::check::{vnode_hash_tree, TimeRangeHashTreeNode, DEFAULT_DURATION};
     use crate::compaction::flush;
-    use crate::context::GlobalContext;
     use crate::tseries_family::TseriesFamily;
     use crate::tsm::codec::DataBlockEncoding;
     use crate::tsm::DataBlock;
@@ -1006,14 +1005,7 @@ mod test {
             .unwrap();
         let mut db = db.write().await;
         let tsf = db
-            .add_tsfamily(
-                vnode_id,
-                None,
-                engine.summary_task_sender(),
-                engine.flush_task_sender(),
-                engine.compact_task_sender(),
-                Arc::new(GlobalContext::new()),
-            )
+            .add_tsfamily(vnode_id, None, engine.context())
             .await
             .unwrap();
         let tsf = tsf.read().await;
@@ -1047,15 +1039,9 @@ mod test {
             vnode.switch_to_immutable();
             vnode.build_flush_req(true).unwrap()
         };
-        flush::run_flush_memtable_job(
-            flush_req,
-            engine.global_ctx(),
-            engine.version_set(),
-            engine.summary_task_sender(),
-            None,
-        )
-        .await
-        .unwrap();
+        flush::run_flush_memtable_job(flush_req, engine.context(), false)
+            .await
+            .unwrap();
 
         let sec_1 = Duration::seconds(1).to_std().unwrap();
         let mut check_num = 0;

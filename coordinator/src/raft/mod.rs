@@ -4,12 +4,8 @@ use std::time::Duration;
 
 use meta::model::MetaRef;
 use models::meta_data::{NodeId, VnodeId};
-use models::schema::Precision;
 use protos::kv_service::tskv_service_client::TskvServiceClient;
-use protos::kv_service::{
-    raft_write_command, GetFilesMetaResponse, GetVnodeSnapFilesMetaRequest, RaftWriteCommand,
-    WriteDataRequest,
-};
+use protos::kv_service::{GetFilesMetaResponse, GetVnodeSnapFilesMetaRequest, RaftWriteCommand};
 use protos::models_helper::parse_prost_bytes;
 use protos::{tskv_service_time_out_client, DEFAULT_GRPC_SERVER_MESSAGE_LEN};
 use replication::errors::{ReplicationError, ReplicationResult};
@@ -17,7 +13,8 @@ use replication::{ApplyContext, ApplyStorage};
 use tonic::transport::Channel;
 use tower::timeout::Timeout;
 use tracing::info;
-use tskv::{VnodeSnapshot, VnodeStorage};
+use tskv::vnode_store::VnodeStorage;
+use tskv::VnodeSnapshot;
 
 use crate::errors::{CoordinatorError, CoordinatorResult};
 use crate::file_info::get_file_info;
@@ -137,22 +134,6 @@ impl TskvEngineStorage {
 
         Ok(resp)
     }
-
-    async fn apply_write_data(
-        &self,
-        ctx: &ApplyContext,
-        request: WriteDataRequest,
-    ) -> ReplicationResult<Vec<u8>> {
-        let precision = Precision::from(request.precision as u8);
-        self.storage
-            .write_memcache(ctx.index, request.data, precision, self.vnode.clone(), None)
-            .await
-            .map_err(|err| ReplicationError::ApplyEngineErr {
-                msg: err.to_string(),
-            })?;
-
-        Ok(vec![])
-    }
 }
 
 #[async_trait::async_trait]
@@ -164,34 +145,24 @@ impl ApplyStorage for TskvEngineStorage {
     ) -> ReplicationResult<replication::Response> {
         let request = parse_prost_bytes::<RaftWriteCommand>(req)?;
         if let Some(command) = request.command {
-            match command {
-                raft_write_command::Command::WriteData(request) => {
-                    return self.apply_write_data(ctx, request).await;
+            self.vnode.apply(ctx, command).await.map_err(|err| {
+                ReplicationError::ApplyEngineErr {
+                    msg: err.to_string(),
                 }
-
-                raft_write_command::Command::DropTab(_request) => {}
-
-                raft_write_command::Command::DropColumn(_request) => {}
-
-                raft_write_command::Command::AddColumn(_request) => {}
-
-                raft_write_command::Command::AlterColumn(_request) => {}
-
-                raft_write_command::Command::UpdateTags(_request) => {}
-            }
+            })?;
         }
 
         Ok(vec![])
     }
 
     async fn snapshot(&self) -> ReplicationResult<Vec<u8>> {
-        let mut snapshot = self
-            .storage
-            .create_snapshot(self.vnode_id)
-            .await
-            .map_err(|err| ReplicationError::ApplyEngineErr {
-                msg: err.to_string(),
-            })?;
+        let mut snapshot =
+            self.vnode
+                .create_snapshot()
+                .await
+                .map_err(|err| ReplicationError::ApplyEngineErr {
+                    msg: err.to_string(),
+                })?;
 
         snapshot.node_id = self.node_id;
 
@@ -225,7 +196,7 @@ impl ApplyStorage for TskvEngineStorage {
 
         let mut snapshot = snapshot.clone();
         snapshot.vnode_id = self.vnode_id;
-        self.storage.apply_snapshot(snapshot).await.map_err(|err| {
+        self.vnode.apply_snapshot(snapshot).await.map_err(|err| {
             ReplicationError::ApplyEngineErr {
                 msg: err.to_string(),
             }

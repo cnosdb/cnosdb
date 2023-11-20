@@ -8,18 +8,22 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 pub use compaction::check::vnode_table_checksum_schema;
-use database::Database;
+use compaction::{CompactTask, FlushReq};
+use context::GlobalContext;
 use datafusion::arrow::record_batch::RecordBatch;
-use index::ts_index::TSIndex;
 use models::meta_data::{NodeId, VnodeId};
 use models::predicate::domain::{ColumnDomains, ResolvedPredicate};
-use models::schema::{Precision, TableColumn};
+use models::schema::Precision;
 use models::{SeriesId, SeriesKey, TagKey, TagValue, Timestamp};
 use protos::kv_service::{WritePointsRequest, WritePointsResponse};
 use serde::{Deserialize, Serialize};
+use summary::SummaryTask;
+use tokio::sync::mpsc::Sender;
 use tokio::sync::RwLock;
 use trace::SpanContext;
-use tseries_family::TseriesFamily;
+use version_set::VersionSet;
+use vnode_store::VnodeStorage;
+use wal::WalTask;
 
 pub use crate::error::{Error, Result};
 pub use crate::kv_option::Options;
@@ -52,6 +56,7 @@ mod summary;
 mod tseries_family;
 pub mod tsm;
 mod version_set;
+pub mod vnode_store;
 pub mod wal;
 
 /// The column file ID is unique in a KV instance
@@ -66,13 +71,6 @@ pub type EngineRef = Arc<dyn Engine>;
 pub struct UpdateSetValue<K, V> {
     pub key: K,
     pub value: Option<V>,
-}
-
-#[derive(Clone)]
-pub struct VnodeStorage {
-    pub db: Arc<RwLock<Database>>,
-    pub ts_index: Arc<TSIndex>,
-    pub ts_family: Arc<RwLock<TseriesFamily>>,
 }
 
 #[async_trait]
@@ -92,15 +90,6 @@ pub trait Engine: Send + Sync + Debug {
         vnode_id: VnodeId,
         precision: Precision,
         write_batch: WritePointsRequest,
-    ) -> Result<WritePointsResponse>;
-
-    async fn write_memcache(
-        &self,
-        index: u64,
-        points: Vec<u8>,
-        precision: Precision,
-        vnode: Arc<VnodeStorage>,
-        span_ctx: Option<&SpanContext>,
     ) -> Result<WritePointsResponse>;
 
     /// Remove all storage unit(caches and files) in specified database,
@@ -134,31 +123,12 @@ pub trait Engine: Send + Sync + Debug {
     async fn flush_tsfamily(&self, tenant: &str, database: &str, vnode_id: VnodeId) -> Result<()>;
 
     // TODO this method is not completed,
-    async fn add_table_column(
-        &self,
-        tenant: &str,
-        database: &str,
-        table: &str,
-        column: TableColumn,
-    ) -> Result<()>;
-
-    // TODO this method is not completed,
     async fn drop_table_column(
         &self,
         tenant: &str,
         database: &str,
         table: &str,
         column: &str,
-    ) -> Result<()>;
-
-    // TODO this method is not completed,
-    async fn change_table_column(
-        &self,
-        tenant: &str,
-        database: &str,
-        table: &str,
-        column_name: &str,
-        new_column: TableColumn,
     ) -> Result<()>;
 
     /// Update the value of the tag type columns of the specified table
@@ -281,22 +251,18 @@ pub trait Engine: Send + Sync + Debug {
 
     /// Close all background jobs of engine.
     async fn close(&self);
+}
 
-    /// Flush caches into TSM file, create a new Version of the Vnode, then:
-    /// 1. Make hard links point to all TSM files in the Version in snapshot directory,
-    /// 2. Copy series index in Vnode into snapshot directory,
-    /// 3. Save current Version as a summary file in snapshot directory.
-    /// Then return VnodeSnapshot.
-    ///
-    /// For one Vnode, multi snapshot may exist at a time.
-    async fn create_snapshot(&self, vnode_id: VnodeId) -> Result<VnodeSnapshot>;
+#[derive(Debug, Clone)]
+pub struct TsKvContext {
+    pub options: Arc<Options>,
+    pub global_ctx: Arc<GlobalContext>,
+    pub version_set: Arc<RwLock<VersionSet>>,
 
-    /// Build a new Vnode from the VersionSnapshot, existing Vnode with the same VnodeId
-    /// will be deleted.
-    async fn apply_snapshot(&self, snapshot: VnodeSnapshot) -> Result<()>;
-
-    /// Delete the snapshot directory of a Vnode, all snapshots will be deleted.
-    async fn delete_snapshot(&self, vnode_id: VnodeId) -> Result<()>;
+    pub wal_sender: Sender<WalTask>,
+    pub flush_task_sender: Sender<FlushReq>,
+    pub compact_task_sender: Sender<CompactTask>,
+    pub summary_task_sender: Sender<SummaryTask>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

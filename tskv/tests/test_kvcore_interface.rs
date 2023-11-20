@@ -377,10 +377,14 @@ mod tests {
                 .unwrap();
         }
 
+        let vnode = runtime
+            .block_on(tskv.open_tsfamily(tenant, database, vnode_id))
+            .unwrap();
         let (vnode_snapshot_sub_dir, mut vnode_snapshot) = {
             // Test create snapshot.
             sleep_in_runtime(runtime.clone(), Duration::from_secs(3));
-            let vnode_snap = runtime.block_on(tskv.create_snapshot(vnode_id)).unwrap();
+
+            let vnode_snap = runtime.block_on(vnode.create_snapshot()).unwrap();
 
             assert_eq!(vnode_snap.tenant, tenant);
             assert_eq!(vnode_snap.database, database);
@@ -418,7 +422,7 @@ mod tests {
             dircpy::copy_dir(vnode_snapshot_sub_dir, &vnode_backup_dir).unwrap();
 
             // 2. Do test delete snapshot.
-            runtime.block_on(tskv.delete_snapshot(vnode_id)).unwrap();
+            runtime.block_on(vnode.delete_snapshot()).unwrap();
             sleep_in_runtime(runtime.clone(), Duration::from_secs(3));
             assert!(
                 !file_manager::try_exists(&vnode_snapshot_dir),
@@ -441,22 +445,23 @@ mod tests {
 
             // 2. Do test apply snapshot.
             runtime
-                .block_on(tskv.apply_snapshot(vnode_snapshot))
+                .block_on(vnode.apply_snapshot(vnode_snapshot))
                 .unwrap();
             sleep_in_runtime(runtime.clone(), Duration::from_secs(3));
-            let vnode = runtime
+
+            let summary = runtime
                 .block_on(tskv.get_vnode_summary(tenant, database, new_vnode_id))
                 .unwrap()
                 .unwrap();
-            assert_eq!(vnode.tsf_id, new_vnode_id);
-            assert_eq!(vnode.add_files.len(), 2);
-            let tsm_files: Vec<SnapshotFileMeta> = vnode
+            assert_eq!(summary.tsf_id, new_vnode_id);
+            assert_eq!(summary.add_files.len(), 2);
+            let tsm_files: Vec<SnapshotFileMeta> = summary
                 .add_files
                 .iter()
                 .filter(|f| !f.is_delta)
                 .map(From::from)
                 .collect();
-            let delta_files: Vec<SnapshotFileMeta> = vnode
+            let delta_files: Vec<SnapshotFileMeta> = summary
                 .add_files
                 .iter()
                 .filter(|f| f.is_delta)

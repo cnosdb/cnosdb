@@ -724,13 +724,7 @@ impl TsfFactory {
         }
     }
 
-    pub fn create_tsf(
-        &self,
-        tf_id: TseriesFamilyId,
-        version: Arc<Version>,
-        flush_task_sender: Sender<FlushReq>,
-        compact_task_sender: Sender<CompactTask>,
-    ) -> TseriesFamily {
+    pub fn create_tsf(&self, tf_id: TseriesFamilyId, version: Arc<Version>) -> TseriesFamily {
         let mut_cache = Arc::new(RwLock::new(MemCache::new(
             tf_id,
             self.options.cache.max_buffer_size,
@@ -763,8 +757,6 @@ impl TsfFactory {
             storage_opt: self.options.storage.clone(),
             seq_no: version.last_seq,
             last_modified: Arc::new(Default::default()),
-            flush_task_sender,
-            compact_task_sender,
             cancellation_token: CancellationToken::new(),
             memory_pool: self.memory_pool.clone(),
             tsf_metrics,
@@ -786,8 +778,6 @@ pub struct TseriesFamily {
     storage_opt: Arc<StorageOptions>,
     seq_no: u64,
     last_modified: Arc<tokio::sync::RwLock<Option<Instant>>>,
-    flush_task_sender: Sender<FlushReq>,
-    compact_task_sender: Sender<CompactTask>,
     cancellation_token: CancellationToken,
     memory_pool: MemoryPoolRef,
     tsf_metrics: TsfMetrics,
@@ -805,8 +795,6 @@ impl TseriesFamily {
         version: Arc<Version>,
         cache_opt: Arc<CacheOptions>,
         storage_opt: Arc<StorageOptions>,
-        flush_task_sender: Sender<FlushReq>,
-        compact_task_sender: Sender<CompactTask>,
         memory_pool: MemoryPoolRef,
         register: &Arc<MetricsRegister>,
     ) -> Self {
@@ -833,8 +821,6 @@ impl TseriesFamily {
             cache_opt,
             storage_opt,
             last_modified: Arc::new(tokio::sync::RwLock::new(None)),
-            flush_task_sender,
-            compact_task_sender,
             cancellation_token: CancellationToken::new(),
             memory_pool,
             tsf_metrics: TsfMetrics::new(register, tenant_database.as_str(), tf_id as u64),
@@ -945,9 +931,9 @@ impl TseriesFamily {
 
     /// Try to build a `FlushReq` by immutable caches,
     /// if succeed, send it to flush job.
-    pub(crate) async fn send_flush_req(&mut self, force: bool) {
+    pub(crate) async fn send_flush_req(&mut self, sender: Sender<FlushReq>, force: bool) {
         if let Some(req) = self.build_flush_req(force) {
-            self.flush_task_sender
+            sender
                 .send(req)
                 .await
                 .expect("error send flush req to kvcore");
@@ -969,7 +955,7 @@ impl TseriesFamily {
         Ok(res as u64)
     }
 
-    pub async fn check_to_flush(&mut self) {
+    pub async fn check_to_flush(&mut self, sender: Sender<FlushReq>) {
         if self.mut_cache.read().is_full() {
             info!(
                 "mut_cache is full, switch to immutable. current pool_size : {}",
@@ -978,7 +964,7 @@ impl TseriesFamily {
             self.switch_to_immutable();
         }
         if self.immut_cache.len() >= self.cache_opt.max_immutable_number as usize {
-            self.send_flush_req(false).await;
+            self.send_flush_req(sender, false).await;
         }
     }
 
@@ -1031,11 +1017,10 @@ impl TseriesFamily {
         }
     }
 
-    pub fn schedule_compaction(&self, runtime: Arc<Runtime>) {
+    pub fn schedule_compaction(&self, runtime: Arc<Runtime>, sender: Sender<CompactTask>) {
         let tsf_id = self.tf_id;
         let compact_trigger_cold_duration = self.storage_opt.compact_trigger_cold_duration;
         let last_modified = self.last_modified.clone();
-        let compact_task_sender = self.compact_task_sender.clone();
         let cancellation_token = self.cancellation_token.clone();
         let _jh = runtime.spawn(async move {
             if compact_trigger_cold_duration == Duration::ZERO {} else {
@@ -1047,7 +1032,7 @@ impl TseriesFamily {
                             let last_modified = last_modified.read().await;
                             if let Some(t) = *last_modified {
                                 if t.elapsed() >= compact_trigger_cold_duration {
-                                    if let Err(e) = compact_task_sender.send(CompactTask::ColdVnode(tsf_id)).await {
+                                    if let Err(e) = sender.send(CompactTask::ColdVnode(tsf_id)).await {
                                         warn!("failed to send compact task({}), {}", tsf_id, e);
                                     }
                                 }
@@ -1225,7 +1210,7 @@ pub mod test_tseries_family {
     use crate::tseries_family::{TimeRange, TseriesFamily, Version};
     use crate::tsm::TsmTombstone;
     use crate::version_set::VersionSet;
-    use crate::TseriesFamilyId;
+    use crate::{TsKvContext, TseriesFamilyId};
 
     #[tokio::test]
     async fn test_version_apply_version_edits_1() {
@@ -1494,8 +1479,6 @@ pub mod test_tseries_family {
         global_config.storage.path = dir.to_string();
         let opt = Arc::new(Options::from(&global_config));
         let memory_pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::default());
-        let (flush_task_sender, _) = mpsc::channel(opt.storage.flush_req_channel_cap);
-        let (compact_task_sender, _) = mpsc::channel(COMPACT_REQ_CHANNEL_CAP);
         let database = Arc::new("db".to_string());
         let tsf = TseriesFamily::new(
             0,
@@ -1512,8 +1495,6 @@ pub mod test_tseries_family {
             )),
             opt.cache.clone(),
             opt.storage.clone(),
-            flush_task_sender,
-            compact_task_sender,
             memory_pool,
             &Arc::new(MetricsRegister::default()),
         );
@@ -1652,9 +1633,10 @@ pub mod test_tseries_family {
 
         let tenant = "cnosdb".to_string();
         let database = "test_db".to_string();
-        let global_ctx = Arc::new(GlobalContext::new());
+
         let (summary_task_sender, summary_task_receiver) = mpsc::channel(SUMMARY_REQ_CHANNEL_CAP);
         let (compact_task_sender, _compact_task_receiver) = mpsc::channel(COMPACT_REQ_CHANNEL_CAP);
+        let (wal_sender, _wal_task_receiver) = mpsc::channel(1024 * 10);
         let (flush_task_sender, _) = mpsc::channel(opt.storage.flush_req_channel_cap);
         let runtime_ref = runtime.clone();
         runtime.block_on(async move {
@@ -1665,7 +1647,6 @@ pub mod test_tseries_family {
                     runtime_ref.clone(),
                     memory_pool.clone(),
                     HashMap::new(),
-                    flush_task_sender.clone(),
                     compact_task_sender.clone(),
                     Arc::new(MetricsRegister::default()),
                 )
@@ -1683,33 +1664,31 @@ pub mod test_tseries_family {
                 .await
                 .get_db(&tenant, &database)
                 .unwrap();
-            let cxt = Arc::new(GlobalContext::new());
+            let global_ctx = Arc::new(GlobalContext::new());
+
+            let ctx = Arc::new(TsKvContext {
+                version_set: version_set.clone(),
+
+                wal_sender,
+                flush_task_sender,
+                compact_task_sender,
+                summary_task_sender,
+
+                options: opt.clone(),
+                global_ctx,
+            });
+
             let ts_family_id = db
                 .write()
                 .await
-                .add_tsfamily(
-                    0,
-                    None,
-                    summary_task_sender.clone(),
-                    flush_task_sender.clone(),
-                    compact_task_sender.clone(),
-                    cxt.clone(),
-                )
+                .add_tsfamily(0, None, ctx.clone())
                 .await
                 .unwrap()
                 .read()
                 .await
                 .tf_id();
 
-            run_flush_memtable_job(
-                flush_seq,
-                global_ctx,
-                version_set.clone(),
-                summary_task_sender,
-                Some(compact_task_sender),
-            )
-            .await
-            .unwrap();
+            run_flush_memtable_job(flush_seq, ctx, true).await.unwrap();
 
             update_ts_family_version(version_set.clone(), ts_family_id, summary_task_receiver)
                 .await;

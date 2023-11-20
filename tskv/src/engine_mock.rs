@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use datafusion::arrow::record_batch::RecordBatch;
 use models::meta_data::VnodeId;
 use models::predicate::domain::{ColumnDomains, ResolvedPredicate};
-use models::schema::{Precision, TableColumn};
+use models::schema::Precision;
 use models::{SeriesId, SeriesKey, TagKey, TagValue};
 use protos::kv_service::{WritePointsRequest, WritePointsResponse};
 use protos::models as fb_models;
@@ -17,7 +17,8 @@ use crate::error::Result;
 use crate::kv_option::StorageOptions;
 use crate::summary::VersionEdit;
 use crate::tseries_family::SuperVersion;
-use crate::{Engine, TseriesFamilyId, UpdateSetValue, VnodeSnapshot, VnodeStorage};
+use crate::vnode_store::VnodeStorage;
+use crate::{Engine, TseriesFamilyId, UpdateSetValue};
 
 #[derive(Debug, Default)]
 pub struct MockEngine {}
@@ -40,23 +41,12 @@ impl Engine for MockEngine {
         Ok(WritePointsResponse { points_number: 0 })
     }
 
-    async fn write_memcache(
-        &self,
-        index: u64,
-        points: Vec<u8>,
-        precision: Precision,
-        vnode: Arc<VnodeStorage>,
-        span_ctx: Option<&SpanContext>,
-    ) -> Result<WritePointsResponse> {
-        todo!()
-    }
-
     async fn open_tsfamily(
         &self,
         tenant: &str,
         db_name: &str,
         vnode_id: VnodeId,
-    ) -> Result<crate::VnodeStorage> {
+    ) -> Result<VnodeStorage> {
         todo!()
     }
 
@@ -174,33 +164,12 @@ impl Engine for MockEngine {
     //     todo!()
     // }
 
-    async fn add_table_column(
-        &self,
-        tenant: &str,
-        database: &str,
-        table: &str,
-        column: TableColumn,
-    ) -> Result<()> {
-        todo!()
-    }
-
     async fn drop_table_column(
         &self,
         tenant: &str,
         database: &str,
         table: &str,
         column: &str,
-    ) -> Result<()> {
-        todo!()
-    }
-
-    async fn change_table_column(
-        &self,
-        tenant: &str,
-        database: &str,
-        table: &str,
-        column_name: &str,
-        new_column: TableColumn,
     ) -> Result<()> {
         todo!()
     }
@@ -224,18 +193,6 @@ impl Engine for MockEngine {
     async fn close(&self) {}
 
     async fn prepare_copy_vnode(&self, tenant: &str, database: &str, vnode_id: u32) -> Result<()> {
-        todo!()
-    }
-
-    async fn create_snapshot(&self, vnode_id: VnodeId) -> Result<VnodeSnapshot> {
-        todo!()
-    }
-
-    async fn apply_snapshot(&self, snapshot: VnodeSnapshot) -> Result<()> {
-        todo!()
-    }
-
-    async fn delete_snapshot(&self, vnode_id: VnodeId) -> Result<()> {
         todo!()
     }
 }

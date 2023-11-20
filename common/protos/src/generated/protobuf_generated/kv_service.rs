@@ -145,28 +145,6 @@ pub struct DropColumnRequest {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct AddColumnRequest {
-    #[prost(string, tag = "1")]
-    pub db: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub table: ::prost::alloc::string::String,
-    #[prost(bytes = "vec", tag = "3")]
-    pub column: ::prost::alloc::vec::Vec<u8>,
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct AlterColumnRequest {
-    #[prost(string, tag = "1")]
-    pub db: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub table: ::prost::alloc::string::String,
-    #[prost(string, tag = "3")]
-    pub name: ::prost::alloc::string::String,
-    #[prost(bytes = "vec", tag = "4")]
-    pub column: ::prost::alloc::vec::Vec<u8>,
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct UpdateSetValue {
     #[prost(bytes = "vec", tag = "1")]
     pub key: ::prost::alloc::vec::Vec<u8>,
@@ -220,7 +198,7 @@ pub struct AdminCommandRequest {
     pub tenant: ::prost::alloc::string::String,
     #[prost(
         oneof = "admin_command_request::Command",
-        tags = "2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15"
+        tags = "2, 3, 4, 5, 6, 7, 8, 12, 13, 14, 15"
     )]
     pub command: ::core::option::Option<admin_command_request::Command>,
 }
@@ -243,10 +221,6 @@ pub mod admin_command_request {
         CompactVnode(super::CompactVnodeRequest),
         #[prost(message, tag = "8")]
         DropColumn(super::DropColumnRequest),
-        #[prost(message, tag = "9")]
-        AddColumn(super::AddColumnRequest),
-        #[prost(message, tag = "10")]
-        AlterColumn(super::AlterColumnRequest),
         #[prost(message, tag = "12")]
         UpdateTags(super::UpdateTagsRequest),
         #[prost(message, tag = "13")]
@@ -381,7 +355,7 @@ pub struct RaftWriteCommand {
     pub db_name: ::prost::alloc::string::String,
     #[prost(uint32, tag = "3")]
     pub replica_id: u32,
-    #[prost(oneof = "raft_write_command::Command", tags = "4, 5, 6, 7, 8, 10")]
+    #[prost(oneof = "raft_write_command::Command", tags = "4, 5, 6, 7, 8")]
     pub command: ::core::option::Option<raft_write_command::Command>,
 }
 /// Nested message and enum types in `RaftWriteCommand`.
@@ -392,14 +366,12 @@ pub mod raft_write_command {
         #[prost(message, tag = "4")]
         WriteData(super::WriteDataRequest),
         #[prost(message, tag = "5")]
-        DropTab(super::DropTableRequest),
+        DropTable(super::DropTableRequest),
         #[prost(message, tag = "6")]
         DropColumn(super::DropColumnRequest),
         #[prost(message, tag = "7")]
-        AddColumn(super::AddColumnRequest),
+        DeleteFromTable(super::DeleteFromTableRequest),
         #[prost(message, tag = "8")]
-        AlterColumn(super::AlterColumnRequest),
-        #[prost(message, tag = "10")]
         UpdateTags(super::UpdateTagsRequest),
     }
 }

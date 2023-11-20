@@ -300,13 +300,11 @@ mod test {
     use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
     use metrics::metric_register::MetricsRegister;
     use models::predicate::domain::TimeRange;
-    use tokio::sync::mpsc;
 
     use crate::compaction::test::create_options;
     use crate::compaction::{LevelCompactionPicker, Picker};
     use crate::file_utils::make_tsm_file;
     use crate::kv_option::Options;
-    use crate::kvcore::COMPACT_REQ_CHANNEL_CAP;
     use crate::memcache::MemCache;
     use crate::tseries_family::{ColumnFile, LevelInfo, TseriesFamily, Version};
 
@@ -376,8 +374,7 @@ mod test {
             1000,
             Arc::new(ShardedAsyncCache::create_lru_sharded_cache(1)),
         ));
-        let (flush_task_sender, _) = mpsc::channel(opt.storage.flush_req_channel_cap);
-        let (compactt_task_sender, _) = mpsc::channel(COMPACT_REQ_CHANNEL_CAP);
+
         TseriesFamily::new(
             1,
             Arc::new("ts_family_1".to_string()),
@@ -385,8 +382,6 @@ mod test {
             version,
             opt.cache.clone(),
             opt.storage.clone(),
-            flush_task_sender,
-            compactt_task_sender,
             memory_pool,
             &Arc::new(MetricsRegister::default()),
         )
