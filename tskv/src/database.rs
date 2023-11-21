@@ -1,4 +1,4 @@
-use std::collections::{HashMap, LinkedList};
+use std::collections::HashMap;
 use std::mem::size_of;
 use std::sync::Arc;
 
@@ -23,7 +23,7 @@ use crate::context::GlobalContext;
 use crate::error::{Result, SchemaSnafu};
 use crate::index::{self, IndexResult};
 use crate::kv_option::{Options, INDEX_PATH};
-use crate::memcache::{MemCache, RowData, RowGroup};
+use crate::memcache::{OrderedRowsData, RowData, RowGroup, MemCache};
 use crate::schema::schemas::DBschemas;
 use crate::summary::{SummaryTask, VersionEdit};
 use crate::tseries_family::{LevelInfo, TseriesFamily, Version};
@@ -376,7 +376,7 @@ impl Database {
         let schema_id = table_schema.schema_id;
         let entry = map.entry((sids[row_count], schema_id)).or_insert(RowGroup {
             schema: Arc::new(TskvTableSchema::default()),
-            rows: LinkedList::new(),
+            rows: OrderedRowsData::new(),
             range: TimeRange {
                 min_ts: i64::MAX,
                 max_ts: i64::MIN,
@@ -390,7 +390,7 @@ impl Database {
             max_ts: row.ts,
         });
         entry.size += row.size();
-        entry.rows.push_back(row);
+        entry.rows.insert(row);
         Ok(())
     }
 

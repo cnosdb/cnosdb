@@ -1447,19 +1447,18 @@ impl SeriesGroupRowIterator {
         };
 
         let time_ranges_ref = self.query_option.split.time_ranges();
-        let time_predicate = |ts| time_ranges_ref.is_boundless() || time_ranges_ref.contains(ts);
         debug!("Pushed down time range filter: {:?}", time_ranges_ref);
         // Get data from im_memcache and memcache
         let mut cache_data: Vec<DataType> = Vec::new();
         super_version.caches.read_field_data(
             field_id,
-            time_predicate,
+            &time_ranges_ref,
             |_| true,
             |d| cache_data.push(d),
         );
 
-        cache_data.sort_by_key(|data| data.timestamp());
-        cache_data.reverse();
+        // cache_data.sort_by_key(|data| data.timestamp());
+        // cache_data.reverse();
         cache_data.dedup_by_key(|data| data.timestamp());
 
         debug!(

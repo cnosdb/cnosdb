@@ -614,41 +614,38 @@ impl CacheGroup {
     pub fn read_field_data(
         &self,
         field_id: FieldId,
-        mut time_predicate: impl FnMut(Timestamp) -> bool,
+        time_ranges: &TimeRanges,
         mut value_predicate: impl FnMut(&FieldVal) -> bool,
         mut handle_data: impl FnMut(DataType),
     ) {
         self.immut_cache.iter().for_each(|m| {
             m.read().read_field_data(
                 field_id,
-                &mut time_predicate,
+                time_ranges,
                 &mut value_predicate,
                 &mut handle_data,
             );
         });
 
-        self.mut_cache.read().read_field_data(
-            field_id,
-            time_predicate,
-            value_predicate,
-            handle_data,
-        );
+        self.mut_cache
+            .read()
+            .read_field_data(field_id, time_ranges, value_predicate, handle_data);
     }
 
     pub fn read_series_timestamps(
         &self,
         series_ids: &[SeriesId],
-        mut time_predicate: impl FnMut(Timestamp) -> bool,
+        time_ranges: &TimeRanges,
         mut handle_data: impl FnMut(Timestamp),
     ) {
         self.immut_cache.iter().for_each(|m| {
             m.read()
-                .read_series_timestamps(series_ids, &mut time_predicate, &mut handle_data);
+                .read_series_timestamps(series_ids, time_ranges, &mut handle_data);
         });
 
         self.mut_cache
             .read()
-            .read_series_timestamps(series_ids, time_predicate, &mut handle_data);
+            .read_series_timestamps(series_ids, time_ranges, &mut handle_data);
     }
     /// todo：原来的实现里面 memcache中的数据被copy了出来，在cache中命中的数据较多且查询的并发量大的时候，会引发oom的问题。
     /// 内存结构变成一种按照时间排序的结构，查询的时候就返回引用，支持 stream 迭代。
@@ -979,7 +976,7 @@ impl TseriesFamily {
         let mut res = 0;
         for ((sid, _schema_id), group) in points {
             let mem = self.mut_cache.read();
-            res += group.rows.len();
+            res += group.rows.get_ref_rows().len();
             mem.write_group(sid, seq, group)?;
         }
         Ok(res as u64)
@@ -1164,7 +1161,7 @@ impl Drop for TseriesFamily {
 
 #[cfg(test)]
 pub mod test_tseries_family {
-    use std::collections::{HashMap, LinkedList};
+    use std::collections::HashMap;
     use std::mem::size_of;
     use std::sync::Arc;
 
@@ -1174,6 +1171,7 @@ pub mod test_tseries_family {
     use meta::model::MetaRef;
     use metrics::metric_register::MetricsRegister;
     use models::field_value::FieldVal;
+    use models::predicate::domain::TimeRanges;
     use models::schema::{DatabaseSchema, TenantOptions};
     use models::Timestamp;
     use parking_lot::RwLock;
@@ -1187,7 +1185,7 @@ pub mod test_tseries_family {
     use crate::file_utils::make_tsm_file_name;
     use crate::kv_option::{Options, StorageOptions};
     use crate::kvcore::{COMPACT_REQ_CHANNEL_CAP, SUMMARY_REQ_CHANNEL_CAP};
-    use crate::memcache::{MemCache, RowData, RowGroup};
+    use crate::memcache::{MemCache, OrderedRowsData, RowData, RowGroup};
     use crate::summary::{CompactMeta, SummaryTask, VersionEdit};
     use crate::tseries_family::{TimeRange, TseriesFamily, Version};
     use crate::tsm::TsmTombstone;
@@ -1478,20 +1476,22 @@ pub mod test_tseries_family {
             &Arc::new(MetricsRegister::default()),
         );
 
+        let mut rows: OrderedRowsData = OrderedRowsData::new();
+        rows.insert(RowData {
+            ts: 10,
+            fields: vec![
+                Some(FieldVal::Integer(11)),
+                Some(FieldVal::Integer(12)),
+                Some(FieldVal::Integer(13)),
+            ],
+        });
         let row_group = RowGroup {
             schema: default_table_schema(vec![0, 1, 2]).into(),
             range: TimeRange {
                 min_ts: 1,
                 max_ts: 100,
             },
-            rows: LinkedList::from([RowData {
-                ts: 10,
-                fields: vec![
-                    Some(FieldVal::Integer(11)),
-                    Some(FieldVal::Integer(12)),
-                    Some(FieldVal::Integer(13)),
-                ],
-            }]),
+            rows,
             size: size_of::<RowGroup>() + 3 * size_of::<u32>() + size_of::<Option<FieldVal>>() + 8,
         };
         let mut points = HashMap::new();
@@ -1499,9 +1499,15 @@ pub mod test_tseries_family {
         let _ = tsf.put_points(0, points);
 
         let mut cached_data = vec![];
-        tsf.mut_cache
-            .read()
-            .read_field_data(0, |_| true, |_| true, |d| cached_data.push(d));
+        tsf.mut_cache.read().read_field_data(
+            0,
+            &TimeRanges::new(vec![TimeRange {
+                min_ts: Timestamp::MIN,
+                max_ts: Timestamp::MAX,
+            }]),
+            |_| true,
+            |d| cached_data.push(d),
+        );
         assert_eq!(cached_data.len(), 1);
         tsf.delete_series(
             &[0],
@@ -1511,9 +1517,15 @@ pub mod test_tseries_family {
             },
         );
         cached_data.clear();
-        tsf.mut_cache
-            .read()
-            .read_field_data(0, |_| true, |_| true, |d| cached_data.push(d));
+        tsf.mut_cache.read().read_field_data(
+            0,
+            &TimeRanges::new(vec![TimeRange {
+                min_ts: Timestamp::MIN,
+                max_ts: Timestamp::MAX,
+            }]),
+            |_| true,
+            |d| cached_data.push(d),
+        );
         assert!(cached_data.is_empty());
     }
 
@@ -1575,20 +1587,22 @@ pub mod test_tseries_family {
         });
         let memory_pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::default());
         let mem = MemCache::new(0, 1000, 2, 0, &memory_pool);
+        let mut rows: OrderedRowsData = OrderedRowsData::new();
+        rows.insert(RowData {
+            ts: 10,
+            fields: vec![
+                Some(FieldVal::Integer(11)),
+                Some(FieldVal::Integer(12)),
+                Some(FieldVal::Integer(13)),
+            ],
+        });
         let row_group = RowGroup {
             schema: default_table_schema(vec![0, 1, 2]).into(),
             range: TimeRange {
                 min_ts: 1,
                 max_ts: 100,
             },
-            rows: LinkedList::from([RowData {
-                ts: 10,
-                fields: vec![
-                    Some(FieldVal::Integer(11)),
-                    Some(FieldVal::Integer(12)),
-                    Some(FieldVal::Integer(13)),
-                ],
-            }]),
+            rows,
             size: size_of::<RowGroup>() + 3 * size_of::<u32>() + size_of::<Option<FieldVal>>() + 8,
         };
         mem.write_group(1, 0, row_group).unwrap();
