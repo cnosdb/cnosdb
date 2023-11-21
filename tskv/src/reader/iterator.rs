@@ -1465,8 +1465,8 @@ impl SeriesGroupRowIterator {
             |d| cache_data.push(d),
         );
 
-        cache_data.sort_by_key(|data| data.timestamp());
-        cache_data.reverse();
+        // cache_data.sort_by_key(|data| data.timestamp());
+        // cache_data.reverse();
         cache_data.dedup_by_key(|data| data.timestamp());
 
         debug!(
