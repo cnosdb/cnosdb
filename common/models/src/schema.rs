@@ -1208,7 +1208,7 @@ impl Tenant {
 pub struct TenantOptions {
     pub comment: Option<String>,
     pub limiter_config: Option<TenantLimiterConfig>,
-    after: Option<Duration>, // None means now
+    drop_after: Option<Duration>, // None means now
     tenant_is_hidden: bool,
 }
 
@@ -1221,8 +1221,8 @@ impl From<TenantOptions> for TenantOptionsBuilder {
         if let Some(config) = value.limiter_config.clone() {
             builder.limiter_config(config);
         }
-        if let Some(after) = value.get_after() {
-            builder.after(after);
+        if let Some(drop_after) = value.get_drop_after() {
+            builder.drop_after(drop_after);
         }
         builder.tenant_is_hidden(false);
         builder
@@ -1236,8 +1236,8 @@ impl TenantOptionsBuilder {
     pub fn unset_limiter_config(&mut self) {
         self.limiter_config = None
     }
-    pub fn unset_after(&mut self) {
-        self.after = None;
+    pub fn unset_drop_after(&mut self) {
+        self.drop_after = None;
     }
 }
 
@@ -1264,12 +1264,8 @@ impl TenantOptions {
         self.tenant_is_hidden = tenant_is_hidden;
     }
 
-    pub fn get_after(&self) -> Option<Duration> {
-        self.after.clone()
-    }
-
-    pub fn set_after(&mut self, after: &Option<Duration>) {
-        self.after = after.clone();
+    pub fn get_drop_after(&self) -> Option<Duration> {
+        self.drop_after.clone()
     }
 }
 
