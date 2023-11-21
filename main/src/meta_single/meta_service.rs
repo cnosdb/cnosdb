@@ -8,6 +8,7 @@ use actix_web::{get, middleware, post, web, App, HttpServer, Responder};
 use config::Config;
 use meta::error::MetaResult;
 use meta::store::command::*;
+use meta::store::dump::dump_impl;
 use meta::store::state_machine::{response_encode, CommandResp, StateMachine};
 use meta::{ClusterNode, ClusterNodeId, TypeConfig};
 use models::auth::role::{SystemTenantRole, TenantRoleIdentifier};
@@ -117,6 +118,24 @@ pub async fn watch(
     }
 }
 
+#[get("/dump/sql/ddl/{cluster}/{tenant}")]
+pub async fn dump_sql_ddl(
+    app: Data<MetaApp>,
+    path: web::Path<(String, String)>,
+) -> MetaResult<String> {
+    let (cluster, tenant) = path.into_inner();
+    dump_impl(cluster.as_str(), Some(tenant.as_str()), &app.store).await
+}
+
+#[get("/dump/sql/ddl/{cluster}")]
+pub async fn dump_sql_ddl_cluster(
+    app: Data<MetaApp>,
+    path: web::Path<String>,
+) -> MetaResult<String> {
+    let cluster = path.into_inner();
+    dump_impl(cluster.as_str(), None, &app.store).await
+}
+
 pub struct MetaService {
     cpu: usize,
     opt: Config,
@@ -159,6 +178,8 @@ pub async fn run_service(cpu: usize, opt: &Config) -> std::io::Result<()> {
             .service(read)
             .service(debug)
             .service(watch)
+            .service(dump_sql_ddl)
+            .service(dump_sql_ddl_cluster)
     })
     .keep_alive(Duration::from_secs(5));
 

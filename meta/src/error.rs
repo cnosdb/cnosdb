@@ -243,6 +243,16 @@ impl From<client::WriteError> for MetaError {
     }
 }
 
+impl From<models::Error> for MetaError {
+    fn from(value: models::Error) -> Self {
+        Self::CommonError {
+            msg: value.to_string(),
+        }
+    }
+}
+
+impl actix_web::error::ResponseError for MetaError {}
+
 #[test]
 fn test_mod_code() {
     let e = MetaError::NotFoundDb { db: "".to_string() };

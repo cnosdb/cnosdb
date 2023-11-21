@@ -108,6 +108,7 @@ pub async fn start_service(opt: Opt) -> std::io::Result<()> {
             .service(api::write)
             .service(api::read)
             .service(api::dump)
+            .service(api::dump_sql_ddl)
             .service(api::restore)
             .service(api::debug)
             .service(api::watch)

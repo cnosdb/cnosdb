@@ -7,7 +7,7 @@ use fly_accept_encoding::Encoding;
 use http_protocol::encoding::EncodingExt;
 use http_protocol::header::{ACCEPT, PRIVATE_KEY};
 use http_protocol::http_client::HttpClient;
-use http_protocol::parameter::{SqlParam, WriteParam};
+use http_protocol::parameter::{DumpParam, SqlParam, WriteParam};
 use http_protocol::status_code::OK;
 use reqwest::header::{ACCEPT_ENCODING, CONTENT_ENCODING};
 
@@ -27,6 +27,7 @@ pub const DEFAULT_ERROR_STOP: bool = false;
 
 pub const API_V1_SQL_PATH: &str = "/api/v1/sql";
 pub const API_V1_WRITE_PATH: &str = "/api/v1/write";
+pub const API_V1_DUMP_SQL_DDL_PATH: &str = "/api/v1/dump/sql/ddl";
 
 pub struct SessionConfig {
     pub user_info: UserInfo,
@@ -394,6 +395,29 @@ impl SessionContext {
             self.write_line_protocol_file(dir_entry.path()).await?;
         }
         Ok(())
+    }
+
+    pub async fn dump(&self, tenant: Option<String>) -> Result<String> {
+        let user_info = &self.session_config.user_info;
+
+        let param = DumpParam { tenant };
+
+        let mut builder = self
+            .http_client
+            .get(API_V1_DUMP_SQL_DDL_PATH)
+            .basic_auth::<&str, &str>(&user_info.user, user_info.password.as_deref());
+        builder = if let Some(key) = &user_info.private_key {
+            let key = base64::encode(key);
+            builder.header(PRIVATE_KEY, key)
+        } else {
+            builder
+        }
+        .query(&param);
+
+        let resp = builder.send().await?;
+
+        let res = resp.text().await?;
+        Ok(res)
     }
 }
 
