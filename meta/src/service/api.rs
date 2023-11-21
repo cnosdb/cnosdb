@@ -7,7 +7,9 @@ use openraft::error::Infallible;
 use trace::info;
 use web::Json;
 
+use crate::error::MetaResult;
 use crate::store::command::*;
+use crate::store::dump::dump_impl;
 use crate::store::state_machine::{response_encode, CommandResp};
 use crate::MetaApp;
 
@@ -124,6 +126,26 @@ pub async fn watch(
             follow_ver = watch_data.max_ver;
         }
     }
+}
+
+#[get("/dump/sql/ddl/{cluster}/{tenant}")]
+pub async fn dump_sql_ddl(
+    app: Data<MetaApp>,
+    path: web::Path<(String, String)>,
+) -> MetaResult<String> {
+    let (cluster, tenant) = path.into_inner();
+    let state_machine = app.store.state_machine.read().await;
+    dump_impl(cluster.as_str(), Some(tenant.as_str()), &state_machine).await
+}
+
+#[get("/dump/sql/ddl/{cluster}")]
+pub async fn dump_sql_ddl_cluster(
+    app: Data<MetaApp>,
+    path: web::Path<String>,
+) -> MetaResult<String> {
+    let cluster = path.into_inner();
+    let state_machine = app.store.state_machine.read().await;
+    dump_impl(cluster.as_str(), None, &state_machine).await
 }
 
 #[get("/debug")]

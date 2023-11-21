@@ -1,11 +1,13 @@
 #[cfg(test)]
 pub mod test {
-    use std::{sync::Arc, time::Duration, thread};
+    use std::sync::Arc;
+    use std::thread;
+    use std::time::Duration;
 
     use http_protocol::status_code;
     use regex::Regex;
 
-    use crate::utils::{clean_env, Client, start_cluster};
+    use crate::utils::{clean_env, start_cluster, Client};
 
     #[test]
     fn case1() {

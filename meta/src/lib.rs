@@ -1,3 +1,5 @@
+#![feature(is_some_and)]
+
 use std::fmt::Display;
 use std::sync::Arc;
 

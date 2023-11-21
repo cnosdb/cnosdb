@@ -14,9 +14,9 @@ use coordinator::service::CoordinatorRef;
 use fly_accept_encoding::Encoding;
 use http_protocol::encoding::EncodingExt;
 use http_protocol::header::{ACCEPT, AUTHORIZATION, PRIVATE_KEY};
-use http_protocol::parameter::{SqlParam, WriteParam};
+use http_protocol::parameter::{DumpParam, SqlParam, WriteParam};
 use http_protocol::response::ErrorResponse;
-use meta::error::MetaError;
+use meta::error::{MetaError, MetaResult};
 use meta::limiter::RequestLimiter;
 use meta::model::MetaRef;
 use metrics::count::U64Counter;
@@ -229,6 +229,7 @@ impl HttpService {
             .or(self.prom_remote_write())
             .or(self.write_open_tsdb())
             .or(self.put_open_tsdb())
+            .or(self.dump_ddl_sql())
     }
 
     fn routes_store(
@@ -240,6 +241,7 @@ impl HttpService {
             .or(self.debug_pprof())
             .or(self.debug_jeprof())
             .or(self.backtrace())
+            .or(self.dump_ddl_sql())
     }
 
     fn ping(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
@@ -888,6 +890,47 @@ impl HttpService {
                 },
             )
     }
+
+    fn dump_ddl_sql(&self) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+        async fn dump_sql_ddl_impl(meta: MetaRef, tenant: Option<String>) -> MetaResult<String> {
+            let cluster = meta.cluster();
+            let leader = meta.leader_addr();
+            let url = match tenant {
+                Some(t) => {
+                    format!("http://{}/{}/{cluster}/{t}", leader, "dump/sql/ddl")
+                }
+                None => {
+                    format!("http://{}/{}/{cluster}", leader, "dump/sql/ddl")
+                }
+            };
+
+            let resp = reqwest::get(url.clone())
+                .await
+                .map_err(|e| MetaError::MetaClientErr { msg: e.to_string() })?;
+            let status = resp.status();
+
+            let data = resp
+                .text()
+                .await
+                .map_err(|e| MetaError::MetaClientErr { msg: e.to_string() })?;
+
+            if !status.is_success() {
+                return Err(MetaError::MetaClientErr {
+                    msg: format!("httpcode: {}, response:{}", status, data),
+                });
+            }
+            Ok(data)
+        }
+        warp::path!("api" / "v1" / "dump" / "sql" / "ddl")
+            .and(self.with_meta())
+            .and(warp::query::<DumpParam>())
+            .and_then(|meta, param: DumpParam| async move {
+                dump_sql_ddl_impl(meta, param.tenant)
+                    .await
+                    .map(|r| r.into_bytes())
+                    .map_err(meta_err_to_reject)
+            })
+    }
 }
 
 #[async_trait::async_trait]
@@ -1330,6 +1373,7 @@ async fn handle_rejection(err: Rejection) -> Result<impl Reply, std::convert::In
         Ok(ResponseBuilder::internal_server_error())
     }
 }
+
 /**************** bottom *****************/
 #[cfg(test)]
 mod test {
