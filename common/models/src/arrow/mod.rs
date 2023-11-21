@@ -4,8 +4,8 @@ pub use datafusion::datasource::file_format::file_type::{FileCompressionType, Fi
 pub use datafusion::sql::sqlparser::ast::DataType as SQLDataType;
 use datafusion::sql::sqlparser::ast::{ExactNumberInfo, TimezoneInfo};
 
-pub fn arrow_data_type_to_sql_data_type(data_type: &DataType) -> SQLDataType {
-    match data_type {
+pub fn arrow_data_type_to_sql_data_type(data_type: &DataType) -> Result<SQLDataType, crate::Error> {
+    let res = match data_type {
         DataType::Boolean => SQLDataType::Boolean,
         DataType::Int8 => SQLDataType::TinyInt(None),
         DataType::Int16 => SQLDataType::SmallInt(None),
@@ -35,7 +35,10 @@ pub fn arrow_data_type_to_sql_data_type(data_type: &DataType) -> SQLDataType {
             SQLDataType::BigDecimal(ExactNumberInfo::PrecisionAndScale(*p as u64, *s as u64))
         }
         _ => {
-            panic!()
+            return Err(crate::Error::Common {
+                msg: format!("Not implement {} to sql type", data_type),
+            });
         }
-    }
+    };
+    Ok(res)
 }
