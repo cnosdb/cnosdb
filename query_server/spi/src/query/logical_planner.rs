@@ -429,6 +429,9 @@ pub fn sql_options_to_user_options(
             "granted_admin" => {
                 builder.granted_admin(parse_bool_value(value)?);
             }
+            "hash_password" => {
+                builder.password(parse_string_value(value)?);
+            }
             _ => {
                 return Err(ParserError::ParserError(format!(
                 "Expected option [password | rsa_public_key | comment | granted_admin], found [{}]",
