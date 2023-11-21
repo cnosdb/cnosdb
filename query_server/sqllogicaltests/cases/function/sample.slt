@@ -33,8 +33,10 @@ create table readings(
   tags(name, fleet, driver, model, device_version)
 );
 
-statement error Arrow error: Io error: Cannot connect to endpoint: transport error
+query T
 insert into readings select * from readings_ext;
+----
+8192
 
 ##########
 ## Query

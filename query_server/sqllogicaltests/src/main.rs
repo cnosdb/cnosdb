@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use crate::instance::SqlClientOptions;
 
+mod db_request;
 mod error;
 mod instance;
 mod os;
@@ -10,11 +11,16 @@ mod utils;
 
 const TEST_DIRECTORY: &str = "query_server/sqllogicaltests/cases";
 
-const CNOSDB_HOST_ENV: &str = "CNOSDB_HOST";
-const CNOSDB_PORT_ENV: &str = "CNOSDB_PORT";
+const CNOSDB_FLIGHT_HOST_ENV: &str = "CNOSDB_FLIGHT_HOST";
+const CNOSDB_FLIGHT_PORT_ENV: &str = "CNOSDB_FLIGHT_PORT";
+const CNOSDB_HTTP_HOST_ENV: &str = "CNOSDB_HTTP_HOST";
+const CNOSDB_HTTP_PORT_ENV: &str = "CNOSDB_HTTP_PORT";
 
-const CNOSDB_HOST_DEFAULT: &str = "localhost";
-const CNOSDB_PORT_DEFAULT: u16 = 8904;
+const CNOSDB_FLIGHT_HOST_DEFAULT: &str = "localhost";
+const CNOSDB_FLIGHT_PORT_DEFAULT: u16 = 8904;
+const CNOSDB_HTTP_HOST_DEFAULT: &str = "localhost";
+const CNOSDB_HTTP_PORT_DEFAULT: u16 = 8902;
+
 const CNOSDB_USERNAME_DEFAULT: &str = "root";
 const CNOSDB_PASSWORD_DEFAULT: &str = "";
 const CNOSDB_TENANT_DEFAULT: &str = "cnosdb";
@@ -26,13 +32,18 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     let options = Options::new();
 
     let db_options = SqlClientOptions {
-        host: options.host.clone(),
-        port: options.port,
+        flight_host: options.flight_host.clone(),
+        flight_port: options.flight_port,
+        http_host: options.http_host.clone(),
+        http_port: options.http_port,
         username: CNOSDB_USERNAME_DEFAULT.into(),
         password: CNOSDB_PASSWORD_DEFAULT.into(),
         tenant: CNOSDB_TENANT_DEFAULT.into(),
         db: CNOSDB_DB_DEFAULT.into(),
         target_partitions: CNOSDB_TARGET_PARTITIONS_DEFAULT,
+        timeout: None,
+        precision: None,
+        chunked: None,
     };
 
     println!("{options:?}");
@@ -93,8 +104,10 @@ struct Options {
     /// Auto complete mode to fill out expected results
     complete_mode: bool,
 
-    host: String,
-    port: u16,
+    flight_host: String,
+    flight_port: u16,
+    http_host: String,
+    http_port: u16,
 }
 
 impl Options {
@@ -102,9 +115,17 @@ impl Options {
         let args: Vec<_> = std::env::args().collect();
 
         let complete_mode = args.iter().any(|a| a == "--complete");
-        let host = std::env::var(CNOSDB_HOST_ENV).unwrap_or(CNOSDB_HOST_DEFAULT.into());
-        let port = std::env::var(CNOSDB_PORT_ENV).map_or(CNOSDB_PORT_DEFAULT, |e| {
-            e.parse::<u16>().expect("Parse CNOSDB_PORT")
+        let flight_host =
+            std::env::var(CNOSDB_FLIGHT_HOST_ENV).unwrap_or(CNOSDB_FLIGHT_HOST_DEFAULT.into());
+        let flight_port = std::env::var(CNOSDB_FLIGHT_PORT_ENV)
+            .map_or(CNOSDB_FLIGHT_PORT_DEFAULT, |e| {
+                e.parse::<u16>().expect("Parse CNOSDB_FLIGHT_PORT")
+            });
+
+        let http_host =
+            std::env::var(CNOSDB_HTTP_HOST_ENV).unwrap_or(CNOSDB_HTTP_HOST_DEFAULT.into());
+        let http_port = std::env::var(CNOSDB_HTTP_PORT_ENV).map_or(CNOSDB_HTTP_PORT_DEFAULT, |e| {
+            e.parse::<u16>().expect("Parse CNOSDB_HTTP_PORT")
         });
 
         // treat args after the first as filters to run (substring matching)
@@ -121,8 +142,10 @@ impl Options {
         Self {
             filters,
             complete_mode,
-            host,
-            port,
+            flight_host,
+            flight_port,
+            http_host,
+            http_port,
         }
     }
 

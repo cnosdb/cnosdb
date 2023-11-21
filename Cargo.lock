@@ -5410,19 +5410,23 @@ dependencies = [
  "async-backtrace",
  "async-trait",
  "futures",
+ "humantime",
+ "nom",
  "prost",
+ "reqwest",
  "snafu",
  "sqllogictest",
  "tokio",
  "tonic",
  "trace",
+ "url",
 ]
 
 [[package]]
 name = "sqllogictest"
-version = "0.13.2"
+version = "0.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b7d83bd42830e2c891865c0da6e8ad741ed3a108188061ea4eaf99cf13cd375"
+checksum = "b69c517b1f8701ecd20942be800a5d080726fff7d75984cea5f6b50b0d785390"
 dependencies = [
  "async-trait",
  "educe",
@@ -5430,12 +5434,13 @@ dependencies = [
  "futures",
  "glob",
  "humantime",
- "itertools 0.10.5",
+ "itertools 0.11.0",
  "libtest-mimic",
  "md-5",
  "owo-colors",
  "regex",
  "similar",
+ "subst",
  "tempfile",
  "thiserror",
  "tracing",
@@ -5531,6 +5536,16 @@ dependencies = [
  "quote",
  "rustversion",
  "syn 2.0.32",
+]
+
+[[package]]
+name = "subst"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ca1318e5d6716d6541696727c88d9b8dfc8cfe6afd6908e186546fd4af7f5b98"
+dependencies = [
+ "memchr",
+ "unicode-width",
 ]
 
 [[package]]

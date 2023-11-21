@@ -1,12 +1,17 @@
+statement ok
 DROP DATABASE IF EXISTS empty_table;
 
+statement ok
 CREATE DATABASE empty_table;
 
+statement ok
 --#DATABASE=empty_table
---#SLEEP=100
 
+statement ok
 CREATE TABLE empty (
     f DOUBLE,
     TAGS(t));
 
+query T
 SELECT * FROM empty;
+----

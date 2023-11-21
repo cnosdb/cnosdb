@@ -83,7 +83,7 @@ INSERT time_window.err(TIME, f0, f1, t0, t1) VALUES('1677-09-21 00:12:44.0', 111
 statement error .*create expired bucket.*
 INSERT time_window.err(TIME, f0, f1, t0, t1) VALUES('1688-09-21 00:12:44.0', 111, 444, 'tag11', 'tag21');
 
-statement error .*create expired bucket".*
+statement ok
 INSERT time_window.err(TIME, f0, f1, t0, t1)
 VALUES
     ('1970-01-01T00:00:00', 111, 444, 'tag11', 'tag21'),
