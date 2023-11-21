@@ -156,6 +156,7 @@ http-body = "0.4.5"
 run_script = "0.10.1"
 geo = "0.27.0"
 geozero = "0.11.0"
+skiplist = "0.5.1"
 
 [workspace.package]
 edition = "2021"

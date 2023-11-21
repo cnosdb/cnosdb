@@ -5262,6 +5262,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "skiplist"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0eec25f46463fcdc5e02f388c2780b1b58e01be81a8378e62ec60931beccc3f6"
+dependencies = [
+ "rand",
+]
+
+[[package]]
 name = "slab"
 version = "0.4.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6237,6 +6246,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serial_test",
+ "skiplist",
  "sled",
  "snafu",
  "snap",

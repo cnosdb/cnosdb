@@ -963,7 +963,7 @@ impl TseriesFamily {
         let mut res = 0;
         for (sid, group) in points {
             let mem = self.mut_cache.read();
-            res += group.rows.len();
+            res += group.rows.get_rows().len();
             mem.write_group(sid, seq, group)?;
         }
         Ok(res as u64)
@@ -1197,7 +1197,7 @@ impl ColumnFileToTsmReaderIterator {
 
 #[cfg(test)]
 pub mod test_tseries_family {
-    use std::collections::{HashMap, LinkedList};
+    use std::collections::HashMap;
     use std::mem::size_of;
     use std::sync::Arc;
 
@@ -1220,7 +1220,7 @@ pub mod test_tseries_family {
     use crate::file_utils::make_tsm_file;
     use crate::kv_option::{Options, StorageOptions};
     use crate::kvcore::{COMPACT_REQ_CHANNEL_CAP, SUMMARY_REQ_CHANNEL_CAP};
-    use crate::memcache::{FieldVal, MemCache, RowData, RowGroup};
+    use crate::memcache::{FieldVal, MemCache, OrderedRowsData, RowData, RowGroup};
     use crate::summary::{CompactMeta, SummaryTask, VersionEdit};
     use crate::tseries_family::{TimeRange, TseriesFamily, Version};
     use crate::tsm::TsmTombstone;
@@ -1518,20 +1518,22 @@ pub mod test_tseries_family {
             &Arc::new(MetricsRegister::default()),
         );
 
+        let mut rows: OrderedRowsData = OrderedRowsData::new();
+        rows.insert(RowData {
+            ts: 10,
+            fields: vec![
+                Some(FieldVal::Integer(11)),
+                Some(FieldVal::Integer(12)),
+                Some(FieldVal::Integer(13)),
+            ],
+        });
         let row_group = RowGroup {
             schema: default_table_schema(vec![0, 1, 2]).into(),
             range: TimeRange {
                 min_ts: 1,
                 max_ts: 100,
             },
-            rows: LinkedList::from([RowData {
-                ts: 10,
-                fields: vec![
-                    Some(FieldVal::Integer(11)),
-                    Some(FieldVal::Integer(12)),
-                    Some(FieldVal::Integer(13)),
-                ],
-            }]),
+            rows,
             size: size_of::<RowGroup>() + 3 * size_of::<u32>() + size_of::<Option<FieldVal>>() + 8,
         };
         let mut points = HashMap::new();
@@ -1615,20 +1617,22 @@ pub mod test_tseries_family {
         });
         let memory_pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::default());
         let mem = MemCache::new(0, 1000, 2, 0, &memory_pool);
+        let mut rows: OrderedRowsData = OrderedRowsData::new();
+        rows.insert(RowData {
+            ts: 10,
+            fields: vec![
+                Some(FieldVal::Integer(11)),
+                Some(FieldVal::Integer(12)),
+                Some(FieldVal::Integer(13)),
+            ],
+        });
         let row_group = RowGroup {
             schema: default_table_schema(vec![0, 1, 2]).into(),
             range: TimeRange {
                 min_ts: 1,
                 max_ts: 100,
             },
-            rows: LinkedList::from([RowData {
-                ts: 10,
-                fields: vec![
-                    Some(FieldVal::Integer(11)),
-                    Some(FieldVal::Integer(12)),
-                    Some(FieldVal::Integer(13)),
-                ],
-            }]),
+            rows,
             size: size_of::<RowGroup>() + 3 * size_of::<u32>() + size_of::<Option<FieldVal>>() + 8,
         };
         mem.write_group(1, 0, row_group).unwrap();

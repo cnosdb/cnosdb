@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::collections::{HashMap, LinkedList};
+use std::collections::HashMap;
 use std::mem::size_of;
 use std::sync::Arc;
 
@@ -23,7 +23,7 @@ use crate::context::GlobalContext;
 use crate::error::{Result, SchemaSnafu};
 use crate::index::{self, IndexResult};
 use crate::kv_option::{Options, INDEX_PATH};
-use crate::memcache::{RowData, RowGroup};
+use crate::memcache::{OrderedRowsData, RowData, RowGroup};
 use crate::schema::schemas::DBschemas;
 use crate::summary::{SummaryTask, VersionEdit};
 use crate::tseries_family::{LevelInfo, TseriesFamily, TsfFactory, Version};
@@ -309,14 +309,14 @@ impl Database {
             )?;
             let mut row_group = RowGroup {
                 schema: table_schema.clone(),
-                rows: LinkedList::new(),
+                rows: OrderedRowsData::new(),
                 range: TimeRange::none(),
                 size: size_of::<RowGroup>(),
             };
             for row in rows {
                 row_group.range.merge(&TimeRange::new(row.ts, row.ts));
                 row_group.size += row.size();
-                row_group.rows.push_back(row);
+                row_group.rows.insert(row);
             }
             let res = map.insert(sid, row_group);
             // every sid of different table is different

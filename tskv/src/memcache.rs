@@ -1,3 +1,4 @@
+use std::cmp;
 use std::collections::{HashMap, LinkedList};
 use std::fmt::Display;
 use std::mem::size_of_val;
@@ -17,6 +18,7 @@ use models::{
 };
 use parking_lot::RwLock;
 use protos::models::{Column, FieldType};
+use skiplist::OrderedSkipList;
 use trace::error;
 use utils::bitset::ImmutBitSet;
 
@@ -281,11 +283,63 @@ impl RowData {
     }
 }
 
+impl PartialOrd for RowData {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+        Some(self.ts.cmp(&other.ts))
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct OrderedRowsData {
+    rows: OrderedSkipList<RowData>,
+}
+
+impl OrderedRowsData {
+    pub fn new() -> Self {
+        let mut rows: OrderedSkipList<RowData> = OrderedSkipList::new();
+        unsafe { rows.sort_by(|a: &RowData, b: &RowData| b.partial_cmp(a).unwrap()) }
+        Self { rows }
+    }
+
+    pub fn get_rows(&self) -> &OrderedSkipList<RowData> {
+        &self.rows
+    }
+
+    pub fn clear(&mut self) {
+        self.rows.clear()
+    }
+
+    pub fn insert(&mut self, row: RowData) {
+        self.rows.insert(row);
+    }
+
+    pub fn retain(&mut self, mut f: impl FnMut(&RowData) -> bool) {
+        self.rows.retain(|row| f(row));
+    }
+}
+
+impl Default for OrderedRowsData {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Clone for OrderedRowsData {
+    fn clone(&self) -> Self {
+        let mut clone_rows: OrderedSkipList<RowData> = OrderedSkipList::new();
+        unsafe { clone_rows.sort_by(|a: &RowData, b: &RowData| b.partial_cmp(a).unwrap()) }
+        self.rows.iter().for_each(|row| {
+            clone_rows.insert(row.clone());
+        });
+        Self { rows: clone_rows }
+    }
+}
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct RowGroup {
     pub schema: Arc<TskvTableSchema>,
     pub range: TimeRange,
-    pub rows: LinkedList<RowData>,
+    pub rows: OrderedRowsData,
     /// total size in stack and heap
     pub size: usize,
 }
@@ -309,13 +363,15 @@ impl SeriesData {
         }
     }
 
-    pub fn write(&mut self, mut group: RowGroup) {
+    pub fn write(&mut self, group: RowGroup) {
         self.range.merge(&group.range);
 
         for item in self.groups.iter_mut() {
             if item.schema.schema_id == group.schema.schema_id {
                 item.range.merge(&group.range);
-                item.rows.append(&mut group.rows);
+                group.rows.get_rows().iter().for_each(|row| {
+                    item.rows.insert(row.clone());
+                });
                 item.schema = group.schema;
                 return;
             }
@@ -334,8 +390,11 @@ impl SeriesData {
                 None => continue,
                 Some(index) => *index,
             };
-            for row in item.rows.iter_mut() {
+            let mut rowdata_vec: Vec<RowData> = item.rows.get_rows().iter().cloned().collect();
+            item.rows.clear();
+            for row in rowdata_vec.iter_mut() {
                 row.fields.remove(index);
+                item.rows.insert(row.clone());
             }
             let mut schema_t = item.schema.as_ref().clone();
             schema_t.drop_column(&name);
@@ -368,12 +427,8 @@ impl SeriesData {
         }
 
         for item in self.groups.iter_mut() {
-            item.rows = item
-                .rows
-                .iter()
-                .filter(|row| row.ts < range.min_ts || row.ts > range.max_ts)
-                .cloned()
-                .collect();
+            item.rows
+                .retain(|row| row.ts < range.min_ts || row.ts > range.max_ts);
         }
     }
 
@@ -384,12 +439,8 @@ impl SeriesData {
             }
 
             for item in self.groups.iter_mut() {
-                item.rows = item
-                    .rows
-                    .iter()
-                    .filter(|row| row.ts < time_range.min_ts || row.ts > time_range.max_ts)
-                    .cloned()
-                    .collect();
+                item.rows
+                    .retain(|row| row.ts < time_range.min_ts || row.ts > time_range.max_ts);
             }
         }
     }
@@ -409,6 +460,7 @@ impl SeriesData {
             };
             group
                 .rows
+                .get_rows()
                 .iter()
                 .filter(|row| time_predicate(row.ts))
                 .for_each(|row| {
@@ -429,13 +481,14 @@ impl SeriesData {
         for group in self.groups.iter() {
             group
                 .rows
+                .get_rows()
                 .iter()
                 .filter(|row| time_predicate(row.ts))
                 .for_each(|row| handle_data(row.ts));
         }
     }
 
-    pub fn flat_groups(&self) -> Vec<(SchemaId, TskvTableSchemaRef, &LinkedList<RowData>)> {
+    pub fn flat_groups(&self) -> Vec<(SchemaId, TskvTableSchemaRef, &OrderedRowsData)> {
         self.groups
             .iter()
             .map(|g| (g.schema.schema_id, g.schema.clone(), &g.rows))
@@ -777,7 +830,7 @@ impl Display for DataType {
 }
 
 pub(crate) mod test {
-    use std::collections::{HashMap, LinkedList};
+    use std::collections::HashMap;
     use std::mem::size_of;
     use std::sync::Arc;
 
@@ -786,7 +839,7 @@ pub(crate) mod test {
     use models::{SchemaId, SeriesId, Timestamp};
     use parking_lot::RwLock;
 
-    use super::{FieldVal, MemCache, RowData, RowGroup};
+    use super::{FieldVal, MemCache, OrderedRowsData, RowData, RowGroup};
 
     pub fn put_rows_to_cache(
         cache: &MemCache,
@@ -796,7 +849,7 @@ pub(crate) mod test {
         time_range: (Timestamp, Timestamp),
         put_none: bool,
     ) {
-        let mut rows = LinkedList::new();
+        let mut rows = OrderedRowsData::new();
         let mut size: usize = schema.size();
         for ts in time_range.0..=time_range.1 {
             let mut fields = Vec::new();
@@ -810,7 +863,7 @@ pub(crate) mod test {
                 }
             }
             size += 8;
-            rows.push_back(RowData { ts, fields });
+            rows.insert(RowData { ts, fields });
         }
 
         schema.schema_id = schema_id;
@@ -833,7 +886,7 @@ pub(crate) mod test {
             let schema_groups = sdata_rlock.flat_groups();
             for (_sch_id, sch, row) in schema_groups {
                 let fields = sch.fields();
-                for r in row {
+                for r in row.get_rows().iter() {
                     for (i, f) in r.fields.iter().enumerate() {
                         if let Some(fv) = f {
                             if let Some(c) = fields.get(i) {
@@ -856,7 +909,6 @@ pub(crate) mod test {
 
 #[cfg(test)]
 mod test_memcache {
-    use std::collections::LinkedList;
     use std::sync::Arc;
 
     use datafusion::arrow::datatypes::TimeUnit;
@@ -865,7 +917,7 @@ mod test_memcache {
     use models::schema::{ColumnType, TableColumn, TskvTableSchema};
     use models::{SeriesId, ValueType};
 
-    use super::{FieldVal, MemCache, RowData, RowGroup};
+    use super::{FieldVal, MemCache, OrderedRowsData, RowData, RowGroup};
 
     #[test]
     fn test_write_group() {
@@ -890,14 +942,20 @@ mod test_memcache {
             ],
         );
         schema_1.schema_id = 1;
+        let mut rows = OrderedRowsData::new();
+        rows.insert(RowData {
+            ts: 1,
+            fields: vec![Some(FieldVal::Float(1.0))],
+        });
+        rows.insert(RowData {
+            ts: 3,
+            fields: vec![Some(FieldVal::Float(3.0))],
+        });
         #[rustfmt::skip]
         let row_group_1 = RowGroup {
             schema: Arc::new(schema_1),
             range: TimeRange::new(1, 3),
-            rows: LinkedList::from([
-                RowData { ts: 1, fields: vec![Some(FieldVal::Float(1.0))] },
-                RowData { ts: 3, fields: vec![Some(FieldVal::Float(3.0))] },
-            ]),
+            rows,
             size: 10,
         };
         mem_cache.write_group(sid, 1, row_group_1.clone()).unwrap();
@@ -924,14 +982,20 @@ mod test_memcache {
             ],
         );
         schema_2.schema_id = 2;
+        let mut rows = OrderedRowsData::new();
+        rows.insert(RowData {
+            ts: 3,
+            fields: vec![None, Some(FieldVal::Integer(3))],
+        });
+        rows.insert(RowData {
+            ts: 5,
+            fields: vec![Some(FieldVal::Float(5.0)), Some(FieldVal::Integer(5))],
+        });
         #[rustfmt::skip]
         let row_group_2 = RowGroup {
             schema: Arc::new(schema_2),
             range: TimeRange::new(3, 5),
-            rows: LinkedList::from([
-                RowData { ts: 3, fields: vec![None, Some(FieldVal::Integer(3))] },
-                RowData { ts: 5, fields: vec![Some(FieldVal::Float(5.0)), Some(FieldVal::Integer(5))] }
-            ]),
+            rows,
             size: 10,
         };
         mem_cache.write_group(sid, 2, row_group_2.clone()).unwrap();
