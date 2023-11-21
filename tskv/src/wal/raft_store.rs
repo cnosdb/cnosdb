@@ -92,15 +92,14 @@ impl EntryStorage for RaftEntryStorage {
         let mut inner = self.inner.lock().await;
         inner.mark_delete_after(first_seq_no);
         for ent in entries {
-            let seq = ent.log_id.index;
-            let wal_id = inner.wal.current_wal_id();
-            let pos = inner.wal.current_wal_size();
-            inner
+            let (wal_id, pos) = inner
                 .wal
                 .write_raft_entry(ent)
                 .await
                 .map_err(|e| ReplicationError::RaftInternalErr { msg: e.to_string() })?;
             inner.wal.sync().await.unwrap();
+
+            let seq = ent.log_id.index;
             inner.mark_write_wal(seq, wal_id, pos);
         }
         Ok(())
@@ -179,12 +178,13 @@ impl RaftEntryStorageInner {
     ) -> ReplicationResult<Vec<RaftEntry>> {
         let mut entries = Vec::new();
         for (_seq, (wal_id, pos)) in self.seq_wal_pos_index.range(range) {
-            if let Some(Block::RaftLog(e)) = self
+            let entry = self
                 .wal
                 .read(*wal_id, *pos)
                 .await
-                .map_err(|e| ReplicationError::RaftInternalErr { msg: e.to_string() })?
-            {
+                .map_err(|e| ReplicationError::RaftInternalErr { msg: e.to_string() })?;
+
+            if let Some(Block::RaftLog(e)) = entry {
                 entries.push(e);
             }
         }
@@ -256,7 +256,8 @@ impl RaftEntryStorageInner {
             let reader = WalReader::open(&path).await?;
             let mut reader = reader.take_record_reader();
             loop {
-                let (pos, seq) = match reader.read_record().await {
+                let record = reader.read_record().await;
+                let (pos, seq) = match record {
                     Ok(r) => {
                         if r.data.len() < 9 {
                             continue;

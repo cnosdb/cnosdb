@@ -19,6 +19,7 @@ pub const T_SERIES_FAMILY_SNAPSHOT_PATH: &str = "snapshot";
 
 #[derive(Debug, Clone)]
 pub struct Options {
+    pub raft_mode: bool,
     pub storage: Arc<StorageOptions>,
     pub wal: Arc<WalOptions>,
     pub cache: Arc<CacheOptions>,
@@ -28,6 +29,7 @@ pub struct Options {
 impl From<&Config> for Options {
     fn from(config: &Config) -> Self {
         Self {
+            raft_mode: config.using_raft_replication,
             storage: Arc::new(StorageOptions::from(config)),
             wal: Arc::new(WalOptions::from(config)),
             cache: Arc::new(CacheOptions::from(config)),

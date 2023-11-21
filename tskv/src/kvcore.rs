@@ -95,6 +95,7 @@ impl TsKv {
             shared_options.clone(),
             flush_task_sender.clone(),
             compact_task_sender.clone(),
+            wal_sender.clone(),
             metrics.clone(),
         )
         .await;
@@ -152,6 +153,7 @@ impl TsKv {
         opt: Arc<Options>,
         flush_task_sender: Sender<FlushReq>,
         compact_task_sender: Sender<CompactTask>,
+        wal_sender: Sender<WalTask>,
         metrics: Arc<MetricsRegister>,
     ) -> (Arc<RwLock<VersionSet>>, Summary) {
         let summary_dir = opt.storage.summary_dir();
@@ -170,12 +172,13 @@ impl TsKv {
                 flush_task_sender,
                 compact_task_sender,
                 true,
+                wal_sender.clone(),
                 metrics.clone(),
             )
             .await
             .unwrap()
         } else {
-            Summary::new(opt, runtime, meta, memory_pool, metrics)
+            Summary::new(opt, runtime, meta, memory_pool, wal_sender, metrics)
                 .await
                 .unwrap()
         };
