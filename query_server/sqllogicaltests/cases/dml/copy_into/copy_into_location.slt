@@ -1,0 +1,186 @@
+statement ok
+DROP TABLE IF EXISTS ci_location_tbl;
+
+statement ok
+DROP TABLE IF EXISTS ci_location_tbl_ext;
+
+statement ok
+DROP TABLE IF EXISTS ci_location_tbl2_ext;
+
+statement ok
+DROP TABLE IF EXISTS ci_location_tbl_ext_csv;
+
+statement ok
+DROP TABLE IF EXISTS ci_location_tbl_ext_json;
+
+statement ok
+DROP TABLE IF EXISTS local_to_table_json;
+
+system ok
+rm -rf /tmp/data
+
+statement ok
+CREATE EXTERNAL TABLE ci_location_tbl
+STORED AS PARQUET
+LOCATION 'query_server/test/resource/parquet/part-0.parquet';
+
+query PTTTTTRRRRRRRRRR
+select * from ci_location_tbl order by time,name limit 10;
+----
+2022-01-01T00:00:00 truck_0 South Trish H_2 v2_3 25.0 0.0 0.0 0.0 NULL NULL NULL NULL NULL NULL
+2022-01-01T00:00:00 truck_3127 South Rodney F_150 v1_0 25.0 0.0 0.0 0.0 NULL NULL NULL NULL NULL NULL
+2022-01-01T00:00:00 truck_3136 South Rodney G_2000 v2_3 25.0 0.0 0.0 0.0 NULL NULL NULL NULL NULL NULL
+2022-01-01T00:00:00 truck_3152 North Albert F_150 v1_0 25.0 0.0 0.0 0.0 NULL NULL NULL NULL NULL NULL
+2022-01-01T00:00:00 truck_3153 South Andy H_2 v1_5 25.0 0.0 0.0 0.0 NULL NULL NULL NULL NULL NULL
+2022-01-01T00:00:10 truck_0 South Trish H_2 v2_3 26.7 1500.0 150.0 12.0 NULL NULL NULL NULL NULL NULL
+2022-01-01T00:00:10 truck_1377 South Rodney F_150 v1_5 23.6 1500.0 150.0 12.0 NULL NULL NULL NULL NULL NULL
+2022-01-01T00:00:10 truck_3127 South Rodney F_150 v1_0 22.6 1500.0 150.0 12.0 NULL NULL NULL NULL NULL NULL
+2022-01-01T00:00:10 truck_3136 South Rodney G_2000 v2_3 20.2 1500.0 150.0 12.0 NULL NULL NULL NULL NULL NULL
+2022-01-01T00:00:10 truck_3152 North Albert F_150 v1_0 24.5 1500.0 150.0 12.0 NULL NULL NULL NULL NULL NULL
+
+
+# Export data from subquery to external path
+query I
+COPY INTO 'file:///tmp/data/parquet_out1/'
+FROM (select time, name from ci_location_tbl)
+file_format = (type = 'parquet');
+----
+8192
+
+# Export data again from subquery to external path
+query I
+COPY INTO 'file:///tmp/data/parquet_out1/'
+FROM (select time, name from ci_location_tbl)
+file_format = (type = 'parquet');
+----
+8192
+
+# Create external table validation data
+statement ok
+CREATE EXTERNAL TABLE ci_location_tbl_ext
+STORED AS PARQUET
+LOCATION 'file:///tmp/data/parquet_out1/';
+
+query T
+select count(1) from ci_location_tbl_ext;
+----
+16384
+
+query PT
+select * from ci_location_tbl_ext order by time,name limit 10;
+----
+2022-01-01T00:00:00 truck_0
+2022-01-01T00:00:00 truck_0
+2022-01-01T00:00:00 truck_3127
+2022-01-01T00:00:00 truck_3127
+2022-01-01T00:00:00 truck_3136
+2022-01-01T00:00:00 truck_3136
+2022-01-01T00:00:00 truck_3152
+2022-01-01T00:00:00 truck_3152
+2022-01-01T00:00:00 truck_3153
+2022-01-01T00:00:00 truck_3153
+
+# Export data from table to external path
+query I
+COPY INTO 'file:///tmp/data/parquet_out2/'
+FROM ci_location_tbl
+file_format = (type = 'parquet');
+----
+8192
+
+# Create external table validation data
+statement ok
+CREATE EXTERNAL TABLE ci_location_tbl2_ext
+STORED AS PARQUET
+LOCATION 'file:///tmp/data/parquet_out2/';
+
+query PTTTTTRRRRRRRRRR
+select * from ci_location_tbl2_ext order by time,name limit 10;
+----
+2022-01-01T00:00:00 truck_0 South Trish H_2 v2_3 25.0 0.0 0.0 0.0 NULL NULL NULL NULL NULL NULL
+2022-01-01T00:00:00 truck_3127 South Rodney F_150 v1_0 25.0 0.0 0.0 0.0 NULL NULL NULL NULL NULL NULL
+2022-01-01T00:00:00 truck_3136 South Rodney G_2000 v2_3 25.0 0.0 0.0 0.0 NULL NULL NULL NULL NULL NULL
+2022-01-01T00:00:00 truck_3152 North Albert F_150 v1_0 25.0 0.0 0.0 0.0 NULL NULL NULL NULL NULL NULL
+2022-01-01T00:00:00 truck_3153 South Andy H_2 v1_5 25.0 0.0 0.0 0.0 NULL NULL NULL NULL NULL NULL
+2022-01-01T00:00:10 truck_0 South Trish H_2 v2_3 26.7 1500.0 150.0 12.0 NULL NULL NULL NULL NULL NULL
+2022-01-01T00:00:10 truck_1377 South Rodney F_150 v1_5 23.6 1500.0 150.0 12.0 NULL NULL NULL NULL NULL NULL
+2022-01-01T00:00:10 truck_3127 South Rodney F_150 v1_0 22.6 1500.0 150.0 12.0 NULL NULL NULL NULL NULL NULL
+2022-01-01T00:00:10 truck_3136 South Rodney G_2000 v2_3 20.2 1500.0 150.0 12.0 NULL NULL NULL NULL NULL NULL
+2022-01-01T00:00:10 truck_3152 North Albert F_150 v1_0 24.5 1500.0 150.0 12.0 NULL NULL NULL NULL NULL NULL
+
+
+# csv start
+query I
+copy into 'file:///tmp/data/csv_out/'
+FROM (select time, name from ci_location_tbl)
+file_format = (type = 'csv');
+----
+8192
+
+# Create external table validation data
+statement ok
+CREATE EXTERNAL TABLE ci_location_tbl_ext_csv
+STORED AS CSV
+WITH HEADER ROW
+LOCATION 'file:///tmp/data/csv_out/';
+
+query PT
+select * from ci_location_tbl_ext_csv order by time,name limit 10;
+----
+2022-01-01T00:00:00 truck_0
+2022-01-01T00:00:00 truck_3127
+2022-01-01T00:00:00 truck_3136
+2022-01-01T00:00:00 truck_3152
+2022-01-01T00:00:00 truck_3153
+2022-01-01T00:00:10 truck_0
+2022-01-01T00:00:10 truck_1377
+2022-01-01T00:00:10 truck_3127
+2022-01-01T00:00:10 truck_3136
+2022-01-01T00:00:10 truck_3152
+
+
+# json start
+query I
+copy into 'file:///tmp/data/json_out/'
+FROM (select time, name from ci_location_tbl)
+file_format = (type = 'json');
+----
+8192
+
+# Create external table validation data
+statement ok
+CREATE EXTERNAL TABLE ci_location_tbl_ext_json
+STORED AS JSON
+LOCATION 'file:///tmp/data/json_out/';
+
+query TT
+select * from ci_location_tbl_ext_json order by time,name limit 10;
+----
+truck_0 2022-01-01T00:00:00
+truck_3127 2022-01-01T00:00:00
+truck_3136 2022-01-01T00:00:00
+truck_3152 2022-01-01T00:00:00
+truck_3153 2022-01-01T00:00:00
+truck_0 2022-01-01T00:00:10
+truck_1377 2022-01-01T00:00:10
+truck_3127 2022-01-01T00:00:10
+truck_3136 2022-01-01T00:00:10
+truck_3152 2022-01-01T00:00:10
+
+statement ok
+CREATE EXTERNAL TABLE local_to_table_json STORED AS JSON LOCATION 'file:///tmp/data/json_out/';
+
+query T
+select count(*) from local_to_table_json;
+----
+8192
+
+query I
+copy into local_to_table_json from 'query_server/test/resource/json/part-0.json' FILE_FORMAT = (TYPE = 'JSON', DELIMITER = ',');
+----
+10
+
+query T
+select count(*) from local_to_table_json;
+----
+8202

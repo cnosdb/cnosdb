@@ -94,3 +94,80 @@ support duration format:
 - `weeks`, `week`, `w`
 - `months`, `month`, `M` -- defined as 30.44 days
 - `years`, `year`, `y` -- defined as 365.25 days
+
+### system
+
+execute system command
+
+usage:
+```shell
+system ok
+rm -rf /tmp/cnosdb
+```
+
+### instruction
+
+change connection state
+
+usage:
+```shell
+statement ok
+--#TENANT = cnosdb
+--#DATABASE = public
+--#USER_NAME = root
+--#HTTP_HOST = localhost
+--#HTTP_PORT = 8902
+--#FLIGHT_HOST = localhost
+--#FLIGHT_HOST = 8904
+--#PASSWORD=abc
+```
+
+### line protocol write
+
+write line protocol
+
+usage:
+```shell
+statement ok
+--#LP_BEGIN
+test1,ta=a1,tb=b1 fa=1,fb=2 1667456411000001
+--#LP_END
+```
+
+### opentsdb write
+
+usage:
+```shell
+statement ok
+--#OPENTSDB_BEGIN
+test2 1667456411000001 1 ta=a1 tb=b1
+--#OPENTSDB_END
+```
+
+### opentsdb json
+usage:
+```shell
+statement ok
+--#OPENTSDB_JSON_BEGIN
+[
+    {
+        "metric": "nice",
+        "timestamp": 1667456411000001,
+        "value": 18,
+        "tags": {
+           "host": "web01",
+           "dc": "lga"
+        }
+    },
+    {
+        "metric": "nice",
+        "timestamp": 1667456411000002,
+        "value": 9,
+        "tags": {
+           "host": "web02",
+           "dc": "lga"
+        }
+    }
+]
+--#OPENTSDB_JSON_END
+```

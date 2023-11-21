@@ -17,6 +17,10 @@ prost = { workspace = true }
 futures = { workspace = true, default-features = false, features = ["alloc"] }
 snafu = { workspace = true }
 async-backtrace = { workspace = true, optional = true }
+nom = { workspace = true }
+humantime = { workspace = true }
+reqwest = { workspace = true }
+url = { workspace = true }
 
 [features]
 default = []
