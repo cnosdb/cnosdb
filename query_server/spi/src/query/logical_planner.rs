@@ -349,10 +349,14 @@ pub fn unset_option_to_alter_tenant_action(
             tenant_options_builder.unset_limiter_config();
             Privilege::Global(GlobalPrivilege::System)
         }
+        TENANT_OPTION_DROP_AFTER => {
+            tenant_options_builder.unset_drop_after();
+            Privilege::Global(GlobalPrivilege::Tenant(Some(tenant_id)))
+        }
         _ => {
             return Err(QueryError::Parser {
                 source: ParserError::ParserError(format!(
-                "Expected option [{TENANT_OPTION_COMMENT}], [{TENANT_OPTION_LIMITER}] found [{}]",
+                "Expected option [{TENANT_OPTION_COMMENT}], [{TENANT_OPTION_LIMITER}], [{TENANT_OPTION_DROP_AFTER}] found [{}]",
                 ident
             )),
             })
@@ -388,11 +392,11 @@ pub fn sql_option_to_alter_tenant_action(
             Privilege::Global(GlobalPrivilege::System)
         }
         TENANT_OPTION_DROP_AFTER => {
-            let after_str = parse_string_value(value).context(ParserSnafu)?;
-            let after = Duration::new(&after_str).ok_or_else(|| QueryError::Parser {
-                source: ParserError::ParserError(format!("{} is not a valid duration", after_str)),
+            let drop_after_str = parse_string_value(value).context(ParserSnafu)?;
+            let drop_after = Duration::new(&drop_after_str).ok_or_else(|| QueryError::Parser {
+                source: ParserError::ParserError(format!("{} is not a valid duration", drop_after_str)),
             })?;
-            tenant_options_builder.after(after);
+            tenant_options_builder.drop_after(drop_after);
             Privilege::Global(GlobalPrivilege::Tenant(Some(tenant_id)))
         }
         _ => {
@@ -426,11 +430,11 @@ pub fn sql_options_to_tenant_options(options: Vec<SqlOption>) -> Result<TenantOp
                 builder.limiter_config(config);
             }
             TENANT_OPTION_DROP_AFTER => {
-                let after_str = parse_string_value(value).context(ParserSnafu)?;
-                let after = Duration::new(&after_str).ok_or_else(|| QueryError::Parser {
-                    source: ParserError::ParserError(format!("{} is not a valid duration", after_str)),
+                let drop_after_str = parse_string_value(value).context(ParserSnafu)?;
+                let drop_after = Duration::new(&drop_after_str).ok_or_else(|| QueryError::Parser {
+                    source: ParserError::ParserError(format!("{} is not a valid duration", drop_after_str)),
                 })?;
-                builder.after(after);
+                builder.drop_after(drop_after);
             }
             _ => {
                 return Err(QueryError::Parser {

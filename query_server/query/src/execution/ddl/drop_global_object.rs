@@ -76,7 +76,7 @@ impl DDLDefinitionTask for DropGlobalObjectTask {
                         meta.set_tenant_is_hidden(name, true).await?;
 
                         if after.is_none() {
-                            after = tenant_schema.options().get_after();
+                            after = tenant_schema.options().get_drop_after();
                         }
 
                         // second, add drop task
