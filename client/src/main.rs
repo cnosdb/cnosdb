@@ -123,6 +123,7 @@ struct CliArgs {
     #[arg(long, value_name = "FILE")]
     cacert: Vec<String>,
 
+    /// Enable chunk mode, and CnosDB server uses http streaming output
     #[arg(long, default_value = "false")]
     chunked: bool,
 
