@@ -143,7 +143,7 @@ impl FlushTask {
                         column_encoding_map.insert(i.id, i.encoding);
                     }
                     // Iterates [ RowData ]
-                    for row in rows.get_rows().iter() {
+                    for row in rows.get_ref_rows().iter() {
                         // Iterates RowData -> [ Option<FieldVal>, column_id ]
                         for (val, col) in row.fields.iter().zip(sch_cols.fields().iter()) {
                             if let Some(v) = val {

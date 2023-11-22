@@ -963,7 +963,7 @@ impl TseriesFamily {
         let mut res = 0;
         for (sid, group) in points {
             let mem = self.mut_cache.read();
-            res += group.rows.get_rows().len();
+            res += group.rows.get_ref_rows().len();
             mem.write_group(sid, seq, group)?;
         }
         Ok(res as u64)

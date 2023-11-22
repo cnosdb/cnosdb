@@ -301,7 +301,11 @@ impl OrderedRowsData {
         Self { rows }
     }
 
-    pub fn get_rows(&self) -> &OrderedSkipList<RowData> {
+    pub fn get_rows(self) -> OrderedSkipList<RowData> {
+        self.rows
+    }
+
+    pub fn get_ref_rows(&self) -> &OrderedSkipList<RowData> {
         &self.rows
     }
 
@@ -369,8 +373,8 @@ impl SeriesData {
         for item in self.groups.iter_mut() {
             if item.schema.schema_id == group.schema.schema_id {
                 item.range.merge(&group.range);
-                group.rows.get_rows().iter().for_each(|row| {
-                    item.rows.insert(row.clone());
+                group.rows.get_rows().into_iter().for_each(|row| {
+                    item.rows.insert(row);
                 });
                 item.schema = group.schema;
                 return;
@@ -390,7 +394,7 @@ impl SeriesData {
                 None => continue,
                 Some(index) => *index,
             };
-            let mut rowdata_vec: Vec<RowData> = item.rows.get_rows().iter().cloned().collect();
+            let mut rowdata_vec: Vec<RowData> = item.rows.get_ref_rows().iter().cloned().collect();
             item.rows.clear();
             for row in rowdata_vec.iter_mut() {
                 row.fields.remove(index);
@@ -460,7 +464,7 @@ impl SeriesData {
             };
             group
                 .rows
-                .get_rows()
+                .get_ref_rows()
                 .iter()
                 .filter(|row| time_predicate(row.ts))
                 .for_each(|row| {
@@ -481,7 +485,7 @@ impl SeriesData {
         for group in self.groups.iter() {
             group
                 .rows
-                .get_rows()
+                .get_ref_rows()
                 .iter()
                 .filter(|row| time_predicate(row.ts))
                 .for_each(|row| handle_data(row.ts));
@@ -886,7 +890,7 @@ pub(crate) mod test {
             let schema_groups = sdata_rlock.flat_groups();
             for (_sch_id, sch, row) in schema_groups {
                 let fields = sch.fields();
-                for r in row.get_rows().iter() {
+                for r in row.get_ref_rows().iter() {
                     for (i, f) in r.fields.iter().enumerate() {
                         if let Some(fv) = f {
                             if let Some(c) = fields.get(i) {
