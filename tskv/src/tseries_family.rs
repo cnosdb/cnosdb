@@ -42,7 +42,7 @@ pub struct ColumnFile {
     is_delta: bool,
     time_range: TimeRange,
     size: u64,
-    field_id_filter: Arc<BloomFilter>,
+    series_id_filter: Arc<BloomFilter>,
     deleted: AtomicBool,
     compacting: AtomicBool,
 
@@ -54,7 +54,7 @@ impl ColumnFile {
     pub fn with_compact_data(
         meta: &CompactMeta,
         path: impl AsRef<Path>,
-        field_id_filter: Arc<BloomFilter>,
+        series_id_filter: Arc<BloomFilter>,
         tsm_reader_cache: Weak<ShardedCache<String, Arc<TSM2Reader>>>,
     ) -> Self {
         Self {
@@ -63,7 +63,7 @@ impl ColumnFile {
             is_delta: meta.is_delta,
             time_range: TimeRange::new(meta.min_ts, meta.max_ts),
             size: meta.file_size,
-            field_id_filter,
+            series_id_filter,
             deleted: AtomicBool::new(false),
             compacting: AtomicBool::new(false),
             path: path.as_ref().into(),
@@ -99,13 +99,13 @@ impl ColumnFile {
         self.time_range.overlaps(time_range)
     }
 
-    pub fn contains_field_id(&self, field_id: FieldId) -> bool {
-        self.field_id_filter.contains(&field_id.to_be_bytes())
+    pub fn contains_series_id(&self, series_id: SeriesId) -> bool {
+        self.series_id_filter.contains(&series_id.to_be_bytes())
     }
 
-    pub fn contains_any_field_id(&self, field_ids: &[FieldId]) -> bool {
-        for field_id in field_ids {
-            if self.field_id_filter.contains(&field_id.to_be_bytes()) {
+    pub fn contains_any_series_id(&self, series_ids: &[FieldId]) -> bool {
+        for field_id in series_ids {
+            if self.series_id_filter.contains(&field_id.to_be_bytes()) {
                 return true;
             }
         }
@@ -188,7 +188,7 @@ impl ColumnFile {
             is_delta,
             time_range,
             size,
-            field_id_filter: Arc::new(BloomFilter::default()),
+            series_id_filter: Arc::new(BloomFilter::default()),
             deleted: AtomicBool::new(false),
             compacting: AtomicBool::new(false),
             path: path.as_ref().into(),
@@ -197,7 +197,7 @@ impl ColumnFile {
     }
 
     pub fn set_field_id_filter(&mut self, field_id_filter: Arc<BloomFilter>) {
-        self.field_id_filter = field_id_filter;
+        self.series_id_filter = field_id_filter;
     }
 }
 
@@ -255,7 +255,7 @@ impl LevelInfo {
     pub fn push_compact_meta(
         &mut self,
         compact_meta: &CompactMeta,
-        field_filter: Arc<BloomFilter>,
+        series_filter: Arc<BloomFilter>,
         tsm_reader_cache: Weak<ShardedCache<String, Arc<TSM2Reader>>>,
     ) {
         let file_path = if compact_meta.is_delta {
@@ -268,7 +268,7 @@ impl LevelInfo {
         self.files.push(Arc::new(ColumnFile::with_compact_data(
             compact_meta,
             file_path,
-            field_filter,
+            series_filter,
             tsm_reader_cache,
         )));
         self.tsf_id = compact_meta.tsf_id;
@@ -355,7 +355,9 @@ impl LevelInfo {
         let mut res = self
             .files
             .iter()
-            .filter(|f| time_ranges.overlaps(f.time_range()) && f.contains_field_id(field_id))
+            .filter(|f| {
+                time_ranges.overlaps(f.time_range()) && f.contains_series_id(field_id as SeriesId)
+            })
             .cloned()
             .collect::<Vec<Arc<ColumnFile>>>();
         res.sort_by_key(|f| *f.time_range());
@@ -437,10 +439,10 @@ impl Version {
                 new_levels[level.level as usize].push_column_file(file.clone());
             }
             for file in added_files[level.level as usize].iter() {
-                let field_filter = file_metas.remove(&file.file_id).unwrap_or_default();
+                let series_filter = file_metas.remove(&file.file_id).unwrap_or_default();
                 new_levels[level.level as usize].push_compact_meta(
                     file,
-                    field_filter,
+                    series_filter,
                     weak_tsm_reader_cache.clone(),
                 );
             }
@@ -504,7 +506,7 @@ impl Version {
             .filter(|level| level.time_range.overlaps(time_range))
             .flat_map(|level| {
                 level.files.iter().filter(|f| {
-                    f.time_range().overlaps(time_range) && f.contains_any_field_id(field_ids)
+                    f.time_range().overlaps(time_range) && f.contains_any_series_id(field_ids)
                 })
             })
             .cloned()
@@ -575,7 +577,7 @@ impl Version {
         &self,
         series_ids: &[SeriesId],
         time_predicate: TimeRange,
-    ) -> BTreeMap<u64, BTreeMap<SeriesId, Vec<PageMeta>>> {
+    ) -> BTreeMap<ColumnFileId, BTreeMap<SeriesId, Vec<PageMeta>>> {
         let mut result = BTreeMap::new();
         for level in self.levels_info.iter() {
             for file in level.files.iter() {
@@ -716,7 +718,7 @@ impl SuperVersion {
         time_predicate: TimeRange,
     ) -> (
         BTreeMap<u64, MemCacheStatistics>,
-        BTreeMap<u64, BTreeMap<SeriesId, Vec<PageMeta>>>,
+        BTreeMap<ColumnFileId, BTreeMap<SeriesId, Vec<PageMeta>>>,
     ) {
         let cache = self.caches.cache_statistics(series_ids, time_predicate);
         let sts = self.version.statistics(series_ids, time_predicate).await;
@@ -1057,7 +1059,7 @@ impl TseriesFamily {
                 meta.tsf_id = files.tsf_id;
                 meta.high_seq = self.seq_no;
                 version_edit.add_file(meta, max_level_ts);
-                file_metas.insert(file.file_id, file.field_id_filter.clone());
+                file_metas.insert(file.file_id, file.series_id_filter.clone());
             }
         }
 

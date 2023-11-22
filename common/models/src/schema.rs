@@ -1274,4 +1274,11 @@ impl ColumnType {
             Self::Field(value_type) => PhysicalCType::Field(value_type.to_physical_type()),
         }
     }
+    pub fn to_physical_data_type(&self) -> PhysicalDType {
+        match self {
+            Self::Tag => PhysicalDType::String,
+            Self::Time(_) => PhysicalDType::Integer,
+            Self::Field(value_type) => value_type.to_physical_type(),
+        }
+    }
 }

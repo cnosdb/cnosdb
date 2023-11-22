@@ -7,7 +7,7 @@ use models::predicate::domain::TimeRange;
 use models::schema::{ColumnType, TableColumn, TskvTableSchema, TskvTableSchemaRef};
 use models::{PhysicalDType, SeriesId, ValueType};
 use serde::{Deserialize, Serialize};
-use utils::bitset::BitSet;
+use utils::bitset::{BitSet, ImmutBitSet};
 use utils::BloomFilter;
 
 use crate::byte_utils::{decode_be_u32, decode_be_u64};
@@ -43,6 +43,22 @@ impl Page {
 
     pub fn desc(&self) -> &TableColumn {
         &self.meta.column
+    }
+
+    pub fn null_bitset(&self) -> ImmutBitSet<'_> {
+        let data_len = decode_be_u64(&self.bytes[4..12]) as usize;
+        let bitset_buffer = self.null_bitset_slice();
+        ImmutBitSet::new_without_check(data_len, bitset_buffer)
+    }
+
+    pub fn null_bitset_slice(&self) -> &[u8] {
+        let bitset_len = decode_be_u32(&self.bytes[0..4]) as usize;
+        &self.bytes[12..12 + bitset_len]
+    }
+
+    pub fn data_buffer(&self) -> &[u8] {
+        let bitset_len = decode_be_u32(&self.bytes[0..4]) as usize;
+        &self.bytes[12 + bitset_len..]
     }
 
     pub fn to_column(&self) -> Result<Column> {
@@ -196,8 +212,8 @@ impl PageWriteSpec {
     }
 
     /// todo: dont copy meta
-    pub fn meta(&self) -> PageMeta {
-        self.meta.clone()
+    pub fn meta(&self) -> &PageMeta {
+        &self.meta
     }
 }
 
@@ -206,8 +222,7 @@ impl PageWriteSpec {
 pub struct Chunk {
     all_page_begin_offset: u64,
     all_page_end_offset: u64,
-    min_ts: i64,
-    max_ts: i64,
+    time_range: TimeRange,
     table_name: String,
     series_id: SeriesId,
     pages: Vec<PageWriteSpec>,
@@ -218,8 +233,7 @@ impl Chunk {
         Self {
             all_page_begin_offset: 0,
             all_page_end_offset: 0,
-            min_ts: i64::MAX,
-            max_ts: i64::MIN,
+            time_range: TimeRange::none(),
             table_name,
             series_id,
             pages: Vec::new(),
@@ -227,11 +241,11 @@ impl Chunk {
     }
 
     pub fn min_ts(&self) -> i64 {
-        self.min_ts
+        self.time_range.min_ts
     }
 
     pub fn max_ts(&self) -> i64 {
-        self.max_ts
+        self.time_range.max_ts
     }
 
     pub fn all_page_begin_offset(&self) -> u64 {
@@ -272,16 +286,11 @@ impl Chunk {
             debug_assert_eq!(self.all_page_end_offset, page.offset);
         }
         self.all_page_end_offset = page.offset + page.size as u64;
-        self.min_ts = std::cmp::min(self.min_ts, page.meta.time_range.min_ts);
-        self.max_ts = std::cmp::max(self.max_ts, page.meta.time_range.max_ts);
+        self.time_range.merge(&page.meta.time_range);
         self.pages.push(page);
     }
-    pub fn time_range(&self) -> TimeRange {
-        let mut time_range = TimeRange::none();
-        for page in self.pages.iter() {
-            time_range.merge(&page.meta.time_range);
-        }
-        time_range
+    pub fn time_range(&self) -> &TimeRange {
+        &self.time_range
     }
 }
 

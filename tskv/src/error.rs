@@ -78,6 +78,18 @@ pub enum Error {
         source: WriteTsmError,
     },
 
+    #[snafu(display("Unsupported datatype {}", dt))]
+    #[error_code(code = 10)]
+    UnsupportedDataType {
+        dt: String,
+    },
+
+    #[snafu(display("Mismatched schema {}", msg))]
+    #[error_code(code = 11)]
+    MismatchedSchema {
+        msg: String,
+    },
+
     // Internal Error
     #[snafu(display("{}", source))]
     IO {

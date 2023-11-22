@@ -159,7 +159,7 @@ impl TSM2Reader {
                     // chunks.push(chunk);
                     for page in chunk.pages() {
                         if page.meta.time_range.overlaps(&time_range) {
-                            pages.push(page.meta());
+                            pages.push(page.meta().clone());
                         }
                     }
                 }
@@ -194,6 +194,10 @@ impl TSM2Reader {
             }
         }
         Ok(res)
+    }
+
+    pub async fn read_page(&self, page_spec: &PageWriteSpec) -> Result<Page> {
+        read_page(self.reader.clone(), page_spec).await
     }
 
     pub async fn read_series_pages(&self, series_id: SeriesId) -> Result<Vec<Page>> {
@@ -322,12 +326,12 @@ pub async fn read_chunk(
     Ok(chunks)
 }
 
-pub async fn read_page(reader: Arc<AsyncFile>, page_spec: &PageWriteSpec) -> Result<Page> {
+async fn read_page(reader: Arc<AsyncFile>, page_spec: &PageWriteSpec) -> Result<Page> {
     let pos = page_spec.offset();
     let mut buffer = vec![0u8; page_spec.size()];
     reader.read_at(pos, &mut buffer).await?;
     let page = Page {
-        meta: page_spec.meta(),
+        meta: page_spec.meta().clone(),
         bytes: Bytes::from(buffer),
     };
     Ok(page)

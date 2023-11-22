@@ -4,12 +4,13 @@ use std::task::{Context, Poll};
 
 use datafusion::arrow::record_batch::RecordBatch;
 use futures::future::BoxFuture;
-use futures::{ready, FutureExt, Stream, TryFutureExt};
+use futures::{ready, Stream, StreamExt, TryFutureExt};
 use models::meta_data::VnodeId;
 use tokio::runtime::Runtime;
 use trace::SpanRecorder;
 
-use crate::reader::{QueryOption, RowIterator};
+use super::{iterator_v2, SendableTskvRecordBatchStream};
+use crate::reader::QueryOption;
 use crate::{EngineRef, Error};
 
 type Result<T, E = Error> = std::result::Result<T, E>;
@@ -28,7 +29,7 @@ impl LocalTskvTableScanStream {
         runtime: Arc<Runtime>,
         span_recorder: SpanRecorder,
     ) -> Self {
-        let iter_future = Box::pin(RowIterator::new(
+        let iter_future = Box::pin(iterator_v2::execute(
             runtime,
             kv_inst,
             option,
@@ -53,7 +54,7 @@ impl LocalTskvTableScanStream {
                     Err(err) => return Poll::Ready(Some(Err(err))),
                 },
                 StreamState::Scan { iterator } => {
-                    return iterator.next().boxed().poll_unpin(cx);
+                    return iterator.poll_next_unpin(cx);
                 }
             }
         }
@@ -68,9 +69,13 @@ impl Stream for LocalTskvTableScanStream {
     }
 }
 
-pub type RowIteratorFuture = BoxFuture<'static, Result<RowIterator, Error>>;
+pub type RowIteratorFuture = BoxFuture<'static, Result<SendableTskvRecordBatchStream, Error>>;
 
 enum StreamState {
-    Open { iter_future: RowIteratorFuture },
-    Scan { iterator: RowIterator },
+    Open {
+        iter_future: RowIteratorFuture,
+    },
+    Scan {
+        iterator: SendableTskvRecordBatchStream,
+    },
 }

@@ -767,7 +767,9 @@ impl Tsm2Writer {
                     series_id: *series,
                     chunk_offset,
                     chunk_size,
-                    statics: ChunkStatics { time_range },
+                    statics: ChunkStatics {
+                        time_range: *time_range,
+                    },
                 };
                 self.chunk_specs
                     .entry(table.clone())

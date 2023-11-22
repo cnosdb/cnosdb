@@ -69,7 +69,7 @@ impl CompactingBlockMeta {
     }
 
     pub fn time_range(&self) -> TimeRange {
-        self.meta.time_range()
+        *self.meta.time_range()
     }
 
     pub fn overlaps(&self, other: &Self) -> bool {

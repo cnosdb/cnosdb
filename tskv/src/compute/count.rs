@@ -221,7 +221,7 @@ async fn create_file_read_tasks<'a>(
         let reader = super_version.version.get_tsm_reader(&path).await?;
         let idx_meta_iter = match counting_object {
             CountingObject::Field(field_id) => {
-                if !cf.contains_field_id(*field_id) {
+                if !cf.contains_series_id(*field_id as SeriesId) {
                     continue;
                 }
                 reader.index_iterator_opt(*field_id)

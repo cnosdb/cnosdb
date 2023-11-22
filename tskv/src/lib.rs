@@ -2,6 +2,7 @@
 #![allow(unreachable_patterns)]
 #![feature(maybe_uninit_array_assume_init)]
 #![feature(maybe_uninit_uninit_array)]
+#![feature(trait_upcasting)]
 
 use std::fmt::Debug;
 use std::sync::Arc;
