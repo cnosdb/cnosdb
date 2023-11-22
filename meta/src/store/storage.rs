@@ -188,7 +188,17 @@ impl StateMachine {
             .put(&mut writer, &KeyPath::version(), &version.to_string())?;
         writer.commit()?;
 
-        info!("METADATA WRITE(ver: {}): {} :{}", version, key, val);
+        debug!(
+            "METADATA WRITE(ver: {}): {} :{}",
+            version,
+            key,
+            if val.contains("password") {
+                "*****"
+            } else {
+                val
+            }
+        );
+
         let log = EntryLog {
             tye: ENTRY_LOG_TYPE_SET,
             ver: version,
@@ -514,7 +524,7 @@ impl StateMachine {
     }
 
     pub fn process_write_command(&self, req: &WriteCommand) -> CommandResp {
-        debug!("meta process write command {:?}", req);
+        // debug!("meta process write command {:?}", req);
 
         match req {
             WriteCommand::Set { key, value } => response_encode(self.process_write_set(key, value)),
