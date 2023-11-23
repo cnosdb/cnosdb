@@ -18,8 +18,6 @@ use crate::tsm2::reader::TSM2Reader;
 use crate::Result;
 
 pub struct ChunkReader {
-    reader: Arc<TSM2Reader>,
-    chunk: Arc<Chunk>,
     page_readers: Vec<PageReaderRef>,
     schema: SchemaRef,
 }
@@ -31,7 +29,6 @@ impl ChunkReader {
         _batch_size: usize,
     ) -> Result<Self> {
         let columns = projection
-            .0
             .iter()
             .filter_map(|e| chunk.pages().iter().find(|e2| &e2.meta().column.name == e));
 
@@ -48,11 +45,16 @@ impl ChunkReader {
         let schema = Arc::new(Schema::new(fields));
 
         Ok(Self {
-            reader,
-            chunk,
             page_readers,
             schema,
         })
+    }
+
+    pub fn new_with_unchecked(page_readers: Vec<PageReaderRef>, schema: SchemaRef) -> Self {
+        Self {
+            page_readers,
+            schema,
+        }
     }
 }
 
@@ -152,4 +154,61 @@ fn build_reader(reader: Arc<TSM2Reader>, page_meta: &PageWriteSpec) -> Result<Pa
     Ok(Arc::new(PrimitiveArrayReader::new(
         data_type, reader, page_meta,
     )))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use arrow::datatypes::{DataType, Field, Schema};
+    use datafusion::assert_batches_eq;
+    use futures::TryStreamExt;
+
+    use crate::reader::chunk::ChunkReader;
+    use crate::reader::page::tests::TestPageReader;
+    use crate::reader::page::PageReaderRef;
+    use crate::reader::BatchReader;
+
+    #[tokio::test]
+    async fn test_chunk_reader() {
+        let page_readers: Vec<PageReaderRef> = vec![
+            Arc::new(TestPageReader::<i64>::new(9)),
+            Arc::new(TestPageReader::<u64>::new(9)),
+            Arc::new(TestPageReader::<f64>::new(9)),
+            Arc::new(TestPageReader::<String>::new(9)),
+            Arc::new(TestPageReader::<bool>::new(9)),
+        ];
+
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("time", DataType::Int64, true),
+            Field::new("c1", DataType::UInt64, true),
+            Field::new("c2", DataType::Float64, true),
+            Field::new("c3", DataType::Utf8, true),
+            Field::new("c4", DataType::Boolean, true),
+        ]));
+
+        let chunk_reader = ChunkReader::new_with_unchecked(page_readers, schema);
+
+        let stream = chunk_reader.process().expect("chunk_reader");
+
+        let result = stream.try_collect::<Vec<_>>().await.unwrap();
+
+        let expected = [
+            "+------+----+-----+-------+-------+",
+            "| time | c1 | c2  | c3    | c4    |",
+            "+------+----+-----+-------+-------+",
+            "|      |    |     |       |       |",
+            "| 1    | 1  | 1.0 | str_1 | false |",
+            "|      |    |     |       |       |",
+            "| 3    | 3  | 3.0 | str_3 | true  |",
+            "|      |    |     |       |       |",
+            "| 5    | 5  | 5.0 | str_5 | false |",
+            "|      |    |     |       |       |",
+            "| 7    | 7  | 7.0 | str_7 | false |",
+            "|      |    |     |       |       |",
+            "+------+----+-----+-------+-------+",
+        ];
+
+        assert_batches_eq!(expected, &result);
+    }
 }

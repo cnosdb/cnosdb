@@ -169,17 +169,120 @@ async fn page_to_arrow_array(page: Page) -> Result<ArrayRef> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
+    use std::marker::PhantomData;
+    use std::sync::Arc;
+
     use arrow::datatypes::TimeUnit;
+    use arrow_array::builder::{BooleanBuilder, StringBuilder};
+    use arrow_array::{ArrayRef, Float64Array, Int64Array, UInt64Array};
+    use futures::stream;
     use minivec::MiniVec;
+    use models::arrow::stream::BoxStream;
     use models::field_value::FieldVal;
     use models::gis::data_type::{Geometry, GeometryType};
     use models::predicate::domain::TimeRange;
     use models::schema::{ColumnType, TableColumn};
     use models::{PhysicalDType, ValueType};
 
+    use super::PageReader;
     use crate::tsm2::page::Page;
     use crate::tsm2::writer::Column;
+    use crate::Result;
+
+    pub struct TestPageReader<T> {
+        _phantom_data: PhantomData<T>,
+        row_nums: usize,
+    }
+
+    impl<T> TestPageReader<T> {
+        pub fn new(row_nums: usize) -> Self {
+            Self {
+                _phantom_data: PhantomData,
+                row_nums,
+            }
+        }
+    }
+
+    impl PageReader for TestPageReader<f64> {
+        fn process(&self) -> Result<BoxStream<Result<ArrayRef>>> {
+            let mut builder = Float64Array::builder(self.row_nums);
+            for i in 0..self.row_nums {
+                if i % 2 == 0 {
+                    builder.append_null();
+                } else {
+                    builder.append_value(i as f64);
+                }
+            }
+            Ok(Box::pin(stream::once(async move {
+                Ok(Arc::new(builder.finish()) as ArrayRef)
+            })))
+        }
+    }
+
+    impl PageReader for TestPageReader<i64> {
+        fn process(&self) -> Result<BoxStream<Result<ArrayRef>>> {
+            let mut builder = Int64Array::builder(self.row_nums);
+            for i in 0..self.row_nums {
+                if i % 2 == 0 {
+                    builder.append_null();
+                } else {
+                    builder.append_value(i as i64);
+                }
+            }
+            Ok(Box::pin(stream::once(async move {
+                Ok(Arc::new(builder.finish()) as ArrayRef)
+            })))
+        }
+    }
+
+    impl PageReader for TestPageReader<u64> {
+        fn process(&self) -> Result<BoxStream<Result<ArrayRef>>> {
+            let mut builder = UInt64Array::builder(self.row_nums);
+            for i in 0..self.row_nums {
+                if i % 2 == 0 {
+                    builder.append_null();
+                } else {
+                    builder.append_value(i as u64);
+                }
+            }
+            Ok(Box::pin(stream::once(async move {
+                Ok(Arc::new(builder.finish()) as ArrayRef)
+            })))
+        }
+    }
+
+    impl PageReader for TestPageReader<String> {
+        fn process(&self) -> Result<BoxStream<Result<ArrayRef>>> {
+            let mut builder = StringBuilder::new();
+            for i in 0..self.row_nums {
+                if i % 2 == 0 {
+                    builder.append_null();
+                } else {
+                    builder.append_value(format!("str_{}", i));
+                }
+            }
+            Ok(Box::pin(stream::once(async move {
+                Ok(Arc::new(builder.finish()) as ArrayRef)
+            })))
+        }
+    }
+
+    impl PageReader for TestPageReader<bool> {
+        fn process(&self) -> Result<BoxStream<Result<ArrayRef>>> {
+            let mut builder = BooleanBuilder::new();
+            for i in 0..self.row_nums {
+                if i % 2 == 0 {
+                    builder.append_null();
+                } else {
+                    builder.append_value(i % 3 == 0);
+                }
+            }
+            Ok(Box::pin(stream::once(async move {
+                Ok(Arc::new(builder.finish()) as ArrayRef)
+            })))
+        }
+    }
 
     fn page(row_nums: usize, ct: ColumnType) -> Page {
         let mut col = Column::empty(ct.clone());

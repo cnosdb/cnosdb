@@ -1,3 +1,4 @@
+use std::ops::Deref;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -32,6 +33,13 @@ pub struct Projection<'a>(pub Vec<&'a str>);
 impl<'a> From<&'a Schema> for Projection<'a> {
     fn from(schema: &'a Schema) -> Self {
         Self(schema.fields().iter().map(|f| f.name().as_str()).collect())
+    }
+}
+impl<'a> Deref for Projection<'a> {
+    type Target = [&'a str];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
