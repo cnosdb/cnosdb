@@ -22,6 +22,7 @@ use crate::summary::{CompactMeta, CompactMetaBuilder, SummaryTask, VersionEdit};
 use crate::tseries_family::Version;
 use crate::tsm::codec::DataBlockEncoding;
 use crate::tsm::{self, DataBlock, TsmWriter};
+use crate::wal::WalTask;
 use crate::{ColumnFileId, TsKvContext, TseriesFamilyId};
 
 struct FlushingBlock {
@@ -227,12 +228,24 @@ pub async fn run_flush_memtable_job(
             path_tsm,
             path_delta,
         );
-        if let Some((ve, fm)) = flush_task.run(version).await? {
+        if let Some((ve, fm)) = flush_task.run(version.clone()).await? {
             let _ = version_edit.insert(ve);
             file_metas = fm;
         }
 
         tsf.read().await.update_last_modified().await;
+
+        if !ctx.options.raft_mode {
+            let (task, rx) = WalTask::new_clear_wal_entry(
+                tsf.read().await.tenant_database().to_string(),
+                req.ts_family_id,
+                version.last_seq(),
+            );
+
+            if ctx.wal_sender.send(task).await.is_ok() {
+                let _ = rx.await;
+            }
+        }
 
         if trigger_compact {
             let _ = ctx

@@ -124,13 +124,13 @@ impl Identifier<Oid> for UserDesc {
 #[builder(setter(into, strip_option), default)]
 pub struct UserOptions {
     hash_password: Option<String>,
-    #[builder(default = "Some(false)")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     must_change_password: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     rsa_public_key: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     comment: Option<String>,
-    #[builder(default = "Some(false)")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     granted_admin: Option<bool>,
 }
 

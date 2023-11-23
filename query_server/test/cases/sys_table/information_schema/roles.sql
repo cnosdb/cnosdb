@@ -38,3 +38,9 @@ alter tenant test_rs_tenant1 remove user test_rs_u2;
 --#SORT=true
 select * from information_schema.ROLES;
 
+--#TENANT=cnosdb
+--#USER_NAME=root
+
+drop role owner;
+
+drop role member;

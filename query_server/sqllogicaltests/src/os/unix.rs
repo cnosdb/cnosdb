@@ -12,8 +12,9 @@ pub async fn run_test_file(
     options: SqlClientOptions,
 ) -> Result<(), Box<dyn Error>> {
     info!("Running with DataFusion runner: {}", path.display());
-    let client = CnosDBClient::new(relative_path, options);
-    let mut runner = sqllogictest::Runner::new(client);
+    let mut runner = sqllogictest::Runner::new(|| async {
+        CnosDBClient::new(relative_path.clone(), options.clone())
+    });
     runner.run_file_async(path).await?;
     Ok(())
 }
@@ -25,8 +26,10 @@ pub async fn run_complete_file(
 ) -> Result<(), Box<dyn Error>> {
     info!("Using complete mode to complete: {}", path.display());
 
-    let client = CnosDBClient::new(relative_path, options);
-    let mut runner = sqllogictest::Runner::new(client);
+    // let mut data = 3;
+    let mut runner = sqllogictest::Runner::new(|| async {
+        CnosDBClient::new(relative_path.clone(), options.clone())
+    });
     let col_separator = " ";
     let validator = default_validator;
     let column_validator = default_column_validator;

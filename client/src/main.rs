@@ -10,7 +10,7 @@ use client::{exec, CNOSDB_CLI_VERSION};
 use fly_accept_encoding::Encoding;
 use http_protocol::encoding::EncodingExt;
 
-#[derive(Debug, Parser, PartialEq)]
+#[derive(Debug, Clone, Parser, PartialEq)]
 #[command(author, version, about, long_about= None)]
 struct CliArgs {
     #[command(subcommand)]
@@ -123,6 +123,7 @@ struct CliArgs {
     #[arg(long, value_name = "FILE")]
     cacert: Vec<String>,
 
+    /// Enable chunk mode, and CnosDB server uses http streaming output
     #[arg(long, default_value = "false")]
     chunked: bool,
 
@@ -133,20 +134,20 @@ struct CliArgs {
     process_cli_command: bool,
 }
 
-#[derive(Debug, Subcommand, PartialOrd, PartialEq)]
+#[derive(Debug, Clone, Subcommand, PartialOrd, PartialEq)]
 enum CliCommand {
     DumpDDL(DumpDDL),
 
     RestoreDumpDDL(RestoreDumpDDL),
 }
 
-#[derive(Debug, Args, PartialOrd, PartialEq)]
+#[derive(Debug, Clone, Args, PartialOrd, PartialEq)]
 struct DumpDDL {
     #[arg(short, long)]
     tenant: Option<String>,
 }
 
-#[derive(Debug, Args, PartialOrd, PartialEq)]
+#[derive(Debug, Clone, Args, PartialOrd, PartialEq)]
 struct RestoreDumpDDL {
     #[arg(short, long)]
     tenant: Option<String>,
@@ -162,7 +163,9 @@ pub async fn main() -> Result<(), anyhow::Error> {
 
     if !args.quiet && args.subcommand.is_none() {
         println!("CnosDB CLI v{}", CNOSDB_CLI_VERSION);
-        println!("Input arguments: {:?}", args);
+        let mut new_args = args.clone();
+        new_args.password = args.password.as_ref().map(|_p| "*****".to_string());
+        println!("Input arguments: {:?}", new_args);
     }
 
     if let Some(ref path) = args.data_path {
