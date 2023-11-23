@@ -115,7 +115,9 @@ impl Column {
                     ValueType::Integer => ColumnData::I64(vec![], i64::MAX, i64::MIN),
                     ValueType::Unsigned => ColumnData::U64(vec![], u64::MAX, u64::MIN),
                     ValueType::Boolean => ColumnData::Bool(vec![], false, true),
-                    ValueType::String => ColumnData::String(vec![], String::new(), String::new()),
+                    ValueType::Geometry(_) | ValueType::String => {
+                        ColumnData::String(vec![], String::new(), String::new())
+                    }
                     _ => {
                         panic!("invalid type: field type does not match filed type")
                     }
