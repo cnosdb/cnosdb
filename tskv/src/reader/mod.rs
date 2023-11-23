@@ -5,8 +5,9 @@ use std::task::{Context, Poll};
 
 use arrow::datatypes::{Schema, SchemaRef};
 use datafusion::arrow::record_batch::RecordBatch;
-use futures::Stream;
+use futures::{Stream, StreamExt};
 pub use iterator::*;
+use models::arrow::stream::{BoxStream, MemoryRecordBatchStream};
 use models::field_value::DataType;
 use models::schema::PhysicalCType;
 
@@ -94,6 +95,48 @@ impl BatchReader for Vec<BatchReaderRef> {
         Err(Error::CommonError {
             reason: "No stream found in CombinedRecordBatchStream".to_string(),
         })
+    }
+}
+
+pub struct MemoryBatchReader {
+    schema: SchemaRef,
+    data: Vec<RecordBatch>,
+}
+
+impl MemoryBatchReader {
+    pub fn new(schema: SchemaRef, data: Vec<RecordBatch>) -> Self {
+        Self { schema, data }
+    }
+}
+
+impl BatchReader for MemoryBatchReader {
+    fn process(&self) -> Result<SendableSchemableTskvRecordBatchStream> {
+        struct SchemableMemoryBatchReaderStream {
+            schema: SchemaRef,
+            stream: BoxStream<Result<RecordBatch>>,
+        }
+        impl SchemableTskvRecordBatchStream for SchemableMemoryBatchReaderStream {
+            fn schema(&self) -> SchemaRef {
+                self.schema.clone()
+            }
+        }
+        impl Stream for SchemableMemoryBatchReaderStream {
+            type Item = Result<RecordBatch>;
+
+            fn poll_next(
+                mut self: Pin<&mut Self>,
+                cx: &mut Context<'_>,
+            ) -> Poll<Option<Self::Item>> {
+                self.stream.poll_next_unpin(cx)
+            }
+        }
+
+        let stream = Box::pin(MemoryRecordBatchStream::<Error>::new(self.data.clone()));
+
+        Ok(Box::pin(SchemableMemoryBatchReaderStream {
+            schema: self.schema.clone(),
+            stream,
+        }))
     }
 }
 
