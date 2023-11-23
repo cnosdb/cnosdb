@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use arrow::datatypes::SchemaRef;
 use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
-use datafusion::physical_plan::PhysicalExpr;
 use models::meta_data::VnodeId;
 use models::{SeriesId, SeriesKey};
 use tokio::runtime::Runtime;
@@ -12,7 +11,8 @@ use super::merge::{DataMerger, ParallelMergeAdapter};
 use super::series::SeriesReader;
 use super::utils::OverlappingSegments;
 use super::{
-    EmptySchemableTskvRecordBatchStream, Projection, QueryOption, SendableTskvRecordBatchStream,
+    EmptySchemableTskvRecordBatchStream, Predicate, Projection, QueryOption,
+    SendableTskvRecordBatchStream,
 };
 use crate::reader::chunk::ChunkReader;
 use crate::reader::filter::DataFilter;
@@ -186,7 +186,7 @@ impl SeriesGroupBatchReaderFactory {
         let schema = &self.query_option.df_schema;
         let time_fields_schema = &self.query_option.df_schema;
         // TODO 使用query下推的物理表达式
-        let predicate: Option<Arc<dyn PhysicalExpr>> = None;
+        let predicate: Option<Arc<Predicate>> = None;
 
         let super_version = &self.super_version;
         let vnode_id = super_version.ts_family_id;
@@ -291,7 +291,7 @@ impl SeriesGroupBatchReaderFactory {
         reader: Arc<TSM2Reader>,
         batch_size: usize,
         projection: &Projection,
-        predicate: &Option<Arc<dyn PhysicalExpr>>,
+        predicate: &Option<Arc<Predicate>>,
     ) -> Result<BatchReaderRef> {
         let chunk_reader = Arc::new(ChunkReader::try_new(reader, chunk, projection, batch_size)?);
 
@@ -307,7 +307,7 @@ impl SeriesGroupBatchReaderFactory {
         chunks: OverlappingSegments<(Arc<Chunk>, Arc<TSM2Reader>)>,
         batch_size: usize,
         projection: &Projection,
-        predicate: &Option<Arc<dyn PhysicalExpr>>,
+        predicate: &Option<Arc<Predicate>>,
     ) -> Result<Vec<BatchReaderRef>> {
         let chunk_readers = chunks
             .into_iter()
@@ -327,7 +327,7 @@ impl SeriesGroupBatchReaderFactory {
         mut chunks: Vec<(Arc<Chunk>, Arc<TSM2Reader>)>,
         batch_size: usize,
         projection: &Projection,
-        predicate: &Option<Arc<dyn PhysicalExpr>>,
+        predicate: &Option<Arc<Predicate>>,
         schema: SchemaRef,
         time_fields_schema: SchemaRef,
     ) -> Result<Option<BatchReaderRef>> {

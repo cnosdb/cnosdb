@@ -5,6 +5,7 @@ use std::task::{Context, Poll};
 
 use arrow::datatypes::{Schema, SchemaRef};
 use datafusion::arrow::record_batch::RecordBatch;
+use datafusion::physical_plan::PhysicalExpr;
 use futures::{Stream, StreamExt};
 pub use iterator::*;
 use models::arrow::stream::{BoxStream, MemoryRecordBatchStream};
@@ -27,6 +28,26 @@ pub mod series;
 pub mod table_scan;
 pub mod tag_scan;
 pub mod utils;
+
+#[derive(Debug)]
+pub struct Predicate {
+    expr: Arc<dyn PhysicalExpr>,
+    schema: SchemaRef,
+}
+
+impl Predicate {
+    pub fn new(expr: Arc<dyn PhysicalExpr>, schema: SchemaRef) -> Self {
+        Self { expr, schema }
+    }
+
+    pub fn schema(&self) -> SchemaRef {
+        self.schema.clone()
+    }
+
+    pub fn expr(&self) -> Arc<dyn PhysicalExpr> {
+        self.expr.clone()
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct Projection<'a>(pub Vec<&'a str>);

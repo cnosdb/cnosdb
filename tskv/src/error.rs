@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use datafusion::arrow::error::ArrowError;
+use datafusion::error::DataFusionError;
 use error_code::{ErrorCode, ErrorCoder};
 use http_protocol::response::ErrorResponse;
 use meta::error::MetaError;
@@ -88,6 +89,11 @@ pub enum Error {
     #[error_code(code = 11)]
     MismatchedSchema {
         msg: String,
+    },
+
+    #[error_code(code = 12)]
+    DatafusionError {
+        source: DataFusionError,
     },
 
     // Internal Error
@@ -287,6 +293,12 @@ impl From<MetaError> for Error {
 impl From<ArrowError> for Error {
     fn from(source: ArrowError) -> Self {
         Error::Arrow { source }
+    }
+}
+
+impl From<DataFusionError> for Error {
+    fn from(source: DataFusionError) -> Self {
+        Error::DatafusionError { source }
     }
 }
 
