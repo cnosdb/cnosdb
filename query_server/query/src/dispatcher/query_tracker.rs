@@ -48,11 +48,17 @@ impl QueryTracker {
         query: Arc<dyn QueryExecution>,
     ) -> Result<TrackedQuery> {
         debug!(
-            "total query count: {}, current query info {:?} status {:?}",
+            "total query count: {}, status {:?}",
             self.queries.read().len(),
-            query.info(),
             query.status(),
         );
+
+        // debug!(
+        //     "total query count: {}, current query info {:?} status {:?}",
+        //     self.queries.read().len(),
+        //     query.info(),
+        //     query.status(),
+        // );
 
         self.save_query(query_id, query.clone()).await?;
 

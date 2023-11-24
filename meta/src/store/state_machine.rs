@@ -171,7 +171,17 @@ impl StateMachine {
     fn insert(&self, key: &str, val: &str) -> StorageIOResult<()> {
         let version = self.update_version()?;
         self.db.insert(key, val).map_err(l_r_err)?;
-        info!("METADATA WRITE: {} :{}", key, val);
+        info!(
+            "METADATA WRITE(ver: {}): {} :{}",
+            version,
+            key,
+            if val.contains("password") {
+                "*****"
+            } else {
+                val
+            }
+        );
+
         let log = EntryLog {
             tye: ENTRY_LOG_TYPE_SET,
             ver: version,
@@ -492,7 +502,7 @@ impl StateMachine {
     }
 
     pub fn process_write_command(&self, req: &WriteCommand) -> CommandResp {
-        debug!("meta process write command {:?}", req);
+        // debug!("meta process write command {:?}", req);
 
         match req {
             WriteCommand::Set { key, value } => response_encode(self.process_write_set(key, value)),
