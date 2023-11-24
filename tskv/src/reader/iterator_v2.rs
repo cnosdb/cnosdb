@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
-use arrow::datatypes::SchemaRef;
+use arrow::datatypes::{Schema, SchemaRef};
 use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
 use models::meta_data::VnodeId;
+use models::schema::TskvTableSchemaRef;
 use models::{SeriesId, SeriesKey};
 use tokio::runtime::Runtime;
 use trace::{debug, SpanRecorder};
@@ -19,6 +20,7 @@ use crate::reader::filter::DataFilter;
 use crate::reader::schema_alignmenter::SchemaAlignmenter;
 use crate::reader::utils::group_overlapping_segments;
 use crate::reader::BatchReaderRef;
+use crate::schema::error::SchemaError;
 use crate::tseries_family::{ColumnFile, SuperVersion, Version};
 use crate::tsm2::page::Chunk;
 use crate::tsm2::reader::TSM2Reader;
@@ -185,7 +187,10 @@ impl SeriesGroupBatchReaderFactory {
         }
 
         let schema = &self.query_option.df_schema;
-        let time_fields_schema = &self.query_option.df_schema;
+        let time_fields_schema = project_time_fields(
+            &self.query_option.table_schema,
+            &self.query_option.df_schema,
+        )?;
         // TODO 使用query下推的物理表达式
         let predicate: Option<Arc<Predicate>> = None;
 
@@ -368,4 +373,35 @@ impl SeriesGroupBatchReaderFactory {
 
         Ok(Some(reader))
     }
+}
+
+/// Extracts columns from the provided table schema and schema reference, excluding tag columns.
+/// Returns a new schema reference containing the extracted columns.
+///
+/// # Arguments
+///
+/// * `table_schema` - A reference to the table schema (`&TskvTableSchemaRef`)
+/// * `schema` - A reference to the schema (`&SchemaRef`)
+///
+/// # Errors
+///
+/// Returns an `Error` if a column is not found in the table schema.
+///
+fn project_time_fields(table_schema: &TskvTableSchemaRef, schema: &SchemaRef) -> Result<SchemaRef> {
+    let mut fields = vec![];
+    for field in schema.fields() {
+        if let Some(col) = table_schema.column(field.name()) {
+            if !col.column_type.is_tag() {
+                fields.push(field.clone());
+            }
+        } else {
+            return Err(Error::Schema {
+                source: SchemaError::ColumnNotFound {
+                    column: field.name().to_string(),
+                },
+            });
+        }
+    }
+
+    Ok(SchemaRef::new(Schema::new(fields)))
 }

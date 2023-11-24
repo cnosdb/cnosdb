@@ -48,6 +48,11 @@ pub enum SchemaError {
     DatabaseAlreadyExists {
         database: String,
     },
+
+    #[snafu(display("column '{}' not found", column))]
+    ColumnNotFound {
+        column: String,
+    },
 }
 
 impl From<MetaError> for SchemaError {
