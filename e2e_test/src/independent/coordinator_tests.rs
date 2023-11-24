@@ -16,9 +16,10 @@ use models::schema::{
     DatabaseOptions, DatabaseSchema, Duration as CnosDuration, Precision, Tenant, TenantOptions,
 };
 use serial_test::serial;
+use sysinfo::{ProcessExt, System, SystemExt};
 use walkdir::WalkDir;
 
-use crate::utils::{clean_env, start_cluster, CnosdbData, CnosdbMeta};
+use crate::utils::{start_bundle_cluster, CnosDBData, CnosDBMeta};
 use crate::{E2eError, E2eResult};
 
 const DEFAULT_CLUSTER: &str = "cluster_xxx";
@@ -32,7 +33,7 @@ fn database_name(code: i32) -> String {
     format!("tenant_{code}_database")
 }
 
-impl CnosdbMeta {
+impl CnosDBMeta {
     fn prepare_test_data(&self) {
         for i in 0..5 {
             // Create tenant tenant_{i}
@@ -65,7 +66,7 @@ impl CnosdbMeta {
     }
 }
 
-impl CnosdbData {
+impl CnosDBData {
     /// Generate write line protocol `{DEFAULT_TABLE},tag_a=a1,tag_b=b1 value={}` and write to cnosdb.
     fn prepare_test_data(&self) -> E2eResult<()> {
         let mut handles: Vec<thread::JoinHandle<()>> = vec![];
@@ -128,8 +129,40 @@ impl CnosdbData {
     }
 }
 
+/// Clean test environment.
+///
+/// 1. Kill all 'cnosdb' and 'cnosdb-meta' process,
+/// 2. Remove directory '/tmp/cnosdb'.
+fn clean_env() {
+    println!("Cleaning environment...");
+    kill_process("cnosdb");
+    kill_process("cnosdb-meta");
+    println!(" - Removing directory '/tmp/cnosdb'");
+    let _ = std::fs::remove_dir_all("/tmp/cnosdb");
+    println!("Clean environment completed.");
+}
+
+/// Kill all processes with specified process name.
+fn kill_process(process_name: &str) {
+    println!("- Killing processes {process_name}...");
+    let system = System::new_all();
+    for (pid, process) in system.processes() {
+        if process.name() == process_name {
+            let output = Command::new("kill")
+                .args(["-9", &(pid.to_string())])
+                .output()
+                .expect("failed to execute kill");
+            if !output.status.success() {
+                println!(" - failed killing process {} ('{}')", pid, process.name());
+            }
+            println!(" - killed process {pid} ('{}')", process.name());
+        }
+    }
+}
+
 mod self_tests {
     use super::*;
+    use crate::utils::start_bundle_cluster;
 
     #[test]
     #[ignore = "run this test when developing"]
@@ -156,7 +189,8 @@ mod self_tests {
 
         clean_env();
         {
-            let (meta, data) = start_cluster(runtime, 3, 2);
+            let (meta, data) =
+                start_bundle_cluster(None::<PathBuf>, None::<PathBuf>, runtime, 3, 2);
             meta.prepare_test_data();
             data.prepare_test_data().unwrap();
 
@@ -189,7 +223,7 @@ fn test_multi_tenants_write_data() {
 
     clean_env();
     {
-        let (meta, data) = start_cluster(runtime, 3, 2);
+        let (meta, data) = start_bundle_cluster(None::<PathBuf>, None::<PathBuf>, runtime, 3, 2);
         meta.prepare_test_data();
         data.prepare_test_data().unwrap();
 
@@ -227,7 +261,8 @@ fn test_replica() {
 
     clean_env();
     {
-        let (meta, _data) = start_cluster(runtime.clone(), 3, 2);
+        let (meta, _data) =
+            start_bundle_cluster(None::<PathBuf>, None::<PathBuf>, runtime.clone(), 3, 2);
 
         let tenant_name = "cnosdb";
         let database_name = "db_test_replica";
@@ -290,7 +325,8 @@ fn test_shard() {
 
     clean_env();
     {
-        let (meta, _data) = start_cluster(runtime.clone(), 3, 2);
+        let (meta, _data) =
+            start_bundle_cluster(None::<PathBuf>, None::<PathBuf>, runtime.clone(), 3, 2);
 
         let tenant_name = "cnosdb";
         let database_name = "db_test_shard";
@@ -353,7 +389,8 @@ fn test_ttl() {
 
     clean_env();
     {
-        let (meta, data) = start_cluster(runtime.clone(), 3, 2);
+        let (meta, data) =
+            start_bundle_cluster(None::<PathBuf>, None::<PathBuf>, runtime.clone(), 3, 2);
 
         let tenant_name = "cnosdb";
         let database_name = "db_test_ttl";
@@ -450,7 +487,8 @@ fn test_balance() {
 
     clean_env();
     {
-        let (meta, data) = start_cluster(runtime.clone(), 3, 2);
+        let (meta, data) =
+            start_bundle_cluster(None::<PathBuf>, None::<PathBuf>, runtime.clone(), 3, 2);
 
         let tenant_name = "cnosdb";
         let database_name = "db_test_balance";

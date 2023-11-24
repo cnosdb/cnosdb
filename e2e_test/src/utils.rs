@@ -2,11 +2,12 @@
 
 use std::collections::HashMap;
 use std::ffi::OsStr;
+use std::fmt::{self, Display, Formatter};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
+use std::thread;
 use std::time::{Duration, Instant};
-use std::{fs, thread};
 
 use meta::client::MetaHttpClient;
 use regex::Regex;
@@ -134,7 +135,7 @@ impl Client {
     }
 }
 
-pub struct CnosdbMeta {
+pub struct CnosDBMeta {
     pub(crate) runtime: Arc<Runtime>,
     pub(crate) workspace: PathBuf,
     pub(crate) last_build: Option<Instant>,
@@ -145,7 +146,7 @@ pub struct CnosdbMeta {
     pub(crate) sub_processes: HashMap<String, Child>,
 }
 
-impl CnosdbMeta {
+impl CnosDBMeta {
     pub fn new(runtime: Arc<Runtime>, workspace_dir: impl AsRef<Path>) -> Self {
         let workspace = workspace_dir.as_ref().to_path_buf();
         Self {
@@ -154,6 +155,25 @@ impl CnosdbMeta {
             last_build: None,
             exe_path: workspace.join("target").join("debug").join("cnosdb-meta"),
             config_dir: workspace.join("meta").join("config"),
+            client: Arc::new(Client::no_auth()),
+            meta_client: Arc::new(MetaHttpClient::new("127.0.0.1:8901")),
+            sub_processes: HashMap::with_capacity(3),
+        }
+    }
+
+    pub fn with_config_dir(
+        runtime: Arc<Runtime>,
+        workspace_dir: impl AsRef<Path>,
+        config_dir: impl AsRef<Path>,
+    ) -> Self {
+        let workspace = workspace_dir.as_ref().to_path_buf();
+        let config_dir = config_dir.as_ref().to_path_buf();
+        Self {
+            runtime,
+            workspace: workspace.clone(),
+            last_build: None,
+            exe_path: workspace.join("target").join("debug").join("cnosdb-meta"),
+            config_dir,
             client: Arc::new(Client::no_auth()),
             meta_client: Arc::new(MetaHttpClient::new("127.0.0.1:8901")),
             sub_processes: HashMap::with_capacity(3),
@@ -251,15 +271,15 @@ impl CnosdbMeta {
         let config_path = self.config_dir.join(config_file);
         let proc = Command::new(&self.exe_path)
             .args([OsStr::new("-c"), config_path.as_os_str()])
-            .stderr(Stdio::null())
-            .stdout(Stdio::null())
+            .stderr(Stdio::inherit())
+            .stdout(Stdio::inherit())
             .spawn()
             .expect("failed to execute cnosdb-meta");
         self.sub_processes.insert(config_file.to_string(), proc);
     }
 }
 
-impl Drop for CnosdbMeta {
+impl Drop for CnosDBMeta {
     fn drop(&mut self) {
         for (k, p) in self.sub_processes.iter_mut() {
             if let Err(e) = p.kill() {
@@ -269,16 +289,45 @@ impl Drop for CnosdbMeta {
     }
 }
 
-pub struct CnosdbData {
+pub enum CnosDBDataMode {
+    Query,
+    Tskv,
+    Bundle,
+    Singleton,
+}
+
+impl AsRef<OsStr> for CnosDBDataMode {
+    fn as_ref(&self) -> &OsStr {
+        match self {
+            CnosDBDataMode::Query => OsStr::new("query"),
+            CnosDBDataMode::Tskv => OsStr::new("tskv"),
+            CnosDBDataMode::Bundle => OsStr::new("query_tskv"),
+            CnosDBDataMode::Singleton => OsStr::new("singleton"),
+        }
+    }
+}
+
+impl Display for CnosDBDataMode {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self {
+            CnosDBDataMode::Query => write!(f, "Query"),
+            CnosDBDataMode::Tskv => write!(f, "Tskv"),
+            CnosDBDataMode::Bundle => write!(f, "Bundle"),
+            CnosDBDataMode::Singleton => write!(f, "Singleton"),
+        }
+    }
+}
+
+pub struct CnosDBData {
     pub(crate) workspace: PathBuf,
     pub(crate) last_build: Option<Instant>,
     pub(crate) exe_path: PathBuf,
     pub(crate) config_dir: PathBuf,
     pub(crate) client: Arc<Client>,
-    pub(crate) sub_processes: HashMap<String, Child>,
+    pub(crate) sub_processes: HashMap<String, (Child, CnosDBDataMode)>,
 }
 
-impl CnosdbData {
+impl CnosDBData {
     pub fn new(workspace_dir: impl AsRef<Path>) -> Self {
         let workspace = workspace_dir.as_ref().to_path_buf();
         Self {
@@ -291,8 +340,9 @@ impl CnosdbData {
         }
     }
 
-    pub fn with_config_dir(workspace_dir: impl AsRef<Path>, config_dir: PathBuf) -> Self {
+    pub fn with_config_dir(workspace_dir: impl AsRef<Path>, config_dir: impl AsRef<Path>) -> Self {
         let workspace = workspace_dir.as_ref().to_path_buf();
+        let config_dir = config_dir.as_ref().to_path_buf();
         Self {
             workspace: workspace.clone(),
             last_build: None,
@@ -303,52 +353,15 @@ impl CnosdbData {
         }
     }
 
-    pub fn run_cluster(&mut self) {
-        println!("Runing cnosdb cluster at '{}'", self.workspace.display());
+    pub fn run(&mut self, mode: CnosDBDataMode, config_file: &str, http_addr: &str) {
+        println!("Runing cnosdb at '{}'", self.workspace.display());
         println!("- Building cnosdb");
         self.build();
-        println!("- Running cnosdb with config 'config_8902.toml'");
-        self.execute("config_8902.toml");
-        println!("- Running cnosdb with config 'config_8912.toml'");
-        self.execute("config_8912.toml");
+        println!("- Running cnosdb with config '{config_file}', deploy mode {mode}");
+        self.execute(config_file, mode);
 
-        let jh1 = self.wait_startup("127.0.0.1:8902");
-        let jh2 = self.wait_startup("127.0.0.1:8912");
-        let _ = jh1.join();
-        let _ = jh2.join();
-        // self.wait_healthy("127.0.0.1:8902");
-    }
-
-    pub fn run_cluster_with_three_data(&mut self) {
-        println!("Runing cnosdb cluster at '{}'", self.workspace.display());
-        println!("- Building cnosdb");
-        self.build();
-        println!("- Running cnosdb with config 'config_8902.toml'");
-        self.execute("config_8902.toml");
-        println!("- Running cnosdb with config 'config_8912.toml'");
-        self.execute("config_8912.toml");
-        println!("- Running cnosdb with config 'config_8922.toml'");
-        self.execute("config_8922.toml");
-
-        let jh1 = self.wait_startup("127.0.0.1:8902");
-        let jh2 = self.wait_startup("127.0.0.1:8912");
-        let jh3 = self.wait_startup("127.0.0.1:8922");
-        let _ = jh1.join();
-        let _ = jh2.join();
-        let _ = jh3.join();
-        // self.wait_healthy("127.0.0.1:8902");
-    }
-
-    pub fn run_singleton(&mut self, config_file: &str, http_addr: &str) {
-        println!("Runing cnosdb singleton at '{}'", self.workspace.display());
-        println!("- Building cnosdb");
-        self.build();
-        println!("- Running cnosdb with config '{config_file}'");
-        self.execute_singleton(config_file);
-
-        let jh1 = self.wait_startup(http_addr);
-        let _ = jh1.join();
-        // self.wait_healthy(http_addr);
+        let jh = self.wait_startup(http_addr);
+        jh.join().unwrap();
     }
 
     fn build(&mut self) {
@@ -369,22 +382,7 @@ impl CnosdbData {
         self.last_build = Some(Instant::now());
     }
 
-    fn execute(&mut self, config_file: &str) {
-        let config_path = self.config_dir.join(config_file);
-        let proc = Command::new(&self.exe_path)
-            .args([
-                OsStr::new("run"),
-                OsStr::new("--config"),
-                config_path.as_os_str(),
-            ])
-            .stderr(Stdio::null())
-            .stdout(Stdio::null())
-            .spawn()
-            .expect("failed to execute cnosdb");
-        self.sub_processes.insert(config_file.to_string(), proc);
-    }
-
-    fn execute_singleton(&mut self, config_file: &str) {
+    fn execute(&mut self, config_file: &str, mode: CnosDBDataMode) {
         let config_path = self.config_dir.join(config_file);
         let proc = Command::new(&self.exe_path)
             .args([
@@ -392,13 +390,14 @@ impl CnosdbData {
                 OsStr::new("--config"),
                 config_path.as_os_str(),
                 OsStr::new("-M"),
-                OsStr::new("singleton"),
+                mode.as_ref(),
             ])
-            .stderr(Stdio::null())
-            .stdout(Stdio::null())
+            .stderr(Stdio::inherit())
+            .stdout(Stdio::inherit())
             .spawn()
             .expect("failed to execute cnosdb");
-        self.sub_processes.insert(config_file.to_string(), proc);
+        self.sub_processes
+            .insert(config_file.to_string(), (proc, mode));
     }
 
     /// Wait cnosdb startup by checking ping api in loop
@@ -461,31 +460,7 @@ impl CnosdbData {
     // }
 
     pub fn restart(&mut self, config_file: &str, http_addr: &str) {
-        let proc = self
-            .sub_processes
-            .get_mut(config_file)
-            .unwrap_or_else(|| panic!("No data node created with {}", config_file));
-        if let Err(e) = proc.kill() {
-            println!("Failed to kill cnosdb ({config_file}) sub-process: {e}");
-        }
-        proc.wait().unwrap();
-        let new_proc = Command::new(&self.exe_path)
-            .args([
-                OsStr::new("run"),
-                OsStr::new("--config"),
-                self.config_dir.join(config_file).as_os_str(),
-            ])
-            .stderr(Stdio::null())
-            .stdout(Stdio::null())
-            .spawn()
-            .expect("failed to execute cnosdb");
-        *proc = new_proc;
-        let jh1 = self.wait_startup(http_addr);
-        let _ = jh1.join();
-    }
-
-    pub fn restart_singleton(&mut self, config_file: &str, http_addr: &str) {
-        let proc = self
+        let (proc, mode) = self
             .sub_processes
             .get_mut(config_file)
             .unwrap_or_else(|| panic!("No data node created with {}", config_file));
@@ -499,19 +474,19 @@ impl CnosdbData {
                 OsStr::new("--config"),
                 self.config_dir.join(config_file).as_os_str(),
                 OsStr::new("-M"),
-                OsStr::new("singleton"),
+                mode.as_ref(),
             ])
-            .stderr(Stdio::null())
-            .stdout(Stdio::null())
+            .stderr(Stdio::inherit())
+            .stdout(Stdio::inherit())
             .spawn()
             .expect("failed to execute cnosdb");
         *proc = new_proc;
-        let jh1 = self.wait_startup(http_addr);
-        let _ = jh1.join();
+        let jh = self.wait_startup(http_addr);
+        jh.join().unwrap();
     }
 
     pub fn kill_process(&mut self, config_file: &str) {
-        let proc = self
+        let (proc, _) = self
             .sub_processes
             .get_mut(config_file)
             .unwrap_or_else(|| panic!("No data node created with {}", config_file));
@@ -523,32 +498,29 @@ impl CnosdbData {
         self.sub_processes.remove(config_file);
     }
 
-    pub fn start_process(&mut self, config_file: &str, singleton: bool) {
-        let config_file_path = self.config_dir.join(config_file);
-        let mut args = vec![
-            OsStr::new("run"),
-            OsStr::new("--config"),
-            config_file_path.as_os_str(),
-        ];
-        if singleton {
-            args.push(OsStr::new("-M"));
-            args.push(OsStr::new("singleton"));
-        }
+    pub fn start_process(&mut self, config_file: &str, mode: CnosDBDataMode) {
         let new_proc = Command::new(&self.exe_path)
-            .args(args)
-            .stderr(Stdio::null())
-            .stdout(Stdio::null())
+            .args([
+                OsStr::new("run"),
+                OsStr::new("--config"),
+                self.config_dir.join(config_file).as_os_str(),
+                OsStr::new("-M"),
+                mode.as_ref(),
+            ])
+            .stderr(Stdio::inherit())
+            .stdout(Stdio::inherit())
             .spawn()
             .expect("failed to execute cnosdb");
-        self.sub_processes.insert(config_file.to_string(), new_proc);
-        let jh1 = self.wait_startup(&format!("127.0.0.1:{}", &config_file[7..11]));
-        let _ = jh1.join();
+        self.sub_processes
+            .insert(config_file.to_string(), (new_proc, mode));
+        let jh = self.wait_startup(&format!("127.0.0.1:{}", &config_file[7..11]));
+        jh.join().unwrap();
     }
 }
 
-impl Drop for CnosdbData {
+impl Drop for CnosDBData {
     fn drop(&mut self) {
-        for (k, p) in self.sub_processes.iter_mut() {
+        for (k, (p, _)) in self.sub_processes.iter_mut() {
             if let Err(e) = p.kill() {
                 println!("Failed to kill cnosdb ({k}) sub-process: {e}");
             }
@@ -556,44 +528,102 @@ impl Drop for CnosdbData {
     }
 }
 
-/// Start the cnosdb cluster
-pub fn start_cluster(
+/// Start the cnosdb bundle cluster
+pub fn start_bundle_cluster(
+    meta_config_dir: Option<impl AsRef<Path>>,
+    data_config_dir: Option<impl AsRef<Path>>,
     runtime: Arc<Runtime>,
     meta_num: u32,
-    query_tskv_num: u32,
-) -> (CnosdbMeta, CnosdbData) {
+    bundle_num: u32,
+) -> (CnosDBMeta, CnosDBData) {
     let crate_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let workspace_dir = crate_dir.parent().unwrap();
-    let mut meta = CnosdbMeta::new(runtime, workspace_dir);
-    let mut data = CnosdbData::new(workspace_dir);
-    match (meta_num, query_tskv_num) {
+    let mut meta = match meta_config_dir {
+        Some(config_dir) => CnosDBMeta::with_config_dir(runtime, workspace_dir, config_dir),
+        None => CnosDBMeta::new(runtime, workspace_dir),
+    };
+    let mut data = match data_config_dir {
+        Some(config_dir) => CnosDBData::with_config_dir(workspace_dir, config_dir),
+        None => CnosDBData::new(workspace_dir),
+    };
+
+    match (meta_num, bundle_num) {
         (1, 2) => {
             meta.run_single_meta();
-            data.run_cluster();
+            data.run(CnosDBDataMode::Bundle, "config_8902.toml", "127.0.0.1:8902");
+            data.run(CnosDBDataMode::Bundle, "config_8912.toml", "127.0.0.1:8912");
         }
         (1, 3) => {
             meta.run_single_meta();
-            data.run_cluster_with_three_data();
+            data.run(CnosDBDataMode::Bundle, "config_8902.toml", "127.0.0.1:8902");
+            data.run(CnosDBDataMode::Bundle, "config_8912.toml", "127.0.0.1:8912");
+            data.run(CnosDBDataMode::Bundle, "config_8922.toml", "127.0.0.1:8922");
         }
         (3, 2) => {
             meta.run_cluster();
-            data.run_cluster();
+            data.run(CnosDBDataMode::Bundle, "config_8902.toml", "127.0.0.1:8902");
+            data.run(CnosDBDataMode::Bundle, "config_8912.toml", "127.0.0.1:8912");
         }
         (3, 3) => {
             meta.run_cluster();
-            data.run_cluster_with_three_data();
+            data.run(CnosDBDataMode::Bundle, "config_8902.toml", "127.0.0.1:8902");
+            data.run(CnosDBDataMode::Bundle, "config_8912.toml", "127.0.0.1:8912");
+            data.run(CnosDBDataMode::Bundle, "config_8922.toml", "127.0.0.1:8922");
         }
-        _ => panic!("unsupported cluster: meta_num: {meta_num}, query_tskv_num: {query_tskv_num}"),
+        _ => panic!("unsupported cluster: meta_num: {meta_num}, bundle_num: {bundle_num}"),
+    }
+    (meta, data)
+}
+
+/// Start the cnosdb sepration cluster
+pub fn start_sepration_cluster(
+    meta_config_dir: Option<impl AsRef<Path>>,
+    data_config_dir: Option<impl AsRef<Path>>,
+    runtime: Arc<Runtime>,
+    meta_num: u32,
+    query_num: u32,
+    tskv_num: u32,
+) -> (CnosDBMeta, CnosDBData) {
+    let crate_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let workspace_dir = crate_dir.parent().unwrap();
+    let mut meta = match meta_config_dir {
+        Some(config_dir) => CnosDBMeta::with_config_dir(runtime, workspace_dir, config_dir),
+        None => CnosDBMeta::new(runtime, workspace_dir),
+    };
+    let mut data = match data_config_dir {
+        Some(config_dir) => CnosDBData::with_config_dir(workspace_dir, config_dir),
+        None => CnosDBData::new(workspace_dir),
+    };
+
+    match (meta_num, query_num, tskv_num) {
+        (1, 1, 1) => {
+            meta.run_single_meta();
+            data.run(CnosDBDataMode::Tskv, "config_8902.toml", "127.0.0.1:8902");
+            data.run(CnosDBDataMode::Query, "config_8912.toml", "127.0.0.1:8912");
+        }
+        (3, 1, 1) => {
+            meta.run_cluster();
+            data.run(CnosDBDataMode::Tskv, "config_8902.toml", "127.0.0.1:8902");
+            data.run(CnosDBDataMode::Query, "config_8912.toml", "127.0.0.1:8912");
+        }
+        _ => panic!("unsupported cluster: meta_num: {meta_num}, query_num: {query_num}, tskv_num: {tskv_num}"),
     }
     (meta, data)
 }
 
 /// Start the cnosdb singleton
-pub fn start_singleton(config_file: &str, http_addr: &str) -> CnosdbData {
+pub fn start_singleton(
+    config_dir: Option<impl AsRef<Path>>,
+    config_file: &str,
+    http_addr: &str,
+) -> CnosDBData {
     let crate_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let workspace_dir = crate_dir.parent().unwrap();
-    let mut data = CnosdbData::new(workspace_dir);
-    data.run_singleton(config_file, http_addr);
+    let mut data = match config_dir {
+        Some(config_dir) => CnosDBData::with_config_dir(workspace_dir, config_dir),
+        None => CnosDBData::new(workspace_dir),
+    };
+    data.run(CnosDBDataMode::Singleton, config_file, http_addr);
     data
 }
 
@@ -647,133 +677,4 @@ pub fn change_config_file(config_path: &PathBuf, replace_table: Vec<(&str, &str)
 pub fn workspace_dir() -> PathBuf {
     let crate_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     crate_dir.parent().unwrap().into()
-}
-
-pub struct ConfigFile {
-    path: PathBuf,
-    original_content: String,
-    new_content: String,
-}
-
-impl ConfigFile {
-    pub fn new(path: PathBuf, original_content: String, new_content: String) -> Self {
-        ConfigFile {
-            path,
-            original_content,
-            new_content,
-        }
-    }
-}
-
-type TestCaseFn = fn(Option<&CnosdbMeta>, Option<&CnosdbData>);
-
-/// Test case need to modify config file
-pub struct TestCase {
-    config_files: Vec<ConfigFile>,
-    case: TestCaseFn,
-    case_name: String,
-}
-
-impl TestCase {
-    pub fn builder() -> TestCaseBuilder {
-        TestCaseBuilder {
-            config_files: None,
-            case: None,
-            case_name: None,
-        }
-    }
-
-    pub fn run_cluster(
-        &self,
-        pass_meta: bool,
-        pass_data: bool,
-        meta_num: u32,
-        query_tskv_num: u32,
-    ) {
-        println!("Test begin '{}'", self.case_name);
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .worker_threads(4)
-            .build()
-            .unwrap();
-        let runtime = Arc::new(runtime);
-        clean_env();
-        let (meta, data) = start_cluster(runtime, meta_num, query_tskv_num);
-        match (pass_meta, pass_data) {
-            (true, true) => (self.case)(Some(&meta), Some(&data)),
-            (true, false) => (self.case)(Some(&meta), None),
-            (false, true) => (self.case)(None, Some(&data)),
-            (false, false) => (self.case)(None, None),
-        }
-        println!("Test complete '{}'", self.case_name);
-    }
-
-    pub fn run_singleton(&self, node_num: u32) {
-        if node_num == 0 || node_num > 3 {
-            panic!("unsupported node_num: {node_num}");
-        }
-        println!("Test begin '{}'", self.case_name);
-        clean_env();
-
-        let mut nodes = vec![start_singleton("test_config_8902.toml", "127.0.0.1:8902")];
-        if node_num > 1 {
-            nodes.push(start_singleton("test_config_8912.toml", "127.0.0.1:8912"));
-        }
-        if node_num > 2 {
-            nodes.push(start_singleton("test_config_8922.toml", "127.0.0.1:8922"));
-        }
-
-        (self.case)(None, None);
-        println!("Test complete '{}'", self.case_name);
-    }
-}
-
-impl Drop for TestCase {
-    fn drop(&mut self) {
-        for config_file in &self.config_files {
-            fs::write(&config_file.path, &config_file.original_content).unwrap();
-        }
-        clean_env();
-    }
-}
-
-pub struct TestCaseBuilder {
-    config_files: Option<Vec<ConfigFile>>,
-    case: Option<TestCaseFn>,
-    case_name: Option<String>,
-}
-
-impl TestCaseBuilder {
-    pub fn set_case_name(mut self, case_name: String) -> Self {
-        self.case_name = Some(case_name);
-        self
-    }
-
-    pub fn set_case(mut self, case: TestCaseFn) -> Self {
-        self.case = Some(case);
-        self
-    }
-
-    pub fn set_config_files(mut self, config_files: Vec<ConfigFile>) -> Self {
-        self.config_files = Some(config_files);
-        self
-    }
-
-    pub fn build(&mut self) -> TestCase {
-        let case = self.case.take().expect("Test case function is needed");
-        let case_name = self.case_name.take().expect("Test case name is needed");
-        let config_files = if let Some(config_files) = self.config_files.take() {
-            config_files
-        } else {
-            vec![]
-        };
-        for config_file in &config_files {
-            fs::write(&config_file.path, &config_file.new_content).unwrap();
-        }
-        TestCase {
-            config_files,
-            case,
-            case_name,
-        }
-    }
 }
