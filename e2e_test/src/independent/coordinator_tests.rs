@@ -17,10 +17,9 @@ use models::schema::{
 };
 use serial_test::serial;
 use sysinfo::{ProcessExt, System, SystemExt};
-use tokio::runtime::Runtime;
 use walkdir::WalkDir;
 
-use crate::utils::{CnosdbData, CnosdbMeta};
+use crate::utils::{start_bundle_cluster, CnosDBData, CnosDBMeta};
 use crate::{E2eError, E2eResult};
 
 const DEFAULT_CLUSTER: &str = "cluster_xxx";
@@ -34,7 +33,7 @@ fn database_name(code: i32) -> String {
     format!("tenant_{code}_database")
 }
 
-impl CnosdbMeta {
+impl CnosDBMeta {
     fn prepare_test_data(&self) {
         for i in 0..5 {
             // Create tenant tenant_{i}
@@ -67,7 +66,7 @@ impl CnosdbMeta {
     }
 }
 
-impl CnosdbData {
+impl CnosDBData {
     /// Generate write line protocol `{DEFAULT_TABLE},tag_a=a1,tag_b=b1 value={}` and write to cnosdb.
     fn prepare_test_data(&self) -> E2eResult<()> {
         let mut handles: Vec<thread::JoinHandle<()>> = vec![];
@@ -130,17 +129,6 @@ impl CnosdbData {
     }
 }
 
-/// Start the cnosdb cluster
-fn start_cluster(runtime: Arc<Runtime>) -> (CnosdbMeta, CnosdbData) {
-    let crate_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let workspace_dir = crate_dir.parent().unwrap();
-    let mut meta = CnosdbMeta::new(runtime, workspace_dir);
-    meta.run_cluster();
-    let mut data = CnosdbData::new(workspace_dir);
-    data.run_cluster();
-    (meta, data)
-}
-
 /// Clean test environment.
 ///
 /// 1. Kill all 'cnosdb' and 'cnosdb-meta' process,
@@ -174,6 +162,7 @@ fn kill_process(process_name: &str) {
 
 mod self_tests {
     use super::*;
+    use crate::utils::start_bundle_cluster;
 
     #[test]
     #[ignore = "run this test when developing"]
@@ -200,7 +189,7 @@ mod self_tests {
 
         clean_env();
         {
-            let (meta, data) = start_cluster(runtime);
+            let (meta, data) = start_bundle_cluster(runtime, 3, 2);
             meta.prepare_test_data();
             data.prepare_test_data().unwrap();
 
@@ -233,7 +222,7 @@ fn test_multi_tenants_write_data() {
 
     clean_env();
     {
-        let (meta, data) = start_cluster(runtime);
+        let (meta, data) = start_bundle_cluster(runtime, 3, 2);
         meta.prepare_test_data();
         data.prepare_test_data().unwrap();
 
@@ -271,7 +260,7 @@ fn test_replica() {
 
     clean_env();
     {
-        let (meta, _data) = start_cluster(runtime.clone());
+        let (meta, _data) = start_bundle_cluster(runtime.clone(), 3, 2);
 
         let tenant_name = "cnosdb";
         let database_name = "db_test_replica";
@@ -334,7 +323,7 @@ fn test_shard() {
 
     clean_env();
     {
-        let (meta, _data) = start_cluster(runtime.clone());
+        let (meta, _data) = start_bundle_cluster(runtime.clone(), 3, 2);
 
         let tenant_name = "cnosdb";
         let database_name = "db_test_shard";
@@ -397,7 +386,7 @@ fn test_ttl() {
 
     clean_env();
     {
-        let (meta, data) = start_cluster(runtime.clone());
+        let (meta, data) = start_bundle_cluster(runtime.clone(), 3, 2);
 
         let tenant_name = "cnosdb";
         let database_name = "db_test_ttl";
@@ -494,7 +483,7 @@ fn test_balance() {
 
     clean_env();
     {
-        let (meta, data) = start_cluster(runtime.clone());
+        let (meta, data) = start_bundle_cluster(runtime.clone(), 3, 2);
 
         let tenant_name = "cnosdb";
         let database_name = "db_test_balance";

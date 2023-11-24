@@ -1,3 +1,4 @@
+mod api_router_tests;
 #[cfg(feature = "not_passed")]
 mod chaos_tests;
 #[cfg(feature = "coordinator_e2e_test")]
