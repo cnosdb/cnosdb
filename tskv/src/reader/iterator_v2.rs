@@ -159,6 +159,7 @@ impl SeriesGroupBatchReaderFactory {
     ///          DataFilter:
     ///            ChunkReader [PageReader]
     ///          ......
+    ///      SchemaAlignmenter:
     ///        DataMerger: schema=[{}]
     ///          DataFilter: expr=[{}], schema=[{}]
     ///            ChunkReader: sid={}, projection=[{}], schema=[{}]

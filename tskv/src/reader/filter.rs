@@ -49,10 +49,10 @@ impl BatchReader for DataFilter {
 }
 
 /// Re-assign column indices referenced in predicate according to given schema.
-/// If a column is not found in the schema, it will be replaced with a literal null value.
+/// If a column is not found in the schema, it will be replaced.
 ///
 /// if we have a file, has [time, c1, c2],
-/// If the filter is 'c3 = 1', then it will produce a expr 'true'.
+/// If the filter is 'c3 = 1', then it will be replaced by a expr 'true'.
 fn reassign_predicate_columns(
     pred: Arc<Predicate>,
     file_schema: SchemaRef,
