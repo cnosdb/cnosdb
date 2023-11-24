@@ -12,7 +12,7 @@ use super::merge::{DataMerger, ParallelMergeAdapter};
 use super::series::SeriesReader;
 use super::utils::OverlappingSegments;
 use super::{
-    EmptySchemableTskvRecordBatchStream, Predicate, Projection, QueryOption,
+    DataReference, EmptySchemableTskvRecordBatchStream, Predicate, Projection, QueryOption,
     SendableTskvRecordBatchStream,
 };
 use crate::reader::chunk::ChunkReader;
@@ -22,8 +22,6 @@ use crate::reader::utils::group_overlapping_segments;
 use crate::reader::BatchReaderRef;
 use crate::schema::error::SchemaError;
 use crate::tseries_family::{ColumnFile, SuperVersion, Version};
-use crate::tsm2::page::Chunk;
-use crate::tsm2::reader::TSM2Reader;
 use crate::{EngineRef, Error, Result};
 
 pub async fn execute(
@@ -157,16 +155,16 @@ impl SeriesGroupBatchReaderFactory {
     ///      SchemaAlignmenter:                                         -------- 用 Null 值补齐缺失的 Field 列
     ///        DataMerger: schema=[{}]                                  -------- 合并相同 series 下时间段重叠的chunk数据
     ///          DataFilter: expr=[{}], schema=[{}]                     -------- 根据下推的过滤条件精确过滤数据
-    ///            ChunkReader: sid={}, projection=[{}], schema=[{}]    -------- 读取单个chunk的数据的指定列的数据
+    ///            MemRowGroup/ChunkReader: sid={}, projection=[{}], schema=[{}]    -------- 读取单个chunk或memcache rowgroup的数据的指定列的数据
     ///          DataFilter:
-    ///            ChunkReader [PageReader]
+    ///            MemRowGroup/ChunkReader [PageReader]
     ///          ......
     ///      SchemaAlignmenter:
     ///        DataMerger: schema=[{}]
     ///          DataFilter: expr=[{}], schema=[{}]
-    ///            ChunkReader: sid={}, projection=[{}], schema=[{}]
+    ///            MemRowGroup/ChunkReader: sid={}, projection=[{}], schema=[{}]
     ///          DataFilter
-    ///            ChunkReader [PageReader]
+    ///            MemRowGroup/ChunkReader [PageReader]
     ///          ......
     ///        ......
     ///  SchemaAlignmenter: schema=[{}]                                                
@@ -174,9 +172,9 @@ impl SeriesGroupBatchReaderFactory {
     ///      SchemaAlignmenter:
     ///        DataMerger: schema=[{}]
     ///          DataFilter: expr=[{}], schema=[{}]
-    ///            ChunkReader: sid={}, projection=[{}], schema=[{}]
+    ///            MemRowGroup/ChunkReader: sid={}, projection=[{}], schema=[{}]
     ///          DataFilter
-    ///            ChunkReader [PageReader]
+    ///            MemRowGroup/ChunkReader [PageReader]
     ///          ......
     ///      ......
     ///    ......
@@ -203,12 +201,13 @@ impl SeriesGroupBatchReaderFactory {
         // 通过sid获取serieskey
         let sid_keys = self.series_keys(vnode_id, series_ids).await?;
 
-        // 获取所有的符合条件的chunk Vec<(SeriesKey, Vec<(chunk, reader)>)>
+        // 获取所有的符合条件的chunk Vec<(SeriesKey, Vec<DataReference>)>
         let mut series_chunk_readers = vec![];
         for (sid, series_key) in series_ids.iter().zip(sid_keys) {
-            // 选择含有series的所有chunk
+            // 选择含有series的所有chunk Vec<DataReference::Chunk(chunk, reader)>
             let chunks =
                 Self::filter_chunks(super_version.version.as_ref(), &column_files, *sid).await?;
+            // TODO @lutengda 获取所有符合条件的 memcache rowgroup Vec<DataReference::Memcache(rowgroup)>)
             series_chunk_readers.push((series_key, chunks));
         }
 
@@ -273,7 +272,7 @@ impl SeriesGroupBatchReaderFactory {
         version: &Version,
         column_files: &[Arc<ColumnFile>],
         sid: SeriesId,
-    ) -> Result<Vec<(Arc<Chunk>, Arc<TSM2Reader>)>> {
+    ) -> Result<Vec<DataReference>> {
         // 选择含有series的所有文件
         let files = column_files
             .iter()
@@ -286,20 +285,29 @@ impl SeriesGroupBatchReaderFactory {
             let chunk = reader.chunk().get(&sid).ok_or_else(|| Error::CommonError {
                 reason: "Thi maybe a bug".to_string(),
             })?;
-            chunks.push((chunk.clone(), reader));
+            chunks.push(DataReference::Chunk(chunk.clone(), reader));
         }
 
         Ok(chunks)
     }
 
     fn build_chunk_reader(
-        chunk: Arc<Chunk>,
-        reader: Arc<TSM2Reader>,
+        chunk: DataReference,
         batch_size: usize,
         projection: &Projection,
         predicate: &Option<Arc<Predicate>>,
     ) -> Result<BatchReaderRef> {
-        let chunk_reader = Arc::new(ChunkReader::try_new(reader, chunk, projection, batch_size)?);
+        let chunk_reader = match chunk {
+            DataReference::Chunk(chunk, reader) => {
+                Arc::new(ChunkReader::try_new(reader, chunk, projection, batch_size)?)
+            }
+            DataReference::Memcache(_) => {
+                // TODO @lutengda 构建memcache rowgroup reader(需要自己实现 trait BatchReader)
+                return Err(Error::Unimplement {
+                    msg: "memcache reader is not supported yet".to_string(),
+                });
+            }
+        };
 
         // 数据过滤
         if let Some(predicate) = &predicate {
@@ -310,16 +318,16 @@ impl SeriesGroupBatchReaderFactory {
     }
 
     fn build_chunk_readers(
-        chunks: OverlappingSegments<(Arc<Chunk>, Arc<TSM2Reader>)>,
+        chunks: OverlappingSegments<DataReference>,
         batch_size: usize,
         projection: &Projection,
         predicate: &Option<Arc<Predicate>>,
     ) -> Result<Vec<BatchReaderRef>> {
         let chunk_readers = chunks
             .into_iter()
-            .map(|(chunk, reader)| -> Result<BatchReaderRef> {
+            .map(|data_reference| -> Result<BatchReaderRef> {
                 let chunk_reader =
-                    Self::build_chunk_reader(chunk, reader, batch_size, projection, predicate)?;
+                    Self::build_chunk_reader(data_reference, batch_size, projection, predicate)?;
 
                 Ok(chunk_reader)
             })
@@ -330,7 +338,7 @@ impl SeriesGroupBatchReaderFactory {
 
     fn build_series_reader(
         series_key: SeriesKey,
-        mut chunks: Vec<(Arc<Chunk>, Arc<TSM2Reader>)>,
+        mut chunks: Vec<DataReference>,
         batch_size: usize,
         projection: &Projection,
         predicate: &Option<Arc<Predicate>>,
@@ -344,7 +352,7 @@ impl SeriesGroupBatchReaderFactory {
 
         // 对 chunk 按照时间顺序排序
         // 使用 group_overlapping_segments 函数来对具有重叠关系的chunk进行分组。
-        chunks.sort_unstable_by_key(|(e, _)| *e.time_range());
+        chunks.sort_unstable_by_key(|e| *e.time_range());
         let grouped_chunks = group_overlapping_segments(&chunks);
 
         debug!(

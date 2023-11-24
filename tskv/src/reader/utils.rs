@@ -1,5 +1,4 @@
 use std::pin::Pin;
-use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use arrow::datatypes::SchemaRef;
@@ -8,8 +7,6 @@ use futures::{Stream, StreamExt};
 use models::predicate::domain::TimeRange;
 
 use super::{SchemableTskvRecordBatchStream, SendableSchemableTskvRecordBatchStream};
-use crate::tsm2::page::Chunk;
-use crate::tsm2::reader::TSM2Reader;
 use crate::{Error, Result};
 
 pub struct OverlappingSegments<T> {
@@ -37,12 +34,6 @@ impl<T> IntoIterator for OverlappingSegments<T> {
 
 pub trait TimeRangeProvider {
     fn time_range(&self) -> &TimeRange;
-}
-
-impl TimeRangeProvider for (Arc<Chunk>, Arc<TSM2Reader>) {
-    fn time_range(&self) -> &TimeRange {
-        self.0.time_range()
-    }
 }
 
 /// Given a slice of range-like items `ordered_chunks`, this function groups overlapping segments

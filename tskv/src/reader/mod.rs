@@ -10,9 +10,13 @@ use futures::{Stream, StreamExt};
 pub use iterator::*;
 use models::arrow::stream::{BoxStream, MemoryRecordBatchStream};
 use models::field_value::DataType;
+use models::predicate::domain::TimeRange;
 use models::schema::PhysicalCType;
 
-use self::utils::CombinedRecordBatchStream;
+use self::utils::{CombinedRecordBatchStream, TimeRangeProvider};
+use crate::memcache::RowGroup;
+use crate::tsm2::page::Chunk;
+use crate::tsm2::reader::TSM2Reader;
 use crate::{Error, Result};
 
 pub mod chunk;
@@ -158,6 +162,27 @@ impl BatchReader for MemoryBatchReader {
             schema: self.schema.clone(),
             stream,
         }))
+    }
+}
+
+#[derive(Clone)]
+pub enum DataReference {
+    Chunk(Arc<Chunk>, Arc<TSM2Reader>),
+    Memcache(Arc<RowGroup>),
+}
+
+impl DataReference {
+    pub fn time_range(&self) -> &TimeRange {
+        match self {
+            DataReference::Chunk(chunk, _) => chunk.time_range(),
+            DataReference::Memcache(row_group) => &row_group.range,
+        }
+    }
+}
+
+impl TimeRangeProvider for DataReference {
+    fn time_range(&self) -> &TimeRange {
+        self.time_range()
     }
 }
 

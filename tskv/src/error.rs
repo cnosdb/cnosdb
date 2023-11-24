@@ -36,6 +36,11 @@ pub enum Error {
         reason: String, // When the tsm file is known to be out of spec.
     },
 
+    #[error_code(code = 9999)]
+    Unimplement {
+        msg: String,
+    },
+
     #[snafu(display("Invalid flatbuffers: {}", source))]
     #[error_code(code = 1)]
     InvalidFlatbuffer {
