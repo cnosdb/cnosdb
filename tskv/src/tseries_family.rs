@@ -547,41 +547,38 @@ impl CacheGroup {
     pub fn read_field_data(
         &self,
         field_id: FieldId,
-        mut time_predicate: impl FnMut(Timestamp) -> bool,
+        time_ranges: &TimeRanges,
         mut value_predicate: impl FnMut(&FieldVal) -> bool,
         mut handle_data: impl FnMut(DataType),
     ) {
         self.immut_cache.iter().for_each(|m| {
             m.read().read_field_data(
                 field_id,
-                &mut time_predicate,
+                time_ranges,
                 &mut value_predicate,
                 &mut handle_data,
             );
         });
 
-        self.mut_cache.read().read_field_data(
-            field_id,
-            time_predicate,
-            value_predicate,
-            handle_data,
-        );
+        self.mut_cache
+            .read()
+            .read_field_data(field_id, time_ranges, value_predicate, handle_data);
     }
 
     pub fn read_series_timestamps(
         &self,
         series_ids: &[SeriesId],
-        mut time_predicate: impl FnMut(Timestamp) -> bool,
+        time_ranges: &TimeRanges,
         mut handle_data: impl FnMut(Timestamp),
     ) {
         self.immut_cache.iter().for_each(|m| {
             m.read()
-                .read_series_timestamps(series_ids, &mut time_predicate, &mut handle_data);
+                .read_series_timestamps(series_ids, time_ranges, &mut handle_data);
         });
 
         self.mut_cache
             .read()
-            .read_series_timestamps(series_ids, time_predicate, &mut handle_data);
+            .read_series_timestamps(series_ids, time_ranges, &mut handle_data);
     }
 }
 
@@ -1541,9 +1538,15 @@ pub mod test_tseries_family {
         let _ = tsf.put_points(0, points);
 
         let mut cached_data = vec![];
-        tsf.mut_cache
-            .read()
-            .read_field_data(0, |_| true, |_| true, |d| cached_data.push(d));
+        tsf.mut_cache.read().read_field_data(
+            0,
+            &TimeRanges::new(vec![TimeRange {
+                min_ts: Timestamp::MIN,
+                max_ts: Timestamp::MAX,
+            }]),
+            |_| true,
+            |d| cached_data.push(d),
+        );
         assert_eq!(cached_data.len(), 1);
         tsf.delete_series_by_time_ranges(
             &[0],
@@ -1553,9 +1556,15 @@ pub mod test_tseries_family {
             }]),
         );
         cached_data.clear();
-        tsf.mut_cache
-            .read()
-            .read_field_data(0, |_| true, |_| true, |d| cached_data.push(d));
+        tsf.mut_cache.read().read_field_data(
+            0,
+            &TimeRanges::new(vec![TimeRange {
+                min_ts: Timestamp::MIN,
+                max_ts: Timestamp::MAX,
+            }]),
+            |_| true,
+            |d| cached_data.push(d),
+        );
         assert!(cached_data.is_empty());
     }
 

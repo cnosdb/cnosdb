@@ -158,12 +158,11 @@ fn get_field_timestamps_in_caches(
     field_id: FieldId,
     time_ranges: &TimeRanges,
 ) -> (HashSet<Timestamp>, TimeRange) {
-    let time_predicate = |ts| time_ranges.is_boundless() || time_ranges.contains(ts);
     let mut cached_timestamps: HashSet<i64> = HashSet::new();
     let mut cached_time_range = TimeRange::new(i64::MAX, i64::MIN);
     super_version.caches.read_field_data(
         field_id,
-        time_predicate,
+        time_ranges,
         |_| true,
         |d| {
             let ts = d.timestamp();
@@ -182,12 +181,11 @@ fn get_series_timestamps_in_caches(
     series_id: SeriesId,
     time_ranges: &TimeRanges,
 ) -> (HashSet<Timestamp>, TimeRange) {
-    let time_predicate = |ts| time_ranges.is_boundless() || time_ranges.contains(ts);
     let mut cached_timestamps: HashSet<i64> = HashSet::new();
     let mut cached_time_range = TimeRange::new(i64::MAX, i64::MIN);
     super_version
         .caches
-        .read_series_timestamps(&[series_id], time_predicate, |ts| {
+        .read_series_timestamps(&[series_id], time_ranges, |ts| {
             cached_time_range.min_ts = cached_time_range.min_ts.min(ts);
             cached_time_range.max_ts = cached_time_range.max_ts.max(ts);
             cached_timestamps.insert(ts);

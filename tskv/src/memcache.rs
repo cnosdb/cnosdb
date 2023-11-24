@@ -2,6 +2,7 @@ use std::cmp;
 use std::collections::{HashMap, LinkedList};
 use std::fmt::Display;
 use std::mem::size_of_val;
+use std::ops::Bound::Included;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
@@ -452,43 +453,129 @@ impl SeriesData {
     pub fn read_data(
         &self,
         column_id: ColumnId,
-        mut time_predicate: impl FnMut(Timestamp) -> bool,
+        time_ranges: &TimeRanges,
         mut value_predicate: impl FnMut(&FieldVal) -> bool,
         mut handle_data: impl FnMut(DataType),
     ) {
-        for group in self.groups.iter() {
-            let field_index = group.schema.fields_id();
-            let index = match field_index.get(&column_id) {
-                None => continue,
-                Some(v) => v,
-            };
-            group
-                .rows
-                .get_ref_rows()
-                .iter()
-                .filter(|row| time_predicate(row.ts))
-                .for_each(|row| {
-                    if let Some(Some(field)) = row.fields.get(*index) {
-                        if value_predicate(field) {
-                            handle_data(field.data_value(row.ts))
+        match (time_ranges.is_boundless(), time_ranges.is_empty()) {
+            (_, false) => {
+                for group in self.groups.iter() {
+                    let field_index = group.schema.fields_id();
+                    let index = match field_index.get(&column_id) {
+                        None => continue,
+                        Some(v) => v,
+                    };
+                    for range in time_ranges.time_ranges() {
+                        for row in group.rows.get_ref_rows().range(
+                            Included(&RowData {
+                                ts: range.max_ts,
+                                fields: vec![],
+                            }),
+                            Included(&RowData {
+                                ts: range.min_ts,
+                                fields: vec![],
+                            }),
+                        ) {
+                            if let Some(Some(field)) = row.fields.get(*index) {
+                                if value_predicate(field) {
+                                    handle_data(field.data_value(row.ts))
+                                }
+                            }
                         }
                     }
-                });
+                }
+            }
+            (false, true) => {
+                for group in self.groups.iter() {
+                    let field_index = group.schema.fields_id();
+                    let index = match field_index.get(&column_id) {
+                        None => continue,
+                        Some(v) => v,
+                    };
+                    for row in group.rows.get_ref_rows().range(
+                        Included(&RowData {
+                            ts: time_ranges.max_ts(),
+                            fields: vec![],
+                        }),
+                        Included(&RowData {
+                            ts: time_ranges.min_ts(),
+                            fields: vec![],
+                        }),
+                    ) {
+                        if let Some(Some(field)) = row.fields.get(*index) {
+                            if value_predicate(field) {
+                                handle_data(field.data_value(row.ts))
+                            }
+                        }
+                    }
+                }
+            }
+            (true, true) => {
+                for group in self.groups.iter() {
+                    let field_index = group.schema.fields_id();
+                    let index = match field_index.get(&column_id) {
+                        None => continue,
+                        Some(v) => v,
+                    };
+                    for row in group.rows.get_ref_rows() {
+                        if let Some(Some(field)) = row.fields.get(*index) {
+                            if value_predicate(field) {
+                                handle_data(field.data_value(row.ts))
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
     pub fn read_timestamps(
         &self,
-        mut time_predicate: impl FnMut(Timestamp) -> bool,
+        time_ranges: &TimeRanges,
         mut handle_data: impl FnMut(Timestamp),
     ) {
-        for group in self.groups.iter() {
-            group
-                .rows
-                .get_ref_rows()
-                .iter()
-                .filter(|row| time_predicate(row.ts))
-                .for_each(|row| handle_data(row.ts));
+        match (time_ranges.is_boundless(), time_ranges.is_empty()) {
+            (_, false) => {
+                for group in self.groups.iter() {
+                    for range in time_ranges.time_ranges() {
+                        for row in group.rows.get_ref_rows().range(
+                            Included(&RowData {
+                                ts: range.max_ts,
+                                fields: vec![],
+                            }),
+                            Included(&RowData {
+                                ts: range.min_ts,
+                                fields: vec![],
+                            }),
+                        ) {
+                            handle_data(row.ts);
+                        }
+                    }
+                }
+            }
+            (false, true) => {
+                for group in self.groups.iter() {
+                    for row in group.rows.get_ref_rows().range(
+                        Included(&RowData {
+                            ts: time_ranges.max_ts(),
+                            fields: vec![],
+                        }),
+                        Included(&RowData {
+                            ts: time_ranges.min_ts(),
+                            fields: vec![],
+                        }),
+                    ) {
+                        handle_data(row.ts);
+                    }
+                }
+            }
+            (true, true) => {
+                for group in self.groups.iter() {
+                    for row in group.rows.get_ref_rows() {
+                        handle_data(row.ts);
+                    }
+                }
+            }
         }
     }
 
@@ -571,7 +658,7 @@ impl MemCache {
     pub fn read_field_data(
         &self,
         field_id: FieldId,
-        time_predicate: impl FnMut(Timestamp) -> bool,
+        time_ranges: &TimeRanges,
         value_predicate: impl FnMut(&FieldVal) -> bool,
         handle_data: impl FnMut(DataType),
     ) {
@@ -581,14 +668,14 @@ impl MemCache {
         if let Some(series_data) = series_data {
             series_data
                 .read()
-                .read_data(column_id, time_predicate, value_predicate, handle_data)
+                .read_data(column_id, time_ranges, value_predicate, handle_data)
         }
     }
 
     pub fn read_series_timestamps(
         &self,
         series_ids: &[SeriesId],
-        mut time_predicate: impl FnMut(Timestamp) -> bool,
+        time_ranges: &TimeRanges,
         mut handle_data: impl FnMut(Timestamp),
     ) {
         for sid in series_ids.iter() {
@@ -597,7 +684,7 @@ impl MemCache {
             if let Some(series_data) = series_data {
                 series_data
                     .read()
-                    .read_timestamps(&mut time_predicate, &mut handle_data);
+                    .read_timestamps(time_ranges, &mut handle_data);
             }
         }
     }
