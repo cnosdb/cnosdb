@@ -61,6 +61,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_kvcore_init() {
+        println!("Enter serial test: test_kvcore_init");
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
         let dir = "/tmp/test/kvcore/kvcore_init";
         let _ = std::fs::remove_dir_all(dir);
@@ -68,16 +69,17 @@ mod tests {
 
         get_tskv(dir, None);
         dbg!("Ok");
+        println!("Leave serial test: test_kvcore_init");
     }
 
     #[test]
     #[serial]
     fn test_kvcore_write() {
+        println!("Enter serial test: test_kvcore_write");
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
         let dir = "/tmp/test/kvcore/kvcore_write";
         let _ = std::fs::remove_dir_all(dir);
         std::fs::create_dir_all(dir).unwrap();
-
         let (rt, tskv) = get_tskv(dir, None);
 
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
@@ -97,12 +99,14 @@ mod tests {
         rt.spawn(async move {
             tskv.write(None, 0, Precision::NS, request).await.unwrap();
         });
+        println!("Leave serial test: test_kvcore_write");
     }
 
     // tips : to test all read method, we can use a small MAX_MEMCACHE_SIZE
     #[test]
     #[serial]
     fn test_kvcore_flush() {
+        println!("Enter serial test: test_kvcore_flush");
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
         let dir = "/tmp/test/kvcore/kvcore_flush";
         let _ = std::fs::remove_dir_all(dir);
@@ -149,12 +153,14 @@ mod tests {
 
         assert!(file_manager::try_exists(
             "/tmp/test/kvcore/kvcore_flush/data/cnosdb.db/0/tsm"
-        ))
+        ));
+        println!("Leave serial test: test_kvcore_flush");
     }
 
     #[test]
     #[ignore]
     fn test_kvcore_big_write() {
+        println!("Enter serial test: test_kvcore_big_write");
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
         let dir = "/tmp/test/kvcore/kvcore_big_write";
         let _ = std::fs::remove_dir_all(dir);
@@ -183,11 +189,13 @@ mod tests {
                     .unwrap();
             });
         }
+        println!("Leave serial test: test_kvcore_big_write");
     }
 
     #[test]
     #[serial]
     fn test_kvcore_flush_delta() {
+        println!("Enter serial test: test_kvcore_flush_delta");
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
         let dir = "/tmp/test/kvcore/kvcore_flush_delta";
         let _ = std::fs::remove_dir_all(dir);
@@ -241,21 +249,25 @@ mod tests {
         assert!(file_manager::try_exists(format!(
             "/tmp/test/kvcore/kvcore_flush_delta/data/cnosdb.{database}/0/delta"
         )));
+        println!("Leave serial test: test_kvcore_flush_delta");
     }
 
     #[tokio::test]
     #[serial]
     async fn test_kvcore_log() {
+        println!("Enter serial test: nc fn test_kvcore_log");
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
         info!("hello");
         warn!("hello");
         debug!("hello");
         error!("hello"); //maybe we can use panic directly
+        println!("Leave serial test: nc fn test_kvcore_log");
     }
 
     #[test]
     #[serial]
     fn test_kvcore_build_row_data() {
+        println!("Enter serial test: test_kvcore_build_row_data");
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
         let dir = "/tmp/test/kvcore/kvcore_build_row_data";
         let _ = std::fs::remove_dir_all(dir);
@@ -285,11 +297,14 @@ mod tests {
                 .await
                 .unwrap();
         });
-        println!("{:?}", tskv)
+        println!("{:?}", tskv);
+        println!("Leave serial test: test_kvcore_build_row_data");
     }
 
     #[test]
+    #[serial]
     fn test_kvcore_recover() {
+        println!("Enter serial test: test_kvcore_recover");
         let dir = PathBuf::from("/tmp/test/kvcore/kvcore_recover");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -333,10 +348,13 @@ mod tests {
         let cached_data = tskv::test::get_one_series_cache_data(version.caches.mut_cache.clone());
         // TODO: compare cached_data and the wrote_data
         assert!(!cached_data.is_empty());
+        println!("Leave serial test: test_kvcore_recover");
     }
 
     #[test]
+    #[serial]
     fn test_kvcore_snapshot_create_apply_delete() {
+        println!("Enter serial test: test_kvcore_snapshot_create_apply_delete");
         let dir = PathBuf::from("/tmp/test/kvcore/kvcore_snapshot_create_apply_delete");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -483,6 +501,7 @@ mod tests {
         }
 
         runtime.block_on(tskv.close());
+        println!("Leave serial test: test_kvcore_snapshot_create_apply_delete");
     }
 
     fn sleep_in_runtime(runtime: Arc<Runtime>, duration: Duration) {
