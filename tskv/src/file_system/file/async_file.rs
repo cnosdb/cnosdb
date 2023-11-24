@@ -183,6 +183,10 @@ impl AsyncFile {
     pub fn fd(&self) -> usize {
         os::fd(&self.inner.0)
     }
+
+    pub fn size(&self) -> u64 {
+        self.size
+    }
 }
 
 #[cfg(test)]

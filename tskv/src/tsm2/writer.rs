@@ -1,7 +1,7 @@
 use std::cmp::{max, min};
 use std::collections::{BTreeMap, HashMap};
 use std::io::IoSlice;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use minivec::MiniVec;
@@ -21,7 +21,7 @@ use crate::file_system::file::cursor::FileCursor;
 use crate::file_system::file_manager;
 use crate::file_utils::make_tsm_file_name;
 use crate::tsm::codec::{
-    get_bool_codec, get_f64_codec, get_i64_codec, get_str_codec, get_u64_codec,
+    get_bool_codec, get_f64_codec, get_i64_codec, get_str_codec, get_ts_codec, get_u64_codec,
 };
 use crate::tsm2::page::{
     Chunk, ChunkGroup, ChunkGroupMeta, ChunkGroupWriteSpec, ChunkStatics, ChunkWriteSpec, Footer,
@@ -94,7 +94,7 @@ use crate::{Error, Result};
 // }
 
 /// max size 1024
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Column {
     pub column_type: ColumnType,
     pub valid: BitSet,
@@ -248,8 +248,13 @@ impl Column {
                 )
             }
             ColumnData::I64(array, min, max) => {
-                let encoder = get_i64_codec(desc.encoding);
-                encoder.encode(array, &mut buf).unwrap();
+                if desc.column_type.is_time() {
+                    let encoder = get_ts_codec(desc.encoding);
+                    encoder.encode(array, &mut buf).unwrap();
+                } else {
+                    let encoder = get_i64_codec(desc.encoding);
+                    encoder.encode(array, &mut buf).unwrap();
+                };
                 (
                     Vec::from(min.to_le_bytes()),
                     Vec::from(max.to_le_bytes()),
@@ -286,8 +291,8 @@ impl Column {
             }
         };
         let mut data = vec![];
-        data.extend_from_slice(&len_bitset.to_be_bytes());
-        data.extend_from_slice(&data_len.to_be_bytes());
+        data.extend_from_slice(&len_bitset.to_le_bytes());
+        data.extend_from_slice(&data_len.to_le_bytes());
         data.extend_from_slice(self.valid.bytes());
         data.extend_from_slice(&buf);
         let bytes = bytes::Bytes::from(data);
@@ -314,6 +319,9 @@ impl Column {
     }
 
     pub fn get(&self, index: usize) -> Option<FieldVal> {
+        if self.valid.len() <= index {
+            return None;
+        }
         if self.valid.get(index) {
             self.data.get(index)
         } else {
@@ -330,7 +338,7 @@ impl Column {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ColumnData {
     ///   array   min, max
     F64(Vec<f64>, f64, f64),
@@ -354,7 +362,7 @@ impl ColumnData {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DataBlock2 {
     schema: TskvTableSchemaRef,
     ts: Column,
@@ -423,22 +431,26 @@ impl DataBlock2 {
                 match idx {
                     Merge::SelfTs(index) => {
                         if let Some(column_self) = column_self {
-                            merge_column.push(column_self.data.get(*index));
+                            merge_column.push(column_self.get(*index));
+                        } else {
+                            merge_column.push(None);
                         }
                     }
                     Merge::OtherTs(index) => {
                         if let Some(column_other) = column_other {
-                            merge_column.push(column_other.data.get(*index));
+                            merge_column.push(column_other.get(*index));
+                        } else {
+                            merge_column.push(None);
                         }
                     }
                     Merge::Equal(index_self, index_other) => {
                         let field_self = if let Some(column_self) = column_self {
-                            column_self.data.get(*index_self)
+                            column_self.get(*index_self)
                         } else {
                             None
                         };
                         let field_other = if let Some(column_other) = column_other {
-                            column_other.data.get(*index_other)
+                            column_other.get(*index_other)
                         } else {
                             None
                         };
@@ -622,6 +634,7 @@ pub struct Tsm2Writer {
     max_ts: i64,
     size: usize,
     max_size: u64,
+    path: PathBuf,
 
     series_bloom_filter: BloomFilter,
     // todo: table object id bloom filter
@@ -642,19 +655,20 @@ pub struct Tsm2Writer {
 
 //MutableRecordBatch
 impl Tsm2Writer {
-    pub async fn open(path_buf: &PathBuf, file_id: u64, max_size: u64) -> Result<Self> {
+    pub async fn open(path_buf: &impl AsRef<Path>, file_id: u64, max_size: u64) -> Result<Self> {
         let tsm_path = make_tsm_file_name(path_buf, file_id);
-        let file_cursor = file_manager::create_file(tsm_path).await?;
-        let writer = Self::new(file_cursor.into(), file_id, max_size);
+        let file_cursor = file_manager::create_file(&tsm_path).await?;
+        let writer = Self::new(tsm_path, file_cursor.into(), file_id, max_size);
         Ok(writer)
     }
-    pub fn new(writer: FileCursor, file_id: u64, max_size: u64) -> Self {
+    pub fn new(path: PathBuf, writer: FileCursor, file_id: u64, max_size: u64) -> Self {
         Self {
             file_id,
             max_ts: i64::MIN,
             min_ts: i64::MAX,
             size: 0,
             max_size,
+            path,
             series_bloom_filter: BloomFilter::new(BLOOM_FILTER_BITS),
             writer,
             options: Default::default(),
@@ -681,6 +695,10 @@ impl Tsm2Writer {
 
     pub fn size(&self) -> usize {
         self.size
+    }
+
+    pub fn path(&self) -> &Path {
+        self.path.as_path()
     }
 
     pub fn series_bloom_filter(&self) -> &BloomFilter {
@@ -710,11 +728,8 @@ impl Tsm2Writer {
 
     /// todo: write footer
     pub async fn write_footer(&mut self) -> Result<usize> {
-        let size = self
-            .writer
-            .write(&self.footer.serialize()?)
-            .await
-            .context(IOSnafu)?;
+        let buf = self.footer.serialize()?;
+        let size = self.writer.write(&buf).await.context(IOSnafu)?;
         self.size += size;
         Ok(size)
     }
@@ -803,10 +818,6 @@ impl Tsm2Writer {
         series_id: SeriesId,
         datablock: DataBlock2,
     ) -> Result<()> {
-        if self.state == State::Initialised {
-            self.write_header().await?;
-        }
-
         if self.state == State::Finished {
             return Err(Error::CommonError {
                 reason: "Tsm2Writer has been finished".to_string(),
@@ -826,6 +837,10 @@ impl Tsm2Writer {
         series_id: SeriesId,
         pages: Vec<Page>,
     ) -> Result<()> {
+        if self.state == State::Initialised {
+            self.write_header().await?;
+        }
+
         let table = schema.name.clone();
         let mut time_range = TimeRange::none();
         for page in pages {
@@ -842,7 +857,7 @@ impl Tsm2Writer {
                 .entry(table.clone())
                 .or_default()
                 .entry(series_id)
-                .or_insert(Chunk::new(schema.name.clone(), series_id))
+                .or_insert(Chunk::new(schema.name.clone(), series_id, time_range))
                 .push(spec);
             self.table_schemas
                 .entry(table.clone())
@@ -857,6 +872,10 @@ impl Tsm2Writer {
         meta: Arc<Chunk>,
         raw: Vec<u8>,
     ) -> Result<()> {
+        if self.state == State::Initialised {
+            self.write_header().await?;
+        }
+
         let mut offset = self.writer.pos();
         let size = self.writer.write(&raw).await?;
         self.size += size;
@@ -874,7 +893,7 @@ impl Tsm2Writer {
                 .entry(table.clone())
                 .or_default()
                 .entry(series_id)
-                .or_insert(Chunk::new(table.clone(), series_id))
+                .or_insert(Chunk::new(table.clone(), series_id, *meta.time_range()))
                 .push(spec.clone());
             self.table_schemas
                 .entry(table.clone())
@@ -923,6 +942,98 @@ impl Tsm2Writer {
         self.write_chunk_group_specs(series_meta).await?;
         self.write_footer().await?;
         self.state = State::Finished;
+        println!("writer size: {}", self.size);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::path::PathBuf;
+    use std::sync::Arc;
+
+    use arrow::datatypes::TimeUnit;
+    use models::codec::Encoding;
+    use models::field_value::FieldVal;
+    use models::schema::{ColumnType, TableColumn, TskvTableSchema};
+    use models::ValueType;
+
+    use crate::file_utils::make_tsm_file_name;
+    use crate::tsm2::reader::TSM2Reader;
+    use crate::tsm2::writer::{Column, DataBlock2, Tsm2Writer};
+
+    fn i64_column(data: Vec<i64>) -> Column {
+        let mut col = Column::empty(ColumnType::Field(ValueType::Integer));
+        for datum in data {
+            col.push(Some(FieldVal::Integer(datum)))
+        }
+        col
+    }
+
+    fn ts_column(data: Vec<i64>) -> Column {
+        let mut col = Column::empty(ColumnType::Time(TimeUnit::Nanosecond));
+        for datum in data {
+            col.push(Some(FieldVal::Integer(datum)))
+        }
+        col
+    }
+
+    #[tokio::test]
+    async fn test_write_and_read() {
+        let schema = TskvTableSchema::new(
+            "cnosdb".to_string(),
+            "public".to_string(),
+            "test0".to_string(),
+            vec![
+                TableColumn::new(
+                    0,
+                    "time".to_string(),
+                    ColumnType::Time(TimeUnit::Nanosecond),
+                    Encoding::default(),
+                ),
+                TableColumn::new(
+                    1,
+                    "f1".to_string(),
+                    ColumnType::Field(ValueType::Integer),
+                    Encoding::default(),
+                ),
+                TableColumn::new(
+                    2,
+                    "f2".to_string(),
+                    ColumnType::Field(ValueType::Integer),
+                    Encoding::default(),
+                ),
+                TableColumn::new(
+                    3,
+                    "f3".to_string(),
+                    ColumnType::Field(ValueType::Integer),
+                    Encoding::default(),
+                ),
+            ],
+        );
+        let schema = Arc::new(schema);
+        let data1 = DataBlock2::new(
+            schema.clone(),
+            ts_column(vec![1, 2, 3]),
+            schema.time_column().clone(),
+            vec![
+                i64_column(vec![1, 2, 3]),
+                i64_column(vec![1, 2, 3]),
+                i64_column(vec![1, 2, 3]),
+            ],
+            vec![
+                schema.column("f1").cloned().unwrap(),
+                schema.column("f2").cloned().unwrap(),
+                schema.column("f3").cloned().unwrap(),
+            ],
+        );
+
+        let path = "/tmp/test/tsm2";
+        let mut tsm_writer = Tsm2Writer::open(&PathBuf::from(path), 1, 0).await.unwrap();
+        tsm_writer.write_datablock(1, data1.clone()).await.unwrap();
+        tsm_writer.finish().await.unwrap();
+        let tsm_reader = TSM2Reader::open(tsm_writer.path).await.unwrap();
+        let data2 = tsm_reader.read_datablock(1).await.unwrap();
+        assert_eq!(data1, data2);
     }
 }

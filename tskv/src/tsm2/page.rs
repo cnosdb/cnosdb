@@ -7,7 +7,7 @@ use models::predicate::domain::TimeRange;
 use models::schema::{ColumnType, TableColumn, TskvTableSchema, TskvTableSchemaRef};
 use models::{PhysicalDType, SeriesId, ValueType};
 use serde::{Deserialize, Serialize};
-use utils::bitset::{BitSet, ImmutBitSet};
+use utils::bitset::ImmutBitSet;
 use utils::BloomFilter;
 
 use crate::byte_utils::{decode_be_u32, decode_be_u64};
@@ -19,6 +19,7 @@ use crate::tsm::codec::{
 use crate::tsm2::writer::Column;
 use crate::Error;
 
+#[derive(Debug)]
 pub struct Page {
     /// 4 bits for bitset len
     /// 8 bits for data len
@@ -64,23 +65,20 @@ impl Page {
     pub fn to_column(&self) -> Result<Column> {
         let col_type = self.meta.column.column_type.clone();
         let mut col = Column::empty(col_type.clone());
-        let bitset_len = decode_be_u32(&self.bytes[0..4]) as usize;
-        let data_len = decode_be_u64(&self.bytes[4..12]) as usize;
-        let bitset_buffer = &self.bytes[12..12 + bitset_len];
-        let data_buffer = &self.bytes[12 + bitset_len..];
-        let bitset = BitSet::new_without_check(data_len, bitset_buffer.to_vec());
+        let data_buffer = self.data_buffer();
+        let bitset = self.null_bitset();
         match col_type {
             ColumnType::Tag => {
                 unreachable!("tag column not support")
             }
             ColumnType::Time(_) => {
-                let encoding = get_encoding(&data_buffer[0..1]);
+                let encoding = get_encoding(data_buffer);
                 let ts_codec = get_ts_codec(encoding);
                 let mut target = Vec::new();
-                debug_assert_eq!(target.len(), data_len);
                 ts_codec
                     .decode(data_buffer, &mut target)
                     .map_err(|e| Error::Decode { source: e })?;
+                debug_assert_eq!(target.len(), bitset.len());
                 for (i, v) in target.iter().enumerate() {
                     if bitset.get(i) {
                         col.push(Some(FieldVal::Integer(*v)));
@@ -94,7 +92,7 @@ impl Page {
                     unreachable!("unknown field type")
                 }
                 ValueType::Float => {
-                    let encoding = get_encoding(&data_buffer[0..1]);
+                    let encoding = get_encoding(data_buffer);
                     let ts_codec = get_f64_codec(encoding);
                     let mut target = Vec::new();
                     ts_codec
@@ -109,7 +107,7 @@ impl Page {
                     }
                 }
                 ValueType::Integer => {
-                    let encoding = get_encoding(&data_buffer[0..1]);
+                    let encoding = get_encoding(data_buffer);
                     let ts_codec = get_i64_codec(encoding);
                     let mut target = Vec::new();
                     ts_codec
@@ -124,7 +122,7 @@ impl Page {
                     }
                 }
                 ValueType::Unsigned => {
-                    let encoding = get_encoding(&data_buffer[0..1]);
+                    let encoding = get_encoding(data_buffer);
                     let ts_codec = get_u64_codec(encoding);
                     let mut target = Vec::new();
                     ts_codec
@@ -139,7 +137,7 @@ impl Page {
                     }
                 }
                 ValueType::Boolean => {
-                    let encoding = get_encoding(&data_buffer[0..1]);
+                    let encoding = get_encoding(data_buffer);
                     let ts_codec = get_bool_codec(encoding);
                     let mut target = Vec::new();
                     ts_codec
@@ -154,7 +152,7 @@ impl Page {
                     }
                 }
                 ValueType::String | ValueType::Geometry(_) => {
-                    let encoding = get_encoding(&data_buffer[0..1]);
+                    let encoding = get_encoding(data_buffer);
                     let ts_codec = get_str_codec(encoding);
                     let mut target = Vec::new();
                     ts_codec
@@ -217,6 +215,11 @@ impl PageWriteSpec {
     }
 }
 
+pub struct ColumnGroup {
+    time_range: TimeRange,
+    pages: Vec<PageWriteSpec>,
+}
+
 /// A chunk of data for a series at least two columns
 #[derive(Clone, Default, Debug, Serialize, Deserialize, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Chunk {
@@ -229,11 +232,11 @@ pub struct Chunk {
 }
 
 impl Chunk {
-    pub fn new(table_name: String, series_id: SeriesId) -> Self {
+    pub fn new(table_name: String, series_id: SeriesId, time_range: TimeRange) -> Self {
         Self {
             all_page_begin_offset: 0,
             all_page_end_offset: 0,
-            time_range: TimeRange::none(),
+            time_range,
             table_name,
             series_id,
             pages: Vec::new(),

@@ -4,11 +4,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use bytes::Bytes;
-use datafusion::arrow::datatypes::TimeUnit;
 use datafusion::parquet::data_type::AsBytes;
-use models::codec::Encoding;
 use models::predicate::domain::TimeRange;
-use models::schema::{ColumnType, TableColumn, TskvTableSchemaRef, TIME_FIELD};
+use models::schema::{TskvTableSchemaRef, TIME_FIELD};
 use models::{ColumnId, SeriesId};
 use parking_lot::RwLock;
 
@@ -93,6 +91,7 @@ impl TSM2Reader {
         let path = tsm_path.as_ref().to_path_buf();
         let file_id = file_utils::get_tsm_file_id_by_path(&path)?;
         let reader = Arc::new(file_manager::open_file(&path).await?);
+        println!("reader size :{:?}", reader.size());
         let footer = Arc::new(read_footer(reader.clone()).await?);
         let chunk_group_meta = Arc::new(read_chunk_group_meta(reader.clone(), &footer).await?);
         let chunk_group = read_chunk_groups(reader.clone(), &chunk_group_meta).await?;
@@ -121,11 +120,11 @@ impl TSM2Reader {
         self.file_id
     }
 
-    fn footer(&self) -> &Footer {
+    pub fn footer(&self) -> &Footer {
         &self.tsm_meta.footer
     }
 
-    fn chunk_group_meta(&self) -> &ChunkGroupMeta {
+    pub fn chunk_group_meta(&self) -> &ChunkGroupMeta {
         &self.tsm_meta.chunk_group_meta
     }
 
@@ -216,7 +215,7 @@ impl TSM2Reader {
     pub async fn read_datablock_raw(&self, series_id: SeriesId) -> Result<Vec<u8>> {
         let chunk = self.chunk();
         if let Some(chunk) = chunk.get(&series_id) {
-            let mut res = Vec::with_capacity(chunk.size() as usize);
+            let mut res = vec![0u8; chunk.size() as usize];
             self.reader
                 .read_at(chunk.all_page_begin_offset(), &mut res)
                 .await?;
@@ -249,12 +248,11 @@ impl TSM2Reader {
 pub fn decode_buf_to_pages(chunk: Arc<Chunk>, pages_buf: &[u8]) -> Result<Vec<Page>> {
     let mut pages = Vec::with_capacity(chunk.pages().len());
     for page in chunk.pages() {
-        let offset = page.offset() - chunk.all_page_begin_offset();
-        let page_buf = pages_buf
-            .get(offset as usize..page.size)
-            .ok_or(Error::CommonError {
-                reason: "page_buf get error".to_string(),
-            })?;
+        let offset = (page.offset() - chunk.all_page_begin_offset()) as usize;
+        let end = offset + page.size;
+        let page_buf = pages_buf.get(offset..end).ok_or(Error::CommonError {
+            reason: "page_buf get error".to_string(),
+        })?;
         let page = Page {
             meta: page.meta.clone(),
             bytes: Bytes::from(page_buf.to_vec()),
@@ -338,12 +336,7 @@ async fn read_page(reader: Arc<AsyncFile>, page_spec: &PageWriteSpec) -> Result<
 }
 
 pub fn decode_pages(pages: Vec<Page>, table_schema: TskvTableSchemaRef) -> Result<DataBlock2> {
-    let mut time_column_desc = TableColumn::new(
-        0,
-        TIME_FIELD.to_string(),
-        ColumnType::Time(TimeUnit::Nanosecond),
-        Encoding::Default,
-    );
+    let mut time_column_desc = table_schema.time_column();
     let mut time_column = Column::empty(time_column_desc.column_type.clone());
 
     let mut other_columns_desc = Vec::new();

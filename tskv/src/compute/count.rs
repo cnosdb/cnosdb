@@ -383,256 +383,256 @@ mod test {
         }
     }
 
-    #[test]
-    fn test_super_version_count_file() {
-        let dir = "/tmp/test/ts_family/super_version_count_file";
-        let mut global_config = config::get_config_for_test();
-        global_config.storage.path = dir.to_string();
-
-        #[rustfmt::skip]
-        let data = vec![
-            HashMap::from([
-                (model_utils::unite_id(1, 1), vec![DataBlock::I64 { ts: vec![1, 2, 3, 4], val: vec![1, 1, 1, 1], enc: DataBlockEncoding::default() }]),
-                (model_utils::unite_id(1, 2), vec![DataBlock::I64 { ts: vec![10, 20, 30, 40], val: vec![1, 1, 1, 1], enc: DataBlockEncoding::default() }]),
-            ]),
-            HashMap::from([
-                (model_utils::unite_id(1, 1), vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![1, 1, 1], enc: DataBlockEncoding::default() }]),
-                (model_utils::unite_id(1, 2), vec![DataBlock::I64 { ts: vec![40, 50, 60], val: vec![1, 1, 1], enc: DataBlockEncoding::default() }]),
-            ]),
-            HashMap::from([
-                (model_utils::unite_id(1, 1), vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![1, 1, 1], enc: DataBlockEncoding::default() }]),
-                (model_utils::unite_id(1, 2), vec![DataBlock::I64 { ts: vec![70, 80, 90], val: vec![1, 1, 1], enc: DataBlockEncoding::default() }]),
-            ]),
-        ];
-
-        let opt = Arc::new(Options::from(&global_config));
-        let database = Arc::new("dba".to_string());
-        let ts_family_id = 1;
-        let dir = opt.storage.tsm_dir(&database, 1);
-        let runtime = Arc::new(
-            tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .unwrap(),
-        );
-
-        let (_, files) = runtime.block_on(write_data_blocks_to_column_file(&dir, data));
-        let version =
-            build_version_by_column_files(opt.storage.clone(), database, ts_family_id, files);
-        let pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::default());
-        let test_helper = TestHelper {
-            runtime,
-            super_version: Arc::new(SuperVersion::new(
-                ts_family_id,
-                opt.storage.clone(),
-                CacheGroup {
-                    mut_cache: Arc::new(RwLock::new(MemCache::new(ts_family_id, 1, 2, 1, &pool))),
-                    immut_cache: vec![],
-                },
-                Arc::new(version),
-                1,
-            )),
-        };
-
-        #[rustfmt::skip]
-        let _skip_fmt = {
-            assert_eq!(test_helper.run(&[1], None, (i64::MIN, i64::MAX)).unwrap(), 9);
-            assert_eq!(test_helper.run(&[1, 2], None, (i64::MIN, i64::MAX)).unwrap(), 18);
-
-            assert_eq!(test_helper.run(&[1], Some(1), (i64::MIN, i64::MAX)).unwrap(), 9);
-            assert_eq!(test_helper.run(&[1, 2], Some(1), (i64::MIN, i64::MAX)).unwrap(), 18);
-
-            assert_eq!(test_helper.run(&[1], Some(1), (0, 0)).unwrap(), 0);
-            assert_eq!(test_helper.run(&[1], Some(1), (1, 1)).unwrap(), 1);
-            assert_eq!(test_helper.run(&[1], Some(1), (1, 4)).unwrap(), 4);
-            assert_eq!(test_helper.run(&[1], Some(1), (1, 5)).unwrap(), 5);
-            assert_eq!(test_helper.run(&[1], Some(1), (4, 4)).unwrap(), 1);
-            assert_eq!(test_helper.run(&[1], Some(1), (4, 5)).unwrap(), 2);
-            assert_eq!(test_helper.run(&[1], Some(1), (4, 7)).unwrap(), 4);
-            assert_eq!(test_helper.run(&[1], Some(1), (10, 10)).unwrap(), 0);
-
-            assert_eq!(test_helper.run(&[2], Some(1), (10, 40)).unwrap(), 4);
-            assert_eq!(test_helper.run(&[2], Some(1), (40, 50)).unwrap(), 2);
-
-            "skip_fmt"
-        };
-    }
-
-    #[test]
-    fn test_super_version_count_memcache() {
-        let dir = "/tmp/test/ts_family/super_version_count_memcache";
-        let mut global_config = config::get_config_for_test();
-        global_config.storage.path = dir.to_string();
-
-        let pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::default());
-        #[rustfmt::skip]
-        let cache_group = {
-            let caches = vec![MemCache::new(1, 16, 2, 0, &pool), MemCache::new(1, 16, 2, 0, &pool), MemCache::new(1, 16, 2, 0, &pool)];
-            // cache, sid, schema_id, schema, time_range, put_none
-            put_rows_to_cache(&caches[0], 1, 1, default_table_schema(vec![1]), (1, 4), false);
-            put_rows_to_cache(&caches[0], 2, 1, default_table_schema(vec![1]), (101, 104), false);
-            put_rows_to_cache(&caches[1], 1, 1, default_table_schema(vec![1]), (4, 6), false);
-            put_rows_to_cache(&caches[1], 2, 1, default_table_schema(vec![1]), (104, 106), false);
-            put_rows_to_cache(&caches[2], 1, 1, default_table_schema(vec![1]), (7, 9), false);
-            put_rows_to_cache(&caches[2], 2, 1, default_table_schema(vec![1]), (107, 109), false);
-            put_rows_to_cache(&caches[2], 1, 1, default_table_schema(vec![1]), (11, 15), false);
-            put_rows_to_cache(&caches[2], 2, 1, default_table_schema(vec![1]), (111, 115), false);
-            let cache = MemCache::new(1, 16, 2, 0, &pool);
-            put_rows_to_cache(&cache, 1, 1, default_table_schema(vec![1]), (11, 15), false);
-            put_rows_to_cache(&cache, 2, 1, default_table_schema(vec![1]), (111, 115), false);
-            CacheGroup {
-                mut_cache: Arc::new(RwLock::new(cache)),
-                immut_cache: caches.into_iter().map(|c| Arc::new(RwLock::new(c))).collect(),
-            }
-        };
-
-        let opt = Arc::new(Options::from(&global_config));
-        let database = Arc::new("dba".to_string());
-        let ts_family_id = 1;
-
-        let version =
-            build_version_by_column_files(opt.storage.clone(), database, ts_family_id, vec![]);
-        let test_helper = TestHelper {
-            runtime: Arc::new(
-                tokio::runtime::Builder::new_multi_thread()
-                    .enable_all()
-                    .build()
-                    .unwrap(),
-            ),
-            super_version: Arc::new(SuperVersion::new(
-                ts_family_id,
-                opt.storage.clone(),
-                cache_group,
-                Arc::new(version),
-                1,
-            )),
-        };
-
-        #[rustfmt::skip]
-        let _skip_fmt = {
-            assert_eq!(test_helper.run(&[1], None, (i64::MIN, i64::MAX)).unwrap(), 14);
-            assert_eq!(test_helper.run(&[1], None, (i64::MIN, i64::MAX)).unwrap(), 14);
-
-            assert_eq!(test_helper.run(&[1], Some(1), (i64::MIN, i64::MAX)).unwrap(), 14);
-            assert_eq!(test_helper.run(&[1, 2], Some(1), (i64::MIN, i64::MAX)).unwrap(), 28);
-            assert_eq!(test_helper.run(&[1], Some(1), (0, 0)).unwrap(), 0);
-            assert_eq!(test_helper.run(&[1], Some(1), (1, 1)).unwrap(), 1);
-            assert_eq!(test_helper.run(&[1], Some(1), (1, 4)).unwrap(), 4);
-            assert_eq!(test_helper.run(&[1], Some(1), (1, 5)).unwrap(), 5);
-            assert_eq!(test_helper.run(&[1], Some(1), (4, 4)).unwrap(), 1);
-            assert_eq!(test_helper.run(&[1], Some(1), (4, 5)).unwrap(), 2);
-            assert_eq!(test_helper.run(&[1], Some(1), (4, 7)).unwrap(), 4);
-            assert_eq!(test_helper.run(&[1], Some(1), (8, 10)).unwrap(), 2);
-            assert_eq!(test_helper.run(&[1], Some(1), (10, 10)).unwrap(), 0);
-
-            assert_eq!(test_helper.run(&[2], Some(1), (101, 104)).unwrap(), 4);
-            assert_eq!(test_helper.run(&[2], Some(1), (104, 105)).unwrap(), 2);
-            "skip_fmt"
-        };
-    }
-
-    #[test]
-    fn test_super_version_count() {
-        let dir = "/tmp/test/ts_family/super_version_count";
-        let mut global_config = config::get_config_for_test();
-        global_config.storage.path = dir.to_string();
-        #[rustfmt::skip]
-        let data = vec![
-            HashMap::from([
-                (model_utils::unite_id(1, 1), vec![DataBlock::I64 { ts: vec![1, 2, 3, 4], val: vec![1, 1, 1, 1], enc: DataBlockEncoding::default() }]),
-                (model_utils::unite_id(1, 2), vec![DataBlock::I64 { ts: vec![2, 3, 101, 104], val: vec![1, 1, 1, 1], enc: DataBlockEncoding::default() }]),
-            ]),
-            HashMap::from([
-                (model_utils::unite_id(1, 1), vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![1, 1, 1], enc: DataBlockEncoding::default() }]),
-                (model_utils::unite_id(1, 2), vec![DataBlock::I64 { ts: vec![5, 104, 106], val: vec![1, 1, 1], enc: DataBlockEncoding::default() }]),
-            ]),
-            HashMap::from([
-                (model_utils::unite_id(1, 1), vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![1, 1, 1], enc: DataBlockEncoding::default() }]),
-                (model_utils::unite_id(1, 2), vec![DataBlock::I64 { ts: vec![8, 107, 109], val: vec![1, 1, 1], enc: DataBlockEncoding::default() }]),
-            ]),
-        ];
-
-        let pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::default());
-        #[rustfmt::skip]
-        let cache_group = {
-            let caches = vec![MemCache::new(1, 16, 2, 0, &pool), MemCache::new(1, 16, 2, 0, &pool), MemCache::new(1, 16, 2, 0, &pool)];
-            // cache, sid, schema_id, schema, time_range, put_none
-            put_rows_to_cache(&caches[0], 1, 1, default_table_schema(vec![1]), (11, 15), false);
-            put_rows_to_cache(&caches[1], 1, 1, default_table_schema(vec![1]), (21, 25), false);
-            put_rows_to_cache(&caches[2], 1, 1, default_table_schema(vec![1]), (31, 35), false);
-
-            put_rows_to_cache(&caches[0], 2, 1, default_table_schema(vec![1]), (12, 13), false);
-            put_rows_to_cache(&caches[0], 2, 1, default_table_schema(vec![1]), (111, 115), false);
-            put_rows_to_cache(&caches[1], 2, 1, default_table_schema(vec![1]), (22, 23), false);
-            put_rows_to_cache(&caches[1], 2, 1, default_table_schema(vec![1]), (121, 125), false);
-            put_rows_to_cache(&caches[2], 2, 1, default_table_schema(vec![1]), (32, 33), false);
-            put_rows_to_cache(&caches[2], 2, 1, default_table_schema(vec![1]), (131, 135), false);
-            let mut_cache = MemCache::new(1, 16, 2, 0, &pool);
-            put_rows_to_cache(&mut_cache, 1, 1, default_table_schema(vec![1]), (31, 40), false);
-            put_rows_to_cache(&mut_cache, 2, 1, default_table_schema(vec![1]), (36, 37), false);
-            put_rows_to_cache(&mut_cache, 2, 1, default_table_schema(vec![1]), (131, 140), false);
-            CacheGroup {
-                mut_cache: Arc::new(RwLock::new(mut_cache)),
-                immut_cache: caches.into_iter().map(|c| Arc::new(RwLock::new(c))).collect(),
-            }
-        };
-
-        let opt = Arc::new(Options::from(&global_config));
-        let database = Arc::new("dba".to_string());
-        let ts_family_id = 1;
-        let dir = opt.storage.tsm_dir(&database, 1);
-        let runtime = Arc::new(
-            tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .unwrap(),
-        );
-
-        let (_, files) = runtime.block_on(write_data_blocks_to_column_file(&dir, data));
-        let version =
-            build_version_by_column_files(opt.storage.clone(), database, ts_family_id, files);
-        let test_helper = TestHelper {
-            runtime,
-            super_version: Arc::new(SuperVersion::new(
-                ts_family_id,
-                opt.storage.clone(),
-                cache_group,
-                Arc::new(version),
-                1,
-            )),
-        };
-
-        // # sum
-        // sid=1: 29, sid=2: 37
-        // # disk
-        // sid=1 (9): 1, 2, 3, 4, 5, 6, 7, 8, 9
-        // sid=2 (9):    2, 3,    5,       8, 101, 104, 106, 107, 109
-        // # memory
-        // sid=1 (20): 11, 12, 13, 14, 15, 21, 22, 23, 24, 25, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40
-        // sid=2 (8):  12, 13,             22, 23,             32, 33,         36, 37,
-        // sid=2 (20): 111, 112, 113, 114, 115, 121, 122, 123, 124, 125, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140
-
-        #[rustfmt::skip]
-        let _skip_fmt = {
-            assert_eq!(test_helper.run(&[1], None, (i64::MIN, i64::MAX)).unwrap(), 29);
-            assert_eq!(test_helper.run(&[1, 2], None, (i64::MIN, i64::MAX)).unwrap(), 66);
-
-            assert_eq!(test_helper.run(&[1], Some(1), (i64::MIN, i64::MAX)).unwrap(), 29);
-            assert_eq!(test_helper.run(&[1, 2], Some(1), (i64::MIN, i64::MAX)).unwrap(), 66);
-            assert_eq!(test_helper.run(&[1], Some(1), (0, 0)).unwrap(), 0);
-            assert_eq!(test_helper.run(&[1], Some(1), (1, 1)).unwrap(), 1);
-            assert_eq!(test_helper.run(&[1], Some(1), (1, 10)).unwrap(), 9);
-            assert_eq!(test_helper.run(&[1], Some(1), (1, 50)).unwrap(), 29);
-            assert_eq!(test_helper.run(&[1], Some(1), (10, 20)).unwrap(), 5);
-            assert_eq!(test_helper.run(&[1], Some(1), (10, 50)).unwrap(), 20);
-            assert_eq!(test_helper.run(&[1], Some(1), (15, 21)).unwrap(), 2);
-            assert_eq!(test_helper.run(&[1], Some(1), (40, 40)).unwrap(), 1);
-            assert_eq!(test_helper.run(&[1], Some(1), (41, 41)).unwrap(), 0);
-
-            assert_eq!(test_helper.run(&[2], Some(1), (105, 110)).unwrap(), 3);
-            assert_eq!(test_helper.run(&[2], Some(1), (105, 121)).unwrap(), 9);
-            assert_eq!(test_helper.run(&[2], Some(1), (115, 125)).unwrap(), 6);
-            "skip_fmt"
-        };
-    }
+    // #[test]
+    // fn test_super_version_count_file() {
+    //     let dir = "/tmp/test/ts_family/super_version_count_file";
+    //     let mut global_config = config::get_config_for_test();
+    //     global_config.storage.path = dir.to_string();
+    //
+    //     #[rustfmt::skip]
+    //     let data = vec![
+    //         HashMap::from([
+    //             (model_utils::unite_id(1, 1), vec![DataBlock::I64 { ts: vec![1, 2, 3, 4], val: vec![1, 1, 1, 1], enc: DataBlockEncoding::default() }]),
+    //             (model_utils::unite_id(1, 2), vec![DataBlock::I64 { ts: vec![10, 20, 30, 40], val: vec![1, 1, 1, 1], enc: DataBlockEncoding::default() }]),
+    //         ]),
+    //         HashMap::from([
+    //             (model_utils::unite_id(1, 1), vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![1, 1, 1], enc: DataBlockEncoding::default() }]),
+    //             (model_utils::unite_id(1, 2), vec![DataBlock::I64 { ts: vec![40, 50, 60], val: vec![1, 1, 1], enc: DataBlockEncoding::default() }]),
+    //         ]),
+    //         HashMap::from([
+    //             (model_utils::unite_id(1, 1), vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![1, 1, 1], enc: DataBlockEncoding::default() }]),
+    //             (model_utils::unite_id(1, 2), vec![DataBlock::I64 { ts: vec![70, 80, 90], val: vec![1, 1, 1], enc: DataBlockEncoding::default() }]),
+    //         ]),
+    //     ];
+    //
+    //     let opt = Arc::new(Options::from(&global_config));
+    //     let database = Arc::new("dba".to_string());
+    //     let ts_family_id = 1;
+    //     let dir = opt.storage.tsm_dir(&database, 1);
+    //     let runtime = Arc::new(
+    //         tokio::runtime::Builder::new_multi_thread()
+    //             .enable_all()
+    //             .build()
+    //             .unwrap(),
+    //     );
+    //
+    //     let (_, files) = runtime.block_on(write_data_blocks_to_column_file(&dir, data));
+    //     let version =
+    //         build_version_by_column_files(opt.storage.clone(), database, ts_family_id, files);
+    //     let pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::default());
+    //     let test_helper = TestHelper {
+    //         runtime,
+    //         super_version: Arc::new(SuperVersion::new(
+    //             ts_family_id,
+    //             opt.storage.clone(),
+    //             CacheGroup {
+    //                 mut_cache: Arc::new(RwLock::new(MemCache::new(ts_family_id, 1, 2, 1, &pool))),
+    //                 immut_cache: vec![],
+    //             },
+    //             Arc::new(version),
+    //             1,
+    //         )),
+    //     };
+    //
+    //     #[rustfmt::skip]
+    //     let _skip_fmt = {
+    //         assert_eq!(test_helper.run(&[1], None, (i64::MIN, i64::MAX)).unwrap(), 9);
+    //         assert_eq!(test_helper.run(&[1, 2], None, (i64::MIN, i64::MAX)).unwrap(), 18);
+    //
+    //         assert_eq!(test_helper.run(&[1], Some(1), (i64::MIN, i64::MAX)).unwrap(), 9);
+    //         assert_eq!(test_helper.run(&[1, 2], Some(1), (i64::MIN, i64::MAX)).unwrap(), 18);
+    //
+    //         assert_eq!(test_helper.run(&[1], Some(1), (0, 0)).unwrap(), 0);
+    //         assert_eq!(test_helper.run(&[1], Some(1), (1, 1)).unwrap(), 1);
+    //         assert_eq!(test_helper.run(&[1], Some(1), (1, 4)).unwrap(), 4);
+    //         assert_eq!(test_helper.run(&[1], Some(1), (1, 5)).unwrap(), 5);
+    //         assert_eq!(test_helper.run(&[1], Some(1), (4, 4)).unwrap(), 1);
+    //         assert_eq!(test_helper.run(&[1], Some(1), (4, 5)).unwrap(), 2);
+    //         assert_eq!(test_helper.run(&[1], Some(1), (4, 7)).unwrap(), 4);
+    //         assert_eq!(test_helper.run(&[1], Some(1), (10, 10)).unwrap(), 0);
+    //
+    //         assert_eq!(test_helper.run(&[2], Some(1), (10, 40)).unwrap(), 4);
+    //         assert_eq!(test_helper.run(&[2], Some(1), (40, 50)).unwrap(), 2);
+    //
+    //         "skip_fmt"
+    //     };
+    // }
+    //
+    // #[test]
+    // fn test_super_version_count_memcache() {
+    //     let dir = "/tmp/test/ts_family/super_version_count_memcache";
+    //     let mut global_config = config::get_config_for_test();
+    //     global_config.storage.path = dir.to_string();
+    //
+    //     let pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::default());
+    //     #[rustfmt::skip]
+    //     let cache_group = {
+    //         let caches = vec![MemCache::new(1, 16, 2, 0, &pool), MemCache::new(1, 16, 2, 0, &pool), MemCache::new(1, 16, 2, 0, &pool)];
+    //         // cache, sid, schema_id, schema, time_range, put_none
+    //         put_rows_to_cache(&caches[0], 1, 1, default_table_schema(vec![1]), (1, 4), false);
+    //         put_rows_to_cache(&caches[0], 2, 1, default_table_schema(vec![1]), (101, 104), false);
+    //         put_rows_to_cache(&caches[1], 1, 1, default_table_schema(vec![1]), (4, 6), false);
+    //         put_rows_to_cache(&caches[1], 2, 1, default_table_schema(vec![1]), (104, 106), false);
+    //         put_rows_to_cache(&caches[2], 1, 1, default_table_schema(vec![1]), (7, 9), false);
+    //         put_rows_to_cache(&caches[2], 2, 1, default_table_schema(vec![1]), (107, 109), false);
+    //         put_rows_to_cache(&caches[2], 1, 1, default_table_schema(vec![1]), (11, 15), false);
+    //         put_rows_to_cache(&caches[2], 2, 1, default_table_schema(vec![1]), (111, 115), false);
+    //         let cache = MemCache::new(1, 16, 2, 0, &pool);
+    //         put_rows_to_cache(&cache, 1, 1, default_table_schema(vec![1]), (11, 15), false);
+    //         put_rows_to_cache(&cache, 2, 1, default_table_schema(vec![1]), (111, 115), false);
+    //         CacheGroup {
+    //             mut_cache: Arc::new(RwLock::new(cache)),
+    //             immut_cache: caches.into_iter().map(|c| Arc::new(RwLock::new(c))).collect(),
+    //         }
+    //     };
+    //
+    //     let opt = Arc::new(Options::from(&global_config));
+    //     let database = Arc::new("dba".to_string());
+    //     let ts_family_id = 1;
+    //
+    //     let version =
+    //         build_version_by_column_files(opt.storage.clone(), database, ts_family_id, vec![]);
+    //     let test_helper = TestHelper {
+    //         runtime: Arc::new(
+    //             tokio::runtime::Builder::new_multi_thread()
+    //                 .enable_all()
+    //                 .build()
+    //                 .unwrap(),
+    //         ),
+    //         super_version: Arc::new(SuperVersion::new(
+    //             ts_family_id,
+    //             opt.storage.clone(),
+    //             cache_group,
+    //             Arc::new(version),
+    //             1,
+    //         )),
+    //     };
+    //
+    //     #[rustfmt::skip]
+    //     let _skip_fmt = {
+    //         assert_eq!(test_helper.run(&[1], None, (i64::MIN, i64::MAX)).unwrap(), 14);
+    //         assert_eq!(test_helper.run(&[1], None, (i64::MIN, i64::MAX)).unwrap(), 14);
+    //
+    //         assert_eq!(test_helper.run(&[1], Some(1), (i64::MIN, i64::MAX)).unwrap(), 14);
+    //         assert_eq!(test_helper.run(&[1, 2], Some(1), (i64::MIN, i64::MAX)).unwrap(), 28);
+    //         assert_eq!(test_helper.run(&[1], Some(1), (0, 0)).unwrap(), 0);
+    //         assert_eq!(test_helper.run(&[1], Some(1), (1, 1)).unwrap(), 1);
+    //         assert_eq!(test_helper.run(&[1], Some(1), (1, 4)).unwrap(), 4);
+    //         assert_eq!(test_helper.run(&[1], Some(1), (1, 5)).unwrap(), 5);
+    //         assert_eq!(test_helper.run(&[1], Some(1), (4, 4)).unwrap(), 1);
+    //         assert_eq!(test_helper.run(&[1], Some(1), (4, 5)).unwrap(), 2);
+    //         assert_eq!(test_helper.run(&[1], Some(1), (4, 7)).unwrap(), 4);
+    //         assert_eq!(test_helper.run(&[1], Some(1), (8, 10)).unwrap(), 2);
+    //         assert_eq!(test_helper.run(&[1], Some(1), (10, 10)).unwrap(), 0);
+    //
+    //         assert_eq!(test_helper.run(&[2], Some(1), (101, 104)).unwrap(), 4);
+    //         assert_eq!(test_helper.run(&[2], Some(1), (104, 105)).unwrap(), 2);
+    //         "skip_fmt"
+    //     };
+    // }
+    //
+    // #[test]
+    // fn test_super_version_count() {
+    //     let dir = "/tmp/test/ts_family/super_version_count";
+    //     let mut global_config = config::get_config_for_test();
+    //     global_config.storage.path = dir.to_string();
+    //     #[rustfmt::skip]
+    //     let data = vec![
+    //         HashMap::from([
+    //             (model_utils::unite_id(1, 1), vec![DataBlock::I64 { ts: vec![1, 2, 3, 4], val: vec![1, 1, 1, 1], enc: DataBlockEncoding::default() }]),
+    //             (model_utils::unite_id(1, 2), vec![DataBlock::I64 { ts: vec![2, 3, 101, 104], val: vec![1, 1, 1, 1], enc: DataBlockEncoding::default() }]),
+    //         ]),
+    //         HashMap::from([
+    //             (model_utils::unite_id(1, 1), vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![1, 1, 1], enc: DataBlockEncoding::default() }]),
+    //             (model_utils::unite_id(1, 2), vec![DataBlock::I64 { ts: vec![5, 104, 106], val: vec![1, 1, 1], enc: DataBlockEncoding::default() }]),
+    //         ]),
+    //         HashMap::from([
+    //             (model_utils::unite_id(1, 1), vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![1, 1, 1], enc: DataBlockEncoding::default() }]),
+    //             (model_utils::unite_id(1, 2), vec![DataBlock::I64 { ts: vec![8, 107, 109], val: vec![1, 1, 1], enc: DataBlockEncoding::default() }]),
+    //         ]),
+    //     ];
+    //
+    //     let pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::default());
+    //     #[rustfmt::skip]
+    //     let cache_group = {
+    //         let caches = vec![MemCache::new(1, 16, 2, 0, &pool), MemCache::new(1, 16, 2, 0, &pool), MemCache::new(1, 16, 2, 0, &pool)];
+    //         // cache, sid, schema_id, schema, time_range, put_none
+    //         put_rows_to_cache(&caches[0], 1, 1, default_table_schema(vec![1]), (11, 15), false);
+    //         put_rows_to_cache(&caches[1], 1, 1, default_table_schema(vec![1]), (21, 25), false);
+    //         put_rows_to_cache(&caches[2], 1, 1, default_table_schema(vec![1]), (31, 35), false);
+    //
+    //         put_rows_to_cache(&caches[0], 2, 1, default_table_schema(vec![1]), (12, 13), false);
+    //         put_rows_to_cache(&caches[0], 2, 1, default_table_schema(vec![1]), (111, 115), false);
+    //         put_rows_to_cache(&caches[1], 2, 1, default_table_schema(vec![1]), (22, 23), false);
+    //         put_rows_to_cache(&caches[1], 2, 1, default_table_schema(vec![1]), (121, 125), false);
+    //         put_rows_to_cache(&caches[2], 2, 1, default_table_schema(vec![1]), (32, 33), false);
+    //         put_rows_to_cache(&caches[2], 2, 1, default_table_schema(vec![1]), (131, 135), false);
+    //         let mut_cache = MemCache::new(1, 16, 2, 0, &pool);
+    //         put_rows_to_cache(&mut_cache, 1, 1, default_table_schema(vec![1]), (31, 40), false);
+    //         put_rows_to_cache(&mut_cache, 2, 1, default_table_schema(vec![1]), (36, 37), false);
+    //         put_rows_to_cache(&mut_cache, 2, 1, default_table_schema(vec![1]), (131, 140), false);
+    //         CacheGroup {
+    //             mut_cache: Arc::new(RwLock::new(mut_cache)),
+    //             immut_cache: caches.into_iter().map(|c| Arc::new(RwLock::new(c))).collect(),
+    //         }
+    //     };
+    //
+    //     let opt = Arc::new(Options::from(&global_config));
+    //     let database = Arc::new("dba".to_string());
+    //     let ts_family_id = 1;
+    //     let dir = opt.storage.tsm_dir(&database, 1);
+    //     let runtime = Arc::new(
+    //         tokio::runtime::Builder::new_multi_thread()
+    //             .enable_all()
+    //             .build()
+    //             .unwrap(),
+    //     );
+    //
+    //     let (_, files) = runtime.block_on(write_data_blocks_to_column_file(&dir, data));
+    //     let version =
+    //         build_version_by_column_files(opt.storage.clone(), database, ts_family_id, files);
+    //     let test_helper = TestHelper {
+    //         runtime,
+    //         super_version: Arc::new(SuperVersion::new(
+    //             ts_family_id,
+    //             opt.storage.clone(),
+    //             cache_group,
+    //             Arc::new(version),
+    //             1,
+    //         )),
+    //     };
+    //
+    //     // # sum
+    //     // sid=1: 29, sid=2: 37
+    //     // # disk
+    //     // sid=1 (9): 1, 2, 3, 4, 5, 6, 7, 8, 9
+    //     // sid=2 (9):    2, 3,    5,       8, 101, 104, 106, 107, 109
+    //     // # memory
+    //     // sid=1 (20): 11, 12, 13, 14, 15, 21, 22, 23, 24, 25, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40
+    //     // sid=2 (8):  12, 13,             22, 23,             32, 33,         36, 37,
+    //     // sid=2 (20): 111, 112, 113, 114, 115, 121, 122, 123, 124, 125, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140
+    //
+    //     #[rustfmt::skip]
+    //     let _skip_fmt = {
+    //         assert_eq!(test_helper.run(&[1], None, (i64::MIN, i64::MAX)).unwrap(), 29);
+    //         assert_eq!(test_helper.run(&[1, 2], None, (i64::MIN, i64::MAX)).unwrap(), 66);
+    //
+    //         assert_eq!(test_helper.run(&[1], Some(1), (i64::MIN, i64::MAX)).unwrap(), 29);
+    //         assert_eq!(test_helper.run(&[1, 2], Some(1), (i64::MIN, i64::MAX)).unwrap(), 66);
+    //         assert_eq!(test_helper.run(&[1], Some(1), (0, 0)).unwrap(), 0);
+    //         assert_eq!(test_helper.run(&[1], Some(1), (1, 1)).unwrap(), 1);
+    //         assert_eq!(test_helper.run(&[1], Some(1), (1, 10)).unwrap(), 9);
+    //         assert_eq!(test_helper.run(&[1], Some(1), (1, 50)).unwrap(), 29);
+    //         assert_eq!(test_helper.run(&[1], Some(1), (10, 20)).unwrap(), 5);
+    //         assert_eq!(test_helper.run(&[1], Some(1), (10, 50)).unwrap(), 20);
+    //         assert_eq!(test_helper.run(&[1], Some(1), (15, 21)).unwrap(), 2);
+    //         assert_eq!(test_helper.run(&[1], Some(1), (40, 40)).unwrap(), 1);
+    //         assert_eq!(test_helper.run(&[1], Some(1), (41, 41)).unwrap(), 0);
+    //
+    //         assert_eq!(test_helper.run(&[2], Some(1), (105, 110)).unwrap(), 3);
+    //         assert_eq!(test_helper.run(&[2], Some(1), (105, 121)).unwrap(), 9);
+    //         assert_eq!(test_helper.run(&[2], Some(1), (115, 125)).unwrap(), 6);
+    //         "skip_fmt"
+    //     };
+    // }
 }

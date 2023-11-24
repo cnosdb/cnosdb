@@ -66,55 +66,70 @@ impl FlushTask {
         version_edits: &mut Vec<VersionEdit>,
         file_metas: &mut HashMap<ColumnFileId, Arc<BloomFilter>>,
     ) -> Result<()> {
-        let mut tsm_writer =
-            Tsm2Writer::open(&self.path_tsm, self.global_context.file_id_next(), 0).await?;
-        let mut delta_writer =
-            Tsm2Writer::open(&self.path_delta, self.global_context.file_id_next(), 0).await?;
+        let mut tsm_writer = None;
+        let mut delta_writer = None;
         for memcache in self.mem_caches {
             let (group, delta_group) = memcache.read().to_chunk_group(version.clone())?;
-            for data in group {
-                tsm_writer.write_data(data).await?;
+            if tsm_writer.is_none() && !group.is_empty() {
+                tsm_writer = Some(
+                    Tsm2Writer::open(&self.path_tsm, self.global_context.file_id_next(), 0).await?,
+                );
             }
-            for data in delta_group {
-                delta_writer.write_data(data).await?;
+            if delta_writer.is_none() && !delta_group.is_empty() {
+                delta_writer = Some(
+                    Tsm2Writer::open(&self.path_delta, self.global_context.file_id_next(), 0)
+                        .await?,
+                );
+            }
+            if let Some(tsm_writer) = tsm_writer.as_mut() {
+                tsm_writer.write_data(group).await?;
+            }
+            if let Some(delta_writer) = delta_writer.as_mut() {
+                delta_writer.write_data(delta_group).await?;
             }
         }
-        tsm_writer.finish().await?;
-        delta_writer.finish().await?;
-
-        file_metas.insert(
-            tsm_writer.file_id(),
-            Arc::new(tsm_writer.series_bloom_filter().clone()),
-        );
-        file_metas.insert(
-            delta_writer.file_id(),
-            Arc::new(delta_writer.series_bloom_filter().clone()),
-        );
 
         let compact_meta_builder = CompactMetaBuilder::new(self.ts_family_id);
-        let tsm_meta = compact_meta_builder.build(
-            tsm_writer.file_id(),
-            tsm_writer.size() as u64,
-            1,
-            tsm_writer.min_ts(),
-            tsm_writer.max_ts(),
-        );
-        let delta_meta = compact_meta_builder.build(
-            delta_writer.file_id(),
-            delta_writer.size() as u64,
-            0,
-            delta_writer.min_ts(),
-            delta_writer.max_ts(),
-        );
-
-        let mut edit = VersionEdit::new(self.ts_family_id);
         let mut max_level_ts = version.max_level_ts;
-        max_level_ts = max(max_level_ts, tsm_meta.max_ts);
-        max_level_ts = max(max_level_ts, delta_meta.max_ts);
-        edit.add_file(tsm_meta, max_level_ts);
-        edit.add_file(delta_meta, max_level_ts);
-        version_edits.push(edit);
+        let mut edit = VersionEdit::new(self.ts_family_id);
 
+        if let Some(mut tsm_writer) = tsm_writer {
+            tsm_writer.finish().await?;
+            file_metas.insert(
+                tsm_writer.file_id(),
+                Arc::new(tsm_writer.series_bloom_filter().clone()),
+            );
+            let tsm_meta = compact_meta_builder.build(
+                tsm_writer.file_id(),
+                tsm_writer.size() as u64,
+                1,
+                tsm_writer.min_ts(),
+                tsm_writer.max_ts(),
+            );
+            max_level_ts = max(max_level_ts, tsm_meta.max_ts);
+            edit.add_file(tsm_meta, max_level_ts);
+        }
+
+        if let Some(mut delta_writer) = delta_writer {
+            delta_writer.finish().await?;
+            file_metas.insert(
+                delta_writer.file_id(),
+                Arc::new(delta_writer.series_bloom_filter().clone()),
+            );
+
+            let delta_meta = compact_meta_builder.build(
+                delta_writer.file_id(),
+                delta_writer.size() as u64,
+                0,
+                delta_writer.min_ts(),
+                delta_writer.max_ts(),
+            );
+
+            max_level_ts = max(max_level_ts, delta_meta.max_ts);
+            edit.add_file(delta_meta, max_level_ts);
+        }
+
+        version_edits.push(edit);
         Ok(())
     }
 

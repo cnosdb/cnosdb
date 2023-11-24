@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, LinkedList};
+use std::collections::{BTreeMap, HashMap, HashSet, LinkedList};
 use std::mem::size_of_val;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -344,6 +344,8 @@ impl SeriesData {
         version: Arc<Version>,
     ) -> Result<Option<(String, DataBlock2, DataBlock2)>> {
         if let Some(schema) = self.get_schema() {
+            let field_ids = schema.fields_id();
+
             let mut cols: Vec<ColumnData> = schema
                 .fields()
                 .iter()
@@ -354,35 +356,45 @@ impl SeriesData {
                 0,
                 ColumnType::Time(TimeUnit::from(schema.time_column_precision())),
             );
+
             let mut delta_time_array = time_array.clone();
-            let mut cols_desc = Vec::with_capacity(schema.field_num());
+            let mut cols_desc = vec![None; schema.field_num()];
             for (_schema_id, schema, rows) in self.flat_groups() {
-                let mut values = rows.iter().cloned().collect::<Vec<_>>();
-                values.sort_by_key(|row| row.ts);
-                // utils::dedup_front_by_key(&mut values, |row| row.ts);
-                // dedup_row_data(&mut values);
+                let values = dedup_and_sort_row_data(rows);
                 for row in values {
                     if row.ts < version.max_level_ts {
                         delta_time_array.push(Some(FieldVal::Integer(row.ts)));
                     }
                     time_array.push(Some(FieldVal::Integer(row.ts)));
-                    for (index, col) in schema.fields().iter().enumerate() {
-                        let field = row.fields.get(index);
-                        if row.ts < version.max_level_ts {
-                            if let Some(val) = field {
-                                delta_cols[index].push(val.clone());
+                    for col in schema.fields().iter() {
+                        if let Some(index) = field_ids.get(&col.id) {
+                            let field = row.fields.get(*index);
+                            if row.ts < version.max_level_ts {
+                                if let Some(val) = field {
+                                    delta_cols[*index].push(val.clone());
+                                } else {
+                                    delta_cols[*index].push(None);
+                                }
+                            } else if let Some(val) = field {
+                                cols[*index].push(val.clone());
                             } else {
-                                delta_cols[index].push(None);
+                                cols[*index].push(None);
                             }
-                        } else if let Some(val) = field {
-                            cols[index].push(val.clone());
-                        } else {
-                            cols[index].push(None);
+                            if cols_desc[*index].is_none() {
+                                cols_desc[*index] = Some(col.clone());
+                            }
                         }
-                        cols_desc.insert(index, col.clone());
                     }
                 }
             }
+
+            let cols_desc = cols_desc.into_iter().flatten().collect::<Vec<_>>();
+            if cols_desc.len() != cols.len() {
+                return Err(Error::CommonError {
+                    reason: "Invalid cols_desc".to_string(),
+                });
+            }
+
             if !time_array.valid.is_all_set() || !delta_time_array.valid.is_all_set() {
                 return Err(Error::CommonError {
                     reason: "Invalid time array in DataBlock".to_string(),
@@ -441,43 +453,52 @@ pub struct MemCache {
 }
 
 impl MemCache {
-    pub fn to_chunk_group(
-        &self,
-        version: Arc<Version>,
-    ) -> Result<(Vec<TsmWriteData>, Vec<TsmWriteData>)> {
-        let mut chunk_groups = Vec::with_capacity(self.part_count);
-        let mut delta_chunk_groups = Vec::new();
-        self.partions.iter().try_for_each(|p| -> Result<()> {
-            let mut chunk_group: TsmWriteData = BTreeMap::new();
-            let mut delta_chunk_group: TsmWriteData = BTreeMap::new();
-            let part = p.read();
-            part.iter().try_for_each(|(series_id, v)| -> Result<()> {
+    pub fn to_chunk_group(&self, version: Arc<Version>) -> Result<(TsmWriteData, TsmWriteData)> {
+        let partions: HashMap<SeriesId, Arc<RwLock<SeriesData>>> = self
+            .partions
+            .iter()
+            .flat_map(|lock| {
+                let inner_map = lock.read();
+                let values = inner_map
+                    .iter()
+                    .map(|(id, rw_lock_ref)| (*id, rw_lock_ref.clone()))
+                    .collect::<Vec<_>>();
+                values
+            })
+            .collect();
+
+        let mut chunk_group: TsmWriteData = BTreeMap::new();
+        let mut delta_chunk_group: TsmWriteData = BTreeMap::new();
+        partions
+            .iter()
+            .try_for_each(|(series_id, v)| -> Result<()> {
                 let data = v.read();
                 if let Some((table, datablock, delta_datablock)) =
                     data.build_data_block(version.clone())?
                 {
-                    if let Some(chunk) = chunk_group.get_mut(&table) {
-                        chunk.insert(*series_id, datablock);
-                    } else {
-                        let mut chunk = BTreeMap::new();
-                        chunk.insert(*series_id, datablock);
-                        chunk_group.insert(table.clone(), chunk);
+                    if datablock.len() != 0 {
+                        if let Some(chunk) = chunk_group.get_mut(&table) {
+                            chunk.insert(*series_id, datablock);
+                        } else {
+                            let mut chunk = BTreeMap::new();
+                            chunk.insert(*series_id, datablock);
+                            chunk_group.insert(table.clone(), chunk);
+                        }
                     }
-                    if let Some(chunk) = delta_chunk_group.get_mut(&table) {
-                        chunk.insert(*series_id, delta_datablock);
-                    } else {
-                        let mut chunk = BTreeMap::new();
-                        chunk.insert(*series_id, delta_datablock);
-                        chunk_group.insert(table, chunk);
+
+                    if delta_datablock.len() != 0 {
+                        if let Some(chunk) = delta_chunk_group.get_mut(&table) {
+                            chunk.insert(*series_id, delta_datablock);
+                        } else {
+                            let mut chunk = BTreeMap::new();
+                            chunk.insert(*series_id, delta_datablock);
+                            chunk_group.insert(table, chunk);
+                        }
                     }
                 }
                 Ok(())
             })?;
-            chunk_groups.push(chunk_group);
-            delta_chunk_groups.push(delta_chunk_group);
-            Ok(())
-        })?;
-        Ok((chunk_groups, delta_chunk_groups))
+        Ok((chunk_group, delta_chunk_group))
     }
     pub fn new(
         tf_id: TseriesFamilyId,
@@ -763,18 +784,31 @@ pub(crate) mod test {
     }
 }
 
-// pub fn dedup_row_data(data: &mut Vec<RowData>) {
-//     for i in 0..data.len() - 1 {
-//         if data[i].ts == data[i + 1].ts {
-//             for (j, field) in data[i + 1].fields.iter().enumerate() {
-//                 if field.is_some() {
-//                     data[i].fields[j] = field.clone();
-//                 }
-//             }
-//         }
-//     }
-//     data.dedup_by_key(|row| row.ts);
-// }
+pub fn dedup_and_sort_row_data(data: &LinkedList<RowData>) -> Vec<RowData> {
+    let mut data = data.iter().cloned().collect::<Vec<_>>();
+    data.sort_by(|a, b| a.ts.cmp(&b.ts));
+    let mut dedup_ts = HashSet::new();
+    data.iter().for_each(|row_data| {
+        if !dedup_ts.contains(&row_data.ts) {
+            dedup_ts.insert(row_data.ts);
+        }
+    });
+    let mut result: Vec<RowData> = Vec::with_capacity(data.len());
+    for row_data in data {
+        if let Some(existing_row) = result.last_mut() {
+            if existing_row.ts == row_data.ts {
+                for (index, field) in row_data.fields.iter().enumerate() {
+                    if let Some(field) = field {
+                        existing_row.fields[index] = Some(field.clone());
+                    }
+                }
+            } else {
+                result.push(row_data);
+            }
+        }
+    }
+    result
+}
 
 #[cfg(test)]
 mod test_memcache {
