@@ -1,0 +1,122 @@
+statement ok
+drop user if exists u1;
+
+statement ok
+drop user if exists u2;
+
+statement ok
+drop user if exists u3;
+
+statement ok
+drop user if exists u4;
+
+statement ok
+drop user if exists u5;
+
+statement ok
+drop user if exists u6;
+
+statement ok
+drop user if exists u7;
+
+statement ok
+drop user if exists u8;
+
+statement ok
+drop user if exists u9;
+
+statement ok
+drop user if exists u10;
+
+statement ok
+drop user if exists u11;
+
+statement ok
+create user u1;
+
+statement ok
+create user u2 with password='abc';
+
+statement ok
+create user u3 with password='';
+
+statement ok
+create user u4 with must_change_password=true;
+
+statement ok
+create user u5 with must_change_password=false;
+
+statement ok
+create user u6 with comment='';
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Expected =, found: ;", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
+create user u7 with comment;
+
+statement ok
+create user u8 with password='abc', must_change_password=true;
+
+statement ok
+create user u9 with password='abc', comment='abc';
+
+statement ok
+create user u10 with must_change_password=true, comment='abc';
+
+statement ok
+create user u11 with password='abc', must_change_password=true, comment='abc';
+
+statement ok
+alter user u1 set password='123';
+
+query T
+SELECT * FROM cluster_schema.users where user_name='u1';
+----
+u1 false {"hash_password":"*****"}
+
+statement ok
+alter user u1 set must_change_password=true;
+
+query T
+SELECT * FROM cluster_schema.users where user_name='u1';
+----
+u1 false {"hash_password":"*****","must_change_password":true}
+
+statement ok
+alter user u1 set comment='abc';
+
+query T
+SELECT * FROM cluster_schema.users where user_name='u1';
+----
+u1 false {"hash_password":"*****","must_change_password":true,"comment":"abc"}
+
+statement ok
+drop user u1;
+
+statement ok
+drop user u2;
+
+statement ok
+drop user u3;
+
+statement ok
+drop user u4;
+
+statement ok
+drop user u5;
+
+statement ok
+drop user u6;
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Meta: The user u7 not found", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
+drop user u7;
+
+statement ok
+drop user u8;
+
+statement ok
+drop user u9;
+
+statement ok
+drop user u10;
+
+statement ok
+drop user u11;

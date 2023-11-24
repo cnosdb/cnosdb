@@ -57,7 +57,7 @@ mod test {
         println!("Test {case_name}, start cnosdb");
         let old_path = std::env::current_dir().unwrap();
         std::env::set_current_dir(workspace_dir()).unwrap();
-        let mut data = start_singleton("config_8902.toml", "127.0.0.1:8902");
+        let mut data = start_singleton(None::<PathBuf>, "config_8902.toml", "127.0.0.1:8902");
         sleep(Duration::from_secs(1));
         println!("Test {case_name}, restore");
         let dump_sql = data
