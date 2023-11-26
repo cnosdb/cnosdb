@@ -242,8 +242,10 @@ pub async fn run_flush_memtable_job(
                 version.last_seq(),
             );
 
-            if ctx.wal_sender.send(task).await.is_ok() {
-                let _ = rx.await;
+            if ctx.wal_sender.send(task).await.is_ok()
+                && timeout(Duration::from_secs(3), rx).await.is_err()
+            {
+                info!("Flush: failed to receive clear wal files result in 3 seconds",);
             }
         }
 
