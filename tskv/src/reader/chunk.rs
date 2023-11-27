@@ -7,6 +7,7 @@ use crate::tsm2::reader::TSM2Reader;
 use crate::Result;
 
 pub struct ChunkReader {
+    chunk: Arc<Chunk>,
     batch_readers: Vec<BatchReaderRef>,
 }
 impl ChunkReader {
@@ -27,16 +28,37 @@ impl ChunkReader {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        Ok(Self { batch_readers })
+        Ok(Self {
+            chunk,
+            batch_readers,
+        })
     }
 
-    pub fn new_with_unchecked(batch_readers: Vec<BatchReaderRef>) -> Self {
-        Self { batch_readers }
+    pub fn new_with_unchecked(chunk: Arc<Chunk>, batch_readers: Vec<BatchReaderRef>) -> Self {
+        Self {
+            chunk,
+            batch_readers,
+        }
     }
 }
 
 impl BatchReader for ChunkReader {
     fn process(&self) -> Result<SendableSchemableTskvRecordBatchStream> {
         self.batch_readers.process()
+    }
+
+    fn fmt_as(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let column_group_nums = self.chunk.column_group().len();
+        let time_range = self.chunk.time_range();
+        let chunk_bytes = self.chunk.size();
+
+        write!(
+            f,
+            "ChunkReader: column_group_nums={column_group_nums}, time_range={time_range}, chunk_bytes={chunk_bytes}"
+        )
+    }
+
+    fn children(&self) -> Vec<BatchReaderRef> {
+        self.batch_readers.clone()
     }
 }

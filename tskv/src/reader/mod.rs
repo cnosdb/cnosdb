@@ -1,3 +1,4 @@
+use std::fmt;
 use std::ops::Deref;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -21,6 +22,7 @@ use crate::{Error, Result};
 
 pub mod chunk;
 mod column_group;
+pub mod display;
 pub mod filter;
 mod iterator;
 pub mod iterator_v2;
@@ -33,6 +35,7 @@ pub mod series;
 pub mod table_scan;
 pub mod tag_scan;
 pub mod utils;
+pub mod visitor;
 
 #[derive(Debug)]
 pub struct Predicate {
@@ -102,6 +105,8 @@ impl Stream for EmptySchemableTskvRecordBatchStream {
 pub type BatchReaderRef = Arc<dyn BatchReader>;
 pub trait BatchReader {
     fn process(&self) -> Result<SendableSchemableTskvRecordBatchStream>;
+    fn fmt_as(&self, f: &mut fmt::Formatter) -> fmt::Result;
+    fn children(&self) -> Vec<BatchReaderRef>;
 }
 
 impl BatchReader for Vec<BatchReaderRef> {
@@ -121,6 +126,14 @@ impl BatchReader for Vec<BatchReaderRef> {
         Err(Error::CommonError {
             reason: "No stream found in CombinedRecordBatchStream".to_string(),
         })
+    }
+
+    fn fmt_as(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "CombinedBatchReader: size={}", self.len())
+    }
+
+    fn children(&self) -> Vec<BatchReaderRef> {
+        self.clone()
     }
 }
 
@@ -164,6 +177,14 @@ impl BatchReader for MemoryBatchReader {
             stream,
         }))
     }
+
+    fn fmt_as(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "MemoryBatchReader:")
+    }
+
+    fn children(&self) -> Vec<BatchReaderRef> {
+        vec![]
+    }
 }
 
 #[derive(Clone)]
@@ -184,6 +205,22 @@ impl DataReference {
 impl TimeRangeProvider for DataReference {
     fn time_range(&self) -> &TimeRange {
         self.time_range()
+    }
+}
+
+/// A wrapper to customize partitioned file display
+#[derive(Debug)]
+pub struct ProjectSchemaDisplay<'a>(pub &'a SchemaRef);
+
+impl<'a> fmt::Display for ProjectSchemaDisplay<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let parts: Vec<_> = self
+            .0
+            .fields()
+            .iter()
+            .map(|x| x.name().to_owned())
+            .collect::<Vec<String>>();
+        write!(f, "[{}]", parts.join(", "))
     }
 }
 

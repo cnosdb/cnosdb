@@ -11,13 +11,15 @@ use trace::warn;
 
 use super::page::{PageReaderRef, PrimitiveArrayReader};
 use super::{
-    BatchReader, Projection, SchemableTskvRecordBatchStream, SendableSchemableTskvRecordBatchStream,
+    BatchReader, BatchReaderRef, Projection, SchemableTskvRecordBatchStream,
+    SendableSchemableTskvRecordBatchStream,
 };
 use crate::tsm2::page::{ColumnGroup, PageWriteSpec};
 use crate::tsm2::reader::TSM2Reader;
 use crate::Result;
 
 pub struct ColumnGroupReader {
+    column_group: Arc<ColumnGroup>,
     page_readers: Vec<PageReaderRef>,
     schema: SchemaRef,
 }
@@ -48,13 +50,19 @@ impl ColumnGroupReader {
         let schema = Arc::new(Schema::new(fields));
 
         Ok(Self {
+            column_group,
             page_readers,
             schema,
         })
     }
 
-    pub fn new_with_unchecked(page_readers: Vec<PageReaderRef>, schema: SchemaRef) -> Self {
+    pub fn new_with_unchecked(
+        column_group: Arc<ColumnGroup>,
+        page_readers: Vec<PageReaderRef>,
+        schema: SchemaRef,
+    ) -> Self {
         Self {
+            column_group,
             page_readers,
             schema,
         }
@@ -99,6 +107,21 @@ impl BatchReader for ColumnGroupReader {
             buffers,
             join_handles,
         }))
+    }
+
+    fn fmt_as(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let column_group_id = self.column_group.column_group_id();
+        let pages_offset = self.column_group.pages_offset();
+        let column_group_bytes = self.column_group.size();
+
+        write!(
+            f,
+            "ColumnGroupReader: column_group_id={column_group_id}, pages_offset={pages_offset}, column_group_bytes={column_group_bytes}"
+        )
+    }
+
+    fn children(&self) -> Vec<BatchReaderRef> {
+        vec![]
     }
 }
 
@@ -171,6 +194,7 @@ mod tests {
     use crate::reader::page::tests::TestPageReader;
     use crate::reader::page::PageReaderRef;
     use crate::reader::BatchReader;
+    use crate::tsm2::page::ColumnGroup;
 
     #[tokio::test]
     async fn test_column_group_reader() {
@@ -190,7 +214,11 @@ mod tests {
             Field::new("c4", DataType::Boolean, true),
         ]));
 
-        let column_group_reader = ColumnGroupReader::new_with_unchecked(page_readers, schema);
+        let column_group_reader = ColumnGroupReader::new_with_unchecked(
+            Arc::new(ColumnGroup::new(0)),
+            page_readers,
+            schema,
+        );
 
         let stream = column_group_reader.process().expect("chunk_reader");
 

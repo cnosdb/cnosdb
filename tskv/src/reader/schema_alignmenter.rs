@@ -42,6 +42,21 @@ impl BatchReader for SchemaAlignmenter {
 
         Ok(input)
     }
+
+    fn fmt_as(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let fields = self
+            .schema
+            .fields()
+            .iter()
+            .map(|f| f.name())
+            .collect::<Vec<_>>();
+
+        write!(f, "SchemaAlignmenter: columns={:?}", fields)
+    }
+
+    fn children(&self) -> Vec<BatchReaderRef> {
+        vec![self.input.clone()]
+    }
 }
 
 /// Constructs a schema mapping between `output_schema` and `input_schema`.

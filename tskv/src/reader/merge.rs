@@ -44,6 +44,14 @@ impl BatchReader for DataMerger {
             schema, streams,
         )?))
     }
+
+    fn fmt_as(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "DataMerger:")
+    }
+
+    fn children(&self) -> Vec<BatchReaderRef> {
+        self.inputs.clone()
+    }
 }
 
 pub struct ParallelMergeAdapter {
@@ -77,6 +85,14 @@ impl BatchReader for ParallelMergeAdapter {
             schema: self.schema.clone(),
             stream,
         }))
+    }
+
+    fn fmt_as(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "ParallelMergeAdapter:")
+    }
+
+    fn children(&self) -> Vec<BatchReaderRef> {
+        self.inputs.clone()
     }
 }
 

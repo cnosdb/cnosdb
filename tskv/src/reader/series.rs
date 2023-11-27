@@ -67,6 +67,14 @@ impl BatchReader for SeriesReader {
             schema,
         }))
     }
+
+    fn fmt_as(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "SeriesReader: series=[{}]", self.skey.string())
+    }
+
+    fn children(&self) -> Vec<BatchReaderRef> {
+        vec![self.input.clone()]
+    }
 }
 
 struct SeriesReaderStream {

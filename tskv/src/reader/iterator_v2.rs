@@ -1,13 +1,16 @@
 use std::sync::Arc;
 
 use arrow::datatypes::{Schema, SchemaRef};
-use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
+use datafusion::physical_plan::metrics::{
+    self, ExecutionPlanMetricsSet, MetricBuilder, MetricsSet,
+};
 use models::meta_data::VnodeId;
 use models::schema::TskvTableSchemaRef;
 use models::{SeriesId, SeriesKey};
 use tokio::runtime::Runtime;
 use trace::{debug, SpanRecorder};
 
+use super::display::DisplayableBatchReader;
 use super::merge::{DataMerger, ParallelMergeAdapter};
 use super::series::SeriesReader;
 use super::utils::OverlappingSegments;
@@ -125,7 +128,7 @@ pub struct SeriesGroupBatchReaderFactory {
 
     #[allow(unused)]
     span_recorder: SpanRecorder,
-    metrics: ExecutionPlanMetricsSet,
+    metrics_set: ExecutionPlanMetricsSet,
 }
 
 impl SeriesGroupBatchReaderFactory {
@@ -134,19 +137,23 @@ impl SeriesGroupBatchReaderFactory {
         query_option: QueryOption,
         super_version: Arc<SuperVersion>,
         span_recorder: SpanRecorder,
-        metrics: ExecutionPlanMetricsSet,
+        metrics_set: ExecutionPlanMetricsSet,
     ) -> Self {
         Self {
             engine,
             query_option,
             super_version,
             span_recorder,
-            metrics,
+            metrics_set,
         }
     }
 
     pub fn schema(&self) -> SchemaRef {
         self.query_option.df_schema.clone()
+    }
+
+    fn metrics(&self) -> Option<MetricsSet> {
+        Some(self.metrics_set.clone_inner())
     }
 
     /// ParallelMergeAdapter: schema=[{}]                               -------- 并行执行多个 stream
@@ -179,10 +186,19 @@ impl SeriesGroupBatchReaderFactory {
     ///      ......
     ///    ......
     pub async fn create(&self, series_ids: &[u32]) -> Result<Option<BatchReaderRef>> {
-        // let metrics = SeriesGroupRowIteratorMetrics::new(&metrics_set, partition),
+        let metrics = SeriesGroupBatchReaderMetrics::new(
+            &self.metrics_set,
+            self.super_version.ts_family_id as usize,
+        );
+
+        let _timer = metrics.elapsed_build_batch_reader_time().timer();
+
         if series_ids.is_empty() {
             return Ok(None);
         }
+
+        // 采集读取的 series 数量
+        metrics.series_nums().set(series_ids.len());
 
         let schema = &self.query_option.df_schema;
         let time_fields_schema = project_time_fields(
@@ -198,6 +214,11 @@ impl SeriesGroupBatchReaderFactory {
         let time_ranges = self.query_option.split.time_ranges();
         let column_files = super_version.column_files(time_ranges.as_ref());
 
+        // 采集过滤后的文件数量
+        metrics
+            .file_nums_filtered_by_time_range()
+            .set(column_files.len());
+
         // 通过sid获取serieskey
         let sid_keys = self.series_keys(vnode_id, series_ids).await?;
 
@@ -211,6 +232,10 @@ impl SeriesGroupBatchReaderFactory {
             series_chunk_readers.push((series_key, chunks));
         }
 
+        metrics
+            .chunk_nums()
+            .set(series_chunk_readers.iter().map(|(_, e)| e.len()).sum());
+
         let series_readers = series_chunk_readers
             .into_iter()
             .filter_map(|(series_key, chunks)| {
@@ -222,6 +247,7 @@ impl SeriesGroupBatchReaderFactory {
                     &predicate,
                     schema.clone(),
                     time_fields_schema.clone(),
+                    &metrics,
                 )
                 .transpose()
             })
@@ -236,6 +262,11 @@ impl SeriesGroupBatchReaderFactory {
             schema.clone(),
             series_readers,
         )?);
+
+        trace::trace!(
+            "Final batch reader tree: \n{}",
+            DisplayableBatchReader::new(reader.as_ref()).indent()
+        );
 
         Ok(Some(reader))
     }
@@ -259,7 +290,7 @@ impl SeriesGroupBatchReaderFactory {
                 )
                 .await?
                 .ok_or_else(|| Error::CommonError {
-                    reason: "Thi maybe a bug".to_string(),
+                    reason: format!("Get series key of sid {sid}, this maybe a bug"),
                 })?;
             sid_keys.push(series_key);
         }
@@ -283,7 +314,7 @@ impl SeriesGroupBatchReaderFactory {
         for f in files {
             let reader = version.get_tsm_reader2(f.file_path()).await?;
             let chunk = reader.chunk().get(&sid).ok_or_else(|| Error::CommonError {
-                reason: "Thi maybe a bug".to_string(),
+                reason: format!("Retrieve chunks with sid {sid}, this maybe a bug"),
             })?;
             chunks.push(DataReference::Chunk(chunk.clone(), reader));
         }
@@ -344,11 +375,15 @@ impl SeriesGroupBatchReaderFactory {
         predicate: &Option<Arc<Predicate>>,
         schema: SchemaRef,
         time_fields_schema: SchemaRef,
+        metrics: &SeriesGroupBatchReaderMetrics,
     ) -> Result<Option<BatchReaderRef>> {
         if chunks.is_empty() {
             return Ok(None);
         }
         // TODO 通过物理表达式根据page统计信息过滤chunk
+        metrics
+            .chunk_nums_filtered_by_statistics()
+            .set(chunks.len());
 
         // 对 chunk 按照时间顺序排序
         // 使用 group_overlapping_segments 函数来对具有重叠关系的chunk进行分组。
@@ -360,6 +395,7 @@ impl SeriesGroupBatchReaderFactory {
             series_key,
             grouped_chunks.len()
         );
+        metrics.grouped_chunk_nums().set(grouped_chunks.len());
 
         let readers = grouped_chunks
             .into_iter()
@@ -412,4 +448,69 @@ fn project_time_fields(table_schema: &TskvTableSchemaRef, schema: &SchemaRef) ->
     }
 
     Ok(SchemaRef::new(Schema::new(fields)))
+}
+
+/// Stores metrics about the table writer execution.
+#[derive(Debug, Clone)]
+pub struct SeriesGroupBatchReaderMetrics {
+    elapsed_build_batch_reader_time: metrics::Time,
+    series_nums: metrics::Gauge,
+    file_nums_filtered_by_time_range: metrics::Gauge,
+    chunk_nums: metrics::Gauge,
+    chunk_nums_filtered_by_statistics: metrics::Gauge,
+    grouped_chunk_nums: metrics::Gauge,
+}
+
+impl SeriesGroupBatchReaderMetrics {
+    /// Create new metrics
+    pub fn new(metrics: &ExecutionPlanMetricsSet, partition: usize) -> Self {
+        let elapsed_build_batch_reader_time =
+            MetricBuilder::new(metrics).subset_time("elapsed_build_batch_reader_time", partition);
+
+        let series_nums = MetricBuilder::new(metrics).gauge("series_nums", partition);
+
+        let file_nums_filtered_by_time_range =
+            MetricBuilder::new(metrics).gauge("file_nums_filtered_by_time_range", partition);
+
+        let chunk_nums = MetricBuilder::new(metrics).gauge("chunk_nums", partition);
+
+        let chunk_nums_filtered_by_statistics =
+            MetricBuilder::new(metrics).gauge("chunk_nums_filtered_by_statistics", partition);
+
+        let grouped_chunk_nums =
+            MetricBuilder::new(metrics).gauge("chunk_nums_filtered_by_statistics", partition);
+
+        Self {
+            elapsed_build_batch_reader_time,
+            series_nums,
+            file_nums_filtered_by_time_range,
+            chunk_nums,
+            chunk_nums_filtered_by_statistics,
+            grouped_chunk_nums,
+        }
+    }
+
+    pub fn elapsed_build_batch_reader_time(&self) -> &metrics::Time {
+        &self.elapsed_build_batch_reader_time
+    }
+
+    pub fn series_nums(&self) -> &metrics::Gauge {
+        &self.series_nums
+    }
+
+    pub fn file_nums_filtered_by_time_range(&self) -> &metrics::Gauge {
+        &self.file_nums_filtered_by_time_range
+    }
+
+    pub fn chunk_nums(&self) -> &metrics::Gauge {
+        &self.chunk_nums
+    }
+
+    pub fn chunk_nums_filtered_by_statistics(&self) -> &metrics::Gauge {
+        &self.chunk_nums_filtered_by_statistics
+    }
+
+    pub fn grouped_chunk_nums(&self) -> &metrics::Gauge {
+        &self.grouped_chunk_nums
+    }
 }

@@ -46,6 +46,14 @@ impl BatchReader for DataFilter {
             input,
         }))
     }
+
+    fn fmt_as(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "DataFilter: expr=[{}]", self.predicate.expr())
+    }
+
+    fn children(&self) -> Vec<BatchReaderRef> {
+        vec![self.input.clone()]
+    }
 }
 
 /// Re-assign column indices referenced in predicate according to given schema.
