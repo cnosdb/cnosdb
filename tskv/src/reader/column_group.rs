@@ -2,7 +2,8 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use arrow::datatypes::{Field, Schema, SchemaRef};
+use arrow::compute::kernels::cast;
+use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use arrow_array::{ArrayRef, RecordBatch};
 use futures::{ready, Stream, StreamExt};
 use tokio::sync::mpsc;
@@ -147,12 +148,22 @@ impl Stream for ChunkRecordBatchStream {
         let column_nums = self.buffers.len();
 
         loop {
-            let exists_column_nums = self.column_arrays.len();
+            let next_column_idx = self.column_arrays.len();
+            let target_type = self.schema.field(next_column_idx).data_type().clone();
 
-            match ready!(self.buffers[exists_column_nums].poll_recv(cx)) {
+            match ready!(self.buffers[next_column_idx].poll_recv(cx)) {
                 Some(Ok(array)) => {
                     let arrays = &mut self.column_arrays;
-                    arrays.push(array);
+
+                    // 如果类型不匹配，需要进行类型转换
+                    match convert_data_type_if_necessary(array, &target_type) {
+                        Ok(array) => {
+                            arrays.push(array);
+                        }
+                        Err(e) => {
+                            return Poll::Ready(Some(Err(e)));
+                        }
+                    }
 
                     if arrays.len() == column_nums {
                         // 可以构造 RecordBatch
@@ -171,6 +182,17 @@ impl Stream for ChunkRecordBatchStream {
                 }
             }
         }
+    }
+}
+
+fn convert_data_type_if_necessary(array: ArrayRef, target_type: &DataType) -> Result<ArrayRef> {
+    if array.data_type() != target_type {
+        match cast::cast(&array, target_type) {
+            Ok(array) => Ok(array),
+            Err(e) => Err(e.into()),
+        }
+    } else {
+        Ok(array)
     }
 }
 
