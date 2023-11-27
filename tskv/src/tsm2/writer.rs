@@ -942,7 +942,6 @@ impl Tsm2Writer {
         self.write_chunk_group_specs(series_meta).await?;
         self.write_footer().await?;
         self.state = State::Finished;
-        println!("writer size: {}", self.size);
         Ok(())
     }
 }
@@ -958,7 +957,6 @@ mod test {
     use models::schema::{ColumnType, TableColumn, TskvTableSchema};
     use models::ValueType;
 
-    use crate::file_utils::make_tsm_file_name;
     use crate::tsm2::reader::TSM2Reader;
     use crate::tsm2::writer::{Column, DataBlock2, Tsm2Writer};
 
@@ -1015,7 +1013,7 @@ mod test {
         let data1 = DataBlock2::new(
             schema.clone(),
             ts_column(vec![1, 2, 3]),
-            schema.time_column().clone(),
+            schema.time_column(),
             vec![
                 i64_column(vec![1, 2, 3]),
                 i64_column(vec![1, 2, 3]),

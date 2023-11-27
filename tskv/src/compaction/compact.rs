@@ -880,28 +880,23 @@ pub mod test {
     use std::sync::Arc;
 
     use arrow::datatypes::TimeUnit;
-    use datafusion::physical_plan::sorts::sort::SortExec;
     use lru_cache::asynchronous::ShardedCache;
-    use minivec::MiniVec;
     use models::codec::Encoding;
     use models::field_value::FieldVal;
     use models::predicate::domain::TimeRange;
     use models::schema::{ColumnType, TableColumn, TskvTableSchema};
-    use models::{FieldId, PhysicalDType, SeriesId, Timestamp, ValueType};
+    use models::{SeriesId, ValueType};
 
     use crate::compaction::{run_compaction_job, CompactReq};
     use crate::context::GlobalContext;
-    use crate::file_system::file::IFile;
     use crate::file_system::file_manager;
-    use crate::file_utils::make_tsm_file_name;
+    use crate::file_utils;
     use crate::kv_option::Options;
     use crate::summary::VersionEdit;
     use crate::tseries_family::{ColumnFile, LevelInfo, Version};
-    use crate::tsm::codec::DataBlockEncoding;
-    use crate::tsm::{self, DataBlock, TsmReader, TsmTombstone};
+    use crate::tsm::DataBlock;
     use crate::tsm2::reader::TSM2Reader;
     use crate::tsm2::writer::{Column, DataBlock2, Tsm2Writer};
-    use crate::{file_utils, ColumnFileId};
 
     pub(crate) async fn write_data_blocks_to_column_file(
         dir: impl AsRef<Path>,
@@ -967,7 +962,7 @@ pub mod test {
     fn i64_some_column(data: Vec<Option<i64>>) -> Column {
         let mut col = Column::empty(ColumnType::Field(ValueType::Integer));
         for datum in data {
-            col.push(datum.map(|v| FieldVal::Integer(v)))
+            col.push(datum.map(FieldVal::Integer))
         }
         col
     }
@@ -1087,7 +1082,7 @@ pub mod test {
         let data1 = DataBlock2::new(
             schema.clone(),
             ts_column(vec![1, 2, 3]),
-            schema.time_column().clone(),
+            schema.time_column(),
             vec![
                 i64_column(vec![1, 2, 3]),
                 i64_column(vec![1, 2, 3]),
@@ -1103,7 +1098,7 @@ pub mod test {
         let data2 = DataBlock2::new(
             schema.clone(),
             ts_column(vec![4, 5, 6]),
-            schema.time_column().clone(),
+            schema.time_column(),
             vec![
                 i64_column(vec![4, 5, 6]),
                 i64_column(vec![4, 5, 6]),
@@ -1119,7 +1114,7 @@ pub mod test {
         let data3 = DataBlock2::new(
             schema.clone(),
             ts_column(vec![7, 8, 9]),
-            schema.time_column().clone(),
+            schema.time_column(),
             vec![
                 i64_column(vec![7, 8, 9]),
                 i64_column(vec![7, 8, 9]),
@@ -1135,7 +1130,7 @@ pub mod test {
         let expected_data = DataBlock2::new(
             schema.clone(),
             ts_column(vec![1, 2, 3, 4, 5, 6, 7, 8, 9]),
-            schema.time_column().clone(),
+            schema.time_column(),
             vec![
                 i64_column(vec![1, 2, 3, 4, 5, 6, 7, 8, 9]),
                 i64_column(vec![1, 2, 3, 4, 5, 6, 7, 8, 9]),
@@ -1208,7 +1203,7 @@ pub mod test {
         let data1 = DataBlock2::new(
             schema.clone(),
             ts_column(vec![4, 5, 6]),
-            schema.time_column().clone(),
+            schema.time_column(),
             vec![
                 i64_column(vec![4, 5, 6]),
                 i64_column(vec![4, 5, 6]),
@@ -1224,7 +1219,7 @@ pub mod test {
         let data2 = DataBlock2::new(
             schema.clone(),
             ts_column(vec![1, 2, 3]),
-            schema.time_column().clone(),
+            schema.time_column(),
             vec![
                 i64_column(vec![1, 2, 3]),
                 i64_column(vec![1, 2, 3]),
@@ -1240,7 +1235,7 @@ pub mod test {
         let data3 = DataBlock2::new(
             schema.clone(),
             ts_column(vec![7, 8, 9]),
-            schema.time_column().clone(),
+            schema.time_column(),
             vec![
                 i64_column(vec![7, 8, 9]),
                 i64_column(vec![7, 8, 9]),
@@ -1256,7 +1251,7 @@ pub mod test {
         let expected_data = DataBlock2::new(
             schema.clone(),
             ts_column(vec![1, 2, 3, 4, 5, 6, 7, 8, 9]),
-            schema.time_column().clone(),
+            schema.time_column(),
             vec![
                 i64_column(vec![1, 2, 3, 4, 5, 6, 7, 8, 9]),
                 i64_column(vec![1, 2, 3, 4, 5, 6, 7, 8, 9]),
@@ -1335,7 +1330,7 @@ pub mod test {
         let data1 = DataBlock2::new(
             schema.clone(),
             ts_column(vec![1, 2, 3, 4]),
-            schema.time_column().clone(),
+            schema.time_column(),
             vec![
                 i64_some_column(vec![Some(1), Some(2), Some(3), Some(5)]),
                 i64_some_column(vec![Some(1), Some(2), Some(3), Some(5)]),
@@ -1351,7 +1346,7 @@ pub mod test {
         let data2 = DataBlock2::new(
             schema.clone(),
             ts_column(vec![4, 5, 6, 7]),
-            schema.time_column().clone(),
+            schema.time_column(),
             vec![
                 i64_some_column(vec![Some(4), Some(5), Some(6), None]),
                 i64_some_column(vec![Some(4), Some(5), Some(6), None]),
@@ -1367,7 +1362,7 @@ pub mod test {
         let data3 = DataBlock2::new(
             schema.clone(),
             ts_column(vec![7, 8, 9]),
-            schema.time_column().clone(),
+            schema.time_column(),
             vec![
                 i64_column(vec![7, 8, 9]),
                 i64_column(vec![7, 8, 9]),
@@ -1383,7 +1378,7 @@ pub mod test {
         let expected_data = DataBlock2::new(
             schema.clone(),
             ts_column(vec![1, 2, 3, 4, 5, 6, 7, 8, 9]),
-            schema.time_column().clone(),
+            schema.time_column(),
             vec![
                 i64_column(vec![1, 2, 3, 4, 5, 6, 7, 8, 9]),
                 i64_some_column(vec![

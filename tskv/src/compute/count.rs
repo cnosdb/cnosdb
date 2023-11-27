@@ -340,25 +340,16 @@ async fn count_non_null_values_in_files(
 
 #[cfg(test)]
 mod test {
-    use std::collections::HashMap;
+
     use std::sync::Arc;
 
-    use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
     use models::predicate::domain::TimeRanges;
-    use models::{utils as model_utils, ColumnId, SeriesId};
-    use parking_lot::RwLock;
+    use models::{ColumnId, SeriesId};
     use tokio::runtime::Runtime;
 
-    use crate::compaction::flush_tests::default_table_schema;
-    use crate::compaction::test::write_data_blocks_to_column_file;
     use crate::compute::count::count_column_non_null_values;
-    use crate::memcache::test::put_rows_to_cache;
-    use crate::memcache::MemCache;
-    use crate::tseries_family::test_tseries_family::build_version_by_column_files;
-    use crate::tseries_family::{CacheGroup, SuperVersion};
-    use crate::tsm::codec::DataBlockEncoding;
-    use crate::tsm::DataBlock;
-    use crate::{Options, Result};
+    use crate::tseries_family::SuperVersion;
+    use crate::Result;
 
     struct TestHelper {
         runtime: Arc<Runtime>,

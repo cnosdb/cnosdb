@@ -805,6 +805,8 @@ pub fn dedup_and_sort_row_data(data: &LinkedList<RowData>) -> Vec<RowData> {
             } else {
                 result.push(row_data);
             }
+        } else {
+            result.push(row_data);
         }
     }
     result

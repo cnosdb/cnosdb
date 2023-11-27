@@ -91,7 +91,6 @@ impl TSM2Reader {
         let path = tsm_path.as_ref().to_path_buf();
         let file_id = file_utils::get_tsm_file_id_by_path(&path)?;
         let reader = Arc::new(file_manager::open_file(&path).await?);
-        println!("reader size :{:?}", reader.size());
         let footer = Arc::new(read_footer(reader.clone()).await?);
         let chunk_group_meta = Arc::new(read_chunk_group_meta(reader.clone(), &footer).await?);
         let chunk_group = read_chunk_groups(reader.clone(), &chunk_group_meta).await?;
