@@ -475,11 +475,11 @@ impl AdminMeta {
             }
         };
 
-        let mut status = NodeStatus::default();
-        const MIN_AVALIBLE_DISK_SPACE: u64 = 1024 * 1024 * 1024;
-        if disk_free < MIN_AVALIBLE_DISK_SPACE {
-            status = NodeStatus::NoDiskSpace;
-        }
+        let status = NodeStatus::default();
+        // const MIN_AVALIBLE_DISK_SPACE: u64 = 1024 * 1024 * 1024;
+        // if disk_free < MIN_AVALIBLE_DISK_SPACE {
+        //     status = NodeStatus::NoDiskSpace;
+        // }
 
         let node_metrics = NodeMetrics {
             id: self.config.node_basic.node_id,
