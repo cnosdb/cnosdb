@@ -242,8 +242,8 @@ impl Column {
                 let encoder = get_f64_codec(desc.encoding);
                 encoder.encode(array, &mut buf).unwrap();
                 (
-                    Vec::from(min.to_le_bytes()),
-                    Vec::from(max.to_le_bytes()),
+                    Vec::from(min.to_be_bytes()),
+                    Vec::from(max.to_be_bytes()),
                     PhysicalDType::Float,
                 )
             }
@@ -256,8 +256,8 @@ impl Column {
                     encoder.encode(array, &mut buf).unwrap();
                 };
                 (
-                    Vec::from(min.to_le_bytes()),
-                    Vec::from(max.to_le_bytes()),
+                    Vec::from(min.to_be_bytes()),
+                    Vec::from(max.to_be_bytes()),
                     PhysicalDType::Integer,
                 )
             }
@@ -265,8 +265,8 @@ impl Column {
                 let encoder = get_u64_codec(desc.encoding);
                 encoder.encode(array, &mut buf).unwrap();
                 (
-                    Vec::from(min.to_le_bytes()),
-                    Vec::from(max.to_le_bytes()),
+                    Vec::from(min.to_be_bytes()),
+                    Vec::from(max.to_be_bytes()),
                     PhysicalDType::Unsigned,
                 )
             }
@@ -291,8 +291,8 @@ impl Column {
             }
         };
         let mut data = vec![];
-        data.extend_from_slice(&len_bitset.to_le_bytes());
-        data.extend_from_slice(&data_len.to_le_bytes());
+        data.extend_from_slice(&len_bitset.to_be_bytes());
+        data.extend_from_slice(&data_len.to_be_bytes());
         data.extend_from_slice(self.valid.bytes());
         data.extend_from_slice(&buf);
         let bytes = bytes::Bytes::from(data);
