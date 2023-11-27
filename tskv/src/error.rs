@@ -101,6 +101,12 @@ pub enum Error {
         source: DataFusionError,
     },
 
+    #[snafu(display("DuplicateColumnGroup: {}", reason))]
+    #[error_code(code = 13)]
+    DuplicateColumnGroup {
+        reason: String,
+    },
+
     // Internal Error
     #[snafu(display("{}", source))]
     IO {

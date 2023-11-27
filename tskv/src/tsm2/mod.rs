@@ -22,3 +22,5 @@ const BLOOM_FILTER_BITS: u64 = 512;
 const FOOTER_SIZE: usize = 129;
 
 pub type TsmWriteData = BTreeMap<String, BTreeMap<SeriesId, DataBlock2>>; // (table, (series_id, pages))
+
+pub type ColumnGroupID = usize;

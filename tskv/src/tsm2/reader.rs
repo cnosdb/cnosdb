@@ -4,10 +4,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use bytes::Bytes;
-use datafusion::parquet::data_type::AsBytes;
 use models::predicate::domain::TimeRange;
 use models::schema::{TskvTableSchemaRef, TIME_FIELD};
-use models::{ColumnId, SeriesId};
+use models::SeriesId;
 use parking_lot::RwLock;
 
 use crate::error::Result;
@@ -17,7 +16,7 @@ use crate::file_system::file_manager;
 use crate::tsm::TsmTombstone;
 use crate::tsm2::page::{Chunk, ChunkGroup, ChunkGroupMeta, Footer, Page, PageMeta, PageWriteSpec};
 use crate::tsm2::writer::{Column, DataBlock2};
-use crate::tsm2::FOOTER_SIZE;
+use crate::tsm2::{ColumnGroupID, FOOTER_SIZE};
 use crate::{file_utils, Error};
 
 pub struct TSM2MetaData {
@@ -147,91 +146,118 @@ impl TSM2Reader {
         &self,
         series_ids: &[SeriesId],
         time_range: TimeRange,
-    ) -> Result<BTreeMap<SeriesId, Vec<PageMeta>>> {
+    ) -> Result<BTreeMap<SeriesId, Vec<(ColumnGroupID, Vec<PageMeta>)>>> {
         let meta = self.tsm_meta.clone();
         let mut map = BTreeMap::new();
         for series_id in series_ids {
-            let mut pages = vec![];
+            let mut column_groups = vec![];
             if meta.footer().is_series_exist(series_id) {
                 if let Some(chunk) = meta.chunk().get(series_id) {
-                    // chunks.push(chunk);
-                    for page in chunk.pages() {
-                        if page.meta.time_range.overlaps(&time_range) {
-                            pages.push(page.meta().clone());
+                    for (id, column_group) in chunk.column_group() {
+                        let mut pages = vec![];
+                        for page in column_group.pages() {
+                            if page.meta.time_range.overlaps(&time_range) {
+                                pages.push(page.meta().clone());
+                            }
                         }
+                        column_groups.push((*id, pages))
                     }
                 }
             }
-            map.insert(*series_id, pages);
+            map.insert(*series_id, column_groups);
         }
         Ok(map)
     }
 
-    pub async fn read_pages(
-        &mut self,
-        series_ids: &[SeriesId],
-        column_id: &[ColumnId],
-    ) -> Result<Vec<Page>> {
-        let mut res = Vec::new();
-        let meta = self.tsm_meta.clone();
-        let footer = meta.footer();
-        let bloom_filter = footer.series().bloom_filter();
-        let reader = self.reader.clone();
-        for sid in series_ids {
-            if !bloom_filter.contains(sid.as_bytes()) {
-                continue;
-            }
-            let chunk = self.chunk().get(sid).ok_or(Error::CommonError {
-                reason: format!("chunk for series id : {} not found", sid),
-            })?;
-            for pages in chunk.pages() {
-                if column_id.contains(&pages.meta.column.id) {
-                    let page = read_page(reader.clone(), pages).await?;
-                    res.push(page);
-                }
-            }
-        }
-        Ok(res)
-    }
+    // pub async fn read_pages(
+    //     &mut self,
+    //     series_ids: &[SeriesId],
+    //     column_id: &[ColumnId],
+    // ) -> Result<Vec<Page>> {
+    //     let mut res = Vec::new();
+    //     let meta = self.tsm_meta.clone();
+    //     let footer = meta.footer();
+    //     let bloom_filter = footer.series().bloom_filter();
+    //     let reader = self.reader.clone();
+    //     for sid in series_ids {
+    //         if !bloom_filter.contains(sid.as_bytes()) {
+    //             continue;
+    //         }
+    //         let chunk = self.chunk().get(sid).ok_or(Error::CommonError {
+    //             reason: format!("chunk for series id : {} not found", sid),
+    //         })?;
+    //         for pages in chunk.pages() {
+    //             if column_id.contains(&pages.meta.column.id) {
+    //                 let page = read_page(reader.clone(), pages).await?;
+    //                 res.push(page);
+    //             }
+    //         }
+    //     }
+    //     Ok(res)
+    // }
 
     pub async fn read_page(&self, page_spec: &PageWriteSpec) -> Result<Page> {
         read_page(self.reader.clone(), page_spec).await
     }
 
-    pub async fn read_series_pages(&self, series_id: SeriesId) -> Result<Vec<Page>> {
+    pub async fn read_series_pages(
+        &self,
+        series_id: SeriesId,
+        column_group_id: ColumnGroupID,
+    ) -> Result<Vec<Page>> {
         let chunk = self.chunk();
-        let mut res = Vec::new();
         let reader = self.reader.clone();
         if let Some(chunk) = chunk.get(&series_id) {
-            for page in chunk.pages() {
-                let page = read_page(reader.clone(), page).await?;
-                res.push(page);
+            for (id, column_group) in chunk.column_group() {
+                if *id != column_group_id {
+                    continue;
+                }
+                let mut res_page = Vec::with_capacity(column_group.pages().len());
+                for page in column_group.pages() {
+                    let page = read_page(reader.clone(), page).await?;
+                    res_page.push(page);
+                }
+                return Ok(res_page);
             }
-        }
-        Ok(res)
-    }
-
-    pub async fn read_datablock_raw(&self, series_id: SeriesId) -> Result<Vec<u8>> {
-        let chunk = self.chunk();
-        if let Some(chunk) = chunk.get(&series_id) {
-            let mut res = vec![0u8; chunk.size() as usize];
-            self.reader
-                .read_at(chunk.all_page_begin_offset(), &mut res)
-                .await?;
-            return Ok(res);
         }
         Ok(vec![])
     }
 
-    pub async fn read_datablock(&self, series_id: SeriesId) -> Result<DataBlock2> {
-        let pages = self.read_series_pages(series_id).await?;
+    pub async fn read_datablock_raw(
+        &self,
+        series_id: SeriesId,
+        column_group_id: ColumnGroupID,
+    ) -> Result<Vec<u8>> {
+        let chunk = self.chunk();
+        if let Some(chunk) = chunk.get(&series_id) {
+            for (id, column_group) in chunk.column_group() {
+                if *id != column_group_id {
+                    continue;
+                }
+                let mut res_column_group = vec![0u8; column_group.size() as usize];
+                self.reader
+                    .read_at(column_group.pages_offset(), &mut res_column_group)
+                    .await?;
+                return Ok(res_column_group);
+            }
+        }
+        Ok(vec![])
+    }
+
+    pub async fn read_datablock(
+        &self,
+        series_id: SeriesId,
+        column_group_id: ColumnGroupID,
+    ) -> Result<DataBlock2> {
+        let column_group = self.read_series_pages(series_id, column_group_id).await?;
         let schema = self
             .tsm_meta
             .table_schema_by_sid(series_id)
             .ok_or(Error::CommonError {
                 reason: format!("table schema for series id : {} not found", series_id),
             })?;
-        let data_block = decode_pages(pages, schema)?;
+        let data_block = decode_pages(column_group, schema)?;
+
         Ok(data_block)
     }
 
@@ -244,10 +270,24 @@ impl TSM2Reader {
     }
 }
 
-pub fn decode_buf_to_pages(chunk: Arc<Chunk>, pages_buf: &[u8]) -> Result<Vec<Page>> {
-    let mut pages = Vec::with_capacity(chunk.pages().len());
-    for page in chunk.pages() {
-        let offset = (page.offset() - chunk.all_page_begin_offset()) as usize;
+pub fn decode_buf_to_pages(
+    chunk: Arc<Chunk>,
+    column_group_id: ColumnGroupID,
+    pages_buf: &[u8],
+) -> Result<Vec<Page>> {
+    let column_group = chunk
+        .column_group()
+        .get(&column_group_id)
+        .ok_or(Error::CommonError {
+            reason: format!(
+                "column group for column group id : {} not found",
+                column_group_id
+            ),
+        })?;
+    let mut pages = Vec::with_capacity(column_group.pages().len());
+
+    for page in column_group.pages() {
+        let offset = (page.offset() - column_group.pages_offset()) as usize;
         let end = offset + page.size;
         let page_buf = pages_buf.get(offset..end).ok_or(Error::CommonError {
             reason: "page_buf get error".to_string(),
@@ -364,9 +404,10 @@ pub fn decode_pages(pages: Vec<Page>, table_schema: TskvTableSchemaRef) -> Resul
 pub fn decode_pages_buf(
     pages_buf: &[u8],
     chunk: Arc<Chunk>,
+    column_group_id: ColumnGroupID,
     table_schema: TskvTableSchemaRef,
 ) -> Result<DataBlock2> {
-    let pages = decode_buf_to_pages(chunk, pages_buf)?;
+    let pages = decode_buf_to_pages(chunk, column_group_id, pages_buf)?;
     let data_block = decode_pages(pages, table_schema)?;
     Ok(data_block)
 }

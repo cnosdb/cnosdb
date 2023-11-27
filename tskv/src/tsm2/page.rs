@@ -17,6 +17,7 @@ use crate::tsm::codec::{
     get_u64_codec,
 };
 use crate::tsm2::writer::Column;
+use crate::tsm2::ColumnGroupID;
 use crate::Error;
 
 #[derive(Debug)]
@@ -215,31 +216,85 @@ impl PageWriteSpec {
     }
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq, Ord, PartialOrd)]
 pub struct ColumnGroup {
+    column_group_id: ColumnGroupID,
+
+    pages_offset: u64,
+    size: u64,
     time_range: TimeRange,
     pages: Vec<PageWriteSpec>,
+}
+
+impl ColumnGroup {
+    pub fn new(id: usize) -> Self {
+        Self {
+            column_group_id: id,
+            pages_offset: 0,
+            size: 0,
+            time_range: TimeRange::none(),
+            pages: Vec::new(),
+        }
+    }
+
+    pub fn column_group_id(&self) -> ColumnGroupID {
+        self.column_group_id
+    }
+
+    pub fn pages_offset(&self) -> u64 {
+        self.pages_offset
+    }
+
+    pub fn size(&self) -> u64 {
+        self.size
+    }
+
+    pub fn time_range(&self) -> &TimeRange {
+        &self.time_range
+    }
+
+    pub fn pages(&self) -> &[PageWriteSpec] {
+        &self.pages
+    }
+
+    pub fn push(&mut self, page: PageWriteSpec) {
+        if self.pages_offset == 0 {
+            self.pages_offset = page.offset;
+        }
+        if self.size != 0 {
+            debug_assert_eq!(self.pages_offset + self.size, page.offset);
+        }
+        self.size += page.size as u64;
+        self.time_range.merge(&page.meta.time_range);
+        self.pages.push(page);
+    }
 }
 
 /// A chunk of data for a series at least two columns
 #[derive(Clone, Default, Debug, Serialize, Deserialize, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Chunk {
-    all_page_begin_offset: u64,
-    all_page_end_offset: u64,
+    column_group_offset: u64,
+    size: u64,
+
     time_range: TimeRange,
+
     table_name: String,
     series_id: SeriesId,
-    pages: Vec<PageWriteSpec>,
+
+    next_column_group_id: ColumnGroupID,
+    column_groups: BTreeMap<ColumnGroupID, Arc<ColumnGroup>>,
 }
 
 impl Chunk {
-    pub fn new(table_name: String, series_id: SeriesId, time_range: TimeRange) -> Self {
+    pub fn new(table_name: String, series_id: SeriesId) -> Self {
         Self {
-            all_page_begin_offset: 0,
-            all_page_end_offset: 0,
-            time_range,
+            column_group_offset: 0,
+            size: 0,
+            time_range: TimeRange::none(),
             table_name,
             series_id,
-            pages: Vec::new(),
+            next_column_group_id: 0,
+            column_groups: BTreeMap::new(),
         }
     }
 
@@ -251,20 +306,30 @@ impl Chunk {
         self.time_range.max_ts
     }
 
-    pub fn all_page_begin_offset(&self) -> u64 {
-        self.all_page_begin_offset
+    pub fn column_group_offset(&self) -> u64 {
+        self.column_group_offset
     }
 
     pub fn size(&self) -> u64 {
-        self.all_page_end_offset - self.all_page_begin_offset
+        self.size
     }
 
     pub fn len(&self) -> usize {
-        self.pages.len()
+        self.column_groups.len()
     }
 
-    pub fn pages(&self) -> &[PageWriteSpec] {
-        &self.pages
+    pub fn column_group(&self) -> &BTreeMap<ColumnGroupID, Arc<ColumnGroup>> {
+        &self.column_groups
+    }
+
+    pub fn next_column_group_id(&mut self) -> ColumnGroupID {
+        let id = self.next_column_group_id;
+        self.next_column_group_id += 1;
+        id
+    }
+
+    pub fn current_next_column_group_id(&self) -> ColumnGroupID {
+        self.next_column_group_id
     }
 
     pub fn table_name(&self) -> &str {
@@ -281,16 +346,33 @@ impl Chunk {
     pub fn deserialize(bytes: &[u8]) -> Result<Self> {
         bincode::deserialize(bytes).map_err(|e| Error::Deserialize { source: e.into() })
     }
-    pub fn push(&mut self, page: PageWriteSpec) {
-        if self.all_page_begin_offset == 0 {
-            self.all_page_begin_offset = page.offset;
+    pub fn push(&mut self, column_group: Arc<ColumnGroup>) -> Result<()> {
+        if self.column_group_offset == 0 {
+            self.column_group_offset = column_group.pages_offset;
         }
-        if self.all_page_end_offset != 0 {
-            debug_assert_eq!(self.all_page_end_offset, page.offset);
+        if self.size != 0 {
+            debug_assert_eq!(
+                self.column_group_offset + self.size,
+                column_group.pages_offset
+            );
         }
-        self.all_page_end_offset = page.offset + page.size as u64;
-        self.time_range.merge(&page.meta.time_range);
-        self.pages.push(page);
+        self.size += column_group.size;
+        self.time_range.merge(&column_group.time_range);
+        if self
+            .column_groups
+            .get(&column_group.column_group_id())
+            .is_some()
+        {
+            return Err(Error::DuplicateColumnGroup {
+                reason: format!(
+                    "duplicate column group id: {}, failed push pages meta to tsm_meta",
+                    column_group.column_group_id()
+                ),
+            });
+        }
+        self.column_groups
+            .insert(column_group.column_group_id(), column_group);
+        Ok(())
     }
     pub fn time_range(&self) -> &TimeRange {
         &self.time_range

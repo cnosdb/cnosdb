@@ -32,6 +32,7 @@ use crate::summary::{CompactMeta, VersionEdit};
 use crate::tsm::{DataBlock, TsmReader, TsmTombstone};
 use crate::tsm2::page::PageMeta;
 use crate::tsm2::reader::TSM2Reader;
+use crate::tsm2::ColumnGroupID;
 use crate::Error::CommonError;
 use crate::{ColumnFileId, LevelId, TseriesFamilyId};
 
@@ -577,7 +578,7 @@ impl Version {
         &self,
         series_ids: &[SeriesId],
         time_predicate: TimeRange,
-    ) -> BTreeMap<ColumnFileId, BTreeMap<SeriesId, Vec<PageMeta>>> {
+    ) -> BTreeMap<ColumnFileId, BTreeMap<SeriesId, Vec<(ColumnGroupID, Vec<PageMeta>)>>> {
         let mut result = BTreeMap::new();
         for level in self.levels_info.iter() {
             for file in level.files.iter() {
@@ -718,7 +719,7 @@ impl SuperVersion {
         time_predicate: TimeRange,
     ) -> (
         BTreeMap<u64, MemCacheStatistics>,
-        BTreeMap<ColumnFileId, BTreeMap<SeriesId, Vec<PageMeta>>>,
+        BTreeMap<ColumnFileId, BTreeMap<SeriesId, Vec<(ColumnGroupID, Vec<PageMeta>)>>>,
     ) {
         let cache = self.caches.cache_statistics(series_ids, time_predicate);
         let sts = self.version.statistics(series_ids, time_predicate).await;

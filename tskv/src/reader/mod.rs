@@ -20,6 +20,7 @@ use crate::tsm2::reader::TSM2Reader;
 use crate::{Error, Result};
 
 pub mod chunk;
+mod column_group;
 pub mod filter;
 mod iterator;
 pub mod iterator_v2;

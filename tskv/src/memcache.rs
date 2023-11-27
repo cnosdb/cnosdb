@@ -793,6 +793,7 @@ pub fn dedup_and_sort_row_data(data: &LinkedList<RowData>) -> Vec<RowData> {
             dedup_ts.insert(row_data.ts);
         }
     });
+
     let mut result: Vec<RowData> = Vec::with_capacity(data.len());
     for row_data in data {
         if let Some(existing_row) = result.last_mut() {

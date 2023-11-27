@@ -13,9 +13,10 @@ use crate::context::GlobalContext;
 use crate::error::Result;
 use crate::summary::{CompactMeta, VersionEdit};
 use crate::tseries_family::TseriesFamily;
-use crate::tsm2::page::{Chunk, Page};
+use crate::tsm2::page::{Chunk, ColumnGroup, Page};
 use crate::tsm2::reader::{decode_pages, decode_pages_buf, TSM2MetaData, TSM2Reader};
 use crate::tsm2::writer::{DataBlock2, Tsm2Writer};
+use crate::tsm2::ColumnGroupID;
 use crate::{ColumnFileId, Error, LevelId, TseriesFamilyId};
 
 /// Temporary compacting data block meta
@@ -24,6 +25,7 @@ pub(crate) struct CompactingBlockMeta {
     reader_idx: usize,
     reader: Arc<TSM2Reader>,
     meta: Arc<Chunk>,
+    column_group_id: ColumnGroupID,
 }
 
 impl PartialEq for CompactingBlockMeta {
@@ -60,11 +62,17 @@ impl Ord for CompactingBlockMeta {
 // }
 
 impl CompactingBlockMeta {
-    pub fn new(tsm_reader_idx: usize, tsm_reader: Arc<TSM2Reader>, chunk: Arc<Chunk>) -> Self {
+    pub fn new(
+        tsm_reader_idx: usize,
+        tsm_reader: Arc<TSM2Reader>,
+        chunk: Arc<Chunk>,
+        column_group_id: ColumnGroupID,
+    ) -> Self {
         Self {
             reader_idx: tsm_reader_idx,
             reader: tsm_reader,
             meta: chunk,
+            column_group_id,
         }
     }
 
@@ -81,15 +89,32 @@ impl CompactingBlockMeta {
     }
 
     pub async fn get_data_block(&self) -> Result<DataBlock2> {
-        self.reader.read_datablock(self.meta.series_id()).await
+        self.reader
+            .read_datablock(self.meta.series_id(), self.column_group_id)
+            .await
     }
 
     pub async fn get_raw_data(&self) -> Result<Vec<u8>> {
-        self.reader.read_datablock_raw(self.meta.series_id()).await
+        self.reader
+            .read_datablock_raw(self.meta.series_id(), self.column_group_id)
+            .await
     }
 
     pub fn tsm_meta(&self) -> Arc<TSM2MetaData> {
         self.reader.tsm_meta_data()
+    }
+
+    pub fn column_group(&self) -> Result<Arc<ColumnGroup>> {
+        self.meta
+            .column_group()
+            .get(&self.column_group_id)
+            .cloned()
+            .ok_or(Error::CommonError {
+                reason: format!(
+                    "column group {} not found in chunk {:?}",
+                    self.column_group_id, self.meta
+                ),
+            })
     }
 
     pub fn table_schema(&self) -> Option<TskvTableSchemaRef> {
@@ -143,6 +168,7 @@ impl CompactingBlockMetaGroup {
             // Only one compacting block and has no tombstone, write as raw block.
             trace!("only one compacting block, write as raw block");
             let meta_0 = &self.blk_metas[0].meta;
+            let column_group_id = self.blk_metas[0].column_group_id;
             let buf_0 = self.blk_metas[0].get_raw_data().await?;
 
             if meta_0.size() >= max_block_size as u64 {
@@ -158,6 +184,7 @@ impl CompactingBlockMetaGroup {
                     self.blk_metas[0].reader_idx,
                     meta_0.clone(),
                     table_schema,
+                    column_group_id,
                     buf_0,
                 ));
 
@@ -166,12 +193,13 @@ impl CompactingBlockMetaGroup {
                 // Raw block is not full, so decode and merge with compacting_block.
                 let meta = self.blk_metas[0].tsm_meta();
                 let chunk = self.blk_metas[0].meta.clone();
+                let column_group_id = self.blk_metas[0].column_group_id;
                 let schema = meta
                     .table_schema(chunk.table_name())
                     .ok_or(Error::CommonError {
                         reason: format!("table schema not found for table {}", chunk.table_name()),
                     })?;
-                let decoded_raw_block = decode_pages_buf(&buf_0, chunk, schema)?;
+                let decoded_raw_block = decode_pages_buf(&buf_0, chunk, column_group_id, schema)?;
                 let mut data_block = compacting_block.decode()?;
                 let data_block = data_block.merge(decoded_raw_block)?;
 
@@ -185,6 +213,7 @@ impl CompactingBlockMetaGroup {
                     self.blk_metas[0].reader_idx,
                     meta_0.clone(),
                     table_schema,
+                    column_group_id,
                     buf_0,
                 )]);
             }
@@ -283,6 +312,7 @@ pub enum CompactingBlock {
         priority: usize,
         table_schema: TskvTableSchemaRef,
         meta: Arc<Chunk>,
+        column_group_id: ColumnGroupID,
         raw: Vec<u8>,
     },
 }
@@ -348,12 +378,14 @@ impl CompactingBlock {
         priority: usize,
         chunk: Arc<Chunk>,
         table_schema: TskvTableSchemaRef,
+        column_group_id: ColumnGroupID,
         raw: Vec<u8>,
     ) -> CompactingBlock {
         CompactingBlock::Raw {
             priority,
             meta: chunk,
             table_schema,
+            column_group_id,
             raw,
         }
     }
@@ -370,8 +402,9 @@ impl CompactingBlock {
                 raw,
                 meta,
                 table_schema,
+                column_group_id,
                 ..
-            } => decode_pages_buf(&raw, meta, table_schema),
+            } => decode_pages_buf(&raw, meta, column_group_id, table_schema),
         }
     }
 
@@ -379,7 +412,15 @@ impl CompactingBlock {
         match self {
             CompactingBlock::Decoded { data_block, .. } => data_block.len(),
             CompactingBlock::Encoded { data_block, .. } => data_block[0].meta.num_values as usize,
-            CompactingBlock::Raw { meta, .. } => meta.pages()[0].meta.num_values as usize,
+            CompactingBlock::Raw {
+                meta,
+                column_group_id,
+                ..
+            } => {
+                meta.column_group()[column_group_id].pages()[0]
+                    .meta
+                    .num_values as usize
+            }
         }
     }
 }
@@ -461,7 +502,7 @@ pub(crate) struct CompactIterator {
     /// return CompactingBlock::DataBlock rather than CompactingBlock::Raw .
     decode_non_overlap_blocks: bool,
 
-    tmp_tsm_blk_meta_iters: Vec<Arc<Chunk>>,
+    tmp_tsm_blk_meta_iters: Vec<(Arc<Chunk>, ColumnGroupID)>,
     /// Index to mark `Peekable<BlockMetaIterator>` in witch `TsmReader`,
     /// tmp_tsm_blks[i] is in self.tsm_readers[ tmp_tsm_blk_tsm_reader_idx[i] ]
     tmp_tsm_blk_tsm_reader_idx: Vec<usize>,
@@ -550,7 +591,11 @@ impl CompactIterator {
                                     sid, loop_file_i
                                 ),
                             })?;
-                    self.tmp_tsm_blk_meta_iters.push(meta);
+                    let column_groups_id = meta.column_group().keys().cloned().collect::<Vec<_>>();
+                    column_groups_id.iter().for_each(|&column_group_id| {
+                        self.tmp_tsm_blk_meta_iters
+                            .push((meta.clone(), column_group_id));
+                    });
                     f.next();
                     self.compacting_files.push(f);
                 } else {
@@ -586,7 +631,8 @@ impl CompactIterator {
             blk_metas.push(CompactingBlockMeta::new(
                 tsm_reader_idx,
                 tsm_reader_ptr,
-                meta.clone(),
+                meta.0.clone(),
+                meta.1,
             ));
         }
         // Sort by field_id, min_ts and max_ts.
@@ -937,7 +983,7 @@ pub mod test {
         let tsm_reader = TSM2Reader::open(&path).await.unwrap();
         let mut data = HashMap::new();
         for sid in tsm_reader.chunk().keys() {
-            let blk = tsm_reader.read_datablock(*sid).await.unwrap();
+            let blk = tsm_reader.read_datablock(*sid, 0).await.unwrap();
             data.insert(*sid, blk);
         }
         data

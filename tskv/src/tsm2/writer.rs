@@ -24,8 +24,8 @@ use crate::tsm::codec::{
     get_bool_codec, get_f64_codec, get_i64_codec, get_str_codec, get_ts_codec, get_u64_codec,
 };
 use crate::tsm2::page::{
-    Chunk, ChunkGroup, ChunkGroupMeta, ChunkGroupWriteSpec, ChunkStatics, ChunkWriteSpec, Footer,
-    Page, PageMeta, PageStatistics, PageWriteSpec, SeriesMeta, TableMeta,
+    Chunk, ChunkGroup, ChunkGroupMeta, ChunkGroupWriteSpec, ChunkStatics, ChunkWriteSpec,
+    ColumnGroup, Footer, Page, PageMeta, PageStatistics, PageWriteSpec, SeriesMeta, TableMeta,
 };
 use crate::tsm2::{TsmWriteData, BLOOM_FILTER_BITS};
 use crate::{Error, Result};
@@ -813,6 +813,19 @@ impl Tsm2Writer {
         Ok(())
     }
 
+    fn create_column_group(
+        &mut self,
+        schema: TskvTableSchemaRef,
+        series_id: SeriesId,
+    ) -> ColumnGroup {
+        let chunks = self.page_specs.entry(schema.name.clone()).or_default();
+        let chunk = chunks
+            .entry(series_id)
+            .or_insert(Chunk::new(schema.name.clone(), series_id));
+
+        ColumnGroup::new(chunk.next_column_group_id())
+    }
+
     pub async fn write_datablock(
         &mut self,
         series_id: SeriesId,
@@ -841,6 +854,8 @@ impl Tsm2Writer {
             self.write_header().await?;
         }
 
+        let mut column_group = self.create_column_group(schema.clone(), series_id);
+
         let table = schema.name.clone();
         let mut time_range = TimeRange::none();
         for page in pages {
@@ -853,16 +868,15 @@ impl Tsm2Writer {
                 size,
                 meta: page.meta,
             };
-            self.page_specs
-                .entry(table.clone())
-                .or_default()
-                .entry(series_id)
-                .or_insert(Chunk::new(schema.name.clone(), series_id, time_range))
-                .push(spec);
-            self.table_schemas
-                .entry(table.clone())
-                .or_insert(schema.clone());
+            column_group.push(spec);
+            self.table_schemas.insert(table.clone(), schema.clone());
         }
+        self.page_specs
+            .entry(table.clone())
+            .or_default()
+            .entry(series_id)
+            .or_insert(Chunk::new(schema.name.clone(), series_id))
+            .push(column_group.into())?;
         Ok(())
     }
 
@@ -870,35 +884,44 @@ impl Tsm2Writer {
         &mut self,
         schema: TskvTableSchemaRef,
         meta: Arc<Chunk>,
+        column_group_id: usize,
         raw: Vec<u8>,
     ) -> Result<()> {
         if self.state == State::Initialised {
             self.write_header().await?;
         }
 
+        let mut new_column_group = self.create_column_group(schema.clone(), meta.series_id());
+
         let mut offset = self.writer.pos();
         let size = self.writer.write(&raw).await?;
         self.size += size;
 
         let table = schema.name.to_string();
-        let series_id = meta.series_id();
-        for spec in meta.pages() {
+        let column_group = meta
+            .column_group()
+            .get(&column_group_id)
+            .ok_or(Error::CommonError {
+                reason: format!("column group not found: {}", column_group_id),
+            })?;
+        for spec in column_group.pages() {
             let spec = PageWriteSpec {
                 offset,
                 size: spec.size,
                 meta: spec.meta.clone(),
             };
             offset += spec.size as u64;
-            self.page_specs
-                .entry(table.clone())
-                .or_default()
-                .entry(series_id)
-                .or_insert(Chunk::new(table.clone(), series_id, *meta.time_range()))
-                .push(spec.clone());
-            self.table_schemas
-                .entry(table.clone())
-                .or_insert(schema.clone());
+            new_column_group.push(spec);
+            self.table_schemas.insert(table.clone(), schema.clone());
         }
+        let series_id = meta.series_id();
+        self.page_specs
+            .entry(table.clone())
+            .or_default()
+            .entry(series_id)
+            .or_insert(Chunk::new(table, series_id))
+            .push(new_column_group.into())?;
+
         Ok(())
     }
 
@@ -924,9 +947,13 @@ impl Tsm2Writer {
             CompactingBlock::Raw {
                 table_schema,
                 meta,
+                column_group_id,
                 raw,
                 ..
-            } => self.write_raw(table_schema, meta, raw).await?,
+            } => {
+                self.write_raw(table_schema, meta, column_group_id, raw)
+                    .await?
+            }
         }
 
         if self.max_size != 0 && self.size > self.max_size as usize {
@@ -954,6 +981,7 @@ mod test {
     use arrow::datatypes::TimeUnit;
     use models::codec::Encoding;
     use models::field_value::FieldVal;
+    use models::predicate::domain::TimeRange;
     use models::schema::{ColumnType, TableColumn, TskvTableSchema};
     use models::ValueType;
 
@@ -1031,7 +1059,11 @@ mod test {
         tsm_writer.write_datablock(1, data1.clone()).await.unwrap();
         tsm_writer.finish().await.unwrap();
         let tsm_reader = TSM2Reader::open(tsm_writer.path).await.unwrap();
-        let data2 = tsm_reader.read_datablock(1).await.unwrap();
+        let data2 = tsm_reader.read_datablock(1, 0).await.unwrap();
         assert_eq!(data1, data2);
+        let pages = data2.block_to_page();
+        let time_range = pages[0].meta.time_range;
+        assert_eq!(time_range, TimeRange::new(1, 3));
+        println!("time range: {:?}", time_range);
     }
 }

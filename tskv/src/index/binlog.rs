@@ -173,7 +173,7 @@ impl IndexBinlog {
         let mut buffer = Vec::new();
         for block in blocks {
             let size = block.size_bytes()?;
-            buffer.extend(size.to_be_bytes());
+            buffer.extend(size.to_le_bytes());
             buffer.reserve(size as usize);
             block.encode(&mut buffer)?;
         }
