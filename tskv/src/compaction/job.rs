@@ -5,16 +5,13 @@ use std::time::{Duration, Instant};
 
 use flush::run_flush_memtable_job;
 use tokio::runtime::Runtime;
-use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::mpsc::Receiver;
 use tokio::sync::{oneshot, RwLock, RwLockWriteGuard, Semaphore};
 use trace::{error, info};
 
 use crate::compaction::{flush, CompactTask, FlushReq, LevelCompactionPicker, Picker};
-use crate::context::GlobalContext;
-use crate::kv_option::StorageOptions;
 use crate::summary::SummaryTask;
-use crate::version_set::VersionSet;
-use crate::TseriesFamilyId;
+use crate::{TsKvContext, TseriesFamilyId};
 
 const COMPACT_BATCH_CHECKING_SECONDS: u64 = 1;
 
@@ -48,21 +45,9 @@ pub struct CompactJob {
 }
 
 impl CompactJob {
-    pub fn new(
-        runtime: Arc<Runtime>,
-        storage_opt: Arc<StorageOptions>,
-        version_set: Arc<RwLock<VersionSet>>,
-        global_context: Arc<GlobalContext>,
-        summary_task_sender: Sender<SummaryTask>,
-    ) -> Self {
+    pub fn new(runtime: Arc<Runtime>, ctx: Arc<TsKvContext>) -> Self {
         Self {
-            inner: Arc::new(RwLock::new(CompactJobInner::new(
-                runtime,
-                storage_opt,
-                version_set,
-                global_context,
-                summary_task_sender,
-            ))),
+            inner: Arc::new(RwLock::new(CompactJobInner::new(runtime, ctx))),
         }
     }
 
@@ -94,33 +79,20 @@ impl std::fmt::Debug for CompactJob {
 }
 
 struct CompactJobInner {
+    ctx: Arc<TsKvContext>,
     runtime: Arc<Runtime>,
-    storage_opt: Arc<StorageOptions>,
-    version_set: Arc<RwLock<VersionSet>>,
-    global_context: Arc<GlobalContext>,
-    summary_task_sender: Sender<SummaryTask>,
-
     compact_processor: Arc<RwLock<CompactProcessor>>,
     enable_compaction: Arc<AtomicBool>,
     running_compactions: Arc<AtomicUsize>,
 }
 
 impl CompactJobInner {
-    fn new(
-        runtime: Arc<Runtime>,
-        storage_opt: Arc<StorageOptions>,
-        version_set: Arc<RwLock<VersionSet>>,
-        global_context: Arc<GlobalContext>,
-        summary_task_sender: Sender<SummaryTask>,
-    ) -> Self {
+    fn new(runtime: Arc<Runtime>, ctx: Arc<TsKvContext>) -> Self {
         let compact_processor = Arc::new(RwLock::new(CompactProcessor::default()));
 
         Self {
+            ctx,
             runtime,
-            storage_opt,
-            version_set,
-            global_context,
-            summary_task_sender,
             compact_processor,
             enable_compaction: Arc::new(AtomicBool::new(true)),
             running_compactions: Arc::new(AtomicUsize::new(0)),
@@ -162,18 +134,15 @@ impl CompactJobInner {
         }
 
         let runtime_inner = self.runtime.clone();
-        let storage_opt = self.storage_opt.clone();
-        let version_set = self.version_set.clone();
-        let global_context = self.global_context.clone();
-        let summary_task_sender = self.summary_task_sender.clone();
         let compact_processor = Arc::new(RwLock::new(CompactProcessor::default()));
         let enable_compaction = self.enable_compaction.clone();
         let running_compaction = self.running_compactions.clone();
+        let ctx = self.ctx.clone();
 
         self.runtime.spawn(async move {
             // TODO: Concurrent compactions should not over argument $cpu.
             let compaction_limit = Arc::new(Semaphore::new(
-                storage_opt.max_concurrent_compaction as usize,
+                ctx.options.storage.max_concurrent_compaction as usize,
             ));
             let mut check_interval =
                 tokio::time::interval(Duration::from_secs(COMPACT_BATCH_CHECKING_SECONDS));
@@ -193,7 +162,8 @@ impl CompactJobInner {
                 let now = Instant::now();
                 info!("Compacting on vnode(job start): {:?}", &vnode_ids_for_debug);
                 for (vnode_id, flush_vnode) in vnode_ids {
-                    let ts_family = version_set
+                    let ts_family = ctx
+                        .version_set
                         .read()
                         .await
                         .get_tsfamily_by_tf_id(vnode_id)
@@ -205,7 +175,7 @@ impl CompactJobInner {
                             info!("forbidden compaction on moving vnode {}", vnode_id);
                             return;
                         }
-                        let picker = LevelCompactionPicker::new(storage_opt.clone());
+                        let picker = LevelCompactionPicker::new(ctx.options.storage.clone());
                         let version = tsf.read().await.version();
                         let compact_req = picker.pick_compaction(version);
                         if let Some(req) = compact_req {
@@ -213,14 +183,12 @@ impl CompactJobInner {
                             let compact_ts_family = req.ts_family_id;
                             let out_level = req.out_level;
 
-                            let ctx_inner = global_context.clone();
-                            let version_set_inner = version_set.clone();
-                            let summary_task_sender_inner = summary_task_sender.clone();
-
                             // Method acquire_owned() will return AcquireError if the semaphore has been closed.
                             let permit = compaction_limit.clone().acquire_owned().await.unwrap();
                             let enable_compaction = enable_compaction.clone();
                             let running_compaction = running_compaction.clone();
+
+                            let ctx = ctx.clone();
                             runtime_inner.spawn(async move {
                                 // Check enable compaction
                                 if !enable_compaction.load(atomic::Ordering::SeqCst) {
@@ -238,25 +206,21 @@ impl CompactJobInner {
                                     let flush_req = tsf_wlock.build_flush_req(true);
                                     drop(tsf_wlock);
                                     if let Some(req) = flush_req {
-                                        if let Err(e) = flush::run_flush_memtable_job(
-                                            req,
-                                            ctx_inner.clone(),
-                                            version_set_inner,
-                                            summary_task_sender_inner.clone(),
-                                            None,
-                                        )
-                                        .await
+                                        if let Err(e) =
+                                            flush::run_flush_memtable_job(req, ctx.clone(), false)
+                                                .await
                                         {
                                             error!("Failed to flush vnode {}: {:?}", vnode_id, e);
                                         }
                                     }
                                 }
 
-                                match super::run_compaction_job(req, ctx_inner).await {
+                                match super::run_compaction_job(req, ctx.global_ctx.clone()).await {
                                     Ok(Some((version_edit, file_metas))) => {
                                         metrics::incr_compaction_success();
                                         let (summary_tx, _summary_rx) = oneshot::channel();
-                                        let _ = summary_task_sender_inner
+                                        let _ = ctx
+                                            .summary_task_sender
                                             .send(SummaryTask::new(
                                                 vec![version_edit],
                                                 Some(file_metas),
@@ -340,47 +304,23 @@ impl<F: FnOnce()> Drop for DeferGuard<F> {
 }
 
 pub struct FlushJob {
+    ctx: Arc<TsKvContext>,
     runtime: Arc<Runtime>,
-    version_set: Arc<RwLock<VersionSet>>,
-    global_context: Arc<GlobalContext>,
-    summary_task_sender: Sender<SummaryTask>,
-    compact_task_sender: Sender<CompactTask>,
 }
 
 impl FlushJob {
-    pub fn new(
-        runtime: Arc<Runtime>,
-        version_set: Arc<RwLock<VersionSet>>,
-        global_context: Arc<GlobalContext>,
-        summary_task_sender: Sender<SummaryTask>,
-        compact_task_sender: Sender<CompactTask>,
-    ) -> Self {
-        Self {
-            runtime,
-            version_set,
-            global_context,
-            summary_task_sender,
-            compact_task_sender,
-        }
+    pub fn new(runtime: Arc<Runtime>, ctx: Arc<TsKvContext>) -> Self {
+        Self { ctx, runtime }
     }
 
     pub fn start_vnode_flush_job(&self, mut flush_req_receiver: Receiver<FlushReq>) {
         let runtime_inner = self.runtime.clone();
-        let version_set = self.version_set.clone();
-        let global_context = self.global_context.clone();
-        let summary_task_sender = self.summary_task_sender.clone();
-        let compact_task_sender = self.compact_task_sender.clone();
+        let ctx = self.ctx.clone();
         self.runtime.spawn(async move {
             while let Some(x) = flush_req_receiver.recv().await {
                 // TODO(zipper): this make config `flush_req_channel_cap` wasted
                 // Run flush job and trigger compaction.
-                runtime_inner.spawn(run_flush_memtable_job(
-                    x,
-                    global_context.clone(),
-                    version_set.clone(),
-                    summary_task_sender.clone(),
-                    Some(compact_task_sender.clone()),
-                ));
+                runtime_inner.spawn(run_flush_memtable_job(x, ctx.clone(), true));
             }
         });
         info!("Flush task handler started");

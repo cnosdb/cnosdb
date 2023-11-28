@@ -7,8 +7,8 @@ use models::schema::{ResourceInfo, ResourceOperator, ResourceStatus, TableSchema
 use models::utils::now_timestamp_nanos;
 use protos::kv_service::admin_command_request::Command::{self, DropDb, DropTab, UpdateTags};
 use protos::kv_service::{
-    AddColumnRequest, AdminCommandRequest, AlterColumnRequest, DropColumnRequest, DropDbRequest,
-    DropTableRequest, UpdateSetValue, UpdateTagsRequest,
+    AdminCommandRequest, DropColumnRequest, DropDbRequest, DropTableRequest, UpdateSetValue,
+    UpdateTagsRequest,
 };
 use tracing::{debug, error, info};
 
@@ -281,51 +281,43 @@ impl ResourceManager {
                     name: tenant_name.to_string(),
                 })?;
 
-        let req = match resourceinfo.get_operator() {
-            ResourceOperator::AddColumn(table_schema, table_column) => Some((
-                table_schema,
-                AdminCommandRequest {
-                    tenant: tenant_name.to_string(),
-                    command: Some(Command::AddColumn(AddColumnRequest {
-                        db: table_schema.db.to_owned(),
-                        table: table_schema.name.to_string(),
-                        column: table_column.encode()?,
-                    })),
-                },
-            )),
-            ResourceOperator::DropColumn(drop_column_name, table_schema) => Some((
-                table_schema,
-                AdminCommandRequest {
+        match resourceinfo.get_operator() {
+            ResourceOperator::AddColumn(table_schema, _) => {
+                tenant
+                    .update_table(&TableSchema::TsKvTableSchema(Arc::new(
+                        table_schema.clone(),
+                    )))
+                    .await?;
+            }
+
+            ResourceOperator::DropColumn(drop_column_name, table_schema) => {
+                let req = AdminCommandRequest {
                     tenant: tenant_name.to_string(),
                     command: Some(Command::DropColumn(DropColumnRequest {
                         db: table_schema.db.to_owned(),
                         table: table_schema.name.to_string(),
                         column: drop_column_name.clone(),
                     })),
-                },
-            )),
-            ResourceOperator::AlterColumn(alter_column_name, table_schema, table_column) => Some((
-                table_schema,
-                AdminCommandRequest {
-                    tenant: tenant_name.to_string(),
-                    command: Some(Command::AlterColumn(AlterColumnRequest {
-                        db: table_schema.db.to_owned(),
-                        table: table_schema.name.to_string(),
-                        name: alter_column_name.clone(),
-                        column: table_column.encode()?,
-                    })),
-                },
-            )),
-            _ => None,
+                };
+
+                coord.broadcast_command(req).await?;
+
+                tenant
+                    .update_table(&TableSchema::TsKvTableSchema(Arc::new(
+                        table_schema.clone(),
+                    )))
+                    .await?;
+            }
+            ResourceOperator::AlterColumn(_, table_schema, _) => {
+                tenant
+                    .update_table(&TableSchema::TsKvTableSchema(Arc::new(
+                        table_schema.clone(),
+                    )))
+                    .await?;
+            }
+
+            _ => {}
         };
-
-        if let Some((schema, req)) = req {
-            coord.broadcast_command(req).await?;
-
-            tenant
-                .update_table(&TableSchema::TsKvTableSchema(Arc::new(schema.clone())))
-                .await?;
-        }
 
         Ok(true)
     }

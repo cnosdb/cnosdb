@@ -18,8 +18,7 @@ use tokio::sync::{oneshot, RwLock};
 use trace::{error, info};
 use utils::BloomFilter;
 
-use crate::compaction::{CompactTask, FlushReq};
-use crate::context::GlobalContext;
+use crate::compaction::CompactTask;
 use crate::error::{Result, SchemaSnafu};
 use crate::index::{self, IndexResult};
 use crate::kv_option::{Options, INDEX_PATH};
@@ -28,7 +27,7 @@ use crate::schema::schemas::DBschemas;
 use crate::summary::{SummaryTask, VersionEdit};
 use crate::tseries_family::{LevelInfo, TseriesFamily, TsfFactory, Version};
 use crate::Error::{self};
-use crate::{file_utils, ColumnFileId, TseriesFamilyId};
+use crate::{file_utils, ColumnFileId, TsKvContext, TseriesFamilyId};
 
 pub type FlatBufferTable<'a> = flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Table<'a>>>;
 
@@ -114,14 +113,11 @@ impl Database {
         &mut self,
         runtime: Arc<Runtime>,
         ver: Arc<Version>,
-        flush_task_sender: Sender<FlushReq>,
         compact_task_sender: Sender<CompactTask>,
     ) {
         let tf_id = ver.tf_id();
-        let tf =
-            self.tsf_factory
-                .create_tsf(tf_id, ver.clone(), flush_task_sender, compact_task_sender);
-        tf.schedule_compaction(runtime);
+        let tf = self.tsf_factory.create_tsf(tf_id, ver.clone());
+        tf.schedule_compaction(runtime, compact_task_sender);
         self.ts_families
             .insert(ver.tf_id(), Arc::new(RwLock::new(tf)));
     }
@@ -132,10 +128,7 @@ impl Database {
         &mut self,
         tsf_id: TseriesFamilyId,
         version_edit: Option<VersionEdit>,
-        summary_task_sender: Sender<SummaryTask>,
-        flush_task_sender: Sender<FlushReq>,
-        compact_task_sender: Sender<CompactTask>,
-        global_ctx: Arc<GlobalContext>,
+        ctx: Arc<TsKvContext>,
     ) -> Result<Arc<RwLock<TseriesFamily>>> {
         let new_version_edit_seq_no = 0;
         let (seq_no, version_edits, file_metas) = match version_edit {
@@ -145,7 +138,7 @@ impl Database {
                 ve.seq_no = new_version_edit_seq_no;
                 let mut file_metas = HashMap::with_capacity(ve.add_files.len());
                 for f in ve.add_files.iter_mut() {
-                    let new_file_id = global_ctx.file_id_next();
+                    let new_file_id = ctx.global_ctx.file_id_next();
                     f.tsf_id = tsf_id;
                     let file_path = f
                         .rename_file(&self.opt.storage, &self.owner, f.tsf_id, new_file_id)
@@ -154,7 +147,7 @@ impl Database {
                     file_metas.insert(new_file_id, file_reader.bloom_filter());
                 }
                 for f in ve.del_files.iter_mut() {
-                    let new_file_id = global_ctx.file_id_next();
+                    let new_file_id = ctx.global_ctx.file_id_next();
                     f.tsf_id = tsf_id;
                     f.rename_file(&self.opt.storage, &self.owner, f.tsf_id, new_file_id)
                         .await?;
@@ -195,12 +188,7 @@ impl Database {
             cache.into(),
         ));
 
-        let tf = self.tsf_factory.create_tsf(
-            tsf_id,
-            ver.clone(),
-            flush_task_sender,
-            compact_task_sender,
-        );
+        let tf = self.tsf_factory.create_tsf(tsf_id, ver.clone());
         let tf = Arc::new(RwLock::new(tf));
         if let Some(tsf) = self.ts_families.get(&tsf_id) {
             return Ok(tsf.clone());
@@ -209,7 +197,7 @@ impl Database {
 
         let (task_state_sender, _task_state_receiver) = oneshot::channel();
         let task = SummaryTask::new(version_edits, file_metas, None, task_state_sender);
-        if let Err(e) = summary_task_sender.send(task).await {
+        if let Err(e) = ctx.summary_task_sender.send(task).await {
             error!("failed to send Summary task, {:?}", e);
         }
 
@@ -486,6 +474,10 @@ impl Database {
 
     pub fn owner(&self) -> Arc<String> {
         self.owner.clone()
+    }
+
+    pub fn db_name(&self) -> Arc<String> {
+        self.db_name.clone()
     }
 }
 

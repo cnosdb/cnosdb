@@ -102,48 +102,6 @@ impl TskvServiceImpl {
         }
     }
 
-    async fn admin_add_column(
-        &self,
-        tenant: &str,
-        request: &AddColumnRequest,
-    ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
-        let column = match bincode::deserialize::<TableColumn>(&request.column) {
-            Ok(column) => column,
-            Err(err) => return self.status_response(SUCCESS_RESPONSE_CODE, err.to_string()),
-        };
-
-        if let Err(e) = self
-            .kv_inst
-            .add_table_column(tenant, &request.db, &request.table, column)
-            .await
-        {
-            self.status_response(FAILED_RESPONSE_CODE, e.to_string())
-        } else {
-            self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
-        }
-    }
-
-    async fn admin_alter_column(
-        &self,
-        tenant: &str,
-        request: &AlterColumnRequest,
-    ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
-        let column = match bincode::deserialize::<TableColumn>(&request.column) {
-            Ok(column) => column,
-            Err(err) => return self.status_response(SUCCESS_RESPONSE_CODE, err.to_string()),
-        };
-
-        if let Err(e) = self
-            .kv_inst
-            .change_table_column(tenant, &request.db, &request.table, &request.name, column)
-            .await
-        {
-            self.status_response(FAILED_RESPONSE_CODE, e.to_string())
-        } else {
-            self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
-        }
-    }
-
     async fn admin_update_tags(
         &self,
         tenant: &str,
@@ -560,12 +518,6 @@ impl TskvService for TskvServiceImpl {
                 }
                 admin_command_request::Command::DropColumn(command) => {
                     self.admin_drop_column(&inner.tenant, command).await
-                }
-                admin_command_request::Command::AddColumn(command) => {
-                    self.admin_add_column(&inner.tenant, command).await
-                }
-                admin_command_request::Command::AlterColumn(command) => {
-                    self.admin_alter_column(&inner.tenant, command).await
                 }
                 admin_command_request::Command::UpdateTags(command) => {
                     self.admin_update_tags(&inner.tenant, command).await

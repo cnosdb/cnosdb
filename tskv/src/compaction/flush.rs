@@ -9,7 +9,6 @@ use models::{
 };
 use parking_lot::RwLock;
 use snafu::ResultExt;
-use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot;
 use tokio::time::timeout;
 use trace::{error, info, warn};
@@ -23,8 +22,8 @@ use crate::summary::{CompactMeta, CompactMetaBuilder, SummaryTask, VersionEdit};
 use crate::tseries_family::Version;
 use crate::tsm::codec::DataBlockEncoding;
 use crate::tsm::{self, DataBlock, TsmWriter};
-use crate::version_set::VersionSet;
-use crate::{ColumnFileId, TseriesFamilyId};
+use crate::wal::WalTask;
+use crate::{ColumnFileId, TsKvContext, TseriesFamilyId};
 
 struct FlushingBlock {
     pub field_id: FieldId,
@@ -190,10 +189,8 @@ impl FlushTask {
 
 pub async fn run_flush_memtable_job(
     req: FlushReq,
-    global_context: Arc<GlobalContext>,
-    version_set: Arc<tokio::sync::RwLock<VersionSet>>,
-    summary_task_sender: Sender<SummaryTask>,
-    compact_task_sender: Option<Sender<CompactTask>>,
+    ctx: Arc<TsKvContext>,
+    trigger_compact: bool,
 ) -> Result<Option<VersionEdit>> {
     let req_str = format!("{req}");
     info!("Flush: running: {req_str}");
@@ -201,7 +198,8 @@ pub async fn run_flush_memtable_job(
     let mut version_edit = None;
     let mut file_metas: HashMap<ColumnFileId, Arc<BloomFilter>> = HashMap::new();
 
-    let get_tsf_result = version_set
+    let get_tsf_result = ctx
+        .version_set
         .read()
         .await
         .get_tsfamily_by_tf_id(req.ts_family_id)
@@ -226,19 +224,36 @@ pub async fn run_flush_memtable_job(
             req.mems.clone(),
             req.low_seq_no,
             req.high_seq_no,
-            global_context.clone(),
+            ctx.global_ctx.clone(),
             path_tsm,
             path_delta,
         );
-        if let Some((ve, fm)) = flush_task.run(version).await? {
+        if let Some((ve, fm)) = flush_task.run(version.clone()).await? {
             let _ = version_edit.insert(ve);
             file_metas = fm;
         }
 
         tsf.read().await.update_last_modified().await;
 
-        if let Some(sender) = compact_task_sender.as_ref() {
-            let _ = sender.send(CompactTask::Vnode(req.ts_family_id)).await;
+        if !ctx.options.raft_mode {
+            let (task, rx) = WalTask::new_clear_wal_entry(
+                tsf.read().await.tenant_database().to_string(),
+                req.ts_family_id,
+                version.last_seq(),
+            );
+
+            if ctx.wal_sender.send(task).await.is_ok()
+                && timeout(Duration::from_secs(3), rx).await.is_err()
+            {
+                info!("Flush: failed to receive clear wal files result in 3 seconds",);
+            }
+        }
+
+        if trigger_compact {
+            let _ = ctx
+                .compact_task_sender
+                .send(CompactTask::Vnode(req.ts_family_id))
+                .await;
         }
     }
 
@@ -265,7 +280,7 @@ pub async fn run_flush_memtable_job(
             task_state_sender,
         );
 
-        if let Err(e) = summary_task_sender.send(task).await {
+        if let Err(e) = ctx.summary_task_sender.send(task).await {
             warn!("Flush: failed to send summary task for {req_str}: {e}",);
         }
 
