@@ -268,6 +268,13 @@ impl ColumnGroup {
         self.time_range.merge(&page.meta.time_range);
         self.pages.push(page);
     }
+
+    pub fn row_len(&self) -> usize {
+        self.pages
+            .first()
+            .map(|p| p.meta.num_values as usize)
+            .unwrap_or(0)
+    }
 }
 
 /// A chunk of data for a series at least two columns

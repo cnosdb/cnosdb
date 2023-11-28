@@ -169,9 +169,10 @@ impl CompactingBlockMetaGroup {
             trace!("only one compacting block, write as raw block");
             let meta_0 = &self.blk_metas[0].meta;
             let column_group_id = self.blk_metas[0].column_group_id;
+            let column_group = self.blk_metas[0].column_group()?;
             let buf_0 = self.blk_metas[0].get_raw_data().await?;
 
-            if meta_0.size() >= max_block_size as u64 {
+            if column_group.row_len() >= max_block_size {
                 // Raw data block is full, so do not merge with the previous, directly return.
                 let mut merged_blks = Vec::new();
                 if let Some(blk) = previous_block {
