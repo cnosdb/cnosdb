@@ -184,11 +184,11 @@ impl PartialEq for BitSet {
         if self.len == 0 {
             return true;
         }
-        let bound = self.len >> 3;
+        let bound = (self.len >> 3) - (if self.len & 7 == 0 { 1 } else { 0 });
         if self.buffer[..bound] != other.buffer[..bound] {
             return false;
         }
-        let mask = 0xFF >> (8 - (self.len & 7));
+        let mask = (0xFFu64 >> (8 - (self.len & 7))) as u8;
         (self.buffer[bound] & mask) == (other.buffer[bound] & mask)
     }
 }

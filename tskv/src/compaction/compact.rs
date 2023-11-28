@@ -257,9 +257,8 @@ impl CompactingBlockMetaGroup {
         } else {
             let len = data_block.len();
             let mut start = 0;
-            let mut end = len.min(max_block_size);
-            while start + end < len {
-                let data_block = data_block.chunk(start, start + end)?;
+            while start + max_block_size < len {
+                let data_block = data_block.chunk(start, start + max_block_size)?;
                 // Encode decoded data blocks into chunks.
                 merged_blks.push(CompactingBlock::Decoded {
                     priority: 0,
@@ -267,8 +266,7 @@ impl CompactingBlockMetaGroup {
                     data_block,
                 });
 
-                start += end;
-                end = len.min(start + max_block_size);
+                start += max_block_size;
             }
             if start < len {
                 // Encode the remaining decoded data blocks.
@@ -503,7 +501,7 @@ pub(crate) struct CompactIterator {
     /// return CompactingBlock::DataBlock rather than CompactingBlock::Raw .
     decode_non_overlap_blocks: bool,
 
-    tmp_tsm_blk_meta_iters: Vec<(Arc<Chunk>, ColumnGroupID)>,
+    tmp_tsm_blk_meta_iters: Vec<(Arc<Chunk>, ColumnGroupID, usize)>,
     /// Index to mark `Peekable<BlockMetaIterator>` in witch `TsmReader`,
     /// tmp_tsm_blks[i] is in self.tsm_readers[ tmp_tsm_blk_tsm_reader_idx[i] ]
     tmp_tsm_blk_tsm_reader_idx: Vec<usize>,
@@ -595,7 +593,7 @@ impl CompactIterator {
                     let column_groups_id = meta.column_group().keys().cloned().collect::<Vec<_>>();
                     column_groups_id.iter().for_each(|&column_group_id| {
                         self.tmp_tsm_blk_meta_iters
-                            .push((meta.clone(), column_group_id));
+                            .push((meta.clone(), column_group_id, f.i));
                     });
                     f.next();
                     self.compacting_files.push(f);
@@ -626,14 +624,14 @@ impl CompactIterator {
         let mut blk_metas: Vec<CompactingBlockMeta> =
             Vec::with_capacity(self.tmp_tsm_blk_meta_iters.len());
         // Get all block_meta, and check if it's tsm file has a related tombstone file.
-        for (i, meta) in self.tmp_tsm_blk_meta_iters.iter().enumerate() {
-            let tsm_reader_idx = self.tmp_tsm_blk_tsm_reader_idx[i];
+        for (chunk, column_grouop_id, index) in self.tmp_tsm_blk_meta_iters.iter() {
+            let tsm_reader_idx = self.tmp_tsm_blk_tsm_reader_idx[*index];
             let tsm_reader_ptr = self.tsm_readers[tsm_reader_idx].clone();
             blk_metas.push(CompactingBlockMeta::new(
                 tsm_reader_idx,
                 tsm_reader_ptr,
-                meta.0.clone(),
-                meta.1,
+                chunk.clone(),
+                *column_grouop_id,
             ));
         }
         // Sort by field_id, min_ts and max_ts.
@@ -980,12 +978,19 @@ pub mod test {
 
     async fn read_data_blocks_from_column_file(
         path: impl AsRef<Path>,
-    ) -> HashMap<SeriesId, DataBlock2> {
+    ) -> HashMap<SeriesId, Vec<DataBlock2>> {
         let tsm_reader = TSM2Reader::open(&path).await.unwrap();
         let mut data = HashMap::new();
-        for sid in tsm_reader.chunk().keys() {
-            let blk = tsm_reader.read_datablock(*sid, 0).await.unwrap();
-            data.insert(*sid, blk);
+        for (sid, chunk) in tsm_reader.chunk() {
+            let mut blks = vec![];
+            for column_group_id in chunk.column_group().keys() {
+                let blk = tsm_reader
+                    .read_datablock(*sid, *column_group_id)
+                    .await
+                    .unwrap();
+                blks.push(blk)
+            }
+            data.insert(*sid, blks);
         }
         data
     }
@@ -1014,6 +1019,30 @@ pub mod test {
         col
     }
 
+    fn u64_some_column(data: Vec<Option<u64>>) -> Column {
+        let mut col = Column::empty(ColumnType::Field(ValueType::Unsigned));
+        for datum in data {
+            col.push(datum.map(FieldVal::Unsigned))
+        }
+        col
+    }
+
+    fn f64_some_column(data: Vec<Option<f64>>) -> Column {
+        let mut col = Column::empty(ColumnType::Field(ValueType::Float));
+        for datum in data {
+            col.push(datum.map(FieldVal::Float))
+        }
+        col
+    }
+
+    fn bool_some_column(data: Vec<Option<bool>>) -> Column {
+        let mut col = Column::empty(ColumnType::Field(ValueType::Boolean));
+        for datum in data {
+            col.push(datum.map(FieldVal::Boolean))
+        }
+        col
+    }
+
     fn get_result_file_path(dir: impl AsRef<Path>, version_edit: VersionEdit) -> PathBuf {
         if version_edit.has_file_id && !version_edit.add_files.is_empty() {
             let file_id = version_edit.add_files.first().unwrap().file_id;
@@ -1027,7 +1056,7 @@ pub mod test {
     async fn check_column_file(
         dir: impl AsRef<Path>,
         version_edit: VersionEdit,
-        expected_data: HashMap<SeriesId, DataBlock2>,
+        expected_data: HashMap<SeriesId, Vec<DataBlock2>>,
     ) {
         let path = get_result_file_path(dir, version_edit);
         let mut data = read_data_blocks_from_column_file(path).await;
@@ -1041,7 +1070,15 @@ pub mod test {
             let data_blks = data.remove(&k).unwrap();
             println!("v.len(): {}", v.len());
             println!("data_blks.len(): {}", data_blks.len());
-            assert_eq!(v, data_blks);
+            for v in v.iter().enumerate() {
+                println!("v[{}]: {}", v.0, v.1.len());
+            }
+            for data_blk in data_blks.iter().enumerate() {
+                println!("data_blk[{}]: {}", data_blk.0, data_blk.1.len());
+            }
+            for (v, data_blc) in v.iter().zip(data_blks.iter()) {
+                assert_eq!(v, data_blc);
+            }
         }
     }
 
@@ -1196,7 +1233,7 @@ pub mod test {
             HashMap::from([(1, data3)]),
         ];
 
-        let expected_data = HashMap::from([(1 as SeriesId, expected_data)]);
+        let expected_data = HashMap::from([(1 as SeriesId, vec![expected_data])]);
 
         let dir = "/tmp/test/compaction";
         let database = Arc::new("dba".to_string());
@@ -1317,7 +1354,7 @@ pub mod test {
             HashMap::from([(1, data3)]),
         ];
 
-        let expected_data = HashMap::from([(1 as SeriesId, expected_data)]);
+        let expected_data = HashMap::from([(1 as SeriesId, vec![expected_data])]);
 
         let dir = "/tmp/test/compaction";
         let database = Arc::new("dba".to_string());
@@ -1466,7 +1503,7 @@ pub mod test {
             HashMap::from([(1, data3)]),
         ];
 
-        let expected_data = HashMap::from([(1 as SeriesId, expected_data)]);
+        let expected_data = HashMap::from([(1 as SeriesId, vec![expected_data])]);
 
         let dir = "/tmp/test/compaction/2";
         let database = Arc::new("dba".to_string());
@@ -1483,228 +1520,407 @@ pub mod test {
         check_column_file(dir, version_edit, expected_data).await;
     }
 
-    // /// Returns a generated `DataBlock` with default value and specified size, `DataBlock::ts`
-    // /// is all the time-ranges in data_descriptors.
-    // ///
-    // /// The default value is different for each ValueType:
-    // /// - Unsigned: 1
-    // /// - Integer: 1
-    // /// - String: "1"
-    // /// - Float: 1.0
-    // /// - Boolean: true
-    // /// - Unknown: will create a panic
-    // fn generate_data_block(value_type: ValueType, data_descriptors: Vec<(i64, i64)>) -> DataBlock {
-    //     match value_type {
-    //         ValueType::Unsigned => {
-    //             let mut ts_vec: Vec<Timestamp> = Vec::with_capacity(1000);
-    //             let mut val_vec: Vec<u64> = Vec::with_capacity(1000);
-    //             for (min_ts, max_ts) in data_descriptors {
-    //                 for ts in min_ts..max_ts + 1 {
-    //                     ts_vec.push(ts);
-    //                     val_vec.push(1_u64);
-    //                 }
-    //             }
-    //             DataBlock::U64 {
-    //                 ts: ts_vec,
-    //                 val: val_vec,
-    //                 enc: DataBlockEncoding::default(),
-    //             }
-    //         }
-    //         ValueType::Integer => {
-    //             let mut ts_vec: Vec<Timestamp> = Vec::with_capacity(1000);
-    //             let mut val_vec: Vec<i64> = Vec::with_capacity(1000);
-    //             for (min_ts, max_ts) in data_descriptors {
-    //                 for ts in min_ts..max_ts + 1 {
-    //                     ts_vec.push(ts);
-    //                     val_vec.push(1_i64);
-    //                 }
-    //             }
-    //             DataBlock::I64 {
-    //                 ts: ts_vec,
-    //                 val: val_vec,
-    //                 enc: DataBlockEncoding::default(),
-    //             }
-    //         }
-    //         ValueType::String => {
-    //             let word = MiniVec::from(&b"1"[..]);
-    //             let mut ts_vec: Vec<Timestamp> = Vec::with_capacity(10000);
-    //             let mut val_vec: Vec<MiniVec<u8>> = Vec::with_capacity(10000);
-    //             for (min_ts, max_ts) in data_descriptors {
-    //                 for ts in min_ts..max_ts + 1 {
-    //                     ts_vec.push(ts);
-    //                     val_vec.push(word.clone());
-    //                 }
-    //             }
-    //             DataBlock::Str {
-    //                 ts: ts_vec,
-    //                 val: val_vec,
-    //                 enc: DataBlockEncoding::default(),
-    //             }
-    //         }
-    //         ValueType::Float => {
-    //             let mut ts_vec: Vec<Timestamp> = Vec::with_capacity(10000);
-    //             let mut val_vec: Vec<f64> = Vec::with_capacity(10000);
-    //             for (min_ts, max_ts) in data_descriptors {
-    //                 for ts in min_ts..max_ts + 1 {
-    //                     ts_vec.push(ts);
-    //                     val_vec.push(1.0);
-    //                 }
-    //             }
-    //             DataBlock::F64 {
-    //                 ts: ts_vec,
-    //                 val: val_vec,
-    //                 enc: DataBlockEncoding::default(),
-    //             }
-    //         }
-    //         ValueType::Boolean => {
-    //             let mut ts_vec: Vec<Timestamp> = Vec::with_capacity(10000);
-    //             let mut val_vec: Vec<bool> = Vec::with_capacity(10000);
-    //             for (min_ts, max_ts) in data_descriptors {
-    //                 for ts in min_ts..max_ts + 1 {
-    //                     ts_vec.push(ts);
-    //                     val_vec.push(true);
-    //                 }
-    //             }
-    //             DataBlock::Bool {
-    //                 ts: ts_vec,
-    //                 val: val_vec,
-    //                 enc: DataBlockEncoding::default(),
-    //             }
-    //         }
-    //         ValueType::Unknown => {
-    //             panic!("value type is Unknown")
-    //         }
-    //     }
-    // }
-    //
-    // #[tokio::test]
-    // async fn test_compaction_3() {
-    //     #[rustfmt::skip]
-    //     let data_desc = [
-    //         // [( tsm_sequence, vec![ (ValueType, FieldId, Timestamp_Begin, Timestamp_end) ] )]
-    //         (1_u64, vec![
-    //             // 1, 1~2500
-    //             (ValueType::Unsigned, 1_u64, 1_i64, 1000_i64),
-    //             (ValueType::Unsigned, 1, 1001, 2000),
-    //             (ValueType::Unsigned, 1, 2001, 2500),
-    //             // 2, 1~1500
-    //             (ValueType::Integer, 2, 1, 1000),
-    //             (ValueType::Integer, 2, 1001, 1500),
-    //             // 3, 1~1500
-    //             (ValueType::Boolean, 3, 1, 1000),
-    //             (ValueType::Boolean, 3, 1001, 1500),
-    //         ]),
-    //         (2, vec![
-    //             // 1, 2001~4500
-    //             (ValueType::Unsigned, 1, 2001, 3000),
-    //             (ValueType::Unsigned, 1, 3001, 4000),
-    //             (ValueType::Unsigned, 1, 4001, 4500),
-    //             // 2, 1001~3000
-    //             (ValueType::Integer, 2, 1001, 2000),
-    //             (ValueType::Integer, 2, 2001, 3000),
-    //             // 3, 1001~2500
-    //             (ValueType::Boolean, 3, 1001, 2000),
-    //             (ValueType::Boolean, 3, 2001, 2500),
-    //             // 4, 1~1500
-    //             (ValueType::Float, 4, 1, 1000),
-    //             (ValueType::Float, 4, 1001, 1500),
-    //         ]),
-    //         (3, vec![
-    //             // 1, 4001~6500
-    //             (ValueType::Unsigned, 1, 4001, 5000),
-    //             (ValueType::Unsigned, 1, 5001, 6000),
-    //             (ValueType::Unsigned, 1, 6001, 6500),
-    //             // 2, 3001~5000
-    //             (ValueType::Integer, 2, 3001, 4000),
-    //             (ValueType::Integer, 2, 4001, 5000),
-    //             // 3, 2001~3500
-    //             (ValueType::Boolean, 3, 2001, 3000),
-    //             (ValueType::Boolean, 3, 3001, 3500),
-    //             // 4. 1001~2500
-    //             (ValueType::Float, 4, 1001, 2000),
-    //             (ValueType::Float, 4, 2001, 2500),
-    //         ]),
-    //     ];
-    //     #[rustfmt::skip]
-    //     let expected_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from(
-    //         [
-    //             // 1, 1~6500
-    //             (1, vec![
-    //                 generate_data_block(ValueType::Unsigned, vec![(1, 1000)]),
-    //                 generate_data_block(ValueType::Unsigned, vec![(1001, 2000)]),
-    //                 generate_data_block(ValueType::Unsigned, vec![(2001, 3000)]),
-    //                 generate_data_block(ValueType::Unsigned, vec![(3001, 4000)]),
-    //                 generate_data_block(ValueType::Unsigned, vec![(4001, 5000)]),
-    //                 generate_data_block(ValueType::Unsigned, vec![(5001, 6000)]),
-    //                 generate_data_block(ValueType::Unsigned, vec![(6001, 6500)]),
-    //             ]),
-    //             // 2, 1~5000
-    //             (2, vec![
-    //                 generate_data_block(ValueType::Integer, vec![(1, 1000)]),
-    //                 generate_data_block(ValueType::Integer, vec![(1001, 2000)]),
-    //                 generate_data_block(ValueType::Integer, vec![(2001, 3000)]),
-    //                 generate_data_block(ValueType::Integer, vec![(3001, 4000)]),
-    //                 generate_data_block(ValueType::Integer, vec![(4001, 5000)]),
-    //             ]),
-    //             // 3, 1~3500
-    //             (3, vec![
-    //                 generate_data_block(ValueType::Boolean, vec![(1, 1000)]),
-    //                 generate_data_block(ValueType::Boolean, vec![(1001, 2000)]),
-    //                 generate_data_block(ValueType::Boolean, vec![(2001, 3000)]),
-    //                 generate_data_block(ValueType::Boolean, vec![(3001, 3500)]),
-    //             ]),
-    //             // 4, 1~2500
-    //             (4, vec![
-    //                 generate_data_block(ValueType::Float, vec![(1, 1000)]),
-    //                 generate_data_block(ValueType::Float, vec![(1001, 2000)]),
-    //                 generate_data_block(ValueType::Float, vec![(2001, 2500)]),
-    //             ]),
-    //         ]
-    //     );
-    //
-    //     let dir = "/tmp/test/compaction/3";
-    //     let database = Arc::new("dba".to_string());
-    //     let opt = create_options(dir.to_string());
-    //     let dir = opt.storage.tsm_dir(&database, 1);
-    //     if !file_manager::try_exists(&dir) {
-    //         std::fs::create_dir_all(&dir).unwrap();
-    //     }
-    //
-    //     let mut column_files = Vec::new();
-    //     for (tsm_sequence, args) in data_desc.iter() {
-    //         let mut tsm_writer = tsm::new_tsm_writer(&dir, *tsm_sequence, false, 0)
-    //             .await
-    //             .unwrap();
-    //         for arg in args.iter() {
-    //             tsm_writer
-    //                 .write_block(arg.1, &generate_data_block(arg.0, vec![(arg.2, arg.3)]))
-    //                 .await
-    //                 .unwrap();
-    //         }
-    //         tsm_writer.write_index().await.unwrap();
-    //         tsm_writer.finish().await.unwrap();
-    //         column_files.push(Arc::new(ColumnFile::new(
-    //             *tsm_sequence,
-    //             2,
-    //             TimeRange::new(tsm_writer.min_ts(), tsm_writer.max_ts()),
-    //             tsm_writer.size(),
-    //             false,
-    //             tsm_writer.path(),
-    //         )));
-    //     }
-    //
-    //     let next_file_id = 4_u64;
-    //
-    //     let (compact_req, kernel) =
-    //         prepare_compact_req_and_kernel(database, opt, next_file_id, column_files);
-    //
-    //     let (version_edit, _) = run_compaction_job(compact_req, kernel)
-    //         .await
-    //         .unwrap()
-    //         .unwrap();
-    //
-    //     check_column_file(dir, version_edit, expected_data).await;
-    // }
+    fn generate_column_ts(min_ts: i64, max_ts: i64) -> Column {
+        let mut col = Column::empty(ColumnType::Time(TimeUnit::Nanosecond));
+        for i in min_ts..max_ts + 1 {
+            col.push(Some(FieldVal::Integer(i)));
+        }
+        col
+    }
+
+    fn generate_column_i64(len: usize, none_range: Vec<(usize, usize)>) -> Column {
+        let mut col = Column::empty(ColumnType::Field(ValueType::Integer));
+        for i in 0..len {
+            if none_range.iter().any(|(min, max)| i >= *min && i <= *max) {
+                col.push(None);
+            } else {
+                col.push(Some(FieldVal::Integer(i as i64)));
+            }
+        }
+        col
+    }
+
+    fn generate_column_u64(len: usize, none_range: Vec<(usize, usize)>) -> Column {
+        let mut col = Column::empty(ColumnType::Field(ValueType::Unsigned));
+        for i in 0..len {
+            if none_range.iter().any(|(min, max)| i >= *min && i <= *max) {
+                col.push(None);
+            } else {
+                col.push(Some(FieldVal::Unsigned(i as u64)));
+            }
+        }
+        col
+    }
+
+    fn generate_column_f64(len: usize, none_range: Vec<(usize, usize)>) -> Column {
+        let mut col = Column::empty(ColumnType::Field(ValueType::Float));
+        for i in 0..len {
+            if none_range.iter().any(|(min, max)| i >= *min && i <= *max) {
+                col.push(None);
+            } else {
+                col.push(Some(FieldVal::Float(i as f64)));
+            }
+        }
+        col
+    }
+
+    fn generate_column_bool(len: usize, none_range: Vec<(usize, usize)>) -> Column {
+        let mut col = Column::empty(ColumnType::Field(ValueType::Boolean));
+        for i in 0..len {
+            if none_range.iter().any(|(min, max)| i >= *min && i <= *max) {
+                col.push(None);
+            } else {
+                col.push(Some(FieldVal::Boolean(true)));
+            }
+        }
+        col
+    }
+
+    #[tokio::test]
+    async fn test_compaction_3() {
+        let schema1 = TskvTableSchema::new(
+            "cnosdb".to_string(),
+            "public".to_string(),
+            "test0".to_string(),
+            vec![
+                TableColumn::new(
+                    0,
+                    "time".to_string(),
+                    ColumnType::Time(TimeUnit::Nanosecond),
+                    Encoding::default(),
+                ),
+                TableColumn::new(
+                    1,
+                    "f1".to_string(),
+                    ColumnType::Field(ValueType::Unsigned),
+                    Encoding::default(),
+                ),
+                TableColumn::new(
+                    2,
+                    "f2".to_string(),
+                    ColumnType::Field(ValueType::Integer),
+                    Encoding::default(),
+                ),
+                TableColumn::new(
+                    3,
+                    "f3".to_string(),
+                    ColumnType::Field(ValueType::Boolean),
+                    Encoding::default(),
+                ),
+            ],
+        );
+        let mut schema2 = schema1.clone();
+        schema2.add_column(TableColumn::new(
+            4,
+            "f4".to_string(),
+            ColumnType::Field(ValueType::Float),
+            Encoding::default(),
+        ));
+        schema2.schema_id += 1;
+
+        let schema1 = Arc::new(schema1);
+        let schema2 = Arc::new(schema2);
+        #[rustfmt::skip]
+        let data_desc = [
+            // [( tsm_sequence, vec![ (ValueType, FieldId, Timestamp_Begin, Timestamp_end) ] )]
+            (1_u64, vec![
+                DataBlock2::new(
+                    schema1.clone(),
+                    generate_column_ts(1, 1000),
+                    schema1.time_column(),
+                    vec![
+                        generate_column_u64(1000, vec![]),
+                        generate_column_i64(1000, vec![]),
+                        generate_column_bool(1000, vec![]),
+                    ],
+                    schema1.fields(),
+                ),
+                DataBlock2::new(
+                    schema1.clone(),
+                    generate_column_ts(1001, 2000),
+                    schema1.time_column(),
+                    vec![
+                        generate_column_u64(1000, vec![]),
+                        generate_column_i64(1000, vec![(500,999)]),
+                        generate_column_bool(1000, vec![(500,999)]),
+                    ],
+                    schema1.fields(),
+                ),
+                DataBlock2::new(
+                    schema1.clone(),
+                    generate_column_ts(2001, 2500),
+                    schema1.time_column(),
+                    vec![
+                        generate_column_u64(500, vec![]),
+                        generate_column_i64(500, vec![(0,499)]),
+                        generate_column_bool(500, vec![(0,499)]),
+                    ],
+                    schema1.fields(),
+                ),
+            ]),
+            (2, vec![
+                DataBlock2::new(
+                    schema2.clone(),
+                    generate_column_ts(1, 1000),
+                    schema2.time_column(),
+                    vec![
+                        generate_column_u64(1000, vec![(0, 999)]),
+                        generate_column_i64(1000, vec![(0, 999)]),
+                        generate_column_bool(1000, vec![(0, 999)]),
+                        generate_column_f64(1000, vec![]),
+                    ],
+                    schema2.fields(),
+                ),
+                DataBlock2::new(
+                    schema2.clone(),
+                    generate_column_ts(1001, 2000),
+                    schema2.time_column(),
+                    vec![
+                        generate_column_u64(1000, vec![(0, 999)]),
+                        generate_column_i64(1000, vec![]),
+                        generate_column_bool(1000, vec![]),
+                        generate_column_f64(1000, vec![(500, 999)]),
+                    ],
+                    schema2.fields(),
+                ),
+                DataBlock2::new(
+                    schema2.clone(),
+                    generate_column_ts(2001, 3000),
+                    schema2.time_column(),
+                    vec![
+                        generate_column_u64(1000, vec![]),
+                        generate_column_i64(1000, vec![]),
+                        generate_column_bool(1000, vec![(500, 999)]),
+                        generate_column_f64(1000, vec![(0, 999)]),
+                    ],
+                    schema2.fields(),
+                ),
+                DataBlock2::new(
+                    schema2.clone(),
+                    generate_column_ts(3001, 4000),
+                    schema2.time_column(),
+                    vec![
+                        generate_column_u64(1000, vec![]),
+                        generate_column_i64(1000, vec![(0, 999)]),
+                        generate_column_bool(1000, vec![(0, 999)]),
+                        generate_column_f64(1000, vec![(0, 999)]),
+                    ],
+                    schema2.fields(),
+                ),
+                DataBlock2::new(
+                    schema2.clone(),
+                    generate_column_ts(4001, 4500),
+                    schema2.time_column(),
+                    vec![
+                        generate_column_u64(500, vec![]),
+                        generate_column_i64(500, vec![(0, 499)]),
+                        generate_column_bool(500, vec![(0, 499)]),
+                        generate_column_f64(500, vec![(0, 499)]),
+                    ],
+                    schema2.fields(),
+                ),
+            ]),
+            (3, vec![
+                DataBlock2::new(
+                    schema2.clone(),
+                    generate_column_ts(1001, 2000),
+                    schema2.time_column(),
+                    vec![
+                        generate_column_u64(1000, vec![(0, 999)]),
+                        generate_column_i64(1000, vec![(0, 999)]),
+                        generate_column_bool(1000, vec![(0, 999)]),
+                        generate_column_f64(1000, vec![]),
+                    ],
+                    schema2.fields(),
+                ),
+                DataBlock2::new(
+                    schema2.clone(),
+                    generate_column_ts(2001, 3000),
+                    schema2.time_column(),
+                    vec![
+                        generate_column_u64(1000, vec![(0, 999)]),
+                        generate_column_i64(1000, vec![(0, 999)]),
+                        generate_column_bool(1000, vec![]),
+                        generate_column_f64(1000, vec![(500, 999)]),
+                    ],
+                    schema2.fields(),
+                ),
+                DataBlock2::new(
+                    schema2.clone(),
+                    generate_column_ts(3001, 4000),
+                    schema2.time_column(),
+                    vec![
+                        generate_column_u64(1000, vec![(0, 999)]),
+                        generate_column_i64(1000, vec![]),
+                        generate_column_bool(1000, vec![(500, 999)]),
+                        generate_column_f64(1000, vec![(0, 999)]),
+                    ],
+                    schema2.fields(),
+                ),
+                DataBlock2::new(
+                    schema2.clone(),
+                    generate_column_ts(4001, 5000),
+                    schema2.time_column(),
+                    vec![
+                        generate_column_u64(1000, vec![]),
+                        generate_column_i64(1000, vec![]),
+                        generate_column_bool(1000, vec![(0, 999)]),
+                        generate_column_f64(1000, vec![(0, 999)]),
+                    ],
+                    schema2.fields(),
+                ),
+                DataBlock2::new(
+                    schema2.clone(),
+                    generate_column_ts(5001, 6000),
+                    schema2.time_column(),
+                    vec![
+                        generate_column_u64(1000, vec![]),
+                        generate_column_i64(1000, vec![(0, 999)]),
+                        generate_column_bool(1000, vec![(0, 999)]),
+                        generate_column_f64(1000, vec![(0, 999)]),
+                    ],
+                    schema2.fields(),
+                ),
+                DataBlock2::new(
+                    schema2.clone(),
+                    generate_column_ts(6001, 6500),
+                    schema2.time_column(),
+                    vec![
+                        generate_column_u64(500, vec![]),
+                        generate_column_i64(500, vec![(0, 499)]),
+                        generate_column_bool(500, vec![(0, 499)]),
+                        generate_column_f64(500, vec![(0, 499)]),
+                    ],
+                    schema2.fields(),
+                ),
+            ]),
+        ];
+        #[rustfmt::skip]
+        let expected_data: Vec<DataBlock2> = vec![
+            DataBlock2::new(
+                schema2.clone(),
+                generate_column_ts(1, 1000),
+                schema2.time_column(),
+                vec![
+                    generate_column_u64(1000, vec![]),
+                    generate_column_i64(1000, vec![]),
+                    generate_column_bool(1000, vec![]),
+                    generate_column_f64(1000, vec![]),
+                ],
+                schema2.fields(),
+            ),
+            DataBlock2::new(
+                schema2.clone(),
+                generate_column_ts(1001, 2000),
+                schema2.time_column(),
+                vec![
+                    generate_column_u64(1000, vec![]),
+                    generate_column_i64(1000, vec![]),
+                    generate_column_bool(1000, vec![]),
+                    generate_column_f64(1000, vec![]),
+                ],
+                schema2.fields(),
+            ),
+            DataBlock2::new(
+                schema2.clone(),
+                generate_column_ts(2001, 3000),
+                schema2.time_column(),
+                vec![
+                    generate_column_u64(1000, vec![]),
+                    generate_column_i64(1000, vec![]),
+                    generate_column_bool(1000, vec![]),
+                    generate_column_f64(1000, vec![(500, 999)]),
+                ],
+                schema2.fields(),
+            ),
+            DataBlock2::new(
+                schema2.clone(),
+                generate_column_ts(3001, 4000),
+                schema2.time_column(),
+                vec![
+                    generate_column_u64(1000, vec![]),
+                    generate_column_i64(1000, vec![]),
+                    generate_column_bool(1000, vec![(500, 999)]),
+                    generate_column_f64(1000, vec![(0, 999)]),
+                ],
+                schema2.fields(),
+            ),
+            DataBlock2::new(
+                schema2.clone(),
+                generate_column_ts(4001, 5000),
+                schema2.time_column(),
+                vec![
+                    generate_column_u64(1000, vec![]),
+                    generate_column_i64(1000, vec![]),
+                    generate_column_bool(1000, vec![(0, 999)]),
+                    generate_column_f64(1000, vec![(0, 999)]),
+                ],
+                schema2.fields(),
+            ),
+            DataBlock2::new(
+                schema2.clone(),
+                generate_column_ts(5001, 6000),
+                schema2.time_column(),
+                vec![
+                    generate_column_u64(1000, vec![]),
+                    generate_column_i64(1000, vec![(0, 999)]),
+                    generate_column_bool(1000, vec![(0, 999)]),
+                    generate_column_f64(1000, vec![(0, 999)]),
+                ],
+                schema2.fields(),
+            ),
+            DataBlock2::new(
+                schema2.clone(),
+                generate_column_ts(6001, 6500),
+                schema2.time_column(),
+                vec![
+                    generate_column_u64(500, vec![]),
+                    generate_column_i64(500, vec![(0, 499)]),
+                    generate_column_bool(500, vec![(0, 499)]),
+                    generate_column_f64(500, vec![(0, 499)]),
+                ],
+                schema2.fields(),
+            ),
+        ];
+        let expected_data = HashMap::from([(1 as SeriesId, expected_data)]);
+
+        let dir = "/tmp/test/compaction/3";
+        let database = Arc::new("dba".to_string());
+        let opt = create_options(dir.to_string());
+        let dir = opt.storage.tsm_dir(&database, 1);
+        if !file_manager::try_exists(&dir) {
+            std::fs::create_dir_all(&dir).unwrap();
+        }
+
+        let mut column_files = Vec::new();
+        for (tsm_sequence, args) in data_desc.into_iter() {
+            let mut tsm_writer = Tsm2Writer::open(&dir, tsm_sequence, 0).await.unwrap();
+            for arg in args.into_iter() {
+                tsm_writer.write_datablock(1, arg).await.unwrap();
+            }
+            tsm_writer.finish().await.unwrap();
+            column_files.push(Arc::new(ColumnFile::new(
+                tsm_sequence,
+                2,
+                TimeRange::new(tsm_writer.min_ts(), tsm_writer.max_ts()),
+                tsm_writer.size() as u64,
+                false,
+                tsm_writer.path(),
+            )));
+        }
+
+        let next_file_id = 4_u64;
+
+        let (compact_req, kernel) =
+            prepare_compact_req_and_kernel(database, opt, next_file_id, column_files);
+
+        let (version_edit, _) = run_compaction_job(compact_req, kernel)
+            .await
+            .unwrap()
+            .unwrap();
+
+        check_column_file(dir, version_edit, expected_data).await;
+    }
 
     // #[allow(clippy::type_complexity)]
     // async fn write_data_block_desc(

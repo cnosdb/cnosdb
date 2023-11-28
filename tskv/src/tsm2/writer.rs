@@ -336,6 +336,10 @@ impl Column {
         }
         Ok(column)
     }
+
+    pub fn len(&self) -> usize {
+        self.valid.len()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -661,7 +665,7 @@ impl Tsm2Writer {
         let writer = Self::new(tsm_path, file_cursor.into(), file_id, max_size);
         Ok(writer)
     }
-    pub fn new(path: PathBuf, writer: FileCursor, file_id: u64, max_size: u64) -> Self {
+    fn new(path: PathBuf, writer: FileCursor, file_id: u64, max_size: u64) -> Self {
         Self {
             file_id,
             max_ts: i64::MIN,
