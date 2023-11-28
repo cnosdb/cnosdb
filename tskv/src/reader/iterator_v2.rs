@@ -403,9 +403,15 @@ impl SeriesGroupBatchReaderFactory {
                 let chunk_readers =
                     Self::build_chunk_readers(chunks, batch_size, projection, predicate)?;
 
-                let merger = Arc::new(DataMerger::new(chunk_readers));
+                let reader: BatchReaderRef = if chunk_readers.len() > 1 {
+                    // 如果有多个重叠的 chunk reader 则需要做合并
+                    Arc::new(DataMerger::new(chunk_readers))
+                } else {
+                    Arc::new(chunk_readers)
+                };
+
                 // 用 Null 值补齐缺失的 Field 列
-                let reader = Arc::new(SchemaAlignmenter::new(merger, time_fields_schema.clone()));
+                let reader = Arc::new(SchemaAlignmenter::new(reader, time_fields_schema.clone()));
                 Ok(reader)
             })
             .collect::<Result<Vec<_>>>()?;

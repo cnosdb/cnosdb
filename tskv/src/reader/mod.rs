@@ -109,7 +109,8 @@ pub trait BatchReader {
     fn children(&self) -> Vec<BatchReaderRef>;
 }
 
-impl BatchReader for Vec<BatchReaderRef> {
+pub type CombinedBatchReader = Vec<BatchReaderRef>;
+impl BatchReader for CombinedBatchReader {
     fn process(&self) -> Result<SendableSchemableTskvRecordBatchStream> {
         let streams = self
             .iter()
