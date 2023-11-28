@@ -30,7 +30,9 @@ pub(crate) struct CompactingBlockMeta {
 
 impl PartialEq for CompactingBlockMeta {
     fn eq(&self, other: &Self) -> bool {
-        self.reader.file_id() == other.reader.file_id() && self.meta == other.meta
+        self.reader.file_id() == other.reader.file_id()
+            && self.meta.series_id() == other.meta.series_id()
+            && self.column_group_id == other.column_group_id
     }
 }
 
@@ -44,7 +46,20 @@ impl PartialOrd for CompactingBlockMeta {
 
 impl Ord for CompactingBlockMeta {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.meta.cmp(&other.meta)
+        let res = self.meta.series_id().cmp(&other.meta.series_id());
+        if res != std::cmp::Ordering::Equal {
+            res
+        } else {
+            match (
+                self.meta.column_group().get(&self.column_group_id),
+                other.meta.column_group().get(&other.column_group_id),
+            ) {
+                (Some(cg1), Some(cg2)) => cg1.time_range().min_ts.cmp(&cg2.time_range().min_ts),
+                (None, Some(_)) => std::cmp::Ordering::Less,
+                (Some(_), None) => std::cmp::Ordering::Greater,
+                _ => std::cmp::Ordering::Equal,
+            }
+        }
     }
 }
 

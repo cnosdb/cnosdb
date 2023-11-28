@@ -278,7 +278,7 @@ impl ColumnGroup {
 }
 
 /// A chunk of data for a series at least two columns
-#[derive(Clone, Default, Debug, Serialize, Deserialize, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Default, Debug, Serialize, Deserialize)]
 pub struct Chunk {
     column_group_offset: u64,
     size: u64,
