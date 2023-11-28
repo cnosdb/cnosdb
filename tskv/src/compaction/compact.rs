@@ -592,8 +592,11 @@ impl CompactIterator {
                             })?;
                     let column_groups_id = meta.column_group().keys().cloned().collect::<Vec<_>>();
                     column_groups_id.iter().for_each(|&column_group_id| {
-                        self.tmp_tsm_blk_meta_iters
-                            .push((meta.clone(), column_group_id, f.i));
+                        self.tmp_tsm_blk_meta_iters.push((
+                            meta.clone(),
+                            column_group_id,
+                            self.tmp_tsm_blk_tsm_reader_idx.len() - 1,
+                        ));
                     });
                     f.next();
                     self.compacting_files.push(f);
