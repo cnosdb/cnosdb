@@ -1,11 +1,10 @@
+use std::iter;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use arrow::datatypes::{DataType, Field, Fields, Schema, SchemaRef};
-use arrow_array::types::Int32Type;
-use arrow_array::{ArrayRef, PrimitiveArray, RecordBatch, RunArray};
-use datafusion::scalar::ScalarValue;
+use arrow_array::{RecordBatch, StringArray};
 use futures::{ready, Stream, StreamExt};
 use models::{SeriesKey, Tag};
 
@@ -42,14 +41,10 @@ impl BatchReader for SeriesReader {
                 DataType::Utf8,
                 true,
             ));
-            let array =
-                ScalarValue::Utf8(Some(String::from_utf8(value.to_vec()).map_err(|err| {
-                    Error::InvalidUtf8 {
-                        message: format!("Convert tag {}'s value: {:?}", field.name(), value),
-                        source: err.utf8_error(),
-                    }
-                })?))
-                .to_array();
+            let array = String::from_utf8(value.to_vec()).map_err(|err| Error::InvalidUtf8 {
+                message: format!("Convert tag {}'s value: {:?}", field.name(), value),
+                source: err.utf8_error(),
+            })?;
             append_column.push(field);
             append_column_values.push(array);
         }
@@ -79,7 +74,7 @@ impl BatchReader for SeriesReader {
 
 struct SeriesReaderStream {
     input: SendableSchemableTskvRecordBatchStream,
-    append_column_values: Vec<ArrayRef>,
+    append_column_values: Vec<String>,
     schema: SchemaRef,
 }
 
@@ -97,15 +92,18 @@ impl Stream for SeriesReaderStream {
             Some(Ok(batch)) => {
                 let num_rows = batch.num_rows() as i32;
 
-                let run_ends = PrimitiveArray::<Int32Type>::from_iter_values([num_rows]);
-
                 let mut arrays = batch.columns().to_vec();
                 for value in &self.append_column_values {
-                    let value_array = Arc::new(RunArray::try_new(&run_ends, value.as_ref())?);
+                    let value_array = Arc::new(StringArray::from_iter(
+                        iter::repeat(Some(value)).take(num_rows as usize),
+                    ));
                     arrays.push(value_array);
                 }
-                let batch = RecordBatch::try_new(self.schema.clone(), arrays).unwrap();
-                Poll::Ready(Some(Ok(batch)))
+
+                match RecordBatch::try_new(self.schema.clone(), arrays) {
+                    Ok(batch) => Poll::Ready(Some(Ok(batch))),
+                    Err(err) => Poll::Ready(Some(Err(err.into()))),
+                }
             }
             Some(Err(e)) => Poll::Ready(Some(Err(e))),
             None => Poll::Ready(None),
