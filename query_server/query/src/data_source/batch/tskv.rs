@@ -289,47 +289,49 @@ impl TableProvider for ClusterTable {
     fn supports_aggregate_pushdown(
         &self,
         group_expr: &[Expr],
-        aggr_expr: &[Expr],
+        _aggr_expr: &[Expr],
     ) -> Result<TableProviderAggregationPushDown> {
         if !group_expr.is_empty() {
             return Ok(TableProviderAggregationPushDown::Unsupported);
         }
 
-        let result = if aggr_expr.iter().all(|e| {
-            match e {
-                Expr::AggregateFunction(AggregateFunction {
-                    fun,
-                    args,
-                    distinct,
-                    filter,
-                    order_by,
-                }) => {
-                    let support_agg_func = matches!(
-                        fun,
-                        aggregate_function::AggregateFunction::Count // TODO
-                                                                     // | aggregate_function::AggregateFunction::Max
-                                                                     // | aggregate_function::AggregateFunction::Min
-                                                                     // | aggregate_function::AggregateFunction::Sum
-                    );
+        // let result = if aggr_expr.iter().all(|e| {
+        //     match e {
+        //         Expr::AggregateFunction(AggregateFunction {
+        //             fun,
+        //             args,
+        //             distinct,
+        //             filter,
+        //             order_by,
+        //         }) => {
+        //             let support_agg_func = matches!(
+        //                 fun,
+        //                 aggregate_function::AggregateFunction::Count // TODO
+        //                                                              // | aggregate_function::AggregateFunction::Max
+        //                                                              // | aggregate_function::AggregateFunction::Min
+        //                                                              // | aggregate_function::AggregateFunction::Sum
+        //             );
 
-                    support_agg_func
-                        && args.len() == 1
-                        // count(*) | count(1) | count(col)
-                        && (matches!(args[0], Expr::Column(_)) || matches!(args[0], Expr::Literal(_)))
-                        // not distinct
-                        && !*distinct
-                        && filter.is_none()
-                        && order_by.is_none()
-                }
-                _ => false,
-            }
-        }) {
-            TableProviderAggregationPushDown::Ungrouped
-        } else {
-            TableProviderAggregationPushDown::Unsupported
-        };
+        //             support_agg_func
+        //                 && args.len() == 1
+        //                 // count(*) | count(1) | count(col)
+        //                 && (matches!(args[0], Expr::Column(_)) || matches!(args[0], Expr::Literal(_)))
+        //                 // not distinct
+        //                 && !*distinct
+        //                 && filter.is_none()
+        //                 && order_by.is_none()
+        //         }
+        //         _ => false,
+        //     }
+        // }) {
+        //     TableProviderAggregationPushDown::Ungrouped
+        // } else {
+        //     TableProviderAggregationPushDown::Unsupported
+        // };
 
-        Ok(result)
+        // Ok(result)
+
+        Ok(TableProviderAggregationPushDown::Unsupported)
     }
 
     fn push_down_projection(&self, proj: &[usize]) -> Option<Vec<usize>> {
