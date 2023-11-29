@@ -181,7 +181,6 @@ pub(crate) mod tests {
     use models::arrow::stream::BoxStream;
     use models::field_value::FieldVal;
     use models::gis::data_type::{Geometry, GeometryType};
-    use models::predicate::domain::TimeRange;
     use models::schema::{ColumnType, TableColumn};
     use models::{PhysicalDType, ValueType};
 
@@ -308,7 +307,7 @@ pub(crate) mod tests {
 
         let col_schema = TableColumn::new_with_default("col".to_string(), ct);
 
-        col.col_to_page(&col_schema, Some(TimeRange::all()))
+        col.col_to_page(&col_schema)
     }
 
     #[tokio::test]

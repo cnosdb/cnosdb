@@ -177,7 +177,6 @@ impl Page {
 pub struct PageMeta {
     pub(crate) num_values: u32,
     pub(crate) column: TableColumn,
-    pub(crate) time_range: TimeRange,
     pub(crate) statistic: PageStatistics,
 }
 
@@ -241,6 +240,10 @@ impl ColumnGroup {
         self.column_group_id
     }
 
+    pub fn time_range_merge(&mut self, time_range: &TimeRange) {
+        self.time_range.merge(time_range)
+    }
+
     pub fn pages_offset(&self) -> u64 {
         self.pages_offset
     }
@@ -265,7 +268,6 @@ impl ColumnGroup {
             debug_assert_eq!(self.pages_offset + self.size, page.offset);
         }
         self.size += page.size as u64;
-        self.time_range.merge(&page.meta.time_range);
         self.pages.push(page);
     }
 
@@ -280,9 +282,6 @@ impl ColumnGroup {
 /// A chunk of data for a series at least two columns
 #[derive(Clone, Default, Debug, Serialize, Deserialize)]
 pub struct Chunk {
-    column_group_offset: u64,
-    size: u64,
-
     time_range: TimeRange,
 
     table_name: String,
@@ -295,13 +294,11 @@ pub struct Chunk {
 impl Chunk {
     pub fn new(table_name: String, series_id: SeriesId) -> Self {
         Self {
-            column_group_offset: 0,
-            size: 0,
             time_range: TimeRange::none(),
             table_name,
             series_id,
             next_column_group_id: 0,
-            column_groups: BTreeMap::new(),
+            column_groups: Default::default(),
         }
     }
 
@@ -311,14 +308,6 @@ impl Chunk {
 
     pub fn max_ts(&self) -> i64 {
         self.time_range.max_ts
-    }
-
-    pub fn column_group_offset(&self) -> u64 {
-        self.column_group_offset
-    }
-
-    pub fn size(&self) -> u64 {
-        self.size
     }
 
     pub fn len(&self) -> usize {
@@ -354,16 +343,6 @@ impl Chunk {
         bincode::deserialize(bytes).map_err(|e| Error::Deserialize { source: e.into() })
     }
     pub fn push(&mut self, column_group: Arc<ColumnGroup>) -> Result<()> {
-        if self.column_group_offset == 0 {
-            self.column_group_offset = column_group.pages_offset;
-        }
-        if self.size != 0 {
-            debug_assert_eq!(
-                self.column_group_offset + self.size,
-                column_group.pages_offset
-            );
-        }
-        self.size += column_group.size;
         self.time_range.merge(&column_group.time_range);
         if self
             .column_groups

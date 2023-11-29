@@ -273,24 +273,35 @@ impl CompactingBlockMetaGroup {
             let len = data_block.len();
             let mut start = 0;
             while start + max_block_size < len {
-                let data_block = data_block.chunk(start, start + max_block_size)?;
+                let data_block_merge = data_block.chunk(start, start + max_block_size)?;
+                let time_range = data_block_merge.time_range();
+                let table_schema = data_block_merge.schema();
+                let data_block_merge_pages = data_block_merge.block_to_page();
                 // Encode decoded data blocks into chunks.
-                merged_blks.push(CompactingBlock::Decoded {
-                    priority: 0,
-                    series_id: self.series_id,
-                    data_block,
-                });
+                merged_blks.push(CompactingBlock::encoded(
+                    0,
+                    table_schema,
+                    self.series_id,
+                    time_range,
+                    data_block_merge_pages,
+                ));
 
                 start += max_block_size;
             }
             if start < len {
                 // Encode the remaining decoded data blocks.
-                let data_block = data_block.chunk(start, len)?;
-                merged_blks.push(CompactingBlock::Decoded {
-                    priority: 0,
-                    series_id: self.series_id,
-                    data_block,
-                });
+                let data_block_merge = data_block.chunk(start, len)?;
+                let time_range = data_block_merge.time_range();
+                let table_schema = data_block_merge.schema();
+                let data_block_merge_pages = data_block_merge.block_to_page();
+                // Encode decoded data blocks into chunks.
+                merged_blks.push(CompactingBlock::encoded(
+                    0,
+                    table_schema,
+                    self.series_id,
+                    time_range,
+                    data_block_merge_pages,
+                ));
             }
         }
 
@@ -320,6 +331,7 @@ pub enum CompactingBlock {
         priority: usize,
         table_schema: TskvTableSchemaRef,
         series_id: SeriesId,
+        time_range: TimeRange,
         data_block: Vec<Page>,
     },
     Raw {
@@ -378,12 +390,14 @@ impl CompactingBlock {
         priority: usize,
         table_schema: TskvTableSchemaRef,
         series_id: SeriesId,
+        time_range: TimeRange,
         data_block: Vec<Page>,
     ) -> CompactingBlock {
         Self::Encoded {
             priority,
             series_id,
             table_schema,
+            time_range,
             data_block,
         }
     }
@@ -573,6 +587,8 @@ impl CompactIterator {
     /// Update tmp_tsm_blks and tmp_tsm_blk_tsm_reader_idx for field id in next iteration.
     fn next_series_id(&mut self) -> Result<()> {
         self.curr_sid = None;
+        self.tmp_tsm_blk_tsm_reader_idx.clear();
+        self.tmp_tsm_blk_meta_iters.clear();
 
         if let Some(f) = self.compacting_files.peek() {
             if self.curr_sid.is_none() {

@@ -50,11 +50,10 @@ impl BatchReader for ChunkReader {
     fn fmt_as(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let column_group_nums = self.chunk.column_group().len();
         let time_range = self.chunk.time_range();
-        let chunk_bytes = self.chunk.size();
 
         write!(
             f,
-            "ChunkReader: column_group_nums={column_group_nums}, time_range={time_range}, chunk_bytes={chunk_bytes}"
+            "ChunkReader: column_group_nums={column_group_nums}, time_range={time_range}"
         )
     }
 

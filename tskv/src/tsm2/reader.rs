@@ -154,13 +154,16 @@ impl TSM2Reader {
             if meta.footer().is_series_exist(series_id) {
                 if let Some(chunk) = meta.chunk().get(series_id) {
                     for (id, column_group) in chunk.column_group() {
+                        let page_time_range = column_group.time_range();
                         let mut pages = vec![];
                         for page in column_group.pages() {
-                            if page.meta.time_range.overlaps(&time_range) {
+                            if page_time_range.overlaps(&time_range) {
                                 pages.push(page.meta().clone());
                             }
                         }
-                        column_groups.push((*id, pages))
+                        if !pages.is_empty() {
+                            column_groups.push((*id, pages));
+                        }
                     }
                 }
             }

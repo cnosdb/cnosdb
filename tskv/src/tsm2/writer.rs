@@ -14,7 +14,6 @@ use snafu::ResultExt;
 use utils::bitset::BitSet;
 use utils::BloomFilter;
 
-use crate::byte_utils::decode_be_i64;
 use crate::compaction::CompactingBlock;
 use crate::error::IOSnafu;
 use crate::file_system::file::cursor::FileCursor;
@@ -233,7 +232,7 @@ impl Column {
             }
         }
     }
-    pub fn col_to_page(&self, desc: &TableColumn, time_range: Option<TimeRange>) -> Page {
+    pub fn col_to_page(&self, desc: &TableColumn) -> Page {
         let len_bitset = self.valid.byte_len() as u32;
         let data_len = self.valid.len() as u64;
         let mut buf = vec![];
@@ -296,17 +295,9 @@ impl Column {
         data.extend_from_slice(self.valid.bytes());
         data.extend_from_slice(&buf);
         let bytes = bytes::Bytes::from(data);
-        let time_range = match time_range {
-            None => TimeRange {
-                max_ts: decode_be_i64(&max),
-                min_ts: decode_be_i64(&min),
-            },
-            Some(time_range) => time_range,
-        };
         let meta = PageMeta {
             num_values: self.valid.len() as u32,
             column: desc.clone(),
-            time_range,
             statistic: PageStatistics {
                 primitive_type: value_type,
                 null_count: None,
@@ -404,14 +395,11 @@ impl DataBlock2 {
         self.schema.clone()
     }
 
-    //todo dont forgot build time column to pages
     pub fn block_to_page(&self) -> Vec<Page> {
         let mut pages = Vec::with_capacity(self.cols.len() + 1);
-        let ts_page = self.ts.col_to_page(&self.ts_desc, None);
-        let time_range = ts_page.meta.time_range;
-        pages.push(self.ts.col_to_page(&self.ts_desc, None));
+        pages.push(self.ts.col_to_page(&self.ts_desc));
         for (col, desc) in self.cols.iter().zip(self.cols_desc.iter()) {
-            pages.push(col.col_to_page(desc, Some(time_range)));
+            pages.push(col.col_to_page(desc));
         }
         pages
     }
@@ -546,7 +534,15 @@ impl DataBlock2 {
             || self.schema.tenant != other.schema.tenant
         {
             return Err(Error::CommonError {
-                reason: "schema name not match".to_string(),
+                reason: format!(
+                    "schema name not match in datablock merge, self: {}.{}.{}, other: {}.{}.{}",
+                    self.schema.tenant,
+                    self.schema.db,
+                    self.schema.name,
+                    other.schema.tenant,
+                    other.schema.db,
+                    other.schema.name
+                ),
             });
         }
         Ok(())
@@ -841,10 +837,12 @@ impl Tsm2Writer {
             });
         }
 
+        let time_range = datablock.time_range();
         let schema = datablock.schema.clone();
         let pages = datablock.block_to_page();
 
-        self.write_pages(schema, series_id, pages).await?;
+        self.write_pages(schema, series_id, pages, time_range)
+            .await?;
         Ok(())
     }
 
@@ -853,6 +851,7 @@ impl Tsm2Writer {
         schema: TskvTableSchemaRef,
         series_id: SeriesId,
         pages: Vec<Page>,
+        time_range: TimeRange,
     ) -> Result<()> {
         if self.state == State::Initialised {
             self.write_header().await?;
@@ -861,12 +860,10 @@ impl Tsm2Writer {
         let mut column_group = self.create_column_group(schema.clone(), series_id);
 
         let table = schema.name.clone();
-        let mut time_range = TimeRange::none();
         for page in pages {
             let offset = self.writer.pos();
             let size = self.writer.write(&page.bytes).await?;
             self.size += size;
-            time_range.merge(&page.meta.time_range);
             let spec = PageWriteSpec {
                 offset,
                 size,
@@ -875,6 +872,7 @@ impl Tsm2Writer {
             column_group.push(spec);
             self.table_schemas.insert(table.clone(), schema.clone());
         }
+        column_group.time_range_merge(&time_range);
         self.page_specs
             .entry(table.clone())
             .or_default()
@@ -918,6 +916,7 @@ impl Tsm2Writer {
             new_column_group.push(spec);
             self.table_schemas.insert(table.clone(), schema.clone());
         }
+        new_column_group.time_range_merge(column_group.time_range());
         let series_id = meta.series_id();
         self.page_specs
             .entry(table.clone())
@@ -942,10 +941,11 @@ impl Tsm2Writer {
             CompactingBlock::Encoded {
                 table_schema,
                 series_id,
+                time_range,
                 data_block,
                 ..
             } => {
-                self.write_pages(table_schema, series_id, data_block)
+                self.write_pages(table_schema, series_id, data_block, time_range)
                     .await?
             }
             CompactingBlock::Raw {
@@ -1065,8 +1065,8 @@ mod test {
         let tsm_reader = TSM2Reader::open(tsm_writer.path).await.unwrap();
         let data2 = tsm_reader.read_datablock(1, 0).await.unwrap();
         assert_eq!(data1, data2);
-        let pages = data2.block_to_page();
-        let time_range = pages[0].meta.time_range;
+        let time_range = data2.time_range();
+        let _pages = data2.block_to_page();
         assert_eq!(time_range, TimeRange::new(1, 3));
         println!("time range: {:?}", time_range);
     }
