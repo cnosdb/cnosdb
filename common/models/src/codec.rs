@@ -2,16 +2,17 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
-pub const BIGINT_CODEC: [Encoding; 4] = [
+pub const BIGINT_CODEC: [Encoding; 5] = [
     Encoding::Default,
     Encoding::Null,
     Encoding::Delta,
+    Encoding::DeltaTs,
     Encoding::Quantile,
 ];
 // Because timestamp, bigint, and unsigned bigint are all integers,
 // so their compression algorithms are the same
-pub const TIMESTAMP_CODEC: [Encoding; 4] = BIGINT_CODEC;
-pub const UNSIGNED_BIGINT_CODEC: [Encoding; 4] = BIGINT_CODEC;
+pub const TIMESTAMP_CODEC: [Encoding; 5] = BIGINT_CODEC;
+pub const UNSIGNED_BIGINT_CODEC: [Encoding; 5] = BIGINT_CODEC;
 
 pub const DOUBLE_CODEC: [Encoding; 4] = [
     Encoding::Default,
@@ -48,6 +49,7 @@ pub enum Encoding {
     Zstd = 8,
     Zlib = 9,
     BitPack = 10,
+    DeltaTs = 11,
     Unknown = 15,
 }
 
@@ -81,6 +83,7 @@ impl Encoding {
             Encoding::Default => "DEFAULT",
             Encoding::Null => "NULL",
             Encoding::Delta => "DELTA",
+            Encoding::DeltaTs => "DELTATS",
             Encoding::Quantile => "QUANTILE",
             Encoding::Gzip => "GZIP",
             Encoding::Bzip => "BZIP",
@@ -101,6 +104,7 @@ impl FromStr for Encoding {
             "DEFAULT" => Ok(Self::Default),
             "NULL" => Ok(Self::Null),
             "DELTA" => Ok(Self::Delta),
+            "DELTATS" => Ok(Self::DeltaTs),
             "QUANTILE" => Ok(Self::Quantile),
             "GZIP" => Ok(Self::Gzip),
             "BZIP" => Ok(Self::Bzip),
@@ -128,6 +132,7 @@ impl From<u8> for Encoding {
             8 => Encoding::Zstd,
             9 => Encoding::Zlib,
             10 => Encoding::BitPack,
+            11 => Encoding::DeltaTs,
             _ => Encoding::Unknown,
         }
     }

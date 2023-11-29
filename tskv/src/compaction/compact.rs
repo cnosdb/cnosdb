@@ -1269,7 +1269,7 @@ pub mod test {
 
         let expected_data = HashMap::from([(1 as SeriesId, vec![expected_data])]);
 
-        let dir = "/tmp/test/compaction";
+        let dir = "/tmp/test/compaction/fast";
         let database = Arc::new("dba".to_string());
         let opt = create_options(dir.to_string());
         let dir = opt.storage.tsm_dir(&database, 1);
@@ -1390,7 +1390,7 @@ pub mod test {
 
         let expected_data = HashMap::from([(1 as SeriesId, vec![expected_data])]);
 
-        let dir = "/tmp/test/compaction";
+        let dir = "/tmp/test/compaction/1";
         let database = Arc::new("dba".to_string());
         let opt = create_options(dir.to_string());
         let dir = opt.storage.tsm_dir(&database, 1);
