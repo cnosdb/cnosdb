@@ -220,7 +220,6 @@ impl TsKv {
                                 }
                                 match wal_entry_blk.entry {
                                     WalEntry::Write(blk) => {
-                                        error!("write seq: {}", seq);
                                         let vnode_id = blk.vnode_id();
                                         if vnode_last_seq_map.vnode_min_seq(vnode_id) >= seq {
                                             // If `seq_no` of TsFamily is greater than or equal to `seq`,
