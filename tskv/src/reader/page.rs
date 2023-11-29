@@ -7,10 +7,12 @@ use arrow_array::builder::StringBuilder;
 use arrow_array::types::{Float64Type, Int64Type, UInt64Type};
 use arrow_array::{ArrayRef, BooleanArray, PrimitiveArray};
 use models::arrow::stream::BoxStream;
+use models::schema::PhysicalCType;
 use models::PhysicalDType;
 
 use crate::tsm::codec::{
-    get_bool_codec, get_encoding, get_f64_codec, get_i64_codec, get_str_codec, get_u64_codec,
+    get_bool_codec, get_encoding, get_f64_codec, get_i64_codec, get_str_codec, get_ts_codec,
+    get_u64_codec,
 };
 use crate::tsm2::page::{Page, PageWriteSpec};
 use crate::tsm2::reader::TSM2Reader;
@@ -58,7 +60,7 @@ async fn read(reader: Arc<TSM2Reader>, page_meta: PageWriteSpec) -> Result<Array
 }
 
 async fn page_to_arrow_array(page: Page) -> Result<ArrayRef> {
-    let data_type = page.meta().column.column_type.to_physical_data_type();
+    let data_type = page.meta().column.column_type.to_physical_type();
     let num_values = page.meta().num_values as usize;
     let data_buffer = page.data_buffer();
 
@@ -68,77 +70,7 @@ async fn page_to_arrow_array(page: Page) -> Result<ArrayRef> {
     let null_mutable_buffer = NullBuffer::new(BooleanBuffer::new(null_buffer, 0, num_values));
 
     let array: ArrayRef = match data_type {
-        PhysicalDType::Integer => {
-            let encoding = get_encoding(&data_buffer[0..1]);
-            let ts_codec = get_i64_codec(encoding);
-            let mut target = Vec::new();
-            ts_codec
-                .decode(data_buffer, &mut target)
-                .map_err(|e| Error::Decode { source: e })?;
-
-            let data_mutable_buffer = MutableBuffer::from_vec(target);
-
-            let nulls = Some(null_mutable_buffer);
-            let builder = ArrayData::builder(DataType::Int64)
-                .len(num_values)
-                .add_buffer(data_mutable_buffer.into())
-                .nulls(nulls);
-
-            let array_data = unsafe { builder.build_unchecked() };
-            Arc::new(PrimitiveArray::<Int64Type>::from(array_data))
-        }
-        PhysicalDType::Unsigned => {
-            let encoding = get_encoding(&data_buffer[0..1]);
-            let ts_codec = get_u64_codec(encoding);
-            let mut target = Vec::new();
-            ts_codec
-                .decode(data_buffer, &mut target)
-                .map_err(|e| Error::Decode { source: e })?;
-
-            let data_mutable_buffer = MutableBuffer::from_vec(target);
-
-            let nulls = Some(null_mutable_buffer);
-            let builder = ArrayData::builder(DataType::UInt64)
-                .len(num_values)
-                .add_buffer(data_mutable_buffer.into())
-                .nulls(nulls);
-
-            let array_data = unsafe { builder.build_unchecked() };
-            Arc::new(PrimitiveArray::<UInt64Type>::from(array_data))
-        }
-        PhysicalDType::Float => {
-            let encoding = get_encoding(&data_buffer[0..1]);
-            let ts_codec = get_f64_codec(encoding);
-            let mut target = Vec::new();
-            ts_codec
-                .decode(data_buffer, &mut target)
-                .map_err(|e| Error::Decode { source: e })?;
-
-            let data_mutable_buffer = MutableBuffer::from_vec(target);
-
-            let nulls = Some(null_mutable_buffer);
-            let builder = ArrayData::builder(DataType::Float64)
-                .len(num_values)
-                .add_buffer(data_mutable_buffer.into())
-                .nulls(nulls);
-
-            let array_data = unsafe { builder.build_unchecked() };
-            Arc::new(PrimitiveArray::<Float64Type>::from(array_data))
-        }
-        PhysicalDType::Boolean => {
-            let encoding = get_encoding(&data_buffer[0..1]);
-            let ts_codec = get_bool_codec(encoding);
-            let mut target = Vec::new();
-            ts_codec
-                .decode(data_buffer, &mut target)
-                .map_err(|e| Error::Decode { source: e })?;
-            // TODO target 应为 bitset
-            let data_mutable_buffer = BooleanBuffer::from(target);
-
-            let array = BooleanArray::new(data_mutable_buffer, Some(null_mutable_buffer));
-            Arc::new(array)
-        }
-        PhysicalDType::String => {
+        PhysicalCType::Tag | PhysicalCType::Field(PhysicalDType::String) => {
             let encoding = get_encoding(&data_buffer[0..1]);
             let ts_codec = get_str_codec(encoding);
             let mut target = Vec::new();
@@ -159,12 +91,102 @@ async fn page_to_arrow_array(page: Page) -> Result<ArrayRef> {
 
             Arc::new(builder.finish())
         }
-        PhysicalDType::Unknown => {
+        PhysicalCType::Time(_) => {
+            let encoding = get_encoding(&data_buffer[0..1]);
+            let ts_codec = get_ts_codec(encoding);
+            let mut target = Vec::new();
+            ts_codec
+                .decode(data_buffer, &mut target)
+                .map_err(|e| Error::Decode { source: e })?;
+
+            let data_mutable_buffer = MutableBuffer::from_vec(target);
+
+            let nulls = Some(null_mutable_buffer);
+            let builder = ArrayData::builder(DataType::Int64)
+                .len(num_values)
+                .add_buffer(data_mutable_buffer.into())
+                .nulls(nulls);
+
+            let array_data = unsafe { builder.build_unchecked() };
+            Arc::new(PrimitiveArray::<Int64Type>::from(array_data))
+        }
+        PhysicalCType::Field(PhysicalDType::Float) => {
+            let encoding = get_encoding(&data_buffer[0..1]);
+            let ts_codec = get_f64_codec(encoding);
+            let mut target = Vec::new();
+            ts_codec
+                .decode(data_buffer, &mut target)
+                .map_err(|e| Error::Decode { source: e })?;
+
+            let data_mutable_buffer = MutableBuffer::from_vec(target);
+
+            let nulls = Some(null_mutable_buffer);
+            let builder = ArrayData::builder(DataType::Float64)
+                .len(num_values)
+                .add_buffer(data_mutable_buffer.into())
+                .nulls(nulls);
+
+            let array_data = unsafe { builder.build_unchecked() };
+            Arc::new(PrimitiveArray::<Float64Type>::from(array_data))
+        }
+        PhysicalCType::Field(PhysicalDType::Integer) => {
+            let encoding = get_encoding(&data_buffer[0..1]);
+            let ts_codec = get_i64_codec(encoding);
+            let mut target = Vec::new();
+            ts_codec
+                .decode(data_buffer, &mut target)
+                .map_err(|e| Error::Decode { source: e })?;
+
+            let data_mutable_buffer = MutableBuffer::from_vec(target);
+
+            let nulls = Some(null_mutable_buffer);
+            let builder = ArrayData::builder(DataType::Int64)
+                .len(num_values)
+                .add_buffer(data_mutable_buffer.into())
+                .nulls(nulls);
+
+            let array_data = unsafe { builder.build_unchecked() };
+            Arc::new(PrimitiveArray::<Int64Type>::from(array_data))
+        }
+        PhysicalCType::Field(PhysicalDType::Unsigned) => {
+            let encoding = get_encoding(&data_buffer[0..1]);
+            let ts_codec = get_u64_codec(encoding);
+            let mut target = Vec::new();
+            ts_codec
+                .decode(data_buffer, &mut target)
+                .map_err(|e| Error::Decode { source: e })?;
+
+            let data_mutable_buffer = MutableBuffer::from_vec(target);
+
+            let nulls = Some(null_mutable_buffer);
+            let builder = ArrayData::builder(DataType::UInt64)
+                .len(num_values)
+                .add_buffer(data_mutable_buffer.into())
+                .nulls(nulls);
+
+            let array_data = unsafe { builder.build_unchecked() };
+            Arc::new(PrimitiveArray::<UInt64Type>::from(array_data))
+        }
+        PhysicalCType::Field(PhysicalDType::Boolean) => {
+            let encoding = get_encoding(&data_buffer[0..1]);
+            let ts_codec = get_bool_codec(encoding);
+            let mut target = Vec::new();
+            ts_codec
+                .decode(data_buffer, &mut target)
+                .map_err(|e| Error::Decode { source: e })?;
+            // TODO target 应为 bitset
+            let data_mutable_buffer = BooleanBuffer::from(target);
+
+            let array = BooleanArray::new(data_mutable_buffer, Some(null_mutable_buffer));
+            Arc::new(array)
+        }
+        PhysicalCType::Field(PhysicalDType::Unknown) => {
             return Err(Error::UnsupportedDataType {
                 dt: "Unknown".to_string(),
             })
         }
     };
+
     Ok(array)
 }
 
