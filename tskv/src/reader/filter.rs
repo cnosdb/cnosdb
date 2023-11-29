@@ -6,11 +6,8 @@ use arrow::compute::filter_record_batch;
 use arrow::datatypes::SchemaRef;
 use arrow_array::RecordBatch;
 use datafusion::common::cast::as_boolean_array;
-use datafusion::common::tree_node::{TreeNode, TreeNodeRewriter};
 use datafusion::error::DataFusionError;
-use datafusion::physical_plan::expressions::{BinaryExpr, Column, Literal};
 use datafusion::physical_plan::PhysicalExpr;
-use datafusion::scalar::ScalarValue;
 use futures::{Stream, StreamExt};
 use trace::debug;
 
@@ -18,6 +15,7 @@ use super::{
     BatchReader, BatchReaderRef, Predicate, SchemableTskvRecordBatchStream,
     SendableSchemableTskvRecordBatchStream,
 };
+use crate::reader::utils::reassign_predicate_columns;
 use crate::Result;
 
 pub struct DataFilter {
@@ -53,72 +51,6 @@ impl BatchReader for DataFilter {
 
     fn children(&self) -> Vec<BatchReaderRef> {
         vec![self.input.clone()]
-    }
-}
-
-/// Re-assign column indices referenced in predicate according to given schema.
-/// If a column is not found in the schema, it will be replaced.
-///
-/// if we have a file, has [time, c1, c2],
-/// If the filter is 'c3 = 1', then it will be replaced by a expr 'true'.
-fn reassign_predicate_columns(
-    pred: Arc<Predicate>,
-    file_schema: SchemaRef,
-) -> Result<Arc<dyn PhysicalExpr>, DataFusionError> {
-    let full_schema = pred.schema();
-    let expr = pred.expr();
-
-    let mut rewriter = PredicateColumnsReassigner {
-        file_schema,
-        full_schema,
-        has_col_not_in_file: false,
-    };
-
-    expr.rewrite(&mut rewriter)
-}
-
-struct PredicateColumnsReassigner {
-    file_schema: SchemaRef,
-    full_schema: SchemaRef,
-    has_col_not_in_file: bool,
-}
-
-impl TreeNodeRewriter for PredicateColumnsReassigner {
-    type N = Arc<dyn PhysicalExpr>;
-
-    fn mutate(
-        &mut self,
-        expr: Arc<dyn PhysicalExpr>,
-    ) -> Result<Arc<dyn PhysicalExpr>, DataFusionError> {
-        if let Some(column) = expr.as_any().downcast_ref::<Column>() {
-            // find the column index in file schema
-            let index = match self.file_schema.index_of(column.name()) {
-                Ok(idx) => idx,
-                Err(_) => {
-                    // the column expr must be in the full schema
-                    return match self.full_schema.field_with_name(column.name()) {
-                        Ok(_) => {
-                            // 标记 predicate 中含有文件中不存在的列
-                            self.has_col_not_in_file = true;
-                            Ok(expr)
-                        }
-                        Err(e) => {
-                            // If the column is not in the full schema, should throw the error
-                            Err(DataFusionError::ArrowError(e))
-                        }
-                    };
-                }
-            };
-
-            return Ok(Arc::new(Column::new(column.name(), index)));
-        } else if expr.as_any().downcast_ref::<BinaryExpr>().is_some() && self.has_col_not_in_file {
-            let true_value = ScalarValue::Boolean(Some(true));
-            // 重置标记
-            self.has_col_not_in_file = false;
-            return Ok(Arc::new(Literal::new(true_value)));
-        }
-
-        Ok(expr)
     }
 }
 

@@ -9,11 +9,12 @@ use models::codec::Encoding;
 use models::field_value::FieldVal;
 use models::predicate::domain::TimeRange;
 use models::schema::{ColumnType, TableColumn, TskvTableSchemaRef};
-use models::{PhysicalDType, SeriesId, ValueType};
+use models::{SeriesId, ValueType};
 use snafu::ResultExt;
 use utils::bitset::BitSet;
 use utils::BloomFilter;
 
+use super::statistics::ValueStatistics;
 use crate::compaction::CompactingBlock;
 use crate::error::IOSnafu;
 use crate::file_system::file::cursor::FileCursor;
@@ -233,18 +234,21 @@ impl Column {
         }
     }
     pub fn col_to_page(&self, desc: &TableColumn) -> Page {
+        // TODO
+        let null_count = 1;
         let len_bitset = self.valid.byte_len() as u32;
         let data_len = self.valid.len() as u64;
         let mut buf = vec![];
-        let (min, max, value_type) = match &self.data {
+        let statistics = match &self.data {
             ColumnData::F64(array, min, max) => {
                 let encoder = get_f64_codec(desc.encoding);
                 encoder.encode(array, &mut buf).unwrap();
-                (
-                    Vec::from(min.to_be_bytes()),
-                    Vec::from(max.to_be_bytes()),
-                    PhysicalDType::Float,
-                )
+                PageStatistics::F64(ValueStatistics::new(
+                    Some(*min),
+                    Some(*max),
+                    None,
+                    null_count,
+                ))
             }
             ColumnData::I64(array, min, max) => {
                 if desc.column_type.is_time() {
@@ -254,20 +258,22 @@ impl Column {
                     let encoder = get_i64_codec(desc.encoding);
                     encoder.encode(array, &mut buf).unwrap();
                 };
-                (
-                    Vec::from(min.to_be_bytes()),
-                    Vec::from(max.to_be_bytes()),
-                    PhysicalDType::Integer,
-                )
+                PageStatistics::I64(ValueStatistics::new(
+                    Some(*min),
+                    Some(*max),
+                    None,
+                    null_count,
+                ))
             }
             ColumnData::U64(array, min, max) => {
                 let encoder = get_u64_codec(desc.encoding);
                 encoder.encode(array, &mut buf).unwrap();
-                (
-                    Vec::from(min.to_be_bytes()),
-                    Vec::from(max.to_be_bytes()),
-                    PhysicalDType::Unsigned,
-                )
+                PageStatistics::U64(ValueStatistics::new(
+                    Some(*min),
+                    Some(*max),
+                    None,
+                    null_count,
+                ))
             }
             ColumnData::String(array, min, max) => {
                 let encoder = get_str_codec(desc.encoding);
@@ -277,16 +283,22 @@ impl Column {
                         &mut buf,
                     )
                     .unwrap();
-                (
-                    min.as_bytes().to_vec(),
-                    max.as_bytes().to_vec(),
-                    PhysicalDType::String,
-                )
+                PageStatistics::Bytes(ValueStatistics::new(
+                    Some(min.as_bytes().to_vec()),
+                    Some(max.as_bytes().to_vec()),
+                    None,
+                    null_count,
+                ))
             }
             ColumnData::Bool(array, min, max) => {
                 let encoder = get_bool_codec(desc.encoding);
                 encoder.encode(array, &mut buf).unwrap();
-                (vec![*min as u8], vec![*max as u8], PhysicalDType::Boolean)
+                PageStatistics::Bool(ValueStatistics::new(
+                    Some(*min),
+                    Some(*max),
+                    None,
+                    null_count,
+                ))
             }
         };
         let mut data = vec![];
@@ -298,13 +310,7 @@ impl Column {
         let meta = PageMeta {
             num_values: self.valid.len() as u32,
             column: desc.clone(),
-            statistic: PageStatistics {
-                primitive_type: value_type,
-                null_count: None,
-                distinct_count: None,
-                max_value: Some(max),
-                min_value: Some(min),
-            },
+            statistics,
         };
         Page { bytes, meta }
     }

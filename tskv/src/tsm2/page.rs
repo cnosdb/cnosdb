@@ -1,15 +1,17 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use arrow::datatypes::{Field, Schema, SchemaRef};
 use datafusion::parquet::data_type::AsBytes;
 use models::field_value::FieldVal;
 use models::predicate::domain::TimeRange;
 use models::schema::{ColumnType, TableColumn, TskvTableSchema, TskvTableSchemaRef};
-use models::{PhysicalDType, SeriesId, ValueType};
+use models::{SeriesId, ValueType};
 use serde::{Deserialize, Serialize};
 use utils::bitset::ImmutBitSet;
 use utils::BloomFilter;
 
+use super::statistics::ValueStatistics;
 use crate::byte_utils::{decode_be_u32, decode_be_u64};
 use crate::error::Result;
 use crate::tsm::codec::{
@@ -173,23 +175,23 @@ impl Page {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PageMeta {
     pub(crate) num_values: u32,
     pub(crate) column: TableColumn,
-    pub(crate) statistic: PageStatistics,
+    pub(crate) statistics: PageStatistics,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Ord, PartialOrd)]
-pub struct PageStatistics {
-    pub(crate) primitive_type: PhysicalDType,
-    pub(crate) null_count: Option<i64>,
-    pub(crate) distinct_count: Option<i64>,
-    pub(crate) max_value: Option<Vec<u8>>,
-    pub(crate) min_value: Option<Vec<u8>>,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum PageStatistics {
+    Bool(ValueStatistics<bool>),
+    F64(ValueStatistics<f64>),
+    I64(ValueStatistics<i64>),
+    U64(ValueStatistics<u64>),
+    Bytes(ValueStatistics<Vec<u8>>),
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PageWriteSpec {
     pub(crate) offset: u64,
     pub(crate) size: usize,
@@ -215,7 +217,7 @@ impl PageWriteSpec {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ColumnGroup {
     column_group_id: ColumnGroupID,
 
@@ -362,6 +364,19 @@ impl Chunk {
     }
     pub fn time_range(&self) -> &TimeRange {
         &self.time_range
+    }
+    /// TODO high performance cost
+    pub fn schema(&self) -> SchemaRef {
+        if let Some((_, cg)) = self.column_group().first_key_value() {
+            let fields = cg
+                .pages()
+                .iter()
+                .map(|p| (&p.meta().column).into())
+                .collect::<Vec<Field>>();
+            return Arc::new(Schema::new(fields));
+        }
+
+        Arc::new(Schema::empty())
     }
 }
 

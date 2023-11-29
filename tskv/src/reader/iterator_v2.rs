@@ -329,9 +329,9 @@ impl SeriesGroupBatchReaderFactory {
         predicate: &Option<Arc<Predicate>>,
     ) -> Result<BatchReaderRef> {
         let chunk_reader = match chunk {
-            DataReference::Chunk(chunk, reader) => {
-                Arc::new(ChunkReader::try_new(reader, chunk, projection, batch_size)?)
-            }
+            DataReference::Chunk(chunk, reader) => Arc::new(ChunkReader::try_new(
+                reader, chunk, projection, predicate, batch_size,
+            )?),
             DataReference::Memcache(_) => {
                 // TODO @lutengda 构建memcache rowgroup reader(需要自己实现 trait BatchReader)
                 return Err(Error::Unimplement {
@@ -380,7 +380,8 @@ impl SeriesGroupBatchReaderFactory {
         if chunks.is_empty() {
             return Ok(None);
         }
-        // TODO 通过物理表达式根据page统计信息过滤chunk
+        // TODO performance 通过物理表达式根据 chunk 统计信息过滤chunk
+
         metrics
             .chunk_nums_filtered_by_statistics()
             .set(chunks.len());
