@@ -100,13 +100,17 @@ impl ColumnFile {
         self.time_range.overlaps(time_range)
     }
 
-    pub fn contains_series_id(&self, series_id: SeriesId) -> bool {
-        self.series_id_filter.contains(&series_id.to_be_bytes())
+    pub fn maybe_contains_series_id(&self, series_id: SeriesId) -> bool {
+        self.series_id_filter
+            .maybe_contains(&series_id.to_be_bytes())
     }
 
     pub fn contains_any_series_id(&self, series_ids: &[FieldId]) -> bool {
         for field_id in series_ids {
-            if self.series_id_filter.contains(&field_id.to_be_bytes()) {
+            if self
+                .series_id_filter
+                .maybe_contains(&field_id.to_be_bytes())
+            {
                 return true;
             }
         }
@@ -357,7 +361,8 @@ impl LevelInfo {
             .files
             .iter()
             .filter(|f| {
-                time_ranges.overlaps(f.time_range()) && f.contains_series_id(field_id as SeriesId)
+                time_ranges.overlaps(f.time_range())
+                    && f.maybe_contains_series_id(field_id as SeriesId)
             })
             .cloned()
             .collect::<Vec<Arc<ColumnFile>>>();

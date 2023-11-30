@@ -607,10 +607,10 @@ impl Footer {
         bincode::deserialize(bytes).map_err(|e| Error::Deserialize { source: e.into() })
     }
 
-    pub fn is_series_exist(&self, series_id: &SeriesId) -> bool {
+    pub fn maybe_series_exist(&self, series_id: &SeriesId) -> bool {
         self.series
             .bloom_filter
-            .contains((*series_id).as_bytes().as_ref())
+            .maybe_contains((*series_id).as_bytes().as_ref())
     }
 }
 

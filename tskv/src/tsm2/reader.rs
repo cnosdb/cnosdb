@@ -151,7 +151,7 @@ impl TSM2Reader {
         let mut map = BTreeMap::new();
         for series_id in series_ids {
             let mut column_groups = vec![];
-            if meta.footer().is_series_exist(series_id) {
+            if meta.footer().maybe_series_exist(series_id) {
                 if let Some(chunk) = meta.chunk().get(series_id) {
                     for (id, column_group) in chunk.column_group() {
                         let page_time_range = column_group.time_range();

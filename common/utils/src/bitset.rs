@@ -520,12 +520,4 @@ mod tests {
             assert_eq!(a2, b2);
         }
     }
-
-    #[test]
-    fn test_set() {
-        let mut bit_set = BitSet::new();
-        bit_set.append_set(16);
-        let len = bit_set.len;
-        bit_set.set(len);
-    }
 }

@@ -309,16 +309,19 @@ impl SeriesGroupBatchReaderFactory {
         // 选择含有series的所有文件
         let files = column_files
             .iter()
-            .filter(|cf| cf.contains_series_id(sid))
+            .filter(|cf| cf.maybe_contains_series_id(sid))
             .collect::<Vec<_>>();
         // 选择含有series的所有chunk
         let mut chunks = Vec::with_capacity(files.len());
         for f in files {
             let reader = version.get_tsm_reader2(f.file_path()).await?;
-            let chunk = reader.chunk().get(&sid).ok_or_else(|| Error::CommonError {
-                reason: format!("Retrieve chunks with sid {sid}, this maybe a bug"),
-            })?;
-            chunks.push(DataReference::Chunk(chunk.clone(), reader));
+            let chunk = reader.chunk().get(&sid);
+            match chunk {
+                None => continue,
+                Some(chunk) => {
+                    chunks.push(DataReference::Chunk(chunk.clone(), reader));
+                }
+            }
         }
 
         Ok(chunks)
