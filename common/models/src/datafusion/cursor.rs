@@ -1,5 +1,4 @@
 /// from datafusion::physical_plan::sorts::cursor
-
 use std::cmp::Ordering;
 
 use datafusion::arrow::array::{Array, ArrowPrimitiveType, GenericByteArray, PrimitiveArray};

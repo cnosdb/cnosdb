@@ -67,7 +67,7 @@ impl Page {
 
     pub fn to_column(&self) -> Result<Column> {
         let col_type = self.meta.column.column_type.clone();
-        let mut col = Column::empty(col_type.clone());
+        let mut col = Column::empty_with_cap(col_type.clone(), self.meta.num_values as usize);
         let data_buffer = self.data_buffer();
         let bitset = self.null_bitset();
         match col_type {

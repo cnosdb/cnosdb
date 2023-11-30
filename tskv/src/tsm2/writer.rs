@@ -96,12 +96,20 @@ use crate::{Error, Result};
 /// max size 1024
 #[derive(Debug, Clone, PartialEq)]
 pub struct Column {
-    pub column_type: ColumnType,
-    pub valid: BitSet,
-    pub data: ColumnData,
+    column_type: ColumnType,
+    valid: BitSet,
+    data: ColumnData,
 }
 
 impl Column {
+    pub fn new(column_type: ColumnType, valid: BitSet, data: ColumnData) -> Column {
+        Column {
+            column_type,
+            valid,
+            data,
+        }
+    }
+
     pub fn empty(column_type: ColumnType) -> Column {
         let valid = BitSet::new();
         Self {
@@ -126,34 +134,38 @@ impl Column {
         }
     }
 
-    pub fn new(row_count: usize, column_type: ColumnType) -> Column {
-        let mut valid = BitSet::new();
-        valid.append_unset(row_count);
-
-        let data = match column_type {
-            ColumnType::Tag => {
-                ColumnData::String(vec![String::new(); row_count], String::new(), String::new())
-            }
-            ColumnType::Time(_) => ColumnData::I64(vec![0; row_count], i64::MAX, i64::MIN),
-            ColumnType::Field(field_type) => match field_type {
-                ValueType::Float => ColumnData::F64(vec![0.0; row_count], f64::MAX, f64::MIN),
-                ValueType::Integer => ColumnData::I64(vec![0; row_count], i64::MAX, i64::MIN),
-                ValueType::Unsigned => ColumnData::U64(vec![0; row_count], u64::MAX, u64::MIN),
-                ValueType::Boolean => ColumnData::Bool(vec![false; row_count], false, true),
-                ValueType::String => {
-                    ColumnData::String(vec![String::new(); row_count], String::new(), String::new())
-                }
-                _ => {
-                    panic!("invalid type: field type does not match filed type")
-                }
-            },
-        };
+    pub fn empty_with_cap(column_type: ColumnType, cap: usize) -> Column {
+        let valid = BitSet::with_size(cap);
         Self {
-            column_type,
+            column_type: column_type.clone(),
             valid,
-            data,
+            data: match column_type {
+                ColumnType::Tag => {
+                    ColumnData::String(Vec::with_capacity(cap), String::new(), String::new())
+                }
+                ColumnType::Time(_) => ColumnData::I64(Vec::with_capacity(cap), i64::MAX, i64::MIN),
+                ColumnType::Field(ref field_type) => match field_type {
+                    ValueType::Float => {
+                        ColumnData::F64(Vec::with_capacity(cap), f64::MAX, f64::MIN)
+                    }
+                    ValueType::Integer => {
+                        ColumnData::I64(Vec::with_capacity(cap), i64::MAX, i64::MIN)
+                    }
+                    ValueType::Unsigned => {
+                        ColumnData::U64(Vec::with_capacity(cap), u64::MAX, u64::MIN)
+                    }
+                    ValueType::Boolean => ColumnData::Bool(Vec::with_capacity(cap), false, true),
+                    ValueType::Geometry(_) | ValueType::String => {
+                        ColumnData::String(Vec::with_capacity(cap), String::new(), String::new())
+                    }
+                    _ => {
+                        panic!("invalid type: field type does not match filed type")
+                    }
+                },
+            },
         }
     }
+
     pub fn push(&mut self, value: Option<FieldVal>) {
         match (&mut self.data, value) {
             (ColumnData::F64(ref mut value, min, max), Some(FieldVal::Float(val))) => {
@@ -164,11 +176,14 @@ impl Column {
                 if *min > val {
                     *min = val;
                 }
-                self.valid.append_set(1);
+                let idx = value.len() - 1;
+                self.valid.append_unset_and_set(idx);
             }
             (ColumnData::F64(ref mut value, ..), None) => {
                 value.push(0.0);
-                self.valid.append_unset(1);
+                if self.valid.len() < value.len() {
+                    self.valid.append_unset(1);
+                }
             }
             (ColumnData::I64(ref mut value, min, max), Some(FieldVal::Integer(val))) => {
                 if *max < val {
@@ -178,11 +193,14 @@ impl Column {
                     *min = val;
                 }
                 value.push(val);
-                self.valid.append_set(1);
+                let idx = value.len() - 1;
+                self.valid.append_unset_and_set(idx);
             }
             (ColumnData::I64(ref mut value, ..), None) => {
                 value.push(0);
-                self.valid.append_unset(1);
+                if self.valid.len() < value.len() {
+                    self.valid.append_unset(1);
+                }
             }
             (ColumnData::U64(ref mut value, min, max), Some(FieldVal::Unsigned(val))) => {
                 if *max < val {
@@ -192,11 +210,14 @@ impl Column {
                     *min = val;
                 }
                 value.push(val);
-                self.valid.append_set(1);
+                let idx = value.len() - 1;
+                self.valid.append_unset_and_set(idx);
             }
             (ColumnData::U64(ref mut value, ..), None) => {
                 value.push(0);
-                self.valid.append_unset(1);
+                if self.valid.len() < value.len() {
+                    self.valid.append_unset(1);
+                }
             }
             //todo: need to change string to Bytes type in ColumnData
             (ColumnData::String(ref mut value, min, max), Some(FieldVal::Bytes(val))) => {
@@ -208,11 +229,14 @@ impl Column {
                     *min = val.clone();
                 }
                 value.push(val);
-                self.valid.append_set(1);
+                let idx = value.len() - 1;
+                self.valid.append_unset_and_set(idx);
             }
             (ColumnData::String(ref mut value, ..), None) => {
                 value.push(String::new());
-                self.valid.append_unset(1);
+                if self.valid.len() < value.len() {
+                    self.valid.append_unset(1);
+                }
             }
             (ColumnData::Bool(ref mut value, min, max), Some(FieldVal::Boolean(val))) => {
                 if !(*max) & val {
@@ -222,11 +246,14 @@ impl Column {
                     *min = val;
                 }
                 value.push(val);
-                self.valid.append_set(1);
+                let idx = value.len() - 1;
+                self.valid.append_unset_and_set(idx);
             }
             (ColumnData::Bool(ref mut value, ..), None) => {
                 value.push(false);
-                self.valid.append_unset(1);
+                if self.valid.len() < value.len() {
+                    self.valid.append_unset(1);
+                }
             }
             _ => {
                 panic!("Column type mismatch")
@@ -237,7 +264,7 @@ impl Column {
         // TODO
         let null_count = 1;
         let len_bitset = self.valid.byte_len() as u32;
-        let data_len = self.valid.len() as u64;
+        let data_len = self.len() as u64;
         let mut buf = vec![];
         let statistics = match &self.data {
             ColumnData::F64(array, min, max) => {
@@ -308,7 +335,7 @@ impl Column {
         data.extend_from_slice(&buf);
         let bytes = bytes::Bytes::from(data);
         let meta = PageMeta {
-            num_values: self.valid.len() as u32,
+            num_values: self.data.len() as u32,
             column: desc.clone(),
             statistics,
         };
@@ -316,7 +343,7 @@ impl Column {
     }
 
     pub fn get(&self, index: usize) -> Option<FieldVal> {
-        if self.valid.len() <= index {
+        if self.valid.len() <= index || self.data.len() <= index {
             return None;
         }
         if self.valid.get(index) {
@@ -327,7 +354,7 @@ impl Column {
     }
 
     pub fn chunk(&self, start: usize, end: usize) -> Result<Column> {
-        let mut column = Column::empty(self.column_type.clone());
+        let mut column = Column::empty_with_cap(self.column_type.clone(), end - start);
         for index in start..end {
             column.push(self.get(index));
         }
@@ -335,7 +362,11 @@ impl Column {
     }
 
     pub fn len(&self) -> usize {
-        self.valid.len()
+        self.data.len()
+    }
+
+    pub fn is_all_set(&self) -> bool {
+        self.valid.is_all_set()
     }
 }
 
@@ -360,6 +391,16 @@ impl ColumnData {
                 .map(|val| FieldVal::Bytes(MiniVec::from(val.as_str()))),
             ColumnData::Bool(data, _, _) => data.get(index).map(|val| FieldVal::Boolean(*val)),
         };
+    }
+
+    pub fn len(&self) -> usize {
+        match self {
+            ColumnData::F64(data, _, _) => data.len(),
+            ColumnData::I64(data, _, _) => data.len(),
+            ColumnData::U64(data, _, _) => data.len(),
+            ColumnData::String(data, _, _) => data.len(),
+            ColumnData::Bool(data, _, _) => data.len(),
+        }
     }
 }
 
@@ -422,7 +463,8 @@ impl DataBlock2 {
         let mut columns = Vec::new();
         let mut columns_des = Vec::new();
         for field in schema.fields() {
-            let mut merge_column = Column::empty(field.column_type.clone());
+            let mut merge_column =
+                Column::empty_with_cap(field.column_type.clone(), time_array.len());
             let column_self = self.column(&field.name);
             let column_other = other.column(&field.name);
             for idx in sort_index.iter() {
@@ -464,7 +506,8 @@ impl DataBlock2 {
             columns_des.push(field.clone());
         }
 
-        let mut ts_col = Column::empty(self.ts_desc.column_type.clone());
+        let mut ts_col = Column::empty_with_cap(self.ts_desc.column_type.clone(), time_array.len());
+
         time_array
             .iter()
             .for_each(|it| ts_col.push(Some(FieldVal::Integer(*it))));
@@ -531,7 +574,7 @@ impl DataBlock2 {
     }
 
     pub fn len(&self) -> usize {
-        self.ts.valid.len()
+        self.ts.data.len()
     }
 
     pub fn schema_check(&self, other: &DataBlock2) -> Result<()> {

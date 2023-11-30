@@ -306,7 +306,7 @@ pub(crate) mod tests {
     }
 
     fn page(row_nums: usize, ct: ColumnType) -> Page {
-        let mut col = Column::empty(ct.clone());
+        let mut col = Column::empty_with_cap(ct.clone(), row_nums);
 
         for i in 0..row_nums {
             let val = if i % 2 == 0 {

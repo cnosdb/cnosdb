@@ -4,12 +4,12 @@ use std::task::{Context, Poll};
 
 use arrow::datatypes::SchemaRef;
 use arrow_array::{ArrayRef, RecordBatch};
+use arrow_schema::{ArrowError, Field, Schema};
 use datafusion::common::tree_node::{TreeNode, TreeNodeRewriter};
 use datafusion::error::DataFusionError;
 use datafusion::physical_plan::expressions::{BinaryExpr, Column, Literal};
 use datafusion::physical_plan::PhysicalExpr;
 use datafusion::scalar::ScalarValue;
-use arrow_schema::{ArrowError, Field, Schema};
 use futures::{Stream, StreamExt};
 use models::predicate::domain::TimeRange;
 use models::schema::TIME_FIELD;

@@ -417,7 +417,11 @@ impl SeriesGroupBatchReaderFactory {
 
                 let reader: BatchReaderRef = if chunk_readers.len() > 1 {
                     // 如果有多个重叠的 chunk reader 则需要做合并
-                    Arc::new(DataMerger::new(time_fields_schema.clone(), chunk_readers, batch_size))
+                    Arc::new(DataMerger::new(
+                        time_fields_schema.clone(),
+                        chunk_readers,
+                        batch_size,
+                    ))
                 } else {
                     Arc::new(chunk_readers)
                 };

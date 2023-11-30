@@ -379,7 +379,7 @@ async fn read_page(reader: Arc<AsyncFile>, page_spec: &PageWriteSpec) -> Result<
 
 pub fn decode_pages(pages: Vec<Page>, table_schema: TskvTableSchemaRef) -> Result<DataBlock2> {
     let mut time_column_desc = table_schema.time_column();
-    let mut time_column = Column::empty(time_column_desc.column_type.clone());
+    let mut time_column = Column::empty_with_cap(time_column_desc.column_type.clone(), 0);
 
     let mut other_columns_desc = Vec::new();
     let mut other_columns = Vec::new();

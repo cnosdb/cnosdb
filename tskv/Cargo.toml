@@ -16,7 +16,7 @@ trace = { path = "../common/trace" }
 utils = { path = "../common/utils" }
 http_protocol = { path = "../common/http_protocol" }
 
-arrow = { workspace = true }
+arrow = { workspace = true, features = ["test_utils"] }
 arrow-array = { workspace = true }
 async-backtrace = { workspace = true, optional = true }
 async-trait = { workspace = true }

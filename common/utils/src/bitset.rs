@@ -122,15 +122,22 @@ impl BitSet {
     }
 
     pub fn set(&mut self, idx: usize) {
-        assert!(idx <= self.len);
+        assert!(idx < self.len);
 
         let byte_idx = idx >> 3;
         let bit_idx = idx & 7;
         self.buffer[byte_idx] |= 1 << bit_idx;
     }
 
+    pub fn append_unset_and_set(&mut self, idx: usize) {
+        if idx >= self.len {
+            self.append_unset(idx - self.len + 1)
+        }
+        self.set(idx);
+    }
+
     pub fn get(&self, idx: usize) -> bool {
-        assert!(idx <= self.len);
+        assert!(idx < self.len);
 
         let byte_idx = idx >> 3;
         let bit_idx = idx & 7;
@@ -512,5 +519,13 @@ mod tests {
             let b2 = ImmutBitSet::new_without_check(5, &buffer_2);
             assert_eq!(a2, b2);
         }
+    }
+
+    #[test]
+    fn test_set() {
+        let mut bit_set = BitSet::new();
+        bit_set.append_set(16);
+        let len = bit_set.len;
+        bit_set.set(len);
     }
 }

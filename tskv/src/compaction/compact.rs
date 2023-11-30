@@ -1030,7 +1030,7 @@ pub mod test {
     }
 
     fn i64_column(data: Vec<i64>) -> Column {
-        let mut col = Column::empty(ColumnType::Field(ValueType::Integer));
+        let mut col = Column::empty_with_cap(ColumnType::Field(ValueType::Integer), data.len());
         for datum in data {
             col.push(Some(FieldVal::Integer(datum)))
         }
@@ -1038,7 +1038,7 @@ pub mod test {
     }
 
     fn ts_column(data: Vec<i64>) -> Column {
-        let mut col = Column::empty(ColumnType::Time(TimeUnit::Nanosecond));
+        let mut col = Column::empty_with_cap(ColumnType::Time(TimeUnit::Nanosecond), data.len());
         for datum in data {
             col.push(Some(FieldVal::Integer(datum)))
         }
@@ -1046,7 +1046,7 @@ pub mod test {
     }
 
     fn i64_some_column(data: Vec<Option<i64>>) -> Column {
-        let mut col = Column::empty(ColumnType::Field(ValueType::Integer));
+        let mut col = Column::empty_with_cap(ColumnType::Field(ValueType::Integer), data.len());
         for datum in data {
             col.push(datum.map(FieldVal::Integer))
         }
@@ -1054,7 +1054,7 @@ pub mod test {
     }
 
     fn u64_some_column(data: Vec<Option<u64>>) -> Column {
-        let mut col = Column::empty(ColumnType::Field(ValueType::Unsigned));
+        let mut col = Column::empty_with_cap(ColumnType::Field(ValueType::Unsigned), data.len());
         for datum in data {
             col.push(datum.map(FieldVal::Unsigned))
         }
@@ -1062,7 +1062,7 @@ pub mod test {
     }
 
     fn f64_some_column(data: Vec<Option<f64>>) -> Column {
-        let mut col = Column::empty(ColumnType::Field(ValueType::Float));
+        let mut col = Column::empty_with_cap(ColumnType::Field(ValueType::Float), data.len());
         for datum in data {
             col.push(datum.map(FieldVal::Float))
         }
@@ -1070,7 +1070,7 @@ pub mod test {
     }
 
     fn bool_some_column(data: Vec<Option<bool>>) -> Column {
-        let mut col = Column::empty(ColumnType::Field(ValueType::Boolean));
+        let mut col = Column::empty_with_cap(ColumnType::Field(ValueType::Boolean), data.len());
         for datum in data {
             col.push(datum.map(FieldVal::Boolean))
         }
@@ -1555,7 +1555,10 @@ pub mod test {
     }
 
     fn generate_column_ts(min_ts: i64, max_ts: i64) -> Column {
-        let mut col = Column::empty(ColumnType::Time(TimeUnit::Nanosecond));
+        let mut col = Column::empty_with_cap(
+            ColumnType::Time(TimeUnit::Nanosecond),
+            (max_ts - min_ts + 1) as usize,
+        );
         for i in min_ts..max_ts + 1 {
             col.push(Some(FieldVal::Integer(i)));
         }
@@ -1563,7 +1566,7 @@ pub mod test {
     }
 
     fn generate_column_i64(len: usize, none_range: Vec<(usize, usize)>) -> Column {
-        let mut col = Column::empty(ColumnType::Field(ValueType::Integer));
+        let mut col = Column::empty_with_cap(ColumnType::Field(ValueType::Integer), len);
         for i in 0..len {
             if none_range.iter().any(|(min, max)| i >= *min && i <= *max) {
                 col.push(None);
@@ -1575,7 +1578,7 @@ pub mod test {
     }
 
     fn generate_column_u64(len: usize, none_range: Vec<(usize, usize)>) -> Column {
-        let mut col = Column::empty(ColumnType::Field(ValueType::Unsigned));
+        let mut col = Column::empty_with_cap(ColumnType::Field(ValueType::Unsigned), len);
         for i in 0..len {
             if none_range.iter().any(|(min, max)| i >= *min && i <= *max) {
                 col.push(None);
@@ -1587,7 +1590,7 @@ pub mod test {
     }
 
     fn generate_column_f64(len: usize, none_range: Vec<(usize, usize)>) -> Column {
-        let mut col = Column::empty(ColumnType::Field(ValueType::Float));
+        let mut col = Column::empty_with_cap(ColumnType::Field(ValueType::Float), len);
         for i in 0..len {
             if none_range.iter().any(|(min, max)| i >= *min && i <= *max) {
                 col.push(None);
@@ -1599,7 +1602,7 @@ pub mod test {
     }
 
     fn generate_column_bool(len: usize, none_range: Vec<(usize, usize)>) -> Column {
-        let mut col = Column::empty(ColumnType::Field(ValueType::Boolean));
+        let mut col = Column::empty_with_cap(ColumnType::Field(ValueType::Boolean), len);
         for i in 0..len {
             if none_range.iter().any(|(min, max)| i >= *min && i <= *max) {
                 col.push(None);

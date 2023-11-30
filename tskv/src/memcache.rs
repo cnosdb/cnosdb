@@ -349,13 +349,12 @@ impl SeriesData {
             let mut cols: Vec<ColumnData> = schema
                 .fields()
                 .iter()
-                .map(|col| ColumnData::new(0, col.column_type.clone()))
+                .map(|col| ColumnData::empty(col.column_type.clone()))
                 .collect();
             let mut delta_cols = cols.clone();
-            let mut time_array = ColumnData::new(
-                0,
-                ColumnType::Time(TimeUnit::from(schema.time_column_precision())),
-            );
+            let mut time_array = ColumnData::empty(ColumnType::Time(TimeUnit::from(
+                schema.time_column_precision(),
+            )));
 
             let mut delta_time_array = time_array.clone();
             let mut cols_desc = vec![None; schema.field_num()];
@@ -395,7 +394,7 @@ impl SeriesData {
                 });
             }
 
-            if !time_array.valid.is_all_set() || !delta_time_array.valid.is_all_set() {
+            if !time_array.is_all_set() || !delta_time_array.is_all_set() {
                 return Err(Error::CommonError {
                     reason: "Invalid time array in DataBlock".to_string(),
                 });
