@@ -2,9 +2,11 @@ use arrow::compute::{interleave, sort_to_indices};
 use arrow::util::data_gen::create_random_batch;
 use arrow_array::RecordBatch;
 use arrow_schema::{DataType, Field, Schema, SchemaRef, SortOptions, TimeUnit};
+use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
 use futures::executor::block_on;
 use futures::StreamExt;
 
+use super::cut_merge::CutMergeMetrics;
 use crate::reader::cut_merge::CutMergeStream;
 use crate::reader::{SchemableMemoryBatchReaderStream, SendableSchemableTskvRecordBatchStream};
 
@@ -83,6 +85,10 @@ pub fn test_schema() -> SchemaRef {
     ]))
 }
 
+pub fn cut_merge_metrices() -> CutMergeMetrics {
+    CutMergeMetrics::new(&ExecutionPlanMetricsSet::new())
+}
+
 pub fn create_cut_merge_stream(
     schema: SchemaRef,
     batches: Vec<Vec<RecordBatch>>,
@@ -90,7 +96,16 @@ pub fn create_cut_merge_stream(
     column_name: &str,
 ) -> SendableSchemableTskvRecordBatchStream {
     let streams = SchemableMemoryBatchReaderStream::new_partitions(schema.clone(), batches);
-    Box::pin(CutMergeStream::new(schema, streams, batch_size, column_name).unwrap())
+    Box::pin(
+        CutMergeStream::new(
+            schema,
+            streams,
+            batch_size,
+            column_name,
+            cut_merge_metrices(),
+        )
+        .unwrap(),
+    )
 }
 
 pub fn create_sort_batches(

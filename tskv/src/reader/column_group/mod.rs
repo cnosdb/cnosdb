@@ -7,11 +7,13 @@ use std::task::{Context, Poll};
 use arrow::compute::kernels::cast;
 use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use arrow_array::{ArrayRef, RecordBatch};
+use datafusion::physical_plan::metrics::{ExecutionPlanMetricsSet, MetricBuilder, Time};
 use futures::{ready, Stream, StreamExt};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use trace::warn;
 
+use super::metrics::BaselineMetrics;
 use super::page::{PageReaderRef, PrimitiveArrayReader};
 use super::{
     BatchReader, BatchReaderRef, Projection, SchemableTskvRecordBatchStream,
@@ -25,6 +27,7 @@ pub struct ColumnGroupReader {
     column_group: Arc<ColumnGroup>,
     page_readers: Vec<PageReaderRef>,
     schema: SchemaRef,
+    metrics: Arc<ExecutionPlanMetricsSet>,
 }
 impl ColumnGroupReader {
     pub fn try_new(
@@ -32,6 +35,7 @@ impl ColumnGroupReader {
         column_group: Arc<ColumnGroup>,
         projection: &Projection,
         _batch_size: usize,
+        metrics: Arc<ExecutionPlanMetricsSet>,
     ) -> Result<Self> {
         let columns = projection.iter().filter_map(|e| {
             column_group
@@ -56,6 +60,7 @@ impl ColumnGroupReader {
             column_group,
             page_readers,
             schema,
+            metrics,
         })
     }
 
@@ -68,6 +73,7 @@ impl ColumnGroupReader {
             column_group,
             page_readers,
             schema,
+            metrics: Arc::new(ExecutionPlanMetricsSet::new()),
         }
     }
 }
@@ -80,12 +86,17 @@ impl BatchReader for ColumnGroupReader {
             .map(|r| r.process())
             .collect::<Result<Vec<_>>>()?;
 
+        let metrics = ColumnGroupReaderMetrics::new(self.metrics.as_ref());
+
         let (join_handles, buffers): (Vec<_>, Vec<_>) = streams
             .into_iter()
             .map(|mut s| {
                 let (sender, receiver) = mpsc::channel::<Result<ArrayRef>>(1);
 
+                let metrics = metrics.clone();
                 let task = async move {
+                    // 记录读取 page 的时间
+                    let _timer = metrics.elapsed_page_scan_time().timer();
                     while let Some(item) = s.next().await {
                         let exit = item.is_err();
                         // If send fails, stream being torn down,
@@ -104,11 +115,12 @@ impl BatchReader for ColumnGroupReader {
             })
             .unzip();
 
-        Ok(Box::pin(ChunkRecordBatchStream {
+        Ok(Box::pin(ColumnGroupRecordBatchStream {
             schema: self.schema.clone(),
             column_arrays: Vec::with_capacity(self.schema.fields().len()),
             buffers,
             join_handles,
+            metrics: ColumnGroupReaderMetrics::new(self.metrics.as_ref()),
         }))
     }
 
@@ -128,24 +140,25 @@ impl BatchReader for ColumnGroupReader {
     }
 }
 
-struct ChunkRecordBatchStream {
+struct ColumnGroupRecordBatchStream {
     schema: SchemaRef,
 
     /// Stream entries
     column_arrays: Vec<ArrayRef>,
     buffers: Vec<mpsc::Receiver<Result<ArrayRef>>>,
     join_handles: Vec<JoinHandle<()>>,
+
+    metrics: ColumnGroupReaderMetrics,
 }
 
-impl SchemableTskvRecordBatchStream for ChunkRecordBatchStream {
+impl SchemableTskvRecordBatchStream for ColumnGroupRecordBatchStream {
     fn schema(&self) -> SchemaRef {
         self.schema.clone()
     }
 }
 
-impl Stream for ChunkRecordBatchStream {
-    type Item = Result<RecordBatch>;
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+impl ColumnGroupRecordBatchStream {
+    fn poll_inner(&mut self, cx: &mut Context<'_>) -> Poll<Option<Result<RecordBatch>>> {
         let schema = self.schema.clone();
         let column_nums = self.buffers.len();
 
@@ -184,6 +197,50 @@ impl Stream for ChunkRecordBatchStream {
                 }
             }
         }
+    }
+}
+
+impl Stream for ColumnGroupRecordBatchStream {
+    type Item = Result<RecordBatch>;
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let poll = self.poll_inner(cx);
+        self.metrics.record_poll(poll)
+    }
+}
+
+/// Stores metrics about the table writer execution.
+#[derive(Debug, Clone)]
+pub struct ColumnGroupReaderMetrics {
+    elapsed_page_scan_time: Time,
+    inner: BaselineMetrics,
+}
+
+impl ColumnGroupReaderMetrics {
+    /// Create new metrics
+    pub fn new(metrics: &ExecutionPlanMetricsSet) -> Self {
+        let elapsed_page_scan_time =
+            MetricBuilder::new(metrics).subset_time("elapsed_page_scan_time", 0);
+
+        let inner = BaselineMetrics::new(metrics);
+
+        Self {
+            elapsed_page_scan_time,
+            inner,
+        }
+    }
+
+    pub fn elapsed_page_scan_time(&self) -> &Time {
+        &self.elapsed_page_scan_time
+    }
+    pub fn elapsed_compute(&self) -> &Time {
+        self.inner.elapsed_compute()
+    }
+
+    pub fn record_poll(
+        &self,
+        poll: Poll<Option<Result<RecordBatch>>>,
+    ) -> Poll<Option<Result<RecordBatch>>> {
+        self.inner.record_poll(poll)
     }
 }
 

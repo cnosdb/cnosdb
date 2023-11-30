@@ -1,13 +1,15 @@
-use std::iter;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use arrow::datatypes::{DataType, Field, Fields, Schema, SchemaRef};
-use arrow_array::{RecordBatch, StringArray};
+use arrow_array::builder::StringBuilder;
+use arrow_array::RecordBatch;
+use datafusion::physical_plan::metrics::{ExecutionPlanMetricsSet, MetricBuilder, Time};
 use futures::{ready, Stream, StreamExt};
 use models::{SeriesKey, Tag};
 
+use super::metrics::BaselineMetrics;
 use super::{
     BatchReader, BatchReaderRef, SchemableTskvRecordBatchStream,
     SendableSchemableTskvRecordBatchStream,
@@ -18,10 +20,19 @@ use crate::{Error, Result};
 pub struct SeriesReader {
     skey: SeriesKey,
     input: BatchReaderRef,
+    metrics: Arc<ExecutionPlanMetricsSet>,
 }
 impl SeriesReader {
-    pub fn new(skey: SeriesKey, input: BatchReaderRef) -> Self {
-        Self { skey, input }
+    pub fn new(
+        skey: SeriesKey,
+        input: BatchReaderRef,
+        metrics: Arc<ExecutionPlanMetricsSet>,
+    ) -> Self {
+        Self {
+            skey,
+            input,
+            metrics,
+        }
     }
 }
 impl BatchReader for SeriesReader {
@@ -60,6 +71,7 @@ impl BatchReader for SeriesReader {
             input,
             append_column_values,
             schema,
+            metrics: SeriesReaderMetrics::new(self.metrics.as_ref()),
         }))
     }
 
@@ -76,6 +88,7 @@ struct SeriesReaderStream {
     input: SendableSchemableTskvRecordBatchStream,
     append_column_values: Vec<String>,
     schema: SchemaRef,
+    metrics: SeriesReaderMetrics,
 }
 
 impl SchemableTskvRecordBatchStream for SeriesReaderStream {
@@ -84,19 +97,21 @@ impl SchemableTskvRecordBatchStream for SeriesReaderStream {
     }
 }
 
-impl Stream for SeriesReaderStream {
-    type Item = Result<RecordBatch>;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+impl SeriesReaderStream {
+    fn poll_inner(&mut self, cx: &mut Context<'_>) -> Poll<Option<Result<RecordBatch>>> {
         match ready!(self.input.poll_next_unpin(cx)) {
             Some(Ok(batch)) => {
-                let num_rows = batch.num_rows() as i32;
+                // 记录补齐tag列所用时间
+                let _timer = self.metrics.elapsed_complete_tag_columns_time().timer();
+
+                let num_rows = batch.num_rows();
 
                 let mut arrays = batch.columns().to_vec();
                 for value in &self.append_column_values {
-                    let value_array = Arc::new(StringArray::from_iter(
-                        iter::repeat(Some(value)).take(num_rows as usize),
-                    ));
+                    let mut builder =
+                        StringBuilder::with_capacity(num_rows, value.as_bytes().len());
+                    builder.extend(std::iter::repeat(Some(value)).take(num_rows));
+                    let value_array = Arc::new(builder.finish());
                     arrays.push(value_array);
                 }
 
@@ -108,5 +123,54 @@ impl Stream for SeriesReaderStream {
             Some(Err(e)) => Poll::Ready(Some(Err(e))),
             None => Poll::Ready(None),
         }
+    }
+}
+
+impl Stream for SeriesReaderStream {
+    type Item = Result<RecordBatch>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let cloned_time = self.metrics.elapsed_compute().clone();
+        let _timer = cloned_time.timer();
+
+        let poll = self.poll_inner(cx);
+
+        self.metrics.record_poll(poll)
+    }
+}
+
+/// Stores metrics about the table writer execution.
+#[derive(Debug, Clone)]
+pub struct SeriesReaderMetrics {
+    elapsed_complete_tag_columns_time: Time,
+    inner: BaselineMetrics,
+}
+
+impl SeriesReaderMetrics {
+    /// Create new metrics
+    pub fn new(metrics: &ExecutionPlanMetricsSet) -> Self {
+        let elapsed_complete_tag_columns_time =
+            MetricBuilder::new(metrics).subset_time("elapsed_complete_tag_columns_time", 0);
+
+        let inner = BaselineMetrics::new(metrics);
+
+        Self {
+            elapsed_complete_tag_columns_time,
+            inner,
+        }
+    }
+
+    pub fn elapsed_complete_tag_columns_time(&self) -> &Time {
+        &self.elapsed_complete_tag_columns_time
+    }
+    pub fn elapsed_compute(&self) -> &Time {
+        self.inner.elapsed_compute()
+    }
+
+    pub fn record_poll(
+        &self,
+        poll: Poll<Option<Result<RecordBatch>>>,
+    ) -> Poll<Option<Result<RecordBatch>>> {
+        self.inner.record_poll(poll)
     }
 }

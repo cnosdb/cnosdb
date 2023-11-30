@@ -8,12 +8,14 @@ use arrow_schema::{ArrowError, Field, Schema};
 use datafusion::common::tree_node::{TreeNode, TreeNodeRewriter};
 use datafusion::error::DataFusionError;
 use datafusion::physical_plan::expressions::{BinaryExpr, Column, Literal};
+use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
 use datafusion::physical_plan::PhysicalExpr;
 use datafusion::scalar::ScalarValue;
 use futures::{Stream, StreamExt};
 use models::predicate::domain::TimeRange;
 use models::schema::TIME_FIELD;
 
+use super::metrics::BaselineMetrics;
 use super::{Predicate, SchemableTskvRecordBatchStream, SendableSchemableTskvRecordBatchStream};
 use crate::{Error, Result};
 
@@ -101,6 +103,7 @@ pub struct CombinedRecordBatchStream {
     schema: SchemaRef,
     /// Stream entries
     entries: Vec<SendableSchemableTskvRecordBatchStream>,
+    metrics: BaselineMetrics,
 }
 
 impl CombinedRecordBatchStream {
@@ -108,6 +111,7 @@ impl CombinedRecordBatchStream {
     pub fn try_new(
         schema: SchemaRef,
         entries: Vec<SendableSchemableTskvRecordBatchStream>,
+        metrics: &ExecutionPlanMetricsSet,
     ) -> Result<Self> {
         for s in &entries {
             if s.schema() != schema {
@@ -121,7 +125,11 @@ impl CombinedRecordBatchStream {
             }
         }
 
-        Ok(Self { schema, entries })
+        Ok(Self {
+            schema,
+            entries,
+            metrics: BaselineMetrics::new(metrics),
+        })
     }
 }
 
@@ -137,22 +145,33 @@ impl Stream for CombinedRecordBatchStream {
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         use Poll::*;
 
+        let poll;
         loop {
             match self.entries.first_mut() {
                 Some(s) => {
                     match s.poll_next_unpin(cx) {
-                        Ready(Some(val)) => return Ready(Some(val)),
+                        Ready(Some(val)) => {
+                            poll = Ready(Some(val));
+                            break;
+                        }
                         Ready(None) => {
                             // Remove the entry
                             self.entries.remove(0);
                             continue;
                         }
-                        Pending => return Pending,
+                        Pending => {
+                            poll = Pending;
+                            break;
+                        }
                     }
                 }
-                None => return Ready(None),
+                None => {
+                    poll = Ready(None);
+                    break;
+                }
             }
         }
+        self.metrics.record_poll(poll)
     }
 }
 
@@ -232,4 +251,57 @@ pub fn time_column_from_record_batch(record_batch: &RecordBatch) -> Result<&Arra
     record_batch.column_by_name(TIME_FIELD).ok_or_else(|| {
         ArrowError::SchemaError(format!("Unable to get field named \"{TIME_FIELD}\"."))
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use models::predicate::domain::TimeRange;
+
+    use super::{group_overlapping_segments, TimeRangeProvider};
+
+    #[derive(Clone)]
+    struct TestTimeRangeProvider {
+        tr: TimeRange,
+    }
+
+    impl TestTimeRangeProvider {
+        fn new(tr: TimeRange) -> Self {
+            Self { tr }
+        }
+    }
+
+    impl TimeRangeProvider for TestTimeRangeProvider {
+        fn time_range(&self) -> &TimeRange {
+            &self.tr
+        }
+    }
+
+    fn test_time_range_provider(min_ts: i64, max_ts: i64) -> TestTimeRangeProvider {
+        TestTimeRangeProvider::new(TimeRange { min_ts, max_ts })
+    }
+
+    #[test]
+    fn test_group_overlapping_segments() {
+        let trs = vec![
+            test_time_range_provider(0, 5),
+            test_time_range_provider(1, 3),
+            test_time_range_provider(2, 7),
+            test_time_range_provider(6, 10),
+            test_time_range_provider(11, 14),
+            test_time_range_provider(12, 15),
+            test_time_range_provider(16, 18),
+        ];
+
+        let grouped_trs = group_overlapping_segments(&trs);
+
+        assert_eq!(grouped_trs.len(), 3);
+
+        let g4 = &grouped_trs[0];
+        let g2 = &grouped_trs[1];
+        let g1 = &grouped_trs[2];
+
+        assert_eq!(g4.segments.len(), 4);
+        assert_eq!(g2.segments.len(), 2);
+        assert_eq!(g1.segments.len(), 1);
+    }
 }

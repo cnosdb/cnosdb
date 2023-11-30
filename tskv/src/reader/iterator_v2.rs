@@ -13,17 +13,20 @@ use trace::{debug, SpanRecorder};
 use super::display::DisplayableBatchReader;
 use super::merge::DataMerger;
 use super::series::SeriesReader;
+use super::trace::Recorder;
 use super::utils::OverlappingSegments;
 use super::{
     DataReference, EmptySchemableTskvRecordBatchStream, Predicate, Projection, QueryOption,
     SendableTskvRecordBatchStream,
 };
-use crate::reader::chunk::ChunkReader;
+use crate::reader::chunk::filter_column_groups;
+use crate::reader::column_group::ColumnGroupReader;
 use crate::reader::filter::DataFilter;
 use crate::reader::paralle_merge::ParallelMergeAdapter;
 use crate::reader::schema_alignmenter::SchemaAlignmenter;
+use crate::reader::trace::TraceCollectorBatcherReaderProxy;
 use crate::reader::utils::group_overlapping_segments;
-use crate::reader::BatchReaderRef;
+use crate::reader::{BatchReaderRef, CombinedBatchReader};
 use crate::schema::error::SchemaError;
 use crate::tseries_family::{ColumnFile, SuperVersion, Version};
 use crate::{EngineRef, Error, Result};
@@ -59,7 +62,7 @@ pub async fn execute(
             engine,
             query_option,
             vnode_id,
-            span_recorder,
+            span_recorder.child("build stream"),
         )
         .await;
     }
@@ -109,11 +112,14 @@ async fn build_stream(
         engine,
         query_option,
         super_version,
-        span_recorder,
+        span_recorder.child("SeriesGroupBatchReaderFactory"),
         ExecutionPlanMetricsSet::new(),
     );
 
-    if let Some(reader) = factory.create(&series_ids).await? {
+    if let Some(reader) = factory
+        .create(span_recorder.child("SeriesGroupBatchReader"), &series_ids)
+        .await?
+    {
         return Ok(reader.process()?);
     }
 
@@ -127,9 +133,13 @@ pub struct SeriesGroupBatchReaderFactory {
     query_option: QueryOption,
     super_version: Arc<SuperVersion>,
 
-    #[allow(unused)]
     span_recorder: SpanRecorder,
     metrics_set: ExecutionPlanMetricsSet,
+    series_reader_metrics_set: Arc<ExecutionPlanMetricsSet>,
+    column_group_reader_metrics_set: Arc<ExecutionPlanMetricsSet>,
+    filter_reader_metrics_set: Arc<ExecutionPlanMetricsSet>,
+    merge_reader_metrics_set: Arc<ExecutionPlanMetricsSet>,
+    schema_align_reader_metrics_set: Arc<ExecutionPlanMetricsSet>,
 }
 
 impl SeriesGroupBatchReaderFactory {
@@ -146,6 +156,11 @@ impl SeriesGroupBatchReaderFactory {
             super_version,
             span_recorder,
             metrics_set,
+            series_reader_metrics_set: Arc::new(ExecutionPlanMetricsSet::new()),
+            column_group_reader_metrics_set: Arc::new(ExecutionPlanMetricsSet::new()),
+            filter_reader_metrics_set: Arc::new(ExecutionPlanMetricsSet::new()),
+            merge_reader_metrics_set: Arc::new(ExecutionPlanMetricsSet::new()),
+            schema_align_reader_metrics_set: Arc::new(ExecutionPlanMetricsSet::new()),
         }
     }
 
@@ -186,7 +201,11 @@ impl SeriesGroupBatchReaderFactory {
     ///          ......
     ///      ......
     ///    ......
-    pub async fn create(&self, series_ids: &[u32]) -> Result<Option<BatchReaderRef>> {
+    pub async fn create(
+        &self,
+        span_recorder: SpanRecorder,
+        series_ids: &[u32],
+    ) -> Result<Option<BatchReaderRef>> {
         let metrics = SeriesGroupBatchReaderMetrics::new(
             &self.metrics_set,
             self.super_version.ts_family_id as usize,
@@ -240,7 +259,7 @@ impl SeriesGroupBatchReaderFactory {
         let series_readers = series_chunk_readers
             .into_iter()
             .filter_map(|(series_key, chunks)| {
-                Self::build_series_reader(
+                self.build_series_reader(
                     series_key,
                     chunks,
                     self.query_option.batch_size,
@@ -263,6 +282,22 @@ impl SeriesGroupBatchReaderFactory {
             schema.clone(),
             series_readers,
         )?);
+
+        // 添加收集trace信息的reader
+        let reader = Arc::new(
+            TraceCollectorBatcherReaderProxy::new(reader, span_recorder)
+                .register_metrics_set("series_reader", self.series_reader_metrics_set.clone())
+                .register_metrics_set(
+                    "column_group_reader",
+                    self.column_group_reader_metrics_set.clone(),
+                )
+                .register_metrics_set("filter_reader", self.filter_reader_metrics_set.clone())
+                .register_metrics_set("merge_reader", self.merge_reader_metrics_set.clone())
+                .register_metrics_set(
+                    "schema_align_reader",
+                    self.schema_align_reader_metrics_set.clone(),
+                ),
+        );
 
         trace::trace!(
             "Final batch reader tree: \n{}",
@@ -327,15 +362,38 @@ impl SeriesGroupBatchReaderFactory {
     }
 
     fn build_chunk_reader(
+        &self,
         chunk: DataReference,
         batch_size: usize,
         projection: &Projection,
         predicate: &Option<Arc<Predicate>>,
     ) -> Result<BatchReaderRef> {
         let chunk_reader = match chunk {
-            DataReference::Chunk(chunk, reader) => Arc::new(ChunkReader::try_new(
-                reader, chunk, projection, predicate, batch_size,
-            )?),
+            DataReference::Chunk(chunk, reader) => {
+                let chunk_schema = chunk.schema();
+                let cgs = chunk.column_group().values().cloned().collect::<Vec<_>>();
+                // filter column groups
+                trace::debug!("All column group nums: {}", cgs.len());
+                let cgs = filter_column_groups(cgs, predicate, chunk_schema)?;
+                trace::debug!("Filtered column group nums: {}", cgs.len());
+
+                let batch_readers = chunk
+                    .column_group()
+                    .values()
+                    .map(|e| {
+                        let column_group_reader = ColumnGroupReader::try_new(
+                            reader.clone(),
+                            e.clone(),
+                            projection,
+                            batch_size,
+                            self.column_group_reader_metrics_set.clone(),
+                        )?;
+                        Ok(Arc::new(column_group_reader) as BatchReaderRef)
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+
+                Arc::new(CombinedBatchReader::new(batch_readers))
+            }
             DataReference::Memcache(_) => {
                 // TODO @lutengda 构建memcache rowgroup reader(需要自己实现 trait BatchReader)
                 return Err(Error::Unimplemented {
@@ -346,13 +404,18 @@ impl SeriesGroupBatchReaderFactory {
 
         // 数据过滤
         if let Some(predicate) = &predicate {
-            return Ok(Arc::new(DataFilter::new(predicate.clone(), chunk_reader)));
+            return Ok(Arc::new(DataFilter::new(
+                predicate.clone(),
+                chunk_reader,
+                self.filter_reader_metrics_set.clone(),
+            )));
         }
 
         Ok(chunk_reader)
     }
 
     fn build_chunk_readers(
+        &self,
         chunks: OverlappingSegments<DataReference>,
         batch_size: usize,
         projection: &Projection,
@@ -362,7 +425,7 @@ impl SeriesGroupBatchReaderFactory {
             .into_iter()
             .map(|data_reference| -> Result<BatchReaderRef> {
                 let chunk_reader =
-                    Self::build_chunk_reader(data_reference, batch_size, projection, predicate)?;
+                    self.build_chunk_reader(data_reference, batch_size, projection, predicate)?;
 
                 Ok(chunk_reader)
             })
@@ -372,6 +435,7 @@ impl SeriesGroupBatchReaderFactory {
     }
 
     fn build_series_reader(
+        &self,
         series_key: SeriesKey,
         mut chunks: Vec<DataReference>,
         batch_size: usize,
@@ -385,10 +449,9 @@ impl SeriesGroupBatchReaderFactory {
             return Ok(None);
         }
         // TODO performance 通过物理表达式根据 chunk 统计信息过滤chunk
-
         metrics
             .chunk_nums_filtered_by_statistics()
-            .set(chunks.len());
+            .add(chunks.len());
 
         // 对 chunk 按照时间顺序排序
         // 使用 group_overlapping_segments 函数来对具有重叠关系的chunk进行分组。
@@ -400,20 +463,23 @@ impl SeriesGroupBatchReaderFactory {
             series_key,
             grouped_chunks.len()
         );
-        metrics.grouped_chunk_nums().set(grouped_chunks.len());
+        metrics.grouped_chunk_nums().add(grouped_chunks.len());
 
         let readers = grouped_chunks
             .into_iter()
             .map(|chunks| -> Result<BatchReaderRef> {
                 let chunk_readers =
-                    Self::build_chunk_readers(chunks, batch_size, projection, predicate)?;
+                    self.build_chunk_readers(chunks, batch_size, projection, predicate)?;
 
                 // 用 Null 值补齐缺失的 Field 列
                 let chunk_readers = chunk_readers
                     .into_iter()
                     .map(|r| {
-                        Arc::new(SchemaAlignmenter::new(r, time_fields_schema.clone()))
-                            as BatchReaderRef
+                        Arc::new(SchemaAlignmenter::new(
+                            r,
+                            time_fields_schema.clone(),
+                            self.schema_align_reader_metrics_set.clone(),
+                        )) as BatchReaderRef
                     })
                     .collect::<Vec<_>>();
 
@@ -423,22 +489,40 @@ impl SeriesGroupBatchReaderFactory {
                         time_fields_schema.clone(),
                         chunk_readers,
                         batch_size,
+                        self.merge_reader_metrics_set.clone(),
                     ))
                 } else {
-                    Arc::new(chunk_readers)
+                    Arc::new(CombinedBatchReader::new(chunk_readers))
                 };
 
-                // 用 Null 值补齐缺失的 Field 列
                 Ok(reader)
             })
             .collect::<Result<Vec<_>>>()?;
 
         // 根据 series key 补齐对应的 tag 列
-        let series_reader = Arc::new(SeriesReader::new(series_key, Arc::new(readers)));
+        let series_reader = Arc::new(SeriesReader::new(
+            series_key,
+            Arc::new(CombinedBatchReader::new(readers)),
+            self.series_reader_metrics_set.clone(),
+        ));
         // 用 Null 值补齐缺失的 tag 列
-        let reader = Arc::new(SchemaAlignmenter::new(series_reader, schema));
+        let reader = Arc::new(SchemaAlignmenter::new(
+            series_reader,
+            schema,
+            self.schema_align_reader_metrics_set.clone(),
+        ));
 
         Ok(Some(reader))
+    }
+}
+
+impl Drop for SeriesGroupBatchReaderFactory {
+    fn drop(&mut self) {
+        if self.span_recorder.span_ctx().is_some() {
+            self.metrics_set
+                .clone_inner()
+                .record(&mut self.span_recorder, "metrics");
+        }
     }
 }
 
@@ -480,8 +564,8 @@ pub struct SeriesGroupBatchReaderMetrics {
     series_nums: metrics::Gauge,
     file_nums_filtered_by_time_range: metrics::Gauge,
     chunk_nums: metrics::Gauge,
-    chunk_nums_filtered_by_statistics: metrics::Gauge,
-    grouped_chunk_nums: metrics::Gauge,
+    chunk_nums_filtered_by_statistics: metrics::Count,
+    grouped_chunk_nums: metrics::Count,
 }
 
 impl SeriesGroupBatchReaderMetrics {
@@ -498,10 +582,10 @@ impl SeriesGroupBatchReaderMetrics {
         let chunk_nums = MetricBuilder::new(metrics).gauge("chunk_nums", partition);
 
         let chunk_nums_filtered_by_statistics =
-            MetricBuilder::new(metrics).gauge("chunk_nums_filtered_by_statistics", partition);
+            MetricBuilder::new(metrics).counter("chunk_nums_filtered_by_statistics", partition);
 
         let grouped_chunk_nums =
-            MetricBuilder::new(metrics).gauge("chunk_nums_filtered_by_statistics", partition);
+            MetricBuilder::new(metrics).counter("grouped_chunk_nums", partition);
 
         Self {
             elapsed_build_batch_reader_time,
@@ -529,11 +613,11 @@ impl SeriesGroupBatchReaderMetrics {
         &self.chunk_nums
     }
 
-    pub fn chunk_nums_filtered_by_statistics(&self) -> &metrics::Gauge {
+    pub fn chunk_nums_filtered_by_statistics(&self) -> &metrics::Count {
         &self.chunk_nums_filtered_by_statistics
     }
 
-    pub fn grouped_chunk_nums(&self) -> &metrics::Gauge {
+    pub fn grouped_chunk_nums(&self) -> &metrics::Count {
         &self.grouped_chunk_nums
     }
 }

@@ -34,7 +34,7 @@ impl LocalTskvTableScanStream {
             kv_inst,
             option,
             vnode_id,
-            span_recorder.child("RowIterator"),
+            span_recorder.child("build vnode stream"),
         ));
         let state = StreamState::Open { iter_future };
 

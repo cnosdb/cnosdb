@@ -7,6 +7,7 @@ use arrow::datatypes::SchemaRef;
 use arrow_array::RecordBatch;
 use datafusion::common::cast::as_boolean_array;
 use datafusion::error::DataFusionError;
+use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
 use datafusion::physical_plan::PhysicalExpr;
 use futures::{Stream, StreamExt};
 use trace::debug;
@@ -15,16 +16,26 @@ use super::{
     BatchReader, BatchReaderRef, Predicate, SchemableTskvRecordBatchStream,
     SendableSchemableTskvRecordBatchStream,
 };
+use crate::reader::metrics::BaselineMetrics;
 use crate::reader::utils::reassign_predicate_columns;
 use crate::Result;
 
 pub struct DataFilter {
     predicate: Arc<Predicate>,
     input: BatchReaderRef,
+    metrics: Arc<ExecutionPlanMetricsSet>,
 }
 impl DataFilter {
-    pub fn new(predicate: Arc<Predicate>, input: BatchReaderRef) -> Self {
-        Self { predicate, input }
+    pub fn new(
+        predicate: Arc<Predicate>,
+        input: BatchReaderRef,
+        metrics: Arc<ExecutionPlanMetricsSet>,
+    ) -> Self {
+        Self {
+            predicate,
+            input,
+            metrics,
+        }
     }
 }
 impl BatchReader for DataFilter {
@@ -42,6 +53,7 @@ impl BatchReader for DataFilter {
             schema,
             predicate: new_predicate,
             input,
+            metrics: BaselineMetrics::new(self.metrics.as_ref()),
         }))
     }
 
@@ -58,7 +70,8 @@ struct DataFilterStream {
     schema: SchemaRef,
     predicate: Arc<dyn PhysicalExpr>,
     input: SendableSchemableTskvRecordBatchStream,
-    // TODO runtime metrics recording
+    // runtime metrics recording
+    metrics: BaselineMetrics,
 }
 
 impl SchemableTskvRecordBatchStream for DataFilterStream {
@@ -67,15 +80,17 @@ impl SchemableTskvRecordBatchStream for DataFilterStream {
     }
 }
 
-impl Stream for DataFilterStream {
-    type Item = Result<RecordBatch>;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+impl DataFilterStream {
+    fn poll_inner(&mut self, cx: &mut Context<'_>) -> Poll<Option<Result<RecordBatch>>> {
         loop {
             match self.input.poll_next_unpin(cx) {
                 Poll::Ready(value) => match value {
                     Some(Ok(batch)) => {
-                        let filtered_batch = batch_filter(&batch, &self.predicate)?;
+                        let filtered_batch = {
+                            // 记录过滤数据所用时间
+                            let _timer = self.metrics.elapsed_compute().timer();
+                            batch_filter(&batch, &self.predicate)?
+                        };
                         // skip entirely filtered batches
                         if filtered_batch.num_rows() == 0 {
                             continue;
@@ -91,6 +106,15 @@ impl Stream for DataFilterStream {
                 }
             }
         }
+    }
+}
+
+impl Stream for DataFilterStream {
+    type Item = Result<RecordBatch>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let poll = self.poll_inner(cx);
+        self.metrics.record_poll(poll)
     }
 }
 
@@ -117,6 +141,7 @@ mod tests {
     use datafusion::assert_batches_eq;
     use datafusion::logical_expr::Operator;
     use datafusion::physical_plan::expressions::{binary, Column, Literal};
+    use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
     use datafusion::physical_plan::PhysicalExpr;
     use datafusion::scalar::ScalarValue;
     use futures::TryStreamExt;
@@ -197,7 +222,11 @@ mod tests {
         let predicate = and_filter(and_filter(time_filter(), c1_filter()), c4_filter());
         let predicate = Arc::new(Predicate::new(predicate, output_schema()));
 
-        let filter = DataFilter::new(predicate, Arc::new(reader));
+        let filter = DataFilter::new(
+            predicate,
+            Arc::new(reader),
+            Arc::new(ExecutionPlanMetricsSet::new()),
+        );
 
         let stream = filter.process().expect("filter");
 

@@ -6,6 +6,7 @@ use std::task::{ready, Context, Poll};
 
 use arrow::datatypes::{Schema, SchemaRef};
 use datafusion::arrow::record_batch::RecordBatch;
+use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
 use datafusion::physical_plan::PhysicalExpr;
 use futures::stream::BoxStream;
 use futures::{Stream, StreamExt};
@@ -22,27 +23,30 @@ use crate::{Error, Result};
 
 mod batch_builder;
 mod batch_cut;
-pub mod chunk;
+mod chunk;
 mod column_group;
-pub mod cut_merge;
-pub mod display;
-pub mod filter;
+mod display;
+mod filter;
 mod iterator;
-pub mod iterator_v2;
-pub mod merge;
-pub mod page;
+mod iterator_v2;
+mod merge;
+mod metrics;
+mod page;
 mod paralle_merge;
 mod partitioned_stream;
+mod schema_alignmenter;
+mod series;
+mod trace;
+mod utils;
+mod visitor;
+
+pub mod cut_merge;
 pub mod query_executor;
-pub mod schema_alignmenter;
 pub mod serialize;
-pub mod series;
 pub mod sort_merge;
 pub mod table_scan;
 pub mod tag_scan;
 pub mod test_util;
-pub mod utils;
-pub mod visitor;
 
 #[derive(Debug)]
 pub struct Predicate {
@@ -116,10 +120,20 @@ pub trait BatchReader {
     fn children(&self) -> Vec<BatchReaderRef>;
 }
 
-pub type CombinedBatchReader = Vec<BatchReaderRef>;
+pub struct CombinedBatchReader {
+    readers: Vec<BatchReaderRef>,
+}
+
+impl CombinedBatchReader {
+    pub fn new(readers: Vec<BatchReaderRef>) -> Self {
+        Self { readers }
+    }
+}
+
 impl BatchReader for CombinedBatchReader {
     fn process(&self) -> Result<SendableSchemableTskvRecordBatchStream> {
         let streams = self
+            .readers
             .iter()
             .map(|e| e.process())
             .collect::<Result<Vec<_>>>()?;
@@ -128,6 +142,7 @@ impl BatchReader for CombinedBatchReader {
             return Ok(Box::pin(CombinedRecordBatchStream::try_new(
                 s.schema(),
                 streams,
+                &ExecutionPlanMetricsSet::new(),
             )?));
         }
 
@@ -137,11 +152,11 @@ impl BatchReader for CombinedBatchReader {
     }
 
     fn fmt_as(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "CombinedBatchReader: size={}", self.len())
+        write!(f, "CombinedBatchReader: size={}", self.readers.len())
     }
 
     fn children(&self) -> Vec<BatchReaderRef> {
-        self.clone()
+        self.readers.clone()
     }
 }
 

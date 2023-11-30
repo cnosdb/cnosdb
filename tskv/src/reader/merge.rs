@@ -1,6 +1,10 @@
+use std::sync::Arc;
+
 use arrow::datatypes::SchemaRef;
+use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
 use models::schema::TIME_FIELD;
 
+use super::cut_merge::CutMergeMetrics;
 use super::{
     BatchReader, BatchReaderRef, EmptySchemableTskvRecordBatchStream,
     SendableSchemableTskvRecordBatchStream,
@@ -15,15 +19,23 @@ pub struct DataMerger {
     inputs: Vec<BatchReaderRef>,
     batch_size: usize,
     single_stream_has_duplication: bool,
+
+    metrics: Arc<ExecutionPlanMetricsSet>,
 }
 
 impl DataMerger {
-    pub fn new(schema: SchemaRef, inputs: Vec<BatchReaderRef>, batch_size: usize) -> Self {
+    pub fn new(
+        schema: SchemaRef,
+        inputs: Vec<BatchReaderRef>,
+        batch_size: usize,
+        metrics: Arc<ExecutionPlanMetricsSet>,
+    ) -> Self {
         Self {
             schema,
             inputs,
             batch_size,
             single_stream_has_duplication: false,
+            metrics,
         }
     }
 
@@ -31,16 +43,18 @@ impl DataMerger {
         schema: SchemaRef,
         inputs: Vec<BatchReaderRef>,
         batch_size: usize,
+        metrics: Arc<ExecutionPlanMetricsSet>,
     ) -> Self {
         Self {
             schema,
             inputs,
             batch_size,
             single_stream_has_duplication: true,
+            metrics,
         }
     }
 
-    pub fn process_cut_merge(&self) -> Result<SendableSchemableTskvRecordBatchStream> {
+    fn process_cut_merge(&self) -> Result<SendableSchemableTskvRecordBatchStream> {
         if self.inputs.is_empty() {
             return Ok(Box::pin(EmptySchemableTskvRecordBatchStream::new(
                 self.schema.clone(),
@@ -57,10 +71,11 @@ impl DataMerger {
             streams,
             self.batch_size,
             TIME_FIELD,
+            CutMergeMetrics::new(self.metrics.as_ref()),
         )?))
     }
 
-    pub fn process_sort_merge(&self) -> Result<SendableSchemableTskvRecordBatchStream> {
+    fn process_sort_merge(&self) -> Result<SendableSchemableTskvRecordBatchStream> {
         if self.inputs.is_empty() {
             return Ok(Box::pin(EmptySchemableTskvRecordBatchStream::new(
                 self.schema.clone(),

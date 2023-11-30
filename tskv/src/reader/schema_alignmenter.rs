@@ -5,8 +5,10 @@ use std::task::{Context, Poll};
 use arrow::datatypes::{FieldRef, Schema, SchemaRef};
 use arrow::error::ArrowError;
 use arrow_array::{new_null_array, RecordBatch};
+use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
 use futures::{Stream, StreamExt};
 
+use super::metrics::BaselineMetrics;
 use super::{
     BatchReader, BatchReaderRef, SchemableTskvRecordBatchStream,
     SendableSchemableTskvRecordBatchStream,
@@ -18,11 +20,20 @@ use crate::Result;
 pub struct SchemaAlignmenter {
     input: BatchReaderRef,
     schema: SchemaRef,
+    metrics: Arc<ExecutionPlanMetricsSet>,
 }
 
 impl SchemaAlignmenter {
-    pub fn new(input: BatchReaderRef, schema: SchemaRef) -> Self {
-        Self { input, schema }
+    pub fn new(
+        input: BatchReaderRef,
+        schema: SchemaRef,
+        metrics: Arc<ExecutionPlanMetricsSet>,
+    ) -> Self {
+        Self {
+            input,
+            schema,
+            metrics,
+        }
     }
 }
 
@@ -37,6 +48,7 @@ impl BatchReader for SchemaAlignmenter {
                 schema_mapping,
                 schema: output_schema,
                 input,
+                metrics: BaselineMetrics::new(self.metrics.as_ref()),
             }));
         }
 
@@ -101,6 +113,7 @@ struct SchemaAlignmenterStream {
     schema_mapping: SchemaMapping,
     schema: SchemaRef,
     input: SendableSchemableTskvRecordBatchStream,
+    metrics: BaselineMetrics,
 }
 
 impl SchemableTskvRecordBatchStream for SchemaAlignmenterStream {
@@ -113,15 +126,19 @@ impl Stream for SchemaAlignmenterStream {
     type Item = Result<RecordBatch>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        match self.input.poll_next_unpin(cx) {
+        let poll = match self.input.poll_next_unpin(cx) {
             Poll::Ready(Some(Ok(batch))) => {
+                let _timer = self.metrics.elapsed_compute().timer();
+
                 match reorder_and_align_schema(&self.schema_mapping, batch) {
                     Ok(batch) => Poll::Ready(Some(Ok(batch))),
                     Err(err) => Poll::Ready(Some(Err(err).map_err(Into::into))),
                 }
             }
             other => other,
-        }
+        };
+
+        self.metrics.record_poll(poll)
     }
 }
 
@@ -223,6 +240,7 @@ mod tests {
     use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
     use arrow_array::{Float64Array, Int64Array, RecordBatch, StringArray, UInt64Array};
     use datafusion::assert_batches_eq;
+    use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
     use futures::TryStreamExt;
 
     use super::SchemaAlignmenter;
@@ -281,6 +299,10 @@ mod tests {
         ]))
     }
 
+    fn metrics() -> Arc<ExecutionPlanMetricsSet> {
+        Arc::new(ExecutionPlanMetricsSet::new())
+    }
+
     #[tokio::test]
     async fn test() {
         let reader = Arc::new(MemoryBatchReader::new(
@@ -288,7 +310,7 @@ mod tests {
             input_record_batchs(),
         ));
 
-        let schema_alignmenter = SchemaAlignmenter::new(reader, output_schema());
+        let schema_alignmenter = SchemaAlignmenter::new(reader, output_schema(), metrics());
 
         let stream = schema_alignmenter.process().expect("schema_alignmenter");
 
@@ -316,7 +338,7 @@ mod tests {
             input_record_batchs(),
         ));
 
-        let schema_alignmenter = SchemaAlignmenter::new(reader, missing_column_schema());
+        let schema_alignmenter = SchemaAlignmenter::new(reader, missing_column_schema(), metrics());
 
         let stream = schema_alignmenter.process().expect("schema_alignmenter");
 
@@ -344,7 +366,8 @@ mod tests {
             input_record_batchs(),
         ));
         // c1 字段的数据类型 输出schema与输出schema不一致 不做检查 使用输出schema的字段数据类型
-        let schema_alignmenter = SchemaAlignmenter::new(reader, column_data_type_mismatch_schema());
+        let schema_alignmenter =
+            SchemaAlignmenter::new(reader, column_data_type_mismatch_schema(), metrics());
 
         let stream = schema_alignmenter.process().expect("schema_alignmenter");
 

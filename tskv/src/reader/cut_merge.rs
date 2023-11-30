@@ -5,9 +5,11 @@ use std::task::{ready, Context, Poll};
 
 use arrow_array::RecordBatch;
 use arrow_schema::{ArrowError, SchemaRef};
+use datafusion::physical_plan::metrics::{ExecutionPlanMetricsSet, MetricBuilder, Time};
 use futures::{Stream, StreamExt};
 use stable_vec::StableVec;
 
+use super::metrics::BaselineMetrics;
 use crate::reader::batch_cut::cut_record_batches;
 use crate::reader::sort_merge::sort_merge;
 use crate::reader::{
@@ -29,6 +31,8 @@ pub struct CutMergeStream {
     sort_column: Arc<String>,
 
     batch_size: usize,
+
+    metrics: CutMergeMetrics,
 }
 
 impl CutMergeStream {
@@ -37,6 +41,7 @@ impl CutMergeStream {
         streams: Vec<SendableSchemableTskvRecordBatchStream>,
         batch_size: usize,
         sort_column: impl Into<String>,
+        metrics: CutMergeMetrics,
     ) -> Result<Self> {
         let sort_column = Arc::new(sort_column.into());
         schema.field_with_name(sort_column.as_str())?;
@@ -55,6 +60,7 @@ impl CutMergeStream {
             merge_stream: None,
             sort_column,
             batch_size,
+            metrics,
         })
     }
 
@@ -140,6 +146,8 @@ impl CutMergeStream {
             return Poll::Ready(None);
         }
 
+        let _timer = self.metrics.elapsed_data_merge_time().timer();
+
         let time_column = self
             .schema
             .column_with_name(self.sort_column.as_ref())
@@ -212,13 +220,50 @@ impl Stream for CutMergeStream {
     type Item = Result<RecordBatch>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        self.next_record_batch(cx)
+        let poll = self.next_record_batch(cx);
+        self.metrics.record_poll(poll)
     }
 }
 
 impl SchemableTskvRecordBatchStream for CutMergeStream {
     fn schema(&self) -> SchemaRef {
         self.schema.clone()
+    }
+}
+
+/// Stores metrics about the table writer execution.
+#[derive(Debug, Clone)]
+pub struct CutMergeMetrics {
+    elapsed_data_merge_time: Time,
+    inner: BaselineMetrics,
+}
+
+impl CutMergeMetrics {
+    /// Create new metrics
+    pub fn new(metrics: &ExecutionPlanMetricsSet) -> Self {
+        let elapsed_data_merge_time =
+            MetricBuilder::new(metrics).subset_time("elapsed_data_merge_time", 0);
+
+        let inner = BaselineMetrics::new(metrics);
+
+        Self {
+            elapsed_data_merge_time,
+            inner,
+        }
+    }
+
+    pub fn elapsed_data_merge_time(&self) -> &Time {
+        &self.elapsed_data_merge_time
+    }
+    pub fn elapsed_compute(&self) -> &Time {
+        self.inner.elapsed_compute()
+    }
+
+    pub fn record_poll(
+        &self,
+        poll: Poll<Option<Result<RecordBatch>>>,
+    ) -> Poll<Option<Result<RecordBatch>>> {
+        self.inner.record_poll(poll)
     }
 }
 
@@ -231,6 +276,7 @@ mod test {
     use futures::StreamExt;
 
     use crate::reader::cut_merge::CutMergeStream;
+    use crate::reader::test_util::cut_merge_metrices;
     use crate::reader::SchemableMemoryBatchReaderStream;
 
     #[tokio::test]
@@ -258,7 +304,14 @@ mod test {
         ];
         let streams = SchemableMemoryBatchReaderStream::new_partitions(schema.clone(), batches);
 
-        let mut stream = CutMergeStream::new(schema.clone(), streams, 4096, "column1").unwrap();
+        let mut stream = CutMergeStream::new(
+            schema.clone(),
+            streams,
+            4096,
+            "column1",
+            cut_merge_metrices(),
+        )
+        .unwrap();
 
         let res = stream.next().await.unwrap().unwrap();
         let array1 = Arc::new(Int64Array::from_iter_values([1]));
@@ -318,7 +371,14 @@ mod test {
         ];
         let streams = SchemableMemoryBatchReaderStream::new_partitions(schema.clone(), batches);
 
-        let mut stream = CutMergeStream::new(schema.clone(), streams, 4096, "column1").unwrap();
+        let mut stream = CutMergeStream::new(
+            schema.clone(),
+            streams,
+            4096,
+            "column1",
+            cut_merge_metrices(),
+        )
+        .unwrap();
 
         let res = stream.next().await.unwrap().unwrap();
         let array1 = Arc::new(Int64Array::from_iter_values([1]));
