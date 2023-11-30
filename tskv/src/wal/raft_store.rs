@@ -269,6 +269,7 @@ impl RaftEntryStorageInner {
                                 let ctx = replication::ApplyContext {
                                     index: entry.log_id.index,
                                     raft_id: self.wal.vnode_id as u64,
+                                    apply_type: replication::APPLY_TYPE_WAL,
                                 };
                                 engine.apply(&ctx, req).await.unwrap();
                             }

@@ -619,6 +619,7 @@ impl TSIndex {
         &self,
         new_tags: &[UpdateSetValue<TagKey, TagValue>],
         matched_series: &[SeriesKey],
+        check_conflict: bool,
     ) -> IndexResult<(Vec<SeriesKey>, Vec<SeriesKey>, Vec<SeriesId>)> {
         // Find all matching series ids
         let mut ids = vec![];
@@ -657,13 +658,13 @@ impl TSIndex {
                 table: key.table.clone(),
             };
 
-            // check conflict
-            if self.get_series_id(&new_key).await?.is_some() {
+            if check_conflict && self.get_series_id(&new_key).await?.is_some() {
                 trace::warn!("Series already exists: {:?}", new_key);
                 return Err(IndexError::SeriesAlreadyExists {
                     key: key.to_string(),
                 });
             }
+
             // TODO 去重
             new_keys.push(new_key);
         }
@@ -1398,6 +1399,7 @@ mod test {
                     value: Some("a2".as_bytes().to_vec()),
                 }],
                 &[matched_series.clone()],
+                true,
             )
             .await
             .unwrap();

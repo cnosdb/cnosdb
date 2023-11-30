@@ -2,7 +2,7 @@ use models::auth::role::{SystemTenantRole, TenantRoleIdentifier};
 use models::auth::user::{UserDesc, UserOptionsBuilder};
 use models::oid::Identifier;
 use models::schema::{Tenant, TenantOptionsBuilder};
-use replication::{ApplyContext, ApplyStorage};
+use replication::{ApplyContext, ApplyStorage, APPLY_TYPE_WRITE};
 
 use crate::store::command::WriteCommand;
 use crate::store::config::MetaInit;
@@ -17,6 +17,7 @@ pub async fn init_meta(storage: &StateMachine, init_data: MetaInit) {
     let ctx = ApplyContext {
         index: 0,
         raft_id: 0,
+        apply_type: APPLY_TYPE_WRITE,
     };
 
     // init tenant
