@@ -59,6 +59,8 @@ tokio-util = { workspace = true }
 walkdir = { workspace = true }
 zstd = { workspace = true }
 tonic = { workspace = true }
+stable-vec = { workspace = true }
+arrow-schema = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 rio = { version = "0.9", optional = true }
@@ -79,7 +81,12 @@ criterion = { workspace = true, features = ["async_tokio"] }
 parking_lot = { workspace = true, features = ["nightly"] }
 rand = { workspace = true }
 tempfile = { workspace = true }
+arrow = { workspace = true, features = ["test_utils"] }
 
 [[bench]]
 harness = false
 name = "kvcore_bench"
+
+[[bench]]
+harness = false
+name = "data_merge"

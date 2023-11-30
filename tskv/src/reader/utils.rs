@@ -3,14 +3,16 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use arrow::datatypes::SchemaRef;
-use arrow_array::RecordBatch;
+use arrow_array::{ArrayRef, RecordBatch};
 use datafusion::common::tree_node::{TreeNode, TreeNodeRewriter};
 use datafusion::error::DataFusionError;
 use datafusion::physical_plan::expressions::{BinaryExpr, Column, Literal};
 use datafusion::physical_plan::PhysicalExpr;
 use datafusion::scalar::ScalarValue;
+use arrow_schema::{ArrowError, Field, Schema};
 use futures::{Stream, StreamExt};
 use models::predicate::domain::TimeRange;
+use models::schema::TIME_FIELD;
 
 use super::{Predicate, SchemableTskvRecordBatchStream, SendableSchemableTskvRecordBatchStream};
 use crate::{Error, Result};
@@ -218,4 +220,16 @@ impl TreeNodeRewriter for PredicateColumnsReassigner {
 
         Ok(expr)
     }
+}
+
+pub fn time_field_from_schema(schema: &Schema) -> std::result::Result<(usize, &Field), ArrowError> {
+    schema.column_with_name(TIME_FIELD).ok_or_else(|| {
+        ArrowError::SchemaError(format!("Unable to get field named \"{TIME_FIELD}\"."))
+    })
+}
+
+pub fn time_column_from_record_batch(record_batch: &RecordBatch) -> Result<&ArrayRef, ArrowError> {
+    record_batch.column_by_name(TIME_FIELD).ok_or_else(|| {
+        ArrowError::SchemaError(format!("Unable to get field named \"{TIME_FIELD}\"."))
+    })
 }

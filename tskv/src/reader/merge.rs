@@ -1,116 +1,94 @@
-use std::pin::Pin;
-use std::task::{Context, Poll};
-
 use arrow::datatypes::SchemaRef;
-use arrow_array::RecordBatch;
-use futures::{Stream, StreamExt};
-use models::arrow::stream::{BoxStream, ParallelMergeStream};
+use models::schema::TIME_FIELD;
 
-use super::utils::CombinedRecordBatchStream;
 use super::{
-    BatchReader, BatchReaderRef, SchemableTskvRecordBatchStream,
+    BatchReader, BatchReaderRef, EmptySchemableTskvRecordBatchStream,
     SendableSchemableTskvRecordBatchStream,
 };
-use crate::{Error, Result};
+use crate::reader::cut_merge::CutMergeStream;
+use crate::reader::sort_merge::sort_merge;
+use crate::Result;
 
 /// 对相同series的数据进行合并
 pub struct DataMerger {
+    schema: SchemaRef,
     inputs: Vec<BatchReaderRef>,
+    batch_size: usize,
+    single_stream_has_duplication: bool,
 }
-impl DataMerger {
-    pub fn new(inputs: Vec<BatchReaderRef>) -> Self {
-        Self { inputs }
-    }
-}
-impl BatchReader for DataMerger {
-    fn process(&self) -> Result<SendableSchemableTskvRecordBatchStream> {
-        // TODO: Perform data merging
-        // Check if there are any inputs
-        if self.inputs.is_empty() {
-            return Err(Error::CommonError {
-                reason: "No inputs provided for DataMerger".to_string(),
-            });
-        }
 
+impl DataMerger {
+    pub fn new(schema: SchemaRef, inputs: Vec<BatchReaderRef>, batch_size: usize) -> Self {
+        Self {
+            schema,
+            inputs,
+            batch_size,
+            single_stream_has_duplication: false,
+        }
+    }
+
+    pub fn new_with_single_stream_has_duplication(
+        schema: SchemaRef,
+        inputs: Vec<BatchReaderRef>,
+        batch_size: usize,
+    ) -> Self {
+        Self {
+            schema,
+            inputs,
+            batch_size,
+            single_stream_has_duplication: true,
+        }
+    }
+
+    pub fn process_cut_merge(&self) -> Result<SendableSchemableTskvRecordBatchStream> {
+        if self.inputs.is_empty() {
+            return Ok(Box::pin(EmptySchemableTskvRecordBatchStream::new(
+                self.schema.clone(),
+            )));
+        }
         let streams = self
             .inputs
             .iter()
             .map(|e| e.process())
             .collect::<Result<Vec<_>>>()?;
 
-        let schema = streams[0].schema();
-
-        Ok(Box::pin(CombinedRecordBatchStream::try_new(
-            schema, streams,
+        Ok(Box::pin(CutMergeStream::new(
+            self.schema.clone(),
+            streams,
+            self.batch_size,
+            TIME_FIELD,
         )?))
     }
 
-    fn fmt_as(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "DataMerger:")
-    }
-
-    fn children(&self) -> Vec<BatchReaderRef> {
-        self.inputs.clone()
-    }
-}
-
-pub struct ParallelMergeAdapter {
-    schema: SchemaRef,
-    inputs: Vec<BatchReaderRef>,
-}
-
-impl ParallelMergeAdapter {
-    pub fn try_new(schema: SchemaRef, inputs: Vec<BatchReaderRef>) -> Result<Self> {
-        if inputs.is_empty() {
-            return Err(Error::CommonError {
-                reason: "No inputs provided for ParallelMergeAdapter".to_string(),
-            });
+    pub fn process_sort_merge(&self) -> Result<SendableSchemableTskvRecordBatchStream> {
+        if self.inputs.is_empty() {
+            return Ok(Box::pin(EmptySchemableTskvRecordBatchStream::new(
+                self.schema.clone(),
+            )));
         }
-
-        Ok(Self { schema, inputs })
-    }
-}
-
-impl BatchReader for ParallelMergeAdapter {
-    fn process(&self) -> Result<SendableSchemableTskvRecordBatchStream> {
         let streams = self
             .inputs
             .iter()
-            .map(|e| -> Result<BoxStream<_>> { Ok(e.process()?) })
+            .map(|e| e.process())
             .collect::<Result<Vec<_>>>()?;
+        sort_merge(streams, self.schema.clone(), self.batch_size, TIME_FIELD)
+    }
+}
 
-        let stream = ParallelMergeStream::new(None, streams);
-
-        Ok(Box::pin(SchemableParallelMergeStream {
-            schema: self.schema.clone(),
-            stream,
-        }))
+impl BatchReader for DataMerger {
+    fn process(&self) -> Result<SendableSchemableTskvRecordBatchStream> {
+        if self.single_stream_has_duplication {
+            self.process_sort_merge()
+        } else {
+            self.process_cut_merge()
+        }
     }
 
     fn fmt_as(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "ParallelMergeAdapter:")
+        write!(f, "DataMerger: ")
     }
 
     fn children(&self) -> Vec<BatchReaderRef> {
         self.inputs.clone()
-    }
-}
-
-pub struct SchemableParallelMergeStream {
-    schema: SchemaRef,
-    stream: ParallelMergeStream<Error>,
-}
-
-impl SchemableTskvRecordBatchStream for SchemableParallelMergeStream {
-    fn schema(&self) -> SchemaRef {
-        self.schema.clone()
-    }
-}
-
-impl Stream for SchemableParallelMergeStream {
-    type Item = Result<RecordBatch>;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        self.stream.poll_next_unpin(cx)
     }
 }

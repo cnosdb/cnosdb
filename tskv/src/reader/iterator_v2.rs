@@ -11,7 +11,7 @@ use tokio::runtime::Runtime;
 use trace::{debug, SpanRecorder};
 
 use super::display::DisplayableBatchReader;
-use super::merge::{DataMerger, ParallelMergeAdapter};
+use super::merge::DataMerger;
 use super::series::SeriesReader;
 use super::utils::OverlappingSegments;
 use super::{
@@ -20,6 +20,7 @@ use super::{
 };
 use crate::reader::chunk::ChunkReader;
 use crate::reader::filter::DataFilter;
+use crate::reader::paralle_merge::ParallelMergeAdapter;
 use crate::reader::schema_alignmenter::SchemaAlignmenter;
 use crate::reader::utils::group_overlapping_segments;
 use crate::reader::BatchReaderRef;
@@ -261,6 +262,7 @@ impl SeriesGroupBatchReaderFactory {
         let reader = Arc::new(ParallelMergeAdapter::try_new(
             schema.clone(),
             series_readers,
+            self.query_option.batch_size,
         )?);
 
         trace::trace!(
@@ -334,7 +336,7 @@ impl SeriesGroupBatchReaderFactory {
             )?),
             DataReference::Memcache(_) => {
                 // TODO @lutengda 构建memcache rowgroup reader(需要自己实现 trait BatchReader)
-                return Err(Error::Unimplement {
+                return Err(Error::Unimplemented {
                     msg: "memcache reader is not supported yet".to_string(),
                 });
             }
@@ -404,15 +406,23 @@ impl SeriesGroupBatchReaderFactory {
                 let chunk_readers =
                     Self::build_chunk_readers(chunks, batch_size, projection, predicate)?;
 
+                // 用 Null 值补齐缺失的 Field 列
+                let chunk_readers = chunk_readers
+                    .into_iter()
+                    .map(|r| {
+                        Arc::new(SchemaAlignmenter::new(r, time_fields_schema.clone()))
+                            as BatchReaderRef
+                    })
+                    .collect::<Vec<_>>();
+
                 let reader: BatchReaderRef = if chunk_readers.len() > 1 {
                     // 如果有多个重叠的 chunk reader 则需要做合并
-                    Arc::new(DataMerger::new(chunk_readers))
+                    Arc::new(DataMerger::new(time_fields_schema.clone(), chunk_readers, batch_size))
                 } else {
                     Arc::new(chunk_readers)
                 };
 
                 // 用 Null 值补齐缺失的 Field 列
-                let reader = Arc::new(SchemaAlignmenter::new(reader, time_fields_schema.clone()));
                 Ok(reader)
             })
             .collect::<Result<Vec<_>>>()?;

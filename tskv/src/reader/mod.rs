@@ -2,14 +2,14 @@ use std::fmt;
 use std::ops::Deref;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::task::{Context, Poll};
+use std::task::{ready, Context, Poll};
 
 use arrow::datatypes::{Schema, SchemaRef};
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::physical_plan::PhysicalExpr;
+use futures::stream::BoxStream;
 use futures::{Stream, StreamExt};
 pub use iterator::*;
-use models::arrow::stream::{BoxStream, MemoryRecordBatchStream};
 use models::field_value::DataType;
 use models::predicate::domain::TimeRange;
 use models::schema::PhysicalCType;
@@ -20,20 +20,27 @@ use crate::tsm2::page::Chunk;
 use crate::tsm2::reader::TSM2Reader;
 use crate::{Error, Result};
 
+mod batch_builder;
+mod batch_cut;
 pub mod chunk;
 mod column_group;
+pub mod cut_merge;
 pub mod display;
 pub mod filter;
 mod iterator;
 pub mod iterator_v2;
 pub mod merge;
 pub mod page;
+mod paralle_merge;
+mod partitioned_stream;
 pub mod query_executor;
 pub mod schema_alignmenter;
 pub mod serialize;
 pub mod series;
+pub mod sort_merge;
 pub mod table_scan;
 pub mod tag_scan;
+pub mod test_util;
 pub mod utils;
 pub mod visitor;
 
@@ -76,7 +83,7 @@ impl<'a> Deref for Projection<'a> {
 pub type SendableTskvRecordBatchStream = Pin<Box<dyn Stream<Item = Result<RecordBatch>> + Send>>;
 
 pub type SendableSchemableTskvRecordBatchStream =
-    Pin<Box<dyn SchemableTskvRecordBatchStream + Send>>;
+    Pin<Box<dyn SchemableTskvRecordBatchStream<Item = Result<RecordBatch>> + Send>>;
 pub trait SchemableTskvRecordBatchStream: Stream<Item = Result<RecordBatch>> {
     fn schema(&self) -> SchemaRef;
 }
@@ -151,32 +158,9 @@ impl MemoryBatchReader {
 
 impl BatchReader for MemoryBatchReader {
     fn process(&self) -> Result<SendableSchemableTskvRecordBatchStream> {
-        struct SchemableMemoryBatchReaderStream {
-            schema: SchemaRef,
-            stream: BoxStream<Result<RecordBatch>>,
-        }
-        impl SchemableTskvRecordBatchStream for SchemableMemoryBatchReaderStream {
-            fn schema(&self) -> SchemaRef {
-                self.schema.clone()
-            }
-        }
-        impl Stream for SchemableMemoryBatchReaderStream {
-            type Item = Result<RecordBatch>;
+        let stream = SchemableMemoryBatchReaderStream::new(self.schema.clone(), self.data.clone());
 
-            fn poll_next(
-                mut self: Pin<&mut Self>,
-                cx: &mut Context<'_>,
-            ) -> Poll<Option<Self::Item>> {
-                self.stream.poll_next_unpin(cx)
-            }
-        }
-
-        let stream = Box::pin(MemoryRecordBatchStream::<Error>::new(self.data.clone()));
-
-        Ok(Box::pin(SchemableMemoryBatchReaderStream {
-            schema: self.schema.clone(),
-            stream,
-        }))
+        Ok(Box::pin(stream))
     }
 
     fn fmt_as(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -185,6 +169,50 @@ impl BatchReader for MemoryBatchReader {
 
     fn children(&self) -> Vec<BatchReaderRef> {
         vec![]
+    }
+}
+
+pub struct SchemableMemoryBatchReaderStream {
+    schema: SchemaRef,
+    stream: BoxStream<'static, RecordBatch>,
+}
+
+impl SchemableMemoryBatchReaderStream {
+    pub fn new(schema: SchemaRef, batches: Vec<RecordBatch>) -> Self {
+        Self {
+            schema,
+            stream: Box::pin(futures::stream::iter(batches.into_iter())),
+        }
+    }
+
+    pub fn new_partitions(
+        schema: SchemaRef,
+        batches: Vec<Vec<RecordBatch>>,
+    ) -> Vec<SendableSchemableTskvRecordBatchStream> {
+        batches
+            .into_iter()
+            .map(|b| {
+                Box::pin(SchemableMemoryBatchReaderStream::new(schema.clone(), b))
+                    as SendableSchemableTskvRecordBatchStream
+            })
+            .collect::<Vec<_>>()
+    }
+}
+
+impl SchemableTskvRecordBatchStream for SchemableMemoryBatchReaderStream {
+    fn schema(&self) -> SchemaRef {
+        self.schema.clone()
+    }
+}
+
+impl Stream for SchemableMemoryBatchReaderStream {
+    type Item = Result<RecordBatch>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        match ready!(self.stream.poll_next_unpin(cx)) {
+            None => Poll::Ready(None),
+            Some(r) => Poll::Ready(Some(Ok(r))),
+        }
     }
 }
 

@@ -156,6 +156,8 @@ dateparser = "0.1.7"
 run_script = "0.10.1"
 geo = "0.26.0"
 geozero = "0.11.0"
+stable-vec = "0.4.0"
+ranges = "0.3.3"
 
 [workspace.package]
 edition = "2021"
