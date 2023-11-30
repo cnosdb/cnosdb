@@ -75,9 +75,13 @@ pub type Response = Vec<u8>;
 //     pub value: Option<String>,
 // }
 
+pub const APPLY_TYPE_WAL: u32 = 1;
+pub const APPLY_TYPE_WRITE: u32 = 2;
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq, Default)]
 pub struct ApplyContext {
     pub index: u64,
+    pub apply_type: u32,
     pub raft_id: RaftNodeId,
 }
 

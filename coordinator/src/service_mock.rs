@@ -53,6 +53,15 @@ impl Coordinator for MockCoordinator {
         Some(Arc::new(TenantMeta::mock()))
     }
 
+    async fn write_replica_by_raft(
+        &self,
+        replica: ReplicationSet,
+        request: RaftWriteCommand,
+        span_ctx: Option<&SpanContext>,
+    ) -> CoordinatorResult<()> {
+        todo!()
+    }
+
     async fn table_vnodes(
         &self,
         table: &ResolvedTable,
