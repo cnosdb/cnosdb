@@ -27,6 +27,7 @@ use crate::memcache::{MemCache, RowData, RowGroup};
 use crate::schema::schemas::DBschemas;
 use crate::summary::{SummaryTask, VersionEdit};
 use crate::tseries_family::{LevelInfo, TseriesFamily, Version};
+use crate::tsm2::reader::TSM2Reader;
 use crate::Error::{self};
 use crate::{file_utils, ColumnFileId, TseriesFamilyId};
 
@@ -123,8 +124,10 @@ impl Database {
                     let file_path = f
                         .rename_file(&self.opt.storage, &self.owner, f.tsf_id, new_file_id)
                         .await?;
-                    let file_reader = crate::tsm::TsmReader::open(file_path).await?;
-                    file_metas.insert(new_file_id, file_reader.bloom_filter());
+                    let file_reader = TSM2Reader::open(file_path).await?;
+                    let bloom_filter =
+                        Arc::new(file_reader.footer().series().bloom_filter().clone());
+                    file_metas.insert(new_file_id, bloom_filter);
                 }
                 for f in ve.del_files.iter_mut() {
                     let new_file_id = global_ctx.file_id_next();
