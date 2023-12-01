@@ -128,10 +128,11 @@ impl BatchReader for ColumnGroupReader {
         let column_group_id = self.column_group.column_group_id();
         let pages_offset = self.column_group.pages_offset();
         let column_group_bytes = self.column_group.size();
+        let time_range = self.column_group.time_range();
 
         write!(
             f,
-            "ColumnGroupReader: column_group_id={column_group_id}, pages_offset={pages_offset}, column_group_bytes={column_group_bytes}"
+            "ColumnGroupReader: column_group_id={column_group_id}, time_range={time_range}, pages_offset={pages_offset}, column_group_bytes={column_group_bytes}"
         )
     }
 
