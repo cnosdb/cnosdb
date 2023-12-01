@@ -7,6 +7,7 @@ use replication::network_http::RaftHttpAdmin;
 use replication::raft_node::RaftNode;
 use replication::ApplyStorage;
 use trace::info;
+use tracing::debug;
 use warp::{hyper, Filter};
 
 use crate::error::{MetaError, MetaResult};
@@ -296,7 +297,7 @@ impl HttpServer {
     ) -> MetaResult<String> {
         let req: (String, String, HashSet<String>, u64) = serde_json::from_slice(&req)?;
         let (client, cluster, tenants, base_ver) = req;
-        info!(
+        debug!(
             "watch all  args: client-id: {}, cluster: {}, tenants: {:?}, version: {}",
             client, cluster, tenants, base_ver
         );
@@ -316,7 +317,7 @@ impl HttpServer {
             let _ = tokio::time::timeout(Duration::from_secs(20), notify.recv()).await;
 
             let watch_data = storage.read_change_logs(&cluster, &tenants, follow_ver);
-            info!("watch notify {} {}.{}", client, base_ver, follow_ver);
+            debug!("watch notify {} {}.{}", client, base_ver, follow_ver);
             if watch_data.need_return(base_ver) || now.elapsed() > Duration::from_secs(30) {
                 return Ok(crate::store::storage::response_encode(Ok(watch_data)));
             }

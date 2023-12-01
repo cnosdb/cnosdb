@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use replication::ApplyStorage;
 use tokio::sync::RwLock;
-use tracing::info;
+use tracing::{debug, info};
 use warp::{hyper, Filter};
 
 use crate::error::{MetaError, MetaResult};
@@ -247,7 +247,7 @@ impl SingleServer {
     ) -> MetaResult<String> {
         let req: (String, String, HashSet<String>, u64) = serde_json::from_slice(&req)?;
         let (client, cluster, tenants, base_ver) = req;
-        info!(
+        debug!(
             "watch all  args: client-id: {}, cluster: {}, tenants: {:?}, version: {}",
             client, cluster, tenants, base_ver
         );
@@ -271,7 +271,7 @@ impl SingleServer {
                 .read()
                 .await
                 .read_change_logs(&cluster, &tenants, follow_ver);
-            info!("watch notify {} {}.{}", client, base_ver, follow_ver);
+            debug!("watch notify {} {}.{}", client, base_ver, follow_ver);
             if watch_data.need_return(base_ver) || now.elapsed() > Duration::from_secs(30) {
                 return Ok(crate::store::storage::response_encode(Ok(watch_data)));
             }
