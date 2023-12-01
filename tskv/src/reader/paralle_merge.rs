@@ -1,33 +1,32 @@
-use datafusion::arrow::datatypes::SchemaRef;
-use models::schema::TIME_FIELD;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
-use crate::reader::cut_merge::CutMergeStream;
-use crate::reader::{BatchReader, BatchReaderRef, SendableSchemableTskvRecordBatchStream};
+use arrow_array::RecordBatch;
+use datafusion::arrow::datatypes::SchemaRef;
+use futures::stream::BoxStream;
+use futures::{Stream, StreamExt};
+use models::arrow::stream::ParallelMergeStream;
+
+use crate::reader::{
+    BatchReader, BatchReaderRef, SchemableTskvRecordBatchStream,
+    SendableSchemableTskvRecordBatchStream,
+};
 use crate::{Error, Result};
 
 pub struct ParallelMergeAdapter {
     schema: SchemaRef,
     inputs: Vec<BatchReaderRef>,
-    batch_size: usize,
 }
 
 impl ParallelMergeAdapter {
-    pub fn try_new(
-        schema: SchemaRef,
-        inputs: Vec<BatchReaderRef>,
-        batch_size: usize,
-    ) -> Result<Self> {
+    pub fn try_new(schema: SchemaRef, inputs: Vec<BatchReaderRef>) -> Result<Self> {
         if inputs.is_empty() {
             return Err(Error::CommonError {
                 reason: "No inputs provided for ParallelMergeAdapter".to_string(),
             });
         }
 
-        Ok(Self {
-            schema,
-            inputs,
-            batch_size,
-        })
+        Ok(Self { schema, inputs })
     }
 }
 
@@ -36,15 +35,15 @@ impl BatchReader for ParallelMergeAdapter {
         let streams = self
             .inputs
             .iter()
-            .map(|e| e.process())
-            .collect::<Result<Vec<SendableSchemableTskvRecordBatchStream>>>()?;
+            .map(|e| -> Result<BoxStream<_>> { Ok(e.process()?) })
+            .collect::<Result<Vec<_>>>()?;
 
-        Ok(Box::pin(CutMergeStream::new(
-            self.schema.clone(),
-            streams,
-            self.batch_size,
-            TIME_FIELD,
-        )?))
+        let stream = ParallelMergeStream::new(None, streams);
+
+        Ok(Box::pin(SchemableParallelMergeStream {
+            schema: self.schema.clone(),
+            stream,
+        }))
     }
 
     fn fmt_as(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -53,5 +52,24 @@ impl BatchReader for ParallelMergeAdapter {
 
     fn children(&self) -> Vec<BatchReaderRef> {
         self.inputs.clone()
+    }
+}
+
+pub struct SchemableParallelMergeStream {
+    schema: SchemaRef,
+    stream: ParallelMergeStream<Error>,
+}
+
+impl SchemableTskvRecordBatchStream for SchemableParallelMergeStream {
+    fn schema(&self) -> SchemaRef {
+        self.schema.clone()
+    }
+}
+
+impl Stream for SchemableParallelMergeStream {
+    type Item = Result<RecordBatch>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.stream.poll_next_unpin(cx)
     }
 }

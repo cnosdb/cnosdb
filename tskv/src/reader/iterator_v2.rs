@@ -262,7 +262,6 @@ impl SeriesGroupBatchReaderFactory {
         let reader = Arc::new(ParallelMergeAdapter::try_new(
             schema.clone(),
             series_readers,
-            self.query_option.batch_size,
         )?);
 
         trace::trace!(
