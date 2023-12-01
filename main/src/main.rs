@@ -211,6 +211,7 @@ fn main() -> Result<(), std::io::Error> {
             server.add_service(Box::new(ReportService::new()));
         }
 
+        let _ = std::fs::create_dir_all(config.storage.path);
         let storage = match deployment_mode {
             DeploymentMode::QueryTskv => builder.build_query_storage(&mut server).await,
             DeploymentMode::Tskv => builder.build_storage_server(&mut server).await,

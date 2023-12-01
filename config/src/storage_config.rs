@@ -49,6 +49,9 @@ pub struct StorageConfig {
 
     #[serde(default = "StorageConfig::default_strict_write")]
     pub strict_write: bool,
+
+    #[serde(with = "bytes_num", default = "StorageConfig::default_reserver_space")]
+    pub reserver_space: u64,
 }
 
 impl StorageConfig {
@@ -86,6 +89,10 @@ impl StorageConfig {
 
     fn default_max_compact_size() -> u64 {
         2 * 1024 * 1024 * 1024
+    }
+
+    fn default_reserver_space() -> u64 {
+        0
     }
 
     fn default_max_concurrent_compaction() -> u16 {
@@ -152,6 +159,7 @@ impl Default for StorageConfig {
             max_compact_size: Self::default_max_compact_size(),
             max_concurrent_compaction: Self::default_max_concurrent_compaction(),
             strict_write: Self::default_strict_write(),
+            reserver_space: Self::default_reserver_space(),
         }
     }
 }
