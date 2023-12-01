@@ -808,7 +808,8 @@ pub async fn run_compaction_job(
     let mut iter = CompactIterator::new(tsm_readers, max_block_size, false);
     let tsm_dir = request.storage_opt.tsm_dir(&request.database, tsf_id);
     let max_file_size = version.storage_opt.level_max_file_size(request.out_level);
-    let mut tsm_writer = Tsm2Writer::open(&tsm_dir, kernel.file_id_next(), max_file_size).await?;
+    let mut tsm_writer =
+        Tsm2Writer::open(&tsm_dir, kernel.file_id_next(), max_file_size, false).await?;
     // let mut tsm_writer = tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0).await?;
     info!(
         "Compaction: File: {} been created (level: {}).",
@@ -835,7 +836,8 @@ pub async fn run_compaction_job(
                 .await?
                 {
                     tsm_writer =
-                        Tsm2Writer::open(&tsm_dir, kernel.file_id_next(), max_file_size).await?;
+                        Tsm2Writer::open(&tsm_dir, kernel.file_id_next(), max_file_size, false)
+                            .await?;
                 }
             }
         }
@@ -868,7 +870,7 @@ pub async fn run_compaction_job(
             .await?
             {
                 tsm_writer =
-                    Tsm2Writer::open(&tsm_dir, kernel.file_id_next(), max_file_size).await?;
+                    Tsm2Writer::open(&tsm_dir, kernel.file_id_next(), max_file_size, false).await?;
             }
         }
     }
@@ -988,7 +990,7 @@ pub mod test {
         let mut file_seq = 0;
         for (i, d) in data.iter().enumerate() {
             file_seq = i as u64 + 1;
-            let mut writer = Tsm2Writer::open(&dir, file_seq, 0).await.unwrap();
+            let mut writer = Tsm2Writer::open(&dir, file_seq, 0, false).await.unwrap();
             for (sid, data_blks) in d.iter() {
                 writer
                     .write_datablock(*sid, data_blks.clone())
@@ -1931,7 +1933,9 @@ pub mod test {
 
         let mut column_files = Vec::new();
         for (tsm_sequence, args) in data_desc.into_iter() {
-            let mut tsm_writer = Tsm2Writer::open(&dir, tsm_sequence, 0).await.unwrap();
+            let mut tsm_writer = Tsm2Writer::open(&dir, tsm_sequence, 0, false)
+                .await
+                .unwrap();
             for arg in args.into_iter() {
                 tsm_writer.write_datablock(1, arg).await.unwrap();
             }

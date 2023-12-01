@@ -363,8 +363,9 @@ impl SeriesData {
                 for row in values {
                     if row.ts < version.max_level_ts {
                         delta_time_array.push(Some(FieldVal::Integer(row.ts)));
+                    } else {
+                        time_array.push(Some(FieldVal::Integer(row.ts)));
                     }
-                    time_array.push(Some(FieldVal::Integer(row.ts)));
                     for col in schema.fields().iter() {
                         if let Some(index) = field_ids.get(&col.id) {
                             let field = row.fields.get(*index);
@@ -491,7 +492,7 @@ impl MemCache {
                         } else {
                             let mut chunk = BTreeMap::new();
                             chunk.insert(*series_id, delta_datablock);
-                            chunk_group.insert(table, chunk);
+                            delta_chunk_group.insert(table, chunk);
                         }
                     }
                 }

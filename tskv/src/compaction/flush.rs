@@ -72,13 +72,19 @@ impl FlushTask {
             let (group, delta_group) = memcache.read().to_chunk_group(version.clone())?;
             if tsm_writer.is_none() && !group.is_empty() {
                 tsm_writer = Some(
-                    Tsm2Writer::open(&self.path_tsm, self.global_context.file_id_next(), 0).await?,
+                    Tsm2Writer::open(&self.path_tsm, self.global_context.file_id_next(), 0, false)
+                        .await?,
                 );
             }
             if delta_writer.is_none() && !delta_group.is_empty() {
                 delta_writer = Some(
-                    Tsm2Writer::open(&self.path_delta, self.global_context.file_id_next(), 0)
-                        .await?,
+                    Tsm2Writer::open(
+                        &self.path_delta,
+                        self.global_context.file_id_next(),
+                        0,
+                        true,
+                    )
+                    .await?,
                 );
             }
             if let Some(tsm_writer) = tsm_writer.as_mut() {

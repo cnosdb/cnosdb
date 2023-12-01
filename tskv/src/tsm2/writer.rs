@@ -19,7 +19,7 @@ use crate::compaction::CompactingBlock;
 use crate::error::IOSnafu;
 use crate::file_system::file::cursor::FileCursor;
 use crate::file_system::file_manager;
-use crate::file_utils::make_tsm_file_name;
+use crate::file_utils::{make_delta_file_name, make_tsm_file_name};
 use crate::tsm::codec::{
     get_bool_codec, get_f64_codec, get_i64_codec, get_str_codec, get_ts_codec, get_u64_codec,
 };
@@ -169,13 +169,13 @@ impl Column {
     pub fn push(&mut self, value: Option<FieldVal>) {
         match (&mut self.data, value) {
             (ColumnData::F64(ref mut value, min, max), Some(FieldVal::Float(val))) => {
-                value.push(val);
                 if *max < val {
                     *max = val;
                 }
                 if *min > val {
                     *min = val;
                 }
+                value.push(val);
                 let idx = value.len() - 1;
                 self.valid.append_unset_and_set(idx);
             }
@@ -704,10 +704,19 @@ pub struct Tsm2Writer {
 
 //MutableRecordBatch
 impl Tsm2Writer {
-    pub async fn open(path_buf: &impl AsRef<Path>, file_id: u64, max_size: u64) -> Result<Self> {
-        let tsm_path = make_tsm_file_name(path_buf, file_id);
-        let file_cursor = file_manager::create_file(&tsm_path).await?;
-        let writer = Self::new(tsm_path, file_cursor.into(), file_id, max_size);
+    pub async fn open(
+        path_buf: &impl AsRef<Path>,
+        file_id: u64,
+        max_size: u64,
+        is_delta: bool,
+    ) -> Result<Self> {
+        let file_path = if is_delta {
+            make_delta_file_name(path_buf, file_id)
+        } else {
+            make_tsm_file_name(path_buf, file_id)
+        };
+        let file_cursor = file_manager::create_file(&file_path).await?;
+        let writer = Self::new(file_path, file_cursor.into(), file_id, max_size);
         Ok(writer)
     }
     fn new(path: PathBuf, writer: FileCursor, file_id: u64, max_size: u64) -> Self {
@@ -1108,7 +1117,9 @@ mod test {
         );
 
         let path = "/tmp/test/tsm2";
-        let mut tsm_writer = Tsm2Writer::open(&PathBuf::from(path), 1, 0).await.unwrap();
+        let mut tsm_writer = Tsm2Writer::open(&PathBuf::from(path), 1, 0, false)
+            .await
+            .unwrap();
         tsm_writer.write_datablock(1, data1.clone()).await.unwrap();
         tsm_writer.finish().await.unwrap();
         let tsm_reader = TSM2Reader::open(tsm_writer.path).await.unwrap();
