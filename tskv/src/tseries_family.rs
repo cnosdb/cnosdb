@@ -105,16 +105,20 @@ impl ColumnFile {
             .maybe_contains(&series_id.to_be_bytes())
     }
 
-    pub fn contains_any_series_id(&self, series_ids: &[FieldId]) -> bool {
-        for field_id in series_ids {
+    pub fn contains_any_series_id(&self, series_ids: &[SeriesId]) -> bool {
+        for series_id in series_ids {
             if self
                 .series_id_filter
-                .maybe_contains(&field_id.to_be_bytes())
+                .maybe_contains(&series_id.to_be_bytes())
             {
                 return true;
             }
         }
         false
+    }
+
+    pub fn contains_any_field_id(&self, _series_ids: &[FieldId]) -> bool {
+        unimplemented!("contains_any_field_id")
     }
 
     pub async fn add_tombstone(&self, field_ids: &[FieldId], time_range: &TimeRange) -> Result<()> {
@@ -512,7 +516,7 @@ impl Version {
             .filter(|level| level.time_range.overlaps(time_range))
             .flat_map(|level| {
                 level.files.iter().filter(|f| {
-                    f.time_range().overlaps(time_range) && f.contains_any_series_id(field_ids)
+                    f.time_range().overlaps(time_range) && f.contains_any_field_id(field_ids)
                 })
             })
             .cloned()
@@ -707,6 +711,26 @@ impl SuperVersion {
             }
             for cf in lv.files.iter() {
                 if time_ranges.overlaps(&cf.time_range) {
+                    files.push(cf.clone());
+                }
+            }
+        }
+        files
+    }
+
+    pub fn column_files_by_sid_and_time(
+        &self,
+        sids: &[SeriesId],
+        time_ranges: &TimeRanges,
+    ) -> Vec<Arc<ColumnFile>> {
+        let mut files = Vec::new();
+
+        for lv in self.version.levels_info.iter() {
+            if !time_ranges.overlaps(&lv.time_range) {
+                continue;
+            }
+            for cf in lv.files.iter() {
+                if time_ranges.overlaps(&cf.time_range) && cf.contains_any_series_id(sids) {
                     files.push(cf.clone());
                 }
             }

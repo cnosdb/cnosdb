@@ -28,7 +28,8 @@ use crate::reader::trace::TraceCollectorBatcherReaderProxy;
 use crate::reader::utils::group_overlapping_segments;
 use crate::reader::{BatchReaderRef, CombinedBatchReader};
 use crate::schema::error::SchemaError;
-use crate::tseries_family::{ColumnFile, SuperVersion, Version};
+use crate::tseries_family::{ColumnFile, SuperVersion};
+use crate::tsm2::reader::TSM2Reader;
 use crate::{EngineRef, Error, Result};
 
 pub async fn execute(
@@ -232,12 +233,20 @@ impl SeriesGroupBatchReaderFactory {
         let vnode_id = super_version.ts_family_id;
         let projection = Projection::from(schema.as_ref());
         let time_ranges = self.query_option.split.time_ranges();
-        let column_files = super_version.column_files(time_ranges.as_ref());
+        let column_files =
+            super_version.column_files_by_sid_and_time(series_ids, time_ranges.as_ref());
 
         // 采集过滤后的文件数量
         metrics
             .file_nums_filtered_by_time_range()
             .set(column_files.len());
+
+        // 获取所有的文件的 reader
+        let mut column_files_with_reader = Vec::with_capacity(column_files.len());
+        for f in column_files {
+            let reader = super_version.version.get_tsm_reader2(f.file_path()).await?;
+            column_files_with_reader.push((f, reader));
+        }
 
         // 通过sid获取serieskey
         let sid_keys = self.series_keys(vnode_id, series_ids).await?;
@@ -246,8 +255,7 @@ impl SeriesGroupBatchReaderFactory {
         let mut series_chunk_readers = vec![];
         for (sid, series_key) in series_ids.iter().zip(sid_keys) {
             // 选择含有series的所有chunk Vec<DataReference::Chunk(chunk, reader)>
-            let chunks =
-                Self::filter_chunks(super_version.version.as_ref(), &column_files, *sid).await?;
+            let chunks = Self::filter_chunks(&column_files_with_reader, *sid).await?;
             // TODO @lutengda 获取所有符合条件的 memcache rowgroup Vec<DataReference::Memcache(rowgroup)>)
             series_chunk_readers.push((series_key, chunks));
         }
@@ -338,24 +346,22 @@ impl SeriesGroupBatchReaderFactory {
 
     /// 从给定的文件列表中选择含有指定series的所有chunk及其对应的TSMReader
     async fn filter_chunks(
-        version: &Version,
-        column_files: &[Arc<ColumnFile>],
+        column_files: &[(Arc<ColumnFile>, Arc<TSM2Reader>)],
         sid: SeriesId,
     ) -> Result<Vec<DataReference>> {
         // 选择含有series的所有文件
         let files = column_files
             .iter()
-            .filter(|cf| cf.maybe_contains_series_id(sid))
+            .filter(|(cf, _)| cf.maybe_contains_series_id(sid))
             .collect::<Vec<_>>();
         // 选择含有series的所有chunk
         let mut chunks = Vec::with_capacity(files.len());
-        for f in files {
-            let reader = version.get_tsm_reader2(f.file_path()).await?;
+        for (_, reader) in files {
             let chunk = reader.chunk().get(&sid);
             match chunk {
                 None => continue,
                 Some(chunk) => {
-                    chunks.push(DataReference::Chunk(chunk.clone(), reader));
+                    chunks.push(DataReference::Chunk(chunk.clone(), reader.clone()));
                 }
             }
         }
