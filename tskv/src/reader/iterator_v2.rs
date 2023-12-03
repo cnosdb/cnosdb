@@ -277,11 +277,13 @@ impl SeriesGroupBatchReaderFactory {
             return Ok(None);
         }
 
-        // 不同series reader并行执行
-        let reader = Arc::new(ParallelMergeAdapter::try_new(
-            schema.clone(),
-            series_readers,
-        )?);
+        // 设置并行度为cpu逻辑核心数
+        // TODO 可配置
+        let readers = series_readers
+            .chunks((series_readers.len() + num_cpus::get()) / num_cpus::get())
+            .map(|readers| Arc::new(CombinedBatchReader::new(readers.to_vec())) as BatchReaderRef)
+            .collect::<Vec<_>>();
+        let reader = Arc::new(ParallelMergeAdapter::try_new(schema.clone(), readers)?);
 
         // 添加收集trace信息的reader
         let reader = Arc::new(

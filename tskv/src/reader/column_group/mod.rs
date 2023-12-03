@@ -7,10 +7,10 @@ use std::task::{Context, Poll};
 use arrow::compute::kernels::cast;
 use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use arrow_array::{ArrayRef, RecordBatch};
+use datafusion::physical_plan::common::AbortOnDropMany;
 use datafusion::physical_plan::metrics::{ExecutionPlanMetricsSet, MetricBuilder, Time};
 use futures::{ready, Stream, StreamExt};
 use tokio::sync::mpsc;
-use tokio::task::JoinHandle;
 use trace::warn;
 
 use super::metrics::BaselineMetrics;
@@ -119,7 +119,7 @@ impl BatchReader for ColumnGroupReader {
             schema: self.schema.clone(),
             column_arrays: Vec::with_capacity(self.schema.fields().len()),
             buffers,
-            join_handles,
+            drop_helper: AbortOnDropMany(join_handles),
             metrics: ColumnGroupReaderMetrics::new(self.metrics.as_ref()),
         }))
     }
@@ -147,7 +147,8 @@ struct ColumnGroupRecordBatchStream {
     /// Stream entries
     column_arrays: Vec<ArrayRef>,
     buffers: Vec<mpsc::Receiver<Result<ArrayRef>>>,
-    join_handles: Vec<JoinHandle<()>>,
+    #[allow(unused)]
+    drop_helper: AbortOnDropMany<()>,
 
     metrics: ColumnGroupReaderMetrics,
 }
