@@ -27,7 +27,7 @@ use crate::file_system::file_manager;
 use crate::record_file::{self, RecordDataType, RecordDataVersion};
 use crate::{byte_utils, file_utils, Error, Result};
 
-const TOMBSTONE_FILE_SUFFIX: &str = ".tombstone";
+pub const TOMBSTONE_FILE_SUFFIX: &str = "tombstone";
 const FOOTER_MAGIC_NUMBER: u32 = u32::from_be_bytes([b'r', b'o', b'm', b'b']);
 const FOOTER_MAGIC_NUMBER_LEN: usize = 4;
 const ENTRY_LEN: usize = 24; // 8 + 8 + 8
