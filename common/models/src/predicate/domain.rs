@@ -1,6 +1,6 @@
 use std::cmp::{self, Ordering};
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::fmt::Display;
+use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 use std::ops::{Bound as StdBound, RangeBounds};
 use std::sync::Arc;
@@ -8,14 +8,17 @@ use std::sync::Arc;
 use arrow_schema::Schema;
 use datafusion::arrow::datatypes::DataType;
 use datafusion::logical_expr::Expr;
-use datafusion::optimizer::utils::conjunction;
+use datafusion::physical_expr::execution_props::ExecutionProps;
+use datafusion::physical_expr::{create_physical_expr, PhysicalExpr};
 use datafusion::prelude::Column;
 use datafusion::scalar::ScalarValue;
 use datafusion_proto::protobuf;
+use datafusion_proto::protobuf::PhysicalExprNode;
+use prost::Message;
 use protos::models_helper::to_prost_bytes;
 use serde::de::Visitor;
 use serde::ser::SerializeStruct;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::transformation::RowExpressionToDomainsVisitor;
 use super::utils::filter_to_time_ranges;
@@ -1338,24 +1341,66 @@ impl<T: Eq + Hash + Clone> ColumnDomains<T> {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct PhysicalExprNodeWrap(PhysicalExprNode);
+impl Serialize for PhysicalExprNodeWrap {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_bytes(&self.0.encode_to_vec())
+    }
+}
+
+impl<'de> Deserialize<'de> for PhysicalExprNodeWrap {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct BytesVisit;
+        impl<'de> Visitor<'de> for BytesVisit {
+            type Value = PhysicalExprNode;
+
+            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+                formatter.write_str("expecting PhysicalExprNode")
+            }
+
+            fn visit_bytes<E>(self, v: &[u8]) -> std::result::Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                let node = PhysicalExprNode::decode(v).map_err(|e| serde::de::Error::custom(e))?;
+                Ok(node)
+            }
+        }
+        let node = deserializer.deserialize_bytes(BytesVisit)?;
+        Ok(PhysicalExprNodeWrap(node))
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResolvedPredicate {
     time_ranges: Arc<TimeRanges>,
     tags_filter: ColumnDomains<String>,
-    fields_filter: ColumnDomains<String>,
+    physical_expr: PhysicalExprNodeWrap,
 }
 
 impl ResolvedPredicate {
     pub fn new(
         time_ranges: Arc<TimeRanges>,
         tags_filter: ColumnDomains<String>,
-        fields_filter: ColumnDomains<String>,
-    ) -> Self {
-        Self {
+        physical_expr: Option<Arc<dyn PhysicalExpr>>,
+    ) -> Result<Self> {
+        let node = match physical_expr {
+            None => PhysicalExprNode { expr_type: None },
+            Some(e) => PhysicalExprNode::try_from(e)?,
+        };
+
+        Ok(Self {
             time_ranges,
             tags_filter,
-            fields_filter,
-        }
+            physical_expr: PhysicalExprNodeWrap(node),
+        })
     }
 
     pub fn time_ranges(&self) -> Arc<TimeRanges> {
@@ -1366,14 +1411,15 @@ impl ResolvedPredicate {
         &self.tags_filter
     }
 
-    pub fn fields_filter(&self) -> &ColumnDomains<String> {
-        &self.fields_filter
+    pub fn filter(&self) -> &PhysicalExprNode {
+        &self.physical_expr.0
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Predicate {
     pushed_down_domains: ColumnDomains<Column>,
+    physical_expr: Option<Arc<dyn PhysicalExpr>>,
     limit: Option<usize>,
 }
 
@@ -1386,7 +1432,11 @@ impl Predicate {
         &self.pushed_down_domains
     }
 
-    pub fn set_limit(mut self, limit: Option<usize>) -> Predicate {
+    pub fn physical_expr(&self) -> Option<&Arc<dyn PhysicalExpr>> {
+        self.physical_expr.as_ref()
+    }
+
+    pub fn with_limit(mut self, limit: Option<usize>) -> Predicate {
         self.limit = limit;
         self
     }
@@ -1394,43 +1444,63 @@ impl Predicate {
     /// resolve and extract supported filter
     /// convert filter to ColumnDomains and set self
     pub fn push_down_filter(
-        mut self,
-        filters: &[Expr],
-        _table_schema: &TskvTableSchema,
-    ) -> Predicate {
-        if let Some(ref expr) = conjunction(filters.to_vec()) {
-            if let Ok(domains) = RowExpressionToDomainsVisitor::expr_to_column_domains(expr) {
-                self.pushed_down_domains = domains;
+        filter: Option<Expr>,
+        table_schema: &TskvTableSchema,
+    ) -> crate::Result<Predicate> {
+        match filter {
+            None => Ok(Predicate {
+                pushed_down_domains: ColumnDomains::all(),
+                physical_expr: None,
+                limit: None,
+            }),
+            Some(expr) => {
+                let mut push_down_domains = ColumnDomains::all();
+
+                if let Ok(domains) = RowExpressionToDomainsVisitor::expr_to_column_domains(&expr) {
+                    push_down_domains = domains;
+                }
+
+                let df_schema = table_schema.to_df_schema()?;
+                let arrow_schema = table_schema.to_arrow_schema();
+                let execution_props = ExecutionProps::new();
+                let expr = create_physical_expr(
+                    &expr,
+                    df_schema.as_ref(),
+                    arrow_schema.as_ref(),
+                    &execution_props,
+                )?;
+                Ok(Predicate {
+                    pushed_down_domains: push_down_domains,
+                    physical_expr: Some(expr),
+                    limit: None,
+                })
             }
         }
-        self
     }
 
-    pub fn resolve(&self, table: &TskvTableSchemaRef) -> Result<ResolvedPredicateRef, String> {
+    pub fn resolve(&self, table: &TskvTableSchemaRef) -> Result<ResolvedPredicateRef> {
         let domains_filter = self
             .filter()
             .translate_column(|c| table.column(&c.name).cloned());
+
+        let time_filter = domains_filter.translate_column(|e| match e.column_type {
+            ColumnType::Time(_) => Some(e.name.clone()),
+            _ => None,
+        });
+
+        let time_ranges = filter_to_time_ranges(&time_filter);
 
         let tags_filter = domains_filter.translate_column(|e| match e.column_type {
             ColumnType::Tag => Some(e.name.clone()),
             _ => None,
         });
-
-        let fields_filter = domains_filter.translate_column(|e| match e.column_type {
-            ColumnType::Field(_) => Some(e.name.clone()),
-            _ => None,
-        });
-        let time_filter = domains_filter.translate_column(|e| match e.column_type {
-            ColumnType::Time(_) => Some(e.name.clone()),
-            _ => None,
-        });
-        let time_ranges = filter_to_time_ranges(&time_filter);
-
-        Ok(Arc::new(ResolvedPredicate::new(
+        let res = ResolvedPredicate::new(
             Arc::new(TimeRanges::new(time_ranges)),
             tags_filter,
-            fields_filter,
-        )))
+            self.physical_expr.clone(),
+        )?;
+
+        Ok(Arc::new(res))
     }
 }
 
@@ -1469,8 +1539,8 @@ pub struct QueryExpr {
 }
 
 impl QueryExpr {
-    pub fn encode(option: &QueryExpr) -> Result<Vec<u8>> {
-        let bytes = bincode::serialize(option).map_err(|e| Error::InvalidQueryExprMsg {
+    pub fn encode(&self) -> Result<Vec<u8>> {
+        let bytes = bincode::serialize(self).map_err(|e| Error::InvalidQueryExprMsg {
             err: format!("encode error {}", e),
         })?;
 
@@ -1509,6 +1579,10 @@ pub enum PushedAggregateFunction {
 
 #[cfg(test)]
 mod tests {
+    use datafusion::common::DFSchema;
+    use datafusion::prelude::lit;
+    use datafusion_proto::protobuf::PhysicalExprNode;
+
     use super::*;
 
     #[test]
@@ -1769,5 +1843,22 @@ mod tests {
                 panic!("excepted Domain::Equtable")
             }
         };
+    }
+
+    #[test]
+    fn test_serialize_physical_expr_node_wrap() {
+        let expr = create_physical_expr(
+            &lit(true),
+            &Arc::new(DFSchema::empty()),
+            &Arc::new(Schema::empty()),
+            &ExecutionProps::new(),
+        )
+        .unwrap();
+        let expr = PhysicalExprNode::try_from(expr.clone()).unwrap();
+        let wrap = PhysicalExprNodeWrap(expr);
+        let data = bincode::serialize(&wrap).unwrap();
+        let wrap1 = bincode::deserialize::<PhysicalExprNodeWrap>(&data).unwrap();
+
+        assert_eq!(wrap.0.expr_type, wrap1.0.expr_type);
     }
 }

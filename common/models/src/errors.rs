@@ -2,6 +2,8 @@ use std::fmt::Debug;
 use std::io;
 use std::string::FromUtf8Error;
 
+use arrow_schema::ArrowError;
+use datafusion::error::DataFusionError;
 use snafu::Snafu;
 
 #[macro_export]
@@ -16,6 +18,14 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub))]
 pub enum Error {
+    Datafusion {
+        source: DataFusionError,
+    },
+
+    Arrow {
+        source: ArrowError,
+    },
+
     #[snafu(display("Invalid point: {}", err))]
     InvalidPoint {
         err: String,
@@ -82,6 +92,18 @@ impl From<io::Error> for Error {
 impl From<FromUtf8Error> for Error {
     fn from(_: FromUtf8Error) -> Self {
         Error::EncodingError
+    }
+}
+
+impl From<DataFusionError> for Error {
+    fn from(value: DataFusionError) -> Self {
+        Self::Datafusion { source: value }
+    }
+}
+
+impl From<ArrowError> for Error {
+    fn from(value: ArrowError) -> Self {
+        Self::Arrow { source: value }
     }
 }
 

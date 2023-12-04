@@ -4,6 +4,7 @@ use arrow::datatypes::{Schema, SchemaRef};
 use datafusion::physical_plan::metrics::{
     self, ExecutionPlanMetricsSet, MetricBuilder, MetricsSet,
 };
+use datafusion_proto::physical_plan::from_proto::parse_physical_expr;
 use models::meta_data::VnodeId;
 use models::schema::TskvTableSchemaRef;
 use models::{SeriesId, SeriesKey};
@@ -16,12 +17,13 @@ use super::series::SeriesReader;
 use super::trace::Recorder;
 use super::utils::OverlappingSegments;
 use super::{
-    DataReference, EmptySchemableTskvRecordBatchStream, Predicate, Projection, QueryOption,
-    SendableTskvRecordBatchStream,
+    DataReference, EmptySchemableTskvRecordBatchStream, Predicate, PredicateRef, Projection,
+    QueryOption, SendableTskvRecordBatchStream,
 };
 use crate::reader::chunk::filter_column_groups;
 use crate::reader::column_group::ColumnGroupReader;
 use crate::reader::filter::DataFilter;
+use crate::reader::function_register::NoRegistry;
 use crate::reader::paralle_merge::ParallelMergeAdapter;
 use crate::reader::schema_alignmenter::SchemaAlignmenter;
 use crate::reader::trace::TraceCollectorBatcherReaderProxy;
@@ -96,6 +98,21 @@ async fn build_stream(
             })?
     };
 
+    // TODO 这里需要验证table schema是否正确
+    let expr = query_option.split.filter();
+    let arrow_schema = query_option.table_schema.to_arrow_schema();
+    let physical_expr = if expr.expr_type.is_none() {
+        None
+    } else {
+        Some(parse_physical_expr(expr, &NoRegistry, &arrow_schema)?)
+    };
+
+    let predicate = PredicateRef::new(Predicate::new(
+        physical_expr,
+        arrow_schema,
+        query_option.split.limit(),
+    ));
+
     if series_ids.is_empty() {
         return Ok(Box::pin(EmptySchemableTskvRecordBatchStream::new(
             query_option.df_schema.clone(),
@@ -118,7 +135,11 @@ async fn build_stream(
     );
 
     if let Some(reader) = factory
-        .create(span_recorder.child("SeriesGroupBatchReader"), &series_ids)
+        .create(
+            span_recorder.child("SeriesGroupBatchReader"),
+            &series_ids,
+            Some(predicate),
+        )
         .await?
     {
         return Ok(reader.process()?);
@@ -206,6 +227,7 @@ impl SeriesGroupBatchReaderFactory {
         &self,
         span_recorder: SpanRecorder,
         series_ids: &[u32],
+        predicate: Option<PredicateRef>,
     ) -> Result<Option<BatchReaderRef>> {
         let metrics = SeriesGroupBatchReaderMetrics::new(
             &self.metrics_set,
@@ -226,8 +248,6 @@ impl SeriesGroupBatchReaderFactory {
             &self.query_option.table_schema,
             &self.query_option.df_schema,
         )?;
-        // TODO 使用query下推的物理表达式
-        let predicate: Option<Arc<Predicate>> = None;
 
         let super_version = &self.super_version;
         let vnode_id = super_version.ts_family_id;
@@ -285,13 +305,19 @@ impl SeriesGroupBatchReaderFactory {
             return Ok(None);
         }
 
+        let limit = self.query_option.split.limit();
+
         // 设置并行度为cpu逻辑核心数
         // TODO 可配置
         let readers = series_readers
             .chunks((series_readers.len() + num_cpus::get()) / num_cpus::get())
             .map(|readers| Arc::new(CombinedBatchReader::new(readers.to_vec())) as BatchReaderRef)
             .collect::<Vec<_>>();
-        let reader = Arc::new(ParallelMergeAdapter::try_new(schema.clone(), readers)?);
+        let reader = Arc::new(ParallelMergeAdapter::try_new(
+            schema.clone(),
+            readers,
+            limit,
+        )?);
 
         // 添加收集trace信息的reader
         let reader = Arc::new(
@@ -507,11 +533,13 @@ impl SeriesGroupBatchReaderFactory {
             })
             .collect::<Result<Vec<_>>>()?;
 
+        let limit = predicate.as_ref().and_then(|p| p.limit());
         // 根据 series key 补齐对应的 tag 列
         let series_reader = Arc::new(SeriesReader::new(
             series_key,
             Arc::new(CombinedBatchReader::new(readers)),
             self.series_reader_metrics_set.clone(),
+            limit,
         ));
         // 用 Null 值补齐缺失的 tag 列
         let reader = Arc::new(SchemaAlignmenter::new(

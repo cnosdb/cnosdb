@@ -7,6 +7,7 @@ use arrow_array::builder::StringBuilder;
 use arrow_array::RecordBatch;
 use datafusion::physical_plan::metrics::{ExecutionPlanMetricsSet, MetricBuilder, Time};
 use futures::{ready, Stream, StreamExt};
+use models::datafusion::limit_record_batch::limit_record_batch;
 use models::{SeriesKey, Tag};
 
 use super::metrics::BaselineMetrics;
@@ -21,20 +22,25 @@ pub struct SeriesReader {
     skey: SeriesKey,
     input: BatchReaderRef,
     metrics: Arc<ExecutionPlanMetricsSet>,
+    limit: Option<usize>,
 }
+
 impl SeriesReader {
     pub fn new(
         skey: SeriesKey,
         input: BatchReaderRef,
         metrics: Arc<ExecutionPlanMetricsSet>,
+        limit: Option<usize>,
     ) -> Self {
         Self {
             skey,
             input,
             metrics,
+            limit,
         }
     }
 }
+
 impl BatchReader for SeriesReader {
     fn process(&self) -> Result<SendableSchemableTskvRecordBatchStream> {
         let input = self.input.process()?;
@@ -72,11 +78,17 @@ impl BatchReader for SeriesReader {
             append_column_values,
             schema,
             metrics: SeriesReaderMetrics::new(self.metrics.as_ref()),
+            remain: self.limit,
         }))
     }
 
     fn fmt_as(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "SeriesReader: series=[{}]", self.skey.string())
+        write!(
+            f,
+            "SeriesReader: series=[{}], limit={:#?}",
+            self.skey.string(),
+            self.limit
+        )
     }
 
     fn children(&self) -> Vec<BatchReaderRef> {
@@ -89,6 +101,7 @@ struct SeriesReaderStream {
     append_column_values: Vec<String>,
     schema: SchemaRef,
     metrics: SeriesReaderMetrics,
+    remain: Option<usize>,
 }
 
 impl SchemableTskvRecordBatchStream for SeriesReaderStream {
@@ -115,10 +128,11 @@ impl SeriesReaderStream {
                     arrays.push(value_array);
                 }
 
-                match RecordBatch::try_new(self.schema.clone(), arrays) {
-                    Ok(batch) => Poll::Ready(Some(Ok(batch))),
-                    Err(err) => Poll::Ready(Some(Err(err.into()))),
-                }
+                let batch = match RecordBatch::try_new(self.schema.clone(), arrays) {
+                    Ok(batch) => batch,
+                    Err(err) => return Poll::Ready(Some(Err(err.into()))),
+                };
+                Poll::Ready(limit_record_batch(self.remain.as_mut(), batch).map(Ok))
             }
             Some(Err(e)) => Poll::Ready(Some(Err(e))),
             None => Poll::Ready(None),

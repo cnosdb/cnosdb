@@ -25,8 +25,9 @@ mod batch_builder;
 mod batch_cut;
 mod chunk;
 mod column_group;
-mod display;
-mod filter;
+pub mod display;
+pub mod filter;
+mod function_register;
 mod iterator;
 mod iterator_v2;
 mod merge;
@@ -48,23 +49,38 @@ pub mod table_scan;
 pub mod tag_scan;
 pub mod test_util;
 
+pub type PredicateRef = Arc<Predicate>;
+
 #[derive(Debug)]
 pub struct Predicate {
-    expr: Arc<dyn PhysicalExpr>,
+    expr: Option<Arc<dyn PhysicalExpr>>,
     schema: SchemaRef,
+    limit: Option<usize>,
 }
 
 impl Predicate {
-    pub fn new(expr: Arc<dyn PhysicalExpr>, schema: SchemaRef) -> Self {
-        Self { expr, schema }
+    pub fn new(
+        expr: Option<Arc<dyn PhysicalExpr>>,
+        schema: SchemaRef,
+        limit: Option<usize>,
+    ) -> Self {
+        Self {
+            expr,
+            schema,
+            limit,
+        }
     }
 
     pub fn schema(&self) -> SchemaRef {
         self.schema.clone()
     }
 
-    pub fn expr(&self) -> Arc<dyn PhysicalExpr> {
+    pub fn expr(&self) -> Option<Arc<dyn PhysicalExpr>> {
         self.expr.clone()
+    }
+
+    pub fn limit(&self) -> Option<usize> {
+        self.limit
     }
 }
 

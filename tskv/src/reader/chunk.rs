@@ -35,9 +35,14 @@ fn filter_column_groups_indices(
     if let Some(predicate) = predicate {
         let new_predicate = reassign_predicate_columns(predicate.clone(), chunk_schema.clone())?;
         let statistics = ColumnGroupsStatisticsWrapper(cgs);
-        let pruning_predicate = PruningPredicate::try_new(new_predicate, chunk_schema)?;
-        let indices = pruning_predicate.prune(&statistics)?;
-        Ok(Some(indices))
+
+        if let Some(expr) = new_predicate {
+            let pruning_predicate = PruningPredicate::try_new(expr, chunk_schema)?;
+            let indices = pruning_predicate.prune(&statistics)?;
+            Ok(Some(indices))
+        } else {
+            Ok(None)
+        }
     } else {
         Ok(None)
     }
@@ -185,7 +190,7 @@ mod tests {
             Operator::Gt,
             lit(ScalarValue::TimestampMillisecond(Some(5), None)),
         ));
-        let predicate = Arc::new(Predicate::new(expr, schema.clone()));
+        let predicate = Arc::new(Predicate::new(Some(expr), schema.clone(), None));
 
         let cgs = filter_column_groups_indices(&data, &Some(predicate), schema)
             .unwrap()
@@ -203,7 +208,7 @@ mod tests {
             Operator::Eq,
             lit(ScalarValue::Utf8(Some("33".to_string()))),
         ));
-        let predicate = Arc::new(Predicate::new(expr, schema.clone()));
+        let predicate = Arc::new(Predicate::new(Some(expr), schema.clone(), None));
 
         let cgs = filter_column_groups_indices(&data, &Some(predicate), schema)
             .unwrap()
@@ -238,7 +243,7 @@ mod tests {
             field_expr,
         ));
 
-        let predicate = Arc::new(Predicate::new(expr, schema.clone()));
+        let predicate = Arc::new(Predicate::new(Some(expr), schema.clone(), None));
 
         let cgs = filter_column_groups_indices(&data, &Some(predicate), schema)
             .unwrap()
@@ -265,7 +270,7 @@ mod tests {
             func_expr,
         ));
 
-        let predicate = Arc::new(Predicate::new(expr, schema.clone()));
+        let predicate = Arc::new(Predicate::new(Some(expr), schema.clone(), None));
 
         let cgs = filter_column_groups_indices(&data, &Some(predicate), schema)
             .unwrap()
@@ -285,7 +290,7 @@ mod tests {
             lit(ScalarValue::Int64(Some(10))),
         ));
 
-        let predicate = Arc::new(Predicate::new(expr, schema.clone()));
+        let predicate = Arc::new(Predicate::new(Some(expr), schema.clone(), None));
 
         let cgs = filter_column_groups_indices(&data, &Some(predicate), schema);
 

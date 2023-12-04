@@ -58,7 +58,14 @@ impl BatchReader for DataFilter {
     }
 
     fn fmt_as(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "DataFilter: expr=[{}]", self.predicate.expr())
+        match self.predicate.expr() {
+            None => {
+                write!(f, "DataFilter: expr=None")
+            }
+            Some(e) => {
+                write!(f, "DataFilter: expr=[{}]", e)
+            }
+        }
     }
 
     fn children(&self) -> Vec<BatchReaderRef> {
@@ -68,7 +75,7 @@ impl BatchReader for DataFilter {
 
 struct DataFilterStream {
     schema: SchemaRef,
-    predicate: Arc<dyn PhysicalExpr>,
+    predicate: Option<Arc<dyn PhysicalExpr>>,
     input: SendableSchemableTskvRecordBatchStream,
     // runtime metrics recording
     metrics: BaselineMetrics,
@@ -86,16 +93,18 @@ impl DataFilterStream {
             match self.input.poll_next_unpin(cx) {
                 Poll::Ready(value) => match value {
                     Some(Ok(batch)) => {
-                        let filtered_batch = {
-                            // 记录过滤数据所用时间
-                            let _timer = self.metrics.elapsed_compute().timer();
-                            batch_filter(&batch, &self.predicate)?
+                        // 记录过滤数据所用时间
+                        let _timer = self.metrics.elapsed_compute().timer();
+                        let batch = if let Some(filter) = self.predicate.as_ref() {
+                            batch_filter(&batch, filter)?
+                        } else {
+                            batch
                         };
                         // skip entirely filtered batches
-                        if filtered_batch.num_rows() == 0 {
+                        if batch.num_rows() == 0 {
                             continue;
                         }
-                        return Poll::Ready(Some(Ok(filtered_batch)));
+                        return Poll::Ready(Some(Ok(batch)));
                     }
                     _ => {
                         return Poll::Ready(value);
@@ -220,7 +229,7 @@ mod tests {
         let reader = MemoryBatchReader::new(file_schema(), file_record_batchs());
         // time > 2 and c1 < 5 and c4 = true
         let predicate = and_filter(and_filter(time_filter(), c1_filter()), c4_filter());
-        let predicate = Arc::new(Predicate::new(predicate, output_schema()));
+        let predicate = Arc::new(Predicate::new(Some(predicate), output_schema(), None));
 
         let filter = DataFilter::new(
             predicate,

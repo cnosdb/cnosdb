@@ -13,7 +13,7 @@ use datafusion::logical_expr::logical_plan::AggWithGrouping;
 use datafusion::logical_expr::{
     aggregate_function, Expr, TableProviderAggregationPushDown, TableProviderFilterPushDown,
 };
-use datafusion::optimizer::utils::split_conjunction;
+use datafusion::optimizer::utils::{conjunction, split_conjunction};
 use datafusion::physical_plan::empty::EmptyExec;
 use datafusion::physical_plan::{project_schema, ExecutionPlan};
 use datafusion::prelude::Column;
@@ -23,6 +23,7 @@ use models::predicate::domain::{Predicate, PredicateRef, PushedAggregateFunction
 use models::schema::{TskvTableSchema, TskvTableSchemaRef};
 use trace::debug;
 
+use crate::data_source::batch::filter_expr_rewriter::{has_udf_function, rewrite_filters};
 use crate::data_source::sink::tskv::TskvRecordBatchSinkProvider;
 use crate::data_source::split::tskv::TableLayoutHandle;
 use crate::data_source::split::SplitManagerRef;
@@ -172,10 +173,11 @@ impl ClusterTable {
         filters: &[Expr],
         limit: Option<usize>,
     ) -> Result<Arc<dyn ExecutionPlan>> {
+        let filter = conjunction(filters.iter().cloned());
         let predicate = Arc::new(
-            Predicate::default()
-                .set_limit(limit)
-                .push_down_filter(filters, &self.schema),
+            Predicate::push_down_filter(filter, &self.schema)
+                .map_err(|e| DataFusionError::External(Box::new(e)))?
+                .with_limit(limit),
         );
 
         let table_layout = TableLayoutHandle {
@@ -253,10 +255,13 @@ impl TableProvider for ClusterTable {
         // The datasource should return *at least* this number of rows if available.
         limit: Option<usize>,
     ) -> Result<Arc<dyn ExecutionPlan>> {
+        let df_schema = self.schema.to_df_schema()?;
+        let filters = rewrite_filters(filters, df_schema)?;
+
         let filter = Arc::new(
-            Predicate::default()
-                .set_limit(limit)
-                .push_down_filter(filters, &self.schema),
+            Predicate::push_down_filter(filters, &self.schema)
+                .map_err(|e| DataFusionError::External(Box::new(e)))?
+                .with_limit(limit),
         );
 
         if let Some(agg_with_grouping) = agg_with_grouping {
@@ -272,6 +277,10 @@ impl TableProvider for ClusterTable {
     }
 
     fn supports_filter_pushdown(&self, expr: &Expr) -> Result<TableProviderFilterPushDown> {
+        if has_udf_function(expr)? {
+            return Ok(TableProviderFilterPushDown::Inexact);
+        }
+
         let exprs = split_conjunction(expr);
         let exprs = exprs.into_iter().cloned().collect::<Vec<_>>();
         if expr_utils::find_exprs_in_exprs(&exprs, &|nested_expr| {

@@ -1,11 +1,12 @@
 use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::task::{ready, Context, Poll};
 
 use arrow_array::RecordBatch;
 use datafusion::arrow::datatypes::SchemaRef;
 use futures::stream::BoxStream;
 use futures::{Stream, StreamExt};
 use models::arrow::stream::ParallelMergeStream;
+use models::datafusion::limit_record_batch::limit_record_batch;
 
 use crate::reader::{
     BatchReader, BatchReaderRef, SchemableTskvRecordBatchStream,
@@ -16,17 +17,26 @@ use crate::{Error, Result};
 pub struct ParallelMergeAdapter {
     schema: SchemaRef,
     inputs: Vec<BatchReaderRef>,
+    limit: Option<usize>,
 }
 
 impl ParallelMergeAdapter {
-    pub fn try_new(schema: SchemaRef, inputs: Vec<BatchReaderRef>) -> Result<Self> {
+    pub fn try_new(
+        schema: SchemaRef,
+        inputs: Vec<BatchReaderRef>,
+        limit: Option<usize>,
+    ) -> Result<Self> {
         if inputs.is_empty() {
             return Err(Error::CommonError {
                 reason: "No inputs provided for ParallelMergeAdapter".to_string(),
             });
         }
 
-        Ok(Self { schema, inputs })
+        Ok(Self {
+            schema,
+            inputs,
+            limit,
+        })
     }
 }
 
@@ -43,11 +53,12 @@ impl BatchReader for ParallelMergeAdapter {
         Ok(Box::pin(SchemableParallelMergeStream {
             schema: self.schema.clone(),
             stream,
+            remain: self.limit,
         }))
     }
 
     fn fmt_as(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "ParallelMergeAdapter:")
+        write!(f, "ParallelMergeAdapter: limit={:#?}", self.limit)
     }
 
     fn children(&self) -> Vec<BatchReaderRef> {
@@ -58,6 +69,7 @@ impl BatchReader for ParallelMergeAdapter {
 pub struct SchemableParallelMergeStream {
     schema: SchemaRef,
     stream: ParallelMergeStream<Error>,
+    remain: Option<usize>,
 }
 
 impl SchemableTskvRecordBatchStream for SchemableParallelMergeStream {
@@ -70,6 +82,9 @@ impl Stream for SchemableParallelMergeStream {
     type Item = Result<RecordBatch>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        self.stream.poll_next_unpin(cx)
+        return match ready!(self.stream.poll_next_unpin(cx)) {
+            Some(Ok(batch)) => Poll::Ready(limit_record_batch(self.remain.as_mut(), batch).map(Ok)),
+            other => Poll::Ready(other),
+        };
     }
 }

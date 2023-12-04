@@ -16,11 +16,11 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
-use arrow_schema::{DataType, Field as DFField};
 use config::{RequestLimiterConfig, TenantLimiterConfig, TenantObjectLimiterConfig};
 use datafusion::arrow::datatypes::{
     DataType as ArrowDataType, Field as ArrowField, Schema, SchemaRef, TimeUnit,
 };
+use datafusion::common::{DFField, DFSchema, DFSchemaRef};
 use datafusion::datasource::file_format::avro::AvroFormat;
 use datafusion::datasource::file_format::csv::CsvFormat;
 use datafusion::datasource::file_format::file_type::{FileCompressionType, FileType};
@@ -107,7 +107,7 @@ pub struct ExternalTableSchema {
     pub file_type: String,
     pub location: String,
     pub target_partitions: usize,
-    pub table_partition_cols: Vec<(String, DataType)>,
+    pub table_partition_cols: Vec<(String, ArrowDataType)>,
     pub has_header: bool,
     pub delimiter: u8,
     pub schema: Schema,
@@ -189,6 +189,19 @@ impl TskvTableSchema {
     pub fn to_arrow_schema(&self) -> SchemaRef {
         let fields: Vec<ArrowField> = self.columns.iter().map(|field| field.into()).collect();
         Arc::new(Schema::new(fields))
+    }
+
+    pub fn to_df_schema(&self) -> std::result::Result<DFSchemaRef, DataFusionError> {
+        let fields: Vec<DFField> = self
+            .columns
+            .iter()
+            .map(ArrowField::from)
+            .map(|f| DFField::from_qualified(self.db.as_str(), f))
+            .collect();
+        Ok(Arc::new(DFSchema::new_with_metadata(
+            fields,
+            HashMap::new(),
+        )?))
     }
 
     pub fn new(tenant: String, db: String, name: String, columns: Vec<TableColumn>) -> Self {
@@ -1210,7 +1223,7 @@ pub enum ScalarValueForkDF {
     /// large binary
     LargeBinary(Option<Vec<u8>>),
     /// list of nested ScalarValue
-    List(Option<Vec<ScalarValueForkDF>>, Box<DFField>),
+    List(Option<Vec<ScalarValueForkDF>>, Box<ArrowField>),
     /// Date stored as a signed 32bit int days since UNIX epoch 1970-01-01
     Date32(Option<i32>),
     /// Date stored as a signed 64bit int milliseconds since UNIX epoch 1970-01-01
@@ -1235,7 +1248,7 @@ pub enum ScalarValueForkDF {
     /// Nanoseconds is encoded as a 64-bit signed integer (no leap seconds).
     IntervalMonthDayNano(Option<i128>),
     /// struct of nested ScalarValue
-    Struct(Option<Vec<ScalarValueForkDF>>, Box<Vec<DFField>>),
+    Struct(Option<Vec<ScalarValueForkDF>>, Box<Vec<ArrowField>>),
     /// Dictionary type: index type and value
     Dictionary(Box<ArrowDataType>, Box<ScalarValueForkDF>),
 }

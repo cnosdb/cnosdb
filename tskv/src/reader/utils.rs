@@ -183,17 +183,18 @@ impl Stream for CombinedRecordBatchStream {
 pub fn reassign_predicate_columns(
     pred: Arc<Predicate>,
     file_schema: SchemaRef,
-) -> Result<Arc<dyn PhysicalExpr>, DataFusionError> {
+) -> Result<Option<Arc<dyn PhysicalExpr>>, DataFusionError> {
     let full_schema = pred.schema();
-    let expr = pred.expr();
-
     let mut rewriter = PredicateColumnsReassigner {
         file_schema,
         full_schema,
         has_col_not_in_file: false,
     };
 
-    expr.rewrite(&mut rewriter)
+    match pred.expr() {
+        None => Ok(None),
+        Some(expr) => Ok(Some(expr.rewrite(&mut rewriter)?)),
+    }
 }
 
 struct PredicateColumnsReassigner {

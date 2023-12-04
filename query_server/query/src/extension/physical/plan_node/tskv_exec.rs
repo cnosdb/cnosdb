@@ -17,6 +17,7 @@ use datafusion::physical_plan::{
 };
 use futures::{Stream, StreamExt};
 use models::codec::Encoding;
+use models::datafusion::limit_record_batch::limit_record_batch;
 use models::predicate::domain::PredicateRef;
 use models::predicate::PlacedSplit;
 use models::schema::{ColumnType, TableColumn, TskvTableSchema, TskvTableSchemaRef, TIME_FIELD};
@@ -188,9 +189,10 @@ impl<'a> Display for PredicateDisplay<'a> {
         let filter = self.0;
         write!(
             f,
-            "limit={:?}, predicate={:?}",
+            "limit={:?}, predicate={:?}, filter={:?}",
             filter.limit(),
             filter.filter(),
+            filter.physical_expr(),
         )
     }
 }
@@ -312,21 +314,9 @@ impl Stream for TableScanStream {
         let timer = metrics.elapsed_compute().timer();
 
         let result = match this.iterator.poll_next_unpin(cx) {
-            Poll::Ready(Some(Ok(batch))) => match this.remain.as_mut() {
-                Some(remain) => {
-                    if *remain == 0 {
-                        Poll::Ready(None)
-                    } else if *remain > batch.num_rows() {
-                        *remain -= batch.num_rows();
-                        Poll::Ready(Some(Ok(batch)))
-                    } else {
-                        let batch = batch.slice(0, *remain);
-                        *remain = 0;
-                        Poll::Ready(Some(Ok(batch)))
-                    }
-                }
-                None => Poll::Ready(Some(Ok(batch))),
-            },
+            Poll::Ready(Some(Ok(batch))) => {
+                Poll::Ready(limit_record_batch(this.remain.as_mut(), batch).map(Ok))
+            }
             Poll::Ready(Some(Err(e))) => {
                 Poll::Ready(Some(Err(DataFusionError::External(Box::new(e)))))
             }
