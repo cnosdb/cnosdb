@@ -8,7 +8,7 @@ mod writer;
 pub use block::*;
 pub use index::*;
 pub use reader::*;
-pub use tombstone::{Tombstone, TsmTombstone};
+pub use tombstone::{Tombstone, TsmTombstone, TOMBSTONE_FILE_SUFFIX};
 pub use writer::*;
 
 // MAX_BLOCK_VALUES is the maximum number of values a TSM block can store.
