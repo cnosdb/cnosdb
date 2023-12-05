@@ -92,7 +92,7 @@ pub struct Projection {
 
 impl Projection {
     fn from_schema(schema: &TskvTableSchema, time_column_id: ColumnId) -> Self {
-        let column_ids = schema.fields().iter().map(|f| f.id).collect::<Vec<_>>();
+        let column_ids = schema.columns().iter().map(|f| f.id).collect::<Vec<_>>();
 
         let fields_with_time = if schema.column_index(TIME_FIELD_NAME).is_none() {
             column_ids
