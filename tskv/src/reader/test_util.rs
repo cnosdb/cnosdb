@@ -1,72 +1,106 @@
+use std::sync::Arc;
+
 use arrow::compute::{interleave, sort_to_indices};
 use arrow::util::data_gen::create_random_batch;
-use arrow_array::RecordBatch;
+use arrow_array::{Array, RecordBatch};
 use arrow_schema::{DataType, Field, Schema, SchemaRef, SortOptions, TimeUnit};
+use datafusion::common::ScalarValue;
+use datafusion::logical_expr::Operator;
+use datafusion::physical_expr::expressions::{BinaryExpr, CastExpr, Column, Literal};
+use datafusion::physical_expr::PhysicalExpr;
 use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
+use datafusion::physical_plan::SendableRecordBatchStream;
 use futures::executor::block_on;
 use futures::StreamExt;
 
-use super::cut_merge::CutMergeMetrics;
-use crate::reader::cut_merge::CutMergeStream;
 use crate::reader::{SchemableMemoryBatchReaderStream, SendableSchemableTskvRecordBatchStream};
 
 // create random record_batch [RecordBatch; batch_num]
 pub fn random_record_batches(
     schema: SchemaRef,
+    column_name: &str,
     batch_size: usize,
     batch_num: usize,
-    column_name: &str,
-) -> Vec<RecordBatch> {
+    stream_num: usize,
+    range: Option<i64>,
+) -> Vec<Vec<RecordBatch>> {
     let batch = create_random_batch(schema.clone(), batch_size * batch_num, 0.35, 0.7).unwrap();
-    let array = batch.column_by_name(column_name).unwrap();
-    let indices = sort_to_indices(array, Some(SortOptions::default()), None).unwrap();
-    let indices = indices
-        .iter()
-        .filter_map(|i| i.map(|i| (0usize, i as usize)))
+    let chunk_num = batch.num_rows() / stream_num;
+
+    let batches = (0..stream_num)
+        .map(|i| batch.slice(i * chunk_num, chunk_num))
         .collect::<Vec<_>>();
-    let columns = batch
-        .columns()
-        .iter()
-        .map(|a| interleave(&[a.as_ref()], &indices).unwrap())
-        .collect::<Vec<_>>();
-    let record_batch = RecordBatch::try_new(schema, columns).unwrap();
-    (0..batch_num)
-        .map(|i| record_batch.slice(i * batch_size, batch_size))
+
+    batches
+        .into_iter()
+        .map(|b| {
+            let (idx, _) = schema.column_with_name(column_name).unwrap();
+            let array = b.column(idx);
+            let array = match range {
+                None => array.clone(),
+                Some(range) => {
+                    let bin_expr = Arc::new(BinaryExpr::new(
+                        Arc::new(CastExpr::new(
+                            Arc::new(Column::new(column_name, idx)),
+                            DataType::Int64,
+                            None,
+                        )),
+                        Operator::Modulo,
+                        Arc::new(Literal::new(ScalarValue::Int64(Some(range)))),
+                    ));
+
+                    let expr = Arc::new(CastExpr::new(bin_expr, array.data_type().clone(), None));
+                    let column_value = expr.evaluate(&b).unwrap();
+
+                    column_value.into_array(array.len())
+                }
+            };
+
+            let mut new_columns = b.columns().to_vec();
+            new_columns[idx] = array.clone();
+
+            let b = RecordBatch::try_new(schema.clone(), new_columns).unwrap();
+
+            let indices = sort_to_indices(&array, Some(SortOptions::default()), None).unwrap();
+            let indices = indices
+                .iter()
+                .filter_map(|i| i.map(|i| (0usize, i as usize)))
+                .collect::<Vec<_>>();
+            let columns = b
+                .columns()
+                .iter()
+                .map(|a| interleave(&[a.as_ref()], &indices).unwrap())
+                .collect::<Vec<_>>();
+            let record_batch = RecordBatch::try_new(schema.clone(), columns).unwrap();
+            (0..(batch_num / stream_num))
+                .map(|i| record_batch.slice(i * batch_size, batch_size))
+                .collect::<Vec<_>>()
+        })
         .collect::<Vec<_>>()
 }
 
-/// create SortStream {
-///          input: Vec<Stream { input:  Vec<RecordBatch> }>,
-///        };
 pub fn create_sort_merge_stream(
     schema: SchemaRef,
-    batch_size: usize,
+    batches: Vec<Vec<RecordBatch>>,
     column_name: &str,
-    batches: Vec<RecordBatch>,
-    chunk_num: usize,
+    batch_size: usize,
 ) -> SendableSchemableTskvRecordBatchStream {
-    let batches = batches
-        .chunks(chunk_num)
-        .map(|batches| batches.to_vec())
-        .collect::<Vec<_>>();
     let streams = SchemableMemoryBatchReaderStream::new_partitions(schema.clone(), batches);
-    crate::reader::sort_merge::sort_merge(streams, schema, batch_size, column_name).unwrap()
-}
-
-pub fn merge_same_column(
-    schema: SchemaRef,
-    batch_size: usize,
-    column_name: &str,
-    batches: Vec<RecordBatch>,
-) -> Vec<RecordBatch> {
-    assert_eq!(batches[0].num_rows(), 4096);
-    let stream = create_sort_merge_stream(schema, batch_size, column_name, batches, 125);
-    let res = collect_stream(stream);
-    assert_eq!(res[0].num_rows(), 4096);
-    res
+    crate::reader::sort_merge::sort_merge(
+        streams,
+        schema,
+        batch_size,
+        column_name,
+        &ExecutionPlanMetricsSet::new(),
+    )
+    .unwrap()
 }
 
 pub fn collect_stream(stream: SendableSchemableTskvRecordBatchStream) -> Vec<RecordBatch> {
+    block_on(stream.map(|r| r.unwrap()).collect())
+}
+
+pub fn collect_df_stream(stream: SendableRecordBatchStream) -> Vec<RecordBatch> {
     block_on(stream.map(|r| r.unwrap()).collect())
 }
 
@@ -74,7 +108,7 @@ pub fn test_schema() -> SchemaRef {
     SchemaRef::new(Schema::new(vec![
         Field::new(
             "time",
-            DataType::Timestamp(TimeUnit::Nanosecond, None),
+            DataType::Timestamp(TimeUnit::Microsecond, None),
             false,
         ),
         Field::new("f0", DataType::Int64, true),
@@ -85,57 +119,50 @@ pub fn test_schema() -> SchemaRef {
     ]))
 }
 
-pub fn cut_merge_metrices() -> CutMergeMetrics {
-    CutMergeMetrics::new(&ExecutionPlanMetricsSet::new())
-}
-
-pub fn create_cut_merge_stream(
-    schema: SchemaRef,
-    batches: Vec<Vec<RecordBatch>>,
-    batch_size: usize,
-    column_name: &str,
-) -> SendableSchemableTskvRecordBatchStream {
-    let streams = SchemableMemoryBatchReaderStream::new_partitions(schema.clone(), batches);
-    Box::pin(
-        CutMergeStream::new(
-            schema,
-            streams,
-            batch_size,
-            column_name,
-            cut_merge_metrices(),
-        )
-        .unwrap(),
-    )
-}
-
-pub fn create_sort_batches(
-    schema: SchemaRef,
-    batch_size: usize,
-    stream_num: usize,
-    batch_num: usize,
-    column_name: &str,
-) -> Vec<Vec<RecordBatch>> {
-    let batches = random_record_batches(schema, batch_size, batch_num, column_name);
-    batches
-        .chunks(batch_num / stream_num)
-        .map(|rs| rs.to_vec())
-        .collect::<Vec<_>>()
-}
+// pub fn create_dedup_stream(
+//     schema: SchemaRef,
+//     batches: Vec<Vec<RecordBatch>>,
+//     batch_size: usize,
+//     column_name: &str,
+// ) -> SendableRecordBatchStream {
+//     let streams = SchemableMemoryBatchReaderStream::new_partitions(schema.clone(), batches)
+//         .into_iter()
+//         .map(|s| Box::pin(TskvToDFStreamAdapter::new(s)) as SendableRecordBatchStream)
+//         .collect::<Vec<_>>();
+//
+//     let (idx, _) = schema.column_with_name(column_name).unwrap();
+//
+//     let expr = vec![PhysicalSortExpr {
+//         expr: Arc::new(Column::new(column_name, idx)),
+//         options: Default::default(),
+//     }];
+//
+//     let stream = streaming_merge(streams, schema.clone(), expr.as_slice(), batch_size).unwrap();
+//     Box::pin(DeduplicateStream::new(stream, column_name, schema).unwrap())
+// }
 
 #[cfg(test)]
 mod test {
     use crate::reader::test_util::{
-        collect_stream, create_cut_merge_stream, create_sort_batches, test_schema,
+        collect_stream, create_sort_merge_stream, random_record_batches, test_schema,
     };
 
     #[test]
-    fn test_cut_merge() {
+    fn test_sort_merge() {
         let schema = test_schema();
         let batch_size = 4096;
-        let batch_num = 100;
+        let batch_num = 1000;
         let column_name = "time";
-        let batches = create_sort_batches(schema.clone(), batch_size, 4, batch_num, column_name);
-        let stream = create_cut_merge_stream(schema, batches, batch_size, column_name);
-        collect_stream(stream);
+        let batches =
+            random_record_batches(schema.clone(), column_name, batch_size, batch_num, 4, None);
+        let stream = create_sort_merge_stream(schema, batches, column_name, batch_size);
+        let _ = collect_stream(stream);
+        // let res1 = res.iter().map(|b| b.num_rows()).sum::<usize>();
+
+        // let stream = create_dedup_stream(schema, batches, batch_size, "time");
+        // let res = collect_df_stream(stream);
+        // let res3 = res.iter().map(|b| b.num_rows()).sum::<usize>();
+
+        // assert_eq!(res3, res1);
     }
 }

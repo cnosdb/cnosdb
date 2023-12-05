@@ -4,30 +4,30 @@ use std::task::{Context, Poll};
 
 use arrow::datatypes::SchemaRef;
 use arrow_array::RecordBatch;
+use datafusion::physical_plan::metrics::{ExecutionPlanMetricsSet, MetricBuilder, Time};
 use futures::{ready, Stream};
 use models::datafusion::cursor::{Cursor, FieldArray, FieldValues};
 
 use crate::reader::batch_builder::BatchMergeBuilder;
+use crate::reader::metrics::BaselineMetrics;
 use crate::reader::partitioned_stream::{ColumnCursorStream, PartitionedStream};
-use crate::reader::{
-    SchemableMemoryBatchReaderStream, SchemableTskvRecordBatchStream,
-    SendableSchemableTskvRecordBatchStream,
-};
+use crate::reader::{SchemableTskvRecordBatchStream, SendableSchemableTskvRecordBatchStream};
 use crate::Result;
 
 macro_rules! primitive_merge_helper {
     ($t:ty, $($v:ident),+) => {
-        merge_helper!(arrow_array::PrimitiveArray<$t>, $($v),+)
+        merge_helper!(arrow_array::PrimitiveArray<$t>, $($v), +)
     };
 }
 
 macro_rules! merge_helper {
-    ($t:ty, $streams:ident, $schema:ident, $batch_size:ident, $sort_column: ident) => {{
+    ($t:ty, $streams:ident, $schema:ident, $batch_size:ident, $sort_column:ident, $metrics:ident) => {{
         let streams = ColumnCursorStream::<$t>::new($streams, $sort_column)?;
         return Ok(Box::pin(SortPreservingMergeStream::<$t>::new(
             streams,
             $schema,
             $batch_size,
+            $metrics,
         )));
     }};
 }
@@ -37,13 +37,14 @@ pub fn sort_merge(
     schema: SchemaRef,
     batch_size: usize,
     column_name: &str,
+    metrics: &ExecutionPlanMetricsSet,
 ) -> Result<SendableSchemableTskvRecordBatchStream> {
     use arrow_array::*;
 
     // Special case single column comparisons with optimized cursor implementations
     let data_type = schema.field_with_name(column_name)?.data_type();
     downcast_primitive! {
-        data_type => (primitive_merge_helper, streams, schema, batch_size, column_name),
+        data_type => (primitive_merge_helper, streams, schema, batch_size, column_name, metrics),
         _ => {}
     }
 
@@ -109,6 +110,42 @@ impl<T: FieldValues> Cursor for ColumnCursor<T> {
 
 type CursorStream<C> = Box<dyn PartitionedStream<Output = Result<(C, RecordBatch)>>>;
 
+/// Stores metrics about the table writer execution.
+#[derive(Debug, Clone)]
+pub struct SortMergeMetrics {
+    elapsed_data_merge_time: Time,
+    inner: BaselineMetrics,
+}
+
+impl SortMergeMetrics {
+    /// Create new metrics
+    pub fn new(metrics: &ExecutionPlanMetricsSet) -> Self {
+        let elapsed_data_merge_time =
+            MetricBuilder::new(metrics).subset_time("elapsed_data_merge_time", 0);
+
+        let inner = BaselineMetrics::new(metrics);
+
+        Self {
+            elapsed_data_merge_time,
+            inner,
+        }
+    }
+
+    pub fn elapsed_data_merge_time(&self) -> &Time {
+        &self.elapsed_data_merge_time
+    }
+    pub fn elapsed_compute(&self) -> &Time {
+        self.inner.elapsed_compute()
+    }
+
+    pub fn record_poll(
+        &self,
+        poll: Poll<Option<Result<RecordBatch>>>,
+    ) -> Poll<Option<Result<RecordBatch>>> {
+        self.inner.record_poll(poll)
+    }
+}
+
 #[derive(Debug)]
 pub struct SortPreservingMergeStream<T: FieldArray> {
     in_progress: BatchMergeBuilder<T>,
@@ -160,6 +197,8 @@ pub struct SortPreservingMergeStream<T: FieldArray> {
 
     /// Vector that holds cursors for each non-exhausted input partition
     cursors: Vec<Option<ColumnCursor<T::Values>>>,
+
+    metrics: SortMergeMetrics,
 }
 
 impl<T: FieldArray + Unpin> SortPreservingMergeStream<T> {
@@ -167,6 +206,7 @@ impl<T: FieldArray + Unpin> SortPreservingMergeStream<T> {
         streams: ColumnCursorStream<T>,
         schema: SchemaRef,
         batch_size: usize,
+        metrics: &ExecutionPlanMetricsSet,
     ) -> SortPreservingMergeStream<T> {
         let stream_count = streams.partitions();
         Self {
@@ -176,57 +216,10 @@ impl<T: FieldArray + Unpin> SortPreservingMergeStream<T> {
             cursors: (0..stream_count).map(|_| None).collect(),
             loser_tree: vec![],
             loser_tree_adjusted: false,
+            metrics: SortMergeMetrics::new(metrics),
         }
     }
 
-    pub fn new_with_batches(
-        schema: SchemaRef,
-        batches: Vec<RecordBatch>,
-        batch_size: usize,
-        sort_column: &str,
-    ) -> Result<SortPreservingMergeStream<T>> {
-        let streams = batches
-            .into_iter()
-            .map(|b| {
-                Box::pin(SchemableMemoryBatchReaderStream::new(
-                    schema.clone(),
-                    vec![b],
-                )) as SendableSchemableTskvRecordBatchStream
-            })
-            .collect::<Vec<_>>();
-        let cursor_stream = ColumnCursorStream::<T>::new(streams, sort_column)?;
-        Ok(Self::new(cursor_stream, schema.clone(), batch_size))
-    }
-
-    // pub fn new_(
-    //     batches: Vec<RecordBatch>,
-    //     schema: SchemaRef,
-    //     column_name: &str,
-    //     batch_size: usize,
-    // ) -> Result<Self> {
-    //     let count = batches.len();
-    // let mut res: SortPreservingMergeStream<T> = Self {
-    //     in_progress: BatchMergeBuilder::new(schema, count, batch_size),
-    //     cursors: (0..count).map(|_| None).collect(),
-    //     loser_tree: vec![],
-    //     loser_tree_adjusted: false,
-    //     batch_size,
-    // };
-    // for (i, batch) in batches.into_iter().enumerate() {
-    //     let (index, _) = batch
-    //         .schema()
-    //         .column_with_name(column_name)
-    //         .ok_or_else(|| Error::CommonError {
-    //             reason: "column not found".to_string(),
-    //         })?;
-    //     let array = batch.column(index);
-    //     let array = array.as_any().downcast_ref::<T>().expect("field values");
-    //     res.cursors[i] = Some(ColumnCursor::new(array, index));
-    //     res.in_progress.push_batch(i, batch);
-    // }
-    // Ok(res)
-    // }
-    //
     fn maybe_poll_stream(&mut self, cx: &mut Context<'_>, idx: usize) -> Poll<Result<()>> {
         if self.cursors[idx].is_some() {
             // Cursor is not finished - don't need a new RecordBatch yet
@@ -402,7 +395,8 @@ impl<T: FieldArray + Unpin> Stream for SortPreservingMergeStream<T> {
     type Item = Result<RecordBatch>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        self.poll_next_inner(cx)
+        let res = self.poll_next_inner(cx);
+        self.metrics.record_poll(res)
     }
 }
 
@@ -418,10 +412,37 @@ mod test {
 
     use arrow_array::{Int64Array, RecordBatch};
     use arrow_schema::{DataType, Field, Fields, Schema, SchemaRef};
+    use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
     use futures::StreamExt;
+    use models::datafusion::cursor::FieldArray;
 
+    use crate::reader::partitioned_stream::ColumnCursorStream;
     use crate::reader::sort_merge::SortPreservingMergeStream;
+    use crate::reader::{SchemableMemoryBatchReaderStream, SendableSchemableTskvRecordBatchStream};
 
+    pub fn new_with_batches<T: FieldArray + Unpin>(
+        schema: SchemaRef,
+        batches: Vec<RecordBatch>,
+        batch_size: usize,
+        sort_column: &str,
+    ) -> crate::Result<SortPreservingMergeStream<T>> {
+        let streams = batches
+            .into_iter()
+            .map(|b| {
+                Box::pin(SchemableMemoryBatchReaderStream::new(
+                    schema.clone(),
+                    vec![b],
+                )) as SendableSchemableTskvRecordBatchStream
+            })
+            .collect::<Vec<_>>();
+        let cursor_stream = ColumnCursorStream::<T>::new(streams, sort_column)?;
+        Ok(SortPreservingMergeStream::new(
+            cursor_stream,
+            schema.clone(),
+            batch_size,
+            &ExecutionPlanMetricsSet::new(),
+        ))
+    }
     #[tokio::test]
     async fn test_merge_tree() {
         let fields = Fields::from(vec![
@@ -442,13 +463,8 @@ mod test {
 
         let batches = vec![record_batch1, record_batch2, record_batch3];
 
-        let mut stream = SortPreservingMergeStream::<Int64Array>::new_with_batches(
-            schema.clone(),
-            batches,
-            4096,
-            "column1",
-        )
-        .unwrap();
+        let mut stream =
+            new_with_batches::<Int64Array>(schema.clone(), batches, 4096, "column1").unwrap();
         let res = stream.next().await.unwrap().unwrap();
 
         let array1 = Arc::new(Int64Array::from_iter_values([1, 2]));
@@ -480,13 +496,8 @@ mod test {
 
         let batches = vec![record_batch1, record_batch2, record_batch3];
 
-        let mut stream = SortPreservingMergeStream::<Int64Array>::new_with_batches(
-            schema.clone(),
-            batches,
-            4096,
-            "column1",
-        )
-        .unwrap();
+        let mut stream =
+            new_with_batches::<Int64Array>(schema.clone(), batches, 4096, "column1").unwrap();
         let res = stream.next().await.unwrap().unwrap();
 
         let array1 = Arc::new(Int64Array::from_iter_values([1, 2]));

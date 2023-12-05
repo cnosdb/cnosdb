@@ -3363,6 +3363,8 @@ dependencies = [
 name = "models"
 version = "2.3.2"
 dependencies = [
+ "arrow",
+ "arrow-array",
  "arrow-schema",
  "async-backtrace",
  "async-trait",

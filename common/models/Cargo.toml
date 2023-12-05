@@ -12,6 +12,8 @@ protos = { path = "../protos" }
 trace = { path = "../trace" }
 utils = { path = "../utils" }
 
+arrow = { workspace = true }
+arrow-array = { workspace = true }
 arrow-schema = { workspace = true, features = ["serde"] }
 async-backtrace = { workspace = true, optional = true }
 async-trait = { workspace = true }

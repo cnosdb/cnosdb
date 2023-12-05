@@ -22,7 +22,6 @@ use crate::tsm2::reader::TSM2Reader;
 use crate::{Error, Result};
 
 mod batch_builder;
-mod batch_cut;
 mod chunk;
 mod column_group;
 pub mod display;
@@ -41,13 +40,13 @@ mod trace;
 mod utils;
 mod visitor;
 
-pub mod cut_merge;
 pub mod query_executor;
 pub mod serialize;
 pub mod sort_merge;
 pub mod table_scan;
 pub mod tag_scan;
 pub mod test_util;
+pub mod tskv_stream_adapter;
 
 pub type PredicateRef = Arc<Predicate>;
 

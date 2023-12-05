@@ -1,9 +1,8 @@
-use std::cmp::Ordering;
 use std::marker::PhantomData;
 
 use arrow::compute::interleave;
 use arrow::datatypes::SchemaRef;
-use arrow_array::{Array, ArrayRef, RecordBatch};
+use arrow_array::{Array, RecordBatch};
 use datafusion::common::DataFusionError;
 use models::datafusion::cursor::{FieldArray, FieldValues};
 
@@ -31,7 +30,7 @@ pub struct BatchMergeBuilder<T: FieldArray> {
 
     /// The accumulated stream indexes from which to pull rows
     /// Consists of a tuple of `(batch_idx, row_idx)`
-    indices: Vec<(usize, usize)>,
+    indices: Vec<Vec<(usize, usize)>>,
 
     // batch_index, column_index, row_index, same_rows
     last: Option<(usize, usize, usize)>,
@@ -44,11 +43,14 @@ pub struct BatchMergeBuilder<T: FieldArray> {
 impl<T: FieldArray> BatchMergeBuilder<T> {
     /// Create a new [`BatchMergeBuilder`] with the provided `stream_count` and `batch_size`
     pub fn new(schema: SchemaRef, stream_count: usize, batch_size: usize) -> Self {
+        let field_len = schema.fields.len();
         Self {
             schema,
             batches: Vec::with_capacity(stream_count),
             cursors: vec![BatchCursor::default(); stream_count],
-            indices: Vec::with_capacity(batch_size),
+            indices: (0..field_len)
+                .map(|_| Vec::with_capacity(batch_size))
+                .collect(),
             last: None,
             last_same_rows: vec![],
             phantom: Default::default(),
@@ -98,23 +100,17 @@ impl<T: FieldArray> BatchMergeBuilder<T> {
                 let now_values = now_array.values();
                 let now_value = now_values.value(row_idx);
 
-                match T::Values::compare(last_value, now_value) {
-                    Ordering::Less => {
-                        *last_batch_idx = now_batch_idx;
-                        *last_column_idx = now_column_idx;
-                        *last_row_idx = now_row_idx;
-                        self.take_last_and_merge()?;
-                        self.last_same_rows.push((now_batch_idx, now_row_idx));
-                    }
-                    Ordering::Equal => {
-                        *last_batch_idx = now_batch_idx;
-                        *last_column_idx = now_column_idx;
-                        *last_row_idx = now_row_idx;
-                        self.last_same_rows.push((now_batch_idx, now_row_idx));
-                    }
-                    Ordering::Greater => {
-                        self.take_last_and_merge()?;
-                    }
+                if T::Values::compare(last_value, now_value).is_eq() {
+                    *last_batch_idx = now_batch_idx;
+                    *last_column_idx = now_column_idx;
+                    *last_row_idx = now_row_idx;
+                    self.last_same_rows.push((now_batch_idx, now_row_idx));
+                } else {
+                    *last_batch_idx = now_batch_idx;
+                    *last_column_idx = now_column_idx;
+                    *last_row_idx = now_row_idx;
+                    self.take_last_and_merge()?;
+                    self.last_same_rows.push((now_batch_idx, now_row_idx));
                 }
             }
         }
@@ -122,23 +118,25 @@ impl<T: FieldArray> BatchMergeBuilder<T> {
     }
 
     pub fn take_last_and_merge(&mut self) -> Result<(), DataFusionError> {
-        if self.last_same_rows.len() > 1 {
-            let batches = self
-                .last_same_rows
-                .iter()
-                .map(|(batch_idx, _)| &self.batches[*batch_idx].1)
-                .collect::<Vec<&RecordBatch>>();
-            let rows_idx = self
-                .last_same_rows
-                .iter()
-                .map(|(_, row_idx)| *row_idx)
-                .collect::<Vec<_>>();
-            let new_record_batch = merge_rows(self.schema.clone(), &batches, &rows_idx)?;
-            self.batches.push((None, new_record_batch));
-            self.indices.push((self.batches.len() - 1, 0));
-            self.last_same_rows.clear();
-        } else {
-            self.indices.append(&mut self.last_same_rows);
+        match self.last_same_rows.len() {
+            2.. => {
+                for c_i in 0..self.schema.fields().len() {
+                    for (i, (b_i, r_i)) in self.last_same_rows.iter().enumerate().rev() {
+                        let b_i = *b_i;
+                        let r_i = *r_i;
+                        if self.batches[b_i].1.column(c_i).is_valid(r_i) || i == 0 {
+                            self.indices[c_i].push((b_i, r_i));
+                            break;
+                        }
+                    }
+                }
+                self.last_same_rows.clear();
+            }
+            1 => {
+                let idx = self.last_same_rows.pop().unwrap();
+                self.indices.iter_mut().for_each(|i| i.push(idx))
+            }
+            _ => {}
         }
 
         Ok(())
@@ -170,72 +168,18 @@ impl<T: FieldArray> BatchMergeBuilder<T> {
         }
 
         let columns = (0..self.schema.fields.len())
-            .map(|column_idx| {
+            .zip(self.indices.iter())
+            .map(|(column_idx, indices)| {
                 let arrays: Vec<_> = self
                     .batches
                     .iter()
                     .map(|(_, batch)| batch.column(column_idx).as_ref())
                     .collect();
-                Ok(interleave(&arrays, &self.indices)?)
+                Ok(interleave(&arrays, indices.as_slice())?)
             })
             .collect::<std::result::Result<Vec<_>, DataFusionError>>()?;
-        self.indices.clear();
+        self.indices.iter_mut().for_each(|v| v.clear());
 
         Ok(Some(RecordBatch::try_new(self.schema.clone(), columns)?))
-    }
-}
-
-/// (1, 1, null, 2)
-/// (1, 1, null, 3)  =>   (1, 2, 3, 3)
-/// (1, 2, 3, null)
-///
-pub fn merge_rows(
-    schema: SchemaRef,
-    batches: &[&RecordBatch],
-    rows_idx: &[usize],
-) -> Result<RecordBatch, DataFusionError> {
-    let indices = rows_idx.iter().cloned().enumerate().collect::<Vec<_>>();
-
-    let columns = (0..schema.fields.len())
-        .map(|column_idx| {
-            let arrays: Vec<_> = batches
-                .iter()
-                .map(|b| b.column(column_idx).as_ref())
-                .collect();
-            let array = interleave(&arrays, &indices)?;
-            Ok(merge_column(&array))
-        })
-        .collect::<std::result::Result<Vec<_>, DataFusionError>>()?;
-
-    Ok(RecordBatch::try_new(schema, columns)?)
-}
-
-///
-/// ┌──────┐
-/// │  1   │
-/// ├──────┤
-/// │ null │
-/// ├──────┤
-/// │  2   │    ┌──────┐
-/// ├──────┼───►│  3   │
-/// │ null │    └──────┘
-/// ├──────┤
-/// │  3   │
-/// ├──────┤
-/// │ null │
-/// └──────┘
-pub fn merge_column(array: &ArrayRef) -> ArrayRef {
-    if array.len() <= 1 {
-        return array.clone();
-    }
-    let mut i = array.len() - 1;
-    loop {
-        if !array.is_null(i) {
-            return array.slice(i, 1);
-        }
-        if i == 0 {
-            return array.slice(0, 1);
-        }
-        i -= 1;
     }
 }
