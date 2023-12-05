@@ -91,7 +91,7 @@ fn build_schema_mapping(
     output_schema: &SchemaRef,
     input_schema: &SchemaRef,
 ) -> Option<SchemaMapping> {
-    if output_schema == input_schema {
+    if output_schema.fields() == input_schema.fields() {
         return None;
     }
 

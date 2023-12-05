@@ -114,7 +114,7 @@ impl CombinedRecordBatchStream {
         metrics: &ExecutionPlanMetricsSet,
     ) -> Result<Self> {
         for s in &entries {
-            if s.schema() != schema {
+            if s.schema().fields() != schema.fields() {
                 return Err(Error::MismatchedSchema {
                     msg: format!(
                         "in combined stream. Expected: {:?}, got {:?}",
@@ -193,7 +193,15 @@ pub fn reassign_predicate_columns(
 
     match pred.expr() {
         None => Ok(None),
-        Some(expr) => Ok(Some(expr.rewrite(&mut rewriter)?)),
+        Some(expr) => {
+            let new_expr = expr.rewrite(&mut rewriter)?;
+            if rewriter.has_col_not_in_file {
+                return Ok(Some(Arc::new(Literal::new(ScalarValue::Boolean(Some(
+                    true,
+                ))))));
+            }
+            Ok(Some(new_expr))
+        }
     }
 }
 

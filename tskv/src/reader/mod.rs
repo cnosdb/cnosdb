@@ -1,10 +1,9 @@
 use std::fmt;
-use std::ops::Deref;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{ready, Context, Poll};
 
-use arrow::datatypes::{Schema, SchemaRef};
+use arrow::datatypes::SchemaRef;
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
 use datafusion::physical_plan::PhysicalExpr;
@@ -13,7 +12,8 @@ use futures::{Stream, StreamExt};
 pub use iterator::*;
 use models::field_value::DataType;
 use models::predicate::domain::TimeRange;
-use models::schema::PhysicalCType;
+use models::schema::{PhysicalCType, TskvTableSchema, TIME_FIELD_NAME};
+use models::ColumnId;
 
 use self::utils::{CombinedRecordBatchStream, TimeRangeProvider};
 use crate::memcache::RowGroup;
@@ -85,18 +85,37 @@ impl Predicate {
 }
 
 #[derive(Debug, Clone)]
-pub struct Projection<'a>(pub Vec<&'a str>);
-
-impl<'a> From<&'a Schema> for Projection<'a> {
-    fn from(schema: &'a Schema) -> Self {
-        Self(schema.fields().iter().map(|f| f.name().as_str()).collect())
-    }
+pub struct Projection {
+    fields: Vec<ColumnId>,
+    fields_with_time: Vec<ColumnId>,
 }
-impl<'a> Deref for Projection<'a> {
-    type Target = [&'a str];
 
-    fn deref(&self) -> &Self::Target {
-        &self.0
+impl Projection {
+    fn from_schema(schema: &TskvTableSchema, time_column_id: ColumnId) -> Self {
+        let column_ids = schema.fields().iter().map(|f| f.id).collect::<Vec<_>>();
+
+        let fields_with_time = if schema.column_index(TIME_FIELD_NAME).is_none() {
+            column_ids
+                .iter()
+                .cloned()
+                .chain(std::iter::once(time_column_id))
+                .collect()
+        } else {
+            column_ids.clone()
+        };
+
+        Self {
+            fields: column_ids,
+            fields_with_time,
+        }
+    }
+
+    pub fn fields(&self) -> &[ColumnId] {
+        &self.fields
+    }
+
+    pub fn fields_with_time(&self) -> &[ColumnId] {
+        &self.fields_with_time
     }
 }
 

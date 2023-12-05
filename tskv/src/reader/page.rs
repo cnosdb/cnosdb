@@ -6,10 +6,12 @@ use arrow::datatypes::DataType;
 use arrow_array::builder::StringBuilder;
 use arrow_array::types::{Float64Type, Int64Type, UInt64Type};
 use arrow_array::{ArrayRef, BooleanArray, PrimitiveArray};
+use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
 use models::arrow::stream::BoxStream;
 use models::schema::PhysicalCType;
 use models::PhysicalDType;
 
+use super::column_group::ColumnGroupReaderMetrics;
 use crate::tsm::codec::{
     get_bool_codec, get_encoding, get_f64_codec, get_i64_codec, get_str_codec, get_ts_codec,
     get_u64_codec,
@@ -28,6 +30,7 @@ pub struct PrimitiveArrayReader {
     date_type: PhysicalDType,
     reader: Arc<TSM2Reader>,
     page_meta: PageWriteSpec,
+    metrics: Arc<ExecutionPlanMetricsSet>,
 }
 
 impl PrimitiveArrayReader {
@@ -35,27 +38,41 @@ impl PrimitiveArrayReader {
         date_type: PhysicalDType,
         reader: Arc<TSM2Reader>,
         page_meta: &PageWriteSpec,
+        metrics: Arc<ExecutionPlanMetricsSet>,
     ) -> Self {
         Self {
             date_type,
             reader,
             // TODO
             page_meta: page_meta.clone(),
+            metrics,
         }
     }
 }
 
 impl PageReader for PrimitiveArrayReader {
     fn process(&self) -> Result<BoxStream<Result<ArrayRef>>> {
+        let metrics = ColumnGroupReaderMetrics::new(self.metrics.as_ref());
+
         Ok(Box::pin(futures::stream::once(read(
             self.reader.clone(),
             self.page_meta.clone(),
+            metrics,
         ))))
     }
 }
 
-async fn read(reader: Arc<TSM2Reader>, page_meta: PageWriteSpec) -> Result<ArrayRef> {
-    let page = reader.read_page(&page_meta).await?;
+async fn read(
+    reader: Arc<TSM2Reader>,
+    page_meta: PageWriteSpec,
+    metrics: ColumnGroupReaderMetrics,
+) -> Result<ArrayRef> {
+    let page = {
+        let _timer = metrics.elapsed_page_scan_time().timer();
+        reader.read_page(&page_meta).await?
+    };
+
+    let _timer = metrics.elapsed_page_to_array_time().timer();
     page_to_arrow_array(page).await
 }
 

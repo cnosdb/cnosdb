@@ -188,3 +188,88 @@ impl SeriesReaderMetrics {
         self.inner.record_poll(poll)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
+    use arrow_array::{Float64Array, Int64Array, RecordBatch, StringArray, UInt64Array};
+    use datafusion::assert_batches_eq;
+    use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
+    use futures::TryStreamExt;
+    use models::{SeriesKey, Tag};
+
+    use crate::reader::series::SeriesReader;
+    use crate::reader::{BatchReader, MemoryBatchReader};
+
+    fn input_record_batchs() -> Vec<RecordBatch> {
+        let batch = RecordBatch::try_new(
+            input_schema(),
+            vec![
+                Arc::new(Int64Array::from(vec![-1, 2, 4, 18, 8])),
+                Arc::new(StringArray::from(vec![
+                    Some("z"),
+                    Some("y"),
+                    Some("x"),
+                    Some("w"),
+                    None,
+                ])),
+                Arc::new(Float64Array::from(vec![1.0, 2.0, 4.0, 18.0, 8.0])),
+                Arc::new(UInt64Array::from(vec![1, 2, 4, 18, 8])),
+            ],
+        )
+        .expect("create record batch");
+        vec![batch]
+    }
+
+    fn input_schema() -> SchemaRef {
+        Arc::new(Schema::new(vec![
+            Field::new("time", DataType::Int64, true),
+            Field::new("c3", DataType::Utf8, true),
+            Field::new("c2", DataType::Float64, true),
+            Field::new("c1", DataType::UInt64, true),
+        ]))
+    }
+
+    fn metrics() -> Arc<ExecutionPlanMetricsSet> {
+        Arc::new(ExecutionPlanMetricsSet::new())
+    }
+
+    #[tokio::test]
+    async fn test() {
+        let reader = Arc::new(MemoryBatchReader::new(
+            input_schema(),
+            input_record_batchs(),
+        ));
+
+        let series_key = SeriesKey {
+            id: 0,
+            tags: vec![
+                Tag::new("tag1".as_bytes().to_vec(), "t_val1".as_bytes().to_vec()),
+                Tag::new("tag2".as_bytes().to_vec(), "t_val2".as_bytes().to_vec()),
+            ],
+            table: "tbl".to_string(),
+            db: "db".to_string(),
+        };
+        let reader = SeriesReader::new(series_key, reader, metrics(), None);
+
+        let stream = reader.process().expect("reader");
+
+        let result = stream.try_collect::<Vec<_>>().await.unwrap();
+
+        let expected = [
+            "+------+----+------+----+--------+--------+",
+            "| time | c3 | c2   | c1 | tag1   | tag2   |",
+            "+------+----+------+----+--------+--------+",
+            "| -1   | z  | 1.0  | 1  | t_val1 | t_val2 |",
+            "| 2    | y  | 2.0  | 2  | t_val1 | t_val2 |",
+            "| 4    | x  | 4.0  | 4  | t_val1 | t_val2 |",
+            "| 18   | w  | 18.0 | 18 | t_val1 | t_val2 |",
+            "| 8    |    | 8.0  | 8  | t_val1 | t_val2 |",
+            "+------+----+------+----+--------+--------+",
+        ];
+
+        assert_batches_eq!(expected, &result);
+    }
+}

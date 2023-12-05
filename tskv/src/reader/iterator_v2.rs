@@ -7,7 +7,7 @@ use datafusion::physical_plan::metrics::{
 use datafusion_proto::physical_plan::from_proto::parse_physical_expr;
 use models::meta_data::VnodeId;
 use models::schema::TskvTableSchemaRef;
-use models::{SeriesId, SeriesKey};
+use models::{ColumnId, SeriesId, SeriesKey};
 use tokio::runtime::Runtime;
 use trace::{debug, SpanRecorder};
 
@@ -197,15 +197,15 @@ impl SeriesGroupBatchReaderFactory {
     /// ParallelMergeAdapter: schema=[{}]                               -------- 并行执行多个 stream
     ///   SchemaAlignmenter: schema=[{}]                                -------- 用 Null 值补齐缺失的 tag 列
     ///    SeriesReader: sid={}, schema=[{}]                            -------- 根据 series key 补齐对应的 tag 列
-    ///      SchemaAlignmenter:                                         -------- 用 Null 值补齐缺失的 Field 列
-    ///        DataMerger: schema=[{}]                                  -------- 合并相同 series 下时间段重叠的chunk数据
+    ///      DataMerger: schema=[{}]                                  -------- 合并相同 series 下时间段重叠的chunk数据
+    ///        SchemaAlignmenter:                                         -------- 用 Null 值补齐缺失的 Field 列
     ///          DataFilter: expr=[{}], schema=[{}]                     -------- 根据下推的过滤条件精确过滤数据
     ///            MemRowGroup/ChunkReader: sid={}, projection=[{}], schema=[{}]    -------- 读取单个chunk或memcache rowgroup的数据的指定列的数据
     ///          DataFilter:
     ///            MemRowGroup/ChunkReader [PageReader]
     ///          ......
-    ///      SchemaAlignmenter:
-    ///        DataMerger: schema=[{}]
+    ///      DataMerger: schema=[{}]
+    ///        SchemaAlignmenter:
     ///          DataFilter: expr=[{}], schema=[{}]
     ///            MemRowGroup/ChunkReader: sid={}, projection=[{}], schema=[{}]
     ///          DataFilter
@@ -214,8 +214,8 @@ impl SeriesGroupBatchReaderFactory {
     ///        ......
     ///  SchemaAlignmenter: schema=[{}]                                                
     ///    SeriesReader: sid={}, schema=[{}]
-    ///      SchemaAlignmenter:
-    ///        DataMerger: schema=[{}]
+    ///      DataMerger: schema=[{}]
+    ///        SchemaAlignmenter:
     ///          DataFilter: expr=[{}], schema=[{}]
     ///            MemRowGroup/ChunkReader: sid={}, projection=[{}], schema=[{}]
     ///          DataFilter
@@ -243,15 +243,15 @@ impl SeriesGroupBatchReaderFactory {
         // 采集读取的 series 数量
         metrics.series_nums().set(series_ids.len());
 
+        let kv_schema = &self.query_option.table_schema;
         let schema = &self.query_option.df_schema;
-        let time_fields_schema = project_time_fields(
-            &self.query_option.table_schema,
-            &self.query_option.df_schema,
-        )?;
+        // TODO 投影中一定包含 time 列，后续优化掉
+        let time_fields_schema = project_time_fields(kv_schema, schema)?;
 
         let super_version = &self.super_version;
         let vnode_id = super_version.ts_family_id;
-        let projection = Projection::from(schema.as_ref());
+        // TODO time column id 需要从上面传下来，当前schema中一定包含time列，所以这里写死为0
+        let projection = Projection::from_schema(kv_schema.as_ref(), 0);
         let time_ranges = self.query_option.split.time_ranges();
         let column_files =
             super_version.column_files_by_sid_and_time(series_ids, time_ranges.as_ref());
@@ -263,13 +263,19 @@ impl SeriesGroupBatchReaderFactory {
 
         // 获取所有的文件的 reader
         let mut column_files_with_reader = Vec::with_capacity(column_files.len());
-        for f in column_files {
-            let reader = super_version.version.get_tsm_reader2(f.file_path()).await?;
-            column_files_with_reader.push((f, reader));
+        {
+            let _timer = metrics.elapsed_get_tsm_readers_time().timer();
+            for f in column_files {
+                let reader = super_version.version.get_tsm_reader2(f.file_path()).await?;
+                column_files_with_reader.push((f, reader));
+            }
         }
 
         // 通过sid获取serieskey
-        let sid_keys = self.series_keys(vnode_id, series_ids).await?;
+        let sid_keys = {
+            let _timer = metrics.elapsed_get_series_keys_time().timer();
+            self.series_keys(vnode_id, series_ids).await?
+        };
 
         // 获取所有的符合条件的chunk Vec<(SeriesKey, Vec<DataReference>)>
         let mut series_chunk_readers = vec![];
@@ -399,7 +405,7 @@ impl SeriesGroupBatchReaderFactory {
         &self,
         chunk: DataReference,
         batch_size: usize,
-        projection: &Projection,
+        projection: &[ColumnId],
         predicate: &Option<Arc<Predicate>>,
     ) -> Result<BatchReaderRef> {
         let chunk_reader = match chunk {
@@ -455,6 +461,13 @@ impl SeriesGroupBatchReaderFactory {
         projection: &Projection,
         predicate: &Option<Arc<Predicate>>,
     ) -> Result<Vec<BatchReaderRef>> {
+        let projection = if chunks.segments().len() > 1 {
+            // 需要进行合并去重，所以必须含有time列
+            projection.fields_with_time()
+        } else {
+            projection.fields()
+        };
+
         let chunk_readers = chunks
             .into_iter()
             .map(|data_reference| -> Result<BatchReaderRef> {
@@ -596,6 +609,8 @@ fn project_time_fields(table_schema: &TskvTableSchemaRef, schema: &SchemaRef) ->
 /// Stores metrics about the table writer execution.
 #[derive(Debug, Clone)]
 pub struct SeriesGroupBatchReaderMetrics {
+    elapsed_get_series_keys_time: metrics::Time,
+    elapsed_get_tsm_readers_time: metrics::Time,
     elapsed_build_batch_reader_time: metrics::Time,
     series_nums: metrics::Gauge,
     file_nums_filtered_by_time_range: metrics::Gauge,
@@ -607,6 +622,12 @@ pub struct SeriesGroupBatchReaderMetrics {
 impl SeriesGroupBatchReaderMetrics {
     /// Create new metrics
     pub fn new(metrics: &ExecutionPlanMetricsSet, partition: usize) -> Self {
+        let elapsed_get_series_keys_time =
+            MetricBuilder::new(metrics).subset_time("elapsed_get_series_keys_time", partition);
+
+        let elapsed_get_tsm_readers_time =
+            MetricBuilder::new(metrics).subset_time("elapsed_get_tsm_readers_time", partition);
+
         let elapsed_build_batch_reader_time =
             MetricBuilder::new(metrics).subset_time("elapsed_build_batch_reader_time", partition);
 
@@ -624,6 +645,8 @@ impl SeriesGroupBatchReaderMetrics {
             MetricBuilder::new(metrics).counter("grouped_chunk_nums", partition);
 
         Self {
+            elapsed_get_series_keys_time,
+            elapsed_get_tsm_readers_time,
             elapsed_build_batch_reader_time,
             series_nums,
             file_nums_filtered_by_time_range,
@@ -631,6 +654,14 @@ impl SeriesGroupBatchReaderMetrics {
             chunk_nums_filtered_by_statistics,
             grouped_chunk_nums,
         }
+    }
+
+    pub fn elapsed_get_series_keys_time(&self) -> &metrics::Time {
+        &self.elapsed_get_series_keys_time
+    }
+
+    pub fn elapsed_get_tsm_readers_time(&self) -> &metrics::Time {
+        &self.elapsed_get_tsm_readers_time
     }
 
     pub fn elapsed_build_batch_reader_time(&self) -> &metrics::Time {

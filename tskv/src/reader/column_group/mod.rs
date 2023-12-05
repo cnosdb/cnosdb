@@ -10,13 +10,14 @@ use arrow_array::{ArrayRef, RecordBatch};
 use datafusion::physical_plan::common::AbortOnDropMany;
 use datafusion::physical_plan::metrics::{ExecutionPlanMetricsSet, MetricBuilder, Time};
 use futures::{ready, Stream, StreamExt};
+use models::ColumnId;
 use tokio::sync::mpsc;
 use trace::warn;
 
 use super::metrics::BaselineMetrics;
 use super::page::{PageReaderRef, PrimitiveArrayReader};
 use super::{
-    BatchReader, BatchReaderRef, Projection, SchemableTskvRecordBatchStream,
+    BatchReader, BatchReaderRef, SchemableTskvRecordBatchStream,
     SendableSchemableTskvRecordBatchStream,
 };
 use crate::tsm2::page::{ColumnGroup, PageWriteSpec};
@@ -33,7 +34,7 @@ impl ColumnGroupReader {
     pub fn try_new(
         reader: Arc<TSM2Reader>,
         column_group: Arc<ColumnGroup>,
-        projection: &Projection,
+        projection: &[ColumnId],
         _batch_size: usize,
         metrics: Arc<ExecutionPlanMetricsSet>,
     ) -> Result<Self> {
@@ -41,12 +42,12 @@ impl ColumnGroupReader {
             column_group
                 .pages()
                 .iter()
-                .find(|e2| &e2.meta().column.name == e)
+                .find(|e2| e2.meta().column.id == *e)
         });
 
         let page_readers = columns
             .clone()
-            .map(|e| build_reader(reader.clone(), e))
+            .map(|e| build_reader(reader.clone(), e, metrics.clone()))
             .collect::<Result<Vec<_>>>()?;
 
         let fields = columns
@@ -86,17 +87,13 @@ impl BatchReader for ColumnGroupReader {
             .map(|r| r.process())
             .collect::<Result<Vec<_>>>()?;
 
-        let metrics = ColumnGroupReaderMetrics::new(self.metrics.as_ref());
-
         let (join_handles, buffers): (Vec<_>, Vec<_>) = streams
             .into_iter()
             .map(|mut s| {
                 let (sender, receiver) = mpsc::channel::<Result<ArrayRef>>(1);
 
-                let metrics = metrics.clone();
                 let task = async move {
                     // 记录读取 page 的时间
-                    let _timer = metrics.elapsed_page_scan_time().timer();
                     while let Some(item) = s.next().await {
                         let exit = item.is_err();
                         // If send fails, stream being torn down,
@@ -214,6 +211,7 @@ impl Stream for ColumnGroupRecordBatchStream {
 #[derive(Debug, Clone)]
 pub struct ColumnGroupReaderMetrics {
     elapsed_page_scan_time: Time,
+    elapsed_page_to_array_time: Time,
     inner: BaselineMetrics,
 }
 
@@ -222,17 +220,24 @@ impl ColumnGroupReaderMetrics {
     pub fn new(metrics: &ExecutionPlanMetricsSet) -> Self {
         let elapsed_page_scan_time =
             MetricBuilder::new(metrics).subset_time("elapsed_page_scan_time", 0);
+        let elapsed_page_to_array_time =
+            MetricBuilder::new(metrics).subset_time("elapsed_page_to_array_time", 0);
 
         let inner = BaselineMetrics::new(metrics);
 
         Self {
             elapsed_page_scan_time,
+            elapsed_page_to_array_time,
             inner,
         }
     }
 
     pub fn elapsed_page_scan_time(&self) -> &Time {
         &self.elapsed_page_scan_time
+    }
+
+    pub fn elapsed_page_to_array_time(&self) -> &Time {
+        &self.elapsed_page_to_array_time
     }
     pub fn elapsed_compute(&self) -> &Time {
         self.inner.elapsed_compute()
@@ -257,11 +262,15 @@ fn convert_data_type_if_necessary(array: ArrayRef, target_type: &DataType) -> Re
     }
 }
 
-fn build_reader(reader: Arc<TSM2Reader>, page_meta: &PageWriteSpec) -> Result<PageReaderRef> {
+fn build_reader(
+    reader: Arc<TSM2Reader>,
+    page_meta: &PageWriteSpec,
+    metrics: Arc<ExecutionPlanMetricsSet>,
+) -> Result<PageReaderRef> {
     // TODO 根据指定列及其元数据和文件读取器，构造 PageReader
     let data_type = page_meta.meta().column.column_type.to_physical_data_type();
     Ok(Arc::new(PrimitiveArrayReader::new(
-        data_type, reader, page_meta,
+        data_type, reader, page_meta, metrics,
     )))
 }
 

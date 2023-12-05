@@ -405,8 +405,6 @@ pub const GIS_SUB_TYPE_META_KEY: &str = "gis.sub_type";
 impl From<&TableColumn> for ArrowField {
     fn from(column: &TableColumn) -> Self {
         let mut map = HashMap::new();
-        map.insert(FIELD_ID.to_string(), column.id.to_string());
-        map.insert(TAG.to_string(), column.column_type.is_tag().to_string());
 
         // 通过 SRID_META_KEY 标记 Geometry 类型的列
         if let ColumnType::Field(ValueType::Geometry(Geometry { srid, sub_type })) =
