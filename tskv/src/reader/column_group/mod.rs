@@ -8,7 +8,7 @@ use arrow::compute::kernels::cast;
 use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use arrow_array::{ArrayRef, RecordBatch};
 use datafusion::physical_plan::common::AbortOnDropMany;
-use datafusion::physical_plan::metrics::{ExecutionPlanMetricsSet, MetricBuilder, Time};
+use datafusion::physical_plan::metrics::{Count, ExecutionPlanMetricsSet, MetricBuilder, Time};
 use futures::{ready, Stream, StreamExt};
 use models::ColumnId;
 use tokio::sync::mpsc;
@@ -212,6 +212,8 @@ impl Stream for ColumnGroupRecordBatchStream {
 pub struct ColumnGroupReaderMetrics {
     elapsed_page_scan_time: Time,
     elapsed_page_to_array_time: Time,
+    page_read_count: Count,
+    page_read_bytes: Count,
     inner: BaselineMetrics,
 }
 
@@ -222,12 +224,16 @@ impl ColumnGroupReaderMetrics {
             MetricBuilder::new(metrics).subset_time("elapsed_page_scan_time", 0);
         let elapsed_page_to_array_time =
             MetricBuilder::new(metrics).subset_time("elapsed_page_to_array_time", 0);
+        let page_read_count = MetricBuilder::new(metrics).counter("page_read_count", 0);
+        let page_read_bytes = MetricBuilder::new(metrics).counter("page_read_bytes", 0);
 
         let inner = BaselineMetrics::new(metrics);
 
         Self {
             elapsed_page_scan_time,
             elapsed_page_to_array_time,
+            page_read_count,
+            page_read_bytes,
             inner,
         }
     }
@@ -239,6 +245,15 @@ impl ColumnGroupReaderMetrics {
     pub fn elapsed_page_to_array_time(&self) -> &Time {
         &self.elapsed_page_to_array_time
     }
+
+    pub fn page_read_count(&self) -> &Count {
+        &self.page_read_count
+    }
+
+    pub fn page_read_bytes(&self) -> &Count {
+        &self.page_read_bytes
+    }
+
     pub fn elapsed_compute(&self) -> &Time {
         self.inner.elapsed_compute()
     }

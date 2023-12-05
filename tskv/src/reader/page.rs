@@ -69,6 +69,8 @@ async fn read(
 ) -> Result<ArrayRef> {
     let page = {
         let _timer = metrics.elapsed_page_scan_time().timer();
+        metrics.page_read_count().add(1);
+        metrics.page_read_bytes().add(page_meta.size());
         reader.read_page(&page_meta).await?
     };
 

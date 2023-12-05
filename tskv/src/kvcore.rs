@@ -391,22 +391,19 @@ impl TsKv {
         summary_task_sender: Sender<SummaryTask>,
         compact_task_sender: Sender<CompactTask>,
     ) {
+        let runtime = self.runtime.clone();
         let f = async move {
             while let Some(x) = receiver.recv().await {
                 // TODO(zipper): this make config `flush_req_channel_cap` wasted
                 // Run flush job and trigger compaction.
-                if let Err(e) = run_flush_memtable_job(
+                runtime.spawn(run_flush_memtable_job(
                     x,
                     ctx.clone(),
                     seq_ctx.clone(),
                     version_set.clone(),
                     summary_task_sender.clone(),
                     Some(compact_task_sender.clone()),
-                )
-                .await
-                {
-                    error!("Failed to run flush job: {:?}", e);
-                }
+                ));
             }
         };
         self.runtime.spawn(f);
