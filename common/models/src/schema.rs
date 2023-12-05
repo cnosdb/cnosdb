@@ -196,7 +196,7 @@ impl TskvTableSchema {
             .columns
             .iter()
             .map(ArrowField::from)
-            .map(|f| DFField::from_qualified(self.db.as_str(), f))
+            .map(|f| DFField::from_qualified(self.name.as_str(), f))
             .collect();
         Ok(Arc::new(DFSchema::new_with_metadata(
             fields,
