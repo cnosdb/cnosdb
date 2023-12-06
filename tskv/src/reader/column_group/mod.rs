@@ -7,12 +7,10 @@ use std::task::{Context, Poll};
 use arrow::compute::kernels::cast;
 use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use arrow_array::{ArrayRef, RecordBatch};
-use datafusion::physical_plan::common::AbortOnDropMany;
 use datafusion::physical_plan::metrics::{Count, ExecutionPlanMetricsSet, MetricBuilder, Time};
 use futures::{ready, Stream, StreamExt};
+use models::arrow::stream::BoxStream;
 use models::ColumnId;
-use tokio::sync::mpsc;
-use trace::warn;
 
 use super::metrics::BaselineMetrics;
 use super::page::{PageReaderRef, PrimitiveArrayReader};
@@ -87,36 +85,10 @@ impl BatchReader for ColumnGroupReader {
             .map(|r| r.process())
             .collect::<Result<Vec<_>>>()?;
 
-        let (join_handles, buffers): (Vec<_>, Vec<_>) = streams
-            .into_iter()
-            .map(|mut s| {
-                let (sender, receiver) = mpsc::channel::<Result<ArrayRef>>(1);
-
-                let task = async move {
-                    // 记录读取 page 的时间
-                    while let Some(item) = s.next().await {
-                        let exit = item.is_err();
-                        // If send fails, stream being torn down,
-                        // there is no place to send the error.
-                        if sender.send(item).await.is_err() {
-                            warn!("Stopping execution: output is gone, PageReader cancelling");
-                            return;
-                        }
-                        if exit {
-                            return;
-                        }
-                    }
-                };
-                let join_handle = tokio::spawn(task);
-                (join_handle, receiver)
-            })
-            .unzip();
-
         Ok(Box::pin(ColumnGroupRecordBatchStream {
             schema: self.schema.clone(),
             column_arrays: Vec::with_capacity(self.schema.fields().len()),
-            buffers,
-            drop_helper: AbortOnDropMany(join_handles),
+            streams,
             metrics: ColumnGroupReaderMetrics::new(self.metrics.as_ref()),
         }))
     }
@@ -143,9 +115,7 @@ struct ColumnGroupRecordBatchStream {
 
     /// Stream entries
     column_arrays: Vec<ArrayRef>,
-    buffers: Vec<mpsc::Receiver<Result<ArrayRef>>>,
-    #[allow(unused)]
-    drop_helper: AbortOnDropMany<()>,
+    streams: Vec<BoxStream<Result<ArrayRef>>>,
 
     metrics: ColumnGroupReaderMetrics,
 }
@@ -159,13 +129,13 @@ impl SchemableTskvRecordBatchStream for ColumnGroupRecordBatchStream {
 impl ColumnGroupRecordBatchStream {
     fn poll_inner(&mut self, cx: &mut Context<'_>) -> Poll<Option<Result<RecordBatch>>> {
         let schema = self.schema.clone();
-        let column_nums = self.buffers.len();
+        let column_nums = self.streams.len();
 
         loop {
             let next_column_idx = self.column_arrays.len();
             let target_type = self.schema.field(next_column_idx).data_type().clone();
 
-            match ready!(self.buffers[next_column_idx].poll_recv(cx)) {
+            match ready!(self.streams[next_column_idx].poll_next_unpin(cx)) {
                 Some(Ok(array)) => {
                     let arrays = &mut self.column_arrays;
 

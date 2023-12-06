@@ -277,7 +277,7 @@ impl SeriesGroupBatchReaderFactory {
         };
 
         // 获取所有的符合条件的chunk Vec<(SeriesKey, Vec<DataReference>)>
-        let mut series_chunk_readers = vec![];
+        let mut series_chunk_readers = Vec::with_capacity(series_ids.len());
         for (sid, series_key) in series_ids.iter().zip(sid_keys) {
             // 选择含有series的所有chunk Vec<DataReference::Chunk(chunk, reader)>
             let chunks = Self::filter_chunks(&column_files_with_reader, *sid).await?;
@@ -416,13 +416,12 @@ impl SeriesGroupBatchReaderFactory {
                 let cgs = filter_column_groups(cgs, predicate, chunk_schema)?;
                 trace::debug!("Filtered column group nums: {}", cgs.len());
 
-                let batch_readers = chunk
-                    .column_group()
-                    .values()
+                let batch_readers = cgs
+                    .into_iter()
                     .map(|e| {
                         let column_group_reader = ColumnGroupReader::try_new(
                             reader.clone(),
-                            e.clone(),
+                            e,
                             projection,
                             batch_size,
                             self.column_group_reader_metrics_set.clone(),
