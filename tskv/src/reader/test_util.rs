@@ -143,6 +143,11 @@ pub fn test_schema() -> SchemaRef {
 
 #[cfg(test)]
 mod test {
+    use std::collections::BTreeSet;
+
+    use arrow::compute::concat_batches;
+    use arrow_array::{Array, TimestampMicrosecondArray};
+
     use crate::reader::test_util::{
         collect_stream, create_sort_merge_stream, random_record_batches, test_schema,
     };
@@ -153,16 +158,49 @@ mod test {
         let batch_size = 4096;
         let batch_num = 1000;
         let column_name = "time";
-        let batches =
-            random_record_batches(schema.clone(), column_name, batch_size, batch_num, 4, None);
-        let stream = create_sort_merge_stream(schema, batches, column_name, batch_size);
-        let _ = collect_stream(stream);
-        // let res1 = res.iter().map(|b| b.num_rows()).sum::<usize>();
+        let batches = random_record_batches(
+            schema.clone(),
+            column_name,
+            batch_size,
+            batch_num,
+            4,
+            Some(1000),
+        );
+        let stream = create_sort_merge_stream(schema.clone(), batches, column_name, batch_size);
+        let res = collect_stream(stream);
+        let res_batches = concat_batches(&schema, res.iter()).unwrap();
+        let _ = res_batches.num_rows();
 
-        // let stream = create_dedup_stream(schema, batches, batch_size, "time");
+        let mut set = BTreeSet::new();
+        let array = res_batches.column_by_name("time").unwrap();
+        let array = array
+            .as_any()
+            .downcast_ref::<TimestampMicrosecondArray>()
+            .unwrap();
+        let mut last = i64::MIN;
+        array.iter().for_each(|v| {
+            let v = v.unwrap();
+            assert!(v > last);
+            last = v;
+            assert!(set.insert(v))
+        });
+
+        // let stream = create_dedup_stream(schema.clone(), batches.clone(), batch_size, "time");
         // let res = collect_df_stream(stream);
-        // let res3 = res.iter().map(|b| b.num_rows()).sum::<usize>();
-
+        // let res_batches = concat_batches(&schema, res.iter()).unwrap();
+        // let res3 = res_batches.num_rows();
+        //
+        // let mut set = BTreeSet::new();
+        // let array = res_batches.column_by_name("time").unwrap();
+        // let array = array.as_any().downcast_ref::<TimestampMicrosecondArray>().unwrap();
+        // let mut last = i64::MIN;
+        // array.iter().for_each(|v| {
+        //     let v = v.unwrap();
+        //     assert!(v > last);
+        //     last = v;
+        //     assert!(set.insert(v))
+        // });
+        //
         // assert_eq!(res3, res1);
     }
 }

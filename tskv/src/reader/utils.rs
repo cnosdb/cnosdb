@@ -1,4 +1,5 @@
 use std::cmp;
+use std::fmt::{Debug, Formatter};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -20,26 +21,38 @@ use super::metrics::BaselineMetrics;
 use super::{Predicate, SchemableTskvRecordBatchStream, SendableSchemableTskvRecordBatchStream};
 use crate::{Error, Result};
 
-pub struct OverlappingSegments<T> {
+pub struct OverlappingSegments<T: TimeRangeProvider> {
     segments: Vec<T>,
 }
 
-impl<T> OverlappingSegments<T> {
+impl<T: TimeRangeProvider> OverlappingSegments<T> {
     pub fn new(segments: Vec<T>) -> Self {
         Self { segments }
     }
 
-    pub fn segments(&self) -> &[T] {
+    pub fn segments_ref(&self) -> &[T] {
         &self.segments
+    }
+
+    pub fn segments(self) -> Vec<T> {
+        self.segments
     }
 }
 
-impl<T> IntoIterator for OverlappingSegments<T> {
+impl<T: TimeRangeProvider> IntoIterator for OverlappingSegments<T> {
     type Item = T;
     type IntoIter = std::vec::IntoIter<T>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.segments.into_iter()
+    }
+}
+
+impl<T: TimeRangeProvider> Debug for OverlappingSegments<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_list()
+            .entries(self.segments.iter().map(|t| t.time_range()))
+            .finish()
     }
 }
 

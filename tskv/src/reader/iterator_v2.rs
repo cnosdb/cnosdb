@@ -12,10 +12,8 @@ use tokio::runtime::Runtime;
 use trace::{debug, SpanRecorder};
 
 use super::display::DisplayableBatchReader;
-use super::merge::DataMerger;
 use super::series::SeriesReader;
 use super::trace::Recorder;
-use super::utils::OverlappingSegments;
 use super::{
     DataReference, EmptySchemableTskvRecordBatchStream, Predicate, PredicateRef, Projection,
     QueryOption, SendableTskvRecordBatchStream,
@@ -24,10 +22,11 @@ use crate::reader::chunk::filter_column_groups;
 use crate::reader::column_group::ColumnGroupReader;
 use crate::reader::filter::DataFilter;
 use crate::reader::function_register::NoRegistry;
+use crate::reader::merge::DataMerger;
 use crate::reader::paralle_merge::ParallelMergeAdapter;
 use crate::reader::schema_alignmenter::SchemaAlignmenter;
 use crate::reader::trace::TraceCollectorBatcherReaderProxy;
-use crate::reader::utils::group_overlapping_segments;
+use crate::reader::utils::{group_overlapping_segments, OverlappingSegments};
 use crate::reader::{BatchReaderRef, CombinedBatchReader};
 use crate::schema::error::SchemaError;
 use crate::tseries_family::{ColumnFile, SuperVersion};
@@ -461,7 +460,7 @@ impl SeriesGroupBatchReaderFactory {
         projection: &Projection,
         predicate: &Option<Arc<Predicate>>,
     ) -> Result<Vec<BatchReaderRef>> {
-        let projection = if chunks.segments().len() > 1 {
+        let projection = if chunks.segments_ref().len() > 1 {
             // 需要进行合并去重，所以必须含有time列
             projection.fields_with_time()
         } else {
@@ -506,9 +505,10 @@ impl SeriesGroupBatchReaderFactory {
         let grouped_chunks = group_overlapping_segments(&chunks);
 
         debug!(
-            "series_key: {:?}, grouped_chunks num: {}",
+            "series_key: {:?}, grouped_chunks num: {}, grouped_chunks: {:?}",
             series_key,
-            grouped_chunks.len()
+            grouped_chunks.len(),
+            grouped_chunks,
         );
         metrics.grouped_chunk_nums().add(grouped_chunks.len());
 
