@@ -26,7 +26,7 @@ use crate::reader::merge::DataMerger;
 use crate::reader::paralle_merge::ParallelMergeAdapter;
 use crate::reader::schema_alignmenter::SchemaAlignmenter;
 use crate::reader::trace::TraceCollectorBatcherReaderProxy;
-use crate::reader::utils::{group_overlapping_segments, OverlappingSegments};
+use crate::reader::utils::group_overlapping_segments;
 use crate::reader::{BatchReaderRef, CombinedBatchReader};
 use crate::schema::error::SchemaError;
 use crate::tseries_family::{ColumnFile, SuperVersion};
@@ -455,12 +455,12 @@ impl SeriesGroupBatchReaderFactory {
 
     fn build_chunk_readers(
         &self,
-        chunks: OverlappingSegments<DataReference>,
+        chunks: Vec<DataReference>,
         batch_size: usize,
         projection: &Projection,
         predicate: &Option<Arc<Predicate>>,
     ) -> Result<Vec<BatchReaderRef>> {
-        let projection = if chunks.segments_ref().len() > 1 {
+        let projection = if chunks.len() > 1 {
             // 需要进行合并去重，所以必须含有time列
             projection.fields_with_time()
         } else {
@@ -516,7 +516,7 @@ impl SeriesGroupBatchReaderFactory {
             .into_iter()
             .map(|chunks| -> Result<BatchReaderRef> {
                 let chunk_readers =
-                    self.build_chunk_readers(chunks, batch_size, projection, predicate)?;
+                    self.build_chunk_readers(chunks.segments(), batch_size, projection, predicate)?;
 
                 // 用 Null 值补齐缺失的 Field 列
                 let chunk_readers = chunk_readers

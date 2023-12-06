@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::marker::PhantomData;
 
 use arrow::compute::interleave;
@@ -6,7 +7,7 @@ use arrow_array::{Array, RecordBatch};
 use datafusion::common::DataFusionError;
 use models::datafusion::cursor::{FieldArray, FieldValues};
 
-use crate::Result;
+use crate::{Error, Result};
 
 #[derive(Debug, Copy, Clone, Default)]
 struct BatchCursor {
@@ -100,17 +101,25 @@ impl<T: FieldArray> BatchMergeBuilder<T> {
                 let now_values = now_array.values();
                 let now_value = now_values.value(row_idx);
 
-                if T::Values::compare(last_value, now_value).is_eq() {
-                    *last_batch_idx = now_batch_idx;
-                    *last_column_idx = now_column_idx;
-                    *last_row_idx = now_row_idx;
-                    self.last_same_rows.push((now_batch_idx, now_row_idx));
-                } else {
-                    *last_batch_idx = now_batch_idx;
-                    *last_column_idx = now_column_idx;
-                    *last_row_idx = now_row_idx;
-                    self.take_last_and_merge()?;
-                    self.last_same_rows.push((now_batch_idx, now_row_idx));
+                match T::Values::compare(last_value, now_value) {
+                    Ordering::Equal => {
+                        *last_batch_idx = now_batch_idx;
+                        *last_column_idx = now_column_idx;
+                        *last_row_idx = now_row_idx;
+                        self.last_same_rows.push((now_batch_idx, now_row_idx));
+                    }
+                    Ordering::Less => {
+                        *last_batch_idx = now_batch_idx;
+                        *last_column_idx = now_column_idx;
+                        *last_row_idx = now_row_idx;
+                        self.take_last_and_merge()?;
+                        self.last_same_rows.push((now_batch_idx, now_row_idx));
+                    }
+                    Ordering::Greater => {
+                        return Err(Error::CommonError {
+                            reason: "data in stream is not sorted".to_string(),
+                        });
+                    }
                 }
             }
         }
