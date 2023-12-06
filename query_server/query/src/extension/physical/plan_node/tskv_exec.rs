@@ -192,7 +192,7 @@ impl<'a> Display for PredicateDisplay<'a> {
             "limit={:?}, predicate={:?}, filter={:?}",
             filter.limit(),
             filter.filter(),
-            filter.physical_expr(),
+            filter.physical_expr().map(|e| e.to_string()),
         )
     }
 }
