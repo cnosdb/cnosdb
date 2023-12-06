@@ -340,6 +340,9 @@ max_concurrent_compaction = 4
 # If true, write request will not be checked in detail.
 strict_write = false
 
+# The size of reserve space of the system.
+reserve_space = "10G"
+
 [wal]
 
 # If true, write requets on disk before writing to memory.

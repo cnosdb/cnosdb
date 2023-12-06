@@ -33,6 +33,7 @@ compact_trigger_cold_duration = "1h"
 max_compact_size = "2G" # 2147483648
 max_concurrent_compaction = 4
 strict_write = false
+reserve_space = "0"
 
 [wal]
 enabled = true

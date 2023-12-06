@@ -248,6 +248,9 @@ impl ServiceBuilder {
         )
         .await;
 
+        // wait meta server ready!
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
         self.build_query_storage(server).await
     }
 
