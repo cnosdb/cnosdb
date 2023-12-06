@@ -101,9 +101,21 @@ pub enum Error {
         source: DataFusionError,
     },
 
-    #[snafu(display("DuplicateColumnGroup: {}", reason))]
+    #[snafu(display("ColumnGroupError: {}", reason))]
     #[error_code(code = 13)]
-    DuplicateColumnGroup {
+    TsmColumnGroupError {
+        reason: String,
+    },
+
+    #[snafu(display("TsmPageError: {}", reason))]
+    #[error_code(code = 14)]
+    TsmPageError {
+        reason: String,
+    },
+
+    #[snafu(display("DataBlockError: {}", reason))]
+    #[error_code(code = 15)]
+    DataBlockError {
         reason: String,
     },
 

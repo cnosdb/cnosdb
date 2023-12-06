@@ -13,7 +13,7 @@ use models::schema::{
     timestamp_convert, ColumnType, Precision, TableColumn, TskvTableSchema, TskvTableSchemaRef,
 };
 use models::utils::split_id;
-use models::{ColumnId, FieldId, RwLockRef, SchemaId, SeriesId, Timestamp};
+use models::{ColumnId, FieldId, RwLockRef, SeriesId, Timestamp};
 use parking_lot::RwLock;
 use protos::models::{Column, FieldType};
 use trace::error;
@@ -327,10 +327,10 @@ impl SeriesData {
         }
     }
 
-    pub fn flat_groups(&self) -> Vec<(SchemaId, TskvTableSchemaRef, &LinkedList<RowData>)> {
+    pub fn flat_groups(&self) -> Vec<(TskvTableSchemaRef, &LinkedList<RowData>)> {
         self.groups
             .iter()
-            .map(|g| (g.schema.schema_id, g.schema.clone(), &g.rows))
+            .map(|g| (g.schema.clone(), &g.rows))
             .collect()
     }
     pub fn get_schema(&self) -> Option<Arc<TskvTableSchema>> {
@@ -346,39 +346,39 @@ impl SeriesData {
         if let Some(schema) = self.get_schema() {
             let field_ids = schema.fields_id();
 
-            let mut cols: Vec<ColumnData> = schema
+            let mut cols = schema
                 .fields()
                 .iter()
                 .map(|col| ColumnData::empty(col.column_type.clone()))
-                .collect();
+                .collect::<Result<Vec<_>>>()?;
             let mut delta_cols = cols.clone();
             let mut time_array = ColumnData::empty(ColumnType::Time(TimeUnit::from(
                 schema.time_column_precision(),
-            )));
+            )))?;
 
             let mut delta_time_array = time_array.clone();
             let mut cols_desc = vec![None; schema.field_num()];
-            for (_schema_id, schema, rows) in self.flat_groups() {
+            for (schema, rows) in self.flat_groups() {
                 let values = dedup_and_sort_row_data(rows);
                 for row in values {
-                    if row.ts < version.max_level_ts {
-                        delta_time_array.push(Some(FieldVal::Integer(row.ts)));
-                    } else {
-                        time_array.push(Some(FieldVal::Integer(row.ts)));
+                    match row.ts.cmp(&version.max_level_ts) {
+                        std::cmp::Ordering::Less => {
+                            delta_time_array.push(Some(FieldVal::Integer(row.ts)));
+                        }
+                        _ => {
+                            time_array.push(Some(FieldVal::Integer(row.ts)));
+                        }
                     }
                     for col in schema.fields().iter() {
                         if let Some(index) = field_ids.get(&col.id) {
-                            let field = row.fields.get(*index);
-                            if row.ts < version.max_level_ts {
-                                if let Some(val) = field {
-                                    delta_cols[*index].push(val.clone());
-                                } else {
-                                    delta_cols[*index].push(None);
+                            let field = row.fields.get(*index).and_then(|v| v.clone());
+                            match row.ts.cmp(&version.max_level_ts) {
+                                std::cmp::Ordering::Less => {
+                                    delta_cols[*index].push(field);
                                 }
-                            } else if let Some(val) = field {
-                                cols[*index].push(val.clone());
-                            } else {
-                                cols[*index].push(None);
+                                _ => {
+                                    cols[*index].push(field);
+                                }
                             }
                             if cols_desc[*index].is_none() {
                                 cols_desc[*index] = Some(col.clone());
@@ -761,7 +761,7 @@ pub(crate) mod test {
         for (_sid, sdata) in series_data {
             let sdata_rlock = sdata.read();
             let schema_groups = sdata_rlock.flat_groups();
-            for (_sch_id, sch, row) in schema_groups {
+            for (sch, row) in schema_groups {
                 let fields = sch.fields();
                 for r in row {
                     for (i, f) in r.fields.iter().enumerate() {
@@ -794,7 +794,7 @@ pub fn dedup_and_sort_row_data(data: &LinkedList<RowData>) -> Vec<RowData> {
         }
     });
 
-    let mut result: Vec<RowData> = Vec::with_capacity(data.len());
+    let mut result: Vec<RowData> = Vec::with_capacity(dedup_ts.len());
     for row_data in data {
         if let Some(existing_row) = result.last_mut() {
             if existing_row.ts == row_data.ts {

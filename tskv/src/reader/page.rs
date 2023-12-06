@@ -325,7 +325,7 @@ pub(crate) mod tests {
     }
 
     fn page(row_nums: usize, ct: ColumnType) -> Page {
-        let mut col = Column::empty_with_cap(ct.clone(), row_nums);
+        let mut col = Column::empty_with_cap(ct.clone(), row_nums).unwrap();
 
         for i in 0..row_nums {
             let val = if i % 2 == 0 {
@@ -348,7 +348,7 @@ pub(crate) mod tests {
 
         let col_schema = TableColumn::new_with_default("col".to_string(), ct);
 
-        col.col_to_page(&col_schema)
+        col.col_to_page(&col_schema).unwrap()
     }
 
     #[tokio::test]

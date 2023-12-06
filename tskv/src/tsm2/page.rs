@@ -15,8 +15,7 @@ use super::statistics::ValueStatistics;
 use crate::byte_utils::{decode_be_u32, decode_be_u64};
 use crate::error::Result;
 use crate::tsm::codec::{
-    get_bool_codec, get_encoding, get_f64_codec, get_i64_codec, get_str_codec, get_ts_codec,
-    get_u64_codec,
+    get_bool_codec, get_encoding, get_f64_codec, get_i64_codec, get_str_codec, get_u64_codec,
 };
 use crate::tsm2::writer::Column;
 use crate::tsm2::ColumnGroupID;
@@ -67,21 +66,22 @@ impl Page {
 
     pub fn to_column(&self) -> Result<Column> {
         let col_type = self.meta.column.column_type.clone();
-        let mut col = Column::empty_with_cap(col_type.clone(), self.meta.num_values as usize);
+        let mut col = Column::empty_with_cap(col_type.clone(), self.meta.num_values as usize)?;
         let data_buffer = self.data_buffer();
         let bitset = self.null_bitset();
         match col_type {
             ColumnType::Tag => {
-                unreachable!("tag column not support")
+                return Err(Error::TsmPageError {
+                    reason: "tag column not support now".to_string(),
+                });
             }
-            ColumnType::Time(_) => {
+            ColumnType::Time(_) | ColumnType::Field(ValueType::Integer) => {
                 let encoding = get_encoding(data_buffer);
-                let ts_codec = get_ts_codec(encoding);
+                let ts_codec = get_i64_codec(encoding);
                 let mut target = Vec::new();
                 ts_codec
                     .decode(data_buffer, &mut target)
                     .map_err(|e| Error::Decode { source: e })?;
-                debug_assert_eq!(target.len(), bitset.len());
                 for (i, v) in target.iter().enumerate() {
                     if bitset.get(i) {
                         col.push(Some(FieldVal::Integer(*v)));
@@ -90,86 +90,71 @@ impl Page {
                     }
                 }
             }
-            ColumnType::Field(ref field_type) => match field_type {
-                ValueType::Unknown => {
-                    unreachable!("unknown field type")
-                }
-                ValueType::Float => {
-                    let encoding = get_encoding(data_buffer);
-                    let ts_codec = get_f64_codec(encoding);
-                    let mut target = Vec::new();
-                    ts_codec
-                        .decode(data_buffer, &mut target)
-                        .map_err(|e| Error::Decode { source: e })?;
-                    for (i, v) in target.iter().enumerate() {
-                        if bitset.get(i) {
-                            col.push(Some(FieldVal::Float(*v)));
-                        } else {
-                            col.push(None);
-                        }
+            ColumnType::Field(ValueType::Float) => {
+                let encoding = get_encoding(data_buffer);
+                let ts_codec = get_f64_codec(encoding);
+                let mut target = Vec::new();
+                ts_codec
+                    .decode(data_buffer, &mut target)
+                    .map_err(|e| Error::Decode { source: e })?;
+                for (i, v) in target.iter().enumerate() {
+                    if bitset.get(i) {
+                        col.push(Some(FieldVal::Float(*v)));
+                    } else {
+                        col.push(None);
                     }
                 }
-                ValueType::Integer => {
-                    let encoding = get_encoding(data_buffer);
-                    let ts_codec = get_i64_codec(encoding);
-                    let mut target = Vec::new();
-                    ts_codec
-                        .decode(data_buffer, &mut target)
-                        .map_err(|e| Error::Decode { source: e })?;
-                    for (i, v) in target.iter().enumerate() {
-                        if bitset.get(i) {
-                            col.push(Some(FieldVal::Integer(*v)));
-                        } else {
-                            col.push(None);
-                        }
+            }
+            ColumnType::Field(ValueType::Unsigned) => {
+                let encoding = get_encoding(data_buffer);
+                let ts_codec = get_u64_codec(encoding);
+                let mut target = Vec::new();
+                ts_codec
+                    .decode(data_buffer, &mut target)
+                    .map_err(|e| Error::Decode { source: e })?;
+                for (i, v) in target.iter().enumerate() {
+                    if bitset.get(i) {
+                        col.push(Some(FieldVal::Unsigned(*v)));
+                    } else {
+                        col.push(None);
                     }
                 }
-                ValueType::Unsigned => {
-                    let encoding = get_encoding(data_buffer);
-                    let ts_codec = get_u64_codec(encoding);
-                    let mut target = Vec::new();
-                    ts_codec
-                        .decode(data_buffer, &mut target)
-                        .map_err(|e| Error::Decode { source: e })?;
-                    for (i, v) in target.iter().enumerate() {
-                        if bitset.get(i) {
-                            col.push(Some(FieldVal::Unsigned(*v)));
-                        } else {
-                            col.push(None);
-                        }
+            }
+            ColumnType::Field(ValueType::Boolean) => {
+                let encoding = get_encoding(data_buffer);
+                let ts_codec = get_bool_codec(encoding);
+                let mut target = Vec::new();
+                ts_codec
+                    .decode(data_buffer, &mut target)
+                    .map_err(|e| Error::Decode { source: e })?;
+                for (i, v) in target.iter().enumerate() {
+                    if bitset.get(i) {
+                        col.push(Some(FieldVal::Boolean(*v)));
+                    } else {
+                        col.push(None);
                     }
                 }
-                ValueType::Boolean => {
-                    let encoding = get_encoding(data_buffer);
-                    let ts_codec = get_bool_codec(encoding);
-                    let mut target = Vec::new();
-                    ts_codec
-                        .decode(data_buffer, &mut target)
-                        .map_err(|e| Error::Decode { source: e })?;
-                    for (i, v) in target.iter().enumerate() {
-                        if bitset.get(i) {
-                            col.push(Some(FieldVal::Boolean(*v)));
-                        } else {
-                            col.push(None);
-                        }
+            }
+            ColumnType::Field(ValueType::String) | ColumnType::Field(ValueType::Geometry(_)) => {
+                let encoding = get_encoding(data_buffer);
+                let ts_codec = get_str_codec(encoding);
+                let mut target = Vec::new();
+                ts_codec
+                    .decode(data_buffer, &mut target)
+                    .map_err(|e| Error::Decode { source: e })?;
+                for (i, v) in target.iter().enumerate() {
+                    if bitset.get(i) {
+                        col.push(Some(FieldVal::Bytes(v.clone())));
+                    } else {
+                        col.push(None);
                     }
                 }
-                ValueType::String | ValueType::Geometry(_) => {
-                    let encoding = get_encoding(data_buffer);
-                    let ts_codec = get_str_codec(encoding);
-                    let mut target = Vec::new();
-                    ts_codec
-                        .decode(data_buffer, &mut target)
-                        .map_err(|e| Error::Decode { source: e })?;
-                    for (i, v) in target.iter().enumerate() {
-                        if bitset.get(i) {
-                            col.push(Some(FieldVal::Bytes(v.clone())));
-                        } else {
-                            col.push(None);
-                        }
-                    }
-                }
-            },
+            }
+            ColumnType::Field(ValueType::Unknown) => {
+                return Err(Error::UnsupportedDataType {
+                    dt: "unknown".to_string(),
+                });
+            }
         }
         Ok(col)
     }
@@ -344,14 +329,23 @@ impl Chunk {
     pub fn deserialize(bytes: &[u8]) -> Result<Self> {
         bincode::deserialize(bytes).map_err(|e| Error::Deserialize { source: e.into() })
     }
+
     pub fn push(&mut self, column_group: Arc<ColumnGroup>) -> Result<()> {
+        if self.time_range.max_ts > column_group.time_range.min_ts {
+            return Err(Error::TsmColumnGroupError {
+                reason: format!(
+                    "invalid column group time range, current max_ts: {}, new min_ts: {}",
+                    self.time_range.max_ts, column_group.time_range.min_ts
+                ),
+            });
+        }
         self.time_range.merge(&column_group.time_range);
         if self
             .column_groups
             .get(&column_group.column_group_id())
             .is_some()
         {
-            return Err(Error::DuplicateColumnGroup {
+            return Err(Error::TsmColumnGroupError {
                 reason: format!(
                     "duplicate column group id: {}, failed push pages meta to tsm_meta",
                     column_group.column_group_id()

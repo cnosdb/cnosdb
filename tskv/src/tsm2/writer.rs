@@ -21,7 +21,7 @@ use crate::file_system::file::cursor::FileCursor;
 use crate::file_system::file_manager;
 use crate::file_utils::{make_delta_file_name, make_tsm_file_name};
 use crate::tsm::codec::{
-    get_bool_codec, get_f64_codec, get_i64_codec, get_str_codec, get_ts_codec, get_u64_codec,
+    get_bool_codec, get_f64_codec, get_i64_codec, get_str_codec, get_u64_codec,
 };
 use crate::tsm2::page::{
     Chunk, ChunkGroup, ChunkGroupMeta, ChunkGroupWriteSpec, ChunkStatics, ChunkWriteSpec,
@@ -110,9 +110,9 @@ impl Column {
         }
     }
 
-    pub fn empty(column_type: ColumnType) -> Column {
+    pub fn empty(column_type: ColumnType) -> Result<Column> {
         let valid = BitSet::new();
-        Self {
+        let column = Self {
             column_type: column_type.clone(),
             valid,
             data: match column_type {
@@ -126,17 +126,20 @@ impl Column {
                     ValueType::Geometry(_) | ValueType::String => {
                         ColumnData::String(vec![], String::new(), String::new())
                     }
-                    _ => {
-                        panic!("invalid type: field type does not match filed type")
+                    ValueType::Unknown => {
+                        return Err(Error::UnsupportedDataType {
+                            dt: "unknown".to_string(),
+                        })
                     }
                 },
             },
-        }
+        };
+        Ok(column)
     }
 
-    pub fn empty_with_cap(column_type: ColumnType, cap: usize) -> Column {
+    pub fn empty_with_cap(column_type: ColumnType, cap: usize) -> Result<Column> {
         let valid = BitSet::with_size(cap);
-        Self {
+        let column = Self {
             column_type: column_type.clone(),
             valid,
             data: match column_type {
@@ -158,12 +161,15 @@ impl Column {
                     ValueType::Geometry(_) | ValueType::String => {
                         ColumnData::String(Vec::with_capacity(cap), String::new(), String::new())
                     }
-                    _ => {
-                        panic!("invalid type: field type does not match filed type")
+                    ValueType::Unknown => {
+                        return Err(Error::UnsupportedDataType {
+                            dt: "unknown".to_string(),
+                        })
                     }
                 },
             },
-        }
+        };
+        Ok(column)
     }
 
     pub fn push(&mut self, value: Option<FieldVal>) {
@@ -260,8 +266,7 @@ impl Column {
             }
         }
     }
-    pub fn col_to_page(&self, desc: &TableColumn) -> Page {
-        // TODO
+    pub fn col_to_page(&self, desc: &TableColumn) -> Result<Page> {
         let null_count = 1;
         let len_bitset = self.valid.byte_len() as u32;
         let data_len = self.len() as u64;
@@ -269,7 +274,9 @@ impl Column {
         let statistics = match &self.data {
             ColumnData::F64(array, min, max) => {
                 let encoder = get_f64_codec(desc.encoding);
-                encoder.encode(array, &mut buf).unwrap();
+                encoder
+                    .encode(array, &mut buf)
+                    .map_err(|e| Error::Encode { source: e })?;
                 PageStatistics::F64(ValueStatistics::new(
                     Some(*min),
                     Some(*max),
@@ -278,13 +285,10 @@ impl Column {
                 ))
             }
             ColumnData::I64(array, min, max) => {
-                if desc.column_type.is_time() {
-                    let encoder = get_ts_codec(desc.encoding);
-                    encoder.encode(array, &mut buf).unwrap();
-                } else {
-                    let encoder = get_i64_codec(desc.encoding);
-                    encoder.encode(array, &mut buf).unwrap();
-                };
+                let encoder = get_i64_codec(desc.encoding);
+                encoder
+                    .encode(array, &mut buf)
+                    .map_err(|e| Error::Encode { source: e })?;
                 PageStatistics::I64(ValueStatistics::new(
                     Some(*min),
                     Some(*max),
@@ -294,7 +298,9 @@ impl Column {
             }
             ColumnData::U64(array, min, max) => {
                 let encoder = get_u64_codec(desc.encoding);
-                encoder.encode(array, &mut buf).unwrap();
+                encoder
+                    .encode(array, &mut buf)
+                    .map_err(|e| Error::Encode { source: e })?;
                 PageStatistics::U64(ValueStatistics::new(
                     Some(*min),
                     Some(*max),
@@ -309,7 +315,7 @@ impl Column {
                         &array.iter().map(|it| it.as_bytes()).collect::<Vec<_>>(),
                         &mut buf,
                     )
-                    .unwrap();
+                    .map_err(|e| Error::Encode { source: e })?;
                 PageStatistics::Bytes(ValueStatistics::new(
                     Some(min.as_bytes().to_vec()),
                     Some(max.as_bytes().to_vec()),
@@ -319,7 +325,9 @@ impl Column {
             }
             ColumnData::Bool(array, min, max) => {
                 let encoder = get_bool_codec(desc.encoding);
-                encoder.encode(array, &mut buf).unwrap();
+                encoder
+                    .encode(array, &mut buf)
+                    .map_err(|e| Error::Encode { source: e })?;
                 PageStatistics::Bool(ValueStatistics::new(
                     Some(*min),
                     Some(*max),
@@ -339,7 +347,7 @@ impl Column {
             column: desc.clone(),
             statistics,
         };
-        Page { bytes, meta }
+        Ok(Page { bytes, meta })
     }
 
     pub fn get(&self, index: usize) -> Option<FieldVal> {
@@ -354,7 +362,7 @@ impl Column {
     }
 
     pub fn chunk(&self, start: usize, end: usize) -> Result<Column> {
-        let mut column = Column::empty_with_cap(self.column_type.clone(), end - start);
+        let mut column = Column::empty_with_cap(self.column_type.clone(), end - start)?;
         for index in start..end {
             column.push(self.get(index));
         }
@@ -442,13 +450,13 @@ impl DataBlock2 {
         self.schema.clone()
     }
 
-    pub fn block_to_page(&self) -> Vec<Page> {
+    pub fn block_to_page(&self) -> Result<Vec<Page>> {
         let mut pages = Vec::with_capacity(self.cols.len() + 1);
-        pages.push(self.ts.col_to_page(&self.ts_desc));
+        pages.push(self.ts.col_to_page(&self.ts_desc)?);
         for (col, desc) in self.cols.iter().zip(self.cols_desc.iter()) {
-            pages.push(col.col_to_page(desc));
+            pages.push(col.col_to_page(desc)?);
         }
-        pages
+        Ok(pages)
     }
 
     pub fn merge(&mut self, other: DataBlock2) -> Result<DataBlock2> {
@@ -459,12 +467,12 @@ impl DataBlock2 {
         } else {
             other.schema.clone()
         };
-        let (sort_index, time_array) = self.sort_index_and_time_col(&other);
+        let (sort_index, time_array) = self.sort_index_and_time_col(&other)?;
         let mut columns = Vec::new();
         let mut columns_des = Vec::new();
         for field in schema.fields() {
             let mut merge_column =
-                Column::empty_with_cap(field.column_type.clone(), time_array.len());
+                Column::empty_with_cap(field.column_type.clone(), time_array.len())?;
             let column_self = self.column(&field.name);
             let column_other = other.column(&field.name);
             for idx in sort_index.iter() {
@@ -506,7 +514,8 @@ impl DataBlock2 {
             columns_des.push(field.clone());
         }
 
-        let mut ts_col = Column::empty_with_cap(self.ts_desc.column_type.clone(), time_array.len());
+        let mut ts_col =
+            Column::empty_with_cap(self.ts_desc.column_type.clone(), time_array.len())?;
 
         time_array
             .iter()
@@ -520,7 +529,7 @@ impl DataBlock2 {
         Ok(datablock)
     }
 
-    fn sort_index_and_time_col(&self, other: &DataBlock2) -> (Vec<Merge>, Vec<i64>) {
+    fn sort_index_and_time_col(&self, other: &DataBlock2) -> Result<(Vec<Merge>, Vec<i64>)> {
         let mut sort_index = Vec::with_capacity(self.len() + other.len());
         let mut time_array = Vec::new();
         let (mut index_self, mut index_other) = (0_usize, 0_usize);
@@ -548,7 +557,10 @@ impl DataBlock2 {
                     }
                 }
                 _ => {
-                    unreachable!();
+                    return Err(Error::DataBlockError {
+                        reason: "Time column does not support except i64 physical data type"
+                            .to_string(),
+                    })
                 }
             }
         }
@@ -567,10 +579,13 @@ impl DataBlock2 {
                 }
             }
             _ => {
-                unreachable!()
+                return Err(Error::DataBlockError {
+                    reason: "Time column does not support except i64 physical data type"
+                        .to_string(),
+                })
             }
         }
-        (sort_index, time_array)
+        Ok((sort_index, time_array))
     }
 
     pub fn len(&self) -> usize {
@@ -630,18 +645,18 @@ impl DataBlock2 {
         Ok(datablock)
     }
 
-    pub fn time_range(&self) -> TimeRange {
+    pub fn time_range(&self) -> Result<TimeRange> {
         match self.ts {
             Column {
                 data: ColumnData::I64(_, min, max),
                 ..
-            } => TimeRange {
+            } => Ok(TimeRange {
                 min_ts: min,
                 max_ts: max,
-            },
-            _ => {
-                unreachable!()
-            }
+            }),
+            _ => Err(Error::DataBlockError {
+                reason: "Time column does not support except i64 physical data type".to_string(),
+            }),
         }
     }
 }
@@ -895,9 +910,9 @@ impl Tsm2Writer {
             });
         }
 
-        let time_range = datablock.time_range();
+        let time_range = datablock.time_range()?;
         let schema = datablock.schema.clone();
-        let pages = datablock.block_to_page();
+        let pages = datablock.block_to_page()?;
 
         self.write_pages(schema, series_id, pages, time_range)
             .await?;
@@ -1051,7 +1066,7 @@ mod test {
     use crate::tsm2::writer::{Column, DataBlock2, Tsm2Writer};
 
     fn i64_column(data: Vec<i64>) -> Column {
-        let mut col = Column::empty(ColumnType::Field(ValueType::Integer));
+        let mut col = Column::empty(ColumnType::Field(ValueType::Integer)).unwrap();
         for datum in data {
             col.push(Some(FieldVal::Integer(datum)))
         }
@@ -1059,7 +1074,7 @@ mod test {
     }
 
     fn ts_column(data: Vec<i64>) -> Column {
-        let mut col = Column::empty(ColumnType::Time(TimeUnit::Nanosecond));
+        let mut col = Column::empty(ColumnType::Time(TimeUnit::Nanosecond)).unwrap();
         for datum in data {
             col.push(Some(FieldVal::Integer(datum)))
         }
@@ -1125,8 +1140,7 @@ mod test {
         let tsm_reader = TSM2Reader::open(tsm_writer.path).await.unwrap();
         let data2 = tsm_reader.read_datablock(1, 0).await.unwrap();
         assert_eq!(data1, data2);
-        let time_range = data2.time_range();
-        let _pages = data2.block_to_page();
+        let time_range = data2.time_range().unwrap();
         assert_eq!(time_range, TimeRange::new(1, 3));
         println!("time range: {:?}", time_range);
     }

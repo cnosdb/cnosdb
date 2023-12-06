@@ -54,7 +54,7 @@ impl Ord for CompactingBlockMeta {
                 self.meta.column_group().get(&self.column_group_id),
                 other.meta.column_group().get(&other.column_group_id),
             ) {
-                (Some(cg1), Some(cg2)) => cg1.time_range().min_ts.cmp(&cg2.time_range().min_ts),
+                (Some(cg1), Some(cg2)) => cg1.time_range().cmp(cg2.time_range()),
                 (None, Some(_)) => std::cmp::Ordering::Less,
                 (Some(_), None) => std::cmp::Ordering::Greater,
                 _ => std::cmp::Ordering::Equal,
@@ -274,9 +274,9 @@ impl CompactingBlockMetaGroup {
             let mut start = 0;
             while start + max_block_size < len {
                 let data_block_merge = data_block.chunk(start, start + max_block_size)?;
-                let time_range = data_block_merge.time_range();
+                let time_range = data_block_merge.time_range()?;
                 let table_schema = data_block_merge.schema();
-                let data_block_merge_pages = data_block_merge.block_to_page();
+                let data_block_merge_pages = data_block_merge.block_to_page()?;
                 // Encode decoded data blocks into chunks.
                 merged_blks.push(CompactingBlock::encoded(
                     0,
@@ -291,9 +291,9 @@ impl CompactingBlockMetaGroup {
             if start < len {
                 // Encode the remaining decoded data blocks.
                 let data_block_merge = data_block.chunk(start, len)?;
-                let time_range = data_block_merge.time_range();
+                let time_range = data_block_merge.time_range()?;
                 let table_schema = data_block_merge.schema();
-                let data_block_merge_pages = data_block_merge.block_to_page();
+                let data_block_merge_pages = data_block_merge.block_to_page()?;
                 // Encode decoded data blocks into chunks.
                 merged_blks.push(CompactingBlock::encoded(
                     0,
@@ -451,6 +451,18 @@ impl CompactingBlock {
             }
         }
     }
+
+    pub fn time_range(&self) -> Result<TimeRange> {
+        match self {
+            CompactingBlock::Decoded { data_block, .. } => data_block.time_range(),
+            CompactingBlock::Encoded { time_range, .. } => Ok(*time_range),
+            CompactingBlock::Raw {
+                meta,
+                column_group_id,
+                ..
+            } => Ok(*meta.column_group()[column_group_id].time_range()),
+        }
+    }
 }
 
 struct CompactingFile {
@@ -462,13 +474,14 @@ struct CompactingFile {
 
 impl CompactingFile {
     fn new(i: usize, tsm_reader: Arc<TSM2Reader>) -> Self {
-        let series_ids = {
+        let mut series_ids = {
             let chunks = tsm_reader.chunk_group();
             chunks
                 .iter()
                 .flat_map(|(_, chunk)| chunk.chunks.iter().map(|chunk_meta| chunk_meta.series_id))
                 .collect::<Vec<_>>()
         };
+        series_ids.sort();
 
         Self {
             i,
@@ -503,12 +516,13 @@ impl PartialEq for CompactingFile {
 
 impl Ord for CompactingFile {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        match (self.series_id(), other.series_id()) {
+        let res = match (self.series_id(), other.series_id()) {
             (Some(sid1), Some(sid2)) => sid1.cmp(&sid2),
-            (Some(_), None) => std::cmp::Ordering::Greater,
-            (None, Some(_)) => std::cmp::Ordering::Less,
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
             (None, None) => std::cmp::Ordering::Equal,
-        }
+        };
+        res.reverse()
     }
 }
 
@@ -1032,7 +1046,8 @@ pub mod test {
     }
 
     fn i64_column(data: Vec<i64>) -> Column {
-        let mut col = Column::empty_with_cap(ColumnType::Field(ValueType::Integer), data.len());
+        let mut col =
+            Column::empty_with_cap(ColumnType::Field(ValueType::Integer), data.len()).unwrap();
         for datum in data {
             col.push(Some(FieldVal::Integer(datum)))
         }
@@ -1040,7 +1055,8 @@ pub mod test {
     }
 
     fn ts_column(data: Vec<i64>) -> Column {
-        let mut col = Column::empty_with_cap(ColumnType::Time(TimeUnit::Nanosecond), data.len());
+        let mut col =
+            Column::empty_with_cap(ColumnType::Time(TimeUnit::Nanosecond), data.len()).unwrap();
         for datum in data {
             col.push(Some(FieldVal::Integer(datum)))
         }
@@ -1048,7 +1064,8 @@ pub mod test {
     }
 
     fn i64_some_column(data: Vec<Option<i64>>) -> Column {
-        let mut col = Column::empty_with_cap(ColumnType::Field(ValueType::Integer), data.len());
+        let mut col =
+            Column::empty_with_cap(ColumnType::Field(ValueType::Integer), data.len()).unwrap();
         for datum in data {
             col.push(datum.map(FieldVal::Integer))
         }
@@ -1056,7 +1073,8 @@ pub mod test {
     }
 
     fn u64_some_column(data: Vec<Option<u64>>) -> Column {
-        let mut col = Column::empty_with_cap(ColumnType::Field(ValueType::Unsigned), data.len());
+        let mut col =
+            Column::empty_with_cap(ColumnType::Field(ValueType::Unsigned), data.len()).unwrap();
         for datum in data {
             col.push(datum.map(FieldVal::Unsigned))
         }
@@ -1064,7 +1082,8 @@ pub mod test {
     }
 
     fn f64_some_column(data: Vec<Option<f64>>) -> Column {
-        let mut col = Column::empty_with_cap(ColumnType::Field(ValueType::Float), data.len());
+        let mut col =
+            Column::empty_with_cap(ColumnType::Field(ValueType::Float), data.len()).unwrap();
         for datum in data {
             col.push(datum.map(FieldVal::Float))
         }
@@ -1072,7 +1091,8 @@ pub mod test {
     }
 
     fn bool_some_column(data: Vec<Option<bool>>) -> Column {
-        let mut col = Column::empty_with_cap(ColumnType::Field(ValueType::Boolean), data.len());
+        let mut col =
+            Column::empty_with_cap(ColumnType::Field(ValueType::Boolean), data.len()).unwrap();
         for datum in data {
             col.push(datum.map(FieldVal::Boolean))
         }
@@ -1560,7 +1580,8 @@ pub mod test {
         let mut col = Column::empty_with_cap(
             ColumnType::Time(TimeUnit::Nanosecond),
             (max_ts - min_ts + 1) as usize,
-        );
+        )
+        .unwrap();
         for i in min_ts..max_ts + 1 {
             col.push(Some(FieldVal::Integer(i)));
         }
@@ -1568,7 +1589,7 @@ pub mod test {
     }
 
     fn generate_column_i64(len: usize, none_range: Vec<(usize, usize)>) -> Column {
-        let mut col = Column::empty_with_cap(ColumnType::Field(ValueType::Integer), len);
+        let mut col = Column::empty_with_cap(ColumnType::Field(ValueType::Integer), len).unwrap();
         for i in 0..len {
             if none_range.iter().any(|(min, max)| i >= *min && i <= *max) {
                 col.push(None);
@@ -1580,7 +1601,7 @@ pub mod test {
     }
 
     fn generate_column_u64(len: usize, none_range: Vec<(usize, usize)>) -> Column {
-        let mut col = Column::empty_with_cap(ColumnType::Field(ValueType::Unsigned), len);
+        let mut col = Column::empty_with_cap(ColumnType::Field(ValueType::Unsigned), len).unwrap();
         for i in 0..len {
             if none_range.iter().any(|(min, max)| i >= *min && i <= *max) {
                 col.push(None);
@@ -1592,7 +1613,7 @@ pub mod test {
     }
 
     fn generate_column_f64(len: usize, none_range: Vec<(usize, usize)>) -> Column {
-        let mut col = Column::empty_with_cap(ColumnType::Field(ValueType::Float), len);
+        let mut col = Column::empty_with_cap(ColumnType::Field(ValueType::Float), len).unwrap();
         for i in 0..len {
             if none_range.iter().any(|(min, max)| i >= *min && i <= *max) {
                 col.push(None);
@@ -1604,7 +1625,7 @@ pub mod test {
     }
 
     fn generate_column_bool(len: usize, none_range: Vec<(usize, usize)>) -> Column {
-        let mut col = Column::empty_with_cap(ColumnType::Field(ValueType::Boolean), len);
+        let mut col = Column::empty_with_cap(ColumnType::Field(ValueType::Boolean), len).unwrap();
         for i in 0..len {
             if none_range.iter().any(|(min, max)| i >= *min && i <= *max) {
                 col.push(None);

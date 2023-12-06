@@ -216,7 +216,7 @@ impl FlushTask {
             // Iterates [ MemCache ] -> next_series_id -> [ SeriesData ]
             for series_data in series_datas.iter_mut() {
                 // Iterates SeriesData -> [ RowGroups{ schema_id, schema, [ RowData ] } ]
-                for (_sch_id, sch_cols, rows) in series_data.read().flat_groups() {
+                for (sch_cols, rows) in series_data.read().flat_groups() {
                     for i in sch_cols.columns().iter() {
                         column_encoding_map.insert(i.id, i.encoding);
                     }
