@@ -119,7 +119,12 @@ impl<T: FieldArray> BatchMergeBuilder<T> {
 
     pub fn take_last_and_merge(&mut self) -> Result<(), DataFusionError> {
         match self.last_same_rows.len() {
-            2.. => {
+            0 => {}
+            1 => {
+                let idx = self.last_same_rows.pop().unwrap();
+                self.indices.iter_mut().for_each(|i| i.push(idx))
+            }
+            _ => {
                 for c_i in 0..self.schema.fields().len() {
                     for (i, (b_i, r_i)) in self.last_same_rows.iter().enumerate().rev() {
                         let b_i = *b_i;
@@ -132,11 +137,6 @@ impl<T: FieldArray> BatchMergeBuilder<T> {
                 }
                 self.last_same_rows.clear();
             }
-            1 => {
-                let idx = self.last_same_rows.pop().unwrap();
-                self.indices.iter_mut().for_each(|i| i.push(idx))
-            }
-            _ => {}
         }
 
         Ok(())
@@ -149,7 +149,7 @@ impl<T: FieldArray> BatchMergeBuilder<T> {
 
     /// Returns `true` if this [`BatchMergeBuilder`] contains no in-progress rows
     pub fn is_empty(&self) -> bool {
-        self.indices.is_empty()
+        self.indices[0].is_empty()
     }
 
     /// Returns the schema of this [`BatchMergeBuilder`]

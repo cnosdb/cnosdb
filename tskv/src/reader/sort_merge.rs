@@ -508,4 +508,30 @@ mod test {
         assert_eq!(res, expected_batch);
         assert!(stream.next().await.is_none());
     }
+
+    #[tokio::test]
+    async fn test_merge_time() {
+        let fields = Fields::from(vec![Field::new("column1", DataType::Int64, true)]);
+        let schema = SchemaRef::new(Schema::new(fields));
+
+        let array11 = Arc::new(Int64Array::from_iter_values([1, 1, 1]));
+        let record_batch1 = RecordBatch::try_new(schema.clone(), vec![array11]).unwrap();
+        let array21 = Arc::new(Int64Array::from_iter_values([1, 1, 2]));
+        let record_batch2 = RecordBatch::try_new(schema.clone(), vec![array21]).unwrap();
+        let array31 = Arc::new(Int64Array::from_iter_values([1, 2, 2]));
+        let record_batch3 = RecordBatch::try_new(schema.clone(), vec![array31]).unwrap();
+
+        let batches = vec![record_batch1, record_batch2, record_batch3];
+
+        let mut stream =
+            new_with_batches::<Int64Array>(schema.clone(), batches, 4096, "column1").unwrap();
+        let res = stream.next().await.unwrap().unwrap();
+
+        let array1 = Arc::new(Int64Array::from_iter_values([1, 2]));
+
+        let expected_batch = RecordBatch::try_new(schema.clone(), vec![array1]).unwrap();
+
+        assert_eq!(res, expected_batch);
+        assert!(stream.next().await.is_none());
+    }
 }
