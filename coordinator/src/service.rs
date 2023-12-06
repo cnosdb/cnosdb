@@ -7,11 +7,11 @@ use std::vec;
 
 use config::{Config, HintedOffConfig};
 use datafusion::arrow::array::{
-    Array, ArrayRef, Int64Array, StringArray, TimestampMicrosecondArray, TimestampMillisecondArray,
-    TimestampNanosecondArray, UInt32Array,
+    Array, ArrayAccessor, ArrayRef, DictionaryArray, Int64Array, StringArray,
+    TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray, UInt32Array,
 };
 use datafusion::arrow::compute::take;
-use datafusion::arrow::datatypes::{DataType, TimeUnit};
+use datafusion::arrow::datatypes::{DataType, Int32Type, TimeUnit};
 use datafusion::arrow::record_batch::RecordBatch;
 use meta::error::MetaError;
 use meta::model::{MetaClientRef, MetaRef};
@@ -554,9 +554,13 @@ impl Coordinator for CoordService {
                 if matches!(tskv_schema_column.column_type, ColumnType::Tag) {
                     let value = column
                         .as_any()
-                        .downcast_ref::<StringArray>()
+                        .downcast_ref::<DictionaryArray<Int32Type>>()
                         .ok_or(CoordinatorError::CommonError {
-                            msg: format!("column {} is not string", name),
+                            msg: format!("column {} is not DictionaryArray", name),
+                        })?
+                        .downcast_dict::<StringArray>()
+                        .ok_or(CoordinatorError::CommonError {
+                            msg: format!("column {} is not StringArray", name),
                         })?
                         .value(idx);
                     hasher.hash_with(name.as_bytes());
