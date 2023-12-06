@@ -20,7 +20,7 @@ use datafusion::prelude::Column;
 use meta::error::MetaError;
 use meta::model::MetaClientRef;
 use models::predicate::domain::{Predicate, PredicateRef, PushedAggregateFunction};
-use models::schema::{TskvTableSchema, TskvTableSchemaRef};
+use models::schema::{TskvTableSchema, TskvTableSchemaRef, TIME_FIELD_NAME};
 use trace::debug;
 
 use crate::data_source::batch::filter_expr_rewriter::{has_udf_function, rewrite_filters};
@@ -357,22 +357,14 @@ impl TableProvider for ClusterTable {
                 }
             });
 
-        if contain_time && !contain_field {
-            let new_projection = proj
-                .iter()
-                .cloned()
-                .chain(
-                    self.schema
-                        .columns()
-                        .iter()
-                        .enumerate()
-                        .filter(|(_, c)| c.column_type.is_field())
-                        .map(|(i, _)| i),
-                )
-                .collect::<Vec<usize>>();
-
-            return Some(new_projection);
-        };
+        if contain_field && !contain_time {
+            if let Some(idx) = self.schema.column_index(TIME_FIELD_NAME) {
+                let new_proj = std::iter::once(idx)
+                    .chain(proj.iter().cloned())
+                    .collect::<Vec<_>>();
+                return Some(new_proj);
+            }
+        }
 
         None
     }
@@ -405,26 +397,21 @@ pub fn valid_project(
     schema: &TskvTableSchema,
     projection: Option<&Vec<usize>>,
 ) -> std::result::Result<(), MetaError> {
-    let mut field_count = 0;
     let mut contains_time_column = false;
 
     if let Some(e) = projection {
-        e.iter().cloned().for_each(|idx| {
-            if let Some(c) = schema.column_by_index(idx) {
+        e.iter().for_each(|idx| {
+            if let Some(c) = schema.column_by_index(*idx) {
                 if c.column_type.is_time() {
                     contains_time_column = true;
-                }
-                if c.column_type.is_field() {
-                    field_count += 1;
                 }
             };
         });
     }
 
-    if contains_time_column && field_count == 0 {
+    if !contains_time_column {
         return Err(MetaError::CommonError {
-            msg: "If the projection contains the time column, it must contain the field column"
-                .to_string(),
+            msg: "The projection must contains the time column".to_string(),
         });
     }
 
