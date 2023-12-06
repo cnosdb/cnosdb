@@ -1,14 +1,12 @@
-use datafusion::arrow::datatypes::DataType;
 use datafusion::common::tree_node::{
     RewriteRecursion, TreeNode, TreeNodeRewriter, TreeNodeVisitor, VisitRecursion,
 };
 use datafusion::common::{DFSchemaRef, ScalarValue};
 use datafusion::error::{DataFusionError, Result};
 use datafusion::execution::context::ExecutionProps;
-use datafusion::logical_expr::{Expr, ExprSchemable};
+use datafusion::logical_expr::{Expr, Operator};
 use datafusion::optimizer::simplify_expressions::{ExprSimplifier, SimplifyContext};
 use datafusion::optimizer::utils::conjunction;
-use datafusion::prelude::lit;
 
 pub fn is_udf_function(expr: &Expr) -> bool {
     matches!(expr, Expr::ScalarUDF(_) | Expr::AggregateUDF(_))
@@ -21,7 +19,7 @@ pub fn has_udf_function(expr: &Expr) -> Result<bool, DataFusionError> {
 }
 
 pub fn rewrite_filters(filters: &[Expr], df_schema: DFSchemaRef) -> Result<Option<Expr>> {
-    let mut filter_expr_rewriter = FilterExprRewriter::new(df_schema.clone());
+    let mut filter_expr_rewriter = FilterExprRewriter::new();
     let props = ExecutionProps::new();
     let simplify_cxt = SimplifyContext::new(&props).with_schema(df_schema);
     let simplifier = ExprSimplifier::new(simplify_cxt);
@@ -31,7 +29,15 @@ pub fn rewrite_filters(filters: &[Expr], df_schema: DFSchemaRef) -> Result<Optio
             e.rewrite(&mut filter_expr_rewriter)
                 .and_then(|e| simplifier.simplify(e))
         })
-        .transpose()?;
+        .transpose()?
+        .map(|e| {
+            let mut udf_visitor = UDFVisitor::default();
+            e.visit(&mut udf_visitor)
+                .map(|_| if udf_visitor.has_udf() { None } else { Some(e) })
+        })
+        .transpose()?
+        .flatten();
+
     if matches!(expr, Some(Expr::Literal(ScalarValue::Boolean(Some(true))))) {
         Ok(None)
     } else {
@@ -63,36 +69,57 @@ impl TreeNodeVisitor for UDFVisitor {
 }
 
 pub struct FilterExprRewriter {
-    schema: DFSchemaRef,
-    udf_cnt: usize,
+    has_udf: bool,
 }
 
 impl FilterExprRewriter {
-    pub fn new(schema: DFSchemaRef) -> Self {
-        Self { schema, udf_cnt: 0 }
+    pub fn new() -> Self {
+        Self { has_udf: false }
     }
 }
 
 impl TreeNodeRewriter for FilterExprRewriter {
     type N = Expr;
-    fn pre_visit(&mut self, node: &Self::N) -> Result<RewriteRecursion> {
-        if is_udf_function(node) {
-            self.udf_cnt += 1;
-        }
+    fn pre_visit(&mut self, _node: &Self::N) -> Result<RewriteRecursion> {
         Ok(RewriteRecursion::Continue)
     }
 
     fn mutate(&mut self, node: Self::N) -> Result<Self::N> {
-        if self.udf_cnt.gt(&0) {
-            let data_type = node.get_type(self.schema.as_ref())?;
-            if matches!(data_type, DataType::Boolean) {
-                self.udf_cnt -= 1;
-                Ok(lit(true))
-            } else {
+        if is_udf_function(&node) {
+            self.has_udf = true;
+        }
+        match &node {
+            Expr::BinaryExpr(bin) => {
+                if matches!(bin.op, Operator::And | Operator::Or) {
+                    let mut udf_visitor = UDFVisitor::default();
+                    bin.left.visit(&mut udf_visitor)?;
+                    let left_has_udf = udf_visitor.has_udf();
+
+                    let mut udf_visitor = UDFVisitor::default();
+                    bin.right.visit(&mut udf_visitor)?;
+                    let right_has_udf = udf_visitor.has_udf();
+
+                    if matches!(bin.op, Operator::And) {
+                        match (left_has_udf, right_has_udf) {
+                            (false, false) => return Ok(node),
+                            (true, true) => {
+                                return Ok(Expr::Literal(ScalarValue::Boolean(Some(true))))
+                            }
+                            (true, _) => return Ok(bin.right.as_ref().clone()),
+                            (_, true) => return Ok(bin.left.as_ref().clone()),
+                        }
+                    }
+
+                    if matches!(bin.op, Operator::Or) {
+                        match (left_has_udf, right_has_udf) {
+                            (false, false) => return Ok(node),
+                            _ => return Ok(Expr::Literal(ScalarValue::Boolean(Some(true)))),
+                        }
+                    }
+                }
                 Ok(node)
             }
-        } else {
-            Ok(node)
+            _ => Ok(node),
         }
     }
 }
