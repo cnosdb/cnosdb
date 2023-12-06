@@ -1,3 +1,4 @@
+use std::cmp;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -67,21 +68,16 @@ pub fn group_overlapping_segments<R: TimeRangeProvider + Clone>(
 ) -> Vec<OverlappingSegments<R>> {
     let mut result: Vec<OverlappingSegments<R>> = Vec::new();
 
+    let mut global_min_ts = i64::MIN;
+
     for chunk in ordered_chunks {
         let mut found = false;
 
         // Check if the current segment overlaps any existing grouping
-        for segment_group in result.iter_mut() {
-            if let Some(last_segment) = segment_group.segments().last() {
-                let last = last_segment.time_range().max_ts;
-                let c = chunk.time_range().min_ts;
-
-                // Check if there is overlap
-                if c <= last {
-                    segment_group.segments.push(chunk.clone());
-                    found = true;
-                    break;
-                }
+        if let Some(segment_group) = result.last_mut() {
+            if chunk.time_range().min_ts <= global_min_ts {
+                segment_group.segments.push(chunk.clone());
+                found = true;
             }
         }
 
@@ -92,6 +88,8 @@ pub fn group_overlapping_segments<R: TimeRangeProvider + Clone>(
             };
             result.push(new_segment_group);
         }
+
+        global_min_ts = cmp::max(chunk.time_range().max_ts, global_min_ts);
     }
 
     result
@@ -292,9 +290,9 @@ mod tests {
     #[test]
     fn test_group_overlapping_segments() {
         let trs = vec![
-            test_time_range_provider(0, 5),
+            test_time_range_provider(0, 10),
             test_time_range_provider(1, 3),
-            test_time_range_provider(2, 7),
+            test_time_range_provider(4, 7),
             test_time_range_provider(6, 10),
             test_time_range_provider(11, 14),
             test_time_range_provider(12, 15),
