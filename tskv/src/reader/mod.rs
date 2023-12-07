@@ -169,6 +169,8 @@ impl BatchReader for CombinedBatchReader {
         let streams = self
             .readers
             .iter()
+            // CombinedRecordBatchStream 是倒序遍历，所以此处 rev 反转一下
+            .rev()
             .map(|e| e.process())
             .collect::<Result<Vec<_>>>()?;
 

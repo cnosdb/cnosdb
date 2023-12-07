@@ -118,7 +118,11 @@ pub struct CombinedRecordBatchStream {
 }
 
 impl CombinedRecordBatchStream {
-    /// Create an CombinedRecordBatchStream
+    /// 依次从 entries 中取出 stream，直到取到第一个不为空的 stream 为止。
+    /// 要求所有 steram 的 schema一致。
+    /// 只有从一个 stream 中取完所有元素时，才会进行下一个 stream 的取值。
+    ///
+    /// 注意：为了性能考虑，会反向遍历 entries 列表中的 stream。
     pub fn try_new(
         schema: SchemaRef,
         entries: Vec<SendableSchemableTskvRecordBatchStream>,
@@ -158,7 +162,7 @@ impl Stream for CombinedRecordBatchStream {
 
         let poll;
         loop {
-            match self.entries.first_mut() {
+            match self.entries.last_mut() {
                 Some(s) => {
                     match s.poll_next_unpin(cx) {
                         Ready(Some(val)) => {
@@ -167,7 +171,7 @@ impl Stream for CombinedRecordBatchStream {
                         }
                         Ready(None) => {
                             // Remove the entry
-                            self.entries.remove(0);
+                            let _ = self.entries.pop();
                             continue;
                         }
                         Pending => {
