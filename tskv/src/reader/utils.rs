@@ -57,7 +57,7 @@ impl<T: TimeRangeProvider> Debug for OverlappingSegments<T> {
 }
 
 pub trait TimeRangeProvider {
-    fn time_range(&self) -> &TimeRange;
+    fn time_range(&self) -> TimeRange;
 }
 
 /// Given a slice of range-like items `ordered_chunks`, this function groups overlapping segments
@@ -295,8 +295,8 @@ mod tests {
     }
 
     impl TimeRangeProvider for TestTimeRangeProvider {
-        fn time_range(&self) -> &TimeRange {
-            &self.tr
+        fn time_range(&self) -> TimeRange {
+            self.tr
         }
     }
 

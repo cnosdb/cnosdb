@@ -604,7 +604,7 @@ impl Version {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CacheGroup {
     pub mut_cache: Arc<RwLock<MemCache>>,
     pub immut_cache: Vec<Arc<RwLock<MemCache>>>,

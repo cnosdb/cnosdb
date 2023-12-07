@@ -12,12 +12,13 @@ use futures::stream::BoxStream;
 use futures::{Stream, StreamExt};
 pub use iterator::*;
 use models::field_value::DataType;
-use models::predicate::domain::TimeRange;
+use models::predicate::domain::{TimeRange, TimeRanges};
 use models::schema::{PhysicalCType, TskvTableSchema, TIME_FIELD_NAME};
 use models::ColumnId;
+use parking_lot::RwLock;
 
 use self::utils::{CombinedRecordBatchStream, TimeRangeProvider};
-use crate::memcache::RowGroup;
+use crate::memcache::SeriesData;
 use crate::tsm2::page::Chunk;
 use crate::tsm2::reader::TSM2Reader;
 use crate::{Error, Result};
@@ -30,6 +31,7 @@ pub mod filter;
 mod function_register;
 mod iterator;
 mod iterator_v2;
+mod memcache_reader;
 mod merge;
 mod metrics;
 mod page;
@@ -273,20 +275,20 @@ impl Stream for SchemableMemoryBatchReaderStream {
 #[derive(Clone)]
 pub enum DataReference {
     Chunk(Arc<Chunk>, Arc<TSM2Reader>),
-    Memcache(Arc<RowGroup>),
+    Memcache(Arc<RwLock<SeriesData>>, Arc<TimeRanges>),
 }
 
 impl DataReference {
-    pub fn time_range(&self) -> &TimeRange {
+    pub fn time_range(&self) -> TimeRange {
         match self {
-            DataReference::Chunk(chunk, _) => chunk.time_range(),
-            DataReference::Memcache(row_group) => &row_group.range,
+            DataReference::Chunk(chunk, _) => *chunk.time_range(),
+            DataReference::Memcache(series_data, ..) => series_data.read().range,
         }
     }
 }
 
 impl TimeRangeProvider for DataReference {
-    fn time_range(&self) -> &TimeRange {
+    fn time_range(&self) -> TimeRange {
         self.time_range()
     }
 }

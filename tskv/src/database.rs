@@ -23,7 +23,7 @@ use crate::context::GlobalContext;
 use crate::error::{Result, SchemaSnafu};
 use crate::index::{self, IndexResult};
 use crate::kv_option::{Options, INDEX_PATH};
-use crate::memcache::{OrderedRowsData, RowData, RowGroup, MemCache};
+use crate::memcache::{MemCache, OrderedRowsData, RowData, RowGroup};
 use crate::schema::schemas::DBschemas;
 use crate::summary::{SummaryTask, VersionEdit};
 use crate::tseries_family::{LevelInfo, TseriesFamily, Version};

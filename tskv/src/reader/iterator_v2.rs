@@ -6,12 +6,15 @@ use datafusion::physical_plan::metrics::{
 };
 use datafusion_proto::physical_plan::from_proto::parse_physical_expr;
 use models::meta_data::VnodeId;
+use models::predicate::domain::TimeRanges;
 use models::schema::TskvTableSchemaRef;
 use models::{ColumnId, SeriesId, SeriesKey};
 use tokio::runtime::Runtime;
 use trace::{debug, SpanRecorder};
 
 use super::display::DisplayableBatchReader;
+use super::memcache_reader::MemCacheReader;
+use super::merge::DataMerger;
 use super::series::SeriesReader;
 use super::trace::Recorder;
 use super::{
@@ -22,14 +25,13 @@ use crate::reader::chunk::filter_column_groups;
 use crate::reader::column_group::ColumnGroupReader;
 use crate::reader::filter::DataFilter;
 use crate::reader::function_register::NoRegistry;
-use crate::reader::merge::DataMerger;
 use crate::reader::paralle_merge::ParallelMergeAdapter;
 use crate::reader::schema_alignmenter::SchemaAlignmenter;
 use crate::reader::trace::TraceCollectorBatcherReaderProxy;
 use crate::reader::utils::group_overlapping_segments;
 use crate::reader::{BatchReaderRef, CombinedBatchReader};
 use crate::schema::error::SchemaError;
-use crate::tseries_family::{ColumnFile, SuperVersion};
+use crate::tseries_family::{CacheGroup, ColumnFile, SuperVersion};
 use crate::tsm2::reader::TSM2Reader;
 use crate::{EngineRef, Error, Result};
 
@@ -280,8 +282,13 @@ impl SeriesGroupBatchReaderFactory {
         let mut series_chunk_readers = Vec::with_capacity(series_ids.len());
         for (sid, series_key) in series_ids.iter().zip(sid_keys) {
             // 选择含有series的所有chunk Vec<DataReference::Chunk(chunk, reader)>
-            let chunks = Self::filter_chunks(&column_files_with_reader, *sid).await?;
-            // TODO @lutengda 获取所有符合条件的 memcache rowgroup Vec<DataReference::Memcache(rowgroup)>)
+            let mut chunks = Self::filter_chunks(&column_files_with_reader, *sid).await?;
+            // 获取所有符合条件的 memcache rowgroup Vec<DataReference::Memcache(rowgroup)>)
+            chunks.append(
+                Self::filter_rowgroups(super_version.caches.clone(), *sid, time_ranges.clone())
+                    .await?
+                    .as_mut(),
+            );
             series_chunk_readers.push((series_key, chunks));
         }
 
@@ -400,6 +407,32 @@ impl SeriesGroupBatchReaderFactory {
         Ok(chunks)
     }
 
+    /// filter rowgroup by sid
+    async fn filter_rowgroups(
+        caches: CacheGroup,
+        sid: SeriesId,
+        time_ranges: Arc<TimeRanges>,
+    ) -> Result<Vec<DataReference>> {
+        let mut rowgroups = Vec::new();
+        for immut_cache in caches.immut_cache {
+            let series_data = immut_cache.read().read_series_data();
+            for (series_id, series) in series_data {
+                if series_id == sid {
+                    rowgroups.push(DataReference::Memcache(series.clone(), time_ranges.clone()));
+                    break;
+                }
+            }
+        }
+        for (series_id, series) in caches.mut_cache.read().read_series_data() {
+            if series_id == sid {
+                rowgroups.push(DataReference::Memcache(series, time_ranges));
+                break;
+            }
+        }
+
+        Ok(rowgroups)
+    }
+
     fn build_chunk_reader(
         &self,
         chunk: DataReference,
@@ -408,7 +441,7 @@ impl SeriesGroupBatchReaderFactory {
         predicate: &Option<Arc<Predicate>>,
         metrics: &SeriesGroupBatchReaderMetrics,
     ) -> Result<BatchReaderRef> {
-        let chunk_reader = match chunk {
+        let chunk_reader: BatchReaderRef = match chunk {
             DataReference::Chunk(chunk, reader) => {
                 let chunk_schema = chunk.schema();
                 let cgs = chunk.column_group().values().cloned().collect::<Vec<_>>();
@@ -419,28 +452,25 @@ impl SeriesGroupBatchReaderFactory {
                 trace::debug!("Filtered column group nums: {}", cgs.len());
                 metrics.filtered_column_group_nums().add(cgs.len());
 
-                let batch_readers = cgs
-                    .into_iter()
-                    .map(|e| {
-                        let column_group_reader = ColumnGroupReader::try_new(
-                            reader.clone(),
-                            e,
-                            projection,
-                            batch_size,
-                            self.column_group_reader_metrics_set.clone(),
-                        )?;
-                        Ok(Arc::new(column_group_reader) as BatchReaderRef)
-                    })
-                    .collect::<Result<Vec<_>>>()?;
+                    let batch_readers = cgs
+                        .into_iter()
+                        .map(|e| {
+                            let column_group_reader = ColumnGroupReader::try_new(
+                                reader.clone(),
+                                e,
+                                projection,
+                                batch_size,
+                                self.column_group_reader_metrics_set.clone(),
+                            )?;
+                            Ok(Arc::new(column_group_reader) as BatchReaderRef)
+                        })
+                        .collect::<Result<Vec<_>>>()?;
 
-                Arc::new(CombinedBatchReader::new(batch_readers))
+                    Arc::new(CombinedBatchReader::new(batch_readers))
             }
-            DataReference::Memcache(_) => {
-                // TODO @lutengda 构建memcache rowgroup reader(需要自己实现 trait BatchReader)
-                return Err(Error::Unimplemented {
-                    msg: "memcache reader is not supported yet".to_string(),
-                });
-            }
+            DataReference::Memcache(series_data, time_ranges) => Arc::new(
+                    MemCacheReader::try_new(series_data, time_ranges, batch_size, projection)?,
+                ),
         };
 
         // 数据过滤
@@ -509,7 +539,7 @@ impl SeriesGroupBatchReaderFactory {
 
         // 对 chunk 按照时间顺序排序
         // 使用 group_overlapping_segments 函数来对具有重叠关系的chunk进行分组。
-        chunks.sort_unstable_by_key(|e| *e.time_range());
+        chunks.sort_unstable_by_key(|e| e.time_range());
         let grouped_chunks = group_overlapping_segments(&chunks);
 
         debug!(
