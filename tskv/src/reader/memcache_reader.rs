@@ -1,4 +1,3 @@
-use std::iter::Rev;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -69,7 +68,7 @@ impl MemCacheReader {
     fn collect_row_data(
         &self,
         builders: &mut [ArrayBuilderPtr],
-        columns_data_vec: &mut Vec<Rev<IntoIter<DataType>>>,
+        columns_data_vec: &mut Vec<IntoIter<DataType>>,
         row_cols: &mut [Option<DataType>],
     ) -> Result<Option<()>> {
         trace::trace!("======collect_row_data=========");
@@ -136,7 +135,7 @@ impl MemCacheReader {
     }
 
     fn read_data_and_build_array(&self) -> Result<Vec<ArrayBuilderPtr>> {
-        let mut columns_data_vec: Vec<Rev<IntoIter<DataType>>> = Vec::new();
+        let mut columns_data_vec: Vec<IntoIter<DataType>> = Vec::new();
         // 1.read all columns data to Vec<Rev<IntoIter<DataType>>>
         for column in &self.columns {
             let mut columns_data: Vec<DataType> = Vec::new();
@@ -147,7 +146,7 @@ impl MemCacheReader {
                 |d| columns_data.push(d),
             );
             columns_data.dedup_by_key(|data| data.timestamp());
-            columns_data_vec.push(columns_data.into_iter().rev());
+            columns_data_vec.push(columns_data.into_iter());
         }
 
         // 2.by Vec<Vec<DataType>>, build multi ArrayBuilderPtr
