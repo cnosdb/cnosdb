@@ -406,15 +406,18 @@ impl SeriesGroupBatchReaderFactory {
         batch_size: usize,
         projection: &[ColumnId],
         predicate: &Option<Arc<Predicate>>,
+        metrics: &SeriesGroupBatchReaderMetrics,
     ) -> Result<BatchReaderRef> {
         let chunk_reader = match chunk {
             DataReference::Chunk(chunk, reader) => {
                 let chunk_schema = chunk.schema();
                 let cgs = chunk.column_group().values().cloned().collect::<Vec<_>>();
                 // filter column groups
+                metrics.column_group_nums().add(cgs.len());
                 trace::debug!("All column group nums: {}", cgs.len());
                 let cgs = filter_column_groups(cgs, predicate, chunk_schema)?;
                 trace::debug!("Filtered column group nums: {}", cgs.len());
+                metrics.filtered_column_group_nums().add(cgs.len());
 
                 let batch_readers = cgs
                     .into_iter()
@@ -458,6 +461,7 @@ impl SeriesGroupBatchReaderFactory {
         batch_size: usize,
         projection: &Projection,
         predicate: &Option<Arc<Predicate>>,
+        metrics: &SeriesGroupBatchReaderMetrics,
     ) -> Result<Vec<BatchReaderRef>> {
         let projection = if chunks.len() > 1 {
             // 需要进行合并去重，所以必须含有time列
@@ -469,8 +473,13 @@ impl SeriesGroupBatchReaderFactory {
         let chunk_readers = chunks
             .into_iter()
             .map(|data_reference| -> Result<BatchReaderRef> {
-                let chunk_reader =
-                    self.build_chunk_reader(data_reference, batch_size, projection, predicate)?;
+                let chunk_reader = self.build_chunk_reader(
+                    data_reference,
+                    batch_size,
+                    projection,
+                    predicate,
+                    metrics,
+                )?;
 
                 Ok(chunk_reader)
             })
@@ -514,8 +523,13 @@ impl SeriesGroupBatchReaderFactory {
         let readers = grouped_chunks
             .into_iter()
             .map(|chunks| -> Result<BatchReaderRef> {
-                let chunk_readers =
-                    self.build_chunk_readers(chunks.segments(), batch_size, projection, predicate)?;
+                let chunk_readers = self.build_chunk_readers(
+                    chunks.segments(),
+                    batch_size,
+                    projection,
+                    predicate,
+                    metrics,
+                )?;
 
                 // 用 Null 值补齐缺失的 Field 列
                 let chunk_readers = chunk_readers
@@ -616,6 +630,8 @@ pub struct SeriesGroupBatchReaderMetrics {
     chunk_nums: metrics::Gauge,
     chunk_nums_filtered_by_statistics: metrics::Count,
     grouped_chunk_nums: metrics::Count,
+    column_group_nums: metrics::Count,
+    filtered_column_group_nums: metrics::Count,
 }
 
 impl SeriesGroupBatchReaderMetrics {
@@ -643,6 +659,11 @@ impl SeriesGroupBatchReaderMetrics {
         let grouped_chunk_nums =
             MetricBuilder::new(metrics).counter("grouped_chunk_nums", partition);
 
+        let column_group_nums = MetricBuilder::new(metrics).counter("column_group_nums", partition);
+
+        let filtered_column_group_nums =
+            MetricBuilder::new(metrics).counter("filtered_column_group_nums", partition);
+
         Self {
             elapsed_get_series_keys_time,
             elapsed_get_tsm_readers_time,
@@ -652,6 +673,8 @@ impl SeriesGroupBatchReaderMetrics {
             chunk_nums,
             chunk_nums_filtered_by_statistics,
             grouped_chunk_nums,
+            column_group_nums,
+            filtered_column_group_nums,
         }
     }
 
@@ -685,5 +708,13 @@ impl SeriesGroupBatchReaderMetrics {
 
     pub fn grouped_chunk_nums(&self) -> &metrics::Count {
         &self.grouped_chunk_nums
+    }
+
+    pub fn column_group_nums(&self) -> &metrics::Count {
+        &self.column_group_nums
+    }
+
+    pub fn filtered_column_group_nums(&self) -> &metrics::Count {
+        &self.filtered_column_group_nums
     }
 }

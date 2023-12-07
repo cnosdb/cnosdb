@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::task::{ready, Context, Poll};
 
 use arrow::datatypes::SchemaRef;
+use arrow_schema::Schema;
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
 use datafusion::physical_plan::PhysicalExpr;
@@ -182,9 +183,11 @@ impl BatchReader for CombinedBatchReader {
             )?));
         }
 
-        Err(Error::CommonError {
-            reason: "No stream found in CombinedRecordBatchStream".to_string(),
-        })
+        // 如果没有 stream，则返回一个空的 stream
+        Ok(Box::pin(SchemableMemoryBatchReaderStream::new(
+            Arc::new(Schema::empty()),
+            vec![],
+        )))
     }
 
     fn fmt_as(&self, f: &mut fmt::Formatter) -> fmt::Result {
