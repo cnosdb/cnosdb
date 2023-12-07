@@ -153,7 +153,7 @@ impl<T: FieldArray> BatchMergeBuilder<T> {
 
     /// Returns the number of in-progress rows in this [`BatchMergeBuilder`]
     pub fn len(&self) -> usize {
-        self.indices.len()
+        self.indices[0].len()
     }
 
     /// Returns `true` if this [`BatchMergeBuilder`] contains no in-progress rows
