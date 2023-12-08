@@ -3,6 +3,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
+use crate::override_by_env::{entry_override, OverrideByEnv};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct HintedOffConfig {
@@ -26,17 +27,13 @@ impl HintedOffConfig {
     fn default_threads() -> i32 {
         3
     }
+}
 
-    pub fn override_by_env(&mut self) {
-        if let Ok(enable) = std::env::var("CNOSDB_HINTEDOFF_ENABLE") {
-            self.enable = enable.parse::<bool>().unwrap();
-        }
-        if let Ok(path) = std::env::var("CNOSDB_HINTEDOFF_PATH") {
-            self.path = path;
-        }
-        if let Ok(threads) = std::env::var("CNOSDB_HINTEDOFF_THREADS") {
-            self.threads = threads.parse::<i32>().unwrap();
-        }
+impl OverrideByEnv for HintedOffConfig {
+    fn override_by_env(&mut self) {
+        entry_override(&mut self.enable, "CNOSDB_HINTED_OFF_ENABLE");
+        entry_override(&mut self.path, "CNOSDB_HINTED_OFF_PATH");
+        entry_override(&mut self.threads, "CNOSDB_HINTED_OFF_THREADS");
     }
 }
 

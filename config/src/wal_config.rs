@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
 use crate::codec::{bytes_num, duration};
+use crate::override_by_env::{entry_override, entry_override_to_duration, OverrideByEnv};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WalConfig {
@@ -62,24 +63,27 @@ impl WalConfig {
         Duration::from_secs(0)
     }
 
-    pub fn override_by_env(&mut self) {
-        if let Ok(enabled) = std::env::var("CNOSDB_WAL_ENABLED") {
-            self.enabled = enabled.as_str() == "true";
-        }
-        if let Ok(path) = std::env::var("CNOSDB_WAL_PATH") {
-            self.path = path;
-        }
-        if let Ok(cap) = std::env::var("CNOSDB_WAL_REQ_CHANNEL_CAP") {
-            self.wal_req_channel_cap = cap.parse::<usize>().unwrap();
-        }
-        if let Ok(sync) = std::env::var("CNOSDB_WAL_SYNC") {
-            self.sync = sync.as_str() == sync;
-        }
-    }
-
     pub fn introspect(&mut self) {
         // Unit of wal.sync_interval is seconds
         self.sync_interval = Duration::from_secs(self.sync_interval.as_secs());
+    }
+}
+
+impl OverrideByEnv for WalConfig {
+    fn override_by_env(&mut self) {
+        entry_override(&mut self.enabled, "CNOSDB_WAL_ENABLED");
+        entry_override(&mut self.path, "CNOSDB_WAL_PATH");
+        entry_override(
+            &mut self.wal_req_channel_cap,
+            "CNOSDB_WAL_WAL_REQ_CHANNEL_CAP",
+        );
+        entry_override(&mut self.max_file_size, "CNOSDB_WAL_MAX_FILE_SIZE");
+        entry_override(
+            &mut self.flush_trigger_total_file_size,
+            "CNOSDB_WAL_FLUSH_TRIGGER_TOTAL_FILE_SIZE",
+        );
+        entry_override(&mut self.sync, "CNOSDB_WAL_SYNC");
+        entry_override_to_duration(&mut self.sync_interval, "CNOSDB_WAL_SYNC_INTERVAL");
     }
 }
 

@@ -42,8 +42,8 @@ impl RaftNodesManager {
     pub fn new(config: config::Config, meta: MetaRef, kv_inst: Option<EngineRef>) -> Self {
         let path = PathBuf::from(config.storage.path.clone()).join("raft-state");
         let state = StateStorage::open(path).unwrap();
-        let grpc_listen_port = config.cluster.grpc_listen_port.unwrap_or(0);
-        let enabled = config.cluster.grpc_listen_port.is_some();
+        let grpc_listen_port = config.service.grpc_listen_port.unwrap_or(0);
+        let enabled = config.service.grpc_listen_port.is_some();
 
         Self {
             config,
@@ -61,7 +61,7 @@ impl RaftNodesManager {
     }
 
     pub fn node_id(&self) -> u64 {
-        self.config.node_basic.node_id
+        self.config.global.node_id
     }
 
     pub fn multi_raft(&self) -> Arc<RwLock<MultiRaft>> {
@@ -391,7 +391,7 @@ impl RaftNodesManager {
     }
 
     fn raft_config(&self) -> openraft::Config {
-        let logs_to_keep = self.config.raft_logs_to_keep;
+        let logs_to_keep = self.config.cluster.raft_logs_to_keep;
 
         let heartbeat = 10000;
         openraft::Config {
@@ -425,7 +425,8 @@ impl RaftNodesManager {
             .raft_node_logs(tenant, db_name, vnode_id, group_id, engine.clone())
             .await?;
 
-        let grpc_addr = models::utils::build_address(&self.config.host, self.grpc_listen_port);
+        let grpc_addr =
+            models::utils::build_address(&self.config.global.host, self.grpc_listen_port);
         let info = RaftNodeInfo {
             group_id,
             address: grpc_addr,
