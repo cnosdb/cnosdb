@@ -277,6 +277,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_kvcore_recover() {
         let dir = PathBuf::from("/tmp/test/kvcore/kvcore_recover");
         let _ = std::fs::remove_dir_all(&dir);
