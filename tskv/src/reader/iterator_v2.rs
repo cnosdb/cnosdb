@@ -1,3 +1,5 @@
+use std::iter;
+use std::ops::Not;
 use std::sync::Arc;
 
 use arrow::datatypes::{Schema, SchemaRef};
@@ -289,6 +291,10 @@ impl SeriesGroupBatchReaderFactory {
                     .await?
                     .as_mut(),
             );
+            // 按时间范围过滤chunk reader
+            chunks.retain(|d| {
+                d.time_range().is_none().not() && time_ranges.overlaps(&d.time_range())
+            });
             series_chunk_readers.push((series_key, chunks));
         }
 
@@ -414,19 +420,22 @@ impl SeriesGroupBatchReaderFactory {
         time_ranges: Arc<TimeRanges>,
     ) -> Result<Vec<DataReference>> {
         let mut rowgroups = Vec::new();
-        for immut_cache in caches.immut_cache {
-            let series_data = immut_cache.read().read_series_data();
+        for cache in caches
+            .immut_cache
+            .iter()
+            .chain(iter::once(&caches.mut_cache))
+        {
+            let series_data = cache.read().read_series_data();
             for (series_id, series) in series_data {
                 if series_id == sid {
-                    rowgroups.push(DataReference::Memcache(series.clone(), time_ranges.clone()));
+                    if let Some(new_time_ranges) = time_ranges.intersect(&series.read().range) {
+                        rowgroups.push(DataReference::Memcache(
+                            series.clone(),
+                            Arc::new(new_time_ranges),
+                        ))
+                    }
                     break;
                 }
-            }
-        }
-        for (series_id, series) in caches.mut_cache.read().read_series_data() {
-            if series_id == sid {
-                rowgroups.push(DataReference::Memcache(series, time_ranges));
-                break;
             }
         }
 
@@ -441,16 +450,17 @@ impl SeriesGroupBatchReaderFactory {
         predicate: &Option<Arc<Predicate>>,
         metrics: &SeriesGroupBatchReaderMetrics,
     ) -> Result<BatchReaderRef> {
-        let chunk_reader: BatchReaderRef = match chunk {
-            DataReference::Chunk(chunk, reader) => {
-                let chunk_schema = chunk.schema();
-                let cgs = chunk.column_group().values().cloned().collect::<Vec<_>>();
-                // filter column groups
-                metrics.column_group_nums().add(cgs.len());
-                trace::debug!("All column group nums: {}", cgs.len());
-                let cgs = filter_column_groups(cgs, predicate, chunk_schema)?;
-                trace::debug!("Filtered column group nums: {}", cgs.len());
-                metrics.filtered_column_group_nums().add(cgs.len());
+        let chunk_reader: BatchReaderRef =
+            match chunk {
+                DataReference::Chunk(chunk, reader) => {
+                    let chunk_schema = chunk.schema();
+                    let cgs = chunk.column_group().values().cloned().collect::<Vec<_>>();
+                    // filter column groups
+                    metrics.column_group_nums().add(cgs.len());
+                    trace::debug!("All column group nums: {}", cgs.len());
+                    let cgs = filter_column_groups(cgs, predicate, chunk_schema)?;
+                    trace::debug!("Filtered column group nums: {}", cgs.len());
+                    metrics.filtered_column_group_nums().add(cgs.len());
 
                     let batch_readers = cgs
                         .into_iter()
@@ -467,11 +477,11 @@ impl SeriesGroupBatchReaderFactory {
                         .collect::<Result<Vec<_>>>()?;
 
                     Arc::new(CombinedBatchReader::new(batch_readers))
-            }
-            DataReference::Memcache(series_data, time_ranges) => Arc::new(
+                }
+                DataReference::Memcache(series_data, time_ranges) => Arc::new(
                     MemCacheReader::try_new(series_data, time_ranges, batch_size, projection)?,
                 ),
-        };
+            };
 
         // 数据过滤
         if let Some(predicate) = &predicate {

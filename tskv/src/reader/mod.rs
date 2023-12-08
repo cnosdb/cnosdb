@@ -282,7 +282,7 @@ impl DataReference {
     pub fn time_range(&self) -> TimeRange {
         match self {
             DataReference::Chunk(chunk, _) => *chunk.time_range(),
-            DataReference::Memcache(series_data, ..) => series_data.read().range,
+            DataReference::Memcache(_, trs) => trs.max_time_range(),
         }
     }
 }

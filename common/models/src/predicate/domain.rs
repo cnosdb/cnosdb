@@ -119,6 +119,10 @@ impl TimeRange {
         self.min_ts = self.min_ts.min(other.min_ts);
         self.max_ts = self.max_ts.max(other.max_ts);
     }
+
+    pub fn is_none(&self) -> bool {
+        self.min_ts > self.max_ts
+    }
 }
 
 impl From<(Timestamp, Timestamp)> for TimeRange {
@@ -318,7 +322,11 @@ impl TimeRanges {
                     new_time_ranges.push(intersect_tr);
                 }
             }
-            return Some(Self::new(new_time_ranges));
+            if new_time_ranges.is_empty() {
+                return None;
+            } else {
+                return Some(Self::new(new_time_ranges));
+            }
         }
 
         None

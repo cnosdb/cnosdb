@@ -9,7 +9,7 @@ use arrow_array::{ArrayRef, RecordBatch};
 use arrow_schema::SchemaRef;
 use futures::Stream;
 use models::field_value::DataType;
-use models::predicate::domain::TimeRanges;
+use models::predicate::domain::{TimeRange, TimeRanges};
 use models::schema::{ColumnType, TableColumn};
 use models::utils::min_num;
 use models::ColumnId;
@@ -20,6 +20,7 @@ use super::{
     SendableSchemableTskvRecordBatchStream,
 };
 use crate::memcache::SeriesData;
+use crate::reader::utils::TimeRangeProvider;
 use crate::{Error, Result};
 
 pub struct MemCacheReader {
@@ -27,6 +28,19 @@ pub struct MemCacheReader {
     time_ranges: Arc<TimeRanges>,
     batch_size: usize,
     columns: Vec<TableColumn>,
+}
+
+impl TimeRangeProvider for MemCacheReader {
+    fn time_range(&self) -> TimeRange {
+        match self
+            .time_ranges
+            .max_time_range()
+            .intersect(&self.series_data.read().range)
+        {
+            None => TimeRange::none(),
+            Some(tr) => tr,
+        }
+    }
 }
 
 impl MemCacheReader {
