@@ -137,7 +137,7 @@ impl ServiceBuilder {
         meta.add_data_node().await.unwrap();
         tokio::spawn(regular_report_node_metrics(
             meta.clone(),
-            self.config.heartbeat.report_time_interval_secs,
+            self.config.meta.report_time_interval_secs,
         ));
 
         let kv_inst = self
@@ -200,7 +200,7 @@ impl ServiceBuilder {
         meta.add_data_node().await.unwrap();
         tokio::spawn(regular_report_node_metrics(
             meta.clone(),
-            self.config.heartbeat.report_time_interval_secs,
+            self.config.meta.report_time_interval_secs,
         ));
 
         let kv_inst = self
@@ -243,8 +243,8 @@ impl ServiceBuilder {
     pub async fn build_singleton(&self, server: &mut Server) -> Option<EngineRef> {
         meta::service::single::start_singe_meta_server(
             self.config.storage.path.clone(),
-            self.config.cluster.name.clone(),
-            self.config.cluster.meta_service_addr[0].clone(),
+            self.config.global.cluster_name.clone(),
+            self.config.meta.service_addr[0].clone(),
         )
         .await;
 
@@ -320,7 +320,7 @@ impl ServiceBuilder {
         coord: CoordinatorRef,
         mode: ServerMode,
     ) -> Option<HttpService> {
-        let default_http_addr = match self.config.cluster.http_listen_port {
+        let default_http_addr = match self.config.service.http_listen_port {
             Some(port) => build_default_address(port),
             None => return None,
         };
@@ -353,7 +353,7 @@ impl ServiceBuilder {
     }
 
     fn create_grpc_if_enabled(&self, kv: EngineRef, coord: CoordinatorRef) -> Option<GrpcService> {
-        let default_grpc_addr = match self.config.cluster.grpc_listen_port {
+        let default_grpc_addr = match self.config.service.grpc_listen_port {
             Some(port) => build_default_address(port),
             None => return None,
         };
@@ -388,7 +388,7 @@ impl ServiceBuilder {
         coord: CoordinatorRef,
         dbms: DBMSRef,
     ) -> Option<VectorGrpcService> {
-        let default_vector_grpc_addr = match self.config.cluster.vector_listen_port {
+        let default_vector_grpc_addr = match self.config.service.vector_listen_port {
             Some(port) => build_default_address(port),
             None => return None,
         };
@@ -418,7 +418,7 @@ impl ServiceBuilder {
     }
 
     fn create_tcp_if_enabled(&self, coord: CoordinatorRef) -> Option<TcpService> {
-        let default_tcp_addr = match self.config.cluster.tcp_listen_port {
+        let default_tcp_addr = match self.config.service.tcp_listen_port {
             Some(port) => build_default_address(port),
             None => return None,
         };
@@ -427,7 +427,7 @@ impl ServiceBuilder {
     }
 
     fn create_flight_sql_if_enabled(&self, dbms: DBMSRef) -> Option<FlightSqlServiceAdapter> {
-        let default_flight_sql_addr = match self.config.cluster.flight_rpc_listen_port {
+        let default_flight_sql_addr = match self.config.service.flight_rpc_listen_port {
             Some(port) => build_default_address(port),
             None => return None,
         };

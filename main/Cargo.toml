@@ -50,6 +50,7 @@ datafusion = { workspace = true }
 datafusion-proto = { workspace = true }
 flatbuffers = { workspace = true }
 fly-accept-encoding = { workspace = true }
+home = { workspace = true }
 futures = { workspace = true, default-features = false, features = ["alloc"] }
 lazy_static = { workspace = true }
 libc = { workspace = true }

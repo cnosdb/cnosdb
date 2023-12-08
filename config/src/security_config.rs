@@ -3,6 +3,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
+use crate::override_by_env::{entry_override, OverrideByEnv};
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SecurityConfig {
@@ -42,6 +43,35 @@ impl TLSConfig {
 
     fn default_private_key() -> String {
         "/etc/cnosdb/tls/server.key".to_string()
+    }
+}
+
+impl OverrideByEnv for Option<TLSConfig> {
+    fn override_by_env(&mut self) {
+        let is_some = self.is_some();
+        let mut tls_config = self.take().unwrap_or(TLSConfig {
+            certificate: Default::default(),
+            private_key: Default::default(),
+        });
+        *self = match (
+            is_some,
+            entry_override(
+                &mut tls_config.certificate,
+                "CNOSDB_SECURITY_TLS_CONFIG_CERTIFICATE",
+            ) || entry_override(
+                &mut tls_config.private_key,
+                "CNOSDB_SECURITY_TLS_CONFIG_PRIVATE_KEY",
+            ),
+        ) {
+            (_, true) | (true, false) => Some(tls_config),
+            (false, false) => None,
+        };
+    }
+}
+
+impl OverrideByEnv for SecurityConfig {
+    fn override_by_env(&mut self) {
+        self.tls_config.override_by_env();
     }
 }
 

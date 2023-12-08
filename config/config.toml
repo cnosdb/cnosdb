@@ -1,15 +1,23 @@
-#reporting_disabled = false
-#node_id = 100 
+[global]
+# node_id = 100
+host = "localhost"
+cluster_name = 'cluster_xxx'
+cold_data_server = false
+store_metrics = true
 
 [deployment]
-#mode = 'singleton'
-#cpu = 4
-#memory = 16
+# mode = 'query_tskv'
+# cpu = 8
+# memory = 16
+
+[meta]
+service_addr = ["127.0.0.1:8901"]
+report_time_interval_secs = 30
 
 [query]
 max_server_connections = 10240
-query_sql_limit = 16777216   # 16 * 1024 * 1024
-write_sql_limit = 167772160  # 160 * 1024 * 1024
+query_sql_limit = 16777216     # 16 * 1024 * 1024
+write_sql_limit = 167772160    # 160 * 1024 * 1024
 auth_enabled = false
 read_timeout_ms = 3000
 write_timeout_ms = 3000
@@ -26,32 +34,32 @@ stream_executor_cpu = 2
 path = '/var/lib/cnosdb/data'
 
 ## The maximum file size of summary file.
-#max_summary_size = "128M" # 134,217,728 bytes
+# max_summary_size = "128M" # 134,217,728 bytes
 
 ## The maximum file size of a level is as follows:
 ## $base_file_size * level * $compact_trigger_file_num
-#base_file_size = "16M" # 16,777,216 bytes
+# base_file_size = "16M" # 16,777,216 bytes
 
 ## The maxmimum amount of flush requests in memory
-#flush_req_channel_cap = 16
+# flush_req_channel_cap = 16
 
 ## The maximum count of opened file handles (for query) in each vnode.
-#max_cached_readers = 32
+# max_cached_readers = 32
 
 ## The maxmimum level of a data file (from 0 to 4).
-#max_level = 4
+# max_level = 4
 
 # Trigger of compaction using the number of level 0 files.
-#compact_trigger_file_num = 4
+# compact_trigger_file_num = 4
 
 ## Duration since last write to trigger compaction.
-#compact_trigger_cold_duration = "1h"
+# compact_trigger_cold_duration = "1h"
 
 ## The maximum size of all files in a compaction.
-#max_compact_size = "2G" # 2,147,483,648 bytes
+# max_compact_size = "2G" # 2,147,483,648 bytes
 
 ## The maximum concurrent compactions.
-#max_concurrent_compaction = 4
+# max_concurrent_compaction = 4
 
 ## If true, write request will not be checked in detail.
 strict_write = false
@@ -65,63 +73,60 @@ enabled = true
 path = '/var/lib/cnosdb/wal'
 
 ## The maxmimum amount of write request in memory.
-#wal_req_channel_cap = 64
+# wal_req_channel_cap = 64
 
 ## The maximum size of a WAL.
-#max_file_size = "1G" # 1,073,741,824 bytes
+# max_file_size = '1G' # 1,073,741,824 bytes
 
 ## Trigger all vnode flushing if size of WALs exceeds this value.
-#flush_trigger_total_file_size = "2G" # 2,147,483,648 bytes
+# flush_trigger_total_file_size = '2G' # 2,147,483,648 bytes
 
 ## If true, fsync will be called after every WAL writes.
-#sync = false
+# sync = false
 
 ## Interval for automatic WAL fsync.
-#sync_interval = "0" # h, m, s
+# sync_interval = '0' # h, m, s
 
 [cache]
+
 ## The maximum size of a mutable cache.
-#max_buffer_size = "128M" # 134,217,728 bytes
+# max_buffer_size = '128M' # 134,217,728 bytes
 
 ## The maximum amount of immutable caches.
-#max_immutable_number = 4
+# max_immutable_number = 4
 
 ## The partion number of memcache cache,default equal to cpu number
-# partition = 16
+# partition = 8
 
 [log]
 level = 'info'
 path = '/var/log/cnosdb'
 ## Tokio trace, default turn off tokio trace
-#tokio_trace = { addr = "127.0.0.1:6669" }
+# tokio_trace = { addr = "127.0.0.1:6669" }
 
 [security]
 # [security.tls_config]
-# certificate = "/etc/cnosdb/tls/server.crt"
-# private_key = "/etc/cnosdb/tls/server.key"
+# certificate = "/etc/config/tls/server.crt"
+# private_key = "/etc/config/tls/server.key"
 
-[cluster]
-name = 'cluster_xxx'
-meta_service_addr = ["127.0.0.1:8901"]
-
+[service]
 http_listen_port = 8902
 grpc_listen_port = 8903
 flight_rpc_listen_port = 8904
 tcp_listen_port = 8905
 vector_listen_port = 8906
+enable_report = true
 
-## Whether to store metrics to the CnosDB
-[node_basic]
-node_id = 1001
-cold_data_server = false
-store_metrics = true
 
-[heartbeat]
-report_time_interval_secs = 30
+[cluster]
+# raft_logs_to_keep = 5000
+# using_raft_replication = false
 
 [hinted_off]
 enable = true
 path = '/var/lib/cnosdb/hh'
+threads = 3
+
 
 # [trace]
 # auto_generate_span = false

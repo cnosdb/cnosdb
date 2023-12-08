@@ -9,13 +9,15 @@ use serde::{Deserialize, Serialize};
 pub use crate::cache_config::*;
 pub use crate::cluster_config::*;
 pub use crate::deployment_config::*;
-pub use crate::heartbeat_config::*;
+pub use crate::global_config::*;
 pub use crate::hinted_off_config::*;
 pub use crate::limiter_config::*;
 pub use crate::log_config::*;
-pub use crate::node_config::*;
+pub use crate::meta_config::*;
+pub use crate::override_by_env::OverrideByEnv;
 pub use crate::query_config::*;
 pub use crate::security_config::*;
+pub use crate::service_config::*;
 pub use crate::storage_config::*;
 pub use crate::trace::*;
 pub use crate::wal_config::*;
@@ -25,35 +27,32 @@ mod check;
 mod cluster_config;
 mod codec;
 mod deployment_config;
-mod heartbeat_config;
+mod global_config;
 mod hinted_off_config;
 mod limiter_config;
 mod log_config;
-mod node_config;
+mod meta_config;
+mod override_by_env;
 mod query_config;
 mod security_config;
+mod service_config;
 mod storage_config;
 mod trace;
 mod wal_config;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
     ///
-    #[serde(default = "Config::default_reporting_disabled")]
-    pub reporting_disabled: bool,
-
-    #[serde(default = "Config::default_raft_logs_to_keep")]
-    pub raft_logs_to_keep: u64,
-    #[serde(default = "Config::default_using_raft_replication")]
-    pub using_raft_replication: bool,
-
-    ///
-    #[serde(default = "Config::default_host")]
-    pub host: String,
+    #[serde(default = "Default::default")]
+    pub global: GlobalConfig,
 
     ///
     #[serde(default = "Default::default")]
     pub deployment: DeploymentConfig,
+
+    ///
+    #[serde(default = "Default::default")]
+    pub meta: MetaConfig,
 
     ///
     #[serde(default = "Default::default")]
@@ -81,75 +80,41 @@ pub struct Config {
 
     ///
     #[serde(default = "Default::default")]
+    pub service: ServiceConfig,
+
+    ///
+    #[serde(default = "Default::default")]
     pub cluster: ClusterConfig,
 
     ///
     #[serde(default = "Default::default")]
     pub hinted_off: HintedOffConfig,
 
-    ///
-    #[serde(default = "Default::default")]
-    pub heartbeat: HeartBeatConfig,
-
-    ///
-    #[serde(default = "Default::default")]
-    pub node_basic: NodeBasicConfig,
-
     #[serde(default = "Default::default")]
     pub trace: TraceConfig,
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            reporting_disabled: Self::default_reporting_disabled(),
-            raft_logs_to_keep: Self::default_raft_logs_to_keep(),
-            using_raft_replication: Self::default_using_raft_replication(),
-            host: Self::default_host(),
-            deployment: Default::default(),
-            query: Default::default(),
-            storage: Default::default(),
-            wal: Default::default(),
-            cache: Default::default(),
-            log: Default::default(),
-            security: Default::default(),
-            cluster: Default::default(),
-            hinted_off: Default::default(),
-            heartbeat: Default::default(),
-            node_basic: Default::default(),
-            trace: Default::default(),
-        }
+impl Config {
+    pub fn to_string_pretty(&self) -> String {
+        toml::to_string_pretty(self).unwrap_or_else(|_| "Failed to stringify Config".to_string())
     }
 }
 
-impl Config {
-    fn default_reporting_disabled() -> bool {
-        false
-    }
-
-    fn default_raft_logs_to_keep() -> u64 {
-        5000
-    }
-
-    fn default_using_raft_replication() -> bool {
-        false
-    }
-
-    fn default_host() -> String {
-        "localhost".to_string()
-    }
-
-    pub fn override_by_env(&mut self) {
-        self.cluster.override_by_env();
+impl OverrideByEnv for Config {
+    fn override_by_env(&mut self) {
+        self.global.override_by_env();
+        self.deployment.override_by_env();
+        self.meta.override_by_env();
+        self.query.override_by_env();
         self.storage.override_by_env();
         self.wal.override_by_env();
         self.cache.override_by_env();
-        self.query.override_by_env();
-        self.node_basic.override_by_env();
-    }
-
-    pub fn to_string_pretty(&self) -> String {
-        toml::to_string_pretty(self).unwrap_or_else(|_| "Failed to stringify Config".to_string())
+        self.log.override_by_env();
+        self.security.override_by_env();
+        self.service.override_by_env();
+        self.cluster.override_by_env();
+        self.hinted_off.override_by_env();
+        self.trace.override_by_env();
     }
 }
 
@@ -214,7 +179,13 @@ pub fn check_config(path: impl AsRef<Path>, show_warnings: bool) {
         Ok(cfg) => {
             let mut check_results = CheckConfigResult::default();
 
+            if let Some(c) = cfg.global.check(&cfg) {
+                check_results.add_all(c)
+            }
             if let Some(c) = cfg.deployment.check(&cfg) {
+                check_results.add_all(c)
+            }
+            if let Some(c) = cfg.meta.check(&cfg) {
                 check_results.add_all(c)
             }
             if let Some(c) = cfg.query.check(&cfg) {
@@ -235,16 +206,13 @@ pub fn check_config(path: impl AsRef<Path>, show_warnings: bool) {
             if let Some(c) = cfg.security.check(&cfg) {
                 check_results.add_all(c)
             }
+            if let Some(c) = cfg.service.check(&cfg) {
+                check_results.add_all(c)
+            }
             if let Some(c) = cfg.cluster.check(&cfg) {
                 check_results.add_all(c)
             }
             if let Some(c) = cfg.hinted_off.check(&cfg) {
-                check_results.add_all(c)
-            }
-            if let Some(c) = cfg.heartbeat.check(&cfg) {
-                check_results.add_all(c)
-            }
-            if let Some(c) = cfg.node_basic.check(&cfg) {
                 check_results.add_all(c)
             }
 
@@ -291,53 +259,70 @@ mod test {
     #[test]
     fn test_parse() {
         let config_str = r#"
-#reporting_disabled = false
-using_raft_replication=true
+[global]
+# node_id = 100
 host = "localhost"
+cluster_name = 'cluster_xxx'
+cold_data_server = false
+store_metrics = true
 
 [deployment]
-mode = 'singleton'
-cpu = 4
-memory = 16
+# mode = 'query_tskv'
+# cpu = 8
+# memory = 16
+
+[meta]
+service_addr = ["127.0.0.1:8901"]
+report_time_interval_secs = 30
 
 [query]
 max_server_connections = 10240
-query_sql_limit = 16777216   # 16 * 1024 * 1024
-write_sql_limit = 167772160  # 160 * 1024 * 1024
+query_sql_limit = 16777216     # 16 * 1024 * 1024
+write_sql_limit = 167772160    # 160 * 1024 * 1024
 auth_enabled = false
+read_timeout_ms = 3000
+write_timeout_ms = 3000
+stream_trigger_cpu = 1
+stream_executor_cpu = 2
 
 [storage]
 
-# The directory where database files stored.
+## The directory where database files stored.
 # Directory for summary:    $path/summary
 # Directory for index:      $path/$database/data/id/index
 # Directory for tsm:        $path/$database/data/id/tsm
 # Directory for delta:      $path/$database/data/id/delta
-path = 'data/db'
+path = '/var/lib/cnosdb/data'
 
-# The maximum file size of summary file.
-max_summary_size = "128M" # 134217728
+## The maximum file size of summary file.
+# max_summary_size = "128M" # 134,217,728 bytes
 
-# The maximum file size of a level is:
-# $base_file_size * level * $compact_trigger_file_num
-base_file_size = "16M" # 16777216
+## The maximum file size of a level is as follows:
+## $base_file_size * level * $compact_trigger_file_num
+# base_file_size = "16M" # 16,777,216 bytes
 
-# The maxmimum data file level (from 0 to 4).
-max_level = 4
+## The maxmimum amount of flush requests in memory
+# flush_req_channel_cap = 16
+
+## The maximum count of opened file handles (for query) in each vnode.
+# max_cached_readers = 32
+
+## The maxmimum level of a data file (from 0 to 4).
+# max_level = 4
 
 # Trigger of compaction using the number of level 0 files.
-compact_trigger_file_num = 4
+# compact_trigger_file_num = 4
 
-# Duration since last write to trigger compaction.
-compact_trigger_cold_duration = "1h"
+## Duration since last write to trigger compaction.
+# compact_trigger_cold_duration = "1h"
 
-# The maximum size of all files in a compaction.
-max_compact_size = "2G" # 2147483648
+## The maximum size of all files in a compaction.
+# max_compact_size = "2G" # 2,147,483,648 bytes
 
-# The maximum concurrent compactions.
-max_concurrent_compaction = 4
+## The maximum concurrent compactions.
+# max_concurrent_compaction = 4
 
-# If true, write request will not be checked in detail.
+## If true, write request will not be checked in detail.
 strict_write = false
 
 # The size of reserve space of the system.
@@ -345,57 +330,76 @@ reserve_space = "10G"
 
 [wal]
 
-# If true, write requets on disk before writing to memory.
+## If true, write requets on disk before writing to memory.
 enabled = true
 
-# The directory where write ahead logs stored.
-path = 'data/wal'
+## The directory where write ahead logs stored.
+path = '/var/lib/cnosdb/wal'
 
-wal_req_channel_cap = 64
+## The maxmimum amount of write request in memory.
+# wal_req_channel_cap = 64
 
-# The maximum size of a wal file.
-max_file_size = "1G" # 1073741824
-flush_trigger_total_file_size = "2G"
+## The maximum size of a WAL.
+# max_file_size = '1G' # 1,073,741,824 bytes
 
-# If true, fsync will be called after every wal writes.
-sync = false
-sync_interval = "10s" # h, m, s
+## Trigger all vnode flushing if size of WALs exceeds this value.
+# flush_trigger_total_file_size = '2G' # 2,147,483,648 bytes
+
+## If true, fsync will be called after every WAL writes.
+# sync = false
+
+## Interval for automatic WAL fsync.
+# sync_interval = '0' # h, m, s
 
 [cache]
-max_buffer_size = "128M" # 134217728
-max_immutable_number = 4
+
+## The maximum size of a mutable cache.
+# max_buffer_size = '128M' # 134,217,728 bytes
+
+## The maximum amount of immutable caches.
+# max_immutable_number = 4
+
+## The partion number of memcache cache,default equal to cpu number
+# partition = 8
 
 [log]
 level = 'info'
-path = 'data/log'
-tokio_trace = { addr = "127.0.0.1:6669" }
+path = '/var/log/cnosdb'
+## Tokio trace, default turn off tokio trace
+# tokio_trace = { addr = "127.0.0.1:6669" }
 
 [security]
 # [security.tls_config]
 # certificate = "./config/tls/server.crt"
 # private_key = "./config/tls/server.key"
 
+[service]
+http_listen_port = 8902
+grpc_listen_port = 8903
+flight_rpc_listen_port = 8904
+tcp_listen_port = 8905
+vector_listen_port = 8906
+reporting_disabled = false
+
+
 [cluster]
-node_id = 100
-name = 'cluster_xxx'
-meta_service_addr = ["127.0.0.1:8901"]
-tenant = ''
-
-flight_rpc_listen_port = 31006
-http_listen_port = 31007
-grpc_listen_port = 31008
-
-[node_basic]
-node_id = 1001
-cold_data_server = false
-store_metrics = true
-
-[heartbeat]
-report_time_interval_secs = 30
+# raft_logs_to_keep = 5000
+# using_raft_replication = false
 
 [hinted_off]
 enable = true
-path = '/tmp/cnosdb/hh'
+path = '/var/lib/cnosdb/hh'
+threads = 3
+
+
+# [trace]
+# auto_generate_span = false
+# [trace.log]
+# path = '/var/log/cnosdb'
+# [trace.jaeger]
+# jaeger_agent_endpoint = 'http://localhost:14268/api/traces'
+# max_concurrent_exports = 2
+# max_queue_size = 4096
 "#;
 
         let config: Config = toml::from_str(config_str).unwrap();

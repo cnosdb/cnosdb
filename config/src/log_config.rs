@@ -3,10 +3,27 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
+use crate::override_by_env::{entry_override, OverrideByEnv};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TokioTrace {
     pub addr: String,
+}
+
+impl OverrideByEnv for Option<TokioTrace> {
+    fn override_by_env(&mut self) {
+        let is_some = self.is_some();
+        let mut tokio_trace = self.take().unwrap_or(TokioTrace {
+            addr: Default::default(),
+        });
+        *self = match (
+            is_some,
+            entry_override(&mut tokio_trace.addr, "CNOSDB_LOG_TOKIO_TRACE_ADDR"),
+        ) {
+            (_, true) | (true, false) => Some(tokio_trace),
+            (false, false) => None,
+        };
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -34,6 +51,14 @@ impl LogConfig {
         if let Ok(path) = std::env::var("CNOSDB_LOG_PATH") {
             self.path = path;
         }
+    }
+}
+
+impl OverrideByEnv for LogConfig {
+    fn override_by_env(&mut self) {
+        entry_override(&mut self.level, "CNOSDB_LOG_LEVEL");
+        entry_override(&mut self.path, "CNOSDB_LOG_PATH");
+        self.tokio_trace.override_by_env();
     }
 }
 

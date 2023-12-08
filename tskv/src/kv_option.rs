@@ -29,7 +29,7 @@ pub struct Options {
 impl From<&Config> for Options {
     fn from(config: &Config) -> Self {
         Self {
-            raft_mode: config.using_raft_replication,
+            raft_mode: config.cluster.using_raft_replication,
             storage: Arc::new(StorageOptions::from(config)),
             wal: Arc::new(WalOptions::from(config)),
             cache: Arc::new(CacheOptions::from(config)),

@@ -85,7 +85,7 @@ impl AdminMeta {
     }
 
     pub async fn new(config: Config) -> Arc<Self> {
-        let meta_service_addr = config.cluster.meta_service_addr.clone();
+        let meta_service_addr = config.meta.service_addr.clone();
         let meta_url = meta_service_addr.join(";");
         let (watch_notify, receiver) = mpsc::channel(1024);
 
@@ -95,7 +95,7 @@ impl AdminMeta {
             map.insert(
                 LimiterType::Tenant,
                 Arc::new(LocalRequestLimiterFactory::new(
-                    config.cluster.name.clone(),
+                    config.global.cluster_name.clone(),
                     client.clone(),
                 )) as Arc<dyn LimiterFactory>,
             );
@@ -125,15 +125,15 @@ impl AdminMeta {
     }
 
     pub fn cluster(&self) -> String {
-        self.config.cluster.name.clone()
+        self.config.global.cluster_name.clone()
     }
 
     pub fn node_id(&self) -> u64 {
-        self.config.node_basic.node_id
+        self.config.global.node_id
     }
 
     fn meta_addrs(&self) -> String {
-        self.config.cluster.meta_service_addr.join(";")
+        self.config.meta.service_addr.join(";")
     }
 
     pub async fn meta_leader(&self) -> MetaResult<String> {
@@ -192,14 +192,14 @@ impl AdminMeta {
     }
 
     pub async fn retain_id(&self, count: u32) -> MetaResult<u32> {
-        let req = command::WriteCommand::RetainID(self.config.cluster.name.clone(), count);
+        let req = command::WriteCommand::RetainID(self.config.global.cluster_name.clone(), count);
         let id = self.client.write::<u32>(&req).await?;
 
         Ok(id)
     }
 
     pub async fn sync_gobal_info(&self) -> MetaResult<u64> {
-        let req = command::ReadCommand::DataNodes(self.config.cluster.name.clone());
+        let req = command::ReadCommand::DataNodes(self.config.global.cluster_name.clone());
         let (resp, version) = self.client.read::<(Vec<NodeInfo>, u64)>(&req).await?;
         {
             let mut nodes = self.data_nodes.write();
@@ -365,7 +365,7 @@ impl AdminMeta {
 
             let strs: Vec<&str> = entry.key.split('/').collect();
             let len = strs.len();
-            if len < 2 || strs[1] != self.config.cluster.name {
+            if len < 2 || strs[1] != self.config.global.cluster_name {
                 continue;
             }
 
@@ -429,22 +429,22 @@ impl AdminMeta {
     /******************** Data Node Operation Begin *********************/
     pub async fn add_data_node(&self) -> MetaResult<()> {
         let grpc_addr = build_address_with_optional_addr(
-            &self.config.host,
-            self.config.cluster.grpc_listen_port,
+            &self.config.global.host,
+            self.config.service.grpc_listen_port,
         );
 
         let mut attribute = NodeAttribute::default();
-        if self.config.node_basic.cold_data_server {
+        if self.config.global.cold_data_server {
             attribute = NodeAttribute::Cold;
         }
 
         let node = NodeInfo {
             attribute,
-            id: self.config.node_basic.node_id,
+            id: self.config.global.node_id,
             grpc_addr,
         };
 
-        let cluster_name = self.config.cluster.name.clone();
+        let cluster_name = self.config.global.cluster_name.clone();
         let req = command::WriteCommand::AddDataNode(cluster_name, node.clone());
         self.client.write::<()>(&req).await?;
         self.report_node_metrics().await?;
@@ -481,14 +481,14 @@ impl AdminMeta {
         }
 
         let node_metrics = NodeMetrics {
-            id: self.config.node_basic.node_id,
+            id: self.config.global.node_id,
             disk_free,
             time: now_timestamp_secs(),
             status,
         };
 
         let req = command::WriteCommand::ReportNodeMetrics(
-            self.config.cluster.name.clone(),
+            self.config.global.cluster_name.clone(),
             node_metrics.clone(),
         );
 

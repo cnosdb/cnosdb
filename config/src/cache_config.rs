@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
 use crate::codec::bytes_num;
+use crate::override_by_env::{entry_override, OverrideByEnv};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CacheConfig {
@@ -26,17 +27,16 @@ impl CacheConfig {
     fn default_partitions() -> usize {
         num_cpus::get()
     }
+}
 
-    pub fn override_by_env(&mut self) {
-        if let Ok(size) = std::env::var("CNOSDB_CACHE_MAX_BUFFER_SIZE") {
-            self.max_buffer_size = size.parse::<u64>().unwrap();
-        }
-        if let Ok(size) = std::env::var("CNOSDB_CACHE_MAX_IMMUTABLE_NUMBER") {
-            self.max_immutable_number = size.parse::<u16>().unwrap();
-        }
-        if let Ok(size) = std::env::var("CNOSDB_CACHE_PARTITIONS") {
-            self.partition = size.parse::<usize>().unwrap();
-        }
+impl OverrideByEnv for CacheConfig {
+    fn override_by_env(&mut self) {
+        entry_override(&mut self.max_buffer_size, "CNOSDB_CACHE_MAX_BUFFER_SIZE");
+        entry_override(
+            &mut self.max_immutable_number,
+            "CNOSDB_CACHE_MAX_IMMUTABLE_NUMBER",
+        );
+        entry_override(&mut self.partition, "CNOSDB_CACHE_PARTITION");
     }
 }
 

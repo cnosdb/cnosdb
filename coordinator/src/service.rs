@@ -154,7 +154,7 @@ impl CoordService {
         memory_pool: MemoryPoolRef,
         metrics_register: Arc<MetricsRegister>,
     ) -> Arc<Self> {
-        let node_id = config.node_basic.node_id;
+        let node_id = config.global.node_id;
 
         let (hh_sender, hh_receiver) = mpsc::channel(1024);
         let point_writer = Arc::new(PointWriter::new(
@@ -209,7 +209,7 @@ impl CoordService {
         tokio::spawn(CoordService::check_resourceinfos(coord.clone()));
         tokio::spawn(CoordService::db_ttl_service(coord.clone()));
 
-        if config.node_basic.store_metrics {
+        if config.global.store_metrics {
             tokio::spawn(CoordService::metrics_service(
                 coord.clone(),
                 metrics_register,
@@ -525,7 +525,7 @@ impl Coordinator for CoordService {
     }
 
     fn using_raft_replication(&self) -> bool {
-        self.config.using_raft_replication
+        self.config.cluster.using_raft_replication
     }
 
     async fn tenant_meta(&self, tenant: &str) -> Option<MetaClientRef> {
