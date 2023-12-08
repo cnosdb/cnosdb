@@ -448,7 +448,7 @@ pub mod flush_tests {
 
     use lru_cache::asynchronous::ShardedCache;
     use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
-    use minivec::mini_vec;
+    use minivec::{mini_vec, MiniVec};
     use models::codec::Encoding;
     use models::schema::{ColumnType, TableColumn, TskvTableSchema};
     use models::{utils as model_utils, ColumnId, FieldId, Timestamp, ValueType};
@@ -488,17 +488,70 @@ pub mod flush_tests {
 
     #[test]
     fn test_sort_dedup() {
-        #[rustfmt::skip]
-            let mut data = vec![
-            (1, 11), (1, 12), (2, 21), (3, 3), (2, 22), (4, 41), (4, 42),
-        ];
-        data.sort_by_key(|a| a.0);
-        assert_eq!(
-            &data,
-            &vec![(1, 11), (1, 12), (2, 21), (2, 22), (3, 3), (4, 41), (4, 42)]
-        );
-        dedup_front_by_key(&mut data, |a| a.0);
-        assert_eq!(&data, &vec![(1, 12), (2, 22), (3, 3), (4, 42)]);
+        {
+            let mut data = vec![(1, 11), (1, 12), (2, 21), (3, 3), (2, 22), (4, 41), (4, 42)];
+            data.sort_by_key(|a| a.0);
+            assert_eq!(
+                &data,
+                &vec![(1, 11), (1, 12), (2, 21), (2, 22), (3, 3), (4, 41), (4, 42)]
+            );
+            dedup_front_by_key(&mut data, |a| a.0);
+            assert_eq!(&data, &vec![(1, 12), (2, 22), (3, 3), (4, 42)]);
+        }
+        {
+            // Test dedup-front for list with no duplicated key.
+            let mut data: Vec<(i32, MiniVec<u8>)> = vec![
+                (1, "a1".into()),
+                (2, "b2".into()),
+                (3, "c3".into()),
+                (4, "d4".into()),
+            ];
+            data.sort_by_key(|a| a.0);
+            dedup_front_by_key(&mut data, |a| a.0);
+            assert_eq!(
+                &data,
+                &vec![
+                    (1, "a1".into()),
+                    (2, "b2".into()),
+                    (3, "c3".into()),
+                    (4, "d4".into()),
+                ]
+            );
+        }
+        {
+            // Test dedup-front for list with only one key.
+            let mut data: Vec<(i32, MiniVec<u8>)> = vec![
+                (1, "a1".into()),
+                (1, "a2".into()),
+                (1, "a3".into()),
+                (1, "a4".into()),
+            ];
+            dedup_front_by_key(&mut data, |a| a.0);
+            assert_eq!(&data, &vec![(1, "a4".into()),]);
+        }
+        {
+            // Test dedup-front for list with shuffled multiply duplicated key.
+            let mut data: Vec<(i32, MiniVec<u8>)> = vec![
+                (1, "a1".into()),
+                (1, "b1".into()),
+                (2, "c2".into()),
+                (3, "d3".into()),
+                (2, "e2".into()),
+                (4, "e4".into()),
+                (4, "f4".into()),
+            ];
+            data.sort_by_key(|a| a.0);
+            dedup_front_by_key(&mut data, |a| a.0);
+            assert_eq!(
+                &data,
+                &vec![
+                    (1, "b1".into()),
+                    (2, "e2".into()),
+                    (3, "d3".into()),
+                    (4, "f4".into()),
+                ]
+            );
+        }
     }
 
     #[tokio::test]
@@ -520,8 +573,7 @@ pub mod flush_tests {
         let database = Arc::new("test_db".to_string());
         let global_context = Arc::new(GlobalContext::new());
         let options = Options::from(&config);
-        #[rustfmt::skip]
-            let version = Arc::new(Version {
+        let version = Arc::new(Version {
             ts_family_id,
             database: database.clone(),
             storage_opt: options.storage.clone(),
@@ -618,7 +670,7 @@ pub mod flush_tests {
             MemCache::new(1, 16, 2, 0, memory_pool),
         ];
         #[rustfmt::skip]
-            let _skip_fmt = {
+        let _skip_fmt = {
             put_rows_to_cache(&caches[0], 1, 1, default_table_schema(vec![0, 1, 2]), (3, 4), false);
             put_rows_to_cache(&caches[0], 1, 2, default_table_schema(vec![0, 1, 3]), (1, 2), false);
             put_rows_to_cache(&caches[0], 1, 3, default_table_schema(vec![0, 1, 2, 3]), (5, 5), true);
@@ -651,7 +703,7 @@ pub mod flush_tests {
         // Col_2: None, None, 9,    10
         // Col_3: 7,    8,    None, None
         #[rustfmt::skip]
-            let expected_delta_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from([
+        let expected_delta_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from([
             (model_utils::unite_id(0, 1), vec![DataBlock::F64 { ts: vec![1, 2, 3, 4, 5, 6], val: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], enc: DataBlockEncoding::default() }]),
             (model_utils::unite_id(1, 1), vec![DataBlock::F64 { ts: vec![1, 2, 3, 4, 5, 6], val: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], enc: DataBlockEncoding::default() }]),
             (model_utils::unite_id(2, 1), vec![DataBlock::F64 { ts: vec![3, 4, 5, 6], val: vec![3.0, 4.0, 5.0, 6.0], enc: DataBlockEncoding::default() }]),
@@ -675,7 +727,7 @@ pub mod flush_tests {
         // Col_2: None, None, 15,   16,   None, 17, 18
         // Col_3: 13,   14,   None, None, None, 17, 18
         #[rustfmt::skip]
-            let expected_tsm_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from([
+        let expected_tsm_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from([
             (model_utils::unite_id(0, 2), vec![DataBlock::F64 { ts: vec![11, 12], val: vec![11.0, 12.0], enc: DataBlockEncoding::default() }]),
             (model_utils::unite_id(1, 2), vec![DataBlock::F64 { ts: vec![11, 12], val: vec![11.0, 12.0], enc: DataBlockEncoding::default() }]),
             (model_utils::unite_id(2, 2), vec![DataBlock::F64 { ts: vec![11, 12], val: vec![11.0, 12.0], enc: DataBlockEncoding::default() }]),

@@ -102,10 +102,11 @@ where
             let read_ptr = ptr.add(gap.read);
 
             if same_bucket(&mut *prev_ptr, &mut *read_ptr) {
-                // Increase `gap.read` now since the drop may panic.
+                // Increase `gap.prev` now since the drop may panic.
                 gap.read += 1;
+                gap.prev += 1;
                 /* We have found duplicate, drop it in-place */
-                ptr::drop_in_place(read_ptr);
+                ptr::drop_in_place(prev_ptr);
             } else {
                 let read_ptr = ptr.add(gap.read.wrapping_sub(1));
                 let write_ptr = ptr.add(gap.write);
@@ -173,5 +174,6 @@ fn test_dedup_by() {
         }
     });
 
-    assert_eq!(vec, [("foo", 4), ("bar", 8)]);
+    // 1 + 2 + 3, 3 + 4 + 5
+    assert_eq!(vec, [("foo", 6), ("bar", 12)]);
 }
