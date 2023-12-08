@@ -21,7 +21,7 @@ use super::{
 };
 use crate::memcache::SeriesData;
 use crate::reader::utils::TimeRangeProvider;
-use crate::{Error, Result};
+use crate::Result;
 
 pub struct MemCacheReader {
     series_data: Arc<RwLock<SeriesData>>,
@@ -60,9 +60,6 @@ impl MemCacheReader {
                             columns.push(column.clone());
                         }
                     }
-                } else {
-                    let result = format!("column {} not found in series_data", col_id);
-                    return Err(Error::CommonError { reason: result });
                 }
             }
 
