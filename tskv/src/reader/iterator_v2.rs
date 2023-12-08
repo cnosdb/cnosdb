@@ -449,47 +449,49 @@ impl SeriesGroupBatchReaderFactory {
         projection: &[ColumnId],
         predicate: &Option<Arc<Predicate>>,
         metrics: &SeriesGroupBatchReaderMetrics,
-    ) -> Result<BatchReaderRef> {
-        let chunk_reader: BatchReaderRef =
-            match chunk {
-                DataReference::Chunk(chunk, reader) => {
-                    let chunk_schema = chunk.schema();
-                    let cgs = chunk.column_group().values().cloned().collect::<Vec<_>>();
-                    // filter column groups
-                    metrics.column_group_nums().add(cgs.len());
-                    trace::debug!("All column group nums: {}", cgs.len());
-                    let cgs = filter_column_groups(cgs, predicate, chunk_schema)?;
-                    trace::debug!("Filtered column group nums: {}", cgs.len());
-                    metrics.filtered_column_group_nums().add(cgs.len());
+    ) -> Result<Option<BatchReaderRef>> {
+        let chunk_reader: Option<BatchReaderRef> = match chunk {
+            DataReference::Chunk(chunk, reader) => {
+                let chunk_schema = chunk.schema();
+                let cgs = chunk.column_group().values().cloned().collect::<Vec<_>>();
+                // filter column groups
+                metrics.column_group_nums().add(cgs.len());
+                trace::debug!("All column group nums: {}", cgs.len());
+                let cgs = filter_column_groups(cgs, predicate, chunk_schema)?;
+                trace::debug!("Filtered column group nums: {}", cgs.len());
+                metrics.filtered_column_group_nums().add(cgs.len());
 
-                    let batch_readers = cgs
-                        .into_iter()
-                        .map(|e| {
-                            let column_group_reader = ColumnGroupReader::try_new(
-                                reader.clone(),
-                                e,
-                                projection,
-                                batch_size,
-                                self.column_group_reader_metrics_set.clone(),
-                            )?;
-                            Ok(Arc::new(column_group_reader) as BatchReaderRef)
-                        })
-                        .collect::<Result<Vec<_>>>()?;
+                let batch_readers = cgs
+                    .into_iter()
+                    .map(|e| {
+                        let column_group_reader = ColumnGroupReader::try_new(
+                            reader.clone(),
+                            e,
+                            projection,
+                            batch_size,
+                            self.column_group_reader_metrics_set.clone(),
+                        )?;
+                        Ok(Arc::new(column_group_reader) as BatchReaderRef)
+                    })
+                    .collect::<Result<Vec<_>>>()?;
 
-                    Arc::new(CombinedBatchReader::new(batch_readers))
-                }
-                DataReference::Memcache(series_data, time_ranges) => Arc::new(
-                    MemCacheReader::try_new(series_data, time_ranges, batch_size, projection)?,
-                ),
-            };
+                Some(Arc::new(CombinedBatchReader::new(batch_readers)))
+            }
+            DataReference::Memcache(series_data, time_ranges) => {
+                MemCacheReader::try_new(series_data, time_ranges, batch_size, projection)?
+                    .map(|e| e as BatchReaderRef)
+            }
+        };
 
         // 数据过滤
         if let Some(predicate) = &predicate {
-            return Ok(Arc::new(DataFilter::new(
-                predicate.clone(),
-                chunk_reader,
-                self.filter_reader_metrics_set.clone(),
-            )));
+            if let Some(chunk_reader) = chunk_reader {
+                return Ok(Some(Arc::new(DataFilter::new(
+                    predicate.clone(),
+                    chunk_reader,
+                    self.filter_reader_metrics_set.clone(),
+                ))));
+            }
         }
 
         Ok(chunk_reader)
@@ -510,20 +512,19 @@ impl SeriesGroupBatchReaderFactory {
             projection.fields()
         };
 
-        let chunk_readers = chunks
-            .into_iter()
-            .map(|data_reference| -> Result<BatchReaderRef> {
-                let chunk_reader = self.build_chunk_reader(
-                    data_reference,
-                    batch_size,
-                    projection,
-                    predicate,
-                    metrics,
-                )?;
-
-                Ok(chunk_reader)
-            })
-            .collect::<Result<Vec<_>>>()?;
+        let mut chunk_readers = Vec::new();
+        for data_reference in chunks.into_iter() {
+            let chunk_reader = self.build_chunk_reader(
+                data_reference,
+                batch_size,
+                projection,
+                predicate,
+                metrics,
+            )?;
+            if let Some(chunk_reader) = chunk_reader {
+                chunk_readers.push(chunk_reader);
+            }
+        }
 
         Ok(chunk_readers)
     }

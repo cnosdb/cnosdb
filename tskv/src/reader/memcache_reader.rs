@@ -49,20 +49,15 @@ impl MemCacheReader {
         time_ranges: Arc<TimeRanges>,
         batch_size: usize,
         projection: &[ColumnId],
-    ) -> Result<Self> {
+    ) -> Result<Option<Arc<Self>>> {
         if let Some(tskv_schema) = series_data.read().get_schema() {
-            let mut memcache_reader = Self {
-                series_data: series_data.clone(),
-                time_ranges,
-                batch_size,
-                columns: Vec::new(),
-            };
             // filter columns by projection
+            let mut columns: Vec<TableColumn> = Vec::with_capacity(projection.len());
             for col_id in projection.iter() {
                 if let Some(col_name) = tskv_schema.column_name(*col_id) {
                     if let Some(column) = tskv_schema.column(col_name) {
                         if !column.column_type.is_tag() {
-                            memcache_reader.columns.push(column.clone());
+                            columns.push(column.clone());
                         }
                     }
                 } else {
@@ -71,11 +66,14 @@ impl MemCacheReader {
                 }
             }
 
-            Ok(memcache_reader)
+            Ok(Some(Arc::new(Self {
+                series_data: series_data.clone(),
+                time_ranges,
+                batch_size,
+                columns,
+            })))
         } else {
-            Err(Error::CommonError {
-                reason: "memcache no data".to_string(),
-            })
+            Ok(None)
         }
     }
 
@@ -333,15 +331,14 @@ mod tests {
         mem_cache.write_group(sid, 1, row_group_1.clone()).unwrap();
 
         let trs = Arc::new(TimeRanges::new(vec![TimeRange::new(1, 3)]));
-        let memcache_reader: Arc<dyn BatchReader> = Arc::new(
-            MemCacheReader::try_new(
-                mem_cache.read_series_data()[0].1.clone(),
-                trs,
-                2,
-                &[1, 2, 3],
-            )
-            .unwrap(),
-        );
+        let memcache_reader: Arc<dyn BatchReader> = MemCacheReader::try_new(
+            mem_cache.read_series_data()[0].1.clone(),
+            trs,
+            2,
+            &[1, 2, 3],
+        )
+        .unwrap()
+        .unwrap();
         let stream = memcache_reader.process().expect("memcache_reader");
         let result = stream.try_collect::<Vec<_>>().await.unwrap();
         let expected = [
