@@ -12,7 +12,7 @@ use models::field_value::DataType;
 use models::predicate::domain::{TimeRange, TimeRanges};
 use models::schema::{ColumnType, TableColumn};
 use models::utils::min_num;
-use models::ColumnId;
+use models::{ColumnId, Timestamp};
 use parking_lot::RwLock;
 
 use super::{
@@ -23,11 +23,16 @@ use crate::memcache::SeriesData;
 use crate::reader::utils::TimeRangeProvider;
 use crate::Result;
 
+enum MemcacheReadMode {
+    FieldScan,
+    TimeScan,
+}
 pub struct MemCacheReader {
     series_data: Arc<RwLock<SeriesData>>,
     time_ranges: Arc<TimeRanges>,
     batch_size: usize,
     columns: Vec<TableColumn>,
+    read_mode: MemcacheReadMode,
 }
 
 impl TimeRangeProvider for MemCacheReader {
@@ -63,11 +68,16 @@ impl MemCacheReader {
                 }
             }
 
+            let mut read_mode = MemcacheReadMode::FieldScan;
+            if columns.len() == 1 && columns[0].column_type.is_time() {
+                read_mode = MemcacheReadMode::TimeScan;
+            }
             Ok(Some(Arc::new(Self {
                 series_data: series_data.clone(),
                 time_ranges,
                 batch_size,
                 columns,
+                read_mode,
             })))
         } else {
             Ok(None)
@@ -144,35 +154,55 @@ impl MemCacheReader {
     }
 
     fn read_data_and_build_array(&self) -> Result<Vec<ArrayBuilderPtr>> {
-        let mut columns_data_vec: Vec<IntoIter<DataType>> = Vec::new();
-        // 1.read all columns data to Vec<Rev<IntoIter<DataType>>>
-        for column in &self.columns {
-            let mut columns_data: Vec<DataType> = Vec::new();
-            self.series_data.read().read_data(
-                column.id,
-                &self.time_ranges,
-                |_| true,
-                |d| columns_data.push(d),
-            );
-            columns_data.dedup_by_key(|data| data.timestamp());
-            columns_data_vec.push(columns_data.into_iter());
-        }
-
-        // 2.by Vec<Vec<DataType>>, build multi ArrayBuilderPtr
-        // build builders to RecordBatch
         let mut builders = Vec::with_capacity(self.columns.len());
+        // build builders to RecordBatch
         for item in self.columns.iter() {
             let kv_dt = item.column_type.to_physical_type();
             let builder_item = RowIterator::new_column_builder(&kv_dt, self.batch_size)?;
             builders.push(ArrayBuilderPtr::new(builder_item, kv_dt))
         }
-        let mut row_cols: Vec<Option<DataType>> = vec![None; self.columns.len()];
-        loop {
-            if self
-                .collect_row_data(&mut builders, &mut columns_data_vec, &mut row_cols)?
-                .is_none()
-            {
-                break;
+
+        match self.read_mode {
+            MemcacheReadMode::FieldScan => {
+                // 1.read all columns data to Vec<Rev<IntoIter<DataType>>>
+                let mut columns_data_vec: Vec<IntoIter<DataType>> = Vec::new();
+                for column in &self.columns {
+                    let mut columns_data: Vec<DataType> = Vec::new();
+                    self.series_data.read().read_data(
+                        column.id,
+                        &self.time_ranges,
+                        |_| true,
+                        |d| columns_data.push(d),
+                    );
+                    columns_data.dedup_by_key(|data| data.timestamp());
+                    columns_data_vec.push(columns_data.into_iter());
+                }
+
+                // 2.by Vec<Vec<DataType>>, build multi ArrayBuilderPtr
+                let mut row_cols: Vec<Option<DataType>> = vec![None; self.columns.len()];
+                loop {
+                    if self
+                        .collect_row_data(&mut builders, &mut columns_data_vec, &mut row_cols)?
+                        .is_none()
+                    {
+                        break;
+                    }
+                }
+            },
+            MemcacheReadMode::TimeScan => {
+                // 1.read all columns data to Vec<Rev<IntoIter<DataType>>>
+                let mut columns_data: Vec<Timestamp> = Vec::new();
+                self.series_data.read().read_timestamps(
+                    &self.time_ranges,
+                    |d| columns_data.push(d),
+                );
+                columns_data.dedup_by_key(|data| *data);
+                // 2.by Vec<Vec<Timestamp>>, build multi ArrayBuilderPtr
+                if let ColumnType::Time(unit) = &self.columns[0].column_type {
+                    for ts in columns_data {
+                        builders[0].append_timestamp(unit, ts);
+                    }
+                }
             }
         }
 
