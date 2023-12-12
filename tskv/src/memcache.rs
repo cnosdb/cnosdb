@@ -345,6 +345,93 @@ impl SeriesData {
         }
     }
 
+    pub fn read_data_v2(
+        &self,
+        column_ids: &[ColumnId],
+        time_ranges: &TimeRanges,
+        mut handle_data: impl FnMut(RowData),
+    ) {
+        match (time_ranges.is_boundless(), time_ranges.is_empty()) {
+            (_, false) => {
+                for group in self.groups.iter() {
+                    let field_index = group.schema.fields_id();
+                    for range in time_ranges.time_ranges() {
+                        for row in group.rows.get_ref_rows().range(
+                            Included(&RowData {
+                                ts: range.min_ts,
+                                fields: vec![],
+                            }),
+                            Included(&RowData {
+                                ts: range.max_ts,
+                                fields: vec![],
+                            }),
+                        ) {
+                            let mut fields = vec![None; column_ids.len()];
+                            column_ids.iter().enumerate().for_each(|(i, column_id)| {
+                                if let Some(index) = field_index.get(column_id) {
+                                    if let Some(Some(field)) = row.fields.get(*index) {
+                                        fields[i] = Some(field.clone());
+                                    }
+                                }
+                            });
+                            handle_data(RowData {
+                                ts: row.ts,
+                                fields,
+                            });
+                        }
+                    }
+                }
+            }
+            (false, true) => {
+                for group in self.groups.iter() {
+                    let field_index = group.schema.fields_id();
+                    for row in group.rows.get_ref_rows().range(
+                        Included(&RowData {
+                            ts: time_ranges.min_ts(),
+                            fields: vec![],
+                        }),
+                        Included(&RowData {
+                            ts: time_ranges.max_ts(),
+                            fields: vec![],
+                        }),
+                    ) {
+                        let mut fields = vec![None; column_ids.len()];
+                        column_ids.iter().enumerate().for_each(|(i, column_id)| {
+                            if let Some(index) = field_index.get(column_id) {
+                                if let Some(Some(field)) = row.fields.get(*index) {
+                                    fields[i] = Some(field.clone());
+                                }
+                            }
+                        });
+                        handle_data(RowData {
+                            ts: row.ts,
+                            fields,
+                        });
+                    }
+                }
+            }
+            (true, true) => {
+                for group in self.groups.iter() {
+                    let field_index = group.schema.fields_id();
+                    for row in group.rows.get_ref_rows() {
+                        let mut fields = vec![None; column_ids.len()];
+                        column_ids.iter().enumerate().for_each(|(i, column_id)| {
+                            if let Some(index) = field_index.get(column_id) {
+                                if let Some(Some(field)) = row.fields.get(*index) {
+                                    fields[i] = Some(field.clone());
+                                }
+                            }
+                        });
+                        handle_data(RowData {
+                            ts: row.ts,
+                            fields,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
     pub fn read_data(
         &self,
         column_id: ColumnId,

@@ -1,25 +1,23 @@
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
-use std::vec::IntoIter;
 
 use arrow::compute::kernels::cast;
 use arrow::datatypes::{Field, Schema};
 use arrow_array::{ArrayRef, RecordBatch};
 use arrow_schema::SchemaRef;
 use futures::Stream;
-use models::field_value::DataType;
 use models::predicate::domain::{TimeRange, TimeRanges};
 use models::schema::{ColumnType, TableColumn};
-use models::utils::min_num;
 use models::{ColumnId, Timestamp};
 use parking_lot::RwLock;
+use skiplist::OrderedSkipList;
 
 use super::{
     ArrayBuilderPtr, BatchReader, BatchReaderRef, RowIterator, SchemableTskvRecordBatchStream,
     SendableSchemableTskvRecordBatchStream,
 };
-use crate::memcache::SeriesData;
+use crate::memcache::{SeriesData, RowData};
 use crate::reader::utils::TimeRangeProvider;
 use crate::Result;
 
@@ -84,75 +82,6 @@ impl MemCacheReader {
         }
     }
 
-    fn collect_row_data(
-        &self,
-        builders: &mut [ArrayBuilderPtr],
-        columns_data_vec: &mut Vec<IntoIter<DataType>>,
-        row_cols: &mut [Option<DataType>],
-    ) -> Result<Option<()>> {
-        trace::trace!("======collect_row_data=========");
-
-        let mut min_time = i64::MAX;
-
-        // For each column, peek next (timestamp, value), set column_values, and
-        // specify the next min_time (if column is a `Field`).
-        for (col_cursor, row_col) in columns_data_vec.iter_mut().zip(row_cols.iter_mut()) {
-            if row_col.is_none() {
-                *row_col = col_cursor.next();
-            }
-            if let Some(ref d) = row_col {
-                min_time = min_num(min_time, d.timestamp());
-            }
-        }
-
-        // For the specified min_time, fill each column data.
-        // If a column data is for later time, set min_time_column_flag.
-        let mut min_time_column_flag = vec![false; columns_data_vec.len()];
-        for (ts_val, min_flag) in row_cols.iter().zip(min_time_column_flag.iter_mut()) {
-            if let Some(d) = ts_val {
-                let ts = d.timestamp();
-                if ts == min_time {
-                    *min_flag = true
-                }
-            }
-        }
-
-        // Step field_scan completed.
-        if min_time == i64::MAX {
-            return Ok(None);
-        }
-
-        for (i, (value, min_flag)) in row_cols
-            .iter_mut()
-            .zip(min_time_column_flag.iter_mut())
-            .enumerate()
-        {
-            match &self.columns[i].column_type {
-                ColumnType::Time(unit) => {
-                    builders[i].append_timestamp(unit, min_time);
-                }
-                ColumnType::Field(_) => {
-                    if *min_flag {
-                        builders[i].append_value(
-                            self.columns[i].column_type.to_physical_data_type(),
-                            value.take(),
-                            &self.columns[i].name,
-                        )?;
-                    } else {
-                        builders[i].append_value(
-                            self.columns[i].column_type.to_physical_data_type(),
-                            None,
-                            &self.columns[i].name,
-                        )?;
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        Ok(Some(()))
-    }
-
     fn read_data_and_build_array(&self) -> Result<Vec<ArrayBuilderPtr>> {
         let mut builders = Vec::with_capacity(self.columns.len());
         // build builders to RecordBatch
@@ -164,28 +93,54 @@ impl MemCacheReader {
 
         match self.read_mode {
             MemcacheReadMode::FieldScan => {
-                // 1.read all columns data to Vec<Rev<IntoIter<DataType>>>
-                let mut columns_data_vec: Vec<IntoIter<DataType>> = Vec::new();
-                for column in &self.columns {
-                    let mut columns_data: Vec<DataType> = Vec::new();
-                    self.series_data.read().read_data(
-                        column.id,
-                        &self.time_ranges,
-                        |_| true,
-                        |d| columns_data.push(d),
-                    );
-                    columns_data.dedup_by_key(|data| data.timestamp());
-                    columns_data_vec.push(columns_data.into_iter());
+                // 1.read all columns data to Vec<RowData>
+                let mut row_data_vec: OrderedSkipList<RowData> = OrderedSkipList::new();
+                let column_ids: Vec<u32> = self.columns.iter().map(|c| c.id).collect();
+                self.series_data.read().read_data_v2(
+                    &column_ids[1..],
+                    &self.time_ranges,
+                    |d| row_data_vec.insert(d),
+                );
+
+                // 2.merge RowData by ts
+                let mut merge_row_data_vec: Vec<RowData> = Vec::with_capacity(row_data_vec.len());
+                for row_data in row_data_vec {
+                    if let Some(existing_row) = merge_row_data_vec.last_mut() {
+                        if existing_row.ts == row_data.ts {
+                            for (index, field) in row_data.fields.iter().enumerate() {
+                                if let Some(field) = field {
+                                    existing_row.fields[index] = Some(field.clone());
+                                }
+                            }
+                        } else {
+                            merge_row_data_vec.push(row_data.clone());
+                        }
+                    } else {
+                        merge_row_data_vec.push(row_data.clone());
+                    }
                 }
 
-                // 2.by Vec<Vec<DataType>>, build multi ArrayBuilderPtr
-                let mut row_cols: Vec<Option<DataType>> = vec![None; self.columns.len()];
-                loop {
-                    if self
-                        .collect_row_data(&mut builders, &mut columns_data_vec, &mut row_cols)?
-                        .is_none()
-                    {
-                        break;
+                // 3.by Vec<RowData>, build multi ArrayBuilderPtr
+                for row_data in merge_row_data_vec {
+                    let mut offset = 0;
+                    if let ColumnType::Time(unit) = &self.columns[0].column_type {
+                        builders[offset].append_timestamp(unit, row_data.ts);
+                        offset += 1;
+                    }
+                    for (index, field) in row_data.fields.iter().enumerate() {
+                        if let Some(field) = field {
+                            builders[index + offset].append_value(
+                                self.columns[index + offset].column_type.to_physical_data_type(),
+                                Some(field.data_value(row_data.ts)),
+                                &self.columns[index + offset].name,
+                            )?;
+                        } else {
+                            builders[index + offset].append_value(
+                                self.columns[index + offset].column_type.to_physical_data_type(),
+                                None,
+                                &self.columns[index + offset].name,
+                            )?;
+                        }
                     }
                 }
             },
@@ -196,7 +151,9 @@ impl MemCacheReader {
                     &self.time_ranges,
                     |d| columns_data.push(d),
                 );
+                columns_data.sort_by_key(|data| *data);
                 columns_data.dedup_by_key(|data| *data);
+
                 // 2.by Vec<Vec<Timestamp>>, build multi ArrayBuilderPtr
                 if let ColumnType::Time(unit) = &self.columns[0].column_type {
                     for ts in columns_data {
