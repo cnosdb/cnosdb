@@ -552,17 +552,22 @@ impl Coordinator for CoordService {
                     has_ts = true;
                 }
                 if matches!(tskv_schema_column.column_type, ColumnType::Tag) {
-                    let value = column
+                    let array = column
                         .as_any()
                         .downcast_ref::<DictionaryArray<Int32Type>>()
-                        .ok_or(CoordinatorError::CommonError {
-                            msg: format!("column {} is not DictionaryArray", name),
-                        })?
-                        .downcast_dict::<StringArray>()
-                        .ok_or(CoordinatorError::CommonError {
-                            msg: format!("column {} is not StringArray", name),
-                        })?
-                        .value(idx);
+                        .and_then(|a| a.downcast_dict::<StringArray>());
+
+                    let value = if let Some(array) = array {
+                        array.value(idx)
+                    } else {
+                        column
+                            .as_any()
+                            .downcast_ref::<StringArray>()
+                            .ok_or(CoordinatorError::CommonError {
+                                msg: format!("column {} is not StringArray", name),
+                            })?
+                            .value(idx)
+                    };
                     hasher.hash_with(name.as_bytes());
                     hasher.hash_with(value.as_bytes());
                 }

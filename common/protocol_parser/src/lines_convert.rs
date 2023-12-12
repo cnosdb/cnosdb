@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
 use datafusion::arrow::array::{
-    Array, ArrayRef, BooleanArray, DictionaryArray, Float64Array, Int64Array, StringArray,
-    TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray, UInt64Array,
+    Array, ArrayAccessor, ArrayRef, BooleanArray, DictionaryArray, Float64Array, Int64Array,
+    StringArray, TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray,
+    UInt64Array,
 };
 use datafusion::arrow::datatypes::{Int32Type, SchemaRef, TimeUnit};
 use flatbuffers::{FlatBufferBuilder, WIPOffset};
@@ -324,19 +325,15 @@ pub fn build_string_column<'a>(
     fbb: &mut FlatBufferBuilder<'a>,
 ) -> Result<WIPOffset<FbColumn<'a>>> {
     let name = fbb.create_string(col_name);
-    let values = column
+    let array = column
         .as_any()
         .downcast_ref::<DictionaryArray<Int32Type>>()
-        .ok_or(Error::Common {
-            content: format!("column {} is not DictionaryArray", col_name),
-        })?
-        .downcast_dict::<StringArray>()
-        .ok_or(Error::Common {
-            content: format!("column {} is not StringArray", col_name),
-        })?;
+        .and_then(|a| a.downcast_dict::<StringArray>());
+
     let mut nullbits = BitSet::new();
-    let mut col_values = Vec::with_capacity(values.len());
-    values.into_iter().for_each(|value| {
+    let mut col_values = Vec::with_capacity(column.len());
+
+    let append_value = |value: Option<&str>| {
         if let Some(value) = value {
             nullbits.append_set(1);
             col_values.push(fbb.create_string(value));
@@ -344,7 +341,33 @@ pub fn build_string_column<'a>(
             nullbits.append_unset(1);
             col_values.push(fbb.create_string(""));
         }
-    });
+    };
+
+    match array {
+        Some(array) => {
+            for i in 0..array.keys().len() {
+                let idx = array.keys().value(i);
+                if array.values().is_null(idx as usize) {
+                    nullbits.append_unset(1);
+                    col_values.push(fbb.create_string(""));
+                } else {
+                    let value = array.value(i);
+                    nullbits.append_set(1);
+                    col_values.push(fbb.create_string(value));
+                }
+            }
+        }
+        None => {
+            let array = column
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .ok_or(Error::Common {
+                    content: format!("column {} is not StringArray", col_name),
+                })?;
+            array.into_iter().for_each(append_value);
+        }
+    };
+
     let nullbits = fbb.create_vector(nullbits.bytes());
     let values = fbb.create_vector(&col_values);
     let mut values_builder = ValuesBuilder::new(fbb);
