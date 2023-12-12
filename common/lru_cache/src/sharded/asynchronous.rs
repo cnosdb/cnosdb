@@ -184,11 +184,141 @@ where
 
 #[cfg(test)]
 mod test {
+    use std::sync::atomic::AtomicUsize;
     use std::sync::Arc;
 
     use parking_lot::RwLock;
 
     use crate::sharded::asynchronous::ShardedCache;
+
+    /// Visit all keys from the cache in parallel, and return the hit/miss/error count.
+    /// If the key is not in the cache, insert new key-value into the cache.
+    async fn read_cache_in_parallel(
+        cache: Arc<ShardedCache<String, Arc<String>>>,
+        keys: Arc<Vec<String>>,
+        task_count: usize,
+    ) -> (usize, usize, usize) {
+        let hit_cnt = Arc::new(AtomicUsize::new(0));
+        let miss_cnt = Arc::new(AtomicUsize::new(0));
+        let error_cnt = Arc::new(AtomicUsize::new(0));
+
+        let mut tasks = Vec::with_capacity(task_count);
+
+        let mut key_i_vec = (0..tasks.capacity()).collect::<Vec<usize>>();
+        // Shuffle the key index.
+        key_i_vec.sort_by(|_, _| rand::random::<i8>().cmp(&0));
+
+        let task_key_range_base = keys.len() / tasks.capacity();
+        for i in key_i_vec {
+            let keys = keys.clone();
+            let cache = cache.clone();
+            let hit_cnt = hit_cnt.clone();
+            let miss_cnt = miss_cnt.clone();
+            let error_cnt = error_cnt.clone();
+            let jh = tokio::spawn(async move {
+                let key_i_start = task_key_range_base * i;
+                let key_i_end = task_key_range_base * (i + 1);
+
+                // Start task: [{key_i_start}, {key_i_end})
+                for key_i in key_i_start..key_i_end {
+                    let key = keys[key_i].clone();
+                    let val = Arc::new(format!("val_{key_i}"));
+                    let mut lock = cache.lock_shard(&key).await;
+                    let val_ref = match lock.get(&key) {
+                        Some(v) => {
+                            hit_cnt.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                            println!("Got key: {key}");
+                            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                            v.clone()
+                        }
+                        None => {
+                            miss_cnt.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                            // Take some time to init the value (open a file, etc.)
+                            tokio::time::sleep(std::time::Duration::from_micros(100)).await;
+                            println!("Insert new key: {key}");
+                            match lock.get(&key) {
+                                Some(v) => v.clone(),
+                                None => match lock.insert(key.clone(), val.clone()) {
+                                    Some(v) => v.clone(),
+                                    None => {
+                                        eprintln!("Value of key: {} failed to insert", key);
+                                        error_cnt.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                                        continue;
+                                    }
+                                },
+                            }
+                        }
+                    };
+                    assert_eq!(val.as_str(), val_ref.as_str());
+                    tokio::spawn(async move {
+                        // Hold the value for a while.
+                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                        let _p = val_ref.as_ptr();
+                    });
+                }
+                // End task: [{key_i_start}, {key_i_end})"
+            });
+            tasks.push(jh);
+        }
+        for t in tasks {
+            if let Err(e) = t.await {
+                eprintln!("Error(in): {:?}", e);
+                error_cnt.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+        (
+            hit_cnt.load(std::sync::atomic::Ordering::SeqCst),
+            miss_cnt.load(std::sync::atomic::Ordering::SeqCst),
+            error_cnt.load(std::sync::atomic::Ordering::SeqCst),
+        )
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_read_write_in_parallel() {
+        const KEY_NUM: usize = 128;
+        const CACHE_CAPACITY: usize = 16;
+        const TASK_NUM: usize = 4;
+        const SUB_TASK_NUM: usize = 8;
+
+        let mut keys: Vec<String> = Vec::with_capacity(KEY_NUM);
+        for i in 0..keys.capacity() {
+            keys.push(format!("key_{i}"));
+        }
+        let keys = Arc::new(keys);
+
+        let cache: Arc<ShardedCache<String, Arc<String>>> =
+            Arc::new(ShardedCache::with_capacity(CACHE_CAPACITY));
+
+        let hit_cnt = Arc::new(AtomicUsize::new(0));
+        let miss_cnt = Arc::new(AtomicUsize::new(0));
+        let error_cnt = Arc::new(AtomicUsize::new(0));
+        let mut tasks = Vec::with_capacity(TASK_NUM);
+        for _ in 0..tasks.capacity() {
+            let keys = keys.clone();
+            let cache = cache.clone();
+            let hit_cnt = hit_cnt.clone();
+            let miss_cnt = miss_cnt.clone();
+            let error_cnt = miss_cnt.clone();
+            let jh = tokio::spawn(async move {
+                let (hit, miss, err) = read_cache_in_parallel(cache, keys, SUB_TASK_NUM).await;
+                hit_cnt.fetch_add(hit, std::sync::atomic::Ordering::SeqCst);
+                miss_cnt.fetch_add(miss, std::sync::atomic::Ordering::SeqCst);
+                error_cnt.fetch_add(err, std::sync::atomic::Ordering::SeqCst);
+            });
+            tasks.push(jh);
+        }
+        for t in tasks {
+            if let Err(e) = t.await {
+                println!("Error(out): {:?}", e);
+            }
+        }
+        println!(
+            "Total hit: {}, Total missed: {}, Total errors: {}",
+            hit_cnt.load(std::sync::atomic::Ordering::SeqCst),
+            miss_cnt.load(std::sync::atomic::Ordering::SeqCst),
+            error_cnt.load(std::sync::atomic::Ordering::SeqCst),
+        );
+    }
 
     const CACHE_SIZE: usize = 1000;
 

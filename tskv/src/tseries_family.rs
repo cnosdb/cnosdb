@@ -511,18 +511,16 @@ impl Version {
 
     pub async fn get_tsm_reader(&self, path: impl AsRef<Path>) -> Result<Arc<TsmReader>> {
         let path = path.as_ref().display().to_string();
-        let tsm_reader = match self.tsm_reader_cache.get(&path).await {
-            Some(val) => val.clone(),
-            None => {
-                let mut lock = self.tsm_reader_cache.lock_shard(&path).await;
-                match lock.get(&path) {
-                    Some(val) => val.clone(),
-                    None => {
-                        let tsm_reader = TsmReader::open(&path).await?;
-                        lock.insert(path, Arc::new(tsm_reader)).unwrap().clone()
-                    }
+        let mut sync_lru = self.tsm_reader_cache.lock_shard(&path).await;
+        let tsm_reader = match sync_lru.get(&path) {
+            Some(r) => r.clone(),
+            None => match sync_lru.get(&path) {
+                Some(r) => r.clone(),
+                None => {
+                    let tsm_reader = TsmReader::open(&path).await?;
+                    sync_lru.insert(path, Arc::new(tsm_reader)).unwrap().clone()
                 }
-            }
+            },
         };
         Ok(tsm_reader)
     }
