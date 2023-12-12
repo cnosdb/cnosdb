@@ -13,7 +13,7 @@ use crate::kv_option::WalOptions;
 use crate::record_file::{RecordDataType, RecordDataVersion};
 use crate::wal::reader::WalReader;
 use crate::wal::{raft_store, reader, WalType, WAL_FOOTER_MAGIC_NUMBER};
-use crate::{record_file, Error, Result};
+use crate::{record_file, Result};
 
 fn build_footer(min_sequence: u64, max_sequence: u64) -> [u8; record_file::FILE_FOOTER_LEN] {
     let mut footer = [0_u8; record_file::FILE_FOOTER_LEN];
@@ -281,15 +281,13 @@ impl WalWriter {
         };
 
         let seq = raft_entry.log_id.index;
-        let raft_entry_bytes =
-            bincode::serialize(raft_entry).map_err(|e| Error::Encode { source: e })?;
-
+        let data = super::encode_wal_raft_entry(raft_entry)?;
         let written_size = self
             .inner
             .write_record(
                 RecordDataVersion::V1 as u8,
                 RecordDataType::Wal as u8,
-                [&[wal_type as u8][..], &seq.to_be_bytes(), &raft_entry_bytes].as_slice(),
+                [&[wal_type as u8][..], &seq.to_be_bytes(), &data].as_slice(),
             )
             .await?;
 

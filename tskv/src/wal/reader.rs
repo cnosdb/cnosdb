@@ -175,7 +175,7 @@ impl WalRecordData {
             WalType::DeleteVnode => Block::DeleteVnode(DeleteVnodeBlock::new(buf)),
             WalType::DeleteTable => Block::DeleteTable(DeleteTableBlock::new(buf)),
             WalType::RaftBlankLog | WalType::RaftNormalLog | WalType::RaftMembershipLog => {
-                match raft_store::new_raft_entry(&buf[WAL_HEADER_LEN..]) {
+                match super::decode_wal_raft_entry(&buf[WAL_HEADER_LEN..]) {
                     Ok(e) => Block::RaftLog(e),
                     Err(e) => {
                         trace::error!("Failed to decode raft entry from wal: {e}");

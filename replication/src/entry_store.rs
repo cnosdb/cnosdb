@@ -50,10 +50,6 @@ impl EntryStorage for HeedEntryStorage {
             return Ok(());
         }
 
-        // Remove all entries overwritten by `ents`.
-        let begin = ents[0].log_id.index;
-        self.del_after(begin).await?;
-
         let mut writer = self.env.write_txn()?;
         for entry in ents {
             let index = entry.log_id.index;

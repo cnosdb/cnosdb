@@ -102,7 +102,6 @@ impl VnodeStorage {
         span_ctx: Option<&SpanContext>,
     ) -> Result<WritePointsResponse> {
         let span_recorder = SpanRecorder::new(span_ctx.child_span("tskv engine write cache"));
-
         let fb_points = flatbuffers::root::<fb_models::Points>(&points)
             .context(crate::error::InvalidFlatbufferSnafu)?;
 

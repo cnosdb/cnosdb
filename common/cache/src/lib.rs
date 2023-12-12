@@ -1,4 +1,5 @@
 mod async_cache;
+mod circular_kvcache;
 mod lru_cache;
 mod sharded_async_cache;
 mod sharded_sync_cache;
@@ -10,6 +11,7 @@ use std::hash::{Hash, Hasher};
 use std::num::NonZeroUsize;
 
 pub use crate::async_cache::*;
+pub use crate::circular_kvcache::*;
 pub use crate::lru_cache::*;
 pub use crate::sharded_async_cache::*;
 pub use crate::sharded_sync_cache::*;

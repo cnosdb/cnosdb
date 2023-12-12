@@ -37,7 +37,7 @@ use crate::tsm::codec::get_str_codec;
 use crate::version_set::VersionSet;
 use crate::vnode_store::VnodeStorage;
 use crate::wal::{
-    self, Block, DeleteBlock, UpdateSeriesKeysBlock, WalDecoder, WalManager, WalTask,
+    self, Block, DeleteBlock, UpdateSeriesKeysBlock, WalEntryCodec, WalManager, WalTask,
 };
 use crate::{file_utils, Engine, Error, TsKvContext, TseriesFamilyId, UpdateSetValue};
 
@@ -182,7 +182,7 @@ impl TsKv {
         for (vnode_id, readers) in vnode_wal_readers {
             let vnode_seq = vnode_last_seq_map.get(&vnode_id).copied().unwrap_or(0);
             let task = async move {
-                let mut decoder = WalDecoder::new();
+                let mut decoder = WalEntryCodec::new();
                 for mut reader in readers {
                     info!(
                         "Recover: reading wal '{}' for seq {} to {}",
@@ -489,7 +489,7 @@ impl TsKv {
         vnode_id: TseriesFamilyId,
         seq: u64,
         block: &wal::WriteBlock,
-        block_decoder: &mut WalDecoder,
+        block_decoder: &mut WalEntryCodec,
     ) -> Result<()> {
         let tenant = {
             let tenant = block.tenant_utf8()?;

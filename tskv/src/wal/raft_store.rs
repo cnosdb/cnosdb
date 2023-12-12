@@ -1,6 +1,3 @@
-use std::collections::{BTreeMap, HashMap};
-use std::fmt::Write;
-use std::ops::RangeBounds;
 use std::sync::Arc;
 
 use openraft::EntryPayload;
@@ -9,32 +6,14 @@ use replication::{ApplyStorageRef, EntryStorage, RaftNodeId, RaftNodeInfo, TypeC
 use tokio::sync::Mutex;
 
 use super::reader::WalRecordData;
-use crate::byte_utils::decode_be_u64;
 use crate::file_system::file_manager;
 use crate::wal::reader::{Block, WalReader};
 use crate::wal::{writer, VnodeWal};
 use crate::{file_utils, Error, Result};
 
-// https://datafuselabs.github.io/openraft/getting-started.html
-
-// openraft::declare_raft_types!(
-//     pub VnodeRaftConfig:
-//         D            = reader::Block,
-//         R            = u64,
-//         NodeId       = u64,
-//         Node         = openraft::BasicNode,
-//         Entry        = openraft::Entry<VnodeRaftConfig>,
-//         SnapshotData = std::io::Cursor<Vec<u8>>,
-//         AsyncRuntime = openraft::TokioRuntime,
-// );
-
 pub type RaftEntry = openraft::Entry<TypeConfig>;
 pub type RaftLogMembership = openraft::Membership<RaftNodeId, RaftNodeInfo>;
 pub type RaftRequestForWalWrite = writer::Task;
-
-pub fn new_raft_entry(buf: &[u8]) -> Result<RaftEntry> {
-    bincode::deserialize(buf).map_err(|e| Error::Decode { source: e })
-}
 
 pub struct RaftEntryStorage {
     inner: Arc<Mutex<RaftEntryStorageInner>>,
@@ -45,8 +24,8 @@ impl RaftEntryStorage {
         Self {
             inner: Arc::new(Mutex::new(RaftEntryStorageInner {
                 wal,
-                seq_wal_pos_index: BTreeMap::new(),
-                wal_ref_count_index: HashMap::new(),
+                files_meta: vec![],
+                entry_cache: cache::CircularKVCache::new(256),
             })),
         }
     }
@@ -60,187 +39,309 @@ impl RaftEntryStorage {
 
 #[async_trait::async_trait]
 impl EntryStorage for RaftEntryStorage {
-    async fn entry(&self, seq_no: u64) -> ReplicationResult<Option<RaftEntry>> {
-        let mut inner = self.inner.lock().await;
-
-        let (wal_id, pos) = match inner.seq_wal_pos_index.get(&seq_no) {
-            Some((wal_id, pos)) => (*wal_id, *pos),
-            None => return Ok(None),
-        };
-        inner.read(wal_id, pos).await
-    }
-
-    async fn del_before(&self, seq_no: u64) -> ReplicationResult<()> {
-        let mut inner = self.inner.lock().await;
-        inner.mark_delete_before(seq_no);
-        let wal_ids_can_delete = inner.get_empty_old_wal_ids();
-        inner.wal.delete_wal_files(&wal_ids_can_delete).await;
-        Ok(())
-    }
-
-    async fn del_after(&self, seq_no: u64) -> ReplicationResult<()> {
-        let mut inner = self.inner.lock().await;
-        inner.mark_delete_after(seq_no);
-        Ok(())
-    }
-
     async fn append(&self, entries: &[RaftEntry]) -> ReplicationResult<()> {
         if entries.is_empty() {
             return Ok(());
         }
-        let first_seq_no = entries[0].log_id.index;
+
         let mut inner = self.inner.lock().await;
-        inner.mark_delete_after(first_seq_no);
         for ent in entries {
             let (wal_id, pos) = inner
                 .wal
                 .write_raft_entry(ent)
                 .await
                 .map_err(|e| ReplicationError::RaftInternalErr { msg: e.to_string() })?;
-            inner.wal.sync().await.unwrap();
+            //inner.wal.sync().await.unwrap();
 
-            let seq = ent.log_id.index;
-            inner.mark_write_wal(seq, wal_id, pos);
+            inner.mark_write_wal(ent.clone(), wal_id, pos);
         }
         Ok(())
     }
 
+    async fn del_before(&self, seq_no: u64) -> ReplicationResult<()> {
+        let mut inner = self.inner.lock().await;
+        inner.mark_delete_before(seq_no);
+
+        let _ = inner.wal.delete_wal_before_seq(seq_no).await;
+
+        Ok(())
+    }
+
+    async fn del_after(&self, seq_no: u64) -> ReplicationResult<()> {
+        let mut inner = self.inner.lock().await;
+        inner.mark_delete_after(seq_no);
+
+        // TODO delete data in file
+
+        Ok(())
+    }
+
+    async fn entry(&self, seq_no: u64) -> ReplicationResult<Option<RaftEntry>> {
+        let mut inner = self.inner.lock().await;
+
+        inner.read_raft_entry(seq_no).await
+    }
+
     async fn last_entry(&self) -> ReplicationResult<Option<RaftEntry>> {
         let mut inner = self.inner.lock().await;
-        if let Some(wal_id_pos) = inner.seq_wal_pos_index.last_entry() {
-            let (wal_id, pos) = wal_id_pos.get().to_owned();
-            inner.read(wal_id, pos).await
+        inner.wal_last_entry().await
+    }
+
+    async fn entries(&self, begin: u64, end: u64) -> ReplicationResult<Vec<RaftEntry>> {
+        let mut inner = self.inner.lock().await;
+        inner.read_raft_entry_range(begin, end).await
+    }
+}
+
+struct WalFileMeta {
+    file_id: u64,
+    min_seq: u64,
+    max_seq: u64,
+    reader: WalReader,
+    entry_index: Vec<(u64, u64)>, // seq -> pos
+}
+
+impl WalFileMeta {
+    fn is_empty(&self) -> bool {
+        self.min_seq == u64::MAX || self.max_seq == u64::MAX
+    }
+
+    fn intersection(&self, start: u64, end: u64) -> Option<(u64, u64)> {
+        if self.is_empty() {
+            return None;
+        }
+
+        let start = self.min_seq.max(start);
+        let end = (self.max_seq + 1).min(end); //[ ... )
+        if start <= end {
+            Some((start, end))
+        } else {
+            None
+        }
+    }
+
+    fn mark_entry(&mut self, index: u64, pos: u64) {
+        if self.min_seq == u64::MAX || self.min_seq > index {
+            self.min_seq = index
+        }
+
+        if self.max_seq == u64::MAX || self.max_seq < index {
+            self.max_seq = index
+        }
+
+        self.entry_index.push((index, pos));
+    }
+
+    fn del_befor(&mut self, index: u64) {
+        if self.min_seq == u64::MAX || self.min_seq >= index {
+            return;
+        }
+
+        self.min_seq = index;
+        let idx = match self.entry_index.binary_search_by(|v| v.0.cmp(&index)) {
+            Ok(idx) => idx,
+            Err(idx) => idx,
+        };
+
+        self.entry_index.drain(0..idx);
+    }
+
+    fn del_after(&mut self, index: u64) {
+        if self.max_seq == u64::MAX || self.max_seq < index {
+            return;
+        }
+
+        if index == 0 {
+            self.min_seq = u64::MAX;
+            self.max_seq = u64::MAX;
+            self.entry_index.clear();
+            return;
+        }
+
+        self.max_seq = index - 1;
+        let idx = match self.entry_index.binary_search_by(|v| v.0.cmp(&index)) {
+            Ok(idx) => idx,
+            Err(idx) => idx,
+        };
+        self.entry_index.drain(idx..);
+    }
+
+    async fn get_entry_by_index(&mut self, index: u64) -> ReplicationResult<Option<RaftEntry>> {
+        if let Ok(idx) = self.entry_index.binary_search_by(|v| v.0.cmp(&index)) {
+            let pos = self.entry_index[idx].1;
+            self.get_entry(pos).await
         } else {
             Ok(None)
         }
     }
 
-    async fn entries(
-        &self,
-        begin_seq_no: u64,
-        end_seq_no: u64,
-    ) -> ReplicationResult<Vec<RaftEntry>> {
-        let mut inner = self.inner.lock().await;
-
-        let min_seq: u64;
-        let max_seq: u64;
-        if let Some(wal_id_pos) = inner.seq_wal_pos_index.first_entry() {
-            let seq = *wal_id_pos.key();
-            min_seq = seq.max(begin_seq_no);
-        } else {
-            min_seq = u64::MAX;
-        }
-        if let Some(wal_id_pos) = inner.seq_wal_pos_index.last_entry() {
-            let seq = *wal_id_pos.key();
-            max_seq = seq.min(end_seq_no - 1);
-        } else {
-            max_seq = 0;
-        }
-
-        if min_seq > max_seq {
-            return Ok(Vec::new());
-        }
-
-        inner.read_range(min_seq..=max_seq).await
-    }
-}
-
-struct RaftEntryStorageInner {
-    wal: VnodeWal,
-    /// Maps seq to (WAL id, position).
-    seq_wal_pos_index: BTreeMap<u64, (u64, u64)>,
-    /// Maps WAL id to it's record count.
-    wal_ref_count_index: HashMap<u64, u64>,
-}
-
-impl RaftEntryStorageInner {
-    async fn read(&mut self, wal_id: u64, pos: u64) -> ReplicationResult<Option<RaftEntry>> {
-        match self
-            .wal
-            .read(wal_id, pos)
+    async fn get_entry(&mut self, pos: u64) -> ReplicationResult<Option<RaftEntry>> {
+        if let Some(record) = self
+            .reader
+            .read_wal_record_data(pos)
             .await
             .map_err(|e| ReplicationError::RaftInternalErr { msg: e.to_string() })?
         {
-            Some(d) => {
-                let entry = match d {
-                    Block::RaftLog(e) => Some(e),
-                    _ => None,
-                };
-                Ok(entry)
-            }
-            None => Ok(None),
-        }
-    }
-
-    async fn read_range(
-        &mut self,
-        range: impl RangeBounds<u64>,
-    ) -> ReplicationResult<Vec<RaftEntry>> {
-        let mut entries = Vec::new();
-        for (_seq, (wal_id, pos)) in self.seq_wal_pos_index.range(range) {
-            let entry = self
-                .wal
-                .read(*wal_id, *pos)
-                .await
-                .map_err(|e| ReplicationError::RaftInternalErr { msg: e.to_string() })?;
-
-            if let Some(Block::RaftLog(e)) = entry {
-                entries.push(e);
+            if let Block::RaftLog(entry) = record.block {
+                return Ok(Some(entry));
             }
         }
 
-        Ok(entries)
+        Ok(None)
     }
+}
+struct RaftEntryStorageInner {
+    wal: VnodeWal,
+    files_meta: Vec<WalFileMeta>,
+    entry_cache: cache::CircularKVCache<u64, RaftEntry>,
+}
 
-    fn mark_write_wal(&mut self, seq_no: u64, wal_id: u64, pos: u64) {
-        self.seq_wal_pos_index.insert(seq_no, (wal_id, pos));
+impl RaftEntryStorageInner {
+    fn mark_write_wal(&mut self, entry: RaftEntry, wal_id: u64, pos: u64) {
+        let index = entry.log_id.index;
+        if let Some(item) = self
+            .files_meta
+            .iter_mut()
+            .rev()
+            .find(|item| item.file_id == wal_id)
+        {
+            item.mark_entry(index, pos);
+        } else {
+            let mut item = WalFileMeta {
+                file_id: wal_id,
+                min_seq: u64::MAX,
+                max_seq: u64::MAX,
+                entry_index: vec![],
+                reader: self.wal.current_wal.new_reader(),
+            };
 
-        let ref_count = self.wal_ref_count_index.entry(wal_id).or_default();
-        *ref_count += 1;
+            item.entry_index.reserve(8 * 1024);
+            item.mark_entry(index, pos);
+            self.files_meta.push(item);
+        }
+
+        self.entry_cache.put(index, entry);
     }
 
     fn mark_delete_before(&mut self, seq_no: u64) {
-        self.seq_wal_pos_index.retain(|&seq, (wal_id, _)| {
-            if seq >= seq_no {
-                let ref_count = self.wal_ref_count_index.entry(*wal_id).or_default();
-                if *ref_count > 0 {
-                    *ref_count -= 1;
-                }
-                return true;
+        if self.min_sequence() >= seq_no {
+            return;
+        }
+
+        for item in self.files_meta.iter_mut() {
+            if item.min_seq < seq_no {
+                item.del_befor(seq_no);
+            } else {
+                break;
             }
-            false
-        });
+        }
+
+        self.entry_cache.del_befor(seq_no);
     }
 
     fn mark_delete_after(&mut self, seq_no: u64) {
-        self.seq_wal_pos_index.retain(|&seq, (wal_id, _)| {
-            if seq < seq_no {
-                let ref_count = self.wal_ref_count_index.entry(*wal_id).or_default();
-                if *ref_count > 0 {
-                    *ref_count -= 1;
-                }
-                return true;
-            }
-            false
-        });
-    }
+        if self.max_sequence() < seq_no {
+            return;
+        }
 
-    /// Get id list of old WALs that don't needed.
-    fn get_empty_old_wal_ids(&self) -> Vec<u64> {
-        let current_wal_id = self.wal.current_wal_id();
-        let mut wal_ids = Vec::new();
-        for (wal_id, ref_count) in self.wal_ref_count_index.iter() {
-            if *wal_id == current_wal_id {
-                continue;
-            }
-            if *ref_count == 0 {
-                wal_ids.push(*wal_id);
+        for item in self.files_meta.iter_mut().rev() {
+            if item.max_seq >= seq_no {
+                item.del_after(seq_no);
+            } else {
+                break;
             }
         }
-        wal_ids
+
+        self.entry_cache.del_after(seq_no);
     }
 
-    /// Read WAL files to recover `Self::seq_wal_pos_index`.
+    fn entries_from_cache(&self, start: u64, end: u64) -> Option<Vec<RaftEntry>> {
+        let mut entries = vec![];
+        for index in start..end {
+            if let Some(entry) = self.entry_cache.get(&index) {
+                entries.push(entry.clone());
+            } else {
+                return None;
+            }
+        }
+
+        Some(entries)
+    }
+
+    fn is_empty(&self) -> bool {
+        if self.min_sequence() == u64::MAX || self.max_sequence() == u64::MAX {
+            return true;
+        }
+
+        false
+    }
+
+    fn min_sequence(&self) -> u64 {
+        if let Some(item) = self.files_meta.first() {
+            return item.min_seq;
+        }
+
+        u64::MAX
+    }
+
+    fn max_sequence(&self) -> u64 {
+        if let Some(item) = self.files_meta.last() {
+            return item.max_seq;
+        }
+
+        u64::MAX
+    }
+
+    async fn wal_last_entry(&mut self) -> ReplicationResult<Option<RaftEntry>> {
+        if let Some(entry) = self.entry_cache.last() {
+            Ok(Some(entry.clone()))
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn read_raft_entry_range(
+        &mut self,
+        start: u64,
+        end: u64,
+    ) -> ReplicationResult<Vec<RaftEntry>> {
+        if let Some(entries) = self.entries_from_cache(start, end) {
+            return Ok(entries);
+        }
+
+        let mut list = vec![];
+        for item in self.files_meta.iter_mut() {
+            if let Some((start, end)) = item.intersection(start, end) {
+                for index in start..end {
+                    if let Some(entry) = item.get_entry_by_index(index).await? {
+                        list.push(entry);
+                    }
+                }
+            }
+        }
+
+        Ok(list)
+    }
+
+    async fn read_raft_entry(&mut self, index: u64) -> ReplicationResult<Option<RaftEntry>> {
+        if let Some(entry) = self.entry_cache.get(&index) {
+            return Ok(Some(entry.clone()));
+        }
+
+        let location = match self
+            .files_meta
+            .iter_mut()
+            .rev()
+            .find(|item| (index >= item.min_seq) && (index <= item.max_seq))
+        {
+            Some(item) => item,
+            None => return Ok(None),
+        };
+
+        location.get_entry_by_index(index).await
+    }
+
+    /// Read WAL files to recover: engine, index, cache.
     pub async fn recover(&mut self, engine: ApplyStorageRef) -> Result<()> {
         let wal_files = file_manager::list_file_names(self.wal.wal_dir());
         for file_name in wal_files {
@@ -253,16 +354,16 @@ impl RaftEntryStorageInner {
             if !file_manager::try_exists(&path) {
                 continue;
             }
-            let reader = WalReader::open(&path).await?;
-            let mut reader = reader.take_record_reader();
+            let reader = self.wal.wal_reader(wal_id).await?;
+            let mut record_reader = reader.take_record_reader();
             loop {
-                let record = reader.read_record().await;
-                let (pos, seq) = match record {
+                let record = record_reader.read_record().await;
+                match record {
                     Ok(r) => {
                         if r.data.len() < 9 {
                             continue;
                         }
-                        let seq = decode_be_u64(&r.data[1..9]);
+
                         let wal_entry = WalRecordData::new(r.data);
                         if let Block::RaftLog(entry) = wal_entry.block {
                             if let EntryPayload::Normal(ref req) = entry.payload {
@@ -272,9 +373,9 @@ impl RaftEntryStorageInner {
                                 };
                                 engine.apply(&ctx, req).await.unwrap();
                             }
-                        }
 
-                        (r.pos, seq)
+                            self.mark_write_wal(entry, wal_id, r.pos);
+                        }
                     }
                     Err(Error::Eof) => {
                         break;
@@ -284,30 +385,11 @@ impl RaftEntryStorageInner {
                         trace::error!("Error reading wal: {:?}", e);
                         return Err(Error::WalTruncated);
                     }
-                };
-                self.mark_write_wal(seq, wal_id, pos);
+                }
             }
         }
 
         Ok(())
-    }
-
-    fn format_seq_wal_pos_index(&self) -> String {
-        let mut buf = String::new();
-        if self.seq_wal_pos_index.is_empty() {
-            return buf;
-        }
-        let mut i = 0;
-        for (seq, (wal_id, pos)) in self.seq_wal_pos_index.iter() {
-            buf.write_fmt(format_args!("[{seq}, ({wal_id}, {pos})]"))
-                .unwrap();
-            i += 1;
-            if i < self.seq_wal_pos_index.len() {
-                buf.write_str(", ").unwrap();
-            }
-        }
-
-        buf
     }
 }
 
