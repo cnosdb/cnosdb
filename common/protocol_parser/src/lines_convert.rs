@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
 use datafusion::arrow::array::{
-    Array, ArrayRef, BooleanArray, DictionaryArray, Float64Array, Int64Array, StringArray,
+    Array, ArrayRef, BooleanArray, Float64Array, Int64Array, StringArray,
     TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray, UInt64Array,
 };
-use datafusion::arrow::datatypes::{Int32Type, SchemaRef, TimeUnit};
+use datafusion::arrow::datatypes::{SchemaRef, TimeUnit};
 use flatbuffers::{FlatBufferBuilder, WIPOffset};
 use models::mutable_batch::{ColumnData, MutableBatch};
 use models::schema::{PhysicalCType as ColumnType, TskvTableSchemaRef};
@@ -326,13 +326,14 @@ pub fn build_string_column<'a>(
     let name = fbb.create_string(col_name);
     let array = column
         .as_any()
-        .downcast_ref::<DictionaryArray<Int32Type>>()
-        .and_then(|a| a.downcast_dict::<StringArray>());
+        .downcast_ref::<StringArray>()
+        .ok_or(Error::Common {
+            content: format!("column {} is not string", col_name),
+        })?;
 
     let mut nullbits = BitSet::new();
-    let mut col_values = Vec::with_capacity(column.len());
-
-    let append_value = |value: Option<&str>| {
+    let mut col_values = Vec::with_capacity(array.len());
+    array.iter().for_each(|value| {
         if let Some(value) = value {
             nullbits.append_set(1);
             col_values.push(fbb.create_string(value));

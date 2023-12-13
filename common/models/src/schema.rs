@@ -34,7 +34,6 @@ use datafusion::scalar::ScalarValue;
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 
-use crate::arrow::str_dict_data_type;
 use crate::codec::Encoding;
 use crate::gis::data_type::Geometry;
 use crate::oid::{Identifier, Oid};
@@ -513,7 +512,7 @@ impl TableColumn {
 impl From<ColumnType> for ArrowDataType {
     fn from(t: ColumnType) -> Self {
         match t {
-            ColumnType::Tag => str_dict_data_type().clone(),
+            ColumnType::Tag => ArrowDataType::Utf8,
             ColumnType::Time(unit) => ArrowDataType::Timestamp(unit, None),
             ColumnType::Field(ValueType::Float) => ArrowDataType::Float64,
             ColumnType::Field(ValueType::Integer) => ArrowDataType::Int64,

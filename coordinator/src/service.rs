@@ -7,11 +7,11 @@ use std::vec;
 
 use config::{Config, HintedOffConfig};
 use datafusion::arrow::array::{
-    Array, ArrayAccessor, ArrayRef, DictionaryArray, Int64Array, StringArray,
-    TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray, UInt32Array,
+    Array, ArrayRef, Int64Array, StringArray, TimestampMicrosecondArray, TimestampMillisecondArray,
+    TimestampNanosecondArray, UInt32Array,
 };
 use datafusion::arrow::compute::take;
-use datafusion::arrow::datatypes::{DataType, Int32Type, TimeUnit};
+use datafusion::arrow::datatypes::{DataType, TimeUnit};
 use datafusion::arrow::record_batch::RecordBatch;
 use meta::error::MetaError;
 use meta::model::{MetaClientRef, MetaRef};
@@ -552,26 +552,18 @@ impl Coordinator for CoordService {
                     has_ts = true;
                 }
                 if matches!(tskv_schema_column.column_type, ColumnType::Tag) {
-                    let array = column
+                    let value = column
                         .as_any()
-                        .downcast_ref::<DictionaryArray<Int32Type>>()
-                        .and_then(|a| a.downcast_dict::<StringArray>());
-
-                    let value = if let Some(array) = array {
-                        array.value(idx)
-                    } else {
-                        column
-                            .as_any()
-                            .downcast_ref::<StringArray>()
-                            .ok_or(CoordinatorError::CommonError {
-                                msg: format!("column {} is not StringArray", name),
-                            })?
-                            .value(idx)
-                    };
+                        .downcast_ref::<StringArray>()
+                        .ok_or(CoordinatorError::CommonError {
+                            msg: format!("column {} is not StringArray", name),
+                        })?
+                        .value(idx);
                     hasher.hash_with(name.as_bytes());
                     hasher.hash_with(value.as_bytes());
                 }
             }
+
             if !has_ts {
                 return Err(CoordinatorError::CommonError {
                     msg: format!("column {} not found in table {}", TIME_FIELD, table_name),

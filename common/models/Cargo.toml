@@ -41,7 +41,6 @@ tokio-stream = { workspace = true }
 tokio-util = { workspace = true }
 uuid = { workspace = true }
 snap = { workspace = true }
-once_cell = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true, features = ["Win32_Storage_FileSystem"] }

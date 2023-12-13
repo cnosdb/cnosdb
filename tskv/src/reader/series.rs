@@ -2,13 +2,11 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use arrow::buffer::ScalarBuffer;
-use arrow::datatypes::{Field, Fields, Schema, SchemaRef};
-use arrow_array::{ArrayRef, DictionaryArray, Int32Array, RecordBatch};
+use arrow::datatypes::{DataType, Field, Fields, Schema, SchemaRef};
+use arrow_array::builder::StringBuilder;
+use arrow_array::RecordBatch;
 use datafusion::physical_plan::metrics::{ExecutionPlanMetricsSet, MetricBuilder, Time};
-use datafusion::scalar::ScalarValue;
 use futures::{ready, Stream, StreamExt};
-use models::arrow::str_dict_data_type;
 use models::datafusion::limit_record_batch::limit_record_batch;
 use models::{SeriesKey, Tag};
 
@@ -57,18 +55,15 @@ impl BatchReader for SeriesReader {
                     message: format!("Convert tag {key:?}"),
                     source: err.utf8_error(),
                 })?,
-                str_dict_data_type().clone(),
+                DataType::Utf8,
                 true,
             ));
-
             let array = String::from_utf8(value.to_vec()).map_err(|err| Error::InvalidUtf8 {
                 message: format!("Convert tag {}'s value: {:?}", field.name(), value),
                 source: err.utf8_error(),
             })?;
-            let value_array = ScalarValue::Utf8(Some(array)).to_array();
-
             append_column.push(field);
-            append_column_values.push(value_array);
+            append_column_values.push(array);
         }
 
         let new_fields = ori_schema
@@ -103,7 +98,7 @@ impl BatchReader for SeriesReader {
 
 struct SeriesReaderStream {
     input: SendableSchemableTskvRecordBatchStream,
-    append_column_values: Vec<ArrayRef>,
+    append_column_values: Vec<String>,
     schema: SchemaRef,
     metrics: SeriesReaderMetrics,
     remain: Option<usize>,
@@ -123,22 +118,14 @@ impl SeriesReaderStream {
                 let _timer = self.metrics.elapsed_complete_tag_columns_time().timer();
 
                 let num_rows = batch.num_rows();
-                if num_rows == 0 {
-                    return Poll::Ready(Some(Ok(RecordBatch::new_empty(self.schema.clone()))));
-                }
 
                 let mut arrays = batch.columns().to_vec();
                 for value in &self.append_column_values {
-                    let array = unsafe {
-                        let keys = Int32Array::new(ScalarBuffer::from(vec![0; num_rows]), None);
-                        DictionaryArray::new_unchecked(keys, value.clone())
-                    };
-                    arrays.push(Arc::new(array));
-                    // let mut builder =
-                    //     StringBuilder::with_capacity(num_rows, value.as_bytes().len());
-                    // builder.extend(std::iter::repeat(Some(value)).take(num_rows));
-                    // let value_array = Arc::new(builder.finish());
-                    // arrays.push(value_array);
+                    let mut builder =
+                        StringBuilder::with_capacity(num_rows, value.as_bytes().len());
+                    builder.extend(std::iter::repeat(Some(value)).take(num_rows));
+                    let value_array = Arc::new(builder.finish());
+                    arrays.push(value_array);
                 }
 
                 let batch = match RecordBatch::try_new(self.schema.clone(), arrays) {
