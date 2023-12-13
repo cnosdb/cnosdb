@@ -836,7 +836,6 @@ impl ValueEntry {
 pub fn utf8_from(val: &ScalarValue) -> Option<&str> {
     match &val {
         ScalarValue::Utf8(v) => v.as_deref(),
-        ScalarValue::Dictionary(_, v) => utf8_from(v.as_ref()),
         _ => None,
     }
 }

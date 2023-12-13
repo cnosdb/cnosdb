@@ -625,10 +625,7 @@ pub fn filter_range_to_index_key_range(
 
 pub fn tag_value_to_index_key(tab: &str, tag_key: &str, v: &ScalarValue) -> Vec<u8> {
     // Tag can only be of string type
-    assert!(matches!(
-        v.get_datatype(),
-        DataType::Utf8 | DataType::Dictionary(_, _)
-    ));
+    assert_eq!(DataType::Utf8, v.get_datatype());
 
     // Convert a string to an inverted index key
     let generate_index_key = |tag_val| {
