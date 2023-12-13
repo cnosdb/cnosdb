@@ -1445,7 +1445,7 @@ impl Predicate {
         self.physical_expr.as_ref()
     }
 
-    pub fn with_limit(mut self, limit: Option<usize>) -> Predicate {
+    pub fn with_limit(mut self, limit: Option<usize>) -> Self {
         self.limit = limit;
         self
     }
@@ -1455,12 +1455,13 @@ impl Predicate {
     pub fn push_down_filter(
         filter: Option<Expr>,
         table_schema: &TskvTableSchema,
+        limit: Option<usize>,
     ) -> crate::Result<Predicate> {
         match filter {
             None => Ok(Predicate {
                 pushed_down_domains: ColumnDomains::all(),
                 physical_expr: None,
-                limit: None,
+                limit,
             }),
             Some(expr) => {
                 let mut push_down_domains = ColumnDomains::all();
@@ -1481,7 +1482,7 @@ impl Predicate {
                 Ok(Predicate {
                     pushed_down_domains: push_down_domains,
                     physical_expr: Some(expr),
-                    limit: None,
+                    limit,
                 })
             }
         }

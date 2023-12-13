@@ -137,9 +137,7 @@ fn series_keys_to_record_batch(
         .into_iter()
         .map(|mut b| b.finish())
         .zip(schema.fields().iter().map(|f| f.data_type()))
-        .map(|(a, d)| {
-            arrow::compute::cast(&a, d)
-        })
+        .map(|(a, d)| arrow::compute::cast(&a, d))
         .collect::<Result<Vec<_>, ArrowError>>()?;
 
     let record_batch = RecordBatch::try_new(schema.clone(), columns)?;

@@ -175,9 +175,8 @@ impl ClusterTable {
     ) -> Result<Arc<dyn ExecutionPlan>> {
         let filter = conjunction(filters.iter().cloned());
         let predicate = Arc::new(
-            Predicate::push_down_filter(filter, &self.schema)
-                .map_err(|e| DataFusionError::External(Box::new(e)))?
-                .with_limit(limit),
+            Predicate::push_down_filter(filter, &self.schema, limit)
+                .map_err(|e| DataFusionError::External(Box::new(e)))?,
         );
 
         let table_layout = TableLayoutHandle {
@@ -259,9 +258,8 @@ impl TableProvider for ClusterTable {
         let filters = rewrite_filters(filters, df_schema)?;
 
         let filter = Arc::new(
-            Predicate::push_down_filter(filters, &self.schema)
-                .map_err(|e| DataFusionError::External(Box::new(e)))?
-                .with_limit(limit),
+            Predicate::push_down_filter(filters, &self.schema, limit)
+                .map_err(|e| DataFusionError::External(Box::new(e)))?,
         );
 
         if let Some(agg_with_grouping) = agg_with_grouping {
@@ -281,6 +279,8 @@ impl TableProvider for ClusterTable {
             return Ok(TableProviderFilterPushDown::Inexact);
         }
 
+        // FIXME: tag support Exact Filter PushDown
+        // TODO: REMOVE
         let exprs = split_conjunction(expr);
         let exprs = exprs.into_iter().cloned().collect::<Vec<_>>();
         if expr_utils::find_exprs_in_exprs(&exprs, &|nested_expr| {

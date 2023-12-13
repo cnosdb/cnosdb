@@ -7,8 +7,9 @@ use std::task::{Context, Poll};
 use arrow::datatypes::SchemaRef;
 use arrow_array::{ArrayRef, RecordBatch};
 use arrow_schema::{ArrowError, Field, Schema};
-use datafusion::common::tree_node::{TreeNode, TreeNodeRewriter};
+use datafusion::common::tree_node::{TreeNode, TreeNodeRewriter, TreeNodeVisitor, VisitRecursion};
 use datafusion::error::DataFusionError;
+use datafusion::logical_expr::Operator;
 use datafusion::physical_plan::expressions::{BinaryExpr, Column, Literal};
 use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
 use datafusion::physical_plan::PhysicalExpr;
@@ -201,19 +202,21 @@ pub fn reassign_predicate_columns(
 ) -> Result<Option<Arc<dyn PhysicalExpr>>, DataFusionError> {
     let full_schema = pred.schema();
     let mut rewriter = PredicateColumnsReassigner {
-        file_schema,
+        file_schema: file_schema.clone(),
         full_schema,
-        has_col_not_in_file: false,
     };
 
     match pred.expr() {
         None => Ok(None),
         Some(expr) => {
-            let new_expr = expr.rewrite(&mut rewriter)?;
-            if rewriter.has_col_not_in_file {
-                return Ok(Some(Arc::new(Literal::new(ScalarValue::Boolean(Some(
-                    true,
-                ))))));
+            let new_expr = expr.clone().rewrite(&mut rewriter)?;
+            let mut vistor = ColumnVistor {
+                part_schema: file_schema,
+                has_col_not_in_file: false,
+            };
+            expr.visit(&mut vistor)?;
+            if vistor.has_col_not_in_file {
+                return Ok(None);
             }
             Ok(Some(new_expr))
         }
@@ -223,7 +226,25 @@ pub fn reassign_predicate_columns(
 struct PredicateColumnsReassigner {
     file_schema: SchemaRef,
     full_schema: SchemaRef,
+}
+
+struct ColumnVistor {
+    part_schema: SchemaRef,
     has_col_not_in_file: bool,
+}
+
+impl TreeNodeVisitor for ColumnVistor {
+    type N = Arc<dyn PhysicalExpr>;
+
+    fn pre_visit(&mut self, node: &Self::N) -> datafusion::common::Result<VisitRecursion> {
+        if let Some(column) = node.as_any().downcast_ref::<Column>() {
+            if self.part_schema.index_of(column.name()).is_err() {
+                self.has_col_not_in_file = true;
+                return Ok(VisitRecursion::Stop);
+            }
+        }
+        Ok(VisitRecursion::Continue)
+    }
 }
 
 impl TreeNodeRewriter for PredicateColumnsReassigner {
@@ -240,11 +261,7 @@ impl TreeNodeRewriter for PredicateColumnsReassigner {
                 Err(_) => {
                     // the column expr must be in the full schema
                     return match self.full_schema.field_with_name(column.name()) {
-                        Ok(_) => {
-                            // 标记 predicate 中含有文件中不存在的列
-                            self.has_col_not_in_file = true;
-                            Ok(expr)
-                        }
+                        Ok(_) => Ok(expr),
                         Err(e) => {
                             // If the column is not in the full schema, should throw the error
                             Err(DataFusionError::ArrowError(e))
@@ -252,13 +269,33 @@ impl TreeNodeRewriter for PredicateColumnsReassigner {
                     };
                 }
             };
-
             return Ok(Arc::new(Column::new(column.name(), index)));
-        } else if expr.as_any().downcast_ref::<BinaryExpr>().is_some() && self.has_col_not_in_file {
-            let true_value = ScalarValue::Boolean(Some(true));
-            // 重置标记
-            self.has_col_not_in_file = false;
-            return Ok(Arc::new(Literal::new(true_value)));
+        } else if let Some(b_expr) = expr.as_any().downcast_ref::<BinaryExpr>() {
+            let mut visitor = ColumnVistor {
+                part_schema: self.file_schema.clone(),
+                has_col_not_in_file: false,
+            };
+            b_expr.left().visit(&mut visitor)?;
+            let left = visitor.has_col_not_in_file;
+
+            visitor.has_col_not_in_file = false;
+            b_expr.right().visit(&mut visitor)?;
+            let right = visitor.has_col_not_in_file;
+
+            if matches!(b_expr.op(), Operator::And) {
+                return match (left, right) {
+                    (false, false) => Ok(expr),
+                    (true, true) => Ok(Arc::new(Literal::new(ScalarValue::Boolean(Some(true))))),
+                    (true, _) => Ok(b_expr.right().clone()),
+                    (_, true) => Ok(b_expr.left().clone()),
+                };
+            }
+            if matches!(b_expr.op(), Operator::Or) {
+                return match (left, right) {
+                    (false, false) => Ok(expr),
+                    _ => Ok(Arc::new(Literal::new(ScalarValue::Boolean(Some(true))))),
+                };
+            }
         }
 
         Ok(expr)

@@ -1,6 +1,4 @@
-use datafusion::common::tree_node::{
-    RewriteRecursion, TreeNode, TreeNodeRewriter, TreeNodeVisitor, VisitRecursion,
-};
+use datafusion::common::tree_node::{TreeNode, TreeNodeRewriter, TreeNodeVisitor, VisitRecursion};
 use datafusion::common::{DFSchemaRef, ScalarValue};
 use datafusion::error::{DataFusionError, Result};
 use datafusion::execution::context::ExecutionProps;
@@ -19,7 +17,7 @@ pub fn has_udf_function(expr: &Expr) -> Result<bool, DataFusionError> {
 }
 
 pub fn rewrite_filters(filters: &[Expr], df_schema: DFSchemaRef) -> Result<Option<Expr>> {
-    let mut filter_expr_rewriter = FilterExprRewriter::new();
+    let mut filter_expr_rewriter = FilterExprRewriter {};
     let props = ExecutionProps::new();
     let simplify_cxt = SimplifyContext::new(&props).with_schema(df_schema);
     let simplifier = ExprSimplifier::new(simplify_cxt);
@@ -68,26 +66,12 @@ impl TreeNodeVisitor for UDFVisitor {
     }
 }
 
-pub struct FilterExprRewriter {
-    has_udf: bool,
-}
-
-impl FilterExprRewriter {
-    pub fn new() -> Self {
-        Self { has_udf: false }
-    }
-}
+pub struct FilterExprRewriter {}
 
 impl TreeNodeRewriter for FilterExprRewriter {
     type N = Expr;
-    fn pre_visit(&mut self, _node: &Self::N) -> Result<RewriteRecursion> {
-        Ok(RewriteRecursion::Continue)
-    }
 
     fn mutate(&mut self, node: Self::N) -> Result<Self::N> {
-        if is_udf_function(&node) {
-            self.has_udf = true;
-        }
         match &node {
             Expr::BinaryExpr(bin) => {
                 if matches!(bin.op, Operator::And | Operator::Or) {
