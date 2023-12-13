@@ -341,40 +341,7 @@ pub fn build_string_column<'a>(
             nullbits.append_unset(1);
             col_values.push(fbb.create_string(""));
         }
-    };
-
-    match array {
-        Some(array) => {
-            for i in 0..array.keys().len() {
-                let keys = array.keys();
-
-                if keys.is_null(i) {
-                    nullbits.append_unset(1);
-                    col_values.push(fbb.create_string(""));
-                } else {
-                    let idx = keys.value(i) as usize;
-                    let values = array.values();
-                    if values.is_null(idx) {
-                        nullbits.append_unset(1);
-                        col_values.push(fbb.create_string(""));
-                    } else {
-                        let value = values.value(idx);
-                        nullbits.append_set(1);
-                        col_values.push(fbb.create_string(value));
-                    }
-                }
-            }
-        }
-        None => {
-            let array = column
-                .as_any()
-                .downcast_ref::<StringArray>()
-                .ok_or(Error::Common {
-                    content: format!("column {} is not StringArray", col_name),
-                })?;
-            array.into_iter().for_each(append_value);
-        }
-    };
+    });
 
     let nullbits = fbb.create_vector(nullbits.bytes());
     let values = fbb.create_vector(&col_values);

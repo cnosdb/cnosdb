@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::io::Write;
-use std::iter;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -20,7 +19,6 @@ use datafusion::prelude::{col, Expr};
 use datafusion::sql::sqlparser::ast::{Ident, ObjectName, SqlOption, Value};
 use datafusion::sql::sqlparser::parser::ParserError;
 use lazy_static::lazy_static;
-use models::arrow::str_dict_data_type;
 use models::auth::privilege::{DatabasePrivilege, GlobalPrivilege, Privilege};
 use models::auth::role::{SystemTenantRole, TenantRoleIdentifier};
 use models::auth::user::{UserOptions, UserOptionsBuilder};
@@ -55,7 +53,7 @@ lazy_static! {
                 .chain(TIMESTAMPS)
                 .chain(DATES)
                 .chain(TIMES)
-                .chain(iter::once(str_dict_data_type()))
+                // .chain(iter::once(str_dict_data_type()))
                 .cloned()
                 .collect::<Vec<_>>(),
             Volatility::Immutable
