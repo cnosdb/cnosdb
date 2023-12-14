@@ -374,10 +374,7 @@ impl SeriesData {
                                     }
                                 }
                             });
-                            handle_data(RowData {
-                                ts: row.ts,
-                                fields,
-                            });
+                            handle_data(RowData { ts: row.ts, fields });
                         }
                     }
                 }
@@ -403,10 +400,7 @@ impl SeriesData {
                                 }
                             }
                         });
-                        handle_data(RowData {
-                            ts: row.ts,
-                            fields,
-                        });
+                        handle_data(RowData { ts: row.ts, fields });
                     }
                 }
             }
@@ -422,10 +416,7 @@ impl SeriesData {
                                 }
                             }
                         });
-                        handle_data(RowData {
-                            ts: row.ts,
-                            fields,
-                        });
+                        handle_data(RowData { ts: row.ts, fields });
                     }
                 }
             }

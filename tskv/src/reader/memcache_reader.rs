@@ -17,7 +17,7 @@ use super::{
     ArrayBuilderPtr, BatchReader, BatchReaderRef, RowIterator, SchemableTskvRecordBatchStream,
     SendableSchemableTskvRecordBatchStream,
 };
-use crate::memcache::{SeriesData, RowData};
+use crate::memcache::{RowData, SeriesData};
 use crate::reader::utils::TimeRangeProvider;
 use crate::Result;
 
@@ -96,11 +96,11 @@ impl MemCacheReader {
                 // 1.read all columns data to Vec<RowData>
                 let mut row_data_vec: OrderedSkipList<RowData> = OrderedSkipList::new();
                 let column_ids: Vec<u32> = self.columns.iter().map(|c| c.id).collect();
-                self.series_data.read().read_data_v2(
-                    &column_ids[1..],
-                    &self.time_ranges,
-                    |d| row_data_vec.insert(d),
-                );
+                self.series_data
+                    .read()
+                    .read_data_v2(&column_ids[1..], &self.time_ranges, |d| {
+                        row_data_vec.insert(d)
+                    });
 
                 // 2.merge RowData by ts
                 let mut merge_row_data_vec: Vec<RowData> = Vec::with_capacity(row_data_vec.len());
@@ -130,27 +130,30 @@ impl MemCacheReader {
                     for (index, field) in row_data.fields.iter().enumerate() {
                         if let Some(field) = field {
                             builders[index + offset].append_value(
-                                self.columns[index + offset].column_type.to_physical_data_type(),
+                                self.columns[index + offset]
+                                    .column_type
+                                    .to_physical_data_type(),
                                 Some(field.data_value(row_data.ts)),
                                 &self.columns[index + offset].name,
                             )?;
                         } else {
                             builders[index + offset].append_value(
-                                self.columns[index + offset].column_type.to_physical_data_type(),
+                                self.columns[index + offset]
+                                    .column_type
+                                    .to_physical_data_type(),
                                 None,
                                 &self.columns[index + offset].name,
                             )?;
                         }
                     }
                 }
-            },
+            }
             MemcacheReadMode::TimeScan => {
                 // 1.read all columns data to Vec<Rev<IntoIter<DataType>>>
                 let mut columns_data: Vec<Timestamp> = Vec::new();
-                self.series_data.read().read_timestamps(
-                    &self.time_ranges,
-                    |d| columns_data.push(d),
-                );
+                self.series_data
+                    .read()
+                    .read_timestamps(&self.time_ranges, |d| columns_data.push(d));
                 columns_data.sort_by_key(|data| *data);
                 columns_data.dedup_by_key(|data| *data);
 
