@@ -376,6 +376,7 @@ path = '/var/log/cnosdb'
 [service]
 http_listen_port = 8902
 grpc_listen_port = 8903
+grpc_enable_gzip = false
 flight_rpc_listen_port = 8904
 tcp_listen_port = 8905
 vector_listen_port = 8906

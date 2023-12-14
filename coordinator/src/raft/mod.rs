@@ -31,6 +31,7 @@ pub struct TskvEngineStorage {
     meta: MetaRef,
     vnode: Arc<VnodeStorage>,
     storage: tskv::EngineRef,
+    grpc_enable_gzip: bool,
 }
 
 impl TskvEngineStorage {
@@ -42,6 +43,7 @@ impl TskvEngineStorage {
         meta: MetaRef,
         vnode: Arc<VnodeStorage>,
         storage: tskv::EngineRef,
+        grpc_enable_gzip: bool,
     ) -> Self {
         Self {
             meta,
@@ -51,6 +53,7 @@ impl TskvEngineStorage {
             vnode,
             tenant: tenant.to_owned(),
             db_name: db_name.to_owned(),
+            grpc_enable_gzip,
         }
     }
 
@@ -60,6 +63,7 @@ impl TskvEngineStorage {
             channel,
             Duration::from_secs(60 * 60),
             DEFAULT_GRPC_SERVER_MESSAGE_LEN,
+            self.grpc_enable_gzip,
         );
 
         let owner = models::schema::make_owner(&snapshot.tenant, &snapshot.database);

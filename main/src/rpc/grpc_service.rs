@@ -30,6 +30,7 @@ pub struct GrpcService {
     metrics_register: Arc<MetricsRegister>,
     span_context_extractor: Arc<SpanContextExtractor>,
     handle: Option<ServiceHandle<Result<(), tonic::transport::Error>>>,
+    enable_gzip: bool,
 }
 
 impl GrpcService {
@@ -41,6 +42,7 @@ impl GrpcService {
         tls_config: Option<TLSConfig>,
         metrics_register: Arc<MetricsRegister>,
         span_context_extractor: Arc<SpanContextExtractor>,
+        enable_gzip: bool,
     ) -> Self {
         Self {
             addr,
@@ -51,6 +53,7 @@ impl GrpcService {
             metrics_register,
             span_context_extractor,
             handle: None,
+            enable_gzip,
         }
     }
 }
@@ -79,19 +82,28 @@ macro_rules! build_grpc_server {
 impl Service for GrpcService {
     fn start(&mut self) -> server::Result<()> {
         let (shutdown, rx) = oneshot::channel();
-        let tskv_grpc_service = TskvServiceServer::new(TskvServiceImpl {
+        let mut tskv_grpc_service = TskvServiceServer::new(TskvServiceImpl {
             runtime: self.runtime.clone(),
             kv_inst: self.kv_inst.clone(),
             coord: self.coord.clone(),
             metrics_register: self.metrics_register.clone(),
+            grpc_enable_gzip: self.enable_gzip,
         })
-        .accept_compressed(CompressionEncoding::Gzip)
-        .send_compressed(CompressionEncoding::Gzip)
         .max_decoding_message_size(DEFAULT_GRPC_SERVER_MESSAGE_LEN);
 
         let multi_raft = self.coord.raft_manager().multi_raft();
-        let raft_grpc_service = RaftServiceServer::new(RaftCBServer::new(multi_raft))
+        let mut raft_grpc_service = RaftServiceServer::new(RaftCBServer::new(multi_raft))
             .max_decoding_message_size(DEFAULT_GRPC_SERVER_MESSAGE_LEN);
+
+        if self.enable_gzip {
+            tskv_grpc_service = tskv_grpc_service
+                .accept_compressed(CompressionEncoding::Gzip)
+                .send_compressed(CompressionEncoding::Gzip);
+
+            raft_grpc_service = raft_grpc_service
+                .accept_compressed(CompressionEncoding::Gzip)
+                .send_compressed(CompressionEncoding::Gzip);
+        }
 
         let mut grpc_builder =
             build_grpc_server!(&self.tls_config, self.span_context_extractor.clone());

@@ -12,6 +12,8 @@ pub struct ServiceConfig {
     pub http_listen_port: Option<u16>,
     #[serde(default = "ServiceConfig::default_grpc_listen_port")]
     pub grpc_listen_port: Option<u16>,
+    #[serde(default = "ServiceConfig::default_grpc_enable_gzip")]
+    pub grpc_enable_gzip: bool,
     #[serde(default = "ServiceConfig::default_flight_rpc_listen_port")]
     pub flight_rpc_listen_port: Option<u16>,
     #[serde(default = "ServiceConfig::default_tcp_listen_port")]
@@ -29,6 +31,10 @@ impl ServiceConfig {
 
     fn default_grpc_listen_port() -> Option<u16> {
         None
+    }
+
+    fn default_grpc_enable_gzip() -> bool {
+        false
     }
 
     fn default_flight_rpc_listen_port() -> Option<u16> {
@@ -53,6 +59,7 @@ impl Default for ServiceConfig {
         Self {
             http_listen_port: ServiceConfig::default_http_listen_port(),
             grpc_listen_port: ServiceConfig::default_grpc_listen_port(),
+            grpc_enable_gzip: ServiceConfig::default_grpc_enable_gzip(),
             flight_rpc_listen_port: ServiceConfig::default_flight_rpc_listen_port(),
             tcp_listen_port: ServiceConfig::default_tcp_listen_port(),
             vector_listen_port: ServiceConfig::default_vector_listen_port(),
@@ -70,6 +77,10 @@ impl OverrideByEnv for ServiceConfig {
         entry_override_option(
             &mut self.grpc_listen_port,
             "CNOSDB_SERVICE_GRPC_LISTEN_PORT",
+        );
+        entry_override(
+            &mut self.grpc_enable_gzip,
+            "CNOSDB_SERVICE_GRPC_ENABLE_GZIP",
         );
         entry_override_option(
             &mut self.flight_rpc_listen_port,

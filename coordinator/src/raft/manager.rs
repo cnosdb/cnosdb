@@ -441,7 +441,15 @@ impl RaftNodesManager {
             entry,
         )?;
         let storage = Arc::new(storage);
-        let node = RaftNode::new(raft_id, info, self.raft_config(), storage, engine).await?;
+        let node = RaftNode::new(
+            raft_id,
+            info,
+            self.raft_config(),
+            storage,
+            engine,
+            self.config.service.grpc_enable_gzip,
+        )
+        .await?;
 
         let summary = RaftNodeSummary {
             raft_id,
@@ -495,6 +503,7 @@ impl RaftNodesManager {
             self.meta.clone(),
             Arc::new(vnode),
             storage,
+            self.config.service.grpc_enable_gzip,
         );
         let engine: ApplyStorageRef = Arc::new(engine);
         Ok(engine)
@@ -512,6 +521,7 @@ impl RaftNodesManager {
             channel,
             Duration::from_secs(5),
             DEFAULT_GRPC_SERVER_MESSAGE_LEN,
+            self.config.service.grpc_enable_gzip,
         );
 
         let cmd = tonic::Request::new(DropRaftNodeRequest {
@@ -549,6 +559,7 @@ impl RaftNodesManager {
             channel,
             Duration::from_secs(5),
             DEFAULT_GRPC_SERVER_MESSAGE_LEN,
+            self.config.service.grpc_enable_gzip,
         );
         let cmd = tonic::Request::new(OpenRaftNodeRequest {
             replica_id,

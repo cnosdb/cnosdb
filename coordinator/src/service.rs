@@ -86,6 +86,7 @@ pub struct CoordService {
     raft_manager: Arc<RaftNodesManager>,
 
     replica_selectioner: DynamicReplicaSelectionerRef,
+    grpc_enable_gzip: bool,
 }
 
 #[derive(Debug)]
@@ -153,6 +154,7 @@ impl CoordService {
         config: Config,
         memory_pool: MemoryPoolRef,
         metrics_register: Arc<MetricsRegister>,
+        grpc_enable_gzip: bool,
     ) -> Arc<Self> {
         let node_id = config.global.node_id;
 
@@ -163,6 +165,7 @@ impl CoordService {
             kv_inst.clone(),
             meta.clone(),
             hh_sender,
+            config.service.grpc_enable_gzip,
         ));
 
         let hh_manager = Arc::new(
@@ -204,6 +207,7 @@ impl CoordService {
 
             metrics: Arc::new(CoordServiceMetrics::new(metrics_register.as_ref())),
             replica_selectioner: Arc::new(DynamicReplicaSelectioner::new(meta)),
+            grpc_enable_gzip,
         });
 
         tokio::spawn(CoordService::check_resourceinfos(coord.clone()));
@@ -322,6 +326,7 @@ impl CoordService {
             channel,
             Duration::from_secs(60 * 60),
             DEFAULT_GRPC_SERVER_MESSAGE_LEN,
+            self.grpc_enable_gzip,
         );
         let request = tonic::Request::new(req.clone());
 
@@ -377,6 +382,7 @@ impl CoordService {
             channel,
             Duration::from_secs(60 * 60),
             DEFAULT_GRPC_SERVER_MESSAGE_LEN,
+            self.grpc_enable_gzip,
         );
         let response = client
             .exec_admin_fetch_command(request)
@@ -754,6 +760,7 @@ impl Coordinator for CoordService {
             self.runtime.clone(),
             self.meta.clone(),
             span_ctx,
+            self.grpc_enable_gzip,
         );
 
         Ok(Box::pin(CheckedCoordinatorRecordBatchStream::new(
@@ -777,6 +784,7 @@ impl Coordinator for CoordService {
             self.kv_inst.clone(),
             self.meta.clone(),
             span_ctx,
+            self.grpc_enable_gzip,
         );
 
         Ok(Box::pin(CheckedCoordinatorRecordBatchStream::new(

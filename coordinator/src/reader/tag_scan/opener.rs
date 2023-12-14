@@ -21,6 +21,7 @@ pub struct TemporaryTagScanOpener {
     kv_inst: Option<EngineRef>,
     meta: MetaRef,
     span_ctx: Option<SpanContext>,
+    grpc_enable_gzip: bool,
 }
 
 impl TemporaryTagScanOpener {
@@ -29,12 +30,14 @@ impl TemporaryTagScanOpener {
         kv_inst: Option<EngineRef>,
         meta: MetaRef,
         span_ctx: Option<&SpanContext>,
+        grpc_enable_gzip: bool,
     ) -> Self {
         Self {
             config,
             kv_inst,
             meta,
             span_ctx: span_ctx.cloned(),
+            grpc_enable_gzip,
         }
     }
 }
@@ -49,6 +52,7 @@ impl VnodeOpener for TemporaryTagScanOpener {
         let admin_meta = self.meta.clone();
         let config = self.config.clone();
         let span_ctx = self.span_ctx.clone();
+        let grpc_enable_gzip = self.grpc_enable_gzip;
 
         let future = async move {
             // TODO 请求路由的过程应该由通信框架决定，客户端只关心业务逻辑（请求目标和请求内容）
@@ -93,6 +97,7 @@ impl VnodeOpener for TemporaryTagScanOpener {
                         channel,
                         Duration::from_millis(config.read_timeout_ms),
                         DEFAULT_GRPC_SERVER_MESSAGE_LEN,
+                        grpc_enable_gzip,
                     );
                     client
                         .tag_scan(request)
