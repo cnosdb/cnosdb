@@ -2,6 +2,7 @@ id = 3
 host = "127.0.0.1"
 port = 8921
 data_path = "/tmp/cnosdb/meta"
+grpc_enable_gzip = false
 
 [log]
 level = "info"

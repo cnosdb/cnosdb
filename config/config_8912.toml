@@ -67,6 +67,7 @@ path = '/tmp/cnosdb/2001/log'
 [service]
 http_listen_port = 8912
 grpc_listen_port = 8913
+grpc_enable_gzip = false
 flight_rpc_listen_port = 8914
 tcp_listen_port = 8915
 vector_listen_port = 8916

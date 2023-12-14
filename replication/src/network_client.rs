@@ -10,6 +10,7 @@ use openraft::MessageSummary;
 use parking_lot::RwLock;
 use protos::raft_service::raft_service_client::RaftServiceClient;
 use protos::raft_service::*;
+use protos::{raft_service_time_out_client, DEFAULT_GRPC_SERVER_MESSAGE_LEN};
 use tonic::transport::{Channel, Endpoint};
 use tower::timeout::Timeout;
 use trace::debug;
@@ -21,18 +22,20 @@ use crate::{RaftNodeId, RaftNodeInfo, TypeConfig};
 #[derive(Clone)]
 pub struct NetworkConn {
     conn_map: Arc<RwLock<HashMap<String, Channel>>>,
+    grpc_enable_gzip: bool,
 }
 
 impl Default for NetworkConn {
     fn default() -> Self {
-        Self::new()
+        Self::new(false)
     }
 }
 
 impl NetworkConn {
-    pub fn new() -> Self {
+    pub fn new(grpc_enable_gzip: bool) -> Self {
         Self {
             conn_map: Arc::new(RwLock::new(HashMap::new())),
+            grpc_enable_gzip,
         }
     }
     async fn get_conn(&self, addr: &str) -> ReplicationResult<Channel> {
@@ -70,6 +73,7 @@ impl RaftNetworkFactory<TypeConfig> for NetworkConn {
             target,
             conn: self.clone(),
             target_node: node.clone(),
+            grpc_enable_gzip: self.grpc_enable_gzip,
         }
     }
 }
@@ -83,6 +87,7 @@ pub struct TargetClient {
     conn: NetworkConn,
     target: RaftNodeId,
     target_node: RaftNodeInfo,
+    grpc_enable_gzip: bool,
 }
 
 #[async_trait]
@@ -102,8 +107,12 @@ impl RaftNetwork<TypeConfig> for TargetClient {
             .await
             .map_err(|e| openraft::error::RPCError::Network(NetworkError::new(&e)))?;
 
-        let timeout_channel = Timeout::new(channel, Duration::from_millis(3 * 1000));
-        let mut client = RaftServiceClient::<Timeout<Channel>>::new(timeout_channel);
+        let mut client = raft_service_time_out_client(
+            channel,
+            Duration::from_millis(3 * 1000),
+            DEFAULT_GRPC_SERVER_MESSAGE_LEN,
+            self.grpc_enable_gzip,
+        );
 
         let data = serde_json::to_string(&req)
             .map_err(|e| openraft::error::RPCError::Network(NetworkError::new(&e)))?;
@@ -139,8 +148,12 @@ impl RaftNetwork<TypeConfig> for TargetClient {
             .await
             .map_err(|e| openraft::error::RPCError::Network(NetworkError::new(&e)))?;
 
-        let timeout_channel = Timeout::new(channel, Duration::from_millis(3 * 1000));
-        let mut client = RaftServiceClient::<Timeout<Channel>>::new(timeout_channel);
+        let mut client = raft_service_time_out_client(
+            channel,
+            Duration::from_millis(3 * 1000),
+            DEFAULT_GRPC_SERVER_MESSAGE_LEN,
+            self.grpc_enable_gzip,
+        );
 
         let data = bincode::serialize(&req)
             .map_err(|e| openraft::error::RPCError::Network(NetworkError::new(&e)))?;
@@ -177,8 +190,12 @@ impl RaftNetwork<TypeConfig> for TargetClient {
             .await
             .map_err(|e| openraft::error::RPCError::Network(NetworkError::new(&e)))?;
 
-        let timeout_channel = Timeout::new(channel, Duration::from_millis(3 * 1000));
-        let mut client = RaftServiceClient::<Timeout<Channel>>::new(timeout_channel);
+        let mut client = raft_service_time_out_client(
+            channel,
+            Duration::from_millis(3 * 1000),
+            DEFAULT_GRPC_SERVER_MESSAGE_LEN,
+            self.grpc_enable_gzip,
+        );
 
         let data = bincode::serialize(&req)
             .map_err(|e| openraft::error::RPCError::Network(NetworkError::new(&e)))?;

@@ -28,12 +28,13 @@ impl RaftNode {
         config: openraft::Config,
         storage: Arc<NodeStorage>,
         engine: ApplyStorageRef,
+        grpc_enable_gzip: bool,
     ) -> ReplicationResult<Self> {
         let config = Arc::new(config.validate().unwrap());
 
         let (log_store, state_machine) = Adaptor::new(storage.clone());
 
-        let network = NetworkConn::new();
+        let network = NetworkConn::new(grpc_enable_gzip);
         let raft = openraft::Raft::new(id, config.clone(), network, log_store, state_machine)
             .await
             .map_err(|err| ReplicationError::RaftInternalErr {

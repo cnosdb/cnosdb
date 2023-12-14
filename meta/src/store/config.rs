@@ -54,6 +54,7 @@ pub struct Opt {
     pub host: String,
     pub port: u16,
     pub data_path: String,
+    pub grpc_enable_gzip: bool,
     pub log: LogConfig,
     pub meta_init: MetaInit,
     pub heartbeat: HeartBeatConfig,
@@ -66,6 +67,7 @@ impl Default for Opt {
             host: String::from("127.0.0.1"),
             port: 8901,
             data_path: String::from("/var/lib/cnosdb/meta"),
+            grpc_enable_gzip: false,
             log: Default::default(),
             meta_init: Default::default(),
             heartbeat: Default::default(),
@@ -117,6 +119,7 @@ id = 1
 host = "127.0.0.1"
 port = 8901
 data_path = "/tmp/cnosdb/meta"
+grpc_enable_gzip = false
 
 [log]
 level = "warn"
