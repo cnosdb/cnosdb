@@ -321,7 +321,32 @@ impl From<ArrowError> for Error {
 
 impl From<DataFusionError> for Error {
     fn from(source: DataFusionError) -> Self {
-        Error::DatafusionError { source }
+        match source {
+            DataFusionError::External(e) if e.downcast_ref::<MetaError>().is_some() => Self::Meta {
+                source: *e.downcast::<MetaError>().unwrap(),
+            },
+
+            DataFusionError::External(e) if e.downcast_ref::<Self>().is_some() => {
+                match *e.downcast::<Self>().unwrap() {
+                    Self::Arrow { source } => Self::from(source),
+                    Self::DatafusionError { source } => Self::from(source),
+                    e => e,
+                }
+            }
+
+            DataFusionError::External(e) if e.downcast_ref::<ArrowError>().is_some() => {
+                let arrow_error = *e.downcast::<ArrowError>().unwrap();
+                arrow_error.into()
+            }
+
+            DataFusionError::External(e) if e.downcast_ref::<DataFusionError>().is_some() => {
+                let datafusion_error = *e.downcast::<DataFusionError>().unwrap();
+                Self::from(datafusion_error)
+            }
+
+            DataFusionError::ArrowError(e) => e.into(),
+            v => Self::DatafusionError { source: v },
+        }
     }
 }
 

@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use arrow_schema::Schema;
 use datafusion::arrow::datatypes::DataType;
+use datafusion::common::DFSchema;
 use datafusion::logical_expr::Expr;
 use datafusion::physical_expr::execution_props::ExecutionProps;
 use datafusion::physical_expr::{create_physical_expr, PhysicalExpr};
@@ -23,9 +24,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use super::transformation::RowExpressionToDomainsVisitor;
 use super::utils::filter_to_time_ranges;
 use super::PlacedSplit;
-use crate::schema::{
-    ColumnType, ScalarValueForkDF, TableColumn, TskvTableSchema, TskvTableSchemaRef,
-};
+use crate::schema::{ColumnType, ScalarValueForkDF, TableColumn, TskvTableSchemaRef};
 use crate::{Error, Result, Timestamp};
 
 pub type PredicateRef = Arc<Predicate>;
@@ -1453,7 +1452,8 @@ impl Predicate {
     /// convert filter to ColumnDomains and set self
     pub fn push_down_filter(
         filter: Option<Expr>,
-        table_schema: &TskvTableSchema,
+        df_schema: &DFSchema,
+        arrow_schema: &Schema,
         limit: Option<usize>,
     ) -> crate::Result<Predicate> {
         match filter {
@@ -1469,15 +1469,8 @@ impl Predicate {
                     push_down_domains = domains;
                 }
 
-                let df_schema = table_schema.to_df_schema()?;
-                let arrow_schema = table_schema.to_arrow_schema();
                 let execution_props = ExecutionProps::new();
-                let expr = create_physical_expr(
-                    &expr,
-                    df_schema.as_ref(),
-                    arrow_schema.as_ref(),
-                    &execution_props,
-                )?;
+                let expr = create_physical_expr(&expr, df_schema, arrow_schema, &execution_props)?;
                 Ok(Predicate {
                     pushed_down_domains: push_down_domains,
                     physical_expr: Some(expr),

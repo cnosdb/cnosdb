@@ -97,7 +97,28 @@ impl From<FromUtf8Error> for Error {
 
 impl From<DataFusionError> for Error {
     fn from(value: DataFusionError) -> Self {
-        Self::Datafusion { source: value }
+        match value {
+            DataFusionError::External(e) if e.downcast_ref::<ArrowError>().is_some() => {
+                let arrow_error = *e.downcast::<ArrowError>().unwrap();
+                Self::from(arrow_error)
+            }
+
+            DataFusionError::External(e) if e.downcast_ref::<DataFusionError>().is_some() => {
+                let datafusion_error = *e.downcast::<DataFusionError>().unwrap();
+                Self::from(datafusion_error)
+            }
+
+            DataFusionError::External(e) if e.downcast_ref::<Self>().is_some() => {
+                match *e.downcast::<Self>().unwrap() {
+                    Self::Arrow { source } => Self::from(source),
+                    Self::Datafusion { source } => Self::from(source),
+                    e => e,
+                }
+            }
+
+            DataFusionError::ArrowError(e) => Self::from(e),
+            v => Self::Datafusion { source: v },
+        }
     }
 }
 

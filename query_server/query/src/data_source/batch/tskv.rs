@@ -5,6 +5,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use coordinator::service::CoordinatorRef;
 use datafusion::arrow::datatypes::SchemaRef;
+use datafusion::common::DFSchema;
 use datafusion::datasource::{TableProvider, TableType};
 use datafusion::error::{DataFusionError, Result};
 use datafusion::execution::context::SessionState;
@@ -174,8 +175,23 @@ impl ClusterTable {
         limit: Option<usize>,
     ) -> Result<Arc<dyn ExecutionPlan>> {
         let filter = conjunction(filters.iter().cloned());
+
+        let df_schema = self.schema.to_df_schema()?;
+
+        let df_fields = projected_schema
+            .fields()
+            .iter()
+            .map(|f| df_schema.field_with_unqualified_name(f.name()))
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>();
+
+        let df_schema = DFSchema::new_with_metadata(df_fields, df_schema.metadata().clone())?;
+
+        // Generate physical expressions using projected schema
         let predicate = Arc::new(
-            Predicate::push_down_filter(filter, &self.schema, limit)
+            Predicate::push_down_filter(filter, &df_schema, &projected_schema, limit)
                 .map_err(|e| DataFusionError::External(Box::new(e)))?,
         );
 
@@ -255,10 +271,29 @@ impl TableProvider for ClusterTable {
         limit: Option<usize>,
     ) -> Result<Arc<dyn ExecutionPlan>> {
         let df_schema = self.schema.to_df_schema()?;
-        let filters = rewrite_filters(filters, df_schema)?;
+        let arrow_schema = self.schema.to_arrow_schema();
+        // projection schema
+        let (df_schema, arrow_schema) = if let Some(p) = projection {
+            let df_fields = p
+                .iter()
+                .cloned()
+                .map(|i| df_schema.fields()[i].clone())
+                .collect::<Vec<_>>();
+            let arrow_schema = arrow_schema.project(p)?;
+            let df_schema = Arc::new(DFSchema::new_with_metadata(
+                df_fields,
+                df_schema.metadata().clone(),
+            )?);
+            let arrow_schema = Arc::new(arrow_schema);
+            (df_schema, arrow_schema)
+        } else {
+            (df_schema, arrow_schema)
+        };
 
+        let filters = rewrite_filters(filters, df_schema.clone())?;
+        // Generate physical expressions using projected schema
         let filter = Arc::new(
-            Predicate::push_down_filter(filters, &self.schema, limit)
+            Predicate::push_down_filter(filters, &df_schema, &arrow_schema, limit)
                 .map_err(|e| DataFusionError::External(Box::new(e)))?,
         );
 
