@@ -49,6 +49,5 @@ logical_plan,"Watermark: event_time=time, delay=0ms
 -- EXECUTE SQL: explain select * from TskvTableWithoutSchema; --
 200 OK
 plan_type,plan
-logical_plan,"Projection: tskvtablewithoutschema.time, tskvtablewithoutschema.column6, tskvtablewithoutschema.column7, tskvtablewithoutschema.column1, tskvtablewithoutschema.column2, tskvtablewithoutschema.column3, tskvtablewithoutschema.column4, tskvtablewithoutschema.column5
-  Watermark: event_time=time, delay=0ms
-    StreamScan: [tskvtablewithoutschema.time,tskvtablewithoutschema.column6,tskvtablewithoutschema.column7,tskvtablewithoutschema.column1,tskvtablewithoutschema.column2,tskvtablewithoutschema.column3,tskvtablewithoutschema.column4,tskvtablewithoutschema.column5]"
+logical_plan,"Watermark: event_time=time, delay=0ms
+  StreamScan: [tskvtablewithoutschema.time,tskvtablewithoutschema.column6,tskvtablewithoutschema.column7,tskvtablewithoutschema.column1,tskvtablewithoutschema.column2,tskvtablewithoutschema.column3,tskvtablewithoutschema.column4,tskvtablewithoutschema.column5]"

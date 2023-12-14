@@ -2583,7 +2583,7 @@ f1,t2,f0,t0
 -- EXECUTE SQL: SELECT m2.f1, m2.t2, m2.f0, m2.t0 FROM m2 WHERE starts_with(CAST(starts_with(m2.t0, m2.t2) AS STRING), CAST(CAST(starts_with(m2.t1, m2.t0) AS TIMESTAMP) AS STRING)); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: This feature is not implemented: Unsupported CAST from Boolean to Timestamp(Nanosecond, None)"}
+{"error_code":"010001","error_message":"Datafusion: External error: Datafusion: This feature is not implemented: Unsupported CAST from Boolean to Timestamp(Nanosecond, None)"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m4.t1, m4.t0 FROM m4 WHERE ((upper(CAST(to_timestamp(2939004359518327875) AS STRING)))LIKE(upper(CAST('1235651247' AS STRING)))); --
@@ -2708,7 +2708,7 @@ sGh[2[*?Q,0.6378605229934808,-719146430
 -- EXECUTE SQL: SELECT ALL m2.t0, m2.f1, m2.f0 FROM m2 WHERE CAST(CAST(+ (abs(m2.f0)) AS TIMESTAMP) AS BOOLEAN) UNION ALL SELECT ALL m2.t0, m2.f1, m2.f0 FROM m2 WHERE NOT (CAST(CAST(+ (abs(m2.f0)) AS TIMESTAMP) AS BOOLEAN)) UNION ALL SELECT m2.t0, m2.f1, m2.f0 FROM m2 WHERE (CAST(CAST(+ (abs(m2.f0)) AS TIMESTAMP) AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010001","error_message":"Datafusion: This feature is not implemented: Unsupported CAST from Float64 to Timestamp(Nanosecond, None)"}
+{"error_code":"010001","error_message":"Datafusion: External error: Datafusion: This feature is not implemented: Unsupported CAST from Float64 to Timestamp(Nanosecond, None)"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL ARRAY_AGG(left(- (CAST(-1970168186 AS BIGINT)), upper(m3.t1))), to_timestamp(7825004207928641098) FROM m3 GROUP BY character_length(CAST(CAST(starts_with(m3.t1, m3.t0) AS DOUBLE) AS STRING)); --

@@ -30,7 +30,7 @@ time,tag1,tag2,bigint_c,string_c,ubigint_c,boolean_c,double_c
 
 -- EXECUTE SQL: select * from inner_csv_v2 limit 1; --
 200 OK
-time,tag1,tag2,string_c,bigint_c,boolean_c,ubigint_c,double_c
+
 
 -- EXECUTE SQL: COPY INTO inner_csv_v2(time, tag1, tag2, bigint_c, string_c, ubigint_c, boolean_c, double_c) FROM 'query_server/test/resource/data_type/csv/full_data_type.csv' file_format = (type = 'csv'); --
 200 OK
