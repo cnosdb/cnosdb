@@ -1,9 +1,8 @@
 use std::collections::HashMap;
 
 use datafusion::arrow::array::{
-    Array, ArrayAccessor, ArrayRef, BooleanArray, DictionaryArray, Float64Array, Int64Array,
-    StringArray, TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray,
-    UInt64Array,
+    Array, ArrayRef, BooleanArray, DictionaryArray, Float64Array, Int64Array, StringArray,
+    TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray, UInt64Array,
 };
 use datafusion::arrow::datatypes::{Int32Type, SchemaRef, TimeUnit};
 use flatbuffers::{FlatBufferBuilder, WIPOffset};
@@ -346,14 +345,22 @@ pub fn build_string_column<'a>(
     match array {
         Some(array) => {
             for i in 0..array.keys().len() {
-                let idx = array.keys().value(i);
-                if array.values().is_null(idx as usize) {
+                let keys = array.keys();
+
+                if keys.is_null(i) {
                     nullbits.append_unset(1);
                     col_values.push(fbb.create_string(""));
                 } else {
-                    let value = array.value(i);
-                    nullbits.append_set(1);
-                    col_values.push(fbb.create_string(value));
+                    let idx = keys.value(i) as usize;
+                    let values = array.values();
+                    if values.is_null(idx) {
+                        nullbits.append_unset(1);
+                        col_values.push(fbb.create_string(""));
+                    } else {
+                        let value = values.value(idx);
+                        nullbits.append_set(1);
+                        col_values.push(fbb.create_string(value));
+                    }
                 }
             }
         }

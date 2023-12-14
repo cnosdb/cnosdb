@@ -1,3 +1,4 @@
+use std::iter;
 use std::sync::Arc;
 
 use datafusion::arrow::array::ArrayRef;
@@ -8,6 +9,7 @@ use datafusion::logical_expr::{
     ReturnTypeFunction, ScalarUDF, Signature, TypeSignature, Volatility,
 };
 use datafusion::physical_expr::functions::make_scalar_function;
+use models::arrow::str_dict_data_type;
 use spi::query::function::FunctionMetadataManager;
 use spi::Result;
 
@@ -34,6 +36,7 @@ fn new() -> ScalarUDF {
         .chain(NUMERICS.iter())
         .chain(TIMESTAMPS.iter())
         .chain(DATES.iter())
+        .chain(iter::once(str_dict_data_type()))
         // .chain(TIMES.iter())
         .map(|t| TypeSignature::Exact(vec![t.clone(), DataType::Int64]))
         .collect();
