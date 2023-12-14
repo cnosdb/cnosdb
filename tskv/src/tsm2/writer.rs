@@ -11,6 +11,7 @@ use models::predicate::domain::TimeRange;
 use models::schema::{ColumnType, TableColumn, TskvTableSchemaRef};
 use models::{SeriesId, ValueType};
 use snafu::ResultExt;
+use trace::error;
 use utils::bitset::BitSet;
 use utils::BloomFilter;
 
@@ -23,6 +24,7 @@ use crate::file_utils::{make_delta_file_name, make_tsm_file_name};
 use crate::tsm::codec::{
     get_bool_codec, get_f64_codec, get_i64_codec, get_str_codec, get_u64_codec,
 };
+use crate::tsm::TsmTombstone;
 use crate::tsm2::page::{
     Chunk, ChunkGroup, ChunkGroupMeta, ChunkGroupWriteSpec, ChunkStatics, ChunkWriteSpec,
     ColumnGroup, Footer, Page, PageMeta, PageStatistics, PageWriteSpec, SeriesMeta, TableMeta,
@@ -376,6 +378,15 @@ impl Column {
     pub fn is_all_set(&self) -> bool {
         self.valid.is_all_set()
     }
+
+    /// only use for Timastamp column, other will return Err(0)
+    pub fn binary_search_for_i64_col(&self, value: i64) -> Result<usize, usize> {
+        self.data.binary_search_for_i64_col(value)
+    }
+
+    pub fn valid(&self) -> &BitSet {
+        &self.valid
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -408,6 +419,14 @@ impl ColumnData {
             ColumnData::U64(data, _, _) => data.len(),
             ColumnData::String(data, _, _) => data.len(),
             ColumnData::Bool(data, _, _) => data.len(),
+        }
+    }
+
+    /// only use for Timastamp column, other will return Err(0)
+    pub fn binary_search_for_i64_col(&self, value: i64) -> Result<usize, usize> {
+        match self {
+            ColumnData::I64(data, ..) => data.binary_search(&value),
+            _ => Err(0),
         }
     }
 }
@@ -481,6 +500,7 @@ impl DataBlock2 {
                         if let Some(column_self) = column_self {
                             merge_column.push(column_self.get(*index));
                         } else {
+                            error!("get none, self");
                             merge_column.push(None);
                         }
                     }
@@ -488,16 +508,23 @@ impl DataBlock2 {
                         if let Some(column_other) = column_other {
                             merge_column.push(column_other.get(*index));
                         } else {
+                            error!("get none, other");
                             merge_column.push(None);
                         }
                     }
                     Merge::Equal(index_self, index_other) => {
                         let field_self = if let Some(column_self) = column_self {
+                            if column_self.get(*index_self).is_none() {
+                                error!("get none, equal self")
+                            }
                             column_self.get(*index_self)
                         } else {
                             None
                         };
                         let field_other = if let Some(column_other) = column_other {
+                            if column_other.get(*index_other).is_none() {
+                                error!("get none, equal other")
+                            }
                             column_other.get(*index_other)
                         } else {
                             None
@@ -643,6 +670,36 @@ impl DataBlock2 {
         );
 
         Ok(datablock)
+    }
+
+    pub fn filter_by_tomb(
+        &mut self,
+        tombstone: Arc<TsmTombstone>,
+        series_id: SeriesId,
+    ) -> Result<()> {
+        let time_range = self.time_range()?;
+        for (column, col_desc) in self.cols.iter_mut().zip(self.cols_desc.iter()) {
+            let time_ranges =
+                tombstone.get_overlapped_time_ranges(series_id, col_desc.id, &time_range);
+            for time_range in time_ranges {
+                let index_begin = self
+                    .ts
+                    .data
+                    .binary_search_for_i64_col(time_range.min_ts)
+                    .unwrap_or_else(|index| index);
+                let index_end = self
+                    .ts
+                    .data
+                    .binary_search_for_i64_col(time_range.max_ts)
+                    .map(|index| index + 1)
+                    .unwrap_or_else(|index| index);
+                if index_begin == index_end {
+                    continue;
+                }
+                column.valid.clear_bits(index_begin, index_end);
+            }
+        }
+        Ok(())
     }
 
     pub fn time_range(&self) -> Result<TimeRange> {

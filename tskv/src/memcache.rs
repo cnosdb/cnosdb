@@ -843,13 +843,14 @@ impl MemCache {
         true
     }
 
-    pub fn drop_columns(&self, field_ids: &[FieldId]) {
-        for fid in field_ids {
-            let (column_id, sid) = split_id(*fid);
-            let index = (sid as usize) % self.part_count;
-            let series_data = self.partions[index].read().get(&sid).cloned();
-            if let Some(series_data) = series_data {
-                series_data.write().drop_column(column_id);
+    pub fn drop_columns(&self, series_ids: &[SeriesId], column_ids: &[ColumnId]) {
+        for sid in series_ids {
+            for column_id in column_ids {
+                let index = (*sid as usize) % self.part_count;
+                let series_data = self.partions[index].read().get(sid).cloned();
+                if let Some(series_data) = series_data {
+                    series_data.write().drop_column(*column_id);
+                }
             }
         }
     }

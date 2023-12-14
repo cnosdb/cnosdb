@@ -7,7 +7,6 @@ use bytes::Bytes;
 use models::predicate::domain::TimeRange;
 use models::schema::{TskvTableSchemaRef, TIME_FIELD};
 use models::SeriesId;
-use parking_lot::RwLock;
 
 use crate::error::Result;
 use crate::file_system::file::async_file::AsyncFile;
@@ -82,18 +81,24 @@ pub struct TSM2Reader {
     file_id: u64,
     reader: Arc<AsyncFile>,
     tsm_meta: Arc<TSM2MetaData>,
-    tombstone: Option<Arc<RwLock<TsmTombstone>>>,
+    tombstone: Arc<TsmTombstone>,
 }
 
 impl TSM2Reader {
     pub async fn open(tsm_path: impl AsRef<Path>) -> Result<Self> {
         let path = tsm_path.as_ref().to_path_buf();
-        let file_id = file_utils::get_tsm_file_id_by_path(&path)?;
         let reader = Arc::new(file_manager::open_file(&path).await?);
+
+        let file_id = file_utils::get_tsm_file_id_by_path(&path)?;
+
         let footer = Arc::new(read_footer(reader.clone()).await?);
         let chunk_group_meta = Arc::new(read_chunk_group_meta(reader.clone(), &footer).await?);
         let chunk_group = read_chunk_groups(reader.clone(), &chunk_group_meta).await?;
         let chunk = read_chunk(reader.clone(), &chunk_group).await?;
+
+        let tombstone_path = path.parent().unwrap_or_else(|| Path::new("/"));
+        let tombstone = Arc::new(TsmTombstone::open(tombstone_path, file_id).await?);
+
         let tsm_meta = Arc::new(TSM2MetaData::new(
             footer,
             chunk_group_meta,
@@ -106,7 +111,7 @@ impl TSM2Reader {
             file_id,
             reader,
             tsm_meta,
-            tombstone: None,
+            tombstone,
         })
     }
 
@@ -120,6 +125,10 @@ impl TSM2Reader {
 
     pub fn footer(&self) -> &Footer {
         &self.tsm_meta.footer
+    }
+
+    pub fn has_tombstone(&self) -> bool {
+        !self.tombstone.is_empty()
     }
 
     pub fn chunk_group_meta(&self) -> &ChunkGroupMeta {
@@ -138,7 +147,7 @@ impl TSM2Reader {
         self.tsm_meta.clone()
     }
 
-    pub fn tombstone(&self) -> Option<Arc<RwLock<TsmTombstone>>> {
+    pub fn tombstone(&self) -> Arc<TsmTombstone> {
         self.tombstone.clone()
     }
 

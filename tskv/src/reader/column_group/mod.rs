@@ -10,7 +10,8 @@ use arrow_array::{ArrayRef, RecordBatch};
 use datafusion::physical_plan::metrics::{Count, ExecutionPlanMetricsSet, MetricBuilder, Time};
 use futures::{ready, Stream, StreamExt};
 use models::arrow::stream::BoxStream;
-use models::ColumnId;
+use models::predicate::domain::TimeRange;
+use models::{ColumnId, SeriesId};
 
 use super::metrics::BaselineMetrics;
 use super::page::{PageReaderRef, PrimitiveArrayReader};
@@ -31,6 +32,7 @@ pub struct ColumnGroupReader {
 impl ColumnGroupReader {
     pub fn try_new(
         reader: Arc<TSM2Reader>,
+        series_id: SeriesId,
         column_group: Arc<ColumnGroup>,
         projection: &[ColumnId],
         _batch_size: usize,
@@ -43,9 +45,18 @@ impl ColumnGroupReader {
                 .find(|e2| e2.meta().column.id == *e)
         });
 
+        let time_page = Arc::new(column_group.time_page_write_spec()?);
+        let reader_builder = ReaderBuilder::new(
+            reader,
+            series_id,
+            time_page,
+            *column_group.time_range(),
+            metrics.clone(),
+        );
+
         let page_readers = columns
             .clone()
-            .map(|e| build_reader(reader.clone(), e, metrics.clone()))
+            .map(|e| reader_builder.build(e))
             .collect::<Result<Vec<_>>>()?;
 
         let fields = columns
@@ -247,16 +258,43 @@ fn convert_data_type_if_necessary(array: ArrayRef, target_type: &DataType) -> Re
     }
 }
 
-fn build_reader(
+pub struct ReaderBuilder {
     reader: Arc<TSM2Reader>,
-    page_meta: &PageWriteSpec,
+    series_id: SeriesId,
+    time_page_meta: Arc<PageWriteSpec>,
+    time_range: TimeRange,
     metrics: Arc<ExecutionPlanMetricsSet>,
-) -> Result<PageReaderRef> {
-    // TODO 根据指定列及其元数据和文件读取器，构造 PageReader
-    let data_type = page_meta.meta().column.column_type.to_physical_data_type();
-    Ok(Arc::new(PrimitiveArrayReader::new(
-        data_type, reader, page_meta, metrics,
-    )))
+}
+
+impl ReaderBuilder {
+    pub fn new(
+        reader: Arc<TSM2Reader>,
+        series_id: SeriesId,
+        time_page_meta: Arc<PageWriteSpec>,
+        time_range: TimeRange,
+        metrics: Arc<ExecutionPlanMetricsSet>,
+    ) -> Self {
+        Self {
+            reader,
+            series_id,
+            time_page_meta,
+            time_range,
+            metrics,
+        }
+    }
+
+    pub fn build(&self, page_meta: &PageWriteSpec) -> Result<PageReaderRef> {
+        let data_type = page_meta.meta().column.column_type.to_physical_data_type();
+        Ok(Arc::new(PrimitiveArrayReader::new(
+            data_type,
+            self.reader.clone(),
+            page_meta,
+            self.series_id,
+            self.time_page_meta.clone(),
+            self.time_range,
+            self.metrics.clone(),
+        )))
+    }
 }
 
 #[cfg(test)]

@@ -264,6 +264,16 @@ impl ColumnGroup {
             .map(|p| p.meta.num_values as usize)
             .unwrap_or(0)
     }
+
+    pub fn time_page_write_spec(&self) -> Result<PageWriteSpec> {
+        self.pages
+            .iter()
+            .find(|p| p.meta.column.column_type.is_time())
+            .cloned()
+            .ok_or_else(|| Error::TsmColumnGroupError {
+                reason: format!("column group: {} not found time page", self.column_group_id),
+            })
+    }
 }
 
 /// A chunk of data for a series at least two columns

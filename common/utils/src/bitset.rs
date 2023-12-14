@@ -129,6 +129,45 @@ impl BitSet {
         self.buffer[byte_idx] |= 1 << bit_idx;
     }
 
+    pub fn unset(&mut self, idx: usize) {
+        assert!(idx < self.len);
+
+        let byte_idx = idx >> 3;
+        let bit_idx = idx & 7;
+        self.buffer[byte_idx] &= !(1 << bit_idx);
+    }
+
+    /// Clear bits in range [start, end).
+    pub fn clear_bits(&mut self, start: usize, end: usize) {
+        assert!(start <= end);
+        assert!(end <= self.len);
+
+        if start == end {
+            return;
+        }
+
+        let start_byte_idx = start >> 3;
+        let end_byte_idx = end >> 3;
+
+        if start_byte_idx == end_byte_idx {
+            let mask = (1 << (end - start)) - 1;
+            self.buffer[start_byte_idx] &= !(mask << (start & 7));
+            return;
+        }
+
+        let start_mask = u8::MAX << (start & 7);
+        self.buffer[start_byte_idx] &= !start_mask;
+
+        let end_mask = (1 << (end & 7)) - 1;
+        if end_byte_idx < self.buffer.len() {
+            self.buffer[end_byte_idx] &= !end_mask;
+        }
+
+        for i in start_byte_idx + 1..end_byte_idx {
+            self.buffer[i] = 0;
+        }
+    }
+
     pub fn append_unset_and_set(&mut self, idx: usize) {
         if idx >= self.len {
             self.append_unset(idx - self.len + 1)
@@ -519,5 +558,60 @@ mod tests {
             let b2 = ImmutBitSet::new_without_check(5, &buffer_2);
             assert_eq!(a2, b2);
         }
+    }
+
+    #[test]
+    fn test_unset() {
+        let mut b = BitSet::with_size_all_set(10);
+        b.unset(0);
+        assert_eq!(b.buffer, vec![0b_1111_1110, 0b_0000_0011]);
+        b.unset(9);
+        assert_eq!(b.buffer, vec![0b_1111_1110, 0b_0000_0001]);
+        b.unset(8);
+        assert_eq!(b.buffer, vec![0b_1111_1110, 0b_0000_0000]);
+        b.unset(1);
+        assert_eq!(b.buffer, vec![0b_1111_1100, 0b_0000_0000]);
+        b.unset(2);
+        assert_eq!(b.buffer, vec![0b_1111_1000, 0b_0000_0000]);
+        b.unset(3);
+        assert_eq!(b.buffer, vec![0b_1111_0000, 0b_0000_0000]);
+        b.unset(4);
+        assert_eq!(b.buffer, vec![0b_1110_0000, 0b_0000_0000]);
+        b.unset(5);
+        assert_eq!(b.buffer, vec![0b_1100_0000, 0b_0000_0000]);
+        b.unset(6);
+        assert_eq!(b.buffer, vec![0b_1000_0000, 0b_0000_0000]);
+        b.unset(7);
+        assert_eq!(b.buffer, vec![0b_0000_0000, 0b_0000_0000]);
+    }
+
+    #[test]
+    fn test_clear_bits() {
+        let mut bitset = BitSet::with_size_all_set(24);
+
+        // 将索引 2 到 5 的位设置为0
+        bitset.clear_bits(2, 6);
+        assert_eq!(bitset.buffer, vec![0b11000011, 0b11111111, 0b11111111]);
+
+        // 将索引 0 到 7 的位设置为0
+        bitset.clear_bits(0, 8);
+        assert_eq!(bitset.buffer, vec![0b00000000, 0b11111111, 0b11111111]);
+
+        // 将索引 12 到 20 的位设置为0
+        bitset.clear_bits(12, 21);
+        assert_eq!(bitset.buffer, vec![0b00000000, 0b00001111, 0b11100000]);
+
+        // 将索引 8 到 23 的位设置为0
+        bitset.clear_bits(8, 24);
+        assert_eq!(bitset.buffer, vec![0b00000000, 0b00000000, 0b00000000]);
+
+        let mut bitset = BitSet::with_size_all_set(24);
+        // 将索引 16 到 16 的位设置为0（单个位）
+        bitset.clear_bits(16, 17);
+        assert_eq!(bitset.buffer, vec![0b11111111, 0b11111111, 0b11111110]);
+
+        // 将索引 15 到 16 的位设置为0（跨字节）
+        bitset.clear_bits(15, 17);
+        assert_eq!(bitset.buffer, vec![0b11111111, 0b01111111, 0b11111110]);
     }
 }

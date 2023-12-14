@@ -12,7 +12,6 @@ use models::codec::Encoding;
 use models::meta_data::{VnodeId, VnodeStatus};
 use models::predicate::domain::{ColumnDomains, TimeRange};
 use models::schema::{make_owner, DatabaseSchema, Precision, TableColumn};
-use models::utils::unite_id;
 use models::{ColumnId, SeriesId, SeriesKey, Timestamp};
 use protos::kv_service::{WritePointsRequest, WritePointsResponse};
 use protos::models as fb_models;
@@ -570,19 +569,15 @@ impl TsKv {
                 .await
                 .delete_series(&series_ids, time_range);
 
-            let field_ids: Vec<u64> = series_ids
-                .iter()
-                .flat_map(|sid| column_ids.iter().map(|fid| unite_id(*fid, *sid)))
-                .collect();
             info!(
-                "Drop table: vnode {ts_family_id} deleting {} fields in table: {db_owner}.{table}",
-                field_ids.len()
+                "Drop table: vnode {ts_family_id} deleting {} pages in table: {db_owner}.{table}",
+                column_ids.len() * series_ids.len()
             );
 
             let version = ts_family.read().await.super_version();
-            for column_file in version.version.column_files(&field_ids, time_range) {
-                column_file.add_tombstone(&field_ids, time_range).await?;
-            }
+            version
+                .add_tombstone(&series_ids, column_ids, time_range)
+                .await?;
         }
         Ok(())
     }
@@ -617,20 +612,19 @@ impl TsKv {
                 // TODO: Limit parallel delete to 1.
                 if let Some(ts_index) = db_rlock.get_ts_index(*ts_family_id) {
                     let series_ids = ts_index.get_series_id_list(table, &[]).await?;
-                    let field_ids: Vec<u64> = series_ids
-                        .iter()
-                        .flat_map(|sid| to_drop_column_ids.iter().map(|fid| unite_id(*fid, *sid)))
-                        .collect();
                     info!(
-                        "Drop table: vnode {ts_family_id} deleting {} fields in table: {db_owner}.{table}", field_ids.len()
+                        "Drop table: vnode {ts_family_id} deleting {} fields in table: {db_owner}.{table}", to_drop_column_ids.len() * series_ids.len()
                     );
 
-                    ts_family.write().await.drop_columns(&field_ids);
+                    ts_family
+                        .write()
+                        .await
+                        .drop_columns(&series_ids, &to_drop_column_ids);
 
                     let version = ts_family.read().await.super_version();
-                    for column_file in version.version.column_files(&field_ids, time_range) {
-                        column_file.add_tombstone(&field_ids, time_range).await?;
-                    }
+                    version
+                        .add_tombstone(&series_ids, &to_drop_column_ids, time_range)
+                        .await?;
                 } else {
                     continue;
                 }

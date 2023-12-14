@@ -466,6 +466,7 @@ impl SeriesGroupBatchReaderFactory {
                     .map(|e| {
                         let column_group_reader = ColumnGroupReader::try_new(
                             reader.clone(),
+                            chunk.series_id(),
                             e,
                             projection,
                             batch_size,

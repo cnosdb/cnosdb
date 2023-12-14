@@ -14,7 +14,7 @@ use models::field_value::{DataType, FieldVal};
 use models::meta_data::VnodeStatus;
 use models::predicate::domain::{TimeRange, TimeRanges};
 use models::schema::{split_owner, TableColumn};
-use models::{FieldId, SchemaId, SeriesId, Timestamp};
+use models::{ColumnId, FieldId, SchemaId, SeriesId, Timestamp};
 use parking_lot::RwLock;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Sender;
@@ -121,13 +121,24 @@ impl ColumnFile {
         unimplemented!("contains_any_field_id")
     }
 
-    pub async fn add_tombstone(&self, field_ids: &[FieldId], time_range: &TimeRange) -> Result<()> {
+    pub async fn add_tombstone(
+        &self,
+        series_id: SeriesId,
+        column_id: ColumnId,
+        time_range: &TimeRange,
+    ) -> Result<()> {
         let dir = self.path.parent().expect("file has parent");
         // TODO flock tombstone file.
         let mut tombstone = TsmTombstone::open(dir, self.file_id).await?;
-        tombstone.add_range(field_ids, time_range).await?;
+        tombstone
+            .add_range(&[(series_id, column_id)], time_range)
+            .await?;
         tombstone.flush().await?;
         Ok(())
+    }
+
+    pub fn series_id_filter(&self) -> &BloomFilter {
+        &self.series_id_filter
     }
 }
 
@@ -751,6 +762,31 @@ impl SuperVersion {
         let sts = self.version.statistics(series_ids, time_predicate).await;
         (cache, sts)
     }
+
+    pub async fn add_tombstone(
+        &self,
+        series_ids: &[SeriesId],
+        column_ids: &[ColumnId],
+        time_range: &TimeRange,
+    ) -> Result<()> {
+        let column_files =
+            self.column_files_by_sid_and_time(series_ids, &TimeRanges::new(vec![*time_range]));
+        for sid in series_ids {
+            for column_file in column_files.iter() {
+                if column_file
+                    .series_id_filter()
+                    .maybe_contains(sid.to_be_bytes().as_slice())
+                {
+                    for column_id in column_ids {
+                        column_file
+                            .add_tombstone(*sid, *column_id, time_range)
+                            .await?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -1003,10 +1039,10 @@ impl TseriesFamily {
         self.status = status;
     }
 
-    pub fn drop_columns(&self, field_ids: &[FieldId]) {
-        self.mut_cache.read().drop_columns(field_ids);
+    pub fn drop_columns(&self, series_ids: &[SeriesId], column_ids: &[ColumnId]) {
+        self.mut_cache.read().drop_columns(series_ids, column_ids);
         for memcache in self.immut_cache.iter() {
-            memcache.read().drop_columns(field_ids);
+            memcache.read().drop_columns(series_ids, column_ids);
         }
     }
 
@@ -1718,7 +1754,7 @@ pub mod test_tseries_family {
             let dir = opt.storage.tsm_dir(&database, ts_family_id);
             let mut tombstone = TsmTombstone::open(dir, file.file_id).await.unwrap();
             tombstone
-                .add_range(&[0], &TimeRange::new(0, 0))
+                .add_range(&[(0, 0)], &TimeRange::new(0, 0))
                 .await
                 .unwrap();
             tombstone.flush().await.unwrap();
