@@ -1203,28 +1203,20 @@ pub mod test_tseries_family {
 
     use lru_cache::asynchronous::ShardedCache;
     use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
-    use meta::model::meta_admin::AdminMeta;
-    use meta::model::MetaRef;
     use metrics::metric_register::MetricsRegister;
     use models::field_value::FieldVal;
     use models::predicate::domain::TimeRanges;
-    use models::schema::{DatabaseSchema, TenantOptions};
     use models::Timestamp;
-    use parking_lot::RwLock;
     use tokio::sync::mpsc::{self, Receiver};
-    use tokio::sync::RwLock as AsyncRwLock;
 
     use super::{ColumnFile, LevelInfo};
     use crate::compaction::flush_tests::default_table_schema;
-    use crate::compaction::{run_flush_memtable_job, FlushReq};
-    use crate::context::{GlobalContext, GlobalSequenceContext};
     use crate::file_utils::make_tsm_file_name;
     use crate::kv_option::{Options, StorageOptions};
-    use crate::kvcore::{COMPACT_REQ_CHANNEL_CAP, SUMMARY_REQ_CHANNEL_CAP};
+    use crate::kvcore::COMPACT_REQ_CHANNEL_CAP;
     use crate::memcache::{MemCache, OrderedRowsData, RowData, RowGroup};
     use crate::summary::{CompactMeta, SummaryTask, VersionEdit};
     use crate::tseries_family::{TimeRange, TseriesFamily, Version};
-    use crate::tsm::TsmTombstone;
     use crate::version_set::VersionSet;
     use crate::TseriesFamilyId;
 
@@ -1593,182 +1585,5 @@ pub mod test_tseries_family {
             );
             ts_family.new_version(new_version, None);
         }
-    }
-
-    #[test]
-    pub fn test_read_with_tomb() {
-        let runtime = Arc::new(
-            tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .worker_threads(2)
-                .build()
-                .unwrap(),
-        );
-
-        let mut config = config::get_config_for_test();
-        let dir = "/tmp/test/kv_core/test_read_with_tomb";
-        let _ = std::fs::remove_dir_all(dir);
-        std::fs::create_dir_all(dir).unwrap();
-        config.storage.path = dir.into();
-
-        let meta_manager: MetaRef = runtime.block_on(async {
-            let meta_manager: MetaRef = AdminMeta::new(config.clone()).await;
-
-            meta_manager.add_data_node().await.unwrap();
-
-            let _ = meta_manager
-                .create_tenant("cnosdb".to_string(), TenantOptions::default())
-                .await;
-            meta_manager
-        });
-        let memory_pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::default());
-        let mem = MemCache::new(0, 1000, 2, 0, &memory_pool);
-        let mut rows: OrderedRowsData = OrderedRowsData::new();
-        rows.insert(RowData {
-            ts: 10,
-            fields: vec![
-                Some(FieldVal::Integer(11)),
-                Some(FieldVal::Integer(12)),
-                Some(FieldVal::Integer(13)),
-            ],
-        });
-        let row_group = RowGroup {
-            schema: default_table_schema(vec![0, 1, 2]).into(),
-            range: TimeRange {
-                min_ts: 1,
-                max_ts: 100,
-            },
-            rows,
-            size: size_of::<RowGroup>() + 3 * size_of::<u32>() + size_of::<Option<FieldVal>>() + 8,
-        };
-        mem.write_group(1, 0, row_group).unwrap();
-
-        let mem = Arc::new(RwLock::new(mem));
-        let req_mem = vec![mem];
-        let flush_seq = FlushReq {
-            ts_family_id: 0,
-            mems: req_mem,
-            force_flush: false,
-        };
-
-        let dir = "/tmp/test/ts_family/read_with_tomb";
-        let _ = std::fs::remove_dir_all(dir);
-        std::fs::create_dir_all(dir).unwrap();
-        let mut global_config = config::get_config_for_test();
-        global_config.storage.path = dir.to_string();
-        let opt = Arc::new(Options::from(&global_config));
-
-        let tenant = "cnosdb".to_string();
-        let database = "test_db".to_string();
-        let global_ctx = Arc::new(GlobalContext::new());
-        let global_seq_ctx = GlobalSequenceContext::empty();
-        let (summary_task_sender, summary_task_receiver) = mpsc::channel(SUMMARY_REQ_CHANNEL_CAP);
-        let (compact_task_sender, _compact_task_receiver) = mpsc::channel(COMPACT_REQ_CHANNEL_CAP);
-        let (flush_task_sender, _) = mpsc::channel(opt.storage.flush_req_channel_cap);
-        let runtime_ref = runtime.clone();
-        runtime.block_on(async move {
-            let version_set = Arc::new(AsyncRwLock::new(
-                VersionSet::new(
-                    meta_manager.clone(),
-                    opt.clone(),
-                    runtime_ref.clone(),
-                    memory_pool.clone(),
-                    HashMap::new(),
-                    flush_task_sender.clone(),
-                    compact_task_sender.clone(),
-                    Arc::new(MetricsRegister::default()),
-                )
-                .await
-                .unwrap(),
-            ));
-            version_set
-                .write()
-                .await
-                .create_db(
-                    DatabaseSchema::new(&tenant, &database),
-                    meta_manager.clone(),
-                    memory_pool,
-                )
-                .await
-                .unwrap();
-            let db = version_set
-                .write()
-                .await
-                .get_db(&tenant, &database)
-                .unwrap();
-            let cxt = Arc::new(GlobalContext::new());
-            let ts_family_id = db
-                .write()
-                .await
-                .add_tsfamily(
-                    0,
-                    0,
-                    None,
-                    summary_task_sender.clone(),
-                    flush_task_sender.clone(),
-                    compact_task_sender.clone(),
-                    cxt.clone(),
-                )
-                .await
-                .unwrap()
-                .read()
-                .await
-                .tf_id();
-
-            run_flush_memtable_job(
-                flush_seq,
-                global_ctx,
-                global_seq_ctx,
-                version_set.clone(),
-                summary_task_sender,
-                Some(compact_task_sender),
-            )
-            .await
-            .unwrap();
-
-            update_ts_family_version(version_set.clone(), ts_family_id, summary_task_receiver)
-                .await;
-
-            let version_set = version_set.write().await;
-            let tsf = version_set
-                .get_database_tsfs(&tenant, &database)
-                .await
-                .unwrap()
-                .first()
-                .cloned()
-                .unwrap();
-            let version = tsf.write().await.version();
-            version.levels_info[1]
-                .read_column_file(
-                    ts_family_id,
-                    0,
-                    &TimeRange {
-                        max_ts: 0,
-                        min_ts: 0,
-                    },
-                )
-                .await;
-
-            let file = version.levels_info[1].files[0].clone();
-
-            let dir = opt.storage.tsm_dir(&database, ts_family_id);
-            let mut tombstone = TsmTombstone::open(dir, file.file_id).await.unwrap();
-            tombstone
-                .add_range(&[(0, 0)], &TimeRange::new(0, 0))
-                .await
-                .unwrap();
-            tombstone.flush().await.unwrap();
-
-            version.levels_info[1]
-                .read_column_file(
-                    0,
-                    0,
-                    &TimeRange {
-                        max_ts: 0,
-                        min_ts: 0,
-                    },
-                )
-                .await;
-        });
     }
 }

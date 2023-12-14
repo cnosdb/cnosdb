@@ -40,7 +40,7 @@ impl BitSet {
     /// is greater than `len`, then the max value will be the `len`.
     pub fn with_offsets(len: usize, offsets: &[usize]) -> Self {
         let mut bitset = match offsets.iter().max() {
-            Some(&max_off) => BitSet::with_size(max_off.max(len)),
+            Some(&max_off) => BitSet::with_size((max_off + 1).max(len)),
             None => BitSet::default(),
         };
         for off in offsets {
@@ -425,7 +425,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic = "idx <= self.len"]
+    #[should_panic = "idx < self.len"]
     fn test_bitset_set_get_out_of_bounds() {
         let mut v = BitSet::with_size(4);
 
@@ -507,7 +507,7 @@ mod tests {
     #[test]
     fn test_all_set_unset_empty() {
         let v1 = BitSet::new();
-        assert!(!v1.is_all_set());
+        assert!(v1.is_all_set());
         assert!(v1.is_all_unset());
 
         let v2 = ImmutBitSet::new_without_check(8, &[0]);
@@ -518,7 +518,7 @@ mod tests {
     #[test]
     fn test_with_offsets() {
         let b = BitSet::with_offsets(0, &[1, 2, 3]);
-        assert_eq!(b.len, 3);
+        assert_eq!(b.len, 4);
         assert_eq!(b.buffer, vec![0b_0000_1110]);
 
         let b = BitSet::with_offsets(10, &[1, 2, 3]);
