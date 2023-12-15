@@ -57,6 +57,7 @@ lazy_static! {
                 .chain(TIMESTAMPS)
                 .chain(DATES)
                 .chain(TIMES)
+                // .chain(iter::once(str_dict_data_type()))
                 .cloned()
                 .collect::<Vec<_>>(),
             Volatility::Immutable

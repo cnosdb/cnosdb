@@ -1487,7 +1487,7 @@ false,f1,t0
 -- EXECUTE SQL: SELECT ALL m2.f0, m2.f1, m2.t0 FROM m2 WHERE ((((((((m2.f1)||(1052801116)))||(((m2.f1)||(m2.f0)))))||(CAST(CAST(m2.f1 AS STRING) AS BIGINT))))LIKE(CAST((CAST(FALSE AS BOOLEAN)) IS UNKNOWN AS STRING))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 'f1' to value of Int64 type"}
+{"error_code":"020006","error_message":"Arrow: Cast error: Cannot cast string 'f1' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m3.t0, m3.f0, m3.t1, m3.f1 FROM m3; --
@@ -1549,7 +1549,7 @@ false
 -- EXECUTE SQL: SELECT m2.f0 FROM m2 WHERE (((CAST(CAST(m2.f1 AS STRING) AS BOOLEAN)) IS FALSE)AND((CAST(m2.f0 AS BOOLEAN)) IS UNKNOWN)); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast value 'f1' to value of Boolean type"}
+{"error_code":"020006","error_message":"Arrow: Cast error: Cannot cast value 'f1' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL BOOL_OR(TRUE) FROM m4; --
@@ -2192,7 +2192,7 @@ false
 -- EXECUTE SQL: SELECT ALL m4.t0, m4.t2 FROM m4 WHERE CAST(((CAST(CAST(TRUE AS BIGINT) AS STRING))||(((CAST(0.47117722516469007 AS STRING))>(CAST(m4.f0 AS STRING))))) AS BOOLEAN) UNION ALL SELECT m4.t0, m4.t2 FROM m4 WHERE NOT (CAST(((CAST(CAST(TRUE AS BIGINT) AS STRING))||(((CAST(0.47117722516469007 AS STRING))>(CAST(m4.f0 AS STRING))))) AS BOOLEAN)) UNION ALL SELECT ALL m4.t0, m4.t2 FROM m4 WHERE (CAST(((CAST(CAST(TRUE AS BIGINT) AS STRING))||(((CAST(0.47117722516469007 AS STRING))>(CAST(m4.f0 AS STRING))))) AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast value '11' to value of Boolean type"}
+{"error_code":"020006","error_message":"Arrow: Cast error: Cannot cast value '11' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL * FROM m2; --
@@ -3330,7 +3330,7 @@ f1
 -- EXECUTE SQL: SELECT ALL m2.f1 FROM m2 WHERE (((- (817932306))%(CAST(m2.f0 AS BIGINT)))) NOT IN (694810662, -319337649, -1259189301); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010002","error_message":"Arrow: Divide by zero error"}
+{"error_code":"020006","error_message":"Arrow: Divide by zero error"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL * FROM m1; --
@@ -3410,7 +3410,7 @@ COUNT(Float64(0.5249418544831504))
 -- EXECUTE SQL: SELECT SUM(agg0) FROM (SELECT ALL COUNT(+ (CAST(0.5249418544831504 AS BIGINT)))  as agg0 FROM m2 WHERE CAST(((CAST(((m2.f1)||(m2.f0)) AS BIGINT))*(((+ (-670907606))%(- (1202595187))))) AS BOOLEAN) UNION ALL SELECT ALL COUNT(+ (CAST(0.5249418544831504 AS BIGINT)))  as agg0 FROM m2 WHERE NOT (CAST(((CAST(((m2.f1)||(m2.f0)) AS BIGINT))*(((+ (-670907606))%(- (1202595187))))) AS BOOLEAN)) UNION ALL SELECT ALL COUNT(+ (CAST(0.5249418544831504 AS BIGINT)))  as agg0 FROM m2 WHERE (CAST(((CAST(((m2.f1)||(m2.f0)) AS BIGINT))*(((+ (-670907606))%(- (1202595187))))) AS BOOLEAN)) IS NULL) as asdf; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 'f10' to value of Int64 type"}
+{"error_code":"020006","error_message":"Arrow: Cast error: Cannot cast string 'f10' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.t0, m0.f0, m0.f1 FROM m0; --
@@ -3808,7 +3808,7 @@ f0,t0
 -- EXECUTE SQL: SELECT m1.f0, m1.t0 FROM m1 WHERE (CAST(((CAST(-324786405 AS STRING))||(CAST(m1.f0 AS BIGINT))) AS BOOLEAN)) IS UNKNOWN UNION ALL SELECT m1.f0, m1.t0 FROM m1 WHERE NOT ((CAST(((CAST(-324786405 AS STRING))||(CAST(m1.f0 AS BIGINT))) AS BOOLEAN)) IS UNKNOWN) UNION ALL SELECT m1.f0, m1.t0 FROM m1 WHERE ((CAST(((CAST(-324786405 AS STRING))||(CAST(m1.f0 AS BIGINT))) AS BOOLEAN)) IS UNKNOWN) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast string 'f0' to value of Int64 type"}
+{"error_code":"020006","error_message":"Arrow: Cast error: Cannot cast string 'f0' to value of Int64 type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m3.t1, m3.f1 FROM m3; --
@@ -4356,7 +4356,7 @@ time,t0,f0,f1
 -- EXECUTE SQL: SELECT ALL m2.t0 FROM m2 WHERE NOT (NOT (CAST(((m2.f1)||(m2.f0)) AS BOOLEAN))) UNION ALL SELECT m2.t0 FROM m2 WHERE NOT (NOT (NOT (CAST(((m2.f1)||(m2.f0)) AS BOOLEAN)))) UNION ALL SELECT ALL m2.t0 FROM m2 WHERE (NOT (NOT (CAST(((m2.f1)||(m2.f0)) AS BOOLEAN)))) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast value 'f10' to value of Boolean type"}
+{"error_code":"020006","error_message":"Arrow: Cast error: Cannot cast value 'f10' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT BIT_OR(- (CAST(+ (- (1007863218)) AS BIGINT))) FROM m2; --
@@ -4704,7 +4704,7 @@ false
 -- EXECUTE SQL: SELECT ALL m2.f0 FROM m2 WHERE CAST(CAST(((((m2.f1)||(1876346506)))||(CAST(m2.f0 AS BIGINT))) AS STRING) AS BOOLEAN); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast value 'f118763465060' to value of Boolean type"}
+{"error_code":"020006","error_message":"Arrow: Cast error: Cannot cast value 'f118763465060' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.t0, m0.f1 FROM m0; --
@@ -5096,7 +5096,7 @@ f0,false,t0
 -- EXECUTE SQL: SELECT ALL m1.t0 FROM m1 WHERE CAST(m1.f0 AS BOOLEAN) UNION ALL SELECT m1.t0 FROM m1 WHERE NOT (CAST(m1.f0 AS BOOLEAN)) UNION ALL SELECT ALL m1.t0 FROM m1 WHERE (CAST(m1.f0 AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast value 'f0' to value of Boolean type"}
+{"error_code":"020006","error_message":"Arrow: Cast error: Cannot cast value 'f0' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT ALL m0.t0, m0.f0 FROM m0; --

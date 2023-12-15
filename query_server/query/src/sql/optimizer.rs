@@ -151,6 +151,7 @@ impl CascadeOptimizerBuilder {
 #[cfg(test)]
 mod test {
     use std::sync::Arc;
+    use datafusion::arrow::datatypes::TimeUnit;
 
     use coordinator::service_mock::{MockCoordinator, WITH_NONEMPTY_DATABASE_FOR_TEST};
     use datafusion::datasource::provider_as_source;
@@ -186,6 +187,7 @@ mod test {
             "default"
         };
         let mut schema = TskvTableSchema::default();
+        schema.add_column(TableColumn::new_time_column(0, TimeUnit::Nanosecond));
         schema.add_column(TableColumn::new_with_default(
             "flag".to_string(),
             ColumnType::Tag,
@@ -247,14 +249,16 @@ mod test {
                 plan,
                 "\
                 Aggregate: groupBy=[[?table?.flag]], aggr=[[COUNT(?table?.value)]]\
-                \n  TableScan: ?table? projection=[flag, value]",
+                \n  Projection: ?table?.flag, ?table?.value\
+                \n    TableScan: ?table? projection=[time, flag, value]",
                 "\
                 AggregateExec: mode=FinalPartitioned, gby=[flag@0 as flag], aggr=[COUNT(?table?.value)]\
                 \n  CoalesceBatchesExec: target_batch_size=8192\
                 \n    RepartitionExec: partitioning=Hash([flag@0], 8), input_partitions=8\
                 \n      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1\
                 \n        AggregateExec: mode=Partial, gby=[flag@0 as flag], aggr=[COUNT(?table?.value)]\
-                \n          EmptyExec: produce_one_row=false\
+                \n          ProjectionExec: expr=[flag@1 as flag, value@2 as value]\
+                \n            EmptyExec: produce_one_row=false\
                 \n",
             ).await?;
         }
@@ -266,13 +270,15 @@ mod test {
             plan,
             "\
             Aggregate: groupBy=[[?table?.flag]], aggr=[[COUNT(?table?.value)]]\
-            \n  TableScan: ?table? projection=[flag, value]",
+            \n  Projection: ?table?.flag, ?table?.value\
+            \n    TableScan: ?table? projection=[time, flag, value]",
             "\
             AggregateExec: mode=FinalPartitioned, gby=[flag@0 as flag], aggr=[COUNT(?table?.value)]\
             \n  CoalesceBatchesExec: target_batch_size=8192\
             \n    RepartitionExec: partitioning=Hash([flag@0], 8), input_partitions=8\
             \n      AggregateExec: mode=Partial, gby=[flag@0 as flag], aggr=[COUNT(?table?.value)]\
-            \n        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, split_num=8, projection=[flag,value]\
+            \n        ProjectionExec: expr=[flag@1 as flag, value@2 as value]\
+            \n          TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=None, split_num=8, projection=[time,flag,value]\
             \n",
         ).await
     }
@@ -287,12 +293,12 @@ mod test {
             test_plan(
                 plan,
                 "\
-                Projection: SUM(COUNT(?table?.value)) AS COUNT(?table?.value)\
-                \n  Aggregate: groupBy=[[]], aggr=[[SUM(COUNT(?table?.value))]]\
-                \n    TableScan: ?table?, grouping=[], agg=[AggregateFunction(AggregateFunction { fun: Count, args: [Column(Column { relation: Some(Bare { table: \"?table?\" }), name: \"value\" })], distinct: false, filter: None, order_by: None })]",
+                Aggregate: groupBy=[[]], aggr=[[COUNT(?table?.value)]]\
+                \n  Projection: ?table?.value\
+                \n    TableScan: ?table? projection=[time, value]",
                 "\
-                ProjectionExec: expr=[SUM(COUNT(?table?.value))@0 as COUNT(?table?.value)]\
-                \n  AggregateExec: mode=Single, gby=[], aggr=[SUM(COUNT(?table?.value))]\
+                AggregateExec: mode=Single, gby=[], aggr=[COUNT(?table?.value)]\
+                \n  ProjectionExec: expr=[value@1 as value]\
                 \n    EmptyExec: produce_one_row=false\
                 \n",
             )
@@ -306,15 +312,15 @@ mod test {
         test_plan(
             plan,
             "\
-            Projection: SUM(COUNT(?table?.value)) AS COUNT(?table?.value)\
-            \n  Aggregate: groupBy=[[]], aggr=[[SUM(COUNT(?table?.value))]]\
-            \n    TableScan: ?table?, grouping=[], agg=[AggregateFunction(AggregateFunction { fun: Count, args: [Column(Column { relation: Some(Bare { table: \"?table?\" }), name: \"value\" })], distinct: false, filter: None, order_by: None })]",
+            Aggregate: groupBy=[[]], aggr=[[COUNT(?table?.value)]]\
+            \n  Projection: ?table?.value\
+            \n    TableScan: ?table? projection=[time, value]",
             "\
-            ProjectionExec: expr=[SUM(COUNT(?table?.value))@0 as COUNT(?table?.value)]\
-            \n  AggregateExec: mode=Final, gby=[], aggr=[SUM(COUNT(?table?.value))]\
-            \n    CoalescePartitionsExec\
-            \n      AggregateExec: mode=Partial, gby=[], aggr=[SUM(COUNT(?table?.value))]\
-            \n        AggregateFilterTskvExec: agg=[[Count(\"value\")]], filter=[Predicate { pushed_down_domains: ColumnDomains { column_to_domain: Some({}) }, limit: None }]\
+            AggregateExec: mode=Final, gby=[], aggr=[COUNT(?table?.value)]\
+            \n  CoalescePartitionsExec\
+            \n    AggregateExec: mode=Partial, gby=[], aggr=[COUNT(?table?.value)]\
+            \n      ProjectionExec: expr=[value@1 as value]\
+            \n        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=None, split_num=8, projection=[time,value]\
             \n",
         ).await
     }
@@ -330,14 +336,16 @@ mod test {
                 plan,
                 "\
                 Aggregate: groupBy=[[?table?.flag]], aggr=[[MAX(?table?.value)]]\
-                \n  TableScan: ?table? projection=[flag, value]",
+                \n  Projection: ?table?.flag, ?table?.value\
+                \n    TableScan: ?table? projection=[time, flag, value]",
                 "\
                 AggregateExec: mode=FinalPartitioned, gby=[flag@0 as flag], aggr=[MAX(?table?.value)]\
                 \n  CoalesceBatchesExec: target_batch_size=8192\
                 \n    RepartitionExec: partitioning=Hash([flag@0], 8), input_partitions=8\
                 \n      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1\
                 \n        AggregateExec: mode=Partial, gby=[flag@0 as flag], aggr=[MAX(?table?.value)]\
-                \n          EmptyExec: produce_one_row=false\
+                \n          ProjectionExec: expr=[flag@1 as flag, value@2 as value]\
+                \n            EmptyExec: produce_one_row=false\
                 \n",
             ).await?;
         }
@@ -350,13 +358,15 @@ mod test {
             plan,
             "\
             Aggregate: groupBy=[[?table?.value]], aggr=[[MAX(?table?.value)]]\
-            \n  TableScan: ?table? projection=[value]",
+            \n  Projection: ?table?.value\
+            \n    TableScan: ?table? projection=[time, value]",
             "\
             AggregateExec: mode=FinalPartitioned, gby=[value@0 as value], aggr=[MAX(?table?.value)]\
             \n  CoalesceBatchesExec: target_batch_size=8192\
             \n    RepartitionExec: partitioning=Hash([value@0], 8), input_partitions=8\
             \n      AggregateExec: mode=Partial, gby=[value@0 as value], aggr=[MAX(?table?.value)]\
-            \n        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, split_num=8, projection=[value]\
+            \n        ProjectionExec: expr=[value@1 as value]\
+            \n          TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=None, split_num=8, projection=[time,value]\
             \n",
         ).await
     }
@@ -372,12 +382,13 @@ mod test {
                 plan,
                 "\
                 Aggregate: groupBy=[[]], aggr=[[MAX(?table?.value)]]\
-                \n  TableScan: ?table? projection=[value]",
+                \n  Projection: ?table?.value\
+                \n    TableScan: ?table? projection=[time, value]",
                 "\
                 AggregateExec: mode=Single, gby=[], aggr=[MAX(?table?.value)]\
-                \n  EmptyExec: produce_one_row=false\
-                \n",
-            )
+                \n  ProjectionExec: expr=[value@1 as value]\
+                \n    EmptyExec: produce_one_row=false\
+                \n")
             .await?;
         }
 
@@ -389,12 +400,13 @@ mod test {
             plan,
             "\
             Aggregate: groupBy=[[]], aggr=[[MAX(?table?.value)]]\
-            \n  TableScan: ?table? projection=[value]",
-            "\
-            AggregateExec: mode=Final, gby=[], aggr=[MAX(?table?.value)]\
+            \n  Projection: ?table?.value\
+            \n    TableScan: ?table? projection=[time, value]",
+            "AggregateExec: mode=Final, gby=[], aggr=[MAX(?table?.value)]\
             \n  CoalescePartitionsExec\
             \n    AggregateExec: mode=Partial, gby=[], aggr=[MAX(?table?.value)]\
-            \n      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, split_num=8, projection=[value]\
+            \n      ProjectionExec: expr=[value@1 as value]\
+            \n        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=None, split_num=8, projection=[time,value]\
             \n",
         ).await
     }
@@ -410,14 +422,15 @@ mod test {
                 plan,
                 "\
                 Aggregate: groupBy=[[?table?.flag]], aggr=[[MIN(?table?.value)]]\
-                \n  TableScan: ?table? projection=[flag, value]",
-                "\
-                AggregateExec: mode=FinalPartitioned, gby=[flag@0 as flag], aggr=[MIN(?table?.value)]\
+                \n  Projection: ?table?.flag, ?table?.value\
+                \n    TableScan: ?table? projection=[time, flag, value]",
+                "AggregateExec: mode=FinalPartitioned, gby=[flag@0 as flag], aggr=[MIN(?table?.value)]\
                 \n  CoalesceBatchesExec: target_batch_size=8192\
                 \n    RepartitionExec: partitioning=Hash([flag@0], 8), input_partitions=8\
                 \n      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1\
                 \n        AggregateExec: mode=Partial, gby=[flag@0 as flag], aggr=[MIN(?table?.value)]\
-                \n          EmptyExec: produce_one_row=false\
+                \n          ProjectionExec: expr=[flag@1 as flag, value@2 as value]\
+                \n            EmptyExec: produce_one_row=false\
                 \n",
             ).await?;
         }
@@ -430,13 +443,15 @@ mod test {
             plan,
             "\
             Aggregate: groupBy=[[?table?.value]], aggr=[[MIN(?table?.value)]]\
-            \n  TableScan: ?table? projection=[value]",
+            \n  Projection: ?table?.value\
+            \n    TableScan: ?table? projection=[time, value]",
             "\
             AggregateExec: mode=FinalPartitioned, gby=[value@0 as value], aggr=[MIN(?table?.value)]\
             \n  CoalesceBatchesExec: target_batch_size=8192\
             \n    RepartitionExec: partitioning=Hash([value@0], 8), input_partitions=8\
             \n      AggregateExec: mode=Partial, gby=[value@0 as value], aggr=[MIN(?table?.value)]\
-            \n        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, split_num=8, projection=[value]\
+            \n        ProjectionExec: expr=[value@1 as value]\
+            \n          TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=None, split_num=8, projection=[time,value]\
             \n",
         ).await
     }
@@ -452,10 +467,12 @@ mod test {
                 plan,
                 "\
                 Aggregate: groupBy=[[]], aggr=[[MIN(?table?.value)]]\
-                \n  TableScan: ?table? projection=[value]",
+                \n  Projection: ?table?.value\
+                \n    TableScan: ?table? projection=[time, value]",
                 "\
                 AggregateExec: mode=Single, gby=[], aggr=[MIN(?table?.value)]\
-                \n  EmptyExec: produce_one_row=false\
+                \n  ProjectionExec: expr=[value@1 as value]\
+                \n    EmptyExec: produce_one_row=false\
                 \n",
             )
             .await?;
@@ -469,12 +486,14 @@ mod test {
             plan,
             "\
             Aggregate: groupBy=[[]], aggr=[[MIN(?table?.value)]]\
-            \n  TableScan: ?table? projection=[value]",
+            \n  Projection: ?table?.value\
+            \n    TableScan: ?table? projection=[time, value]",
             "\
             AggregateExec: mode=Final, gby=[], aggr=[MIN(?table?.value)]\
             \n  CoalescePartitionsExec\
             \n    AggregateExec: mode=Partial, gby=[], aggr=[MIN(?table?.value)]\
-            \n      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, split_num=8, projection=[value]\
+            \n      ProjectionExec: expr=[value@1 as value]\
+            \n        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=None, split_num=8, projection=[time,value]\
             \n",
         ).await
     }
@@ -490,14 +509,16 @@ mod test {
                 plan,
                 "\
                 Aggregate: groupBy=[[?table?.value]], aggr=[[SUM(?table?.value)]]\
-                \n  TableScan: ?table? projection=[value]",
+                \n  Projection: ?table?.value\
+                \n    TableScan: ?table? projection=[time, value]",
                 "\
                 AggregateExec: mode=FinalPartitioned, gby=[value@0 as value], aggr=[SUM(?table?.value)]\
                 \n  CoalesceBatchesExec: target_batch_size=8192\
                 \n    RepartitionExec: partitioning=Hash([value@0], 8), input_partitions=8\
                 \n      RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1\
                 \n        AggregateExec: mode=Partial, gby=[value@0 as value], aggr=[SUM(?table?.value)]\
-                \n          EmptyExec: produce_one_row=false\
+                \n          ProjectionExec: expr=[value@1 as value]\
+                \n            EmptyExec: produce_one_row=false\
                 \n",
             ).await?;
         }
@@ -510,13 +531,15 @@ mod test {
             plan,
             "\
             Aggregate: groupBy=[[?table?.value]], aggr=[[SUM(?table?.value)]]\
-            \n  TableScan: ?table? projection=[value]",
+            \n  Projection: ?table?.value\
+            \n    TableScan: ?table? projection=[time, value]",
             "\
             AggregateExec: mode=FinalPartitioned, gby=[value@0 as value], aggr=[SUM(?table?.value)]\
             \n  CoalesceBatchesExec: target_batch_size=8192\
             \n    RepartitionExec: partitioning=Hash([value@0], 8), input_partitions=8\
             \n      AggregateExec: mode=Partial, gby=[value@0 as value], aggr=[SUM(?table?.value)]\
-            \n        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, split_num=8, projection=[value]\
+            \n        ProjectionExec: expr=[value@1 as value]\
+            \n          TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=None, split_num=8, projection=[time,value]\
             \n",
         ).await
     }
@@ -532,10 +555,12 @@ mod test {
                 plan,
                 "\
                 Aggregate: groupBy=[[]], aggr=[[SUM(?table?.value)]]\
-                \n  TableScan: ?table? projection=[value]",
+                \n  Projection: ?table?.value\
+                \n    TableScan: ?table? projection=[time, value]",
                 "\
                 AggregateExec: mode=Single, gby=[], aggr=[SUM(?table?.value)]\
-                \n  EmptyExec: produce_one_row=false\
+                \n  ProjectionExec: expr=[value@1 as value]\
+                \n    EmptyExec: produce_one_row=false\
                 \n",
             )
             .await?;
@@ -549,12 +574,14 @@ mod test {
             plan,
             "\
             Aggregate: groupBy=[[]], aggr=[[SUM(?table?.value)]]\
-            \n  TableScan: ?table? projection=[value]",
+            \n  Projection: ?table?.value\
+            \n    TableScan: ?table? projection=[time, value]",
             "\
             AggregateExec: mode=Final, gby=[], aggr=[SUM(?table?.value)]\
             \n  CoalescePartitionsExec\
             \n    AggregateExec: mode=Partial, gby=[], aggr=[SUM(?table?.value)]\
-            \n      TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, split_num=8, projection=[value]\
+            \n      ProjectionExec: expr=[value@1 as value]\
+            \n        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=None, split_num=8, projection=[time,value]\
             \n",
         ).await
     }

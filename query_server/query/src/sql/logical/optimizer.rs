@@ -40,7 +40,7 @@ pub trait LogicalOptimizer: Send + Sync {
 }
 
 pub struct DefaultLogicalOptimizer {
-    // fit datafusion
+    // fit datafusion_tool
     // TODO refactor
     analyzer: AnalyzerRef,
     rules: Vec<Arc<dyn OptimizerRule + Send + Sync>>,

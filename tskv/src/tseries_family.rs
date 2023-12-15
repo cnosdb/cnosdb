@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::mem::MaybeUninit;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -6,13 +6,14 @@ use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 use cache::{AsyncCache, ShardedAsyncCache};
+use arrow_array::RecordBatch;
 use memory_pool::MemoryPoolRef;
 use metrics::gauge::U64Gauge;
 use metrics::metric_register::MetricsRegister;
 use models::meta_data::VnodeStatus;
 use models::predicate::domain::{TimeRange, TimeRanges};
 use models::schema::{split_owner, TableColumn};
-use models::{FieldId, SeriesId, Timestamp};
+use models::{ColumnId, FieldId, SeriesId, Timestamp};
 use parking_lot::RwLock;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Sender;
@@ -26,11 +27,14 @@ use crate::error::Result;
 use crate::file_system::file_manager;
 use crate::file_utils::{make_delta_file, make_tsm_file};
 use crate::kv_option::{CacheOptions, StorageOptions};
-use crate::memcache::{DataType, FieldVal, MemCache, RowGroup};
+use crate::memcache::{MemCache, MemCacheStatistics, RowGroup};
 use crate::summary::{CompactMeta, VersionEdit};
-use crate::tsm::{self, TsmReader};
+use crate::tsm::{TsmTombstone};
+use crate::tsm2::page::PageMeta;
+use crate::tsm2::reader::TSM2Reader;
+use crate::tsm2::ColumnGroupID;
 use crate::Error::CommonError;
-use crate::{ColumnFileId, LevelId, Options, TseriesFamilyId};
+use crate::{ColumnFileId, LevelId, Options, TseriesFamilyId, tsm};
 
 #[derive(Debug)]
 pub struct ColumnFile {
@@ -39,20 +43,20 @@ pub struct ColumnFile {
     is_delta: bool,
     time_range: TimeRange,
     size: u64,
-    field_id_filter: Arc<BloomFilter>,
+    series_id_filter: Arc<BloomFilter>,
     deleted: AtomicBool,
     compacting: AtomicBool,
 
     path: PathBuf,
-    tsm_reader_cache: Weak<ShardedAsyncCache<String, Arc<TsmReader>>>,
+    tsm_reader_cache: Weak<ShardedAsyncCache<String, Arc<TSM2Reader>>>,
 }
 
 impl ColumnFile {
     pub fn with_compact_data(
         meta: &CompactMeta,
         path: impl AsRef<Path>,
-        field_id_filter: Arc<BloomFilter>,
-        tsm_reader_cache: Weak<ShardedAsyncCache<String, Arc<TsmReader>>>,
+        series_id_filter: Arc<BloomFilter>,
+        tsm_reader_cache: Weak<ShardedAsyncCache<String, Arc<TSM2Reader>>>,
     ) -> Self {
         Self {
             file_id: meta.file_id,
@@ -60,7 +64,7 @@ impl ColumnFile {
             is_delta: meta.is_delta,
             time_range: TimeRange::new(meta.min_ts, meta.max_ts),
             size: meta.file_size,
-            field_id_filter,
+            series_id_filter,
             deleted: AtomicBool::new(false),
             compacting: AtomicBool::new(false),
             path: path.as_ref().into(),
@@ -102,17 +106,45 @@ impl ColumnFile {
         self.time_range.overlaps(time_range)
     }
 
-    pub fn contains_field_id(&self, field_id: FieldId) -> bool {
-        self.field_id_filter.contains(&field_id.to_be_bytes())
+    pub fn maybe_contains_series_id(&self, series_id: SeriesId) -> bool {
+        self.series_id_filter
+            .maybe_contains(&series_id.to_be_bytes())
     }
 
-    pub fn contains_any_field_id(&self, field_ids: &[FieldId]) -> bool {
-        for field_id in field_ids {
-            if self.field_id_filter.contains(&field_id.to_be_bytes()) {
+    pub fn contains_any_series_id(&self, series_ids: &[SeriesId]) -> bool {
+        for series_id in series_ids {
+            if self
+                .series_id_filter
+                .maybe_contains(&series_id.to_be_bytes())
+            {
                 return true;
             }
         }
         false
+    }
+
+    pub fn contains_any_field_id(&self, _series_ids: &[FieldId]) -> bool {
+        unimplemented!("contains_any_field_id")
+    }
+
+    pub async fn add_tombstone(
+        &self,
+        series_id: SeriesId,
+        column_id: ColumnId,
+        time_range: &TimeRange,
+    ) -> Result<()> {
+        let dir = self.path.parent().expect("file has parent");
+        // TODO flock tombstone file.
+        let mut tombstone = TsmTombstone::open(dir, self.file_id).await?;
+        tombstone
+            .add_range(&[(series_id, column_id)], time_range)
+            .await?;
+        tombstone.flush().await?;
+        Ok(())
+    }
+
+    pub fn series_id_filter(&self) -> &BloomFilter {
+        &self.series_id_filter
     }
 }
 
@@ -196,7 +228,7 @@ impl ColumnFile {
             is_delta,
             time_range,
             size,
-            field_id_filter: Arc::new(BloomFilter::default()),
+            series_id_filter: Arc::new(BloomFilter::default()),
             deleted: AtomicBool::new(false),
             compacting: AtomicBool::new(false),
             path: path.as_ref().into(),
@@ -205,7 +237,7 @@ impl ColumnFile {
     }
 
     pub fn set_field_id_filter(&mut self, field_id_filter: Arc<BloomFilter>) {
-        self.field_id_filter = field_id_filter;
+        self.series_id_filter = field_id_filter;
     }
 }
 
@@ -263,8 +295,8 @@ impl LevelInfo {
     pub fn push_compact_meta(
         &mut self,
         compact_meta: &CompactMeta,
-        field_filter: Arc<BloomFilter>,
-        tsm_reader_cache: Weak<ShardedAsyncCache<String, Arc<TsmReader>>>,
+        series_filter: Arc<BloomFilter>,
+        tsm_reader_cache: Weak<ShardedAsyncCache<String, Arc<TSM2Reader>>>,
     ) {
         let file_path = if compact_meta.is_delta {
             let base_dir = self.storage_opt.delta_dir(&self.database, self.tsf_id);
@@ -276,7 +308,7 @@ impl LevelInfo {
         self.files.push(Arc::new(ColumnFile::with_compact_data(
             compact_meta,
             file_path,
-            field_filter,
+            series_filter,
             tsm_reader_cache,
         )));
         self.tsf_id = compact_meta.tsf_id;
@@ -308,41 +340,6 @@ impl LevelInfo {
         self.time_range = TimeRange::new(min_ts, max_ts);
     }
 
-    #[cfg(test)]
-    pub(self) async fn read_column_file(
-        &self,
-        _tf_id: u32,
-        field_id: FieldId,
-        time_range: &TimeRange,
-    ) -> Vec<crate::tsm::DataBlock> {
-        let time_ranges = Arc::new(TimeRanges::with_inclusive_bounds(
-            time_range.min_ts,
-            time_range.max_ts,
-        ));
-        let mut data = vec![];
-        for file in self.files.iter() {
-            if file.is_deleted() || !file.overlap(time_range) {
-                continue;
-            }
-
-            let tsm_reader = match TsmReader::open(file.file_path()).await {
-                Ok(tr) => tr,
-                Err(e) => {
-                    error!("failed to load tsm reader, in case {:?}", e);
-                    return vec![];
-                }
-            };
-            for idx in tsm_reader.index_iterator_opt(field_id) {
-                for blk in idx.block_iterator_opt(time_ranges.clone()) {
-                    if let Ok(blk) = tsm_reader.get_data_block(&blk).await {
-                        data.push(blk);
-                    }
-                }
-            }
-        }
-        data
-    }
-
     pub fn sort_file_asc(&mut self) {
         self.files
             .sort_by(|a, b| a.file_id.partial_cmp(&b.file_id).unwrap());
@@ -364,7 +361,10 @@ impl LevelInfo {
         let mut res = self
             .files
             .iter()
-            .filter(|f| time_ranges.overlaps(f.time_range()) && f.contains_field_id(field_id))
+            .filter(|f| {
+                time_ranges.overlaps(f.time_range())
+                    && f.maybe_contains_series_id(field_id as SeriesId)
+            })
             .cloned()
             .collect::<Vec<Arc<ColumnFile>>>();
         res.sort_by_key(|f| *f.time_range());
@@ -382,7 +382,7 @@ pub struct Version {
     /// The max timestamp of write batch in wal flushed to column file.
     max_level_ts: i64,
     levels_info: [LevelInfo; 5],
-    tsm_reader_cache: Arc<ShardedAsyncCache<String, Arc<TsmReader>>>,
+    tsm2_reader_cache: Arc<ShardedAsyncCache<String, Arc<TSM2Reader>>>,
 }
 
 impl Version {
@@ -394,7 +394,7 @@ impl Version {
         last_seq: u64,
         levels_info: [LevelInfo; 5],
         max_level_ts: i64,
-        tsm_reader_cache: Arc<ShardedAsyncCache<String, Arc<TsmReader>>>,
+        tsm2_reader_cache: Arc<ShardedAsyncCache<String, Arc<TSM2Reader>>>,
     ) -> Self {
         Self {
             ts_family_id,
@@ -403,7 +403,7 @@ impl Version {
             last_seq,
             max_level_ts,
             levels_info,
-            tsm_reader_cache,
+            tsm2_reader_cache,
         }
     }
 
@@ -434,7 +434,7 @@ impl Version {
             self.ts_family_id,
             self.storage_opt.clone(),
         );
-        let weak_tsm_reader_cache = Arc::downgrade(&self.tsm_reader_cache);
+        let weak_tsm_reader_cache = Arc::downgrade(&self.tsm2_reader_cache);
         for level in self.levels_info.iter() {
             for file in level.files.iter() {
                 if deleted_files[file.level as usize].contains(&file.file_id) {
@@ -444,10 +444,10 @@ impl Version {
                 new_levels[level.level as usize].push_column_file(file.clone());
             }
             for file in added_files[level.level as usize].iter() {
-                let field_filter = file_metas.remove(&file.file_id).unwrap_or_default();
+                let series_filter = file_metas.remove(&file.file_id).unwrap_or_default();
                 new_levels[level.level as usize].push_compact_meta(
                     file,
-                    field_filter,
+                    series_filter,
                     weak_tsm_reader_cache.clone(),
                 );
             }
@@ -461,7 +461,7 @@ impl Version {
             last_seq: last_seq.unwrap_or(self.last_seq),
             max_level_ts: self.max_level_ts,
             levels_info: new_levels,
-            tsm_reader_cache: self.tsm_reader_cache.clone(),
+            tsm2_reader_cache: self.tsm2_reader_cache.clone(),
         };
         new_version.update_max_level_ts();
         new_version
@@ -505,18 +505,20 @@ impl Version {
         vec![]
     }
 
-    pub async fn get_tsm_reader(&self, path: impl AsRef<Path>) -> Result<Arc<TsmReader>> {
+    pub async fn get_tsm_reader2(&self, path: impl AsRef<Path>) -> Result<Arc<TSM2Reader>> {
         let path = path.as_ref().display().to_string();
-        let tsm_reader = match self.tsm_reader_cache.get(&path).await {
-            Some(val) => val,
-            None => match self.tsm_reader_cache.get(&path).await {
-                Some(val) => val,
-                None => {
-                    let tsm_reader = Arc::new(TsmReader::open(&path).await?);
-                    self.tsm_reader_cache.insert(path, tsm_reader.clone()).await;
-                    tsm_reader
+        let tsm_reader = match self.tsm2_reader_cache.get(&path).await {
+            Some(val) => val.clone(),
+            None => {
+                match self.tsm2_reader_cache.get(&path).await {
+                    Some(val) => val,
+                    None => {
+                        let tsm_reader = Arc::new(TSM2Reader::open(&path).await?);
+                        self.tsm2_reader_cache.insert(path, tsm_reader.clone()).await;
+                        tsm_reader
+                    }
                 }
-            },
+            }
         };
         Ok(tsm_reader)
     }
@@ -544,8 +546,8 @@ impl Version {
         self.max_level_ts
     }
 
-    pub fn tsm_reader_cache(&self) -> &Arc<ShardedAsyncCache<String, Arc<TsmReader>>> {
-        &self.tsm_reader_cache
+    pub fn tsm2_reader_cache(&self) -> &Arc<ShardedAsyncCache<String, Arc<TSM2Reader>>> {
+        &self.tsm2_reader_cache
     }
 
     pub fn last_seq(&self) -> u64 {
@@ -556,53 +558,73 @@ impl Version {
     pub fn levels_info_mut(&mut self) -> &mut [LevelInfo; 5] {
         &mut self.levels_info
     }
+
+    pub async fn statistics(
+        &self,
+        series_ids: &[SeriesId],
+        time_predicate: TimeRange,
+    ) -> BTreeMap<ColumnFileId, BTreeMap<SeriesId, Vec<(ColumnGroupID, Vec<PageMeta>)>>> {
+        let mut result = BTreeMap::new();
+        for level in self.levels_info.iter() {
+            for file in level.files.iter() {
+                if file.is_deleted() || !file.overlap(&time_predicate) {
+                    continue;
+                }
+                let reader = self.get_tsm_reader2(file.file_path()).await.unwrap();
+                let fid = reader.file_id();
+                let sts = reader.statistics(series_ids, time_predicate).await.unwrap();
+                result.insert(fid, sts);
+            }
+        }
+        result
+    }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CacheGroup {
     pub mut_cache: Arc<RwLock<MemCache>>,
     pub immut_cache: Vec<Arc<RwLock<MemCache>>>,
 }
 
 impl CacheGroup {
-    pub fn read_field_data(
-        &self,
-        field_id: FieldId,
-        mut time_predicate: impl FnMut(Timestamp) -> bool,
-        mut value_predicate: impl FnMut(&FieldVal) -> bool,
-        mut handle_data: impl FnMut(DataType),
-    ) {
-        self.immut_cache.iter().for_each(|m| {
-            m.read().read_field_data(
-                field_id,
-                &mut time_predicate,
-                &mut value_predicate,
-                &mut handle_data,
-            );
-        });
-
-        self.mut_cache.read().read_field_data(
-            field_id,
-            time_predicate,
-            value_predicate,
-            handle_data,
-        );
-    }
-
     pub fn read_series_timestamps(
         &self,
         series_ids: &[SeriesId],
-        mut time_predicate: impl FnMut(Timestamp) -> bool,
+        time_ranges: &TimeRanges,
         mut handle_data: impl FnMut(Timestamp),
     ) {
         self.immut_cache.iter().for_each(|m| {
             m.read()
-                .read_series_timestamps(series_ids, &mut time_predicate, &mut handle_data);
+                .read_series_timestamps(series_ids, time_ranges, &mut handle_data);
         });
 
         self.mut_cache
             .read()
-            .read_series_timestamps(series_ids, time_predicate, &mut handle_data);
+            .read_series_timestamps(series_ids, time_ranges, &mut handle_data);
+    }
+    /// todo：原来的实现里面 memcache中的数据被copy了出来，在cache中命中的数据较多且查询的并发量大的时候，会引发oom的问题。
+    /// 内存结构变成一种按照时间排序的结构，查询的时候就返回引用，支持 stream 迭代。
+    pub fn stream_read(
+        _series_ids: &[SeriesId],
+        _project: &[usize],
+        _time_predicate: impl FnMut(Timestamp) -> bool,
+    ) -> Option<RecordBatch> {
+        None
+    }
+
+    pub fn cache_statistics(
+        &self,
+        series_ids: &[SeriesId],
+        time_predicate: TimeRange,
+    ) -> BTreeMap<u64, MemCacheStatistics> {
+        let mut result = BTreeMap::new();
+        let sts = self.mut_cache.read().statistics(series_ids, time_predicate);
+        result.insert(sts.seq_no(), sts);
+        self.immut_cache.iter().for_each(|m| {
+            let sts = m.read().statistics(series_ids, time_predicate);
+            result.insert(sts.seq_no(), sts);
+        });
+        result
     }
 }
 
@@ -648,36 +670,63 @@ impl SuperVersion {
         files
     }
 
-    pub async fn add_tsm_tombstone(
+    pub fn column_files_by_sid_and_time(
         &self,
-        field_ids: &[FieldId],
+        sids: &[SeriesId],
         time_ranges: &TimeRanges,
-    ) -> Result<()> {
-        let version = self.version.clone();
+    ) -> Vec<Arc<ColumnFile>> {
+        let mut files = Vec::new();
 
-        let column_files = version
-            .levels_info
-            .iter()
-            .filter(|level| time_ranges.overlaps(&level.time_range))
-            .flat_map(|level| {
-                level.files.iter().filter(|f| {
-                    time_ranges.overlaps(f.time_range()) && f.contains_any_field_id(field_ids)
-                })
-            })
-            .cloned()
-            .collect();
-        let mut tsm_iter = ColumnFileToTsmReaderIterator::new(version, column_files);
-        loop {
-            match tsm_iter.next().await {
-                Some(Ok(tsm)) => {
-                    for tr in time_ranges.time_ranges() {
-                        tsm.add_tombstone(field_ids, tr).await?;
+        for lv in self.version.levels_info.iter() {
+            if !time_ranges.overlaps(&lv.time_range) {
+                continue;
+            }
+            for cf in lv.files.iter() {
+                if time_ranges.overlaps(&cf.time_range) && cf.contains_any_series_id(sids) {
+                    files.push(cf.clone());
+                }
+            }
+        }
+        files
+    }
+
+    pub fn cache_group(&self) -> &CacheGroup {
+        &self.caches
+    }
+
+    pub async fn statistics(
+        &self,
+        series_ids: &[SeriesId],
+        time_predicate: TimeRange,
+    ) -> (
+        BTreeMap<u64, MemCacheStatistics>,
+        BTreeMap<ColumnFileId, BTreeMap<SeriesId, Vec<(ColumnGroupID, Vec<PageMeta>)>>>,
+    ) {
+        let cache = self.caches.cache_statistics(series_ids, time_predicate);
+        let sts = self.version.statistics(series_ids, time_predicate).await;
+        (cache, sts)
+    }
+
+    pub async fn add_tombstone(
+        &self,
+        series_ids: &[SeriesId],
+        column_ids: &[ColumnId],
+        time_range: &TimeRange,
+    ) -> Result<()> {
+        let column_files =
+            self.column_files_by_sid_and_time(series_ids, &TimeRanges::new(vec![*time_range]));
+        for sid in series_ids {
+            for column_file in column_files.iter() {
+                if column_file
+                    .series_id_filter()
+                    .maybe_contains(sid.to_be_bytes().as_slice())
+                {
+                    for column_id in column_ids {
+                        column_file
+                            .add_tombstone(*sid, *column_id, time_range)
+                            .await?;
                     }
                 }
-                Some(Err(e)) => {
-                    return Err(e);
-                }
-                None => break,
             }
         }
         Ok(())
@@ -970,7 +1019,7 @@ impl TseriesFamily {
         let mut res = 0;
         for (sid, group) in points {
             let mem = self.mut_cache.read();
-            res += group.rows.len();
+            res += group.rows.get_ref_rows().len();
             mem.write_group(sid, seq, group)?;
         }
         Ok(res as u64)
@@ -997,10 +1046,10 @@ impl TseriesFamily {
         self.status = status;
     }
 
-    pub fn drop_columns(&self, field_ids: &[FieldId]) {
-        self.mut_cache.read().drop_columns(field_ids);
+    pub fn drop_columns(&self, series_ids: &[SeriesId], column_ids: &[ColumnId]) {
+        self.mut_cache.read().drop_columns(series_ids, column_ids);
         for memcache in self.immut_cache.iter() {
-            memcache.read().drop_columns(field_ids);
+            memcache.read().drop_columns(series_ids, column_ids);
         }
     }
 
@@ -1089,7 +1138,7 @@ impl TseriesFamily {
                 meta.tsf_id = files.tsf_id;
                 meta.high_seq = self.seq_no;
                 version_edit.add_file(meta, max_level_ts);
-                file_metas.insert(file.file_id, file.field_id_filter.clone());
+                file_metas.insert(file.file_id, file.series_id_filter.clone());
             }
         }
 
@@ -1163,73 +1212,33 @@ impl Drop for TseriesFamily {
     }
 }
 
-pub struct ColumnFileToTsmReaderIterator {
-    version: Arc<Version>,
-    inner_iter: <Vec<Arc<ColumnFile>> as IntoIterator>::IntoIter,
-}
-
-impl ColumnFileToTsmReaderIterator {
-    pub fn new(version: Arc<Version>, column_files: Vec<Arc<ColumnFile>>) -> Self {
-        Self {
-            version,
-            inner_iter: column_files.into_iter(),
-        }
-    }
-
-    pub async fn next(&mut self) -> Option<Result<Arc<TsmReader>>> {
-        loop {
-            if let Some(f) = self.inner_iter.next() {
-                let tsm_reader = match self.version.get_tsm_reader(f.file_path()).await {
-                    Ok(r) => r,
-                    Err(e) => {
-                        if e.is_file_not_found_error() {
-                            trace::error!(
-                                "Get tsm reader: column file '{}' not found, skip",
-                                f.file_path().display()
-                            );
-                            continue;
-                        } else {
-                            return Some(Err(e));
-                        }
-                    }
-                };
-                return Some(Ok(tsm_reader));
-            } else {
-                return None;
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 pub mod test_tseries_family {
-    use std::collections::{HashMap, LinkedList};
+    use std::collections::HashMap;
     use std::mem::size_of;
     use std::sync::Arc;
 
     use cache::ShardedAsyncCache;
     use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
-    use meta::model::meta_admin::AdminMeta;
-    use meta::model::MetaRef;
     use metrics::metric_register::MetricsRegister;
     use models::predicate::domain::TimeRanges;
     use models::schema::{DatabaseSchema, TenantOptions};
+    use models::field_value::FieldVal;
+    use models::predicate::domain::TimeRanges;
     use models::Timestamp;
-    use parking_lot::RwLock;
     use tokio::sync::mpsc::{self, Receiver};
-    use tokio::sync::RwLock as AsyncRwLock;
 
     use super::{ColumnFile, LevelInfo};
     use crate::compaction::flush_tests::default_table_schema;
     use crate::compaction::{run_flush_memtable_job, FlushReq};
     use crate::context::GlobalContext;
     use crate::file_utils::make_tsm_file;
+    use crate::file_utils::make_tsm_file_name;
     use crate::kv_option::{Options, StorageOptions};
-    use crate::kvcore::{COMPACT_REQ_CHANNEL_CAP, SUMMARY_REQ_CHANNEL_CAP};
-    use crate::memcache::{FieldVal, MemCache, RowData, RowGroup};
+    use crate::kvcore::COMPACT_REQ_CHANNEL_CAP;
+    use crate::memcache::{MemCache, OrderedRowsData, RowData, RowGroup};
     use crate::summary::{CompactMeta, SummaryTask, VersionEdit};
     use crate::tseries_family::{TimeRange, TseriesFamily, Version};
-    use crate::tsm::TsmTombstone;
     use crate::version_set::VersionSet;
     use crate::{TsKvContext, TseriesFamilyId};
 
@@ -1520,20 +1529,22 @@ pub mod test_tseries_family {
             &Arc::new(MetricsRegister::default()),
         );
 
+        let mut rows: OrderedRowsData = OrderedRowsData::new();
+        rows.insert(RowData {
+            ts: 10,
+            fields: vec![
+                Some(FieldVal::Integer(11)),
+                Some(FieldVal::Integer(12)),
+                Some(FieldVal::Integer(13)),
+            ],
+        });
         let row_group = RowGroup {
             schema: default_table_schema(vec![0, 1, 2]).into(),
             range: TimeRange {
                 min_ts: 1,
                 max_ts: 100,
             },
-            rows: LinkedList::from([RowData {
-                ts: 10,
-                fields: vec![
-                    Some(FieldVal::Integer(11)),
-                    Some(FieldVal::Integer(12)),
-                    Some(FieldVal::Integer(13)),
-                ],
-            }]),
+            rows,
             size: size_of::<RowGroup>() + 3 * size_of::<u32>() + size_of::<Option<FieldVal>>() + 8,
         };
         let mut points = HashMap::new();
@@ -1541,9 +1552,15 @@ pub mod test_tseries_family {
         let _ = tsf.put_points(0, points);
 
         let mut cached_data = vec![];
-        tsf.mut_cache
-            .read()
-            .read_field_data(0, |_| true, |_| true, |d| cached_data.push(d));
+        tsf.mut_cache.read().read_field_data(
+            0,
+            &TimeRanges::new(vec![TimeRange {
+                min_ts: Timestamp::MIN,
+                max_ts: Timestamp::MAX,
+            }]),
+            |_| true,
+            |d| cached_data.push(d),
+        );
         assert_eq!(cached_data.len(), 1);
         tsf.delete_series_by_time_ranges(
             &[0],
@@ -1553,9 +1570,15 @@ pub mod test_tseries_family {
             }]),
         );
         cached_data.clear();
-        tsf.mut_cache
-            .read()
-            .read_field_data(0, |_| true, |_| true, |d| cached_data.push(d));
+        tsf.mut_cache.read().read_field_data(
+            0,
+            &TimeRanges::new(vec![TimeRange {
+                min_ts: Timestamp::MIN,
+                max_ts: Timestamp::MAX,
+            }]),
+            |_| true,
+            |d| cached_data.push(d),
+        );
         assert!(cached_data.is_empty());
     }
 
@@ -1587,173 +1610,5 @@ pub mod test_tseries_family {
             );
             ts_family.new_version(new_version, None);
         }
-    }
-
-    #[test]
-    pub fn test_read_with_tomb() {
-        let runtime = Arc::new(
-            tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .worker_threads(2)
-                .build()
-                .unwrap(),
-        );
-
-        let mut config = config::get_config_for_test();
-        let dir = "/tmp/test/kv_core/test_read_with_tomb";
-        let _ = std::fs::remove_dir_all(dir);
-        std::fs::create_dir_all(dir).unwrap();
-        config.storage.path = dir.into();
-
-        let meta_manager: MetaRef = runtime.block_on(async {
-            let meta_manager: MetaRef = AdminMeta::new(config.clone()).await;
-
-            meta_manager.add_data_node().await.unwrap();
-
-            let _ = meta_manager
-                .create_tenant("cnosdb".to_string(), TenantOptions::default())
-                .await;
-            meta_manager
-        });
-        let memory_pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::default());
-        let mem = MemCache::new(0, 1000, 2, 0, &memory_pool);
-        let row_group = RowGroup {
-            schema: default_table_schema(vec![0, 1, 2]).into(),
-            range: TimeRange {
-                min_ts: 1,
-                max_ts: 100,
-            },
-            rows: LinkedList::from([RowData {
-                ts: 10,
-                fields: vec![
-                    Some(FieldVal::Integer(11)),
-                    Some(FieldVal::Integer(12)),
-                    Some(FieldVal::Integer(13)),
-                ],
-            }]),
-            size: size_of::<RowGroup>() + 3 * size_of::<u32>() + size_of::<Option<FieldVal>>() + 8,
-        };
-        mem.write_group(1, 0, row_group).unwrap();
-
-        let mem = Arc::new(RwLock::new(mem));
-        let req_mem = vec![mem];
-        let flush_seq = FlushReq {
-            ts_family_id: 0,
-            mems: req_mem,
-            force_flush: false,
-            low_seq_no: 0,
-            high_seq_no: 1,
-        };
-
-        let dir = "/tmp/test/ts_family/read_with_tomb";
-        let _ = std::fs::remove_dir_all(dir);
-        std::fs::create_dir_all(dir).unwrap();
-        let mut global_config = config::get_config_for_test();
-        global_config.storage.path = dir.to_string();
-        let opt = Arc::new(Options::from(&global_config));
-
-        let tenant = "cnosdb".to_string();
-        let database = "test_db".to_string();
-
-        let (summary_task_sender, summary_task_receiver) = mpsc::channel(SUMMARY_REQ_CHANNEL_CAP);
-        let (compact_task_sender, _compact_task_receiver) = mpsc::channel(COMPACT_REQ_CHANNEL_CAP);
-        let (wal_sender, _wal_task_receiver) = mpsc::channel(1024 * 10);
-        let (flush_task_sender, _) = mpsc::channel(opt.storage.flush_req_channel_cap);
-        let runtime_ref = runtime.clone();
-        runtime.block_on(async move {
-            let version_set = Arc::new(AsyncRwLock::new(
-                VersionSet::new(
-                    meta_manager.clone(),
-                    opt.clone(),
-                    runtime_ref.clone(),
-                    memory_pool.clone(),
-                    HashMap::new(),
-                    compact_task_sender.clone(),
-                    Arc::new(MetricsRegister::default()),
-                )
-                .await
-                .unwrap(),
-            ));
-            version_set
-                .write()
-                .await
-                .create_db(DatabaseSchema::new(&tenant, &database))
-                .await
-                .unwrap();
-            let db = version_set
-                .write()
-                .await
-                .get_db(&tenant, &database)
-                .unwrap();
-            let global_ctx = Arc::new(GlobalContext::new());
-
-            let ctx = Arc::new(TsKvContext {
-                version_set: version_set.clone(),
-
-                wal_sender,
-                flush_task_sender,
-                compact_task_sender,
-                summary_task_sender,
-
-                options: opt.clone(),
-                global_ctx,
-            });
-
-            let ts_family_id = db
-                .write()
-                .await
-                .add_tsfamily(0, None, ctx.clone())
-                .await
-                .unwrap()
-                .read()
-                .await
-                .tf_id();
-
-            run_flush_memtable_job(flush_seq, ctx, true).await.unwrap();
-
-            update_ts_family_version(version_set.clone(), ts_family_id, summary_task_receiver)
-                .await;
-
-            let version_set = version_set.write().await;
-            let tsf = version_set
-                .get_database_tsfs(&tenant, &database)
-                .await
-                .unwrap()
-                .first()
-                .cloned()
-                .unwrap();
-            let version = tsf.write().await.version();
-            version.levels_info[1]
-                .read_column_file(
-                    ts_family_id,
-                    0,
-                    &TimeRange {
-                        max_ts: 0,
-                        min_ts: 0,
-                    },
-                )
-                .await;
-
-            let file = version.levels_info[1].files[0].clone();
-
-            let dir = opt.storage.tsm_dir(&database, ts_family_id);
-            let tombstone = TsmTombstone::open(dir, file.file_id).await.unwrap();
-            tombstone
-                .add_range(&[0], &TimeRange::new(0, 0), None)
-                .await
-                .unwrap();
-            tombstone.flush().await.unwrap();
-
-            version.levels_info[1]
-                .read_column_file(
-                    0,
-                    0,
-                    &TimeRange {
-                        max_ts: 0,
-                        min_ts: 0,
-                    },
-                )
-                .await;
-        });
     }
 }

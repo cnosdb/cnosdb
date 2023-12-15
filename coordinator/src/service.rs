@@ -684,13 +684,14 @@ impl Coordinator for CoordService {
                         .as_any()
                         .downcast_ref::<StringArray>()
                         .ok_or(CoordinatorError::CommonError {
-                            msg: format!("column {} is not string", name),
+                            msg: format!("column {} is not StringArray", name),
                         })?
                         .value(idx);
                     hasher.hash_with(name.as_bytes());
                     hasher.hash_with(value.as_bytes());
                 }
             }
+
             if !has_ts {
                 return Err(CoordinatorError::CommonError {
                     msg: format!("column {} not found in table {}", TIME_FIELD, table_name),

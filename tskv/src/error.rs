@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use datafusion::arrow::error::ArrowError;
+use datafusion::error::DataFusionError;
 use error_code::{ErrorCode, ErrorCoder};
 use http_protocol::response::ErrorResponse;
 use meta::error::MetaError;
@@ -12,7 +13,6 @@ use tonic::{Code, Status};
 use crate::index::IndexError;
 use crate::record_file;
 use crate::schema::error::SchemaError;
-use crate::tsm::{ReadTsmError, WriteTsmError};
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -31,6 +31,15 @@ pub enum Error {
 
     Meta {
         source: MetaError,
+    },
+
+    OutOfSpec {
+        reason: String, // When the tsm file is known to be out of spec.
+    },
+
+    #[error_code(code = 9999)]
+    Unimplemented {
+        msg: String,
     },
 
     #[snafu(display("Invalid flatbuffers: {}", source))]
@@ -64,16 +73,53 @@ pub enum Error {
         source: ArrowError,
     },
 
-    #[snafu(display("read tsm block file error: {}", source))]
+    #[snafu(display("read tsm block file error: {}", reason))]
     #[error_code(code = 7)]
     ReadTsm {
-        source: ReadTsmError,
+        reason: String,
+        // source: ReadTsmError,
     },
 
-    #[snafu(display("write tsm block file error: {}", source))]
+    #[snafu(display("write tsm block file error: {}", reason))]
     #[error_code(code = 9)]
     WriteTsm {
-        source: WriteTsmError,
+        reason: String,
+        // source: WriteTsmError,
+    },
+
+    #[snafu(display("Unsupported datatype {}", dt))]
+    #[error_code(code = 10)]
+    UnsupportedDataType {
+        dt: String,
+    },
+
+    #[snafu(display("Mismatched schema {}", msg))]
+    #[error_code(code = 11)]
+    MismatchedSchema {
+        msg: String,
+    },
+
+    #[error_code(code = 12)]
+    DatafusionError {
+        source: DataFusionError,
+    },
+
+    #[snafu(display("ColumnGroupError: {}", reason))]
+    #[error_code(code = 13)]
+    TsmColumnGroupError {
+        reason: String,
+    },
+
+    #[snafu(display("TsmPageError: {}", reason))]
+    #[error_code(code = 14)]
+    TsmPageError {
+        reason: String,
+    },
+
+    #[snafu(display("DataBlockError: {}", reason))]
+    #[error_code(code = 15)]
+    DataBlockError {
+        reason: String,
     },
 
     // Internal Error
@@ -167,7 +213,7 @@ pub enum Error {
     },
 
     /// This error is handled by the caller of record_file::Reader::read_record()
-    #[snafu(display("Record data at [{pos}..{}] is invalid", pos + *len as u64))]
+    #[snafu(display("Record data at [{pos}..{}] is invalid", pos + * len as u64))]
     RecordFileInvalidDataSize {
         pos: u64,
         len: u32,
@@ -269,6 +315,18 @@ pub enum Error {
 
     #[snafu(display("Columns of FlatBufferTable is missing"))]
     FlatBufColumnsMiss,
+
+    // Internal Error
+    #[snafu(display("{}", source))]
+    Serialize {
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
+
+    // Internal Error
+    #[snafu(display("{}", source))]
+    Deserialize {
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
 }
 
 impl From<PointsError> for Error {
@@ -310,9 +368,34 @@ impl From<ArrowError> for Error {
     }
 }
 
-impl From<ReadTsmError> for Error {
-    fn from(source: ReadTsmError) -> Self {
-        Error::ReadTsm { source }
+impl From<DataFusionError> for Error {
+    fn from(source: DataFusionError) -> Self {
+        match source {
+            DataFusionError::External(e) if e.downcast_ref::<MetaError>().is_some() => Self::Meta {
+                source: *e.downcast::<MetaError>().unwrap(),
+            },
+
+            DataFusionError::External(e) if e.downcast_ref::<Self>().is_some() => {
+                match *e.downcast::<Self>().unwrap() {
+                    Self::Arrow { source } => Self::from(source),
+                    Self::DatafusionError { source } => Self::from(source),
+                    e => e,
+                }
+            }
+
+            DataFusionError::External(e) if e.downcast_ref::<ArrowError>().is_some() => {
+                let arrow_error = *e.downcast::<ArrowError>().unwrap();
+                arrow_error.into()
+            }
+
+            DataFusionError::External(e) if e.downcast_ref::<DataFusionError>().is_some() => {
+                let datafusion_error = *e.downcast::<DataFusionError>().unwrap();
+                Self::from(datafusion_error)
+            }
+
+            DataFusionError::ArrowError(e) => e.into(),
+            v => Self::DatafusionError { source: v },
+        }
     }
 }
 
@@ -327,7 +410,8 @@ impl Error {
 
     pub fn vnode_broken_code(code: &str) -> bool {
         let e = Self::ReadTsm {
-            source: ReadTsmError::CrcCheck,
+            // source: ReadTsmError::CrcCheck,
+            reason: "crc check failed".to_string(),
         };
 
         e.code() == code

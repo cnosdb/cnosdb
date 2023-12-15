@@ -548,9 +548,8 @@ impl From<DataFusionError> for QueryError {
             }
 
             DataFusionError::External(e) if e.downcast_ref::<tskv::Error>().is_some() => {
-                QueryError::TsKv {
-                    source: *e.downcast::<tskv::Error>().unwrap(),
-                }
+                let e = *e.downcast::<tskv::Error>().unwrap();
+                QueryError::from(e)
             }
 
             DataFusionError::External(e) if e.downcast_ref::<CoordinatorError>().is_some() => {
@@ -566,6 +565,11 @@ impl From<DataFusionError> for QueryError {
             DataFusionError::External(e) if e.downcast_ref::<ArrowError>().is_some() => {
                 let arrow_error = *e.downcast::<ArrowError>().unwrap();
                 arrow_error.into()
+            }
+
+            DataFusionError::External(e) if e.downcast_ref::<DataFusionError>().is_some() => {
+                let datafusion_error = *e.downcast::<DataFusionError>().unwrap();
+                QueryError::from(datafusion_error)
             }
 
             DataFusionError::ArrowError(e) => e.into(),
@@ -588,13 +592,21 @@ impl From<CoordinatorError> for QueryError {
 
 impl From<tskv::Error> for QueryError {
     fn from(value: tskv::Error) -> Self {
-        QueryError::TsKv { source: value }
+        match value {
+            tskv::Error::DatafusionError { source } => QueryError::from(source),
+            tskv::Error::Arrow { source } => QueryError::from(source),
+            e => Self::TsKv { source: e },
+        }
     }
 }
 
 impl From<models::Error> for QueryError {
     fn from(value: models::Error) -> Self {
-        QueryError::Models { source: value }
+        match value {
+            models::Error::Datafusion { source } => QueryError::from(source),
+            models::Error::Arrow { source } => QueryError::from(source),
+            v => QueryError::Models { source: v },
+        }
     }
 }
 

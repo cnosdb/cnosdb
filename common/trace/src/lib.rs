@@ -25,7 +25,7 @@ use tracing_error::ErrorLayer;
 use tracing_subscriber::fmt::time::OffsetTime;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::{filter, fmt, EnvFilter, Layer, Registry};
+use tracing_subscriber::{filter, fmt, EnvFilter, Registry};
 
 /// only use for unit test
 /// parameter only use for first call
@@ -74,6 +74,8 @@ pub fn targets_filter(level: LevelFilter, defined_tokio_trace: bool) -> filter::
             ("tskv", level),
             ("utils", level),
             ("replication", level),
+            ("datafusion_tool", level),
+            ("arrow", level),
         ])
         .with_targets(vec![
             // Third-party crates
@@ -123,16 +125,14 @@ pub fn init_global_tracing(
     let formatting_layer = fmt::layer()
         .with_ansi(false)
         .with_timer(local_time.clone())
-        .with_writer(std::io::stderr)
-        .with_filter(LevelFilter::DEBUG);
+        .with_writer(std::io::stderr);
 
     let file_appender = rolling::daily(log_path, log_file_prefix_name);
     let (non_blocking_appender, guard) = non_blocking(file_appender);
     let file_layer = fmt::layer()
         .with_ansi(false)
         .with_timer(local_time)
-        .with_writer(non_blocking_appender)
-        .with_filter(LevelFilter::DEBUG);
+        .with_writer(non_blocking_appender);
 
     let guards = vec![guard];
 

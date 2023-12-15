@@ -138,7 +138,7 @@ impl Stream for Output {
 
 //     pub fn build<S>(self, input: S) -> FlightDataEncoderWrapper
 //         where
-//             S: Stream<Item=datafusion::common::Result<RecordBatch>> + Send + 'static,
+//             S: Stream<Item=datafusion_tool::common::Result<RecordBatch>> + Send + 'static,
 //     {
 //         FlightDataEncoderWrapper::new(
 //             self.inner

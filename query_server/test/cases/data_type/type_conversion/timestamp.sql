@@ -1,5 +1,4 @@
 -- normal
---#SLEEP=100
 -- public.test(time i64, ta utf8, tb utf8, fa , fb)
 drop table if exists test_timestamp_conv;
 alter database public set ttl '1000000d';

@@ -38,7 +38,7 @@ impl DMLDefinitionTask for DeleteFromTableTask {
         };
 
         let predicate =
-            ResolvedPredicate::new(Arc::new(time_ranges), tags_filter, ColumnDomains::all());
+            ResolvedPredicate::new(Arc::new(time_ranges), tags_filter, None)?;
 
         trace::info!("Delete from table: {table_name}, filter: {predicate:?}");
 

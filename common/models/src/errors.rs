@@ -2,6 +2,8 @@ use std::fmt::Debug;
 use std::io;
 use std::string::FromUtf8Error;
 
+use arrow_schema::ArrowError;
+use datafusion::error::DataFusionError;
 use snafu::Snafu;
 
 #[macro_export]
@@ -16,33 +18,57 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub))]
 pub enum Error {
+    Datafusion {
+        source: DataFusionError,
+    },
+
+    Arrow {
+        source: ArrowError,
+    },
+
     #[snafu(display("Invalid point: {}", err))]
-    InvalidPoint { err: String },
+    InvalidPoint {
+        err: String,
+    },
 
     #[snafu(display("Invalid tag: {}", err))]
-    InvalidTag { err: String },
+    InvalidTag {
+        err: String,
+    },
 
     #[snafu(display("Invalid field: {}", err))]
-    InvalidField { err: String },
+    InvalidField {
+        err: String,
+    },
 
     #[snafu(display("Invalid flatbuffer message: {}", err))]
-    InvalidFlatbufferMessage { err: String },
+    InvalidFlatbufferMessage {
+        err: String,
+    },
 
     #[snafu(display("Invalid serde message: {}", err))]
-    InvalidSerdeMessage { err: String },
+    InvalidSerdeMessage {
+        err: String,
+    },
 
     #[snafu(display("Invalid query expr message: {}", err))]
-    InvalidQueryExprMsg { err: String },
+    InvalidQueryExprMsg {
+        err: String,
+    },
 
     #[snafu(display(
         "Internal error: {}. This was likely caused by a bug in Cnosdb's \
     code and we would welcome that you file an bug report in our issue tracker",
         err
     ))]
-    Internal { err: String },
+    Internal {
+        err: String,
+    },
 
     #[snafu(display("IO operator: {}", err))]
-    IOErrors { err: String },
+    IOErrors {
+        err: String,
+    },
 
     #[snafu(display("Failed to convert vec to string"))]
     EncodingError,
@@ -68,6 +94,39 @@ impl From<io::Error> for Error {
 impl From<FromUtf8Error> for Error {
     fn from(_: FromUtf8Error) -> Self {
         Error::EncodingError
+    }
+}
+
+impl From<DataFusionError> for Error {
+    fn from(value: DataFusionError) -> Self {
+        match value {
+            DataFusionError::External(e) if e.downcast_ref::<ArrowError>().is_some() => {
+                let arrow_error = *e.downcast::<ArrowError>().unwrap();
+                Self::from(arrow_error)
+            }
+
+            DataFusionError::External(e) if e.downcast_ref::<DataFusionError>().is_some() => {
+                let datafusion_error = *e.downcast::<DataFusionError>().unwrap();
+                Self::from(datafusion_error)
+            }
+
+            DataFusionError::External(e) if e.downcast_ref::<Self>().is_some() => {
+                match *e.downcast::<Self>().unwrap() {
+                    Self::Arrow { source } => Self::from(source),
+                    Self::Datafusion { source } => Self::from(source),
+                    e => e,
+                }
+            }
+
+            DataFusionError::ArrowError(e) => Self::from(e),
+            v => Self::Datafusion { source: v },
+        }
+    }
+}
+
+impl From<ArrowError> for Error {
+    fn from(value: ArrowError) -> Self {
+        Self::Arrow { source: value }
     }
 }
 

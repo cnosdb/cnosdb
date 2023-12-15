@@ -19,7 +19,7 @@ use super::plan_node::table_writer_merge::TableWriterMergePlanNode;
 use super::plan_node::watermark::WatermarkNode;
 use crate::extension::logical::plan_node::table_writer::TableWriterPlanNode;
 
-/// Used to extend the function of datafusion's [`LogicalPlanBuilder`]
+/// Used to extend the function of datafusion_tool's [`LogicalPlanBuilder`]
 pub trait LogicalPlanBuilderExt: Sized {
     /// Apply a expand with specific projections
     fn expand(self, projections: Vec<Vec<Expr>>) -> Result<Self>;

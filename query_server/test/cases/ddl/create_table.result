@@ -221,7 +221,7 @@ time,column6,column7,column1,column3,column4,column5,column8
 -- EXECUTE SQL: SELECT ALL * FROM test0; --
 -- AFTER_SORT --
 200 OK
-time,column6,column8,column7,column1,column3,column4,column5
+
 
 -- EXECUTE SQL: CREATE TABLE IF NOT EXISTS test8 ( column1 BIGINT CODEC(DELTA), column2 BIGINT UNSIGNED CODEC(NULL), column3 BOOLEAN ); --
 200 OK

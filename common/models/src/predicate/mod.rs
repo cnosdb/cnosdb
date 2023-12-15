@@ -1,12 +1,14 @@
 use std::sync::Arc;
 
+use datafusion::physical_expr::PhysicalExpr;
+use datafusion_proto::protobuf::PhysicalExprNode;
 use serde::{Deserialize, Serialize};
 
-use self::domain::{
-    ColumnDomains, PredicateRef, ResolvedPredicate, ResolvedPredicateRef, TimeRange, TimeRanges,
-};
+use self::domain::{ColumnDomains, PredicateRef, TimeRange, TimeRanges};
 use crate::meta_data::{ReplicationSet, ReplicationSetId, VnodeInfo};
+use crate::predicate::domain::{ResolvedPredicate, ResolvedPredicateRef};
 use crate::schema::{ColumnType, TskvTableSchemaRef};
+use crate::Result;
 
 pub mod domain;
 pub mod transformation;
@@ -26,7 +28,8 @@ impl Split {
         table: TskvTableSchemaRef,
         time_ranges: Vec<TimeRange>,
         predicate: PredicateRef,
-    ) -> Self {
+        filter: Option<Arc<dyn PhysicalExpr>>,
+    ) -> Result<Self> {
         let domains_filter = predicate
             .filter()
             .translate_column(|c| table.column(&c.name).cloned());
@@ -36,24 +39,19 @@ impl Split {
             _ => None,
         });
 
-        let fields_filter = domains_filter.translate_column(|e| match e.column_type {
-            ColumnType::Field(_) => Some(e.name.clone()),
-            _ => None,
-        });
-
         let limit = predicate.limit();
 
         let predicate = Arc::new(ResolvedPredicate::new(
             Arc::new(TimeRanges::new(time_ranges)),
             tags_filter,
-            fields_filter,
-        ));
+            filter,
+        )?);
 
-        Self {
+        Ok(Self {
             id,
             predicate,
             limit,
-        }
+        })
     }
 
     pub fn id(&self) -> usize {
@@ -68,8 +66,8 @@ impl Split {
         self.predicate.tags_filter()
     }
 
-    pub fn fields_filter(&self) -> &ColumnDomains<String> {
-        self.predicate.fields_filter()
+    pub fn filter(&self) -> &PhysicalExprNode {
+        self.predicate.filter()
     }
 
     pub fn limit(&self) -> Option<usize> {
@@ -116,15 +114,15 @@ impl PlacedSplit {
     }
 
     pub fn time_ranges(&self) -> Arc<TimeRanges> {
-        self.split.predicate.time_ranges()
+        self.split.time_ranges()
     }
 
     pub fn tags_filter(&self) -> &ColumnDomains<String> {
-        self.split.predicate.tags_filter()
+        self.split.tags_filter()
     }
 
-    pub fn fields_filter(&self) -> &ColumnDomains<String> {
-        self.split.predicate.fields_filter()
+    pub fn filter(&self) -> &PhysicalExprNode {
+        self.split.filter()
     }
 
     pub fn limit(&self) -> Option<usize> {

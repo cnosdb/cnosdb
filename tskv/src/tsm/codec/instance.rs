@@ -46,15 +46,27 @@ impl TimestampCodec for NullTimestampCodec {
     }
 }
 
-struct DeltaTimestampCodec();
+struct DeltaTsTimestampCodec();
 
-impl TimestampCodec for DeltaTimestampCodec {
+impl TimestampCodec for DeltaTsTimestampCodec {
     fn encode(&self, src: &[i64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
         ts_zigzag_simple8b_encode(src, dst)
     }
 
     fn decode(&self, src: &[u8], dst: &mut Vec<i64>) -> Result<(), Box<dyn Error + Send + Sync>> {
         ts_zigzag_simple8b_decode(src, dst)
+    }
+}
+
+impl IntegerCodec for DeltaTsTimestampCodec {
+    fn encode(&self, src: &[i64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let codec = self as &dyn TimestampCodec;
+        codec.encode(src, dst)
+    }
+
+    fn decode(&self, src: &[u8], dst: &mut Vec<i64>) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let codec = self as &dyn TimestampCodec;
+        codec.decode(src, dst)
     }
 }
 
@@ -96,6 +108,18 @@ impl IntegerCodec for DeltaIntegerCodec {
 
     fn decode(&self, src: &[u8], dst: &mut Vec<i64>) -> Result<(), Box<dyn Error + Send + Sync>> {
         i64_zigzag_simple8b_decode(src, dst)
+    }
+}
+
+impl TimestampCodec for DeltaIntegerCodec {
+    fn encode(&self, src: &[i64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let codec = self as &dyn IntegerCodec;
+        codec.encode(src, dst)
+    }
+
+    fn decode(&self, src: &[u8], dst: &mut Vec<i64>) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let codec = self as &dyn IntegerCodec;
+        codec.decode(src, dst)
     }
 }
 
@@ -337,9 +361,10 @@ pub fn get_encoding(src: &[u8]) -> Encoding {
 pub fn get_ts_codec(algo: Encoding) -> Box<dyn TimestampCodec + Send + Sync> {
     match algo {
         Encoding::Null => Box::new(NullTimestampCodec()),
-        Encoding::Delta => Box::new(DeltaTimestampCodec()),
+        Encoding::Delta => Box::new(DeltaIntegerCodec()),
+        Encoding::DeltaTs => Box::new(DeltaTsTimestampCodec()),
         Encoding::Quantile => Box::new(QuantileTimestampCodec()),
-        _ => Box::new(DeltaTimestampCodec()),
+        _ => Box::new(DeltaTsTimestampCodec()),
     }
 }
 
@@ -347,6 +372,7 @@ pub fn get_i64_codec(algo: Encoding) -> Box<dyn IntegerCodec + Send + Sync> {
     match algo {
         Encoding::Null => Box::new(NullIntegerCodec()),
         Encoding::Delta => Box::new(DeltaIntegerCodec()),
+        Encoding::DeltaTs => Box::new(DeltaTsTimestampCodec()),
         Encoding::Quantile => Box::new(QuantileIntegerCodec()),
         _ => Box::new(DeltaIntegerCodec()),
     }

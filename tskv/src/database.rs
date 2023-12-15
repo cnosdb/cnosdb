@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::collections::{HashMap, LinkedList};
+use std::collections::{HashMap};
 use std::mem::size_of;
 use std::sync::Arc;
 
@@ -22,10 +22,11 @@ use crate::compaction::CompactTask;
 use crate::error::{Result, SchemaSnafu};
 use crate::index::{self, IndexResult};
 use crate::kv_option::{Options, INDEX_PATH};
-use crate::memcache::{RowData, RowGroup};
+use crate::tseries_family::{LevelInfo, TseriesFamily, TsfFactory, Version};
+use crate::memcache::{OrderedRowsData, RowData, RowGroup};
 use crate::schema::schemas::DBschemas;
 use crate::summary::{SummaryTask, VersionEdit};
-use crate::tseries_family::{LevelInfo, TseriesFamily, TsfFactory, Version};
+use crate::tsm2::reader::TSM2Reader;
 use crate::Error::{self};
 use crate::{file_utils, ColumnFileId, TsKvContext, TseriesFamilyId};
 
@@ -143,8 +144,10 @@ impl Database {
                     let file_path = f
                         .rename_file(&self.opt.storage, &self.owner, f.tsf_id, new_file_id)
                         .await?;
-                    let file_reader = crate::tsm::TsmReader::open(file_path).await?;
-                    file_metas.insert(new_file_id, file_reader.bloom_filter());
+                    let file_reader = TSM2Reader::open(file_path).await?;
+                    let bloom_filter =
+                        Arc::new(file_reader.footer().series().bloom_filter().clone());
+                    file_metas.insert(new_file_id, bloom_filter);
                 }
                 for f in ve.del_files.iter_mut() {
                     let new_file_id = ctx.global_ctx.file_id_next();
@@ -297,14 +300,14 @@ impl Database {
             )?;
             let mut row_group = RowGroup {
                 schema: table_schema.clone(),
-                rows: LinkedList::new(),
+                rows: OrderedRowsData::new(),
                 range: TimeRange::none(),
                 size: size_of::<RowGroup>(),
             };
             for row in rows {
                 row_group.range.merge(&TimeRange::new(row.ts, row.ts));
                 row_group.size += row.size();
-                row_group.rows.push_back(row);
+                row_group.rows.insert(row);
             }
             let res = map.insert(sid, row_group);
             // every sid of different table is different

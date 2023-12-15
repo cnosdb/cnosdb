@@ -1,120 +1,34 @@
-use std::collections::{HashMap, LinkedList};
-use std::fmt::Display;
+use std::cmp;
+use std::collections::{BTreeMap, HashMap, HashSet, LinkedList};
 use std::mem::size_of_val;
+use std::ops::Bound::Included;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
+use datafusion::arrow::datatypes::TimeUnit;
 use flatbuffers::{ForwardsUOffset, Vector};
 use memory_pool::{MemoryConsumer, MemoryPoolRef, MemoryReservation};
-use minivec::{mini_vec, MiniVec};
+use minivec::{MiniVec};
+use models::field_value::{FieldVal};
 use models::predicate::domain::{TimeRange, TimeRanges};
 use models::schema::{
-    timestamp_convert, Precision, TableColumn, TskvTableSchema, TskvTableSchemaRef,
+    timestamp_convert, ColumnType, Precision, TableColumn, TskvTableSchema, TskvTableSchemaRef,
 };
-use models::utils::split_id;
-use models::{
-    ColumnId, FieldId, PhysicalDType as ValueType, RwLockRef, SchemaId, SeriesId, Timestamp,
-};
+use models::{ColumnId, RwLockRef, SeriesId, Timestamp};
 use parking_lot::RwLock;
 use protos::models::{Column, FieldType};
+use skiplist::OrderedSkipList;
 use trace::error;
 use utils::bitset::ImmutBitSet;
 
 use crate::database::FbSchema;
 use crate::error::Result;
-use crate::{byte_utils, Error, TseriesFamilyId};
+use crate::tseries_family::Version;
+use crate::tsm2::writer::{Column as ColumnData, DataBlock2};
+use crate::tsm2::TsmWriteData;
+use crate::{Error, TseriesFamilyId};
 
-#[derive(Debug, Clone)]
-pub enum FieldVal {
-    Float(f64),
-    Integer(i64),
-    Unsigned(u64),
-    Boolean(bool),
-    Bytes(MiniVec<u8>),
-}
-
-impl FieldVal {
-    pub fn value_type(&self) -> ValueType {
-        match self {
-            FieldVal::Float(..) => ValueType::Float,
-            FieldVal::Integer(..) => ValueType::Integer,
-            FieldVal::Unsigned(..) => ValueType::Unsigned,
-            FieldVal::Boolean(..) => ValueType::Boolean,
-            FieldVal::Bytes(..) => ValueType::String,
-        }
-    }
-
-    pub fn data_value(&self, ts: i64) -> DataType {
-        match self {
-            FieldVal::Float(val) => DataType::F64(ts, *val),
-            FieldVal::Integer(val) => DataType::I64(ts, *val),
-            FieldVal::Unsigned(val) => DataType::U64(ts, *val),
-            FieldVal::Boolean(val) => DataType::Bool(ts, *val),
-            FieldVal::Bytes(val) => DataType::Str(ts, val.clone()),
-        }
-    }
-
-    pub fn new(val: MiniVec<u8>, vtype: ValueType) -> FieldVal {
-        match vtype {
-            ValueType::Unsigned => {
-                let val = byte_utils::decode_be_u64(&val);
-                FieldVal::Unsigned(val)
-            }
-            ValueType::Integer => {
-                let val = byte_utils::decode_be_i64(&val);
-                FieldVal::Integer(val)
-            }
-            ValueType::Float => {
-                let val = byte_utils::decode_be_f64(&val);
-                FieldVal::Float(val)
-            }
-            ValueType::Boolean => {
-                let val = byte_utils::decode_be_bool(&val);
-                FieldVal::Boolean(val)
-            }
-            ValueType::String => {
-                //let val = Vec::from(val);
-                FieldVal::Bytes(val)
-            }
-            _ => todo!(),
-        }
-    }
-
-    pub fn heap_size(&self) -> usize {
-        if let FieldVal::Bytes(val) = self {
-            val.capacity()
-        } else {
-            0
-        }
-    }
-}
-
-impl Display for FieldVal {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            FieldVal::Unsigned(val) => write!(f, "{}", val),
-            FieldVal::Integer(val) => write!(f, "{}", val),
-            FieldVal::Float(val) => write!(f, "{}", val),
-            FieldVal::Boolean(val) => write!(f, "{}", val),
-            FieldVal::Bytes(val) => write!(f, "{:?})", val),
-        }
-    }
-}
-
-impl PartialEq for FieldVal {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (FieldVal::Unsigned(a), FieldVal::Unsigned(b)) => a == b,
-            (FieldVal::Integer(a), FieldVal::Integer(b)) => a == b,
-            (FieldVal::Float(a), FieldVal::Float(b)) => a.eq(b),
-            (FieldVal::Boolean(a), FieldVal::Boolean(b)) => a == b,
-            (FieldVal::Bytes(a), FieldVal::Bytes(b)) => a == b,
-            _ => false,
-        }
-    }
-}
-
-impl Eq for FieldVal {}
+// use skiplist::ordered_skiplist::OrderedSkipList;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct RowData {
@@ -281,11 +195,67 @@ impl RowData {
     }
 }
 
+impl PartialOrd for RowData {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+        Some(self.ts.cmp(&other.ts))
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct OrderedRowsData {
+    rows: OrderedSkipList<RowData>,
+}
+
+impl OrderedRowsData {
+    pub fn new() -> Self {
+        let mut rows: OrderedSkipList<RowData> = OrderedSkipList::new();
+        unsafe { rows.sort_by(|a: &RowData, b: &RowData| a.partial_cmp(b).unwrap()) }
+        Self { rows }
+    }
+
+    pub fn get_rows(self) -> OrderedSkipList<RowData> {
+        self.rows
+    }
+
+    pub fn get_ref_rows(&self) -> &OrderedSkipList<RowData> {
+        &self.rows
+    }
+
+    pub fn clear(&mut self) {
+        self.rows.clear()
+    }
+
+    pub fn insert(&mut self, row: RowData) {
+        self.rows.insert(row);
+    }
+
+    pub fn retain(&mut self, mut f: impl FnMut(&RowData) -> bool) {
+        self.rows.retain(|row| f(row));
+    }
+}
+
+impl Default for OrderedRowsData {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Clone for OrderedRowsData {
+    fn clone(&self) -> Self {
+        let mut clone_rows: OrderedSkipList<RowData> = OrderedSkipList::new();
+        unsafe { clone_rows.sort_by(|a: &RowData, b: &RowData| a.partial_cmp(b).unwrap()) }
+        self.rows.iter().for_each(|row| {
+            clone_rows.insert(row.clone());
+        });
+        Self { rows: clone_rows }
+    }
+}
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct RowGroup {
     pub schema: Arc<TskvTableSchema>,
     pub range: TimeRange,
-    pub rows: LinkedList<RowData>,
+    pub rows: OrderedRowsData,
     /// total size in stack and heap
     pub size: usize,
 }
@@ -309,13 +279,15 @@ impl SeriesData {
         }
     }
 
-    pub fn write(&mut self, mut group: RowGroup) {
+    pub fn write(&mut self, group: RowGroup) {
         self.range.merge(&group.range);
 
         for item in self.groups.iter_mut() {
             if item.schema.schema_id == group.schema.schema_id {
                 item.range.merge(&group.range);
-                item.rows.append(&mut group.rows);
+                group.rows.get_rows().into_iter().for_each(|row| {
+                    item.rows.insert(row);
+                });
                 item.schema = group.schema;
                 return;
             }
@@ -334,8 +306,11 @@ impl SeriesData {
                 None => continue,
                 Some(index) => *index,
             };
-            for row in item.rows.iter_mut() {
+            let mut rowdata_vec: Vec<RowData> = item.rows.get_ref_rows().iter().cloned().collect();
+            item.rows.clear();
+            for row in rowdata_vec.iter_mut() {
                 row.fields.remove(index);
+                item.rows.insert(row.clone());
             }
             let mut schema_t = item.schema.as_ref().clone();
             schema_t.drop_column(&name);
@@ -368,12 +343,86 @@ impl SeriesData {
         }
 
         for item in self.groups.iter_mut() {
-            item.rows = item
-                .rows
-                .iter()
-                .filter(|row| row.ts < range.min_ts || row.ts > range.max_ts)
-                .cloned()
-                .collect();
+            item.rows
+                .retain(|row| row.ts < range.min_ts || row.ts > range.max_ts);
+        }
+    }
+
+    pub fn read_data_v2(
+        &self,
+        column_ids: &[ColumnId],
+        time_ranges: &TimeRanges,
+        mut handle_data: impl FnMut(RowData),
+    ) {
+        match (time_ranges.is_boundless(), time_ranges.is_empty()) {
+            (_, false) => {
+                for group in self.groups.iter() {
+                    let field_index = group.schema.fields_id();
+                    for range in time_ranges.time_ranges() {
+                        for row in group.rows.get_ref_rows().range(
+                            Included(&RowData {
+                                ts: range.min_ts,
+                                fields: vec![],
+                            }),
+                            Included(&RowData {
+                                ts: range.max_ts,
+                                fields: vec![],
+                            }),
+                        ) {
+                            let mut fields = vec![None; column_ids.len()];
+                            column_ids.iter().enumerate().for_each(|(i, column_id)| {
+                                if let Some(index) = field_index.get(column_id) {
+                                    if let Some(Some(field)) = row.fields.get(*index) {
+                                        fields[i] = Some(field.clone());
+                                    }
+                                }
+                            });
+                            handle_data(RowData { ts: row.ts, fields });
+                        }
+                    }
+                }
+            }
+            (false, true) => {
+                for group in self.groups.iter() {
+                    let field_index = group.schema.fields_id();
+                    for row in group.rows.get_ref_rows().range(
+                        Included(&RowData {
+                            ts: time_ranges.min_ts(),
+                            fields: vec![],
+                        }),
+                        Included(&RowData {
+                            ts: time_ranges.max_ts(),
+                            fields: vec![],
+                        }),
+                    ) {
+                        let mut fields = vec![None; column_ids.len()];
+                        column_ids.iter().enumerate().for_each(|(i, column_id)| {
+                            if let Some(index) = field_index.get(column_id) {
+                                if let Some(Some(field)) = row.fields.get(*index) {
+                                    fields[i] = Some(field.clone());
+                                }
+                            }
+                        });
+                        handle_data(RowData { ts: row.ts, fields });
+                    }
+                }
+            }
+            (true, true) => {
+                for group in self.groups.iter() {
+                    let field_index = group.schema.fields_id();
+                    for row in group.rows.get_ref_rows() {
+                        let mut fields = vec![None; column_ids.len()];
+                        column_ids.iter().enumerate().for_each(|(i, column_id)| {
+                            if let Some(index) = field_index.get(column_id) {
+                                if let Some(Some(field)) = row.fields.get(*index) {
+                                    fields[i] = Some(field.clone());
+                                }
+                            }
+                        });
+                        handle_data(RowData { ts: row.ts, fields });
+                    }
+                }
+            }
         }
     }
 
@@ -384,62 +433,175 @@ impl SeriesData {
             }
 
             for item in self.groups.iter_mut() {
-                item.rows = item
+                let mut rows = OrderedRowsData::new();
+                item
                     .rows
+                    .get_ref_rows()
                     .iter()
                     .filter(|row| row.ts < time_range.min_ts || row.ts > time_range.max_ts)
-                    .cloned()
-                    .collect();
+                    .for_each(|row| {
+                        rows.insert(row.clone());
+                    });
+                item.rows = rows;
             }
-        }
-    }
-
-    pub fn read_data(
-        &self,
-        column_id: ColumnId,
-        mut time_predicate: impl FnMut(Timestamp) -> bool,
-        mut value_predicate: impl FnMut(&FieldVal) -> bool,
-        mut handle_data: impl FnMut(DataType),
-    ) {
-        for group in self.groups.iter() {
-            let field_index = group.schema.fields_id();
-            let index = match field_index.get(&column_id) {
-                None => continue,
-                Some(v) => v,
-            };
-            group
-                .rows
-                .iter()
-                .filter(|row| time_predicate(row.ts))
-                .for_each(|row| {
-                    if let Some(Some(field)) = row.fields.get(*index) {
-                        if value_predicate(field) {
-                            handle_data(field.data_value(row.ts))
-                        }
-                    }
-                });
         }
     }
 
     pub fn read_timestamps(
         &self,
-        mut time_predicate: impl FnMut(Timestamp) -> bool,
+        time_ranges: &TimeRanges,
         mut handle_data: impl FnMut(Timestamp),
     ) {
-        for group in self.groups.iter() {
-            group
-                .rows
-                .iter()
-                .filter(|row| time_predicate(row.ts))
-                .for_each(|row| handle_data(row.ts));
+        match (time_ranges.is_boundless(), time_ranges.is_empty()) {
+            (_, false) => {
+                for group in self.groups.iter() {
+                    for range in time_ranges.time_ranges() {
+                        for row in group.rows.get_ref_rows().range(
+                            Included(&RowData {
+                                ts: range.min_ts,
+                                fields: vec![],
+                            }),
+                            Included(&RowData {
+                                ts: range.max_ts,
+                                fields: vec![],
+                            }),
+                        ) {
+                            handle_data(row.ts);
+                        }
+                    }
+                }
+            }
+            (false, true) => {
+                for group in self.groups.iter() {
+                    for row in group.rows.get_ref_rows().range(
+                        Included(&RowData {
+                            ts: time_ranges.min_ts(),
+                            fields: vec![],
+                        }),
+                        Included(&RowData {
+                            ts: time_ranges.max_ts(),
+                            fields: vec![],
+                        }),
+                    ) {
+                        handle_data(row.ts);
+                    }
+                }
+            }
+            (true, true) => {
+                for group in self.groups.iter() {
+                    for row in group.rows.get_ref_rows() {
+                        handle_data(row.ts);
+                    }
+                }
+            }
         }
     }
 
-    pub fn flat_groups(&self) -> Vec<(SchemaId, TskvTableSchemaRef, &LinkedList<RowData>)> {
+    pub fn flat_groups(&self) -> Vec<(TskvTableSchemaRef, &OrderedRowsData)> {
         self.groups
             .iter()
-            .map(|g| (g.schema.schema_id, g.schema.clone(), &g.rows))
+            .map(|g| (g.schema.clone(), &g.rows))
             .collect()
+    }
+    pub fn get_schema(&self) -> Option<Arc<TskvTableSchema>> {
+        if let Some(item) = self.groups.back() {
+            return Some(item.schema.clone());
+        }
+        None
+    }
+    pub fn build_data_block(
+        &self,
+        version: Arc<Version>,
+    ) -> Result<Option<(String, DataBlock2, DataBlock2)>> {
+        if let Some(schema) = self.get_schema() {
+            let field_ids = schema.fields_id();
+
+            let mut cols = schema
+                .fields()
+                .iter()
+                .map(|col| ColumnData::empty(col.column_type.clone()))
+                .collect::<Result<Vec<_>>>()?;
+            let mut delta_cols = cols.clone();
+            let mut time_array = ColumnData::empty(ColumnType::Time(TimeUnit::from(
+                schema.time_column_precision(),
+            )))?;
+
+            let mut delta_time_array = time_array.clone();
+            let mut cols_desc = vec![None; schema.field_num()];
+            for (schema, rows) in self.flat_groups() {
+                let values = dedup_and_sort_row_data(rows);
+                for row in values {
+                    match row.ts.cmp(&version.max_level_ts()) {
+                        std::cmp::Ordering::Less => {
+                            delta_time_array.push(Some(FieldVal::Integer(row.ts)));
+                        }
+                        _ => {
+                            time_array.push(Some(FieldVal::Integer(row.ts)));
+                        }
+                    }
+                    for col in schema.fields().iter() {
+                        if let Some(index) = field_ids.get(&col.id) {
+                            let field = row.fields.get(*index).and_then(|v| v.clone());
+                            match row.ts.cmp(&version.max_level_ts()) {
+                                std::cmp::Ordering::Less => {
+                                    delta_cols[*index].push(field);
+                                }
+                                _ => {
+                                    cols[*index].push(field);
+                                }
+                            }
+                            if cols_desc[*index].is_none() {
+                                cols_desc[*index] = Some(col.clone());
+                            }
+                        }
+                    }
+                }
+            }
+
+            let cols_desc = cols_desc.into_iter().flatten().collect::<Vec<_>>();
+            if cols_desc.len() != cols.len() {
+                return Err(Error::CommonError {
+                    reason: "Invalid cols_desc".to_string(),
+                });
+            }
+
+            if !time_array.is_all_set() || !delta_time_array.is_all_set() {
+                return Err(Error::CommonError {
+                    reason: "Invalid time array in DataBlock".to_string(),
+                });
+            }
+            return Ok(Some((
+                schema.name.clone(),
+                DataBlock2::new(
+                    schema.clone(),
+                    time_array,
+                    schema.time_column(),
+                    cols,
+                    cols_desc.clone(),
+                ),
+                DataBlock2::new(
+                    schema.clone(),
+                    delta_time_array,
+                    schema.time_column(),
+                    delta_cols,
+                    cols_desc,
+                ),
+            )));
+        }
+        Ok(None)
+    }
+}
+
+pub struct MemCacheStatistics {
+    tf_id: TseriesFamilyId,
+    /// greater seq mean the last write
+    seq_no: u64,
+    statistics: HashMap<SeriesId, TimeRange>,
+}
+
+impl MemCacheStatistics {
+    pub fn seq_no(&self) -> u64 {
+        self.seq_no
     }
 }
 
@@ -457,11 +619,57 @@ pub struct MemCache {
     memory: RwLock<MemoryReservation>,
 
     part_count: usize,
-    // This u64 comes from split_id(SeriesId) % part_count
-    partions: Vec<RwLock<HashMap<u32, RwLockRef<SeriesData>>>>,
+    partions: Vec<RwLock<HashMap<SeriesId, RwLockRef<SeriesData>>>>,
 }
 
 impl MemCache {
+    pub fn to_chunk_group(&self, version: Arc<Version>) -> Result<(TsmWriteData, TsmWriteData)> {
+        let partions: HashMap<SeriesId, Arc<RwLock<SeriesData>>> = self
+            .partions
+            .iter()
+            .flat_map(|lock| {
+                let inner_map = lock.read();
+                let values = inner_map
+                    .iter()
+                    .map(|(id, rw_lock_ref)| (*id, rw_lock_ref.clone()))
+                    .collect::<Vec<_>>();
+                values
+            })
+            .collect();
+
+        let mut chunk_group: TsmWriteData = BTreeMap::new();
+        let mut delta_chunk_group: TsmWriteData = BTreeMap::new();
+        partions
+            .iter()
+            .try_for_each(|(series_id, v)| -> Result<()> {
+                let data = v.read();
+                if let Some((table, datablock, delta_datablock)) =
+                    data.build_data_block(version.clone())?
+                {
+                    if datablock.len() != 0 {
+                        if let Some(chunk) = chunk_group.get_mut(&table) {
+                            chunk.insert(*series_id, datablock);
+                        } else {
+                            let mut chunk = BTreeMap::new();
+                            chunk.insert(*series_id, datablock);
+                            chunk_group.insert(table.clone(), chunk);
+                        }
+                    }
+
+                    if delta_datablock.len() != 0 {
+                        if let Some(chunk) = delta_chunk_group.get_mut(&table) {
+                            chunk.insert(*series_id, delta_datablock);
+                        } else {
+                            let mut chunk = BTreeMap::new();
+                            chunk.insert(*series_id, delta_datablock);
+                            delta_chunk_group.insert(table, chunk);
+                        }
+                    }
+                }
+                Ok(())
+            })?;
+        Ok((chunk_group, delta_chunk_group))
+    }
     pub fn new(
         tf_id: TseriesFamilyId,
         max_size: u64,
@@ -511,27 +719,10 @@ impl MemCache {
         Ok(())
     }
 
-    pub fn read_field_data(
-        &self,
-        field_id: FieldId,
-        time_predicate: impl FnMut(Timestamp) -> bool,
-        value_predicate: impl FnMut(&FieldVal) -> bool,
-        handle_data: impl FnMut(DataType),
-    ) {
-        let (column_id, sid) = split_id(field_id);
-        let index = (sid as usize) % self.part_count;
-        let series_data = self.partions[index].read().get(&sid).cloned();
-        if let Some(series_data) = series_data {
-            series_data
-                .read()
-                .read_data(column_id, time_predicate, value_predicate, handle_data)
-        }
-    }
-
     pub fn read_series_timestamps(
         &self,
         series_ids: &[SeriesId],
-        mut time_predicate: impl FnMut(Timestamp) -> bool,
+        time_ranges: &TimeRanges,
         mut handle_data: impl FnMut(Timestamp),
     ) {
         for sid in series_ids.iter() {
@@ -540,8 +731,33 @@ impl MemCache {
             if let Some(series_data) = series_data {
                 series_data
                     .read()
-                    .read_timestamps(&mut time_predicate, &mut handle_data);
+                    .read_timestamps(time_ranges, &mut handle_data);
             }
+        }
+    }
+
+    pub fn statistics(
+        &self,
+        series_ids: &[SeriesId],
+        time_predicate: TimeRange,
+    ) -> MemCacheStatistics {
+        let mut statistics = HashMap::new();
+        for sid in series_ids {
+            let index = (*sid as usize) % self.part_count;
+            let range = match self.partions[index].read().get(sid) {
+                None => continue,
+                Some(series_data) => series_data.read().range,
+            };
+            let time_predicate = match time_predicate.intersect(&range) {
+                None => continue,
+                Some(time_predicate) => time_predicate,
+            };
+            statistics.insert(*sid, time_predicate);
+        }
+        MemCacheStatistics {
+            tf_id: self.tf_id,
+            seq_no: self.min_seq_no,
+            statistics,
         }
     }
 
@@ -555,13 +771,14 @@ impl MemCache {
         true
     }
 
-    pub fn drop_columns(&self, field_ids: &[FieldId]) {
-        for fid in field_ids {
-            let (column_id, sid) = split_id(*fid);
-            let index = (sid as usize) % self.part_count;
-            let series_data = self.partions[index].read().get(&sid).cloned();
-            if let Some(series_data) = series_data {
-                series_data.write().drop_column(column_id);
+    pub fn drop_columns(&self, series_ids: &[SeriesId], column_ids: &[ColumnId]) {
+        for sid in series_ids {
+            for column_id in column_ids {
+                let index = (*sid as usize) % self.part_count;
+                let series_data = self.partions[index].read().get(sid).cloned();
+                if let Some(series_data) = series_data {
+                    series_data.write().drop_column(*column_id);
+                }
             }
         }
     }
@@ -652,141 +869,18 @@ impl MemCache {
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum DataType {
-    U64(i64, u64),
-    I64(i64, i64),
-    Str(i64, MiniVec<u8>),
-    F64(i64, f64),
-    Bool(i64, bool),
-    /// Notice.
-    /// This variant is used for multiple Clone.
-    /// If not, please use [`DataType::Str`].
-    StrRef(i64, Arc<Vec<u8>>),
-}
-
-impl PartialEq for DataType {
-    fn eq(&self, other: &Self) -> bool {
-        self.timestamp().eq(&other.timestamp())
-    }
-}
-
-impl Eq for DataType {}
-
-impl PartialOrd for DataType {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-/// Only care about timestamps when comparing
-impl Ord for DataType {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.timestamp().cmp(&other.timestamp())
-    }
-}
-
-impl DataType {
-    pub fn new(vtype: ValueType, ts: i64) -> Self {
-        match vtype {
-            ValueType::Unsigned => DataType::U64(ts, 0),
-            ValueType::Integer => DataType::I64(ts, 0),
-            ValueType::Float => DataType::F64(ts, 0.0),
-            ValueType::Boolean => DataType::Bool(ts, false),
-            ValueType::String => DataType::Str(ts, mini_vec![]),
-            _ => todo!(),
-        }
-    }
-    pub fn timestamp(&self) -> i64 {
-        match *self {
-            DataType::U64(ts, ..) => ts,
-            DataType::I64(ts, ..) => ts,
-            DataType::Str(ts, ..) => ts,
-            DataType::F64(ts, ..) => ts,
-            DataType::Bool(ts, ..) => ts,
-            DataType::StrRef(ts, ..) => ts,
-        }
-    }
-
-    pub fn with_field_val(ts: Timestamp, field_val: FieldVal) -> Self {
-        match field_val {
-            FieldVal::Float(val) => Self::F64(ts, val),
-            FieldVal::Integer(val) => Self::I64(ts, val),
-            FieldVal::Unsigned(val) => Self::U64(ts, val),
-            FieldVal::Boolean(val) => Self::Bool(ts, val),
-            FieldVal::Bytes(val) => Self::Str(ts, val),
-        }
-    }
-
-    #[cfg(test)]
-    pub fn to_bytes(&self) -> Vec<u8> {
-        match self {
-            DataType::U64(t, val) => {
-                let mut buf = vec![0; 16];
-                buf[0..8].copy_from_slice(t.to_be_bytes().as_slice());
-                buf[8..16].copy_from_slice(val.to_be_bytes().as_slice());
-                buf
-            }
-            DataType::I64(t, val) => {
-                let mut buf = vec![0; 16];
-                buf[0..8].copy_from_slice(t.to_be_bytes().as_slice());
-                buf[8..16].copy_from_slice(val.to_be_bytes().as_slice());
-                buf
-            }
-            DataType::F64(t, val) => {
-                let mut buf = vec![0; 16];
-                buf[0..8].copy_from_slice(t.to_be_bytes().as_slice());
-                buf[8..16].copy_from_slice(val.to_be_bytes().as_slice());
-                buf
-            }
-            DataType::Str(t, val) => {
-                let buf_len = 8 + val.len();
-                let mut buf = vec![0; buf_len];
-                buf[0..8].copy_from_slice(t.to_be_bytes().as_slice());
-                buf[8..buf_len].copy_from_slice(val);
-                buf
-            }
-            DataType::Bool(t, val) => {
-                let mut buf = vec![0; 9];
-                buf[0..8].copy_from_slice(t.to_be_bytes().as_slice());
-                buf[8] = if *val { 1_u8 } else { 0_u8 };
-                buf
-            }
-            DataType::StrRef(t, val) => {
-                let buf_len = 8 + val.len();
-                let mut buf = vec![0; buf_len];
-                buf[0..8].copy_from_slice(t.to_be_bytes().as_slice());
-                buf[8..buf_len].copy_from_slice(val);
-                buf
-            }
-        }
-    }
-}
-
-impl Display for DataType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            DataType::U64(ts, val) => write!(f, "({}, {})", ts, val),
-            DataType::I64(ts, val) => write!(f, "({}, {})", ts, val),
-            DataType::Str(ts, val) => write!(f, "({}, {:?})", ts, val),
-            DataType::F64(ts, val) => write!(f, "({}, {})", ts, val),
-            DataType::Bool(ts, val) => write!(f, "({}, {})", ts, val),
-            DataType::StrRef(ts, val) => write!(f, "({}, {:?})", ts, val),
-        }
-    }
-}
-
 pub(crate) mod test {
-    use std::collections::{HashMap, LinkedList};
+    use std::collections::HashMap;
     use std::mem::size_of;
     use std::sync::Arc;
 
+    use models::field_value::FieldVal;
     use models::predicate::domain::TimeRange;
     use models::schema::TskvTableSchema;
     use models::{SchemaId, SeriesId, Timestamp};
     use parking_lot::RwLock;
 
-    use super::{FieldVal, MemCache, RowData, RowGroup};
+    use super::{MemCache, OrderedRowsData, RowData, RowGroup};
 
     pub fn put_rows_to_cache(
         cache: &MemCache,
@@ -796,7 +890,7 @@ pub(crate) mod test {
         time_range: (Timestamp, Timestamp),
         put_none: bool,
     ) {
-        let mut rows = LinkedList::new();
+        let mut rows = OrderedRowsData::new();
         let mut size: usize = schema.size();
         for ts in time_range.0..=time_range.1 {
             let mut fields = Vec::new();
@@ -810,7 +904,7 @@ pub(crate) mod test {
                 }
             }
             size += 8;
-            rows.push_back(RowData { ts, fields });
+            rows.insert(RowData { ts, fields });
         }
 
         schema.schema_id = schema_id;
@@ -831,9 +925,9 @@ pub(crate) mod test {
         for (_sid, sdata) in series_data {
             let sdata_rlock = sdata.read();
             let schema_groups = sdata_rlock.flat_groups();
-            for (_sch_id, sch, row) in schema_groups {
+            for (sch, row) in schema_groups {
                 let fields = sch.fields();
-                for r in row {
+                for r in row.get_ref_rows().iter() {
                     for (i, f) in r.fields.iter().enumerate() {
                         if let Some(fv) = f {
                             if let Some(c) = fields.get(i) {
@@ -854,18 +948,47 @@ pub(crate) mod test {
     }
 }
 
+pub fn dedup_and_sort_row_data(data: &OrderedRowsData) -> Vec<RowData> {
+    // let mut data = data.iter().cloned().collect::<Vec<_>>();
+    // data.sort_by(|a, b| a.ts.cmp(&b.ts));
+    let mut dedup_ts = HashSet::new();
+    data.get_ref_rows().iter().for_each(|row_data| {
+        if !dedup_ts.contains(&row_data.ts) {
+            dedup_ts.insert(row_data.ts);
+        }
+    });
+
+    let mut result: Vec<RowData> = Vec::with_capacity(dedup_ts.len());
+    for row_data in data.get_ref_rows() {
+        if let Some(existing_row) = result.last_mut() {
+            if existing_row.ts == row_data.ts {
+                for (index, field) in row_data.fields.iter().enumerate() {
+                    if let Some(field) = field {
+                        existing_row.fields[index] = Some(field.clone());
+                    }
+                }
+            } else {
+                result.push(row_data.clone());
+            }
+        } else {
+            result.push(row_data.clone());
+        }
+    }
+    result
+}
+
 #[cfg(test)]
 mod test_memcache {
-    use std::collections::LinkedList;
     use std::sync::Arc;
 
     use datafusion::arrow::datatypes::TimeUnit;
     use memory_pool::{GreedyMemoryPool, MemoryPool};
+    use models::field_value::FieldVal;
     use models::predicate::domain::TimeRange;
     use models::schema::{ColumnType, TableColumn, TskvTableSchema};
     use models::{SeriesId, ValueType};
 
-    use super::{FieldVal, MemCache, RowData, RowGroup};
+    use super::{MemCache, OrderedRowsData, RowData, RowGroup};
 
     #[test]
     fn test_write_group() {
@@ -880,7 +1003,7 @@ mod test_memcache {
         }
 
         #[rustfmt::skip]
-        let mut schema_1 = TskvTableSchema::new(
+            let mut schema_1 = TskvTableSchema::new(
             "test_tenant".to_string(), "test_db".to_string(), "test_table".to_string(),
             vec![
                 TableColumn::new_time_column(1, TimeUnit::Nanosecond),
@@ -890,14 +1013,20 @@ mod test_memcache {
             ],
         );
         schema_1.schema_id = 1;
+        let mut rows = OrderedRowsData::new();
+        rows.insert(RowData {
+            ts: 1,
+            fields: vec![Some(FieldVal::Float(1.0))],
+        });
+        rows.insert(RowData {
+            ts: 3,
+            fields: vec![Some(FieldVal::Float(3.0))],
+        });
         #[rustfmt::skip]
-        let row_group_1 = RowGroup {
+            let row_group_1 = RowGroup {
             schema: Arc::new(schema_1),
             range: TimeRange::new(1, 3),
-            rows: LinkedList::from([
-                RowData { ts: 1, fields: vec![Some(FieldVal::Float(1.0))] },
-                RowData { ts: 3, fields: vec![Some(FieldVal::Float(3.0))] },
-            ]),
+            rows,
             size: 10,
         };
         mem_cache.write_group(sid, 1, row_group_1.clone()).unwrap();
@@ -913,7 +1042,7 @@ mod test_memcache {
         }
 
         #[rustfmt::skip]
-        let mut schema_2 = TskvTableSchema::new(
+            let mut schema_2 = TskvTableSchema::new(
             "test_tenant".to_string(), "test_db".to_string(), "test_table".to_string(),
             vec![
                 TableColumn::new_time_column(1, TimeUnit::Nanosecond),
@@ -924,14 +1053,20 @@ mod test_memcache {
             ],
         );
         schema_2.schema_id = 2;
+        let mut rows = OrderedRowsData::new();
+        rows.insert(RowData {
+            ts: 3,
+            fields: vec![None, Some(FieldVal::Integer(3))],
+        });
+        rows.insert(RowData {
+            ts: 5,
+            fields: vec![Some(FieldVal::Float(5.0)), Some(FieldVal::Integer(5))],
+        });
         #[rustfmt::skip]
-        let row_group_2 = RowGroup {
+            let row_group_2 = RowGroup {
             schema: Arc::new(schema_2),
             range: TimeRange::new(3, 5),
-            rows: LinkedList::from([
-                RowData { ts: 3, fields: vec![None, Some(FieldVal::Integer(3))] },
-                RowData { ts: 5, fields: vec![Some(FieldVal::Float(5.0)), Some(FieldVal::Integer(5))] }
-            ]),
+            rows,
             size: 10,
         };
         mem_cache.write_group(sid, 2, row_group_2.clone()).unwrap();

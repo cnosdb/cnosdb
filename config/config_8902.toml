@@ -52,8 +52,8 @@ sync_interval = "0"
 
 [cache]
 max_buffer_size = "128M" # 134217728
-max_immutable_number = 4
-partition = 16           # default memcache partition number
+max_immutable_number = 1
+partition = 16          # default memcache partition number
 
 [log]
 level = 'info'

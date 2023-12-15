@@ -365,6 +365,7 @@ dependencies = [
  "arrow-schema",
  "arrow-select",
  "arrow-string",
+ "rand",
 ]
 
 [[package]]
@@ -3456,11 +3457,14 @@ dependencies = [
 name = "models"
 version = "2.4.0"
 dependencies = [
+ "arrow",
+ "arrow-array",
  "arrow-schema",
  "async-backtrace",
  "async-trait",
  "bcrypt",
  "bincode",
+ "byteorder",
  "chrono",
  "config",
  "datafusion",
@@ -3470,9 +3474,11 @@ dependencies = [
  "flatbuffers 22.12.6",
  "futures",
  "libc",
+ "minivec",
  "openssl",
  "parking_lot 0.12.1",
  "pin-project",
+ "prost",
  "protos",
  "rand",
  "serde",
@@ -3596,6 +3602,12 @@ dependencies = [
  "cfg-if",
  "libc",
 ]
+
+[[package]]
+name = "no-std-compat"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df270209a7f04d62459240d890ecb792714d5db12c92937823574a09930276b4"
 
 [[package]]
 name = "nom"
@@ -4521,6 +4533,7 @@ dependencies = [
  "coordinator",
  "criterion",
  "datafusion",
+ "datafusion-proto",
  "derive_builder",
  "dirs",
  "flatbuffers 22.12.6",
@@ -5263,6 +5276,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "skiplist"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0eec25f46463fcdc5e02f388c2780b1b58e01be81a8378e62ec60931beccc3f6"
+dependencies = [
+ "rand",
+]
+
+[[package]]
 name = "slab"
 version = "0.4.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5466,6 +5488,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "stable-vec"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "80dfb7bb28f3d2fa50566793349d633b33f938543154be8071610ea9f590d8ca"
+dependencies = [
+ "no-std-compat",
 ]
 
 [[package]]
@@ -6206,6 +6237,9 @@ checksum = "3528ecfd12c466c6f163363caf2d02a71161dd5e1cc6ae7b34207ea2d42d81ed"
 name = "tskv"
 version = "2.4.0"
 dependencies = [
+ "arrow",
+ "arrow-array",
+ "arrow-schema",
  "async-backtrace",
  "async-recursion",
  "async-trait",
@@ -6221,6 +6255,7 @@ dependencies = [
  "crossbeam-channel",
  "dashmap",
  "datafusion",
+ "datafusion-proto",
  "dircpy",
  "error_code",
  "flatbuffers 22.12.6",
@@ -6253,9 +6288,11 @@ dependencies = [
  "serde",
  "serde_json",
  "serial_test",
+ "skiplist",
  "sled",
  "snafu",
  "snap",
+ "stable-vec",
  "static_assertions",
  "tempfile",
  "tokio",
@@ -6402,6 +6439,7 @@ dependencies = [
  "libc",
  "pprof",
  "rand",
+ "serde",
  "tikv-jemalloc-ctl",
  "tokio",
  "trace",
