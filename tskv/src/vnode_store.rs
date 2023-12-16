@@ -575,10 +575,15 @@ impl VnodeStorage {
                         "Drop table: vnode {ts_family_id} deleting {} fields in table: {db_owner}.{table}", series_ids.len() * to_drop_column_ids.len()
                     );
 
-                    ts_family.write().await.drop_columns(&series_ids, &to_drop_column_ids);
+                    ts_family
+                        .write()
+                        .await
+                        .drop_columns(&series_ids, &to_drop_column_ids);
 
                     let version = ts_family.read().await.super_version();
-                    version.add_tombstone(&series_ids, &to_drop_column_ids, &time_range).await?;
+                    version
+                        .add_tombstone(&series_ids, &to_drop_column_ids, &time_range)
+                        .await?;
                 } else {
                     continue;
                 }
@@ -614,7 +619,9 @@ impl VnodeStorage {
         // Stop compaction when doing delete TODO
 
         for time_range in time_ranges.time_ranges() {
-            version.add_tombstone(&series_ids, &column_ids, time_range).await?;
+            version
+                .add_tombstone(series_ids, &column_ids, time_range)
+                .await?;
         }
 
         Ok(())

@@ -133,7 +133,7 @@ impl SessionCtxFactory {
     ) -> Result<SessionContext> {
         let mut config = config.clone();
         if let Some(span_ctx) = span_ctx {
-            // inject span context into datafusion_tool session config, so that it can be used in execution
+            // inject span context into datafusion session config, so that it can be used in execution
             config = config.with_extension(Arc::new(span_ctx.clone()))
         }
 
@@ -159,7 +159,7 @@ pub struct CnosSessionConfig {
 impl Default for CnosSessionConfig {
     fn default() -> Self {
         let inner = SessionConfig::default()
-            .set_bool("datafusion_tool.optimizer.skip_failed_rules", false)
+            .set_bool("datafusion.optimizer.skip_failed_rules", false)
             // TODO read from config file
             // .with_extension(Arc::new(StreamTriggerInterval::Once));
             .with_extension(Arc::new(StreamTriggerInterval::Interval(

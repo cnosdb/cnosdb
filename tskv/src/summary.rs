@@ -1258,8 +1258,7 @@ mod test {
                 &mut HashMap::new(),
                 None,
             );
-            let tsm_reader_cache = Arc::downgrade(version.tsm_reader_cache());
-            let tsm_reader_cache = Arc::downgrade(&version.tsm2_reader_cache());
+            let tsm_reader_cache = Arc::downgrade(version.tsm2_reader_cache());
 
             let mut edit = VersionEdit::new(VNODE_ID);
             let meta = CompactMeta {

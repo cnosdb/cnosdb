@@ -7,8 +7,9 @@ use arrow_array::builder::StringBuilder;
 use arrow_array::RecordBatch;
 use datafusion::physical_plan::metrics::{ExecutionPlanMetricsSet, MetricBuilder, Time};
 use futures::{ready, Stream, StreamExt};
-use models::datafusion_tool::limit_record_batch::limit_record_batch;
-use models::{SeriesKey, Tag};
+use models::datafusion::limit_record_batch::limit_record_batch;
+use models::schema::TskvTableSchemaRef;
+use models::{ColumnId, SeriesKey, Tag};
 
 use super::metrics::BaselineMetrics;
 use super::{
@@ -21,6 +22,7 @@ use crate::{Error, Result};
 pub struct SeriesReader {
     skey: SeriesKey,
     input: BatchReaderRef,
+    query_schema: TskvTableSchemaRef,
     metrics: Arc<ExecutionPlanMetricsSet>,
     limit: Option<usize>,
 }
@@ -29,12 +31,14 @@ impl SeriesReader {
     pub fn new(
         skey: SeriesKey,
         input: BatchReaderRef,
+        query_schema: TskvTableSchemaRef,
         metrics: Arc<ExecutionPlanMetricsSet>,
         limit: Option<usize>,
     ) -> Self {
         Self {
             skey,
             input,
+            query_schema,
             metrics,
             limit,
         }
@@ -50,14 +54,24 @@ impl BatchReader for SeriesReader {
         let mut append_column = Vec::with_capacity(self.skey.tags().len());
         let mut append_column_values = Vec::with_capacity(self.skey.tags().len());
         for Tag { key, value } in self.skey.tags() {
-            let field = Arc::new(Field::new(
-                String::from_utf8(key.to_vec()).map_err(|err| Error::InvalidUtf8 {
+            let column_id = std::str::from_utf8(key)
+                .map_err(|err| Error::InvalidUtf8 {
                     message: format!("Convert tag {key:?}"),
-                    source: err.utf8_error(),
-                })?,
-                DataType::Utf8,
-                true,
-            ));
+                    source: err,
+                })?
+                .parse::<ColumnId>()
+                .map_err(|err| Error::TagError {
+                    reason: format!("Convert tag {key:?} to column id failed, because: {}", err),
+                })?;
+
+            let name = match self.query_schema.column_name(column_id) {
+                Some(name) => name.to_string(),
+                None => {
+                    continue;
+                }
+            };
+
+            let field = Arc::new(Field::new(name, DataType::Utf8, true));
             let array = String::from_utf8(value.to_vec()).map_err(|err| Error::InvalidUtf8 {
                 message: format!("Convert tag {}'s value: {:?}", field.name(), value),
                 source: err.utf8_error(),
@@ -195,10 +209,13 @@ mod tests {
 
     use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
     use arrow_array::{Float64Array, Int64Array, RecordBatch, StringArray, UInt64Array};
+    use arrow_schema::TimeUnit;
     use datafusion::assert_batches_eq;
     use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
     use futures::TryStreamExt;
-    use models::{SeriesKey, Tag};
+    use models::codec::Encoding;
+    use models::schema::{ColumnType, TableColumn, TskvTableSchema, TskvTableSchemaRef};
+    use models::{SeriesKey, Tag, ValueType};
 
     use crate::reader::series::SeriesReader;
     use crate::reader::{BatchReader, MemoryBatchReader};
@@ -232,6 +249,43 @@ mod tests {
         ]))
     }
 
+    fn query_schema() -> TskvTableSchemaRef {
+        let schema = TskvTableSchema::new(
+            "cnsodb".to_string(),
+            "test".to_string(),
+            "tbl".to_string(),
+            vec![
+                TableColumn::new(
+                    0,
+                    "time".to_string(),
+                    ColumnType::Time(TimeUnit::Nanosecond),
+                    Encoding::Default,
+                ),
+                TableColumn::new(1, "tag1".to_string(), ColumnType::Tag, Encoding::Default),
+                TableColumn::new(2, "tag2".to_string(), ColumnType::Tag, Encoding::Default),
+                TableColumn::new(
+                    3,
+                    "c3".to_string(),
+                    ColumnType::Field(ValueType::String),
+                    Encoding::Default,
+                ),
+                TableColumn::new(
+                    4,
+                    "c2".to_string(),
+                    ColumnType::Field(ValueType::Float),
+                    Encoding::Default,
+                ),
+                TableColumn::new(
+                    5,
+                    "c1".to_string(),
+                    ColumnType::Field(ValueType::Unsigned),
+                    Encoding::Default,
+                ),
+            ],
+        );
+        Arc::new(schema)
+    }
+
     fn metrics() -> Arc<ExecutionPlanMetricsSet> {
         Arc::new(ExecutionPlanMetricsSet::new())
     }
@@ -244,15 +298,13 @@ mod tests {
         ));
 
         let series_key = SeriesKey {
-            id: 0,
             tags: vec![
-                Tag::new("tag1".as_bytes().to_vec(), "t_val1".as_bytes().to_vec()),
-                Tag::new("tag2".as_bytes().to_vec(), "t_val2".as_bytes().to_vec()),
+                Tag::new("1".as_bytes().to_vec(), "t_val1".as_bytes().to_vec()),
+                Tag::new("2".as_bytes().to_vec(), "t_val2".as_bytes().to_vec()),
             ],
             table: "tbl".to_string(),
-            db: "db".to_string(),
         };
-        let reader = SeriesReader::new(series_key, reader, metrics(), None);
+        let reader = SeriesReader::new(series_key, reader, query_schema(), metrics(), None);
 
         let stream = reader.process().expect("reader");
 

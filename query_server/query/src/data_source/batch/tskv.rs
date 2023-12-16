@@ -14,8 +14,8 @@ use datafusion::logical_expr::logical_plan::AggWithGrouping;
 use datafusion::logical_expr::{
     aggregate_function, Expr, TableProviderAggregationPushDown, TableProviderFilterPushDown,
 };
-use datafusion::physical_expr::PhysicalExpr;
 use datafusion::optimizer::utils::{conjunction, split_conjunction};
+use datafusion::physical_expr::PhysicalExpr;
 use datafusion::physical_plan::empty::EmptyExec;
 use datafusion::physical_plan::{project_schema, ExecutionPlan};
 use datafusion::prelude::Column;

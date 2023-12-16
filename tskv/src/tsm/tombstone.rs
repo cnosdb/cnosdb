@@ -16,8 +16,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use models::predicate::domain::TimeRange;
-use tokio::sync::Mutex as AsyncMutex;
 use models::{ColumnId, SeriesId};
+use tokio::sync::Mutex as AsyncMutex;
 use trace::error;
 
 use crate::file_system::file_manager;
@@ -168,7 +168,12 @@ impl TsmTombstone {
         Ok(())
     }
 
-    pub fn overlaps(&self, seires_id: SeriesId, column_id: ColumnId, time_range: &TimeRange) -> bool {
+    pub fn overlaps(
+        &self,
+        seires_id: SeriesId,
+        column_id: ColumnId,
+        time_range: &TimeRange,
+    ) -> bool {
         if let Some(time_ranges) = self.tombstones.get(&(seires_id, column_id)) {
             for t in time_ranges.iter() {
                 if t.overlaps(time_range) {
@@ -218,7 +223,7 @@ mod test {
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
         }
-        let tombstone = TsmTombstone::open(&dir, 1).await.unwrap();
+        let mut tombstone = TsmTombstone::open(&dir, 1).await.unwrap();
         tombstone
             .add_range(&[(0, 0)], &TimeRange::new(0, 0))
             .await
@@ -245,7 +250,7 @@ mod test {
             std::fs::create_dir_all(&dir).unwrap();
         }
 
-        let tombstone = TsmTombstone::open(&dir, 1).await.unwrap();
+        let mut tombstone = TsmTombstone::open(&dir, 1).await.unwrap();
         // tsm_tombstone.load().unwrap();
         tombstone
             .add_range(&[(0, 1), (0, 2), (0, 3)], &TimeRange::new(1, 100))
@@ -289,7 +294,7 @@ mod test {
             std::fs::create_dir_all(&dir).unwrap();
         }
 
-        let tombstone = TsmTombstone::open(&dir, 1).await.unwrap();
+        let mut tombstone = TsmTombstone::open(&dir, 1).await.unwrap();
         // tsm_tombstone.load().unwrap();
         for i in 0..10000 {
             tombstone

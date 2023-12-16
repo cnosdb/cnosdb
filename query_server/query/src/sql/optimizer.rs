@@ -151,9 +151,9 @@ impl CascadeOptimizerBuilder {
 #[cfg(test)]
 mod test {
     use std::sync::Arc;
-    use datafusion::arrow::datatypes::TimeUnit;
 
     use coordinator::service_mock::{MockCoordinator, WITH_NONEMPTY_DATABASE_FOR_TEST};
+    use datafusion::arrow::datatypes::TimeUnit;
     use datafusion::datasource::provider_as_source;
     use datafusion::error::Result;
     use datafusion::execution::context::SessionState;
@@ -388,7 +388,8 @@ mod test {
                 AggregateExec: mode=Single, gby=[], aggr=[MAX(?table?.value)]\
                 \n  ProjectionExec: expr=[value@1 as value]\
                 \n    EmptyExec: produce_one_row=false\
-                \n")
+                \n",
+            )
             .await?;
         }
 

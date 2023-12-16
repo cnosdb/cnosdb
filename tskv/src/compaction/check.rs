@@ -232,9 +232,9 @@ pub(crate) async fn vnode_checksum(_vnode: Arc<RwLock<TseriesFamily>>) -> Result
     // .map_err(|err| Error::CommonError {
     //     reason: format!("get checksum fail, {}", err),
     // })
-    return Err(Error::Unimplemented {
+    Err(Error::Unimplemented {
         msg: "checksum unimplemented".to_string(),
-    });
+    })
 }
 
 // /// Get checksum of all data of a vnode, returns RecordBatch with more columns, for example:
@@ -285,40 +285,40 @@ pub(crate) async fn vnode_checksum(_vnode: Arc<RwLock<TseriesFamily>>) -> Result
 // ) -> Result<VnodeHashTreeNode> {
 //     const MAX_DATA_BLOCK_SIZE: u32 = 1000;
 
-    // let (version, vnode_id) = {
-    //     let vnode_rlock = vnode.read().await;
-    //     (vnode_rlock.version(), vnode_rlock.tf_id())
-    // };
-    // let mut readers: Vec<Arc<TSM2Reader>> = Vec::new();
-    // let tsm_paths: Vec<&PathBuf> = version
-    //     .levels_info()
-    //     .iter()
-    //     .flat_map(|l| l.files.iter().map(|f| f.file_path()))
-    //     .collect();
-    // for p in tsm_paths {
-    //     let r = version.get_tsm_reader2(p).await?;
-    //     readers.push(r);
-    // }
-    //
-    // // Build a compact iterator, read data, split by time range and then calculate hash.
-    // let iter = CompactIterator::new(readers, MAX_DATA_BLOCK_SIZE as usize, true);
-    // let mut fid_tr_hash_val_map: HashMap<FieldId, Vec<(TimeRange, Hash)>> =
-    //     read_from_compact_iterator(iter, DEFAULT_DURATION).await?;
-    //
-    // let mut field_ids: Vec<FieldId> = fid_tr_hash_val_map.keys().cloned().collect();
-    // field_ids.sort();
-    // let mut vnode_hash_tree_node = VnodeHashTreeNode::with_capacity(vnode_id, field_ids.len());
-    // for fid in field_ids {
-    //     let tr_hashes = fid_tr_hash_val_map.remove(&fid).unwrap();
-    //     let mut filed_hash_tree_node = FieldHashTreeNode::with_capacity(fid, tr_hashes.len());
-    //     for (tr, hash) in tr_hashes {
-    //         filed_hash_tree_node.push(TimeRangeHashTreeNode::new(tr, hash));
-    //     }
-    //     vnode_hash_tree_node.push(filed_hash_tree_node);
-    // }
-    // trace::trace!("VnodeHashTree({vnode_id}): {}", vnode_hash_tree_node);
-    //
-    // Ok(vnode_hash_tree_node)
+// let (version, vnode_id) = {
+//     let vnode_rlock = vnode.read().await;
+//     (vnode_rlock.version(), vnode_rlock.tf_id())
+// };
+// let mut readers: Vec<Arc<TSM2Reader>> = Vec::new();
+// let tsm_paths: Vec<&PathBuf> = version
+//     .levels_info()
+//     .iter()
+//     .flat_map(|l| l.files.iter().map(|f| f.file_path()))
+//     .collect();
+// for p in tsm_paths {
+//     let r = version.get_tsm_reader2(p).await?;
+//     readers.push(r);
+// }
+//
+// // Build a compact iterator, read data, split by time range and then calculate hash.
+// let iter = CompactIterator::new(readers, MAX_DATA_BLOCK_SIZE as usize, true);
+// let mut fid_tr_hash_val_map: HashMap<FieldId, Vec<(TimeRange, Hash)>> =
+//     read_from_compact_iterator(iter, DEFAULT_DURATION).await?;
+//
+// let mut field_ids: Vec<FieldId> = fid_tr_hash_val_map.keys().cloned().collect();
+// field_ids.sort();
+// let mut vnode_hash_tree_node = VnodeHashTreeNode::with_capacity(vnode_id, field_ids.len());
+// for fid in field_ids {
+//     let tr_hashes = fid_tr_hash_val_map.remove(&fid).unwrap();
+//     let mut filed_hash_tree_node = FieldHashTreeNode::with_capacity(fid, tr_hashes.len());
+//     for (tr, hash) in tr_hashes {
+//         filed_hash_tree_node.push(TimeRangeHashTreeNode::new(tr, hash));
+//     }
+//     vnode_hash_tree_node.push(filed_hash_tree_node);
+// }
+// trace::trace!("VnodeHashTree({vnode_id}): {}", vnode_hash_tree_node);
+//
+// Ok(vnode_hash_tree_node)
 // }
 
 // /// Returns a time range calculated by the given `ts_nanoseconds`

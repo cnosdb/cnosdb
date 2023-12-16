@@ -11,6 +11,7 @@ use datafusion::arrow::datatypes::{
 };
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::physical_plan::metrics::{self, ExecutionPlanMetricsSet, MetricBuilder};
+use models::field_value::DataType;
 use models::meta_data::VnodeId;
 use models::predicate::domain::{self, QueryArgs, QueryExpr};
 use models::predicate::PlacedSplit;
@@ -18,14 +19,13 @@ use models::schema::{PhysicalCType as ColumnType, TableColumn, TskvTableSchemaRe
 use models::{PhysicalDType as ValueType, SeriesId, Timestamp};
 use protos::kv_service::QueryRecordBatchRequest;
 use tokio::runtime::Runtime;
-use tokio::sync::mpsc::{Receiver};
+use tokio::sync::mpsc::Receiver;
 use tokio_util::sync::CancellationToken;
-use models::field_value::{DataType};
 use trace::{debug, error, SpanRecorder};
 
 use crate::error::Result;
 use crate::reader::Cursor;
-use crate::tseries_family::{SuperVersion};
+use crate::tseries_family::SuperVersion;
 use crate::{EngineRef, Error};
 
 pub type CursorPtr = Box<dyn Cursor>;
@@ -385,7 +385,6 @@ impl QueryOption {
         })
     }
 }
-
 
 pub struct RowIterator {
     runtime: Arc<Runtime>,

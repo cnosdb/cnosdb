@@ -375,6 +375,10 @@ impl Column {
         self.data.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
+    }
+
     pub fn is_all_set(&self) -> bool {
         self.valid.is_all_set()
     }
@@ -419,6 +423,16 @@ impl ColumnData {
             ColumnData::U64(data, _, _) => data.len(),
             ColumnData::String(data, _, _) => data.len(),
             ColumnData::Bool(data, _, _) => data.len(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        match self {
+            ColumnData::F64(data, _, _) => data.is_empty(),
+            ColumnData::I64(data, _, _) => data.is_empty(),
+            ColumnData::U64(data, _, _) => data.is_empty(),
+            ColumnData::String(data, _, _) => data.is_empty(),
+            ColumnData::Bool(data, _, _) => data.is_empty(),
         }
     }
 
@@ -617,6 +631,10 @@ impl DataBlock2 {
 
     pub fn len(&self) -> usize {
         self.ts.data.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.ts.data.is_empty()
     }
 
     pub fn schema_check(&self, other: &DataBlock2) -> Result<()> {

@@ -41,11 +41,11 @@ fn main() {
         if cfg!(target_os = "macos") {
             cmd = "sed -i '' -e '/^ *pub async fn/s/pub async fn/ #[async_backtrace::framed] pub async fn/g'  \
             -e '/^ *async fn/s/async fn/ #[async_backtrace::framed] async fn/g' \
-            `grep async .. -rl --exclude-dir=generated --exclude-dir=spi --exclude-dir=target --exclude=datafusion_tool --exclude=lib.rs`";
+            `grep async .. -rl --exclude-dir=generated --exclude-dir=spi --exclude-dir=target --exclude=datafusion --exclude=lib.rs`";
         } else if cfg!(target_os = "linux") {
             cmd = "sed -i -e '/^ *pub async fn/s/pub async fn/ #[async_backtrace::framed] pub async fn/g'  \
             -e '/^ *async fn/s/async fn/ #[async_backtrace::framed] async fn/g' \
-            `grep async .. -rl --exclude-dir=generated --exclude-dir=spi --exclude-dir=target --exclude=datafusion_tool --exclude=lib.rs`";
+            `grep async .. -rl --exclude-dir=generated --exclude-dir=spi --exclude-dir=target --exclude=datafusion --exclude=lib.rs`";
         };
         let _ = Command::new("sh").arg("-c").arg(cmd).output();
     }

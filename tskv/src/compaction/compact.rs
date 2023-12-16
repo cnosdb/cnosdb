@@ -922,30 +922,24 @@ pub mod test {
     use std::path::{Path, PathBuf};
     use std::sync::Arc;
 
-    use cache::ShardedAsyncCache;
-    use minivec::MiniVec;
     use arrow::datatypes::TimeUnit;
-    use lru_cache::asynchronous::ShardedCache;
+    use cache::ShardedAsyncCache;
     use models::codec::Encoding;
     use models::field_value::FieldVal;
     use models::predicate::domain::TimeRange;
     use models::schema::{ColumnType, TableColumn, TskvTableSchema};
     use models::{SeriesId, ValueType};
 
-    use crate::compaction::{run_compaction_job, CompactReq, CompactingBlock};
+    use crate::compaction::{run_compaction_job, CompactReq};
     use crate::context::GlobalContext;
     use crate::file_system::file_manager;
     use crate::file_utils;
     use crate::kv_option::Options;
     use crate::summary::VersionEdit;
     use crate::tseries_family::{ColumnFile, LevelInfo, Version};
-    use crate::tsm::codec::DataBlockEncoding;
-    use crate::tsm::{self, DataBlock, EncodedDataBlock, TsmTombstone};
-    use crate::{file_utils, ColumnFileId};
-    use crate::tsm::{DataBlock, TsmTombstone};
+    use crate::tsm::TsmTombstone;
     use crate::tsm2::reader::TSM2Reader;
     use crate::tsm2::writer::{Column, DataBlock2, Tsm2Writer};
-
 
     pub(crate) async fn write_data_blocks_to_column_file(
         dir: impl AsRef<Path>,
@@ -1126,17 +1120,6 @@ pub mod test {
         kernel.set_file_id(next_file_id);
 
         (compact_req, kernel)
-    }
-
-    fn format_data_blocks(data_blocks: &[DataBlock]) -> String {
-        format!(
-            "[{}]",
-            data_blocks
-                .iter()
-                .map(|b| format!("{}", b))
-                .collect::<Vec<String>>()
-                .join(", ")
-        )
     }
 
     #[tokio::test]

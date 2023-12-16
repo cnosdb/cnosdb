@@ -12,4 +12,3 @@ const BLOCK_META_SIZE: usize = 44;
 const BLOOM_FILTER_SIZE: usize = 64;
 const BLOOM_FILTER_BITS: u64 = 512; // 64 * 8
 const FOOTER_SIZE: usize = BLOOM_FILTER_SIZE + 8; // 72
-

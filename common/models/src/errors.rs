@@ -77,10 +77,14 @@ pub enum Error {
     NoneRecordBatch,
 
     #[snafu(display("Dump Error: {}", msg))]
-    DumpError { msg: String },
+    DumpError {
+        msg: String,
+    },
 
     #[snafu(display("{msg}"))]
-    Common { msg: String },
+    Common {
+        msg: String,
+    },
 }
 
 impl From<io::Error> for Error {

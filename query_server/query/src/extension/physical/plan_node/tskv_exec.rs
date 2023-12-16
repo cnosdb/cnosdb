@@ -17,7 +17,7 @@ use datafusion::physical_plan::{
 };
 use futures::{Stream, StreamExt};
 use models::codec::Encoding;
-use models::datafusion_tool::limit_record_batch::limit_record_batch;
+use models::datafusion::limit_record_batch::limit_record_batch;
 use models::predicate::domain::PredicateRef;
 use models::predicate::PlacedSplit;
 use models::schema::{ColumnType, TableColumn, TskvTableSchema, TskvTableSchemaRef, TIME_FIELD};

@@ -10,6 +10,7 @@ use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
 use datafusion::physical_plan::PhysicalExpr;
 use futures::stream::BoxStream;
 use futures::{Stream, StreamExt};
+pub use iterator::QueryOption;
 use models::field_value::DataType;
 use models::predicate::domain::{TimeRange, TimeRanges};
 use models::schema::{PhysicalCType, TskvTableSchema, TIME_FIELD_NAME};
@@ -21,8 +22,6 @@ use crate::memcache::SeriesData;
 use crate::tsm2::page::Chunk;
 use crate::tsm2::reader::TSM2Reader;
 use crate::{Error, Result};
-
-pub use iterator::QueryOption;
 
 mod batch_builder;
 mod chunk;

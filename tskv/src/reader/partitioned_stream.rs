@@ -5,7 +5,7 @@ use arrow_array::RecordBatch;
 use arrow_schema::ArrowError;
 use futures::stream::Fuse;
 use futures::StreamExt;
-use models::datafusion_tool::cursor::FieldArray;
+use models::datafusion::cursor::FieldArray;
 
 use crate::reader::sort_merge::ColumnCursor;
 use crate::reader::SendableSchemableTskvRecordBatchStream;

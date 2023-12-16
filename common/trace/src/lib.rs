@@ -74,7 +74,7 @@ pub fn targets_filter(level: LevelFilter, defined_tokio_trace: bool) -> filter::
             ("tskv", level),
             ("utils", level),
             ("replication", level),
-            ("datafusion_tool", level),
+            ("datafusion", level),
             ("arrow", level),
         ])
         .with_targets(vec![

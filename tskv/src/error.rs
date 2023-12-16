@@ -122,6 +122,12 @@ pub enum Error {
         reason: String,
     },
 
+    #[snafu(display("TagError: {}", reason))]
+    #[error_code(code = 16)]
+    TagError {
+        reason: String,
+    },
+
     // Internal Error
     #[snafu(display("{}", source))]
     IO {

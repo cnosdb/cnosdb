@@ -5,11 +5,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let project_root_dir = env::current_dir()?;
     let proto_files_dir = project_root_dir.join("proto");
 
-    // src/generated/datafusion_tool
+    // src/generated/datafusion
     let generated_mod_rs_path = project_root_dir
         .join("src")
         .join("generated")
-        .join("datafusion_tool");
+        .join("datafusion");
     let mut generated_mod_rs_file = fs::File::create(generated_mod_rs_path)?;
     generated_mod_rs_file.write_all(
         b"#![allow(unused_imports)]
@@ -53,8 +53,9 @@ mod flatbuffers_generated;
             .compile_with_config(config, proto_file_paths, &[proto_files_dir.as_path()])
             .expect("Failed to generate protobuf file {}.");
 
-        // src/generated/protobuf_generated/datafusion_tool
-        let mut protobuf_generated_mod_rs_file = fs::File::create(output_dir_final.join("datafusion_tool"))?;
+        // src/generated/protobuf_generated/datafusion
+        let mut protobuf_generated_mod_rs_file =
+            fs::File::create(output_dir_final.join("datafusion"))?;
         for mod_name in rust_mod_names.iter() {
             protobuf_generated_mod_rs_file.write_all(b"pub mod ")?;
             protobuf_generated_mod_rs_file.write_all(mod_name.as_bytes())?;
@@ -75,9 +76,9 @@ mod flatbuffers_generated;
             .join("flatbuffers_generated");
         fs::create_dir_all(&output_dir_final)?;
 
-        // src/generated/flatbuffers_generated/datafusion_tool
+        // src/generated/flatbuffers_generated/datafusion
         let mut flatbuffers_generated_mod_rs_file =
-            fs::File::create(output_dir_final.join("datafusion_tool"))?;
+            fs::File::create(output_dir_final.join("datafusion"))?;
 
         // <flatbuffers_file_name>.fbs -> <flatbuffers_file_name>
         for p in fbs_file_paths.iter() {

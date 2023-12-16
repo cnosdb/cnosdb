@@ -27,7 +27,7 @@ pub fn str_to_geo(wkt: &str) -> Result<Geometry, DataFusionError> {
 }
 
 /// $FUNC_NAME: &str
-/// $RES_TYPE: datafusion_tool::DataType
+/// $RES_TYPE: datafusion::DataType
 /// $OP: fn(&Geometry) -> Result<$RES_TYPE, DataFusionError>
 /// $RES_ARRAY_BUILDER: impl ArrayBuilder
 #[macro_export]
@@ -75,7 +75,7 @@ macro_rules! geometry_unary_op {
 }
 
 /// $FUNC_NAME: &str
-/// $RES_TYPE: datafusion_tool::DataType
+/// $RES_TYPE: datafusion::DataType
 /// $OP: fn(&Geometry, &Geometry) -> Result<$RES_TYPE, DataFusionError>
 /// $RES_ARRAY_BUILDER: impl ArrayBuilder
 #[macro_export]

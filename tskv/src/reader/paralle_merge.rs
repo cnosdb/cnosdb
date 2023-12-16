@@ -6,7 +6,7 @@ use datafusion::arrow::datatypes::SchemaRef;
 use futures::stream::BoxStream;
 use futures::{Stream, StreamExt};
 use models::arrow::stream::ParallelMergeStream;
-use models::datafusion_tool::limit_record_batch::limit_record_batch;
+use models::datafusion::limit_record_batch::limit_record_batch;
 
 use crate::reader::{
     BatchReader, BatchReaderRef, SchemableTskvRecordBatchStream,

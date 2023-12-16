@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::collections::{HashMap};
+use std::collections::HashMap;
 use std::mem::size_of;
 use std::sync::Arc;
 
@@ -22,10 +22,10 @@ use crate::compaction::CompactTask;
 use crate::error::{Result, SchemaSnafu};
 use crate::index::{self, IndexResult};
 use crate::kv_option::{Options, INDEX_PATH};
-use crate::tseries_family::{LevelInfo, TseriesFamily, TsfFactory, Version};
 use crate::memcache::{OrderedRowsData, RowData, RowGroup};
 use crate::schema::schemas::DBschemas;
 use crate::summary::{SummaryTask, VersionEdit};
+use crate::tseries_family::{LevelInfo, TseriesFamily, TsfFactory, Version};
 use crate::tsm2::reader::TSM2Reader;
 use crate::Error::{self};
 use crate::{file_utils, ColumnFileId, TsKvContext, TseriesFamilyId};

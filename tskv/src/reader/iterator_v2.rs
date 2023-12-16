@@ -309,6 +309,7 @@ impl SeriesGroupBatchReaderFactory {
                     series_key,
                     chunks,
                     self.query_option.batch_size,
+                    self.query_option.table_schema.clone(),
                     &projection,
                     &predicate,
                     schema.clone(),
@@ -368,13 +369,16 @@ impl SeriesGroupBatchReaderFactory {
         series_ids: &[SeriesId],
     ) -> Result<Vec<SeriesKey>> {
         // 通过sid获取serieskey
-        let sid_keys = self.engine.get_series_key(
-            &self.query_option.table_schema.tenant,
-            &self.query_option.table_schema.db,
-            &self.query_option.table_schema.name,
-            vnode_id,
-            series_ids,
-        ).await?;
+        let sid_keys = self
+            .engine
+            .get_series_key(
+                &self.query_option.table_schema.tenant,
+                &self.query_option.table_schema.db,
+                &self.query_option.table_schema.name,
+                vnode_id,
+                series_ids,
+            )
+            .await?;
 
         Ok(sid_keys)
     }
@@ -526,6 +530,7 @@ impl SeriesGroupBatchReaderFactory {
         series_key: SeriesKey,
         mut chunks: Vec<DataReference>,
         batch_size: usize,
+        query_schema: TskvTableSchemaRef,
         projection: &Projection,
         predicate: &Option<Arc<Predicate>>,
         schema: SchemaRef,
@@ -597,6 +602,7 @@ impl SeriesGroupBatchReaderFactory {
         let series_reader = Arc::new(SeriesReader::new(
             series_key,
             Arc::new(CombinedBatchReader::new(readers)),
+            query_schema,
             self.series_reader_metrics_set.clone(),
             limit,
         ));

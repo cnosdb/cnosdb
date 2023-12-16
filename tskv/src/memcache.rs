@@ -8,8 +8,8 @@ use std::sync::Arc;
 use datafusion::arrow::datatypes::TimeUnit;
 use flatbuffers::{ForwardsUOffset, Vector};
 use memory_pool::{MemoryConsumer, MemoryPoolRef, MemoryReservation};
-use minivec::{MiniVec};
-use models::field_value::{FieldVal};
+use minivec::MiniVec;
+use models::field_value::FieldVal;
 use models::predicate::domain::{TimeRange, TimeRanges};
 use models::schema::{
     timestamp_convert, ColumnType, Precision, TableColumn, TskvTableSchema, TskvTableSchemaRef,
@@ -434,8 +434,7 @@ impl SeriesData {
 
             for item in self.groups.iter_mut() {
                 let mut rows = OrderedRowsData::new();
-                item
-                    .rows
+                item.rows
                     .get_ref_rows()
                     .iter()
                     .filter(|row| row.ts < time_range.min_ts || row.ts > time_range.max_ts)
@@ -532,22 +531,22 @@ impl SeriesData {
                 let values = dedup_and_sort_row_data(rows);
                 for row in values {
                     match row.ts.cmp(&version.max_level_ts()) {
-                        std::cmp::Ordering::Less => {
-                            delta_time_array.push(Some(FieldVal::Integer(row.ts)));
+                        cmp::Ordering::Greater => {
+                            time_array.push(Some(FieldVal::Integer(row.ts)));
                         }
                         _ => {
-                            time_array.push(Some(FieldVal::Integer(row.ts)));
+                            delta_time_array.push(Some(FieldVal::Integer(row.ts)));
                         }
                     }
                     for col in schema.fields().iter() {
                         if let Some(index) = field_ids.get(&col.id) {
                             let field = row.fields.get(*index).and_then(|v| v.clone());
                             match row.ts.cmp(&version.max_level_ts()) {
-                                std::cmp::Ordering::Less => {
-                                    delta_cols[*index].push(field);
+                                cmp::Ordering::Greater => {
+                                    cols[*index].push(field);
                                 }
                                 _ => {
-                                    cols[*index].push(field);
+                                    delta_cols[*index].push(field);
                                 }
                             }
                             if cols_desc[*index].is_none() {
@@ -646,7 +645,7 @@ impl MemCache {
                 if let Some((table, datablock, delta_datablock)) =
                     data.build_data_block(version.clone())?
                 {
-                    if datablock.len() != 0 {
+                    if !datablock.is_empty() {
                         if let Some(chunk) = chunk_group.get_mut(&table) {
                             chunk.insert(*series_id, datablock);
                         } else {
@@ -656,7 +655,7 @@ impl MemCache {
                         }
                     }
 
-                    if delta_datablock.len() != 0 {
+                    if !delta_datablock.is_empty() {
                         if let Some(chunk) = delta_chunk_group.get_mut(&table) {
                             chunk.insert(*series_id, delta_datablock);
                         } else {

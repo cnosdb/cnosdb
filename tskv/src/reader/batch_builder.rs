@@ -5,7 +5,7 @@ use arrow::compute::interleave;
 use arrow::datatypes::SchemaRef;
 use arrow_array::{Array, RecordBatch};
 use datafusion::common::DataFusionError;
-use models::datafusion_tool::cursor::{FieldArray, FieldValues};
+use models::datafusion::cursor::{FieldArray, FieldValues};
 
 use crate::{Error, Result};
 

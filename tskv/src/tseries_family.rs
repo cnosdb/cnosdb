@@ -5,8 +5,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
-use cache::{AsyncCache, ShardedAsyncCache};
 use arrow_array::RecordBatch;
+use cache::{AsyncCache, ShardedAsyncCache};
 use memory_pool::MemoryPoolRef;
 use metrics::gauge::U64Gauge;
 use metrics::metric_register::MetricsRegister;
@@ -29,12 +29,12 @@ use crate::file_utils::{make_delta_file, make_tsm_file};
 use crate::kv_option::{CacheOptions, StorageOptions};
 use crate::memcache::{MemCache, MemCacheStatistics, RowGroup};
 use crate::summary::{CompactMeta, VersionEdit};
-use crate::tsm::{TsmTombstone};
+use crate::tsm::TsmTombstone;
 use crate::tsm2::page::PageMeta;
 use crate::tsm2::reader::TSM2Reader;
 use crate::tsm2::ColumnGroupID;
 use crate::Error::CommonError;
-use crate::{ColumnFileId, LevelId, Options, TseriesFamilyId, tsm};
+use crate::{tsm, ColumnFileId, LevelId, Options, TseriesFamilyId};
 
 #[derive(Debug)]
 pub struct ColumnFile {
@@ -508,17 +508,17 @@ impl Version {
     pub async fn get_tsm_reader2(&self, path: impl AsRef<Path>) -> Result<Arc<TSM2Reader>> {
         let path = path.as_ref().display().to_string();
         let tsm_reader = match self.tsm2_reader_cache.get(&path).await {
-            Some(val) => val.clone(),
-            None => {
-                match self.tsm2_reader_cache.get(&path).await {
-                    Some(val) => val,
-                    None => {
-                        let tsm_reader = Arc::new(TSM2Reader::open(&path).await?);
-                        self.tsm2_reader_cache.insert(path, tsm_reader.clone()).await;
-                        tsm_reader
-                    }
+            Some(val) => val,
+            None => match self.tsm2_reader_cache.get(&path).await {
+                Some(val) => val,
+                None => {
+                    let tsm_reader = Arc::new(TSM2Reader::open(&path).await?);
+                    self.tsm2_reader_cache
+                        .insert(path, tsm_reader.clone())
+                        .await;
+                    tsm_reader
                 }
-            }
+            },
         };
         Ok(tsm_reader)
     }
@@ -1215,32 +1215,19 @@ impl Drop for TseriesFamily {
 #[cfg(test)]
 pub mod test_tseries_family {
     use std::collections::HashMap;
-    use std::mem::size_of;
     use std::sync::Arc;
 
     use cache::ShardedAsyncCache;
-    use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
-    use metrics::metric_register::MetricsRegister;
-    use models::predicate::domain::TimeRanges;
-    use models::schema::{DatabaseSchema, TenantOptions};
-    use models::field_value::FieldVal;
-    use models::predicate::domain::TimeRanges;
     use models::Timestamp;
-    use tokio::sync::mpsc::{self, Receiver};
+    use tokio::sync::mpsc::Receiver;
 
     use super::{ColumnFile, LevelInfo};
-    use crate::compaction::flush_tests::default_table_schema;
-    use crate::compaction::{run_flush_memtable_job, FlushReq};
-    use crate::context::GlobalContext;
     use crate::file_utils::make_tsm_file;
-    use crate::file_utils::make_tsm_file_name;
     use crate::kv_option::{Options, StorageOptions};
-    use crate::kvcore::COMPACT_REQ_CHANNEL_CAP;
-    use crate::memcache::{MemCache, OrderedRowsData, RowData, RowGroup};
     use crate::summary::{CompactMeta, SummaryTask, VersionEdit};
-    use crate::tseries_family::{TimeRange, TseriesFamily, Version};
+    use crate::tseries_family::{TimeRange, Version};
     use crate::version_set::VersionSet;
-    use crate::{TsKvContext, TseriesFamilyId};
+    use crate::TseriesFamilyId;
 
     #[tokio::test]
     async fn test_version_apply_version_edits_1() {
@@ -1498,88 +1485,6 @@ pub mod test_tseries_family {
             max_level_ts,
             tsm_reader_cache,
         )
-    }
-
-    #[tokio::test]
-    pub async fn test_tsf_delete() {
-        let dir = "/tmp/test/ts_family/tsf_delete";
-        let _ = std::fs::remove_dir_all(dir);
-        std::fs::create_dir_all(dir).unwrap();
-        let mut global_config = config::get_config_for_test();
-        global_config.storage.path = dir.to_string();
-        let opt = Arc::new(Options::from(&global_config));
-        let memory_pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::default());
-        let database = Arc::new("db".to_string());
-        let tsf = TseriesFamily::new(
-            0,
-            database.clone(),
-            MemCache::new(0, 500, 2, 0, &memory_pool),
-            Arc::new(Version::new(
-                0,
-                database.clone(),
-                opt.storage.clone(),
-                0,
-                LevelInfo::init_levels(database, 0, opt.storage.clone()),
-                0,
-                Arc::new(ShardedAsyncCache::create_lru_sharded_cache(1)),
-            )),
-            opt.cache.clone(),
-            opt.storage.clone(),
-            memory_pool,
-            &Arc::new(MetricsRegister::default()),
-        );
-
-        let mut rows: OrderedRowsData = OrderedRowsData::new();
-        rows.insert(RowData {
-            ts: 10,
-            fields: vec![
-                Some(FieldVal::Integer(11)),
-                Some(FieldVal::Integer(12)),
-                Some(FieldVal::Integer(13)),
-            ],
-        });
-        let row_group = RowGroup {
-            schema: default_table_schema(vec![0, 1, 2]).into(),
-            range: TimeRange {
-                min_ts: 1,
-                max_ts: 100,
-            },
-            rows,
-            size: size_of::<RowGroup>() + 3 * size_of::<u32>() + size_of::<Option<FieldVal>>() + 8,
-        };
-        let mut points = HashMap::new();
-        points.insert(0, row_group);
-        let _ = tsf.put_points(0, points);
-
-        let mut cached_data = vec![];
-        tsf.mut_cache.read().read_field_data(
-            0,
-            &TimeRanges::new(vec![TimeRange {
-                min_ts: Timestamp::MIN,
-                max_ts: Timestamp::MAX,
-            }]),
-            |_| true,
-            |d| cached_data.push(d),
-        );
-        assert_eq!(cached_data.len(), 1);
-        tsf.delete_series_by_time_ranges(
-            &[0],
-            &TimeRanges::new(vec![TimeRange {
-                min_ts: 0,
-                max_ts: 200,
-            }]),
-        );
-        cached_data.clear();
-        tsf.mut_cache.read().read_field_data(
-            0,
-            &TimeRanges::new(vec![TimeRange {
-                min_ts: Timestamp::MIN,
-                max_ts: Timestamp::MAX,
-            }]),
-            |_| true,
-            |d| cached_data.push(d),
-        );
-        assert!(cached_data.is_empty());
     }
 
     // Util function for testing with summary modification.

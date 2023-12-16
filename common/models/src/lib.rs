@@ -2,7 +2,6 @@
 
 use std::sync::Arc;
 
-pub use datafusion::sql::sqlparser::ast::Value as SqlParserValue;
 pub use error_code;
 pub use errors::{Error, Result};
 use parking_lot::RwLock;
@@ -26,7 +25,7 @@ mod value_type;
 pub mod arrow_array;
 pub mod arrow;
 pub mod auth;
-pub mod datafusion_tool;
+pub mod datafusion;
 pub mod duration;
 pub mod field_value;
 pub mod gis;
