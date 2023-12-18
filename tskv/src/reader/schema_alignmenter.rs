@@ -7,6 +7,8 @@ use arrow::error::ArrowError;
 use arrow_array::{new_null_array, RecordBatch};
 use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
 use futures::{Stream, StreamExt};
+use models::schema::COLUMN_ID_META_KEY;
+use trace::error;
 
 use super::metrics::BaselineMetrics;
 use super::{
@@ -42,11 +44,11 @@ impl BatchReader for SchemaAlignmenter {
         let input = self.input.process()?;
         let input_schema = input.schema();
         if let Some(schema_mapping) = build_schema_mapping(&self.schema, &input_schema) {
-            let output_schema = schema_mapping.schema(&input_schema);
+            // let output_schema = schema_mapping.schema(&input_schema);
 
             return Ok(Box::pin(SchemaAlignmenterStream {
                 schema_mapping,
-                schema: output_schema,
+                schema: self.schema.clone(),
                 input,
                 metrics: BaselineMetrics::new(self.metrics.as_ref()),
             }));
@@ -99,10 +101,36 @@ fn build_schema_mapping(
         .fields()
         .iter()
         .map(|f| {
-            input_schema
-                .index_of(f.name())
-                .map(Assignment::Location)
-                .unwrap_or_else(|_| Assignment::Fill(f.clone()))
+            let column_id_out = f
+                .metadata()
+                .get(COLUMN_ID_META_KEY)
+                .map(|v| v.as_str())
+                .unwrap_or_else(|| {
+                    error!(
+                        "column_id is missing in output schema field metadata: {:?}",
+                        f
+                    );
+                    ""
+                });
+            let mut ans = Assignment::Fill(f.clone());
+            for (index, column) in input_schema.fields.iter().enumerate() {
+                if let Some(column_id) = column
+                    .metadata()
+                    .get(COLUMN_ID_META_KEY)
+                    .map(|v| v.as_str())
+                {
+                    if column_id_out == column_id {
+                        ans = Assignment::Location(index);
+                        break;
+                    }
+                } else {
+                    error!(
+                        "column_id is missing in input schema field metadata: {:?}",
+                        column
+                    );
+                }
+            }
+            ans
         })
         .collect();
 

@@ -241,6 +241,7 @@ pub async fn run_flush_memtable_job(
 
 #[cfg(test)]
 pub mod flush_tests {
+    use minivec::MiniVec;
     use models::codec::Encoding;
     use models::schema::{ColumnType, TableColumn, TskvTableSchema};
     use models::{ColumnId, ValueType};
@@ -267,17 +268,70 @@ pub mod flush_tests {
 
     #[test]
     fn test_sort_dedup() {
-        #[rustfmt::skip]
-            let mut data = vec![
-            (1, 11), (1, 12), (2, 21), (3, 3), (2, 22), (4, 41), (4, 42),
-        ];
-        data.sort_by_key(|a| a.0);
-        assert_eq!(
-            &data,
-            &vec![(1, 11), (1, 12), (2, 21), (2, 22), (3, 3), (4, 41), (4, 42)]
-        );
-        dedup_front_by_key(&mut data, |a| a.0);
-        assert_eq!(&data, &vec![(1, 12), (2, 22), (3, 3), (4, 42)]);
+        {
+            let mut data = vec![(1, 11), (1, 12), (2, 21), (3, 3), (2, 22), (4, 41), (4, 42)];
+            data.sort_by_key(|a| a.0);
+            assert_eq!(
+                &data,
+                &vec![(1, 11), (1, 12), (2, 21), (2, 22), (3, 3), (4, 41), (4, 42)]
+            );
+            dedup_front_by_key(&mut data, |a| a.0);
+            assert_eq!(&data, &vec![(1, 12), (2, 22), (3, 3), (4, 42)]);
+        }
+        {
+            // Test dedup-front for list with no duplicated key.
+            let mut data: Vec<(i32, MiniVec<u8>)> = vec![
+                (1, "a1".into()),
+                (2, "b2".into()),
+                (3, "c3".into()),
+                (4, "d4".into()),
+            ];
+            data.sort_by_key(|a| a.0);
+            dedup_front_by_key(&mut data, |a| a.0);
+            assert_eq!(
+                &data,
+                &vec![
+                    (1, "a1".into()),
+                    (2, "b2".into()),
+                    (3, "c3".into()),
+                    (4, "d4".into()),
+                ]
+            );
+        }
+        {
+            // Test dedup-front for list with only one key.
+            let mut data: Vec<(i32, MiniVec<u8>)> = vec![
+                (1, "a1".into()),
+                (1, "a2".into()),
+                (1, "a3".into()),
+                (1, "a4".into()),
+            ];
+            dedup_front_by_key(&mut data, |a| a.0);
+            assert_eq!(&data, &vec![(1, "a4".into()),]);
+        }
+        {
+            // Test dedup-front for list with shuffled multiply duplicated key.
+            let mut data: Vec<(i32, MiniVec<u8>)> = vec![
+                (1, "a1".into()),
+                (1, "b1".into()),
+                (2, "c2".into()),
+                (3, "d3".into()),
+                (2, "e2".into()),
+                (4, "e4".into()),
+                (4, "f4".into()),
+            ];
+            data.sort_by_key(|a| a.0);
+            dedup_front_by_key(&mut data, |a| a.0);
+            assert_eq!(
+                &data,
+                &vec![
+                    (1, "b1".into()),
+                    (2, "e2".into()),
+                    (3, "d3".into()),
+                    (4, "f4".into()),
+                ]
+            );
+        }
     }
 
     #[tokio::test]

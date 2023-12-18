@@ -381,6 +381,7 @@ f1,f0,t0
 -- AFTER_SORT --
 200 OK
 t0,f0
+,
 t0,f0
 
 -- EXECUTE SQL: SELECT m1.t0, m1.f0 FROM m1 WHERE ((((m1.f1)OR((NOT (CAST('-1326988525' AS BOOLEAN))) IS NOT UNKNOWN)))OR(NOT (((CAST(-1893650081 AS STRING))LIKE(((m1.f0)||(-397861691))))))) UNION ALL SELECT m1.t0, m1.f0 FROM m1 WHERE NOT (((((m1.f1)OR((NOT (CAST('-1326988525' AS BOOLEAN))) IS NOT UNKNOWN)))OR(NOT (((CAST(-1893650081 AS STRING))LIKE(((m1.f0)||(-397861691)))))))) UNION ALL SELECT m1.t0, m1.f0 FROM m1 WHERE (((((m1.f1)OR((NOT (CAST('-1326988525' AS BOOLEAN))) IS NOT UNKNOWN)))OR(NOT (((CAST(-1893650081 AS STRING))LIKE(((m1.f0)||(-397861691)))))))) IS NULL; --
@@ -393,6 +394,11 @@ t0,f0
 -- AFTER_SORT --
 200 OK
 f1
+""
+""
+""
+""
+""
 0.0
 0.4131558313302025
 0.47166914414715877
@@ -564,6 +570,8 @@ f0
 -- AFTER_SORT --
 200 OK
 f0
+""
+""
 false
 false
 false
@@ -585,6 +593,8 @@ true
 -- AFTER_SORT --
 200 OK
 f0
+""
+""
 false
 false
 false
@@ -1091,13 +1101,14 @@ f0,t0,false
 -- EXECUTE SQL: SELECT ALL m1.f0, m1.t0, m1.f1 FROM m1 WHERE (CAST(CAST((m1.t0) BETWEEN (m1.t0) AND (m1.f0) AS STRING) AS BIGINT)) IS NULL; --
 -- AFTER_SORT --
 200 OK
-f0,t0,f1
-,,false
+
 
 -- EXECUTE SQL: SELECT ALL m0.f0 FROM m0 ORDER BY m0.f0 DESC; --
 -- AFTER_SORT --
 200 OK
 f0
+""
+""
 false
 false
 false
@@ -1134,12 +1145,15 @@ true
 -- EXECUTE SQL: SELECT ALL m0.f0 FROM m0 WHERE (((m0.f0) NOT IN (FALSE, TRUE)) NOT IN (FALSE)) IS NULL; --
 -- AFTER_SORT --
 200 OK
-
+f0
+""
+""
 
 -- EXECUTE SQL: SELECT ALL BOOL_AND((0.7125738444099359) NOT IN (0.17193890888962704, 0.5773990828254518)) FROM m1 GROUP BY ((- (CAST(((m1.t0)LIKE(m1.f0)) AS BIGINT)))*(CAST(-33990896 AS BIGINT))); --
 -- AFTER_SORT --
 200 OK
 "BOOL_AND(Float64(0.7125738444099359) NOT IN (Map { iter: Iter([Literal(Float64(0.17193890888962704)), Literal(Float64(0.5773990828254518))]) }))"
+true
 true
 
 -- EXECUTE SQL: SELECT m3.f0, m3.t0 FROM m3; --
@@ -1254,6 +1268,8 @@ SUM(Float64(0.7069601217262456))
 -- AFTER_SORT --
 200 OK
 f0,t0
+,
+,916053861
 false,
 false,
 false,t0
@@ -1270,6 +1286,8 @@ true,
 -- AFTER_SORT --
 200 OK
 f0,t0
+,
+,916053861
 false,
 false,
 false,t0
@@ -1518,6 +1536,11 @@ BIT_AND(m3.f0),Float64(0.13969056553337023)
 -- AFTER_SORT --
 200 OK
 f1
+""
+""
+""
+""
+""
 0.0
 0.4131558313302025
 0.47166914414715877
@@ -1531,6 +1554,11 @@ f1
 -- AFTER_SORT --
 200 OK
 f1
+""
+""
+""
+""
+""
 0.0
 0.4131558313302025
 0.47166914414715877
@@ -1562,6 +1590,7 @@ true
 -- AFTER_SORT --
 200 OK
 f0,t0
+,
 f0,t0
 
 -- EXECUTE SQL: SELECT ALL m1.f0, m1.t0 FROM m1 WHERE NOT (NOT ((CAST(-1231009110 AS BOOLEAN)) IS FALSE)); --
@@ -1573,6 +1602,7 @@ f0,t0
 -- AFTER_SORT --
 200 OK
 f0,t0
+,
 f0,t0
 
 -- EXECUTE SQL: SELECT m1.f0, m1.t0 FROM m1 WHERE (NOT (NOT ((CAST(-1231009110 AS BOOLEAN)) IS FALSE))) IS NULL; --
@@ -1596,6 +1626,11 @@ f0,t2,t0
 -- AFTER_SORT --
 200 OK
 f1
+""
+""
+""
+""
+""
 0.0
 0.4131558313302025
 0.47166914414715877
@@ -1609,6 +1644,11 @@ f1
 -- AFTER_SORT --
 200 OK
 f1
+""
+""
+""
+""
+""
 0.0
 0.4131558313302025
 0.47166914414715877
@@ -1634,6 +1674,11 @@ MAX(asdf.agg0)
 -- AFTER_SORT --
 200 OK
 f1
+""
+""
+""
+""
+""
 0.0
 0.4131558313302025
 0.47166914414715877
@@ -1647,6 +1692,11 @@ f1
 -- AFTER_SORT --
 200 OK
 f1
+""
+""
+""
+""
+""
 0.0
 0.4131558313302025
 0.47166914414715877
@@ -1683,6 +1733,7 @@ t2,0,t0,t1
 -- AFTER_SORT --
 200 OK
 f0
+""
 f0
 
 -- EXECUTE SQL: SELECT ALL m1.f0 FROM m1 WHERE (((CAST(2.6056234E7 AS BOOLEAN)) IS FALSE) BETWEEN SYMMETRIC (CAST((-1085148421) NOT IN (-1500909960) AS BOOLEAN)) AND ((((1573456014) IN (0.13611617631973572, 0.9136097523200366))!=((m1.t0) BETWEEN (m1.f0) AND ('-3d~%24v '))))) IS UNKNOWN UNION ALL SELECT m1.f0 FROM m1 WHERE NOT ((((CAST(2.6056234E7 AS BOOLEAN)) IS FALSE) BETWEEN SYMMETRIC (CAST((-1085148421) NOT IN (-1500909960) AS BOOLEAN)) AND ((((1573456014) IN (0.13611617631973572, 0.9136097523200366))!=((m1.t0) BETWEEN (m1.f0) AND ('-3d~%24v '))))) IS UNKNOWN) UNION ALL SELECT ALL m1.f0 FROM m1 WHERE ((((CAST(2.6056234E7 AS BOOLEAN)) IS FALSE) BETWEEN SYMMETRIC (CAST((-1085148421) NOT IN (-1500909960) AS BOOLEAN)) AND ((((1573456014) IN (0.13611617631973572, 0.9136097523200366))!=((m1.t0) BETWEEN (m1.f0) AND ('-3d~%24v '))))) IS UNKNOWN) IS NULL; --
@@ -1748,6 +1799,8 @@ true
 -- AFTER_SORT --
 200 OK
 f0,t0
+,
+,916053861
 false,
 false,
 false,t0
@@ -1764,6 +1817,8 @@ true,
 -- AFTER_SORT --
 200 OK
 f0,t0
+,
+,916053861
 false,
 false,
 false,t0
@@ -1780,6 +1835,11 @@ true,
 -- AFTER_SORT --
 200 OK
 f1
+""
+""
+""
+""
+""
 0.0
 0.4131558313302025
 0.47166914414715877
@@ -1793,6 +1853,11 @@ f1
 -- AFTER_SORT --
 200 OK
 f1
+""
+""
+""
+""
+""
 0.0
 0.4131558313302025
 0.47166914414715877
@@ -1970,6 +2035,8 @@ MAX(Int64(-1770299815) # Int64(291484029) - Int64(706170751) - Int64(-488758559)
 -- AFTER_SORT --
 200 OK
 f0,t0
+,
+,916053861
 false,
 false,
 false,t0
@@ -2070,8 +2137,7 @@ false,t0,f1
 -- EXECUTE SQL: SELECT m2.f0, m2.t0, m2.f1 FROM m2 WHERE CAST(((m2.t0) IN ('{e', '')) IS FALSE AS BOOLEAN) UNION ALL SELECT m2.f0, m2.t0, m2.f1 FROM m2 WHERE NOT (CAST(((m2.t0) IN ('{e', '')) IS FALSE AS BOOLEAN)) UNION ALL SELECT ALL m2.f0, m2.t0, m2.f1 FROM m2 WHERE (CAST(((m2.t0) IN ('{e', '')) IS FALSE AS BOOLEAN)) IS NULL; --
 -- AFTER_SORT --
 200 OK
-f0,t0,f1
-false,t0,f1
+
 
 -- EXECUTE SQL: SELECT m2.f1 FROM m2; --
 -- AFTER_SORT --
@@ -2211,6 +2277,7 @@ time,t0,f0,f1
 -- AFTER_SORT --
 200 OK
 t0,f0
+,
 t0,f0
 
 -- EXECUTE SQL: SELECT ALL m1.t0, m1.f0 FROM m1 WHERE (m1.f1) IS TRUE; --
@@ -2328,6 +2395,8 @@ f1,f0,t0
 -- AFTER_SORT --
 200 OK
 f0
+""
+""
 false
 false
 false
@@ -2362,6 +2431,8 @@ true
 -- AFTER_SORT --
 200 OK
 f0
+""
+""
 false
 false
 false
@@ -2470,6 +2541,11 @@ f0,t0,t2,t1
 -- AFTER_SORT --
 200 OK
 t0,f1
+,
+,
+,
+,
+,
 ,0.4131558313302025
 ,0.47166914414715877
 ,0.5469987105166848
@@ -2489,6 +2565,7 @@ t0,0.0
 -- AFTER_SORT --
 200 OK
 f0
+""
 f0
 
 -- EXECUTE SQL: SELECT ALL m1.f0 FROM m1 WHERE CAST(CAST((-898117395) IN (-1907483300) AS STRING) AS BOOLEAN); --
@@ -2681,6 +2758,11 @@ t1,t0,false,0
 -- AFTER_SORT --
 200 OK
 f1,t0
+,
+,
+,
+,
+,
 0.0,t0
 0.4131558313302025,
 0.47166914414715877,
@@ -2694,6 +2776,11 @@ f1,t0
 -- AFTER_SORT --
 200 OK
 f1,t0
+,
+,
+,
+,
+,
 0.0,t0
 0.4131558313302025,
 0.47166914414715877,
@@ -2713,6 +2800,7 @@ Float64(0.3000222763276785)
 -- AFTER_SORT --
 200 OK
 t0,f0
+,
 ,false
 ,false
 ,true
@@ -2723,12 +2811,14 @@ t0,f0
 ,true
 ,true
 ,true
+916053861,
 t0,false
 
 -- EXECUTE SQL: SELECT ALL m0.t0, m0.f0 FROM m0 WHERE (NOT ((0.114734690079073) NOT IN (0.16365240511015255, 0.42955713688800734, 0.172575140114413))) IS UNKNOWN UNION ALL SELECT ALL m0.t0, m0.f0 FROM m0 WHERE NOT ((NOT ((0.114734690079073) NOT IN (0.16365240511015255, 0.42955713688800734, 0.172575140114413))) IS UNKNOWN) UNION ALL SELECT m0.t0, m0.f0 FROM m0 WHERE ((NOT ((0.114734690079073) NOT IN (0.16365240511015255, 0.42955713688800734, 0.172575140114413))) IS UNKNOWN) IS NULL; --
 -- AFTER_SORT --
 200 OK
 t0,f0
+,
 ,false
 ,false
 ,true
@@ -2739,6 +2829,7 @@ t0,f0
 ,true
 ,true
 ,true
+916053861,
 t0,false
 
 -- EXECUTE SQL: SELECT m1.t0, m1.f1 FROM m1; --
@@ -3089,6 +3180,7 @@ t0,f0,false
 -- AFTER_SORT --
 200 OK
 f0
+""
 f0
 
 -- EXECUTE SQL: SELECT m1.f0 FROM m1 WHERE m1.f1 UNION ALL SELECT m1.f0 FROM m1 WHERE NOT (m1.f1) UNION ALL SELECT m1.f0 FROM m1 WHERE (m1.f1) IS NULL; --
@@ -3261,13 +3353,13 @@ f1,t0,false
 -- EXECUTE SQL: SELECT ALL m0.f0 FROM m0 WHERE (CAST((((('ࢀ+h')||('335616128')))||((m0.t0) NOT IN ('', 'A6<k['''))) AS BOOLEAN)) IS TRUE; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast value 'ࢀ+h3356161281' to value of Boolean type"}
+{"error_code":"020006","error_message":"Arrow: Cast error: Cannot cast value 'ࢀ+h3356161281' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.f0 FROM m0 WHERE NOT ((CAST((((('ࢀ+h')||('335616128')))||((m0.t0) NOT IN ('', 'A6<k['''))) AS BOOLEAN)) IS TRUE); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010002","error_message":"Arrow: Cast error: Cannot cast value 'ࢀ+h3356161281' to value of Boolean type"}
+{"error_code":"020006","error_message":"Arrow: Cast error: Cannot cast value 'ࢀ+h3356161281' to value of Boolean type"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT m0.f0 FROM m0 WHERE ((CAST((((('ࢀ+h')||('335616128')))||((m0.t0) NOT IN ('', 'A6<k['''))) AS BOOLEAN)) IS TRUE) IS NULL; --
@@ -3374,8 +3466,7 @@ false
 -- EXECUTE SQL: SELECT m1.f1 FROM m1 WHERE NOT (NOT (NOT (((m1.t0) BETWEEN (m1.f0) AND (m1.f0)) IS NOT UNKNOWN))); --
 -- AFTER_SORT --
 200 OK
-f1
-false
+
 
 -- EXECUTE SQL: SELECT m1.f1 FROM m1 WHERE (NOT (NOT (((m1.t0) BETWEEN (m1.f0) AND (m1.f0)) IS NOT UNKNOWN))) IS NULL; --
 -- AFTER_SORT --
@@ -3453,6 +3544,8 @@ t0,false,0.0
 -- AFTER_SORT --
 200 OK
 f0,t0
+,
+,916053861
 false,
 false,
 false,t0
@@ -3469,6 +3562,8 @@ true,
 -- AFTER_SORT --
 200 OK
 f0,t0
+,
+,916053861
 false,
 false,
 false,t0
@@ -3518,14 +3613,13 @@ time,t0,t1,f0,f1
 -- EXECUTE SQL: SELECT * FROM m3 WHERE NOT (NOT (((((((((((((m3.f0)%(m3.f0)))<=(+ (m3.f0))))OR(CAST(NOT (m3.f1) AS BOOLEAN))))OR(NOT (m3.f1))))AND((((m3.t1)LIKE(m3.t1))) IS TRUE)))OR(NOT ((m3.f1) NOT IN (TRUE, TRUE)))))); --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"010002","error_message":"Arrow: Divide by zero error"}
+{"error_code":"020006","error_message":"Arrow: Divide by zero error"}
 -- ERROR:  --
 
 -- EXECUTE SQL: SELECT * FROM m3 WHERE (NOT (((((((((((((m3.f0)%(m3.f0)))<=(+ (m3.f0))))OR(CAST(NOT (m3.f1) AS BOOLEAN))))OR(NOT (m3.f1))))AND((((m3.t1)LIKE(m3.t1))) IS TRUE)))OR(NOT ((m3.f1) NOT IN (TRUE, TRUE)))))) IS NULL; --
 -- AFTER_SORT --
-422 Unprocessable Entity
-{"error_code":"010002","error_message":"Arrow: Divide by zero error"}
--- ERROR:  --
+200 OK
+
 
 -- EXECUTE SQL: SELECT ALL m0.t0, m0.f0, m0.f1 FROM m0; --
 -- AFTER_SORT --
@@ -3803,6 +3897,7 @@ t0,false,0.0
 -- AFTER_SORT --
 200 OK
 f0,t0
+,
 f0,t0
 
 -- EXECUTE SQL: SELECT m1.f0, m1.t0 FROM m1 WHERE (CAST(((CAST(-324786405 AS STRING))||(CAST(m1.f0 AS BIGINT))) AS BOOLEAN)) IS UNKNOWN UNION ALL SELECT m1.f0, m1.t0 FROM m1 WHERE NOT ((CAST(((CAST(-324786405 AS STRING))||(CAST(m1.f0 AS BIGINT))) AS BOOLEAN)) IS UNKNOWN) UNION ALL SELECT m1.f0, m1.t0 FROM m1 WHERE ((CAST(((CAST(-324786405 AS STRING))||(CAST(m1.f0 AS BIGINT))) AS BOOLEAN)) IS UNKNOWN) IS NULL; --
@@ -4055,6 +4150,7 @@ f1,false,t0
 -- AFTER_SORT --
 200 OK
 f0
+""
 f0
 
 -- EXECUTE SQL: SELECT ALL m1.f0 FROM m1 WHERE m1.f1; --
@@ -4078,6 +4174,8 @@ f0
 -- AFTER_SORT --
 200 OK
 f0,t0
+,
+,916053861
 false,
 false,
 false,t0
@@ -4094,6 +4192,8 @@ true,
 -- AFTER_SORT --
 200 OK
 f0,t0
+,
+,916053861
 false,
 false,
 false,t0
@@ -4132,6 +4232,8 @@ time,t0,f0,f1
 -- AFTER_SORT --
 200 OK
 f0,t0
+,
+,916053861
 false,
 false,
 false,t0
@@ -4148,6 +4250,8 @@ true,
 -- AFTER_SORT --
 200 OK
 f0,t0
+,
+,916053861
 false,
 false,
 false,t0
@@ -4186,6 +4290,7 @@ time,t0,f0,f1
 -- AFTER_SORT --
 200 OK
 f0
+""
 f0
 
 -- EXECUTE SQL: SELECT m1.f0 FROM m1 WHERE NOT (CAST(0.389040859566277 AS BOOLEAN)); --
@@ -4374,8 +4479,7 @@ f1
 -- EXECUTE SQL: SELECT m2.f1 FROM m2 WHERE NOT (((NOT (m2.f0)) BETWEEN (((m2.f1)LIKE(m2.f1))) AND ((m2.t0) BETWEEN (m2.t0) AND (m2.f1))) IS TRUE) UNION ALL SELECT m2.f1 FROM m2 WHERE NOT (NOT (((NOT (m2.f0)) BETWEEN (((m2.f1)LIKE(m2.f1))) AND ((m2.t0) BETWEEN (m2.t0) AND (m2.f1))) IS TRUE)) UNION ALL SELECT ALL m2.f1 FROM m2 WHERE (NOT (((NOT (m2.f0)) BETWEEN (((m2.f1)LIKE(m2.f1))) AND ((m2.t0) BETWEEN (m2.t0) AND (m2.f1))) IS TRUE)) IS NULL; --
 -- AFTER_SORT --
 200 OK
-f1
-f1
+
 
 -- EXECUTE SQL: SELECT MAX(CAST(3.50532422E8 AS STRING)) FROM m2; --
 -- AFTER_SORT --
@@ -4445,6 +4549,7 @@ t1
 -- AFTER_SORT --
 200 OK
 t0,f0
+,
 t0,f0
 
 -- EXECUTE SQL: SELECT m1.t0, m1.f0 FROM m1 WHERE ((CAST(m1.t0 AS STRING))LIKE(CAST(((m1.t0)LIKE(m1.t0)) AS STRING))); --
@@ -4479,6 +4584,8 @@ false
 -- AFTER_SORT --
 200 OK
 f0,t0
+,
+,916053861
 false,
 false,
 false,t0
@@ -4495,6 +4602,8 @@ true,
 -- AFTER_SORT --
 200 OK
 f0,t0
+,
+,916053861
 false,
 false,
 false,t0
@@ -4533,12 +4642,14 @@ t1,t0,0
 -- AFTER_SORT --
 200 OK
 t0,f0
+,
 t0,f0
 
 -- EXECUTE SQL: SELECT ALL m1.t0, m1.f0 FROM m1 WHERE NOT (((m1.f0)LIKE(CAST(((388010802)^(916053861)) AS STRING)))) UNION ALL SELECT ALL m1.t0, m1.f0 FROM m1 WHERE NOT (NOT (((m1.f0)LIKE(CAST(((388010802)^(916053861)) AS STRING))))) UNION ALL SELECT m1.t0, m1.f0 FROM m1 WHERE (NOT (((m1.f0)LIKE(CAST(((388010802)^(916053861)) AS STRING))))) IS NULL; --
 -- AFTER_SORT --
 200 OK
 t0,f0
+,
 t0,f0
 
 -- EXECUTE SQL: SELECT * FROM m2; --
@@ -4585,6 +4696,7 @@ t0,0,false,t1
 -- AFTER_SORT --
 200 OK
 t0
+""
 t0
 
 -- EXECUTE SQL: SELECT m1.t0 FROM m1 WHERE (FALSE) IS TRUE; --
@@ -4711,6 +4823,11 @@ false
 -- AFTER_SORT --
 200 OK
 t0,f1
+,
+,
+,
+,
+,
 ,0.4131558313302025
 ,0.47166914414715877
 ,0.5469987105166848
@@ -4784,6 +4901,8 @@ f0,t2,t1
 -- AFTER_SORT --
 200 OK
 f0
+""
+""
 false
 false
 false
@@ -4838,6 +4957,11 @@ false,f0,t0
 -- AFTER_SORT --
 200 OK
 f1
+""
+""
+""
+""
+""
 0.0
 0.4131558313302025
 0.47166914414715877
@@ -4851,6 +4975,11 @@ f1
 -- AFTER_SORT --
 200 OK
 f1
+""
+""
+""
+""
+""
 0.0
 0.4131558313302025
 0.47166914414715877
@@ -4902,6 +5031,8 @@ time,t0,f0,f1
 -- AFTER_SORT --
 200 OK
 f0
+""
+""
 false
 false
 false
@@ -4918,6 +5049,8 @@ true
 -- AFTER_SORT --
 200 OK
 f0
+""
+""
 false
 false
 false
@@ -5103,6 +5236,7 @@ f0,false,t0
 -- AFTER_SORT --
 200 OK
 t0,f0
+,
 ,false
 ,false
 ,true
@@ -5113,12 +5247,14 @@ t0,f0
 ,true
 ,true
 ,true
+916053861,
 t0,false
 
 -- EXECUTE SQL: SELECT ALL m0.t0, m0.f0 FROM m0 WHERE (0.8444721799430347) NOT IN (0.6094674344995117, 0.10297882441723716); --
 -- AFTER_SORT --
 200 OK
 t0,f0
+,
 ,false
 ,false
 ,true
@@ -5129,6 +5265,7 @@ t0,f0
 ,true
 ,true
 ,true
+916053861,
 t0,false
 
 -- EXECUTE SQL: SELECT m0.t0, m0.f0 FROM m0 WHERE NOT ((0.8444721799430347) NOT IN (0.6094674344995117, 0.10297882441723716)); --
@@ -5145,6 +5282,8 @@ t0,false
 -- AFTER_SORT --
 200 OK
 f0,t0
+,
+,916053861
 false,
 false,
 false,t0
@@ -5161,6 +5300,8 @@ true,
 -- AFTER_SORT --
 200 OK
 f0,t0
+,
+,916053861
 false,
 false,
 false,t0
@@ -5512,6 +5653,7 @@ f0,t0
 -- AFTER_SORT --
 200 OK
 t0,f0
+,
 ,false
 ,false
 ,true
@@ -5522,6 +5664,7 @@ t0,f0
 ,true
 ,true
 ,true
+916053861,
 t0,false
 
 -- EXECUTE SQL: SELECT ALL m0.t0, m0.f0 FROM m0 WHERE NOT (((CAST(CAST(-1873429940 AS BIGINT) AS STRING))LIKE(((CAST(m0.f0 AS STRING))||(((m0.t0)||(1860831107))))))); --
@@ -5546,18 +5689,22 @@ t0,0,t1
 -- AFTER_SORT --
 200 OK
 t0,f0
+,
 t0,f0
 
 -- EXECUTE SQL: SELECT ALL m1.t0, m1.f0 FROM m1 WHERE CAST(CAST(+ (- (-410308362)) AS BIGINT) AS BOOLEAN); --
 -- AFTER_SORT --
 200 OK
 t0,f0
+,
 t0,f0
 
 -- EXECUTE SQL: SELECT ALL m0.f0, m0.t0 FROM m0 ORDER BY m0.t0 DESC; --
 -- AFTER_SORT --
 200 OK
 f0,t0
+,
+,916053861
 false,
 false,
 false,t0
@@ -5586,6 +5733,7 @@ BOOL_OR(Int64(1498176990) / Float64(0.013198073302153945))
 -- AFTER_SORT --
 200 OK
 f0
+""
 f0
 
 -- EXECUTE SQL: SELECT ALL m1.f0 FROM m1 WHERE CAST(CAST(0.5590183968399077 AS STRING) AS BOOLEAN); --

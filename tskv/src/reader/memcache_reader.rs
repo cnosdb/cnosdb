@@ -36,14 +36,10 @@ pub struct MemCacheReader {
 
 impl TimeRangeProvider for MemCacheReader {
     fn time_range(&self) -> TimeRange {
-        match self
-            .time_ranges
+        self.time_ranges
             .max_time_range()
             .intersect(&self.series_data.read().range)
-        {
-            None => TimeRange::none(),
-            Some(tr) => tr,
-        }
+            .unwrap_or_else(TimeRange::none)
     }
 }
 

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -8,7 +9,7 @@ use arrow_array::RecordBatch;
 use datafusion::physical_plan::metrics::{ExecutionPlanMetricsSet, MetricBuilder, Time};
 use futures::{ready, Stream, StreamExt};
 use models::datafusion::limit_record_batch::limit_record_batch;
-use models::schema::TskvTableSchemaRef;
+use models::schema::{TskvTableSchemaRef, COLUMN_ID_META_KEY};
 use models::{ColumnId, SeriesKey, Tag};
 
 use super::metrics::BaselineMetrics;
@@ -71,7 +72,13 @@ impl BatchReader for SeriesReader {
                 }
             };
 
-            let field = Arc::new(Field::new(name, DataType::Utf8, true));
+            let mut field = Field::new(name, DataType::Utf8, true);
+            field.set_metadata(HashMap::from([(
+                COLUMN_ID_META_KEY.to_string(),
+                column_id.to_string(),
+            )]));
+
+            let field = Arc::new(field);
             let array = String::from_utf8(value.to_vec()).map_err(|err| Error::InvalidUtf8 {
                 message: format!("Convert tag {}'s value: {:?}", field.name(), value),
                 source: err.utf8_error(),
