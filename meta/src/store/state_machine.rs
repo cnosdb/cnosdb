@@ -49,28 +49,27 @@ pub struct StateMachineContent {
 
 impl From<&StateMachine> for StateMachineContent {
     fn from(state: &StateMachine) -> Self {
-        let mut data_tree = BTreeMap::new();
-        for entry_res in state.data_tree.iter() {
+        let mut data = BTreeMap::new();
+        for entry_res in state.db.iter() {
             let entry = entry_res.expect("read db failed");
 
             let key: &[u8] = &entry.0;
             let value: &[u8] = &entry.1;
-            data_tree.insert(
+            data.insert(
                 String::from_utf8(key.to_vec()).expect("invalid key"),
                 String::from_utf8(value.to_vec()).expect("invalid data"),
             );
         }
         Self {
+            data,
             last_applied_log: state.get_last_applied_log().expect("last_applied_log"),
             last_membership: state.get_last_membership().expect("last_membership"),
-            data: data_tree,
         }
     }
 }
 
 pub struct StateMachine {
     pub db: Arc<sled::Db>,
-    pub data_tree: sled::Tree,
     pub state_machine: sled::Tree,
     pub watch: Arc<Watch>,
 }
@@ -79,7 +78,6 @@ impl StateMachine {
     pub fn new(db: Arc<sled::Db>) -> StateMachine {
         Self {
             db: db.clone(),
-            data_tree: db.open_tree("data").expect("data open failed"),
             state_machine: db
                 .open_tree("state_machine")
                 .expect("state_machine open failed"),
@@ -138,12 +136,11 @@ impl StateMachine {
         sm: StateMachineContent,
         db: Arc<sled::Db>,
     ) -> StorageIOResult<Self> {
-        let data_tree = db.open_tree("data").expect("store open failed");
         let mut batch = sled::Batch::default();
         for (key, value) in sm.data {
             batch.insert(key.as_bytes(), value.as_bytes())
         }
-        data_tree.apply_batch(batch).map_err(sm_w_err)?;
+        db.apply_batch(batch).map_err(sm_w_err)?;
 
         let r = StateMachine::new(db);
 
