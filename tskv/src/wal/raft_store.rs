@@ -236,7 +236,7 @@ impl RaftEntryStorageInner {
             }
         }
 
-        self.entry_cache.del_befor(seq_no);
+        self.entry_cache.del_before(seq_no);
     }
 
     fn mark_delete_after(&mut self, seq_no: u64) {
