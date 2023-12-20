@@ -94,7 +94,7 @@ impl CompactJobInner {
             ctx,
             runtime,
             compact_processor,
-            enable_compaction: Arc::new(AtomicBool::new(true)),
+            enable_compaction: Arc::new(AtomicBool::new(false)),
             running_compactions: Arc::new(AtomicUsize::new(0)),
         }
     }
@@ -129,12 +129,12 @@ impl CompactJobInner {
             )
             .is_err()
         {
-            info!("Compaction: enable_compaction is false, later to start vnode compaction job");
+            info!("Compaction: failed to change enable_compaction from false to true, compaction is already started");
             return;
         }
 
         let runtime_inner = self.runtime.clone();
-        let compact_processor = Arc::new(RwLock::new(CompactProcessor::default()));
+        let compact_processor = self.compact_processor.clone();
         let enable_compaction = self.enable_compaction.clone();
         let running_compaction = self.running_compactions.clone();
         let ctx = self.ctx.clone();
@@ -152,11 +152,9 @@ impl CompactJobInner {
                 if !enable_compaction.load(atomic::Ordering::SeqCst) {
                     break;
                 }
-                let processor = compact_processor.read().await;
-                if processor.vnode_ids.is_empty() {
+                if compact_processor.read().await.vnode_ids.is_empty() {
                     continue;
                 }
-                drop(processor);
                 let vnode_ids = compact_processor.write().await.take();
                 let vnode_ids_for_debug = vnode_ids.clone();
                 let now = Instant::now();

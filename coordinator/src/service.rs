@@ -28,7 +28,9 @@ use metrics::count::U64Counter;
 use metrics::label::Labels;
 use metrics::metric::Metric;
 use metrics::metric_register::MetricsRegister;
-use models::meta_data::{ExpiredBucketInfo, ReplicationSet, ReplicationSetId, VnodeStatus};
+use models::meta_data::{
+    ExpiredBucketInfo, ReplicationSet, ReplicationSetId, VnodeInfo, VnodeStatus,
+};
 use models::object_reference::ResolvedTable;
 use models::oid::Identifier;
 use models::predicate::domain::{ResolvedPredicate, ResolvedPredicateRef, TimeRange, TimeRanges};
@@ -86,6 +88,7 @@ pub struct CoordService {
     raft_manager: Arc<RaftNodesManager>,
 
     replica_selectioner: DynamicReplicaSelectionerRef,
+    grpc_enable_gzip: bool,
 }
 
 #[derive(Debug)]
@@ -153,8 +156,9 @@ impl CoordService {
         config: Config,
         memory_pool: MemoryPoolRef,
         metrics_register: Arc<MetricsRegister>,
+        grpc_enable_gzip: bool,
     ) -> Arc<Self> {
-        let node_id = config.node_basic.node_id;
+        let node_id = config.global.node_id;
 
         let (hh_sender, hh_receiver) = mpsc::channel(1024);
         let point_writer = Arc::new(PointWriter::new(
@@ -163,6 +167,7 @@ impl CoordService {
             kv_inst.clone(),
             meta.clone(),
             hh_sender,
+            config.service.grpc_enable_gzip,
         ));
 
         let hh_manager = Arc::new(
@@ -204,12 +209,13 @@ impl CoordService {
 
             metrics: Arc::new(CoordServiceMetrics::new(metrics_register.as_ref())),
             replica_selectioner: Arc::new(DynamicReplicaSelectioner::new(meta)),
+            grpc_enable_gzip,
         });
 
         tokio::spawn(CoordService::check_resourceinfos(coord.clone()));
         tokio::spawn(CoordService::db_ttl_service(coord.clone()));
 
-        if config.node_basic.store_metrics {
+        if config.global.store_metrics {
             tokio::spawn(CoordService::metrics_service(
                 coord.clone(),
                 metrics_register,
@@ -322,6 +328,7 @@ impl CoordService {
             channel,
             Duration::from_secs(60 * 60),
             DEFAULT_GRPC_SERVER_MESSAGE_LEN,
+            self.grpc_enable_gzip,
         );
         let request = tonic::Request::new(req.clone());
 
@@ -377,6 +384,7 @@ impl CoordService {
             channel,
             Duration::from_secs(60 * 60),
             DEFAULT_GRPC_SERVER_MESSAGE_LEN,
+            self.grpc_enable_gzip,
         );
         let response = client
             .exec_admin_fetch_command(request)
@@ -430,24 +438,6 @@ impl CoordService {
         }
 
         Ok(requests)
-    }
-
-    async fn write_replica_by_raft(
-        &self,
-        replica: ReplicationSet,
-        request: RaftWriteCommand,
-        span_ctx: Option<&SpanContext>,
-    ) -> CoordinatorResult<()> {
-        self.raft_writer
-            .write_to_replica(
-                &replica,
-                request,
-                SpanRecorder::new(span_ctx.child_span(format!(
-                    "write to replica {} on node {}",
-                    replica.id, self.node_id
-                ))),
-            )
-            .await
     }
 
     async fn push_points_to_requests<'a>(
@@ -525,7 +515,7 @@ impl Coordinator for CoordService {
     }
 
     fn using_raft_replication(&self) -> bool {
-        self.config.using_raft_replication
+        self.config.cluster.using_raft_replication
     }
 
     async fn tenant_meta(&self, tenant: &str) -> Option<MetaClientRef> {
@@ -559,6 +549,24 @@ impl Coordinator for CoordService {
     ) -> CoordinatorResult<()> {
         self.raft_writer
             .write_to_local_or_forward(&replica, request, span_ctx)
+            .await
+    }
+
+    async fn write_replica_by_raft(
+        &self,
+        replica: ReplicationSet,
+        request: RaftWriteCommand,
+        span_ctx: Option<&SpanContext>,
+    ) -> CoordinatorResult<()> {
+        self.raft_writer
+            .write_to_replica(
+                &replica,
+                request,
+                SpanRecorder::new(span_ctx.child_span(format!(
+                    "write to replica {} on node {}",
+                    replica.id, self.node_id
+                ))),
+            )
             .await
     }
 
@@ -754,6 +762,7 @@ impl Coordinator for CoordService {
             self.runtime.clone(),
             self.meta.clone(),
             span_ctx,
+            self.grpc_enable_gzip,
         );
 
         Ok(Box::pin(CheckedCoordinatorRecordBatchStream::new(
@@ -777,6 +786,7 @@ impl Coordinator for CoordService {
             self.kv_inst.clone(),
             self.meta.clone(),
             span_ctx,
+            self.grpc_enable_gzip,
         );
 
         Ok(Box::pin(CheckedCoordinatorRecordBatchStream::new(
@@ -795,7 +805,7 @@ impl Coordinator for CoordService {
     ) -> CoordinatorResult<()> {
         let nodes = self.meta.data_nodes().await;
 
-        let vnodes = self
+        let replicas = self
             .prune_shards(
                 table.tenant(),
                 table.database(),
@@ -804,29 +814,53 @@ impl Coordinator for CoordService {
             .await?;
 
         let now = tokio::time::Instant::now();
-        let mut requests = vec![];
 
         if self.using_raft_replication() {
-            // TODO
-            return Err(CoordinatorError::CommonError {
-                msg: "Not support delete table use raft api".to_string(),
-            });
+            let mut requests = vec![];
+            let predicate_bytes = bincode::serialize(predicate)?;
+            for replica in replicas.iter() {
+                let request = DeleteFromTableRequest {
+                    tenant: table.tenant().to_string(),
+                    database: table.database().to_string(),
+                    table: table.table().to_string(),
+                    predicate: predicate_bytes.clone(),
+                    vnode_id: 0,
+                };
+                let command = RaftWriteCommand {
+                    replica_id: replica.id,
+                    tenant: table.tenant().to_string(),
+                    db_name: table.database().to_string(),
+                    command: Some(raft_write_command::Command::DeleteFromTable(request)),
+                };
+
+                let request = self.write_replica_by_raft(replica.clone(), command, None);
+                requests.push(request);
+            }
+
+            for result in futures::future::join_all(requests).await {
+                debug!("exec delete from {table} WHERE {predicate:?}, now:{now:?}, elapsed:{}ms, result:{result:?}", now.elapsed().as_millis());
+                result?
+            }
         } else {
-            for vnode in vnodes.into_iter().flat_map(|v| v.vnodes) {
-                requests.push(self.point_writer.delete_from_table_on_vnode(
+            let mut requests = vec![];
+            for vnode in replicas.into_iter().flat_map(|v| v.vnodes) {
+                let request = self.point_writer.delete_from_table_on_vnode(
                     vnode,
                     table.tenant(),
                     table.database(),
                     table.table(),
                     predicate,
-                ));
+                );
+
+                requests.push(request);
+            }
+
+            for result in futures::future::join_all(requests).await {
+                debug!("exec delete from {table} WHERE {predicate:?}, now:{now:?}, elapsed:{}ms, result:{result:?}", now.elapsed().as_millis());
+                result?
             }
         }
 
-        for result in futures::future::join_all(requests).await {
-            debug!("exec delete from {table} WHERE {predicate:?}, now:{now:?}, elapsed:{}ms, result:{result:?}", now.elapsed().as_millis());
-            result?
-        }
         Ok(())
     }
 

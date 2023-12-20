@@ -91,6 +91,13 @@ pub trait Coordinator: Send + Sync {
         predicate: ResolvedPredicateRef,
     ) -> CoordinatorResult<Vec<ReplicationSet>>;
 
+    async fn write_replica_by_raft(
+        &self,
+        replica: ReplicationSet,
+        request: RaftWriteCommand,
+        span_ctx: Option<&SpanContext>,
+    ) -> CoordinatorResult<()>;
+
     async fn exec_write_replica_points(
         &self,
         replica: ReplicationSet,

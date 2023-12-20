@@ -23,11 +23,12 @@ use utils::BloomFilter;
 
 use crate::compaction::{CompactTask, FlushReq};
 use crate::error::Result;
+use crate::file_system::file_manager;
 use crate::file_utils::{make_delta_file, make_tsm_file};
 use crate::kv_option::{CacheOptions, StorageOptions};
 use crate::memcache::{DataType, FieldVal, MemCache, RowGroup};
 use crate::summary::{CompactMeta, VersionEdit};
-use crate::tsm::TsmReader;
+use crate::tsm::{self, TsmReader};
 use crate::Error::CommonError;
 use crate::{ColumnFileId, LevelId, Options, TseriesFamilyId};
 
@@ -91,6 +92,12 @@ impl ColumnFile {
         &self.path
     }
 
+    pub fn tombstone_path(&self) -> PathBuf {
+        let mut path = self.path.clone();
+        path.set_extension(tsm::TOMBSTONE_FILE_SUFFIX);
+        path
+    }
+
     pub fn overlap(&self, time_range: &TimeRange) -> bool {
         self.time_range.overlaps(time_range)
     }
@@ -135,7 +142,10 @@ impl ColumnFile {
 
 impl Drop for ColumnFile {
     fn drop(&mut self) {
-        debug!("Removing file {}", self.file_id);
+        debug!(
+            "Removing tsm file {} and it's tombstone if exists.",
+            self.file_id
+        );
         if self.is_deleted() {
             let path = self.file_path();
             if let Some(cache) = self.tsm_reader_cache.upgrade() {
@@ -144,16 +154,27 @@ impl Drop for ColumnFile {
                     cache.remove(&k).await;
                 });
             }
-
             if let Err(e) = std::fs::remove_file(path) {
                 error!(
-                    "Error when removing file {} at '{}': {}",
+                    "Failed to remove tsm file {} at '{}': {e}",
                     self.file_id,
-                    path.display(),
-                    e.to_string()
+                    path.display()
                 );
+            } else {
+                info!("Removed tsm file {} at '{}", self.file_id, path.display());
             }
-            info!("Removed file {} at '{}", self.file_id, path.display());
+
+            let tombstone_path = self.tombstone_path();
+            if file_manager::try_exists(&tombstone_path) {
+                if let Err(e) = std::fs::remove_file(&tombstone_path) {
+                    error!(
+                        "Failed to remove tsm tombstone '{}': {e}",
+                        tombstone_path.display()
+                    );
+                } else {
+                    info!("Removed tsm tombstone '{}", tombstone_path.display());
+                }
+            }
         }
     }
 }

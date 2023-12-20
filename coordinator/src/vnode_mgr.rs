@@ -25,14 +25,16 @@ pub struct VnodeManager {
     node_id: u64,
     meta: MetaRef,
     kv_inst: EngineRef,
+    grpc_enable_gzip: bool,
 }
 
 impl VnodeManager {
-    pub fn new(meta: MetaRef, kv_inst: EngineRef, node_id: u64) -> Self {
+    pub fn new(meta: MetaRef, kv_inst: EngineRef, node_id: u64, grpc_enable_gzip: bool) -> Self {
         Self {
             node_id,
             meta,
             kv_inst,
+            grpc_enable_gzip,
         }
     }
 
@@ -84,6 +86,7 @@ impl VnodeManager {
             channel,
             Duration::from_secs(60 * 60 * 60),
             DEFAULT_GRPC_SERVER_MESSAGE_LEN,
+            self.grpc_enable_gzip,
         );
 
         if let Err(err) = self
@@ -179,6 +182,7 @@ impl VnodeManager {
             channel,
             Duration::from_secs(60 * 60),
             DEFAULT_GRPC_SERVER_MESSAGE_LEN,
+            self.grpc_enable_gzip,
         );
         let request = tonic::Request::new(cmd);
 

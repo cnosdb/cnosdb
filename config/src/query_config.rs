@@ -3,6 +3,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
+use crate::override_by_env::{entry_override, OverrideByEnv};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct QueryConfig {
@@ -54,32 +55,27 @@ impl QueryConfig {
     fn default_stream_executor_cpu() -> usize {
         2
     }
+}
 
-    pub fn override_by_env(&mut self) {
-        if let Ok(size) = std::env::var("MAX_SERVER_CONNECTIONS") {
-            self.max_server_connections = size.parse::<u32>().unwrap();
-        }
-        if let Ok(size) = std::env::var("QUERY_SQL_LIMIT") {
-            self.query_sql_limit = size.parse::<u64>().unwrap();
-        }
-        if let Ok(size) = std::env::var("WRITE_SQL_LIMIT") {
-            self.write_sql_limit = size.parse::<u64>().unwrap();
-        }
-        if let Ok(val) = std::env::var("AUTH_ENABLED") {
-            self.auth_enabled = val.parse::<bool>().unwrap();
-        }
-        if let Ok(size) = std::env::var("READ_TIMEOUT_MS") {
-            self.read_timeout_ms = size.parse::<u64>().unwrap();
-        }
-        if let Ok(size) = std::env::var("WRITE_TIMEOUT_MS") {
-            self.write_timeout_ms = size.parse::<u64>().unwrap();
-        }
-        if let Ok(size) = std::env::var("STREAM_TRIGGER_CPU") {
-            self.stream_trigger_cpu = size.parse::<usize>().unwrap();
-        }
-        if let Ok(size) = std::env::var("STREAM_EXECUTOR_CPU") {
-            self.stream_executor_cpu = size.parse::<usize>().unwrap();
-        }
+impl OverrideByEnv for QueryConfig {
+    fn override_by_env(&mut self) {
+        entry_override(
+            &mut self.max_server_connections,
+            "CNOSDB_QUERY_MAX_SERVER_CONNECTIONS",
+        );
+        entry_override(&mut self.query_sql_limit, "CNOSDB_QUERY_QUERY_SQL_LIMIT");
+        entry_override(&mut self.write_sql_limit, "CNOSDB_QUERY_WRITE_SQL_LIMIT");
+        entry_override(&mut self.auth_enabled, "CNOSDB_QUERY_AUTH_ENABLED");
+        entry_override(&mut self.read_timeout_ms, "CNOSDB_QUERY_READ_TIMEOUT_MS");
+        entry_override(&mut self.write_timeout_ms, "CNOSDB_QUERY_WRITE_TIMEOUT_MS");
+        entry_override(
+            &mut self.stream_trigger_cpu,
+            "CNOSDB_QUERY_STREAM_TRIGGER_CPU",
+        );
+        entry_override(
+            &mut self.stream_executor_cpu,
+            "CNOSDB_QUERY_STREAM_EXECUTOR_CPU",
+        );
     }
 }
 

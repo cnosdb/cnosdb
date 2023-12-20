@@ -6,7 +6,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use clap::{command, Args, Parser, Subcommand, ValueEnum};
-use config::Config;
+use config::{Config, OverrideByEnv};
 use memory_pool::GreedyMemoryPool;
 use metrics::init_tskv_metrics_recorder;
 use metrics::metric_register::MetricsRegister;
@@ -201,13 +201,13 @@ fn main() -> Result<(), std::io::Error> {
             memory_pool: memory_pool.clone(),
             metrics_register: Arc::new(MetricsRegister::new([(
                 "node_id",
-                config.node_basic.node_id.to_string(),
+                config.global.node_id.to_string(),
             )])),
             span_context_extractor: build_span_context_extractor(&config),
         };
 
         let mut server = server::Server::default();
-        if !config.reporting_disabled {
+        if config.service.enable_report {
             server.add_service(Box::new(ReportService::new()));
         }
 
@@ -233,13 +233,24 @@ fn main() -> Result<(), std::io::Error> {
 }
 
 fn parse_config(config_path: Option<impl AsRef<Path>>) -> config::Config {
-    let global_config = if let Some(p) = config_path {
+    // priority: [specified config file] > [/etc/cnosdb/cnosdb.conf] > [$HOME/cnosdb/cnosdb.conf]
+    let mut global_config = if let Some(p) = config_path {
         println!("----------\nStart with configuration:");
         config::get_config(p).unwrap()
+    } else if Path::new("/etc/cnosdb/cnosdb.conf").exists() {
+        println!("----------\nStart with configuration:");
+        config::get_config("/etc/cnosdb/cnosdb.conf").unwrap()
+    } else if let Some(path) = home::home_dir() {
+        let path = path.join("cnosdb").join("cnosdb.conf");
+        if path.exists() {
+            config::get_config(path).unwrap()
+        } else {
+            config::Config::default()
+        }
     } else {
-        println!("----------\nStart with default configuration:");
         config::Config::default()
     };
+    global_config.override_by_env();
     println!("{}----------", global_config.to_string_pretty());
 
     global_config
@@ -297,7 +308,7 @@ fn set_cli_args_to_config(args: &RunArgs, config: &mut Config) {
 fn build_span_context_extractor(config: &Config) -> Arc<SpanContextExtractor> {
     let mut res: Vec<Arc<dyn TraceExporter>> = Vec::new();
     let mode = &config.deployment.mode;
-    let node_id = config.node_basic.node_id;
+    let node_id = config.global.node_id;
     let service_name = format!("cnosdb_{mode}_{node_id}");
 
     if let Some(trace_log_collector_config) = &config.trace.log {

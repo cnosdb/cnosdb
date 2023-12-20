@@ -69,9 +69,16 @@ pub async fn start_raft_node(opt: store::config::Opt) -> MetaResult<()> {
     let storage = NodeStorage::open(id, info.clone(), state, engine.clone(), entry)?;
     let storage = Arc::new(storage);
 
-    let node = RaftNode::new(id, info, openraft_config(), storage, engine.clone())
-        .await
-        .unwrap();
+    let node = RaftNode::new(
+        id,
+        info,
+        openraft_config(),
+        storage,
+        engine.clone(),
+        opt.grpc_enable_gzip,
+    )
+    .await
+    .unwrap();
 
     init_meta(&engine, opt.meta_init.clone()).await;
     tokio::spawn(detect_node_heartbeat(

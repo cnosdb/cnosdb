@@ -45,7 +45,7 @@ impl RaftWriter {
         request: RaftWriteCommand,
         span_recorder: SpanRecorder,
     ) -> CoordinatorResult<()> {
-        let node_id = self.config.node_basic.node_id;
+        let node_id = self.config.global.node_id;
         let leader_id = replica.leader_node_id;
         if leader_id == node_id && self.kv_inst.is_some() {
             let span_recorder = span_recorder.child("write to local node or forward");
@@ -203,6 +203,7 @@ impl RaftWriter {
             channel,
             Duration::from_millis(timeout),
             DEFAULT_GRPC_SERVER_MESSAGE_LEN,
+            self.config.service.grpc_enable_gzip,
         );
 
         let mut cmd = tonic::Request::new(request);

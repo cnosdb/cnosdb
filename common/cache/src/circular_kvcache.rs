@@ -1,4 +1,9 @@
-#![allow(dead_code, clippy::map_entry)]
+#![allow(
+    dead_code,
+    clippy::map_entry,
+    clippy::inherent_to_string,
+    clippy::needless_range_loop
+)]
 
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
@@ -156,7 +161,8 @@ where
             index = (index + 1) % self.buffer.len();
         }
 
-        s.push_str("]");
+        s.push(']');
+
         s
     }
 }
@@ -264,6 +270,7 @@ mod test {
             {
                 let mut buf: CircularBuffer<usize> = CircularBuffer::new(capacity);
                 range.for_each(|i| buf.push(i));
+
                 for pop_i in 0..pop_count {
                     assert_eq!(buf.pop(), pop_values[pop_i]);
                 }

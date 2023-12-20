@@ -5,10 +5,6 @@ on:
     - cron: "00 10 * * 1-5"
   workflow_dispatch:
 
-env:
-  SCCACHE_GHA_ENABLED: "true"
-  RUSTC_WRAPPER: "sccache"
-
 jobs:
   docker:
     strategy:
@@ -22,9 +18,18 @@ jobs:
       - name: Get current date
         id: date
         run: echo "today=$(TZ=UTC-8 date +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+      - name: Set up cargo-zigbuild
+        shell: bash
+        run: |
+          curl -o zig.tar.xz -sL https://ziglang.org/download/0.11.0/zig-linux-x86_64-0.11.0.tar.xz
+          sudo tar -xf zig.tar.xz -C /opt
+          echo "/opt/zig-linux-x86_64-0.11.0" >> $GITHUB_PATH
+          cargo install cargo-zigbuild
       - uses: actions/checkout@v3
-      - name: Prepare Rust Builder
-        uses: ./.github/actions/setup-builder
+      - name: Install dependencies
+        shell: bash
+        run: |
+          TARGETPLATFORM="linux/amd64" bash ./.github/tools/install_dependencies.sh
       -
         name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -40,19 +45,18 @@ jobs:
       -
         name: Compiler
         run: |
-          sudo apt install gcc-aarch64-linux-gnu
           rustup target add aarch64-unknown-linux-gnu
           mkdir -p linux/amd64 linux/arm64
           if [[ "${{ matrix.image }}" = "cnosdb" ]]; then
-            RUSTFLAGS="-C linker=aarch64-linux-gnu-gcc" cargo build --package main --package client --release --target aarch64-unknown-linux-gnu
-            cargo build --package main --package client --release --target x86_64-unknown-linux-gnu
+            cargo zigbuild --package main --package client --release --target aarch64-unknown-linux-gnu
+            cargo zigbuild --package main --package client --release --target x86_64-unknown-linux-gnu
             mv ./target/aarch64-unknown-linux-gnu/release/cnosdb ./linux/arm64/cnosdb
             mv ./target/aarch64-unknown-linux-gnu/release/cnosdb-cli ./linux/arm64/cnosdb-cli
             mv ./target/x86_64-unknown-linux-gnu/release/cnosdb ./linux/amd64/cnosdb
             mv ./target/x86_64-unknown-linux-gnu/release/cnosdb-cli ./linux/amd64/cnosdb-cli
           else
-            RUSTFLAGS="-C linker=aarch64-linux-gnu-gcc" cargo build --package meta --release --target aarch64-unknown-linux-gnu
-            cargo build --package meta --release --target x86_64-unknown-linux-gnu
+            cargo zigbuild --package meta --release --target aarch64-unknown-linux-gnu
+            cargo zigbuild --package meta --release --target x86_64-unknown-linux-gnu
             mv ./target/aarch64-unknown-linux-gnu/release/cnosdb-meta ./linux/arm64/cnosdb-meta
             mv ./target/x86_64-unknown-linux-gnu/release/cnosdb-meta ./linux/amd64/cnosdb-meta
           fi

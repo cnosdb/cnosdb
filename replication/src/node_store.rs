@@ -342,6 +342,7 @@ impl RaftStorage<TypeConfig> for Arc<NodeStorage> {
 
                 EntryPayload::Normal(ref req) => {
                     let ctx = ApplyContext {
+                        apply_type: crate::APPLY_TYPE_WRITE,
                         index: entry.log_id.index,
                         raft_id: self.id,
                     };
