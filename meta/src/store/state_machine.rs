@@ -503,6 +503,11 @@ impl StateMachine {
 
         match req {
             WriteCommand::Set { key, value } => response_encode(self.process_write_set(key, value)),
+            WriteCommand::SetKV(key, val) => response_encode(self.process_write_set(key, val)),
+            WriteCommand::Delete(key) => {
+                let _ = self.remove(key);
+                response_encode(Ok(()))
+            }
             WriteCommand::AddDataNode(cluster, node) => {
                 response_encode(self.process_add_date_node(cluster, node))
             }

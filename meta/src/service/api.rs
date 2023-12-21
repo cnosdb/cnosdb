@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 use actix_web::web::Data;
-use actix_web::{get, post, web, Responder};
+use actix_web::{get, post, web, HttpRequest, Responder};
 use openraft::error::Infallible;
 use trace::info;
 use web::Json;
@@ -30,6 +30,45 @@ pub async fn write(
 ) -> actix_web::Result<impl Responder> {
     let response = app.raft.client_write(req.0).await;
     Ok(Json(response))
+}
+
+// curl -XPOST "http://127.0.0.1:8901/setkv?key=/cluster_xxx/users/test_user" -d '{"id":15171639751348486842584338881416034150,"name":"root"}'
+#[post("/setkv")]
+pub async fn setkv(app: Data<MetaApp>, req: HttpRequest, body: web::Bytes) -> MetaResult<String> {
+    let key_opt = url::form_urlencoded::parse(req.query_string().as_bytes())
+        .find(|(key, _)| key == "key")
+        .map(|(_, value)| value.into_owned());
+
+    if let Some(key) = key_opt {
+        let value = String::from_utf8_lossy(&body).to_string();
+        let command = WriteCommand::SetKV(key, value);
+        if let Err(err) = app.raft.client_write(command).await {
+            Ok(err.to_string())
+        } else {
+            Ok("Success".to_string())
+        }
+    } else {
+        Ok("query param not found: key".to_string())
+    }
+}
+
+// curl -XPOST "http://127.0.0.1:8901/delete?key=/cluster_xxx/users/test_user" -d ''
+#[post("/delete")]
+pub async fn delete(app: Data<MetaApp>, req: HttpRequest, _body: web::Bytes) -> MetaResult<String> {
+    let key_opt = url::form_urlencoded::parse(req.query_string().as_bytes())
+        .find(|(key, _)| key == "key")
+        .map(|(_, value)| value.into_owned());
+
+    if let Some(key) = key_opt {
+        let command = WriteCommand::Delete(key);
+        if let Err(err) = app.raft.client_write(command).await {
+            Ok(err.to_string())
+        } else {
+            Ok("Success".to_string())
+        }
+    } else {
+        Ok("query param not found: key".to_string())
+    }
 }
 
 // curl -XPOST http://127.0.0.1:8901/dump --o ./meta_dump.data

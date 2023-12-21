@@ -114,6 +114,8 @@ pub async fn start_service(opt: Opt) -> std::io::Result<()> {
             .service(api::watch)
             .service(api::backtrace)
             .service(api::cpu_pprof)
+            .service(api::setkv)
+            .service(api::delete)
     })
     .keep_alive(Duration::from_secs(5));
 
