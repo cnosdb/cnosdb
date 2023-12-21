@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::fmt;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
@@ -35,43 +34,10 @@ pub struct UserInfo {
     pub perm: u64, //read write admin bitmap
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Default, Clone)]
-pub enum NodeAttribute {
-    #[default]
-    Hot,
-    Cold,
-}
-
-impl fmt::Display for NodeAttribute {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            NodeAttribute::Hot => write!(f, "HOT"),
-            NodeAttribute::Cold => write!(f, "COLD"),
-        }
-    }
-}
-
-impl From<String> for NodeAttribute {
-    fn from(node_attribute: String) -> Self {
-        match node_attribute.to_uppercase().as_str() {
-            "HOT" => NodeAttribute::Hot,
-            "COLD" => NodeAttribute::Cold,
-            _ => panic!("Invalid NodeAttribute:{}", node_attribute),
-        }
-    }
-}
-
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct NodeInfo {
     pub id: NodeId,
     pub grpc_addr: String,
-    pub attribute: NodeAttribute,
-}
-
-impl NodeInfo {
-    pub fn is_cold(&self) -> bool {
-        self.attribute == NodeAttribute::Cold
-    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]

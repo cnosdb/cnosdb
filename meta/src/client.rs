@@ -208,7 +208,7 @@ mod test {
     use std::collections::HashSet;
     use std::{thread, time};
 
-    use models::meta_data::{NodeAttribute, NodeInfo};
+    use models::meta_data::NodeInfo;
 
     use crate::client::MetaHttpClient;
     use crate::store::command;
@@ -221,7 +221,6 @@ mod test {
         let cluster = "cluster_xxx".to_string();
         let node = NodeInfo {
             id: 111,
-            attribute: NodeAttribute::Hot,
             grpc_addr: "".to_string(),
         };
 
@@ -249,7 +248,6 @@ mod test {
 
         let node = NodeInfo {
             id: 111,
-            attribute: NodeAttribute::Hot,
             grpc_addr: "".to_string(),
         };
 

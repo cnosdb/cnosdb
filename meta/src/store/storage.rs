@@ -978,27 +978,14 @@ impl StateMachine {
             .map(|m| (m.id, m))
             .collect();
 
-        let node_info_list = node_info_list
+        let mut node_info_list = node_info_list
             .into_iter()
             .filter_map(|n| node_metrics_list.get(&n.id).map(|m| (n, m)))
             .filter(|(_, m)| m.is_healthy())
             .collect::<Vec<_>>();
 
-        let temp_node_info_list = node_info_list
-            .iter()
-            .filter(|(n, _)| !n.is_cold())
-            .cloned()
-            .collect::<Vec<_>>();
-
-        let mut res = if temp_node_info_list.is_empty() {
-            node_info_list
-        } else {
-            temp_node_info_list
-        };
-
-        res.sort_by_key(|(_, m)| Reverse(m.disk_free));
-        let res = res.into_iter().map(|(n, _)| n).collect();
-        Ok(res)
+        node_info_list.sort_by_key(|(_, m)| Reverse(m.disk_free));
+        Ok(node_info_list.into_iter().map(|(n, _)| n).collect())
     }
 
     fn process_create_bucket(

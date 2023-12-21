@@ -434,7 +434,6 @@ impl AdminMeta {
         );
 
         let node = NodeInfo {
-            attribute: NodeAttribute::default(),
             id: self.config.global.node_id,
             grpc_addr,
         };
