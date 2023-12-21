@@ -3174,6 +3174,7 @@ dependencies = [
  "trace",
  "tracing",
  "tracing-futures",
+ "url",
  "utils",
  "uuid",
  "walkdir",

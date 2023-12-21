@@ -17,6 +17,7 @@ models = { path = "../common/models" }
 trace = { path = "../common/trace" }
 utils = { path = "../common/utils" }
 
+url = { workspace = true }
 actix-web = { workspace = true }
 async-backtrace = { workspace = true, optional = true }
 async-trait = { workspace = true }

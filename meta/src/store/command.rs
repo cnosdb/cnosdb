@@ -112,6 +112,9 @@ pub enum WriteCommand {
         key: String,
         value: String,
     },
+
+    SetKV(String, String),
+    Delete(String),
     // cluster, tenant, requests
     LimiterRequest {
         cluster: String,
