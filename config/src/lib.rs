@@ -263,7 +263,6 @@ mod test {
 # node_id = 100
 host = "localhost"
 cluster_name = 'cluster_xxx'
-cold_data_server = false
 store_metrics = true
 
 [deployment]

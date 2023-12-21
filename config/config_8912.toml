@@ -2,7 +2,6 @@
 node_id = 2001
 host = "localhost"
 cluster_name = 'cluster_xxx'
-cold_data_server = false
 store_metrics = true
 
 [deployment]

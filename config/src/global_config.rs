@@ -13,8 +13,6 @@ pub struct GlobalConfig {
     pub host: String,
     #[serde(default = "GlobalConfig::default_cluster_name")]
     pub cluster_name: String,
-    #[serde(default = "GlobalConfig::default_cold_data_server")]
-    pub cold_data_server: bool,
     #[serde(default = "GlobalConfig::default_store_metrics")]
     pub store_metrics: bool,
 }
@@ -32,10 +30,6 @@ impl GlobalConfig {
         "cluster_xxx".to_string()
     }
 
-    fn default_cold_data_server() -> bool {
-        false
-    }
-
     fn default_store_metrics() -> bool {
         true
     }
@@ -46,7 +40,6 @@ impl OverrideByEnv for GlobalConfig {
         entry_override(&mut self.node_id, "CNOSDB_GLOBAL_NODE_ID");
         entry_override(&mut self.host, "CNOSDB_GLOBAL_HOST");
         entry_override(&mut self.cluster_name, "CNOSDB_GLOBAL_CLUSTER_NAME");
-        entry_override(&mut self.cold_data_server, "CNOSDB_GLOBAL_COLD_DATA_SERVER");
         entry_override(&mut self.store_metrics, "CNOSDB_GLOBAL_STORE_METRICS");
     }
 }
@@ -57,7 +50,6 @@ impl Default for GlobalConfig {
             node_id: GlobalConfig::default_node_id(),
             host: GlobalConfig::default_host(),
             cluster_name: GlobalConfig::default_cluster_name(),
-            cold_data_server: GlobalConfig::default_cold_data_server(),
             store_metrics: GlobalConfig::default_store_metrics(),
         }
     }
