@@ -433,13 +433,8 @@ impl AdminMeta {
             self.config.service.grpc_listen_port,
         );
 
-        let mut attribute = NodeAttribute::default();
-        if self.config.global.cold_data_server {
-            attribute = NodeAttribute::Cold;
-        }
-
         let node = NodeInfo {
-            attribute,
+            attribute: NodeAttribute::default(),
             id: self.config.global.node_id,
             grpc_addr,
         };
