@@ -34,6 +34,7 @@ pub struct PointWriter {
     kv_inst: Option<EngineRef>,
     meta_manager: MetaRef,
     hh_sender: Sender<HintedOffWriteReq>,
+    grpc_enable_gzip: bool,
 }
 
 impl PointWriter {
@@ -43,6 +44,7 @@ impl PointWriter {
         kv_inst: Option<EngineRef>,
         meta_manager: MetaRef,
         hh_sender: Sender<HintedOffWriteReq>,
+        grpc_enable_gzip: bool,
     ) -> Self {
         let timeout = Duration::from_millis(timeout_ms);
         Self {
@@ -51,6 +53,7 @@ impl PointWriter {
             timeout,
             meta_manager,
             hh_sender,
+            grpc_enable_gzip,
         }
     }
 
@@ -170,10 +173,12 @@ impl PointWriter {
                 id: node_id,
                 error: error.to_string(),
             })?;
-        let mut client =
-            tskv_service_time_out_client(channel, self.timeout, DEFAULT_GRPC_SERVER_MESSAGE_LEN)
-                .accept_compressed(CompressionEncoding::Gzip)
-                .send_compressed(CompressionEncoding::Gzip);
+        let mut client = tskv_service_time_out_client(
+            channel,
+            self.timeout,
+            DEFAULT_GRPC_SERVER_MESSAGE_LEN,
+            self.grpc_enable_gzip,
+        );
 
         let mut cmd = tonic::Request::new(WriteVnodeRequest {
             vnode_id,
@@ -297,8 +302,12 @@ impl PointWriter {
                 id: node_id,
                 error: error.to_string(),
             })?;
-        let mut client =
-            tskv_service_time_out_client(channel, self.timeout, DEFAULT_GRPC_SERVER_MESSAGE_LEN);
+        let mut client = tskv_service_time_out_client(
+            channel,
+            self.timeout,
+            DEFAULT_GRPC_SERVER_MESSAGE_LEN,
+            self.grpc_enable_gzip,
+        );
 
         let cmd = tonic::Request::new(DeleteFromTableRequest {
             vnode_id,

@@ -1,5 +1,6 @@
 mod generated;
 pub use generated::*;
+use tonic::codec::CompressionEncoding;
 pub mod models_helper;
 pub mod prompb;
 pub mod test_helper;
@@ -9,6 +10,7 @@ use std::time::Duration;
 
 use crate::kv_service::tskv_service_client::TskvServiceClient;
 use crate::models::{Column, Points, Table};
+use crate::raft_service::raft_service_client::RaftServiceClient;
 use flatbuffers::{ForwardsUOffset, Vector};
 use snafu::Snafu;
 use tonic::transport::Channel;
@@ -247,11 +249,36 @@ pub fn tskv_service_time_out_client(
     channel: Channel,
     time_out: Duration,
     max_message_size: usize,
+    grpc_enable_gzip: bool,
 ) -> TskvServiceClient<Timeout<Channel>> {
     let timeout_channel = Timeout::new(channel, time_out);
     let client = TskvServiceClient::<Timeout<Channel>>::new(timeout_channel);
     let client = TskvServiceClient::max_decoding_message_size(client, max_message_size);
-    TskvServiceClient::max_encoding_message_size(client, max_message_size)
+    if grpc_enable_gzip {
+        TskvServiceClient::max_encoding_message_size(client, max_message_size)
+            .accept_compressed(CompressionEncoding::Gzip)
+            .send_compressed(CompressionEncoding::Gzip)
+    } else {
+        TskvServiceClient::max_encoding_message_size(client, max_message_size)
+    }
+}
+
+pub fn raft_service_time_out_client(
+    channel: Channel,
+    time_out: Duration,
+    max_message_size: usize,
+    grpc_enable_gzip: bool,
+) -> RaftServiceClient<Timeout<Channel>> {
+    let timeout_channel = Timeout::new(channel, time_out);
+    let client = RaftServiceClient::<Timeout<Channel>>::new(timeout_channel);
+    let client = RaftServiceClient::max_decoding_message_size(client, max_message_size);
+    if grpc_enable_gzip {
+        RaftServiceClient::max_encoding_message_size(client, max_message_size)
+            .accept_compressed(CompressionEncoding::Gzip)
+            .send_compressed(CompressionEncoding::Gzip)
+    } else {
+        RaftServiceClient::max_encoding_message_size(client, max_message_size)
+    }
 }
 
 #[cfg(test)]

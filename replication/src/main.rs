@@ -33,6 +33,9 @@ pub struct Opt {
 
     #[clap(long)]
     pub http_addr: String,
+
+    #[clap(long, default_value_t = false)]
+    pub grpc_enable_gzip: bool,
 }
 
 #[actix_web::main]
@@ -49,14 +52,18 @@ async fn main() -> std::io::Result<()> {
 
     info!("service start option: {:?}", options);
 
-    start_raft_node(options.id, options.http_addr)
+    start_raft_node(options.id, options.http_addr, options.grpc_enable_gzip)
         .await
         .unwrap();
 
     Ok(())
 }
 
-async fn start_raft_node(id: RaftNodeId, http_addr: String) -> ReplicationResult<()> {
+async fn start_raft_node(
+    id: RaftNodeId,
+    http_addr: String,
+    grpc_enable_gzip: bool,
+) -> ReplicationResult<()> {
     let path = format!("/tmp/cnosdb/{}", id);
 
     let state = StateStorage::open(format!("{}-state", path))?;
@@ -92,7 +99,7 @@ async fn start_raft_node(id: RaftNodeId, http_addr: String) -> ReplicationResult
     };
     let config = config.validate().unwrap();
 
-    let node = RaftNode::new(id, info, config, storage, engine)
+    let node = RaftNode::new(id, info, config, storage, engine, grpc_enable_gzip)
         .await
         .unwrap();
 

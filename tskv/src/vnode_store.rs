@@ -2,11 +2,11 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use models::meta_data::VnodeId;
 use models::predicate::domain::{ResolvedPredicate, TimeRange, TimeRanges};
 use models::schema::Precision;
-use models::{ColumnId, SeriesId, SeriesKey, TagKey, TagValue};
-use protos::kv_service::{raft_write_command, WritePointsResponse};
-use protos::models as fb_models;
+use models::{ColumnId, SeriesId, SeriesKey};
+use protos::kv_service::{raft_write_command, WritePointsResponse, *};
 use snafu::ResultExt;
 use tokio::sync::RwLock;
 use trace::{debug, error, info, warn, SpanContext, SpanExt, SpanRecorder};
@@ -17,12 +17,11 @@ use crate::index::ts_index::TSIndex;
 use crate::schema::error::SchemaError;
 use crate::summary::CompactMeta;
 use crate::tseries_family::TseriesFamily;
-use crate::{
-    file_utils, Error, SnapshotFileMeta, TsKvContext, UpdateSetValue, VersionEdit, VnodeSnapshot,
-};
+use crate::{file_utils, Error, SnapshotFileMeta, TsKvContext, VersionEdit, VnodeSnapshot};
 
 #[derive(Clone)]
 pub struct VnodeStorage {
+    pub id: VnodeId,
     pub ctx: Arc<TsKvContext>,
     pub db: Arc<RwLock<Database>>,
     pub ts_index: Arc<TSIndex>,
@@ -38,7 +37,14 @@ impl VnodeStorage {
         match command {
             raft_write_command::Command::WriteData(cmd) => {
                 let precision = Precision::from(cmd.precision as u8);
-                self.write(ctx.index, cmd.data, precision, None).await?;
+                if let Err(err) = self.write(ctx, cmd.data, precision, None).await {
+                    if ctx.apply_type == replication::APPLY_TYPE_WAL {
+                        info!("recover: write points: {}", err);
+                    } else {
+                        return Err(err);
+                    }
+                }
+
                 Ok(vec![])
             }
 
@@ -48,46 +54,23 @@ impl VnodeStorage {
             }
 
             raft_write_command::Command::DropColumn(cmd) => {
-                self.drop_table_column(&cmd.table, &cmd.column).await?;
+                if let Err(err) = self.drop_table_column(&cmd.table, &cmd.column).await {
+                    if ctx.apply_type == replication::APPLY_TYPE_WAL {
+                        info!("recover: drop column: {}", err);
+                    } else {
+                        return Err(err);
+                    }
+                }
                 Ok(vec![])
             }
 
             raft_write_command::Command::UpdateTags(cmd) => {
-                let new_tags = cmd
-                    .new_tags
-                    .iter()
-                    .cloned()
-                    .map(|protos::kv_service::UpdateSetValue { key, value }| {
-                        crate::UpdateSetValue { key, value }
-                    })
-                    .collect::<Vec<_>>();
-
-                let mut series = Vec::with_capacity(cmd.matched_series.len());
-                for key in cmd.matched_series.iter() {
-                    let ss = SeriesKey::decode(key).map_err(|_| Error::InvalidParam {
-                        reason:
-                            "Deserialize 'matched_series' of 'UpdateTagsRequest' failed, expected: SeriesKey"
-                                .to_string(),
-                    })?;
-                    series.push(ss);
-                }
-
-                self.update_tags_value(&new_tags, &series, cmd.dry_run)
-                    .await?;
+                self.update_tags_value(ctx, &cmd).await?;
                 Ok(vec![])
             }
 
             raft_write_command::Command::DeleteFromTable(cmd) => {
-                let predicate =
-                    bincode::deserialize::<ResolvedPredicate>(&cmd.predicate).map_err(|err| {
-                        Error::InvalidParam {
-                            reason: format!(
-                                "Predicate of delete_from_table is invalid, error: {err}"
-                            ),
-                        }
-                    })?;
-
-                self.delete_from_table(&cmd.table, &predicate).await?;
+                self.delete_from_table(&cmd).await?;
                 Ok(vec![])
             }
         }
@@ -95,24 +78,33 @@ impl VnodeStorage {
 
     async fn write(
         &self,
-        index: u64,
+        ctx: &replication::ApplyContext,
         points: Vec<u8>,
         precision: Precision,
         span_ctx: Option<&SpanContext>,
     ) -> Result<WritePointsResponse> {
         let span_recorder = SpanRecorder::new(span_ctx.child_span("tskv engine write cache"));
-
-        let fb_points = flatbuffers::root::<fb_models::Points>(&points)
+        let fb_points = flatbuffers::root::<protos::models::Points>(&points)
             .context(crate::error::InvalidFlatbufferSnafu)?;
-
         let tables = fb_points.tables().ok_or(Error::InvalidPointTable)?;
+
+        let (mut recover_from_wal, mut strict_write) = (false, None);
+        if ctx.apply_type == replication::APPLY_TYPE_WAL {
+            (recover_from_wal, strict_write) = (true, Some(true));
+        }
 
         let write_group = {
             let mut span_recorder = span_recorder.child("build write group");
             self.db
                 .read()
                 .await
-                .build_write_group(precision, tables, self.ts_index.clone(), false, None)
+                .build_write_group(
+                    precision,
+                    tables,
+                    self.ts_index.clone(),
+                    recover_from_wal,
+                    strict_write,
+                )
                 .await
                 .map_err(|err| {
                     span_recorder.error(err.to_string());
@@ -122,7 +114,12 @@ impl VnodeStorage {
 
         let res = {
             let mut span_recorder = span_recorder.child("put points");
-            match self.ts_family.read().await.put_points(index, write_group) {
+            match self
+                .ts_family
+                .read()
+                .await
+                .put_points(ctx.index, write_group)
+            {
                 Ok(points_number) => Ok(WritePointsResponse { points_number }),
                 Err(err) => {
                     span_recorder.error(err.to_string());
@@ -140,8 +137,6 @@ impl VnodeStorage {
     pub async fn drop_table(&self, table: &str) -> Result<()> {
         // TODO Create global DropTable flag for droping the same table at the same time.
         let db_owner = self.db.read().await.owner();
-        let vnode_id = self.ts_family.read().await.tf_id();
-
         let schemas = self.db.read().await.get_schemas();
         if let Some(fields) = schemas.get_table_schema(table)? {
             let column_ids: Vec<ColumnId> = fields.columns().iter().map(|f| f.id).collect();
@@ -157,7 +152,8 @@ impl VnodeStorage {
                 .delete_series(&series_ids, &TimeRange::all());
 
             info!(
-                "Drop table: vnode {vnode_id} deleting {} fields in table: {db_owner}.{table}",
+                "Drop table: vnode {} deleting {} fields in table: {db_owner}.{table}",
+                self.id,
                 column_ids.len() * series_ids.len()
             );
 
@@ -167,7 +163,8 @@ impl VnodeStorage {
                 .await?;
 
             info!(
-                "Drop table: index {vnode_id} deleting {} fields in table: {db_owner}.{table}",
+                "Drop table: index {} deleting {} fields in table: {db_owner}.{table}",
+                self.id,
                 series_ids.len()
             );
 
@@ -207,18 +204,45 @@ impl VnodeStorage {
 
     async fn update_tags_value(
         &self,
-        new_tags: &[UpdateSetValue<TagKey, TagValue>],
-        matched_series: &[SeriesKey],
-        dry_run: bool,
+        ctx: &replication::ApplyContext,
+        cmd: &UpdateTagsRequest,
     ) -> Result<()> {
+        let new_tags = cmd
+            .new_tags
+            .iter()
+            .cloned()
+            .map(
+                |protos::kv_service::UpdateSetValue { key, value }| crate::UpdateSetValue {
+                    key,
+                    value,
+                },
+            )
+            .collect::<Vec<_>>();
+
+        let mut series = Vec::with_capacity(cmd.matched_series.len());
+        for key in cmd.matched_series.iter() {
+            let ss = SeriesKey::decode(key).map_err(|_| {
+                Error::InvalidParam {
+            reason:
+                "Deserialize 'matched_series' of 'UpdateTagsRequest' failed, expected: SeriesKey"
+                    .to_string(),
+        }
+            })?;
+            series.push(ss);
+        }
+
         // 准备数据
         // 获取待更新的 series key，更新后的 series key 及其对应的 series id
+        let mut check_conflict = true;
+        if ctx.apply_type == replication::APPLY_TYPE_WAL {
+            check_conflict = false;
+        }
         let (old_series_keys, new_series_keys, sids) = self
             .ts_index
-            .prepare_update_tags_value(new_tags, matched_series)
+            .prepare_update_tags_value(&new_tags, &series, check_conflict)
             .await?;
 
-        if dry_run {
+        if cmd.dry_run {
             return Ok(());
         }
 
@@ -240,32 +264,29 @@ impl VnodeStorage {
         Ok(())
     }
 
-    async fn delete_from_table(&self, table: &str, predicate: &ResolvedPredicate) -> Result<()> {
+    async fn delete_from_table(&self, cmd: &DeleteFromTableRequest) -> Result<()> {
+        let predicate =
+            bincode::deserialize::<ResolvedPredicate>(&cmd.predicate).map_err(|err| {
+                Error::InvalidParam {
+                    reason: format!("Predicate of delete_from_table is invalid, error: {err}"),
+                }
+            })?;
+
         let tag_domains = predicate.tags_filter();
-        let time_ranges = predicate.time_ranges();
-
-        let vnode_id = self.ts_family.read().await.tf_id();
         let series_ids = {
-            let db = self.db.read().await;
-
-            let table_schema = match db.get_table_schema(table)? {
+            let table_schema = match self.db.read().await.get_table_schema(&cmd.table)? {
                 None => return Ok(()),
                 Some(schema) => schema,
             };
 
-            let vnode_index = match db.get_ts_index(vnode_id) {
-                Some(vnode) => vnode,
-                None => return Ok(()),
-            };
-            drop(db);
-
-            vnode_index
+            self.ts_index
                 .get_series_ids_by_domains(table_schema.as_ref(), tag_domains)
                 .await?
         };
 
         // 执行delete，删除缓存 & 写墓碑文件
-        self.delete(table, &series_ids, &time_ranges).await
+        let time_ranges = predicate.time_ranges();
+        self.delete(&cmd.table, &series_ids, &time_ranges).await
     }
 
     /// Flush caches into TSM file, create a new Version of the Vnode, then:
@@ -276,9 +297,9 @@ impl VnodeStorage {
     ///
     /// For one Vnode, multi snapshot may exist at a time.
     pub async fn create_snapshot(&self) -> Result<VnodeSnapshot> {
-        let vnode_id = self.ts_family.read().await.tf_id();
-        debug!("Snapshot: create snapshot on vnode: {vnode_id}");
+        debug!("Snapshot: create snapshot on vnode: {}", self.id);
 
+        let vnode_id = self.id;
         let (vnode_optional, vnode_index_optional) = self
             .ctx
             .version_set
@@ -518,7 +539,7 @@ impl VnodeStorage {
 
     /// Delete the snapshot directory of a Vnode, all snapshots will be deleted.
     pub async fn delete_snapshot(&self) -> Result<()> {
-        let vnode_id = self.ts_family.read().await.tf_id();
+        let vnode_id = self.id;
         debug!("Snapshot: create snapshot on vnode: {vnode_id}");
         let vnode_optional = self
             .ctx
@@ -566,28 +587,21 @@ impl VnodeStorage {
             }
 
             let time_range = TimeRange::all();
-            for (ts_family_id, ts_family) in db_rlock.ts_families().iter() {
-                // TODO: Concurrent delete on ts_family.
-                // TODO: Limit parallel delete to 1.
-                if let Some(ts_index) = db_rlock.get_ts_index(*ts_family_id) {
-                    let series_ids = ts_index.get_series_id_list(table, &[]).await?;
-                    info!(
-                        "Drop table: vnode {ts_family_id} deleting {} fields in table: {db_owner}.{table}", series_ids.len() * to_drop_column_ids.len()
-                    );
+            let series_ids = self.ts_index.get_series_id_list(table, &[]).await?;
+            info!(
+                "drop table column: vnode: {} deleting {} fields in table: {db_owner}.{table}",
+                self.id,
+                series_ids.len() * to_drop_column_ids.len()
+            );
 
-                    ts_family
-                        .write()
-                        .await
-                        .drop_columns(&series_ids, &to_drop_column_ids);
-
-                    let version = ts_family.read().await.super_version();
-                    version
-                        .add_tombstone(&series_ids, &to_drop_column_ids, &time_range)
-                        .await?;
-                } else {
-                    continue;
-                }
-            }
+            self.ts_family
+                .write()
+                .await
+                .drop_columns(&series_ids, &to_drop_column_ids);
+            let version = self.ts_family.read().await.super_version();
+            version
+                .add_tombstone(&series_ids, &to_drop_column_ids, &time_range)
+                .await?;
         }
 
         Ok(())

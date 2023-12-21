@@ -35,6 +35,7 @@ pub struct TskvServiceImpl {
     pub kv_inst: EngineRef,
     pub coord: CoordinatorRef,
     pub metrics_register: Arc<MetricsRegister>,
+    pub grpc_enable_gzip: bool,
 }
 
 impl TskvServiceImpl {
@@ -143,7 +144,12 @@ impl TskvServiceImpl {
         request: &DeleteVnodeRequest,
     ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
         let meta = self.coord.meta_manager();
-        let manager = VnodeManager::new(meta, self.kv_inst.clone(), self.coord.node_id());
+        let manager = VnodeManager::new(
+            meta,
+            self.kv_inst.clone(),
+            self.coord.node_id(),
+            self.grpc_enable_gzip,
+        );
         if let Err(err) = manager.drop_vnode(tenant, request.vnode_id).await {
             self.status_response(FAILED_RESPONSE_CODE, err.to_string())
         } else {
@@ -157,7 +163,12 @@ impl TskvServiceImpl {
         request: &CopyVnodeRequest,
     ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
         let meta = self.coord.meta_manager();
-        let manager = VnodeManager::new(meta, self.kv_inst.clone(), self.coord.node_id());
+        let manager = VnodeManager::new(
+            meta,
+            self.kv_inst.clone(),
+            self.coord.node_id(),
+            self.grpc_enable_gzip,
+        );
         if let Err(err) = manager.copy_vnode(tenant, request.vnode_id, true).await {
             self.status_response(FAILED_RESPONSE_CODE, err.to_string())
         } else {
@@ -171,7 +182,12 @@ impl TskvServiceImpl {
         request: &MoveVnodeRequest,
     ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
         let meta = self.coord.meta_manager();
-        let manager = VnodeManager::new(meta, self.kv_inst.clone(), self.coord.node_id());
+        let manager = VnodeManager::new(
+            meta,
+            self.kv_inst.clone(),
+            self.coord.node_id(),
+            self.grpc_enable_gzip,
+        );
         if let Err(err) = manager.move_vnode(tenant, request.vnode_id).await {
             self.status_response(FAILED_RESPONSE_CODE, err.to_string())
         } else {

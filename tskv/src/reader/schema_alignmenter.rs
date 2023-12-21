@@ -263,6 +263,7 @@ enum Assignment {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::sync::Arc;
 
     use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
@@ -270,6 +271,7 @@ mod tests {
     use datafusion::assert_batches_eq;
     use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
     use futures::TryStreamExt;
+    use models::schema::COLUMN_ID_META_KEY;
 
     use super::SchemaAlignmenter;
     use crate::reader::{BatchReader, MemoryBatchReader};
@@ -295,36 +297,84 @@ mod tests {
     }
 
     fn input_schema() -> SchemaRef {
-        Arc::new(Schema::new(vec![
-            Field::new("time", DataType::Int64, true),
-            Field::new("c3", DataType::Utf8, true),
-            Field::new("c2", DataType::Float64, true),
-            Field::new("c1", DataType::UInt64, true),
-        ]))
+        let mut field1 = Field::new("time", DataType::Int64, true);
+        field1.set_metadata(HashMap::from([(
+            COLUMN_ID_META_KEY.to_string(),
+            "0".to_string(),
+        )]));
+        let mut field2 = Field::new("c3", DataType::Utf8, true);
+        field2.set_metadata(HashMap::from([(
+            COLUMN_ID_META_KEY.to_string(),
+            "3".to_string(),
+        )]));
+        let mut field3 = Field::new("c2", DataType::Float64, true);
+        field3.set_metadata(HashMap::from([(
+            COLUMN_ID_META_KEY.to_string(),
+            "2".to_string(),
+        )]));
+        let mut field4 = Field::new("c1", DataType::UInt64, true);
+        field4.set_metadata(HashMap::from([(
+            COLUMN_ID_META_KEY.to_string(),
+            "1".to_string(),
+        )]));
+        Arc::new(Schema::new(vec![field1, field2, field3, field4]))
     }
 
     fn output_schema() -> SchemaRef {
-        Arc::new(Schema::new(vec![
-            Field::new("time", DataType::Int64, true),
-            Field::new("c1", DataType::UInt64, true),
-            Field::new("c2", DataType::Float64, true),
-            Field::new("c3", DataType::Utf8, true),
-            Field::new("c4", DataType::Boolean, true),
-        ]))
+        let mut field1 = Field::new("time", DataType::Int64, true);
+        field1.set_metadata(HashMap::from([(
+            COLUMN_ID_META_KEY.to_string(),
+            "0".to_string(),
+        )]));
+        let mut field2 = Field::new("c1", DataType::UInt64, true);
+        field2.set_metadata(HashMap::from([(
+            COLUMN_ID_META_KEY.to_string(),
+            "1".to_string(),
+        )]));
+        let mut field3 = Field::new("c2", DataType::Float64, true);
+        field3.set_metadata(HashMap::from([(
+            COLUMN_ID_META_KEY.to_string(),
+            "2".to_string(),
+        )]));
+        let mut field4 = Field::new("c3", DataType::Utf8, true);
+        field4.set_metadata(HashMap::from([(
+            COLUMN_ID_META_KEY.to_string(),
+            "3".to_string(),
+        )]));
+        let mut field5 = Field::new("c4", DataType::Boolean, true);
+        field5.set_metadata(HashMap::from([(
+            COLUMN_ID_META_KEY.to_string(),
+            "4".to_string(),
+        )]));
+        Arc::new(Schema::new(vec![field1, field2, field3, field4, field5]))
     }
 
     fn missing_column_schema() -> SchemaRef {
-        Arc::new(Schema::new(vec![
-            Field::new("time", DataType::Int64, true),
-            Field::new("c1", DataType::UInt64, true),
-        ]))
+        let mut field1 = Field::new("time", DataType::Int64, true);
+        field1.set_metadata(HashMap::from([(
+            COLUMN_ID_META_KEY.to_string(),
+            "0".to_string(),
+        )]));
+        let mut field2 = Field::new("c1", DataType::UInt64, true);
+        field2.set_metadata(HashMap::from([(
+            COLUMN_ID_META_KEY.to_string(),
+            "1".to_string(),
+        )]));
+        Arc::new(Schema::new(vec![field1, field2]))
     }
 
     fn column_data_type_mismatch_schema() -> SchemaRef {
-        Arc::new(Schema::new(vec![
-            Field::new("time", DataType::Int64, true),
-            Field::new("c1", DataType::Utf8, true),
-        ]))
+        let mut field1 = Field::new("time", DataType::Int64, true);
+        field1.set_metadata(HashMap::from([(
+            COLUMN_ID_META_KEY.to_string(),
+            "0".to_string(),
+        )]));
+        let mut field2 = Field::new("c1", DataType::Utf8, true);
+        field2.set_metadata(HashMap::from([(
+            COLUMN_ID_META_KEY.to_string(),
+            "1".to_string(),
+        )]));
+        Arc::new(Schema::new(vec![field1, field2]))
     }
 
     fn metrics() -> Arc<ExecutionPlanMetricsSet> {

@@ -788,6 +788,7 @@ impl Engine for TsKv {
             db,
             ts_index,
             ts_family,
+            id: vnode_id,
             ctx: self.ctx.clone(),
         })
     }
@@ -913,7 +914,7 @@ impl Engine for TsKv {
             // 准备数据
             // 获取待更新的 series key，更新后的 series key 及其对应的 series id
             let (old_series_keys, new_series_keys, sids) = ts_index
-                .prepare_update_tags_value(new_tags, matched_series)
+                .prepare_update_tags_value(new_tags, matched_series, true)
                 .await?;
 
             if dry_run {

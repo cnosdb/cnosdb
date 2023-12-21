@@ -203,6 +203,7 @@ impl RaftWriter {
             channel,
             Duration::from_millis(timeout),
             DEFAULT_GRPC_SERVER_MESSAGE_LEN,
+            self.config.service.grpc_enable_gzip,
         );
 
         let mut cmd = tonic::Request::new(request);
