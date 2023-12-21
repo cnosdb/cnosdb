@@ -111,6 +111,34 @@ jobs:
         shell: bash
         run: |
           cargo test --package e2e_test --lib -- independent:: --test-threads=1 --nocapture
+  windows-compatibility:
+    name: "Windows Compatibility"
+    runs-on: windows-latest
+    env:
+      SCCACHE_GHA_ENABLED: ""
+      RUSTC_WRAPPER: ""
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install dependencies
+        shell: bash
+        run: |
+          TARGETPLATFORM="windows/amd64" bash ./.github/tools/install_dependencies.sh
+      - name: Run and test
+        run: |
+          cargo build --profile test-ci --package main --bin cnosdb
+          Copy-Item -Path .\target\test-ci\cnosdb.exe -Destination .\cnosdb.exe
+          cargo clean
+          .\cnosdb.exe run --config config/config_8902.toml -M singleton &
+          while ($true) {
+            try {
+              Invoke-WebRequest -Method GET -Uri http://127.0.0.1:8902/api/v1/ping
+              break
+            }
+            catch {
+              Start-Sleep -Seconds 5
+            }
+          }
+          echo 'cnosdb successfully started'
 
   #integration-test-3m2d:
   #  name: "Integration Test 3meta 2data cluster"
