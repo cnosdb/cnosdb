@@ -198,9 +198,7 @@ mod test {
     use std::collections::HashSet;
     use std::{thread, time};
 
-    use models::meta_data::{
-        NodeAttribute, NodeInfo, TenantMetaData, VnodeAllInfo, VnodeInfo, VnodeStatus,
-    };
+    use models::meta_data::{NodeInfo, TenantMetaData, VnodeAllInfo, VnodeInfo, VnodeStatus};
     use models::schema::DatabaseSchema;
     use tokio::sync::mpsc::channel;
     use tokio::time::timeout;
@@ -224,7 +222,6 @@ mod test {
 
         let node = NodeInfo {
             id: 111,
-            attribute: NodeAttribute::Hot,
             grpc_addr: "".to_string(),
         };
 
