@@ -145,6 +145,35 @@ impl TimeRange {
         };
         (left, right)
     }
+
+    pub fn compact(time_ranges: &mut Vec<TimeRange>) {
+        if time_ranges.is_empty() {
+            return;
+        }
+
+        // Start compact with sorted ascending time ranges
+        time_ranges.sort();
+
+        fn can_compact(a: &TimeRange, b: &TimeRange) -> bool {
+            (a.min_ts <= b.max_ts && a.max_ts >= b.min_ts)
+                || (a.max_ts.checked_add(1).is_some_and(|t| t == b.min_ts))
+                || (b.max_ts.checked_add(1).is_some_and(|t| t == a.min_ts))
+        }
+
+        let mut i = 0;
+        while i < time_ranges.len() - 1 {
+            if can_compact(&time_ranges[i], &time_ranges[i + 1]) {
+                let mut j = i + 1;
+                while j < time_ranges.len() && can_compact(&time_ranges[i], &time_ranges[j]) {
+                    time_ranges[i].max_ts = time_ranges[i].max_ts.max(time_ranges[j].max_ts);
+                    j += 1;
+                }
+                time_ranges.drain(i + 1..j);
+            } else {
+                i += 1;
+            }
+        }
+    }
 }
 
 impl From<(Timestamp, Timestamp)> for TimeRange {
@@ -1802,6 +1831,7 @@ mod tests {
         assert!(tr.overlaps(&TimeRange::new(4, 7)));
         assert!(tr.overlaps(&TimeRange::new(1, 5)));
         assert!(tr.overlaps(&TimeRange::new(2, 4)));
+        assert!(tr.overlaps(&TimeRange::new(5, 6)));
         assert!(!tr.overlaps(&TimeRange::new(-3, -1)));
         assert!(!tr.overlaps(&TimeRange::new(-1, 0)));
         assert!(!tr.overlaps(&TimeRange::new(6, 7)));
@@ -1997,6 +2027,89 @@ mod tests {
         let exclude_ranges =
             trs.exclude_time_ranges(&[&TimeRange::new(3, 4), &TimeRange::new(5, 8)]);
         assert_eq!(expected, exclude_ranges);
+    }
+    #[test]
+    fn test_time_range_sort() {
+        let mut time_range_vec: Vec<TimeRange> = vec![
+            (1, 1).into(),
+            (1, 2).into(),
+            (1, 0).into(),
+            (3, 4).into(),
+            (2, 3).into(),
+            (2, 1).into(),
+        ];
+        time_range_vec.sort();
+        assert_eq!(
+            time_range_vec,
+            vec![
+                (1, 0).into(),
+                (1, 1).into(),
+                (1, 2).into(),
+                (2, 1).into(),
+                (2, 3).into(),
+                (3, 4).into(),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_time_range_compact() {
+        {
+            let mut time_range_vec: Vec<TimeRange> = vec![];
+            TimeRange::compact(&mut time_range_vec);
+            assert_eq!(time_range_vec, vec![]);
+        }
+        {
+            let mut time_range_vec: Vec<TimeRange> = vec![(1, 2).into()];
+            TimeRange::compact(&mut time_range_vec);
+            assert_eq!(time_range_vec, vec![(1, 2).into()]);
+        }
+        {
+            let mut time_range_vec: Vec<TimeRange> =
+                vec![(Timestamp::MIN, 999).into(), (1_000, Timestamp::MAX).into()];
+            TimeRange::compact(&mut time_range_vec);
+            assert_eq!(
+                time_range_vec,
+                vec![(Timestamp::MIN, Timestamp::MAX).into()]
+            );
+        }
+        {
+            let mut time_range_vec: Vec<TimeRange> =
+                vec![(Timestamp::MIN, Timestamp::MAX).into(), (999, 1_000).into()];
+            TimeRange::compact(&mut time_range_vec);
+            assert_eq!(
+                time_range_vec,
+                vec![(Timestamp::MIN, Timestamp::MAX).into()]
+            );
+        }
+        {
+            let mut time_range_vec: Vec<TimeRange> =
+                vec![(Timestamp::MIN, 998).into(), (1_000, Timestamp::MAX).into()];
+            TimeRange::compact(&mut time_range_vec);
+            assert_eq!(
+                time_range_vec,
+                vec![(Timestamp::MIN, 998).into(), (1_000, Timestamp::MAX).into()]
+            );
+        }
+        {
+            let mut time_range_vec: Vec<TimeRange> =
+                vec![(1, 2).into(), (3, 4).into(), (9, 10).into()];
+            TimeRange::compact(&mut time_range_vec);
+            assert_eq!(time_range_vec, vec![(1, 4).into(), (9, 10).into()]);
+        }
+        {
+            let mut time_range_vec: Vec<TimeRange> = vec![
+                (5, 5).into(),
+                (1, 10).into(),
+                (0, 5).into(),
+                (3, 6).into(),
+                (5, 9).into(),
+                (20, 30).into(),
+                (21, 29).into(),
+            ];
+            TimeRange::compact(&mut time_range_vec);
+            assert_eq!(time_range_vec, vec![(0, 10).into(), (20, 30).into()]);
+        }
     }
 
     #[test]

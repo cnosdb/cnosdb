@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::fmt::Display;
 use std::mem::MaybeUninit;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -16,6 +17,7 @@ use models::{FieldId, SeriesId, Timestamp};
 use parking_lot::RwLock;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Sender;
+use tokio::sync::RwLock as AsyncRwLock;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 use trace::{debug, error, info, warn};
@@ -175,7 +177,45 @@ impl Drop for ColumnFile {
                     info!("Removed tsm tombstone '{}", tombstone_path.display());
                 }
             }
+
+            match tsm::tombstone_compact_tmp_path(&tombstone_path) {
+                Ok(path) => {
+                    if file_manager::try_exists(&path) {
+                        if let Err(e) = std::fs::remove_file(&path) {
+                            error!(
+                                "Failed to remove tsm tombstone_compact_tmp '{}': {e}",
+                                path.display()
+                            );
+                        } else {
+                            info!("Removed tsm tombstone_compact_tmp '{}", path.display());
+                        }
+                    }
+                }
+                Err(e) => error!(
+                    "Failed to remove tsm tombstone_compact_tmp '{}', path invalid: {e}",
+                    path.display()
+                ),
+            }
         }
+    }
+}
+
+impl Display for ColumnFile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{{ level:{}, file_id:{}, compacting:{}, time_range:{}-{}, file size:{} }}",
+            self.level,
+            self.file_id,
+            if self.is_compacting() {
+                "True"
+            } else {
+                "False"
+            },
+            self.time_range.min_ts,
+            self.time_range.max_ts,
+            self.size,
+        )
     }
 }
 
@@ -221,6 +261,21 @@ pub struct LevelInfo {
     pub cur_size: u64,
     pub max_size: u64,
     pub time_range: TimeRange,
+}
+
+pub(crate) struct ColumnFiles<'a, F: AsRef<ColumnFile>>(pub &'a [F]);
+
+impl<'a, F: AsRef<ColumnFile>> Display for ColumnFiles<'a, F> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut iter = self.0.iter();
+        if let Some(d) = iter.next() {
+            write!(f, "{}", d.as_ref())?;
+            for d in iter {
+                write!(f, ", {}", d.as_ref())?;
+            }
+        }
+        Ok(())
+    }
 }
 
 impl LevelInfo {
@@ -372,6 +427,34 @@ impl LevelInfo {
     }
 }
 
+impl Display for LevelInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{{ L:{}, files: [ ", self.level)?;
+        for (i, file) in self.files.iter().enumerate() {
+            write!(f, "{}", file.as_ref())?;
+            if i < self.files.len() - 1 {
+                write!(f, ", ")?;
+            }
+        }
+        write!(f, "] }}")
+    }
+}
+
+pub(crate) struct LevelInfos<'a>(pub &'a [LevelInfo]);
+
+impl<'a> Display for LevelInfos<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut iter = self.0.iter();
+        if let Some(d) = iter.next() {
+            write!(f, "{d}")?;
+            for d in iter {
+                write!(f, ", {d}")?;
+            }
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug)]
 pub struct Version {
     ts_family_id: TseriesFamilyId,
@@ -439,6 +522,7 @@ impl Version {
             for file in level.files.iter() {
                 if deleted_files[file.level as usize].contains(&file.file_id) {
                     file.mark_deleted();
+                    trace::info!("deleted_files: {}", file.file_id);
                     continue;
                 }
                 new_levels[level.level as usize].push_column_file(file.clone());
@@ -777,7 +861,7 @@ impl TsfFactory {
             cache_opt: self.options.cache.clone(),
             storage_opt: self.options.storage.clone(),
             seq_no: version.last_seq,
-            last_modified: Arc::new(Default::default()),
+            last_modified: Arc::new(tokio::sync::RwLock::new(None)),
             cancellation_token: CancellationToken::new(),
             memory_pool: self.memory_pool.clone(),
             tsf_metrics,
@@ -1038,37 +1122,8 @@ impl TseriesFamily {
         }
     }
 
-    pub fn schedule_compaction(&self, runtime: Arc<Runtime>, sender: Sender<CompactTask>) {
-        let tsf_id = self.tf_id;
-        let compact_trigger_cold_duration = self.storage_opt.compact_trigger_cold_duration;
-        let last_modified = self.last_modified.clone();
-        let cancellation_token = self.cancellation_token.clone();
-        let _jh = runtime.spawn(async move {
-            if compact_trigger_cold_duration == Duration::ZERO {} else {
-                let mut cold_check_interval = tokio::time::interval(Duration::from_secs(10));
-                cold_check_interval.tick().await;
-                loop {
-                    tokio::select! {
-                        _ = cold_check_interval.tick() => {
-                            let last_modified = last_modified.read().await;
-                            if let Some(t) = *last_modified {
-                                if t.elapsed() >= compact_trigger_cold_duration {
-                                    if let Err(e) = sender.send(CompactTask::ColdVnode(tsf_id)).await {
-                                        warn!("failed to send compact task({}), {}", tsf_id, e);
-                                    }
-                                }
-                            }
-                        }
-                        _ = cancellation_token.cancelled() => {
-                            break;
-                        }
-                    }
-                }
-            }
-        });
-    }
-
     pub fn close(&self) {
+        info!("Closing vnode {}", self.tf_id);
         self.cancellation_token.cancel();
     }
 
@@ -1159,8 +1214,70 @@ impl TseriesFamily {
 
 impl Drop for TseriesFamily {
     fn drop(&mut self) {
-        self.cancellation_token.cancel();
+        if !self.cancellation_token.is_cancelled() {
+            self.cancellation_token.cancel();
+        }
     }
+}
+
+pub fn schedule_vnode_compaction(
+    runtime: Arc<Runtime>,
+    vnode: Arc<AsyncRwLock<TseriesFamily>>,
+    compact_task_sender: Sender<CompactTask>,
+) {
+    let _jh = runtime.spawn(async move {
+        let vnode_rlock = vnode.read().await;
+        let tsf_id = vnode_rlock.tf_id;
+        let compact_trigger_cold_duration = vnode_rlock.storage_opt.compact_trigger_cold_duration;
+        let last_modified = vnode_rlock.last_modified.clone();
+        let compact_trigger_file_num = vnode_rlock.storage_opt.compact_trigger_file_num as usize;
+        let cancellation_token = vnode_rlock.cancellation_token.clone();
+        drop(vnode_rlock);
+
+        if compact_trigger_cold_duration == Duration::ZERO {
+            info!("Schedule vnode compaction for {tsf_id}: compact_trigger_cold_duration is 0 so won't run this job");
+        } else {
+            info!("Schedule vnode compaction for {tsf_id}: checking to compact every 10 seconds.");
+            let mut check_interval = tokio::time::interval(Duration::from_secs(10));
+            check_interval.tick().await;
+
+            loop {
+                tokio::select! {
+                    _ = check_interval.tick() => {
+                        // Check if vnode is cold.
+                        let ts_rlock = last_modified.read().await;
+                        if let Some(t) = *ts_rlock {
+                            if t.elapsed() >= compact_trigger_cold_duration {
+                                drop(ts_rlock);
+                                let mut ts_wlock = last_modified.write().await;
+                                *ts_wlock = Some(Instant::now());
+                                if let Err(e) = compact_task_sender.send(CompactTask::Cold(tsf_id)).await {
+                                    warn!("failed to send compact task({}), {}", tsf_id, e);
+                                }
+                            }
+                        }
+
+                        // Check if level-0 files is more than DEFAULT_COMPACT_TRIGGER_DETLA_FILE_NUM
+                        let version = vnode.read().await.super_version().version.clone();
+                        let mut level0_files = 0_usize;
+                        for file in version.levels_info()[0].files.iter() {
+                            if !file.is_compacting() {
+                                level0_files += 1;
+                            }
+                        }
+                        if level0_files >= compact_trigger_file_num {
+                            if let Err(e) = compact_task_sender.send(CompactTask::Delta(tsf_id)).await {
+                                warn!("failed to send compact task({}), {}", tsf_id, e);
+                            }
+                        }
+                    }
+                    _ = cancellation_token.cancelled() => {
+                        break;
+                    }
+                }
+            }
+        }
+    });
 }
 
 pub struct ColumnFileToTsmReaderIterator {
@@ -1220,7 +1337,7 @@ pub mod test_tseries_family {
     use tokio::sync::RwLock as AsyncRwLock;
 
     use super::{ColumnFile, LevelInfo};
-    use crate::compaction::flush_tests::default_table_schema;
+    use crate::compaction::test::default_table_schema;
     use crate::compaction::{run_flush_memtable_job, FlushReq};
     use crate::context::GlobalContext;
     use crate::file_utils::make_tsm_file;
@@ -1261,7 +1378,7 @@ pub mod test_tseries_family {
         let ts_family_id = 1;
         let tsm_dir = opt.storage.tsm_dir(&database, ts_family_id);
         #[rustfmt::skip]
-            let levels = [
+        let levels = [
             LevelInfo::init(database.clone(), 0, 0, opt.storage.clone()),
             LevelInfo {
                 files: vec![
@@ -1303,7 +1420,6 @@ pub mod test_tseries_family {
         );
         let mut version_edits = Vec::new();
         let mut ve = VersionEdit::new(1);
-        #[rustfmt::skip]
         ve.add_file(
             CompactMeta {
                 file_id: 4,
@@ -1363,7 +1479,7 @@ pub mod test_tseries_family {
         let ts_family_id = 1;
         let tsm_dir = opt.storage.tsm_dir(&database, ts_family_id);
         #[rustfmt::skip]
-            let levels = [
+        let levels = [
             LevelInfo::init(database.clone(), 0, 1, opt.storage.clone()),
             LevelInfo {
                 files: vec![
@@ -1396,11 +1512,10 @@ pub mod test_tseries_family {
         ];
         let tsm_reader_cache = Arc::new(ShardedAsyncCache::create_lru_sharded_cache(16));
         #[rustfmt::skip]
-            let version = Version::new(1, database, opt.storage.clone(), 1, levels, 3150, tsm_reader_cache);
+        let version = Version::new(1, database, opt.storage.clone(), 1, levels, 3150, tsm_reader_cache);
 
         let mut version_edits = Vec::new();
         let mut ve = VersionEdit::new(1);
-        #[rustfmt::skip]
         ve.add_file(
             CompactMeta {
                 file_id: 5,
@@ -1415,7 +1530,6 @@ pub mod test_tseries_family {
             },
             3150,
         );
-        #[rustfmt::skip]
         ve.add_file(
             CompactMeta {
                 file_id: 6,
@@ -1696,6 +1810,7 @@ pub mod test_tseries_family {
                 summary_task_sender,
 
                 options: opt.clone(),
+                runtime: runtime_ref.clone(),
                 global_ctx,
             });
 

@@ -252,7 +252,7 @@ pub async fn run_flush_memtable_job(
         if trigger_compact {
             let _ = ctx
                 .compact_task_sender
-                .send(CompactTask::Vnode(req.ts_family_id))
+                .send(CompactTask::Normal(req.ts_family_id))
                 .await;
         }
     }
@@ -426,13 +426,13 @@ impl WriterWrapper {
             .context(error::WriteTsmSnafu)
     }
 
-    pub async fn finish(&mut self) -> Result<Vec<(CompactMeta, Arc<BloomFilter>)>> {
+    pub async fn finish(self) -> Result<Vec<(CompactMeta, Arc<BloomFilter>)>> {
         let mut column_file_metas = Vec::with_capacity(2);
         let compact_meta_builder = CompactMetaBuilder::new(self.ts_family_id);
 
         // While delta_writer is level-0, tsm_writer is level-1.
-        for (level, writer) in self.writers.iter_mut().enumerate() {
-            if let Some(w) = writer.as_mut() {
+        for (level, writer) in self.writers.into_iter().enumerate() {
+            if let Some(mut w) = writer {
                 w.write_index().await.context(error::WriteTsmSnafu)?;
                 w.finish().await.context(error::WriteTsmSnafu)?;
                 info!(
@@ -441,16 +441,14 @@ impl WriterWrapper {
                     level,
                     w.size()
                 );
-                column_file_metas.push((
-                    compact_meta_builder.build(
-                        w.sequence(),
-                        w.size(),
-                        level as u32,
-                        w.min_ts(),
-                        w.max_ts(),
-                    ),
-                    Arc::new(w.bloom_filter_cloned()),
-                ));
+                let cm = compact_meta_builder.build(
+                    w.sequence(),
+                    w.size(),
+                    level as u32,
+                    w.min_ts(),
+                    w.max_ts(),
+                );
+                column_file_metas.push((cm, Arc::new(w.into_bloom_filter())));
             }
         }
 
@@ -591,15 +589,15 @@ pub mod flush_tests {
         let test_case = flush_test_case_1(&memory_pool, 10);
 
         let ts_family_id = 1;
-        let database = Arc::new("test_db".to_string());
+        let tenant_database = Arc::new("cnosdb.test_db".to_string());
         let global_context = Arc::new(GlobalContext::new());
         let options = Options::from(&config);
         let version = Arc::new(Version::new(
             ts_family_id,
-            database.clone(),
+            tenant_database.clone(),
             options.storage.clone(),
             1,
-            LevelInfo::init_levels(database, 0, options.storage),
+            LevelInfo::init_levels(tenant_database, 0, options.storage),
             test_case.max_level_ts_before,
             Arc::new(ShardedAsyncCache::create_lru_sharded_cache(1)),
         ));

@@ -19,7 +19,7 @@ use models::predicate::domain::TimeRange;
 use models::FieldId;
 use parking_lot::Mutex;
 use tokio::sync::Mutex as AsyncMutex;
-use trace::error;
+use trace::{debug, error};
 use utils::BloomFilter;
 
 use super::DataBlock;
@@ -120,6 +120,29 @@ impl TsmTombstone {
         Ok(())
     }
 
+    async fn save_all(
+        writer: &mut record_file::Writer,
+        tombstones: &HashMap<FieldId, Vec<TimeRange>>,
+    ) -> Result<()> {
+        let mut write_buf = [0_u8; ENTRY_LEN];
+        for (field_id, time_ranges) in tombstones.iter() {
+            for time_range in time_ranges.iter() {
+                write_buf[0..8].copy_from_slice(field_id.to_be_bytes().as_slice());
+                write_buf[8..16].copy_from_slice(time_range.min_ts.to_be_bytes().as_slice());
+                write_buf[16..24].copy_from_slice(time_range.max_ts.to_be_bytes().as_slice());
+                writer
+                    .write_record(
+                        RecordDataVersion::V1 as u8,
+                        RecordDataType::Tombstone as u8,
+                        &[&write_buf],
+                    )
+                    .await?;
+            }
+        }
+
+        Ok(())
+    }
+
     pub fn is_empty(&self) -> bool {
         self.tombstones.lock().is_empty()
     }
@@ -164,6 +187,58 @@ impl TsmTombstone {
                 .push(*time_range);
         }
         Ok(())
+    }
+
+    pub async fn add_range_and_compact_to_tmp(
+        &self,
+        field_ids: &[FieldId],
+        time_range: &TimeRange,
+        bloom_filter: Option<Arc<BloomFilter>>,
+    ) -> Result<()> {
+        let mut tombstones = self.tombstones.lock().clone();
+        for field_id in field_ids.iter() {
+            if let Some(filter) = bloom_filter.as_ref() {
+                if !filter.contains(&field_id.to_be_bytes()) {
+                    continue;
+                }
+            }
+            tombstones.entry(*field_id).or_default().push(*time_range);
+        }
+        if tombstones.is_empty() {
+            debug!("No tombstone to compact and save to compact_tmp file");
+            return Ok(());
+        }
+        for time_ranges in tombstones.values_mut() {
+            TimeRange::compact(time_ranges);
+        }
+
+        let tmp_path = tombstone_compact_tmp_path(&self.path)?;
+        let mut writer = record_file::Writer::open(&tmp_path, RecordDataType::Tombstone).await?;
+        trace::info!("Saving compact_tmp tombstone file '{}'", tmp_path.display());
+        Self::save_all(&mut writer, &tombstones).await?;
+        writer.close().await
+    }
+
+    pub async fn replace_with_compact_tmp(&self) -> Result<()> {
+        let mut writer_lock = self.writer.lock().await;
+        if let Some(w) = writer_lock.as_mut() {
+            w.close().await?;
+        }
+        // Drop the old Writer, reopen in other time.
+        *writer_lock = None;
+
+        let tmp_path = tombstone_compact_tmp_path(&self.path)?;
+        if file_manager::try_exists(&tmp_path) {
+            trace::info!(
+                "Converting compact_tmp tombstone file '{}' to real tombstone file '{}'",
+                tmp_path.display(),
+                self.path.display()
+            );
+            file_utils::rename(tmp_path, &self.path).await
+        } else {
+            debug!("No compact_tmp tombstone file to convert to real tombstone file");
+            Ok(())
+        }
     }
 
     pub async fn flush(&self) -> Result<()> {
@@ -245,6 +320,26 @@ impl TsmTombstone {
     }
 }
 
+/// Generate pathbuf by tombstone path.
+/// - For tombstone file: /tmp/test/000001.tombstone, return /tmp/test/000001.compact.tmp
+pub fn tombstone_compact_tmp_path(tombstone_path: &Path) -> Result<PathBuf> {
+    match tombstone_path.file_name().map(|os_str| {
+        let mut s = os_str.to_os_string();
+        s.push(".compact.tmp");
+        s
+    }) {
+        Some(name) => {
+            let mut p = tombstone_path.to_path_buf();
+            p.set_file_name(name);
+            Ok(p)
+        }
+        None => Err(Error::InvalidFileName {
+            file_name: tombstone_path.display().to_string(),
+            message: "invalid tombstone file name".to_string(),
+        }),
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::path::PathBuf;
@@ -256,7 +351,7 @@ mod test {
 
     #[tokio::test]
     async fn test_write_read_1() {
-        let dir = PathBuf::from("/tmp/test/tombstone/1".to_string());
+        let dir = PathBuf::from("/tmp/test/tombstone/io_1".to_string());
         let _ = std::fs::remove_dir_all(&dir);
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
@@ -281,7 +376,7 @@ mod test {
 
     #[tokio::test]
     async fn test_write_read_2() {
-        let dir = PathBuf::from("/tmp/test/tombstone/2".to_string());
+        let dir = PathBuf::from("/tmp/test/tombstone/io_2".to_string());
         let _ = std::fs::remove_dir_all(&dir);
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
@@ -322,7 +417,7 @@ mod test {
 
     #[tokio::test]
     async fn test_write_read_3() {
-        let dir = PathBuf::from("/tmp/test/tombstone/3".to_string());
+        let dir = PathBuf::from("/tmp/test/tombstone/io_3".to_string());
         let _ = std::fs::remove_dir_all(&dir);
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
@@ -366,4 +461,62 @@ mod test {
             }
         ));
     }
+
+    // #[tokio::test]
+    // async fn test_compact() {
+    //     let dir = PathBuf::from("/tmp/test/tombstone/compact".to_string());
+    //     let _ = std::fs::remove_dir_all(&dir);
+    //     std::fs::create_dir_all(&dir).unwrap();
+
+    //     let time_ranges = vec![
+    //         TimeRange::new(0, 50),
+    //         TimeRange::new(49, 60),
+    //         TimeRange::new(60, 70),
+    //         TimeRange::new(80, 90),
+    //         TimeRange::new(75, 100),
+    //     ];
+    //     let field_ids_vec = vec![vec![1, 2, 3], vec![2, 3, 4], vec![3, 4, 5]];
+
+    //     let tombstone = TsmTombstone::open(&dir, 1).await.unwrap();
+    //     for field_ids in field_ids_vec.iter() {
+    //         for time_range in time_ranges.iter() {
+    //             tombstone
+    //                 .add_range(field_ids, time_range, None)
+    //                 .await
+    //                 .unwrap();
+    //         }
+    //     }
+    //     tombstone.flush().await.unwrap();
+    //     {
+    //         let tombstones = tombstone.tombstones.lock().clone();
+    //         assert_eq!(tombstones.len(), 5);
+    //         let mut time_ranges_exp_2 = time_ranges.clone();
+    //         time_ranges_exp_2.extend_from_slice(&time_ranges);
+    //         let mut time_ranges_exp_3 = time_ranges_exp_2.clone();
+    //         time_ranges_exp_3.extend_from_slice(&time_ranges);
+    //         for field_id in 1..=5 {
+    //             assert!(tombstones.contains_key(&field_id));
+    //             let time_ranges_tomb = tombstones.get(&field_id).unwrap();
+    //             if field_id == 1 || field_id == 5 {
+    //                 assert_eq!(time_ranges_tomb, &time_ranges);
+    //             } else if field_id == 3 {
+    //                 assert_eq!(time_ranges_tomb, &time_ranges_exp_3);
+    //             } else {
+    //                 assert_eq!(time_ranges_tomb, &time_ranges_exp_2);
+    //             }
+    //         }
+    //     }
+
+    //     tombstone.compact();
+    //     {
+    //         let tombstones = tombstone.tombstones.lock().clone();
+    //         assert_eq!(tombstones.len(), 5);
+    //         let time_ranges_exp = vec![TimeRange::new(0, 70), TimeRange::new(75, 100)];
+    //         for field_id in 1..=5 {
+    //             assert!(tombstones.contains_key(&field_id));
+    //             let time_ranges_tomb = tombstones.get(&field_id).unwrap();
+    //             assert_eq!(time_ranges_tomb, &time_ranges_exp);
+    //         }
+    //     }
+    // }
 }

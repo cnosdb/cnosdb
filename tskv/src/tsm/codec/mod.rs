@@ -25,7 +25,7 @@ pub struct DataBlockEncoding {
 }
 
 impl DataBlockEncoding {
-    pub fn new(ts_encoding: Encoding, val_encoding: Encoding) -> Self {
+    pub const fn new(ts_encoding: Encoding, val_encoding: Encoding) -> Self {
         Self {
             ts_encoding,
             val_encoding,

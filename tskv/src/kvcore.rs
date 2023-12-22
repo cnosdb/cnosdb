@@ -22,9 +22,7 @@ use tokio::sync::{oneshot, RwLock};
 use trace::{debug, error, info, warn, SpanContext, SpanExt, SpanRecorder};
 
 use crate::compaction::job::{CompactJob, FlushJob};
-use crate::compaction::{
-    self, check, run_flush_memtable_job, CompactTask, FlushReq, LevelCompactionPicker, Picker,
-};
+use crate::compaction::{self, check, run_flush_memtable_job, CompactTask, FlushReq};
 use crate::database::Database;
 use crate::error::{self, Result};
 use crate::file_system::file_manager;
@@ -93,6 +91,7 @@ impl TsKv {
             summary_task_sender,
 
             options: shared_options.clone(),
+            runtime: runtime.clone(),
             global_ctx: summary.global_context(),
         });
 
@@ -1207,9 +1206,8 @@ impl Engine for TsKv {
                     }
                 }
 
-                let picker = LevelCompactionPicker::new(self.ctx.options.storage.clone());
                 let version = ts_family.read().await.version();
-                if let Some(req) = picker.pick_compaction(version) {
+                if let Some(req) = compaction::pick_level_compaction(version) {
                     match compaction::run_compaction_job(req, self.ctx.global_ctx.clone()).await {
                         Ok(Some((version_edit, file_metas))) => {
                             let (summary_tx, _summary_rx) = oneshot::channel();

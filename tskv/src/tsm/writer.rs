@@ -362,6 +362,11 @@ impl TsmWriter {
     pub fn bloom_filter_cloned(&self) -> BloomFilter {
         self.index_buf.bloom_filter.clone()
     }
+
+    /// Consumes a finished tsm writer and take `BloomFilter` from currently buffered index data.
+    pub fn into_bloom_filter(self) -> BloomFilter {
+        self.index_buf.bloom_filter
+    }
 }
 
 pub async fn new_tsm_writer(
@@ -541,13 +546,13 @@ pub mod tsm_writer_tests {
     use crate::file_utils::{self, make_tsm_file};
     use crate::tsm::codec::DataBlockEncoding;
     use crate::tsm::tsm_reader_tests::read_and_check;
-    use crate::tsm::{DataBlock, TsmReader, TsmWriter};
-
-    const TEST_PATH: &str = "/tmp/test/tsm_writer";
+    use crate::tsm::{DataBlock, EncodedDataBlock, TsmReader, TsmWriter, WriteTsmError};
+    use crate::Error;
 
     pub async fn write_to_tsm(
         path: impl AsRef<Path>,
         data: &HashMap<FieldId, Vec<DataBlock>>,
+        encode_data_block: bool,
     ) -> Result<()> {
         let tsm_seq = file_utils::get_tsm_file_id_by_path(&path)?;
         let path = path.as_ref();
@@ -556,12 +561,28 @@ pub mod tsm_writer_tests {
             std::fs::create_dir_all(dir).context(super::WriteIOSnafu)?;
         }
         let mut writer = TsmWriter::open(path, tsm_seq, false, 0).await?;
-        for (fid, blks) in data.iter() {
-            for blk in blks.iter() {
-                writer
-                    .write_block(*fid, blk)
-                    .await
-                    .context(error::WriteTsmSnafu)?;
+        if encode_data_block {
+            for (fid, blks) in data.iter() {
+                for blk in blks.iter() {
+                    let blk_enc = EncodedDataBlock::encode(blk, 0, blk.len()).map_err(|e| {
+                        Error::WriteTsm {
+                            source: WriteTsmError::Encode { source: e },
+                        }
+                    })?;
+                    writer
+                        .write_encoded_block(*fid, &blk_enc)
+                        .await
+                        .context(error::WriteTsmSnafu)?;
+                }
+            }
+        } else {
+            for (fid, blks) in data.iter() {
+                for blk in blks.iter() {
+                    writer
+                        .write_block(*fid, blk)
+                        .await
+                        .context(error::WriteTsmSnafu)?;
+                }
             }
         }
         writer.write_index().await.context(error::WriteTsmSnafu)?;
@@ -576,11 +597,24 @@ pub mod tsm_writer_tests {
             (2, vec![DataBlock::U64 { ts: vec![2, 3, 4], val: vec![101, 102, 103], enc: DataBlockEncoding::default() }]),
         ]);
 
-        let tsm_file = make_tsm_file(TEST_PATH, 0);
-        write_to_tsm(&tsm_file, &data).await.unwrap();
+        let dir = "/tmp/test/tsm_writer/test_tsm_write_fast";
+        let _ = std::fs::remove_dir_all(dir);
+        {
+            // Test write normal data block.
+            let tsm_file = make_tsm_file(dir, 0);
+            write_to_tsm(&tsm_file, &data, false).await.unwrap();
 
-        let reader = TsmReader::open(tsm_file).await.unwrap();
-        read_and_check(&reader, &data).await.unwrap();
+            let reader = TsmReader::open(tsm_file).await.unwrap();
+            read_and_check(&reader, &data).await.unwrap();
+        }
+        {
+            // Test write encoded data block.
+            let tsm_file = make_tsm_file(dir, 1);
+            write_to_tsm(&tsm_file, &data, true).await.unwrap();
+
+            let reader = TsmReader::open(tsm_file).await.unwrap();
+            read_and_check(&reader, &data).await.unwrap();
+        }
     }
 
     #[tokio::test]
@@ -606,10 +640,23 @@ pub mod tsm_writer_tests {
             ]),
         ]);
 
-        let tsm_file = make_tsm_file(TEST_PATH, 1);
-        write_to_tsm(&tsm_file, &data).await.unwrap();
+        let dir = "/tmp/test/tsm_writer/test_tsm_write_1";
+        let _ = std::fs::remove_dir_all(dir);
+        {
+            // Test write normal data block.
+            let tsm_file = make_tsm_file(dir, 0);
+            write_to_tsm(&tsm_file, &data, false).await.unwrap();
 
-        let reader = TsmReader::open(tsm_file).await.unwrap();
-        read_and_check(&reader, &data).await.unwrap();
+            let reader = TsmReader::open(tsm_file).await.unwrap();
+            read_and_check(&reader, &data).await.unwrap();
+        }
+        {
+            // Test write encoded data block.
+            let tsm_file = make_tsm_file(dir, 1);
+            write_to_tsm(&tsm_file, &data, true).await.unwrap();
+
+            let reader = TsmReader::open(tsm_file).await.unwrap();
+            read_and_check(&reader, &data).await.unwrap();
+        }
     }
 }

@@ -355,8 +355,7 @@ mod test {
     use parking_lot::RwLock;
     use tokio::runtime::Runtime;
 
-    use crate::compaction::flush_tests::default_table_schema;
-    use crate::compaction::test::write_data_blocks_to_column_file;
+    use crate::compaction::test::{default_table_schema, write_data_blocks_to_column_file};
     use crate::compute::count::count_column_non_null_values;
     use crate::memcache::test::put_rows_to_cache;
     use crate::memcache::MemCache;

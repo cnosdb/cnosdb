@@ -13,8 +13,7 @@ use models::predicate::domain::TimeRange;
 use models::{utils as model_utils, ColumnId, FieldId, SeriesId, Timestamp};
 use tokio::sync::RwLock;
 
-use super::CompactingBlockMeta;
-use crate::compaction::CompactIterator;
+use super::compact::{CompactIterator, CompactingBlockMeta};
 use crate::error::{Error, Result};
 use crate::tseries_family::TseriesFamily;
 use crate::tsm::{DataBlock, TsmReader};

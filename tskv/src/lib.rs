@@ -18,6 +18,7 @@ use models::{SeriesId, SeriesKey, TagKey, TagValue, Timestamp};
 use protos::kv_service::{WritePointsRequest, WritePointsResponse};
 use serde::{Deserialize, Serialize};
 use summary::SummaryTask;
+use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::RwLock;
 use trace::SpanContext;
@@ -256,6 +257,7 @@ pub trait Engine: Send + Sync + Debug {
 #[derive(Debug, Clone)]
 pub struct TsKvContext {
     pub options: Arc<Options>,
+    pub runtime: Arc<Runtime>,
     pub global_ctx: Arc<GlobalContext>,
     pub version_set: Arc<RwLock<VersionSet>>,
 
