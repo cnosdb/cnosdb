@@ -66,7 +66,6 @@ vector_listen_port = 8906
 
 [node_basic]
 node_id = 1001
-cold_data_server = false
 store_metrics = true
 
 [heartbeat]

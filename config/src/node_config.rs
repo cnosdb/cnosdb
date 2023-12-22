@@ -8,8 +8,6 @@ use crate::check::{CheckConfig, CheckConfigResult};
 pub struct NodeBasicConfig {
     #[serde(default = "NodeBasicConfig::default_node_id")]
     pub node_id: u64,
-    #[serde(default = "NodeBasicConfig::default_cold_data_server")]
-    pub cold_data_server: bool,
     #[serde(default = "NodeBasicConfig::default_store_metrics")]
     pub store_metrics: bool,
 }
@@ -17,10 +15,6 @@ pub struct NodeBasicConfig {
 impl NodeBasicConfig {
     pub fn default_node_id() -> u64 {
         1001
-    }
-
-    pub fn default_cold_data_server() -> bool {
-        false
     }
 
     pub fn default_store_metrics() -> bool {
@@ -38,7 +32,6 @@ impl Default for NodeBasicConfig {
     fn default() -> Self {
         Self {
             node_id: Self::default_node_id(),
-            cold_data_server: Self::default_cold_data_server(),
             store_metrics: Self::default_store_metrics(),
         }
     }

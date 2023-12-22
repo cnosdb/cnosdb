@@ -409,13 +409,7 @@ impl AdminMeta {
             self.config.cluster.grpc_listen_port,
         );
 
-        let mut attribute = NodeAttribute::default();
-        if self.config.node_basic.cold_data_server {
-            attribute = NodeAttribute::Cold;
-        }
-
         let node = NodeInfo {
-            attribute,
             id: self.config.node_basic.node_id,
             grpc_addr,
         };

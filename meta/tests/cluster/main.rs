@@ -9,7 +9,7 @@ use meta::store::Store;
 use meta::{client, store::command};
 // use meta::store::command::*;
 // use meta::client::*;
-use models::{meta_data::NodeAttribute, meta_data::NodeInfo, schema::Tenant};
+use models::{meta_data::NodeInfo, schema::Tenant};
 use openraft::Config;
 use sysinfo::{ProcessExt, System, SystemExt};
 
@@ -365,7 +365,6 @@ async fn write_data_to_meta() {
     let node = NodeInfo {
         id: 111,
         grpc_addr: "".to_string(),
-        attribute: NodeAttribute::Hot,
     };
     let req = command::WriteCommand::AddDataNode("cluster_xxx".to_string(), node);
     let cli = client::MetaHttpClient::new("127.0.0.1:8901");

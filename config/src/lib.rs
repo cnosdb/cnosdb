@@ -367,7 +367,6 @@ grpc_listen_port = 31008
 
 [node_basic]
 node_id = 1001
-cold_data_server = false
 store_metrics = true
 
 [heartbeat]
