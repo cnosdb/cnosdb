@@ -11,7 +11,6 @@ use models::predicate::domain::TimeRange;
 use models::schema::{ColumnType, TableColumn, TskvTableSchemaRef};
 use models::{SeriesId, ValueType};
 use snafu::ResultExt;
-use trace::error;
 use utils::bitset::BitSet;
 use utils::BloomFilter;
 
@@ -514,7 +513,6 @@ impl DataBlock2 {
                         if let Some(column_self) = column_self {
                             merge_column.push(column_self.get(*index));
                         } else {
-                            error!("get none, self");
                             merge_column.push(None);
                         }
                     }
@@ -522,23 +520,16 @@ impl DataBlock2 {
                         if let Some(column_other) = column_other {
                             merge_column.push(column_other.get(*index));
                         } else {
-                            error!("get none, other");
                             merge_column.push(None);
                         }
                     }
                     Merge::Equal(index_self, index_other) => {
                         let field_self = if let Some(column_self) = column_self {
-                            if column_self.get(*index_self).is_none() {
-                                error!("get none, equal self")
-                            }
                             column_self.get(*index_self)
                         } else {
                             None
                         };
                         let field_other = if let Some(column_other) = column_other {
-                            if column_other.get(*index_other).is_none() {
-                                error!("get none, equal other")
-                            }
                             column_other.get(*index_other)
                         } else {
                             None
