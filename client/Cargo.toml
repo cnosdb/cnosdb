@@ -24,6 +24,7 @@ anyhow = { workspace = true }
 base64 = { workspace = true }
 fly-accept-encoding = { workspace = true }
 reqwest = { workspace = true }
+rpassword = { workspace = true }
 
 [features]
 default = []
