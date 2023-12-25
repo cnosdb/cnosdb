@@ -52,7 +52,7 @@ impl Completer for CliHelper {
 
 impl Validator for CliHelper {
     fn validate(&self, ctx: &mut ValidationContext<'_>) -> Result<ValidationResult> {
-        let input = ctx.input().trim_end();
+        let input = ctx.input().trim();
         if let Some(sql) = input.strip_suffix(';') {
             if sql.trim().is_empty() {
                 return Ok(ValidationResult::Invalid(Some(
