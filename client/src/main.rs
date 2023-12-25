@@ -36,9 +36,9 @@ struct CliArgs {
     #[arg(short, long, default_value = "root")]
     user: String,
 
-    /// Password to connect to CnosDB server.
-    #[arg(short, long)]
-    password: Option<String>,
+    /// Use password to connect to CnosDB server.
+    #[arg(short, long, default_value = "false")]
+    password: bool,
 
     /// Rsa private key path for key pair authentication used to connect to the CnosDB.
     #[arg(long)]
@@ -163,10 +163,14 @@ pub async fn main() -> Result<(), anyhow::Error> {
 
     if !args.quiet && args.subcommand.is_none() {
         println!("CnosDB CLI v{}", CNOSDB_CLI_VERSION);
-        let mut new_args = args.clone();
-        new_args.password = args.password.as_ref().map(|_p| "*****".to_string());
-        println!("Input arguments: {:?}", new_args);
+        println!("Input arguments: {:?}", args);
     }
+
+    let password = if args.password {
+        Some(rpassword::prompt_password("password: ").unwrap())
+    } else {
+        None
+    };
 
     if let Some(ref path) = args.data_path {
         let p = Path::new(path);
@@ -182,7 +186,7 @@ pub async fn main() -> Result<(), anyhow::Error> {
         .with_host(args.host)
         .with_port(args.port)
         .with_user(args.user)
-        .with_password(args.password)
+        .with_password(password)
         .with_private_key(private_key)
         .with_tenant(args.tenant)
         .with_database(args.database)
