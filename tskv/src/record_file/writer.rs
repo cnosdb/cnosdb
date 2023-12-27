@@ -165,6 +165,14 @@ impl Writer {
         Ok(written_size)
     }
 
+    pub async fn truncate(&mut self, size: u64) -> Result<()> {
+        self.file.truncate(size).await?;
+        self.pos = size;
+        self.file_size = size;
+
+        Ok(())
+    }
+
     pub async fn sync(&self) -> Result<()> {
         self.file.sync_data().await.context(error::SyncFileSnafu)
     }

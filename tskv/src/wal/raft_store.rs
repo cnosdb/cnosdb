@@ -51,7 +51,6 @@ impl EntryStorage for RaftEntryStorage {
                 .write_raft_entry(ent)
                 .await
                 .map_err(|e| ReplicationError::RaftInternalErr { msg: e.to_string() })?;
-            //inner.wal.sync().await.unwrap();
 
             inner.mark_write_wal(ent.clone(), wal_id, pos);
         }
@@ -60,18 +59,14 @@ impl EntryStorage for RaftEntryStorage {
 
     async fn del_before(&self, seq_no: u64) -> ReplicationResult<()> {
         let mut inner = self.inner.lock().await;
-        inner.mark_delete_before(seq_no);
-
-        let _ = inner.wal.delete_wal_before_seq(seq_no).await;
+        inner.mark_delete_before(seq_no).await;
 
         Ok(())
     }
 
     async fn del_after(&self, seq_no: u64) -> ReplicationResult<()> {
         let mut inner = self.inner.lock().await;
-        inner.mark_delete_after(seq_no);
-
-        // TODO delete data in file
+        inner.mark_delete_after(seq_no).await?;
 
         Ok(())
     }
@@ -146,16 +141,16 @@ impl WalFileMeta {
         self.entry_index.drain(0..idx);
     }
 
-    fn del_after(&mut self, index: u64) {
+    fn del_after(&mut self, index: u64) -> u64 {
         if self.max_seq == u64::MAX || self.max_seq < index {
-            return;
+            return 0;
         }
 
         if index == 0 {
             self.min_seq = u64::MAX;
             self.max_seq = u64::MAX;
             self.entry_index.clear();
-            return;
+            return 0;
         }
 
         self.max_seq = index - 1;
@@ -163,7 +158,15 @@ impl WalFileMeta {
             Ok(idx) => idx,
             Err(idx) => idx,
         };
+
+        let mut pos = 0;
+        if idx < self.entry_index.len() {
+            pos = self.entry_index[idx].1;
+        }
+
         self.entry_index.drain(idx..);
+
+        pos
     }
 
     async fn get_entry_by_index(&mut self, index: u64) -> ReplicationResult<Option<RaftEntry>> {
@@ -223,7 +226,7 @@ impl RaftEntryStorageInner {
         self.entry_cache.put(index, entry);
     }
 
-    fn mark_delete_before(&mut self, seq_no: u64) {
+    async fn mark_delete_before(&mut self, seq_no: u64) {
         if self.min_sequence() >= seq_no {
             return;
         }
@@ -237,22 +240,42 @@ impl RaftEntryStorageInner {
         }
 
         self.entry_cache.del_before(seq_no);
+
+        let _ = self.wal.delete_wal_before_seq(seq_no).await;
     }
 
-    fn mark_delete_after(&mut self, seq_no: u64) {
-        if self.max_sequence() < seq_no {
-            return;
+    async fn mark_delete_after(&mut self, seq_no: u64) -> ReplicationResult<()> {
+        if self.max_sequence() < seq_no || self.max_sequence() == u64::MAX {
+            return Ok(());
         }
 
+        let mut delete_file_ids = vec![];
         for item in self.files_meta.iter_mut().rev() {
-            if item.max_seq >= seq_no {
-                item.del_after(seq_no);
-            } else {
-                break;
+            if item.min_seq >= seq_no {
+                delete_file_ids.push(item.file_id);
+                continue;
             }
+
+            if item.max_seq >= seq_no {
+                let pos = item.del_after(seq_no);
+                if pos > 0 {
+                    let _ = self.wal.truncate_wal_file(item.file_id, pos, seq_no).await;
+                }
+            }
+
+            break;
         }
 
         self.entry_cache.del_after(seq_no);
+        self.files_meta
+            .retain(|item| !delete_file_ids.contains(&item.file_id));
+
+        self.wal
+            .rollback_wal_writer(&delete_file_ids)
+            .await
+            .map_err(|e| ReplicationError::RaftInternalErr { msg: e.to_string() })?;
+
+        Ok(())
     }
 
     fn entries_from_cache(&self, start: u64, end: u64) -> Option<Vec<RaftEntry>> {
@@ -401,12 +424,13 @@ mod test {
     use std::sync::{atomic, Arc};
 
     use models::schema::make_owner;
+    use openraft::EntryPayload;
     use replication::apply_store::HeedApplyStorage;
     use replication::node_store::NodeStorage;
     use replication::state_store::StateStorage;
-    use replication::{ApplyStorageRef, EntryStorageRef, RaftNodeInfo};
+    use replication::{ApplyStorageRef, EntryStorage, EntryStorageRef, RaftNodeInfo};
 
-    use crate::wal::raft_store::RaftEntryStorage;
+    use crate::wal::raft_store::{RaftEntry, RaftEntryStorage};
     use crate::wal::VnodeWal;
     use crate::Result;
 
@@ -425,6 +449,59 @@ mod test {
         };
 
         VnodeWal::new(Arc::new(wal_option), owner, 1234).await
+    }
+
+    #[tokio::test]
+    async fn test_raft_wal_entry_storage() {
+        trace::debug!("----------------------------------------");
+        let dir = PathBuf::from("/tmp/test/wal/raft_entry");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let wal = get_vnode_wal(dir).await.unwrap();
+        let storage = RaftEntryStorage::new(wal);
+
+        for i in 0..10 {
+            let mut entry = RaftEntry::default();
+            entry.log_id.index = i;
+            entry.payload = EntryPayload::Normal(format!("payload_{}", i).as_bytes().to_vec());
+            storage.append(&[entry]).await.unwrap();
+        }
+        for i in 0..12 {
+            let entry = storage.entry(i).await.unwrap();
+            if i < 10 {
+                assert_eq!(i, entry.unwrap().log_id.index)
+            } else {
+                assert_eq!(None, entry)
+            }
+        }
+
+        storage.del_after(8).await.unwrap();
+        storage.del_before(3).await.unwrap();
+        for i in 0..12 {
+            let entry = storage.entry(i).await.unwrap();
+            if (3..8).contains(&i) {
+                assert_eq!(i, entry.unwrap().log_id.index)
+            } else {
+                assert_eq!(None, entry)
+            }
+        }
+
+        for i in 8..10 {
+            let mut entry = RaftEntry::default();
+            entry.log_id.index = i;
+            entry.payload = EntryPayload::Normal(format!("payload_{}", i).as_bytes().to_vec());
+            storage.append(&[entry]).await.unwrap();
+        }
+
+        for i in 0..12 {
+            let entry = storage.entry(i).await.unwrap();
+            if (3..10).contains(&i) {
+                assert_eq!(i, entry.unwrap().log_id.index)
+            } else {
+                assert_eq!(None, entry)
+            }
+        }
     }
 
     pub async fn get_node_store(dir: impl AsRef<Path>) -> Arc<NodeStorage> {

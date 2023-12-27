@@ -347,19 +347,34 @@ impl VnodeWal {
         vnode_id: VnodeId,
     ) -> Result<Self> {
         let wal_dir = config.wal_dir(&tenant_database, vnode_id);
-        let current_file =
-            writer::WalWriter::open(config.clone(), 0, file_utils::make_wal_file(&wal_dir, 0), 1)
-                .await
-                .map_err(|e| error::Error::CommonError {
-                    reason: format!("Failed to open wal file: {}", e),
-                })?;
+        let writer_file = Self::open_writer(config.clone(), &wal_dir).await?;
         Ok(Self {
             config,
             wal_dir,
             tenant_database,
             vnode_id,
-            current_wal: current_file,
+            current_wal: writer_file,
         })
+    }
+
+    pub async fn open_writer(config: Arc<WalOptions>, wal_dir: &Path) -> Result<WalWriter> {
+        // Create a new wal file every time it starts.
+        let (pre_max_seq, next_file_id) =
+            match file_utils::get_max_sequence_file_name(wal_dir, file_utils::get_wal_file_id) {
+                Some((_, id)) => {
+                    let path = file_utils::make_wal_file(wal_dir, id);
+                    let (_, max_seq) = reader::read_footer(&path).await?.unwrap_or((1_u64, 1_u64));
+                    (max_seq + 1, id)
+                }
+                None => (1_u64, 1_u64),
+            };
+
+        let new_wal = file_utils::make_wal_file(wal_dir, next_file_id);
+        let writer_file =
+            writer::WalWriter::open(config, next_file_id, new_wal, pre_max_seq).await?;
+        trace::info!("WAL '{}' starts write", writer_file.id());
+
+        Ok(writer_file)
     }
 
     async fn roll_wal_file(&mut self, max_file_size: u64) -> Result<()> {
@@ -395,6 +410,36 @@ impl VnodeWal {
                 self.current_wal.max_sequence()
             );
         }
+        Ok(())
+    }
+
+    pub async fn truncate_wal_file(&mut self, file_id: u64, pos: u64, seq_no: u64) -> Result<()> {
+        if self.current_wal_id() == file_id {
+            self.current_wal.truncate(pos, seq_no).await;
+            self.current_wal.sync().await?;
+            return Ok(());
+        }
+
+        let file_name = file_utils::make_wal_file(&self.wal_dir, file_id);
+        let mut new_file = WalWriter::open(self.config.clone(), file_id, file_name, seq_no).await?;
+        new_file.truncate(pos, seq_no).await;
+        new_file.sync().await?;
+
+        Ok(())
+    }
+
+    pub async fn rollback_wal_writer(&mut self, del_ids: &[u64]) -> Result<()> {
+        for wal_id in del_ids {
+            let file_path = file_utils::make_wal_file(self.wal_dir(), *wal_id);
+            trace::info!("Removing wal file '{}'", file_path.display());
+            if let Err(e) = tokio::fs::remove_file(&file_path).await {
+                trace::error!("Failed to remove file '{}': {:?}", file_path.display(), e);
+            }
+        }
+
+        let new_writer = VnodeWal::open_writer(self.config(), self.wal_dir()).await?;
+        let _ = std::mem::replace(&mut self.current_wal, new_writer);
+
         Ok(())
     }
 
@@ -595,6 +640,10 @@ impl VnodeWal {
         self.current_wal.close().await
     }
 
+    pub fn config(&self) -> Arc<WalOptions> {
+        self.config.clone()
+    }
+
     pub fn wal_dir(&self) -> &Path {
         &self.wal_dir
     }
@@ -657,32 +706,8 @@ impl WalManager {
                     }
                 }
 
-                // Create a new wal file every time it starts.
-                let (pre_max_seq, next_file_id) = match file_utils::get_max_sequence_file_name(
-                    &wal_dir,
-                    file_utils::get_wal_file_id,
-                ) {
-                    Some((_, id)) => {
-                        let path = file_utils::make_wal_file(&wal_dir, id);
-                        let (_, max_seq) =
-                            reader::read_footer(&path).await?.unwrap_or((1_u64, 1_u64));
-                        (max_seq + 1, id + 1)
-                    }
-                    None => (1_u64, 1_u64),
-                };
-
-                let new_wal = file_utils::make_wal_file(&wal_dir, next_file_id);
-                let current_file =
-                    writer::WalWriter::open(config.clone(), next_file_id, new_wal, pre_max_seq)
-                        .await?;
-                trace::info!("WAL '{}' starts write", current_file.id());
-                let vnode_wal = VnodeWal {
-                    wal_dir,
-                    vnode_id,
-                    config: config.clone(),
-                    current_wal: current_file,
-                    tenant_database: tenant_database.clone(),
-                };
+                let vnode_wal =
+                    VnodeWal::new(config.clone(), tenant_database.clone(), vnode_id).await?;
                 vnode_wal_map.insert(vnode_id, vnode_wal);
             }
         }

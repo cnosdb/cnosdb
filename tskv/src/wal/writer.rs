@@ -30,7 +30,6 @@ pub struct WalWriter {
     path: PathBuf,
     config: Arc<WalOptions>,
 
-    buf: Vec<u8>,
     min_sequence: u64,
     max_sequence: u64,
     has_footer: bool,
@@ -71,7 +70,6 @@ impl WalWriter {
             size,
             path: PathBuf::from(path),
             config,
-            buf: Vec::new(),
             min_sequence,
             max_sequence,
             has_footer: false,
@@ -294,7 +292,7 @@ impl WalWriter {
         if self.config.sync {
             self.inner.sync().await?;
         }
-        // write & fsync succeed
+
         self.max_sequence = seq + 1;
         self.size += written_size as u64;
         Ok(written_size)
@@ -328,6 +326,24 @@ impl WalWriter {
         )
     }
 
+    pub async fn truncate(&mut self, size: u64, seq_no: u64) {
+        if self.size <= size {
+            return;
+        }
+
+        let _ = self.inner.truncate(size).await;
+
+        self.size = size;
+        let mut new_max_sequence = 0;
+        if seq_no > 0 {
+            new_max_sequence = seq_no - 1;
+        }
+        self.set_max_sequence(new_max_sequence);
+        if self.min_sequence() > new_max_sequence {
+            self.set_min_sequence(new_max_sequence);
+        }
+    }
+
     pub fn id(&self) -> u64 {
         self.id
     }
@@ -346,6 +362,10 @@ impl WalWriter {
 
     pub fn set_max_sequence(&mut self, new_max_sequence: u64) {
         self.max_sequence = new_max_sequence
+    }
+
+    pub fn set_min_sequence(&mut self, new_min_sequence: u64) {
+        self.min_sequence = new_min_sequence
     }
 }
 
