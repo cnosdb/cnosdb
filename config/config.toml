@@ -93,9 +93,6 @@ path = '/var/lib/cnosdb/wal'
 ## The maximum size of a mutable cache.
 # max_buffer_size = '128M' # 134,217,728 bytes
 
-## The maximum amount of immutable caches.
-# max_immutable_number = 4
-
 ## The partion number of memcache cache,default equal to cpu number
 # partition = 8
 

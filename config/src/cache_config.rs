@@ -10,8 +10,6 @@ use crate::override_by_env::{entry_override, OverrideByEnv};
 pub struct CacheConfig {
     #[serde(with = "bytes_num", default = "CacheConfig::default_max_buffer_size")]
     pub max_buffer_size: u64,
-    #[serde(default = "CacheConfig::default_max_immutable_number")]
-    pub max_immutable_number: u16,
     #[serde(default = "CacheConfig::default_partitions")]
     pub partition: usize,
 }
@@ -21,9 +19,6 @@ impl CacheConfig {
         128 * 1024 * 1024
     }
 
-    fn default_max_immutable_number() -> u16 {
-        4
-    }
     fn default_partitions() -> usize {
         num_cpus::get()
     }
@@ -32,10 +27,6 @@ impl CacheConfig {
 impl OverrideByEnv for CacheConfig {
     fn override_by_env(&mut self) {
         entry_override(&mut self.max_buffer_size, "CNOSDB_CACHE_MAX_BUFFER_SIZE");
-        entry_override(
-            &mut self.max_immutable_number,
-            "CNOSDB_CACHE_MAX_IMMUTABLE_NUMBER",
-        );
         entry_override(&mut self.partition, "CNOSDB_CACHE_PARTITION");
     }
 }
@@ -44,7 +35,6 @@ impl Default for CacheConfig {
     fn default() -> Self {
         Self {
             max_buffer_size: Self::default_max_buffer_size(),
-            max_immutable_number: Self::default_max_immutable_number(),
             partition: Self::default_partitions(),
         }
     }
@@ -59,17 +49,6 @@ impl CheckConfig for CacheConfig {
                 config: config_name.clone(),
                 item: "max_buffer_size".to_string(),
                 message: "'max_buffer_size' maybe too small(less than 1M)".to_string(),
-            });
-        }
-        if self
-            .max_buffer_size
-            .checked_mul(self.max_immutable_number as u64 + 1)
-            .is_none()
-        {
-            ret.add_error(CheckConfigItemResult {
-                config: config_name.clone(),
-                item: "max_immutable_number".to_string(),
-                message: "'max_immutable_number' maybe too big( ('max_immutable_number' + 1) * 'max_buffer_size' caused an overflow)".to_string(),
             });
         }
 

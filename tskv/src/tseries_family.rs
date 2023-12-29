@@ -974,7 +974,7 @@ impl TseriesFamily {
             .cloned()
             .collect();
 
-        if !force && filtered_caches.len() < self.cache_opt.max_immutable_number as usize {
+        if !force && filtered_caches.is_empty() {
             return None;
         }
 
@@ -1033,7 +1033,7 @@ impl TseriesFamily {
             );
             self.switch_to_immutable();
         }
-        if self.immut_cache.len() >= self.cache_opt.max_immutable_number as usize {
+        if !self.immut_cache.is_empty() {
             self.send_flush_req(sender, false).await;
         }
     }
