@@ -392,8 +392,7 @@ impl RaftNodesManager {
 
     fn raft_config(&self) -> openraft::Config {
         let logs_to_keep = self.config.cluster.raft_logs_to_keep;
-
-        let heartbeat = 10000;
+        let heartbeat = self.config.cluster.raft_heartbeat_interval;
         openraft::Config {
             heartbeat_interval: heartbeat,
             election_timeout_min: 3 * heartbeat,

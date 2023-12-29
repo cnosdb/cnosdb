@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use meta::model::MetaRef;
-use models::meta_data::{ReplicationSet, ReplicationSetId, VnodeInfo};
+use models::meta_data::ReplicationSet;
 use policy::random::RandomReplicaSelectionPolicy;
 use policy::topology_aware::TopologyAwareReplicaSelectionPolicy;
 
 use self::policy::status::StatusReplicaSelectionPolicy;
-use crate::errors::{CoordinatorError, CoordinatorResult};
+use crate::errors::CoordinatorResult;
 
 mod policy;
 
@@ -39,42 +39,20 @@ impl DynamicReplicaSelectioner {
     }
 
     /// Select the best replica for reading from the given vnode and its replicas
-    pub fn select(&self, shards: Vec<ReplicationSet>) -> CoordinatorResult<Vec<ReplicationSet>> {
-        let (ids, shards): (Vec<ReplicationSetId>, Vec<Vec<VnodeInfo>>) =
-            shards.into_iter().map(|e| (e.id, e.vnodes)).unzip();
-
+    pub fn select(
+        &self,
+        replica_sets: Vec<ReplicationSet>,
+    ) -> CoordinatorResult<Vec<ReplicationSet>> {
         // 1. 过滤掉不可用的副本
-        let selected_shards = self.status.select(shards, 3);
+        let selected_shards = self.status.select(replica_sets, 3);
         // 2. 根据拓扑结构获取优先级最高的2个(至多)副本，因为目前未实现<3>，所以这里直接获取2个，防止所有请求都落在一个节点上
         let selected_shards = self.topology_aware.select(selected_shards, 2);
         // TODO 3. 根据资源情况获取优先级最高的副本
         // 4. 从已选择的副本中随机选择一个副本
         let selected_shards = self.random.select(selected_shards, 2);
 
-        let mut selected_replicas = Vec::new();
-        for (i, replicas) in selected_shards.into_iter().enumerate() {
-            selected_replicas.push(ReplicationSet::new(ids[i], 0, 0, replicas));
-            //todo! fix leader info
-        }
-
-        Ok(selected_replicas)
+        Ok(selected_shards)
     }
-}
-
-fn _filter_first_replica(
-    ids: Vec<ReplicationSetId>,
-    shards: Vec<Vec<VnodeInfo>>,
-) -> CoordinatorResult<Vec<VnodeInfo>> {
-    let mut selected_replicas = Vec::new();
-    for (i, replicas) in shards.into_iter().enumerate() {
-        if let Some(shard) = replicas.first() {
-            selected_replicas.push(shard.to_owned());
-        } else {
-            return Err(CoordinatorError::NoValidReplica { id: ids[i] });
-        }
-    }
-
-    Ok(selected_replicas)
 }
 
 pub type ReplicaSelectionPolicyRef = Arc<dyn ReplicaSelectionPolicy + Send + Sync>;
@@ -87,5 +65,5 @@ pub trait ReplicaSelectionPolicy {
     ///
     /// - shards: vnode副本
     /// - limit: 选择的副本数量, 如果副本数小于limit，则所有副本都会返回，如果limit小于0，则所有副本都会返回
-    fn select(&self, shards: Vec<Vec<VnodeInfo>>, limit: isize) -> Vec<Vec<VnodeInfo>>;
+    fn select(&self, replica_sets: Vec<ReplicationSet>, limit: isize) -> Vec<ReplicationSet>;
 }

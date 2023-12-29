@@ -1,4 +1,4 @@
-use models::meta_data::VnodeInfo;
+use models::meta_data::ReplicationSet;
 use rand::seq::SliceRandom;
 
 use crate::reader::replica_selection::ReplicaSelectionPolicy;
@@ -13,20 +13,14 @@ impl RandomReplicaSelectionPolicy {
 }
 
 impl ReplicaSelectionPolicy for RandomReplicaSelectionPolicy {
-    fn select(&self, shards: Vec<Vec<VnodeInfo>>, limit: isize) -> Vec<Vec<VnodeInfo>> {
-        if limit < 0 {
-            return shards;
+    fn select(&self, mut replica_sets: Vec<ReplicationSet>, limit: isize) -> Vec<ReplicationSet> {
+        if limit >= 0 {
+            for replica_set in replica_sets.iter_mut() {
+                replica_set.vnodes.shuffle(&mut rand::thread_rng());
+                replica_set.vnodes.truncate(limit.try_into().unwrap());
+            }
         }
 
-        shards
-            .into_iter()
-            .map(|mut replicas| {
-                replicas.shuffle(&mut rand::thread_rng());
-                replicas
-                    .into_iter()
-                    .take(limit as usize)
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>()
+        replica_sets
     }
 }

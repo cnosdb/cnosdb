@@ -528,17 +528,37 @@ impl Coordinator for CoordService {
         predicate: ResolvedPredicateRef,
     ) -> CoordinatorResult<Vec<ReplicationSet>> {
         // 1. 根据传入的过滤条件获取表的分片信息（包括副本）
-        let shards = self
+        let mut replica_sets = self
             .prune_shards(
                 table.tenant(),
                 table.database(),
                 predicate.time_ranges().as_ref(),
             )
             .await?;
-        // 2. 选择最优的副本
-        let optimal_shards = self.replica_selectioner.select(shards)?;
 
-        Ok(optimal_shards)
+        // 2. 选择最优的副本
+        for replica_set in replica_sets.iter_mut() {
+            replica_set.vnodes.sort_by_key(|vnode| {
+                // The smaller the score, the easier it is to be selected
+                if vnode.id == replica_set.leader_vnode_id {
+                    0
+                } else {
+                    match vnode.status {
+                        VnodeStatus::Running => 1,
+                        VnodeStatus::Copying => 2,
+                        VnodeStatus::Broken => i32::MAX,
+                    }
+                }
+            });
+
+            replica_set
+                .vnodes
+                .retain(|e| e.status != VnodeStatus::Broken);
+
+            replica_set.vnodes.truncate(2);
+        }
+
+        Ok(replica_sets)
     }
 
     async fn exec_write_replica_points(

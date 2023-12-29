@@ -9,6 +9,10 @@ use crate::override_by_env::{entry_override, OverrideByEnv};
 pub struct ClusterConfig {
     #[serde(default = "ClusterConfig::default_raft_logs_to_keep")]
     pub raft_logs_to_keep: u64,
+
+    #[serde(default = "ClusterConfig::default_raft_heartbeat_interval")]
+    pub raft_heartbeat_interval: u64,
+
     #[serde(default = "ClusterConfig::default_using_raft_replication")]
     pub using_raft_replication: bool,
 }
@@ -16,6 +20,10 @@ pub struct ClusterConfig {
 impl ClusterConfig {
     fn default_raft_logs_to_keep() -> u64 {
         5000
+    }
+
+    fn default_raft_heartbeat_interval() -> u64 {
+        10000
     }
 
     fn default_using_raft_replication() -> bool {
@@ -40,6 +48,7 @@ impl Default for ClusterConfig {
     fn default() -> Self {
         Self {
             raft_logs_to_keep: ClusterConfig::default_raft_logs_to_keep(),
+            raft_heartbeat_interval: ClusterConfig::default_raft_heartbeat_interval(),
             using_raft_replication: ClusterConfig::default_using_raft_replication(),
         }
     }
