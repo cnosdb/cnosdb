@@ -9,6 +9,7 @@ use crate::override_by_env::{entry_override, OverrideByEnv};
 pub struct ClusterConfig {
     #[serde(default = "ClusterConfig::default_raft_logs_to_keep")]
     pub raft_logs_to_keep: u64,
+
     #[serde(default = "ClusterConfig::default_using_raft_replication")]
     pub using_raft_replication: bool,
 }

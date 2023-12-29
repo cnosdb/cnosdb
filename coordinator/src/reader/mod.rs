@@ -1,5 +1,4 @@
 pub mod deserialize;
-pub mod replica_selection;
 pub mod table_scan;
 pub mod tag_scan;
 
