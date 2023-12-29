@@ -843,6 +843,7 @@ mod test {
 
     use minivec::MiniVec;
     use models::codec::Encoding;
+    use models::field_value::FieldVal;
     use models::schema::{make_owner, Precision};
     use models::Timestamp;
     use protos::models::FieldType;
@@ -853,7 +854,6 @@ mod test {
 
     use crate::file_system::file_manager::list_file_names;
     use crate::kv_option::WalOptions;
-    use crate::memcache::FieldVal;
     use crate::tsm::codec::{get_str_codec, StringCodec};
     use crate::version_set::VersionSet;
     use crate::wal::reader::{Block, WalReader};

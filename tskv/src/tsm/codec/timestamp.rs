@@ -83,7 +83,7 @@ pub fn ts_zigzag_simple8b_encode(
             encode_rle(deltas[0], deltas[1], deltas.len() as u64, dst);
             // 4 high bits of first byte used for the encoding type
             dst[0] |= (DeltaEncoding::Rle as u8) << 4;
-            dst.insert(0, Encoding::Delta as u8);
+            dst.insert(0, Encoding::DeltaTs as u8);
             return Ok(());
         }
     }
@@ -99,7 +99,7 @@ pub fn ts_zigzag_simple8b_encode(
         for delta in &deltas {
             dst.extend_from_slice(&delta.to_be_bytes());
         }
-        dst.insert(0, Encoding::Delta as u8);
+        dst.insert(0, Encoding::DeltaTs as u8);
         return Ok(());
     }
 
@@ -127,7 +127,7 @@ pub fn ts_zigzag_simple8b_encode(
     dst[0] |= ((div as f64).log10()) as u8; // 4 low bits used for log10 divisor
     dst.extend_from_slice(&deltas[0].to_be_bytes()); // encode first value
     simple8b::encode(&deltas[1..], dst)?;
-    dst.insert(0, Encoding::Delta as u8);
+    dst.insert(0, Encoding::DeltaTs as u8);
     Ok(())
 }
 

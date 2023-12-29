@@ -48,9 +48,12 @@ impl SplitManager {
 
         let limit = predicate.limit();
 
-        let resolved_predicate = predicate
-            .resolve(&table)
-            .map_err(|reason| QueryError::AnalyzePushedFilter { reason })?;
+        let resolved_predicate =
+            predicate
+                .resolve(&table)
+                .map_err(|reason| QueryError::AnalyzePushedFilter {
+                    reason: reason.to_string(),
+                })?;
 
         let shards = self
             .coord

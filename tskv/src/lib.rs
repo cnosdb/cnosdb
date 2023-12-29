@@ -2,6 +2,9 @@
 #![allow(unreachable_patterns)]
 #![feature(maybe_uninit_array_assume_init)]
 #![feature(maybe_uninit_uninit_array)]
+#![feature(trait_upcasting)]
+#![feature(bound_map)]
+#![feature(exclusive_range_pattern)]
 
 use std::fmt::Debug;
 use std::sync::Arc;
@@ -32,7 +35,8 @@ pub use crate::kvcore::TsKv;
 use crate::summary::CompactMeta;
 pub use crate::summary::{print_summary_statistics, Summary, VersionEdit};
 use crate::tseries_family::SuperVersion;
-pub use crate::tsm::print_tsm_statistics;
+// todo: add a method for print tsm statistics
+// pub use crate::tsm::print_tsm_statistics;
 pub use crate::wal::print_wal_statistics;
 
 pub mod byte_utils;
@@ -55,6 +59,7 @@ mod schema;
 mod summary;
 mod tseries_family;
 pub mod tsm;
+pub mod tsm2;
 mod version_set;
 pub mod vnode_store;
 pub mod wal;

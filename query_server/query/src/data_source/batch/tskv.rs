@@ -5,6 +5,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use coordinator::service::CoordinatorRef;
 use datafusion::arrow::datatypes::SchemaRef;
+use datafusion::common::DFSchema;
 use datafusion::datasource::{TableProvider, TableType};
 use datafusion::error::{DataFusionError, Result};
 use datafusion::execution::context::SessionState;
@@ -13,7 +14,7 @@ use datafusion::logical_expr::logical_plan::AggWithGrouping;
 use datafusion::logical_expr::{
     aggregate_function, Expr, TableProviderAggregationPushDown, TableProviderFilterPushDown,
 };
-use datafusion::optimizer::utils::split_conjunction;
+use datafusion::optimizer::utils::{conjunction, split_conjunction};
 use datafusion::physical_expr::PhysicalExpr;
 use datafusion::physical_plan::empty::EmptyExec;
 use datafusion::physical_plan::{project_schema, ExecutionPlan};
@@ -21,9 +22,10 @@ use datafusion::prelude::Column;
 use meta::error::MetaError;
 use meta::model::MetaClientRef;
 use models::predicate::domain::{Predicate, PredicateRef, PushedAggregateFunction};
-use models::schema::{TskvTableSchema, TskvTableSchemaRef};
+use models::schema::{TskvTableSchema, TskvTableSchemaRef, TIME_FIELD_NAME};
 use trace::debug;
 
+use crate::data_source::batch::filter_expr_rewriter::{has_udf_function, rewrite_filters};
 use crate::data_source::sink::tskv::TskvRecordBatchSinkProvider;
 use crate::data_source::split::tskv::TableLayoutHandle;
 use crate::data_source::split::SplitManagerRef;
@@ -174,10 +176,25 @@ impl ClusterTable {
         filters: &[Expr],
         limit: Option<usize>,
     ) -> Result<Arc<dyn ExecutionPlan>> {
+        let filter = conjunction(filters.iter().cloned());
+
+        let df_schema = self.schema.to_df_schema()?;
+
+        let df_fields = projected_schema
+            .fields()
+            .iter()
+            .map(|f| df_schema.field_with_unqualified_name(f.name()))
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>();
+
+        let df_schema = DFSchema::new_with_metadata(df_fields, df_schema.metadata().clone())?;
+
+        // Generate physical expressions using projected schema
         let predicate = Arc::new(
-            Predicate::default()
-                .set_limit(limit)
-                .push_down_filter(filters, &self.schema),
+            Predicate::push_down_filter(filter, &df_schema, &projected_schema, limit)
+                .map_err(|e| DataFusionError::External(Box::new(e)))?,
         );
 
         let table_layout = TableLayoutHandle {
@@ -255,10 +272,31 @@ impl TableProvider for ClusterTable {
         // The datasource should return *at least* this number of rows if available.
         limit: Option<usize>,
     ) -> Result<Arc<dyn ExecutionPlan>> {
+        let df_schema = self.schema.to_df_schema()?;
+        let arrow_schema = self.schema.to_arrow_schema();
+        // projection schema
+        let (df_schema, arrow_schema) = if let Some(p) = projection {
+            let df_fields = p
+                .iter()
+                .cloned()
+                .map(|i| df_schema.fields()[i].clone())
+                .collect::<Vec<_>>();
+            let arrow_schema = arrow_schema.project(p)?;
+            let df_schema = Arc::new(DFSchema::new_with_metadata(
+                df_fields,
+                df_schema.metadata().clone(),
+            )?);
+            let arrow_schema = Arc::new(arrow_schema);
+            (df_schema, arrow_schema)
+        } else {
+            (df_schema, arrow_schema)
+        };
+
+        let filters = rewrite_filters(filters, df_schema.clone())?;
+        // Generate physical expressions using projected schema
         let filter = Arc::new(
-            Predicate::default()
-                .set_limit(limit)
-                .push_down_filter(filters, &self.schema),
+            Predicate::push_down_filter(filters, &df_schema, &arrow_schema, limit)
+                .map_err(|e| DataFusionError::External(Box::new(e)))?,
         );
 
         if let Some(agg_with_grouping) = agg_with_grouping {
@@ -274,6 +312,12 @@ impl TableProvider for ClusterTable {
     }
 
     fn supports_filter_pushdown(&self, expr: &Expr) -> Result<TableProviderFilterPushDown> {
+        if has_udf_function(expr)? {
+            return Ok(TableProviderFilterPushDown::Inexact);
+        }
+
+        // FIXME: tag support Exact Filter PushDown
+        // TODO: REMOVE
         let exprs = split_conjunction(expr);
         let exprs = exprs.into_iter().cloned().collect::<Vec<_>>();
         if expr_utils::find_exprs_in_exprs(&exprs, &|nested_expr| {
@@ -291,47 +335,49 @@ impl TableProvider for ClusterTable {
     fn supports_aggregate_pushdown(
         &self,
         group_expr: &[Expr],
-        aggr_expr: &[Expr],
+        _aggr_expr: &[Expr],
     ) -> Result<TableProviderAggregationPushDown> {
         if !group_expr.is_empty() {
             return Ok(TableProviderAggregationPushDown::Unsupported);
         }
 
-        let result = if aggr_expr.iter().all(|e| {
-            match e {
-                Expr::AggregateFunction(AggregateFunction {
-                    fun,
-                    args,
-                    distinct,
-                    filter,
-                    order_by,
-                }) => {
-                    let support_agg_func = matches!(
-                        fun,
-                        aggregate_function::AggregateFunction::Count // TODO
-                                                                     // | aggregate_function::AggregateFunction::Max
-                                                                     // | aggregate_function::AggregateFunction::Min
-                                                                     // | aggregate_function::AggregateFunction::Sum
-                    );
+        // let result = if aggr_expr.iter().all(|e| {
+        //     match e {
+        //         Expr::AggregateFunction(AggregateFunction {
+        //             fun,
+        //             args,
+        //             distinct,
+        //             filter,
+        //             order_by,
+        //         }) => {
+        //             let support_agg_func = matches!(
+        //                 fun,
+        //                 aggregate_function::AggregateFunction::Count // TODO
+        //                                                              // | aggregate_function::AggregateFunction::Max
+        //                                                              // | aggregate_function::AggregateFunction::Min
+        //                                                              // | aggregate_function::AggregateFunction::Sum
+        //             );
 
-                    support_agg_func
-                        && args.len() == 1
-                        // count(*) | count(1) | count(col)
-                        && (matches!(args[0], Expr::Column(_)) || matches!(args[0], Expr::Literal(_)))
-                        // not distinct
-                        && !*distinct
-                        && filter.is_none()
-                        && order_by.is_none()
-                }
-                _ => false,
-            }
-        }) {
-            TableProviderAggregationPushDown::Ungrouped
-        } else {
-            TableProviderAggregationPushDown::Unsupported
-        };
+        //             support_agg_func
+        //                 && args.len() == 1
+        //                 // count(*) | count(1) | count(col)
+        //                 && (matches!(args[0], Expr::Column(_)) || matches!(args[0], Expr::Literal(_)))
+        //                 // not distinct
+        //                 && !*distinct
+        //                 && filter.is_none()
+        //                 && order_by.is_none()
+        //         }
+        //         _ => false,
+        //     }
+        // }) {
+        //     TableProviderAggregationPushDown::Ungrouped
+        // } else {
+        //     TableProviderAggregationPushDown::Unsupported
+        // };
 
-        Ok(result)
+        // Ok(result)
+
+        Ok(TableProviderAggregationPushDown::Unsupported)
     }
 
     fn push_down_projection(&self, proj: &[usize]) -> Option<Vec<usize>> {
@@ -348,22 +394,14 @@ impl TableProvider for ClusterTable {
                 }
             });
 
-        if contain_time && !contain_field {
-            let new_projection = proj
-                .iter()
-                .cloned()
-                .chain(
-                    self.schema
-                        .columns()
-                        .iter()
-                        .enumerate()
-                        .filter(|(_, c)| c.column_type.is_field())
-                        .map(|(i, _)| i),
-                )
-                .collect::<Vec<usize>>();
-
-            return Some(new_projection);
-        };
+        if contain_field && !contain_time {
+            if let Some(idx) = self.schema.column_index(TIME_FIELD_NAME) {
+                let new_proj = std::iter::once(idx)
+                    .chain(proj.iter().cloned())
+                    .collect::<Vec<_>>();
+                return Some(new_proj);
+            }
+        }
 
         None
     }
@@ -412,26 +450,21 @@ pub fn valid_project(
     schema: &TskvTableSchema,
     projection: Option<&Vec<usize>>,
 ) -> std::result::Result<(), MetaError> {
-    let mut field_count = 0;
     let mut contains_time_column = false;
 
     if let Some(e) = projection {
-        e.iter().cloned().for_each(|idx| {
-            if let Some(c) = schema.column_by_index(idx) {
+        e.iter().for_each(|idx| {
+            if let Some(c) = schema.column_by_index(*idx) {
                 if c.column_type.is_time() {
                     contains_time_column = true;
-                }
-                if c.column_type.is_field() {
-                    field_count += 1;
                 }
             };
         });
     }
 
-    if contains_time_column && field_count == 0 {
+    if !contains_time_column {
         return Err(MetaError::CommonError {
-            msg: "If the projection contains the time column, it must contain the field column"
-                .to_string(),
+            msg: "The projection must contains the time column".to_string(),
         });
     }
 

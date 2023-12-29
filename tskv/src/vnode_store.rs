@@ -5,9 +5,8 @@ use std::sync::Arc;
 use models::meta_data::VnodeId;
 use models::predicate::domain::{ResolvedPredicate, TimeRange, TimeRanges};
 use models::schema::Precision;
-use models::utils::unite_id;
 use models::{ColumnId, SeriesId, SeriesKey};
-use protos::kv_service::*;
+use protos::kv_service::{raft_write_command, WritePointsResponse, *};
 use snafu::ResultExt;
 use tokio::sync::RwLock;
 use trace::{debug, error, info, warn, SpanContext, SpanExt, SpanRecorder};
@@ -152,19 +151,15 @@ impl VnodeStorage {
                 .await
                 .delete_series(&series_ids, &TimeRange::all());
 
-            let field_ids: Vec<u64> = series_ids
-                .iter()
-                .flat_map(|sid| column_ids.iter().map(|fid| unite_id(*fid, *sid)))
-                .collect();
             info!(
                 "Drop table: vnode {} deleting {} fields in table: {db_owner}.{table}",
                 self.id,
-                field_ids.len()
+                column_ids.len() * series_ids.len()
             );
 
             let version = self.ts_family.read().await.super_version();
             version
-                .add_tsm_tombstone(&field_ids, &TimeRanges::all())
+                .add_tombstone(&series_ids, &column_ids, &TimeRange::all())
                 .await?;
 
             info!(
@@ -591,21 +586,22 @@ impl VnodeStorage {
                 }
             }
 
-            let time_ranges = TimeRanges::all();
+            let time_range = TimeRange::all();
             let series_ids = self.ts_index.get_series_id_list(table, &[]).await?;
-            let field_ids: Vec<u64> = series_ids
-                .iter()
-                .flat_map(|sid| to_drop_column_ids.iter().map(|fid| unite_id(*fid, *sid)))
-                .collect();
             info!(
                 "drop table column: vnode: {} deleting {} fields in table: {db_owner}.{table}",
                 self.id,
-                field_ids.len()
+                series_ids.len() * to_drop_column_ids.len()
             );
 
-            self.ts_family.write().await.drop_columns(&field_ids);
+            self.ts_family
+                .write()
+                .await
+                .drop_columns(&series_ids, &to_drop_column_ids);
             let version = self.ts_family.read().await.super_version();
-            version.add_tsm_tombstone(&field_ids, &time_ranges).await?;
+            version
+                .add_tombstone(&series_ids, &to_drop_column_ids, &time_range)
+                .await?;
         }
 
         Ok(())
@@ -632,22 +628,15 @@ impl VnodeStorage {
             })?
             .column_ids();
 
-        let field_ids = series_ids
-            .iter()
-            .flat_map(|sid| column_ids.iter().map(|fid| unite_id(*fid, *sid)))
-            .collect::<Vec<_>>();
-
-        trace::debug!(
-            "delete from table: vnode {} deleting {} fields in table: {table}",
-            self.id,
-            field_ids.len()
-        );
-
         let version = vnode.super_version();
 
         // Stop compaction when doing delete TODO
 
-        version.add_tsm_tombstone(&field_ids, time_ranges).await?;
+        for time_range in time_ranges.time_ranges() {
+            version
+                .add_tombstone(series_ids, &column_ids, time_range)
+                .await?;
+        }
 
         Ok(())
     }

@@ -8,7 +8,6 @@ use datafusion::physical_plan::common::AbortOnDropMany;
 use futures::{Stream, StreamExt};
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc;
-use trace::warn;
 
 pub type BoxStream<T> = Pin<Box<dyn Stream<Item = T> + Send>>;
 
@@ -37,11 +36,7 @@ where
                     let exit = item.is_err();
                     // If send fails, stream being torn down,
                     // there is no place to send the error.
-                    if sender.send(item).await.is_err() {
-                        warn!("Stopping execution: output is gone, ParallelMergeStream cancelling");
-                        return;
-                    }
-                    if exit {
+                    if sender.send(item).await.is_err() || exit {
                         return;
                     }
                 }

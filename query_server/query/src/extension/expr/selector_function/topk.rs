@@ -34,6 +34,7 @@ fn new() -> ScalarUDF {
         .chain(NUMERICS.iter())
         .chain(TIMESTAMPS.iter())
         .chain(DATES.iter())
+        // .chain(iter::once(str_dict_data_type()))
         // .chain(TIMES.iter())
         .map(|t| TypeSignature::Exact(vec![t.clone(), DataType::Int64]))
         .collect();

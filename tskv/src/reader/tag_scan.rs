@@ -1,8 +1,10 @@
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 
+use arrow_schema::{Fields, Schema};
 use datafusion::arrow::array::StringBuilder;
-use datafusion::arrow::datatypes::SchemaRef;
+use datafusion::arrow::datatypes::{DataType, SchemaRef};
 use datafusion::arrow::error::ArrowError;
 use datafusion::arrow::record_batch::RecordBatch;
 use futures::future::BoxFuture;
@@ -22,6 +24,21 @@ pub struct LocalTskvTagScanStream {
     state: StreamState,
     #[allow(unused)]
     span_recorder: SpanRecorder,
+}
+
+pub fn dictionary_filed_to_string(schema: SchemaRef) -> SchemaRef {
+    let fields = schema
+        .fields()
+        .iter()
+        .map(|f| match f.data_type() {
+            DataType::Dictionary(_, b) => {
+                Arc::new(f.as_ref().clone().with_data_type(b.as_ref().clone()))
+            }
+            _ => f.clone(),
+        })
+        .collect::<Fields>();
+
+    Arc::new(Schema::new(fields))
 }
 
 impl LocalTskvTagScanStream {
@@ -102,7 +119,8 @@ fn series_keys_to_record_batch(
     series_keys: &[SeriesKey],
 ) -> Result<RecordBatch, Error> {
     let tag_key_array = schema.fields.iter().map(|f| f.name()).collect::<Vec<_>>();
-    let mut array_builders = build_arrow_array_builders(&schema, series_keys.len())?;
+    let new_schema = dictionary_filed_to_string(schema.clone());
+    let mut array_builders = build_arrow_array_builders(&new_schema, series_keys.len())?;
     for key in series_keys {
         for (k, array_builder) in tag_key_array.iter().zip(&mut array_builders) {
             let c = tskv_table_schema
@@ -125,7 +143,10 @@ fn series_keys_to_record_batch(
     let columns = array_builders
         .into_iter()
         .map(|mut b| b.finish())
-        .collect::<Vec<_>>();
+        .zip(schema.fields().iter().map(|f| f.data_type()))
+        .map(|(a, d)| arrow::compute::cast(&a, d))
+        .collect::<Result<Vec<_>, ArrowError>>()?;
+
     let record_batch = RecordBatch::try_new(schema.clone(), columns)?;
     Ok(record_batch)
 }

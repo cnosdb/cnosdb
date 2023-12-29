@@ -5,12 +5,13 @@ use datafusion::datasource::file_format::file_type::{FileCompressionType, FileTy
 use crate::arrow::arrow_data_type_to_sql_data_type;
 use crate::auth::role::CustomTenantRole;
 use crate::auth::user::UserDesc;
+use crate::datafusion::SqlParserValue;
 use crate::oid::{Identifier, Oid};
 use crate::schema::{
     ColumnType, DatabaseSchema, DurationUnit, ExternalTableSchema, StreamTable, TableSchema,
     Tenant, TskvTableSchema,
 };
-use crate::{Error, SqlParserValue};
+use crate::Error;
 
 type Result<T, E = Error> = std::result::Result<T, E>;
 
