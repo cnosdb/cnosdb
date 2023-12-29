@@ -41,7 +41,7 @@ pub enum Error {
     #[snafu(display("Error parsing message: {}", source))]
     #[error_code(code = 4)]
     ParseLineProtocol {
-        source: protocol_parser::Error,
+        source: protocol_parser::LineProtocolError,
     },
 
     #[snafu(display("Invalid header: {}", reason))]
@@ -102,6 +102,12 @@ pub enum Error {
     #[error_code(code = 14)]
     EncodeResponse {
         source: std::io::Error,
+    },
+
+    #[snafu(display("Invalid utf-8 sequence: {}", source))]
+    #[error_code(code = 15)]
+    InvalidUTF8 {
+        source: simdutf8::basic::Utf8Error,
     },
 }
 
@@ -166,7 +172,9 @@ impl From<&Error> for Response {
             | Error::Coordinator { .. }
             | Error::Meta { .. }
             | Error::NotFoundTenant { .. }
-            | Error::EncodeResponse { .. } => {
+            | Error::EncodeResponse { .. }
+            | Error::ParseLineProtocol { .. }
+            | Error::InvalidUTF8 { .. } => {
                 ResponseBuilder::new(UNPROCESSABLE_ENTITY).json(&error_resp)
             }
             Error::InvalidHeader { .. }

@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use protos::FieldValue;
 
 use crate::Error::Common;
@@ -35,7 +37,7 @@ impl Parser {
         let mut pos = position;
         let metric = if let Some(m) = next_metric(&buf[pos..]) {
             pos += m.1;
-            m.0
+            Cow::Borrowed(m.0)
         } else {
             return Ok(None);
         };
@@ -77,7 +79,10 @@ impl Parser {
             });
         };
 
-        let fields = vec![(OPEN_TSDB_DEFAULT_FIELD, FieldValue::F64(value))];
+        let fields = vec![(
+            Cow::Borrowed(OPEN_TSDB_DEFAULT_FIELD),
+            FieldValue::F64(value),
+        )];
 
         check_pos_valid(buf, pos)?;
 
@@ -141,7 +146,7 @@ impl Parser {
             });
         }
 
-        let metric = tokens[1];
+        let metric = Cow::Borrowed(tokens[1]);
 
         let ts = tokens[2].parse::<i64>().map_err(|_| Common {
             content: format!("put: invalid timestamp: {}", tokens[2]),
@@ -164,14 +169,17 @@ impl Parser {
                     content: format!("put: invalid tag: {}", tokens[3]),
                 });
             }
-            tags.push((tag[0], tag[1]));
+            tags.push((Cow::Borrowed(tag[0]), Cow::Borrowed(tag[1])));
         }
 
         Ok(Some(Line {
             hash_id: 0,
             table: metric,
             timestamp: ts,
-            fields: vec![(OPEN_TSDB_DEFAULT_FIELD, FieldValue::F64(value))],
+            fields: vec![(
+                Cow::Borrowed(OPEN_TSDB_DEFAULT_FIELD),
+                FieldValue::F64(value),
+            )],
             tags,
         }))
     }

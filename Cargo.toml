@@ -37,6 +37,7 @@ async-backtrace = "0.2.2"
 async-recursion = "1.0.0"
 async-stream = "0.3"
 async-trait = "0.1"
+atoi_simd = "0.15.5"
 backtrace = "0.3"
 base64 = "0.20.0"
 bcrypt = "0.15.0"
@@ -67,6 +68,7 @@ datafusion = { git = "https://github.com/cnosdb/arrow-datafusion.git", branch = 
 diff = "0.1.13"
 dirs = "5.0.1"
 env_logger = "0.10.0"
+fast-float = "0.2.0"
 flatbuffers = "22.9"
 flate2 = "1.0.24"
 futures = { version = "0.3", default-features = false }
@@ -109,6 +111,7 @@ rustyline = "9"
 serde = { version = "1.0", features = ["derive", "rc"] }
 serde_json = "1.0"
 serial_test = "2.0.0"
+simdutf8 = "0.1.4"
 sled = "0.34.7"
 snafu = "0.7"
 snap = "1.0.0"
@@ -146,7 +149,7 @@ zstd = "0.12.3"
 sqllogictest = "0.19.0"
 duration-str = "0.5.0"
 http = "0.2.9"
-itertools = "0.11.0"
+itertools = "0.12.0"
 opentelemetry-jaeger = { version = "0.18.0" }
 opentelemetry_sdk = { version = "0.19.0" }
 opentelemetry_api = { version = "0.19.0" }

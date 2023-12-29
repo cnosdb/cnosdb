@@ -1,5 +1,5 @@
-use crate::line_protocol::parser::Parser;
-use crate::{Line, Result};
+use self::parser::{Parser, Result};
+use crate::Line;
 
 pub mod parser;
 
