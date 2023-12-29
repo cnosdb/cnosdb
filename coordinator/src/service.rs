@@ -59,7 +59,6 @@ use crate::hh_queue::HintedOffManager;
 use crate::metrics::LPReporter;
 use crate::raft::manager::RaftNodesManager;
 use crate::raft::writer::RaftWriter;
-use crate::reader::replica_selection::{DynamicReplicaSelectioner, DynamicReplicaSelectionerRef};
 use crate::reader::table_scan::opener::TemporaryTableScanOpener;
 use crate::reader::tag_scan::opener::TemporaryTagScanOpener;
 use crate::reader::{CheckFuture, CheckedCoordinatorRecordBatchStream};
@@ -86,9 +85,6 @@ pub struct CoordService {
     point_writer: Arc<PointWriter>,
     metrics: Arc<CoordServiceMetrics>,
     raft_manager: Arc<RaftNodesManager>,
-
-    replica_selectioner: DynamicReplicaSelectionerRef,
-    grpc_enable_gzip: bool,
 }
 
 #[derive(Debug)]
@@ -156,7 +152,6 @@ impl CoordService {
         config: Config,
         memory_pool: MemoryPoolRef,
         metrics_register: Arc<MetricsRegister>,
-        grpc_enable_gzip: bool,
     ) -> Arc<Self> {
         let node_id = config.global.node_id;
 
@@ -208,8 +203,6 @@ impl CoordService {
             config: config.clone(),
 
             metrics: Arc::new(CoordServiceMetrics::new(metrics_register.as_ref())),
-            replica_selectioner: Arc::new(DynamicReplicaSelectioner::new(meta)),
-            grpc_enable_gzip,
         });
 
         tokio::spawn(CoordService::check_resourceinfos(coord.clone()));
@@ -328,7 +321,7 @@ impl CoordService {
             channel,
             Duration::from_secs(60 * 60),
             DEFAULT_GRPC_SERVER_MESSAGE_LEN,
-            self.grpc_enable_gzip,
+            self.config.service.grpc_enable_gzip,
         );
         let request = tonic::Request::new(req.clone());
 
@@ -384,7 +377,7 @@ impl CoordService {
             channel,
             Duration::from_secs(60 * 60),
             DEFAULT_GRPC_SERVER_MESSAGE_LEN,
-            self.grpc_enable_gzip,
+            self.config.service.grpc_enable_gzip,
         );
         let response = client
             .exec_admin_fetch_command(request)
@@ -528,17 +521,37 @@ impl Coordinator for CoordService {
         predicate: ResolvedPredicateRef,
     ) -> CoordinatorResult<Vec<ReplicationSet>> {
         // 1. 根据传入的过滤条件获取表的分片信息（包括副本）
-        let shards = self
+        let mut replica_sets = self
             .prune_shards(
                 table.tenant(),
                 table.database(),
                 predicate.time_ranges().as_ref(),
             )
             .await?;
-        // 2. 选择最优的副本
-        let optimal_shards = self.replica_selectioner.select(shards)?;
 
-        Ok(optimal_shards)
+        // 2. 选择最优的副本
+        for replica_set in replica_sets.iter_mut() {
+            replica_set.vnodes.sort_by_key(|vnode| {
+                // The smaller the score, the easier it is to be selected
+                if vnode.id == replica_set.leader_vnode_id {
+                    0
+                } else {
+                    match vnode.status {
+                        VnodeStatus::Running => 1,
+                        VnodeStatus::Copying => 2,
+                        VnodeStatus::Broken => i32::MAX,
+                    }
+                }
+            });
+
+            replica_set
+                .vnodes
+                .retain(|e| e.status != VnodeStatus::Broken);
+
+            replica_set.vnodes.truncate(2);
+        }
+
+        Ok(replica_sets)
     }
 
     async fn exec_write_replica_points(
@@ -764,7 +777,7 @@ impl Coordinator for CoordService {
             self.runtime.clone(),
             self.meta.clone(),
             span_ctx,
-            self.grpc_enable_gzip,
+            self.config.service.grpc_enable_gzip,
         );
 
         Ok(Box::pin(CheckedCoordinatorRecordBatchStream::new(
@@ -788,7 +801,7 @@ impl Coordinator for CoordService {
             self.kv_inst.clone(),
             self.meta.clone(),
             span_ctx,
-            self.grpc_enable_gzip,
+            self.config.service.grpc_enable_gzip,
         );
 
         Ok(Box::pin(CheckedCoordinatorRecordBatchStream::new(

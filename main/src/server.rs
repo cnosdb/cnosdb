@@ -308,7 +308,6 @@ impl ServiceBuilder {
             self.config.clone(),
             memory_pool,
             self.metrics_register.clone(),
-            self.config.service.grpc_enable_gzip,
         )
         .await;
 
