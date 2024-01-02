@@ -10,7 +10,10 @@ models = { path = "../models" }
 protos = { path = "../protos" }
 utils = { path = "../utils" }
 
+atoi_simd = { workspace = true }
 bytes = { workspace = true }
+fast-float = { workspace = true }
+itertools = { workspace = true }
 serde = { workspace = true }
 snafu = { workspace = true }
 flatbuffers = { workspace = true }

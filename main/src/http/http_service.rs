@@ -1162,7 +1162,8 @@ async fn construct_write_context_and_check_privilege(
 }
 
 fn try_parse_req_to_lines(req: &Bytes) -> Result<Vec<Line>, HttpError> {
-    let lines = unsafe { std::str::from_utf8_unchecked(req.as_ref()) };
+    let lines = simdutf8::basic::from_utf8(req.as_ref())
+        .map_err(|e| HttpError::InvalidUTF8 { source: e })?;
     let line_protocol_lines = line_protocol_to_lines(lines, Local::now().timestamp_nanos())
         .map_err(|e| HttpError::ParseLineProtocol { source: e })?;
 
@@ -1170,7 +1171,8 @@ fn try_parse_req_to_lines(req: &Bytes) -> Result<Vec<Line>, HttpError> {
 }
 
 fn construct_write_tsdb_points_request(req: &Bytes) -> Result<Vec<Line>, HttpError> {
-    let lines = unsafe { std::str::from_utf8_unchecked(req.as_ref()) };
+    let lines = simdutf8::basic::from_utf8(req.as_ref())
+        .map_err(|e| HttpError::InvalidUTF8 { source: e })?;
 
     let tsdb_protocol_lines = open_tsdb_to_lines(lines, Local::now().timestamp_nanos())
         .map_err(|e| HttpError::ParseOpentsdbProtocol { source: e })?;
@@ -1179,7 +1181,8 @@ fn construct_write_tsdb_points_request(req: &Bytes) -> Result<Vec<Line>, HttpErr
 }
 
 fn construct_write_tsdb_points_json_request(req: &Bytes) -> Result<Vec<Line>, HttpError> {
-    let lines = unsafe { std::str::from_utf8_unchecked(req.as_ref()) };
+    let lines = simdutf8::basic::from_utf8(req.as_ref())
+        .map_err(|e| HttpError::InvalidUTF8 { source: e })?;
     let tsdb_datapoints = match serde_json::from_str::<DataPoint>(lines) {
         Ok(datapoint) => vec![datapoint],
         Err(_) => match serde_json::from_str::<Vec<DataPoint>>(lines) {

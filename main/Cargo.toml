@@ -66,6 +66,7 @@ regex = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+simdutf8 = { workspace = true }
 sled = { workspace = true }
 snafu = { workspace = true }
 sys-info = { workspace = true }

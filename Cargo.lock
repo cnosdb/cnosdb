@@ -678,6 +678,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "atoi_simd"
+version = "0.15.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ccfc14f5c3e34de57539a7ba9c18ecde3d9bbde48d232ea1da3e468adb307fd0"
+
+[[package]]
 name = "atomic-polyfill"
 version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2115,6 +2121,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "fast-float"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "95765f67b4b18863968b4a1bd5bb576f732b29a4a28c7cd84c09fa3e2875f33c"
+
+[[package]]
 name = "fastrand"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2923,6 +2935,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "itertools"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "25db6b064527c5d482d0423354fcd07a89a2dfe07b67892e62411946db7f07b0"
+dependencies = [
+ "either",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3246,6 +3267,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "simdutf8",
  "sled",
  "snafu",
  "spi",
@@ -4438,9 +4460,12 @@ name = "protocol_parser"
 version = "2.4.0"
 dependencies = [
  "async-backtrace",
+ "atoi_simd",
  "bytes",
  "datafusion",
+ "fast-float",
  "flatbuffers 22.12.6",
+ "itertools 0.12.0",
  "lazy_static",
  "models",
  "parking_lot 0.12.1",
@@ -5269,6 +5294,12 @@ checksum = "d8229b473baa5980ac72ef434c4415e70c4b5e71b423043adb4ba059f89c99a1"
 dependencies = [
  "libc",
 ]
+
+[[package]]
+name = "simdutf8"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f27f6278552951f1f2b8cf9da965d10969b2efdea95a6ec47987ab46edfe263a"
 
 [[package]]
 name = "similar"
@@ -6140,7 +6171,7 @@ name = "trace_http"
 version = "2.4.0"
 dependencies = [
  "http",
- "itertools 0.11.0",
+ "itertools 0.12.0",
  "snafu",
  "tonic",
  "tower",

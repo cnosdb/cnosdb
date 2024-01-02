@@ -20,7 +20,7 @@ use crate::{Error, FieldValue, Line, Result};
 pub fn line_to_batches(lines: &[Line]) -> Result<HashMap<String, MutableBatch>> {
     let mut batches = HashMap::new();
     for line in lines.iter() {
-        let table = line.table;
+        let table = &*line.table;
         let (_, batch) = batches
             .raw_entry_mut()
             .from_key(table)

@@ -29,13 +29,13 @@ impl LPLine {
             .labels
             .0
             .iter()
-            .map(|(k, v)| (*k, v.as_ref()))
+            .map(|(k, v)| (Cow::Borrowed(*k), Cow::Borrowed(&**v)))
             .collect();
 
         Line::new(
-            self.measure.as_ref(),
+            Cow::Borrowed(&*self.measure),
             tags,
-            vec![("value", self.value.clone())],
+            vec![(Cow::Borrowed("value"), self.value.clone())],
             chrono::Utc::now().timestamp_nanos(),
         )
     }
