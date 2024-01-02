@@ -1,21 +1,29 @@
-#[cfg(test)]
-mod test {
-    use std::fs;
-    use std::path::PathBuf;
+#![cfg(test)]
 
-    use http_protocol::status_code;
-    use serial_test::serial;
+use std::path::Path;
 
-    use crate::utils::{clean_env, modify_config_file, start_singleton, Client};
+use http_protocol::status_code;
+use serial_test::serial;
 
-    #[test]
-    #[serial]
-    fn test1() {
-        println!("Test begin auth_test");
-        clean_env();
+use crate::utils::{build_data_node_config, kill_all, run_singleton, Client};
+use crate::{assert_response_is_ok, cluster_def};
 
-        let data = start_singleton(None::<PathBuf>, "config_8902.toml", "127.0.0.1:8902");
+#[test]
+#[serial]
+fn test1() {
+    println!("Test begin auth_test");
 
+    let test_dir = "/tmp/e2e_test/auth_tests/test1";
+    let _ = std::fs::remove_dir_all(test_dir);
+    std::fs::create_dir_all(test_dir).unwrap();
+
+    kill_all();
+
+    let data_node_def = &cluster_def::one_data(1);
+
+    {
+        // Start cnosdb singleton with `auth_enabled = false`, alter password for root.
+        let data = run_singleton(test_dir, data_node_def, false, true);
         let resp = data
             .client
             .post(
@@ -23,33 +31,22 @@ mod test {
                 "alter user root set password='abc'",
             )
             .unwrap();
-        assert_eq!(resp.status(), status_code::OK);
+        assert_response_is_ok!(resp);
+    }
 
-        drop(data);
+    // Start cnosdb singleton with `auth_enabled = true`
+    let mut config = build_data_node_config(test_dir, &data_node_def.config_file_name);
+    data_node_def.update_config(&mut config);
+    config.query.auth_enabled = true;
+    let config_dir = Path::new(test_dir).join("data").join("config");
+    std::fs::create_dir_all(&config_dir).unwrap();
+    let config_file_path = config_dir.join(&data_node_def.config_file_name);
+    std::fs::write(config_file_path, config.to_string_pretty()).unwrap();
 
-        let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let workspace_dir = crate_dir.parent().unwrap();
-        let config_dir = crate_dir.join("tmp_config");
-        let config_path = config_dir.join("config_8902.toml");
+    let _data = run_singleton(test_dir, data_node_def, false, false);
 
-        let _ = fs::remove_dir_all(&config_dir);
-
-        fs::create_dir(&config_dir).unwrap();
-
-        let default_config_content =
-            fs::read_to_string(workspace_dir.join("config").join("config_8902.toml")).unwrap();
-
-        let config_content = modify_config_file(
-            &default_config_content,
-            "auth_enabled = false",
-            "auth_enabled = true",
-        );
-
-        fs::write(config_path, config_content).unwrap();
-
-        let _data = start_singleton(Some(&config_dir), "config_8902.toml", "127.0.0.1:8902");
-
-        let client = Client::new("root".to_string(), Some("ab".to_owned()));
+    {
+        let client = Client::with_auth("root".to_string(), Some("ab".to_string()));
 
         let resp = client
             .post("http://127.0.0.1:8902/api/v1/sql?db=public", "select 1")
@@ -59,8 +56,9 @@ mod test {
             resp.text().unwrap(),
             "{\"error_code\":\"010016\",\"error_message\":\"Auth error: Access denied for user 'root' (using password) incorrect password attempt.\"}"
         );
-
-        let client = Client::new("root".to_string(), None);
+    }
+    {
+        let client = Client::with_auth("root".to_string(), None);
 
         let resp = client
             .post("http://127.0.0.1:8902/api/v1/sql?db=public", "select 1")
@@ -70,13 +68,14 @@ mod test {
             resp.text().unwrap(),
             "{\"error_code\":\"010016\",\"error_message\":\"Auth error: Access denied for user 'root' (using password) incorrect password attempt.\"}"
         );
-
-        let client = Client::new("root".to_string(), Some("abc".to_owned()));
+    }
+    {
+        let client = Client::with_auth("root".to_string(), Some("abc".to_owned()));
 
         let resp = client
             .post("http://127.0.0.1:8902/api/v1/sql?db=public", "select 1")
             .unwrap();
-        assert_eq!(resp.status(), status_code::OK);
+        assert_response_is_ok!(resp);
         assert_eq!(resp.text().unwrap(), "Int64(1)\n1\n");
 
         let resp = client
@@ -85,7 +84,7 @@ mod test {
                 "create user u1",
             )
             .unwrap();
-        assert_eq!(resp.status(), status_code::OK);
+        assert_response_is_ok!(resp);
 
         let resp = client
             .post(
@@ -93,9 +92,10 @@ mod test {
                 "alter tenant cnosdb add user u1 as member",
             )
             .unwrap();
-        assert_eq!(resp.status(), status_code::OK);
-
-        let client = Client::new("u1".to_string(), None);
+        assert_response_is_ok!(resp);
+    }
+    {
+        let client = Client::with_auth("u1".to_string(), None);
 
         let resp = client
             .post("http://127.0.0.1:8902/api/v1/sql?db=public", "select 1")
@@ -105,8 +105,9 @@ mod test {
             resp.text().unwrap(),
             "{\"error_code\":\"010016\",\"error_message\":\"Auth error: Password not set\"}"
         );
-
-        let client = Client::new("root".to_string(), Some("abc".to_owned()));
+    }
+    {
+        let client = Client::with_auth("root".to_string(), Some("abc".to_owned()));
 
         let resp = client
             .post(
@@ -115,16 +116,14 @@ mod test {
             )
             .unwrap();
         assert_eq!(resp.status(), status_code::OK);
-
-        let client = Client::new("u1".to_string(), Some("abc".to_owned()));
+    }
+    {
+        let client = Client::with_auth("u1".to_string(), Some("abc".to_owned()));
 
         let resp = client
             .post("http://127.0.0.1:8902/api/v1/sql?db=public", "select 1")
             .unwrap();
         assert_eq!(resp.status(), status_code::OK);
         assert_eq!(resp.text().unwrap(), "Int64(1)\n1\n");
-
-        let _ = fs::remove_dir_all(&config_dir);
-        clean_env();
     }
 }

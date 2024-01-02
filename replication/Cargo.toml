@@ -14,7 +14,6 @@ utils = { path = "../common/utils" }
 actix-web = "4.3.1"
 tempfile = { version = "3.4.0" }
 clap = { version = "4.1.11", features = ["derive", "env"] }
-reqwest = { version = "0.11.9", features = ["json"] }
 openraft = { workspace = true, features = ["serde"] }
 
 once_cell = { workspace = true }
