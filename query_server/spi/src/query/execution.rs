@@ -202,7 +202,7 @@ impl QueryStateMachine {
 
         use super::session::SessionCtxFactory;
 
-        let factory = SessionCtxFactory::new(None, "/tmp".into());
+        let factory = SessionCtxFactory::new(None, "/tmp".into(), None);
         let ctx = query.context().clone();
         QueryStateMachine::begin(
             QueryId::next_id(),

@@ -1,0 +1,24 @@
+##########
+## Query
+##########
+
+
+query
+select current_user();
+----
+root
+
+query
+select current_database();
+----
+public
+
+query
+select current_tenant();
+----
+cnosdb
+
+query
+select current_role();
+----
+owner

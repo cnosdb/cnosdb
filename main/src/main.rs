@@ -6,7 +6,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use clap::{command, Args, Parser, Subcommand, ValueEnum};
-use config::{Config, OverrideByEnv};
+use config::{Config, OverrideByEnv, VERSION};
 use memory_pool::GreedyMemoryPool;
 use metrics::init_tskv_metrics_recorder;
 use metrics::metric_register::MetricsRegister;
@@ -29,14 +29,6 @@ mod signal;
 mod spi;
 mod tcp;
 mod vector;
-
-static VERSION: Lazy<String> = Lazy::new(|| {
-    format!(
-        "{}, revision {}",
-        option_env!("CARGO_PKG_VERSION").unwrap_or("UNKNOWN"),
-        option_env!("GIT_HASH").unwrap_or("UNKNOWN")
-    )
-});
 
 static GLOBAL_MAIN_LOG_GUARD: Lazy<Arc<Mutex<Option<Vec<WorkerGuard>>>>> =
     Lazy::new(|| Arc::new(Mutex::new(None)));
@@ -240,7 +232,7 @@ fn parse_config(config_path: Option<impl AsRef<Path>>) -> config::Config {
     } else if Path::new("/etc/cnosdb/cnosdb.conf").exists() {
         println!("----------\nStart with configuration:");
         config::get_config("/etc/cnosdb/cnosdb.conf").unwrap()
-    } else if let Some(path) = home::home_dir() {
+    } else if let Some(path) = dirs::home_dir() {
         let path = path.join("cnosdb").join("cnosdb.conf");
         if path.exists() {
             config::get_config(path).unwrap()

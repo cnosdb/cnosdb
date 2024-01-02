@@ -11,7 +11,7 @@ pub type AccessControlRef = Arc<dyn AccessControl + Send + Sync>;
 
 #[async_trait]
 pub trait AccessControl {
-    async fn access_check(&self, user_info: &UserInfo, tenant_name: Option<&str>) -> Result<User>;
+    async fn access_check(&self, user_info: &UserInfo, tenant_name: &str) -> Result<User>;
 
     async fn tenant_id(&self, tenant_name: &str) -> Result<Oid>;
 }

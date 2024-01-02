@@ -6,11 +6,13 @@ pub mod expr_rewriter;
 pub mod expr_utils;
 mod scalar_function;
 mod selector_function;
+mod session_function;
 mod window;
 
 use datafusion::arrow::datatypes::{DataType, IntervalUnit};
 pub use scalar_function::{INTERPOLATE, LOCF, TIME_WINDOW_GAPFILL};
 pub use selector_function::{BOTTOM, TOPK};
+pub use session_function::register_session_udfs;
 use spi::query::function::FunctionMetadataManager;
 use spi::Result;
 pub use window::{

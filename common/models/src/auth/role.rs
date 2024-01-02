@@ -44,7 +44,7 @@ impl<T: Id> UserRole<T> {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TenantRoleIdentifier {
     System(SystemTenantRole),
     Custom(String),

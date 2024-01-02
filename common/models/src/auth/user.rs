@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use super::privilege::{
     DatabasePrivilege, GlobalPrivilege, Privilege, PrivilegeChecker, TenantObjectPrivilege,
 };
-use super::role::UserRole;
+use super::role::{TenantRoleIdentifier, UserRole};
 use super::{rsa_utils, AuthError, Result};
 use crate::auth::{bcrypt_hash, bcrypt_verify};
 use crate::oid::{Identifier, Oid};
@@ -15,18 +15,31 @@ use crate::oid::{Identifier, Oid};
 pub const ROOT: &str = "root";
 pub const ROOT_PWD: &str = "";
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct User {
     desc: UserDesc,
     privileges: HashSet<Privilege<Oid>>,
+    role: Option<TenantRoleIdentifier>,
 }
 
 impl User {
-    pub fn new(desc: UserDesc, mut privileges: HashSet<Privilege<Oid>>) -> Self {
+    pub fn new(
+        desc: UserDesc,
+        mut privileges: HashSet<Privilege<Oid>>,
+        role: Option<TenantRoleIdentifier>,
+    ) -> Self {
         // 添加修改自身信息的权限
         privileges.insert(Privilege::Global(GlobalPrivilege::User(Some(*desc.id()))));
 
-        Self { desc, privileges }
+        Self {
+            desc,
+            privileges,
+            role,
+        }
+    }
+
+    pub fn role(&self) -> Option<&TenantRoleIdentifier> {
+        self.role.as_ref()
     }
 
     pub fn desc(&self) -> &UserDesc {
@@ -76,6 +89,10 @@ impl UserDesc {
             options,
             is_admin,
         }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     pub fn options(&self) -> &UserOptions {
@@ -259,14 +276,14 @@ impl<'a> AuthType<'a> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UserInfo {
     pub user: String,
     pub password: String,
     pub private_key: Option<String>,
 }
 
-pub fn admin_user(desc: UserDesc) -> User {
+pub fn admin_user(desc: UserDesc, role: Option<TenantRoleIdentifier>) -> User {
     let privileges = UserRole::Dba.to_privileges();
-    User::new(desc, privileges)
+    User::new(desc, privileges, role)
 }

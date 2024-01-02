@@ -20,7 +20,7 @@ impl AccessControlImpl {
 
 #[async_trait::async_trait]
 impl AccessControl for AccessControlImpl {
-    async fn access_check(&self, user_info: &UserInfo, tenant_name: Option<&str>) -> Result<User> {
+    async fn access_check(&self, user_info: &UserInfo, tenant_name: &str) -> Result<User> {
         let user = self.inner.access_check(user_info, tenant_name).await?;
 
         let user_options = user.desc().options();
@@ -51,7 +51,7 @@ impl AccessControlNoCheck {
 
 #[async_trait::async_trait]
 impl AccessControl for AccessControlNoCheck {
-    async fn access_check(&self, user_info: &UserInfo, tenant_name: Option<&str>) -> Result<User> {
+    async fn access_check(&self, user_info: &UserInfo, tenant_name: &str) -> Result<User> {
         let user_name = user_info.user.as_str();
         // only get user info with privileges
         self.meta_manager

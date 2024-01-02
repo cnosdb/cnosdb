@@ -239,13 +239,14 @@ impl Drop for TrackedRecordBatchStream {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
     use std::sync::Arc;
     use std::time::Duration;
 
     use async_trait::async_trait;
     use datafusion::arrow::datatypes::Schema;
     use datafusion::physical_plan::EmptyRecordBatchStream;
-    use models::auth::user::{UserDesc, UserOptions};
+    use models::auth::user::{User, UserDesc, UserOptions};
     use spi::query::dispatcher::{QueryInfo, QueryStatus};
     use spi::query::execution::{Output, QueryExecution, QueryState, RUNNING};
     use spi::service::protocol::QueryId;
@@ -269,13 +270,14 @@ mod tests {
         fn info(&self) -> QueryInfo {
             let options = UserOptions::default();
             let desc = UserDesc::new(0_u128, "user".to_string(), options, true);
+            let user = User::new(desc, HashSet::new(), None);
             QueryInfo::new(
                 1_u64.into(),
                 "test".to_string(),
                 0_u128,
                 "tenant".to_string(),
                 "db".to_string(),
-                desc,
+                user,
             )
         }
         fn status(&self) -> QueryStatus {

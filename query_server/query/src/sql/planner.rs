@@ -2948,7 +2948,7 @@ mod tests {
             UserOptions::default(),
             false,
         );
-        let user = User::new(user_desc, HashSet::default());
+        let user = User::new(user_desc, HashSet::default(), None);
         let context = ContextBuilder::new(user).build();
         let pool = UnboundedMemoryPool::default();
         SessionCtxFactory::default()

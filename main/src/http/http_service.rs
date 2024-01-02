@@ -326,7 +326,7 @@ impl HttpService {
                         .map_err(reject::custom)?;
 
                     let tenant = query.context().tenant();
-                    let user = query.context().user_info().desc().name();
+                    let user = query.context().user().desc().name();
                     let addr_str = addr.as_str();
 
                     let result = {
@@ -789,7 +789,7 @@ impl HttpService {
                         .map_err(reject::custom)?;
 
                     let tenant_name = context.tenant();
-                    let username = context.user_info().desc().name();
+                    let username = context.user().desc().name();
                     let database_name = context.database();
 
                     let http_query_data_out = metrics.http_data_out(
@@ -1075,7 +1075,7 @@ async fn construct_read_context(
 
     let tenant = param.tenant;
     let user = dbms
-        .authenticate(&user_info, tenant.as_deref())
+        .authenticate(&user_info, tenant.as_deref().unwrap_or(DEFAULT_CATALOG))
         .await
         .context(QuerySnafu)?;
 
@@ -1108,7 +1108,9 @@ async fn construct_write_context(
     let db = param.db;
     let precision = param.precision;
 
-    let user = dbms.authenticate(&user_info, tenant.as_deref()).await?;
+    let user = dbms
+        .authenticate(&user_info, tenant.as_deref().unwrap_or(DEFAULT_CATALOG))
+        .await?;
 
     let context = ContextBuilder::new(user)
         .with_tenant(tenant)
@@ -1151,7 +1153,7 @@ async fn construct_write_context_and_check_privilege(
         ),
         Some(tenant_id),
     );
-    if !context.user_info().check_privilege(&privilege) {
+    if !context.user().check_privilege(&privilege) {
         return Err(HttpError::Query {
             source: QueryError::InsufficientPrivileges {
                 privilege: format!("{privilege}"),
@@ -1318,7 +1320,7 @@ fn http_record_query_metrics(
     start: Instant,
     api_type: HttpApiType,
 ) {
-    let (tenant, user, db) = (ctx.tenant(), ctx.user_info().desc().name(), ctx.database());
+    let (tenant, user, db) = (ctx.tenant(), ctx.user().desc().name(), ctx.database());
     let db = if metrics_record_db(&api_type) {
         Some(db)
     } else {
@@ -1343,7 +1345,7 @@ fn http_record_write_metrics(
     start: Instant,
     api_type: HttpApiType,
 ) {
-    let (tenant, user, db) = (ctx.tenant(), ctx.user_info().desc().name(), ctx.database());
+    let (tenant, user, db) = (ctx.tenant(), ctx.user().desc().name(), ctx.database());
     let db = if metrics_record_db(&api_type) {
         Some(db)
     } else {

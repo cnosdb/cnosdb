@@ -146,7 +146,7 @@ impl VectorService {
         };
         let user = self
             .dbms
-            .authenticate(&user_info, Some(tenant))
+            .authenticate(&user_info, tenant)
             .await
             .map_err(|e| Status::permission_denied(e.to_string()))?;
         if !user.check_privilege(&privilege) {

@@ -1,4 +1,5 @@
 use http_protocol::header::{self, PRIVATE_KEY};
+use models::schema::DEFAULT_CATALOG;
 use spi::server::dbms::DBMSRef;
 use tonic::metadata::MetadataMap;
 use tonic::Status;
@@ -38,7 +39,7 @@ impl CallHeaderAuthenticator for BasicCallHeaderAuthenticator {
 
         let user = self
             .instance
-            .authenticate(&user_info, tenant.as_deref())
+            .authenticate(&user_info, tenant.as_deref().unwrap_or(DEFAULT_CATALOG))
             .await
             .map_err(|e| Status::unauthenticated(e.to_string()))?;
 
