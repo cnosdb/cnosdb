@@ -72,6 +72,10 @@ impl AccessControl for AccessControlNoCheck {
             .await
             .ok_or(AuthError::TenantNotFound)?;
 
+        if tenant_client.tenant().options().get_tenant_is_hidden() {
+            return Err(AuthError::TenantNotFound);
+        }
+
         Ok(*tenant_client.tenant().id())
     }
 }
