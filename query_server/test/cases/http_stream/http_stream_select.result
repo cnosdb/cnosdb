@@ -54,7 +54,7 @@ rows
 {"error_code":"010001","error_message":"Datafusion: Error during planning: Invalid function 'symmetric'.\nDid you mean 'btrim'?"}
 -- ERROR:  --
 
--- EXECUTE SQL: SELECT m0.f0, m0.t0, m0.f1 FROM m0; --
+-- EXECUTE SQL: SELECT m0.f0, m0.t0, m0.f1 FROM m0 order by time asc; --
 -- AFTER_SORT --
 200 OK
 f0,t0,f1
@@ -71,7 +71,7 @@ true,,0.5469987105166848
 true,,0.5540439337463335
 true,,0.9622249970170084
 
--- EXECUTE SQL: SELECT * FROM m0; --
+-- EXECUTE SQL: SELECT * FROM m0 order by time asc; --
 -- AFTER_SORT --
 200 OK
 time,t0,f0,f1
