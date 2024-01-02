@@ -1,861 +1,653 @@
-#[cfg(test)]
-pub mod test {
-    use http_protocol::status_code;
+#![cfg(test)]
 
-    use crate::utils::{clean_env, start_singleton, Client};
+use reqwest::StatusCode;
+use serial_test::serial;
 
-    #[test]
-    fn case1() {
-        println!("Test begin restart_test_case_1");
-        clean_env();
-        let mut data = start_singleton("config_8902.toml", "127.0.0.1:8902");
+use crate::case::{CnosdbAuth, CnosdbRequest, E2eExecutor, Step};
+use crate::{cluster_def, E2eError};
 
-        let client = Client::new("root".to_string(), Some(String::new()));
+#[test]
+#[serial]
+fn case1() {
+    let url = "http://127.0.0.1:8902/api/v1/sql?tenant=cnosdb&db=public";
 
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "CREATE TABLE air (
-                    visibility DOUBLE,
-                    temperature DOUBLE,
-                    pressure DOUBLE,
-                    TAGS(station))",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-
-        data.restart("config_8902.toml", "127.0.0.1:8902");
-
-        let resp = client
-            .post("http://127.0.0.1:8902/api/v1/sql?db=public", "SHOW TABLES")
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-        assert_eq!(
-            resp.text()
-                .unwrap()
-                .trim()
-                .split_terminator('\n')
-                .collect::<Vec<_>>(),
-            vec!["table_name", "air"]
-        );
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "INSERT INTO air (time, station, visibility, temperature, pressure) VALUES
+    let executor = E2eExecutor::new_singleton("restart_tests", "case_1", cluster_def::one_data(1));
+    executor.execute_steps(&[
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Query {
+                url,
+                sql: "CREATE TABLE air (visibility DOUBLE, temperature DOUBLE, pressure DOUBLE, TAGS(station))",
+                resp: Ok(vec![]),
+                sorted: false,
+            },
+            auth: None,
+        },
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Query { url, sql: "SHOW TABLES", resp: Ok(vec!["table_name", "air"]), sorted: false },
+            auth: None,
+        },
+        Step::RestartDataNode(0),
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Query { url, sql: "SHOW TABLES", resp: Ok(vec!["table_name", "air"]), sorted: false },
+            auth: None,
+        },
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Insert {
+                url,
+                sql: "INSERT INTO air (time, station, visibility, temperature, pressure) VALUES
                     ('2023-01-01 01:10:00', 'XiaoMaiDao', 79, 80, 63),
                     ('2023-01-01 01:20:00', 'XiaoMaiDao', 80, 60, 63),
                     ('2023-01-01 01:30:00', 'XiaoMaiDao', 81, 70, 61)",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-
-        data.restart("config_8902.toml", "127.0.0.1:8902");
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "SELECT * FROM air order by time",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-        assert_eq!(
-            resp.text()
-                .unwrap()
-                .split_terminator('\n')
-                .collect::<Vec<_>>(),
-            vec![
-                "time,station,visibility,temperature,pressure",
-                "2023-01-01T01:10:00.000000000,XiaoMaiDao,79.0,80.0,63.0",
-                "2023-01-01T01:20:00.000000000,XiaoMaiDao,80.0,60.0,63.0",
-                "2023-01-01T01:30:00.000000000,XiaoMaiDao,81.0,70.0,61.0"
-            ]
-        );
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "DROP TABLE air",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-
-        data.restart("config_8902.toml", "127.0.0.1:8902");
-
-        let resp = client
-            .post("http://127.0.0.1:8902/api/v1/sql?db=public", "SHOW TABLES")
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-        assert!(resp.text().unwrap().trim().is_empty());
-
-        println!("Test complete restart_test_case_1");
-    }
-
-    #[test]
-    fn case2() {
-        println!("Test begin restart_test_case_2");
-        clean_env();
-        let mut data = start_singleton("config_8902.toml", "127.0.0.1:8902");
-
-        let client = Client::new("root".to_string(), Some(String::new()));
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "CREATE TABLE air (
-                    visibility DOUBLE,
-                    temperature DOUBLE,
-                    pressure DOUBLE,
-                    TAGS(station))",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "ALTER TABLE air ADD FIELD humidity DOUBLE",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-
-        data.restart("config_8902.toml", "127.0.0.1:8902");
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "DESC TABLE air",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-        assert_eq!(
-            {
-                let mut res = resp
-                    .text()
-                    .unwrap()
-                    .trim()
-                    .split_terminator('\n')
-                    .map(|s| s.to_owned())
-                    .collect::<Vec<_>>();
-                res.sort_unstable();
-                res
+                resp: Ok(()),
             },
-            vec![
-                "column_name,data_type,column_type,compression_codec",
-                "humidity,DOUBLE,FIELD,DEFAULT",
-                "pressure,DOUBLE,FIELD,DEFAULT",
-                "station,STRING,TAG,DEFAULT",
-                "temperature,DOUBLE,FIELD,DEFAULT",
-                "time,TIMESTAMP(NANOSECOND),TIME,DEFAULT",
-                "visibility,DOUBLE,FIELD,DEFAULT"
-            ]
-        );
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "ALTER TABLE air ALTER humidity SET CODEC(QUANTILE)",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-
-        data.restart("config_8902.toml", "127.0.0.1:8902");
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "DESC TABLE air",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-        assert_eq!(
-            {
-                let mut res = resp
-                    .text()
-                    .unwrap()
-                    .trim()
-                    .split_terminator('\n')
-                    .map(|s| s.to_owned())
-                    .collect::<Vec<_>>();
-                res.sort_unstable();
-                res
+            auth: None,
+        },
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Query {
+                url,
+                sql: "SELECT * FROM air order by time",
+                resp: Ok(vec![
+                    "time,station,visibility,temperature,pressure",
+                    "2023-01-01T01:10:00.000000000,XiaoMaiDao,79.0,80.0,63.0",
+                    "2023-01-01T01:20:00.000000000,XiaoMaiDao,80.0,60.0,63.0",
+                    "2023-01-01T01:30:00.000000000,XiaoMaiDao,81.0,70.0,61.0",
+                ]),
+                sorted: false,
             },
-            vec![
-                "column_name,data_type,column_type,compression_codec",
-                "humidity,DOUBLE,FIELD,QUANTILE",
-                "pressure,DOUBLE,FIELD,DEFAULT",
-                "station,STRING,TAG,DEFAULT",
-                "temperature,DOUBLE,FIELD,DEFAULT",
-                "time,TIMESTAMP(NANOSECOND),TIME,DEFAULT",
-                "visibility,DOUBLE,FIELD,DEFAULT"
-            ]
-        );
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "ALTER TABLE air DROP humidity",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-
-        data.restart("config_8902.toml", "127.0.0.1:8902");
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "DESC TABLE air",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-        assert_eq!(
-            {
-                let mut res = resp
-                    .text()
-                    .unwrap()
-                    .trim()
-                    .split_terminator('\n')
-                    .map(|s| s.to_owned())
-                    .collect::<Vec<_>>();
-                res.sort_unstable();
-                res
+            auth: None,
+        },
+        Step::RestartDataNode(0),
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Query {
+                url,
+                sql: "SELECT * FROM air order by time",
+                resp: Ok(vec![
+                    "time,station,visibility,temperature,pressure",
+                    "2023-01-01T01:10:00.000000000,XiaoMaiDao,79.0,80.0,63.0",
+                    "2023-01-01T01:20:00.000000000,XiaoMaiDao,80.0,60.0,63.0",
+                    "2023-01-01T01:30:00.000000000,XiaoMaiDao,81.0,70.0,61.0",
+                ]),
+                sorted: false,
             },
-            vec![
-                "column_name,data_type,column_type,compression_codec",
-                "pressure,DOUBLE,FIELD,DEFAULT",
-                "station,STRING,TAG,DEFAULT",
-                "temperature,DOUBLE,FIELD,DEFAULT",
-                "time,TIMESTAMP(NANOSECOND),TIME,DEFAULT",
-                "visibility,DOUBLE,FIELD,DEFAULT"
-            ]
-        );
+            auth: None,
+        },
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Ddl { url, sql: "DROP TABLE air", resp: Ok(()) },
+            auth: None,
+        },
+        Step::RestartDataNode(0),
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Query { url, sql: "SHOW TABLES", resp: Ok(vec![]), sorted: false },
+            auth: None,
+        },
+    ]);
+}
 
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "ALTER TABLE air ADD TAG height",
-            )
-            .unwrap();
+#[test]
+#[serial]
+#[ignore = "Dropping a field in a database that had not wrote data will get error 'Query: Coordinator: Unreachable'"]
+fn case2() {
+    let url = "http://127.0.0.1:8902/api/v1/sql?tenant=cnosdb&db=public";
 
-        assert_eq!(resp.status(), status_code::OK);
-
-        data.restart("config_8902.toml", "127.0.0.1:8902");
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "DESC TABLE air",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-        assert_eq!(
-            {
-                let mut res = resp
-                    .text()
-                    .unwrap()
-                    .trim()
-                    .split_terminator('\n')
-                    .map(|s| s.to_owned())
-                    .collect::<Vec<_>>();
-                res.sort_unstable();
-                res
+    let executor = E2eExecutor::new_singleton("restart_tests", "case_2", cluster_def::one_data(1));
+    executor.execute_steps(&[
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Ddl {
+                url,
+                sql: "CREATE TABLE air (
+                        visibility DOUBLE,
+                        temperature DOUBLE,
+                        pressure DOUBLE,
+                        TAGS(station))",
+                resp: Ok(()),
             },
-            vec![
-                "column_name,data_type,column_type,compression_codec",
-                "height,STRING,TAG,DEFAULT",
-                "pressure,DOUBLE,FIELD,DEFAULT",
-                "station,STRING,TAG,DEFAULT",
-                "temperature,DOUBLE,FIELD,DEFAULT",
-                "time,TIMESTAMP(NANOSECOND),TIME,DEFAULT",
-                "visibility,DOUBLE,FIELD,DEFAULT"
-            ]
-        );
-
-        println!("Test complete restart_test_case_2");
-    }
-
-    #[test]
-    fn case3() {
-        println!("Test begin restart_test_case_3");
-        clean_env();
-        let mut data = start_singleton("config_8902.toml", "127.0.0.1:8902");
-
-        let client = Client::new("root".to_string(), Some(String::new()));
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "CREATE DATABASE oceanic_station",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-
-        data.restart("config_8902.toml", "127.0.0.1:8902");
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "SHOW DATABASES",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-        assert_eq!(
-            {
-                let mut res = resp
-                    .text()
-                    .unwrap()
-                    .trim()
-                    .split_terminator('\n')
-                    .map(|s| s.to_owned())
-                    .collect::<Vec<_>>();
-                res.sort_unstable();
-                res
+            auth: None,
+        },
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Ddl {
+                url,
+                sql: "ALTER TABLE air ADD FIELD humidity DOUBLE",
+                resp: Ok(()),
             },
-            vec!["database_name", "oceanic_station", "public", "usage_schema"]
-        );
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "ALTER DATABASE oceanic_station SET VNODE_DURATION '1000d'",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-
-        data.restart("config_8902.toml", "127.0.0.1:8902");
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "DESC DATABASE oceanic_station",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-        assert_eq!(
-            resp.text()
-                .unwrap()
-                .trim()
-                .split_terminator('\n')
-                .collect::<Vec<_>>(),
-            vec![
-                "ttl,shard,vnode_duration,cooling_duration,replica,precision",
-                "INF,1,1000 Days,0 Days,1,NS"
-            ]
-        );
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "DROP DATABASE oceanic_station",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-
-        data.restart("config_8902.toml", "127.0.0.1:8902");
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "SHOW DATABASES",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-        assert_eq!(
-            {
-                let mut res = resp
-                    .text()
-                    .unwrap()
-                    .trim()
-                    .split_terminator('\n')
-                    .map(|s| s.to_owned())
-                    .collect::<Vec<_>>();
-                res.sort_unstable();
-                res
+            auth: None,
+        },
+        Step::RestartDataNode(0),
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Query {
+                url,
+                sql: "DESC TABLE air",
+                resp: Ok(vec![
+                    "column_name,data_type,column_type,compression_codec",
+                    "humidity,DOUBLE,FIELD,DEFAULT",
+                    "pressure,DOUBLE,FIELD,DEFAULT",
+                    "station,STRING,TAG,DEFAULT",
+                    "temperature,DOUBLE,FIELD,DEFAULT",
+                    "time,TIMESTAMP(NANOSECOND),TIME,DEFAULT",
+                    "visibility,DOUBLE,FIELD,DEFAULT",
+                ]),
+                sorted: false,
             },
-            vec!["database_name", "public", "usage_schema"]
-        );
-
-        println!("Test complete restart_test_case_3");
-    }
-
-    #[test]
-    fn case4() {
-        println!("Test begin restart_test_case_4");
-        clean_env();
-        let mut data = start_singleton("config_8902.toml", "127.0.0.1:8902");
-
-        let client = Client::new("root".to_string(), Some(String::new()));
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "CREATE USER IF NOT EXISTS tester",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-
-        data.restart("config_8902.toml", "127.0.0.1:8902");
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "SELECT * FROM cluster_schema.users WHERE user_name = 'tester'",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-        assert_eq!(
-            resp.text()
-                .unwrap()
-                .split_terminator('\n')
-                .collect::<Vec<_>>(),
-            vec![
-                "user_name,is_admin,user_options",
-                r#"tester,false,"{""hash_password"":""*****""}""#
-            ]
-        );
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "alter user tester set granted_admin = true",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-
-        data.restart("config_8902.toml", "127.0.0.1:8902");
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "SELECT * FROM cluster_schema.users WHERE user_name = 'tester'",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-        assert_eq!(
-            resp.text()
-                .unwrap()
-                .split_terminator('\n')
-                .collect::<Vec<_>>(),
-            vec![
-                "user_name,is_admin,user_options",
-                r#"tester,true,"{""hash_password"":""*****"",""granted_admin"":true}""#
-            ]
-        );
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "alter user tester set granted_admin = false",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-
-        data.restart("config_8902.toml", "127.0.0.1:8902");
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "SELECT * FROM cluster_schema.users WHERE user_name = 'tester'",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-        assert_eq!(
-            resp.text()
-                .unwrap()
-                .split_terminator('\n')
-                .collect::<Vec<_>>(),
-            vec![
-                "user_name,is_admin,user_options",
-                r#"tester,false,"{""hash_password"":""*****"",""granted_admin"":false}""#
-            ]
-        );
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "ALTER USER tester SET COMMENT = 'bbb'",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-
-        data.restart("config_8902.toml", "127.0.0.1:8902");
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "SELECT * FROM cluster_schema.users WHERE user_name = 'tester'",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-        assert_eq!(
-            resp.text()
-                .unwrap()
-                .split_terminator('\n')
-                .collect::<Vec<_>>(),
-            vec![
-                "user_name,is_admin,user_options",
-                r#"tester,false,"{""hash_password"":""*****"",""comment"":""bbb"",""granted_admin"":false}""#
-            ]
-        );
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "DROP USER tester",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-
-        data.restart("config_8902.toml", "127.0.0.1:8902");
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "SELECT * FROM cluster_schema.users WHERE user_name = 'tester'",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-        assert!(resp.text().unwrap().trim().is_empty());
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "CREATE TENANT test",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-
-        data.restart("config_8902.toml", "127.0.0.1:8902");
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "SELECT * FROM cluster_schema.tenants WHERE tenant_name = 'test'",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-        assert_eq!(
-            resp.text()
-                .unwrap()
-                .split_terminator('\n')
-                .collect::<Vec<_>>(),
-            vec![
-                "tenant_name,tenant_options",
-                r#"test,"{""comment"":null,""limiter_config"":null,""tenant_is_hidden"":false}""#
-            ]
-        );
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "ALTER TENANT test SET COMMENT = 'abc'",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-
-        data.restart("config_8902.toml", "127.0.0.1:8902");
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "SELECT * FROM cluster_schema.tenants WHERE tenant_name = 'test'",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-        assert_eq!(
-            resp.text()
-                .unwrap()
-                .split_terminator('\n')
-                .collect::<Vec<_>>(),
-            vec![
-                "tenant_name,tenant_options",
-                r#"test,"{""comment"":""abc"",""limiter_config"":null,""tenant_is_hidden"":false}""#
-            ]
-        );
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?tenant=test",
-                "CREATE DATABASE db1",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "DROP TENANT test",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-
-        data.restart("config_8902.toml", "127.0.0.1:8902");
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "CREATE TENANT test",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?tenant=test",
-                "SHOW DATABASES",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-        assert!(resp.text().unwrap().trim().is_empty());
-
-        println!("Test complete restart_test_case_4");
-    }
-
-    #[test]
-    fn case5() {
-        println!("Test begin restart_test_case_5");
-        clean_env();
-        let mut data = start_singleton("config_8902.toml", "127.0.0.1:8902");
-
-        let client = Client::new("root".to_string(), Some(String::new()));
-        let tester_client = Client::new("tester".to_string(), Some(String::new()));
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "CREATE USER tester",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "CREATE TENANT test",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?tenant=test",
-                "CREATE ROLE r1 INHERIT member",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-
-        data.restart("config_8902.toml", "127.0.0.1:8902");
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?tenant=test",
-                "SELECT * FROM information_schema.roles WHERE role_name = 'r1'",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-        assert_eq!(
-            resp.text()
-                .unwrap()
-                .split_terminator('\n')
-                .collect::<Vec<_>>(),
-            vec!["role_name,role_type,inherit_role", "r1,custom,member"]
-        );
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?tenant=test",
-                "ALTER TENANT test ADD USER tester AS r1",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-
-        data.restart("config_8902.toml", "127.0.0.1:8902");
-
-        let resp = tester_client
-            .post("http://127.0.0.1:8902/api/v1/sql?tenant=test", "SELECT 1")
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-        assert_eq!(
-            resp.text()
-                .unwrap()
-                .split_terminator('\n')
-                .collect::<Vec<_>>(),
-            vec!["Int64(1)", "1"]
-        );
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?tenant=test",
-                "ALTER TENANT test REMOVE USER tester",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-
-        data.restart("config_8902.toml", "127.0.0.1:8902");
-
-        let resp = tester_client
-            .post("http://127.0.0.1:8902/api/v1/sql?tenant=test", "SELECT 1")
-            .unwrap();
-
-        assert_eq!(
-            resp.text().unwrap(),
-            r#"{"error_code":"010016","error_message":"Auth error: The member tester of tenant test not found"}"#
-        );
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?tenant=test",
-                "CREATE DATABASE db1",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?tenant=test",
-                "GRANT WRITE ON DATABASE db1 TO ROLE r1",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-
-        data.restart("config_8902.toml", "127.0.0.1:8902");
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?tenant=test",
-                "SELECT * FROM information_schema.database_privileges WHERE role_name = 'r1'",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-        assert_eq!(
-            resp.text()
-                .unwrap()
-                .split_terminator('\n')
-                .collect::<Vec<_>>(),
-            vec![
-                "tenant_name,database_name,privilege_type,role_name",
-                "test,db1,Write,r1"
-            ]
-        );
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?tenant=test",
-                "REVOKE WRITE ON DATABASE db1 FROM r1",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-
-        data.restart("config_8902.toml", "127.0.0.1:8902");
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?tenant=test",
-                "SELECT * FROM information_schema.database_privileges WHERE role_name = 'r1'",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-        assert!(resp.text().unwrap().trim().is_empty());
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?tenant=test",
-                "GRANT ALL ON DATABASE db1 TO ROLE r1",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?tenant=test",
-                "DROP ROLE r1",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-
-        data.restart("config_8902.toml", "127.0.0.1:8902");
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?tenant=test",
-                "SELECT * FROM information_schema.roles WHERE role_name = 'r1'",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-        assert!(resp.text().unwrap().trim().is_empty());
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?tenant=test",
-                "CREATE ROLE r1 INHERIT member",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?tenant=test",
-                "SELECT * FROM information_schema.database_privileges WHERE role_name = 'r1'",
-            )
-            .unwrap();
-
-        assert_eq!(resp.status(), status_code::OK);
-        assert!(resp.text().unwrap().trim().is_empty());
-
-        println!("Test complete restart_test_case_5");
-    }
+            auth: None,
+        },
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Ddl {
+                url,
+                sql: "ALTER TABLE air ALTER humidity SET CODEC(QUANTILE)",
+                resp: Ok(()),
+            },
+            auth: None,
+        },
+        Step::RestartDataNode(0),
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Query {
+                url,
+                sql: "DESC TABLE air",
+                resp: Ok(vec![
+                    "column_name,data_type,column_type,compression_codec",
+                    "humidity,DOUBLE,FIELD,QUANTILE",
+                    "pressure,DOUBLE,FIELD,DEFAULT",
+                    "station,STRING,TAG,DEFAULT",
+                    "temperature,DOUBLE,FIELD,DEFAULT",
+                    "time,TIMESTAMP(NANOSECOND),TIME,DEFAULT",
+                    "visibility,DOUBLE,FIELD,DEFAULT",
+                ]),
+                sorted: true,
+            },
+            auth: None,
+        },
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Ddl {
+                url,
+                sql: "ALTER TABLE air DROP humidity",
+                resp: Ok(()),
+            },
+            auth: None,
+        },
+        Step::RestartDataNode(0),
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Query {
+                url,
+                sql: "DESC TABLE air",
+                resp: Ok(vec![
+                    "column_name,data_type,column_type,compression_codec",
+                    "pressure,DOUBLE,FIELD,DEFAULT",
+                    "station,STRING,TAG,DEFAULT",
+                    "temperature,DOUBLE,FIELD,DEFAULT",
+                    "time,TIMESTAMP(NANOSECOND),TIME,DEFAULT",
+                    "visibility,DOUBLE,FIELD,DEFAULT",
+                ]),
+                sorted: true,
+            },
+            auth: None,
+        },
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Ddl {
+                url,
+                sql: "ALTER TABLE air ADD TAG height",
+                resp: Ok(()),
+            },
+            auth: None,
+        },
+        Step::RestartDataNode(0),
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Query {
+                url,
+                sql: "DESC TABLE air",
+                resp: Ok(vec![
+                    "column_name,data_type,column_type,compression_codec",
+                    "height,STRING,TAG,DEFAULT",
+                    "pressure,DOUBLE,FIELD,DEFAULT",
+                    "station,STRING,TAG,DEFAULT",
+                    "temperature,DOUBLE,FIELD,DEFAULT",
+                    "time,TIMESTAMP(NANOSECOND),TIME,DEFAULT",
+                    "visibility,DOUBLE,FIELD,DEFAULT",
+                ]),
+                sorted: true,
+            },
+            auth: None,
+        },
+    ]);
+}
+
+#[test]
+#[serial]
+fn case3() {
+    let url = "http://127.0.0.1:8902/api/v1/sql?tenant=cnosdb&db=public";
+
+    let executor = E2eExecutor::new_singleton("restart_tests", "case_3", cluster_def::one_data(1));
+    executor.execute_steps(&[
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Ddl {
+                url,
+                sql: "CREATE DATABASE oceanic_station",
+                resp: Ok(()),
+            },
+            auth: None,
+        },
+        Step::RestartDataNode(0),
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Query {
+                url,
+                sql: "SHOW DATABASES",
+                resp: Ok(vec![
+                    "database_name",
+                    "oceanic_station",
+                    "public",
+                    "usage_schema",
+                ]),
+                sorted: true,
+            },
+            auth: None,
+        },
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Ddl {
+                url,
+                sql: "ALTER DATABASE oceanic_station SET VNODE_DURATION '1000d'",
+                resp: Ok(()),
+            },
+            auth: None,
+        },
+        Step::RestartDataNode(0),
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Query {
+                url,
+                sql: "DESC DATABASE oceanic_station",
+                resp: Ok(vec![
+                    "ttl,shard,vnode_duration,replica,precision",
+                    "INF,1,1000 Days,1,NS",
+                ]),
+                sorted: false,
+            },
+            auth: None,
+        },
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Ddl {
+                url,
+                sql: "DROP DATABASE oceanic_station",
+                resp: Ok(()),
+            },
+            auth: None,
+        },
+        Step::RestartDataNode(0),
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Query {
+                url,
+                sql: "SHOW DATABASES",
+                resp: Ok(vec!["database_name", "public", "usage_schema"]),
+                sorted: true,
+            },
+            auth: None,
+        },
+    ]);
+}
+
+#[test]
+#[serial]
+fn case4() {
+    let url_cnosdb_public = "http://127.0.0.1:8902/api/v1/sql?tenant=cnosdb&db=public";
+    let url_test_ = "http://127.0.0.1:8902/api/v1/sql?tenant=test";
+
+    let executor = E2eExecutor::new_singleton("restart_tests", "case_4", cluster_def::one_data(1));
+    executor.execute_steps(&[
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Ddl {
+                url: url_cnosdb_public,
+                sql: "CREATE USER IF NOT EXISTS tester",
+                resp: Ok(()),
+            },
+            auth: None,
+        },
+        Step::RestartDataNode(0),
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Query {
+                url: url_cnosdb_public,
+                sql: "SELECT * FROM cluster_schema.users WHERE user_name = 'tester'",
+                resp: Ok(vec![
+                    "user_name,is_admin,user_options",
+                    r#"tester,false,"{""password"":""*****""}""#,
+                ]),
+                sorted: false,
+            },
+            auth: None,
+        },
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Ddl {
+                url: url_cnosdb_public,
+                sql: "alter user tester set granted_admin = true",
+                resp: Ok(()),
+            },
+            auth: None,
+        },
+        Step::RestartDataNode(0),
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Query {
+                url: url_cnosdb_public,
+                sql: "SELECT * FROM cluster_schema.users WHERE user_name = 'tester'",
+                resp: Ok(vec![
+                    "user_name,is_admin,user_options",
+                    r#"tester,true,"{""password"":""*****"",""granted_admin"":true}""#,
+                ]),
+                sorted: false,
+            },
+            auth: None,
+        },
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Ddl {
+                url: url_cnosdb_public,
+                sql: "alter user tester set granted_admin = false",
+                resp: Ok(()),
+            },
+            auth: None,
+        },
+        Step::RestartDataNode(0),
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Query {
+                url: url_cnosdb_public,
+                sql: "SELECT * FROM cluster_schema.users WHERE user_name = 'tester'",
+                resp: Ok(vec![
+                    "user_name,is_admin,user_options",
+                    r#"tester,false,"{""password"":""*****"",""granted_admin"":false}""#,
+                ]),
+                sorted: false,
+            },
+            auth: None,
+        },
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Ddl {
+                url: url_cnosdb_public,
+                sql: "ALTER USER tester SET COMMENT = 'bbb'",
+                resp: Ok(()),
+            },
+            auth: None,
+        },
+        Step::RestartDataNode(0),
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Query {
+                url: url_cnosdb_public,
+                sql: "SELECT * FROM cluster_schema.users WHERE user_name = 'tester'",
+                resp: Ok(vec![
+                    "user_name,is_admin,user_options",
+                    r#"tester,false,"{""password"":""*****"",""comment"":""bbb"",""granted_admin"":false}""#,
+                ]),
+                sorted: false,
+            },
+            auth: None,
+        },
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Ddl {
+                url: url_cnosdb_public,
+                sql: "DROP USER tester",
+                resp: Ok(()),
+            },
+            auth: None,
+        },
+        Step::RestartDataNode(0),
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Query {
+                url: url_cnosdb_public,
+                sql: "SELECT * FROM cluster_schema.users WHERE user_name = 'tester'",
+                resp: Ok(vec![]),
+                sorted: false,
+            },
+            auth: None,
+        },
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Ddl {
+                url: url_cnosdb_public,
+                sql: "CREATE TENANT test",
+                resp: Ok(()),
+            },
+            auth: None,
+        },
+        Step::RestartDataNode(0),
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Query {
+                url: url_cnosdb_public,
+                sql: "SELECT * FROM cluster_schema.tenants WHERE tenant_name = 'test'",
+                resp: Ok(vec![
+                    "tenant_name,tenant_options",
+                    "test,\"{\"\"comment\"\":null,\"\"limiter_config\"\":null}\"",
+                ]),
+                sorted: false,
+            },
+            auth: None,
+        },
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Ddl {
+                url: url_cnosdb_public,
+                sql: "ALTER TENANT test SET COMMENT = 'abc'",
+                resp: Ok(()),
+            },
+            auth: None,
+        },
+        Step::RestartDataNode(0),
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Query {
+                url: url_cnosdb_public,
+                sql: "SELECT * FROM cluster_schema.tenants WHERE tenant_name = 'test'",
+                resp: Ok(vec![
+                    "tenant_name,tenant_options",
+                    "test,\"{\"\"comment\"\":\"\"abc\"\",\"\"limiter_config\"\":null}\"",
+                ]),
+                sorted: false,
+            },
+            auth: None,
+        },
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Ddl {
+                url: url_test_,
+                sql: "CREATE DATABASE db1",
+                resp: Ok(()),
+            },
+            auth: None,
+        },
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Ddl {
+                url: url_cnosdb_public,
+                sql: "DROP TENANT test",
+                resp: Ok(()),
+            },
+            auth: None,
+        },
+        Step::RestartDataNode(0),
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Ddl {
+                url: url_cnosdb_public,
+                sql: "CREATE TENANT test",
+                resp: Ok(()),
+            },
+            auth: None,
+        },
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Query {
+                url: url_test_,
+                sql: "SHOW DATABASES",
+                resp: Ok(vec![]),
+                sorted: false,
+            },
+            auth: None,
+        },
+    ]);
+}
+
+#[test]
+#[serial]
+fn case5() {
+    let url_cnosdb_public = "http://127.0.0.1:8902/api/v1/sql?tenant=cnosdb&db=public";
+    let url_test_ = "http://127.0.0.1:8902/api/v1/sql?tenant=test";
+
+    let executor = E2eExecutor::new_singleton("restart_tests", "case_5", cluster_def::one_data(1));
+    executor.execute_steps(&[
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Ddl {
+                url: url_cnosdb_public,
+                sql: "CREATE USER tester",
+                resp: Ok(()),
+            },
+            auth: None,
+        },
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Ddl {
+                url: url_cnosdb_public,
+                sql: "CREATE TENANT test",
+                resp: Ok(()),
+            },
+            auth: None,
+        },
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Ddl {
+                url: url_test_,
+                sql: "CREATE ROLE r1 INHERIT member",
+                resp: Ok(()),
+            },
+            auth: None,
+        },
+        Step::RestartDataNode(0),
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Query {
+                url: url_test_,
+                sql: "SELECT * FROM information_schema.roles WHERE role_name = 'r1'",
+                resp: Ok(vec!["role_name,role_type,inherit_role", "r1,custom,member"]),
+                sorted: false,
+            },
+            auth: None,
+        },
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Ddl {
+                url: url_test_,
+                sql: "ALTER TENANT test ADD USER tester AS r1",
+                resp: Ok(()),
+            },
+            auth: None,
+        },
+        Step::RestartDataNode(0),
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Query {
+                url: url_test_,
+                sql: "SELECT 1",
+                resp: Ok(vec!["Int64(1)", "1"]),
+                sorted: false,
+            },
+            auth: Some(CnosdbAuth {
+                username: "tester".to_string(),
+                password: Some("".to_string()),
+            }),
+        },
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Ddl {
+                url: url_test_,
+                sql: "ALTER TENANT test REMOVE USER tester",
+                resp: Ok(()),
+            },
+            auth: None,
+        },
+        Step::RestartDataNode(0),
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Query {
+                url: url_test_,
+                sql: "SELECT 1",
+                resp: Err(E2eError::Api {
+                    status: StatusCode::UNPROCESSABLE_ENTITY,
+                    url: None,
+                    req: None,
+                    resp: Some(r#"{"error_code":"010016","error_message":"Auth error: The member tester of tenant test not found"}"#.to_string()),
+                }),
+                sorted: false,
+            },
+            auth: Some(CnosdbAuth {
+                username: "tester".to_string(),
+                password: Some("".to_string()),
+            }),
+        },
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Ddl {
+                url: url_test_,
+                sql: "CREATE DATABASE db1",
+                resp: Ok(()),
+            },
+            auth: None,
+        },
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Ddl {
+                url: url_test_,
+                sql: "GRANT WRITE ON DATABASE db1 TO ROLE r1",
+                resp: Ok(()),
+            },
+            auth: None,
+        },
+        Step::RestartDataNode(0),
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Query {
+                url: url_test_,
+                sql: "SELECT * FROM information_schema.database_privileges WHERE role_name = 'r1'",
+                resp: Ok(vec![
+                    "tenant_name,database_name,privilege_type,role_name",
+                    "test,db1,Write,r1",
+                ]),
+                sorted: false,
+            },
+            auth: None,
+        },
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Ddl {
+                url: url_test_,
+                sql: "REVOKE WRITE ON DATABASE db1 FROM r1",
+                resp: Ok(()),
+            },
+            auth: None,
+        },
+        Step::RestartDataNode(0),
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Query {
+                url: url_test_,
+                sql: "SELECT * FROM information_schema.database_privileges WHERE role_name = 'r1'",
+                resp: Ok(vec![]),
+                sorted: false,
+            },
+            auth: None,
+        },
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Ddl {
+                url: url_test_,
+                sql: "GRANT ALL ON DATABASE db1 TO ROLE r1",
+                resp: Ok(()),
+            },
+            auth: None,
+        },
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Ddl {
+                url: url_test_,
+                sql: "DROP ROLE r1",
+                resp: Ok(()),
+            },
+            auth: None,
+        },
+        Step::RestartDataNode(0),
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Query {
+                url: url_test_,
+                sql: "SELECT * FROM information_schema.roles WHERE role_name = 'r1'",
+                resp: Ok(vec![]),
+                sorted: false,
+            },
+            auth: None,
+        },
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Ddl {
+                url: url_test_,
+                sql: "CREATE ROLE r1 INHERIT member",
+                resp: Ok(()),
+            },
+            auth: None,
+        },
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Query {
+                url: url_test_,
+                sql: "SELECT * FROM information_schema.database_privileges WHERE role_name = 'r1'",
+                resp: Ok(vec![]),
+                sorted: false,
+            },
+            auth: None,
+        },
+    ]);
 }

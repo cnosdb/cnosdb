@@ -1,23 +1,68 @@
 #![allow(dead_code)]
 
+use core::panic;
 use std::collections::HashMap;
-use std::ffi::OsStr;
-use std::fmt::{self, Display, Formatter};
+use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
-use std::{fs, thread};
+use std::thread;
+use std::time::Duration;
 
+use config::Config as CnosdbConfig;
 use meta::client::MetaHttpClient;
-use regex::Regex;
-use reqwest::blocking::{ClientBuilder, Response};
-use reqwest::{Certificate, IntoUrl};
-use sysinfo::{ProcessExt, System, SystemExt};
+use meta::store::config::Opt as MetaStoreConfig;
+use reqwest::blocking::{ClientBuilder, Request, RequestBuilder, Response};
+use reqwest::{Certificate, IntoUrl, Method, StatusCode};
+use sysinfo::{ProcessExt, ProcessRefreshKind, RefreshKind, System, SystemExt};
 use tokio::runtime::Runtime;
 
+use crate::cluster_def::{
+    CnosdbClusterDefinition, DataNodeDefinition, DeploymentMode, MetaNodeDefinition,
+};
 use crate::{E2eError, E2eResult};
 
+pub const CRATE_DIR: &str = env!("CARGO_MANIFEST_DIR");
+
+pub fn get_workspace_dir() -> PathBuf {
+    let crate_dir = std::path::PathBuf::from(CRATE_DIR);
+    crate_dir
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or(crate_dir)
+}
+
+#[macro_export]
+macro_rules! headers {
+    ($($k:expr => $v:expr),*) => {
+        {
+            let mut m = reqwest::header::HeaderMap::new();
+            $(
+                m.insert(
+                    reqwest::header::HeaderName::from_static($k),
+                    reqwest::header::HeaderValue::from_static($v),
+                );
+            )*
+            m
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! assert_response_is_ok {
+    ($resp:expr) => {
+        assert_eq!(
+            reqwest::StatusCode::OK,
+            $resp.status(),
+            "{}",
+            $resp
+                .text()
+                .unwrap_or_else(|e| format!("failed to fetch response: {e}"))
+        );
+    };
+}
+
+#[derive(Debug, Clone)]
 pub struct Client {
     inner: reqwest::blocking::Client,
     user: String,
@@ -25,7 +70,18 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn new(user: String, password: Option<String>) -> Self {
+    pub fn new() -> Self {
+        let inner = ClientBuilder::new().build().unwrap_or_else(|e| {
+            panic!("Failed to build http client: {}", e);
+        });
+        Self {
+            inner,
+            user: String::new(),
+            password: None,
+        }
+    }
+
+    pub fn with_auth(user: String, password: Option<String>) -> Self {
         let inner = ClientBuilder::new().build().unwrap_or_else(|e| {
             panic!("Failed to build http client: {}", e);
         });
@@ -36,147 +92,366 @@ impl Client {
         }
     }
 
-    pub fn no_auth() -> Self {
-        let inner = ClientBuilder::new().build().unwrap_or_else(|e| {
-            panic!("Failed to build http client: {}", e);
-        });
-        Self {
-            inner,
-            user: String::new(),
-            password: None,
-        }
-    }
-
-    pub fn tls_client(crt_path: &Path) -> Self {
+    pub fn with_auth_and_tls(
+        user: String,
+        password: Option<String>,
+        crt_path: impl AsRef<Path>,
+    ) -> Self {
         let cert_bytes = std::fs::read(crt_path).expect("fail to read crt file");
         let cert = Certificate::from_pem(&cert_bytes).expect("fail to load crt file");
         let inner = ClientBuilder::new()
             .add_root_certificate(cert)
             .build()
             .unwrap_or_else(|e| {
-                panic!("Failed to build http client: {}", e);
+                panic!("Failed to build http client with tls: {}", e);
             });
         Self {
             inner,
-            user: String::new(),
-            password: None,
+            user,
+            password,
         }
     }
 
-    fn do_post(
+    pub fn user(&self) -> &str {
+        self.user.as_str()
+    }
+
+    pub fn password(&self) -> Option<&str> {
+        self.password.as_deref()
+    }
+
+    pub fn auth(&self) -> String {
+        format!("{}:{}", self.user, self.password.as_deref().unwrap_or(""))
+    }
+
+    /// Returns request builder with method and url.
+    pub fn request(&self, method: Method, url: impl IntoUrl) -> RequestBuilder {
+        self.inner.request(method, url)
+    }
+
+    /// Returns request builder with method and url, and basic_auth header if user is not empty.
+    pub fn request_with_auth(&self, method: Method, url: impl IntoUrl) -> RequestBuilder {
+        let mut req_builder = self.inner.request(method, url);
+        if !self.user.is_empty() {
+            req_builder = req_builder.basic_auth(&self.user, self.password.as_ref());
+        }
+        req_builder
+    }
+
+    pub fn execute(&self, request: Request) -> E2eResult<Response> {
+        self.inner
+            .execute(request)
+            .map_err(|e| E2eError::Connect(format!("HTTP execute failed: {e}")))
+    }
+
+    pub fn send<U: IntoUrl + std::fmt::Display>(
         &self,
-        url: impl IntoUrl,
+        method: Method,
+        url: U,
         body: &str,
-        json: bool,
-        accept_json: bool,
+        content_encoding: Option<&str>,
+        accept_encoding: Option<&str>,
     ) -> E2eResult<Response> {
-        let url_str = url.as_str().to_string();
-        let mut req_builder = self.inner.post(url);
-        if !self.user.is_empty() {
-            req_builder = req_builder.basic_auth(&self.user, self.password.as_ref());
+        let url_str = format!("{url}");
+        let mut req_builder = self.request_with_auth(method, url);
+        if let Some(encoding) = content_encoding {
+            req_builder = req_builder.header(reqwest::header::CONTENT_ENCODING, encoding);
         }
-        if json && accept_json {
-            req_builder = req_builder.headers({
-                let mut m = reqwest::header::HeaderMap::new();
-                m.insert(
-                    reqwest::header::CONTENT_TYPE,
-                    reqwest::header::HeaderValue::from_static("application/json"),
-                );
-                m.insert(
-                    reqwest::header::ACCEPT,
-                    reqwest::header::HeaderValue::from_static("application/json"),
-                );
-                m
-            });
-        } else if json {
-            req_builder = req_builder.header(reqwest::header::CONTENT_TYPE, "application/json");
-        } else if accept_json {
-            req_builder = req_builder.header(reqwest::header::ACCEPT, "application/json");
+        if let Some(encoding) = accept_encoding {
+            req_builder = req_builder.header(reqwest::header::CONTENT_ENCODING, encoding);
         }
         if !body.is_empty() {
             req_builder = req_builder.body(body.to_string());
         }
+
         match req_builder.send() {
             Ok(r) => Ok(r),
-            Err(e) => {
-                let msg = format!("HTTP post failed: '{url_str}', '{body}': {e}");
-                Err(E2eError::Http(msg))
-            }
+            Err(e) => Err(Self::map_reqwest_err(e, url_str.as_str(), body)),
         }
     }
 
-    pub fn post(&self, url: impl IntoUrl, body: &str) -> E2eResult<Response> {
-        self.do_post(url, body, false, false)
+    pub fn map_reqwest_err(e: reqwest::Error, url: &str, req: &str) -> E2eError {
+        let msg = format!("HTTP request failed: url: '{url}', req: '{req}', error: {e}");
+        E2eError::Connect(msg)
     }
 
-    pub fn post_json(&self, url: impl IntoUrl, body: &str) -> E2eResult<Response> {
-        self.do_post(url, body, true, false)
+    pub fn map_reqwest_resp_err(resp: Response, url: &str, req: &str) -> E2eError {
+        let status = resp.status();
+        match resp.text() {
+            Ok(resp_msg) => E2eError::Api {
+                status,
+                url: Some(url.to_string()),
+                req: Some(req.to_string()),
+                resp: Some(resp_msg),
+            },
+            Err(e) => E2eError::Http {
+                status,
+                url: Some(url.to_string()),
+                req: Some(req.to_string()),
+                err: Some(e.to_string()),
+            },
+        }
     }
 
-    pub fn post_accept_json(&self, url: impl IntoUrl, body: &str) -> E2eResult<Response> {
-        self.do_post(url, body, true, true)
+    pub fn get<U: IntoUrl + std::fmt::Display>(&self, url: U, body: &str) -> E2eResult<Response> {
+        self.send(Method::GET, url, body, None, None)
     }
 
-    pub fn get(&self, url: &str, body: &str) -> E2eResult<Response> {
-        let mut req_builder = self.inner.get(url);
-        if !self.user.is_empty() {
-            req_builder = req_builder.basic_auth(&self.user, self.password.as_ref());
+    pub fn post<U: IntoUrl + std::fmt::Display>(&self, url: U, body: &str) -> E2eResult<Response> {
+        self.send(Method::POST, url, body, None, None)
+    }
+
+    pub fn post_json<U: IntoUrl + std::fmt::Display>(
+        &self,
+        url: U,
+        body: &str,
+    ) -> E2eResult<Response> {
+        self.send(Method::POST, url, body, Some("application/json"), None)
+    }
+
+    pub fn put<U: IntoUrl + std::fmt::Display>(&self, url: U, body: &str) -> E2eResult<Response> {
+        self.send(Method::PUT, url, body, None, None)
+    }
+
+    pub fn delete<U: IntoUrl + std::fmt::Display>(
+        &self,
+        url: U,
+        body: &str,
+    ) -> E2eResult<Response> {
+        self.send(Method::DELETE, url, body, None, None)
+    }
+
+    pub fn head<U: IntoUrl + std::fmt::Display>(&self, url: U, body: &str) -> E2eResult<Response> {
+        self.send(Method::HEAD, url, body, None, None)
+    }
+
+    pub fn options<U: IntoUrl + std::fmt::Display>(
+        &self,
+        url: U,
+        body: &str,
+    ) -> E2eResult<Response> {
+        self.send(Method::OPTIONS, url, body, None, None)
+    }
+
+    pub fn connect<U: IntoUrl + std::fmt::Display>(
+        &self,
+        url: U,
+        body: &str,
+    ) -> E2eResult<Response> {
+        self.send(Method::CONNECT, url, body, None, None)
+    }
+
+    pub fn patch<U: IntoUrl + std::fmt::Display>(&self, url: U, body: &str) -> E2eResult<Response> {
+        self.send(Method::PATCH, url, body, None, None)
+    }
+
+    pub fn trace<U: IntoUrl + std::fmt::Display>(&self, url: U, body: &str) -> E2eResult<Response> {
+        self.send(Method::TRACE, url, body, None, None)
+    }
+
+    pub fn api_v1_sql<U: IntoUrl + std::fmt::Display>(
+        &self,
+        url: U,
+        sql: &str,
+    ) -> E2eResult<Vec<String>> {
+        let url_str = format!("{url}");
+        let resp = self.post(url, sql)?;
+        if resp.status() != StatusCode::OK {
+            return Err(Client::map_reqwest_resp_err(resp, &url_str, sql));
         }
-        if !body.is_empty() {
-            req_builder = req_builder.body(body.to_string());
+        Ok(resp
+            .text()
+            .map_err(|e| Client::map_reqwest_err(e, &url_str, sql))?
+            .trim()
+            .split_terminator('\n')
+            .map(|s| s.to_owned())
+            .collect::<Vec<_>>())
+    }
+
+    pub fn api_v1_write<U: IntoUrl + std::fmt::Display>(
+        &self,
+        url: U,
+        req: &str,
+    ) -> E2eResult<Vec<String>> {
+        let url_str = format!("{url}");
+        let resp = self.post(url, req)?;
+        if resp.status() != StatusCode::OK {
+            return Err(Client::map_reqwest_resp_err(resp, &url_str, req));
         }
-        match req_builder.send() {
-            Ok(r) => Ok(r),
-            Err(e) => {
-                let msg = format!("HTTP get failed: '{url}', '{body}': {e}");
-                Err(E2eError::Http(msg))
-            }
-        }
+        Ok(resp
+            .text()
+            .map_err(|e| Client::map_reqwest_err(e, &url_str, req))?
+            .trim()
+            .split_terminator('\n')
+            .map(|s| s.to_owned())
+            .collect::<Vec<_>>())
     }
 }
 
-pub struct CnosDBMeta {
-    pub(crate) runtime: Arc<Runtime>,
-    pub(crate) workspace: PathBuf,
-    pub(crate) last_build: Option<Instant>,
-    pub(crate) exe_path: PathBuf,
-    pub(crate) config_path: PathBuf,
-    pub(crate) client: Arc<Client>,
-    pub(crate) meta_client: Arc<MetaHttpClient>,
-    pub(crate) sub_processes: HashMap<String, Child>,
+#[test]
+#[ignore]
+fn test_reqwest_https() {
+    let workspace_dir = get_workspace_dir();
+    let ca_crt_path = workspace_dir.join("config").join("tls").join("ca.crt");
+    let cert_bytes = std::fs::read(ca_crt_path).expect("fail to read crt file");
+    let cert = Certificate::from_pem(&cert_bytes).expect("fail to load crt file");
+    let client = ClientBuilder::new()
+        .add_root_certificate(cert)
+        .build()
+        .unwrap_or_else(|e| {
+            panic!("Failed to build http client with tls: {}", e);
+        });
+
+    let resp = client
+        .get("https://127.0.0.1:8902/api/v1/ping")
+        .send()
+        .unwrap();
+    assert_response_is_ok!(resp);
+    println!("{}", resp.text().unwrap());
 }
 
-impl CnosDBMeta {
-    pub fn new(runtime: Arc<Runtime>, workspace_dir: impl AsRef<Path>) -> Self {
-        let workspace = workspace_dir.as_ref().to_path_buf();
+#[test]
+#[ignore]
+fn test_reqwest_http() {
+    let client = ClientBuilder::new()
+        .timeout(Duration::from_secs(70))
+        .build()
+        .unwrap_or_else(|e| {
+            panic!("Failed to build http client: {}", e);
+        });
+
+    let resp = client
+        .get("http://127.0.0.1:8902/api/v1/ping")
+        .send()
+        .unwrap();
+    assert_response_is_ok!(resp);
+    println!("{}", resp.text().unwrap());
+
+    let resp = client
+        .post("http://127.0.0.1:8902/api/v1/sql?db=public")
+        .basic_auth("root", Option::<&str>::None)
+        .body("show databases")
+        .send()
+        .unwrap();
+    assert_response_is_ok!(resp);
+    println!("{}", resp.text().unwrap());
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_http_protocol_client() {
+    let client =
+        http_protocol::http_client::HttpClient::new("127.0.0.1", 8902, false, false, &[]).unwrap();
+    let resp = client
+        .post("/api/v1/sql")
+        .query(&[("db", "public")])
+        .basic_auth("root", Option::<&str>::None)
+        .header("Accept-Encoding", "*")
+        .body("show databases")
+        .send()
+        .await
+        .unwrap();
+    println!("{}", resp.text().await.unwrap());
+}
+
+fn cargo_build_cnosdb_meta(workspace_dir: impl AsRef<Path>) {
+    let workspace_dir = workspace_dir.as_ref();
+    println!("- Building 'meta' at '{}'", workspace_dir.display());
+    let mut cargo_build = Command::new("cargo");
+    let output = cargo_build
+        .current_dir(workspace_dir)
+        .args(["build", "--package", "meta", "--bin", "cnosdb-meta"])
+        .output()
+        .expect("failed to execute cargo build");
+    if !output.status.success() {
+        let message = format!(
+            "Failed to build cnosdb-meta: stdout: {}, stderr: {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        panic!("Failed to build cnosdb-meta: {message}");
+    }
+    println!("- Build 'meta' at '{}' completed", workspace_dir.display());
+}
+
+fn cargo_build_cnosdb_data(workspace_dir: impl AsRef<Path>) {
+    let workspace_dir = workspace_dir.as_ref();
+    println!("Building 'main' at '{}'", workspace_dir.display());
+    let mut cargo_build = Command::new("cargo");
+    let output = cargo_build
+        .current_dir(workspace_dir)
+        .args(["build", "--package", "main", "--bin", "cnosdb"])
+        .output()
+        .expect("failed to execute cargo build");
+    if !output.status.success() {
+        let message = format!(
+            "Failed to build cnosdb: stdout: {}, stderr: {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        panic!("Failed to build cnosdb-meta: {message}");
+    }
+    println!("Build 'main' at '{}' completed", workspace_dir.display());
+}
+
+pub struct CnosdbMetaTestHelper {
+    pub runtime: Arc<Runtime>,
+    pub workspace_dir: PathBuf,
+    /// The meta test dir, usually /e2e_test/$mod/$test/meta
+    pub test_dir: PathBuf,
+    pub meta_node_definitions: Vec<MetaNodeDefinition>,
+    pub exe_path: PathBuf,
+
+    pub client: Arc<Client>,
+    pub meta_client: Arc<MetaHttpClient>,
+    pub sub_processes: HashMap<String, Child>,
+}
+
+impl CnosdbMetaTestHelper {
+    pub fn new(
+        runtime: Arc<Runtime>,
+        workspace_dir: impl AsRef<Path>,
+        test_base_dir: impl AsRef<Path>,
+        meta_node_definitions: Vec<MetaNodeDefinition>,
+    ) -> Self {
+        let workspace_dir = workspace_dir.as_ref().to_path_buf();
         Self {
             runtime,
-            workspace: workspace.clone(),
-            last_build: None,
-            exe_path: workspace.join("target").join("debug").join("cnosdb-meta"),
-            config_path: workspace.join("meta").join("config"),
-            client: Arc::new(Client::no_auth()),
+            workspace_dir: workspace_dir.clone(),
+            test_dir: test_base_dir.as_ref().to_path_buf(),
+            meta_node_definitions,
+            exe_path: workspace_dir
+                .join("target")
+                .join("debug")
+                .join("cnosdb-meta"),
+            client: Arc::new(Client::new()),
             meta_client: Arc::new(MetaHttpClient::new("127.0.0.1:8901")),
             sub_processes: HashMap::with_capacity(3),
         }
     }
 
     pub fn run_single_meta(&mut self) {
-        println!("Running cnosdb-meta at '{}'", self.workspace.display());
-        println!("- Building cnosdb-meta...");
-        self.build();
-        println!("- Running cnosdb-meta with config 'config_8901.toml'");
-        self.execute("config_8901.toml");
+        println!("Running cnosdb-meta at '{}'", self.workspace_dir.display());
+        if self.meta_node_definitions.is_empty() {
+            panic!("At least 1 meta configs are needed to run singleton");
+        }
+        let node_def = self.meta_node_definitions[0].clone();
+        println!(
+            "- Running cnosdb-meta with config '{}'",
+            &node_def.config_file_name
+        );
+        let proc = self.execute(&node_def);
+        self.sub_processes.insert(node_def.config_file_name, proc);
         thread::sleep(Duration::from_secs(3));
 
         println!("- Init cnosdb-meta ...");
-        let master = "http://127.0.0.1:8901";
+        let master_host = format!("http://{}", &self.meta_node_definitions[0].host_port);
         self.client
-            .post_json(format!("{master}/init").as_str(), "{}")
+            .post_json(format!("{master_host}/init").as_str(), "{}")
             .unwrap();
         thread::sleep(Duration::from_secs(1));
         self.client
-            .post_json(format!("{master}/change-membership").as_str(), "[1]")
+            .post_json(format!("{master_host}/change-membership").as_str(), "[1]")
             .unwrap();
         thread::sleep(Duration::from_secs(1));
     }
@@ -184,42 +459,86 @@ impl CnosDBMeta {
     pub fn run_cluster(&mut self) {
         println!(
             "Running cnosdb-meta cluster at '{}'",
-            self.workspace.display()
+            self.workspace_dir.display()
         );
-        println!("- Building cnosdb-meta...");
-        self.build();
-        println!("- Running cnosdb-meta with config 'config_8901.toml'");
-        self.execute("config_8901.toml");
-        println!("- Running cnosdb-meta with config 'config_8911.toml'");
-        self.execute("config_8911.toml");
-        println!("- Running cnosdb-meta with config 'config_8921.toml'");
-        self.execute("config_8921.toml");
+        if self.meta_node_definitions.len() < 2 {
+            panic!("At least 2 meta configs are needed to run cluster");
+        }
+
+        let master_host = format!("http://{}", &self.meta_node_definitions[0].host_port);
+
+        let mut wait_startup_threads = Vec::with_capacity(self.meta_node_definitions.len());
+        for meta_node_def in self.meta_node_definitions.iter() {
+            println!(
+                "- Running cnosdb-meta with config '{}', host '{}",
+                meta_node_def.config_file_name, meta_node_def.host_port
+            );
+            let proc = self.execute(meta_node_def);
+            self.sub_processes
+                .insert(meta_node_def.config_file_name.clone(), proc);
+            wait_startup_threads.push(self.wait_startup(&meta_node_def.host_port));
+        }
         thread::sleep(Duration::from_secs(3));
+        for jh in wait_startup_threads {
+            jh.join().unwrap();
+        }
 
         println!("- Installing cnosdb-meta cluster...");
-        let master = "http://127.0.0.1:8901";
+        // Call $host/init for master node
         self.client
-            .post_json(format!("{master}/init").as_str(), "{}")
+            .post_json(format!("{master_host}/init").as_str(), "{}")
             .unwrap();
         thread::sleep(Duration::from_secs(1));
+
+        // Call $host/add-learner for all follower nodes
+        let mut all_node_ids = "[1".to_string();
+        for meta_node_def in self.meta_node_definitions.iter().skip(1) {
+            self.client
+                .post_json(
+                    format!("{master_host}/add-learner").as_str(),
+                    format!("[{}, \"{}\"]", meta_node_def.id, meta_node_def.host_port).as_str(),
+                )
+                .unwrap();
+            all_node_ids.push_str(format!(", {}", meta_node_def.id).as_str());
+            thread::sleep(Duration::from_secs(1));
+        }
+        all_node_ids.push(']');
+
+        // Call $host/change-membership
         self.client
             .post_json(
-                format!("{master}/add-learner").as_str(),
-                "[2, \"127.0.0.1:8911\"]",
+                format!("{master_host}/change-membership").as_str(),
+                all_node_ids.as_str(),
             )
             .unwrap();
         thread::sleep(Duration::from_secs(1));
-        self.client
-            .post_json(
-                format!("{master}/add-learner").as_str(),
-                "[3, \"127.0.0.1:8921\"]",
-            )
-            .unwrap();
-        thread::sleep(Duration::from_secs(1));
-        self.client
-            .post_json(format!("{master}/change-membership").as_str(), "[1, 2, 3]")
-            .unwrap();
-        thread::sleep(Duration::from_secs(1));
+    }
+
+    /// Wait cnosdb-meta startup by checking ping api in loop
+    pub fn wait_startup(&self, host: &str) -> thread::JoinHandle<()> {
+        let host = host.to_owned();
+        let test_api = format!("http://{host}/debug");
+        let startup_time = std::time::Instant::now();
+        let client = self.client.clone();
+        thread::spawn(move || {
+            let mut counter = 0;
+            loop {
+                thread::sleep(Duration::from_secs(3));
+                if let Err(e) = client.get(&test_api, "") {
+                    println!(
+                        "HTTP get '{test_api}' failed after {} seconds: {}",
+                        startup_time.elapsed().as_secs(),
+                        e
+                    );
+                } else {
+                    break;
+                }
+                counter += 1;
+                if counter == 30 {
+                    panic!("Test case failed, waiting too long for {host} to startup");
+                }
+            }
+        })
     }
 
     pub fn query(&self) -> String {
@@ -230,160 +549,103 @@ impl CnosDBMeta {
             .unwrap()
     }
 
-    fn build(&mut self) {
-        let mut cargo_build = Command::new("cargo");
-        let output = cargo_build
-            .current_dir(&self.workspace)
-            .args(["build", "--package", "meta", "--bin", "cnosdb-meta"])
-            .output()
-            .expect("failed to execute cargo build");
-        if !output.status.success() {
-            let message = format!(
-                "Failed to build cnosdb-meta: stdout: {}, stderr: {}",
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
-            );
-            panic!("Failed to build cnosdb-meta: {message}");
-        }
-        self.last_build = Some(Instant::now());
-    }
-
-    fn execute(&mut self, config_file: &str) {
-        let config_path = self.config_path.join(config_file);
-        let proc = Command::new(&self.exe_path)
-            .args([OsStr::new("-c"), config_path.as_os_str()])
+    fn execute(&self, node_def: &MetaNodeDefinition) -> Child {
+        let config_file_path = node_def.to_config_path(&self.test_dir);
+        println!(
+            "Executing {} -c {}",
+            self.exe_path.display(),
+            config_file_path.display()
+        );
+        Command::new(&self.exe_path)
+            .args([OsStr::new("-c"), config_file_path.as_os_str()])
             .stderr(Stdio::inherit())
             .stdout(Stdio::inherit())
             .spawn()
-            .expect("failed to execute cnosdb-meta");
-        self.sub_processes.insert(config_file.to_string(), proc);
+            .expect("failed to execute cnosdb-meta")
     }
 }
 
-impl Drop for CnosDBMeta {
+impl Drop for CnosdbMetaTestHelper {
     fn drop(&mut self) {
-        for (k, p) in self.sub_processes.iter_mut() {
-            if let Err(e) = p.kill() {
-                println!("Failed to kill cnosdb-meta ({k}) sub-process: {e}");
-            }
+        for (k, p) in self.sub_processes.drain() {
+            println!("Killing cnosdb-meta ({k}) sub_processes: {}", p.id());
+            kill_child_process(p, true);
         }
     }
 }
 
-pub enum CnosDBDataMode {
-    Query,
-    Tskv,
-    Bundle,
-    Singleton,
+pub struct CnosdbDataTestHelper {
+    pub workspace_dir: PathBuf,
+    /// The data test dir, usually /e2e_test/$mod/$test/data
+    pub test_dir: PathBuf,
+    pub data_node_definitions: Vec<DataNodeDefinition>,
+    pub exe_path: PathBuf,
+    pub enable_tls: bool,
+
+    pub client: Arc<Client>,
+    pub sub_processes: HashMap<String, (Child, DeploymentMode)>,
 }
 
-impl AsRef<OsStr> for CnosDBDataMode {
-    fn as_ref(&self) -> &OsStr {
-        match self {
-            CnosDBDataMode::Query => OsStr::new("query"),
-            CnosDBDataMode::Tskv => OsStr::new("tskv"),
-            CnosDBDataMode::Bundle => OsStr::new("bundle"),
-            CnosDBDataMode::Singleton => OsStr::new("singleton"),
-        }
-    }
-}
+impl CnosdbDataTestHelper {
+    pub fn new(
+        workspace_dir: impl AsRef<Path>,
+        test_dir: impl AsRef<Path>,
+        data_node_definitions: Vec<DataNodeDefinition>,
+        enable_tls: bool,
+    ) -> Self {
+        let workspace_dir = workspace_dir.as_ref().to_path_buf();
+        let client = if enable_tls {
+            let ca_crt_path = workspace_dir.join("config").join("tls").join("ca.crt");
+            Arc::new(Client::with_auth_and_tls(
+                "root".to_string(),
+                Some(String::new()),
+                ca_crt_path,
+            ))
+        } else {
+            Arc::new(Client::with_auth("root".to_string(), Some(String::new())))
+        };
 
-impl Display for CnosDBDataMode {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        match self {
-            CnosDBDataMode::Query => write!(f, "Query"),
-            CnosDBDataMode::Tskv => write!(f, "Tskv"),
-            CnosDBDataMode::Bundle => write!(f, "Bundle"),
-            CnosDBDataMode::Singleton => write!(f, "Singleton"),
-        }
-    }
-}
-
-pub struct CnosDBData {
-    pub(crate) workspace: PathBuf,
-    pub(crate) last_build: Option<Instant>,
-    pub(crate) exe_path: PathBuf,
-    pub(crate) config_path: PathBuf,
-    pub(crate) client: Arc<Client>,
-    pub(crate) sub_processes: HashMap<String, (Child, CnosDBDataMode)>,
-}
-
-impl CnosDBData {
-    pub fn new(workspace_dir: impl AsRef<Path>) -> Self {
-        let workspace = workspace_dir.as_ref().to_path_buf();
         Self {
-            workspace: workspace.clone(),
-            last_build: None,
-            exe_path: workspace.join("target").join("debug").join("cnosdb"),
-            config_path: workspace.join("config"),
-            client: Arc::new(Client::new("root".to_string(), Some(String::new()))),
+            workspace_dir: workspace_dir.clone(),
+            test_dir: test_dir.as_ref().to_path_buf(),
+            data_node_definitions,
+            exe_path: workspace_dir.join("target").join("debug").join("cnosdb"),
+            enable_tls,
+            client,
             sub_processes: HashMap::with_capacity(2),
         }
     }
 
-    pub fn with_config_path(workspace_dir: impl AsRef<Path>, config_path: PathBuf) -> Self {
-        let workspace = workspace_dir.as_ref().to_path_buf();
-        Self {
-            workspace: workspace.clone(),
-            last_build: None,
-            exe_path: workspace.join("target").join("debug").join("cnosdb"),
-            config_path,
-            client: Arc::new(Client::new("root".to_string(), Some(String::new()))),
-            sub_processes: HashMap::with_capacity(2),
-        }
-    }
-
-    pub fn run(&mut self, mode: CnosDBDataMode, config_file: &str, http_addr: &str) {
-        println!("Runing cnosdb at '{}'", self.workspace.display());
-        println!("- Building cnosdb");
-        self.build();
-        println!("- Running cnosdb with config '{config_file}', deploy mode {mode}");
-        self.execute(config_file, mode);
-
-        let jh = self.wait_startup(http_addr);
-        jh.join().unwrap();
-    }
-
-    fn build(&mut self) {
-        let mut cargo_build = Command::new("cargo");
-        let output = cargo_build
-            .current_dir(&self.workspace)
-            .args(["build", "--package", "main", "--bin", "cnosdb"])
-            .output()
-            .expect("failed to execute cargo build");
-        if !output.status.success() {
-            let message = format!(
-                "Failed to build cnosdb: stdout: {}, stderr: {}",
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
+    pub fn run(&mut self) {
+        println!("Running cnosdb at '{}'", self.workspace_dir.display());
+        let node_definitions = self.data_node_definitions.clone();
+        let mut wait_startup_threads = Vec::with_capacity(self.data_node_definitions.len());
+        for data_node_def in node_definitions {
+            println!(" - cnosdb '{}' starting", &data_node_def.http_host_port);
+            let proc = self.execute(&data_node_def);
+            self.sub_processes.insert(
+                data_node_def.config_file_name.clone(),
+                (proc, data_node_def.mode),
             );
-            panic!("Failed to build cnosdb-meta: {message}");
-        }
-        self.last_build = Some(Instant::now());
-    }
 
-    fn execute(&mut self, config_file: &str, mode: CnosDBDataMode) {
-        let config_path = self.config_path.join(config_file);
-        let proc = Command::new(&self.exe_path)
-            .args([
-                OsStr::new("run"),
-                OsStr::new("--config"),
-                config_path.as_os_str(),
-                OsStr::new("-M"),
-                mode.as_ref(),
-            ])
-            .stderr(Stdio::inherit())
-            .stdout(Stdio::inherit())
-            .spawn()
-            .expect("failed to execute cnosdb");
-        self.sub_processes
-            .insert(config_file.to_string(), (proc, mode));
+            let jh = self.wait_startup(&data_node_def.http_host_port);
+            wait_startup_threads.push((jh, data_node_def.http_host_port.clone()));
+        }
+        thread::sleep(Duration::from_secs(5));
+        for (jh, addr) in wait_startup_threads {
+            jh.join().unwrap();
+            println!(" - cnosdb '{addr}' started");
+        }
+        thread::sleep(Duration::from_secs(1));
     }
 
     /// Wait cnosdb startup by checking ping api in loop
-    pub fn wait_startup(&self, host: &str) -> thread::JoinHandle<()> {
-        let host = host.to_owned();
-        let ping_api = format!("http://{host}/api/v1/ping");
+    pub fn wait_startup(&self, host_port: &str) -> thread::JoinHandle<()> {
+        let host = host_port.to_owned();
+        let ping_api = format!(
+            "{}://{host}/api/v1/ping",
+            if self.enable_tls { "https" } else { "http" }
+        );
         let startup_time = std::time::Instant::now();
         let client = self.client.clone();
         thread::spawn(move || {
@@ -407,352 +669,480 @@ impl CnosDBData {
         })
     }
 
-    // /// Wait all data node healthy
-    // pub fn wait_healthy(&self, host: &str) {
-    //     let show_datanodes_api = format!("http://{host}/api/v1/sql?db=public");
-    //     let startup_time = std::time::Instant::now();
-    //     let client = self.client.clone();
-    //     let mut counter = 0;
-    //     loop {
-    //         thread::sleep(Duration::from_secs(3));
-    //         match client.post_accept_json(&show_datanodes_api, "show datanodes") {
-    //             Err(e) => {
-    //                 println!(
-    //                     "HTTP post '{show_datanodes_api}' failed after {} seconds: {}",
-    //                     startup_time.elapsed().as_secs(),
-    //                     e
-    //                 );
-    //             }
-    //             Ok(resp) => {
-    //                 let text = resp.text().unwrap();
-    //                 if text.match_indices("HEALTHY").count() == self.sub_processes.len() {
-    //                     break;
-    //                 } else {
-    //                     println!("Waiting for all nodes to be healthy")
-    //                 }
-    //             }
-    //         }
-    //         counter += 1;
-    //         if counter == 30 {
-    //             println!("Test case failed, waiting too long for cluster to be healthy");
-    //         }
-    //     }
-    // }
-
-    pub fn restart(&mut self, config_file: &str, http_addr: &str) {
-        let (proc, mode) = self
-            .sub_processes
-            .get_mut(config_file)
-            .unwrap_or_else(|| panic!("No data node created with {}", config_file));
-        if let Err(e) = proc.kill() {
-            println!("Failed to kill cnosdb ({config_file}) sub-process: {e}");
-        }
-        proc.wait().unwrap();
-        let new_proc = Command::new(&self.exe_path)
-            .args([
-                OsStr::new("run"),
-                OsStr::new("--config"),
-                self.config_path.join(config_file).as_os_str(),
-                OsStr::new("-M"),
-                mode.as_ref(),
-            ])
-            .stderr(Stdio::inherit())
-            .stdout(Stdio::inherit())
-            .spawn()
-            .expect("failed to execute cnosdb");
-        *proc = new_proc;
-        let jh = self.wait_startup(http_addr);
-        jh.join().unwrap();
-    }
-
-    pub fn kill_process(&mut self, config_file: &str) {
+    pub fn restart_one_node(&mut self, node_def: &DataNodeDefinition) {
         let (proc, _) = self
             .sub_processes
-            .get_mut(config_file)
-            .unwrap_or_else(|| panic!("No data node created with {}", config_file));
-        if let Err(e) = proc.kill() {
-            println!("Failed to kill cnosdb ({config_file}) sub-process: {e}");
-        }
-        proc.wait().unwrap();
+            .remove(&node_def.config_file_name)
+            .unwrap_or_else(|| panic!("No data node created with {}", &node_def.config_file_name));
+        kill_child_process(proc, false);
 
-        self.sub_processes.remove(config_file);
+        let new_proc = self.execute(node_def);
+        self.sub_processes
+            .insert(node_def.config_file_name.clone(), (new_proc, node_def.mode));
+
+        let jh = self.wait_startup(&node_def.http_host_port);
+        jh.join().unwrap();
     }
 
-    pub fn start_process(&mut self, config_file: &str, mode: CnosDBDataMode) {
+    pub fn stop_one_node(&mut self, config_file_name: &str, force: bool) {
+        let (proc, _) = self
+            .sub_processes
+            .remove(config_file_name)
+            .unwrap_or_else(|| panic!("No data node created with {}", config_file_name));
+        kill_child_process(proc, force);
+    }
+
+    pub fn start_one_node(&mut self, node_def: &DataNodeDefinition) {
+        let config_path = node_def.to_config_path(&self.test_dir);
         let new_proc = Command::new(&self.exe_path)
             .args([
                 OsStr::new("run"),
                 OsStr::new("--config"),
-                self.config_path.join(config_file).as_os_str(),
+                config_path.as_os_str(),
                 OsStr::new("-M"),
-                mode.as_ref(),
+                &OsString::from(node_def.mode.to_string()),
             ])
             .stderr(Stdio::inherit())
             .stdout(Stdio::inherit())
             .spawn()
             .expect("failed to execute cnosdb");
-        self.sub_processes
-            .insert(config_file.to_string(), (new_proc, mode));
-        let jh = self.wait_startup(&format!("127.0.0.1:{}", &config_file[7..11]));
+        self.sub_processes.insert(
+            node_def.config_file_name.to_string(),
+            (new_proc, node_def.mode),
+        );
+        let jh = self.wait_startup(&node_def.http_host_port);
         jh.join().unwrap();
     }
+
+    fn execute(&self, node_def: &DataNodeDefinition) -> Child {
+        let config_path = node_def.to_config_path(&self.test_dir);
+        println!(
+            "Executing {} run --config {} -M {}",
+            self.exe_path.display(),
+            config_path.display(),
+            node_def.mode,
+        );
+        Command::new(&self.exe_path)
+            .args([
+                OsStr::new("run"),
+                OsStr::new("--config"),
+                config_path.as_os_str(),
+                OsStr::new("-M"),
+                OsString::from(node_def.mode.to_string()).as_os_str(),
+            ])
+            .stderr(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .spawn()
+            .expect("failed to execute cnosdb")
+    }
 }
 
-impl Drop for CnosDBData {
+impl Drop for CnosdbDataTestHelper {
     fn drop(&mut self) {
-        for (k, (p, _)) in self.sub_processes.iter_mut() {
-            if let Err(e) = p.kill() {
-                println!("Failed to kill cnosdb ({k}) sub-process: {e}");
-            }
+        for (k, (p, _)) in self.sub_processes.drain() {
+            println!("Killing cnosdb ({k}) sub_processes: {}", p.id());
+            kill_child_process(p, true);
         }
     }
 }
 
-/// Start the cnosdb bundle cluster
-pub fn start_bundle_cluster(
+/// Run CnosDB cluster.
+///
+/// - Meta server directory: $test_dir/meta
+/// - Data server directory: $test_dir/data
+pub fn run_cluster(
+    test_dir: impl AsRef<Path>,
     runtime: Arc<Runtime>,
-    meta_num: u32,
-    bundle_num: u32,
-) -> (CnosDBMeta, CnosDBData) {
-    let crate_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let workspace_dir = crate_dir.parent().unwrap();
-    let mut meta = CnosDBMeta::new(runtime, workspace_dir);
-    let mut data = CnosDBData::new(workspace_dir);
-    match (meta_num, bundle_num) {
-        (1, 2) => {
+    cluster_def: &CnosdbClusterDefinition,
+    generate_meta_config: bool,
+    generate_data_config: bool,
+) -> (Option<CnosdbMetaTestHelper>, Option<CnosdbDataTestHelper>) {
+    let test_dir = test_dir.as_ref().to_path_buf();
+    let workspace_dir = get_workspace_dir();
+    cargo_build_cnosdb_meta(&workspace_dir);
+    cargo_build_cnosdb_data(&workspace_dir);
+
+    let (mut meta_test_helper, mut data_test_helper) = (
+        Option::<CnosdbMetaTestHelper>::None,
+        Option::<CnosdbDataTestHelper>::None,
+    );
+
+    if !cluster_def.meta_cluster_def.is_empty() {
+        // If need to run `cnosdb-meta`
+        let meta_test_dir = test_dir.join("meta");
+        if generate_meta_config {
+            write_meta_node_config_files(&test_dir, &cluster_def.meta_cluster_def);
+        }
+        let mut meta = CnosdbMetaTestHelper::new(
+            runtime,
+            &workspace_dir,
+            meta_test_dir,
+            cluster_def.meta_cluster_def.clone(),
+        );
+        if cluster_def.meta_cluster_def.len() == 1 {
             meta.run_single_meta();
-            data.run(CnosDBDataMode::Bundle, "config_8902.toml", "127.0.0.1:8902");
-            data.run(CnosDBDataMode::Bundle, "config_8912.toml", "127.0.0.1:8912");
-        }
-        (1, 3) => {
-            meta.run_single_meta();
-            data.run(CnosDBDataMode::Bundle, "config_8902.toml", "127.0.0.1:8902");
-            data.run(CnosDBDataMode::Bundle, "config_8912.toml", "127.0.0.1:8912");
-            data.run(CnosDBDataMode::Bundle, "config_8922.toml", "127.0.0.1:8922");
-        }
-        (3, 2) => {
+        } else {
             meta.run_cluster();
-            data.run(CnosDBDataMode::Bundle, "config_8902.toml", "127.0.0.1:8902");
-            data.run(CnosDBDataMode::Bundle, "config_8912.toml", "127.0.0.1:8912");
         }
-        (3, 3) => {
-            meta.run_cluster();
-            data.run(CnosDBDataMode::Bundle, "config_8902.toml", "127.0.0.1:8902");
-            data.run(CnosDBDataMode::Bundle, "config_8912.toml", "127.0.0.1:8912");
-            data.run(CnosDBDataMode::Bundle, "config_8922.toml", "127.0.0.1:8922");
-        }
-        _ => panic!("unsupported cluster: meta_num: {meta_num}, bundle_num: {bundle_num}"),
+        meta_test_helper = Some(meta);
     }
-    (meta, data)
+
+    thread::sleep(Duration::from_secs(1));
+
+    if !cluster_def.data_cluster_def.is_empty() {
+        // If need to run `cnosdb run`
+        let data_test_dir = test_dir.join("data");
+        if generate_data_config {
+            write_data_node_config_files(&test_dir, &cluster_def.data_cluster_def);
+        }
+        let mut data = CnosdbDataTestHelper::new(
+            workspace_dir,
+            data_test_dir,
+            cluster_def.data_cluster_def.clone(),
+            false,
+        );
+        data.run();
+        data_test_helper = Some(data);
+    }
+
+    (meta_test_helper, data_test_helper)
 }
 
-/// Start the cnosdb sepration cluster
-pub fn start_sepration_cluster(
-    runtime: Arc<Runtime>,
-    meta_num: u32,
-    query_num: u32,
-    tskv_num: u32,
-) -> (CnosDBMeta, CnosDBData) {
-    let crate_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let workspace_dir = crate_dir.parent().unwrap();
-    let mut meta = CnosDBMeta::new(runtime, workspace_dir);
-    let mut data = CnosDBData::new(workspace_dir);
-    match (meta_num, query_num, tskv_num) {
-        (1, 1, 1) => {
-            meta.run_single_meta();
-            data.run(CnosDBDataMode::Tskv, "config_8902.toml", "127.0.0.1:8902");
-            data.run(CnosDBDataMode::Query, "config_8912.toml", "127.0.0.1:8912");
-        }
-        (3, 1, 1) => {
-            meta.run_cluster();
-            data.run(CnosDBDataMode::Tskv, "config_8902.toml", "127.0.0.1:8902");
-            data.run(CnosDBDataMode::Query, "config_8912.toml", "127.0.0.1:8912");
-        }
-        _ => panic!("unsupported cluster: meta_num: {meta_num}, query_num: {query_num}, tskv_num: {tskv_num}"),
-    }
-    (meta, data)
-}
+/// Run CnosDB singleton.
+///
+/// - Data server directory: $test_dir
+pub fn run_singleton(
+    test_dir: impl AsRef<Path>,
+    data_node_definition: &DataNodeDefinition,
+    enable_tls: bool,
+    generate_data_config: bool,
+) -> CnosdbDataTestHelper {
+    let test_dir = test_dir.as_ref().to_path_buf();
+    let workspace_dir = get_workspace_dir();
+    cargo_build_cnosdb_data(&workspace_dir);
 
-/// Start the cnosdb singleton
-pub fn start_singleton(config_file: &str, http_addr: &str) -> CnosDBData {
-    let crate_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let workspace_dir = crate_dir.parent().unwrap();
-    let mut data = CnosDBData::new(workspace_dir);
-    data.run(CnosDBDataMode::Singleton, config_file, http_addr);
+    let data_test_dir = test_dir.join("data");
+
+    let mut data_node_definition = data_node_definition.clone();
+    data_node_definition.mode = DeploymentMode::Singleton;
+    let data_node_definitions = vec![data_node_definition];
+    if generate_data_config {
+        write_data_node_config_files(&test_dir, &data_node_definitions);
+    }
+    let mut data = CnosdbDataTestHelper::new(
+        workspace_dir,
+        data_test_dir,
+        data_node_definitions,
+        enable_tls,
+    );
+    data.run();
     data
 }
 
-/// Clean test environment.
-///
-/// 1. Kill all 'cnosdb' and 'cnosdb-meta' process,
-/// 2. Remove directory '/tmp/cnosdb'.
-pub fn clean_env() {
-    println!("Cleaning environment...");
+/// Kill all 'cnosdb' and 'cnosdb-meta' process with signal 'KILL(9)'.
+pub fn kill_all() {
+    println!("Killing all test processes...");
     kill_process("cnosdb");
     kill_process("cnosdb-meta");
-    println!(" - Removing directory '/tmp/cnosdb'");
-    let _ = std::fs::remove_dir_all("/tmp/cnosdb");
-    println!("Clean environment completed.");
+    println!("Killed all test processes.");
 }
 
-/// Kill all processes with specified process name.
+/// Kill all processes with specified process name with signal 'KILL(9)'.
 pub fn kill_process(process_name: &str) {
     println!("- Killing processes {process_name}...");
-    let system = System::new_all();
+    let system =
+        System::new_with_specifics(RefreshKind::new().with_processes(ProcessRefreshKind::new()));
     for (pid, process) in system.processes() {
         if process.name() == process_name {
-            let output = Command::new("kill")
-                .args(["-9", &(pid.to_string())])
-                .output()
-                .expect("failed to execute kill");
-            if !output.status.success() {
-                println!(" - failed killing process {} ('{}')", pid, process.name());
+            match process.kill_with(sysinfo::Signal::Kill) {
+                Some(true) => println!("- Killed process {pid} ('{}')", process.name()),
+                Some(false) => println!("- Failed killing process {pid} ('{}')", process.name()),
+                None => println!("- Kill with signal 'Kill' isn't supported on this platform"),
             }
-            println!(" - killed process {pid} ('{}')", process.name());
         }
     }
 }
 
-pub fn modify_config_file(file_content: &str, pattern: &str, new: &str) -> String {
-    let reg = Regex::new(pattern).unwrap();
-    reg.replace_all(file_content, new).to_string()
-}
+#[cfg(unix)]
+fn kill_child_process(mut proc: Child, force: bool) {
+    let pid = proc.id().to_string();
 
-pub fn change_config_file(config_path: &PathBuf, replace_table: Vec<(&str, &str)>) -> String {
-    let config_old = std::fs::read_to_string(config_path).unwrap();
-    let mut config_new = config_old.clone();
-
-    for (from, to) in replace_table {
-        config_new = config_new.replace(from, to)
-    }
-    std::fs::write(config_path, config_new).unwrap();
-    config_old
-}
-
-pub fn workspace_dir() -> PathBuf {
-    let crate_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    crate_dir.parent().unwrap().into()
-}
-
-pub struct ConfigFile {
-    path: PathBuf,
-    original_content: String,
-    new_content: String,
-}
-
-impl ConfigFile {
-    pub fn new(path: PathBuf, original_content: String, new_content: String) -> Self {
-        ConfigFile {
-            path,
-            original_content,
-            new_content,
-        }
-    }
-}
-
-type TestCaseFn = fn(Option<&CnosDBMeta>, Option<&CnosDBData>);
-
-/// Test case need to modify config file
-pub struct TestCase {
-    config_files: Vec<ConfigFile>,
-    case: TestCaseFn,
-    case_name: String,
-}
-
-impl TestCase {
-    pub fn builder() -> TestCaseBuilder {
-        TestCaseBuilder {
-            config_files: None,
-            case: None,
-            case_name: None,
-        }
+    // Kill process
+    let mut kill = Command::new("kill");
+    let mut killing_thread = if force {
+        println!("- Force killing child process {pid}...");
+        kill.args(["-s", "KILL", &pid])
+            .spawn()
+            .expect("failed to run 'kill -s KILL {pid}'")
+    } else {
+        println!("- Killing child process {pid}...");
+        kill.args(["-s", "TERM", &pid])
+            .spawn()
+            .expect("failed to run 'kill -s TERM {pid}'")
+    };
+    match killing_thread.wait() {
+        Ok(kill_exit_code) => println!("- Killed process {pid}, exit status: {kill_exit_code}"),
+        Err(e) => println!("- Process {pid} not running: {e}"),
     }
 
-    pub fn run_cluster(&self, pass_meta: bool, pass_data: bool, meta_num: u32, bundle_num: u32) {
-        println!("Test begin '{}'", self.case_name);
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .worker_threads(4)
-            .build()
-            .unwrap();
-        let runtime = Arc::new(runtime);
-        clean_env();
-        let (meta, data) = start_bundle_cluster(runtime, meta_num, bundle_num);
-        match (pass_meta, pass_data) {
-            (true, true) => (self.case)(Some(&meta), Some(&data)),
-            (true, false) => (self.case)(Some(&meta), None),
-            (false, true) => (self.case)(None, Some(&data)),
-            (false, false) => (self.case)(None, None),
-        }
-        println!("Test complete '{}'", self.case_name);
+    // Remove defunct process
+    if let Err(e) = proc.wait() {
+        println!("- Process {pid} not running: {e}");
     }
+    drop(proc);
 
-    pub fn run_singleton(&self, node_num: u32) {
-        if node_num == 0 || node_num > 3 {
-            panic!("unsupported node_num: {node_num}");
-        }
-        println!("Test begin '{}'", self.case_name);
-        clean_env();
-
-        let mut nodes = vec![start_singleton("test_config_8902.toml", "127.0.0.1:8902")];
-        if node_num > 1 {
-            nodes.push(start_singleton("test_config_8912.toml", "127.0.0.1:8912"));
-        }
-        if node_num > 2 {
-            nodes.push(start_singleton("test_config_8922.toml", "127.0.0.1:8922"));
-        }
-
-        (self.case)(None, None);
-        println!("Test complete '{}'", self.case_name);
-    }
-}
-
-impl Drop for TestCase {
-    fn drop(&mut self) {
-        for config_file in &self.config_files {
-            fs::write(&config_file.path, &config_file.original_content).unwrap();
-        }
-        clean_env();
-    }
-}
-
-pub struct TestCaseBuilder {
-    config_files: Option<Vec<ConfigFile>>,
-    case: Option<TestCaseFn>,
-    case_name: Option<String>,
-}
-
-impl TestCaseBuilder {
-    pub fn set_case_name(mut self, case_name: String) -> Self {
-        self.case_name = Some(case_name);
-        self
-    }
-
-    pub fn set_case(mut self, case: TestCaseFn) -> Self {
-        self.case = Some(case);
-        self
-    }
-
-    pub fn set_config_files(mut self, config_files: Vec<ConfigFile>) -> Self {
-        self.config_files = Some(config_files);
-        self
-    }
-
-    pub fn build(&mut self) -> TestCase {
-        let case = self.case.take().expect("Test case function is needed");
-        let case_name = self.case_name.take().expect("Test case name is needed");
-        let config_files = if let Some(config_files) = self.config_files.take() {
-            config_files
+    // Wait CnosDB shutdown.
+    loop {
+        let display_process = Command::new("kill")
+            .args(["-0", &pid])
+            .output()
+            .expect("failed to run 'kill -0 {pid}'");
+        if display_process.status.success() {
+            println!("- Waiting for process {pid} to exit...");
+            thread::sleep(Duration::from_secs(1));
         } else {
-            vec![]
-        };
-        for config_file in &config_files {
-            fs::write(&config_file.path, &config_file.new_content).unwrap();
-        }
-        TestCase {
-            config_files,
-            case,
-            case_name,
+            println!("- Process {pid} exited");
+            break;
         }
     }
+}
+
+#[cfg(windows)]
+fn kill_child_process(proc: &mut Child, force: bool) {
+    let pid = proc.id().to_string();
+    let mut kill = Command::new("taskkill.exe");
+    let mut killing_thread = if force {
+        println!("- Force killing child process {pid}...");
+        kill.args(["/PID", &pid, "/F"])
+            .spawn()
+            .expect("failed to run 'taskkill.exe /PID {pid} /F'")
+    } else {
+        println!("- Killing child process {pid}...");
+        kill.args(["/PID", &pid])
+            .spawn()
+            .expect("failed to run 'taskkill.exe /PID {pid}'")
+    };
+    match killing_thread.wait() {
+        Ok(kill_exit_code) => println!("- Killed process {pid}, exit status: {kill_exit_code}"),
+        Err(e) => println!("- Process {pid} not running: {e}"),
+    }
+}
+
+/// Build meta store config with paths:
+///
+/// - snapshot_path: $test_dir/meta/$meta_dir_name/snapshot
+/// - journal_path: $test_dir/meta/$meta_dir_name/journal
+/// - log.level: INFO
+/// - log.path: $test_dir/meta/$meta_dir_name/log
+pub fn build_meta_node_config(test_dir: impl AsRef<Path>, meta_dir_name: &str) -> MetaStoreConfig {
+    let mut config = MetaStoreConfig::default();
+    let test_dir = test_dir.as_ref().display();
+    config.snapshot_path = format!("{test_dir}/meta/{meta_dir_name}/snapshot");
+    config.journal_path = format!("{test_dir}/meta/{meta_dir_name}/journal");
+    config.log.level = "INFO".to_string();
+    config.log.path = format!("{test_dir}/meta/{meta_dir_name}/log");
+
+    config
+}
+
+/// Build meta store config with paths and write to test_dir.
+/// Will be write to $test_dir/meta/config/$config_file_name.
+pub fn write_meta_node_config_files(
+    test_dir: impl AsRef<Path>,
+    meta_node_definitions: &[MetaNodeDefinition],
+) {
+    let meta_config_dir = test_dir.as_ref().join("meta").join("config");
+    std::fs::create_dir_all(&meta_config_dir).unwrap();
+    for meta_node_def in meta_node_definitions {
+        let mut meta_config = build_meta_node_config(&test_dir, &meta_node_def.config_file_name);
+        meta_node_def.update_config(&mut meta_config);
+        let config_path = meta_config_dir.join(&meta_node_def.config_file_name);
+        std::fs::write(&config_path, meta_config.to_string_pretty()).unwrap();
+    }
+}
+
+/// Build cnosdb config with paths:
+///
+/// - deployment_mode: singleton
+/// - hh file: $test_dir/data/$data_dir_name/hh
+/// - log.level: INFO
+/// - log.path: $test_dir/data/$data_dir_name/log
+/// - storage.path: $test_dir/data/$data_dir_name/storage
+/// - wal.path: $test_dir/data/$data_dir_name/wal
+pub fn build_data_node_config(test_dir: impl AsRef<Path>, data_dir_name: &str) -> CnosdbConfig {
+    let mut config = CnosdbConfig::default();
+    config.deployment.mode = "singleton".to_string();
+    let test_dir = test_dir.as_ref().display();
+    let data_path = format!("{test_dir}/data/{data_dir_name}");
+    config.hinted_off.path = format!("{data_path}/hh");
+    config.log.level = "INFO".to_string();
+    config.log.path = format!("{data_path}/log");
+    config.storage.path = format!("{data_path}/storage");
+    config.wal.path = format!("{data_path}/wal");
+    config.cluster.http_listen_port = Some(8902);
+    config.cluster.grpc_listen_port = Some(8903);
+    config.cluster.flight_rpc_listen_port = Some(8904);
+    config.cluster.tcp_listen_port = Some(8905);
+    config.cluster.vector_listen_port = Some(8906);
+
+    config
+}
+
+/// Build cnosdb config with paths and write to test_dir.
+/// Will be write to $test_dir/data/config/$config_file_name.
+pub fn write_data_node_config_files(
+    test_dir: impl AsRef<Path>,
+    data_node_definitions: &[DataNodeDefinition],
+) {
+    let cnosdb_config_dir = test_dir.as_ref().join("data").join("config");
+    std::fs::create_dir_all(&cnosdb_config_dir).unwrap();
+    for data_node_def in data_node_definitions {
+        let mut cnosdb_config = build_data_node_config(&test_dir, &data_node_def.config_file_name);
+        data_node_def.update_config(&mut cnosdb_config);
+        let config_path = cnosdb_config_dir.join(&data_node_def.config_file_name);
+        std::fs::write(&config_path, cnosdb_config.to_string_pretty()).unwrap();
+
+        // If we do not make directory $storage.path, the data node seems to be sick by the meta node.
+        // TODO(zipper): I think it's the data node who should do this job.
+        if let Err(e) = std::fs::create_dir_all(&cnosdb_config.storage.path) {
+            println!("Failed to pre-create $storage.path for data node: {e}");
+        }
+    }
+}
+
+/// Copy TLS certificates:
+///
+/// - $workspace_dir/config/tls/server.crt to $dest_dir/server.crt
+/// - $workspace_dir/config/tls/server.key to $dest_dir/server.key
+pub fn copy_cnosdb_server_certificate(workspace_dir: impl AsRef<Path>, dest_dir: impl AsRef<Path>) {
+    let src_dir = workspace_dir.as_ref().join("config").join("tls");
+    let files_to_copy = [src_dir.join("server.crt"), src_dir.join("server.key")];
+    let dest_dir = dest_dir.as_ref();
+    let _ = std::fs::create_dir_all(dest_dir);
+    for src_file in files_to_copy {
+        if std::fs::metadata(&src_file).is_err() {
+            panic!("certificate file '{}' not found", src_file.display());
+        }
+        let dst_file = dest_dir.join(src_file.file_name().unwrap());
+        println!(
+            "- coping certificate file: '{}' to '{}'",
+            src_file.display(),
+            dst_file.display(),
+        );
+        std::fs::copy(&src_file, &dst_file).unwrap();
+        println!(
+            "- copy certificate file completed: '{}' to '{}'",
+            src_file.display(),
+            dst_file.display(),
+        );
+    }
+}
+
+type TestFnInCluster = fn(Option<&CnosdbMetaTestHelper>, Option<&CnosdbDataTestHelper>);
+
+pub fn test_in_cnosdb_cluster(
+    test_dir: &str,
+    cluster_def: &CnosdbClusterDefinition,
+    test_case_name: &str,
+    test_fn: TestFnInCluster,
+    generate_meta_config: bool,
+    generate_data_config: bool,
+) {
+    println!("Test begin '{}'", test_case_name);
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .worker_threads(4)
+        .build()
+        .unwrap();
+    let runtime = Arc::new(runtime);
+    kill_all();
+
+    let (meta, data) = run_cluster(
+        test_dir,
+        runtime,
+        cluster_def,
+        generate_meta_config,
+        generate_data_config,
+    );
+
+    (test_fn)(meta.as_ref(), data.as_ref());
+    println!("Test complete '{}'", test_case_name);
+}
+
+pub fn test_in_cnosdb_clusters(
+    cluster_definitions_with_path: &[(PathBuf, CnosdbClusterDefinition)],
+    test_case_name: &str,
+    test_fn: fn(),
+    generate_meta_config: bool,
+    generate_data_config: bool,
+) {
+    println!("Test begin '{}'", test_case_name);
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .worker_threads(4)
+        .build()
+        .unwrap();
+    let runtime = Arc::new(runtime);
+    kill_all();
+
+    let mut context_meta_data: Vec<(Option<CnosdbMetaTestHelper>, Option<CnosdbDataTestHelper>)> =
+        Vec::with_capacity(cluster_definitions_with_path.len());
+    for (cluster_dir, cluster_def) in cluster_definitions_with_path {
+        let (meta, data) = run_cluster(
+            cluster_dir,
+            runtime.clone(),
+            cluster_def,
+            generate_meta_config,
+            generate_data_config,
+        );
+        context_meta_data.push((meta, data));
+    }
+
+    (test_fn)();
+    println!("Test complete '{}'", test_case_name);
+}
+
+pub fn ls(dir: impl AsRef<Path>) -> Result<Vec<String>, String> {
+    let out = Command::new("ls")
+        .arg(dir.as_ref())
+        .stdout(Stdio::piped())
+        .output()
+        .unwrap();
+    if out.status.success() {
+        Ok(String::from_utf8_lossy(&out.stdout)
+            .split_terminator('\n')
+            .map(|s| s.to_string())
+            .collect())
+    } else {
+        Err(format!(
+            "cmd 'ls {}' failed: {}",
+            dir.as_ref().display(),
+            String::from_utf8_lossy(&out.stderr)
+        ))
+    }
+}
+
+pub(crate) struct DeferGuard<F: FnOnce()>(Option<F>);
+
+impl<F: FnOnce()> DeferGuard<F> {
+    pub(crate) fn new(f: F) -> Self {
+        Self(Some(f))
+    }
+}
+
+impl<F: FnOnce()> Drop for DeferGuard<F> {
+    fn drop(&mut self) {
+        if let Some(f) = self.0.take() {
+            f();
+        }
+    }
+}
+
+#[macro_export]
+macro_rules! defer {
+    ($($code:tt)*) => {
+        let _defer_guard = $crate::utils::DeferGuard::new(|| {
+            $($code)*
+        });
+    };
 }
