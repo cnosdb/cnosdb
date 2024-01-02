@@ -39,7 +39,7 @@ pub mod raft_store;
 mod reader;
 pub mod writer;
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::fmt::Display;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -338,11 +338,6 @@ pub struct VnodeWal {
     tenant_database: Arc<String>,
     vnode_id: VnodeId,
     current_wal: WalWriter,
-
-    /// Stores wal_id-wal_reader entry when a `WalReader` opened by `read(wal_id, pos)`.
-    wal_reader_index: HashMap<u64, WalReader>,
-    /// Maps seq_no to (WAL id, position).
-    wal_location_index: BTreeMap<u64, (u64, usize)>,
 }
 
 impl VnodeWal {
@@ -352,21 +347,34 @@ impl VnodeWal {
         vnode_id: VnodeId,
     ) -> Result<Self> {
         let wal_dir = config.wal_dir(&tenant_database, vnode_id);
-        let current_file =
-            writer::WalWriter::open(config.clone(), 0, file_utils::make_wal_file(&wal_dir, 0), 1)
-                .await
-                .map_err(|e| error::Error::CommonError {
-                    reason: format!("Failed to open wal file: {}", e),
-                })?;
+        let writer_file = Self::open_writer(config.clone(), &wal_dir).await?;
         Ok(Self {
             config,
             wal_dir,
             tenant_database,
             vnode_id,
-            current_wal: current_file,
-            wal_reader_index: HashMap::new(),
-            wal_location_index: BTreeMap::new(),
+            current_wal: writer_file,
         })
+    }
+
+    pub async fn open_writer(config: Arc<WalOptions>, wal_dir: &Path) -> Result<WalWriter> {
+        // Create a new wal file every time it starts.
+        let (pre_max_seq, next_file_id) =
+            match file_utils::get_max_sequence_file_name(wal_dir, file_utils::get_wal_file_id) {
+                Some((_, id)) => {
+                    let path = file_utils::make_wal_file(wal_dir, id);
+                    let (_, max_seq) = reader::read_footer(&path).await?.unwrap_or((1_u64, 1_u64));
+                    (max_seq + 1, id)
+                }
+                None => (1_u64, 1_u64),
+            };
+
+        let new_wal = file_utils::make_wal_file(wal_dir, next_file_id);
+        let writer_file =
+            writer::WalWriter::open(config, next_file_id, new_wal, pre_max_seq).await?;
+        trace::info!("WAL '{}' starts write", writer_file.id());
+
+        Ok(writer_file)
     }
 
     async fn roll_wal_file(&mut self, max_file_size: u64) -> Result<()> {
@@ -405,16 +413,44 @@ impl VnodeWal {
         Ok(())
     }
 
+    pub async fn truncate_wal_file(&mut self, file_id: u64, pos: u64, seq_no: u64) -> Result<()> {
+        if self.current_wal_id() == file_id {
+            self.current_wal.truncate(pos, seq_no).await;
+            self.current_wal.sync().await?;
+            return Ok(());
+        }
+
+        let file_name = file_utils::make_wal_file(&self.wal_dir, file_id);
+        let mut new_file = WalWriter::open(self.config.clone(), file_id, file_name, seq_no).await?;
+        new_file.truncate(pos, seq_no).await;
+        new_file.sync().await?;
+
+        Ok(())
+    }
+
+    pub async fn rollback_wal_writer(&mut self, del_ids: &[u64]) -> Result<()> {
+        for wal_id in del_ids {
+            let file_path = file_utils::make_wal_file(self.wal_dir(), *wal_id);
+            trace::info!("Removing wal file '{}'", file_path.display());
+            if let Err(e) = tokio::fs::remove_file(&file_path).await {
+                trace::error!("Failed to remove file '{}': {:?}", file_path.display(), e);
+            }
+        }
+
+        let new_writer = VnodeWal::open_writer(self.config(), self.wal_dir()).await?;
+        let _ = std::mem::replace(&mut self.current_wal, new_writer);
+
+        Ok(())
+    }
+
     pub async fn delete_wal_files(&mut self, wal_ids: &[u64]) {
         for wal_id in wal_ids {
             if *wal_id == self.current_wal.id() {
                 continue;
             }
-            self.wal_reader_index.remove(wal_id);
-            self.wal_location_index.remove(wal_id);
 
             let file_path = file_utils::make_wal_file(self.wal_dir(), *wal_id);
-            trace::debug!("Removing wal file '{}'", file_path.display());
+            trace::info!("Removing wal file '{}'", file_path.display());
             if let Err(e) = tokio::fs::remove_file(&file_path).await {
                 trace::error!("Failed to remove file '{}': {:?}", file_path.display(), e);
             }
@@ -506,39 +542,46 @@ impl VnodeWal {
                 vnode_id,
                 ..
             }) => {
-                let mut delete_ids = vec![];
-                let wal_files = file_manager::list_file_names(self.wal_dir());
-                for file_name in wal_files {
-                    // If file name cannot be parsed to wal id, skip that file.
-                    let wal_id = match file_utils::get_wal_file_id(&file_name) {
-                        Ok(id) => id,
-                        Err(_) => continue,
-                    };
-
-                    if self.current_wal_id() == wal_id {
-                        continue;
-                    }
-
-                    let path = self.wal_dir().join(&file_name);
-                    if let Ok(reader) = WalReader::open(&path).await {
-                        if reader.max_sequence() < *sequence {
-                            delete_ids.push(wal_id);
-                        }
-                    }
-                }
+                let _ = self.delete_wal_before_seq(*sequence).await;
 
                 trace::info!(
-                    "Clear WAL files: {}.{} before seq: {}, file ids: {:?} ",
+                    "Clear WAL files: {}.{} before seq: {}",
                     tenant_database,
                     vnode_id,
                     sequence,
-                    delete_ids
                 );
 
-                self.delete_wal_files(&delete_ids).await;
                 Ok((0, 0))
             }
         }
+    }
+
+    // delete wal files < seq
+    async fn delete_wal_before_seq(&mut self, seq: u64) -> Result<()> {
+        let mut delete_ids = vec![];
+        let wal_files = file_manager::list_file_names(self.wal_dir());
+        for file_name in wal_files {
+            // If file name cannot be parsed to wal id, skip that file.
+            let wal_id = match file_utils::get_wal_file_id(&file_name) {
+                Ok(id) => id,
+                Err(_) => continue,
+            };
+
+            if self.current_wal_id() == wal_id {
+                continue;
+            }
+
+            let path = self.wal_dir().join(&file_name);
+            if let Ok(reader) = WalReader::open(&path).await {
+                if reader.max_sequence() < seq {
+                    delete_ids.push(wal_id);
+                }
+            }
+        }
+
+        self.delete_wal_files(&delete_ids).await;
+
+        Ok(())
     }
 
     async fn write_raft_entry(&mut self, raft_entry: &raft_store::RaftEntry) -> Result<(u64, u64)> {
@@ -553,27 +596,16 @@ impl VnodeWal {
         Ok((wal_id, pos))
     }
 
-    pub async fn read(&mut self, wal_id: u64, pos: u64) -> Result<Option<reader::Block>> {
-        let reader = match self.wal_reader_index.get_mut(&wal_id) {
-            Some(r) => r,
-            None => {
-                let reader = if wal_id == self.current_wal_id() {
-                    // Use the same wal as the writer.
-                    self.current_wal.new_reader()
-                } else {
-                    let wal_dir = self.config.wal_dir(&self.tenant_database, self.vnode_id);
-                    let wal_path = file_utils::make_wal_file(wal_dir, wal_id);
-                    WalReader::open(wal_path).await?
-                };
-
-                self.wal_reader_index.insert(wal_id, reader);
-                self.wal_reader_index.get_mut(&wal_id).unwrap()
-            }
-        };
-
-        match reader.read_wal_record_data(pos).await? {
-            Some(data) => Ok(Some(data.block)),
-            None => Ok(None),
+    pub async fn wal_reader(&mut self, wal_id: u64) -> Result<WalReader> {
+        if wal_id == self.current_wal_id() {
+            // Use the same wal as the writer.
+            let reader = self.current_wal.new_reader();
+            Ok(reader)
+        } else {
+            let wal_dir = self.config.wal_dir(&self.tenant_database, self.vnode_id);
+            let wal_path = file_utils::make_wal_file(wal_dir, wal_id);
+            let reader = WalReader::open(wal_path).await?;
+            Ok(reader)
         }
     }
 
@@ -606,6 +638,10 @@ impl VnodeWal {
     /// Close current record file, return count of bytes appended as footer.
     pub async fn close(&mut self) -> Result<usize> {
         self.current_wal.close().await
+    }
+
+    pub fn config(&self) -> Arc<WalOptions> {
+        self.config.clone()
     }
 
     pub fn wal_dir(&self) -> &Path {
@@ -670,34 +706,8 @@ impl WalManager {
                     }
                 }
 
-                // Create a new wal file every time it starts.
-                let (pre_max_seq, next_file_id) = match file_utils::get_max_sequence_file_name(
-                    &wal_dir,
-                    file_utils::get_wal_file_id,
-                ) {
-                    Some((_, id)) => {
-                        let path = file_utils::make_wal_file(&wal_dir, id);
-                        let (_, max_seq) =
-                            reader::read_footer(&path).await?.unwrap_or((1_u64, 1_u64));
-                        (max_seq + 1, id + 1)
-                    }
-                    None => (1_u64, 1_u64),
-                };
-
-                let new_wal = file_utils::make_wal_file(&wal_dir, next_file_id);
-                let current_file =
-                    writer::WalWriter::open(config.clone(), next_file_id, new_wal, pre_max_seq)
-                        .await?;
-                trace::info!("WAL '{}' starts write", current_file.id());
-                let vnode_wal = VnodeWal {
-                    config: config.clone(),
-                    wal_dir,
-                    tenant_database: tenant_database.clone(),
-                    vnode_id,
-                    current_wal: current_file,
-                    wal_reader_index: HashMap::new(),
-                    wal_location_index: BTreeMap::new(),
-                };
+                let vnode_wal =
+                    VnodeWal::new(config.clone(), tenant_database.clone(), vnode_id).await?;
                 vnode_wal_map.insert(vnode_id, vnode_wal);
             }
         }
@@ -807,31 +817,57 @@ impl WalManager {
     }
 }
 
-pub struct WalDecoder {
+pub struct WalEntryCodec {
     buffer: Vec<MiniVec<u8>>,
-    decoder: Box<dyn StringCodec + Send + Sync>,
+    codec: Box<dyn StringCodec + Send + Sync>,
 }
 
-impl Default for WalDecoder {
+impl Default for WalEntryCodec {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl WalDecoder {
+impl WalEntryCodec {
     pub fn new() -> Self {
         Self {
             buffer: Vec::new(),
-            decoder: get_str_codec(Encoding::Zstd),
+            codec: get_str_codec(Encoding::Zstd),
         }
     }
+
     pub fn decode(&mut self, data: &[u8]) -> Result<Option<MiniVec<u8>>> {
         self.buffer.truncate(0);
-        self.decoder
+        self.codec
             .decode(data, &mut self.buffer)
             .context(error::DecodeSnafu)?;
         Ok(self.buffer.drain(..).next())
     }
+
+    pub fn encode(&self, data: &[u8]) -> Result<Vec<u8>> {
+        let mut enc_data = Vec::with_capacity(data.len() / 2);
+        self.codec
+            .encode(&[data], &mut enc_data)
+            .with_context(|_| crate::error::EncodeSnafu)?;
+
+        Ok(enc_data)
+    }
+}
+
+fn decode_wal_raft_entry(buf: &[u8]) -> Result<raft_store::RaftEntry> {
+    let mut decoder = WalEntryCodec::new();
+    let dec_data = decoder.decode(buf)?.ok_or(crate::Error::CommonError {
+        reason: format!("raft entry decode is none, len: {}", buf.len()),
+    })?;
+
+    bincode::deserialize(&dec_data).map_err(|e| crate::Error::Decode { source: e })
+}
+
+fn encode_wal_raft_entry(entry: &raft_store::RaftEntry) -> Result<Vec<u8>> {
+    let bytes = bincode::serialize(entry).map_err(|e| crate::Error::Encode { source: e })?;
+
+    let encoder = WalEntryCodec::new();
+    encoder.encode(&bytes)
 }
 
 #[cfg(test)]

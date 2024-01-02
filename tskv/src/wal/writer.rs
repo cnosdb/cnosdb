@@ -13,7 +13,7 @@ use crate::kv_option::WalOptions;
 use crate::record_file::{RecordDataType, RecordDataVersion};
 use crate::wal::reader::WalReader;
 use crate::wal::{raft_store, reader, WalType, WAL_FOOTER_MAGIC_NUMBER};
-use crate::{record_file, Error, Result};
+use crate::{record_file, Result};
 
 fn build_footer(min_sequence: u64, max_sequence: u64) -> [u8; record_file::FILE_FOOTER_LEN] {
     let mut footer = [0_u8; record_file::FILE_FOOTER_LEN];
@@ -30,7 +30,6 @@ pub struct WalWriter {
     path: PathBuf,
     config: Arc<WalOptions>,
 
-    buf: Vec<u8>,
     min_sequence: u64,
     max_sequence: u64,
     has_footer: bool,
@@ -71,7 +70,6 @@ impl WalWriter {
             size,
             path: PathBuf::from(path),
             config,
-            buf: Vec::new(),
             min_sequence,
             max_sequence,
             has_footer: false,
@@ -281,22 +279,20 @@ impl WalWriter {
         };
 
         let seq = raft_entry.log_id.index;
-        let raft_entry_bytes =
-            bincode::serialize(raft_entry).map_err(|e| Error::Encode { source: e })?;
-
+        let data = super::encode_wal_raft_entry(raft_entry)?;
         let written_size = self
             .inner
             .write_record(
                 RecordDataVersion::V1 as u8,
                 RecordDataType::Wal as u8,
-                [&[wal_type as u8][..], &seq.to_be_bytes(), &raft_entry_bytes].as_slice(),
+                [&[wal_type as u8][..], &seq.to_be_bytes(), &data].as_slice(),
             )
             .await?;
 
         if self.config.sync {
             self.inner.sync().await?;
         }
-        // write & fsync succeed
+
         self.max_sequence = seq + 1;
         self.size += written_size as u64;
         Ok(written_size)
@@ -330,6 +326,24 @@ impl WalWriter {
         )
     }
 
+    pub async fn truncate(&mut self, size: u64, seq_no: u64) {
+        if self.size <= size {
+            return;
+        }
+
+        let _ = self.inner.truncate(size).await;
+
+        self.size = size;
+        let mut new_max_sequence = 0;
+        if seq_no > 0 {
+            new_max_sequence = seq_no - 1;
+        }
+        self.set_max_sequence(new_max_sequence);
+        if self.min_sequence() > new_max_sequence {
+            self.set_min_sequence(new_max_sequence);
+        }
+    }
+
     pub fn id(&self) -> u64 {
         self.id
     }
@@ -348,6 +362,10 @@ impl WalWriter {
 
     pub fn set_max_sequence(&mut self, new_max_sequence: u64) {
         self.max_sequence = new_max_sequence
+    }
+
+    pub fn set_min_sequence(&mut self, new_min_sequence: u64) {
+        self.min_sequence = new_min_sequence
     }
 }
 
