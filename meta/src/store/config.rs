@@ -61,6 +61,12 @@ pub struct Opt {
     pub heartbeat: HeartBeatConfig,
 }
 
+impl Opt {
+    pub fn to_string_pretty(&self) -> String {
+        toml::to_string_pretty(self).unwrap_or_else(|_| "Failed to stringify Config".to_string())
+    }
+}
+
 impl Default for Opt {
     fn default() -> Self {
         Self {

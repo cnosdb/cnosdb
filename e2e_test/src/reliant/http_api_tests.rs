@@ -1,437 +1,278 @@
-#[cfg(test)]
-pub mod test {
-    use fly_accept_encoding::Encoding;
-    use http_protocol::encoding::EncodingExt;
-    use http_protocol::header::{HeaderValue, ACCEPT, CONTENT_TYPE};
-    use http_protocol::http_client::HttpClient;
-    use http_protocol::response::Response;
-    use http_protocol::status_code;
-    use reqwest::header::{ACCEPT_ENCODING, CONTENT_ENCODING};
+#![cfg(test)]
 
-    pub fn client() -> HttpClient {
-        HttpClient::new("127.0.0.1", 8902, false, false, &[]).unwrap()
-    }
+use fly_accept_encoding::Encoding;
+use http_protocol::encoding::EncodingExt;
+use http_protocol::header::{HeaderValue, ACCEPT, CONTENT_TYPE};
+use reqwest::header::{ACCEPT_ENCODING, CONTENT_ENCODING};
+use reqwest::{Method, StatusCode};
 
-    #[tokio::test]
-    async fn test_v1_sql_path() {
-        let path = "/api/v1/sql";
-        let invalid_path = "/api/v1/xx";
-        let param = &[("db", "public")];
-        let username = "root";
+use crate::utils::Client;
+use crate::{assert_response_is_ok, headers};
 
-        let client = client();
+#[test]
+fn test_v1_sql_path() {
+    let url = "http://127.0.0.1:8902/api/v1/sql?db=public";
+    let url_no_param = "http://127.0.0.1:8902/api/v1/sql";
+    let url_invalid_path = "http://127.0.0.1:8902/api/v1/xx";
 
-        let body = "select 1;";
-        let resp: Response = client
-            .post(path)
-            .query(param)
-            .basic_auth::<&str, &str>(username, None)
+    let body = "select 1;";
+    let client = Client::with_auth("root".to_string(), None);
+
+    let resp = client.post(url, body).unwrap();
+    assert_response_is_ok!(resp);
+    assert_eq!(
+        resp.headers().get(CONTENT_TYPE).unwrap(),
+        &HeaderValue::from_static("application/csv")
+    );
+
+    // invalid basic auth
+    let req = client
+        .request(Method::POST, url)
+        .bearer_auth(client.auth())
+        .body(body);
+    let resp = client.execute(req.build().unwrap()).unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+
+    // lost auth
+    let req = client.request(Method::POST, url).body(body);
+    let resp = client.execute(req.build().unwrap()).unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+
+    // accept: application/csv
+    let mut req = client.request_with_auth(Method::POST, url).body(body);
+    req = req.headers(headers! {
+        ACCEPT.as_str() => "application/csv"
+    });
+    let resp = client.execute(req.build().unwrap()).unwrap();
+    assert_response_is_ok!(resp);
+    assert_eq!(
+        resp.headers().get(CONTENT_TYPE).unwrap(),
+        &HeaderValue::from_static("application/csv")
+    );
+
+    // accept: application/json
+    let mut req = client.request_with_auth(Method::POST, url).body(body);
+    req = req.headers(headers! {
+        ACCEPT.as_str() => "application/json"
+    });
+    let resp = client.execute(req.build().unwrap()).unwrap();
+    assert_response_is_ok!(resp);
+    assert_eq!(
+        resp.headers().get(CONTENT_TYPE).unwrap(),
+        &HeaderValue::from_static("application/json")
+    );
+
+    // accept: application/nd-json
+    let mut req = client.request_with_auth(Method::POST, url).body(body);
+    req = req.headers(headers! {
+        ACCEPT.as_str() => "application/nd-json"
+    });
+    let resp = client.execute(req.build().unwrap()).unwrap();
+    assert_response_is_ok!(resp);
+    assert_eq!(
+        resp.headers().get(CONTENT_TYPE).unwrap(),
+        &HeaderValue::from_static("application/nd-json")
+    );
+
+    // accept: application/*
+    let mut req = client.request_with_auth(Method::POST, url).body(body);
+    req = req.headers(headers! {
+        ACCEPT.as_str() => "application/*"
+    });
+    let resp = client.execute(req.build().unwrap()).unwrap();
+    assert_response_is_ok!(resp);
+    assert_eq!(
+        resp.headers().get(CONTENT_TYPE).unwrap(),
+        &HeaderValue::from_static("application/csv")
+    );
+
+    // accept: */*
+    let mut req = client.request_with_auth(Method::POST, url).body(body);
+    req = req.headers(headers! {
+        ACCEPT.as_str() => "*/*"
+    });
+    let resp = client.execute(req.build().unwrap()).unwrap();
+    assert_response_is_ok!(resp);
+    assert_eq!(
+        resp.headers().get(CONTENT_TYPE).unwrap(),
+        &HeaderValue::from_static("application/csv")
+    );
+
+    // accept: *
+    let mut req = client.request_with_auth(Method::POST, url).body(body);
+    req = req.headers(headers! {
+        ACCEPT.as_str() => "*"
+    });
+    let resp = client.execute(req.build().unwrap()).unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+
+    // accept: xx
+    let mut req = client.request_with_auth(Method::POST, url).body(body);
+    req = req.headers(headers! {
+        ACCEPT.as_str() => "xx"
+    });
+    let resp = client.execute(req.build().unwrap()).unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+
+    // lost param
+    let resp = client.post(url_no_param, body).unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // path not found
+    let resp = client.post(url_invalid_path, body).unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+
+    // GET
+    let resp = client.get(url, body).unwrap();
+    assert_eq!(resp.status(), StatusCode::METHOD_NOT_ALLOWED);
+
+    // PUT
+    let resp = client.put(url, body).unwrap();
+    assert_eq!(resp.status(), StatusCode::METHOD_NOT_ALLOWED);
+
+    // PATCH
+    let resp = client.patch(url, body).unwrap();
+    assert_eq!(resp.status(), StatusCode::METHOD_NOT_ALLOWED);
+
+    // DELETE
+    let resp = client.delete(url, body).unwrap();
+    assert_eq!(resp.status(), StatusCode::METHOD_NOT_ALLOWED);
+
+    // HEAD
+    let resp = client.head(url, body).unwrap();
+    assert_eq!(resp.status(), StatusCode::METHOD_NOT_ALLOWED);
+}
+
+#[test]
+fn test_v1_write_path() {
+    let url = "http://127.0.0.1:8902/api/v1/write?db=public";
+    let body = "test_v1_write_path,ta=a1,tb=b1 fa=1,fb=2";
+    let client = Client::with_auth("root".to_string(), None);
+
+    let resp = client.post(url, body).unwrap();
+    assert_response_is_ok!(resp);
+
+    // lost username
+    let req = client.request(Method::POST, url).body(body);
+    let resp = client.execute(req.build().unwrap()).unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+
+    // GET
+    let resp = client.get(url, body).unwrap();
+    assert_eq!(resp.status(), StatusCode::METHOD_NOT_ALLOWED);
+
+    // PUT
+    let resp = client.put(url, body).unwrap();
+    assert_eq!(resp.status(), StatusCode::METHOD_NOT_ALLOWED);
+
+    // PATCH
+    let resp = client.patch(url, body).unwrap();
+    assert_eq!(resp.status(), StatusCode::METHOD_NOT_ALLOWED);
+
+    // DELETE
+    let resp = client.delete(url, body).unwrap();
+    assert_eq!(resp.status(), StatusCode::METHOD_NOT_ALLOWED);
+
+    // HEAD
+    let resp = client.head(url, body).unwrap();
+    assert_eq!(resp.status(), StatusCode::METHOD_NOT_ALLOWED);
+}
+
+#[test]
+fn test_v1_ping_path() {
+    let url: &str = "http://127.0.0.1:8902/api/v1/ping";
+    let client = Client::with_auth("root".to_string(), None);
+
+    let resp = client.get(url, "").unwrap();
+    assert_response_is_ok!(resp);
+
+    let resp = client.head(url, "").unwrap();
+    assert_response_is_ok!(resp);
+
+    let resp = client.post(url, "").unwrap();
+    assert_eq!(resp.status(), StatusCode::METHOD_NOT_ALLOWED);
+
+    let resp = client.put(url, "").unwrap();
+    assert_eq!(resp.status(), StatusCode::METHOD_NOT_ALLOWED);
+
+    let resp = client.patch(url, "").unwrap();
+    assert_eq!(resp.status(), StatusCode::METHOD_NOT_ALLOWED);
+
+    let resp = client.delete(url, "").unwrap();
+    assert_eq!(resp.status(), StatusCode::METHOD_NOT_ALLOWED);
+}
+
+#[test]
+fn test_compression() {
+    fn send_encoded_request(
+        client: &Client,
+        url: &str,
+        body: Vec<u8>,
+        content_encoding: Encoding,
+        accept_encoding: Encoding,
+    ) -> reqwest::blocking::Response {
+        client
+            .request_with_auth(Method::POST, url)
             .body(body)
+            .header(CONTENT_ENCODING, content_encoding.to_header_value())
+            .header(ACCEPT_ENCODING, accept_encoding.to_header_value())
             .send()
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), status_code::OK);
-        assert_eq!(
-            resp.headers().get(CONTENT_TYPE).unwrap(),
-            &HeaderValue::from_static("application/csv")
-        );
-
-        // invalid basic auth
-        let body = "select 1;";
-        let resp: Response = client
-            .post(path)
-            .query(param)
-            .bearer_auth(username)
-            .body(body)
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), status_code::BAD_REQUEST);
-
-        // lost auth
-        let body = "select 1;";
-        let resp: Response = client
-            .post(path)
-            .query(param)
-            .body(body)
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), status_code::BAD_REQUEST);
-
-        // accept: application/csv
-        let body = "select 1;";
-        let resp: Response = client
-            .post(path)
-            .query(param)
-            .basic_auth::<&str, &str>(username, None)
-            .header(ACCEPT, "application/csv")
-            .body(body)
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), status_code::OK);
-        assert_eq!(
-            resp.headers().get(CONTENT_TYPE).unwrap(),
-            &HeaderValue::from_static("application/csv")
-        );
-
-        // accept: application/json
-        let body = "select 1;";
-        let resp: Response = client
-            .post(path)
-            .query(param)
-            .basic_auth::<&str, &str>(username, None)
-            .header(ACCEPT, "application/json")
-            .body(body)
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), status_code::OK);
-        assert_eq!(
-            resp.headers().get(CONTENT_TYPE).unwrap(),
-            &HeaderValue::from_static("application/json")
-        );
-
-        // accept: application/nd-json
-        let body = "select 1;";
-        let resp: Response = client
-            .post(path)
-            .query(param)
-            .basic_auth::<&str, &str>(username, None)
-            .header(ACCEPT, "application/nd-json")
-            .body(body)
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), status_code::OK);
-        assert_eq!(
-            resp.headers().get(CONTENT_TYPE).unwrap(),
-            &HeaderValue::from_static("application/nd-json")
-        );
-
-        // accept: application/*
-        let body = "select 1;";
-        let resp: Response = client
-            .post(path)
-            .query(param)
-            .basic_auth::<&str, &str>(username, None)
-            .header(ACCEPT, "application/*")
-            .body(body)
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), status_code::OK);
-        assert_eq!(
-            resp.headers().get(CONTENT_TYPE).unwrap(),
-            &HeaderValue::from_static("application/csv")
-        );
-
-        // accept: */*
-        let body = "select 1;";
-        let resp: Response = client
-            .post(path)
-            .query(param)
-            .basic_auth::<&str, &str>(username, None)
-            .header(ACCEPT, "*/*")
-            .body(body)
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), status_code::OK);
-        assert_eq!(
-            resp.headers().get(CONTENT_TYPE).unwrap(),
-            &HeaderValue::from_static("application/csv")
-        );
-
-        // accept: *
-        let body = "select 1;";
-        let resp: Response = client
-            .post(path)
-            .query(param)
-            .basic_auth::<&str, &str>(username, None)
-            .header(ACCEPT, "*")
-            .body(body)
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), status_code::BAD_REQUEST);
-
-        // accept: xx
-        let body = "select 1;";
-        let resp: Response = client
-            .post(path)
-            .query(param)
-            .basic_auth::<&str, &str>(username, None)
-            .header(ACCEPT, "xx")
-            .body(body)
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), status_code::BAD_REQUEST);
-
-        // lost param
-        let body = "select 1;";
-        let resp: Response = client
-            .post(path)
-            .basic_auth::<&str, &str>(username, None)
-            .body(body)
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), status_code::OK);
-
-        // path not found
-        let body = "select 1;";
-        let resp: Response = client
-            .post(invalid_path)
-            .query(param)
-            .basic_auth::<&str, &str>(username, None)
-            .body(body)
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), status_code::NOT_FOUND);
-
-        // GET
-        let body = "select 1;";
-        let resp: Response = client
-            .get(path)
-            .query(param)
-            .basic_auth::<&str, &str>(username, None)
-            .body(body)
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
-
-        // PUT
-        let body = "select 1;";
-        let resp: Response = client
-            .put(path)
-            .query(param)
-            .basic_auth::<&str, &str>(username, None)
-            .body(body)
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
-
-        // PATCH
-        let body = "select 1;";
-        let resp: Response = client
-            .patch(path)
-            .query(param)
-            .basic_auth::<&str, &str>(username, None)
-            .body(body)
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
-
-        // DELETE
-        let body = "select 1;";
-        let resp: Response = client
-            .delete(path)
-            .query(param)
-            .basic_auth::<&str, &str>(username, None)
-            .body(body)
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
-
-        // HEAD
-        let body = "select 1;";
-        let resp: Response = client
-            .head(path)
-            .query(param)
-            .basic_auth::<&str, &str>(username, None)
-            .body(body)
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
-    }
-
-    #[tokio::test]
-    async fn test_v1_write_path() {
-        let path = "/api/v1/write";
-        let param = &[("db", "public")];
-        let username = "root";
-
-        let client = client();
-
-        let body = "test_v1_write_path,ta=a1,tb=b1 fa=1,fb=2";
-
-        let resp: Response = client
-            .post(path)
-            .query(param)
-            .basic_auth::<&str, &str>(username, None)
-            .body(body)
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), status_code::OK);
-
-        // lost username
-        let resp: Response = client
-            .post(path)
-            .query(param)
-            .body(body)
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), status_code::BAD_REQUEST);
-
-        // method error
-        let resp: Response = client
-            .get(path)
-            .query(param)
-            .basic_auth::<&str, &str>(username, None)
-            .body(body)
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
-
-        let resp: Response = client
-            .head(path)
-            .query(param)
-            .basic_auth::<&str, &str>(username, None)
-            .body(body)
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
-
-        let resp: Response = client
-            .put(path)
-            .query(param)
-            .basic_auth::<&str, &str>(username, None)
-            .body(body)
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
-
-        let resp: Response = client
-            .patch(path)
-            .query(param)
-            .basic_auth::<&str, &str>(username, None)
-            .body(body)
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
-
-        let resp: Response = client
-            .delete(path)
-            .query(param)
-            .basic_auth::<&str, &str>(username, None)
-            .body(body)
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
-    }
-
-    #[tokio::test]
-    async fn test_v1_ping_path() {
-        let path = "/api/v1/ping";
-
-        let client = client();
-
-        let resp: Response = client.get(path).send().await.unwrap();
-        assert_eq!(resp.status(), status_code::OK);
-
-        let resp: Response = client.head(path).send().await.unwrap();
-        assert_eq!(resp.status(), status_code::OK);
-
-        let resp: Response = client.post(path).send().await.unwrap();
-        assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
-
-        let resp: Response = client.put(path).send().await.unwrap();
-        assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
-
-        let resp: Response = client.patch(path).send().await.unwrap();
-        assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
-
-        let resp: Response = client.delete(path).send().await.unwrap();
-        assert_eq!(resp.status(), status_code::METHOD_NOT_ALLOWED);
-    }
-
-    #[tokio::test]
-    async fn test_compression() {
-        async fn send_encoded_request(
-            client: &HttpClient,
-            path: &str,
-            data: Vec<u8>,
-            content_encoding: Encoding,
-            accept_encoding: Encoding,
-        ) -> String {
-            let username = "root";
-            let param = &[("db", "public")];
-            let resp = client
-                .post(path)
-                .basic_auth::<&str, &str>(username, None)
-                .query(param)
-                .header(CONTENT_ENCODING, content_encoding.to_header_value())
-                .header(ACCEPT_ENCODING, accept_encoding.to_header_value())
-                .body(content_encoding.encode(data.clone()).unwrap())
-                .send()
-                .await
-                .unwrap();
-            String::from_utf8(
-                accept_encoding
-                    .decode(resp.bytes().await.unwrap())
-                    .unwrap()
-                    .to_vec(),
-            )
             .unwrap()
-        }
+    }
 
-        let client = client();
+    let client = Client::with_auth("root".to_string(), None);
 
-        let path = "/api/v1/sql";
+    let url_cnosdb_public = "http://127.0.0.1:8902/api/v1/sql?db=public";
 
-        for &encoding_a in Encoding::iterator() {
-            for &encoding_b in Encoding::iterator() {
-                let response = send_encoded_request(
-                    &client,
-                    path,
-                    b"select 1;".to_vec(),
-                    encoding_a,
-                    encoding_b,
-                )
-                .await;
-                assert_eq!(response, "Int64(1)\n1\n");
+    let _ = client
+        .api_v1_sql(
+            url_cnosdb_public,
+            "CREATE DATABASE IF NOT EXISTS e2e_test_compression",
+        )
+        .unwrap();
+
+    {
+        let url = "http://127.0.0.1:8902/api/v1/sql?db=e2e_test_compression";
+        let body = b"select 1;".to_vec();
+        for &req_encoding in Encoding::iterator() {
+            for &resp_encoding in Encoding::iterator() {
+                let req_bytes_enc = req_encoding.encode(body.clone()).unwrap();
+                let req_bytes_dec = req_encoding.decode(req_bytes_enc.clone().into()).unwrap();
+                assert_eq!(body, req_bytes_dec.to_vec());
+                let resp =
+                    send_encoded_request(&client, url, req_bytes_enc, req_encoding, resp_encoding);
+                assert_response_is_ok!(resp);
+                let resp_bytes_enc = resp.bytes().unwrap();
+                let resp_bytes_dec = resp_encoding.decode(resp_bytes_enc).unwrap();
+                let resp_text = String::from_utf8(resp_bytes_dec.to_vec()).unwrap();
+                assert_eq!(resp_text, "Int64(1)\n1\n");
             }
         }
+    }
 
-        let path = "/api/v1/write";
-
+    {
+        let url = "http://127.0.0.1:8902/api/v1/write?db=e2e_test_compression";
+        let body = b"test_v1_write_path_compression,ta=a1,tb=b1 fa=1,fb=2".to_vec();
         for &encoding in Encoding::iterator() {
-            send_encoded_request(
-                &client,
-                path,
-                b"test_v1_write_path_compression,ta=a1,tb=b1 fa=1,fb=2".to_vec(),
-                encoding,
-                Encoding::Identity,
-            )
-            .await;
+            let req_bytes_enc = encoding.encode(body.clone()).unwrap();
+            let req_bytes_dec = encoding.decode(req_bytes_enc.clone().into()).unwrap();
+            assert_eq!(body, req_bytes_dec.to_vec());
+            let resp =
+                send_encoded_request(&client, url, req_bytes_enc, encoding, Encoding::Identity);
+            assert_response_is_ok!(resp);
         }
+    }
 
-        let path = "/api/v1/opentsdb/write";
+    {
+        let url = "http://127.0.0.1:8902/api/v1/opentsdb/write?db=e2e_test_compression";
+        let body = b"test_v1_opentsdb_write_path_compression 1 1 ta=a1 tb=b1 fa=1 fb=2".to_vec();
         for &encoding in Encoding::iterator() {
-            send_encoded_request(
-                &client,
-                path,
-                b"test_v1_opentsdb_write_path_compression 1 1 ta=a1 tb=b1 fa=1 fb=2".to_vec(),
-                encoding,
-                Encoding::Identity,
-            )
-            .await;
+            let req_bytes_enc = encoding.encode(body.clone()).unwrap();
+            let req_bytes_dec = encoding.decode(req_bytes_enc.clone().into()).unwrap();
+            assert_eq!(body, req_bytes_dec.to_vec());
+            let resp =
+                send_encoded_request(&client, url, req_bytes_enc, encoding, Encoding::Identity);
+            assert_response_is_ok!(resp);
         }
     }
 }
