@@ -1,6 +1,8 @@
+use serde::{Deserialize, Serialize};
+
 use crate::bkdr_hash::BkdrHasher;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BloomFilter {
     b: Vec<u8>,
     mask: u64,
@@ -34,7 +36,7 @@ impl BloomFilter {
         self.b[loc >> 3] |= 1 << (loc & 7);
     }
 
-    pub fn contains(&self, data: &[u8]) -> bool {
+    pub fn maybe_contains(&self, data: &[u8]) -> bool {
         let hash = Self::hash(data);
         let loc = self.location(hash);
         self.b[loc >> 3] & (1 << (loc & 7)) != 0
@@ -90,9 +92,24 @@ mod test {
 
         let v1 = 10_u64.to_be_bytes();
         bloom_filter.insert(&v1);
-        assert!(bloom_filter.contains(&v1));
+        assert!(bloom_filter.maybe_contains(&v1));
 
         let v2 = 11_u64.to_be_bytes();
-        assert!(!bloom_filter.contains(&v2));
+        assert!(!bloom_filter.maybe_contains(&v2));
+    }
+
+    #[test]
+    fn test_bloom_filter_series() {
+        let mut bloom_filter = BloomFilter::new(512);
+        for i in 1..1158_u32 {
+            bloom_filter.insert(&i.to_be_bytes());
+        }
+        bloom_filter.insert(1159_u32.to_be_bytes().as_slice());
+        bloom_filter.insert(1162_u32.to_be_bytes().as_slice());
+        bloom_filter.insert(1163_u32.to_be_bytes().as_slice());
+        bloom_filter.insert(1164_u32.to_be_bytes().as_slice());
+        bloom_filter.insert(1165_u32.to_be_bytes().as_slice());
+
+        assert!(bloom_filter.maybe_contains(1161_u32.to_be_bytes().as_slice()))
     }
 }

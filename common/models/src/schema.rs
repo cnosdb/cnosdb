@@ -8,6 +8,7 @@
 //!         - Column #4
 
 use std::borrow::Cow;
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fmt::{self, Display};
 use std::mem::size_of_val;
@@ -15,11 +16,11 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
-use arrow_schema::{DataType, Field as DFField};
 use config::{RequestLimiterConfig, TenantLimiterConfig, TenantObjectLimiterConfig};
 use datafusion::arrow::datatypes::{
     DataType as ArrowDataType, Field as ArrowField, Schema, SchemaRef, TimeUnit,
 };
+use datafusion::common::{DFField, DFSchema, DFSchemaRef};
 use datafusion::datasource::file_format::avro::AvroFormat;
 use datafusion::datasource::file_format::csv::CsvFormat;
 use datafusion::datasource::file_format::file_type::{FileCompressionType, FileType};
@@ -252,7 +253,7 @@ pub struct ExternalTableSchema {
     pub file_type: String,
     pub location: String,
     pub target_partitions: usize,
-    pub table_partition_cols: Vec<(String, DataType)>,
+    pub table_partition_cols: Vec<(String, ArrowDataType)>,
     pub has_header: bool,
     pub delimiter: u8,
     pub schema: Schema,
@@ -279,7 +280,7 @@ impl ExternalTableSchema {
             FileType::ARROW => {
                 return Err(DataFusionError::NotImplemented(
                     "Arrow external table.".to_string(),
-                ))
+                ));
             }
         };
 
@@ -304,11 +305,23 @@ pub struct TskvTableSchema {
     columns_index: HashMap<String, usize>,
 }
 
+impl PartialOrd for TskvTableSchema {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.schema_id.cmp(&other.schema_id))
+    }
+}
+
+impl Ord for TskvTableSchema {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.schema_id.cmp(&other.schema_id)
+    }
+}
+
 impl Default for TskvTableSchema {
     fn default() -> Self {
         Self {
-            tenant: "cnosdb".to_string(),
-            db: "public".to_string(),
+            tenant: DEFAULT_CATALOG.to_string(),
+            db: DEFAULT_DATABASE.to_string(),
             name: "template".to_string(),
             schema_id: 0,
             next_column_id: 0,
@@ -322,6 +335,19 @@ impl TskvTableSchema {
     pub fn to_arrow_schema(&self) -> SchemaRef {
         let fields: Vec<ArrowField> = self.columns.iter().map(|field| field.into()).collect();
         Arc::new(Schema::new(fields))
+    }
+
+    pub fn to_df_schema(&self) -> std::result::Result<DFSchemaRef, DataFusionError> {
+        let fields: Vec<DFField> = self
+            .columns
+            .iter()
+            .map(ArrowField::from)
+            .map(|f| DFField::from_qualified(self.name.as_str(), f))
+            .collect();
+        Ok(Arc::new(DFSchema::new_with_metadata(
+            fields,
+            HashMap::new(),
+        )?))
     }
 
     pub fn new(tenant: String, db: String, name: String, columns: Vec<TableColumn>) -> Self {
@@ -519,7 +545,7 @@ pub fn is_time_column(field: &ArrowField) -> bool {
     TIME_FIELD_NAME == field.name()
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct TableColumn {
     pub id: ColumnId,
     pub name: String,
@@ -530,11 +556,12 @@ pub struct TableColumn {
 pub const GIS_SRID_META_KEY: &str = "gis.srid";
 pub const GIS_SUB_TYPE_META_KEY: &str = "gis.sub_type";
 
+pub const COLUMN_ID_META_KEY: &str = "column_id";
+
 impl From<&TableColumn> for ArrowField {
     fn from(column: &TableColumn) -> Self {
         let mut map = HashMap::new();
-        map.insert(FIELD_ID.to_string(), column.id.to_string());
-        map.insert(TAG.to_string(), column.column_type.is_tag().to_string());
+        map.insert(COLUMN_ID_META_KEY.to_string(), column.id.to_string());
 
         // 通过 SRID_META_KEY 标记 Geometry 类型的列
         if let ColumnType::Field(ValueType::Geometry(Geometry { srid, sub_type })) =
@@ -655,7 +682,7 @@ impl From<ColumnType> for ArrowDataType {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub enum ColumnType {
     Tag,
     Time(TimeUnit),
@@ -1391,7 +1418,7 @@ pub enum ScalarValueForkDF {
     /// large binary
     LargeBinary(Option<Vec<u8>>),
     /// list of nested ScalarValue
-    List(Option<Vec<ScalarValueForkDF>>, Box<DFField>),
+    List(Option<Vec<ScalarValueForkDF>>, Box<ArrowField>),
     /// Date stored as a signed 32bit int days since UNIX epoch 1970-01-01
     Date32(Option<i32>),
     /// Date stored as a signed 64bit int milliseconds since UNIX epoch 1970-01-01
@@ -1416,7 +1443,7 @@ pub enum ScalarValueForkDF {
     /// Nanoseconds is encoded as a 64-bit signed integer (no leap seconds).
     IntervalMonthDayNano(Option<i128>),
     /// struct of nested ScalarValue
-    Struct(Option<Vec<ScalarValueForkDF>>, Box<Vec<DFField>>),
+    Struct(Option<Vec<ScalarValueForkDF>>, Box<Vec<ArrowField>>),
     /// Dictionary type: index type and value
     Dictionary(Box<ArrowDataType>, Box<ScalarValueForkDF>),
 }
@@ -1453,6 +1480,13 @@ impl ColumnType {
             Self::Tag => PhysicalCType::Tag,
             Self::Time(unit) => PhysicalCType::Time(unit.clone()),
             Self::Field(value_type) => PhysicalCType::Field(value_type.to_physical_type()),
+        }
+    }
+    pub fn to_physical_data_type(&self) -> PhysicalDType {
+        match self {
+            Self::Tag => PhysicalDType::String,
+            Self::Time(_) => PhysicalDType::Integer,
+            Self::Field(value_type) => value_type.to_physical_type(),
         }
     }
 }

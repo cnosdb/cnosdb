@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::Path;
 
+use heed::flags::Flags;
 use heed::types::*;
 use heed::{Database, Env};
 use openraft::{LogId, StoredMembership, Vote};
@@ -61,7 +62,12 @@ impl StateStorage {
     pub fn open(path: impl AsRef<Path>) -> ReplicationResult<Self> {
         fs::create_dir_all(&path)?;
 
-        let env = heed::EnvOpenOptions::new()
+        let mut env_builder = heed::EnvOpenOptions::new();
+        unsafe {
+            env_builder.flag(Flags::MdbNoSync);
+        }
+
+        let env = env_builder
             .map_size(1024 * 1024 * 1024)
             .max_dbs(16)
             .open(path)?;

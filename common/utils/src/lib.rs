@@ -8,6 +8,8 @@ mod bkdr_hash;
 mod bloom_filter;
 mod dedup;
 
+pub mod byte_utils;
+
 #[cfg(unix)]
 pub mod pprof_tools;
 

@@ -3,7 +3,7 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Copy, Clone, Eq, Hash)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Copy, Clone, Eq, Hash, Ord, PartialOrd)]
 #[non_exhaustive]
 pub struct Geometry {
     pub sub_type: GeometryType,
@@ -22,7 +22,7 @@ impl Display for Geometry {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Copy, Clone, Eq, Hash)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Copy, Clone, Eq, Hash, Ord, PartialOrd)]
 pub enum GeometryType {
     Point,
     LineString,

@@ -246,6 +246,12 @@ impl RaftStorage<TypeConfig> for Arc<NodeStorage> {
         let end = entries.last().map_or(0, |ent| ent.log_id.index);
         debug!("Storage callback append_to_log entires:[{}~{}]", begin, end);
 
+        // Remove all entries overwritten by `ents`.
+        self.raft_logs
+            .del_after(begin)
+            .await
+            .map_err(|e| StorageIOError::write_logs(&e))?;
+
         self.raft_logs
             .append(&entries)
             .await

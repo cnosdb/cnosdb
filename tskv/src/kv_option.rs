@@ -215,7 +215,6 @@ impl WalOptions {
 #[derive(Debug, Clone)]
 pub struct CacheOptions {
     pub max_buffer_size: u64,
-    pub max_immutable_number: u16,
     pub partition: usize,
 }
 
@@ -223,7 +222,6 @@ impl From<&Config> for CacheOptions {
     fn from(config: &Config) -> Self {
         Self {
             max_buffer_size: config.cache.max_buffer_size,
-            max_immutable_number: config.cache.max_immutable_number,
             partition: config.cache.partition,
         }
     }
