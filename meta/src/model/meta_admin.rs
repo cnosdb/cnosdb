@@ -132,6 +132,10 @@ impl AdminMeta {
         self.config.global.node_id
     }
 
+    pub fn deployment_mode(&self) -> String {
+        self.config.deployment.mode.clone()
+    }
+
     fn meta_addrs(&self) -> String {
         self.config.meta.service_addr.join(";")
     }
@@ -539,7 +543,7 @@ impl AdminMeta {
     pub async fn user_with_privileges(
         &self,
         user_name: &str,
-        tenant_name: Option<&str>,
+        tenant_name: &str,
     ) -> MetaResult<User> {
         let user_desc = {
             let cache = self.users.read().get(user_name).cloned();
@@ -554,26 +558,23 @@ impl AdminMeta {
             }
         };
 
-        if user_desc.is_admin() {
-            return Ok(admin_user(user_desc));
-        }
+        let client =
+            self.tenant_meta(tenant_name)
+                .await
+                .ok_or_else(|| MetaError::TenantNotFound {
+                    tenant: tenant_name.to_string(),
+                })?;
 
-        // common user & with tenant
-        if let Some(tenant_name) = tenant_name {
-            let client =
-                self.tenant_meta(tenant_name)
-                    .await
-                    .ok_or_else(|| MetaError::TenantNotFound {
-                        tenant: tenant_name.to_string(),
-                    })?;
+        let role = client.member_role(user_desc.id()).await?;
 
+        let user = if user_desc.is_admin() {
+            admin_user(user_desc, role)
+        } else {
             let privileges = client.user_privileges(&user_desc).await?;
+            User::new(user_desc, privileges, role)
+        };
 
-            return Ok(User::new(user_desc, privileges));
-        }
-
-        // common user & without tenant
-        Ok(User::new(user_desc, Default::default()))
+        Ok(user)
     }
 
     /******************** User Operation End *********************/

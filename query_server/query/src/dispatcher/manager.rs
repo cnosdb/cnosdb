@@ -5,7 +5,6 @@ use coordinator::service::CoordinatorRef;
 use memory_pool::MemoryPoolRef;
 use meta::error::MetaError;
 use meta::model::MetaClientRef;
-use models::auth::user::admin_user;
 use models::oid::Oid;
 use spi::query::ast::ExtStatement;
 use spi::query::datasource::stream::StreamProviderManagerRef;
@@ -59,8 +58,7 @@ impl QueryDispatcher for SimpleQueryDispatcher {
             let database_name = query.database_name();
             let tenant_name = query.tenant_name();
             let tenant_id = query.tenant_id();
-            let user_desc = query.user_desc();
-            let user = admin_user(user_desc.to_owned());
+            let user = query.user().clone();
             let ctx = ContextBuilder::new(user)
                 .with_tenant(Some(tenant_name.to_owned()))
                 .with_database(Some(database_name.to_owned()))

@@ -12,7 +12,6 @@ use datafusion::physical_plan::memory::MemoryExec;
 use datafusion::physical_plan::ExecutionPlan;
 use meta::model::MetaRef;
 use models::auth::user::User;
-use models::oid::Identifier;
 
 use crate::metadata::cluster_schema_provider::builder::users::{
     ClusterSchemaUsersBuilder, USER_SCHEMA,

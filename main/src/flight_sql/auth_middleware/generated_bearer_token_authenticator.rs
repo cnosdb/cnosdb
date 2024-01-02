@@ -155,7 +155,7 @@ mod test {
                     .unwrap_unchecked()
             };
             let mock_desc = UserDesc::new(0_u128, "name".to_string(), options, false);
-            let mock_user = User::new(mock_desc, UserRole::Dba.to_privileges());
+            let mock_user = User::new(mock_desc, UserRole::Dba.to_privileges(), None);
             Ok(CommonAuthResult { user: mock_user })
         }
     }

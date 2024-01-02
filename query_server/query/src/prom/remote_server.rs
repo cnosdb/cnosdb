@@ -393,7 +393,7 @@ mod test {
         let options = UserOptions::default();
         let desc = UserDesc::new(0_u128, "user".to_string(), options, true);
         let query = Query::new(
-            ContextBuilder::new(User::new(desc, Default::default())).build(),
+            ContextBuilder::new(User::new(desc, Default::default(), None)).build(),
             "content".to_string(),
         );
 

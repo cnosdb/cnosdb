@@ -179,11 +179,7 @@ where
         Ok(flight_info)
     }
 
-    fn construct_context(
-        &self,
-        user_info: User,
-        metadata: &MetadataMap,
-    ) -> Result<Context, Status> {
+    fn construct_context(&self, user: User, metadata: &MetadataMap) -> Result<Context, Status> {
         // parse tenant & default database
         let tenant = utils::get_value_from_header(metadata, TENANT, "");
         let db = utils::get_value_from_header(metadata, DB, "");
@@ -206,7 +202,7 @@ where
                         STREAM_TRIGGER_INTERVAL, e
                     ))
                 })?;
-        let ctx = ContextBuilder::new(user_info)
+        let ctx = ContextBuilder::new(user)
             .with_tenant(tenant)
             .with_database(db)
             .with_target_partitions(target_partitions)

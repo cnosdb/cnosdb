@@ -83,16 +83,19 @@ pub struct SessionCtxDesc {
 pub struct SessionCtxFactory {
     sys_var_provider: Option<VarProviderRef>,
     query_dedicated_hidden_dir: PathBuf,
+    session_function_register: Option<fn(df_session_ctx: &SessionContext, context: &Context)>,
 }
 
 impl SessionCtxFactory {
     pub fn new(
         sys_var_provider: Option<VarProviderRef>,
         query_dedicated_hidden_dir: PathBuf,
+        session_function_register: Option<fn(df_session_ctx: &SessionContext, context: &Context)>,
     ) -> Self {
         Self {
             sys_var_provider,
             query_dedicated_hidden_dir,
+            session_function_register,
         }
     }
 
@@ -104,16 +107,12 @@ impl SessionCtxFactory {
         memory_pool: Arc<dyn MemoryPool>,
         span_ctx: Option<SpanContext>,
     ) -> Result<SessionCtx> {
-        let df_session_ctx = self.build_df_session_context(
-            session_id,
-            context.session_config().to_df_config(),
-            memory_pool,
-            &span_ctx,
-        )?;
+        let df_session_ctx =
+            self.build_df_session_context(session_id, context, memory_pool, &span_ctx)?;
 
         Ok(SessionCtx {
             desc: Arc::new(SessionCtxDesc {
-                user: context.user_info().to_owned(),
+                user: context.user().to_owned(),
                 tenant_id,
                 tenant: context.tenant().to_owned(),
                 default_database: context.database().to_owned(),
@@ -127,11 +126,11 @@ impl SessionCtxFactory {
     fn build_df_session_context(
         &self,
         session_id: impl Into<String>,
-        config: &SessionConfig,
+        context: &Context,
         memory_pool: Arc<dyn MemoryPool>,
         span_ctx: &Option<SpanContext>,
     ) -> Result<SessionContext> {
-        let mut config = config.clone();
+        let mut config = context.session_config().to_df_config().clone();
         if let Some(span_ctx) = span_ctx {
             // inject span context into datafusion session config, so that it can be used in execution
             config = config.with_extension(Arc::new(span_ctx.clone()))
@@ -146,7 +145,9 @@ impl SessionCtxFactory {
         if let Some(p) = self.sys_var_provider.as_ref() {
             df_session_ctx.register_variable(VarType::System, p.clone());
         }
-
+        if let Some(register) = self.session_function_register.as_ref() {
+            register(&df_session_ctx, context);
+        }
         Ok(df_session_ctx)
     }
 }

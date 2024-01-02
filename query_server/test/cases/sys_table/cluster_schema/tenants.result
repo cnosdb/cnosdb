@@ -173,5 +173,5 @@ test_ts_tenant1,"{""comment"":null,""limiter_config"":null,""drop_after"":null,"
 -- EXECUTE SQL: select 1; --
 -- AFTER_SORT --
 422 Unprocessable Entity
-{"error_code":"030010","error_message":"The tenant tenant_not_exists not found"}
+{"error_code":"010016","error_message":"Auth error: The tenant tenant_not_exists not found"}
 -- ERROR:  --

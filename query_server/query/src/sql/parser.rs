@@ -9,7 +9,7 @@ use datafusion::sql::sqlparser::ast::{
     DataType, Expr, Ident, ObjectName, Offset, OrderByExpr, SqlOption, TableFactor,
 };
 use datafusion::sql::sqlparser::dialect::keywords::Keyword;
-use datafusion::sql::sqlparser::dialect::{Dialect, GenericDialect};
+use datafusion::sql::sqlparser::dialect::Dialect;
 use datafusion::sql::sqlparser::parser::{IsOptional, Parser, ParserError};
 use datafusion::sql::sqlparser::tokenizer::{Token, TokenWithLocation, Tokenizer};
 use models::codec::Encoding;
@@ -28,6 +28,8 @@ use spi::query::logical_planner::{DatabaseObjectType, GlobalObjectType, TenantOb
 use spi::query::parser::Parser as CnosdbParser;
 use spi::ParserSnafu;
 use trace::debug;
+
+use super::dialect::CnosDBDialect;
 
 // support tag token
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -189,7 +191,7 @@ pub struct ExtParser<'a> {
 impl<'a> ExtParser<'a> {
     /// Parse the specified tokens
     pub fn new(sql: &str) -> Result<Self> {
-        let dialect = &GenericDialect {};
+        let dialect = &CnosDBDialect {};
         ExtParser::new_with_dialect(sql, dialect)
     }
     /// Parse the specified tokens with dialect
@@ -203,7 +205,7 @@ impl<'a> ExtParser<'a> {
 
     /// Parse a SQL statement and produce a set of statements
     pub fn parse_sql(sql: &str) -> Result<VecDeque<ExtStatement>> {
-        let dialect = &GenericDialect {};
+        let dialect = &CnosDBDialect {};
         ExtParser::parse_sql_with_dialect(sql, dialect)
     }
 

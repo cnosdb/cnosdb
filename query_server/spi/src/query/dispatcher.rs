@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use models::auth::user::UserDesc;
+use models::auth::user::User;
 use models::oid::{Identifier, Oid};
 use serde::{Deserialize, Serialize};
 use trace::SpanContext;
@@ -65,7 +65,7 @@ pub struct QueryInfo {
     tenant_id: Oid,
     tenant_name: String,
     database_name: String,
-    user: UserDesc,
+    user: User,
 }
 
 impl QueryInfo {
@@ -75,7 +75,7 @@ impl QueryInfo {
         tenant_id: Oid,
         tenant_name: String,
         database_name: String,
-        user: UserDesc,
+        user: User,
     ) -> Self {
         Self {
             query_id,
@@ -107,16 +107,16 @@ impl QueryInfo {
         &self.database_name
     }
 
-    pub fn user_desc(&self) -> &UserDesc {
+    pub fn user(&self) -> &User {
         &self.user
     }
 
     pub fn user_id(&self) -> Oid {
-        *self.user.id()
+        *self.user.desc().id()
     }
 
     pub fn user_name(&self) -> &str {
-        self.user.name()
+        self.user.desc().name()
     }
 }
 

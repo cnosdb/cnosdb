@@ -63,7 +63,7 @@ impl QueryExecution for SystemExecution {
             *qsm.session.tenant_id(),
             qsm.session.tenant().to_string(),
             qsm.session.default_database().to_string(),
-            qsm.session.user().desc().clone(),
+            qsm.session.user().clone(),
         )
     }
     // 运行时信息

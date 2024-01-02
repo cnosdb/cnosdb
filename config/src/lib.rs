@@ -4,6 +4,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use check::{CheckConfig, CheckConfigResult};
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 
 pub use crate::cache_config::*;
@@ -39,6 +40,14 @@ mod service_config;
 mod storage_config;
 mod trace;
 mod wal_config;
+
+pub static VERSION: Lazy<String> = Lazy::new(|| {
+    format!(
+        "{}, revision {}",
+        option_env!("CARGO_PKG_VERSION").unwrap_or("UNKNOWN"),
+        option_env!("GIT_HASH").unwrap_or("UNKNOWN")
+    )
+});
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {

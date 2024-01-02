@@ -19,7 +19,7 @@ pub type DBMSRef = Arc<dyn DatabaseManagerSystem + Send + Sync>;
 #[async_trait]
 pub trait DatabaseManagerSystem {
     async fn start(&self) -> Result<()>;
-    async fn authenticate(&self, user_info: &UserInfo, tenant_name: Option<&str>) -> Result<User>;
+    async fn authenticate(&self, user_info: &UserInfo, tenant_name: &str) -> Result<User>;
     async fn execute(
         &self,
         query: &Query,
@@ -50,7 +50,7 @@ impl DatabaseManagerSystem for DatabaseManagerSystemMock {
     async fn start(&self) -> Result<()> {
         Ok(())
     }
-    async fn authenticate(&self, user_info: &UserInfo, _tenant_name: Option<&str>) -> Result<User> {
+    async fn authenticate(&self, user_info: &UserInfo, _tenant_name: &str) -> Result<User> {
         let options = unsafe {
             UserOptionsBuilder::default()
                 .password(user_info.password.clone())
@@ -59,7 +59,7 @@ impl DatabaseManagerSystem for DatabaseManagerSystemMock {
                 .unwrap_unchecked()
         };
         let mock_desc = UserDesc::new(0_u128, user_info.user.to_string(), options, true);
-        let mock_user = User::new(mock_desc, UserRole::Dba.to_privileges());
+        let mock_user = User::new(mock_desc, UserRole::Dba.to_privileges(), None);
         Ok(mock_user)
     }
 

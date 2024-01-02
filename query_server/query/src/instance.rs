@@ -31,7 +31,7 @@ use crate::dispatcher::persister::LocalQueryPersister;
 use crate::dispatcher::query_tracker::QueryTracker;
 use crate::execution::factory::SqlQueryExecutionFactory;
 use crate::execution::scheduler::local::LocalScheduler;
-use crate::extension::expr::load_all_functions;
+use crate::extension::expr::{load_all_functions, register_session_udfs};
 use crate::extension::variable::load_all_system_vars;
 use crate::function::simple_func_manager::SimpleFunctionMetadataManager;
 use crate::metadata::BaseTableProvider;
@@ -59,7 +59,7 @@ where
         self.query_dispatcher.start().await
     }
 
-    async fn authenticate(&self, user_info: &UserInfo, tenant_name: Option<&str>) -> Result<User> {
+    async fn authenticate(&self, user_info: &UserInfo, tenant_name: &str) -> Result<User> {
         self.access_control
             .access_check(user_info, tenant_name)
             .await
@@ -172,13 +172,14 @@ pub async fn make_cnosdbms(
     load_all_functions(&mut func_manager)?;
     // init System Variable Manager
     let mut var_manager = SimpleSystemVarManager::default();
-    load_all_system_vars(&mut var_manager)?;
+    load_all_system_vars(&mut var_manager, coord.clone())?;
 
     let split_manager = Arc::new(SplitManager::new(coord.clone()));
     // TODO session config need load global system config
     let session_factory = Arc::new(SessionCtxFactory::new(
         Some(Arc::new(var_manager)),
         query_dedicated_hidden_dir.clone(),
+        Some(register_session_udfs),
     ));
     let parser = Arc::new(DefaultParser::default());
     let optimizer = Arc::new(CascadeOptimizerBuilder::default().build());
@@ -314,7 +315,7 @@ mod tests {
         };
 
         let user = db
-            .authenticate(&user, Some(DEFAULT_CATALOG))
+            .authenticate(&user, DEFAULT_CATALOG)
             .await
             .expect("authenticate");
 

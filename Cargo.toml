@@ -74,7 +74,6 @@ flatbuffers = "22.9"
 flate2 = "1.0.24"
 futures = { version = "0.3", default-features = false }
 fly-accept-encoding = "0.2.0"
-home = "0.5.5"
 integer-encoding = "4.0.0"
 lazy_static = "1.4"
 libc = { version = "0.2", default-features = false }
