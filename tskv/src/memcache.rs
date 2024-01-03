@@ -162,7 +162,7 @@ impl RowData {
             }
 
             if !has_fields {
-                return Err(Error::InvalidPoint);
+                return Err(Error::FieldsIsEmpty);
             }
 
             let ts_column = columns.get(fb_schema.time_index);

@@ -210,7 +210,7 @@ impl TsKv {
                                         let res = self
                                             .write_from_wal(vnode_id, seq, &blk, &mut decoder)
                                             .await;
-                                        if matches!(res, Err(Error::InvalidPoint)) {
+                                        if matches!(res, Err(Error::FieldsIsEmpty)) {
                                             info!("Recover: deleted point, seq: {}", seq);
                                         } else if let Err(e) = res {
                                             error!("Recover: failed to write: {}", e);

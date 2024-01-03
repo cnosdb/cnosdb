@@ -682,6 +682,7 @@ impl Coordinator for CoordService {
             hasher.hash_with(table_name.as_bytes());
             let mut ts = i64::MAX;
             let mut has_ts = false;
+            let mut has_fileds = false;
             for (column, schema) in columns.iter().zip(schema.iter()) {
                 let name = schema.name().as_str();
                 let tskv_schema_column =
@@ -712,6 +713,12 @@ impl Coordinator for CoordService {
                     hasher.hash_with(name.as_bytes());
                     hasher.hash_with(value.as_bytes());
                 }
+
+                if let ColumnType::Field(_) = tskv_schema_column.column_type {
+                    if !column.is_null(idx) {
+                        has_fileds = true;
+                    }
+                }
             }
 
             if !has_ts {
@@ -719,6 +726,13 @@ impl Coordinator for CoordService {
                     msg: format!("column {} not found in table {}", TIME_FIELD, table_name),
                 });
             }
+
+            if !has_fileds {
+                return Err(CoordinatorError::TskvError {
+                    source: Error::FieldsIsEmpty,
+                });
+            }
+
             let hash = hasher.number();
             let info = meta_client
                 .locate_replication_set_for_write(db, hash, ts)
