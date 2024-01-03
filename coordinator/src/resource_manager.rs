@@ -109,7 +109,7 @@ impl ResourceManager {
                 ResourceManager::drop_tenant(coord.clone(), tenant_name).await
             }
             ResourceOperator::DropDatabase(tenant_name, db_name) => {
-                ResourceManager::drop_database(coord.clone(), tenant_name, db_name, true).await
+                ResourceManager::drop_database(coord.clone(), tenant_name, db_name).await
             }
             ResourceOperator::DropTable(tenant_name, db_name, table_name) => {
                 ResourceManager::drop_table(coord.clone(), tenant_name, db_name, table_name).await
@@ -159,20 +159,18 @@ impl ResourceManager {
         coord: Arc<dyn Coordinator>,
         tenant_name: &str,
     ) -> CoordinatorResult<bool> {
-        let tenant = coord
-            .meta_manager()
-            .tenant_meta_for_special(tenant_name)
-            .await
-            .ok_or(CoordinatorError::TenantNotFound {
+        let tenant = coord.meta_manager().tenant_meta(tenant_name).await.ok_or(
+            CoordinatorError::TenantNotFound {
                 name: tenant_name.to_string(),
-            })?;
+            },
+        )?;
 
         // drop database in the tenant
         let all_dbs = tenant
             .list_databases()
             .map_err(|err| CoordinatorError::Meta { source: err })?;
-        for db_name in all_dbs {
-            ResourceManager::drop_database(coord.clone(), tenant_name, &db_name, false).await?;
+        for (db_name, _) in all_dbs {
+            ResourceManager::drop_database(coord.clone(), tenant_name, &db_name).await?;
         }
 
         // drop tenant metadata
@@ -189,24 +187,14 @@ impl ResourceManager {
         coord: Arc<dyn Coordinator>,
         tenant_name: &str,
         db_name: &str,
-        is_need_hidden: bool,
     ) -> CoordinatorResult<bool> {
-        let tenant = if is_need_hidden {
+        let tenant =
             coord
                 .tenant_meta(tenant_name)
                 .await
                 .ok_or(CoordinatorError::TenantNotFound {
                     name: tenant_name.to_string(),
-                })?
-        } else {
-            coord
-                .meta_manager()
-                .tenant_meta_for_special(tenant_name)
-                .await
-                .ok_or(CoordinatorError::TenantNotFound {
-                    name: tenant_name.to_string(),
-                })?
-        };
+                })?;
 
         let req = AdminCommandRequest {
             tenant: tenant_name.to_string(),

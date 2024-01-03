@@ -71,10 +71,7 @@ impl DDLDefinitionTask for DropTenantObjectTask {
                 // tenant_id
                 // database_name
 
-                if meta
-                    .get_db_schema_for_special_case(name)
-                    .is_ok_and(|opt| opt.is_none())
-                {
+                if meta.get_db_schema(name).is_ok_and(|opt| opt.is_none()) {
                     if *if_exist {
                         return Ok(Output::Nil(()));
                     } else {

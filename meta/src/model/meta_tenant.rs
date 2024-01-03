@@ -418,17 +418,6 @@ impl TenantMeta {
 
     pub fn get_db_schema(&self, name: &str) -> MetaResult<Option<DatabaseSchema>> {
         if let Some(db) = self.data.read().dbs.get(name) {
-            if !db.schema.options().get_db_is_hidden() {
-                return Ok(Some(db.schema.clone()));
-            }
-        }
-
-        Ok(None)
-    }
-
-    // for drop and restart
-    pub fn get_db_schema_for_special_case(&self, name: &str) -> MetaResult<Option<DatabaseSchema>> {
-        if let Some(db) = self.data.read().dbs.get(name) {
             return Ok(Some(db.schema.clone()));
         }
 
@@ -437,23 +426,14 @@ impl TenantMeta {
 
     pub fn get_db_info(&self, name: &str) -> MetaResult<Option<DatabaseInfo>> {
         if let Some(db) = self.data.read().dbs.get(name) {
-            if !db.schema.options().get_db_is_hidden() {
-                return Ok(Some(db.clone()));
-            }
+            return Ok(Some(db.clone()));
         }
 
         Ok(None)
     }
 
-    pub fn list_databases(&self) -> MetaResult<Vec<String>> {
-        let mut list = vec![];
-        for (k, db_info) in self.data.read().dbs.iter() {
-            if !db_info.schema.options().get_db_is_hidden() {
-                list.push(k.clone());
-            }
-        }
-
-        Ok(list)
+    pub fn list_databases(&self) -> MetaResult<HashMap<String, DatabaseInfo>> {
+        Ok(self.data.read().dbs.clone())
     }
 
     pub async fn drop_db(&self, name: &str) -> MetaResult<bool> {
