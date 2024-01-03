@@ -50,7 +50,7 @@ pub enum Error {
 
     #[snafu(display("Fields can't be empty"))]
     #[error_code(code = 2)]
-    InvalidPoint,
+    FieldsIsEmpty,
 
     #[snafu(display("{}", reason))]
     #[error_code(code = 3)]
