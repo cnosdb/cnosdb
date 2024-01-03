@@ -178,6 +178,7 @@ impl Coordinator for MockCoordinator {
         &self,
         table_schema: TskvTableSchemaRef,
         record_batch: RecordBatch,
+        db_precision: Precision,
         span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<usize> {
         todo!()

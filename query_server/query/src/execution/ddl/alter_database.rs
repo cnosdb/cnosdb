@@ -33,6 +33,14 @@ impl DDLDefinitionTask for AlterDatabaseTask {
             .ok_or(MetaError::DatabaseNotFound {
                 database: self.stmt.database_name.clone(),
             })?;
+
+        if schema.options().get_db_is_hidden() {
+            return Err(spi::QueryError::Meta {
+                source: meta::error::MetaError::DatabaseNotFound {
+                    database: self.stmt.database_name.clone(),
+                },
+            });
+        }
         // .context(spi::MetaSnafu)?;
         build_database_schema(&self.stmt.database_options, &mut schema.config);
         // client

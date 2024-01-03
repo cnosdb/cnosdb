@@ -36,7 +36,8 @@ impl DDLDefinitionTask for CreateDatabaseTask {
         let db = client
             .list_databases()?
             // .context(spi::MetaSnafu)?
-            .contains(name);
+            .get(name)
+            .is_some_and(|info| !info.is_hidden());
 
         match (if_not_exists, db) {
             // do not create if exists

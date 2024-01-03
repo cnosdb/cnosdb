@@ -84,28 +84,26 @@ impl TableProvider for InformationDatabasesTable {
         let tenant_id = tenant.id();
         let tenant_name = tenant.name();
 
-        for db in dbs {
+        for (db, info) in dbs {
             // Check if the current user has at least read permission on this db, skip if not
             if !self.user.can_read_database(*tenant_id, &db) {
                 continue;
             }
 
-            if let Some(db_schema) = self
-                .metadata
-                .get_db_schema(&db)
-                .map_err(|e| DataFusionError::Internal(format!("Failed to get db schema: {}", e)))?
-            {
-                let options = db_schema.options();
-                builder.append_row(
-                    tenant_name,
-                    db_schema.database_name(),
-                    options.ttl_or_default().to_string(),
-                    options.shard_num_or_default(),
-                    options.vnode_duration_or_default().to_string(),
-                    options.replica_or_default(),
-                    options.precision_or_default().to_string(),
-                );
+            if info.is_hidden() {
+                continue;
             }
+
+            let options = info.schema.options();
+            builder.append_row(
+                tenant_name,
+                info.schema.database_name(),
+                options.ttl_or_default().to_string(),
+                options.shard_num_or_default(),
+                options.vnode_duration_or_default().to_string(),
+                options.replica_or_default(),
+                options.precision_or_default().to_string(),
+            );
         }
         let rb: RecordBatch = builder.try_into()?;
 

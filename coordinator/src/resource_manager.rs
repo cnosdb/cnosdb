@@ -169,7 +169,7 @@ impl ResourceManager {
         let all_dbs = tenant
             .list_databases()
             .map_err(|err| CoordinatorError::Meta { source: err })?;
-        for db_name in all_dbs {
+        for (db_name, _) in all_dbs {
             ResourceManager::drop_database(coord.clone(), tenant_name, &db_name).await?;
         }
 

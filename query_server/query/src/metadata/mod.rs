@@ -211,15 +211,20 @@ impl ContextProviderExtension for MetadataProvider {
     }
 
     fn get_db_precision(&self, name: &str) -> Result<Precision, MetaError> {
-        let precision = *self
-            .meta_client
-            .get_db_schema(name)?
-            .ok_or(MetaError::DatabaseNotFound {
+        let db_schema =
+            self.meta_client
+                .get_db_schema(name)?
+                .ok_or(MetaError::DatabaseNotFound {
+                    database: name.to_string(),
+                })?;
+
+        if db_schema.options().get_db_is_hidden() {
+            return Err(MetaError::DatabaseNotFound {
                 database: name.to_string(),
-            })?
-            .config
-            .precision_or_default();
-        Ok(precision)
+            });
+        }
+
+        Ok(*db_schema.config.precision_or_default())
     }
 
     fn get_table_source(
@@ -268,6 +273,12 @@ impl ContextProviderExtension for MetadataProvider {
                 .ok_or(MetaError::DatabaseNotFound {
                     database: database.to_string(),
                 })?;
+
+        if data_info.is_hidden() {
+            return Err(MetaError::DatabaseNotFound {
+                database: database.to_string(),
+            });
+        }
 
         if let Some(table) = table {
             data_info

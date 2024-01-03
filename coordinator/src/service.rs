@@ -593,8 +593,15 @@ impl Coordinator for CoordService {
                 .ok_or_else(|| MetaError::DatabaseNotFound {
                     database: db.to_string(),
                 })?;
-        let db_precision = db_schema.config.precision_or_default();
+        if db_schema.options().get_db_is_hidden() {
+            return Err(crate::errors::CoordinatorError::Meta {
+                source: MetaError::DatabaseNotFound {
+                    database: db.to_string(),
+                },
+            });
+        }
 
+        let db_precision = db_schema.config.precision_or_default();
         for line in lines {
             let ts = timestamp_convert(precision, *db_precision, line.timestamp).ok_or(
                 CoordinatorError::CommonError {
@@ -638,6 +645,7 @@ impl Coordinator for CoordService {
         &self,
         table_schema: TskvTableSchemaRef,
         record_batch: RecordBatch,
+        db_precision: Precision,
         span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<usize> {
         let mut write_bytes: usize = 0;
@@ -651,13 +659,6 @@ impl Coordinator for CoordService {
                 .ok_or(CoordinatorError::TenantNotFound {
                     name: tenant.to_string(),
                 })?;
-        let db_schema =
-            meta_client
-                .get_db_schema(db)?
-                .ok_or_else(|| MetaError::DatabaseNotFound {
-                    database: db.to_string(),
-                })?;
-        let db_precision = db_schema.config.precision_or_default();
 
         let mut repl_idx: HashMap<ReplicationSet, Vec<u32>> = HashMap::new();
         let schema = record_batch.schema().fields.clone();
@@ -680,7 +681,7 @@ impl Coordinator for CoordService {
                     let precsion_and_value =
                         get_precision_and_value_from_arrow_column(column, idx)?;
                     precision = precsion_and_value.0;
-                    ts = timestamp_convert(precision, *db_precision, precsion_and_value.1).ok_or(
+                    ts = timestamp_convert(precision, db_precision, precsion_and_value.1).ok_or(
                         CoordinatorError::CommonError {
                             msg: "timestamp overflow".to_string(),
                         },
