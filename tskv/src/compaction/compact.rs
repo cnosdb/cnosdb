@@ -204,49 +204,11 @@ impl CompactingBlockMetaGroup {
             merged_block = head_block;
         }
 
-        self.chunk_merged_block(merged_block, max_block_size)
+        chunk_merged_block(self.field_id, merged_block, max_block_size)
     }
 
-    fn chunk_merged_block(
-        &self,
-        data_block: DataBlock,
-        max_block_size: usize,
-    ) -> Result<Vec<CompactingBlock>> {
-        let mut merged_blks = Vec::new();
-        if max_block_size == 0 || data_block.len() < max_block_size {
-            // Data block elements less than max_block_size, do not encode it.
-            // Try to merge with the next CompactingBlockMetaGroup.
-            merged_blks.push(CompactingBlock::decoded(0, self.field_id, data_block));
-        } else {
-            let len = data_block.len();
-            let mut start = 0;
-            let mut end = len.min(max_block_size);
-            while start + end < len {
-                // Encode decoded data blocks into chunks.
-                let encoded_blk =
-                    EncodedDataBlock::encode(&data_block, start, end).map_err(|e| {
-                        Error::WriteTsm {
-                            source: tsm::WriteTsmError::Encode { source: e },
-                        }
-                    })?;
-                merged_blks.push(CompactingBlock::encoded(0, self.field_id, encoded_blk));
-
-                start += end;
-                end = len.min(start + max_block_size);
-            }
-            if start < len {
-                // Encode the remaining decoded data blocks.
-                let encoded_blk =
-                    EncodedDataBlock::encode(&data_block, start, len).map_err(|e| {
-                        Error::WriteTsm {
-                            source: tsm::WriteTsmError::Encode { source: e },
-                        }
-                    })?;
-                merged_blks.push(CompactingBlock::encoded(0, self.field_id, encoded_blk));
-            }
-        }
-
-        Ok(merged_blks)
+    pub fn into_compacting_block_metas(self) -> Vec<CompactingBlockMeta> {
+        self.blk_metas
     }
 
     pub fn is_empty(&self) -> bool {
@@ -258,10 +220,41 @@ impl CompactingBlockMetaGroup {
     }
 }
 
+fn chunk_merged_block(
+    field_id: FieldId,
+    data_block: DataBlock,
+    max_block_size: usize,
+) -> Result<Vec<CompactingBlock>> {
+    let mut merged_blks = Vec::new();
+    if max_block_size == 0 || data_block.len() < max_block_size {
+        // Data block elements less than max_block_size, do not encode it.
+        // Try to merge with the next CompactingBlockMetaGroup.
+        merged_blks.push(CompactingBlock::decoded(0, field_id, data_block));
+    } else {
+        let len = data_block.len();
+        let mut start = 0;
+        let mut end = len.min(max_block_size);
+        while start < len {
+            // Encode decoded data blocks into chunks.
+            let encoded_blk =
+                EncodedDataBlock::encode(&data_block, start, end).map_err(|e| Error::WriteTsm {
+                    source: tsm::WriteTsmError::Encode { source: e },
+                })?;
+            merged_blks.push(CompactingBlock::encoded(0, field_id, encoded_blk));
+
+            start = end;
+            end = len.min(start + max_block_size);
+        }
+    }
+
+    Ok(merged_blks)
+}
+
 /// Temporary compacting data block.
 /// - priority: When merging two (timestamp, value) pair with the same
 /// timestamp from two data blocks, pair from data block with lower
 /// priority will be discarded.
+#[derive(Debug, PartialEq)]
 pub(crate) enum CompactingBlock {
     Decoded {
         priority: usize,
@@ -425,10 +418,9 @@ pub(crate) struct CompactIterator {
     /// return CompactingBlock::DataBlock rather than CompactingBlock::Raw .
     decode_non_overlap_blocks: bool,
 
-    tmp_tsm_blk_meta_iters: Vec<BlockMetaIterator>,
-    /// Index to mark `Peekable<BlockMetaIterator>` in witch `TsmReader`,
-    /// tmp_tsm_blks[i] is in self.tsm_readers[ tmp_tsm_blk_tsm_reader_idx[i] ]
-    tmp_tsm_blk_tsm_reader_idx: Vec<usize>,
+    /// Temporarily stored index of `TsmReader` in self.tsm_readers,
+    /// and `BlockMetaIterator` of current field_id.
+    tmp_tsm_blk_meta_iters: Vec<(usize, BlockMetaIterator)>,
     /// When a TSM file at index i is ended, finished_idxes[i] is set to true.
     finished_readers: Vec<bool>,
     /// How many finished_idxes is set to true.
@@ -447,7 +439,6 @@ impl Default for CompactIterator {
             max_data_block_size: 0,
             decode_non_overlap_blocks: false,
             tmp_tsm_blk_meta_iters: Default::default(),
-            tmp_tsm_blk_tsm_reader_idx: Default::default(),
             finished_readers: Default::default(),
             finished_reader_cnt: Default::default(),
             curr_fid: Default::default(),
@@ -497,13 +488,14 @@ impl CompactIterator {
             trace!("no file to select, mark finished");
             self.finished_reader_cnt += 1;
         }
+        self.tmp_tsm_blk_meta_iters.clear();
         while let Some(mut f) = self.compacting_files.pop() {
             let loop_field_id = f.field_id;
             let loop_file_i = f.i;
             if self.curr_fid == loop_field_id {
                 if let Some(idx_meta) = f.peek() {
-                    self.tmp_tsm_blk_meta_iters.push(idx_meta.block_iterator());
-                    self.tmp_tsm_blk_tsm_reader_idx.push(loop_file_i);
+                    self.tmp_tsm_blk_meta_iters
+                        .push((loop_file_i, idx_meta.block_iterator()));
                     trace!("merging idx_meta: field_id: {}, field_type: {:?}, block_count: {}, time_range: {:?}",
                         idx_meta.field_id(),
                         idx_meta.field_type(),
@@ -538,12 +530,11 @@ impl CompactIterator {
         let mut blk_metas: Vec<CompactingBlockMeta> =
             Vec::with_capacity(self.tmp_tsm_blk_meta_iters.len());
         // Get all block_meta, and check if it's tsm file has a related tombstone file.
-        for (i, blk_iter) in self.tmp_tsm_blk_meta_iters.iter_mut().enumerate() {
+        for (tsm_reader_idx, blk_iter) in self.tmp_tsm_blk_meta_iters.iter_mut() {
             for blk_meta in blk_iter.by_ref() {
-                let tsm_reader_idx = self.tmp_tsm_blk_tsm_reader_idx[i];
-                let tsm_reader_ptr = self.tsm_readers[tsm_reader_idx].clone();
+                let tsm_reader_ptr = self.tsm_readers[*tsm_reader_idx].clone();
                 blk_metas.push(CompactingBlockMeta::new(
-                    tsm_reader_idx,
+                    *tsm_reader_idx,
                     tsm_reader_ptr,
                     blk_meta,
                 ));
@@ -905,15 +896,102 @@ pub mod test {
     use models::predicate::domain::TimeRange;
     use models::{FieldId, Timestamp, ValueType};
 
-    use crate::compaction::{run_compaction_job, CompactReq};
+    use crate::compaction::compact::chunk_merged_block;
+    use crate::compaction::{run_compaction_job, CompactReq, CompactingBlock};
     use crate::context::GlobalContext;
     use crate::file_system::file_manager;
     use crate::kv_option::Options;
     use crate::summary::VersionEdit;
     use crate::tseries_family::{ColumnFile, LevelInfo, Version};
     use crate::tsm::codec::DataBlockEncoding;
-    use crate::tsm::{self, DataBlock, TsmReader, TsmTombstone};
+    use crate::tsm::{self, DataBlock, EncodedDataBlock, TsmReader, TsmTombstone};
     use crate::{file_utils, ColumnFileId};
+
+    #[test]
+    fn test_chunk_merged_block() {
+        let data_block = DataBlock::U64 {
+            ts: vec![0, 1, 2, 10, 11, 12, 100, 101, 102, 1000, 1001, 1002],
+            val: vec![0, 3, 6, 30, 33, 36, 300, 303, 306, 3000, 3003, 3006],
+            enc: DataBlockEncoding::default(),
+        };
+        let field_id = 1;
+        // Trying to chunk with no chunk size
+        {
+            let chunks = chunk_merged_block(field_id, data_block.clone(), 0).unwrap();
+            assert_eq!(chunks.len(), 1);
+            assert_eq!(
+                chunks[0],
+                CompactingBlock::decoded(0, 1, data_block.clone())
+            );
+        }
+        // Trying to chunk with too big chunk size
+        {
+            let chunks = chunk_merged_block(field_id, data_block.clone(), 100).unwrap();
+            assert_eq!(chunks.len(), 1);
+            assert_eq!(
+                chunks[0],
+                CompactingBlock::decoded(0, 1, data_block.clone())
+            );
+        }
+        // Trying to chunk with chunk size that can divide data block exactly
+        {
+            let chunks = chunk_merged_block(field_id, data_block.clone(), 4).unwrap();
+            assert_eq!(chunks.len(), 3);
+            assert_eq!(
+                chunks[0],
+                CompactingBlock::encoded(
+                    0,
+                    field_id,
+                    EncodedDataBlock::encode(&data_block, 0, 4).unwrap()
+                )
+            );
+            assert_eq!(
+                chunks[1],
+                CompactingBlock::encoded(
+                    0,
+                    field_id,
+                    EncodedDataBlock::encode(&data_block, 4, 8).unwrap()
+                )
+            );
+            assert_eq!(
+                chunks[2],
+                CompactingBlock::encoded(
+                    0,
+                    field_id,
+                    EncodedDataBlock::encode(&data_block, 8, 12).unwrap()
+                )
+            );
+        }
+        // Trying to chunk with chunk size that cannot divide data block exactly
+        {
+            let chunks = chunk_merged_block(field_id, data_block.clone(), 5).unwrap();
+            assert_eq!(chunks.len(), 3);
+            assert_eq!(
+                chunks[0],
+                CompactingBlock::encoded(
+                    0,
+                    field_id,
+                    EncodedDataBlock::encode(&data_block, 0, 5).unwrap()
+                )
+            );
+            assert_eq!(
+                chunks[1],
+                CompactingBlock::encoded(
+                    0,
+                    field_id,
+                    EncodedDataBlock::encode(&data_block, 5, 10).unwrap()
+                )
+            );
+            assert_eq!(
+                chunks[2],
+                CompactingBlock::encoded(
+                    0,
+                    field_id,
+                    EncodedDataBlock::encode(&data_block, 10, 12).unwrap()
+                )
+            );
+        }
+    }
 
     pub(crate) async fn write_data_blocks_to_column_file(
         dir: impl AsRef<Path>,
