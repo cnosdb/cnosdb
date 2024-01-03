@@ -38,6 +38,28 @@ impl BaseTableProvider {
 
 impl TableHandleProvider for BaseTableProvider {
     fn build_table_handle(&self, database_name: &str, table_name: &str) -> DFResult<TableHandle> {
+        let db_schema = self
+            .meta_client
+            .get_db_schema(database_name)
+            .map_err(|e| DataFusionError::External(Box::new(e)))?
+            .ok_or_else(|| {
+                DataFusionError::Plan(format!(
+                    "Table not found, tenant: {} db: {}, table: {}",
+                    self.meta_client.tenant_name(),
+                    database_name,
+                    table_name,
+                ))
+            })?;
+
+        if db_schema.options().get_db_is_hidden() {
+            return Err(DataFusionError::Plan(format!(
+                "Table not found, tenant: {} db: {}, table: {}",
+                self.meta_client.tenant_name(),
+                database_name,
+                table_name,
+            )));
+        }
+
         let table_handle: TableHandle = match self
             .meta_client
             .get_table_schema(database_name, table_name)

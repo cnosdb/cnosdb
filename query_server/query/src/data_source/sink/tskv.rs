@@ -40,9 +40,35 @@ impl RecordBatchSink for TskvRecordBatchSink {
         let timer = self.metrics.elapsed_record_batch_write().timer();
         let record_batch_size = record_batch.get_array_memory_size() as u64;
 
+        let tenant = self.schema.tenant.as_str();
+        let db_name = self.schema.db.as_str();
+        let meta_client = self.coord.tenant_meta(tenant).await.ok_or(
+            coordinator::errors::CoordinatorError::TenantNotFound {
+                name: tenant.to_string(),
+            },
+        )?;
+        let db_schema = meta_client.get_db_schema(db_name)?.ok_or_else(|| {
+            meta::error::MetaError::DatabaseNotFound {
+                database: db_name.to_string(),
+            }
+        })?;
+        if db_schema.options().get_db_is_hidden() {
+            return Err(spi::QueryError::Meta {
+                source: meta::error::MetaError::DatabaseNotFound {
+                    database: db_name.to_string(),
+                },
+            });
+        }
+
+        let db_precision = db_schema.config.precision_or_default();
         let write_bytes = self
             .coord
-            .write_record_batch(self.schema.clone(), record_batch, span_recorder.span_ctx())
+            .write_record_batch(
+                self.schema.clone(),
+                record_batch,
+                *db_precision,
+                span_recorder.span_ctx(),
+            )
             .await
             .map(|write_bytes| {
                 span_recorder.set_metadata("output_rows", rows_writed);

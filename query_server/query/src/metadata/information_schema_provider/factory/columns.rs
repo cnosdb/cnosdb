@@ -89,9 +89,13 @@ impl TableProvider for InformationColumnsTable {
         let tenant_id = tenant.id();
         let tenant_name = tenant.name();
 
-        for db in dbs {
+        for (db, info) in dbs {
             // Check if the current user has at least read permission on this db, skip if not
             if !self.user.can_read_database(*tenant_id, &db) {
+                continue;
+            }
+
+            if info.is_hidden() {
                 continue;
             }
 

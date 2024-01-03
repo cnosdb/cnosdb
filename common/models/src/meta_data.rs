@@ -211,6 +211,10 @@ impl DatabaseInfo {
         TimeRange::new(min_ts, max_ts)
     }
 
+    pub fn is_hidden(&self) -> bool {
+        self.schema.options().get_db_is_hidden()
+    }
+
     // return the min timestamp value database allowed to store
     pub fn time_to_expired(&self) -> i64 {
         self.schema.time_to_expired()
