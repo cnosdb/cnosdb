@@ -962,6 +962,15 @@ pub struct EncodedDataBlock {
     pub time_range: Option<TimeRange>,
 }
 
+impl PartialEq for EncodedDataBlock {
+    fn eq(&self, other: &Self) -> bool {
+        self.field_type == other.field_type
+            && self.enc == other.enc
+            && self.ts == other.ts
+            && self.val == other.val
+    }
+}
+
 impl Display for EncodedDataBlock {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let time_range = self.time_range.unwrap_or(TimeRange::none());
