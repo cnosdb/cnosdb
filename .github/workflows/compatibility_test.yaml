@@ -2,7 +2,6 @@ name: Compatibility testing
 
 on:
   push:
-    branches: [ "LTS/2.3" ]
     tags:
       - v[0-9]+.*
   workflow_dispatch: {}
