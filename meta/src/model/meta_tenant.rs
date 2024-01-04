@@ -189,24 +189,13 @@ impl TenantMeta {
         &self,
         user_desc: &UserDesc,
     ) -> MetaResult<HashSet<Privilege<Oid>>> {
-        let role = {
-            let cache = self
-                .data
-                .read()
-                .members
-                .get(&user_desc.id().to_string())
-                .cloned();
-            if let Some(role) = cache {
-                role.clone()
-            } else {
-                self.member_role(user_desc.id()).await?.ok_or_else(|| {
-                    MetaError::MemberNotFound {
-                        member_name: user_desc.name().to_string(),
-                        tenant_name: self.tenant_name(),
-                    }
-                })?
-            }
-        };
+        let role = self
+            .member_role(user_desc.id(), true)
+            .await?
+            .ok_or_else(|| MetaError::MemberNotFound {
+                member_name: user_desc.name().to_string(),
+                tenant_name: self.tenant_name(),
+            })?;
 
         let tenant_id = self.tenant().id();
         let privileges = match role {
@@ -234,7 +223,16 @@ impl TenantMeta {
 
     // tenant member start
 
-    pub async fn member_role(&self, user_id: &Oid) -> MetaResult<Option<TenantRoleIdentifier>> {
+    pub async fn member_role(
+        &self,
+        user_id: &Oid,
+        use_cache: bool,
+    ) -> MetaResult<Option<TenantRoleIdentifier>> {
+        if use_cache {
+            if let Some(role) = self.data.read().members.get(&user_id.to_string()) {
+                return Ok(Some(role.clone()));
+            }
+        }
         let req = command::ReadCommand::MemberRole(
             self.cluster.clone(),
             self.tenant().name().to_string(),

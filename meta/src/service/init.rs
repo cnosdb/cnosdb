@@ -1,6 +1,4 @@
-use models::auth::role::{SystemTenantRole, TenantRoleIdentifier};
 use models::auth::user::{UserDesc, UserOptionsBuilder};
-use models::oid::Identifier;
 use models::schema::{Tenant, TenantOptionsBuilder};
 use replication::{ApplyContext, ApplyStorage, APPLY_TYPE_WRITE};
 
@@ -40,17 +38,6 @@ pub async fn init_meta(storage: &StateMachine, init_data: MetaInit) {
     let oid = 78322384368497284380257291774744000002;
     let user_desc = UserDesc::new(oid, init_data.admin_user.clone(), user_opt, true);
     let req = WriteCommand::CreateUser(init_data.cluster_name.clone(), user_desc.clone());
-    let data = serde_json::to_vec(&req).unwrap();
-    storage.apply(&ctx, &data).await.expect("expect success");
-
-    // init role
-    let role = TenantRoleIdentifier::System(SystemTenantRole::Owner);
-    let req = WriteCommand::AddMemberToTenant(
-        init_data.cluster_name.clone(),
-        *user_desc.id(),
-        role,
-        init_data.system_tenant.to_string(),
-    );
     let data = serde_json::to_vec(&req).unwrap();
     storage.apply(&ctx, &data).await.expect("expect success");
 
