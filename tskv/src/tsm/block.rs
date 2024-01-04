@@ -943,8 +943,8 @@ impl DataBlockReader {
 impl Iterator for DataBlockReader {
     type Item = DataType;
     fn next(&mut self) -> Option<Self::Item> {
-        if self.idx > self.end_idx {
-            self.set_index_from_time_ranges();
+        if self.idx > self.end_idx && !self.set_index_from_time_ranges() {
+            return None;
         }
         let res = self.data_block.get(self.idx);
         self.idx += 1;
@@ -1009,13 +1009,13 @@ impl EncodedDataBlock {
 
 #[cfg(test)]
 pub mod test {
-
     use minivec::mini_vec;
-    use models::predicate::domain::TimeRange;
+    use models::predicate::domain::{TimeRange, TimeRanges};
+    use models::ValueType;
 
     use crate::memcache::DataType;
     use crate::tsm::codec::DataBlockEncoding;
-    use crate::tsm::DataBlock;
+    use crate::tsm::{DataBlock, DataBlockReader};
 
     pub(crate) fn check_data_block(block: &DataBlock, pattern: &[DataType]) {
         assert_eq!(block.len(), pattern.len());
@@ -1196,5 +1196,67 @@ pub mod test {
                 enc: DataBlockEncoding::default(),
             }
         );
+    }
+
+    #[test]
+    fn test_data_block_reader() {
+        {
+            let mut blk_reader = DataBlockReader::new_uninit(ValueType::Float);
+            assert_eq!(blk_reader.next(), None);
+        }
+        {
+            let data_block = DataBlock::U64 {
+                ts: vec![0, 1, 2, 3],
+                val: vec![10, 11, 12, 13],
+                enc: DataBlockEncoding::default(),
+            };
+            let time_ranges = TimeRanges::all();
+            let mut blk_reader = DataBlockReader::new(data_block, time_ranges);
+            assert_eq!(blk_reader.next(), Some(DataType::U64(0, 10)));
+            assert_eq!(blk_reader.next(), Some(DataType::U64(1, 11)));
+            assert_eq!(blk_reader.next(), Some(DataType::U64(2, 12)));
+            assert_eq!(blk_reader.next(), Some(DataType::U64(3, 13)));
+            assert_eq!(blk_reader.next(), None);
+        }
+        {
+            let data_block = DataBlock::U64 {
+                ts: vec![0, 1, 2, 3],
+                val: vec![10, 11, 12, 13],
+                enc: DataBlockEncoding::default(),
+            };
+            let time_ranges = TimeRanges::empty();
+            let mut blk_reader = DataBlockReader::new(data_block, time_ranges);
+            assert_eq!(blk_reader.next(), None);
+        }
+        {
+            let data_block = DataBlock::U64 {
+                ts: vec![0, 1, 2, 10, 11, 12, 100, 101, 102, 1000, 1001, 1002],
+                val: vec![0, 3, 6, 30, 33, 36, 300, 303, 306, 3000, 3003, 3006],
+                enc: DataBlockEncoding::default(),
+            };
+            let time_ranges = TimeRanges::new(vec![
+                (-3, -1).into(),
+                (0, 0).into(),
+                (1, 1).into(),
+                (2, 2).into(),
+                (10, 12).into(),
+                (99, 100).into(),
+                (102, 103).into(),
+                (999, 1003).into(),
+            ]);
+            let mut blk_reader = DataBlockReader::new(data_block, time_ranges);
+            assert_eq!(blk_reader.next(), Some(DataType::U64(0, 0)));
+            assert_eq!(blk_reader.next(), Some(DataType::U64(1, 3)));
+            assert_eq!(blk_reader.next(), Some(DataType::U64(2, 6)));
+            assert_eq!(blk_reader.next(), Some(DataType::U64(10, 30)));
+            assert_eq!(blk_reader.next(), Some(DataType::U64(11, 33)));
+            assert_eq!(blk_reader.next(), Some(DataType::U64(12, 36)));
+            assert_eq!(blk_reader.next(), Some(DataType::U64(100, 300)));
+            assert_eq!(blk_reader.next(), Some(DataType::U64(102, 306)));
+            assert_eq!(blk_reader.next(), Some(DataType::U64(1000, 3000)));
+            assert_eq!(blk_reader.next(), Some(DataType::U64(1001, 3003)));
+            assert_eq!(blk_reader.next(), Some(DataType::U64(1002, 3006)));
+            assert_eq!(blk_reader.next(), None);
+        }
     }
 }
