@@ -102,9 +102,14 @@ impl TableProvider for InformationDatabasePrivilegesTable {
             }
         } else {
             // For non-Owner members, only records corresponding to own role are accessed
-            if let Some(role) = self.metadata.member_role(user_id).await.map_err(|e| {
-                DataFusionError::Internal(format!("Failed to get member role, cause: {:?}", e))
-            })? {
+            if let Some(role) = self
+                .metadata
+                .member_role(user_id, false)
+                .await
+                .map_err(|e| {
+                    DataFusionError::Internal(format!("Failed to get member role, cause: {:?}", e))
+                })?
+            {
                 match role {
                     TenantRoleIdentifier::System(_) => {
                         // not show system roles

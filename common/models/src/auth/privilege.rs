@@ -112,8 +112,10 @@ pub enum TenantObjectPrivilege {
     // e.g. kill querys of tenant
     System,
     // All operation permissions related to members
+    // e.g. alter tenant add user, alter tenant set user, alter tenant remove user
     MemberFull,
     // All operation permissions related to roles
+    // e.g. create role, drop role, grant/revoke on role
     RoleFull,
     // T: database_name
     // None: all databases in this tenant

@@ -21,11 +21,25 @@ impl AccessControlImpl {
 #[async_trait::async_trait]
 impl AccessControl for AccessControlImpl {
     async fn access_check(&self, user_info: &UserInfo, tenant_name: &str) -> Result<User> {
-        let user = self.inner.access_check(user_info, tenant_name).await?;
+        let user = self
+            .inner
+            .access_check(user_info, tenant_name)
+            .await
+            .map_err(|_err| AuthError::AccessDenied {
+                user_name: user_info.user.clone(),
+                auth_type: "xxx".to_owned(),
+                err: "username or password invalid".to_owned(),
+            })?;
 
         let user_options = user.desc().options();
         // access check
-        AuthType::from(user_options).access_check(user_info)?;
+        AuthType::from(user_options)
+            .access_check(user_info)
+            .map_err(|_err| AuthError::AccessDenied {
+                user_name: user_info.user.clone(),
+                auth_type: "xxx".to_owned(),
+                err: "username or password invalid".to_owned(),
+            })?;
 
         Ok(user)
     }

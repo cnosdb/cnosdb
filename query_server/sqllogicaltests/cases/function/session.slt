@@ -2,23 +2,86 @@
 ## Query
 ##########
 
+statement ok
+drop user if exists u1;
 
-query
+statement ok
+drop tenant if exists t1;
+
+statement ok
+drop role if exists r1;
+
+statement ok
+drop database if exists db1;
+
+query 
 select current_user();
 ----
 root
 
-query
+query 
 select current_database();
 ----
 public
 
-query
+query 
 select current_tenant();
 ----
 cnosdb
 
-query
+query 
 select current_role();
 ----
-owner
+NULL
+
+statement ok
+create user u1;
+
+statement ok
+create tenant t1;
+
+statement ok
+create role r1 inherit member;
+
+statement ok
+alter tenant t1 add user u1 as r1;
+
+statement ok
+create database db1;
+
+statement ok
+--#TENANT = t1
+--#USER_NAME = u1
+--#DATABASE = db1
+
+query 
+select current_user();
+----
+u1
+
+query 
+select current_database();
+----
+db1
+
+query 
+select current_tenant();
+----
+t1
+
+query 
+select current_role();
+----
+r1
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Schema error: No field named current_user\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
+select current_user;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Schema error: No field named current_database\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
+select current_database;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Schema error: No field named current_tenant\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
+select current_tenant;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Schema error: No field named current_role\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
+select current_role;

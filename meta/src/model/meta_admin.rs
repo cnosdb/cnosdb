@@ -565,7 +565,7 @@ impl AdminMeta {
                     tenant: tenant_name.to_string(),
                 })?;
 
-        let role = client.member_role(user_desc.id()).await?;
+        let role = client.member_role(user_desc.id(), true).await?;
 
         let user = if user_desc.is_admin() {
             admin_user(user_desc, role)

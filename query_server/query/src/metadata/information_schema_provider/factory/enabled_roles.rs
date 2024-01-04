@@ -78,7 +78,7 @@ impl TableProvider for InformationEnabledRolesTable {
 
         if let Some(role) = self
             .metadata
-            .member_role(self.user.desc().id())
+            .member_role(self.user.desc().id(), false)
             .await
             .map_err(|e| DataFusionError::Internal(format!("Failed to list databases: {}", e)))?
         {
