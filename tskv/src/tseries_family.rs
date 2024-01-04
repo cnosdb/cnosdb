@@ -16,6 +16,7 @@ use models::{FieldId, SchemaId, SeriesId, Timestamp};
 use parking_lot::RwLock;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Sender;
+use tokio::sync::RwLock as AsyncRwLock;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 use trace::{debug, error, info, warn};
@@ -23,11 +24,12 @@ use utils::BloomFilter;
 
 use crate::compaction::{CompactTask, FlushReq};
 use crate::error::Result;
+use crate::file_system::file_manager;
 use crate::file_utils::{make_delta_file_name, make_tsm_file_name};
 use crate::kv_option::{CacheOptions, StorageOptions};
 use crate::memcache::{DataType, FieldVal, MemCache, RowGroup};
 use crate::summary::{CompactMeta, VersionEdit};
-use crate::tsm::{DataBlock, TsmReader, TsmTombstone};
+use crate::tsm::{self, DataBlock, TsmReader, TsmTombstone};
 use crate::Error::CommonError;
 use crate::{ColumnFileId, LevelId, TseriesFamilyId};
 
@@ -91,6 +93,12 @@ impl ColumnFile {
         &self.path
     }
 
+    pub fn tombstone_path(&self) -> PathBuf {
+        let mut path = self.path.clone();
+        path.set_extension(tsm::TOMBSTONE_FILE_SUFFIX);
+        path
+    }
+
     pub fn overlap(&self, time_range: &TimeRange) -> bool {
         self.time_range.overlaps(time_range)
     }
@@ -111,8 +119,10 @@ impl ColumnFile {
     pub async fn add_tombstone(&self, field_ids: &[FieldId], time_range: &TimeRange) -> Result<()> {
         let dir = self.path.parent().expect("file has parent");
         // TODO flock tombstone file.
-        let mut tombstone = TsmTombstone::open(dir, self.file_id).await?;
-        tombstone.add_range(field_ids, time_range).await?;
+        let tombstone = TsmTombstone::open(dir, self.file_id).await?;
+        tombstone
+            .add_range(field_ids, time_range, Some(self.field_id_filter.clone()))
+            .await?;
         tombstone.flush().await?;
         Ok(())
     }
@@ -144,7 +154,10 @@ impl ColumnFile {
 
 impl Drop for ColumnFile {
     fn drop(&mut self) {
-        debug!("Removing file {}", self.file_id);
+        debug!(
+            "Removing tsm file {} and it's tombstone if exists.",
+            self.file_id
+        );
         if self.is_deleted() {
             let path = self.file_path();
             if let Some(cache) = self.tsm_reader_cache.upgrade() {
@@ -153,17 +166,71 @@ impl Drop for ColumnFile {
                     cache.remove(&k).await;
                 });
             }
-
             if let Err(e) = std::fs::remove_file(path) {
                 error!(
-                    "Error when removing file {} at '{}': {}",
+                    "Failed to remove tsm file {} at '{}': {e}",
                     self.file_id,
-                    path.display(),
-                    e.to_string()
+                    path.display()
                 );
+            } else {
+                info!("Removed tsm file {} at '{}", self.file_id, path.display());
             }
-            info!("Removed file {} at '{}", self.file_id, path.display());
+
+            let tombstone_path = self.tombstone_path();
+            info!("Trying to remove tombstone: '{}'", tombstone_path.display());
+            if file_manager::try_exists(&tombstone_path) {
+                if let Err(e) = std::fs::remove_file(&tombstone_path) {
+                    error!(
+                        "Failed to remove tsm tombstone '{}': {e}",
+                        tombstone_path.display()
+                    );
+                } else {
+                    info!("Removed tsm tombstone '{}", tombstone_path.display());
+                }
+            }
+
+            match tsm::tombstone_compact_tmp_path(&tombstone_path) {
+                Ok(path) => {
+                    info!(
+                        "Trying to remove tsm tombstone_compact_tmp: '{}'",
+                        path.display()
+                    );
+                    if file_manager::try_exists(&path) {
+                        if let Err(e) = std::fs::remove_file(&path) {
+                            error!(
+                                "Failed to remove tsm tombstone_compact_tmp '{}': {e}",
+                                path.display()
+                            );
+                        } else {
+                            info!("Removed tsm tombstone_compact_tmp '{}'", path.display());
+                        }
+                    }
+                }
+                Err(e) => error!(
+                    "Failed to remove tsm tombstone_compact_tmp '{}', path invalid: {e}",
+                    path.display()
+                ),
+            }
         }
+    }
+}
+
+impl std::fmt::Display for ColumnFile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{{ level:{}, file_id:{}, compacting:{}, time_range:{}-{}, file size:{} }}",
+            self.level,
+            self.file_id,
+            if self.is_compacting() {
+                "True"
+            } else {
+                "False"
+            },
+            self.time_range.min_ts,
+            self.time_range.max_ts,
+            self.size,
+        )
     }
 }
 
@@ -194,6 +261,21 @@ impl ColumnFile {
 
     pub fn set_field_id_filter(&mut self, field_id_filter: Arc<BloomFilter>) {
         self.field_id_filter = field_id_filter;
+    }
+}
+
+pub(crate) struct ColumnFiles<'a, F: AsRef<ColumnFile>>(pub &'a [F]);
+
+impl<'a, F: AsRef<ColumnFile>> std::fmt::Display for ColumnFiles<'a, F> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut iter = self.0.iter();
+        if let Some(d) = iter.next() {
+            write!(f, "{}", d.as_ref())?;
+            for d in iter {
+                write!(f, ", {}", d.as_ref())?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -356,6 +438,34 @@ impl LevelInfo {
             .collect::<Vec<Arc<ColumnFile>>>();
         res.sort_by_key(|f| *f.time_range());
         res
+    }
+}
+
+impl std::fmt::Display for LevelInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{{ L:{}, files: [ ", self.level)?;
+        for (i, file) in self.files.iter().enumerate() {
+            write!(f, "{}", file.as_ref())?;
+            if i < self.files.len() - 1 {
+                write!(f, ", ")?;
+            }
+        }
+        write!(f, "] }}")
+    }
+}
+
+pub(crate) struct LevelInfos<'a>(pub &'a [LevelInfo]);
+
+impl<'a> std::fmt::Display for LevelInfos<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut iter = self.0.iter();
+        if let Some(d) = iter.next() {
+            write!(f, "{d}")?;
+            for d in iter {
+                write!(f, ", {d}")?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -686,7 +796,7 @@ pub struct TseriesFamily {
     cache_opt: Arc<CacheOptions>,
     storage_opt: Arc<StorageOptions>,
     seq_no: u64,
-    last_modified: Arc<tokio::sync::RwLock<Option<Instant>>>,
+    last_modified: Arc<AsyncRwLock<Option<Instant>>>,
     flush_task_sender: Sender<FlushReq>,
     compact_task_sender: Sender<CompactTask>,
     cancellation_token: CancellationToken,
@@ -732,7 +842,7 @@ impl TseriesFamily {
             version,
             cache_opt,
             storage_opt,
-            last_modified: Arc::new(tokio::sync::RwLock::new(None)),
+            last_modified: Arc::new(AsyncRwLock::new(None)),
             flush_task_sender,
             compact_task_sender,
             cancellation_token: CancellationToken::new(),
@@ -916,38 +1026,8 @@ impl TseriesFamily {
         }
     }
 
-    pub fn schedule_compaction(&self, runtime: Arc<Runtime>) {
-        let tsf_id = self.tf_id;
-        let compact_trigger_cold_duration = self.storage_opt.compact_trigger_cold_duration;
-        let last_modified = self.last_modified.clone();
-        let compact_task_sender = self.compact_task_sender.clone();
-        let cancellation_token = self.cancellation_token.clone();
-        let _jh = runtime.spawn(async move {
-            if compact_trigger_cold_duration == Duration::ZERO {} else {
-                let mut cold_check_interval = tokio::time::interval(Duration::from_secs(10));
-                cold_check_interval.tick().await;
-                loop {
-                    tokio::select! {
-                        _ = cold_check_interval.tick() => {
-                            let last_modified = last_modified.read().await;
-                            if let Some(t) = *last_modified {
-                                if t.elapsed() >= compact_trigger_cold_duration {
-                                    if let Err(e) = compact_task_sender.send(CompactTask::ColdVnode(tsf_id)).await {
-                                        warn!("failed to send compact task({}), {}", tsf_id, e);
-                                    }
-                                }
-                            }
-                        }
-                        _ = cancellation_token.cancelled() => {
-                            break;
-                        }
-                    }
-                }
-            }
-        });
-    }
-
     pub fn close(&self) {
+        info!("Closing vnode {}", self.tf_id);
         self.cancellation_token.cancel();
     }
 
@@ -1038,8 +1118,70 @@ impl TseriesFamily {
 
 impl Drop for TseriesFamily {
     fn drop(&mut self) {
-        self.cancellation_token.cancel();
+        if !self.cancellation_token.is_cancelled() {
+            self.cancellation_token.cancel();
+        }
     }
+}
+
+pub fn schedule_vnode_compaction(
+    runtime: Arc<Runtime>,
+    vnode: Arc<AsyncRwLock<TseriesFamily>>,
+    compact_task_sender: Sender<CompactTask>,
+) {
+    let _jh = runtime.spawn(async move {
+        let vnode_rlock = vnode.read().await;
+        let tsf_id = vnode_rlock.tf_id;
+        let compact_trigger_cold_duration = vnode_rlock.storage_opt.compact_trigger_cold_duration;
+        let last_modified = vnode_rlock.last_modified.clone();
+        let compact_trigger_file_num = vnode_rlock.storage_opt.compact_trigger_file_num as usize;
+        let cancellation_token = vnode_rlock.cancellation_token.clone();
+        drop(vnode_rlock);
+
+        if compact_trigger_cold_duration == Duration::ZERO {
+            info!("Schedule vnode compaction for {tsf_id}: compact_trigger_cold_duration is 0 so won't run this job");
+        } else {
+            info!("Schedule vnode compaction for {tsf_id}: checking to compact every 10 seconds.");
+            let mut check_interval = tokio::time::interval(Duration::from_secs(10));
+            check_interval.tick().await;
+
+            loop {
+                tokio::select! {
+                    _ = check_interval.tick() => {
+                        // Check if vnode is cold.
+                        let ts_rlock = last_modified.read().await;
+                        if let Some(t) = *ts_rlock {
+                            if t.elapsed() >= compact_trigger_cold_duration {
+                                drop(ts_rlock);
+                                let mut ts_wlock = last_modified.write().await;
+                                *ts_wlock = Some(Instant::now());
+                                if let Err(e) = compact_task_sender.send(CompactTask::Cold(tsf_id)).await {
+                                    warn!("failed to send compact task({}), {}", tsf_id, e);
+                                }
+                            }
+                        }
+
+                        // Check if level-0 files is more than DEFAULT_COMPACT_TRIGGER_DETLA_FILE_NUM
+                        let version = vnode.read().await.super_version().version.clone();
+                        let mut level0_files = 0_usize;
+                        for file in version.levels_info()[0].files.iter() {
+                            if !file.is_compacting() {
+                                level0_files += 1;
+                            }
+                        }
+                        if level0_files >= compact_trigger_file_num {
+                            if let Err(e) = compact_task_sender.send(CompactTask::Delta(tsf_id)).await {
+                                warn!("failed to send compact task({}), {}", tsf_id, e);
+                            }
+                        }
+                    }
+                    _ = cancellation_token.cancelled() => {
+                        break;
+                    }
+                }
+            }
+        }
+    });
 }
 
 #[cfg(test)]
@@ -1060,7 +1202,7 @@ pub mod test_tseries_family {
     use tokio::sync::RwLock as AsyncRwLock;
 
     use super::{ColumnFile, LevelInfo};
-    use crate::compaction::flush_tests::default_table_schema;
+    use crate::compaction::test::default_table_schema;
     use crate::compaction::{run_flush_memtable_job, FlushReq};
     use crate::context::{GlobalContext, GlobalSequenceContext};
     use crate::file_utils::make_tsm_file_name;
@@ -1136,7 +1278,6 @@ pub mod test_tseries_family {
             let version = Version::new(1, database, opt.storage.clone(), 1, levels, 3100, tsm_reader_cache);
         let mut version_edits = Vec::new();
         let mut ve = VersionEdit::new(1);
-        #[rustfmt::skip]
         ve.add_file(
             CompactMeta {
                 file_id: 4,
@@ -1196,7 +1337,7 @@ pub mod test_tseries_family {
         let ts_family_id = 1;
         let tsm_dir = opt.storage.tsm_dir(&database, ts_family_id);
         #[rustfmt::skip]
-            let levels = [
+        let levels = [
             LevelInfo::init(database.clone(), 0, 1, opt.storage.clone()),
             LevelInfo {
                 files: vec![
@@ -1233,7 +1374,6 @@ pub mod test_tseries_family {
 
         let mut version_edits = Vec::new();
         let mut ve = VersionEdit::new(1);
-        #[rustfmt::skip]
         ve.add_file(
             CompactMeta {
                 file_id: 5,
@@ -1248,7 +1388,6 @@ pub mod test_tseries_family {
             },
             3150,
         );
-        #[rustfmt::skip]
         ve.add_file(
             CompactMeta {
                 file_id: 6,
@@ -1581,9 +1720,9 @@ pub mod test_tseries_family {
             let file = version.levels_info[1].files[0].clone();
 
             let dir = opt.storage.tsm_dir(&database, ts_family_id);
-            let mut tombstone = TsmTombstone::open(dir, file.file_id).await.unwrap();
+            let tombstone = TsmTombstone::open(dir, file.file_id).await.unwrap();
             tombstone
-                .add_range(&[0], &TimeRange::new(0, 0))
+                .add_range(&[0], &TimeRange::new(0, 0), None)
                 .await
                 .unwrap();
             tombstone.flush().await.unwrap();
