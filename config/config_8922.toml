@@ -74,7 +74,7 @@ enable_report = true
 
 [cluster]
 raft_logs_to_keep = 5000
-using_raft_replication = false
+using_raft_replication = true
 
 [hinted_off]
 enable = true

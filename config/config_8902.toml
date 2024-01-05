@@ -2,7 +2,7 @@
 node_id = 1001
 host = "localhost"
 cluster_name = 'cluster_xxx'
-store_metrics = true
+store_metrics = false
 
 [deployment]
 # mode = 'query_tskv'
@@ -74,7 +74,7 @@ enable_report = true
 
 [cluster]
 raft_logs_to_keep = 5000
-using_raft_replication = false
+using_raft_replication = true
 
 [hinted_off]
 enable = true
