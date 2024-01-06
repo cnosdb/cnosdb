@@ -2,13 +2,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use openraft::storage::Adaptor;
-use openraft::RaftMetrics;
+use openraft::{RaftMetrics, SnapshotPolicy};
 use tracing::info;
 
 use crate::errors::{ReplicationError, ReplicationResult};
 use crate::network_client::NetworkConn;
 use crate::node_store::NodeStorage;
-use crate::{ApplyStorageRef, OpenRaftNode, RaftNodeId, RaftNodeInfo};
+use crate::{ApplyStorageRef, OpenRaftNode, RaftNodeId, RaftNodeInfo, ReplicationConfig};
 
 #[derive(Clone)]
 pub struct RaftNode {
@@ -18,27 +18,42 @@ pub struct RaftNode {
     engine: ApplyStorageRef,
 
     raft: OpenRaftNode,
-    config: Arc<openraft::Config>,
+    config: ReplicationConfig,
 }
 
 impl RaftNode {
     pub async fn new(
         id: RaftNodeId,
         info: RaftNodeInfo,
-        config: openraft::Config,
         storage: Arc<NodeStorage>,
         engine: ApplyStorageRef,
-        grpc_enable_gzip: bool,
+        config: ReplicationConfig,
     ) -> ReplicationResult<Self> {
-        let config = Arc::new(config.validate().unwrap());
+        let hb: u64 = config.heartbeat_interval;
+        let keep_logs = config.raft_logs_to_keep;
+        let raft_config = openraft::Config {
+            enable_tick: true,
+            enable_elect: true,
+            enable_heartbeat: true,
+            heartbeat_interval: hb,
+            election_timeout_min: 3 * hb,
+            election_timeout_max: 5 * hb,
+            install_snapshot_timeout: config.install_snapshot_timeout,
+            replication_lag_threshold: keep_logs,
+            snapshot_policy: SnapshotPolicy::LogsSinceLast(keep_logs),
+            max_in_snapshot_log_to_keep: keep_logs,
+            cluster_name: config.cluster_name.clone(),
+            ..Default::default()
+        };
 
+        let raft_config = Arc::new(raft_config.validate().unwrap());
         let (log_store, state_machine) = Adaptor::new(storage.clone());
 
-        let network = NetworkConn::new(grpc_enable_gzip);
-        let raft = openraft::Raft::new(id, config.clone(), network, log_store, state_machine)
+        let network = NetworkConn::new(config.clone());
+        let raft = openraft::Raft::new(id, raft_config, network, log_store, state_machine)
             .await
             .map_err(|err| ReplicationError::RaftInternalErr {
-                msg: format!("New raft execute failed: {}", err),
+                msg: format!("New raft({}) execute failed: {}", id, err),
             })?;
 
         Ok(Self {
@@ -72,7 +87,10 @@ impl RaftNode {
         nodes.insert(self.id, self.info.clone());
 
         let result = self.raft.initialize(nodes).await;
-        info!("Initialize raft Status: {:?}", result);
+        info!(
+            "Initialize raft group: {}, id: {}, {:?}",
+            self.info.group_id, self.id, result
+        );
         if let Err(openraft::error::RaftError::APIError(
             openraft::error::InitializeError::NotAllowed(_),
         )) = result
@@ -85,15 +103,6 @@ impl RaftNode {
         } else {
             Ok(())
         }
-
-        // self.raft
-        //     .initialize(nodes)
-        //     .await
-        //     .map_err(|err| ReplicationError::RaftInternalErr {
-        //         msg: format!("Initialize raft execute failed: {}", err),
-        //     })?;
-
-        // Ok(())
     }
 
     /// Add a node as **Learner**.

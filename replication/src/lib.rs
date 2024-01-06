@@ -32,6 +32,17 @@ pub struct RaftNodeInfo {
     pub address: String, // server address
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq, Default)]
+pub struct ReplicationConfig {
+    pub cluster_name: String,
+    pub lmdb_max_map_size: usize,
+    pub grpc_enable_gzip: bool,
+    pub heartbeat_interval: u64,
+    pub raft_logs_to_keep: u64,
+    pub send_append_entries_timeout: u64, //ms
+    pub install_snapshot_timeout: u64,    //ms
+}
+
 // #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Ord, PartialOrd)]
 // #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 // pub struct TypeConfig {}
@@ -64,16 +75,6 @@ pub type OpenRaftNode =
 pub type Request = Vec<u8>;
 pub type Response = Vec<u8>;
 //-----------------------------------------------------------------//
-
-// #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
-// pub enum Request {
-//     Set { key: String, value: String },
-// }
-
-// #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
-// pub struct Response {
-//     pub value: Option<String>,
-// }
 
 pub const APPLY_TYPE_WAL: u32 = 1;
 pub const APPLY_TYPE_WRITE: u32 = 2;

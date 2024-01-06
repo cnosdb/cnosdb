@@ -73,8 +73,12 @@ enable_report = true
 
 
 [cluster]
-raft_logs_to_keep = 5000
 using_raft_replication = true
+raft_logs_to_keep = 5000
+lmdb_max_map_size = 1024000000
+heartbeat_interval = 3000
+install_snapshot_timeout = 3600000
+send_append_entries_timeout = 5000
 
 [hinted_off]
 enable = true

@@ -94,12 +94,12 @@ impl ApplyStorage for StateMachine {
 }
 
 impl StateMachine {
-    pub fn open(path: impl AsRef<Path>) -> MetaResult<Self> {
+    pub fn open(path: impl AsRef<Path>, size: usize) -> MetaResult<Self> {
         fs::create_dir_all(&path)?;
 
         let env = heed::EnvOpenOptions::new()
-            .map_size(1024 * 1024 * 1024)
-            .max_dbs(16)
+            .map_size(size)
+            .max_dbs(1)
             .open(path)?;
 
         let db: heed::Database<heed::types::Str, heed::types::Str> =

@@ -16,26 +16,20 @@ use tower::timeout::Timeout;
 use trace::debug;
 
 use crate::errors::{ReplicationError, ReplicationResult};
-use crate::{RaftNodeId, RaftNodeInfo, TypeConfig};
+use crate::{RaftNodeId, RaftNodeInfo, ReplicationConfig, TypeConfig};
 
 // ------------------------------------------------------------------------- //
 #[derive(Clone)]
 pub struct NetworkConn {
+    config: ReplicationConfig,
     conn_map: Arc<RwLock<HashMap<String, Channel>>>,
-    grpc_enable_gzip: bool,
-}
-
-impl Default for NetworkConn {
-    fn default() -> Self {
-        Self::new(false)
-    }
 }
 
 impl NetworkConn {
-    pub fn new(grpc_enable_gzip: bool) -> Self {
+    pub fn new(config: ReplicationConfig) -> Self {
         Self {
+            config,
             conn_map: Arc::new(RwLock::new(HashMap::new())),
-            grpc_enable_gzip,
         }
     }
     async fn get_conn(&self, addr: &str) -> ReplicationResult<Channel> {
@@ -73,7 +67,7 @@ impl RaftNetworkFactory<TypeConfig> for NetworkConn {
             target,
             conn: self.clone(),
             target_node: node.clone(),
-            grpc_enable_gzip: self.grpc_enable_gzip,
+            config: self.config.clone(),
         }
     }
 }
@@ -87,7 +81,8 @@ pub struct TargetClient {
     conn: NetworkConn,
     target: RaftNodeId,
     target_node: RaftNodeInfo,
-    grpc_enable_gzip: bool,
+
+    config: ReplicationConfig,
 }
 
 #[async_trait]
@@ -109,9 +104,9 @@ impl RaftNetwork<TypeConfig> for TargetClient {
 
         let mut client = raft_service_time_out_client(
             channel,
-            Duration::from_millis(3 * 1000),
+            Duration::from_millis(self.config.send_append_entries_timeout),
             DEFAULT_GRPC_SERVER_MESSAGE_LEN,
-            self.grpc_enable_gzip,
+            self.config.grpc_enable_gzip,
         );
 
         let data = serde_json::to_string(&req)
@@ -150,9 +145,9 @@ impl RaftNetwork<TypeConfig> for TargetClient {
 
         let mut client = raft_service_time_out_client(
             channel,
-            Duration::from_millis(3 * 1000),
+            Duration::from_millis(self.config.send_append_entries_timeout),
             DEFAULT_GRPC_SERVER_MESSAGE_LEN,
-            self.grpc_enable_gzip,
+            self.config.grpc_enable_gzip,
         );
 
         let data = bincode::serialize(&req)
@@ -192,9 +187,9 @@ impl RaftNetwork<TypeConfig> for TargetClient {
 
         let mut client = raft_service_time_out_client(
             channel,
-            Duration::from_millis(3 * 1000),
+            Duration::from_millis(self.config.install_snapshot_timeout),
             DEFAULT_GRPC_SERVER_MESSAGE_LEN,
-            self.grpc_enable_gzip,
+            self.config.grpc_enable_gzip,
         );
 
         let data = bincode::serialize(&req)
