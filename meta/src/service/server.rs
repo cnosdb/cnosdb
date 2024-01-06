@@ -5,7 +5,6 @@ use std::time::Duration;
 use futures::TryFutureExt;
 use models::meta_data::{NodeId, NodeMetrics};
 use models::node_info::NodeStatus;
-use openraft::SnapshotPolicy;
 use protos::raft_service::raft_service_server::RaftServiceServer;
 use replication::entry_store::HeedEntryStorage;
 use replication::multi_raft::MultiRaft;
@@ -14,7 +13,7 @@ use replication::network_http::{EitherBody, RaftHttpAdmin, SyncSendError};
 use replication::node_store::NodeStorage;
 use replication::raft_node::RaftNode;
 use replication::state_store::StateStorage;
-use replication::{EntryStorageRef, RaftNodeInfo};
+use replication::{EntryStorageRef, RaftNodeInfo, ReplicationConfig};
 use tokio::sync::RwLock;
 use tower::Service;
 use tracing::warn;
@@ -28,34 +27,15 @@ use crate::store::key_path::KeyPath;
 use crate::store::storage::StateMachine;
 use crate::store::{self};
 
-fn openraft_config() -> openraft::Config {
-    let hb: u64 = 1000;
-    let config = openraft::Config {
-        enable_tick: true,
-        enable_elect: true,
-        enable_heartbeat: true,
-        heartbeat_interval: hb,
-        election_timeout_min: 3 * hb,
-        election_timeout_max: 5 * hb,
-        install_snapshot_timeout: 300 * 1000,
-        replication_lag_threshold: 10000,
-        snapshot_policy: SnapshotPolicy::LogsSinceLast(10000),
-        max_in_snapshot_log_to_keep: 10000,
-        cluster_name: "cnosdb_meta".to_string(),
-        ..Default::default()
-    };
-
-    config.validate().unwrap()
-}
-
 pub async fn start_raft_node(opt: store::config::Opt) -> MetaResult<()> {
     let id = opt.id;
     let path = std::path::Path::new(&opt.data_path);
     let http_addr = models::utils::build_address(&opt.host, opt.port);
 
-    let state = StateStorage::open(path.join(format!("{}_state", id)))?;
-    let entry = HeedEntryStorage::open(path.join(format!("{}_entry", id)))?;
-    let engine = StateMachine::open(path.join(format!("{}_data", id)))?;
+    let max_size = opt.lmdb_max_map_size;
+    let state = StateStorage::open(path.join(format!("{}_state", id)), max_size)?;
+    let entry = HeedEntryStorage::open(path.join(format!("{}_entry", id)), max_size)?;
+    let engine = StateMachine::open(path.join(format!("{}_data", id)), max_size)?;
 
     let state = Arc::new(state);
     let engine = Arc::new(engine);
@@ -67,18 +47,19 @@ pub async fn start_raft_node(opt: store::config::Opt) -> MetaResult<()> {
     };
 
     let storage = NodeStorage::open(id, info.clone(), state, engine.clone(), entry)?;
-    let storage = Arc::new(storage);
+    let config = ReplicationConfig {
+        cluster_name: "cnosdb_meta".to_string(),
+        lmdb_max_map_size: opt.lmdb_max_map_size,
+        grpc_enable_gzip: opt.grpc_enable_gzip,
+        heartbeat_interval: opt.heartbeat_interval,
+        raft_logs_to_keep: opt.raft_logs_to_keep,
+        send_append_entries_timeout: opt.send_append_entries_timeout,
+        install_snapshot_timeout: opt.install_snapshot_timeout,
+    };
 
-    let node = RaftNode::new(
-        id,
-        info,
-        openraft_config(),
-        storage,
-        engine.clone(),
-        opt.grpc_enable_gzip,
-    )
-    .await
-    .unwrap();
+    let node = RaftNode::new(id, info, Arc::new(storage), engine.clone(), config)
+        .await
+        .unwrap();
 
     init_meta(&engine, opt.meta_init.clone()).await;
     tokio::spawn(detect_node_heartbeat(

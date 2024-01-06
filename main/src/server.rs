@@ -245,6 +245,7 @@ impl ServiceBuilder {
             self.config.storage.path.clone(),
             self.config.global.cluster_name.clone(),
             self.config.meta.service_addr[0].clone(),
+            self.config.cluster.lmdb_max_map_size,
         )
         .await;
 

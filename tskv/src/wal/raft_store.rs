@@ -511,8 +511,9 @@ mod test {
         let entry = RaftEntryStorage::new(wal);
         let entry: EntryStorageRef = Arc::new(entry);
 
-        let state = StateStorage::open(dir.join("state")).unwrap();
-        let engine = HeedApplyStorage::open(dir.join("engine")).unwrap();
+        let size = 1024 * 1024 * 1024;
+        let state = StateStorage::open(dir.join("state"), size).unwrap();
+        let engine = HeedApplyStorage::open(dir.join("engine"), size).unwrap();
 
         let state = Arc::new(state);
         let engine: ApplyStorageRef = Arc::new(engine);

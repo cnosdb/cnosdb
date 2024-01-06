@@ -469,9 +469,10 @@ mod test {
     pub async fn get_node_store() -> Arc<NodeStorage> {
         let path = tempfile::tempdir_in("/tmp/cnosdb/test_raft_store").unwrap();
 
-        let state = StateStorage::open(path.path().join("state")).unwrap();
-        let entry = HeedEntryStorage::open(path.path().join("entry")).unwrap();
-        let engine = HeedApplyStorage::open(path.path().join("engine")).unwrap();
+        let max_size = 1024 * 1024 * 1024;
+        let state = StateStorage::open(path.path().join("state"), max_size).unwrap();
+        let entry = HeedEntryStorage::open(path.path().join("entry"), max_size).unwrap();
+        let engine = HeedApplyStorage::open(path.path().join("engine"), max_size).unwrap();
 
         let state = Arc::new(state);
         let entry: EntryStorageRef = Arc::new(entry);

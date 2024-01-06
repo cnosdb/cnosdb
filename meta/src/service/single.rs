@@ -15,9 +15,14 @@ use crate::store::command::*;
 use crate::store::dump::dump_impl;
 use crate::store::storage::{BtreeMapSnapshotData, StateMachine};
 
-pub async fn start_singe_meta_server(path: String, cluster_name: String, addr: String) {
+pub async fn start_singe_meta_server(
+    path: String,
+    cluster_name: String,
+    addr: String,
+    size: usize,
+) {
     let db_path = format!("{}/meta/{}.data", path, 0);
-    let storage = StateMachine::open(db_path).unwrap();
+    let storage = StateMachine::open(db_path, size).unwrap();
 
     let init_data = crate::store::config::MetaInit {
         cluster_name,

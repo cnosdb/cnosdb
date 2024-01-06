@@ -3,6 +3,11 @@ host = "127.0.0.1"
 port = 8901
 data_path = "/tmp/cnosdb/meta"
 grpc_enable_gzip = false
+lmdb_max_map_size = 1024000000
+heartbeat_interval = 3000
+raft_logs_to_keep = 10000
+install_snapshot_timeout = 3600000
+send_append_entries_timeout = 5000
 
 [log]
 level = "info"

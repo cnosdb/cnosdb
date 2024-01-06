@@ -19,7 +19,7 @@ use replication::network_http::{EitherBody, RaftHttpAdmin, SyncSendError};
 use replication::node_store::NodeStorage;
 use replication::raft_node::RaftNode;
 use replication::state_store::StateStorage;
-use replication::{ApplyStorageRef, EntryStorageRef, RaftNodeId, RaftNodeInfo};
+use replication::{ApplyStorageRef, EntryStorageRef, RaftNodeId, RaftNodeInfo, ReplicationConfig};
 use tokio::sync::RwLock;
 use tower::Service;
 use trace::{debug, info};
@@ -66,9 +66,10 @@ async fn start_raft_node(
 ) -> ReplicationResult<()> {
     let path = format!("/tmp/cnosdb/{}", id);
 
-    let state = StateStorage::open(format!("{}-state", path))?;
-    let entry = HeedEntryStorage::open(format!("{}-entry", path))?;
-    let engine = HeedApplyStorage::open(format!("{}-engine", path))?;
+    let max_size = 1024 * 1024 * 1024;
+    let state = StateStorage::open(format!("{}-state", path), max_size)?;
+    let entry = HeedEntryStorage::open(format!("{}-entry", path), max_size)?;
+    let engine = HeedApplyStorage::open(format!("{}-engine", path), max_size)?;
 
     let state = Arc::new(state);
     let entry: EntryStorageRef = Arc::new(entry);
@@ -82,24 +83,17 @@ async fn start_raft_node(
     let storage = NodeStorage::open(id, info.clone(), state, engine.clone(), entry)?;
     let storage = Arc::new(storage);
 
-    let hb: u64 = 10000;
-    let config = openraft::Config {
-        enable_tick: true,
-        enable_elect: true,
-        enable_heartbeat: true,
-        heartbeat_interval: hb,
-        election_timeout_min: 3 * hb,
-        election_timeout_max: 5 * hb,
-        install_snapshot_timeout: 300 * 1000,
-        replication_lag_threshold: 300000,
-        snapshot_policy: SnapshotPolicy::LogsSinceLast(3),
-        max_in_snapshot_log_to_keep: 3,
+    let config = ReplicationConfig {
         cluster_name: "raft_test".to_string(),
-        ..Default::default()
+        lmdb_max_map_size: 1024 * 1024 * 1024,
+        grpc_enable_gzip: false,
+        heartbeat_interval: 10 * 1000,
+        raft_logs_to_keep: 1000,
+        send_append_entries_timeout: 3 * 1000,
+        install_snapshot_timeout: 300 * 1000,
     };
-    let config = config.validate().unwrap();
 
-    let node = RaftNode::new(id, info, config, storage, engine, grpc_enable_gzip)
+    let node = RaftNode::new(id, info, storage, engine, config)
         .await
         .unwrap();
 

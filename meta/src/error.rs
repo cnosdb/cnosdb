@@ -114,9 +114,9 @@ pub enum MetaError {
     #[snafu(display("{}", msg))]
     ObjectLimit { msg: String },
 
-    #[snafu(display("Connect to Meta error reason: {}", msg))]
+    #[snafu(display("Connect to Server({}) error reason: {}", addr, msg))]
     #[error_code(code = 26)]
-    ConnectMetaError { msg: String },
+    ConnectServerError { addr: String, msg: String },
 
     #[snafu(display("Encode/Decode message error reason: {}", err))]
     #[error_code(code = 27)]

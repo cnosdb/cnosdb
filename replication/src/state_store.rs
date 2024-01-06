@@ -59,7 +59,7 @@ pub struct StateStorage {
 }
 
 impl StateStorage {
-    pub fn open(path: impl AsRef<Path>) -> ReplicationResult<Self> {
+    pub fn open(path: impl AsRef<Path>, size: usize) -> ReplicationResult<Self> {
         fs::create_dir_all(&path)?;
 
         let mut env_builder = heed::EnvOpenOptions::new();
@@ -67,12 +67,8 @@ impl StateStorage {
             env_builder.flag(Flags::MdbNoSync);
         }
 
-        let env = env_builder
-            .map_size(1024 * 1024 * 1024)
-            .max_dbs(16)
-            .open(path)?;
-
-        let db: Database<Str, OwnedSlice<u8>> = env.create_database(Some("stat"))?;
+        let env = env_builder.map_size(size).max_dbs(1).open(path)?;
+        let db: Database<Str, OwnedSlice<u8>> = env.create_database(Some("data"))?;
         let storage = Self { env, db };
 
         Ok(storage)

@@ -6,14 +6,13 @@ use std::time::Duration;
 use meta::model::MetaRef;
 use models::meta_data::*;
 use models::schema::Precision;
-use openraft::SnapshotPolicy;
 use protos::kv_service::*;
 use protos::{tskv_service_time_out_client, DEFAULT_GRPC_SERVER_MESSAGE_LEN};
 use replication::multi_raft::MultiRaft;
 use replication::node_store::NodeStorage;
 use replication::raft_node::RaftNode;
 use replication::state_store::{RaftNodeSummary, StateStorage};
-use replication::{ApplyStorageRef, EntryStorageRef, RaftNodeId, RaftNodeInfo};
+use replication::{ApplyStorageRef, EntryStorageRef, RaftNodeId, RaftNodeInfo, ReplicationConfig};
 use tokio::sync::RwLock;
 use tracing::{error, info};
 use tskv::{wal, EngineRef};
@@ -41,7 +40,7 @@ pub struct RaftNodesManager {
 impl RaftNodesManager {
     pub fn new(config: config::Config, meta: MetaRef, kv_inst: Option<EngineRef>) -> Self {
         let path = PathBuf::from(config.storage.path.clone()).join("raft-state");
-        let state = StateStorage::open(path).unwrap();
+        let state = StateStorage::open(path, config.cluster.lmdb_max_map_size).unwrap();
         let grpc_listen_port = config.service.grpc_listen_port.unwrap_or(0);
         let enabled = config.service.grpc_listen_port.is_some();
 
@@ -390,21 +389,6 @@ impl RaftNodesManager {
         Ok(())
     }
 
-    fn raft_config(&self) -> openraft::Config {
-        let logs_to_keep = self.config.cluster.raft_logs_to_keep;
-
-        let heartbeat = 10000;
-        openraft::Config {
-            heartbeat_interval: heartbeat,
-            election_timeout_min: 3 * heartbeat,
-            election_timeout_max: 5 * heartbeat,
-            replication_lag_threshold: logs_to_keep,
-            snapshot_policy: SnapshotPolicy::LogsSinceLast(logs_to_keep),
-            max_in_snapshot_log_to_keep: logs_to_keep,
-            ..Default::default()
-        }
-    }
-
     async fn open_raft_node(
         &self,
         tenant: &str,
@@ -440,16 +424,17 @@ impl RaftNodesManager {
             engine.clone(),
             entry,
         )?;
-        let storage = Arc::new(storage);
-        let node = RaftNode::new(
-            raft_id,
-            info,
-            self.raft_config(),
-            storage,
-            engine,
-            self.config.service.grpc_enable_gzip,
-        )
-        .await?;
+        let config = ReplicationConfig {
+            cluster_name: self.config.global.cluster_name.clone(),
+            lmdb_max_map_size: self.config.cluster.lmdb_max_map_size,
+            grpc_enable_gzip: self.config.service.grpc_enable_gzip,
+            heartbeat_interval: self.config.cluster.heartbeat_interval,
+            raft_logs_to_keep: self.config.cluster.raft_logs_to_keep,
+            send_append_entries_timeout: self.config.cluster.send_append_entries_timeout,
+            install_snapshot_timeout: self.config.cluster.install_snapshot_timeout,
+        };
+
+        let node = RaftNode::new(raft_id, info, Arc::new(storage), engine, config).await?;
 
         let summary = RaftNodeSummary {
             raft_id,

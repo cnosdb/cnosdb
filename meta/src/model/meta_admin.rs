@@ -176,17 +176,17 @@ impl AdminMeta {
         }
 
         let info = self.node_info_by_id(node_id).await?;
-        let connector =
-            Endpoint::from_shared(format!("http://{}", info.grpc_addr)).map_err(|err| {
-                MetaError::ConnectMetaError {
-                    msg: err.to_string(),
-                }
+        let connector = Endpoint::from_shared(format!("http://{}", info.grpc_addr.clone()))
+            .map_err(|err| MetaError::ConnectServerError {
+                addr: info.grpc_addr.clone(),
+                msg: err.to_string(),
             })?;
 
         let channel = connector
             .connect()
             .await
-            .map_err(|err| MetaError::ConnectMetaError {
+            .map_err(|err| MetaError::ConnectServerError {
+                addr: info.grpc_addr,
                 msg: err.to_string(),
             })?;
 
