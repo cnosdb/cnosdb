@@ -10,9 +10,9 @@ use models::auth::user::{admin_user, User, UserDesc, UserOptions};
 use models::meta_data::*;
 use models::node_info::NodeStatus;
 use models::oid::{Identifier, Oid, UuidGenerator};
-use models::schema::{ResourceInfo, Tenant, TenantOptions};
+use models::schema::{ResourceInfo, ResourceStatus, Tenant, TenantOptions};
 use models::utils::{build_address_with_optional_addr, now_timestamp_secs};
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tonic::transport::{Channel, Endpoint};
 use trace::error;
@@ -44,6 +44,7 @@ struct UseTenantInfo {
     pub action: TenantAction,
 }
 
+type ReceiverType = Arc<Mutex<Option<Receiver<MetaModifyType>>>>;
 #[derive(Debug)]
 pub struct AdminMeta {
     config: Config,
@@ -59,6 +60,8 @@ pub struct AdminMeta {
 
     tenants: RwLock<HashMap<String, Arc<TenantMeta>>>,
     limiters: Arc<LimiterManager>,
+
+    resource_tx_rx: (Sender<MetaModifyType>, ReceiverType),
 }
 
 impl AdminMeta {
@@ -68,6 +71,7 @@ impl AdminMeta {
         let config = Config::default();
 
         let limiters = LimiterManager::new(HashMap::new());
+        let (tx, rx) = mpsc::channel::<MetaModifyType>(1024);
 
         Self {
             config,
@@ -81,6 +85,7 @@ impl AdminMeta {
 
             watch_version: AtomicU64::new(0),
             watch_tenants: RwLock::new(HashSet::new()),
+            resource_tx_rx: (tx, Arc::new(Mutex::new(Some(rx)))),
         }
     }
 
@@ -101,6 +106,7 @@ impl AdminMeta {
             );
             map
         }));
+        let (tx, rx) = mpsc::channel::<MetaModifyType>(1024);
 
         let admin = Arc::new(Self {
             config,
@@ -113,6 +119,7 @@ impl AdminMeta {
             limiters,
             watch_version: AtomicU64::new(0),
             watch_tenants: RwLock::new(HashSet::new()),
+            resource_tx_rx: (tx, Arc::new(Mutex::new(Some(rx)))),
         });
 
         let base_ver = admin.sync_gobal_info().await.unwrap();
@@ -380,10 +387,13 @@ impl AdminMeta {
                 if let Some(client) = opt_client {
                     let _ = client.process_watch_log(entry).await;
                 }
-            } else if len == 4 && strs[2] == key_path::DATA_NODES {
-                let _ = self.process_watch_log(entry).await;
             } else if len == 3 && strs[2] == key_path::AUTO_INCR_ID {
-            } else if len == 4 && strs[2] == key_path::USERS {
+            } else if len == 4
+                && (strs[2] == key_path::USERS
+                    || strs[2] == key_path::RESOURCE_INFOS
+                    || strs[2] == key_path::DATA_NODES
+                    || strs[2] == key_path::DATA_NODES_METRICS)
+            {
                 let _ = self.process_watch_log(entry).await;
             }
         }
@@ -411,6 +421,31 @@ impl AdminMeta {
                 }
             } else if entry.tye == command::ENTRY_LOG_TYPE_DEL {
                 self.users.write().remove(strs[3]);
+            }
+        } else if len == 4
+            && strs[2] == key_path::RESOURCE_INFOS
+            && entry.tye == command::ENTRY_LOG_TYPE_SET
+        {
+            if let Ok(res_info) = serde_json::from_str::<ResourceInfo>(&entry.val) {
+                if *res_info.get_status() == ResourceStatus::Schedule
+                    || *res_info.get_status() == ResourceStatus::Executing
+                {
+                    let _ = self
+                        .resource_tx_rx
+                        .0
+                        .send(MetaModifyType::ResourceInfo(Box::new(res_info)))
+                        .await;
+                }
+            }
+        } else if len == 4 && strs[2] == key_path::DATA_NODES_METRICS {
+            if let Ok(node_metrics) = serde_json::from_str::<NodeMetrics>(&entry.val) {
+                if node_metrics.status == NodeStatus::Unreachable {
+                    let _ = self
+                        .resource_tx_rx
+                        .0
+                        .send(MetaModifyType::NodeMetrics(node_metrics))
+                        .await;
+                }
             }
         }
 
@@ -743,5 +778,9 @@ impl AdminMeta {
         let req = command::ReadCommand::ResourceInfosMark(self.cluster());
 
         self.client.read::<(NodeId, bool)>(&req).await
+    }
+
+    pub fn take_resourceinfo_rx(&self) -> Option<Receiver<MetaModifyType>> {
+        self.resource_tx_rx.1.lock().take()
     }
 }

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures::TryFutureExt;
-use models::meta_data::{NodeId, NodeMetrics};
+use models::meta_data::NodeMetrics;
 use models::node_info::NodeStatus;
 use protos::raft_service::raft_service_server::RaftServiceServer;
 use replication::entry_store::HeedEntryStorage;
@@ -113,30 +113,6 @@ async fn detect_node_heartbeat(
                         if let Ok(data) = serde_json::to_vec(&req) {
                             if node.raw_raft().client_write(data).await.is_err() {
                                 tracing::error!("failed to change node status to unreachable");
-                            }
-                        }
-
-                        let resourceinfos_mark_path =
-                            KeyPath::resourceinfosmark(&init_data.cluster_name);
-                        let result =
-                            storage.children_data::<(NodeId, bool)>(&resourceinfos_mark_path);
-                        if let Ok(opt) = result {
-                            let node_id_is_lock_vec: Vec<(NodeId, bool)> =
-                                opt.into_values().collect();
-                            for node_id_is_lock in node_id_is_lock_vec {
-                                if node_id_is_lock.0 == node_metrics.id && node_id_is_lock.1 {
-                                    let req = WriteCommand::ResourceInfosMark(
-                                        init_data.cluster_name.clone(),
-                                        node_metrics.id,
-                                        false,
-                                    );
-
-                                    if let Ok(data) = serde_json::to_vec(&req) {
-                                        if node.raw_raft().client_write(data).await.is_err() {
-                                            tracing::error!("write resourceinfos_mark failed");
-                                        }
-                                    }
-                                }
                             }
                         }
                     }

@@ -85,6 +85,7 @@ impl DDLDefinitionTask for DropGlobalObjectTask {
                             name.clone(),
                             ResourceOperator::DropTenant(name.clone()),
                             &after,
+                            query_state_machine.coord.node_id(),
                         );
                         ResourceManager::add_resource_task(
                             query_state_machine.coord.clone(),

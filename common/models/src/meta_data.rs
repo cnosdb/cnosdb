@@ -7,11 +7,17 @@ use crate::auth::role::{CustomTenantRole, TenantRoleIdentifier};
 use crate::node_info::NodeStatus;
 use crate::oid::Oid;
 use crate::predicate::domain::TimeRange;
-use crate::schema::{DatabaseSchema, TableSchema};
+use crate::schema::{DatabaseSchema, ResourceInfo, TableSchema};
 
 pub type VnodeId = u32;
 pub type NodeId = u64;
 pub type ReplicationSetId = u32;
+
+#[derive(Debug, Clone)]
+pub enum MetaModifyType {
+    NodeMetrics(NodeMetrics),
+    ResourceInfo(Box<ResourceInfo>),
+}
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct SysInfo {

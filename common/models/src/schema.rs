@@ -36,7 +36,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::codec::Encoding;
 use crate::gis::data_type::Geometry;
-use crate::meta_data::ReplicationSet;
+use crate::meta_data::{NodeId, ReplicationSet};
 use crate::oid::{Identifier, Oid};
 use crate::utils::{
     now_timestamp_nanos, DAY_MICROS, DAY_MILLS, DAY_NANOS, HOUR_MICROS, HOUR_MILLS, HOUR_NANOS,
@@ -133,6 +133,8 @@ pub struct ResourceInfo {
     after: Option<Duration>, // None means now
     status: ResourceStatus,
     comment: String,
+    execute_node_id: NodeId,
+    is_new_add: bool,
 }
 
 impl ResourceInfo {
@@ -141,6 +143,7 @@ impl ResourceInfo {
         name: String,
         operator: ResourceOperator,
         after: &Option<Duration>,
+        execute_node_id: NodeId,
     ) -> Self {
         let mut res_info = ResourceInfo {
             time: now_timestamp_nanos(),
@@ -151,6 +154,8 @@ impl ResourceInfo {
             after: after.clone(),
             status: ResourceStatus::Executing,
             comment: String::default(),
+            execute_node_id,
+            is_new_add: true,
         };
         if let Some(after) = after {
             let after_nanos = after.to_nanoseconds();
@@ -190,6 +195,14 @@ impl ResourceInfo {
         &self.comment
     }
 
+    pub fn get_execute_node_id(&self) -> &NodeId {
+        &self.execute_node_id
+    }
+
+    pub fn get_is_new_add(&self) -> bool {
+        self.is_new_add
+    }
+
     pub fn increase_try_count(&mut self) {
         self.try_count += 1;
     }
@@ -200,6 +213,14 @@ impl ResourceInfo {
 
     pub fn set_comment(&mut self, comment: &str) {
         self.comment = comment.to_string();
+    }
+
+    pub fn set_execute_node_id(&mut self, execute_node_id: NodeId) {
+        self.execute_node_id = execute_node_id;
+    }
+
+    pub fn set_is_new_add(&mut self, is_new_add: bool) {
+        self.is_new_add = is_new_add;
     }
 }
 

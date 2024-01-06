@@ -44,6 +44,7 @@ impl DDLDefinitionTask for RecoverDatabaseTask {
             tenant_name.clone() + "-" + db_name,
             ResourceOperator::DropDatabase(tenant_name.clone(), db_name.clone()),
             &None,
+            query_state_machine.coord.node_id(),
         );
         resourceinfo.set_status(ResourceStatus::Cancel);
         resourceinfo.set_comment("");
