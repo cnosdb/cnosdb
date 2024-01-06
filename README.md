@@ -1,5 +1,5 @@
 <div align="center">
-  <img  src="docs/source/_static/img/halloween.gif" width="500" alt="CnodSB Logo">
+  <img  src="docs/source/_static/img/cnosdb_logo_white.svg" width="500" alt="CnodSB Logo">
 </div>
 
 <p align="center">
@@ -29,6 +29,8 @@
   </a>
 </p>
 <h3 align="center">
+    <a href="https://www.cnosdb.cloud/">CnosDB Cloud</a>
+    •
     <a href="https://www.cnosdb.com/">Website</a>
     •
     <a href="https://docs.cnosdb.com/">Documentation</a>
@@ -48,6 +50,8 @@ In its design, we fully utilize the characteristics of time-series data, includi
 - **High performance**: CnosDB addresses the issue of time-series data expansion and theoretically supports unlimited time-series data. It supports aggregate queries along the timeline, including queries divided by equal intervals, queries divided by enumeration values of a column, and queries divided by the length of the time interval between adjacent time-series records. It also has caching capabilities for the latest data and the cache space can be configured for fast access to the latest data.
 - **Easy to use**: CnosDB provides clear and simple interfaces, easy configuration options, standard SQL support, seamless integration with third-party tools, and convenient data access functions. It supports schema-less writing mode and supports historical data supplement(including out of order writing).
 - **Cloud native**: CnosDB has a native distributed design, data sharding and partitioning, separation of storage and computing, Quorum mechanism, Kubernetes deployment and complete observability, ensuring final consistency. It can be deployed in public clouds, private clouds, and hybrid clouds. t also supports multi-tenancy and has role-based permission control. The computing and storage nodes support horizontal scaling.
+
+  **CnosDB Cloud is now live, [click here](https://www.cnosdb.cloud/) to get started now.**
 
 # Architecture
 
