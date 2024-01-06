@@ -1,5 +1,5 @@
 <div align="center">
-  <img  src="docs/source/_static/img/halloween.gif" width="500" alt="CnodSB Logo">
+  <img  src="docs/source/_static/img/cnosdb_logo_white.svg" width="500" alt="CnodSB Logo">
 </div>
 
 <p align="center">
@@ -31,8 +31,10 @@
     •
     <a href="https://docs.cnosdb.com/zh/guide/quick_start.html">Quick Start</a>
     •
-    <a href="https://docs.cnosdb.com/zh/latest/versatility/ai/LangChain.html">CnosDB with LangChain</a>
+    <a href="https://github.com/cnosdb/cnosdb/issues/1414">Eco-Integration</a>
 </h3>
+
+[English](./README.md) | 简体中文
 
 CnosDB 是一款高性能、高压缩率、高易用性的开源分布式时序数据库。主要应用场景为物联网，工业互联网，车联网，IT运维等。所有代码均已在GitHub开源。
 
