@@ -8,8 +8,6 @@ use protos::kv_service::{
     raft_write_command, AdminCommandRequest, DropColumnRequest, DropDbRequest, DropTableRequest,
     RaftWriteCommand, UpdateSetValue, UpdateTagsRequest,
 };
-use tokio_retry::strategy::{jitter, ExponentialBackoff};
-use tokio_retry::Retry;
 use tracing::{debug, info};
 
 use crate::errors::*;
@@ -58,15 +56,16 @@ impl ResourceManager {
             }
         };
 
+        resourceinfo.set_is_new_add(false);
         let mut status_comment = (ResourceStatus::Successed, String::default());
         if let Err(coord_err) = &operator_result {
             status_comment.0 = ResourceStatus::Failed;
             status_comment.1 = coord_err.to_string();
+            resourceinfo.set_is_new_add(true);
         }
         resourceinfo.increase_try_count();
         resourceinfo.set_status(status_comment.0);
         resourceinfo.set_comment(&status_comment.1);
-        resourceinfo.set_is_new_add(false);
         coord
             .meta_manager()
             .write_resourceinfo(resourceinfo.get_name(), resourceinfo.clone())
@@ -385,10 +384,7 @@ impl ResourceManager {
 
             if *resourceinfo.get_status() == ResourceStatus::Executing {
                 // execute right now, if failed, retry later
-                let _ = Retry::spawn(ExponentialBackoff::from_millis(10).map(jitter), || async {
-                    ResourceManager::do_operator(coord.clone(), resourceinfo.clone()).await
-                })
-                .await;
+                ResourceManager::do_operator(coord.clone(), resourceinfo.clone()).await?;
             }
             Ok(true)
         } else {

@@ -429,6 +429,7 @@ impl AdminMeta {
             if let Ok(res_info) = serde_json::from_str::<ResourceInfo>(&entry.val) {
                 if *res_info.get_status() == ResourceStatus::Schedule
                     || *res_info.get_status() == ResourceStatus::Executing
+                    || *res_info.get_status() == ResourceStatus::Failed
                 {
                     let _ = self
                         .resource_tx_rx

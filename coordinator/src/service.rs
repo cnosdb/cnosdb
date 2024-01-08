@@ -283,21 +283,35 @@ impl CoordService {
                     .await
                     .map_err(|meta_err| CoordinatorError::Meta { source: meta_err })?;
                 if id == coord.node_id() && lock {
-                    if let Ok(mut joinhandle_map) = coord.async_task_joinhandle.lock() {
-                        if let Some(handle) = joinhandle_map.get(resourceinfo.get_name()) {
-                            handle.abort(); // same resource name, abort the old task
+                    match *resourceinfo.get_status() {
+                        ResourceStatus::Schedule => {
+                            if let Ok(mut joinhandle_map) = coord.async_task_joinhandle.lock() {
+                                if let Some(handle) = joinhandle_map.get(resourceinfo.get_name()) {
+                                    handle.abort(); // same resource name, abort the old task
+                                }
+                                joinhandle_map.insert(
+                                    resourceinfo.get_name().to_string(),
+                                    tokio::spawn(CoordService::exec_async_task(
+                                        coord.clone(),
+                                        *resourceinfo,
+                                    )),
+                                );
+                            }
                         }
-
-                        if *resourceinfo.get_status() == ResourceStatus::Executing {
-                            return Ok(()); // ignore the executing task
+                        ResourceStatus::Failed => {
+                            let _ = Retry::spawn(
+                                ExponentialBackoff::from_millis(10).map(jitter),
+                                || async {
+                                    ResourceManager::do_operator(
+                                        coord.clone(),
+                                        *resourceinfo.clone(),
+                                    )
+                                    .await
+                                },
+                            )
+                            .await;
                         }
-                        joinhandle_map.insert(
-                            resourceinfo.get_name().to_string(),
-                            tokio::spawn(CoordService::exec_async_task(
-                                coord.clone(),
-                                *resourceinfo,
-                            )),
-                        );
+                        _ => {}
                     }
                 }
                 Ok(())
