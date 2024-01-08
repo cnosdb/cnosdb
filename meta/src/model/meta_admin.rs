@@ -430,6 +430,7 @@ impl AdminMeta {
                 if *res_info.get_status() == ResourceStatus::Schedule
                     || *res_info.get_status() == ResourceStatus::Executing
                     || *res_info.get_status() == ResourceStatus::Failed
+                    || *res_info.get_status() == ResourceStatus::Cancel
                 {
                     let _ = self
                         .resource_tx_rx

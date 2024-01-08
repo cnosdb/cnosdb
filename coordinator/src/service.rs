@@ -276,7 +276,7 @@ impl CoordService {
                         .map_err(|meta_err| CoordinatorError::Meta { source: meta_err })?;
                 }
 
-                // if current node get the lock, build async task
+                // if current node get the lock, handle meta modify
                 let (id, lock) = coord
                     .meta_manager()
                     .read_resourceinfos_mark()
@@ -310,6 +310,14 @@ impl CoordService {
                                 },
                             )
                             .await;
+                        }
+                        ResourceStatus::Cancel => {
+                            if let Ok(mut joinhandle_map) = coord.async_task_joinhandle.lock() {
+                                if let Some(handle) = joinhandle_map.get(resourceinfo.get_name()) {
+                                    handle.abort(); // abort task
+                                }
+                                joinhandle_map.remove(resourceinfo.get_name()); // remove task
+                            }
                         }
                         _ => {}
                     }
