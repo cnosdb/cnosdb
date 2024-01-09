@@ -145,9 +145,7 @@ async fn start_warp_grpc_server(addr: String, node: RaftNode) -> ReplicationResu
             ))
         }))
         .await
-        .map_err(|err| ReplicationError::IOErrors {
-            msg: err.to_string(),
-        })?;
+        .unwrap();
 
     Ok(())
 }

@@ -7,6 +7,7 @@ use models::meta_data::*;
 use protos::kv_service::{raft_write_command, RaftWriteCommand};
 use protos::models_helper::to_prost_bytes;
 use protos::{tskv_service_time_out_client, DEFAULT_GRPC_SERVER_MESSAGE_LEN};
+use replication::errors::ReplicationResult;
 use replication::raft_node::RaftNode;
 use trace::{debug, info, SpanContext, SpanRecorder};
 use tskv::EngineRef;
@@ -238,23 +239,32 @@ impl RaftWriter {
     }
 
     async fn write_to_raft(&self, raft: Arc<RaftNode>, data: Vec<u8>) -> CoordinatorResult<()> {
-        if let Err(err) = raft.raw_raft().client_write(data).await {
-            if let Some(openraft::error::ForwardToLeader {
-                leader_id: Some(leader_id),
-                leader_node: Some(leader_node),
-            }) = err.forward_to_leader()
-            {
-                Err(CoordinatorError::ForwardToLeader {
-                    leader_vnode_id: (*leader_id) as u32,
-                    replica_id: leader_node.group_id,
-                })
-            } else {
-                Err(CoordinatorError::RaftWriteError {
-                    msg: err.to_string(),
-                })
+        match raft.raw_raft().client_write(data).await {
+            Err(err) => {
+                if let Some(openraft::error::ForwardToLeader {
+                    leader_id: Some(leader_id),
+                    leader_node: Some(leader_node),
+                }) = err.forward_to_leader()
+                {
+                    Err(CoordinatorError::ForwardToLeader {
+                        leader_vnode_id: (*leader_id) as u32,
+                        replica_id: leader_node.group_id,
+                    })
+                } else {
+                    Err(CoordinatorError::RaftWriteError {
+                        msg: err.to_string(),
+                    })
+                }
             }
-        } else {
-            Ok(())
+
+            Ok(resp) => {
+                let apply_result =
+                    bincode::deserialize::<ReplicationResult<replication::Response>>(&resp.data)?;
+
+                let _data = apply_result?;
+
+                Ok(())
+            }
         }
     }
 }

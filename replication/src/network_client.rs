@@ -39,7 +39,7 @@ impl NetworkConn {
 
         let connector = Endpoint::from_shared(format!("http://{}", addr)).map_err(|err| {
             ReplicationError::GRPCRequest {
-                msg: err.to_string(),
+                msg: format!("Connect to({}) error: {}", addr, err),
             }
         })?;
 
@@ -47,7 +47,7 @@ impl NetworkConn {
             .connect()
             .await
             .map_err(|err| ReplicationError::GRPCRequest {
-                msg: err.to_string(),
+                msg: format!("Connect to({}) error: {}", addr, err),
             })?;
 
         self.conn_map
