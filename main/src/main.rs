@@ -139,10 +139,6 @@ enum CheckCommand {
     // MetaConfig {},
 }
 
-#[cfg(unix)]
-#[global_allocator]
-static A: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
-
 /// To run cnosdb-cli:
 ///
 /// ```bash
