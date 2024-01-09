@@ -21,6 +21,14 @@
 {"error_code":"030008","error_message":"The user test_au_u2 not found"}
 -- ERROR:  --
 
+-- EXECUTE SQL: alter user root set granted_admin = true; --
+422 Unprocessable Entity
+{"error_code":"010024","error_message":"Invalid parameter : The root user does not support changing granted_admin"}
+
+-- EXECUTE SQL: alter user root set granted_admin = false; --
+422 Unprocessable Entity
+{"error_code":"010024","error_message":"Invalid parameter : The root user does not support changing granted_admin"}
+
 -- EXECUTE SQL: create user if not exists test_au_u1; --
 200 OK
 

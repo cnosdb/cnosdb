@@ -5,6 +5,9 @@ drop user root;
 drop user test_au_u1;
 drop user test_au_u2;
 
+alter user root set granted_admin = true;
+alter user root set granted_admin = false;
+
 create user if not exists test_au_u1;
 create user if not exists test_au_u2;
 
