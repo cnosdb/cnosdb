@@ -8,6 +8,7 @@ use models::auth::privilege::{DatabasePrivilege, Privilege, TenantObjectPrivileg
 use models::auth::user::{UserInfo, ROOT, ROOT_PWD};
 use models::oid::Identifier;
 use models::schema::{Precision, DEFAULT_CATALOG, DEFAULT_DATABASE};
+use models::utils::now_timestamp_nanos;
 use protocol_parser::line_protocol::parser::Parser;
 use protos::vector::event_wrapper::Event;
 use protos::vector::metric::Value as MetricValue;
@@ -327,7 +328,7 @@ fn handle_vector_metric(mut metric: Metric) -> server::Result<String> {
     let timestamp = metric
         .timestamp
         .map(convert_timestamp)
-        .unwrap_or(Utc::now().timestamp_nanos());
+        .unwrap_or(now_timestamp_nanos());
     line.push_str(&table);
 
     metric.tags_v1.remove(TENANT_FIELD);
@@ -534,10 +535,7 @@ fn handle_vector_log_trace(mut log: Log) -> server::Result<String> {
         .fields
         .remove(VECTOR_LOG_TIMESTAMP)
         .map(vector_value_timestamp)
-        .unwrap_or_else(|| {
-            let now = Utc::now();
-            now.timestamp_nanos().to_string()
-        });
+        .unwrap_or_else(|| now_timestamp_nanos().to_string());
 
     log.fields.remove(TENANT_FIELD);
     log.fields.remove(DATABASE_FIELD);
@@ -834,13 +832,13 @@ fn vector_value_timestamp(value: Value) -> String {
             if let Ok(v) = s.parse::<i64>() {
                 v.to_string()
             } else if let Ok(dt) = dateparser::parse(s.as_str()) {
-                return dt.timestamp_nanos().to_string();
+                return dt.timestamp_nanos_opt().unwrap_or_default().to_string();
             } else {
-                return Utc::now().timestamp_nanos().to_string();
+                return now_timestamp_nanos().to_string();
             }
         }
         Some(Kind::Integer(v)) => v.to_string(),
-        _ => Utc::now().timestamp_nanos().to_string(),
+        _ => now_timestamp_nanos().to_string(),
     }
 }
 

@@ -32,7 +32,6 @@ tskv = { path = "../tskv" }
 utils = { path = "../common/utils" }
 replication = { path = "../replication" }
 
-actix-web = { workspace = true }
 arrow-flight = { workspace = true, features = ["flight-sql-experimental"] }
 async-backtrace = { workspace = true, optional = true }
 async-stream = { workspace = true }

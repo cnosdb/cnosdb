@@ -2,7 +2,6 @@
 #![allow(unreachable_patterns)]
 #![feature(maybe_uninit_array_assume_init)]
 #![feature(maybe_uninit_uninit_array)]
-#![feature(trait_upcasting)]
 #![feature(bound_map)]
 #![feature(exclusive_range_pattern)]
 

@@ -16,6 +16,7 @@ pub struct Code {
 }
 
 impl PartialEq for Code {
+    #[allow(clippy::unconditional_recursion)]
     fn eq(&self, other: &Self) -> bool {
         let l: usize = self.code_num.base10_parse().unwrap();
         let r: usize = other.code_num.base10_parse().unwrap();

@@ -884,7 +884,7 @@ impl Tsm2Writer {
                 chunk_group_offset,
                 chunk_group_size,
                 time_range: group.time_range(),
-                /// The number of chunks in the group.
+                // The number of chunks in the group.
                 count: 0,
             };
             self.chunk_group_specs.push(chunk_group_spec);

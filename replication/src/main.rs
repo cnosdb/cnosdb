@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 #![allow(unused)]
-#![feature(trait_upcasting)]
 
 use std::convert::Infallible as StdInfallible;
 use std::net::SocketAddr;

@@ -160,7 +160,7 @@ impl Stream for SchemaAlignmenterStream {
 
                 match reorder_and_align_schema(&self.schema_mapping, batch) {
                     Ok(batch) => Poll::Ready(Some(Ok(batch))),
-                    Err(err) => Poll::Ready(Some(Err(err).map_err(Into::into))),
+                    Err(err) => Poll::Ready(Some(Err(Into::into(err)))),
                 }
             }
             other => other,
