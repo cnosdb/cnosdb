@@ -8,7 +8,6 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Instant;
 
-use chrono::Local;
 use config::TLSConfig;
 use coordinator::service::CoordinatorRef;
 use fly_accept_encoding::Encoding;
@@ -27,6 +26,7 @@ use models::auth::privilege::{DatabasePrivilege, Privilege, TenantObjectPrivileg
 use models::error_code::UnknownCodeWithMessage;
 use models::oid::{Identifier, Oid};
 use models::schema::{Precision, DEFAULT_CATALOG};
+use models::utils::now_timestamp_nanos;
 use protocol_parser::line_protocol::line_protocol_to_lines;
 use protocol_parser::open_tsdb::open_tsdb_to_lines;
 use protocol_parser::{DataPoint, Line};
@@ -1166,7 +1166,7 @@ async fn construct_write_context_and_check_privilege(
 fn try_parse_req_to_lines(req: &Bytes) -> Result<Vec<Line>, HttpError> {
     let lines = simdutf8::basic::from_utf8(req.as_ref())
         .map_err(|e| HttpError::InvalidUTF8 { source: e })?;
-    let line_protocol_lines = line_protocol_to_lines(lines, Local::now().timestamp_nanos())
+    let line_protocol_lines = line_protocol_to_lines(lines, now_timestamp_nanos())
         .map_err(|e| HttpError::ParseLineProtocol { source: e })?;
 
     Ok(line_protocol_lines)
@@ -1176,7 +1176,7 @@ fn construct_write_tsdb_points_request(req: &Bytes) -> Result<Vec<Line>, HttpErr
     let lines = simdutf8::basic::from_utf8(req.as_ref())
         .map_err(|e| HttpError::InvalidUTF8 { source: e })?;
 
-    let tsdb_protocol_lines = open_tsdb_to_lines(lines, Local::now().timestamp_nanos())
+    let tsdb_protocol_lines = open_tsdb_to_lines(lines, now_timestamp_nanos())
         .map_err(|e| HttpError::ParseOpentsdbProtocol { source: e })?;
 
     Ok(tsdb_protocol_lines)

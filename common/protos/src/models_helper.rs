@@ -250,7 +250,7 @@ pub mod test {
         let area = ["a".to_string(), "b".to_string(), "c".to_string()];
         for i in 0..num {
             let timestamp = if i <= num / 2 {
-                Local::now().timestamp_nanos()
+                Local::now().timestamp_nanos_opt().unwrap()
             } else {
                 1
             };
@@ -315,7 +315,7 @@ pub mod test {
         let area = ["a".to_string(), "b".to_string(), "c".to_string()];
         for i in 0..num {
             let timestamp = if i % 2 == 0 {
-                Local::now().timestamp_nanos()
+                Local::now().timestamp_nanos_opt().unwrap()
             } else {
                 i64::MIN
             };
@@ -401,7 +401,7 @@ pub mod test {
         let fbv = rand::random::<f64>().to_be_bytes();
 
         for _ in 0..num {
-            let timestamp = Local::now().timestamp_nanos();
+            let timestamp = Local::now().timestamp_nanos_opt().unwrap();
             time_values.push(timestamp);
             let entry = tags_values.entry("tag").or_insert(vec![]);
             for _ in 0..19999 {

@@ -1151,7 +1151,7 @@ mod test {
                 edits.push(edit.clone());
             }
             summary_1
-                .apply_version_edit(edits.drain(..).collect(), HashMap::new(), HashMap::new())
+                .apply_version_edit(std::mem::take(&mut edits), HashMap::new(), HashMap::new())
                 .await
                 .unwrap();
 

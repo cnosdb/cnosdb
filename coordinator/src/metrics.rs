@@ -5,6 +5,7 @@ use metrics::label::Labels;
 use metrics::metric_type::MetricType;
 use metrics::metric_value::MetricValue;
 use metrics::reporter::Reporter;
+use models::utils::now_timestamp_nanos;
 use protocol_parser::Line;
 use protos::FieldValue;
 
@@ -36,7 +37,7 @@ impl LPLine {
             Cow::Borrowed(&*self.measure),
             tags,
             vec![(Cow::Borrowed("value"), self.value.clone())],
-            chrono::Utc::now().timestamp_nanos(),
+            now_timestamp_nanos(),
         )
     }
 }

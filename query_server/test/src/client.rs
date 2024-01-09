@@ -237,11 +237,7 @@ impl Client {
         println!("Error: {}", error);
     }
 
-    pub async fn execute_db_request(
-        &self,
-        case_name: &str,
-        db_requests: &Vec<DBRequest>,
-    ) -> String {
+    pub async fn execute_db_request(&self, case_name: &str, db_requests: &[DBRequest]) -> String {
         let mut buffer = String::new();
         for (i, request) in db_requests.iter().enumerate() {
             if (i + 1) % 100 == 0 {

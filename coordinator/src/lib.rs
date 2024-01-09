@@ -1,5 +1,4 @@
 #![feature(stmt_expr_attributes)]
-#![feature(arc_unwrap_or_clone)]
 #![feature(allocator_api)]
 
 use std::fmt::Debug;

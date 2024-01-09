@@ -17,7 +17,7 @@ use models::schema::{
     DatabaseOptions, DatabaseSchema, Duration as CnosDuration, Precision, Tenant, TenantOptions,
 };
 use serial_test::serial;
-use sysinfo::{ProcessExt, System, SystemExt};
+use sysinfo::System;
 use walkdir::WalkDir;
 
 use crate::utils::{run_cluster, CnosdbDataTestHelper, CnosdbMetaTestHelper};
@@ -487,7 +487,7 @@ fn test_ttl() {
             format!("http://127.0.0.1:8902/api/v1/write?&tenant={tenant_name}&db={database_name}");
 
         // Insert the valid data.
-        let now = chrono_now.timestamp_nanos();
+        let now = chrono_now.timestamp_nanos_opt().unwrap();
         let resp = data
             .client
             .post(&url, format!("tab_1,ta=a1 fa=1 {now}").as_str())
@@ -495,7 +495,10 @@ fn test_ttl() {
         assert!(resp.status().is_success());
 
         // Insert the exored-time data.
-        let past = chrono_now.sub(chrono_duration).timestamp_nanos();
+        let past = chrono_now
+            .sub(chrono_duration)
+            .timestamp_nanos_opt()
+            .unwrap();
         let resp = data
             .client
             .post(&url, format!("tab_1,ta=a2 fa=2 {past}").as_str())

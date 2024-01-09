@@ -19,7 +19,6 @@ utils = { path = "../common/utils" }
 protos = { path = "../common/protos", features = ["test"] }
 replication = { path = "../replication" }
 
-actix-web = { workspace = true }
 async-backtrace = { workspace = true, optional = true }
 async-trait = { workspace = true }
 byteorder = { workspace = true }
