@@ -12,7 +12,7 @@ use replication::errors::{ReplicationError, ReplicationResult};
 use replication::{ApplyContext, ApplyStorage};
 use tonic::transport::Channel;
 use tower::timeout::Timeout;
-use tracing::info;
+use tracing::{error, info};
 use tskv::vnode_store::VnodeStorage;
 use tskv::VnodeSnapshot;
 
@@ -138,11 +138,8 @@ impl TskvEngineStorage {
 
         Ok(resp)
     }
-}
 
-#[async_trait::async_trait]
-impl ApplyStorage for TskvEngineStorage {
-    async fn apply(
+    async fn exec_apply(
         &self,
         ctx: &ApplyContext,
         req: &replication::Request,
@@ -157,6 +154,25 @@ impl ApplyStorage for TskvEngineStorage {
         }
 
         Ok(vec![])
+    }
+}
+
+#[async_trait::async_trait]
+impl ApplyStorage for TskvEngineStorage {
+    async fn apply(
+        &self,
+        ctx: &ApplyContext,
+        req: &replication::Request,
+    ) -> ReplicationResult<replication::Response> {
+        let apply_result = self.exec_apply(ctx, req).await;
+        if let Err(err) = &apply_result {
+            error!("replication apply failed: {:?}; {:?}", ctx, err);
+        }
+
+        match bincode::serialize(&apply_result) {
+            Ok(data) => Ok(data),
+            Err(err) => Ok(err.to_string().into()),
+        }
     }
 
     async fn snapshot(&self) -> ReplicationResult<Vec<u8>> {

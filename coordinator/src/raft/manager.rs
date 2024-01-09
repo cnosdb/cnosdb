@@ -212,9 +212,10 @@ impl RaftNodesManager {
     }
 
     async fn try_wait_leader_elected(&self, raft_node: Arc<RaftNode>) {
+        let group_id = raft_node.group_id();
         for _ in 0..10 {
             let result = raft_node.raw_raft().is_leader().await;
-            info!("try wait leader elected, check leader: {:?}", result);
+            info!("wait leader elected group: {}, {:?}", group_id, result);
             if let Err(err) = result {
                 if let Some(openraft::error::ForwardToLeader {
                     leader_id: Some(_id),
