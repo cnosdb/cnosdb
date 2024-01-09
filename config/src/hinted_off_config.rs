@@ -21,7 +21,8 @@ impl HintedOffConfig {
     }
 
     fn default_path() -> String {
-        "/var/lib/cnosdb/hh".to_string()
+        let path = std::path::Path::new("cnosdb_data").join("hh");
+        path.to_string_lossy().to_string()
     }
 
     fn default_threads() -> i32 {

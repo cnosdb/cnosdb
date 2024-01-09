@@ -57,7 +57,8 @@ pub struct StorageConfig {
 
 impl StorageConfig {
     fn default_path() -> String {
-        "/var/lib/cnosdb/data".to_string()
+        let path = std::path::Path::new("cnosdb_data").join("data");
+        path.to_string_lossy().to_string()
     }
 
     fn default_max_summary_size() -> u64 {
