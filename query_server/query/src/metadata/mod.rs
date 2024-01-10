@@ -377,13 +377,14 @@ impl TableSet {
     }
 }
 
+// "cnosdb" tenant additional check "public" and "CLUSTER_SCHEMA"
+// other tenant only check "INFORMATION_SCHEMA" and "usage_schema"
 pub fn is_system_database(tenant: &str, database: &str) -> bool {
     if tenant.eq_ignore_ascii_case(DEFAULT_CATALOG)
-        && database.eq_ignore_ascii_case(DEFAULT_DATABASE)
+        && (database.eq_ignore_ascii_case(DEFAULT_DATABASE)
+            || database.eq_ignore_ascii_case(CLUSTER_SCHEMA))
     {
         return true;
     }
-    database.eq_ignore_ascii_case(CLUSTER_SCHEMA)
-        || database.eq_ignore_ascii_case(INFORMATION_SCHEMA)
-        || database.eq_ignore_ascii_case(USAGE_SCHEMA)
+    database.eq_ignore_ascii_case(INFORMATION_SCHEMA) || database.eq_ignore_ascii_case(USAGE_SCHEMA)
 }
