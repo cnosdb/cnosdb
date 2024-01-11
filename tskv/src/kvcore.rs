@@ -22,9 +22,7 @@ use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::sync::{oneshot, RwLock};
 use trace::{debug, error, info, warn, SpanContext, SpanExt, SpanRecorder};
 
-use crate::compaction::{
-    self, check, run_flush_memtable_job, CompactTask, FlushReq, LevelCompactionPicker, Picker,
-};
+use crate::compaction::{self, check, run_flush_memtable_job, CompactTask, FlushReq};
 use crate::context::{self, GlobalContext, GlobalSequenceContext, GlobalSequenceTask};
 use crate::database::Database;
 use crate::error::{self, Result};
@@ -1255,9 +1253,8 @@ impl Engine for TsKv {
                     }
                 }
 
-                let picker = LevelCompactionPicker::new(self.options.storage.clone());
                 let version = ts_family.read().await.version();
-                if let Some(req) = picker.pick_compaction(version) {
+                if let Some(req) = compaction::pick_level_compaction(version) {
                     match compaction::run_compaction_job(req, self.global_ctx.clone()).await {
                         Ok(Some((version_edit, file_metas))) => {
                             let (summary_tx, _summary_rx) = oneshot::channel();

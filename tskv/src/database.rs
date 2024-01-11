@@ -24,7 +24,7 @@ use crate::kv_option::{Options, INDEX_PATH};
 use crate::memcache::{MemCache, RowData, RowGroup};
 use crate::schema::schemas::DBschemas;
 use crate::summary::{SummaryTask, VersionEdit};
-use crate::tseries_family::{LevelInfo, TseriesFamily, Version};
+use crate::tseries_family::{schedule_vnode_compaction, LevelInfo, TseriesFamily, Version};
 use crate::Error::{self, InvalidPoint};
 use crate::{file_utils, ColumnFileId, TseriesFamilyId};
 
@@ -88,14 +88,14 @@ impl Database {
             self.opt.cache.clone(),
             self.opt.storage.clone(),
             flush_task_sender,
-            compact_task_sender,
+            compact_task_sender.clone(),
             self.memory_pool.clone(),
             &self.metrics_register,
         );
-        tf.schedule_compaction(self.runtime.clone());
+        let tf_ref = Arc::new(RwLock::new(tf));
+        schedule_vnode_compaction(self.runtime.clone(), tf_ref.clone(), compact_task_sender);
 
-        self.ts_families
-            .insert(ver.tf_id(), Arc::new(RwLock::new(tf)));
+        self.ts_families.insert(ver.tf_id(), tf_ref);
     }
 
     // todo: Maybe TseriesFamily::new() should be refactored.
@@ -180,7 +180,7 @@ impl Database {
             self.opt.cache.clone(),
             self.opt.storage.clone(),
             flush_task_sender,
-            compact_task_sender,
+            compact_task_sender.clone(),
             self.memory_pool.clone(),
             &self.metrics_register,
         );
@@ -189,6 +189,7 @@ impl Database {
         if let Some(tsf) = self.ts_families.get(&tsf_id) {
             return Ok(tsf.clone());
         }
+        schedule_vnode_compaction(self.runtime.clone(), tf.clone(), compact_task_sender);
         self.ts_families.insert(tsf_id, tf.clone());
 
         let (task_state_sender, _task_state_receiver) = oneshot::channel();
@@ -514,5 +515,16 @@ impl Database {
 impl Database {
     pub fn tsf_num(&self) -> usize {
         self.ts_families.len()
+    }
+}
+
+impl Drop for Database {
+    fn drop(&mut self) {
+        let vnodes: Vec<Arc<RwLock<TseriesFamily>>> = self.ts_families.values().cloned().collect();
+        self.runtime.spawn(async move {
+            for vnode in vnodes {
+                vnode.write().await.close();
+            }
+        });
     }
 }
