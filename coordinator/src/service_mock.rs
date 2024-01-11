@@ -241,10 +241,6 @@ impl Coordinator for MockCoordinator {
         todo!()
     }
 
-    fn using_raft_replication(&self) -> bool {
-        false
-    }
-
     async fn update_tags_value(
         &self,
         table_schema: TskvTableSchemaRef,

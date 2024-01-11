@@ -134,7 +134,7 @@ impl VnodeStorage {
         res
     }
 
-    pub async fn drop_table(&self, table: &str) -> Result<()> {
+    async fn drop_table(&self, table: &str) -> Result<()> {
         // TODO Create global DropTable flag for droping the same table at the same time.
         let db_owner = self.db.read().await.owner();
         let schemas = self.db.read().await.get_schemas();
@@ -176,7 +176,7 @@ impl VnodeStorage {
         Ok(())
     }
 
-    pub async fn drop_table_column(&self, table: &str, column_name: &str) -> Result<()> {
+    async fn drop_table_column(&self, table: &str, column_name: &str) -> Result<()> {
         let db_name = self.db.read().await.db_name();
         let schema = self
             .db
@@ -202,6 +202,42 @@ impl VnodeStorage {
         Ok(())
     }
 
+    /// Update the value of the tag type columns of the specified table
+    ///
+    /// `new_tags` is the new tags, and the tag key must be included in all series
+    ///
+    /// # Parameters
+    /// - `tenant` - The tenant name.
+    /// - `database` - The database name.
+    /// - `new_tags` - The tags and its new tag value.
+    /// - `matched_series` - The series that need to be updated.
+    /// - `dry_run` - Whether to only check if the `update_tags_value` is successful, if it is true, the update will not be performed.
+    ///
+    /// # Examples
+    ///
+    /// We have a table `tbl` as follows
+    ///
+    /// ```text
+    /// +----+-----+-----+-----+
+    /// | ts | tag1| tag2|field|
+    /// +----+-----+-----+-----+
+    /// | 1  | t1a | t2b | f1  |
+    /// +----+-----+-----+-----+
+    /// | 2  | t1a | t2c | f2  |
+    /// +----+-----+-----+-----+
+    /// | 3  | t1b | t2c | f3  |
+    /// +----+-----+-----+-----+
+    /// ```
+    ///
+    /// Execute the following update statement
+    ///
+    /// ```sql
+    /// UPDATE tbl SET tag1 = 't1c' WHERE tag2 = 't2c';
+    /// ```
+    ///
+    /// The `new_tags` is `[tag1 = 't1c']`, and the `matched_series` is `[(tag1 = 't1a', tag2 = 't2c'), (tag1 = 't1b', tag2 = 't2c')]`
+    ///
+    /// TODO Specify vnode id
     async fn update_tags_value(
         &self,
         ctx: &replication::ApplyContext,
@@ -607,7 +643,7 @@ impl VnodeStorage {
         Ok(())
     }
 
-    pub async fn delete(
+    async fn delete(
         &self,
         table: &str,
         series_ids: &[SeriesId],

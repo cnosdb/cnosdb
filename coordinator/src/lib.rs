@@ -25,15 +25,12 @@ use crate::service::CoordServiceMetrics;
 
 pub mod errors;
 pub mod file_info;
-pub mod hh_queue;
 pub mod metrics;
 pub mod raft;
 pub mod reader;
 pub mod resource_manager;
 pub mod service;
 pub mod service_mock;
-pub mod vnode_mgr;
-pub mod writer;
 
 pub const FAILED_RESPONSE_CODE: i32 = -1;
 pub const FINISH_RESPONSE_CODE: i32 = 0;
@@ -42,22 +39,8 @@ pub const SUCCESS_RESPONSE_CODE: i32 = 1;
 pub type SendableCoordinatorRecordBatchStream =
     Pin<Box<dyn Stream<Item = CoordinatorResult<RecordBatch>> + Send>>;
 
-#[derive(Debug)]
-pub struct WriteRequest {
-    pub tenant: String,
-    pub level: models::consistency_level::ConsistencyLevel,
-    pub precision: Precision,
-    pub request: protos::kv_service::WritePointsRequest,
-}
-
 #[derive(Debug, Clone)]
 pub enum VnodeManagerCmdType {
-    /// vnode id, dst node id
-    Copy(u32, u64),
-    /// vnode id, dst node id
-    Move(u32, u64),
-    /// vnode id
-    Drop(u32),
     /// vnode id list
     Compact(Vec<u32>),
 
@@ -169,8 +152,6 @@ pub trait Coordinator: Send + Sync {
         new_tags: Vec<UpdateSetValue>,
         record_batches: Vec<RecordBatch>,
     ) -> CoordinatorResult<()>;
-
-    fn using_raft_replication(&self) -> bool;
 }
 
 pub fn status_response_to_result(
