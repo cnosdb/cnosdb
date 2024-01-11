@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+#![recursion_limit = "256"]
 
 use std::fmt::Display;
 use std::path::Path;
