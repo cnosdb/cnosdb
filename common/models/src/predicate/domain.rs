@@ -114,6 +114,36 @@ impl TimeRange {
         self.min_ts = self.min_ts.min(other.min_ts);
         self.max_ts = self.max_ts.max(other.max_ts);
     }
+
+    pub fn compact(time_ranges: &mut Vec<TimeRange>) {
+        if time_ranges.is_empty() {
+            return;
+        }
+
+        // Re-order time ranges with sorted ascending min_ts.
+        time_ranges.sort_by(|a, b| a.min_ts.cmp(&b.min_ts));
+
+        // Add time ranges to new_time_ranges by optimized check algorithm.
+        let mut new_time_ranges: Vec<TimeRange> = Vec::with_capacity(1);
+        new_time_ranges.push(time_ranges[0]);
+        let mut i = 0;
+        for tr in time_ranges.iter().skip(1) {
+            if tr.min_ts
+                > new_time_ranges[i]
+                    .max_ts
+                    .checked_add(1)
+                    .unwrap_or(Timestamp::MAX)
+            {
+                new_time_ranges.push(*tr);
+                i += 1;
+            } else {
+                new_time_ranges[i].max_ts = new_time_ranges[i].max_ts.max(tr.max_ts);
+            }
+        }
+
+        // Replace time_ranges with new_time_ranges.
+        std::mem::swap(time_ranges, &mut new_time_ranges);
+    }
 }
 
 impl From<(Timestamp, Timestamp)> for TimeRange {
@@ -499,6 +529,7 @@ impl PartialEq for Marker {
             .eq(other.value.as_ref().unwrap())
     }
 }
+
 impl Ord for Marker {
     fn cmp(&self, other: &Self) -> Ordering {
         debug_assert!(self.check_type_compatibility(other));
@@ -636,6 +667,7 @@ impl Range {
 
         Self { low, high }
     }
+
     /// Construct a range of values greater than scalar_value (scalar_value, +∞).
     pub fn gt(data_type: &DataType, scalar_value: &ScalarValue) -> Range {
         let low = Marker {
@@ -647,6 +679,7 @@ impl Range {
 
         Self { low, high }
     }
+
     /// Construct a range of values greater than or equal to scalar_value [scalar_value, +∞).
     pub fn ge(data_type: &DataType, scalar_value: &ScalarValue) -> Range {
         let low = Marker {
@@ -658,6 +691,7 @@ impl Range {
 
         Self { low, high }
     }
+
     /// Construct a range of values smaller than scalar_value (-∞, scalar_value).
     pub fn lt(data_type: &DataType, scalar_value: &ScalarValue) -> Range {
         let low = Marker::lower_unbound(data_type.clone());
@@ -669,6 +703,7 @@ impl Range {
 
         Self { low, high }
     }
+
     /// Construct a range of values less than or equal to scalar_value (-∞, scalar_value].
     pub fn le(data_type: &DataType, scalar_value: &ScalarValue) -> Range {
         let low = Marker::lower_unbound(data_type.clone());
@@ -680,6 +715,7 @@ impl Range {
 
         Self { low, high }
     }
+
     /// Determine if two ranges of values overlap.
     ///
     /// If there is overlap, return Ok(true).
@@ -694,6 +730,7 @@ impl Range {
         }
         Ok(false)
     }
+
     /// Calculates the intersection of two ranges.
     ///
     /// return an exception, if there is no intersection.
@@ -715,6 +752,7 @@ impl Range {
             err: "cannot intersect non-overlapping ranges".to_string(),
         })
     }
+
     /// Calculates the span of two ranges
     ///
     /// return new Range
@@ -738,6 +776,7 @@ impl Range {
             err: "cannot span non-overlapping ranges".to_string(),
         })
     }
+
     /// whether to match all lines
     pub fn is_all(&self) -> bool {
         self.low.is_lower_unbound() && self.high.is_upper_unbound()
@@ -898,6 +937,7 @@ impl Domain {
 
         Ok(Domain::Range(RangeValueSet { low_indexed_ranges }))
     }
+
     /// Construct a set of values.
     ///
     /// white_list = true means equal to values
@@ -918,6 +958,7 @@ impl Domain {
             entries,
         })
     }
+
     /// Calculates the intersection of two ranges, and returns None if the intersection does not exist
     ///
     /// This method returns the new value without changing the old value
@@ -937,6 +978,7 @@ impl Domain {
             }),
         }
     }
+
     /// Calculates the union of two ranges
     ///
     /// This method returns the new value without changing the old value
@@ -960,6 +1002,7 @@ impl Domain {
             }),
         }
     }
+
     /// Merge and intersect two ordered range sets
     ///
     /// This method returns the new ValueSet without changing the old value
@@ -1009,6 +1052,7 @@ impl Domain {
 
         Domain::of_ranges(result.as_ref())
     }
+
     /// Merge and intersect two equable value sets
     ///
     /// This method returns the new ValueSet without changing the old value
@@ -1087,6 +1131,7 @@ impl Domain {
             result_entries.as_ref(),
         ))
     }
+
     /// Merge and intersect two equable value sets
     ///
     /// This method returns the new ValueSet without changing the old value
@@ -1531,6 +1576,7 @@ mod tests {
         assert!(tr.overlaps(&TimeRange::new(4, 7)));
         assert!(tr.overlaps(&TimeRange::new(1, 5)));
         assert!(tr.overlaps(&TimeRange::new(2, 4)));
+        assert!(tr.overlaps(&TimeRange::new(5, 6)));
         assert!(!tr.overlaps(&TimeRange::new(-3, -1)));
         assert!(!tr.overlaps(&TimeRange::new(-1, 0)));
         assert!(!tr.overlaps(&TimeRange::new(6, 7)));
@@ -1688,6 +1734,90 @@ mod tests {
                 TimeRange::new(22, 33)
             ]))
         );
+    }
+
+    #[test]
+    fn test_time_range_sort() {
+        let mut time_range_vec: Vec<TimeRange> = vec![
+            (1, 1).into(),
+            (1, 2).into(),
+            (1, 0).into(),
+            (3, 4).into(),
+            (2, 3).into(),
+            (2, 1).into(),
+        ];
+        time_range_vec.sort();
+        assert_eq!(
+            time_range_vec,
+            vec![
+                (1, 0).into(),
+                (1, 1).into(),
+                (1, 2).into(),
+                (2, 1).into(),
+                (2, 3).into(),
+                (3, 4).into(),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_time_range_compact() {
+        {
+            let mut time_range_vec: Vec<TimeRange> = vec![];
+            TimeRange::compact(&mut time_range_vec);
+            assert_eq!(time_range_vec, vec![]);
+        }
+        {
+            let mut time_range_vec: Vec<TimeRange> = vec![(1, 2).into()];
+            TimeRange::compact(&mut time_range_vec);
+            assert_eq!(time_range_vec, vec![(1, 2).into()]);
+        }
+        {
+            let mut time_range_vec: Vec<TimeRange> =
+                vec![(Timestamp::MIN, 999).into(), (1_000, Timestamp::MAX).into()];
+            TimeRange::compact(&mut time_range_vec);
+            assert_eq!(
+                time_range_vec,
+                vec![(Timestamp::MIN, Timestamp::MAX).into()]
+            );
+        }
+        {
+            let mut time_range_vec: Vec<TimeRange> =
+                vec![(Timestamp::MIN, Timestamp::MAX).into(), (999, 1_000).into()];
+            TimeRange::compact(&mut time_range_vec);
+            assert_eq!(
+                time_range_vec,
+                vec![(Timestamp::MIN, Timestamp::MAX).into()]
+            );
+        }
+        {
+            let mut time_range_vec: Vec<TimeRange> =
+                vec![(Timestamp::MIN, 998).into(), (1_000, Timestamp::MAX).into()];
+            TimeRange::compact(&mut time_range_vec);
+            assert_eq!(
+                time_range_vec,
+                vec![(Timestamp::MIN, 998).into(), (1_000, Timestamp::MAX).into()]
+            );
+        }
+        {
+            let mut time_range_vec: Vec<TimeRange> =
+                vec![(1, 2).into(), (3, 4).into(), (9, 10).into()];
+            TimeRange::compact(&mut time_range_vec);
+            assert_eq!(time_range_vec, vec![(1, 4).into(), (9, 10).into()]);
+        }
+        {
+            let mut time_range_vec: Vec<TimeRange> = vec![
+                (5, 5).into(),
+                (1, 10).into(),
+                (0, 5).into(),
+                (3, 6).into(),
+                (5, 9).into(),
+                (20, 30).into(),
+                (21, 29).into(),
+            ];
+            TimeRange::compact(&mut time_range_vec);
+            assert_eq!(time_range_vec, vec![(0, 10).into(), (20, 30).into()]);
+        }
     }
 
     #[test]

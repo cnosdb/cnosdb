@@ -164,6 +164,11 @@ pub struct VersionEdit {
     pub max_level_ts: Timestamp,
     pub add_files: Vec<CompactMeta>,
     pub del_files: Vec<CompactMeta>,
+    /// Partly deleted files, only for delta-compaction.
+    /// Field min_ts and max_ts are the partly deleted time_range.
+    /// This field won't serialize and write into summary file.
+    #[serde(skip)]
+    pub partly_del_files: Vec<CompactMeta>,
 
     pub del_tsf: bool,
     pub add_tsf: bool,
@@ -181,6 +186,7 @@ impl Default for VersionEdit {
             max_level_ts: i64::MIN,
             add_files: vec![],
             del_files: vec![],
+            partly_del_files: vec![],
             del_tsf: false,
             add_tsf: false,
             tsf_id: 0,
@@ -277,6 +283,24 @@ impl VersionEdit {
             file_id,
             level,
             is_delta,
+            ..Default::default()
+        });
+    }
+
+    pub fn del_file_part(
+        &mut self,
+        level: LevelId,
+        file_id: u64,
+        is_delta: bool,
+        min_ts: Timestamp,
+        max_ts: Timestamp,
+    ) {
+        self.partly_del_files.push(CompactMeta {
+            file_id,
+            level,
+            is_delta,
+            min_ts,
+            max_ts,
             ..Default::default()
         });
     }
@@ -570,21 +594,74 @@ impl Summary {
             }
         }
 
-        // For each TsereiesFamily - VersionEdits，generate a new Version and then apply it.
+        // For each TseriesFamily - VersionEdits，generate a new Version and then apply it.
         let version_set = self.version_set.read().await;
+        let mut partly_deleted_file_paths = Vec::new();
         for (tsf_id, edits) in tsf_version_edits {
             let min_seq = tsf_min_seq.get(&tsf_id);
             if let Some(tsf) = version_set.get_tsfamily_by_tf_id(tsf_id).await {
-                trace::info!("Applying new version for ts_family {}.", tsf_id);
+                // Store tsm paths.
+                let tenant_database = &tsf.read().await.database().clone();
+                partly_deleted_file_paths.clear();
+                for version_edit in edits.iter() {
+                    for compact_meta in version_edit.partly_del_files.iter() {
+                        partly_deleted_file_paths.push(compact_meta.file_path(
+                            &self.opt.storage,
+                            tenant_database.as_str(),
+                            tsf_id,
+                        ));
+                    }
+                }
+
+                // Generate new version by version edits.
                 let new_version = tsf.read().await.version().copy_apply_version_edits(
                     edits,
                     &mut file_metas,
                     min_seq.copied(),
                 );
-                let flushed_mem_cahces = mem_caches.get(&tsf_id);
+
+                // Try to replace tombstones with compact_tmp.
+                let mut replace_tombstone_compact_tmp_tasks =
+                    Vec::with_capacity(partly_deleted_file_paths.len());
+                for tsm_path in partly_deleted_file_paths.iter() {
+                    match new_version.get_tsm_reader(tsm_path).await {
+                        Ok(tsm_reader) => {
+                            replace_tombstone_compact_tmp_tasks.push(
+                                self.runtime.spawn(async move {
+                                    tsm_reader.replace_with_compact_tmp().await
+                                }),
+                            );
+                        }
+                        Err(e) => {
+                            trace::error!(
+                                "Failed to get tsm_reader for file '{}' when trying to replace tombstones generated in delta-compaction: {e}",
+                                tsm_path.display(),
+                            )
+                        }
+                    }
+                }
+                for jh in replace_tombstone_compact_tmp_tasks {
+                    match jh.await {
+                        Ok(Ok(_)) => {
+                            trace::info!("Successfully replaced tombstone with compact_tmp");
+                        }
+                        Ok(Err(e)) => {
+                            // TODO: This delta-compaction should be failed.
+                            trace::error!("Failed to replace tombstone with compact_tmp: {e}");
+                        }
+                        Err(e) => {
+                            trace::error!(
+                                "Maybe panicked replacing tombstone with compact_tmp: {e}"
+                            );
+                        }
+                    }
+                }
+
+                let flushed_mem_caches = mem_caches.get(&tsf_id);
+                trace::info!("Applying new version for ts_family {}.", tsf_id);
                 tsf.write()
                     .await
-                    .new_version(new_version, flushed_mem_cahces);
+                    .new_version(new_version, flushed_mem_caches);
                 trace::info!("Applied new version for ts_family {}.", tsf_id);
             }
         }
@@ -819,17 +896,17 @@ impl SummaryScheduler {
 #[cfg(test)]
 mod test {
     use std::collections::HashMap;
-    use std::fs;
     use std::sync::Arc;
 
-    use memory_pool::GreedyMemoryPool;
+    use config::Config;
+    use memory_pool::{GreedyMemoryPool, MemoryPool};
     use meta::model::meta_admin::AdminMeta;
-    use meta::model::MetaRef;
     use metrics::metric_register::MetricsRegister;
     use models::schema::{make_owner, DatabaseSchema, TenantOptions};
     use tokio::runtime::Runtime;
     use tokio::sync::mpsc;
     use tokio::sync::mpsc::Sender;
+    use tokio::task::JoinHandle;
     use utils::BloomFilter;
 
     use crate::compaction::{CompactTask, FlushReq};
@@ -840,6 +917,7 @@ mod test {
         COMPACT_REQ_CHANNEL_CAP, GLOBAL_TASK_REQ_CHANNEL_CAP, SUMMARY_REQ_CHANNEL_CAP,
     };
     use crate::summary::{CompactMeta, Summary, SummaryTask, VersionEdit};
+    use crate::TseriesFamilyId;
 
     #[test]
     fn test_version_edit() {
@@ -867,410 +945,439 @@ mod test {
         assert_eq!(ves, ves_2);
     }
 
-    #[test]
-    fn test_summary() {
-        let mut config = config::get_config_for_test();
+    #[derive(Debug)]
+    struct SummaryTestHelper {
+        test_case_name: String,
+        base_dir: String,
+        config: Config,
+        options: Arc<Options>,
+        runtime: Arc<Runtime>,
+        admin_meta: Arc<AdminMeta>,
+        memory_pool: Arc<dyn MemoryPool>,
+        global_context: Arc<GlobalContext>,
+        summary_task_sender: Sender<SummaryTask>,
+        summary_job: JoinHandle<()>,
+        flush_task_sender: Sender<FlushReq>,
+        flush_job: JoinHandle<()>,
+        global_seq_task_sender: Sender<GlobalSequenceTask>,
+        global_seq_job: JoinHandle<()>,
+        compact_task_sender: Sender<CompactTask>,
+        compact_job: JoinHandle<()>,
+    }
 
-        let runtime = Arc::new(
-            tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .worker_threads(4)
-                .build()
-                .unwrap(),
+    impl SummaryTestHelper {
+        fn new(mut config: Config, base_dir: String, test_case_name: String) -> Self {
+            config.storage.path = base_dir.clone();
+            config.log.path = base_dir.clone();
+            let options = Arc::new(Options::from(&config));
+
+            let runtime = Arc::new(
+                tokio::runtime::Builder::new_multi_thread()
+                    .enable_all()
+                    .worker_threads(4)
+                    .build()
+                    .unwrap(),
+            );
+
+            let config_for_admin_meta = config.clone();
+            let test_case_name_clone = test_case_name.clone();
+            let admin_meta = runtime.block_on(async move {
+                let admin_meta = AdminMeta::new(config_for_admin_meta).await;
+                admin_meta
+                    .add_data_node()
+                    .await
+                    .map_err(|e| format!("[{}] {e}", &test_case_name_clone))
+                    .unwrap();
+                // TODO(zipper): `create_tenant()` add option: ignore already existed tenant.
+                let _ = admin_meta
+                    .create_tenant("cnosdb".to_string(), TenantOptions::default())
+                    .await;
+                admin_meta
+            });
+
+            let memory_pool = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
+
+            // NOTICE: Make sure these channel senders are dropped before test_summary() finished.
+            let (summary_task_sender, mut summary_task_receiver) =
+                mpsc::channel::<SummaryTask>(SUMMARY_REQ_CHANNEL_CAP);
+            let test_case_name_clone = test_case_name.clone();
+            let summary_job = runtime.spawn(async move {
+                println!("Mock summary job started ({test_case_name_clone}).");
+                while let Some(t) = summary_task_receiver.recv().await {
+                    // Do nothing
+                    println!("Mock summary task: {t:?}");
+                    let _ = t.request.call_back.send(Ok(()));
+                }
+                println!("Mock summary job finished ({test_case_name_clone}).");
+            });
+            let (flush_task_sender, mut flush_task_receiver) =
+                mpsc::channel::<FlushReq>(config.storage.flush_req_channel_cap);
+            let test_case_name_clone = test_case_name.clone();
+            let flush_job = runtime.spawn(async move {
+                println!("Mock flush job started ({test_case_name_clone}).");
+                while let Some(t) = flush_task_receiver.recv().await {
+                    // Do nothing
+                    println!("Mock flush request: {t:?}");
+                }
+                println!("Mock flush job finished ({test_case_name_clone}).");
+            });
+            let (global_seq_task_sender, mut global_seq_task_receiver) =
+                mpsc::channel::<GlobalSequenceTask>(GLOBAL_TASK_REQ_CHANNEL_CAP);
+            let global_seq_job = runtime.spawn(async move {
+                println!("Mock global sequence job started (test_summary).");
+                while let Some(t) = global_seq_task_receiver.recv().await {
+                    // Do nothing
+                    println!("Mock global sequence task: {t:?}");
+                }
+                println!("Mock global sequence job finished (test_summary).");
+            });
+            let (compact_task_sender, mut compact_task_receiver) =
+                mpsc::channel::<CompactTask>(COMPACT_REQ_CHANNEL_CAP);
+            let test_case_name_clone = test_case_name.clone();
+            let compact_job = runtime.spawn(async move {
+                println!("Mock compact job started ({test_case_name_clone}).");
+                while let Some(t) = compact_task_receiver.recv().await {
+                    // Do nothing
+                    println!("Mock compact task: {t:?}");
+                }
+                println!("Mock compact job finished ({test_case_name_clone}).");
+            });
+
+            Self {
+                test_case_name,
+                base_dir,
+                config,
+                options,
+                runtime,
+                admin_meta,
+                memory_pool,
+                global_context: Arc::new(GlobalContext::new()),
+                summary_task_sender,
+                summary_job,
+                flush_task_sender,
+                flush_job,
+                global_seq_task_sender,
+                global_seq_job,
+                compact_task_sender,
+                compact_job,
+            }
+        }
+
+        fn with_default_config(base_dir: String, test_case_name: String) -> Self {
+            let config = config::get_config_for_test();
+            Self::new(config, base_dir, test_case_name)
+        }
+
+        fn init(&self) -> Summary {
+            let summary_dir = self.options.storage.summary_dir();
+            if !file_manager::try_exists(&summary_dir) {
+                std::fs::create_dir_all(&summary_dir)
+                    .map_err(|e| format!("[{}] {e}", &self.test_case_name))
+                    .unwrap();
+            }
+            self.runtime
+                .block_on(Summary::new(
+                    self.options.clone(),
+                    self.runtime.clone(),
+                    self.memory_pool.clone(),
+                    self.global_seq_task_sender.clone(),
+                    Arc::new(MetricsRegister::default()),
+                ))
+                .map_err(|e| format!("[{}] {e}", &self.test_case_name))
+                .unwrap()
+        }
+
+        fn recover(&self) -> Summary {
+            self.runtime
+                .block_on(Summary::recover(
+                    self.admin_meta.clone(),
+                    self.options.clone(),
+                    self.runtime.clone(),
+                    self.memory_pool.clone(),
+                    self.flush_task_sender.clone(),
+                    self.global_seq_task_sender.clone(),
+                    self.compact_task_sender.clone(),
+                    false,
+                    Arc::new(MetricsRegister::default()),
+                ))
+                .unwrap()
+        }
+
+        /// Block until all inner tasks cancelled.
+        ///
+        /// Make sure all senders(usually be holden in TsKvContext or Summary) were dropped
+        /// before calling this method.
+        fn join(self) {
+            let SummaryTestHelper {
+                summary_task_sender,
+                summary_job,
+                flush_task_sender,
+                flush_job,
+                global_seq_task_sender,
+                global_seq_job,
+                compact_task_sender,
+                compact_job,
+                ..
+            } = self;
+            drop(summary_task_sender);
+            drop(compact_task_sender);
+            drop(global_seq_task_sender);
+            drop(flush_task_sender);
+            let _ = self.runtime.block_on(async {
+                tokio::join!(summary_job, flush_job, global_seq_job, compact_job)
+            });
+        }
+    }
+
+    #[test]
+    fn test_summary_recover() {
+        let base_dir = "/tmp/test/summary/test_summary_recover";
+        let _ = std::fs::remove_dir_all(base_dir);
+        std::fs::create_dir_all(base_dir).unwrap();
+        let test_helper = SummaryTestHelper::with_default_config(
+            base_dir.to_string(),
+            "test_summary_recover".to_string(),
         );
 
-        // NOTICE: Make sure these channel senders are dropped before test_summary() finished.
-        let (summary_task_sender, mut summary_task_receiver) =
-            mpsc::channel::<SummaryTask>(SUMMARY_REQ_CHANNEL_CAP);
-        let summary_job_mock = runtime.spawn(async move {
-            println!("Mock summary job started (test_summary).");
-            while let Some(t) = summary_task_receiver.recv().await {
-                // Do nothing
-                let _ = t.request.call_back.send(Ok(()));
-            }
-            println!("Mock summary job finished (test_summary).");
-        });
-        let (flush_task_sender, mut flush_task_receiver) =
-            mpsc::channel::<FlushReq>(config.storage.flush_req_channel_cap);
-        let flush_job_mock = runtime.spawn(async move {
-            println!("Mock flush job started (test_summary).");
-            while flush_task_receiver.recv().await.is_some() {
-                // Do nothing
-            }
-            println!("Mock flush job finished (test_summary).");
-        });
-        let (global_seq_task_sender, mut global_seq_task_receiver) =
-            mpsc::channel::<GlobalSequenceTask>(GLOBAL_TASK_REQ_CHANNEL_CAP);
-        let _global_seq_job_mock = runtime.spawn(async move {
-            println!("Mock global sequence job started (test_summary).");
-            while let Some(_t) = global_seq_task_receiver.recv().await {
-                // Do nothing
-            }
-            println!("Mock global sequence job finished (test_summary).");
-        });
-        let (compact_task_sender, mut compact_task_receiver) =
-            mpsc::channel::<CompactTask>(COMPACT_REQ_CHANNEL_CAP);
-        let compact_job_mock = runtime.spawn(async move {
-            println!("Mock compact job started (test_summary).");
-            while compact_task_receiver.recv().await.is_some() {
-                // Do nothing
-            }
-            println!("Mock compact job finished (test_summary).");
-        });
-
-        let runtime_ref = runtime.clone();
-        runtime.block_on(async move {
-            println!("Running test: test_summary_recover");
-            let base_dir = "/tmp/test/summary/test_summary_recover".to_string();
-            let _ = fs::remove_dir_all(&base_dir);
-            fs::create_dir_all(&base_dir).unwrap();
-            config.storage.path = base_dir.clone();
-            test_summary_recover(
-                config.clone(),
-                runtime_ref.clone(),
-                flush_task_sender.clone(),
-                global_seq_task_sender.clone(),
-                compact_task_sender.clone(),
-            )
-            .await;
-
-            println!("Running test: test_tsf_num_recover");
-            let base_dir = "/tmp/test/summary/test_tsf_num_recover".to_string();
-            let _ = fs::remove_dir_all(&base_dir);
-            fs::create_dir_all(&base_dir).unwrap();
-            config.storage.path = base_dir.clone();
-            test_tsf_num_recover(
-                config.clone(),
-                runtime_ref.clone(),
-                flush_task_sender.clone(),
-                global_seq_task_sender.clone(),
-                compact_task_sender.clone(),
-            )
-            .await;
-
-            println!("Running test: test_recover_summary_with_roll_0");
-            let base_dir = "/tmp/test/summary/test_recover_summary_with_roll_0".to_string();
-            let _ = fs::remove_dir_all(&base_dir);
-            fs::create_dir_all(&base_dir).unwrap();
-            config.storage.path = base_dir.clone();
-            test_recover_summary_with_roll_0(
-                config.clone(),
-                runtime_ref.clone(),
-                summary_task_sender.clone(),
-                flush_task_sender.clone(),
-                global_seq_task_sender.clone(),
-                compact_task_sender.clone(),
-            )
-            .await;
-
-            println!("Running test: test_recover_summary_with_roll_1");
-            let base_dir = "/tmp/test/summary/test_recover_summary_with_roll_1".to_string();
-            let _ = fs::remove_dir_all(&base_dir);
-            config.storage.path = base_dir.clone();
-            test_recover_summary_with_roll_1(
-                config.clone(),
-                runtime_ref.clone(),
-                summary_task_sender,
-                flush_task_sender,
-                global_seq_task_sender,
-                compact_task_sender,
-            )
-            .await;
-
-            let _ = tokio::join!(summary_job_mock, flush_job_mock, compact_job_mock);
-        });
-    }
-
-    async fn test_summary_recover(
-        config: config::Config,
-        runtime: Arc<Runtime>,
-        flush_task_sender: Sender<FlushReq>,
-        global_seq_task_sender: Sender<GlobalSequenceTask>,
-        compact_task_sender: Sender<CompactTask>,
-    ) {
-        let opt = Arc::new(Options::from(&config));
-        let meta_manager = AdminMeta::new(config.clone()).await;
-
-        meta_manager.add_data_node().await.unwrap();
-
-        let _ = meta_manager
-            .create_tenant("cnosdb".to_string(), TenantOptions::default())
-            .await;
-        let summary_dir = opt.storage.summary_dir();
-        if !file_manager::try_exists(&summary_dir) {
-            std::fs::create_dir_all(&summary_dir).unwrap();
-        }
-        let memory_pool = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
-        let mut summary = Summary::new(
-            opt.clone(),
-            runtime.clone(),
-            memory_pool.clone(),
-            global_seq_task_sender.clone(),
-            Arc::new(MetricsRegister::default()),
-        )
-        .await
-        .unwrap();
-        let edit = VersionEdit::new_add_vnode(100, "cnosdb.hello".to_string(), 0);
-        summary
-            .apply_version_edit(vec![edit], HashMap::new(), HashMap::new())
-            .await
-            .unwrap();
-        let _summary = Summary::recover(
-            meta_manager,
-            opt.clone(),
-            runtime.clone(),
-            memory_pool,
-            flush_task_sender,
-            global_seq_task_sender,
-            compact_task_sender,
-            false,
-            Arc::new(MetricsRegister::default()),
-        )
-        .await
-        .unwrap();
-    }
-
-    async fn test_tsf_num_recover(
-        config: config::Config,
-        runtime: Arc<Runtime>,
-        flush_task_sender: Sender<FlushReq>,
-        global_seq_task_sender: Sender<GlobalSequenceTask>,
-        compact_task_sender: Sender<CompactTask>,
-    ) {
-        let opt = Arc::new(Options::from(&config));
-        let meta_manager: MetaRef = AdminMeta::new(config.clone()).await;
-
-        meta_manager.add_data_node().await.unwrap();
-
-        let _ = meta_manager
-            .create_tenant("cnosdb".to_string(), TenantOptions::default())
-            .await;
-        let summary_dir = opt.storage.summary_dir();
-        if !file_manager::try_exists(&summary_dir) {
-            std::fs::create_dir_all(&summary_dir).unwrap();
-        }
-        let memory_pool = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
-        let mut summary = Summary::new(
-            opt.clone(),
-            runtime.clone(),
-            memory_pool.clone(),
-            global_seq_task_sender.clone(),
-            Arc::new(MetricsRegister::default()),
-        )
-        .await
-        .unwrap();
-
-        let edit = VersionEdit::new_add_vnode(100, "cnosdb.hello".to_string(), 0);
-        summary
-            .apply_version_edit(vec![edit], HashMap::new(), HashMap::new())
-            .await
-            .unwrap();
-        let mut summary = Summary::recover(
-            meta_manager.clone(),
-            opt.clone(),
-            runtime.clone(),
-            memory_pool.clone(),
-            flush_task_sender.clone(),
-            global_seq_task_sender.clone(),
-            compact_task_sender.clone(),
-            false,
-            Arc::new(MetricsRegister::default()),
-        )
-        .await
-        .unwrap();
-        assert_eq!(summary.version_set.read().await.tsf_num().await, 1);
-        let edit = VersionEdit::new_del_vnode(100);
-        summary
-            .apply_version_edit(vec![edit], HashMap::new(), HashMap::new())
-            .await
-            .unwrap();
-        let summary = Summary::recover(
-            meta_manager,
-            opt.clone(),
-            runtime,
-            memory_pool.clone(),
-            flush_task_sender,
-            global_seq_task_sender,
-            compact_task_sender,
-            false,
-            Arc::new(MetricsRegister::default()),
-        )
-        .await
-        .unwrap();
-        assert_eq!(summary.version_set.read().await.tsf_num().await, 0);
-    }
-
-    // tips : we can use a small max_summary_size
-    #[allow(clippy::too_many_arguments)]
-    async fn test_recover_summary_with_roll_0(
-        config: config::Config,
-        runtime: Arc<Runtime>,
-        summary_task_sender: Sender<SummaryTask>,
-        flush_task_sender: Sender<FlushReq>,
-        global_seq_task_sender: Sender<GlobalSequenceTask>,
-        compact_task_sender: Sender<CompactTask>,
-    ) {
-        let opt = Arc::new(Options::from(&config));
-        let meta_manager: MetaRef = AdminMeta::new(config.clone()).await;
-
-        meta_manager.add_data_node().await.unwrap();
-        let _ = meta_manager
-            .create_tenant("cnosdb".to_string(), TenantOptions::default())
-            .await;
-        let database = "test".to_string();
-        let summary_dir = opt.storage.summary_dir();
-        if !file_manager::try_exists(&summary_dir) {
-            std::fs::create_dir_all(&summary_dir).unwrap();
-        }
-        let memory_pool = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
-        let global = Arc::new(GlobalContext::new());
-        let mut summary = Summary::new(
-            opt.clone(),
-            runtime.clone(),
-            memory_pool.clone(),
-            global_seq_task_sender.clone(),
-            Arc::new(MetricsRegister::default()),
-        )
-        .await
-        .unwrap();
-
-        let mut edits = vec![];
-        let db = summary
-            .version_set
-            .write()
-            .await
-            .create_db(
-                DatabaseSchema::new("cnosdb", &database),
-                meta_manager.clone(),
-                memory_pool.clone(),
-            )
-            .await
-            .unwrap();
-        for i in 0..40 {
-            db.write()
-                .await
-                .add_tsfamily(
-                    i,
-                    0,
-                    None,
-                    summary_task_sender.clone(),
-                    flush_task_sender.clone(),
-                    compact_task_sender.clone(),
-                    global.clone(),
-                )
-                .await
-                .expect("add tsfamily successfully");
-            let edit = VersionEdit::new_add_vnode(i, make_owner("cnosdb", &database), 0);
-            edits.push(edit.clone());
-        }
-
-        for _ in 0..100 {
-            for i in 0..20 {
-                db.write()
-                    .await
-                    .del_tsfamily(i, summary_task_sender.clone())
-                    .await;
-                edits.push(VersionEdit::new_del_vnode(i));
-            }
-        }
-        summary
-            .apply_version_edit(edits, HashMap::new(), HashMap::new())
-            .await
-            .unwrap();
-
-        let summary = Summary::recover(
-            meta_manager.clone(),
-            opt.clone(),
-            runtime,
-            memory_pool.clone(),
-            flush_task_sender.clone(),
-            global_seq_task_sender.clone(),
-            compact_task_sender,
-            false,
-            Arc::new(MetricsRegister::default()),
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(summary.version_set.read().await.tsf_num().await, 20);
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    async fn test_recover_summary_with_roll_1(
-        config: config::Config,
-        runtime: Arc<Runtime>,
-        summary_task_sender: Sender<SummaryTask>,
-        flush_task_sender: Sender<FlushReq>,
-        global_seq_task_sender: Sender<GlobalSequenceTask>,
-        compact_task_sender: Sender<CompactTask>,
-    ) {
-        let memory_pool = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
-
-        let opt = Arc::new(Options::from(&config));
-        let meta_manager: MetaRef = AdminMeta::new(config.clone()).await;
-
-        meta_manager.add_data_node().await.unwrap();
-
-        let _ = meta_manager
-            .create_tenant("cnosdb".to_string(), TenantOptions::default())
-            .await;
-        let database = "test".to_string();
-        let summary_dir = opt.storage.summary_dir();
-        if !file_manager::try_exists(&summary_dir) {
-            std::fs::create_dir_all(&summary_dir).unwrap();
-        }
-        let mut summary = Summary::new(
-            opt.clone(),
-            runtime.clone(),
-            memory_pool.clone(),
-            global_seq_task_sender.clone(),
-            Arc::new(MetricsRegister::default()),
-        )
-        .await
-        .unwrap();
-
-        let db = summary
-            .version_set
-            .write()
-            .await
-            .create_db(
-                DatabaseSchema::new("cnosdb", &database),
-                meta_manager.clone(),
-                memory_pool.clone(),
-            )
-            .await
-            .unwrap();
-        let cxt = Arc::new(GlobalContext::new());
-        db.write()
-            .await
-            .add_tsfamily(
-                10,
-                0,
-                None,
-                summary_task_sender.clone(),
-                flush_task_sender.clone(),
-                compact_task_sender.clone(),
-                cxt.clone(),
-            )
-            .await
-            .expect("add tsfamily failed");
-
-        let mut edits = vec![];
-        let edit = VersionEdit::new_add_vnode(10, "cnosdb.hello".to_string(), 0);
-        edits.push(edit);
-
-        for _ in 0..100 {
-            db.write()
-                .await
-                .del_tsfamily(0, summary_task_sender.clone())
-                .await;
-            let edit = VersionEdit::new_del_vnode(0);
-            edits.push(edit);
+        {
+            // Create vnode(id=100) in database "cnosdb.hello".
+            let mut summary = test_helper.init();
+            let edit = VersionEdit::new_add_vnode(100, "cnosdb.hello".to_string(), 0);
+            test_helper
+                .runtime
+                .block_on(summary.apply_version_edit(vec![edit], HashMap::new(), HashMap::new()))
+                .unwrap();
         }
 
         {
-            let vs = summary.version_set.write().await;
-            let tsf = vs.get_tsfamily_by_tf_id(10).await.unwrap();
+            // Check if vnode and database still exists after recover.
+            let summary = test_helper.recover();
+            test_helper.runtime.block_on(async move {
+                let version_set = summary.version_set.read().await;
+                assert_eq!(version_set.tsf_num().await, 1);
+                let all_db_names: Vec<String> = version_set.get_all_db().keys().cloned().collect();
+                assert_eq!(all_db_names, vec!["cnosdb.hello".to_string()]);
+                let db = version_set.get_all_db().get("cnosdb.hello").unwrap();
+                let vnode_ids: Vec<TseriesFamilyId> =
+                    db.read().await.ts_families().keys().cloned().collect();
+                assert_eq!(vnode_ids, vec![100]);
+            });
+        }
+
+        test_helper.join();
+    }
+
+    #[test]
+    fn test_tsf_num_recover() {
+        let base_dir = "/tmp/test/summary/test_tsf_num_recover";
+        let _ = std::fs::remove_dir_all(base_dir);
+        std::fs::create_dir_all(base_dir).unwrap();
+        let test_helper = SummaryTestHelper::with_default_config(
+            base_dir.to_string(),
+            "test_tsf_num_recover".to_string(),
+        );
+
+        let tenant_database = "cnosdb.test_tsf_num_recover";
+
+        {
+            // Create vnode(id=100) in database "cnosdb.test_tsf_num_recover".
+            let mut summary = test_helper.init();
+            test_helper.runtime.block_on(async move {
+                let edit = VersionEdit::new_add_vnode(100, tenant_database.to_string(), 0);
+                summary
+                    .apply_version_edit(vec![edit], HashMap::new(), HashMap::new())
+                    .await
+                    .unwrap();
+            });
+        }
+
+        {
+            // Check if vnode and database still exists after recover.
+            // Delete vnode(id=100).
+            let mut summary = test_helper.recover();
+            test_helper.runtime.block_on(async move {
+                let version_set = summary.version_set.read().await;
+                assert_eq!(version_set.tsf_num().await, 1);
+                let all_db_names: Vec<String> = version_set.get_all_db().keys().cloned().collect();
+                assert_eq!(all_db_names, vec![tenant_database.to_string()]);
+                let db = version_set.get_all_db().get(tenant_database).unwrap();
+                let vnode_ids: Vec<TseriesFamilyId> =
+                    db.read().await.ts_families().keys().cloned().collect();
+                assert_eq!(vnode_ids, vec![100]);
+                drop(version_set);
+
+                let edit = VersionEdit::new_del_vnode(100);
+                summary
+                    .apply_version_edit(vec![edit], HashMap::new(), HashMap::new())
+                    .await
+                    .unwrap();
+            });
+        }
+
+        {
+            // Check if database and vnode not exists after recover.
+            let summary = test_helper.recover();
+            test_helper.runtime.block_on(async move {
+                let version_set = summary.version_set.read().await;
+                assert_eq!(version_set.tsf_num().await, 0);
+                assert_eq!(version_set.get_all_db().len(), 0);
+            });
+        }
+
+        test_helper.join();
+    }
+
+    #[test]
+    fn test_recover_summary_with_roll_0() {
+        let base_dir = "/tmp/test/summary/test_recover_summary_with_roll_0";
+        let _ = std::fs::remove_dir_all(base_dir);
+        std::fs::create_dir_all(base_dir).unwrap();
+        let database = "test_recover_summary_with_roll_0";
+        let owned_database = make_owner("cnosdb", database);
+        let mut config = config::get_config_for_test();
+        config.storage.max_summary_size = 128;
+        let test_helper = SummaryTestHelper::new(
+            config,
+            base_dir.to_string(),
+            "test_recover_summary_with_roll_0".to_string(),
+        );
+
+        let test_helper = Arc::new(test_helper);
+
+        {
+            // Create database, add some vnodes then delete some vnodes.
+            let mut summary = test_helper.init();
+            let test_helper_inner = test_helper.clone();
+            test_helper.runtime.block_on(async {
+                let mut edits = vec![];
+                let db = summary
+                    .version_set
+                    .write()
+                    .await
+                    .create_db(
+                        DatabaseSchema::new("cnosdb", database),
+                        test_helper_inner.admin_meta.clone(),
+                        test_helper_inner.memory_pool.clone(),
+                    )
+                    .await
+                    .unwrap();
+                for i in 0..20 {
+                    db.write()
+                        .await
+                        .add_tsfamily(
+                            i,
+                            0,
+                            None,
+                            test_helper_inner.summary_task_sender.clone(),
+                            test_helper_inner.flush_task_sender.clone(),
+                            test_helper_inner.compact_task_sender.clone(),
+                            test_helper_inner.global_context.clone(),
+                        )
+                        .await
+                        .expect("add tsfamily successfully");
+                    let edit = VersionEdit::new_add_vnode(i, owned_database.to_string(), 0);
+                    edits.push(edit.clone());
+                }
+                summary
+                    .apply_version_edit(edits.drain(..).collect(), HashMap::new(), HashMap::new())
+                    .await
+                    .unwrap();
+
+                for _ in 0..10 {
+                    let mut edits = vec![];
+                    for i in 0..10 {
+                        db.write()
+                            .await
+                            .del_tsfamily(i, test_helper_inner.summary_task_sender.clone())
+                            .await;
+                        edits.push(VersionEdit::new_del_vnode(i));
+                    }
+                    summary
+                        .apply_version_edit(edits, HashMap::new(), HashMap::new())
+                        .await
+                        .unwrap();
+                }
+            });
+        }
+
+        {
+            // Recover and compare.
+            let summary = test_helper.recover();
+            test_helper.runtime.block_on(async move {
+                assert_eq!(summary.version_set.read().await.tsf_num().await, 10);
+            });
+        }
+
+        let test_helper = Arc::try_unwrap(test_helper).unwrap();
+        test_helper.join();
+    }
+
+    #[test]
+    fn test_recover_summary_with_roll_1() {
+        let base_dir = "/tmp/test/summary/test_recover_summary_with_roll_1";
+        let _ = std::fs::remove_dir_all(base_dir);
+        std::fs::create_dir_all(base_dir).unwrap();
+        let database = "test_recover_summary_with_roll_1";
+        let owned_database = make_owner("cnosdb", database);
+        const VNODE_ID: u32 = 10;
+        let mut config = config::get_config_for_test();
+        config.storage.max_summary_size = 256;
+        let test_helper = SummaryTestHelper::new(
+            config,
+            base_dir.to_string(),
+            "test_recover_summary_with_roll_1".to_string(),
+        );
+
+        let test_helper = Arc::new(test_helper);
+
+        let mut summary = test_helper.init();
+        // Create database, add some vnodes and delete some vnodes.
+        // Go to the next version.
+        let test_helper_inner = test_helper.clone();
+        test_helper.runtime.block_on(async move {
+            let db = summary
+                .version_set
+                .write()
+                .await
+                .create_db(
+                    DatabaseSchema::new("cnosdb", database),
+                    test_helper_inner.admin_meta.clone(),
+                    test_helper_inner.memory_pool.clone(),
+                )
+                .await
+                .unwrap();
+            db.write()
+                .await
+                .add_tsfamily(
+                    VNODE_ID,
+                    0,
+                    None,
+                    test_helper_inner.summary_task_sender.clone(),
+                    test_helper_inner.flush_task_sender.clone(),
+                    test_helper_inner.compact_task_sender.clone(),
+                    test_helper_inner.global_context.clone(),
+                )
+                .await
+                .expect("add vnode failed");
+            let mut edits = vec![VersionEdit::new_add_vnode(
+                VNODE_ID,
+                owned_database.to_string(),
+                0,
+            )];
+            for _ in 0..10 {
+                db.write()
+                    .await
+                    .del_tsfamily(0, test_helper_inner.summary_task_sender.clone())
+                    .await;
+                let edit = VersionEdit::new_del_vnode(0);
+                edits.push(edit);
+            }
+
+            // Go to the next version.
+            let tsf = {
+                let vs = summary.version_set.read().await;
+                vs.get_tsfamily_by_tf_id(VNODE_ID).await.unwrap()
+            };
             let mut version = tsf.read().await.version().copy_apply_version_edits(
                 edits.clone(),
                 &mut HashMap::new(),
@@ -1278,8 +1385,7 @@ mod test {
             );
             let tsm_reader_cache = Arc::downgrade(&version.tsm_reader_cache);
 
-            summary.ctx.set_last_seq(1);
-            let mut edit = VersionEdit::new(10);
+            let mut edit = VersionEdit::new(VNODE_ID);
             let meta = CompactMeta {
                 file_id: 15,
                 is_delta: false,
@@ -1287,7 +1393,7 @@ mod test {
                 level: 1,
                 min_ts: 1,
                 max_ts: 1,
-                tsf_id: 10,
+                tsf_id: VNODE_ID,
                 high_seq: 1,
                 ..Default::default()
             };
@@ -1299,40 +1405,35 @@ mod test {
             tsf.write().await.new_version(version, None);
             edit.add_file(meta, 1);
             edits.push(edit);
+
+            summary
+                .apply_version_edit(edits, HashMap::new(), HashMap::new())
+                .await
+                .unwrap();
+        });
+
+        {
+            // Recover and compare.
+            let summary = test_helper.recover();
+            test_helper.runtime.block_on(async move {
+                let vs = summary.version_set.read().await;
+                let tsf = vs.get_tsfamily_by_tf_id(VNODE_ID).await.unwrap();
+                assert_eq!(tsf.read().await.version().last_seq, 1);
+                assert_eq!(tsf.read().await.version().levels_info()[1].tsf_id, VNODE_ID);
+                assert!(!tsf.read().await.version().levels_info()[1].files[0].is_delta());
+                assert_eq!(
+                    tsf.read().await.version().levels_info()[1].files[0].file_id(),
+                    15
+                );
+                assert_eq!(
+                    tsf.read().await.version().levels_info()[1].files[0].size(),
+                    100
+                );
+                assert_eq!(summary.ctx.file_id(), 16);
+            });
         }
 
-        summary
-            .apply_version_edit(edits, HashMap::new(), HashMap::new())
-            .await
-            .unwrap();
-
-        let summary = Summary::recover(
-            meta_manager,
-            opt,
-            runtime,
-            memory_pool.clone(),
-            flush_task_sender,
-            global_seq_task_sender,
-            compact_task_sender,
-            false,
-            Arc::new(MetricsRegister::default()),
-        )
-        .await
-        .unwrap();
-
-        let vs = summary.version_set.read().await;
-        let tsf = vs.get_tsfamily_by_tf_id(10).await.unwrap();
-        assert_eq!(tsf.read().await.version().last_seq, 1);
-        assert_eq!(tsf.read().await.version().levels_info[1].tsf_id, 10);
-        assert!(!tsf.read().await.version().levels_info[1].files[0].is_delta());
-        assert_eq!(
-            tsf.read().await.version().levels_info[1].files[0].file_id(),
-            15
-        );
-        assert_eq!(
-            tsf.read().await.version().levels_info[1].files[0].size(),
-            100
-        );
-        assert_eq!(summary.ctx.file_id(), 16);
+        let test_helper = Arc::try_unwrap(test_helper).unwrap();
+        test_helper.join();
     }
 }

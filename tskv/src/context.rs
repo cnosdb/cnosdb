@@ -172,6 +172,7 @@ impl GlobalSequenceContextInner {
     }
 }
 
+#[derive(Debug)]
 pub struct GlobalSequenceTask {
     pub del_ts_family: HashSet<TseriesFamilyId>,
     pub ts_family_min_seq: HashMap<TseriesFamilyId, u64>,

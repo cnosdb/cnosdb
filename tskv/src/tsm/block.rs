@@ -217,23 +217,23 @@ impl DataBlock {
         }
         let end = self.len();
         match self {
-            DataBlock::U64 { ts, .. } => Some((ts[0].to_owned(), ts[end - 1].to_owned())),
-            DataBlock::I64 { ts, .. } => Some((ts[0].to_owned(), ts[end - 1].to_owned())),
-            DataBlock::Str { ts, .. } => Some((ts[0].to_owned(), ts[end - 1].to_owned())),
-            DataBlock::F64 { ts, .. } => Some((ts[0].to_owned(), ts[end - 1].to_owned())),
-            DataBlock::Bool { ts, .. } => Some((ts[0].to_owned(), ts[end - 1].to_owned())),
+            DataBlock::U64 { ts, .. } => Some((ts[0], ts[end - 1])),
+            DataBlock::I64 { ts, .. } => Some((ts[0], ts[end - 1])),
+            DataBlock::Str { ts, .. } => Some((ts[0], ts[end - 1])),
+            DataBlock::F64 { ts, .. } => Some((ts[0], ts[end - 1])),
+            DataBlock::Bool { ts, .. } => Some((ts[0], ts[end - 1])),
         }
     }
 
     /// Returns (`timestamp[start]`, `timestamp[end]`) from this `DataBlock` at the specified
     /// indexes.
-    pub fn time_range_by_range(&self, start: usize, end: usize) -> (i64, i64) {
+    pub fn time_range_by_range(&self, start: usize, end: usize) -> (Timestamp, Timestamp) {
         match self {
-            DataBlock::U64 { ts, .. } => (ts[start].to_owned(), ts[end - 1].to_owned()),
-            DataBlock::I64 { ts, .. } => (ts[start].to_owned(), ts[end - 1].to_owned()),
-            DataBlock::Str { ts, .. } => (ts[start].to_owned(), ts[end - 1].to_owned()),
-            DataBlock::F64 { ts, .. } => (ts[start].to_owned(), ts[end - 1].to_owned()),
-            DataBlock::Bool { ts, .. } => (ts[start].to_owned(), ts[end - 1].to_owned()),
+            DataBlock::U64 { ts, .. } => (ts[start], ts[end - 1]),
+            DataBlock::I64 { ts, .. } => (ts[start], ts[end - 1]),
+            DataBlock::Str { ts, .. } => (ts[start], ts[end - 1]),
+            DataBlock::F64 { ts, .. } => (ts[start], ts[end - 1]),
+            DataBlock::Bool { ts, .. } => (ts[start], ts[end - 1]),
         }
     }
 
@@ -434,6 +434,102 @@ impl DataBlock {
         blk
     }
 
+    /// Split data block at index `i`, returns (block[..i]. block[i..])
+    pub fn split_at(self, i: usize) -> (DataBlock, DataBlock) {
+        match &self {
+            DataBlock::U64 { ts, val, .. } => {
+                if i >= ts.len() {
+                    (self, DataBlock::new(0, ValueType::Unsigned))
+                } else {
+                    (
+                        DataBlock::U64 {
+                            ts: ts[..i].to_vec(),
+                            val: val[..i].to_vec(),
+                            enc: DataBlockEncoding::default(),
+                        },
+                        DataBlock::U64 {
+                            ts: ts[i..].to_vec(),
+                            val: val[i..].to_vec(),
+                            enc: DataBlockEncoding::default(),
+                        },
+                    )
+                }
+            }
+            DataBlock::I64 { ts, val, .. } => {
+                if i >= ts.len() {
+                    (self, DataBlock::new(0, ValueType::Integer))
+                } else {
+                    (
+                        DataBlock::I64 {
+                            ts: ts[..i].to_vec(),
+                            val: val[..i].to_vec(),
+                            enc: DataBlockEncoding::default(),
+                        },
+                        DataBlock::I64 {
+                            ts: ts[i..].to_vec(),
+                            val: val[i..].to_vec(),
+                            enc: DataBlockEncoding::default(),
+                        },
+                    )
+                }
+            }
+            DataBlock::Str { ts, val, .. } => {
+                if i >= ts.len() {
+                    (self, DataBlock::new(0, ValueType::String))
+                } else {
+                    (
+                        DataBlock::Str {
+                            ts: ts[..i].to_vec(),
+                            val: val[..i].to_vec(),
+                            enc: DataBlockEncoding::default(),
+                        },
+                        DataBlock::Str {
+                            ts: ts[i..].to_vec(),
+                            val: val[i..].to_vec(),
+                            enc: DataBlockEncoding::default(),
+                        },
+                    )
+                }
+            }
+            DataBlock::F64 { ts, val, .. } => {
+                if i >= ts.len() {
+                    (self, DataBlock::new(0, ValueType::Float))
+                } else {
+                    (
+                        DataBlock::F64 {
+                            ts: ts[..i].to_vec(),
+                            val: val[..i].to_vec(),
+                            enc: DataBlockEncoding::default(),
+                        },
+                        DataBlock::F64 {
+                            ts: ts[i..].to_vec(),
+                            val: val[i..].to_vec(),
+                            enc: DataBlockEncoding::default(),
+                        },
+                    )
+                }
+            }
+            DataBlock::Bool { ts, val, .. } => {
+                if i >= ts.len() {
+                    (self, DataBlock::new(0, ValueType::Boolean))
+                } else {
+                    (
+                        DataBlock::Bool {
+                            ts: ts[..i].to_vec(),
+                            val: val[..i].to_vec(),
+                            enc: DataBlockEncoding::default(),
+                        },
+                        DataBlock::Bool {
+                            ts: ts[i..].to_vec(),
+                            val: val[i..].to_vec(),
+                            enc: DataBlockEncoding::default(),
+                        },
+                    )
+                }
+            }
+        }
+    }
+
     /// Merges one or many `DataBlock`s into some `DataBlock` with fixed length,
     /// sorted by timestamp, if many (timestamp, value) conflict with the same
     /// timestamp, use the last value.
@@ -609,6 +705,43 @@ impl DataBlock {
             }
             _ => {}
         }
+    }
+
+    /// Returns a subset of `DataBlock` with timestamps included in the specified time range.
+    pub fn intersection(self, time_range: &TimeRange) -> Option<DataBlock> {
+        self.index_range(time_range).map(|(min, max)| {
+            if min == 0 && max >= self.len() {
+                self
+            } else {
+                match self {
+                    DataBlock::U64 { ts, val, enc } => DataBlock::U64 {
+                        ts: ts[min..=max].to_vec(),
+                        val: val[min..=max].to_vec(),
+                        enc,
+                    },
+                    DataBlock::I64 { ts, val, enc } => DataBlock::I64 {
+                        ts: ts[min..=max].to_vec(),
+                        val: val[min..=max].to_vec(),
+                        enc,
+                    },
+                    DataBlock::Str { ts, val, enc } => DataBlock::Str {
+                        ts: ts[min..=max].to_vec(),
+                        val: val[min..=max].to_vec(),
+                        enc,
+                    },
+                    DataBlock::F64 { ts, val, enc } => DataBlock::F64 {
+                        ts: ts[min..=max].to_vec(),
+                        val: val[min..=max].to_vec(),
+                        enc,
+                    },
+                    DataBlock::Bool { ts, val, enc } => DataBlock::Bool {
+                        ts: ts[min..=max].to_vec(),
+                        val: val[min..=max].to_vec(),
+                        enc,
+                    },
+                }
+            }
+        })
     }
 
     /// Encodes timestamps and values of this `DataBlock` to bytes.
@@ -1009,13 +1142,13 @@ impl EncodedDataBlock {
 
 #[cfg(test)]
 pub mod test {
-    use minivec::mini_vec;
+    use minivec::{mini_vec, MiniVec};
     use models::predicate::domain::{TimeRange, TimeRanges};
     use models::ValueType;
 
     use crate::memcache::DataType;
     use crate::tsm::codec::DataBlockEncoding;
-    use crate::tsm::{DataBlock, DataBlockReader};
+    use crate::tsm::{DataBlock, DataBlockReader, EncodedDataBlock};
 
     pub(crate) fn check_data_block(block: &DataBlock, pattern: &[DataType]) {
         assert_eq!(block.len(), pattern.len());
@@ -1040,6 +1173,158 @@ pub mod test {
         assert_eq!(res, vec![
             DataBlock::U64 { ts: vec![1, 2, 3, 4, 5], val: vec![10, 12, 13, 15, 50], enc: DataBlockEncoding::default() },
         ]);
+    }
+
+    #[test]
+    fn test_data_block_split_at() {
+        let cases = vec![
+            (1, (1..=5), 0, vec![], vec![1, 2, 3, 4, 5]),
+            (2, (1..=5), 1, vec![1], vec![2, 3, 4, 5]),
+            (3, (1..=5), 2, vec![1, 2], vec![3, 4, 5]),
+            (4, (1..=5), 4, vec![1, 2, 3, 4], vec![5]),
+            (5, (1..=5), 5, vec![1, 2, 3, 4, 5], vec![]),
+        ];
+        for (i, ts_range, split_idx, left, right) in cases {
+            {
+                let u64_blk = DataBlock::U64 {
+                    ts: ts_range.clone().collect(),
+                    val: ts_range.clone().map(|t| t as u64).collect(),
+                    enc: DataBlockEncoding::default(),
+                };
+                let (a, b) = u64_blk.split_at(split_idx);
+                assert_eq!(
+                    a,
+                    DataBlock::U64 {
+                        ts: left.clone(),
+                        val: left.iter().map(|d| *d as u64).collect(),
+                        enc: DataBlockEncoding::default()
+                    },
+                    "for case: {i}, u64, the left is different",
+                );
+                assert_eq!(
+                    b,
+                    DataBlock::U64 {
+                        ts: right.clone(),
+                        val: right.iter().map(|d| *d as u64).collect(),
+                        enc: DataBlockEncoding::default()
+                    },
+                    "for case: {i}, u64, the right is different",
+                );
+            }
+            {
+                let i64_blk = DataBlock::I64 {
+                    ts: ts_range.clone().collect(),
+                    val: ts_range.clone().collect(),
+                    enc: DataBlockEncoding::default(),
+                };
+                let (a, b) = i64_blk.split_at(split_idx);
+                assert_eq!(
+                    a,
+                    DataBlock::I64 {
+                        ts: left.clone(),
+                        val: left.clone(),
+                        enc: DataBlockEncoding::default()
+                    },
+                    "for case: {i}, i64, the left is different",
+                );
+                assert_eq!(
+                    b,
+                    DataBlock::I64 {
+                        ts: right.clone(),
+                        val: right.clone(),
+                        enc: DataBlockEncoding::default()
+                    },
+                    "for case: {i}, i64, the right is different",
+                );
+            }
+            {
+                let str_blk = DataBlock::Str {
+                    ts: ts_range.clone().collect(),
+                    val: ts_range
+                        .clone()
+                        .map(|d| MiniVec::from(d.to_string().as_bytes()))
+                        .collect(),
+                    enc: DataBlockEncoding::default(),
+                };
+                let (a, b) = str_blk.split_at(split_idx);
+                assert_eq!(
+                    a,
+                    DataBlock::Str {
+                        ts: left.clone(),
+                        val: left
+                            .iter()
+                            .map(|d| MiniVec::from(d.to_string().as_bytes()))
+                            .collect(),
+                        enc: DataBlockEncoding::default()
+                    },
+                    "for case: {i}, str, the left is different",
+                );
+                assert_eq!(
+                    b,
+                    DataBlock::Str {
+                        ts: right.clone(),
+                        val: right
+                            .iter()
+                            .map(|d| MiniVec::from(d.to_string().as_bytes()))
+                            .collect(),
+                        enc: DataBlockEncoding::default()
+                    },
+                    "for case: {i}, str, the right is different",
+                );
+            }
+            {
+                let f64_blk = DataBlock::F64 {
+                    ts: ts_range.clone().collect(),
+                    val: ts_range.clone().map(|t| t as f64).collect(),
+                    enc: DataBlockEncoding::default(),
+                };
+                let (a, b) = f64_blk.split_at(split_idx);
+                assert_eq!(
+                    a,
+                    DataBlock::F64 {
+                        ts: left.clone(),
+                        val: left.iter().map(|t| *t as f64).collect(),
+                        enc: DataBlockEncoding::default()
+                    },
+                    "for case: {i}, f64, the left is different",
+                );
+                assert_eq!(
+                    b,
+                    DataBlock::F64 {
+                        ts: right.clone(),
+                        val: right.iter().map(|t| *t as f64).collect(),
+                        enc: DataBlockEncoding::default()
+                    },
+                    "for case: {i}, f64, the right is different",
+                );
+            }
+            {
+                let bool_blk = DataBlock::Bool {
+                    ts: ts_range.clone().collect(),
+                    val: ts_range.clone().map(|t| t % 2 == 0).collect(),
+                    enc: DataBlockEncoding::default(),
+                };
+                let (a, b) = bool_blk.split_at(split_idx);
+                assert_eq!(
+                    a,
+                    DataBlock::Bool {
+                        ts: left.clone(),
+                        val: left.iter().map(|t| *t % 2 == 0).collect(),
+                        enc: DataBlockEncoding::default()
+                    },
+                    "for case: {i}, bool, the left is different",
+                );
+                assert_eq!(
+                    b,
+                    DataBlock::Bool {
+                        ts: right.clone(),
+                        val: right.iter().map(|t| *t % 2 == 0).collect(),
+                        enc: DataBlockEncoding::default()
+                    },
+                    "for case: {i}, bool, the right is different",
+                );
+            }
+        }
     }
 
     #[test]
@@ -1117,7 +1402,7 @@ pub mod test {
                 val: vec![mini_vec![10], mini_vec![11], mini_vec![19]],
                 enc: DataBlockEncoding::default(),
             }
-        )
+        );
     }
 
     #[test]
@@ -1199,6 +1484,311 @@ pub mod test {
     }
 
     #[test]
+    fn test_data_block_extend() {
+        {
+            let mut block_1 = DataBlock::U64 {
+                ts: vec![0, 1, 2],
+                val: vec![10, 11, 12],
+                enc: DataBlockEncoding::default(),
+            };
+            let block_2 = DataBlock::U64 {
+                ts: vec![3, 4, 5],
+                val: vec![13, 14, 15],
+                enc: DataBlockEncoding::default(),
+            };
+            block_1.extend(block_2);
+            assert_eq!(
+                block_1,
+                DataBlock::U64 {
+                    ts: vec![0, 1, 2, 3, 4, 5],
+                    val: vec![10, 11, 12, 13, 14, 15],
+                    enc: DataBlockEncoding::default(),
+                }
+            );
+        }
+        {
+            let mut block_1 = DataBlock::I64 {
+                ts: vec![0, 1, 2],
+                val: vec![10, 11, 12],
+                enc: DataBlockEncoding::default(),
+            };
+            let block_2 = DataBlock::I64 {
+                ts: vec![3, 4, 5],
+                val: vec![13, 14, 15],
+                enc: DataBlockEncoding::default(),
+            };
+            block_1.extend(block_2);
+            assert_eq!(
+                block_1,
+                DataBlock::I64 {
+                    ts: vec![0, 1, 2, 3, 4, 5],
+                    val: vec![10, 11, 12, 13, 14, 15],
+                    enc: DataBlockEncoding::default(),
+                }
+            );
+        }
+        {
+            let mut block_1 = DataBlock::Str {
+                ts: vec![0, 1, 2],
+                val: vec![
+                    MiniVec::from("10".as_bytes()),
+                    MiniVec::from("11".as_bytes()),
+                    MiniVec::from("12".as_bytes()),
+                ],
+                enc: DataBlockEncoding::default(),
+            };
+            let block_2 = DataBlock::Str {
+                ts: vec![3, 4, 5],
+                val: vec![
+                    MiniVec::from("13".as_bytes()),
+                    MiniVec::from("14".as_bytes()),
+                    MiniVec::from("15".as_bytes()),
+                ],
+                enc: DataBlockEncoding::default(),
+            };
+            block_1.extend(block_2);
+            assert_eq!(
+                block_1,
+                DataBlock::Str {
+                    ts: vec![0, 1, 2, 3, 4, 5],
+                    val: vec![
+                        MiniVec::from("10".as_bytes()),
+                        MiniVec::from("11".as_bytes()),
+                        MiniVec::from("12".as_bytes()),
+                        MiniVec::from("13".as_bytes()),
+                        MiniVec::from("14".as_bytes()),
+                        MiniVec::from("15".as_bytes()),
+                    ],
+                    enc: DataBlockEncoding::default(),
+                }
+            );
+        }
+        {
+            let mut block_1 = DataBlock::F64 {
+                ts: vec![0, 1, 2],
+                val: vec![10.0, 11.0, 12.0],
+                enc: DataBlockEncoding::default(),
+            };
+            let block_2 = DataBlock::F64 {
+                ts: vec![3, 4, 5],
+                val: vec![13.0, 14.0, 15.0],
+                enc: DataBlockEncoding::default(),
+            };
+            block_1.extend(block_2);
+            assert_eq!(
+                block_1,
+                DataBlock::F64 {
+                    ts: vec![0, 1, 2, 3, 4, 5],
+                    val: vec![10.0, 11.0, 12.0, 13.0, 14.0, 15.0],
+                    enc: DataBlockEncoding::default(),
+                }
+            );
+        }
+        {
+            let mut block_1 = DataBlock::Bool {
+                ts: vec![0, 1, 2],
+                val: vec![true, true, true],
+                enc: DataBlockEncoding::default(),
+            };
+            let block_2 = DataBlock::Bool {
+                ts: vec![3, 4, 5],
+                val: vec![false, false, false],
+                enc: DataBlockEncoding::default(),
+            };
+            block_1.extend(block_2);
+            assert_eq!(
+                block_1,
+                DataBlock::Bool {
+                    ts: vec![0, 1, 2, 3, 4, 5],
+                    val: vec![true, true, true, false, false, false],
+                    enc: DataBlockEncoding::default(),
+                }
+            );
+        }
+        {
+            // Test extend with different value type.
+            let mut block_1 = DataBlock::U64 {
+                ts: vec![0, 1, 2],
+                val: vec![10, 11, 12],
+                enc: DataBlockEncoding::default(),
+            };
+            let block_2 = DataBlock::Bool {
+                ts: vec![3, 4, 5],
+                val: vec![false, false, false],
+                enc: DataBlockEncoding::default(),
+            };
+            block_1.extend(block_2);
+            assert_eq!(
+                block_1,
+                DataBlock::U64 {
+                    ts: vec![0, 1, 2],
+                    val: vec![10, 11, 12],
+                    enc: DataBlockEncoding::default(),
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn test_data_block_intersection() {
+        let cases = vec![
+            (1, (1..=5), (1, 5), Some(1..=5)),
+            (2, (1..=5), (0, 6), Some(1..=5)),
+            (3, (1..=5), (0, 1), Some(1..=1)),
+            (4, (1..=5), (1, 2), Some(1..=2)),
+            (5, (1..=5), (-1, 0), None),
+            (6, (1..=5), (4, 5), Some(4..=5)),
+            (7, (1..=5), (5, 6), Some(5..=5)),
+            (8, (1..=5), (6, 7), None),
+        ];
+        for (i, block_time_range, out_time_range, expect_block_time_range) in cases {
+            {
+                let u64_blk = DataBlock::U64 {
+                    ts: block_time_range.clone().collect(),
+                    val: block_time_range.clone().map(|t| t as u64).collect(),
+                    enc: DataBlockEncoding::default(),
+                };
+                let intersection_ret = u64_blk.intersection(&out_time_range.into());
+                match &expect_block_time_range {
+                    Some(exp_time_range) => {
+                        assert!(
+                            intersection_ret.is_some(),
+                            "for case: {i}, u64, the result is not a Some(_)",
+                        );
+                        let blk_ret = intersection_ret.unwrap();
+                        assert!(
+                            blk_ret.time_range().is_some(),
+                            "for case: {i}, u64, the result's time_range is not a Some(_)",
+                        );
+                        let (min_ts, max_ts) = blk_ret.time_range().unwrap();
+                        assert_eq!(
+                            &(min_ts..=max_ts),
+                            exp_time_range,
+                            "for case: {i}, u64, the result's time_range is not as expected",
+                        );
+                    }
+                    None => assert!(intersection_ret.is_none()),
+                }
+            }
+            {
+                let i64_blk = DataBlock::I64 {
+                    ts: block_time_range.clone().collect(),
+                    val: block_time_range.clone().collect(),
+                    enc: DataBlockEncoding::default(),
+                };
+                let intersection_ret = i64_blk.intersection(&out_time_range.into());
+                match &expect_block_time_range {
+                    Some(exp_time_range) => {
+                        assert!(
+                            intersection_ret.is_some(),
+                            "for case: {i}, i64, the result is not a Some(_)",
+                        );
+                        let blk_ret = intersection_ret.unwrap();
+                        assert!(
+                            blk_ret.time_range().is_some(),
+                            "for case: {i}, i64, the result's time_range is not a Some(_)",
+                        );
+                        let (min_ts, max_ts) = blk_ret.time_range().unwrap();
+                        assert_eq!(
+                            &(min_ts..=max_ts),
+                            exp_time_range,
+                            "for case: {i}, i64, the result's time_range is not as expected",
+                        );
+                    }
+                    None => assert!(intersection_ret.is_none()),
+                }
+            }
+            {
+                let str_blk = DataBlock::Str {
+                    ts: block_time_range.clone().collect(),
+                    val: block_time_range
+                        .clone()
+                        .map(|d| MiniVec::from(d.to_string().as_bytes()))
+                        .collect(),
+                    enc: DataBlockEncoding::default(),
+                };
+                let intersection_ret = str_blk.intersection(&out_time_range.into());
+                match &expect_block_time_range {
+                    Some(exp_time_range) => {
+                        assert!(
+                            intersection_ret.is_some(),
+                            "for case: {i}, str, the result is not a Some(_)",
+                        );
+                        let blk_ret = intersection_ret.unwrap();
+                        assert!(
+                            blk_ret.time_range().is_some(),
+                            "for case: {i}, str, the result's time_range is not a Some(_)",
+                        );
+                        let (min_ts, max_ts) = blk_ret.time_range().unwrap();
+                        assert_eq!(
+                            &(min_ts..=max_ts),
+                            exp_time_range,
+                            "for case: {i}, str, the result's time_range is not as expected",
+                        );
+                    }
+                    None => assert!(intersection_ret.is_none()),
+                }
+            }
+            {
+                let f64_blk = DataBlock::F64 {
+                    ts: block_time_range.clone().collect(),
+                    val: block_time_range.clone().map(|t| t as f64).collect(),
+                    enc: DataBlockEncoding::default(),
+                };
+                let intersection_ret = f64_blk.intersection(&out_time_range.into());
+                match &expect_block_time_range {
+                    Some(exp_time_range) => {
+                        assert!(
+                            intersection_ret.is_some(),
+                            "for case: {i}, f64, the result is not a Some(_)",
+                        );
+                        let blk_ret = intersection_ret.unwrap();
+                        assert!(
+                            blk_ret.time_range().is_some(),
+                            "for case: {i}, f64, the result's time_range is not a Some(_)",
+                        );
+                        let (min_ts, max_ts) = blk_ret.time_range().unwrap();
+                        assert_eq!(
+                            &(min_ts..=max_ts),
+                            exp_time_range,
+                            "for case: {i}, f64, the result's time_range is not as expected",
+                        );
+                    }
+                    None => assert!(intersection_ret.is_none()),
+                }
+            }
+            {
+                let bool_blk = DataBlock::Bool {
+                    ts: block_time_range.clone().collect(),
+                    val: block_time_range.clone().map(|t| t % 2 == 0).collect(),
+                    enc: DataBlockEncoding::default(),
+                };
+                let intersection_ret = bool_blk.intersection(&out_time_range.into());
+                match &expect_block_time_range {
+                    Some(exp_time_range) => {
+                        assert!(
+                            intersection_ret.is_some(),
+                            "for case: {i}, bool, the result is not a Some(_)",
+                        );
+                        let blk_ret = intersection_ret.unwrap();
+                        assert!(
+                            blk_ret.time_range().is_some(),
+                            "for case: {i}, bool, the result's time_range is not a Some(_)",
+                        );
+                        let (min_ts, max_ts) = blk_ret.time_range().unwrap();
+                        assert_eq!(
+                            &(min_ts..=max_ts),
+                            exp_time_range,
+                            "for case: {i}, bool, the result's time_range is not as expected",
+                        );
+                    }
+                    None => assert!(intersection_ret.is_none()),
+                }
+            }
+        }
+    }
+
+    #[test]
     fn test_data_block_reader() {
         {
             let mut blk_reader = DataBlockReader::new_uninit(ValueType::Float);
@@ -1257,6 +1847,35 @@ pub mod test {
             assert_eq!(blk_reader.next(), Some(DataType::U64(1001, 3003)));
             assert_eq!(blk_reader.next(), Some(DataType::U64(1002, 3006)));
             assert_eq!(blk_reader.next(), None);
+        }
+    }
+
+    #[test]
+    fn test_encoded_data_block() {
+        let blk = DataBlock::U64 {
+            ts: vec![1, 3, 5, 7, 9],
+            val: vec![10, 30, 50, 70, 90],
+            enc: DataBlockEncoding::default(),
+        };
+
+        {
+            let blk_enc = EncodedDataBlock::encode(&blk, 0, blk.len()).unwrap();
+            let blk_dec = blk_enc.decode().unwrap();
+            assert_eq!(blk, blk_dec);
+        }
+        {
+            let blk = blk.clone();
+            let blk_enc = EncodedDataBlock::encode(&blk, 0, 1).unwrap();
+            let blk_dec = blk_enc.decode().unwrap();
+            let (blk_exp, _) = blk.split_at(1);
+            assert_eq!(blk_exp, blk_dec);
+        }
+        {
+            let blk_enc = EncodedDataBlock::encode(&blk, 1, 2).unwrap();
+            let blk_dec = blk_enc.decode().unwrap();
+            let (_, blk_exp) = blk.split_at(1);
+            let (blk_exp, _) = blk_exp.split_at(1);
+            assert_eq!(blk_exp, blk_dec);
         }
     }
 }
