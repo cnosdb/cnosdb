@@ -93,6 +93,7 @@ pub struct CoordService {
     metrics: Arc<CoordServiceMetrics>,
     raft_manager: Arc<RaftNodesManager>,
     async_task_joinhandle: Arc<Mutex<HashMap<String, JoinHandle<()>>>>,
+    failed_task_joinhandle: Arc<Mutex<HashMap<String, JoinHandle<()>>>>,
 }
 
 #[derive(Debug)]
@@ -210,7 +211,7 @@ impl CoordService {
             meta: meta.clone(),
             config: config.clone(),
             async_task_joinhandle: Arc::new(Mutex::new(HashMap::new())),
-
+            failed_task_joinhandle: Arc::new(Mutex::new(HashMap::new())),
             metrics: Arc::new(CoordServiceMetrics::new(metrics_register.as_ref())),
         });
 
@@ -299,17 +300,19 @@ impl CoordService {
                             }
                         }
                         ResourceStatus::Failed => {
-                            let _ = Retry::spawn(
-                                ExponentialBackoff::from_millis(10).map(jitter),
-                                || async {
-                                    ResourceManager::do_operator(
-                                        coord.clone(),
-                                        *resourceinfo.clone(),
-                                    )
-                                    .await
-                                },
-                            )
-                            .await;
+                            if let Ok(mut joinhandle_map) = coord.failed_task_joinhandle.lock() {
+                                if joinhandle_map.contains_key(resourceinfo.get_name()) {
+                                    return Ok(()); // ignore repetition failed task
+                                }
+                                let coord = coord.clone();
+                                joinhandle_map.insert(
+                                    resourceinfo.get_name().to_string(),
+                                    tokio::spawn(ResourceManager::retry_failed_task(
+                                        coord,
+                                        *resourceinfo,
+                                    )),
+                                );
+                            }
                         }
                         ResourceStatus::Cancel => {
                             if let Ok(mut joinhandle_map) = coord.async_task_joinhandle.lock() {
@@ -359,6 +362,7 @@ impl CoordService {
                     // find the dead node task
                     resourceinfos.retain(|info| *info.get_execute_node_id() == node_metrics.id);
                     for mut resourceinfo in resourceinfos {
+                        let coord = coord.clone();
                         resourceinfo.set_execute_node_id(coord.node_id());
                         resourceinfo.set_is_new_add(false);
                         coord
@@ -381,18 +385,24 @@ impl CoordService {
                                     );
                                 }
                             }
-                            ResourceStatus::Executing | ResourceStatus::Failed => {
-                                let _ = Retry::spawn(
-                                    ExponentialBackoff::from_millis(10).map(jitter),
-                                    || async {
-                                        ResourceManager::do_operator(
-                                            coord.clone(),
-                                            resourceinfo.clone(),
-                                        )
-                                        .await
-                                    },
-                                )
-                                .await;
+                            ResourceStatus::Executing => {
+                                ResourceManager::add_resource_task(coord, resourceinfo).await;
+                            }
+                            ResourceStatus::Failed => {
+                                if let Ok(mut joinhandle_map) = coord.failed_task_joinhandle.lock()
+                                {
+                                    if joinhandle_map.contains_key(resourceinfo.get_name()) {
+                                        return Ok(()); // ignore repetition failed task
+                                    }
+                                    let coord = coord.clone();
+                                    joinhandle_map.insert(
+                                        resourceinfo.get_name().to_string(),
+                                        tokio::spawn(ResourceManager::retry_failed_task(
+                                            coord,
+                                            resourceinfo,
+                                        )),
+                                    );
+                                }
                             }
                             _ => {}
                         }
@@ -416,11 +426,8 @@ impl CoordService {
         {
             error!("failed to execute the async task: {}", meta_err.to_string());
         }
-
-        let _ = Retry::spawn(ExponentialBackoff::from_millis(10).map(jitter), || async {
-            ResourceManager::do_operator(coord.clone(), resourceinfo.clone()).await
-        })
-        .await;
+        // execute, if failed, retry later
+        ResourceManager::do_operator(coord.clone(), resourceinfo.clone()).await;
     }
 
     async fn db_ttl_service(coord: Arc<CoordService>) {
