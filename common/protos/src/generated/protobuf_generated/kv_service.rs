@@ -56,16 +56,6 @@ pub struct FileInfo {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetVnodeFilesMetaRequest {
-    #[prost(string, tag = "1")]
-    pub tenant: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub db: ::prost::alloc::string::String,
-    #[prost(uint32, tag = "3")]
-    pub vnode_id: u32,
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetVnodeSnapFilesMetaRequest {
     #[prost(string, tag = "1")]
     pub tenant: ::prost::alloc::string::String,
@@ -95,73 +85,9 @@ pub struct StatusResponse {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct DropDbRequest {
-    #[prost(string, tag = "1")]
-    pub db: ::prost::alloc::string::String,
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct DropTableRequest {
-    #[prost(string, tag = "1")]
-    pub db: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub table: ::prost::alloc::string::String,
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct DeleteVnodeRequest {
-    #[prost(string, tag = "1")]
-    pub db: ::prost::alloc::string::String,
-    #[prost(uint32, tag = "2")]
-    pub vnode_id: u32,
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct CopyVnodeRequest {
-    #[prost(uint32, tag = "1")]
-    pub vnode_id: u32,
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct MoveVnodeRequest {
-    #[prost(uint32, tag = "1")]
-    pub vnode_id: u32,
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CompactVnodeRequest {
     #[prost(uint32, repeated, tag = "1")]
     pub vnode_ids: ::prost::alloc::vec::Vec<u32>,
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct DropColumnRequest {
-    #[prost(string, tag = "1")]
-    pub db: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub table: ::prost::alloc::string::String,
-    #[prost(string, tag = "3")]
-    pub column: ::prost::alloc::string::String,
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct UpdateSetValue {
-    #[prost(bytes = "vec", tag = "1")]
-    pub key: ::prost::alloc::vec::Vec<u8>,
-    #[prost(bytes = "vec", optional, tag = "2")]
-    pub value: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct UpdateTagsRequest {
-    #[prost(string, tag = "1")]
-    pub db: ::prost::alloc::string::String,
-    #[prost(message, repeated, tag = "2")]
-    pub new_tags: ::prost::alloc::vec::Vec<UpdateSetValue>,
-    #[prost(bytes = "vec", repeated, tag = "3")]
-    pub matched_series: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
-    #[prost(bool, tag = "4")]
-    pub dry_run: bool,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -196,10 +122,7 @@ pub struct DestoryRaftGroupRequest {
 pub struct AdminCommandRequest {
     #[prost(string, tag = "1")]
     pub tenant: ::prost::alloc::string::String,
-    #[prost(
-        oneof = "admin_command_request::Command",
-        tags = "2, 3, 4, 5, 6, 7, 8, 12, 13, 14, 15"
-    )]
+    #[prost(oneof = "admin_command_request::Command", tags = "7, 13, 14, 15")]
     pub command: ::core::option::Option<admin_command_request::Command>,
 }
 /// Nested message and enum types in `AdminCommandRequest`.
@@ -207,22 +130,8 @@ pub mod admin_command_request {
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Command {
-        #[prost(message, tag = "2")]
-        DropDb(super::DropDbRequest),
-        #[prost(message, tag = "3")]
-        DropTab(super::DropTableRequest),
-        #[prost(message, tag = "4")]
-        DelVnode(super::DeleteVnodeRequest),
-        #[prost(message, tag = "5")]
-        CopyVnode(super::CopyVnodeRequest),
-        #[prost(message, tag = "6")]
-        MoveVnode(super::MoveVnodeRequest),
         #[prost(message, tag = "7")]
         CompactVnode(super::CompactVnodeRequest),
-        #[prost(message, tag = "8")]
-        DropColumn(super::DropColumnRequest),
-        #[prost(message, tag = "12")]
-        UpdateTags(super::UpdateTagsRequest),
         #[prost(message, tag = "13")]
         AddRaftFollower(super::AddRaftFollowerRequest),
         #[prost(message, tag = "14")]
@@ -284,16 +193,6 @@ pub struct DownloadFileRequest {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct FetchVnodeSummaryRequest {
-    #[prost(string, tag = "1")]
-    pub tenant: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub database: ::prost::alloc::string::String,
-    #[prost(uint32, tag = "3")]
-    pub vnode_id: u32,
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryRecordBatchRequest {
     #[prost(bytes = "vec", tag = "1")]
     pub args: ::prost::alloc::vec::Vec<u8>,
@@ -301,18 +200,6 @@ pub struct QueryRecordBatchRequest {
     pub expr: ::prost::alloc::vec::Vec<u8>,
     #[prost(bytes = "vec", tag = "3")]
     pub aggs: ::prost::alloc::vec::Vec<u8>,
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct WriteVnodeRequest {
-    #[prost(uint32, tag = "1")]
-    pub vnode_id: u32,
-    #[prost(string, tag = "2")]
-    pub tenant: ::prost::alloc::string::String,
-    #[prost(uint32, tag = "3")]
-    pub precision: u32,
-    #[prost(bytes = "vec", tag = "4")]
-    pub data: ::prost::alloc::vec::Vec<u8>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -345,6 +232,44 @@ pub struct WriteDataRequest {
     pub data: ::prost::alloc::vec::Vec<u8>,
     #[prost(uint32, tag = "2")]
     pub precision: u32,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DropTableRequest {
+    #[prost(string, tag = "1")]
+    pub db: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub table: ::prost::alloc::string::String,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DropColumnRequest {
+    #[prost(string, tag = "1")]
+    pub db: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub table: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub column: ::prost::alloc::string::String,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpdateSetValue {
+    #[prost(bytes = "vec", tag = "1")]
+    pub key: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", optional, tag = "2")]
+    pub value: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpdateTagsRequest {
+    #[prost(string, tag = "1")]
+    pub db: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "2")]
+    pub new_tags: ::prost::alloc::vec::Vec<UpdateSetValue>,
+    #[prost(bytes = "vec", repeated, tag = "3")]
+    pub matched_series: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+    #[prost(bool, tag = "4")]
+    pub dry_run: bool,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -481,55 +406,6 @@ pub mod tskv_service_client {
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("kv_service.TSKVService", "Ping"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn write_points(
-            &mut self,
-            request: impl tonic::IntoStreamingRequest<
-                Message = super::WritePointsRequest,
-            >,
-        ) -> std::result::Result<
-            tonic::Response<tonic::codec::Streaming<super::WritePointsResponse>>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/kv_service.TSKVService/WritePoints",
-            );
-            let mut req = request.into_streaming_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("kv_service.TSKVService", "WritePoints"));
-            self.inner.streaming(req, path, codec).await
-        }
-        pub async fn write_vnode_points(
-            &mut self,
-            request: impl tonic::IntoRequest<super::WriteVnodeRequest>,
-        ) -> std::result::Result<tonic::Response<super::StatusResponse>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/kv_service.TSKVService/WriteVnodePoints",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("kv_service.TSKVService", "WriteVnodePoints"));
             self.inner.unary(req, path, codec).await
         }
         pub async fn query_record_batch(
@@ -674,28 +550,6 @@ pub mod tskv_service_client {
                 .insert(GrpcMethod::new("kv_service.TSKVService", "ExecDropRaftNode"));
             self.inner.unary(req, path, codec).await
         }
-        pub async fn delete_from_table(
-            &mut self,
-            request: impl tonic::IntoRequest<super::DeleteFromTableRequest>,
-        ) -> std::result::Result<tonic::Response<super::StatusResponse>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/kv_service.TSKVService/DeleteFromTable",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("kv_service.TSKVService", "DeleteFromTable"));
-            self.inner.unary(req, path, codec).await
-        }
         pub async fn download_file(
             &mut self,
             request: impl tonic::IntoRequest<super::DownloadFileRequest>,
@@ -720,31 +574,6 @@ pub mod tskv_service_client {
             req.extensions_mut()
                 .insert(GrpcMethod::new("kv_service.TSKVService", "DownloadFile"));
             self.inner.server_streaming(req, path, codec).await
-        }
-        pub async fn get_vnode_files_meta(
-            &mut self,
-            request: impl tonic::IntoRequest<super::GetVnodeFilesMetaRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::GetFilesMetaResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/kv_service.TSKVService/GetVnodeFilesMeta",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("kv_service.TSKVService", "GetVnodeFilesMeta"));
-            self.inner.unary(req, path, codec).await
         }
         pub async fn get_vnode_snap_files_meta(
             &mut self,
@@ -771,31 +600,6 @@ pub mod tskv_service_client {
                 .insert(
                     GrpcMethod::new("kv_service.TSKVService", "GetVnodeSnapFilesMeta"),
                 );
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn fetch_vnode_summary(
-            &mut self,
-            request: impl tonic::IntoRequest<super::FetchVnodeSummaryRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::BatchBytesResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/kv_service.TSKVService/FetchVnodeSummary",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("kv_service.TSKVService", "FetchVnodeSummary"));
             self.inner.unary(req, path, codec).await
         }
         pub async fn tag_scan(
@@ -836,23 +640,6 @@ pub mod tskv_service_server {
             &self,
             request: tonic::Request<super::PingRequest>,
         ) -> std::result::Result<tonic::Response<super::PingResponse>, tonic::Status>;
-        /// Server streaming response type for the WritePoints method.
-        type WritePointsStream: futures_core::Stream<
-                Item = std::result::Result<super::WritePointsResponse, tonic::Status>,
-            >
-            + Send
-            + 'static;
-        async fn write_points(
-            &self,
-            request: tonic::Request<tonic::Streaming<super::WritePointsRequest>>,
-        ) -> std::result::Result<
-            tonic::Response<Self::WritePointsStream>,
-            tonic::Status,
-        >;
-        async fn write_vnode_points(
-            &self,
-            request: tonic::Request<super::WriteVnodeRequest>,
-        ) -> std::result::Result<tonic::Response<super::StatusResponse>, tonic::Status>;
         /// Server streaming response type for the QueryRecordBatch method.
         type QueryRecordBatchStream: futures_core::Stream<
                 Item = std::result::Result<super::BatchBytesResponse, tonic::Status>,
@@ -889,10 +676,6 @@ pub mod tskv_service_server {
             &self,
             request: tonic::Request<super::DropRaftNodeRequest>,
         ) -> std::result::Result<tonic::Response<super::StatusResponse>, tonic::Status>;
-        async fn delete_from_table(
-            &self,
-            request: tonic::Request<super::DeleteFromTableRequest>,
-        ) -> std::result::Result<tonic::Response<super::StatusResponse>, tonic::Status>;
         /// Server streaming response type for the DownloadFile method.
         type DownloadFileStream: futures_core::Stream<
                 Item = std::result::Result<super::BatchBytesResponse, tonic::Status>,
@@ -906,25 +689,11 @@ pub mod tskv_service_server {
             tonic::Response<Self::DownloadFileStream>,
             tonic::Status,
         >;
-        async fn get_vnode_files_meta(
-            &self,
-            request: tonic::Request<super::GetVnodeFilesMetaRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::GetFilesMetaResponse>,
-            tonic::Status,
-        >;
         async fn get_vnode_snap_files_meta(
             &self,
             request: tonic::Request<super::GetVnodeSnapFilesMetaRequest>,
         ) -> std::result::Result<
             tonic::Response<super::GetFilesMetaResponse>,
-            tonic::Status,
-        >;
-        async fn fetch_vnode_summary(
-            &self,
-            request: tonic::Request<super::FetchVnodeSummaryRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::BatchBytesResponse>,
             tonic::Status,
         >;
         /// Server streaming response type for the TagScan method.
@@ -1045,101 +814,6 @@ pub mod tskv_service_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = PingSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/kv_service.TSKVService/WritePoints" => {
-                    #[allow(non_camel_case_types)]
-                    struct WritePointsSvc<T: TskvService>(pub Arc<T>);
-                    impl<
-                        T: TskvService,
-                    > tonic::server::StreamingService<super::WritePointsRequest>
-                    for WritePointsSvc<T> {
-                        type Response = super::WritePointsResponse;
-                        type ResponseStream = T::WritePointsStream;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::ResponseStream>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<
-                                tonic::Streaming<super::WritePointsRequest>,
-                            >,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                (*inner).write_points(request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = WritePointsSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.streaming(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/kv_service.TSKVService/WriteVnodePoints" => {
-                    #[allow(non_camel_case_types)]
-                    struct WriteVnodePointsSvc<T: TskvService>(pub Arc<T>);
-                    impl<
-                        T: TskvService,
-                    > tonic::server::UnaryService<super::WriteVnodeRequest>
-                    for WriteVnodePointsSvc<T> {
-                        type Response = super::StatusResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::WriteVnodeRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                (*inner).write_vnode_points(request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = WriteVnodePointsSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -1433,52 +1107,6 @@ pub mod tskv_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/kv_service.TSKVService/DeleteFromTable" => {
-                    #[allow(non_camel_case_types)]
-                    struct DeleteFromTableSvc<T: TskvService>(pub Arc<T>);
-                    impl<
-                        T: TskvService,
-                    > tonic::server::UnaryService<super::DeleteFromTableRequest>
-                    for DeleteFromTableSvc<T> {
-                        type Response = super::StatusResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::DeleteFromTableRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                (*inner).delete_from_table(request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = DeleteFromTableSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
                 "/kv_service.TSKVService/DownloadFile" => {
                     #[allow(non_camel_case_types)]
                     struct DownloadFileSvc<T: TskvService>(pub Arc<T>);
@@ -1526,52 +1154,6 @@ pub mod tskv_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/kv_service.TSKVService/GetVnodeFilesMeta" => {
-                    #[allow(non_camel_case_types)]
-                    struct GetVnodeFilesMetaSvc<T: TskvService>(pub Arc<T>);
-                    impl<
-                        T: TskvService,
-                    > tonic::server::UnaryService<super::GetVnodeFilesMetaRequest>
-                    for GetVnodeFilesMetaSvc<T> {
-                        type Response = super::GetFilesMetaResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::GetVnodeFilesMetaRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                (*inner).get_vnode_files_meta(request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = GetVnodeFilesMetaSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
                 "/kv_service.TSKVService/GetVnodeSnapFilesMeta" => {
                     #[allow(non_camel_case_types)]
                     struct GetVnodeSnapFilesMetaSvc<T: TskvService>(pub Arc<T>);
@@ -1603,52 +1185,6 @@ pub mod tskv_service_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = GetVnodeSnapFilesMetaSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/kv_service.TSKVService/FetchVnodeSummary" => {
-                    #[allow(non_camel_case_types)]
-                    struct FetchVnodeSummarySvc<T: TskvService>(pub Arc<T>);
-                    impl<
-                        T: TskvService,
-                    > tonic::server::UnaryService<super::FetchVnodeSummaryRequest>
-                    for FetchVnodeSummarySvc<T> {
-                        type Response = super::BatchBytesResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::FetchVnodeSummaryRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                (*inner).fetch_vnode_summary(request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = FetchVnodeSummarySvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

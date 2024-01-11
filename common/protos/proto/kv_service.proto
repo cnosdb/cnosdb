@@ -36,11 +36,7 @@ message FileInfo {
     uint64 size = 3;
 }
 
-message GetVnodeFilesMetaRequest {
-    string tenant = 1;
-    string db = 2;
-    uint32 vnode_id = 3;
-}
+
 
 message GetVnodeSnapFilesMetaRequest {
     string tenant = 1;
@@ -60,48 +56,8 @@ message StatusResponse {
   string data = 2;
 }
 
-message DropDBRequest {
-    string db = 1;
-}
-
-message DropTableRequest {
-    string db = 1;
-    string table = 2;
-}
-
-message DeleteVnodeRequest {
-    string db = 1;
-    uint32 vnode_id = 2;
-}
-
-message CopyVnodeRequest {
-    uint32 vnode_id = 1;
-}
-
-message MoveVnodeRequest {
-    uint32 vnode_id = 1;
-}
-
 message CompactVnodeRequest {
     repeated uint32 vnode_ids = 1;
-}
-
-message DropColumnRequest {
-    string db = 1;
-    string table = 2;
-    string column = 3;
-}
-
-message UpdateSetValue {
-    bytes key = 1;
-    optional bytes value = 2;
-}
-
-message UpdateTagsRequest {
-    string db = 1;
-    repeated UpdateSetValue new_tags = 2;
-    repeated bytes matched_series = 3;
-    bool dry_run = 4;
 }
 
 message AddRaftFollowerRequest {
@@ -124,14 +80,7 @@ message DestoryRaftGroupRequest {
 message AdminCommandRequest {
   string tenant = 1;
   oneof command {
-    DropDBRequest drop_db = 2;
-    DropTableRequest drop_tab = 3;
-    DeleteVnodeRequest del_vnode = 4;
-    CopyVnodeRequest copy_vnode = 5;
-    MoveVnodeRequest move_vnode  = 6;
     CompactVnodeRequest compact_vnode = 7;
-    DropColumnRequest drop_column = 8;
-    UpdateTagsRequest update_tags = 12;
     AddRaftFollowerRequest add_raft_follower = 13;
     RemoveRaftNodeRequest remove_raft_node = 14;
     DestoryRaftGroupRequest destory_raft_group = 15;
@@ -168,24 +117,12 @@ message DownloadFileRequest {
     string filename = 1;
 }
 
-message FetchVnodeSummaryRequest {
-    string tenant = 1;
-    string database = 2;
-    uint32 vnode_id = 3;
-}
-
 message QueryRecordBatchRequest {
     bytes args = 1;
     bytes expr = 2;
     bytes aggs = 3;
 }
 
-message WriteVnodeRequest {
-    uint32 vnode_id = 1;
-    string tenant =2;
-    uint32 precision = 3;
-    bytes data = 4;
-}
 
 message OpenRaftNodeRequest {
     string tenant = 1;
@@ -206,6 +143,29 @@ message WriteDataRequest {
     uint32 precision = 2;
 }
 
+message DropTableRequest {
+    string db = 1;
+    string table = 2;
+}
+
+message DropColumnRequest {
+    string db = 1;
+    string table = 2;
+    string column = 3;
+}
+
+message UpdateSetValue {
+    bytes key = 1;
+    optional bytes value = 2;
+}
+
+message UpdateTagsRequest {
+    string db = 1;
+    repeated UpdateSetValue new_tags = 2;
+    repeated bytes matched_series = 3;
+    bool dry_run = 4;
+}
+
 message RaftWriteCommand {
   string tenant = 1;
   string db_name = 2;
@@ -223,20 +183,15 @@ message RaftWriteCommand {
 /* -------------------------------------------------------------------- */
 service TSKVService {
   rpc Ping(PingRequest) returns (PingResponse) {};
-  rpc WritePoints(stream WritePointsRequest) returns (stream WritePointsResponse) {};
 
-  rpc WriteVnodePoints(WriteVnodeRequest) returns (StatusResponse) {};
   rpc QueryRecordBatch(QueryRecordBatchRequest) returns (stream BatchBytesResponse) {};
   rpc ExecRaftWriteCommand(RaftWriteCommand) returns (StatusResponse) {};
   rpc ExecAdminCommand(AdminCommandRequest) returns (StatusResponse) {};
   rpc ExecAdminFetchCommand(AdminFetchCommandRequest) returns (BatchBytesResponse) {};
   rpc ExecOpenRaftNode(OpenRaftNodeRequest) returns (StatusResponse) {};
   rpc ExecDropRaftNode(DropRaftNodeRequest) returns (StatusResponse) {};
-  rpc DeleteFromTable(DeleteFromTableRequest) returns (StatusResponse) {};
 
   rpc DownloadFile(DownloadFileRequest) returns (stream BatchBytesResponse) {};
-  rpc GetVnodeFilesMeta(GetVnodeFilesMetaRequest) returns (GetFilesMetaResponse) {};
   rpc GetVnodeSnapFilesMeta(GetVnodeSnapFilesMetaRequest) returns (GetFilesMetaResponse) {};
-  rpc FetchVnodeSummary(FetchVnodeSummaryRequest) returns (BatchBytesResponse) {};
   rpc TagScan(QueryRecordBatchRequest) returns (stream BatchBytesResponse) {};
 }

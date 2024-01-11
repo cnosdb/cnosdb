@@ -11,7 +11,6 @@ pub use crate::cache_config::*;
 pub use crate::cluster_config::*;
 pub use crate::deployment_config::*;
 pub use crate::global_config::*;
-pub use crate::hinted_off_config::*;
 pub use crate::limiter_config::*;
 pub use crate::log_config::*;
 pub use crate::meta_config::*;
@@ -29,7 +28,6 @@ mod cluster_config;
 mod codec;
 mod deployment_config;
 mod global_config;
-mod hinted_off_config;
 mod limiter_config;
 mod log_config;
 mod meta_config;
@@ -95,10 +93,6 @@ pub struct Config {
     #[serde(default = "Default::default")]
     pub cluster: ClusterConfig,
 
-    ///
-    #[serde(default = "Default::default")]
-    pub hinted_off: HintedOffConfig,
-
     #[serde(default = "Default::default")]
     pub trace: TraceConfig,
 }
@@ -122,7 +116,6 @@ impl OverrideByEnv for Config {
         self.security.override_by_env();
         self.service.override_by_env();
         self.cluster.override_by_env();
-        self.hinted_off.override_by_env();
         self.trace.override_by_env();
     }
 }
@@ -219,9 +212,6 @@ pub fn check_config(path: impl AsRef<Path>, show_warnings: bool) {
                 check_results.add_all(c)
             }
             if let Some(c) = cfg.cluster.check(&cfg) {
-                check_results.add_all(c)
-            }
-            if let Some(c) = cfg.hinted_off.check(&cfg) {
                 check_results.add_all(c)
             }
 
@@ -393,13 +383,6 @@ reporting_disabled = false
 
 [cluster]
 # raft_logs_to_keep = 5000
-# using_raft_replication = false
-
-[hinted_off]
-enable = true
-path = '/var/lib/cnosdb/hh'
-threads = 3
-
 
 # [trace]
 # auto_generate_span = false

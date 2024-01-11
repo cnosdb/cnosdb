@@ -965,10 +965,8 @@ mod test {
                 .map_err(|e| format!("[{}] {e}", &self.test_case_name))
                 .unwrap();
 
-                let (wal_task_sender, _wal_task_receiver) = mpsc::channel(1);
                 let tskv_context = Arc::new(TsKvContext {
                     options: self.options.clone(),
-                    wal_sender: wal_task_sender,
                     flush_task_sender: self.flush_task_sender.clone(),
                     compact_task_sender: self.compact_task_sender.clone(),
                     summary_task_sender: self.summary_task_sender.clone(),

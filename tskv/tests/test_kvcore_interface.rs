@@ -1,5 +1,6 @@
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::path::{Path, PathBuf};
     use std::sync::Arc;
     use std::time::{Duration, Instant};
@@ -7,9 +8,10 @@ mod tests {
     use memory_pool::GreedyMemoryPool;
     use meta::model::meta_admin::AdminMeta;
     use metrics::metric_register::MetricsRegister;
+    use models::meta_data::VnodeId;
     use models::schema::{make_owner, Precision, TenantOptions};
-    use protos::kv_service::Meta;
-    use protos::{kv_service, models_helper};
+    use protos::kv_service::{raft_write_command, WriteDataRequest};
+    use protos::models_helper;
     use serial_test::serial;
     use tokio::runtime;
     use tokio::runtime::Runtime;
@@ -22,12 +24,19 @@ mod tests {
     ///
     /// If the given runtime is none, get_tskv will create a new runtime and
     /// put into the return value, or else the given runtime will be returned.
-    fn get_tskv(dir: impl AsRef<Path>, runtime: Option<Arc<Runtime>>) -> (Arc<Runtime>, TsKv) {
+
+    fn get_config(dir: impl AsRef<Path>) -> config::Config {
         let dir = dir.as_ref();
         let mut global_config = config::get_config_for_test();
         global_config.wal.path = dir.join("wal").to_str().unwrap().to_string();
         global_config.storage.path = dir.to_str().unwrap().to_string();
         global_config.cache.max_buffer_size = 128;
+
+        global_config
+    }
+
+    fn get_tskv(dir: impl AsRef<Path>, runtime: Option<Arc<Runtime>>) -> (Arc<Runtime>, TsKv) {
+        let global_config = get_config(dir);
         let opt = kv_option::Options::from(&global_config);
         let rt = match runtime {
             Some(rt) => rt,
@@ -58,6 +67,26 @@ mod tests {
         (rt, tskv)
     }
 
+    fn tskv_write(
+        rt: Arc<Runtime>,
+        tskv: &TsKv,
+        tenant: &str,
+        db: &str,
+        id: VnodeId,
+        index: u64,
+        request: WriteDataRequest,
+    ) {
+        let apply_ctx = replication::ApplyContext {
+            index,
+            raft_id: id.into(),
+            apply_type: replication::APPLY_TYPE_WRITE,
+        };
+        let vnode_store = Arc::new(rt.block_on(tskv.open_tsfamily(tenant, db, id)).unwrap());
+
+        let command = raft_write_command::Command::WriteData(request);
+        rt.block_on(vnode_store.apply(&apply_ctx, command)).unwrap();
+    }
+
     #[test]
     #[serial]
     fn test_kvcore_init() {
@@ -86,19 +115,13 @@ mod tests {
         let points = models_helper::create_random_points_with_delta(&mut fbb, 1);
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
-        let request = kv_service::WritePointsRequest {
-            version: 1,
-            meta: Some(Meta {
-                tenant: "cnosdb".to_string(),
-                user: None,
-                password: None,
-            }),
-            points,
+        let request = WriteDataRequest {
+            data: points,
+            precision: Precision::NS as u32,
         };
 
-        rt.spawn(async move {
-            tskv.write(None, 0, Precision::NS, request).await.unwrap();
-        });
+        tskv_write(rt, &tskv, "cnosdb", "public", 0, 1, request);
+
         println!("Leave serial test: test_kvcore_write");
     }
 
@@ -107,7 +130,7 @@ mod tests {
     #[serial]
     fn test_kvcore_flush() {
         println!("Enter serial test: test_kvcore_flush");
-        init_default_global_tracing("tskv_log", "tskv.log", "debug");
+        init_default_global_tracing("tskv_log", "tskv.log", "info");
         let dir = "/tmp/test/kvcore/kvcore_flush";
         let _ = std::fs::remove_dir_all(dir);
         std::fs::create_dir_all(dir).unwrap();
@@ -117,37 +140,17 @@ mod tests {
         let points = models_helper::create_random_points_with_delta(&mut fbb, 2000);
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
-        let request = kv_service::WritePointsRequest {
-            version: 1,
-            meta: Some(Meta {
-                tenant: "cnosdb".to_string(),
-                user: None,
-                password: None,
-            }),
-            points,
+        let request = WriteDataRequest {
+            data: points,
+            precision: Precision::NS as u32,
         };
+
+        tskv_write(rt.clone(), &tskv, "cnosdb", "db", 0, 1, request.clone());
+        tskv_write(rt.clone(), &tskv, "cnosdb", "db", 0, 2, request.clone());
+        tskv_write(rt.clone(), &tskv, "cnosdb", "db", 0, 3, request.clone());
+        tskv_write(rt.clone(), &tskv, "cnosdb", "db", 0, 4, request.clone());
+
         rt.block_on(async {
-            tskv.write(None, 0, Precision::NS, request.clone())
-                .await
-                .unwrap();
-            tokio::time::sleep(Duration::from_secs(1)).await;
-        });
-        rt.block_on(async {
-            tskv.write(None, 0, Precision::NS, request.clone())
-                .await
-                .unwrap();
-            tokio::time::sleep(Duration::from_secs(1)).await;
-        });
-        rt.block_on(async {
-            tskv.write(None, 0, Precision::NS, request.clone())
-                .await
-                .unwrap();
-            tokio::time::sleep(Duration::from_secs(1)).await;
-        });
-        rt.block_on(async {
-            tskv.write(None, 0, Precision::NS, request.clone())
-                .await
-                .unwrap();
             tokio::time::sleep(Duration::from_secs(3)).await;
         });
 
@@ -167,28 +170,19 @@ mod tests {
         std::fs::create_dir_all(dir).unwrap();
         let (rt, tskv) = get_tskv(dir, None);
 
-        for _ in 0..100 {
+        for i in 0..100 {
             let mut fbb = flatbuffers::FlatBufferBuilder::new();
             let points = models_helper::create_big_random_points(&mut fbb, "kvcore_big_write", 10);
             fbb.finish(points, None);
             let points = fbb.finished_data().to_vec();
-
-            let request = kv_service::WritePointsRequest {
-                version: 1,
-                meta: Some(Meta {
-                    tenant: "cnosdb".to_string(),
-                    user: None,
-                    password: None,
-                }),
-                points,
+            let request = WriteDataRequest {
+                data: points,
+                precision: Precision::NS as u32,
             };
 
-            rt.block_on(async {
-                tskv.write(None, 0, Precision::NS, request.clone())
-                    .await
-                    .unwrap();
-            });
+            tskv_write(rt.clone(), &tskv, "cnosdb", "public", 0, i, request.clone());
         }
+
         println!("Leave serial test: test_kvcore_big_write");
     }
 
@@ -208,39 +202,18 @@ mod tests {
             models_helper::create_random_points_include_delta(&mut fbb, database, table, 20);
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
-        let request = kv_service::WritePointsRequest {
-            version: 1,
-            meta: Some(Meta {
-                tenant: "cnosdb".to_string(),
-                user: None,
-                password: None,
-            }),
-            points,
+        let request = WriteDataRequest {
+            data: points,
+            precision: Precision::NS as u32,
         };
 
+        tskv_write(rt.clone(), &tskv, "cnosdb", database, 0, 1, request.clone());
+        tskv_write(rt.clone(), &tskv, "cnosdb", database, 0, 2, request.clone());
+        tskv_write(rt.clone(), &tskv, "cnosdb", database, 0, 3, request.clone());
+        tskv_write(rt.clone(), &tskv, "cnosdb", database, 0, 4, request.clone());
+
         rt.block_on(async {
-            tskv.write(None, 0, Precision::NS, request.clone())
-                .await
-                .unwrap();
-            tokio::time::sleep(Duration::from_secs(3)).await;
-        });
-        rt.block_on(async {
-            tskv.write(None, 0, Precision::NS, request.clone())
-                .await
-                .unwrap();
-            tokio::time::sleep(Duration::from_secs(3)).await;
-        });
-        rt.block_on(async {
-            tskv.write(None, 0, Precision::NS, request.clone())
-                .await
-                .unwrap();
-            tokio::time::sleep(Duration::from_secs(3)).await;
-        });
-        rt.block_on(async {
-            tskv.write(None, 0, Precision::NS, request.clone())
-                .await
-                .unwrap();
-            tokio::time::sleep(Duration::from_secs(3)).await;
+            tokio::time::sleep(Duration::from_secs(12)).await;
         });
 
         assert!(file_manager::try_exists(format!(
@@ -282,73 +255,16 @@ mod tests {
         );
         fbb.finish(points, None);
         let points = fbb.finished_data().to_vec();
-        let request = kv_service::WritePointsRequest {
-            version: 1,
-            meta: Some(Meta {
-                tenant: "cnosdb".to_string(),
-                user: None,
-                password: None,
-            }),
-            points,
+
+        let request = WriteDataRequest {
+            data: points,
+            precision: Precision::NS as u32,
         };
 
-        rt.block_on(async {
-            tskv.write(None, 0, Precision::NS, request.clone())
-                .await
-                .unwrap();
-        });
+        tskv_write(rt.clone(), &tskv, "cnosdb", "public", 0, 1, request.clone());
+
         println!("{:?}", tskv);
         println!("Leave serial test: test_kvcore_build_row_data");
-    }
-
-    #[test]
-    #[serial]
-    fn test_kvcore_recover() {
-        println!("Enter serial test: test_kvcore_recover");
-        let dir = PathBuf::from("/tmp/test/kvcore/kvcore_recover");
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-
-        init_default_global_tracing(dir.join("log"), "tskv.log", "debug");
-        let tenant = "cnosdb";
-        let database = "db_recover";
-        let table = "kvcore_recover";
-        let vnode_id = 10;
-
-        let runtime = {
-            let (runtime, tskv) = get_tskv(&dir, None);
-
-            let mut fbb = flatbuffers::FlatBufferBuilder::new();
-            let points =
-                models_helper::create_random_points_include_delta(&mut fbb, database, table, 20);
-            fbb.finish(points, None);
-            let request = kv_service::WritePointsRequest {
-                version: 1,
-                meta: Some(Meta {
-                    tenant: tenant.to_string(),
-                    user: None,
-                    password: None,
-                }),
-                points: fbb.finished_data().to_vec(),
-            };
-            runtime.block_on(async {
-                tskv.write(None, vnode_id, Precision::NS, request)
-                    .await
-                    .unwrap();
-                tskv.close().await;
-            });
-            runtime
-        };
-
-        let (runtime, tskv) = get_tskv(&dir, Some(runtime));
-        let version = runtime
-            .block_on(tskv.get_db_version(tenant, database, vnode_id))
-            .unwrap()
-            .unwrap();
-        let cached_data = tskv::test::get_one_series_cache_data(version.caches.mut_cache.clone());
-        // TODO: compare cached_data and the wrote_data
-        assert!(!cached_data.is_empty());
-        println!("Leave serial test: test_kvcore_recover");
     }
 
     #[test]
@@ -380,19 +296,20 @@ mod tests {
             let points =
                 models_helper::create_random_points_include_delta(&mut fbb, database, table, 20);
             fbb.finish(points, None);
-            let request = kv_service::WritePointsRequest {
-                version: 1,
-                meta: Some(Meta {
-                    tenant: tenant.to_string(),
-                    user: None,
-                    password: None,
-                }),
-                points: fbb.finished_data().to_vec(),
+            let request = WriteDataRequest {
+                data: fbb.finished_data().to_vec(),
+                precision: Precision::NS as u32,
             };
 
-            runtime
-                .block_on(tskv.write(None, vnode_id, Precision::NS, request))
-                .unwrap();
+            tskv_write(
+                runtime.clone(),
+                &tskv,
+                tenant,
+                database,
+                vnode_id,
+                1,
+                request.clone(),
+            );
         }
 
         let vnode = runtime
@@ -467,10 +384,18 @@ mod tests {
                 .unwrap();
             sleep_in_runtime(runtime.clone(), Duration::from_secs(3));
 
-            let summary = runtime
-                .block_on(tskv.get_vnode_summary(tenant, database, new_vnode_id))
-                .unwrap()
+            let vnode = runtime
+                .block_on(tskv.open_tsfamily(tenant, database, new_vnode_id))
                 .unwrap();
+            let summary = runtime.block_on(async move {
+                let mut file_metas = HashMap::new();
+                vnode
+                    .ts_family
+                    .read()
+                    .await
+                    .build_version_edit(&mut file_metas)
+            });
+
             assert_eq!(summary.tsf_id, new_vnode_id);
             assert_eq!(summary.add_files.len(), 2);
             let tsm_files: Vec<SnapshotFileMeta> = summary

@@ -975,7 +975,6 @@ pub fn build_data_node_config(test_dir: impl AsRef<Path>, data_dir_name: &str) -
     config.deployment.mode = "singleton".to_string();
     let test_dir = test_dir.as_ref().display();
     let data_path = format!("{test_dir}/data/{data_dir_name}");
-    config.hinted_off.path = format!("{data_path}/hh");
     config.log.level = "INFO".to_string();
     config.log.path = format!("{data_path}/log");
     config.storage.path = format!("{data_path}/storage");
