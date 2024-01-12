@@ -747,7 +747,11 @@ impl Engine for TsKv {
 
         let tenant = tenant_name_from_request(&write_batch);
         let points = write_batch.points;
-        let fb_points = flatbuffers::root::<fb_models::Points>(&points)
+        let opts = flatbuffers::VerifierOptions {
+            max_tables: usize::MAX,
+            ..Default::default()
+        };
+        let fb_points = flatbuffers::root_with_opts::<fb_models::Points>(&opts, &points)
             .context(error::InvalidFlatbufferSnafu)?;
 
         let db_name = fb_points.db_ext()?;
