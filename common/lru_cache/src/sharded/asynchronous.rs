@@ -71,48 +71,6 @@ where
         }
     }
 
-    pub async fn insert(&self, k: K, v: V) -> Option<&V> {
-        self.insert_opt(k, v, 1, None).await
-    }
-
-    pub async fn insert_opt(
-        &self,
-        k: K,
-        v: V,
-        charge: usize,
-        after_removed: Option<AfterRemovedFnMut<K, V>>,
-    ) -> Option<&V> {
-        self.shard[Self::shard(&k)]
-            .lock()
-            .await
-            .insert_and_return_value(k, v, charge, after_removed)
-            .map(|v| unsafe { &(*v).v })
-    }
-
-    pub async fn get<Q>(&self, k: &Q) -> Option<&V>
-    where
-        KeyPtr<K>: Borrow<Q>,
-        Q: Hash + Eq + ?Sized,
-    {
-        self.shard[Self::shard(k)]
-            .lock()
-            .await
-            .get_value(k)
-            .map(|v| unsafe { &(*v).v })
-    }
-
-    pub async fn get_mut<Q>(&self, k: &Q) -> Option<&mut V>
-    where
-        KeyPtr<K>: Borrow<Q>,
-        Q: Hash + Eq + ?Sized,
-    {
-        self.shard[Self::shard(k)]
-            .lock()
-            .await
-            .get_value_mut(k)
-            .map(|v| unsafe { &mut (*v).v })
-    }
-
     pub async fn remove<Q>(&self, k: &Q)
     where
         KeyPtr<K>: Borrow<Q>,
@@ -184,7 +142,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use std::sync::atomic::AtomicUsize;
+    use std::sync::atomic::{self, AtomicUsize};
     use std::sync::Arc;
 
     use parking_lot::RwLock;
@@ -202,14 +160,13 @@ mod test {
         let miss_cnt = Arc::new(AtomicUsize::new(0));
         let error_cnt = Arc::new(AtomicUsize::new(0));
 
-        let mut tasks = Vec::with_capacity(task_count);
-
-        let mut key_i_vec = (0..tasks.capacity()).collect::<Vec<usize>>();
         // Shuffle the key index.
+        let mut key_i_vec = (0..keys.len()).collect::<Vec<usize>>();
         key_i_vec.sort_by(|_, _| rand::random::<i8>().cmp(&0));
 
-        let task_key_range_base = keys.len() / tasks.capacity();
-        for i in key_i_vec {
+        let mut tasks = Vec::with_capacity(task_count);
+        let task_key_range_base = keys.len() / task_count;
+        for i in 0..tasks.capacity() {
             let keys = keys.clone();
             let cache = cache.clone();
             let hit_cnt = hit_cnt.clone();
@@ -226,26 +183,32 @@ mod test {
                     let mut lock = cache.lock_shard(&key).await;
                     let val_ref = match lock.get(&key) {
                         Some(v) => {
-                            hit_cnt.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                             println!("Got key: {key}");
+                            hit_cnt.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                             v.clone()
                         }
                         None => {
                             miss_cnt.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                            // Take some time to init the value (open a file, etc.)
+                            // Mock: take some time to init the value (open a file, etc.)
                             tokio::time::sleep(std::time::Duration::from_micros(100)).await;
-                            println!("Insert new key: {key}");
                             match lock.get(&key) {
-                                Some(v) => v.clone(),
-                                None => match lock.insert(key.clone(), val.clone()) {
-                                    Some(v) => v.clone(),
-                                    None => {
-                                        eprintln!("Value of key: {} failed to insert", key);
-                                        error_cnt.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                                        continue;
+                                Some(v) => {
+                                    println!("Got key before insert: {key}");
+                                    v.clone()
+                                }
+                                None => {
+                                    println!("Insert new key: {key}");
+                                    match lock.insert(key.clone(), val.clone()) {
+                                        Some(v) => v.clone(),
+                                        None => {
+                                            eprintln!("Value of key: {} failed to insert", key);
+                                            error_cnt
+                                                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                                            continue;
+                                        }
                                     }
-                                },
+                                }
                             }
                         }
                     };
@@ -267,9 +230,9 @@ mod test {
             }
         }
         (
-            hit_cnt.load(std::sync::atomic::Ordering::SeqCst),
-            miss_cnt.load(std::sync::atomic::Ordering::SeqCst),
-            error_cnt.load(std::sync::atomic::Ordering::SeqCst),
+            hit_cnt.load(atomic::Ordering::SeqCst),
+            miss_cnt.load(atomic::Ordering::SeqCst),
+            error_cnt.load(atomic::Ordering::SeqCst),
         )
     }
 
@@ -277,7 +240,7 @@ mod test {
     async fn test_read_write_in_parallel() {
         const KEY_NUM: usize = 128;
         const CACHE_CAPACITY: usize = 16;
-        const TASK_NUM: usize = 4;
+        const TASK_NUM: usize = 16;
         const SUB_TASK_NUM: usize = 8;
 
         let mut keys: Vec<String> = Vec::with_capacity(KEY_NUM);
@@ -293,7 +256,7 @@ mod test {
         let miss_cnt = Arc::new(AtomicUsize::new(0));
         let error_cnt = Arc::new(AtomicUsize::new(0));
         let mut tasks = Vec::with_capacity(TASK_NUM);
-        for _ in 0..tasks.capacity() {
+        for _ in 0..TASK_NUM {
             let keys = keys.clone();
             let cache = cache.clone();
             let hit_cnt = hit_cnt.clone();
@@ -301,9 +264,9 @@ mod test {
             let error_cnt = miss_cnt.clone();
             let jh = tokio::spawn(async move {
                 let (hit, miss, err) = read_cache_in_parallel(cache, keys, SUB_TASK_NUM).await;
-                hit_cnt.fetch_add(hit, std::sync::atomic::Ordering::SeqCst);
-                miss_cnt.fetch_add(miss, std::sync::atomic::Ordering::SeqCst);
-                error_cnt.fetch_add(err, std::sync::atomic::Ordering::SeqCst);
+                hit_cnt.fetch_add(hit, atomic::Ordering::SeqCst);
+                miss_cnt.fetch_add(miss, atomic::Ordering::SeqCst);
+                error_cnt.fetch_add(err, atomic::Ordering::SeqCst);
             });
             tasks.push(jh);
         }
@@ -338,7 +301,7 @@ mod test {
         }
 
         async fn get_or_default(&mut self, key: i32) -> i32 {
-            if let Some(v) = self.cache.get(&key).await {
+            if let Some(v) = self.cache.lock_shard(&key).await.get(&key) {
                 *v
             } else {
                 -1
@@ -350,33 +313,27 @@ mod test {
         }
 
         async fn insert_charge(&mut self, key: i32, value: i32, charge: i32) {
-            self.cache
-                .insert_opt(
-                    key,
-                    value,
-                    charge as usize,
-                    Some(Box::new(fn_deleter(
-                        self.deleted_keys.clone(),
-                        self.deleted_values.clone(),
-                    ))),
-                )
-                .await;
+            self.cache.lock_shard(&key).await.insert_opt(
+                key,
+                value,
+                charge as usize,
+                Some(Box::new(fn_deleter(
+                    self.deleted_keys.clone(),
+                    self.deleted_values.clone(),
+                ))),
+            );
         }
 
         async fn insert_and_return_default(&mut self, key: i32, value: i32) -> i32 {
-            if let Some(v) = self
-                .cache
-                .insert_opt(
-                    key,
-                    value,
-                    1,
-                    Some(Box::new(fn_deleter(
-                        self.deleted_keys.clone(),
-                        self.deleted_values.clone(),
-                    ))),
-                )
-                .await
-            {
+            if let Some(v) = self.cache.lock_shard(&key).await.insert_opt(
+                key,
+                value,
+                1,
+                Some(Box::new(fn_deleter(
+                    self.deleted_keys.clone(),
+                    self.deleted_values.clone(),
+                ))),
+            ) {
                 *v
             } else {
                 -1
@@ -384,7 +341,7 @@ mod test {
         }
 
         async fn remove(&mut self, key: i32) {
-            self.cache.remove(&key).await;
+            self.cache.lock_shard(&key).await.remove(&key);
         }
     }
 
@@ -424,28 +381,6 @@ mod test {
     }
 
     #[tokio::test]
-    async fn test_multi_threads() {
-        let lru = Arc::new(ShardedCache::<&str, i32>::with_capacity(1));
-
-        let lru_2 = lru.clone();
-        let jh = tokio::spawn(async move {
-            assert_eq!(lru_2.insert("One", 2).await, Some(&2));
-            assert_eq!(lru_2.get(&"One").await, Some(&2));
-
-            assert_eq!(lru_2.insert("One", 1,).await, Some(&1));
-            assert_eq!(lru_2.get(&"One").await, Some(&1));
-
-            lru_2.remove(&"One").await;
-            assert_eq!(lru_2.get(&"One").await, None);
-
-            assert_eq!(lru_2.insert("One", 1,).await, Some(&1));
-        });
-        jh.await.unwrap();
-
-        assert_eq!(lru.get(&"One").await, Some(&1));
-    }
-
-    #[tokio::test]
     async fn test_remove() {
         let mut ct = ShardedCacheTester::new();
         ct.remove(200).await;
@@ -473,7 +408,7 @@ mod test {
         ct.insert(200, 201).await;
         ct.insert(300, 301).await;
 
-        assert_eq!(ct.cache.get(&300).await, Some(&301));
+        assert_eq!(ct.cache.lock_shard(&300).await.get(&300), Some(&301));
 
         for i in 0..CACHE_SIZE + 100 {
             let i1 = i as i32;
@@ -532,7 +467,7 @@ mod test {
         let mut ct = ShardedCacheTester::new();
         ct.insert(1, 100).await;
         ct.insert(2, 200).await;
-        assert_eq!(ct.cache.get(&1).await, Some(&100));
+        assert_eq!(ct.cache.lock_shard(&1).await.get(&1), Some(&100));
 
         ct.cache.prune().await;
         assert_eq!(ct.get_or_default(1).await, -1);
