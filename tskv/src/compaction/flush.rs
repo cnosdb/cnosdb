@@ -18,7 +18,6 @@ use crate::context::{GlobalContext, GlobalSequenceContext};
 use crate::error::{self, Result};
 use crate::memcache::{FieldVal, MemCache, SeriesData};
 use crate::summary::{CompactMeta, CompactMetaBuilder, SummaryTask, VersionEdit};
-use crate::tseries_family::Version;
 use crate::tsm::codec::DataBlockEncoding;
 use crate::tsm::{self, DataBlock, TsmWriter};
 use crate::version_set::VersionSet;
@@ -57,7 +56,7 @@ impl FlushTask {
 
     pub async fn run(
         self,
-        version: Arc<Version>,
+        max_level_ts: Timestamp,
         version_edits: &mut Vec<VersionEdit>,
         file_metas: &mut HashMap<ColumnFileId, Arc<BloomFilter>>,
     ) -> Result<()> {
@@ -89,7 +88,6 @@ impl FlushTask {
             return Ok(());
         }
 
-        let mut max_level_ts = version.max_level_ts;
         let mut column_file_metas = self
             .flush_mem_caches(
                 flushing_mems_data,
@@ -97,15 +95,16 @@ impl FlushTask {
                 tsm::MAX_BLOCK_VALUES as usize,
             )
             .await?;
+        let mut max_level_ts_tmp = max_level_ts;
         let mut edit = VersionEdit::new(self.ts_family_id);
         for (cm, _) in column_file_metas.iter_mut() {
             cm.low_seq = low_seq;
             cm.high_seq = high_seq;
-            max_level_ts = max_level_ts.max(cm.max_ts);
+            max_level_ts_tmp = max_level_ts_tmp.max(cm.max_ts);
         }
         for (cm, field_filter) in column_file_metas {
             file_metas.insert(cm.file_id, field_filter);
-            edit.add_file(cm, max_level_ts);
+            edit.add_file(cm, max_level_ts_tmp);
         }
         version_edits.push(edit);
 
@@ -206,14 +205,10 @@ pub async fn run_flush_memtable_job(
         .await;
     if let Some(tsf) = get_tsf_result {
         // todo: build path by vnode data
-        let (storage_opt, version, database) = {
+        let (storage_opt, database) = {
             let tsf_rlock = tsf.read().await;
             tsf_rlock.update_last_modified().await;
-            (
-                tsf_rlock.storage_opt(),
-                tsf_rlock.version(),
-                tsf_rlock.database(),
-            )
+            (tsf_rlock.storage_opt(), tsf_rlock.database())
         };
 
         let path_tsm = storage_opt.tsm_dir(&database, req.ts_family_id);
@@ -228,7 +223,7 @@ pub async fn run_flush_memtable_job(
         );
 
         flush_task
-            .run(version, &mut version_edits, &mut file_metas)
+            .run(req.max_ts, &mut version_edits, &mut file_metas)
             .await?;
 
         tsf.read().await.update_last_modified().await;
@@ -587,7 +582,7 @@ pub mod flush_tests {
         let mut version_edits = vec![];
         let mut file_metas = HashMap::new();
         flush_task
-            .run(version, &mut version_edits, &mut file_metas)
+            .run(version.max_level_ts, &mut version_edits, &mut file_metas)
             .await
             .unwrap();
 

@@ -197,7 +197,7 @@ impl ColumnFile {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LevelInfo {
     /// the time_range of column file is overlap in L0,
     /// the time_range of column file is not overlap in L0,
@@ -359,7 +359,7 @@ impl LevelInfo {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Version {
     pub ts_family_id: TseriesFamilyId,
     pub database: Arc<String>,
@@ -824,12 +824,24 @@ impl TseriesFamily {
 
         // Mark these caches marked as `flushing` in current thread and collect them.
         filtered_caches.retain(|c| c.read().mark_flushing());
+
+        let max_cache_ts = filtered_caches
+            .iter()
+            .map(|m| m.read().max_ts())
+            .max()
+            .unwrap_or(i64::MIN);
+        let max_level_ts = self.version.max_level_ts;
+        let mut version = self.version.as_ref().clone();
+        version.max_level_ts = max_cache_ts.max(max_level_ts);
+        self.new_version(version, None);
+
         if filtered_caches.is_empty() {
             return None;
         }
 
         Some(FlushReq {
             ts_family_id: self.tf_id,
+            max_ts: max_level_ts,
             mems: filtered_caches,
             force_flush: force,
         })
@@ -1476,6 +1488,7 @@ pub mod test_tseries_family {
         let req_mem = vec![mem];
         let flush_seq = FlushReq {
             ts_family_id: 0,
+            max_ts: 0,
             mems: req_mem,
             force_flush: false,
         };
