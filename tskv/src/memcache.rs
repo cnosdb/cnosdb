@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::mem::size_of_val;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use memory_pool::{MemoryConsumer, MemoryPoolRef, MemoryReservation};
@@ -362,6 +362,8 @@ pub struct MemCache {
     part_count: usize,
     // This u64 comes from split_id(SeriesId) % part_count
     partions: Vec<RwLock<HashMap<u32, RwLockRef<SeriesData>>>>,
+
+    max_ts: AtomicI64,
 }
 
 impl MemCache {
@@ -384,6 +386,7 @@ impl MemCache {
 
             max_size,
             min_seq_no: seq,
+            max_ts: AtomicI64::new(i64::MIN),
 
             part_count,
             partions,
@@ -394,6 +397,7 @@ impl MemCache {
     }
 
     pub fn write_group(&self, sid: SeriesId, seq: u64, group: RowGroup) -> Result<()> {
+        let max_ts = group.range.max_ts;
         self.seq_no.store(seq, Ordering::Relaxed);
         self.memory
             .write()
@@ -411,7 +415,24 @@ impl MemCache {
             series_data.write(group);
             series_map.insert(sid, Arc::new(RwLock::new(series_data)));
         }
+        self.store_max_ts(max_ts);
         Ok(())
+    }
+
+    pub fn store_max_ts(&self, max_ts: i64) {
+        loop {
+            let current_max_ts = self.max_ts.load(Ordering::Relaxed);
+            if current_max_ts >= max_ts {
+                break;
+            }
+            if self
+                .max_ts
+                .compare_exchange(current_max_ts, max_ts, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
+                break;
+            }
+        }
     }
 
     pub fn read_field_data(
@@ -542,6 +563,10 @@ impl MemCache {
 
     pub fn cache_size(&self) -> u64 {
         self.memory.read().size() as u64
+    }
+
+    pub fn max_ts(&self) -> i64 {
+        self.max_ts.load(Ordering::Relaxed)
     }
 }
 

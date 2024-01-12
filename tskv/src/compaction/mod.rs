@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 pub use compact::*;
 pub use flush::*;
+use models::Timestamp;
 use parking_lot::RwLock;
 pub use picker::*;
 
@@ -36,5 +37,6 @@ pub struct CompactReq {
 pub struct FlushReq {
     pub ts_family_id: TseriesFamilyId,
     pub mems: Vec<Arc<RwLock<MemCache>>>,
+    pub max_ts: Timestamp,
     pub force_flush: bool,
 }
