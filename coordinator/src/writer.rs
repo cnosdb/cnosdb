@@ -289,8 +289,13 @@ impl PointWriter {
         let mut mapping = VnodeMapping::new();
         {
             let _span_recorder = SpanRecorder::new(span_ctx.child_span("map point"));
-            let fb_points = flatbuffers::root::<fb_models::Points>(&req.request.points)
-                .context(InvalidFlatbufferSnafu)?;
+            let opts = flatbuffers::VerifierOptions {
+                max_tables: usize::MAX,
+                ..Default::default()
+            };
+            let fb_points =
+                flatbuffers::root_with_opts::<fb_models::Points>(&opts, &req.request.points)
+                    .context(InvalidFlatbufferSnafu)?;
             let database_name = fb_points.db_ext()?.to_string();
             for table in fb_points.tables_iter_ext()? {
                 let table_name = table.tab_ext()?.to_string();

@@ -383,7 +383,11 @@ impl Coordinator for CoordService {
             let limiter = self.meta.limiter(&tenant).await?;
             let points = request.points.as_slice();
 
-            let fb_points = flatbuffers::root::<Points>(points)?;
+            let opts = flatbuffers::VerifierOptions {
+                max_tables: usize::MAX,
+                ..Default::default()
+            };
+            let fb_points = flatbuffers::root_with_opts::<Points>(&opts, points)?;
             let db = fb_points.db_ext()?;
 
             let write_size = points.len();
