@@ -265,7 +265,7 @@ impl TsKv {
             wal_manager.write(wal_task).await;
         }
 
-        async fn on_tick_sync(wal_manager: &WalManager) {
+        async fn on_tick_sync(wal_manager: &mut WalManager) {
             if let Err(e) = wal_manager.sync().await {
                 error!("Failed flushing WAL file: {:?}", e);
             }
@@ -343,7 +343,7 @@ impl TsKv {
                             }
                         }
                         _ = sync_ticker.tick() => {
-                            on_tick_sync(&wal_manager).await;
+                            on_tick_sync(&mut wal_manager).await;
                         }
                         _ = check_total_size_ticker.tick() => {
                             on_tick_check_total_size(

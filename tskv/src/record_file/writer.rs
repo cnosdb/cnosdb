@@ -10,7 +10,6 @@ use super::{
 };
 use crate::error::{self, Error, Result};
 use crate::file_system::file::cursor::FileCursor;
-use crate::file_system::file::IFile;
 use crate::file_system::file_manager;
 
 pub struct Writer {
@@ -31,7 +30,7 @@ impl Writer {
                 .write(&FILE_MAGIC_NUMBER.to_be_bytes())
                 .await
                 .context(error::IOSnafu)? as u64;
-            // Get none as footer data.
+            cursor.try_flush(0).await?;
             None
         } else {
             let footer_data = match Reader::read_footer(&path).await {
@@ -52,6 +51,7 @@ impl Writer {
             // TODO: truncate this file using seek_pos_end.
             cursor
                 .seek(SeekFrom::End(-(seek_pos_end as i64)))
+                .await
                 .context(error::IOSnafu)?;
 
             footer_data
@@ -109,23 +109,27 @@ impl Writer {
         // Write record header and record data.
         let written_size =
             self.cursor
-                .write_vec(&mut write_buf)
+                .write_vec(&write_buf)
                 .await
                 .map_err(|e| Error::WriteFile {
                     path: self.path.clone(),
                     source: e,
                 })?;
         self.file_size += written_size as u64;
+        self.cursor.try_flush(0).await?;
         Ok(written_size)
     }
 
     pub async fn write_footer(&mut self, mut footer: [u8; FILE_FOOTER_LEN]) -> Result<usize> {
         self.sync().await?;
-
+        let pos = self.cursor.pos();
         // Get file crc
         let mut buf = vec![0_u8; file_crc_source_len(self.file_size(), 0_usize)];
         self.cursor
-            .read_at(FILE_MAGIC_NUMBER_LEN as u64, &mut buf)
+            .seek(SeekFrom::Start(FILE_MAGIC_NUMBER_LEN as u64))
+            .await?;
+        self.cursor
+            .read(&mut buf)
             .await
             .map_err(|e| Error::ReadFile {
                 path: self.path.clone(),
@@ -137,20 +141,30 @@ impl Writer {
         footer[4..8].copy_from_slice(&crc.to_be_bytes());
         self.footer = Some(footer);
 
-        self.cursor
+        self.cursor.seek(SeekFrom::Start(pos)).await?;
+        let res = self
+            .cursor
             .write(&footer)
             .await
             .map_err(|e| Error::WriteFile {
                 path: self.path.clone(),
                 source: e,
-            })
+            })?;
+        self.cursor
+            .try_flush(0)
+            .await
+            .map_err(|e| Error::WriteFile {
+                path: self.path.clone(),
+                source: e,
+            })?;
+        Ok(res)
     }
 
     pub fn footer(&self) -> Option<[u8; FILE_FOOTER_LEN]> {
         self.footer
     }
 
-    pub async fn sync(&self) -> Result<()> {
+    pub async fn sync(&mut self) -> Result<()> {
         self.cursor.sync_data().await.context(error::SyncFileSnafu)
     }
 
@@ -169,7 +183,6 @@ impl Writer {
 
 #[cfg(test)]
 mod test {
-
     use serial_test::serial;
 
     use super::Writer;

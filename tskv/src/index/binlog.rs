@@ -214,12 +214,12 @@ pub struct BinlogReader {
 
 impl BinlogReader {
     pub async fn new(id: u64, mut cursor: FileCursor) -> IndexResult<Self> {
-        let header_buf = BinlogReader::reade_header(&mut cursor).await?;
+        let header_buf = BinlogReader::read_header(&mut cursor).await?;
         let offset = byte_utils::decode_be_u32(&header_buf[4..8]);
 
         debug!("Read index binlog begin read offset: {}", offset);
 
-        cursor.set_pos(offset as u64);
+        cursor.seek(SeekFrom::Start(offset as u64)).await?;
 
         Ok(Self {
             id,
@@ -229,10 +229,10 @@ impl BinlogReader {
         })
     }
 
-    async fn reade_header(cursor: &mut FileCursor) -> IndexResult<[u8; SEGMENT_FILE_HEADER_SIZE]> {
+    async fn read_header(cursor: &mut FileCursor) -> IndexResult<[u8; SEGMENT_FILE_HEADER_SIZE]> {
         let mut header_buf = [0_u8; SEGMENT_FILE_HEADER_SIZE];
 
-        cursor.seek(SeekFrom::Start(0))?;
+        cursor.seek(SeekFrom::Start(0)).await?;
         let _read = cursor.read(&mut header_buf[..]).await?;
 
         Ok(header_buf)

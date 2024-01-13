@@ -445,7 +445,7 @@ impl WalManager {
         Ok(wal_readers)
     }
 
-    pub async fn sync(&self) -> Result<()> {
+    pub async fn sync(&mut self) -> Result<()> {
         self.current_file.sync().await
     }
 
