@@ -182,7 +182,7 @@ impl WalWriter {
         Ok((seq, written_size))
     }
 
-    pub async fn sync(&self) -> Result<()> {
+    pub async fn sync(&mut self) -> Result<()> {
         self.inner.sync().await
     }
 
@@ -241,9 +241,9 @@ mod test {
         let wal_config = Arc::new(WalOptions::from(&global_config));
 
         #[rustfmt::skip]
-        let entries = vec![
+            let entries = vec![
             WalEntry::Write(WriteBlock::build(
-                1,  "cnosdb", 3, Precision::NS, vec![1, 2, 3],
+                1, "cnosdb", 3, Precision::NS, vec![1, 2, 3],
             )),
             WalEntry::DeleteVnode(DeleteVnodeBlock::build(2, "cnosdb", "public", 6)),
             WalEntry::DeleteTable(DeleteTableBlock::build(3, "cnosdb", "public", "table")),

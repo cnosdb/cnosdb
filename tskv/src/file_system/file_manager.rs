@@ -179,6 +179,7 @@ pub async fn open_create_file(path: impl AsRef<Path>) -> Result<AsyncFile> {
 
 #[cfg(test)]
 mod test {
+    use std::io::{IoSlice, SeekFrom};
     use std::path::PathBuf;
 
     use trace::info;
@@ -220,6 +221,24 @@ mod test {
 
         let open_file_ret_2 = file_manager::open_file(&path).await;
         assert!(open_file_ret_2.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_skip_write() {
+        let dir = "/tmp/test/file_manager/test_skip_write";
+        let _ = std::fs::remove_dir_all(dir);
+        let path = PathBuf::from(dir).join("test.txt");
+        let file = file_manager::create_file(&path).await.unwrap();
+        let data = [0, 1, 2, 3];
+        let len = file.write_at(0, &data).await.unwrap();
+        assert_eq!(data.len(), len);
+        let data: [u8; 4] = [4, 5, 6, 7];
+        let _len = file.write_at(8, &data).await.unwrap();
+        let mut buf = [0_u8; 12];
+        let size = file.read_at(0, &mut buf).await.unwrap();
+        let buf2 = [0, 1, 2, 3, 0, 0, 0, 0, 4, 5, 6, 7];
+        assert_eq!(buf2, buf);
+        assert_eq!(size, 12);
     }
 
     #[tokio::test]
@@ -359,11 +378,33 @@ mod test {
             let len = cursor.write(&[0, 1, 2, 3, 4]).await.unwrap();
             assert_eq!(len, 5);
         }
-        cursor.set_pos(5);
+        cursor.seek(SeekFrom::Start(0)).await.unwrap();
         let mut buf = [0_u8; 8];
         let len = cursor.read(&mut buf[0..5]).await.unwrap();
         assert_eq!(len, 5);
         assert_eq!(buf, [0, 1, 2, 3, 4, 0, 0, 0]);
+    }
+
+    #[tokio::test]
+    async fn test_cursor2() {
+        let dir = "/tmp/test/file_manager/test_cursor2";
+        let _ = std::fs::remove_dir_all(dir);
+        let path = PathBuf::from(dir).join("test.txt");
+
+        let file = file_manager::create_file(&path).await.unwrap();
+        let mut cursor: FileCursor = file.into();
+        let ios = [
+            IoSlice::new(&[0, 1, 2, 3, 4]),
+            IoSlice::new(&[5, 6, 7, 8, 9]),
+            IoSlice::new(&[10, 11, 12, 13, 14]),
+        ];
+        cursor.write_vec(&ios).await.unwrap();
+        cursor.try_flush(0).await.unwrap();
+        cursor.seek(SeekFrom::Start(0)).await.unwrap();
+        let mut buf = [0_u8; 16];
+        let len = cursor.read(&mut buf).await.unwrap();
+        assert_eq!(len, 15);
+        assert_eq!(buf, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 0]);
     }
 
     #[test]

@@ -1,56 +1,66 @@
 use std::io::{Error, ErrorKind, IoSlice, Result, SeekFrom};
-use std::ops::Deref;
 
 use crate::file_system::file::async_file::AsyncFile;
 use crate::file_system::file::IFile;
 
+const BUFFER_SIZE: usize = 1024 * 1024;
+
 pub struct FileCursor {
     file: AsyncFile,
     pos: u64,
+    buf: Vec<u8>,
 }
 
 impl FileCursor {
-    pub fn into_file(self) -> AsyncFile {
-        self.file
-    }
-
     pub fn file_ref(&self) -> &AsyncFile {
         &self.file
     }
 
     pub fn pos(&self) -> u64 {
-        self.pos
+        self.pos + self.buf.len() as u64
     }
 
-    pub fn set_pos(&mut self, pos: u64) {
+    fn set_pos(&mut self, pos: u64) {
+        self.buf.clear();
         self.pos = pos;
     }
 
     pub async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
         let read = self.file.read_at(self.pos, buf).await?;
-        self.seek(SeekFrom::Current(read.try_into().unwrap()))
-            .unwrap();
+        self.pos += read as u64;
         Ok(read)
     }
 
     pub async fn write(&mut self, buf: &[u8]) -> Result<usize> {
-        let size = self.file.write_at(self.pos, buf).await?;
-        self.seek(SeekFrom::Current(buf.len().try_into().unwrap()))
-            .unwrap();
-        Ok(size)
+        self.buf.extend_from_slice(buf);
+        self.try_flush(BUFFER_SIZE).await?;
+        Ok(buf.len())
     }
 
-    pub async fn write_vec<'a>(&mut self, bufs: &'a mut [IoSlice<'a>]) -> Result<usize> {
-        let mut p = self.pos;
-        for buf in bufs {
-            p += self.write_at(p, buf.deref()).await? as u64;
+    pub async fn write_vec<'a>(&mut self, bufs: &'a [IoSlice<'a>]) -> Result<usize> {
+        let sum = bufs.iter().fold(0, |acc, buf| acc + buf.len());
+        self.buf.reserve(sum);
+        bufs.iter().for_each(|buf| self.buf.extend_from_slice(buf));
+        self.try_flush(BUFFER_SIZE).await?;
+        Ok(sum)
+    }
+
+    pub async fn try_flush(&mut self, buffer_size: usize) -> Result<()> {
+        if self.buf.is_empty() || self.buf.len() < buffer_size {
+            return Ok(());
         }
-        let pos = self.pos;
-        self.seek(SeekFrom::Start(p)).unwrap();
-        Ok((p - pos) as usize)
+        let size = self.file.write_at(self.pos, &self.buf).await?;
+        self.set_pos(self.pos + size as u64);
+        Ok(())
     }
 
-    pub fn seek(&mut self, pos: SeekFrom) -> Result<u64> {
+    pub async fn sync_data(&mut self) -> Result<()> {
+        self.try_flush(0).await?;
+        self.file.sync_data().await
+    }
+
+    pub async fn seek(&mut self, pos: SeekFrom) -> Result<u64> {
+        self.try_flush(0).await?;
         self.pos = match pos {
             SeekFrom::Start(pos) => Some(pos),
             SeekFrom::End(delta) => {
@@ -73,18 +83,21 @@ impl FileCursor {
         .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "underflow or overflow during seek"))?;
         Ok(self.pos)
     }
+
+    pub fn len(&self) -> u64 {
+        self.file.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.file.is_empty()
+    }
 }
 
 impl From<AsyncFile> for FileCursor {
     fn from(file: AsyncFile) -> Self {
-        FileCursor { file, pos: 0 }
-    }
-}
-
-impl Deref for FileCursor {
-    type Target = AsyncFile;
-
-    fn deref(&self) -> &Self::Target {
-        &self.file
+        FileCursor {
+            file,
+            pos: 0,
+            buf: Vec::with_capacity(BUFFER_SIZE),
+        }
     }
 }

@@ -9,7 +9,6 @@ use utils::BloomFilter;
 use super::EncodedDataBlock;
 use crate::error::{self, Error, Result};
 use crate::file_system::file::cursor::FileCursor;
-use crate::file_system::file::IFile;
 use crate::file_system::file_manager;
 use crate::file_utils;
 use crate::tsm::{
