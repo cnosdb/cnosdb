@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
-use lru_cache::asynchronous::ShardedCache;
+use cache::{AsyncCache, ShardedAsyncCache};
 use memory_pool::MemoryPoolRef;
 use metrics::gauge::U64Gauge;
 use metrics::metric_register::MetricsRegister;
@@ -43,7 +43,7 @@ pub struct ColumnFile {
     compacting: AtomicBool,
 
     path: PathBuf,
-    tsm_reader_cache: Weak<ShardedCache<String, Arc<TsmReader>>>,
+    tsm_reader_cache: Weak<ShardedAsyncCache<String, Arc<TsmReader>>>,
 }
 
 impl ColumnFile {
@@ -51,7 +51,7 @@ impl ColumnFile {
         meta: &CompactMeta,
         path: impl AsRef<Path>,
         field_id_filter: Arc<BloomFilter>,
-        tsm_reader_cache: Weak<ShardedCache<String, Arc<TsmReader>>>,
+        tsm_reader_cache: Weak<ShardedAsyncCache<String, Arc<TsmReader>>>,
     ) -> Self {
         Self {
             file_id: meta.file_id,
@@ -252,7 +252,7 @@ impl LevelInfo {
         &mut self,
         compact_meta: &CompactMeta,
         field_filter: Arc<BloomFilter>,
-        tsm_reader_cache: Weak<ShardedCache<String, Arc<TsmReader>>>,
+        tsm_reader_cache: Weak<ShardedAsyncCache<String, Arc<TsmReader>>>,
     ) {
         let file_path = if compact_meta.is_delta {
             let base_dir = self.storage_opt.delta_dir(&self.database, self.tsf_id);
@@ -369,7 +369,7 @@ pub struct Version {
     /// The max timestamp of write batch in wal flushed to column file.
     pub max_level_ts: i64,
     pub levels_info: [LevelInfo; 5],
-    pub tsm_reader_cache: Arc<ShardedCache<String, Arc<TsmReader>>>,
+    pub tsm_reader_cache: Arc<ShardedAsyncCache<String, Arc<TsmReader>>>,
 }
 
 impl Version {
@@ -381,7 +381,7 @@ impl Version {
         last_seq: u64,
         levels_info: [LevelInfo; 5],
         max_level_ts: i64,
-        tsm_reader_cache: Arc<ShardedCache<String, Arc<TsmReader>>>,
+        tsm_reader_cache: Arc<ShardedAsyncCache<String, Arc<TsmReader>>>,
     ) -> Self {
         Self {
             ts_family_id,
@@ -511,14 +511,14 @@ impl Version {
 
     pub async fn get_tsm_reader(&self, path: impl AsRef<Path>) -> Result<Arc<TsmReader>> {
         let path = path.as_ref().display().to_string();
-        let mut sync_lru = self.tsm_reader_cache.lock_shard(&path).await;
-        let tsm_reader = match sync_lru.get(&path) {
-            Some(r) => r.clone(),
-            None => match sync_lru.get(&path) {
-                Some(r) => r.clone(),
+        let tsm_reader = match self.tsm_reader_cache.get(&path).await {
+            Some(r) => r,
+            None => match self.tsm_reader_cache.get(&path).await {
+                Some(r) => r,
                 None => {
-                    let tsm_reader = TsmReader::open(&path).await?;
-                    sync_lru.insert(path, Arc::new(tsm_reader)).unwrap().clone()
+                    let tsm_reader = Arc::new(TsmReader::open(&path).await?);
+                    self.tsm_reader_cache.insert(path, tsm_reader.clone()).await;
+                    tsm_reader
                 }
             },
         };
@@ -1048,7 +1048,7 @@ pub mod test_tseries_family {
     use std::mem::size_of;
     use std::sync::Arc;
 
-    use lru_cache::asynchronous::ShardedCache;
+    use cache::ShardedAsyncCache;
     use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
     use meta::model::meta_admin::AdminMeta;
     use meta::model::MetaRef;
@@ -1131,7 +1131,7 @@ pub mod test_tseries_family {
             LevelInfo::init(database.clone(), 3, 0, opt.storage.clone()),
             LevelInfo::init(database.clone(), 4, 0, opt.storage.clone()),
         ];
-        let tsm_reader_cache = Arc::new(ShardedCache::with_capacity(16));
+        let tsm_reader_cache = Arc::new(ShardedAsyncCache::create_lru_sharded_cache(16));
         #[rustfmt::skip]
             let version = Version::new(1, database, opt.storage.clone(), 1, levels, 3100, tsm_reader_cache);
         let mut version_edits = Vec::new();
@@ -1227,7 +1227,7 @@ pub mod test_tseries_family {
             LevelInfo::init(database.clone(), 3, 1, opt.storage.clone()),
             LevelInfo::init(database.clone(), 4, 1, opt.storage.clone()),
         ];
-        let tsm_reader_cache = Arc::new(ShardedCache::with_capacity(16));
+        let tsm_reader_cache = Arc::new(ShardedAsyncCache::create_lru_sharded_cache(16));
         #[rustfmt::skip]
             let version = Version::new(1, database, opt.storage.clone(), 1, levels, 3150, tsm_reader_cache);
 
@@ -1312,7 +1312,7 @@ pub mod test_tseries_family {
             lv.files.push(file);
         }
 
-        let tsm_reader_cache = Arc::new(ShardedCache::with_capacity(16));
+        let tsm_reader_cache = Arc::new(ShardedAsyncCache::create_lru_sharded_cache(16));
         Version::new(
             ts_family_id,
             database,
@@ -1347,7 +1347,7 @@ pub mod test_tseries_family {
                 0,
                 LevelInfo::init_levels(database, 0, opt.storage.clone()),
                 0,
-                Arc::new(ShardedCache::with_capacity(1)),
+                Arc::new(ShardedAsyncCache::create_lru_sharded_cache(1)),
             )),
             opt.cache.clone(),
             opt.storage.clone(),

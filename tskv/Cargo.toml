@@ -6,7 +6,7 @@ edition.workspace = true
 [dependencies]
 config = { path = "../config" }
 error_code = { path = "../common/error_code" }
-lru_cache = { path = "../common/lru_cache" }
+cache = { path = "../common/cache" }
 memory_pool = { path = "../common/memory_pool" }
 meta = { path = "../meta" }
 metrics = { path = "../common/metrics" }

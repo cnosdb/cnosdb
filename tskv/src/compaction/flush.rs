@@ -446,7 +446,7 @@ pub mod flush_tests {
     use std::path::PathBuf;
     use std::sync::Arc;
 
-    use lru_cache::asynchronous::ShardedCache;
+    use cache::ShardedAsyncCache;
     use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
     use minivec::{mini_vec, MiniVec};
     use models::codec::Encoding;
@@ -580,7 +580,7 @@ pub mod flush_tests {
             last_seq: 1,
             max_level_ts: test_case.max_level_ts_before,
             levels_info: LevelInfo::init_levels(database, 0, options.storage),
-            tsm_reader_cache: Arc::new(ShardedCache::with_capacity(1)),
+            tsm_reader_cache: Arc::new(ShardedAsyncCache::create_lru_sharded_cache(1)),
         });
         let flush_task =
             FlushTask::new(test_case.caches(), 1, global_context, &tsm_dir, &delta_dir);

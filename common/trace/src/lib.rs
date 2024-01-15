@@ -58,7 +58,7 @@ pub fn targets_filter(level: LevelFilter, defined_tokio_trace: bool) -> filter::
             ("error_code_macro", level),
             ("http_protocol", level),
             ("limiter_bucket", level),
-            ("lru_cache", level),
+            ("cache", level),
             ("cnosdb", level),
             ("memory_pool", level),
             ("meta", level),
