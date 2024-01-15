@@ -276,7 +276,11 @@ impl TskvService for TskvServiceImpl {
         debug!("PING");
 
         let ping_req = _request.into_inner();
-        let ping_body = flatbuffers::root::<PingBody>(&ping_req.body);
+        let opts = flatbuffers::VerifierOptions {
+            max_tables: usize::MAX,
+            ..Default::default()
+        };
+        let ping_body = flatbuffers::root_with_opts::<PingBody>(&opts, &ping_req.body);
         if let Err(e) = ping_body {
             error!("{}", e);
         } else {

@@ -33,7 +33,11 @@ impl Engine for MockEngine {
     ) -> Result<WritePointsResponse> {
         debug!("writing point");
         let points = Arc::new(write_batch.points);
-        let fb_points = flatbuffers::root::<fb_models::Points>(&points).unwrap();
+        let opts = flatbuffers::VerifierOptions {
+            max_tables: usize::MAX,
+            ..Default::default()
+        };
+        let fb_points = flatbuffers::root_with_opts::<fb_models::Points>(&opts, &points).unwrap();
 
         debug!("writed point: {:?}", fb_points);
 
