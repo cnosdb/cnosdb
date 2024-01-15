@@ -1,36 +1,42 @@
+use std::collections::{hash_map, HashMap};
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use trace::{debug, info};
+use models::predicate::domain::TimeRange;
+use trace::{debug, error, info};
 
-use crate::compaction::{context_datetime, CompactReq};
+use super::CompactTask;
+use crate::compaction::CompactReq;
 use crate::tseries_family::{ColumnFile, ColumnFiles, LevelInfo, LevelInfos, Version};
-use crate::LevelId;
+use crate::tsm::TsmReader;
+use crate::{ColumnFileId, LevelId};
 
-pub fn pick_level_compaction(version: Arc<Version>) -> Option<CompactReq> {
-    LevelCompactionPicker::new().pick_compaction(version)
-}
-
-pub fn pick_delta_compaction(version: Arc<Version>) -> Option<CompactReq> {
-    DeltaCompactionPicker::new().pick_compaction(version)
+pub async fn pick_compaction(
+    compact_task: CompactTask,
+    version: Arc<Version>,
+) -> Option<CompactReq> {
+    match &compact_task {
+        CompactTask::Normal(_) => LevelCompactionPicker.pick_compaction(compact_task, version),
+        CompactTask::Delta(_) => {
+            DeltaCompactionPicker
+                .pick_compaction(compact_task, version)
+                .await
+        }
+        CompactTask::Cold(_) => LevelCompactionPicker.pick_compaction(compact_task, version),
+    }
 }
 
 /// Compaction picker for picking a level from level-1 to level-4, and then
 /// pick inner files of the level.
 #[derive(Debug)]
-struct LevelCompactionPicker {
-    /// Datetime when this picker created.
-    datetime: String,
-}
+struct LevelCompactionPicker;
 
 impl LevelCompactionPicker {
-    fn new() -> LevelCompactionPicker {
-        Self {
-            datetime: context_datetime(),
-        }
-    }
-
-    fn pick_compaction(&self, version: Arc<Version>) -> Option<CompactReq> {
+    fn pick_compaction(
+        &self,
+        compact_task: CompactTask,
+        version: Arc<Version>,
+    ) -> Option<CompactReq> {
         //! 1. Get TseriesFamily's newest **version**(`Arc<Version>`)
         //! 2. Get all level's score, pick LevelInfo with the max score.
         //! 3. Get files(`Vec<Arc<ColumnFile>>`) from the picked level, sorted by min_ts(ascending)
@@ -93,14 +99,13 @@ impl LevelCompactionPicker {
 
         // Run compaction and send them to the next level, even if picked only 1 file,.
         Some(CompactReq {
-            ts_family_id: version.tf_id(),
-            database: version.database(),
-            storage_opt: version.storage_opt(),
+            compact_task,
+            version,
+
             files: picking_files,
-            version: version.clone(),
+            lv0_files: None,
             in_level,
             out_level,
-            max_ts: level_infos[out_level as usize].time_range.max_ts,
         })
     }
 
@@ -229,21 +234,21 @@ impl LevelCompactionPicker {
 }
 
 /// Compaction picker for picking files in level-0 (delta files)
-/// and the output level (one of 1 to 4)
+/// and one file in the output level (one of 1 to 4)
+///
+/// 1. For level form lv1 to lv4, and the reverse-ordered files in the level.
+/// 2. If the file `is_compacting`, continue to the next file or level.
+/// 3. For each lv0-files, find the first lv0-file that overlaps any lv14-file.
+/// 4. For the other lv0-files
 #[derive(Debug)]
-struct DeltaCompactionPicker {
-    /// Datetime when this picker created.
-    datetime: String,
-}
+struct DeltaCompactionPicker;
 
 impl DeltaCompactionPicker {
-    fn new() -> Self {
-        Self {
-            datetime: context_datetime(),
-        }
-    }
-
-    fn pick_compaction(&self, version: Arc<Version>) -> Option<CompactReq> {
+    async fn pick_compaction(
+        &self,
+        compact_task: CompactTask,
+        version: Arc<Version>,
+    ) -> Option<CompactReq> {
         debug!(
             "Picker(delta): version: [ {} ]",
             LevelInfos(version.levels_info())
@@ -254,279 +259,432 @@ impl DeltaCompactionPicker {
             return None;
         }
 
-        let mut level_overlapped_files: [Vec<Arc<ColumnFile>>; 5] =
-            [vec![], Vec::new(), Vec::new(), Vec::new(), Vec::new()];
-        let mut file_picked: bool;
-        let mut level_picking: usize;
-        for file in levels[0].files.iter() {
-            if file.is_compacting() {
-                continue;
-            }
-            file_picked = false;
-            level_picking = 4;
-            // Form level-4 to level-1, collect the overlapped level-0 files.
-            for level in levels.iter().skip(1).rev() {
-                if file.time_range().min_ts < level.time_range.max_ts {
-                    level_overlapped_files[level_picking].push(file.clone());
-                    file_picked = true;
-                    break;
-                }
-                level_picking -= 1;
-            }
-            // If time_range of a level-0 file is too old than level-4, put to level-4 files.
-            // TODO(zipper): remove this because it's impossible when a level-0 file is newer than level-1 to level-4
-            if !file_picked {
-                // impossible: level-0 files is newer than level-4 to level-1
-                level_overlapped_files[4].push(file.clone());
-            }
-        }
-        debug!(
-            "Picker(delta): level overlapped files: [ {} ]",
-            level_overlapped_files
-                .iter()
-                .enumerate()
-                .map(|(i, files)| format!("{{ Level-{}: {} }}", i, files.len()))
-                .collect::<Vec<String>>()
-                .join(", ")
-        );
-
-        // Find the level with maximum overlapped level-0 files.
-        let mut out_level = 0;
-        let mut max_files = 0_usize;
-        for (i, files) in level_overlapped_files.iter().enumerate() {
-            if files.len() > max_files {
-                out_level = i;
-                max_files = files.len();
-            }
-        }
-        if out_level == 0 || max_files == 0 {
-            info!("Picker(delta): picked out-level is 0 or picked no files",);
-            return None;
-        }
-
-        // Pick files from level-0 files overlapped with that level.
         let max_compact_size = version.storage_opt().max_compact_size;
-        let mut picking_files = Vec::with_capacity(level_overlapped_files.len());
-        let mut picking_file_size = 0_u64;
-        for file in level_overlapped_files[out_level].iter() {
-            if file.is_compacting() || !file.mark_compacting() {
-                // If file already compacting, continue to next file.
-                continue;
-            }
-            picking_file_size += file.size();
-            picking_files.push(file.clone());
 
-            if picking_file_size >= max_compact_size {
-                // Picked file size >= max_compact_size
-                break;
+        let mut picked_tsm_file: Option<(LevelId, Arc<ColumnFile>)> = None;
+        let mut picked_l0_files: Vec<Arc<ColumnFile>> = vec![];
+        let mut picked_size = 0_u64;
+        let mut opened_l0_files: HashMap<u64, Arc<TsmReader>> = HashMap::new();
+        'lv14: for level in levels[1..].iter() {
+            if picked_tsm_file.is_some() {
+                // Do not pick other level if already picked a tsm_file and some delta files.
+                break 'lv14;
+            }
+            'lv14_tsm: for tsm_file in level.files.iter().rev() {
+                if tsm_file.is_compacting() {
+                    continue 'lv14_tsm;
+                }
+                'lv0_tsm: for l0_file in levels[0].files.iter() {
+                    if l0_file.is_compacting() {
+                        continue 'lv0_tsm;
+                    }
+                    if let Some((_, tsm_f)) = &picked_tsm_file {
+                        // If there is already a picked tsm_file, and some l0_files.
+                        if tsm_f.time_range().overlaps(l0_file.time_range()) {
+                            if l0_file.is_compacting() || !l0_file.mark_compacting() {
+                                continue 'lv0_tsm;
+                            }
+                            // And if this lv0_file is overlap with picked tsm_file, pick it.
+                            picked_l0_files.push(l0_file.clone());
+                            picked_size += l0_file.size();
+                            if picked_size >= max_compact_size {
+                                break 'lv14;
+                            }
+                        } else {
+                            // And if this lv0 file is not overlap with picked tsm_file, stop picking other files.
+                            break 'lv14;
+                        }
+                    } else {
+                        // Try to pick the first tsm_file and lv0_file.
+                        if Self::check_l0_file_overlap_with_tsm_file(
+                            l0_file,
+                            tsm_file.time_range(),
+                            version.as_ref(),
+                            &mut opened_l0_files,
+                        )
+                        .await
+                        {
+                            // This_tsm file can be picked to compact with lv0_file.
+                            if tsm_file.is_compacting() || !tsm_file.mark_compacting() {
+                                continue 'lv0_tsm;
+                            }
+                            if l0_file.is_compacting() || !l0_file.mark_compacting() {
+                                tsm_file.unmark_compacting();
+                                continue 'lv0_tsm;
+                            }
+                            picked_size += tsm_file.size();
+                            picked_size += l0_file.size();
+                            picked_tsm_file = Some((level.level(), tsm_file.clone()));
+                            picked_l0_files.push(l0_file.clone());
+                        }
+                    }
+                }
             }
         }
-        info!(
-            "Picker(delta): Picked files: [ {} ]",
-            ColumnFiles(&picking_files)
-        );
-        if picking_files.is_empty() {
+
+        let (picked_level, picked_tsm_file) = if let Some((level, tsm_file)) = picked_tsm_file {
+            info!(
+                "Picker(delta): Picked level: {level}, tsm_file: {tsm_file}, l0_files: [ {} ]",
+                ColumnFiles(&picked_l0_files)
+            );
+            (level, tsm_file)
+        } else {
+            info!(
+                "Picker(delta): Picked nothing because: picked tsm_file: None, l0_files: [ {} ]",
+                ColumnFiles(&picked_l0_files)
+            );
             return None;
-        }
+        };
 
         // Run compaction and send them to the target level, even if picked only 1 file,.
         Some(CompactReq {
-            ts_family_id: version.tf_id(),
-            database: version.database(),
-            storage_opt: version.storage_opt(),
-            files: picking_files,
+            compact_task,
             version: version.clone(),
+            files: vec![picked_tsm_file],
+            lv0_files: Some(picked_l0_files),
             in_level: 0,
-            out_level: out_level as u32,
-            max_ts: levels[out_level].time_range.max_ts,
+            out_level: picked_level,
         })
+    }
+
+    async fn check_l0_file_overlap_with_tsm_file(
+        l0_file: &ColumnFile,
+        tsm_file_time_range: &TimeRange,
+        version: &Version,
+        opened_l0_files: &mut HashMap<ColumnFileId, Arc<TsmReader>>,
+    ) -> bool {
+        if !l0_file.time_range().overlaps(tsm_file_time_range) {
+            // Lv0-file does not overlap with tsm-file.
+            return false;
+        }
+        let lv0_tsm_reader = match opened_l0_files.entry(l0_file.file_id()) {
+            hash_map::Entry::Occupied(e) => e.get().clone(),
+            hash_map::Entry::Vacant(e) => {
+                let reader = match version.get_tsm_reader(l0_file.file_path()).await {
+                    Ok(r) => {
+                        e.insert(r.clone());
+                        r
+                    }
+                    Err(e) => {
+                        error!("Failed to open lv0_file to check if time_range overlapped: {e}");
+                        return false;
+                    }
+                };
+                reader
+            }
+        };
+
+        // If this lv0_file is fully excluded by picked tsm_file, continue to next lv0_file.
+        // This condition may be after a past delta-compaction.
+        !lv0_tsm_reader
+            .tombstone()
+            .check_all_fields_excluded_time_range(tsm_file_time_range)
     }
 }
 
 #[cfg(test)]
 mod test {
+    use std::collections::HashMap;
+    use std::path::{Path, PathBuf};
     use std::sync::Arc;
 
     use cache::ShardedAsyncCache;
-    use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
-    use metrics::metric_register::MetricsRegister;
     use models::predicate::domain::TimeRange;
-    use tokio::sync::mpsc;
 
+    use crate::compaction::picker::{DeltaCompactionPicker, LevelCompactionPicker};
     use crate::compaction::test::create_options;
-    use crate::file_utils::make_tsm_file_name;
-    use crate::kv_option::Options;
-    use crate::kvcore::COMPACT_REQ_CHANNEL_CAP;
-    use crate::memcache::MemCache;
-    use crate::tseries_family::{ColumnFile, LevelInfo, TseriesFamily, Version};
+    use crate::compaction::CompactTask;
+    use crate::file_utils::{make_delta_file_name, make_tsm_file_name};
+    use crate::kv_option::StorageOptions;
+    use crate::tseries_family::{ColumnFile, LevelInfo, Version};
+    use crate::tsm::test::{write_to_tsm, write_to_tsm_tombstone};
+    use crate::tsm::{TsmTombstoneCache, TOMBSTONE_FILE_SUFFIX};
 
-    type ColumnFilesSketch = (u64, i64, i64, u64, bool);
-    type LevelsSketch = Vec<(u32, i64, i64, Vec<ColumnFilesSketch>)>;
+    /// The sketch of a version of a vnode.
+    #[derive(Debug)]
+    pub struct VersionSketch {
+        pub id: u32,
+        pub dir: PathBuf,
+        pub tenant_database: Arc<String>,
+        pub levels: [LevelSketch; 5],
+        pub tombstone_map: HashMap<u64, TimeRange>,
+        pub max_level_ts: i64,
+    }
 
-    /// Returns a TseriesFamily by TseriesFamOpt and levels_sketch.
-    ///
-    /// All elements in levels_sketch is :
-    ///
-    /// - level
-    /// - Timestamp_Begin
-    /// - Timestamp_end
-    /// - Vec<(column_files_sketch)>, all elements in column_files_sketch is:
-    ///   - file_id
-    ///   - Timestamp_Begin
-    ///   - Timestamp_end
-    ///   - size
-    ///   - being_compact
-    fn create_tseries_family(
-        database: Arc<String>,
-        opt: Arc<Options>,
-        levels_sketch: LevelsSketch,
-    ) -> TseriesFamily {
-        let ts_family_id = 0;
-        let mut level_infos =
-            LevelInfo::init_levels(database.clone(), ts_family_id, opt.storage.clone());
-        let mut max_level_ts = 0_i64;
-        let tsm_dir = &opt.storage.tsm_dir(&database, ts_family_id);
-        for (level, lts_min, lts_max, column_files_sketch) in levels_sketch {
-            max_level_ts = max_level_ts.max(lts_max);
-            let mut col_files = Vec::new();
-            let mut cur_size = 0_u64;
-            for (file_id, fts_min, fts_max, file_size, compacting) in column_files_sketch {
-                cur_size += file_size;
-                let col = ColumnFile::new(
-                    file_id,
-                    level,
-                    TimeRange::new(fts_min, fts_max),
-                    file_size,
-                    level == 0,
-                    make_tsm_file_name(tsm_dir, file_id),
-                );
-                if compacting {
-                    col.mark_compacting();
-                }
-                col_files.push(Arc::new(col));
+    impl VersionSketch {
+        fn new<P: AsRef<Path>>(dir: P, tenant_database: Arc<String>, vnode_id: u32) -> Self {
+            let levels = [
+                LevelSketch(0, (i64::MAX, i64::MIN), vec![]),
+                LevelSketch(1, (i64::MAX, i64::MIN), vec![]),
+                LevelSketch(2, (i64::MAX, i64::MIN), vec![]),
+                LevelSketch(3, (i64::MAX, i64::MIN), vec![]),
+                LevelSketch(4, (i64::MAX, i64::MIN), vec![]),
+            ];
+            Self {
+                id: vnode_id,
+                dir: dir.as_ref().to_path_buf(),
+                tenant_database,
+                levels,
+                tombstone_map: HashMap::new(),
+                max_level_ts: i64::MIN,
             }
-            level_infos[level as usize] = LevelInfo {
-                files: col_files,
-                database: database.clone(),
-                tsf_id: 0,
-                storage_opt: opt.storage.clone(),
-                level,
-                cur_size,
-                max_size: opt.storage.level_max_file_size(level),
-                time_range: TimeRange::new(lts_min, lts_max),
-            };
         }
-        let memory_pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
-        let version = Arc::new(Version::new(
-            1,
-            Arc::new("version_1".to_string()),
-            opt.storage.clone(),
-            1,
-            level_infos,
-            1000,
-            Arc::new(ShardedAsyncCache::create_lru_sharded_cache(1)),
-        ));
-        let (flush_task_sender, _) = mpsc::channel(opt.storage.flush_req_channel_cap);
-        let (compactt_task_sender, _) = mpsc::channel(COMPACT_REQ_CHANNEL_CAP);
-        TseriesFamily::new(
-            1,
-            Arc::new("ts_family_1".to_string()),
-            MemCache::new(1, 1000, 2, 1, &memory_pool),
-            version,
-            opt.cache.clone(),
-            opt.storage.clone(),
-            flush_task_sender,
-            compactt_task_sender,
-            memory_pool,
-            &Arc::new(MetricsRegister::default()),
-        )
+
+        fn add(mut self, level: usize, file: FileSketch) -> Self {
+            self.max_level_ts = self.max_level_ts.max(file.1 .1);
+            let level_sketch = &mut self.levels[level];
+            level_sketch.1 .0 = level_sketch.1 .0.min(file.1 .0);
+            level_sketch.1 .1 = level_sketch.1 .1.max(file.1 .1);
+            level_sketch.2.push(file);
+            self
+        }
+
+        fn add_t(mut self, level: usize, file: FileSketch, tomb_all_excluded: (i64, i64)) -> Self {
+            self.tombstone_map.insert(file.0, tomb_all_excluded.into());
+            self = self.add(level, file);
+            self
+        }
+
+        fn to_version(&self, storage_opt: Arc<StorageOptions>) -> Version {
+            let mut level_infos =
+                LevelInfo::init_levels(self.tenant_database.clone(), self.id, storage_opt.clone());
+            for (level, level_sketch) in self.levels.iter().enumerate() {
+                let level_dir = if level == 0 {
+                    storage_opt.delta_dir(self.tenant_database.as_str(), self.id)
+                } else {
+                    storage_opt.tsm_dir(self.tenant_database.as_str(), self.id)
+                };
+                level_sketch.to_level_info(&mut level_infos[level], &level_dir, level as u32);
+            }
+
+            Version::new(
+                self.id,
+                self.tenant_database.clone(),
+                storage_opt,
+                1,
+                level_infos,
+                self.max_level_ts,
+                Arc::new(ShardedAsyncCache::create_lru_sharded_cache(1)),
+            )
+        }
+
+        async fn to_version_with_tsm(&self, storage_opt: Arc<StorageOptions>) -> Version {
+            let version = self.to_version(storage_opt);
+            self.make_tsm_files(&version).await;
+            version
+        }
+
+        async fn make_tsm_files(&self, version: &Version) {
+            let tsm_dir = version
+                .storage_opt()
+                .tsm_dir(self.tenant_database.as_str(), self.id);
+            let delta_dir = version
+                .storage_opt()
+                .delta_dir(self.tenant_database.as_str(), self.id);
+            let _ = std::fs::remove_dir_all(&tsm_dir);
+            let _ = std::fs::remove_dir_all(&delta_dir);
+
+            let tsm_data = &HashMap::new();
+            for level_sketch in self.levels.iter() {
+                for file_sketch in level_sketch.2.iter() {
+                    let tsm_path = if level_sketch.0 == 0 {
+                        make_delta_file_name(&delta_dir, file_sketch.0)
+                    } else {
+                        make_tsm_file_name(&tsm_dir, file_sketch.0)
+                    };
+                    write_to_tsm(&tsm_path, tsm_data, false).await.unwrap();
+
+                    if let Some(tr) = self.tombstone_map.get(&file_sketch.0) {
+                        let tombstone_path = tsm_path.with_extension(TOMBSTONE_FILE_SUFFIX);
+                        let tomb = TsmTombstoneCache::with_all_excluded(*tr);
+                        write_to_tsm_tombstone(tombstone_path, &tomb).await;
+                    }
+                }
+            }
+        }
+    }
+
+    /// The sketch of a level, contains a tuple of
+    /// `level, (min_ts, max_ts), files`.
+    #[derive(Debug, Clone)]
+    pub struct LevelSketch(pub u32, pub (i64, i64), pub Vec<FileSketch>);
+
+    impl LevelSketch {
+        fn to_level_info(
+            &self,
+            level_info: &mut LevelInfo,
+            level_dir: impl AsRef<Path>,
+            level: u32,
+        ) {
+            let mut level_cur_size = 0_u64;
+            let mut files = Vec::with_capacity(self.2.len());
+            for file_sketch in self.2.iter() {
+                level_cur_size += file_sketch.2;
+                let file = file_sketch.to_column_file(&level_dir, level);
+                files.push(Arc::new(file));
+            }
+            level_info.files = files;
+            level_info.cur_size = level_cur_size;
+            level_info.time_range = self.1.into();
+        }
+    }
+
+    /// The sketch of column file, contains `a tuple of
+    /// file_id, (min_ts, max_ts), size, being_compact`.
+    #[derive(Debug, Clone)]
+    pub struct FileSketch(pub u64, pub (i64, i64), pub u64, pub bool);
+
+    impl FileSketch {
+        fn to_column_file(&self, file_dir: impl AsRef<Path>, level: u32) -> ColumnFile {
+            let path = if level == 0 {
+                make_delta_file_name(file_dir, self.0)
+            } else {
+                make_tsm_file_name(file_dir, self.0)
+            };
+            let col = ColumnFile::new(self.0, level, self.1.into(), self.2, path);
+            if self.3 {
+                col.mark_compacting();
+            }
+            col
+        }
     }
 
     #[test]
-    fn test_pick_level_files_1() {
-        //! There are Level 0-4, and Level 1 is now in compaction.
-        //! In this case, Level 2, and serial files in Level 0 will be picked,
-        //! and compact to Level 3.
-        let dir = "/tmp/test/pick/level_files_1";
+    fn test_generate_version() {
+        let dir = "/tmp/test/pick/test_generate_version";
+        let storage_opt = create_options(dir.to_string()).storage.clone();
+        let vnode_sketch = VersionSketch::new(dir, Arc::new("dba".to_string()), 1)
+            .add(0, FileSketch(6, (1, 10), 50, false))
+            .add(0, FileSketch(7, (790, 800), 50, false))
+            .add(1, FileSketch(1, (701, 800), 100, false))
+            .add(1, FileSketch(2, (601, 700), 100, false))
+            .add(2, FileSketch(3, (501, 600), 200, false))
+            .add(3, FileSketch(4, (301, 500), 300, false))
+            .add(4, FileSketch(5, (1, 300), 400, false));
+        assert_eq!(vnode_sketch.id, 1);
+        assert_eq!(vnode_sketch.tenant_database.as_str(), "dba");
+        assert_eq!(vnode_sketch.max_level_ts, 800);
+        let levels_sketch = vnode_sketch.levels.clone();
+        assert_eq!(levels_sketch[0].0, 0);
+        assert_eq!(levels_sketch[0].1, (1, 800));
+        assert_eq!(levels_sketch[0].2.len(), 2);
+        assert_eq!(levels_sketch[1].0, 1);
+        assert_eq!(levels_sketch[1].1, (601, 800));
+        assert_eq!(levels_sketch[1].2.len(), 2);
+        assert_eq!(levels_sketch[2].0, 2);
+        assert_eq!(levels_sketch[2].1, (501, 600));
+        assert_eq!(levels_sketch[2].2.len(), 1);
+        assert_eq!(levels_sketch[3].0, 3);
+        assert_eq!(levels_sketch[3].1, (301, 500));
+        assert_eq!(levels_sketch[3].2.len(), 1);
+        assert_eq!(levels_sketch[4].0, 4);
+        assert_eq!(levels_sketch[4].1, (1, 300));
+        assert_eq!(levels_sketch[4].2.len(), 1);
+
+        let version = vnode_sketch.to_version(storage_opt.clone());
+        assert_eq!(version.tf_id(), 1);
+        assert_eq!(version.database().as_str(), "dba");
+        assert_eq!(version.levels_info().len(), levels_sketch.len());
+        let tsm_dir = storage_opt.tsm_dir("dba", 1);
+        let delta_dir = storage_opt.delta_dir("dba", 1);
+        for (version_level, level_sketch) in version.levels_info().iter().zip(levels_sketch.iter())
+        {
+            assert_eq!(version_level.database.as_str(), "dba");
+            assert_eq!(version_level.tsf_id, 1);
+            assert_eq!(version_level.level, level_sketch.0);
+            assert_eq!(
+                version_level.cur_size,
+                level_sketch.2.iter().map(|f| f.2).sum::<u64>()
+            );
+            assert_eq!(version_level.time_range, level_sketch.1.into());
+            assert_eq!(version_level.files.len(), level_sketch.2.len());
+            for (version_file, file_sketch) in version_level.files.iter().zip(level_sketch.2.iter())
+            {
+                assert_eq!(version_file.file_id(), file_sketch.0);
+                assert_eq!(version_file.level(), level_sketch.0);
+                assert_eq!(version_file.time_range(), &(file_sketch.1.into()));
+                assert_eq!(version_file.size(), file_sketch.2);
+                assert_eq!(version_file.is_compacting(), file_sketch.3);
+                if level_sketch.0 == 0 {
+                    assert_eq!(
+                        version_file.file_path(),
+                        &make_delta_file_name(&delta_dir, file_sketch.0)
+                    );
+                } else {
+                    assert_eq!(
+                        version_file.file_path(),
+                        &make_tsm_file_name(&tsm_dir, file_sketch.0)
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_pick_normal_compaction() {
+        let dir = "/tmp/test/pick/normal_compaction";
+        // Some files in Level 1 will be picked and compact to Level 2.
         let opt = create_options(dir.to_string());
 
-        #[rustfmt::skip]
-        let levels_sketch: LevelsSketch = vec![
-            // vec![( level, Timestamp_Begin, Timestamp_end, vec![(file_id, Timestamp_Begin, Timestamp_end, size, being_compact)] )]
-            (0_u32, 1_i64, 1000_i64, vec![
-                (11_u64, 1_i64, 1000_i64, 1000_u64, false),
-                (12, 33010, 34000, 1000, false),
-            ]),
-            (1, 1, 1000, vec![
-                (7, 34001, 35000, 1000, false),
-                (8, 35001, 36000, 1000, false),
-                (9, 34501, 35500, 1000, true),
-                (10, 35001, 36000, 1000, true),
-            ]), // 0.00019
-            (2, 30001, 34000, vec![
-                (5, 30001, 32000, 2000, false),
-                (6, 32001, 34000, 2000, false),
-            ]), // 0.00002
-            (3, 20001, 30000, vec![
-                (3, 20001, 25000, 5000, false),
-                (4, 25001, 30000, 5000, false),
-            ]), // 0.00002
-            (4, 1, 20000, vec![
-                (1, 1, 10000, 10000, false),
-                (2, 10001, 20000, 10000, false),
-            ]), // 0.00001
-        ];
+        let version = VersionSketch::new(dir, Arc::new("dba".to_string()), 1)
+            .add(0, FileSketch(11, (1, 1000), 1000, false))
+            .add(0, FileSketch(12, (33010, 34000), 1000, false))
+            .add(1, FileSketch(7, (34001, 35000), 1000, false))
+            .add(1, FileSketch(8, (35001, 36000), 1000, false))
+            .add(1, FileSketch(9, (34501, 35500), 1000, true))
+            .add(1, FileSketch(10, (35001, 36000), 1000, true))
+            .add(2, FileSketch(5, (30001, 32000), 1000, false))
+            .add(2, FileSketch(6, (32001, 34000), 1000, false))
+            .add(3, FileSketch(3, (20001, 25000), 1000, false))
+            .add(3, FileSketch(4, (25001, 30000), 1000, false))
+            .add(4, FileSketch(1, (1, 10000), 1000, false))
+            .add(4, FileSketch(2, (10001, 20000), 1000, false))
+            .to_version(opt.storage.clone());
 
-        let tsf = create_tseries_family(Arc::new("dba".to_string()), opt, levels_sketch);
-        let compact_req = super::pick_level_compaction(tsf.version()).unwrap();
-        assert_eq!(compact_req.out_level, 2);
+        let compact_task = CompactTask::Normal(0);
+        let compact_req = LevelCompactionPicker
+            .pick_compaction(compact_task, Arc::new(version))
+            .unwrap();
         assert_eq!(compact_req.files.len(), 2);
+        assert_eq!(compact_req.out_level, 2);
     }
 
-    #[test]
-    fn test_pick_delta_files_1() {
-        //! There are Level 0-4, and Level 0 is now in compaction.
-        //! In this case, Level 2, and serial files in Level 0 will be picked,
-        //! and compact to Level 3.
-        let dir = "/tmp/test/pick/delta_files_1";
+    #[tokio::test]
+    async fn test_pick_delta_compaction() {
+        let dir = "/tmp/test/pick/delta_compaction";
         let opt = create_options(dir.to_string());
 
-        #[rustfmt::skip]
-        let levels_sketch: LevelsSketch = vec![
-            // vec![( level, Timestamp_Begin, Timestamp_end, vec![(file_id, Timestamp_Begin, Timestamp_end, size, being_compact)] )]
-            (0_u32, 1_i64, 370_i64, vec![
-                (11_u64, 1_i64, 5_i64, 10_u64, false), // 4
-                (12, 10, 20, 10, true),                // 4
-                (12, 30, 40, 10, false),               // 4
-                (12, 110, 120, 10, false),             // 4
-                (12, 230, 240, 10, false),             // 3
-                (12, 300, 350, 10, false),             // 3
-                (12, 340, 350, 10, false),             // 2
-                (12, 360, 370, 10, false),             // 1
-            ]),
-            (1, 341, 380, vec![
-                (7, 341, 350, 1000, false),
-                (8, 351, 360, 1000, false),
-                (9, 361, 370, 1000, true),
-                (10, 371, 380, 1000, true),
-            ]), // 1
-            (2, 301, 340, vec![
-                (5, 301, 320, 2000, false),
-                (6, 321, 340, 2000, false),
-            ]), // 1
-            (3, 201, 300, vec![
-                (3, 201, 250, 5000, false),
-                (4, 251, 300, 5000, false),
-            ]), // 2
-            (4, 1, 200, vec![
-                (1, 10, 100, 10000, false),
-                (2, 101, 200, 10000, false),
-            ]), // 3
-        ];
+        let version = VersionSketch::new(dir, Arc::new("dba".to_string()), 1)
+            .add_t(0, FileSketch(11, (1, 500), 100, false), (1, 300))
+            .add(0, FileSketch(12, (100, 300), 10, false))
+            .add_t(0, FileSketch(13, (301, 500), 10, false), (401, 500))
+            .add(0, FileSketch(14, (1, 500), 10, false))
+            .add(0, FileSketch(15, (300, 775), 10, false))
+            .add(0, FileSketch(16, (776, 800), 10, false))
+            .add(1, FileSketch(7, (601, 650), 100, false))
+            .add(1, FileSketch(8, (651, 700), 100, false))
+            .add(1, FileSketch(9, (701, 750), 100, false))
+            .add(1, FileSketch(10, (751, 800), 100, false))
+            .add(2, FileSketch(5, (401, 500), 200, false))
+            .add(2, FileSketch(6, (501, 600), 200, false))
+            .add(3, FileSketch(3, (201, 300), 300, false))
+            .add(3, FileSketch(4, (301, 400), 300, false))
+            .add(4, FileSketch(1, (1, 100), 400, false))
+            .add(4, FileSketch(2, (101, 200), 400, false))
+            .to_version_with_tsm(opt.storage.clone())
+            .await;
 
-        let tsf = create_tseries_family(Arc::new("dba".to_string()), opt, levels_sketch);
-        let compact_req = super::pick_delta_compaction(tsf.version()).unwrap();
-        assert_eq!(compact_req.out_level, 4);
-        assert_eq!(compact_req.files.len(), 3);
+        let compact_task = CompactTask::Delta(0);
+        let compact_req = DeltaCompactionPicker
+            .pick_compaction(compact_task, Arc::new(version))
+            .await
+            .unwrap();
+        assert_eq!(compact_req.files.len(), 1);
+        assert_eq!(compact_req.files[0].file_id(), 10);
+        assert!(compact_req.lv0_files.is_some());
+        let lv0_files = compact_req.lv0_files.unwrap();
+        assert_eq!(lv0_files[0].file_id(), 15);
+        assert_eq!(lv0_files[1].file_id(), 16);
+        assert_eq!(compact_req.out_level, 1);
     }
 }

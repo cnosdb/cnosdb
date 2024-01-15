@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-use std::fmt::Display;
 use std::fs::{remove_file, rename};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -27,7 +26,7 @@ use crate::record_file::{Reader, RecordDataType, RecordDataVersion, Writer};
 use crate::tseries_family::{ColumnFile, LevelInfo, Version};
 use crate::tsm::TsmReader;
 use crate::version_set::VersionSet;
-use crate::{byte_utils, file_utils, ColumnFileId, LevelId, TseriesFamilyId};
+use crate::{file_utils, ColumnFileId, LevelId, TseriesFamilyId};
 
 const MAX_BATCH_SIZE: usize = 64;
 
@@ -230,40 +229,6 @@ impl VersionEdit {
         bincode::deserialize(buf).map_err(|e| Error::RecordFileDecode { source: (e) })
     }
 
-    pub fn encode_vec(data: &[Self]) -> Result<Vec<u8>> {
-        let mut buf: Vec<u8> = Vec::with_capacity(data.len() * 32);
-        for ve in data {
-            let ve_buf =
-                bincode::serialize(ve).map_err(|e| Error::RecordFileEncode { source: (e) })?;
-            let pos = buf.len();
-            buf.resize(pos + 4 + ve_buf.len(), 0_u8);
-            buf[pos..pos + 4].copy_from_slice((ve_buf.len() as u32).to_be_bytes().as_slice());
-            buf[pos + 4..].copy_from_slice(&ve_buf);
-        }
-
-        Ok(buf)
-    }
-
-    pub fn decode_vec(buf: &[u8]) -> Result<Vec<Self>> {
-        let mut list: Vec<Self> = Vec::with_capacity(buf.len() / 32 + 1);
-        let mut pos = 0_usize;
-        while pos < buf.len() {
-            if buf.len() - pos < 4 {
-                break;
-            }
-            let len = byte_utils::decode_be_u32(&buf[pos..pos + 4]);
-            pos += 4;
-            if buf.len() - pos < len as usize {
-                break;
-            }
-            let ve = Self::decode(&buf[pos..pos + len as usize])?;
-            pos += len as usize;
-            list.push(ve);
-        }
-
-        Ok(list)
-    }
-
     pub fn add_file(&mut self, compact_meta: CompactMeta, max_level_ts: i64) {
         if compact_meta.high_seq != 0 {
             // ComapctMeta.seq_no only makes sense when flush.
@@ -278,7 +243,7 @@ impl VersionEdit {
         self.add_files.push(compact_meta);
     }
 
-    pub fn del_file(&mut self, level: LevelId, file_id: u64, is_delta: bool) {
+    pub fn del_file(&mut self, level: LevelId, file_id: ColumnFileId, is_delta: bool) {
         self.del_files.push(CompactMeta {
             file_id,
             level,
@@ -290,7 +255,7 @@ impl VersionEdit {
     pub fn del_file_part(
         &mut self,
         level: LevelId,
-        file_id: u64,
+        file_id: ColumnFileId,
         is_delta: bool,
         min_ts: Timestamp,
         max_ts: Timestamp,
@@ -306,9 +271,9 @@ impl VersionEdit {
     }
 }
 
-impl Display for VersionEdit {
+impl std::fmt::Display for VersionEdit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "seq_no: {}, file_id: {}, add_files: {}, del_files: {}, del_tsf: {}, add_tsf: {}, tsf_id: {}, tsf_name: {}, has_seq_no: {}, has_file_id: {}, max_level_ts: {}",
+        write!(f, "v1, seq_no: {}, file_id: {}, add_files: {}, del_files: {}, del_tsf: {}, add_tsf: {}, tsf_id: {}, tsf_name: {}, has_seq_no: {}, has_file_id: {}, max_level_ts: {}",
                self.seq_no, self.file_id, self.add_files.len(), self.del_files.len(), self.del_tsf, self.add_tsf, self.tsf_id, self.tsf_name, self.has_seq_no, self.has_file_id, self.max_level_ts)
     }
 }
@@ -628,7 +593,7 @@ impl Summary {
                         Ok(tsm_reader) => {
                             replace_tombstone_compact_tmp_tasks.push(
                                 self.runtime.spawn(async move {
-                                    tsm_reader.replace_with_compact_tmp().await
+                                    tsm_reader.replace_tombstone_with_compact_tmp().await
                                 }),
                             );
                         }
@@ -938,11 +903,6 @@ mod test {
         let ve_buf = ve.encode().unwrap();
         let ve2 = VersionEdit::decode(&ve_buf).unwrap();
         assert_eq!(ve2, ve);
-
-        let ves = vec![ve, ve2];
-        let ves_buf = VersionEdit::encode_vec(&ves).unwrap();
-        let ves_2 = VersionEdit::decode_vec(&ves_buf).unwrap();
-        assert_eq!(ves, ves_2);
     }
 
     #[derive(Debug)]

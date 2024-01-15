@@ -9,7 +9,6 @@ mod picker;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use chrono::Utc;
 pub use compact::*;
 pub use flush::*;
 use models::Timestamp;
@@ -18,7 +17,6 @@ pub use picker::*;
 use utils::BloomFilter;
 
 use crate::context::GlobalContext;
-use crate::kv_option::StorageOptions;
 use crate::memcache::MemCache;
 use crate::tseries_family::{ColumnFile, Version};
 use crate::{ColumnFileId, LevelId, TseriesFamilyId, VersionEdit};
@@ -33,36 +31,63 @@ pub mod test {
     pub use super::flush::flush_tests::default_table_schema;
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CompactTask {
     /// Compact the files in the in_level into the out_level.
     Normal(TseriesFamilyId),
+    /// Compact the files in level-0 to larger files.
+    Delta(TseriesFamilyId),
     /// Flush memcaches and then compact the files in the in_level into the out_level.
     Cold(TseriesFamilyId),
-    /// Compact the files in level-0 into the out_level.
-    Delta(TseriesFamilyId),
+}
+
+impl CompactTask {
+    pub fn ts_family_id(&self) -> TseriesFamilyId {
+        match self {
+            CompactTask::Normal(ts_family_id) => *ts_family_id,
+            CompactTask::Cold(ts_family_id) => *ts_family_id,
+            CompactTask::Delta(ts_family_id) => *ts_family_id,
+        }
+    }
+
+    fn priority(&self) -> usize {
+        match self {
+            CompactTask::Delta(_) => 1,
+            CompactTask::Normal(_) => 2,
+            CompactTask::Cold(_) => 3,
+        }
+    }
+}
+
+impl Ord for CompactTask {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.priority().cmp(&other.priority())
+    }
+}
+
+impl PartialOrd for CompactTask {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 pub struct CompactReq {
-    pub ts_family_id: TseriesFamilyId,
-    database: Arc<String>,
-    storage_opt: Arc<StorageOptions>,
+    compact_task: CompactTask,
 
-    files: Vec<Arc<ColumnFile>>,
     version: Arc<Version>,
+    files: Vec<Arc<ColumnFile>>,
+    lv0_files: Option<Vec<Arc<ColumnFile>>>,
     in_level: LevelId,
     out_level: LevelId,
-    /// The maximum timestamp of the data from the in_level to be compacted
-    /// into the out_level, only used in delta compaction.
-    max_ts: Timestamp,
 }
 
 impl std::fmt::Display for CompactReq {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "tenant_database: {}, ts_family: {}, max_ts: {}, files: [",
-            self.database, self.ts_family_id, self.max_ts,
+            "tenant_database: {}, ts_family: {}, files: [",
+            self.version.borrowed_database(),
+            self.version.tf_id(),
         )?;
         if !self.files.is_empty() {
             write!(
@@ -84,7 +109,34 @@ impl std::fmt::Display for CompactReq {
                 )?;
             }
         }
-        write!(f, "]")
+        write!(f, "]")?;
+
+        if let Some(lv0_files) = &self.lv0_files {
+            write!(f, ", lv0_files: [")?;
+            if !lv0_files.is_empty() {
+                write!(
+                    f,
+                    "{{ Level-{}, file_id: {}, time_range: {}-{} }}",
+                    lv0_files[0].level(),
+                    lv0_files[0].file_id(),
+                    lv0_files[0].time_range().min_ts,
+                    lv0_files[0].time_range().max_ts
+                )?;
+                for file in lv0_files.iter().skip(1) {
+                    write!(
+                        f,
+                        ", {{ Level-{}, file_id: {}, time_range: {}-{} }}",
+                        file.level(),
+                        file.file_id(),
+                        file.time_range().min_ts,
+                        file.time_range().max_ts
+                    )?;
+                }
+            }
+            write!(f, "]")?;
+        }
+
+        Ok(())
     }
 }
 
@@ -96,21 +148,13 @@ pub struct FlushReq {
     pub force_flush: bool,
 }
 
-const PICKER_CONTEXT_DATETIME_FORMAT: &str = "%d%m%Y_%H%M%S_%3f";
-
-fn context_datetime() -> String {
-    Utc::now()
-        .format(PICKER_CONTEXT_DATETIME_FORMAT)
-        .to_string()
-}
-
 pub async fn run_compaction_job(
     request: CompactReq,
-    kernel: Arc<GlobalContext>,
+    ctx: Arc<GlobalContext>,
 ) -> crate::Result<Option<(VersionEdit, HashMap<ColumnFileId, Arc<BloomFilter>>)>> {
     if request.in_level == 0 {
-        delta_compact::run_compaction_job(request, kernel).await
+        delta_compact::run_compaction_job(request, ctx).await
     } else {
-        compact::run_compaction_job(request, kernel).await
+        compact::run_compaction_job(request, ctx).await
     }
 }

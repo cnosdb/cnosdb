@@ -53,9 +53,10 @@ pub struct StorageOptions {
 // database/data/ts_family_id/delta
 // database/data/ts_family_id/index
 impl StorageOptions {
+    /// Get the maximum size of a TSM file that in the given level.
     pub fn level_max_file_size(&self, lvl: u32) -> u64 {
-        // TODO(zipper): size of lvl-0 is zero?
-        self.base_file_size * lvl as u64 * self.compact_trigger_file_num as u64
+        let lvl_non_zero = if lvl == 0 { 1 } else { lvl };
+        self.base_file_size * lvl_non_zero as u64 * 4
     }
 
     pub fn summary_dir(&self) -> PathBuf {
