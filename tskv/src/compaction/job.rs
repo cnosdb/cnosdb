@@ -12,47 +12,37 @@ use crate::context::{GlobalContext, GlobalSequenceContext};
 use crate::kv_option::StorageOptions;
 use crate::summary::SummaryTask;
 use crate::version_set::VersionSet;
-use crate::TseriesFamilyId;
 
 const COMPACT_BATCH_CHECKING_SECONDS: u64 = 1;
 
-struct CompactProcessor {
+struct CompactTaskGroup {
     /// Maps (vnode_id, is_delta_compaction) to should_flush_vnode.
-    compact_task_keys: HashMap<CompactTaskKey, bool>,
+    compact_tasks: HashMap<CompactTask, usize>,
 }
 
-impl CompactProcessor {
-    fn insert(&mut self, key: CompactTaskKey, should_flush: bool) {
-        let old_should_flush = self.compact_task_keys.entry(key).or_insert(should_flush);
-        if should_flush && !*old_should_flush {
-            *old_should_flush = should_flush
+impl CompactTaskGroup {
+    fn insert(&mut self, task: CompactTask) {
+        let num = self.compact_tasks.entry(task).or_default();
+        *num += 1;
+    }
+
+    fn try_take(&mut self) -> Option<HashMap<CompactTask, usize>> {
+        if self.compact_tasks.is_empty() {
+            return None;
         }
+        let compact_tasks = std::mem::replace(&mut self.compact_tasks, HashMap::with_capacity(32));
+        Some(compact_tasks)
     }
 
-    fn take(&mut self) -> HashMap<CompactTaskKey, bool> {
-        std::mem::replace(&mut self.compact_task_keys, HashMap::with_capacity(32))
+    fn is_empty(&self) -> bool {
+        self.compact_tasks.is_empty()
     }
 }
 
-impl Default for CompactProcessor {
+impl Default for CompactTaskGroup {
     fn default() -> Self {
         Self {
-            compact_task_keys: HashMap::with_capacity(32),
-        }
-    }
-}
-
-#[derive(Debug, Default, Clone, PartialEq, Eq, Ord, PartialOrd, Hash)]
-struct CompactTaskKey {
-    vnode_id: TseriesFamilyId,
-    delta_compaction: bool,
-}
-
-impl CompactTaskKey {
-    pub fn new(vnode_id: TseriesFamilyId, delta_compaction: bool) -> Self {
-        Self {
-            vnode_id,
-            delta_compaction,
+            compact_tasks: HashMap::with_capacity(32),
         }
     }
 }
@@ -67,8 +57,8 @@ pub fn run(
     summary_task_sender: Sender<SummaryTask>,
 ) {
     let runtime_inner = runtime.clone();
-    let compact_processor = Arc::new(RwLock::new(CompactProcessor::default()));
-    let compact_batch_processor = compact_processor.clone();
+    let compact_task_group_producer = Arc::new(RwLock::new(CompactTaskGroup::default()));
+    let compact_task_group_comsumer = compact_task_group_producer.clone();
     runtime.spawn(async move {
         // TODO: Concurrent compactions should not over argument $cpu.
         let compaction_limit = Arc::new(Semaphore::new(
@@ -79,40 +69,35 @@ pub fn run(
 
         loop {
             check_interval.tick().await;
-            let processor = compact_batch_processor.read().await;
-            if processor.compact_task_keys.is_empty() {
+            if compact_task_group_comsumer.read().await.is_empty() {
                 continue;
             }
-            drop(processor);
-            let compact_tasks = compact_batch_processor.write().await.take();
-            for (compact_task_key, should_flush) in compact_tasks {
-                let ts_family = version_set
+            let compact_tasks = match compact_task_group_comsumer.write().await.try_take() {
+                Some(t) => t,
+                None => continue,
+            };
+            for (compact_task, _c) in compact_tasks {
+                let vnode_id = compact_task.ts_family_id();
+                let vnode_opt = version_set
                     .read()
                     .await
-                    .get_tsfamily_by_tf_id(compact_task_key.vnode_id)
+                    .get_tsfamily_by_tf_id(vnode_id)
                     .await;
-                if let Some(tsf) = ts_family {
-                    info!(
-                        "Starting compaction on ts_family {}",
-                        compact_task_key.vnode_id
-                    );
+                if let Some(vnode) = vnode_opt {
+                    info!("Starting compaction on ts_family {vnode_id}");
                     let start = Instant::now();
-                    if !tsf.read().await.can_compaction() {
-                        info!(
-                            "forbidden compaction on moving vnode {}",
-                            compact_task_key.vnode_id
-                        );
-                        return;
-                    }
-                    let version = tsf.read().await.version();
-                    let compact_req = if compact_task_key.delta_compaction {
-                        picker::pick_delta_compaction(version)
-                    } else {
-                        picker::pick_level_compaction(version)
+
+                    let version = {
+                        let vnode_rlock = vnode.read().await;
+                        if !vnode_rlock.can_compaction() {
+                            info!("forbidden compaction on moving vnode {vnode_id}",);
+                            return;
+                        }
+                        vnode_rlock.version()
                     };
-                    if let Some(req) = compact_req {
-                        let database = req.database.clone();
-                        let compact_ts_family = req.ts_family_id;
+
+                    if let Some(req) = picker::pick_compaction(compact_task, version).await {
+                        let database = req.version.database();
                         let in_level = req.in_level;
                         let out_level = req.out_level;
 
@@ -124,8 +109,8 @@ pub fn run(
                         // Method acquire_owned() will return AcquireError if the semaphore has been closed.
                         let permit = compaction_limit.clone().acquire_owned().await.unwrap();
                         runtime_inner.spawn(async move {
-                            if should_flush {
-                                let mut tsf_wlock = tsf.write().await;
+                            if let CompactTask::Cold(_) = &compact_task {
+                                let mut tsf_wlock = vnode.write().await;
                                 tsf_wlock.switch_to_immutable();
                                 let flush_req = tsf_wlock.build_flush_req(true);
                                 drop(tsf_wlock);
@@ -140,10 +125,7 @@ pub fn run(
                                     )
                                     .await
                                     {
-                                        error!(
-                                            "Failed to flush vnode {}: {:?}",
-                                            compact_task_key.vnode_id, e
-                                        );
+                                        error!("Failed to flush vnode {vnode_id}: {e:?}",);
                                     }
                                 }
                             }
@@ -163,7 +145,7 @@ pub fn run(
 
                                     metrics::sample_tskv_compaction_duration(
                                         database.as_str(),
-                                        compact_ts_family.to_string().as_str(),
+                                        vnode_id.to_string().as_str(),
                                         in_level.to_string().as_str(),
                                         out_level.to_string().as_str(),
                                         start.elapsed().as_secs_f64(),
@@ -188,105 +170,44 @@ pub fn run(
 
     runtime.spawn(async move {
         while let Some(compact_task) = receiver.recv().await {
-            let mut compact_processor_wlock = compact_processor.write().await;
-            match compact_task {
-                CompactTask::Normal(id) => compact_processor_wlock.insert(
-                    CompactTaskKey {
-                        vnode_id: id,
-                        delta_compaction: false,
-                    },
-                    false,
-                ),
-                CompactTask::Cold(id) => compact_processor_wlock.insert(
-                    CompactTaskKey {
-                        vnode_id: id,
-                        delta_compaction: false,
-                    },
-                    true,
-                ),
-                CompactTask::Delta(id) => compact_processor_wlock.insert(
-                    CompactTaskKey {
-                        vnode_id: id,
-                        delta_compaction: true,
-                    },
-                    false,
-                ),
-            }
+            compact_task_group_producer
+                .write()
+                .await
+                .insert(compact_task);
         }
     });
 }
 
 #[cfg(test)]
 mod test {
-    use crate::compaction::job::{CompactProcessor, CompactTaskKey};
+    use crate::compaction::job::CompactTaskGroup;
+    use crate::compaction::CompactTask;
 
     #[test]
     fn test_build_compact_batch() {
-        let mut compact_batch_builder = CompactProcessor::default();
-        compact_batch_builder.insert(CompactTaskKey::new(1, false), false);
-        compact_batch_builder.insert(CompactTaskKey::new(2, false), false);
-        compact_batch_builder.insert(CompactTaskKey::new(1, true), true);
-        compact_batch_builder.insert(CompactTaskKey::new(3, false), true);
-        compact_batch_builder.insert(CompactTaskKey::new(1, false), true);
-        assert_eq!(compact_batch_builder.compact_task_keys.len(), 4);
-        let mut keys: Vec<CompactTaskKey> = compact_batch_builder
-            .compact_task_keys
-            .keys()
-            .cloned()
-            .collect();
-        keys.sort();
-        assert_eq!(
-            keys,
-            vec![
-                CompactTaskKey::new(1, false),
-                CompactTaskKey::new(1, true),
-                CompactTaskKey::new(2, false),
-                CompactTaskKey::new(3, false),
-            ],
-        );
-        assert_eq!(
-            compact_batch_builder
-                .compact_task_keys
-                .get(&CompactTaskKey::new(1, false)),
-            Some(&true)
-        );
-        assert_eq!(
-            compact_batch_builder
-                .compact_task_keys
-                .get(&CompactTaskKey::new(1, true)),
-            Some(&true)
-        );
-        assert_eq!(
-            compact_batch_builder
-                .compact_task_keys
-                .get(&CompactTaskKey::new(2, false)),
-            Some(&false)
-        );
-        assert_eq!(
-            compact_batch_builder
-                .compact_task_keys
-                .get(&CompactTaskKey::new(3, false)),
-            Some(&true)
-        );
-        let compact_tasks = compact_batch_builder.take();
-        assert_eq!(compact_tasks.len(), 4);
-        assert_eq!(
-            compact_tasks.get(&CompactTaskKey::new(1, true)),
-            Some(&true)
-        );
-        assert_eq!(
-            compact_tasks.get(&CompactTaskKey::new(1, false)),
-            Some(&true)
-        );
-        assert_eq!(
-            compact_tasks.get(&CompactTaskKey::new(2, false)),
-            Some(&false)
-        );
-        assert_eq!(
-            compact_tasks.get(&CompactTaskKey::new(3, false)),
-            Some(&true)
-        );
-        let compact_tasks = compact_batch_builder.take();
-        assert!(compact_tasks.is_empty());
+        let mut ctg = CompactTaskGroup::default();
+        ctg.insert(CompactTask::Normal(2));
+        ctg.insert(CompactTask::Normal(1));
+        ctg.insert(CompactTask::Delta(2));
+        ctg.insert(CompactTask::Cold(1));
+        ctg.insert(CompactTask::Normal(1));
+        ctg.insert(CompactTask::Normal(3));
+        assert_eq!(ctg.compact_tasks.len(), 5);
+        assert_eq!(ctg.compact_tasks.get(&CompactTask::Normal(1)), Some(&2));
+        assert_eq!(ctg.compact_tasks.get(&CompactTask::Normal(2)), Some(&1));
+        assert_eq!(ctg.compact_tasks.get(&CompactTask::Normal(3)), Some(&1));
+        assert_eq!(ctg.compact_tasks.get(&CompactTask::Delta(2)), Some(&1));
+        assert_eq!(ctg.compact_tasks.get(&CompactTask::Cold(1)), Some(&1));
+        assert_eq!(ctg.compact_tasks.get(&CompactTask::Cold(2)), None);
+        assert_eq!(ctg.compact_tasks.get(&CompactTask::Cold(3)), None);
+
+        let compact_tasks_ori = ctg.compact_tasks.clone();
+        let compact_tasks = ctg.try_take();
+        assert!(compact_tasks.is_some());
+        let compact_tasks = compact_tasks.unwrap();
+        assert_eq!(compact_tasks, compact_tasks_ori);
+
+        let compact_tasks = ctg.try_take();
+        assert!(compact_tasks.is_none());
     }
 }

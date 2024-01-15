@@ -37,7 +37,6 @@ use crate::{ColumnFileId, LevelId, TseriesFamilyId};
 pub struct ColumnFile {
     file_id: ColumnFileId,
     level: LevelId,
-    is_delta: bool,
     time_range: TimeRange,
     size: u64,
     field_id_filter: Arc<BloomFilter>,
@@ -58,7 +57,6 @@ impl ColumnFile {
         Self {
             file_id: meta.file_id,
             level: meta.level,
-            is_delta: meta.is_delta,
             time_range: TimeRange::new(meta.min_ts, meta.max_ts),
             size: meta.file_size,
             field_id_filter,
@@ -78,7 +76,7 @@ impl ColumnFile {
     }
 
     pub fn is_delta(&self) -> bool {
-        self.is_delta
+        self.level == 0
     }
 
     pub fn time_range(&self) -> &TimeRange {
@@ -116,7 +114,7 @@ impl ColumnFile {
         false
     }
 
-    pub async fn add_tombstone(&self, field_ids: &[FieldId], time_range: &TimeRange) -> Result<()> {
+    pub async fn add_tombstone(&self, field_ids: &[FieldId], time_range: TimeRange) -> Result<()> {
         let dir = self.path.parent().expect("file has parent");
         // TODO flock tombstone file.
         let tombstone = TsmTombstone::open(dir, self.file_id).await?;
@@ -236,19 +234,16 @@ impl std::fmt::Display for ColumnFile {
 
 #[cfg(test)]
 impl ColumnFile {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         file_id: ColumnFileId,
         level: LevelId,
         time_range: TimeRange,
         size: u64,
-        is_delta: bool,
         path: impl AsRef<Path>,
     ) -> Self {
         Self {
             file_id,
             level,
-            is_delta,
             time_range,
             size,
             field_id_filter: Arc::new(BloomFilter::default()),
@@ -589,12 +584,20 @@ impl Version {
         self.database.clone()
     }
 
+    pub fn borrowed_database(&self) -> &str {
+        self.database.as_str()
+    }
+
     pub fn levels_info(&self) -> &[LevelInfo; 5] {
         &self.levels_info
     }
 
     pub fn storage_opt(&self) -> Arc<StorageOptions> {
         self.storage_opt.clone()
+    }
+
+    pub fn borrowed_storage_opt(&self) -> &StorageOptions {
+        self.storage_opt.as_ref()
     }
 
     pub fn column_files(
@@ -1253,11 +1256,11 @@ pub mod test_tseries_family {
         let ts_family_id = 1;
         let tsm_dir = opt.storage.tsm_dir(&database, ts_family_id);
         #[rustfmt::skip]
-            let levels = [
+        let levels = [
             LevelInfo::init(database.clone(), 0, 0, opt.storage.clone()),
             LevelInfo {
                 files: vec![
-                    Arc::new(ColumnFile::new(3, 1, TimeRange::new(3001, 3100), 100, false, make_tsm_file_name(&tsm_dir, 3))),
+                    Arc::new(ColumnFile::new(3, 1, TimeRange::new(3001, 3100), 100, make_tsm_file_name(&tsm_dir, 3))),
                 ],
                 database: database.clone(),
                 tsf_id: 1,
@@ -1269,8 +1272,8 @@ pub mod test_tseries_family {
             },
             LevelInfo {
                 files: vec![
-                    Arc::new(ColumnFile::new(1, 2, TimeRange::new(1, 1000), 1000, false, make_tsm_file_name(&tsm_dir, 1))),
-                    Arc::new(ColumnFile::new(2, 2, TimeRange::new(1001, 2000), 1000, false, make_tsm_file_name(&tsm_dir, 2))),
+                    Arc::new(ColumnFile::new(1, 2, TimeRange::new(1, 1000), 1000, make_tsm_file_name(&tsm_dir, 1))),
+                    Arc::new(ColumnFile::new(2, 2, TimeRange::new(1001, 2000), 1000, make_tsm_file_name(&tsm_dir, 2))),
                 ],
                 database: database.clone(),
                 tsf_id: 1,
@@ -1351,8 +1354,8 @@ pub mod test_tseries_family {
             LevelInfo::init(database.clone(), 0, 1, opt.storage.clone()),
             LevelInfo {
                 files: vec![
-                    Arc::new(ColumnFile::new(3, 1, TimeRange::new(3001, 3100), 100, false, make_tsm_file_name(&tsm_dir, 3))),
-                    Arc::new(ColumnFile::new(4, 1, TimeRange::new(3051, 3150), 100, false, make_tsm_file_name(&tsm_dir, 4))),
+                    Arc::new(ColumnFile::new(3, 1, TimeRange::new(3001, 3100), 100, make_tsm_file_name(&tsm_dir, 3))),
+                    Arc::new(ColumnFile::new(4, 1, TimeRange::new(3051, 3150), 100, make_tsm_file_name(&tsm_dir, 4))),
                 ],
                 database: database.clone(),
                 tsf_id: 1,
@@ -1364,8 +1367,8 @@ pub mod test_tseries_family {
             },
             LevelInfo {
                 files: vec![
-                    Arc::new(ColumnFile::new(1, 2, TimeRange::new(1, 1000), 1000, false, make_tsm_file_name(&tsm_dir, 1))),
-                    Arc::new(ColumnFile::new(2, 2, TimeRange::new(1001, 2000), 1000, false, make_tsm_file_name(&tsm_dir, 2))),
+                    Arc::new(ColumnFile::new(1, 2, TimeRange::new(1, 1000), 1000, make_tsm_file_name(&tsm_dir, 1))),
+                    Arc::new(ColumnFile::new(2, 2, TimeRange::new(1001, 2000), 1000, make_tsm_file_name(&tsm_dir, 2))),
                 ],
                 database: database.clone(),
                 tsf_id: 1,
@@ -1733,7 +1736,7 @@ pub mod test_tseries_family {
             let dir = opt.storage.tsm_dir(&database, ts_family_id);
             let tombstone = TsmTombstone::open(dir, file.file_id).await.unwrap();
             tombstone
-                .add_range(&[0], &TimeRange::new(0, 0), None)
+                .add_range(&[0], TimeRange::new(0, 0), None)
                 .await
                 .unwrap();
             tombstone.flush().await.unwrap();

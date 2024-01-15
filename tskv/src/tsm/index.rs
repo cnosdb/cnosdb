@@ -255,7 +255,7 @@ impl Display for BlockMeta {
     }
 }
 
-pub(crate) fn get_index_meta_unchecked(index: Arc<Index>, idx: usize) -> IndexMeta {
+pub fn get_index_meta_unchecked(index: Arc<Index>, idx: usize) -> IndexMeta {
     let (field_id, off) = unsafe { *index.field_id_offs.get_unchecked(idx) };
     let block_type = ValueType::from(index.data()[off + 8]);
     let block_count = decode_be_u16(&index.data()[off + 9..off + 11]);
@@ -270,7 +270,7 @@ pub(crate) fn get_index_meta_unchecked(index: Arc<Index>, idx: usize) -> IndexMe
     }
 }
 
-pub(crate) fn get_data_block_meta_unchecked(
+pub fn get_data_block_meta_unchecked(
     index: Arc<Index>,
     index_offset: usize,
     block_idx: usize,
@@ -282,14 +282,14 @@ pub(crate) fn get_data_block_meta_unchecked(
 }
 
 #[derive(Debug)]
-pub(crate) struct IndexEntry {
+pub struct IndexEntry {
     pub field_id: FieldId,
     pub field_type: ValueType,
     pub blocks: Vec<BlockEntry>,
 }
 
 impl IndexEntry {
-    pub(crate) fn encode(&self, buf: &mut [u8]) -> WriteTsmResult<()> {
+    pub fn encode(&self, buf: &mut [u8]) -> WriteTsmResult<()> {
         assert!(buf.len() >= INDEX_META_SIZE);
         if buf.len() < INDEX_META_SIZE {
             return Err(WriteTsmError::Encode {
@@ -303,7 +303,7 @@ impl IndexEntry {
         Ok(())
     }
 
-    pub(crate) fn decode(data: &[u8]) -> (Self, u16) {
+    pub fn decode(data: &[u8]) -> (Self, u16) {
         assert!(data.len() >= INDEX_META_SIZE);
         (
             Self {
@@ -317,7 +317,7 @@ impl IndexEntry {
 }
 
 #[derive(Debug)]
-pub(crate) struct BlockEntry {
+pub struct BlockEntry {
     pub min_ts: Timestamp,
     pub max_ts: Timestamp,
     pub count: u32,

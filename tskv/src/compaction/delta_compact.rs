@@ -9,7 +9,7 @@ use snafu::ResultExt;
 use utils::BloomFilter;
 
 use crate::compaction::compact::{CompactingBlock, CompactingBlockMeta, CompactingFile};
-use crate::compaction::CompactReq;
+use crate::compaction::{CompactReq, CompactingBlocks};
 use crate::context::GlobalContext;
 use crate::error::{self, Result};
 use crate::summary::{CompactMeta, VersionEdit};
@@ -22,29 +22,47 @@ use crate::{ColumnFileId, Error, LevelId, TseriesFamilyId};
 
 pub async fn run_compaction_job(
     request: CompactReq,
-    kernel: Arc<GlobalContext>,
+    ctx: Arc<GlobalContext>,
 ) -> Result<Option<(VersionEdit, HashMap<ColumnFileId, Arc<BloomFilter>>)>> {
-    let out_time_range = TimeRange::new(0, request.max_ts);
     trace::info!("Compaction(delta): Running compaction job on {request}");
 
     if request.files.is_empty() {
         // Nothing to compact
         return Ok(None);
     }
+    let lv0_files = match &request.lv0_files {
+        Some(f) => {
+            if f.is_empty() {
+                return Ok(None);
+            } else {
+                f
+            }
+        }
+        None => return Ok(None),
+    };
+    let tsm_file = request.files[0].clone();
+    let out_time_range = tsm_file.time_range();
 
-    // Buffers all tsm-files and it's indexes for this compaction
-    let mut tsm_readers = Vec::new();
-    for col_file in request.files.iter() {
-        let tsm_reader = request.version.get_tsm_reader(col_file.file_path()).await?;
-        tsm_reader
-            .add_tombstone_and_compact_to_tmp(&out_time_range)
+    // Collect l0-files that can be deleted after compaction.
+    let mut l0_file_metas_will_delete = Vec::new();
+    // Open l0-files and tsm-file to run compaction.
+    let mut tsm_readers = Vec::with_capacity(1 + lv0_files.len());
+    tsm_readers.push(request.version.get_tsm_reader(tsm_file.file_path()).await?);
+    for file in lv0_files {
+        let tsm_reader = request.version.get_tsm_reader(file.file_path()).await?;
+        let compacted_all_excluded_time_range = tsm_reader
+            .add_tombstone_and_compact_to_tmp(*out_time_range)
             .await?;
+        if compacted_all_excluded_time_range.includes(file.time_range()) {
+            // The tombstone indludex all of the l0-file, so delete it.
+            l0_file_metas_will_delete.push(CompactMeta::from(file.as_ref()));
+        }
         tsm_readers.push(tsm_reader);
     }
 
     let max_block_size = TseriesFamily::MAX_DATA_BLOCK_SIZE as usize;
-    let mut state = CompactState::new(tsm_readers, out_time_range, max_block_size);
-    let mut writer_wrapper = WriterWrapper::new(&request, kernel.clone());
+    let mut state = CompactState::new(tsm_readers, *out_time_range, max_block_size);
+    let mut writer_wrapper = WriterWrapper::new(&request, ctx.clone());
 
     let mut previous_merged_block = Option::<CompactingBlock>::None;
     let mut merging_blk_meta_groups = Vec::with_capacity(32);
@@ -72,7 +90,7 @@ pub async fn run_compaction_job(
                 .merge_with_previous_block(
                     previous_merged_block.take(),
                     max_block_size,
-                    &out_time_range,
+                    out_time_range,
                     &mut merged_blks,
                 )
                 .await?;
@@ -105,39 +123,10 @@ pub async fn run_compaction_job(
     }
 
     let (mut version_edit, file_metas) = writer_wrapper.close().await?;
+    version_edit.del_files = l0_file_metas_will_delete;
     for file in request.files {
-        if file.time_range().max_ts <= out_time_range.max_ts {
-            // All files merged into target level.
-            version_edit.del_file(file.level(), file.file_id(), file.is_delta());
-        } else {
-            // Only part of the tsm file merged into target level.
-            version_edit.del_file_part(
-                file.level(),
-                file.file_id(),
-                file.is_delta(),
-                out_time_range.min_ts,
-                out_time_range.max_ts,
-            );
-            if let Some(time_range) = file.time_range().intersect(&out_time_range) {
-                // Re-add file but with the intersected time range if file has something.
-                version_edit.add_file(
-                    CompactMeta {
-                        file_id: file.file_id(),
-                        file_size: file.size(),
-                        tsf_id: request.ts_family_id,
-                        level: file.level(),
-                        min_ts: time_range.min_ts,
-                        max_ts: time_range.max_ts,
-                        high_seq: 0,
-                        low_seq: 0,
-                        is_delta: file.is_delta(),
-                    },
-                    out_time_range.max_ts,
-                )
-            } else {
-                // Seems file has nothing merged into target level, it is impossible.
-            }
-        }
+        // Lvel 1-4 files can be deleted after compaction.
+        version_edit.del_file(file.level(), file.file_id(), file.is_delta());
     }
 
     trace::info!(
@@ -232,21 +221,18 @@ impl CompactState {
                 if curr_fid == f.field_id {
                     if let Some(idx_meta) = f.peek() {
                         trace::trace!(
-                            "for delta file @{loop_file_i}, put block iterator with time_range {:?}",
+                            "for tsm file @{loop_file_i}, got idx_meta((field_id: {}, field_type: {:?}, block_count: {}, time_range: {:?}), put the @{} block iterator with filter: {:?}",
+                            idx_meta.field_id(),
+                            idx_meta.field_type(),
+                            idx_meta.block_count(),
+                            idx_meta.time_range(),
+                            self.tmp_tsm_blk_meta_iters.len(),
                             &self.out_time_range
                         );
                         self.tmp_tsm_blk_meta_iters.push((
                             loop_file_i,
                             idx_meta.block_iterator_opt(self.out_time_ranges.clone()),
                         ));
-
-                        trace::trace!("merging idx_meta({}): field_id: {}, field_type: {:?}, block_count: {}, time_range: {:?}",
-                            self.tmp_tsm_blk_meta_iters.len(),
-                            idx_meta.field_id(),
-                            idx_meta.field_type(),
-                            idx_meta.block_count(),
-                            idx_meta.time_range(),
-                        );
                         f.next();
                         self.compacting_files.push(f);
                     } else {
@@ -526,6 +512,7 @@ fn chunk_data_block_into_compacting_blocks(
     max_block_size: usize,
     compacting_blocks: &mut Vec<CompactingBlock>,
 ) -> Result<()> {
+    trace::trace!("Chunking data block {}", data_block);
     compacting_blocks.clear();
     if max_block_size == 0 || data_block.len() < max_block_size {
         // Data block elements less than max_block_size, do not encode it.
@@ -548,6 +535,10 @@ fn chunk_data_block_into_compacting_blocks(
             end = len.min(start + max_block_size);
         }
     }
+    trace::trace!(
+        "Chunked compacting blocks: {}",
+        CompactingBlocks(compacting_blocks)
+    );
 
     Ok(())
 }
@@ -571,22 +562,24 @@ struct WriterWrapper {
 
 impl WriterWrapper {
     pub fn new(request: &CompactReq, context: Arc<GlobalContext>) -> Self {
+        let ts_family_id = request.compact_task.ts_family_id();
         Self {
-            ts_family_id: request.ts_family_id,
+            ts_family_id,
             out_level: request.out_level,
             max_file_size: request
                 .version
                 .storage_opt()
                 .level_max_file_size(request.out_level),
             tsm_dir: request
-                .storage_opt
-                .tsm_dir(&request.database, request.ts_family_id),
+                .version
+                .borrowed_storage_opt()
+                .tsm_dir(request.version.borrowed_database(), ts_family_id),
             context,
 
             tsm_writer_full: false,
             tsm_writer: None,
 
-            version_edit: VersionEdit::new(request.ts_family_id),
+            version_edit: VersionEdit::new(ts_family_id),
             file_metas: HashMap::new(),
         }
     }
@@ -729,6 +722,7 @@ mod test {
     use crate::compaction::test::{
         check_column_file, create_options, generate_data_block, write_data_block_desc, TsmSchema,
     };
+    use crate::compaction::CompactTask;
     use crate::file_system::file_manager;
     use crate::tseries_family::{ColumnFile, LevelInfo, Version};
     use crate::tsm::codec::DataBlockEncoding;
@@ -832,27 +826,28 @@ mod test {
         tenant_database: Arc<String>,
         opt: Arc<Options>,
         next_file_id: ColumnFileId,
-        files: Vec<Arc<ColumnFile>>,
+        delta_files: Vec<Arc<ColumnFile>>,
+        tsm_files: Vec<Arc<ColumnFile>>,
+        out_level: LevelId,
         out_level_max_ts: Timestamp,
     ) -> (CompactReq, Arc<GlobalContext>) {
+        let vnode_id = 1;
         let version = Arc::new(Version::new(
-            1,
+            vnode_id,
             tenant_database.clone(),
             opt.storage.clone(),
             1,
-            LevelInfo::init_levels(tenant_database.clone(), 0, opt.storage.clone()),
+            LevelInfo::init_levels(tenant_database, 0, opt.storage.clone()),
             out_level_max_ts,
             Arc::new(ShardedAsyncCache::create_lru_sharded_cache(1)),
         ));
         let compact_req = CompactReq {
-            ts_family_id: 1,
-            database: tenant_database,
-            storage_opt: opt.storage.clone(),
-            files,
+            compact_task: CompactTask::Delta(vnode_id),
             version,
-            in_level: 1,
-            out_level: 2,
-            max_ts: out_level_max_ts,
+            files: tsm_files,
+            lv0_files: Some(delta_files),
+            in_level: 0,
+            out_level,
         };
         let context = Arc::new(GlobalContext::new());
         context.set_file_id(next_file_id);
@@ -862,7 +857,8 @@ mod test {
 
     async fn test_delta_compaction(
         dir: &str,
-        source_data_desc: &[TsmSchema],
+        delta_files_desc: &[TsmSchema],
+        tsm_files_desc: &[TsmSchema],
         max_ts: Timestamp,
         expected_data_desc: HashMap<FieldId, Vec<DataBlock>>,
         expected_data_level: LevelId,
@@ -879,8 +875,9 @@ mod test {
             std::fs::create_dir_all(&delta_dir).unwrap();
         }
 
-        let column_files = write_data_block_desc(&delta_dir, source_data_desc).await;
-        let next_file_id = source_data_desc
+        let delta_files = write_data_block_desc(&delta_dir, delta_files_desc, true).await;
+        let tsm_files = write_data_block_desc(&tsm_dir, tsm_files_desc, false).await;
+        let next_file_id = delta_files_desc
             .iter()
             .map(|(_file_id, blk_desc, _tomb_desc)| {
                 blk_desc
@@ -892,15 +889,22 @@ mod test {
             .max()
             .unwrap_or(1)
             + 1;
-        let (mut compact_req, kernel) =
-            prepare_delta_compaction(tenant_database, opt, next_file_id, column_files, max_ts);
+        let (mut compact_req, kernel) = prepare_delta_compaction(
+            tenant_database,
+            opt,
+            next_file_id,
+            delta_files,
+            tsm_files,
+            expected_data_level,
+            max_ts,
+        );
         compact_req.in_level = 0;
         compact_req.out_level = expected_data_level;
 
         let (version_edit, _) = run_compaction_job(compact_req, kernel)
             .await
             .unwrap()
-            .unwrap();
+            .expect("Delta compaction sucessfully generated some new files");
 
         check_column_file(
             tsm_dir,
@@ -915,11 +919,11 @@ mod test {
     #[tokio::test]
     async fn test_delta_compaction_1() {
         #[rustfmt::skip]
-        let data_desc: [TsmSchema; 3] = [
+        let delta_files_desc: [TsmSchema; 3] = [
             // [( tsm_data:  tsm_sequence, vec![(ValueType, FieldId, Timestamp_Begin, Timestamp_end)],
             //    tombstone: vec![(FieldId, MinTimestamp, MaxTimestamp)]
             // )]
-            (1, vec![
+            (2, vec![
                 // 1, 1~2500
                 (ValueType::Unsigned, 1, 1, 1000), (ValueType::Unsigned, 1, 1001, 2000),  (ValueType::Unsigned, 1, 2001, 2500),
                 // 2, 1~1500
@@ -927,7 +931,7 @@ mod test {
                 // 3, 1~1500
                 (ValueType::Boolean, 3, 1, 1000), (ValueType::Boolean, 3, 1001, 1500),
             ], vec![]),
-            (2, vec![
+            (3, vec![
                 // 1, 2001~4500
                 (ValueType::Unsigned, 1, 2001, 3000), (ValueType::Unsigned, 1, 3001, 4000), (ValueType::Unsigned, 1, 4001, 4500),
                 // 2, 1001~3000
@@ -937,7 +941,7 @@ mod test {
                 // 4, 1~1500
                 (ValueType::Float, 4, 1, 1000), (ValueType::Float, 4, 1001, 1500),
             ], vec![]),
-            (3, vec![
+            (4, vec![
                 // 1, 4001~6500
                 (ValueType::Unsigned, 1, 4001, 5000), (ValueType::Unsigned, 1, 5001, 6000), (ValueType::Unsigned, 1, 6001, 6500),
                 // 2, 3001~5000
@@ -948,175 +952,63 @@ mod test {
                 (ValueType::Float, 4, 1001, 2000), (ValueType::Float, 4, 2001, 2500),
             ], vec![]),
         ];
-        let max_ts = 3000;
+        // The target tsm file: [2001~5050]
+        let max_level_ts = 5050;
+        #[rustfmt::skip]
+        let tsm_file_desc: TsmSchema = (1, vec![
+            // 1, 2001~5050
+            (ValueType::Unsigned, 1, 2001, 3000), (ValueType::Unsigned, 1, 4001, 5000),  (ValueType::Unsigned, 1, 5001, 5050),
+            // 2, 2001~5000
+            (ValueType::Integer, 2, 2001, 3000), (ValueType::Integer, 2, 4001, 5000),
+            // 3, 3001~5000
+            (ValueType::Boolean, 3, 3001, 4000), (ValueType::Boolean, 3, 4001, 5000),
+            // 3, 2001~2500
+            (ValueType::Float, 4, 2001, 2500),
+        ], vec![]);
+
         let expected_data_target_level: HashMap<FieldId, Vec<DataBlock>> = HashMap::from([
             (
-                // 1, 1~6500
+                // 1, 2001~5050
                 1,
                 vec![
-                    generate_data_block(ValueType::Unsigned, vec![(1, 1000)]),
-                    generate_data_block(ValueType::Unsigned, vec![(1001, 2000)]),
                     generate_data_block(ValueType::Unsigned, vec![(2001, 3000)]),
+                    generate_data_block(ValueType::Unsigned, vec![(3001, 4000)]),
+                    generate_data_block(ValueType::Unsigned, vec![(4001, 5000)]),
+                    generate_data_block(ValueType::Unsigned, vec![(5001, 5050)]),
                 ],
             ),
             (
-                // 2, 1~5000
+                // 2, 2001~5000
                 2,
                 vec![
-                    generate_data_block(ValueType::Integer, vec![(1, 1000)]),
-                    generate_data_block(ValueType::Integer, vec![(1001, 2000)]),
                     generate_data_block(ValueType::Integer, vec![(2001, 3000)]),
+                    generate_data_block(ValueType::Integer, vec![(3001, 4000)]),
+                    generate_data_block(ValueType::Integer, vec![(4001, 5000)]),
                 ],
             ),
             (
-                // 3, 1~3500
+                // 3, 2001~3500
                 3,
                 vec![
-                    generate_data_block(ValueType::Boolean, vec![(1, 1000)]),
-                    generate_data_block(ValueType::Boolean, vec![(1001, 2000)]),
                     generate_data_block(ValueType::Boolean, vec![(2001, 3000)]),
+                    generate_data_block(ValueType::Boolean, vec![(3001, 4000)]),
+                    generate_data_block(ValueType::Boolean, vec![(4001, 5000)]),
                 ],
             ),
             (
-                // 4, 1~2500
+                // 4, 2001~3500
                 4,
-                vec![
-                    generate_data_block(ValueType::Float, vec![(1, 1000)]),
-                    generate_data_block(ValueType::Float, vec![(1001, 2000)]),
-                    generate_data_block(ValueType::Float, vec![(2001, 2500)]),
-                ],
+                vec![generate_data_block(ValueType::Float, vec![(2001, 2500)])],
             ),
         ]);
 
         test_delta_compaction(
             "/tmp/test/delta_compaction/1",
-            &data_desc,
-            max_ts,
+            &delta_files_desc,
+            &[tsm_file_desc],
+            max_level_ts,
             expected_data_target_level,
-            2,
-        )
-        .await;
-    }
-
-    /// Test compaction on level-0 (delta compaction) with samll blocks.
-    #[tokio::test]
-    async fn test_delta_compaction_2() {
-        #[rustfmt::skip]
-        let data_desc: [TsmSchema; 3] = [
-            // [( tsm_data:  tsm_sequence, vec![(ValueType, FieldId, Timestamp_Begin, Timestamp_end)],
-            //    tombstone: vec![(FieldId, MinTimestamp, MaxTimestamp)]
-            // )]
-            (1, vec![
-                // 1, 1~4000
-                (ValueType::Unsigned, 1, 1, 1000), (ValueType::Unsigned, 1, 1001, 2000), (ValueType::Unsigned, 1, 2001, 2500),
-                (ValueType::Unsigned, 1, 2501, 3100), (ValueType::Unsigned, 1, 3101, 3500), (ValueType::Unsigned, 1, 3501, 4000),
-                // 2, 2~2501
-                (ValueType::Integer, 2, 2, 1001), (ValueType::Integer, 2, 1002, 1501), (ValueType::Integer, 2, 1502, 2501),
-                // 3, 3~1002, 2003~2502, 3003~4002
-                (ValueType::Boolean, 3, 3, 1002), (ValueType::Boolean, 3, 2003, 2502), (ValueType::Boolean, 3, 3003, 4002),
-                // 5, 5~1504, 2005~2504
-                (ValueType::String, 5, 5, 1004), (ValueType::String, 5, 1005, 1504), (ValueType::String, 5, 2005, 2504),
-            ], vec![]),
-            (2, vec![
-                // 1, 3501~3700, 3801~4500
-                (ValueType::Unsigned, 1, 3501, 3700), (ValueType::Unsigned, 1, 3801, 4000), (ValueType::Unsigned, 1, 4001, 4500),
-                // 2, 1002~2001, 2502~3001, 3502~4001
-                (ValueType::Integer, 2, 1002, 2001), (ValueType::Integer, 2, 2502, 3001), (ValueType::Integer, 2, 3502, 4001),
-                // 3, 1003~3002, 3503~4502, 5003~7002
-                (ValueType::Boolean, 3, 1003, 2002), (ValueType::Boolean, 3, 2003, 2502), (ValueType::Boolean, 3, 2503, 3002),
-                (ValueType::Boolean, 3, 3503, 4502), (ValueType::Boolean, 3, 5003, 6002), (ValueType::Boolean, 3, 6003, 7002),
-                // 4, 4~1503, 2004~2503
-                (ValueType::Float, 4, 4, 1003), (ValueType::Float, 4, 1004, 1503), (ValueType::Float, 4, 2004, 2503),
-                // 5, 2505~3004. 4005~5004, 6005~7004
-                (ValueType::String, 5, 2505, 3004), (ValueType::String, 5, 4005, 5004), (ValueType::String, 5, 6005, 7004),
-            ], vec![]),
-            (3, vec![
-                // 1, 4001~6500
-                (ValueType::Unsigned, 1, 4001, 5000), (ValueType::Unsigned, 1, 5001, 6000), (ValueType::Unsigned, 1, 6001, 6500),
-                // 2, 3002~6501, 6602~6801, 6802~7001
-                (ValueType::Integer, 2, 3002, 4001), (ValueType::Integer, 2, 4002, 5001), (ValueType::Integer, 2, 5002, 6001),
-                (ValueType::Integer, 2, 6002, 6501), (ValueType::Integer, 2, 6602, 6801), (ValueType::Integer, 2, 6802, 7001),
-                // 3, 2003~3502
-                (ValueType::Boolean, 3, 2003, 3002), (ValueType::Boolean, 3, 3003, 3502),
-                // 4. 1004~2503
-                (ValueType::Float, 4, 1004, 2003), (ValueType::Float, 4, 2004, 2503),
-            ], vec![]),
-        ];
-        let max_ts = 5000;
-        let expected_data_target_level: HashMap<FieldId, Vec<DataBlock>> = HashMap::from([
-            (
-                // 1
-                // 1~4000
-                // 3501~3700, 3801~4500
-                // 4001~6500
-                1,
-                vec![
-                    generate_data_block(ValueType::Unsigned, vec![(1, 1000)]),
-                    generate_data_block(ValueType::Unsigned, vec![(1001, 2000)]),
-                    generate_data_block(ValueType::Unsigned, vec![(2001, 3000)]),
-                    generate_data_block(ValueType::Unsigned, vec![(3001, 4000)]),
-                    generate_data_block(ValueType::Unsigned, vec![(4001, 5000)]),
-                ],
-            ),
-            (
-                // 2
-                // 2~2501
-                // 1002~2001, 2502~3001, 3502~4001
-                // 3002~6501, 6602~6801, 6802~7001
-                2,
-                vec![
-                    generate_data_block(ValueType::Integer, vec![(2, 1001)]),
-                    generate_data_block(ValueType::Integer, vec![(1002, 2001)]),
-                    generate_data_block(ValueType::Integer, vec![(2002, 3001)]),
-                    generate_data_block(ValueType::Integer, vec![(3002, 4001)]),
-                    generate_data_block(ValueType::Integer, vec![(4002, 5000)]),
-                ],
-            ),
-            (
-                // 3
-                // 3~1002, 2003~2502, 3003~4002
-                // 1003~3002, 3503~4502, 5003~7002
-                // 2003~3502
-                3,
-                vec![
-                    generate_data_block(ValueType::Boolean, vec![(3, 1002)]),
-                    generate_data_block(ValueType::Boolean, vec![(1003, 2002)]),
-                    generate_data_block(ValueType::Boolean, vec![(2003, 3002)]),
-                    generate_data_block(ValueType::Boolean, vec![(3003, 4002)]),
-                    generate_data_block(ValueType::Boolean, vec![(4003, 4502)]),
-                ],
-            ),
-            (
-                // 4
-                // 4~1503, 2004~2503
-                // 1004~2503
-                4,
-                vec![
-                    generate_data_block(ValueType::Float, vec![(4, 1003)]),
-                    generate_data_block(ValueType::Float, vec![(1004, 2003)]),
-                    generate_data_block(ValueType::Float, vec![(2004, 2503)]),
-                ],
-            ),
-            (
-                // 5
-                // 5~1504, 2005~2504
-                // 2505~3004. 4005~5004, 6005~7004
-                5,
-                vec![
-                    generate_data_block(ValueType::String, vec![(5, 1004)]),
-                    generate_data_block(ValueType::String, vec![(1005, 1504), (2005, 2504)]),
-                    generate_data_block(ValueType::String, vec![(2505, 3004), (4005, 4504)]),
-                    generate_data_block(ValueType::String, vec![(4505, 5000)]),
-                ],
-            ),
-        ]);
-
-        test_delta_compaction(
-            "/tmp/test/delta_compaction/2",
-            &data_desc,
-            max_ts,
-            expected_data_target_level,
-            2,
+            1,
         )
         .await;
     }

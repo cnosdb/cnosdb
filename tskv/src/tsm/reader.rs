@@ -132,6 +132,8 @@ impl IndexFile {
 
 pub async fn print_tsm_statistics(path: impl AsRef<Path>, show_tombstone: bool) {
     let reader = TsmReader::open(path).await.unwrap();
+    let tomb_fields_excluded = reader.tombstone.fields_excluded_cloned();
+    let tomb_all_excluded = reader.tombstone.all_excluded_cloned();
     let mut points_cnt = 0_usize;
     println!("============================================================");
     for idx in reader.index_iterator() {
@@ -164,12 +166,12 @@ pub async fn print_tsm_statistics(path: impl AsRef<Path>, show_tombstone: bool) 
         println!("{}", buffer);
         if show_tombstone {
             println!("------------------------------------------------------------");
-            print!("Tombstone | ");
-            if let Some(time_ranges) = reader.get_cloned_tombstone_time_ranges(idx.field_id()) {
+            print!("Tombstone | all_excluded: {tomb_all_excluded} | fields_excluded: ");
+            if let Some(time_ranges) = tomb_fields_excluded.get(&idx.field_id()) {
                 if time_ranges.is_empty() {
                     println!("None");
                 } else {
-                    for (i, tr) in time_ranges.iter().enumerate() {
+                    for (i, tr) in time_ranges.time_ranges().iter().enumerate() {
                         if i == time_ranges.len() - 1 {
                             println!("({}, {})", tr.min_ts, tr.max_ts);
                         } else {
@@ -529,47 +531,30 @@ impl TsmReader {
         !self.tombstone.is_empty()
     }
 
-    /// Returns all tombstone `TimeRange`s for a `BlockMeta`.
-    /// Returns None if there is nothing to return, or `TimeRange`s is empty.
-    pub fn get_block_tombstone_time_ranges(
-        &self,
-        block_meta: &BlockMeta,
-    ) -> Option<Vec<TimeRange>> {
-        self.tombstone.get_overlapped_time_ranges(
-            block_meta.field_id(),
-            &TimeRange::from((block_meta.min_ts(), block_meta.max_ts())),
-        )
+    pub(crate) fn tombstone(&self) -> &TsmTombstone {
+        self.tombstone.as_ref()
     }
 
-    /// Returns all TimeRanges for a FieldId cloned from TsmTombstone.
-    pub(crate) fn get_cloned_tombstone_time_ranges(
-        &self,
-        field_id: FieldId,
-    ) -> Option<Vec<TimeRange>> {
-        self.tombstone.get_cloned_time_ranges(field_id)
-    }
-
-    pub async fn add_tombstone(&self, field_ids: &[FieldId], time_range: &TimeRange) -> Result<()> {
+    pub async fn add_tombstone(&self, field_ids: &[FieldId], time_range: TimeRange) -> Result<()> {
         self.tombstone
             .add_range(field_ids, time_range, Some(self.bloom_filter()))
             .await?;
         self.tombstone.flush().await
     }
 
-    pub async fn add_tombstone_and_compact_to_tmp(&self, time_range: &TimeRange) -> Result<()> {
-        let field_ids = self
-            .index_reader
-            .index_ref
-            .field_id_offs()
-            .iter()
-            .map(|(field_id, _)| *field_id)
-            .collect::<Vec<_>>();
+    /// Add a time range to `all_excluded` and then compact tombstones,
+    /// return compacted `all_excluded`.
+    pub async fn add_tombstone_and_compact_to_tmp(
+        &self,
+        time_range: TimeRange,
+    ) -> Result<TimeRanges> {
         self.tombstone
-            .add_range_and_compact_to_tmp(&field_ids, time_range, Some(self.bloom_filter()))
+            .add_range_and_compact_to_tmp(time_range)
             .await
     }
 
-    pub async fn replace_with_compact_tmp(&self) -> Result<()> {
+    /// Replace current tombstone file with compact_tmp tombstone file.
+    pub async fn replace_tombstone_with_compact_tmp(&self) -> Result<()> {
         self.tombstone.replace_with_compact_tmp().await
     }
 
@@ -740,7 +725,7 @@ pub fn decode_data_block(
 }
 
 #[cfg(test)]
-pub mod tsm_reader_tests {
+pub mod test {
     use core::panic;
     use std::collections::HashMap;
     use std::path::{Path, PathBuf};
@@ -754,7 +739,7 @@ pub mod tsm_reader_tests {
     use crate::file_system::file_manager::{self};
     use crate::file_utils;
     use crate::tsm::codec::DataBlockEncoding;
-    use crate::tsm::tsm_writer_tests::write_to_tsm;
+    use crate::tsm::test::write_to_tsm;
     use crate::tsm::{BlockEntry, DataBlock, IndexEntry, IndexFile, TsmReader, TsmTombstone};
 
     async fn prepare(dir: impl AsRef<Path>) -> Result<(PathBuf, PathBuf)> {
@@ -789,14 +774,14 @@ pub mod tsm_reader_tests {
         write_to_tsm(&tsm_file, &ori_data, false).await?;
         let tombstone = TsmTombstone::with_path(&tombstone_file).await?;
         tombstone
-            .add_range(&[1], &TimeRange::new(2, 4), None)
+            .add_range(&[1], TimeRange::new(2, 4), None)
             .await?;
         tombstone.flush().await?;
 
         Ok((tsm_file, tombstone_file))
     }
 
-    pub(crate) async fn read_and_check(
+    pub async fn read_and_check(
         reader: &TsmReader,
         expected_data: &HashMap<FieldId, Vec<DataBlock>>,
     ) -> Result<()> {

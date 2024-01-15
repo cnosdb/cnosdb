@@ -459,7 +459,7 @@ pub mod flush_tests {
     use crate::memcache::{FieldVal, MemCache};
     use crate::tseries_family::{LevelInfo, Version};
     use crate::tsm::codec::DataBlockEncoding;
-    use crate::tsm::tsm_reader_tests::read_and_check;
+    use crate::tsm::test::read_and_check;
     use crate::tsm::{DataBlock, TsmReader};
 
     pub fn default_table_schema(ids: Vec<ColumnId>) -> TskvTableSchema {

@@ -486,7 +486,7 @@ impl TsKv {
                 column_ids.len()
             );
 
-            let time_range = &TimeRange {
+            let time_range = TimeRange {
                 min_ts: Timestamp::MIN,
                 max_ts: Timestamp::MAX,
             };
@@ -498,7 +498,7 @@ impl TsKv {
                     ts_family
                         .write()
                         .await
-                        .delete_series(&series_ids, time_range);
+                        .delete_series(&series_ids, &time_range);
 
                     let field_ids: Vec<u64> = series_ids
                         .iter()
@@ -510,7 +510,7 @@ impl TsKv {
                     );
 
                     let version = ts_family.read().await.super_version();
-                    for column_file in version.version.column_files(&field_ids, time_range) {
+                    for column_file in version.version.column_files(&field_ids, &time_range) {
                         column_file.add_tombstone(&field_ids, time_range).await?;
                     }
                 } else {
@@ -543,7 +543,7 @@ impl TsKv {
                 }
             }
 
-            let time_range = &TimeRange {
+            let time_range = TimeRange {
                 min_ts: Timestamp::MIN,
                 max_ts: Timestamp::MAX,
             };
@@ -563,7 +563,7 @@ impl TsKv {
                     ts_family.write().await.delete_columns(&field_ids);
 
                     let version = ts_family.read().await.super_version();
-                    for column_file in version.version.column_files(&field_ids, time_range) {
+                    for column_file in version.version.column_files(&field_ids, &time_range) {
                         column_file.add_tombstone(&field_ids, time_range).await?;
                     }
                 } else {
@@ -1254,7 +1254,9 @@ impl Engine for TsKv {
                 }
 
                 let version = ts_family.read().await.version();
-                if let Some(req) = compaction::pick_level_compaction(version) {
+                if let Some(req) =
+                    compaction::pick_compaction(CompactTask::Normal(vnode_id), version).await
+                {
                     match compaction::run_compaction_job(req, self.global_ctx.clone()).await {
                         Ok(Some((version_edit, file_metas))) => {
                             let (summary_tx, _summary_rx) = oneshot::channel();

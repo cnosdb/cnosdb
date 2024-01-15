@@ -207,6 +207,11 @@ pub enum Error {
         message: String,
         source: std::str::Utf8Error,
     },
+
+    #[snafu(display("Invalid tombstone record: {message}"))]
+    InvalidTombstone {
+        message: String,
+    },
 }
 
 impl From<PointsError> for Error {

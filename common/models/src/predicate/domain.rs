@@ -76,6 +76,11 @@ impl TimeRange {
     }
 
     #[inline(always)]
+    pub fn is_none(&self) -> bool {
+        self.min_ts == Timestamp::MAX && self.max_ts == Timestamp::MIN
+    }
+
+    #[inline(always)]
     pub fn overlaps(&self, range: &TimeRange) -> bool {
         !(self.min_ts > range.max_ts || self.max_ts < range.min_ts)
     }
@@ -243,6 +248,42 @@ impl TimeRanges {
         TimeRange { min_ts, max_ts }
     }
 
+    /// Push time range to time ranges.
+    pub fn push(&mut self, time_range: TimeRange) {
+        if self.is_boundless {
+            return;
+        }
+        self.min_ts = self.min_ts.min(time_range.min_ts);
+        self.max_ts = self.max_ts.max(time_range.max_ts);
+        self.inner.push(time_range);
+        if time_range.is_boundless() {
+            self.is_boundless = true;
+        }
+    }
+
+    /// Push time range to time ranges.
+    pub fn extend_from_slice(&mut self, time_ranges: &[TimeRange]) {
+        if self.is_boundless {
+            return;
+        }
+        for time_range in time_ranges {
+            if time_range.is_boundless() {
+                self.min_ts = time_range.min_ts;
+                self.max_ts = time_range.max_ts;
+                self.is_boundless = true;
+            } else {
+                self.min_ts = self.min_ts.min(time_range.min_ts);
+                self.max_ts = self.max_ts.max(time_range.max_ts);
+            }
+            self.inner.push(*time_range);
+        }
+    }
+
+    /// Compact inner time ranges..
+    pub fn compact(&mut self) {
+        TimeRange::compact(&mut self.inner);
+    }
+
     #[inline(always)]
     pub fn len(&self) -> usize {
         self.inner.len()
@@ -363,6 +404,16 @@ impl AsRef<[TimeRange]> for TimeRanges {
 impl From<(Timestamp, Timestamp)> for TimeRanges {
     fn from(time_range: (Timestamp, Timestamp)) -> Self {
         Self::with_inclusive_bounds(time_range.0, time_range.1)
+    }
+}
+
+impl Display for TimeRanges {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{{ ")?;
+        for tr in &self.inner {
+            write!(f, "{}", tr)?;
+        }
+        write!(f, " }}")
     }
 }
 
@@ -1734,6 +1785,24 @@ mod tests {
                 TimeRange::new(22, 33)
             ]))
         );
+
+        let mut trs = trs;
+        trs.push(TimeRange::new(0, 1000));
+        trs.compact();
+        assert_eq!(trs.inner.len(), 1);
+        assert_eq!(trs.inner[0], TimeRange::new(0, 1000));
+        assert_eq!(trs.min_ts(), 0);
+        assert_eq!(trs.max_ts(), 1000);
+        assert!(!trs.is_boundless);
+
+        let mut trs_all = trs_all;
+        trs_all.push(TimeRange::new(0, 1000));
+        trs_all.compact();
+        assert_eq!(trs_all.inner.len(), 1);
+        assert_eq!(trs_all.inner[0], TimeRange::new(i64::MIN, i64::MAX));
+        assert_eq!(trs_all.min_ts(), i64::MIN);
+        assert_eq!(trs_all.max_ts(), i64::MAX);
+        assert!(trs_all.is_boundless);
     }
 
     #[test]

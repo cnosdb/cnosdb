@@ -533,7 +533,7 @@ async fn write_footer_to(
 }
 
 #[cfg(test)]
-pub mod tsm_writer_tests {
+pub mod test {
     use std::collections::HashMap;
     use std::path::Path;
 
@@ -544,7 +544,7 @@ pub mod tsm_writer_tests {
     use crate::file_system::file_manager::{self};
     use crate::file_utils::{self, make_tsm_file_name};
     use crate::tsm::codec::DataBlockEncoding;
-    use crate::tsm::tsm_reader_tests::read_and_check;
+    use crate::tsm::test::read_and_check;
     use crate::tsm::{DataBlock, EncodedDataBlock, TsmReader, TsmWriter, WriteTsmError};
     use crate::Error;
 
