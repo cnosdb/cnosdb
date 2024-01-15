@@ -943,6 +943,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "cache"
+version = "2.3.4"
+dependencies = [
+ "async-trait",
+ "criterion",
+ "futures",
+ "lru",
+ "parking_lot 0.12.1",
+ "rand",
+ "tokio",
+]
+
+[[package]]
 name = "camino"
 version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2939,16 +2952,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "lru_cache"
-version = "2.3.4"
+name = "lru"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4a83fb7698b3643a0e34f9ae6f2e8f0178c0fd42f8b59d493aa271ff3a5bf21"
 dependencies = [
- "async-backtrace",
- "criterion",
- "parking_lot 0.12.1",
- "rand",
- "tokio",
- "tracing",
- "utils",
+ "hashbrown 0.14.0",
 ]
 
 [[package]]
@@ -5844,6 +5853,7 @@ dependencies = [
  "blake3",
  "bytes",
  "bzip2",
+ "cache",
  "chrono",
  "config",
  "crc32fast",
@@ -5859,7 +5869,6 @@ dependencies = [
  "integer-encoding 4.0.0",
  "lazy_static",
  "libc",
- "lru_cache",
  "memory_pool",
  "meta",
  "metrics",

@@ -891,7 +891,7 @@ pub mod test {
     use std::path::{Path, PathBuf};
     use std::sync::Arc;
 
-    use lru_cache::asynchronous::ShardedCache;
+    use cache::ShardedAsyncCache;
     use minivec::MiniVec;
     use models::predicate::domain::TimeRange;
     use models::{FieldId, Timestamp, ValueType};
@@ -1098,7 +1098,7 @@ pub mod test {
             1,
             LevelInfo::init_levels(database.clone(), 0, opt.storage.clone()),
             1000,
-            Arc::new(ShardedCache::with_capacity(1)),
+            Arc::new(ShardedAsyncCache::create_lru_sharded_cache(1)),
         ));
         let compact_req = CompactReq {
             ts_family_id: 1,
