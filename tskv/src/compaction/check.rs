@@ -784,7 +784,12 @@ mod test {
             }),
             points,
         };
-        let points = flatbuffers::root::<fb_models::Points>(&write_batch.points).unwrap();
+        let opts = flatbuffers::VerifierOptions {
+            max_tables: usize::MAX,
+            ..Default::default()
+        };
+        let points =
+            flatbuffers::root_with_opts::<fb_models::Points>(&opts, &write_batch.points).unwrap();
         models_helper::print_points(points);
         let _ = engine
             .write(None, vnode_id, Precision::NS, write_batch)

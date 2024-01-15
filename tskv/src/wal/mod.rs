@@ -598,9 +598,14 @@ mod test {
                                     let mut data_buf = Vec::new();
                                     decoder.decode(ety_data, &mut data_buf).unwrap();
                                     assert_eq!(data_buf[0].as_slice(), ori_data.as_slice());
-                                    if let Err(e) =
-                                        flatbuffers::root::<fb_models::Points>(&data_buf[0])
-                                    {
+                                    let opts = flatbuffers::VerifierOptions {
+                                        max_tables: usize::MAX,
+                                        ..Default::default()
+                                    };
+                                    if let Err(e) = flatbuffers::root_with_opts::<fb_models::Points>(
+                                        &opts,
+                                        &data_buf[0],
+                                    ) {
                                         panic!(
                                             "unexpected data in wal file, ignored file '{}' because '{}'",
                                             wal_dir.display(),

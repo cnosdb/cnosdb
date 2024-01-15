@@ -349,7 +349,12 @@ pub async fn print_wal_statistics(path: impl AsRef<Path>) {
                         let ety_points = blk.points();
                         let mut data_buf = Vec::with_capacity(ety_points.len());
                         decoder.decode(ety_points, &mut data_buf).unwrap();
-                        match flatbuffers::root::<fb_models::Points>(&data_buf[0]) {
+                        let opts = flatbuffers::VerifierOptions {
+                            max_tables: usize::MAX,
+                            ..Default::default()
+                        };
+                        match flatbuffers::root_with_opts::<fb_models::Points>(&opts, &data_buf[0])
+                        {
                             Ok(points) => {
                                 print_points(points);
                             }
