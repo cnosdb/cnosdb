@@ -25,7 +25,6 @@ byteorder = { workspace = true }
 clap = { workspace = true }
 ctrlc = { workspace = true, features = ["termination"] }
 dashmap = { workspace = true }
-once_cell = { workspace = true }
 openraft = { workspace = true, features = ["serde"] }
 parking_lot = { workspace = true }
 rand = { workspace = true }
@@ -39,7 +38,6 @@ tokio = { workspace = true }
 toml = { workspace = true }
 tonic = { workspace = true }
 tracing = { workspace = true }
-tracing-futures = { workspace = true }
 uuid = { workspace = true }
 walkdir = { workspace = true }
 psutil = { workspace = true, optional = true }

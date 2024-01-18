@@ -22,7 +22,8 @@ use models::predicate::domain::PredicateRef;
 use models::predicate::PlacedSplit;
 use models::schema::{TskvTableSchema, TskvTableSchemaRef};
 use spi::QueryError;
-use trace::{debug, SpanContext, SpanExt, SpanRecorder};
+use trace::span_ext::SpanExt;
+use trace::{debug, Span, SpanContext};
 use tskv::reader::QueryOption;
 
 use crate::extension::physical::plan_node::TableScanMetrics;
@@ -131,7 +132,7 @@ impl ExecutionPlan for TagScanExec {
             split,
             batch_size,
             metrics,
-            SpanRecorder::new(span_ctx.child_span(format!("TagScanStream ({partition})"))),
+            Span::from_context(format!("TagScanStream ({partition})"), span_ctx.as_deref()),
         )
         .map_err(|err| DataFusionError::External(Box::new(err)))?;
 
@@ -222,7 +223,7 @@ pub struct TagScanStream {
 
     metrics: TableScanMetrics,
     #[allow(unused)]
-    span_recorder: SpanRecorder,
+    span: Span,
 }
 
 impl TagScanStream {
@@ -233,7 +234,7 @@ impl TagScanStream {
         split: PlacedSplit,
         batch_size: usize,
         metrics: TableScanMetrics,
-        span_recorder: SpanRecorder,
+        span: Span,
     ) -> Result<Self, QueryError> {
         let mut proj_fileds = Vec::with_capacity(proj_schema.fields().len());
         for field_name in proj_schema.fields().iter().map(|f| f.name()) {
@@ -263,8 +264,8 @@ impl TagScanStream {
             proj_table_schema.into(),
         );
 
-        let span_ctx = span_recorder.span_ctx();
-        let stream = coord.tag_scan(option, span_ctx)?;
+        let span_ctx = span.context();
+        let stream = coord.tag_scan(option, span_ctx.as_ref())?;
 
         Ok(Self {
             proj_schema,
@@ -272,7 +273,7 @@ impl TagScanStream {
             coord,
             stream,
             metrics,
-            span_recorder,
+            span,
         })
     }
 }

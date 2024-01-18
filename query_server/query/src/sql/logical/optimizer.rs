@@ -29,6 +29,7 @@ use spi::query::analyzer::AnalyzerRef;
 use spi::query::session::SessionCtx;
 use spi::Result;
 use trace::debug;
+use trace::span_ext::SpanExt;
 
 use crate::extension::logical::optimizer_rule::rewrite_tag_scan::RewriteTagScan;
 use crate::sql::analyzer::DefaultAnalyzer;
@@ -108,20 +109,22 @@ impl Default for DefaultLogicalOptimizer {
 impl LogicalOptimizer for DefaultLogicalOptimizer {
     fn optimize(&self, plan: &LogicalPlan, session: &SessionCtx) -> Result<LogicalPlan> {
         let analyzed_plan = {
-            let mut span_recorder = session.get_child_span_recorder("analyze plan");
+            let mut span = session.get_child_span("analyze plan");
 
             self.analyzer
                 .analyze(plan, session)
                 .map(|p| {
-                    span_recorder.ok("analyzer");
-                    span_recorder.set_metadata(
-                        "analyzed logical plan",
-                        p.display_indent_schema().to_string(),
-                    );
+                    span.ok("analyzer");
+                    span.add_property(|| {
+                        (
+                            "analyzed logical plan",
+                            p.display_indent_schema().to_string(),
+                        )
+                    });
                     p
                 })
                 .map_err(|e| {
-                    span_recorder.error(e.to_string());
+                    span.error(e.to_string());
                     e
                 })?
         };
@@ -129,22 +132,24 @@ impl LogicalOptimizer for DefaultLogicalOptimizer {
         debug!("Analyzed logical plan:\n{}\n", plan.display_indent_schema(),);
 
         let optimizeed_plan = {
-            let mut span_recorder = session.get_child_span_recorder("optimize logical plan");
+            let mut span = session.get_child_span("optimize logical plan");
             session
                 .inner()
                 .clone()
                 .with_optimizer_rules(self.rules.clone())
                 .optimize(&analyzed_plan)
                 .map(|p| {
-                    span_recorder.ok("optimize");
-                    span_recorder.set_metadata(
-                        "optimized logical plan",
-                        p.display_indent_schema().to_string(),
-                    );
+                    span.ok("optimize");
+                    span.add_property(|| {
+                        (
+                            "optimized logical plan",
+                            p.display_indent_schema().to_string(),
+                        )
+                    });
                     p
                 })
                 .map_err(|e| {
-                    span_recorder.error(e.to_string());
+                    span.error(e.to_string());
                     e
                 })?
         };

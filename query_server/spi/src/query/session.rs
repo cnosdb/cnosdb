@@ -12,7 +12,8 @@ use datafusion::prelude::{SessionConfig, SessionContext};
 use datafusion::variable::VarType;
 use models::auth::user::User;
 use models::oid::Oid;
-use trace::{SpanContext, SpanExt, SpanRecorder};
+use trace::span_ext::SpanExt;
+use trace::{Span, SpanContext};
 
 use super::config::StreamTriggerInterval;
 use super::variable::VarProviderRef;
@@ -73,8 +74,8 @@ impl SessionCtx {
         // self.inner().config().get_extension::<SpanContext>();
     }
 
-    pub fn get_child_span_recorder(&self, name: &'static str) -> SpanRecorder {
-        SpanRecorder::new(self.get_span_ctx().child_span(name))
+    pub fn get_child_span(&self, name: &'static str) -> Span {
+        Span::from_context(name, self.get_span_ctx())
     }
 }
 
@@ -147,7 +148,7 @@ impl SessionCtxFactory {
         let mut config = context.session_config().to_df_config().clone();
         if let Some(span_ctx) = span_ctx {
             // inject span context into datafusion session config, so that it can be used in execution
-            config = config.with_extension(Arc::new(span_ctx.clone()))
+            config = config.with_extension(Arc::new(*span_ctx))
         }
         // inject cnosdb_config into datafusion session_config
         config

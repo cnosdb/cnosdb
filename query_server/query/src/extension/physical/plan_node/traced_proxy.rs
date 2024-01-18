@@ -14,7 +14,8 @@ use datafusion::physical_plan::{
     SendableRecordBatchStream, Statistics,
 };
 use futures::{Stream, StreamExt};
-use trace::{SpanContext, SpanExt, SpanRecorder};
+use trace::span_ext::SpanExt;
+use trace::{Span, SpanContext};
 
 use crate::extension::physical::utils::one_line;
 
@@ -82,16 +83,18 @@ impl ExecutionPlan for TracedProxyExec {
         context: Arc<TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
         let span_ctx = context.session_config().get_extension::<SpanContext>();
-        let span_recorder =
-            SpanRecorder::new(span_ctx.child_span(format!("{} ({})", self.name(), partition)));
+        let span = Span::from_context(
+            format!("{} ({})", self.name(), partition),
+            span_ctx.as_deref(),
+        );
 
-        let new_context = span_recorder
-            .span_ctx()
+        let new_context = span
+            .context()
             .map(|span_ctx| {
                 let session_config = context
                     .session_config()
                     .clone()
-                    .with_extension(Arc::new(span_ctx.clone()));
+                    .with_extension(Arc::new(span_ctx));
                 // 仅为了把 span_ctx 传到 TableScan 节点
                 // 丢弃了原有的 context 中的udf 和 udaf
                 Arc::new(TaskContext::new(
@@ -110,7 +113,7 @@ impl ExecutionPlan for TracedProxyExec {
         Ok(Box::pin(TracedStream::new(
             partition,
             stream,
-            span_recorder,
+            span,
             self.inner.clone(),
         )))
     }
@@ -156,7 +159,7 @@ impl ExecutionPlan for TracedProxyExec {
 struct TracedStream {
     partition: usize,
     inner: SendableRecordBatchStream,
-    span_recorder: SpanRecorder,
+    span: Span,
     physical_plan: Arc<dyn ExecutionPlan>,
 }
 
@@ -164,13 +167,13 @@ impl TracedStream {
     pub fn new(
         partition: usize,
         inner: SendableRecordBatchStream,
-        span_recorder: SpanRecorder,
+        span: Span,
         physical_plan: Arc<dyn ExecutionPlan>,
     ) -> Self {
         Self {
             partition,
             inner,
-            span_recorder,
+            span,
             physical_plan,
         }
     }
@@ -192,12 +195,12 @@ impl Stream for TracedStream {
 
 impl Drop for TracedStream {
     fn drop(&mut self) {
-        if self.span_recorder.span_ctx().is_some() {
+        if self.span.context().is_some() {
             if let Some(metrics) = self.physical_plan.metrics() {
                 let partition_metrics = partition_metrics(self.partition, &metrics);
                 for m in partition_metrics {
-                    self.span_recorder
-                        .set_metadata(m.value().name().to_string(), m.value().to_string());
+                    self.span
+                        .add_property(|| (m.value().name().to_string(), m.value().to_string()));
                 }
             }
         }

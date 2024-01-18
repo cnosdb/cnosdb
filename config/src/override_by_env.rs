@@ -13,7 +13,7 @@ pub fn entry_override<T: FromStr>(value: &mut T, env_key: &str) -> bool {
             *value = val;
             true
         } else {
-            println!("failed to parse environment variable: {env_key}");
+            eprintln!("failed to parse environment variable: {env_key}");
             false
         }
     } else {
@@ -27,7 +27,7 @@ pub fn entry_override_option<T: FromStr>(value: &mut Option<T>, env_key: &str) -
             *value = Some(val);
             true
         } else {
-            println!("failed to parse environment variable: {env_key}");
+            eprintln!("failed to parse environment variable: {env_key}");
             false
         }
     } else {

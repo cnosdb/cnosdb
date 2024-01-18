@@ -8,8 +8,7 @@ use protos::vector::vector_server::VectorServer;
 use spi::server::dbms::DBMSRef;
 use tokio::sync::oneshot;
 use tonic::transport::{Identity, Server, ServerTlsConfig};
-use trace_http::ctx::SpanContextExtractor;
-use trace_http::tower_layer::TraceLayer;
+use trace::http::tower_layer::TraceLayer;
 
 use crate::server::ServiceHandle;
 use crate::spi::service::Service;
@@ -22,7 +21,7 @@ pub struct VectorGrpcService {
     dbms: DBMSRef,
     tls_config: Option<TLSConfig>,
     metrics_register: Arc<MetricsRegister>,
-    span_context_extractor: Arc<SpanContextExtractor>,
+    auto_generate_span: bool,
     handle: Option<ServiceHandle<Result<(), tonic::transport::Error>>>,
 }
 
@@ -33,7 +32,7 @@ impl VectorGrpcService {
         addr: SocketAddr,
         tls_config: Option<TLSConfig>,
         metrics_register: Arc<MetricsRegister>,
-        span_context_extractor: Arc<SpanContextExtractor>,
+        auto_generate_span: bool,
     ) -> Self {
         Self {
             addr,
@@ -41,15 +40,15 @@ impl VectorGrpcService {
             dbms,
             tls_config,
             metrics_register,
-            span_context_extractor,
+            auto_generate_span,
             handle: None,
         }
     }
 }
 
 macro_rules! build_grpc_server {
-    ($tls_config:expr, $trace_collector:expr) => {{
-        let trace_layer = TraceLayer::new($trace_collector, "grpc_vector");
+    ($tls_config:expr, $auto_generate_span:expr) => {{
+        let trace_layer = TraceLayer::new($auto_generate_span, "grpc_vector");
         let mut server = Server::builder().layer(trace_layer);
 
         if let Some(TLSConfig {
@@ -73,8 +72,7 @@ impl Service for VectorGrpcService {
         let (shutdown, rx) = oneshot::channel();
         let vector_service =
             VectorServer::new(VectorService::new(self.coord.clone(), self.dbms.clone()));
-        let mut grpc_builder =
-            build_grpc_server!(&self.tls_config, self.span_context_extractor.clone());
+        let mut grpc_builder = build_grpc_server!(&self.tls_config, self.auto_generate_span);
         let grpc_router = grpc_builder.add_service(vector_service);
         let server = grpc_router.serve_with_shutdown(self.addr, async {
             rx.await.ok();
