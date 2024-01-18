@@ -40,7 +40,7 @@ impl QueryExecution for DMLExecution {
         let _span_recorder = self
             .query_state_machine
             .session
-            .get_child_span_recorder("execute DML");
+            .get_child_span("execute DML");
 
         let result = self
             .task_factory

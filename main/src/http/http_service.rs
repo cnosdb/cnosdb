@@ -41,8 +41,10 @@ use spi::server::prom::PromRemoteServerRef;
 use spi::service::protocol::{Context, ContextBuilder, Query};
 use spi::QueryError;
 use tokio::sync::oneshot;
-use trace::{debug, error, info, SpanContext, SpanExt, SpanRecorder};
-use trace_http::ctx::{SpanContextExtractor, DEFAULT_TRACE_HEADER_NAME};
+use trace::http::http_ctx::{ContextError, DEFAULT_TRACE_HEADER_NAME};
+use trace::span_ctx_ext::SpanContextExt;
+use trace::span_ext::SpanExt;
+use trace::{debug, error, info, Span, SpanContext};
 use utils::backtrace;
 use warp::hyper::body::Bytes;
 use warp::hyper::Body;
@@ -96,7 +98,7 @@ pub struct HttpService {
     mode: ServerMode,
     metrics_register: Arc<MetricsRegister>,
     http_metrics: Arc<HttpMetrics>,
-    span_context_extractor: Arc<SpanContextExtractor>,
+    auto_generate_span: bool,
 }
 
 impl HttpService {
@@ -109,7 +111,7 @@ impl HttpService {
         write_body_limit: u64,
         mode: ServerMode,
         metrics_register: Arc<MetricsRegister>,
-        span_context_extractor: Arc<SpanContextExtractor>,
+        auto_generate_span: bool,
     ) -> Self {
         let http_metrics = Arc::new(HttpMetrics::new(&metrics_register));
 
@@ -127,7 +129,7 @@ impl HttpService {
             mode,
             metrics_register,
             http_metrics,
-            span_context_extractor,
+            auto_generate_span,
         }
     }
 
@@ -159,15 +161,18 @@ impl HttpService {
     fn handle_span_header(
         &self,
     ) -> impl Filter<Extract = (Option<SpanContext>,), Error = warp::Rejection> + Clone {
-        let span_context_extractor = self.span_context_extractor.clone();
-
+        let auto_generate_span = self.auto_generate_span;
         header::optional::<String>(DEFAULT_TRACE_HEADER_NAME).and_then(
             move |trace: Option<String>| {
-                let result = span_context_extractor
-                    .extract_from_value(DEFAULT_TRACE_HEADER_NAME, trace)
-                    .map_err(HttpError::from)
-                    .map_err(reject::custom);
-
+                let result = match trace {
+                    Some(s) => SpanContext::from_str(&s)
+                        .map(Some)
+                        .map_err(ContextError::from)
+                        .map_err(HttpError::from)
+                        .map_err(reject::custom),
+                    None if auto_generate_span => Ok(Some(SpanContext::random())),
+                    None => Ok(None),
+                };
                 async move { result }
             },
         )
@@ -302,9 +307,8 @@ impl HttpService {
                         "Receive http sql request, header: {:?}, param: {:?}",
                         header, param
                     );
-                    let span_recorder =
-                        SpanRecorder::new(parent_span_ctx.child_span("rest sql request"));
-                    let span_context = span_recorder.span_ctx();
+
+                    let span = Span::from_context("rest sql request", parent_span_ctx.as_ref());
                     let req_len = req.len();
                     let content_encoding = get_content_encoding_from_header(&header)?;
                     if let Some(encoding) = content_encoding {
@@ -314,15 +318,14 @@ impl HttpService {
                         })?;
                     }
                     let query = {
-                        let mut span_recorder =
-                            SpanRecorder::new(span_context.child_span("authenticate"));
+                        let mut span = Span::enter_with_parent("authenticate", &span);
 
                         // Parse req、header and param to construct query request
                         let query = construct_query(req, &header, param, dbms.clone(), coord)
                             .await
                             .map_err(reject::custom)?;
-
-                        span_recorder.record(query)
+                        record_context_in_span(&mut span, query.context());
+                        query
                     };
 
                     let result_fmt = get_result_format_from_header(&header)?;
@@ -336,8 +339,7 @@ impl HttpService {
                     let addr_str = addr.as_str();
 
                     let result = {
-                        let mut span_recorder =
-                            SpanRecorder::new(span_context.child_span("sql handle"));
+                        let span = Span::enter_with_parent("sql handle", &span);
                         let limiter = meta
                             .limiter(query.context().tenant())
                             .await
@@ -354,13 +356,13 @@ impl HttpService {
                             &dbms,
                             result_fmt,
                             result_encoding,
-                            span_recorder.span_ctx(),
+                            span.context().as_ref(),
                             limiter,
                             http_data_out,
                         )
                         .await
                         .map_err(|e| {
-                            span_recorder.error(e.to_string());
+                            span.error(e.to_string());
                             trace::error!("Failed to handle http sql request, err: {}", e);
                             reject::custom(e)
                         })
@@ -404,9 +406,9 @@ impl HttpService {
                  addr: String,
                  parent_span_ctx: Option<SpanContext>| async move {
                     let start = Instant::now();
-                    let span_recorder =
-                        SpanRecorder::new(parent_span_ctx.child_span("rest line protocol write"));
-                    let span_context = span_recorder.span_ctx();
+                    let span =
+                        Span::from_context("rest line protocol write", parent_span_ctx.as_ref());
+                    let span_context = span.context();
 
                     let req_len = req.len();
                     let content_encoding = get_content_encoding_from_header(&header)?;
@@ -418,8 +420,7 @@ impl HttpService {
                     }
 
                     let ctx = {
-                        let mut span_recorder =
-                            SpanRecorder::new(span_context.child_span("construct write context"));
+                        let mut span = Span::enter_with_parent("construct write context", &span);
                         let ctx = construct_write_context_and_check_privilege(
                             header,
                             param,
@@ -428,7 +429,8 @@ impl HttpService {
                         )
                         .await
                         .map_err(reject::custom)?;
-                        span_recorder.record(ctx)
+                        record_context_in_span(&mut span, &ctx);
+                        ctx
                     };
 
                     http_limiter_check_write(&coord.meta_manager(), ctx.tenant(), req_len).await?;
@@ -436,9 +438,8 @@ impl HttpService {
                     let precision = Precision::new(ctx.precision()).unwrap_or(Precision::NS);
 
                     let write_points_lines = {
-                        let mut span_recorder =
-                            SpanRecorder::new(span_context.child_span("try parse req to lines"));
-                        span_recorder.set_metadata("bytes", req.len());
+                        let mut span = Span::enter_with_parent("try parse req to lines", &span);
+                        span.add_property(|| ("bytes", req.len().to_string()));
                         try_parse_req_to_lines(&req).map_err(reject::custom)?
                     };
 
@@ -448,7 +449,7 @@ impl HttpService {
                         ctx.database(),
                         precision,
                         write_points_lines,
-                        span_context,
+                        span_context.as_ref(),
                     )
                     .await;
 
@@ -543,9 +544,8 @@ impl HttpService {
                  addr: String,
                  parent_span_ctx: Option<SpanContext>| async move {
                     let start = Instant::now();
-                    let span_recorder =
-                        SpanRecorder::new(parent_span_ctx.child_span("rest open tsdb write"));
-                    let span_context = span_recorder.span_ctx();
+                    let span = Span::from_context("rest open tsdb write", parent_span_ctx.as_ref());
+                    let span_context = span.context();
 
                     let req_len = req.len();
                     let content_encoding = get_content_encoding_from_header(&header)?;
@@ -557,8 +557,7 @@ impl HttpService {
                     }
 
                     let ctx = {
-                        let mut span_recorder =
-                            SpanRecorder::new(span_context.child_span("construct write context"));
+                        let mut span = Span::enter_with_parent("construct write context", &span);
                         let ctx = construct_write_context_and_check_privilege(
                             header,
                             param,
@@ -567,7 +566,8 @@ impl HttpService {
                         )
                         .await
                         .map_err(reject::custom)?;
-                        span_recorder.record(ctx)
+                        record_context_in_span(&mut span, &ctx);
+                        ctx
                     };
 
                     let precision = Precision::new(ctx.precision()).unwrap_or(Precision::NS);
@@ -577,10 +577,9 @@ impl HttpService {
                         .map_err(reject::custom)?;
 
                     let write_points_req = {
-                        let mut span_recorder = SpanRecorder::new(
-                            span_context.child_span("construct write tsdb points request"),
-                        );
-                        span_recorder.set_metadata("bytes", req.len());
+                        let mut span =
+                            Span::enter_with_parent("construct write tsdb points request", &span);
+                        span.add_property(|| ("bytes", req.len().to_string()));
                         construct_write_tsdb_points_request(&req).map_err(reject::custom)?
                     };
                     let resp = coord_write_points_with_span_recorder(
@@ -589,7 +588,7 @@ impl HttpService {
                         ctx.database(),
                         precision,
                         write_points_req,
-                        span_context,
+                        span_context.as_ref(),
                     )
                     .await;
 
@@ -630,9 +629,8 @@ impl HttpService {
                  addr: String,
                  parent_span_ctx: Option<SpanContext>| async move {
                     let start = Instant::now();
-                    let span_recorder =
-                        SpanRecorder::new(parent_span_ctx.child_span("rest open tsdb put"));
-                    let span_context = span_recorder.span_ctx();
+                    let span = Span::from_context("rest open tsdb put", parent_span_ctx.as_ref());
+                    let span_context = span.context();
 
                     let req_len = req.len();
                     let content_encoding = get_content_encoding_from_header(&header)?;
@@ -644,8 +642,7 @@ impl HttpService {
                     }
 
                     let ctx = {
-                        let mut span_recorder =
-                            SpanRecorder::new(span_context.child_span("construct write context"));
+                        let mut span = Span::enter_with_parent("construct write context", &span);
                         let ctx = construct_write_context_and_check_privilege(
                             header,
                             param,
@@ -654,7 +651,8 @@ impl HttpService {
                         )
                         .await
                         .map_err(reject::custom)?;
-                        span_recorder.record(ctx)
+                        record_context_in_span(&mut span, &ctx);
+                        ctx
                     };
 
                     let precision = Precision::new(ctx.precision()).unwrap_or(Precision::NS);
@@ -664,10 +662,11 @@ impl HttpService {
                         .map_err(reject::custom)?;
 
                     let write_points_req = {
-                        let mut span_recorder = SpanRecorder::new(
-                            span_context.child_span("construct write tsdb points json request"),
+                        let mut span = Span::enter_with_parent(
+                            "construct write tsdb points json request",
+                            &span,
                         );
-                        span_recorder.set_metadata("bytes", req.len());
+                        span.add_property(|| ("bytes", req.len().to_string()));
                         construct_write_tsdb_points_json_request(&req).map_err(reject::custom)?
                     };
                     let resp = coord_write_points_with_span_recorder(
@@ -676,7 +675,7 @@ impl HttpService {
                         ctx.database(),
                         precision,
                         write_points_req,
-                        span_context,
+                        span_context.as_ref(),
                     )
                     .await;
 
@@ -830,19 +829,18 @@ impl HttpService {
                         "Receive rest prom remote read request, header: {:?}, param: {:?}",
                         header, param
                     );
-                    let span_recorder =
-                        SpanRecorder::new(parent_span_ctx.child_span("rest prom remote read"));
-                    let span_context = span_recorder.span_ctx();
+                    let span =
+                        Span::from_context("rest prom remote read", parent_span_ctx.as_ref());
 
                     // Parse req、header and param to construct query request
                     let context = {
-                        let mut span_recorder =
-                            SpanRecorder::new(span_context.child_span("construct context"));
-                        span_recorder.set_metadata("bytes", req.len());
+                        let mut span = Span::enter_with_parent("construct context", &span);
+                        span.add_property(|| ("bytes", req.len().to_string()));
                         let ctx = construct_read_context(&header, param, dbms, coord, false)
                             .await
                             .map_err(reject::custom)?;
-                        span_recorder.record(ctx)
+                        record_context_in_span(&mut span, &ctx);
+                        ctx
                     };
                     let req_len = req.len();
 
@@ -863,12 +861,11 @@ impl HttpService {
                     );
 
                     let result = {
-                        let mut span_recorder =
-                            SpanRecorder::new(span_context.child_span("remote read"));
-                        prs.remote_read(&context, req, span_recorder.span_ctx())
+                        let span = Span::enter_with_parent("remote read", &span);
+                        prs.remote_read(&context, req, span.context().as_ref())
                             .await
                             .map_err(|e| {
-                                span_recorder.error(e.to_string());
+                                span.error(e.to_string());
                                 trace::error!(
                                     "Failed to handle prom remote read request, err: {}",
                                     e
@@ -924,15 +921,14 @@ impl HttpService {
                         "Receive rest prom remote write request, header: {:?}, param: {:?}",
                         header, param
                     );
-                    let span_recorder =
-                        SpanRecorder::new(parent_span_ctx.child_span("rest prom remote write"));
-                    let span_context = span_recorder.span_ctx();
+                    let span =
+                        Span::from_context("rest prom remote write", parent_span_ctx.as_ref());
+                    let span_context = span.context();
 
                     // Parse req、header and param to construct query request
                     let ctx = {
-                        let mut span_recorder =
-                            SpanRecorder::new(span_context.child_span("construct context"));
-                        span_recorder.set_metadata("bytes", req.len());
+                        let mut span = Span::enter_with_parent("construct context", &span);
+                        span.add_property(|| ("bytes", req.len().to_string()));
                         let ctx = construct_write_context_and_check_privilege(
                             header,
                             param,
@@ -941,7 +937,8 @@ impl HttpService {
                         )
                         .await
                         .map_err(reject::custom)?;
-                        span_recorder.record(ctx)
+                        record_context_in_span(&mut span, &ctx);
+                        ctx
                     };
 
                     let req_len = req.len();
@@ -949,17 +946,16 @@ impl HttpService {
                         .await
                         .map_err(reject::custom)?;
 
-                    let mut span_recorder =
-                        SpanRecorder::new(span_context.child_span("remote write"));
+                    let span = Span::enter_with_parent("remote write", &span);
                     let prom_write_request = prs.remote_write(req).map_err(|e| {
-                        span_recorder.error(e.to_string());
+                        span.error(e.to_string());
                         error!("Failed to handle prom remote write request, err: {}", e);
                         reject::custom(HttpError::from(e))
                     })?;
                     let write_request = prs
                         .prom_write_request_to_lines(&prom_write_request)
                         .map_err(|e| {
-                            span_recorder.error(e.to_string());
+                            span.error(e.to_string());
                             error!("Failed to handle prom remote write request, err: {}", e);
                             reject::custom(HttpError::from(e))
                         })?;
@@ -970,7 +966,7 @@ impl HttpService {
                         ctx.database(),
                         Precision::NS,
                         write_request,
-                        span_context,
+                        span_context.as_ref(),
                     )
                     .await;
                     http_record_write_metrics(
@@ -1052,9 +1048,8 @@ impl HttpService {
                  addr: String,
                  parent_span_ctx: Option<SpanContext>| async move {
                     let start = Instant::now();
-                    let span_recorder =
-                        SpanRecorder::new(parent_span_ctx.child_span("rest es log write"));
-                    let span_context = span_recorder.span_ctx();
+                    let span = Span::from_context("rest es log write", parent_span_ctx.as_ref());
+                    let span_context = span.context();
 
                     let req_len = req.len();
                     let content_encoding = get_content_encoding_from_header(&header)?;
@@ -1079,8 +1074,8 @@ impl HttpService {
                         }));
                     }
                     let ctx = {
-                        let mut span_recorder =
-                            SpanRecorder::new(span_context.child_span("construct write context"));
+                        let mut span =
+                            Span::from_context("construct write context", span_context.as_ref());
                         let ctx = construct_write_context_and_check_privilege(
                             header,
                             write_param,
@@ -1089,15 +1084,16 @@ impl HttpService {
                         )
                         .await
                         .map_err(reject::custom)?;
-                        span_recorder.record(ctx)
+                        record_context_in_span(&mut span, &ctx);
+                        ctx
                     };
 
                     http_limiter_check_write(&coord.meta_manager(), ctx.tenant(), req_len).await?;
 
                     let eslog = {
-                        let mut span_recorder =
-                            SpanRecorder::new(span_context.child_span("try parse req to es log"));
-                        span_recorder.set_metadata("bytes", req.len());
+                        let mut span =
+                            Span::from_context("try parse req to es log", span_context.as_ref());
+                        span.add_property(|| ("bytes", req.len().to_string()));
                         try_parse_es_req(&req, param.have_es_command.unwrap_or(true))
                             .map_err(reject::custom)?
                     };
@@ -1110,7 +1106,7 @@ impl HttpService {
                         eslog,
                         param.time_column,
                         param.tag_columns,
-                        span_context,
+                        span_context.as_ref(),
                     )
                     .await;
 
@@ -1458,7 +1454,7 @@ async fn coord_write_eslog(
     tag_columns: Option<String>,
     span_context: Option<&SpanContext>,
 ) -> Result<Response, HttpError> {
-    let mut span_recorder = SpanRecorder::new(span_context.child_span("write points"));
+    let span = Span::from_context("write points", span_context);
 
     let mut table_exist = {
         if let Some(meta) = coord.meta_manager().tenant_meta(tenant).await {
@@ -1489,10 +1485,10 @@ async fn coord_write_eslog(
     }
 
     coord
-        .write_lines(tenant, db, Precision::NS, lines, span_recorder.span_ctx())
+        .write_lines(tenant, db, Precision::NS, lines, span.context().as_ref())
         .await
         .map_err(|e| {
-            span_recorder.error(e.to_string());
+            span.error(e.to_string());
             e
         })?;
 
@@ -1511,18 +1507,18 @@ async fn coord_write_points_with_span_recorder(
     write_points_lines: Vec<Line<'_>>,
     span_context: Option<&SpanContext>,
 ) -> Result<usize, HttpError> {
-    let mut span_recorder = SpanRecorder::new(span_context.child_span("write points"));
+    let span = Span::from_context("write points", span_context);
     coord
         .write_lines(
             tenant,
             db,
             precision,
             write_points_lines,
-            span_recorder.span_ctx(),
+            span.context().as_ref(),
         )
         .await
         .map_err(|e| {
-            span_recorder.error(e.to_string());
+            span.error(e.to_string());
             e.into()
         })
 }
@@ -1538,11 +1534,11 @@ async fn sql_handle(
 ) -> Result<Response, HttpError> {
     // debug!("prepare to execute: {:?}", query.content());
     let handle = {
-        let mut execute_span_recorder = SpanRecorder::new(span_ctx.child_span("execute"));
-        dbms.execute(query, execute_span_recorder.span_ctx())
+        let span = Span::from_context("execute", span_ctx);
+        dbms.execute(query, span.context().as_ref())
             .await
             .map_err(|err| {
-                execute_span_recorder.error(err.to_string());
+                span.error(err.to_string());
                 err
             })?
     };
@@ -1557,19 +1553,18 @@ async fn sql_handle(
         limiter.clone(),
     );
 
-    let _response_span_recorder = SpanRecorder::new(span_ctx.child_span("build response"));
+    let span = Span::from_context("build response", span_ctx);
     if !query.context().chunked() {
         let result = resp.wrap_batches_to_response().await;
         if let Err(err) = &result {
             if tskv::TskvError::vnode_broken_code(err.error_code().code()) {
                 info!("tsm file broken {:?}, try read....", err);
                 let handle = {
-                    let mut execute_span_recorder =
-                        SpanRecorder::new(span_ctx.child_span("retry execute"));
-                    dbms.execute(query, execute_span_recorder.span_ctx())
+                    let span = Span::enter_with_parent("retry execute", &span);
+                    dbms.execute(query, span.context().as_ref())
                         .await
                         .map_err(|err| {
-                            execute_span_recorder.error(err.to_string());
+                            span.error(err.to_string());
                             err
                         })?
                 };
@@ -1683,6 +1678,17 @@ async fn handle_rejection(err: Rejection) -> Result<impl Reply, std::convert::In
         trace::warn!("unhandled rejection: {:?}", err);
         Ok(ResponseBuilder::internal_server_error())
     }
+}
+
+fn record_context_in_span(span: &mut Span, context: &Context) {
+    span.add_properties(|| {
+        [
+            ("user", context.user().desc().name().to_owned()),
+            ("tenant", context.tenant().to_owned()),
+            ("database", context.database().to_owned()),
+            ("chunked", context.chunked().to_string()),
+        ]
+    });
 }
 
 /**************** bottom *****************/

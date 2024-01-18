@@ -16,7 +16,8 @@ use spi::query::parser::Parser;
 use spi::query::session::{SessionCtx, SessionCtxFactory};
 use spi::service::protocol::{ContextBuilder, Query, QueryId};
 use spi::{QueryError, Result};
-use trace::{info, SpanContext, SpanExt, SpanRecorder, TraceExporter};
+use trace::span_ext::SpanExt;
+use trace::{info, Span, SpanContext};
 
 use super::query_tracker::QueryTracker;
 use crate::data_source::split::SplitManagerRef;
@@ -43,7 +44,7 @@ pub struct SimpleQueryDispatcher {
     query_execution_factory: QueryExecutionFactoryRef,
     func_manager: FuncMetaManagerRef,
     stream_provider_manager: StreamProviderManagerRef,
-    trace_collector: Option<Arc<dyn TraceExporter>>,
+    span_ctx: Option<SpanContext>,
 }
 
 #[async_trait]
@@ -64,9 +65,8 @@ impl QueryDispatcher for SimpleQueryDispatcher {
                 .with_database(Some(database_name.to_owned()))
                 .build();
             let query = Query::new(ctx, sql.to_owned());
-            let span_context = self.trace_collector.clone().map(SpanContext::new);
             match self
-                .execute_query(tenant_id, query_id, &query, span_context.as_ref())
+                .execute_query(tenant_id, query_id, &query, self.span_ctx.as_ref())
                 .await
             {
                 Ok(_) => {
@@ -101,7 +101,7 @@ impl QueryDispatcher for SimpleQueryDispatcher {
         span_ctx: Option<&SpanContext>,
     ) -> Result<Output> {
         let query_state_machine = {
-            let _span_recorder = SpanRecorder::new(span_ctx.child_span("init session ctx"));
+            let _span = Span::from_context("init session ctx", span_ctx);
             self.build_query_state_machine(tenant_id, query_id, query.clone(), span_ctx)
                 .await?
         };
@@ -128,7 +128,7 @@ impl QueryDispatcher for SimpleQueryDispatcher {
 
         let logical_planner = DefaultLogicalPlanner::new(&scheme_provider);
 
-        let span_recorder = session.get_child_span_recorder("parse sql");
+        let span_recorder = session.get_child_span("parse sql");
         let statements = self.parser.parse(query.content())?;
 
         // not allow multi statement
@@ -307,7 +307,7 @@ pub struct SimpleQueryDispatcherBuilder {
 
     func_manager: Option<FuncMetaManagerRef>,
     stream_provider_manager: Option<StreamProviderManagerRef>,
-    trace_collector: Option<Arc<dyn TraceExporter>>,
+    span_ctx: Option<SpanContext>,
 }
 
 impl SimpleQueryDispatcherBuilder {
@@ -370,8 +370,8 @@ impl SimpleQueryDispatcherBuilder {
         self
     }
 
-    pub fn with_trace_collector(mut self, trace_collector: Arc<dyn TraceExporter>) -> Self {
-        self.trace_collector = Some(trace_collector);
+    pub fn with_span_ctx(mut self, span_ctx: Option<SpanContext>) -> Self {
+        self.span_ctx = span_ctx;
         self
     }
 
@@ -434,7 +434,7 @@ impl SimpleQueryDispatcherBuilder {
                     err: "lost of default_table_provider".to_string(),
                 })?;
 
-        let trace_collector = self.trace_collector;
+        let span_ctx = self.span_ctx;
 
         Ok(SimpleQueryDispatcher {
             coord,
@@ -447,7 +447,7 @@ impl SimpleQueryDispatcherBuilder {
             query_tracker,
             func_manager,
             stream_provider_manager,
-            trace_collector,
+            span_ctx,
         })
     }
 }

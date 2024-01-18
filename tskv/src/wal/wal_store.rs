@@ -487,6 +487,7 @@ mod test {
     use replication::state_store::StateStorage;
     use replication::{ApplyStorageRef, EntryStorage, EntryStorageRef, RaftNodeInfo};
     use tokio::sync::RwLock;
+    use trace::global_logging::init_default_global_tracing;
 
     use crate::file_system::async_filesystem::LocalFileSystem;
     use crate::file_system::FileSystem;
@@ -672,11 +673,7 @@ mod test {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
 
-        trace::init_default_global_tracing(
-            &dir,
-            "test_wal_raft_storage_with_openraft_cases",
-            "debug",
-        );
+        init_default_global_tracing(&dir, "test_wal_raft_storage_with_openraft_cases", "debug");
 
         let case_id = AtomicUsize::new(0);
         if let Err(e) = openraft::testing::Suite::test_all(|| {

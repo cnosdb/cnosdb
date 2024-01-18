@@ -14,7 +14,7 @@ use models::arrow_array::build_arrow_array_builders;
 use models::meta_data::VnodeId;
 use models::schema::TskvTableSchemaRef;
 use models::SeriesKey;
-use trace::SpanRecorder;
+use trace::Span;
 
 use crate::error::TskvResult;
 use crate::reader::{QueryOption, SendableTskvRecordBatchStream};
@@ -23,7 +23,7 @@ use crate::{EngineRef, TskvError};
 pub struct LocalTskvTagScanStream {
     state: StreamState,
     #[allow(unused)]
-    span_recorder: SpanRecorder,
+    span: Span,
 }
 
 pub fn dictionary_filed_to_string(schema: SchemaRef) -> SchemaRef {
@@ -42,12 +42,7 @@ pub fn dictionary_filed_to_string(schema: SchemaRef) -> SchemaRef {
 }
 
 impl LocalTskvTagScanStream {
-    pub fn new(
-        vnode_id: VnodeId,
-        option: QueryOption,
-        kv: EngineRef,
-        span_recorder: SpanRecorder,
-    ) -> Self {
+    pub fn new(vnode_id: VnodeId, option: QueryOption, kv: EngineRef, span: Span) -> Self {
         let futrue = async move {
             let (tenant, db, table) = (
                 option.table_schema.tenant.as_str(),
@@ -77,10 +72,7 @@ impl LocalTskvTagScanStream {
 
         let state = StreamState::Open(Box::pin(futrue));
 
-        Self {
-            state,
-            span_recorder,
-        }
+        Self { state, span }
     }
 
     fn poll_inner(&mut self, cx: &mut Context<'_>) -> Poll<Option<TskvResult<RecordBatch>>> {
