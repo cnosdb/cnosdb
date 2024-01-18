@@ -1,0 +1,31 @@
+statement ok
+DROP USER IF EXISTS user001;
+
+
+statement ok
+CREATE USER user001 WITH PASSWORD = 'user001';
+
+query T
+select user_name,is_admin from cluster_schema.users where user_name = 'user001';
+----
+user001 false
+
+statement ok
+alter user user001 set granted_admin = true;
+
+
+
+query T
+select user_name,is_admin from cluster_schema.users where user_name = 'user001';
+----
+user001 true
+
+
+statement ok
+alter user user001 set password='user';
+
+
+query T
+select user_name,is_admin from cluster_schema.users where user_name = 'user001';
+----
+user001 true
