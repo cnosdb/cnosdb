@@ -2,6 +2,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use coordinator::Coordinator;
+use datafusion::common::extensions_options;
+use datafusion::config::ConfigExtension;
 use datafusion::execution::context::SessionState;
 use datafusion::execution::memory_pool::MemoryPool;
 use datafusion::execution::runtime_env::{RuntimeConfig, RuntimeEnv};
@@ -13,6 +16,15 @@ use trace::{SpanContext, SpanExt, SpanRecorder};
 use super::config::StreamTriggerInterval;
 use crate::service::protocol::Context;
 use crate::Result;
+
+extensions_options! {
+    pub struct SqlExecInfo {
+        pub copyinto_trigger_flush_size: u64, default = 128 * 1024 * 1024 // 128MB
+    }
+}
+impl ConfigExtension for SqlExecInfo {
+    const PREFIX: &'static str = "sql_exec_info";
+}
 
 #[derive(Clone)]
 pub struct SessionCtx {
@@ -96,12 +108,22 @@ impl SessionCtxFactory {
         tenant_id: Oid,
         memory_pool: Arc<dyn MemoryPool>,
         span_ctx: Option<SpanContext>,
+        coord: Arc<dyn Coordinator>,
     ) -> Result<SessionCtx> {
         let mut ctx = context.session_config().to_owned();
         if let Some(span_ctx) = &span_ctx {
             // inject span context into datafusion session config, so that it can be used in execution
             ctx.inner = ctx.inner.with_extension(Arc::new(span_ctx.clone()));
         }
+        // inject cnosdb_config into datafusion session_config
+        ctx.inner
+            .options_mut()
+            .extensions
+            .insert(SqlExecInfo::default());
+        ctx.inner = ctx.inner.set_u64(
+            "sql_exec_info.copyinto_trigger_flush_size",
+            coord.get_config().storage.copyinto_trigger_flush_size,
+        );
 
         let mut rt_config = RuntimeConfig::new();
         rt_config.memory_pool = Some(memory_pool);

@@ -13,6 +13,7 @@ use futures::{pin_mut, TryStreamExt};
 use object_store::path::Path;
 use object_store::DynObjectStore;
 use spi::query::datasource::WriteContext;
+use spi::query::session::SqlExecInfo;
 use spi::{QueryError, Result};
 use trace::debug;
 
@@ -24,9 +25,6 @@ pub struct ObjectStoreSink {
     s: Arc<DynRecordBatchSerializer>,
     object_store: Arc<DynObjectStore>,
 }
-
-// 128MB
-const MAX_FILE_SIZXE: usize = 128 * 1024 * 1024;
 
 #[async_trait]
 impl RecordBatchSink for ObjectStoreSink {
@@ -41,13 +39,8 @@ impl RecordBatchSink for ObjectStoreSink {
 
         pin_mut!(stream);
 
-        let mut writer = BufferedWriter::new(
-            &self.ctx,
-            &self.s,
-            &self.object_store,
-            stream.schema(),
-            MAX_FILE_SIZXE,
-        );
+        let mut writer =
+            BufferedWriter::new(&self.ctx, &self.s, &self.object_store, stream.schema());
 
         while let Some(batch) = stream.try_next().await? {
             writer.write(batch).await?;
@@ -88,10 +81,18 @@ impl RecordBatchSinkProvider for ObjectStoreSinkProvider {
         partition: usize,
     ) -> Box<dyn RecordBatchSink> {
         let ctx = WriteContext::new(
+            context.session_id(),
             self.location.clone(),
             context.task_id(),
             partition,
             self.file_extension.clone(),
+            context
+                .session_config()
+                .options()
+                .extensions
+                .get::<SqlExecInfo>()
+                .unwrap()
+                .clone(),
         );
 
         Box::new(ObjectStoreSink {
@@ -131,14 +132,13 @@ impl<'a> BufferedWriter<'a> {
         s: &'a Arc<DynRecordBatchSerializer>,
         object_store: &'a Arc<DynObjectStore>,
         schema: SchemaRef,
-        max_file_sizxe: usize,
     ) -> Self {
         Self {
             ctx,
             s,
             object_store,
             schema,
-            max_file_size: max_file_sizxe,
+            max_file_size: ctx.sql_exec_info().copyinto_trigger_flush_size as usize,
             buffer: Default::default(),
             buffered_size: Default::default(),
             rows_writed: Default::default(),
@@ -185,7 +185,8 @@ impl<'a> BufferedWriter<'a> {
 
         if bytes_writed > 0 {
             let path = self.ctx.location().child(format!(
-                "part-{}-{}-{}{}",
+                "queryId-{}-part-{}-{}-{}{}",
+                self.ctx.query_id(),
                 self.ctx.task_id(),
                 self.ctx.partition(),
                 self.file_number.fetch_add(1, Ordering::Relaxed),

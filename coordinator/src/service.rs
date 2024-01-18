@@ -632,4 +632,8 @@ impl Coordinator for CoordService {
     fn metrics(&self) -> &Arc<CoordServiceMetrics> {
         &self.metrics
     }
+
+    fn get_config(&self) -> &Config {
+        &self.config
+    }
 }
