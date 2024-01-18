@@ -104,6 +104,18 @@ path = '/var/lib/cnosdb/wal'
 [log]
 level = 'info'
 path = '/var/log/cnosdb'
+
+## Keeps the last [max_file_count] log files on disk. When a new log file
+## is created, if there are [max_file_count] or more existing log files in
+## the directory, the oldest will be deleted. If no value is supplied, the
+## old file will not be removed.
+# max_file_count = 10
+
+## Defines a fixed period for rolling of a log file, Optional values ​​are
+## "daily", "hourly", "minutely", "never"
+# file_rotation = "daily"
+
+
 ## Tokio trace, default turn off tokio trace
 # tokio_trace = { addr = "127.0.0.1:6669" }
 
@@ -134,9 +146,7 @@ threads = 3
 
 # [trace]
 # auto_generate_span = false
-# [trace.log]
-# path = '/var/log/cnosdb'
-# [trace.jaeger]
-# jaeger_agent_endpoint = 'http://localhost:14268/api/traces'
-# max_concurrent_exports = 2
-# max_queue_size = 4096
+# jaeger_endpoint = 'http://localhost:4317'
+# max_spans_per_trace = 100
+# batch_report_interval_millis = 500
+# batch_report_max_spans = 100

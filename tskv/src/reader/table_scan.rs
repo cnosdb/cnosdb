@@ -7,7 +7,7 @@ use futures::future::BoxFuture;
 use futures::{ready, Stream, StreamExt, TryFutureExt};
 use models::meta_data::VnodeId;
 use tokio::runtime::Runtime;
-use trace::SpanRecorder;
+use trace::Span;
 
 use super::{iterator, SendableTskvRecordBatchStream};
 use crate::reader::QueryOption;
@@ -18,7 +18,7 @@ type Result<T, E = TskvError> = std::result::Result<T, E>;
 pub struct LocalTskvTableScanStream {
     state: StreamState,
     #[allow(unused)]
-    span_recorder: SpanRecorder,
+    span: Span,
 }
 
 impl LocalTskvTableScanStream {
@@ -27,21 +27,18 @@ impl LocalTskvTableScanStream {
         option: QueryOption,
         kv_inst: EngineRef,
         runtime: Arc<Runtime>,
-        span_recorder: SpanRecorder,
+        span: Span,
     ) -> Self {
         let iter_future = Box::pin(iterator::execute(
             runtime,
             kv_inst,
             option,
             vnode_id,
-            span_recorder.child("build vnode stream"),
+            Span::enter_with_parent("build vnode stream", &span),
         ));
         let state = StreamState::Open { iter_future };
 
-        Self {
-            state,
-            span_recorder,
-        }
+        Self { state, span }
     }
 
     fn poll_inner(&mut self, cx: &mut Context<'_>) -> Poll<Option<Result<RecordBatch>>> {

@@ -5,7 +5,8 @@ use meta::model::MetaRef;
 use models::arrow::stream::{BoxStream, ParallelMergeStream};
 use models::meta_data::VnodeInfo;
 use tokio::runtime::Runtime;
-use trace::{SpanContext, SpanExt, SpanRecorder};
+use trace::span_ext::SpanExt;
+use trace::{Span, SpanContext};
 
 use super::table_scan::LocalTskvTableScanStream;
 use super::tag_scan::LocalTskvTagScanStream;
@@ -38,7 +39,7 @@ impl QueryExecutor {
     pub fn local_node_executor(
         &self,
         vnodes: Vec<VnodeInfo>,
-        span_ctx: Option<&SpanContext>,
+        span_context: Option<&SpanContext>,
     ) -> TskvResult<SendableTskvRecordBatchStream> {
         let mut streams: Vec<BoxStream<TskvResult<RecordBatch>>> = Vec::with_capacity(vnodes.len());
 
@@ -48,8 +49,9 @@ impl QueryExecutor {
                 self.option.clone(),
                 self.kv_inst.clone(),
                 self.runtime.clone(),
-                SpanRecorder::new(
-                    span_ctx.child_span(format!("LocalTskvTableScanStream ({})", vnode.id)),
+                Span::from_context(
+                    format!("LocalTskvTableScanStream ({})", vnode.id),
+                    span_context,
                 ),
             ));
 
@@ -64,7 +66,7 @@ impl QueryExecutor {
     pub fn local_node_tag_scan(
         &self,
         vnodes: Vec<VnodeInfo>,
-        span_ctx: Option<&SpanContext>,
+        span_context: Option<&SpanContext>,
     ) -> TskvResult<SendableTskvRecordBatchStream> {
         let mut streams = Vec::with_capacity(vnodes.len());
         vnodes.into_iter().for_each(|vnode| {
@@ -72,8 +74,9 @@ impl QueryExecutor {
                 vnode.id,
                 self.option.clone(),
                 self.kv_inst.clone(),
-                SpanRecorder::new(
-                    span_ctx.child_span(format!("LocalTskvTagScanStream ({})", vnode.id)),
+                Span::from_context(
+                    format!("LocalTskvTagScanStream ({})", vnode.id),
+                    span_context,
                 ),
             );
             streams.push(Box::pin(stream) as SendableTskvRecordBatchStream);

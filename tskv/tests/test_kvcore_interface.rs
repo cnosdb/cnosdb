@@ -15,7 +15,8 @@ mod tests {
     use sysinfo::{ProcessRefreshKind, RefreshKind, System};
     use tokio::runtime;
     use tokio::runtime::Runtime;
-    use trace::{debug, error, info, init_default_global_tracing, warn};
+    use trace::global_logging::init_default_global_tracing;
+    use trace::{debug, error, info, warn};
     use tskv::file_system::async_filesystem::LocalFileSystem;
     use tskv::file_system::FileSystem;
     use tskv::{file_utils, kv_option, Engine, TsKv};

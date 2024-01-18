@@ -27,7 +27,6 @@ protos = { path = "../common/protos" }
 query = { path = "../query_server/query" }
 spi = { path = "../query_server/spi" }
 trace = { path = "../common/trace" }
-trace_http = { path = "../common/trace_http" }
 tskv = { path = "../tskv" }
 utils = { path = "../common/utils" }
 replication = { path = "../replication" }
@@ -52,9 +51,9 @@ flatbuffers = { workspace = true }
 futures = { workspace = true, default-features = false, features = ["alloc"] }
 lazy_static = { workspace = true }
 libc = { workspace = true }
+minitrace = { workspace = true, features = ["enable"] }
 moka = { workspace = true }
 num_cpus = { workspace = true }
-once_cell = { workspace = true, features = ["parking_lot"] }
 openraft = { workspace = true, features = ["serde"] }
 os_info = { workspace = true }
 parking_lot = { workspace = true }
@@ -71,7 +70,6 @@ sys-info = { workspace = true }
 tokio = { workspace = true, features = ["macros", "net", "parking_lot", "rt-multi-thread", "signal", "sync", "time", "tracing"] }
 tokio-stream = { workspace = true, features = ["net"] }
 tonic = { workspace = true, features = ["transport", "tls"] }
-tracing-futures = { workspace = true }
 warp = { workspace = true, features = ["tls"] }
 dateparser = { workspace = true }
 

@@ -12,8 +12,7 @@ use tokio::runtime::Runtime;
 use tokio::sync::oneshot;
 use tonic::codec::CompressionEncoding;
 use tonic::transport::{Identity, Server, ServerTlsConfig};
-use trace_http::ctx::SpanContextExtractor;
-use trace_http::tower_layer::TraceLayer;
+use trace::http::tower_layer::TraceLayer;
 use tskv::EngineRef;
 
 use crate::rpc::tskv::TskvServiceImpl;
@@ -28,7 +27,7 @@ pub struct GrpcService {
     coord: CoordinatorRef,
     tls_config: Option<TLSConfig>,
     metrics_register: Arc<MetricsRegister>,
-    span_context_extractor: Arc<SpanContextExtractor>,
+    auto_generate_span: bool,
     handle: Option<ServiceHandle<Result<(), tonic::transport::Error>>>,
     enable_gzip: bool,
 }
@@ -41,7 +40,7 @@ impl GrpcService {
         addr: SocketAddr,
         tls_config: Option<TLSConfig>,
         metrics_register: Arc<MetricsRegister>,
-        span_context_extractor: Arc<SpanContextExtractor>,
+        auto_generate_span: bool,
         enable_gzip: bool,
     ) -> Self {
         Self {
@@ -51,7 +50,7 @@ impl GrpcService {
             coord,
             tls_config,
             metrics_register,
-            span_context_extractor,
+            auto_generate_span,
             handle: None,
             enable_gzip,
         }
@@ -59,8 +58,8 @@ impl GrpcService {
 }
 
 macro_rules! build_grpc_server {
-    ($tls_config:expr, $trace_collector:expr) => {{
-        let trace_layer = TraceLayer::new($trace_collector, "grpc");
+    ($tls_config:expr, $auto_generate_span:expr) => {{
+        let trace_layer = TraceLayer::new($auto_generate_span, "grpc");
         let mut server = Server::builder().layer(trace_layer);
 
         if let Some(TLSConfig {
@@ -105,8 +104,7 @@ impl Service for GrpcService {
                 .send_compressed(CompressionEncoding::Gzip);
         }
 
-        let mut grpc_builder =
-            build_grpc_server!(&self.tls_config, self.span_context_extractor.clone());
+        let mut grpc_builder = build_grpc_server!(&self.tls_config, self.auto_generate_span);
         let grpc_router = grpc_builder
             .add_service(tskv_grpc_service)
             .add_service(raft_grpc_service);

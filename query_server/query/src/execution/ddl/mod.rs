@@ -100,7 +100,7 @@ impl QueryExecution for DDLExecution {
         let _span_recorder = self
             .query_state_machine
             .session
-            .get_child_span_recorder("execute ddl");
+            .get_child_span("execute ddl");
 
         let result = self
             .task_factory

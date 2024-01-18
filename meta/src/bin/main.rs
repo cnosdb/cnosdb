@@ -1,16 +1,9 @@
 #![allow(dead_code, clippy::field_reassign_with_default)]
 
-use std::sync::Arc;
-
 use clap::Parser;
 use meta::signal;
 use meta::store::{self};
-use once_cell::sync::Lazy;
-use parking_lot::Mutex;
-use trace::{init_process_global_tracing, WorkerGuard};
-
-static GLOBAL_META_LOG_GUARD: Lazy<Arc<Mutex<Option<Vec<WorkerGuard>>>>> =
-    Lazy::new(|| Arc::new(Mutex::new(None)));
+use trace::global_logging::init_global_logging;
 
 #[derive(Debug, Parser)]
 struct Cli {
@@ -22,15 +15,9 @@ struct Cli {
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
-    let options = store::config::get_opt(cli.config);
-    let logs_path = format!("{}/{}", options.log.path, options.id);
-    init_process_global_tracing(
-        &logs_path,
-        &options.log.level,
-        "meta_server.log",
-        options.log.tokio_trace.as_ref(),
-        &GLOBAL_META_LOG_GUARD,
-    );
+    let mut options = store::config::get_opt(cli.config);
+    options.log.path = format!("{}/{}", options.log.path, options.id);
+    init_global_logging(&options.log, "meta_server.log");
 
     meta::service::server::start_raft_node(options)
         .await

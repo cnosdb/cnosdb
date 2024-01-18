@@ -1,9 +1,10 @@
+use std::env;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
-use crate::override_by_env::{entry_override, OverrideByEnv};
+use crate::override_by_env::{entry_override, entry_override_option, OverrideByEnv};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TokioTrace {
@@ -12,17 +13,11 @@ pub struct TokioTrace {
 
 impl OverrideByEnv for Option<TokioTrace> {
     fn override_by_env(&mut self) {
-        let is_some = self.is_some();
-        let mut tokio_trace = self.take().unwrap_or(TokioTrace {
-            addr: Default::default(),
-        });
-        *self = match (
-            is_some,
-            entry_override(&mut tokio_trace.addr, "CNOSDB_LOG_TOKIO_TRACE_ADDR"),
-        ) {
-            (_, true) | (true, false) => Some(tokio_trace),
-            (false, false) => None,
-        };
+        if env::var_os("CNOSDB_LOG_TOKIO_TRACE_ADDR").is_some() {
+            let mut addr = String::new();
+            entry_override(&mut addr, "CNOSDB_LOG_TOKIO_TRACE_ADDR");
+            *self = Some(TokioTrace { addr });
+        }
     }
 }
 
@@ -32,6 +27,11 @@ pub struct LogConfig {
     pub level: String,
     #[serde(default = "LogConfig::default_path")]
     pub path: String,
+    #[serde(default = "LogConfig::default_max_file_count")]
+    pub max_file_count: Option<usize>,
+    #[serde(default = "LogConfig::default_file_rotation")]
+    pub file_rotation: String,
+    #[serde(default = "LogConfig::default_tokio_trace")]
     pub tokio_trace: Option<TokioTrace>,
 }
 
@@ -45,13 +45,16 @@ impl LogConfig {
         path.to_string_lossy().to_string()
     }
 
-    pub fn override_by_env(&mut self) {
-        if let Ok(level) = std::env::var("CNOSDB_LOG_LEVEL") {
-            self.level = level;
-        }
-        if let Ok(path) = std::env::var("CNOSDB_LOG_PATH") {
-            self.path = path;
-        }
+    fn default_max_file_count() -> Option<usize> {
+        None
+    }
+
+    fn default_file_rotation() -> String {
+        "daily".to_owned()
+    }
+
+    fn default_tokio_trace() -> Option<TokioTrace> {
+        None
     }
 }
 
@@ -59,6 +62,8 @@ impl OverrideByEnv for LogConfig {
     fn override_by_env(&mut self) {
         entry_override(&mut self.level, "CNOSDB_LOG_LEVEL");
         entry_override(&mut self.path, "CNOSDB_LOG_PATH");
+        entry_override_option(&mut self.max_file_count, "CNOSDB_LOG_MAX_FILE_COUNT");
+        entry_override(&mut self.file_rotation, "CNOSDB_LOG_FILE_ROTATION");
         self.tokio_trace.override_by_env();
     }
 }
@@ -68,6 +73,8 @@ impl Default for LogConfig {
         Self {
             level: Self::default_level(),
             path: Self::default_path(),
+            max_file_count: Self::default_max_file_count(),
+            file_rotation: Self::default_file_rotation(),
             tokio_trace: None,
         }
     }

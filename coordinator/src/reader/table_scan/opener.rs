@@ -6,8 +6,9 @@ use meta::model::MetaRef;
 use models::meta_data::VnodeInfo;
 use protos::{tskv_service_time_out_client, DEFAULT_GRPC_SERVER_MESSAGE_LEN};
 use tokio::runtime::Runtime;
-use trace::{SpanContext, SpanExt, SpanRecorder};
-use trace_http::ctx::append_trace_context;
+use trace::http::http_ctx::grpc_append_trace_context;
+use trace::span_ext::SpanExt;
+use trace::{Span, SpanContext};
 use tskv::reader::table_scan::LocalTskvTableScanStream;
 use tskv::reader::QueryOption;
 use tskv::EngineRef;
@@ -57,7 +58,7 @@ impl VnodeOpener for TemporaryTableScanOpener {
         let option = option.clone();
         let meta = self.meta.clone();
         let config = self.config.clone();
-        let span_ctx = self.span_ctx.clone();
+        let span_ctx = self.span_ctx;
         let grpc_enable_gzip = self.grpc_enable_gzip;
 
         let future = async move {
@@ -70,8 +71,9 @@ impl VnodeOpener for TemporaryTableScanOpener {
                     option,
                     kv_inst,
                     runtime,
-                    SpanRecorder::new(
-                        span_ctx.child_span(format!("LocalTskvTableScanStream ({vnode_id})")),
+                    Span::from_context(
+                        format!("LocalTskvTableScanStream ({vnode_id})"),
+                        span_ctx.as_ref(),
                     ),
                 )
                 .map_err(Into::into);
@@ -87,11 +89,11 @@ impl VnodeOpener for TemporaryTableScanOpener {
                     tonic::Request::new(req)
                 };
 
-                append_trace_context(span_ctx, request.metadata_mut()).map_err(|_| {
-                    CoordinatorError::CommonError {
+                grpc_append_trace_context(span_ctx.as_ref(), request.metadata_mut()).map_err(
+                    |_| CoordinatorError::CommonError {
                         msg: "Parse trace_id, this maybe a bug".to_string(),
-                    }
-                })?;
+                    },
+                )?;
 
                 let resp_stream = {
                     let channel = meta.get_node_conn(node_id).await.map_err(|error| {

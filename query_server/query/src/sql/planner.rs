@@ -94,6 +94,7 @@ use spi::query::logical_planner::{
 };
 use spi::query::session::SessionCtx;
 use spi::{QueryError, Result};
+use trace::span_ext::SpanExt;
 use trace::{debug, warn};
 use url::Url;
 
@@ -126,16 +127,16 @@ impl<'a, S: ContextProviderExtension + Send + Sync> LogicalPlanner for SqlPlanne
         auth_enable: bool,
     ) -> Result<Plan> {
         let PlanWithPrivileges { plan, privileges } = {
-            let mut span_recorder = session.get_child_span_recorder("statement to logical plan");
+            let span = session.get_child_span("statement to logical plan");
             self.statement_to_plan(statement, session, auth_enable)
                 .await
                 .map_err(|err| {
-                    span_recorder.error(err.to_string());
+                    span.error(err.to_string());
                     err
                 })?
         };
 
-        let _ = session.get_child_span_recorder("check privilege");
+        let _ = session.get_child_span("check privilege");
         check_privilege(session.user(), privileges)?;
         Ok(plan)
     }
