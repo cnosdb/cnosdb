@@ -1110,6 +1110,10 @@ impl Coordinator for CoordService {
 
         Ok(())
     }
+
+    fn get_config(&self) -> Config {
+        self.config.clone()
+    }
 }
 
 struct VnodeLines<'a> {

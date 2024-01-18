@@ -2,6 +2,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use coordinator::Coordinator;
+use datafusion::common::extensions_options;
+use datafusion::config::ConfigExtension;
 use datafusion::execution::context::SessionState;
 use datafusion::execution::memory_pool::MemoryPool;
 use datafusion::execution::runtime_env::{RuntimeConfig, RuntimeEnv};
@@ -15,6 +18,15 @@ use super::config::StreamTriggerInterval;
 use super::variable::VarProviderRef;
 use crate::service::protocol::Context;
 use crate::Result;
+
+extensions_options! {
+    pub struct SqlExecInfo {
+        pub copyinto_trigger_flush_size: u64, default = 128 * 1024 * 1024 // 128MB
+    }
+}
+impl ConfigExtension for SqlExecInfo {
+    const PREFIX: &'static str = "sql_exec_info";
+}
 
 #[derive(Clone)]
 pub struct SessionCtx {
@@ -106,9 +118,10 @@ impl SessionCtxFactory {
         tenant_id: Oid,
         memory_pool: Arc<dyn MemoryPool>,
         span_ctx: Option<SpanContext>,
+        coord: Arc<dyn Coordinator>,
     ) -> Result<SessionCtx> {
         let df_session_ctx =
-            self.build_df_session_context(session_id, context, memory_pool, &span_ctx)?;
+            self.build_df_session_context(session_id, context, memory_pool, &span_ctx, coord)?;
 
         Ok(SessionCtx {
             desc: Arc::new(SessionCtxDesc {
@@ -129,12 +142,22 @@ impl SessionCtxFactory {
         context: &Context,
         memory_pool: Arc<dyn MemoryPool>,
         span_ctx: &Option<SpanContext>,
+        coord: Arc<dyn Coordinator>,
     ) -> Result<SessionContext> {
         let mut config = context.session_config().to_df_config().clone();
         if let Some(span_ctx) = span_ctx {
             // inject span context into datafusion session config, so that it can be used in execution
             config = config.with_extension(Arc::new(span_ctx.clone()))
         }
+        // inject cnosdb_config into datafusion session_config
+        config
+            .options_mut()
+            .extensions
+            .insert(SqlExecInfo::default());
+        config = config.set_u64(
+            "sql_exec_info.copyinto_trigger_flush_size",
+            coord.get_config().storage.copyinto_trigger_flush_size,
+        );
 
         let rt_config = RuntimeConfig::new().with_memory_pool(memory_pool);
         let rt = RuntimeEnv::new(rt_config)?;

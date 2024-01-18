@@ -64,6 +64,9 @@ path = '/var/lib/cnosdb/data'
 ## If true, write request will not be checked in detail.
 strict_write = false
 
+## copyinto trigger flush size
+#copyinto_trigger_flush_size = "128M" # 134217728
+
 [wal]
 
 ## If true, write requets on disk before writing to memory.

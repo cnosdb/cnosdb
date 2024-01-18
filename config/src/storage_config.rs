@@ -53,6 +53,12 @@ pub struct StorageConfig {
 
     #[serde(with = "bytes_num", default = "StorageConfig::default_reserve_space")]
     pub reserve_space: u64,
+
+    #[serde(
+        with = "bytes_num",
+        default = "StorageConfig::default_copyinto_trigger_flush_size"
+    )]
+    pub copyinto_trigger_flush_size: u64,
 }
 
 impl StorageConfig {
@@ -104,6 +110,10 @@ impl StorageConfig {
         false
     }
 
+    fn default_copyinto_trigger_flush_size() -> u64 {
+        128 * 1024 * 1024 // 128M
+    }
+
     pub fn introspect(&mut self) {
         // Unit of storage.compact_trigger_cold_duration is seconds
         self.compact_trigger_cold_duration =
@@ -145,6 +155,10 @@ impl OverrideByEnv for StorageConfig {
             "CNOSDB_STORAGE_MAX_CONCURRENT_COMPACTION",
         );
         entry_override(&mut self.strict_write, "CNOSDB_STORAGE_STRICT_WRITE");
+        entry_override(
+            &mut self.copyinto_trigger_flush_size,
+            "CNOSDB_COPYINTO_TRIGGER_FLUSH_SIZE",
+        );
     }
 }
 
@@ -163,6 +177,7 @@ impl Default for StorageConfig {
             max_concurrent_compaction: Self::default_max_concurrent_compaction(),
             strict_write: Self::default_strict_write(),
             reserve_space: Self::default_reserve_space(),
+            copyinto_trigger_flush_size: Self::default_copyinto_trigger_flush_size(),
         }
     }
 }

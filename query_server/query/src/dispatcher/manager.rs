@@ -174,6 +174,7 @@ impl QueryDispatcher for SimpleQueryDispatcher {
             tenant_id,
             self.memory_pool.clone(),
             span_ctx.cloned(),
+            self.coord.clone(),
         )?;
 
         let query_state_machine = Arc::new(QueryStateMachine::begin(
