@@ -12,3 +12,8 @@ COPY INTO "t1"
 FROM 'query_server/test/resource/parquet_copyinto_widetable/' FILE_FORMAT = (TYPE = 'PARQUET');
 ----
 5000
+
+query I
+select count(*) from t1;
+----
+5000
