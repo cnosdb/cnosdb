@@ -49,6 +49,12 @@ pub struct StorageConfig {
 
     #[serde(default = "StorageConfig::default_strict_write")]
     pub strict_write: bool,
+
+    #[serde(
+        with = "bytes_num",
+        default = "StorageConfig::default_copyinto_trigger_flush_size"
+    )]
+    pub copyinto_trigger_flush_size: u64,
 }
 
 impl StorageConfig {
@@ -96,6 +102,10 @@ impl StorageConfig {
         false
     }
 
+    fn default_copyinto_trigger_flush_size() -> u64 {
+        128 * 1024 * 1024 // 128M
+    }
+
     pub fn override_by_env(&mut self) {
         if let Ok(path) = std::env::var("CNOSDB_APPLICATION_PATH") {
             self.path = path;
@@ -127,6 +137,9 @@ impl StorageConfig {
         if let Ok(size) = std::env::var("CNOSDB_STORAGE_STRICT_WRITE") {
             self.strict_write = size.parse::<bool>().unwrap();
         }
+        if let Ok(size) = std::env::var("CNOSDB_COPYINTO_TRIGGER_FLUSH_SIZE") {
+            self.copyinto_trigger_flush_size = size.parse::<u64>().unwrap();
+        }
 
         self.introspect();
     }
@@ -152,6 +165,7 @@ impl Default for StorageConfig {
             max_compact_size: Self::default_max_compact_size(),
             max_concurrent_compaction: Self::default_max_concurrent_compaction(),
             strict_write: Self::default_strict_write(),
+            copyinto_trigger_flush_size: Self::default_copyinto_trigger_flush_size(),
         }
     }
 }

@@ -4,6 +4,7 @@ use std::fmt::Debug;
 use std::sync::Arc;
 use std::todo;
 
+use config::Config;
 use datafusion::arrow::record_batch::RecordBatch;
 use meta::model::meta_admin::AdminMeta;
 use meta::model::meta_tenant::TenantMeta;
@@ -173,6 +174,10 @@ impl Coordinator for MockCoordinator {
     }
 
     fn metrics(&self) -> &Arc<CoordServiceMetrics> {
+        todo!()
+    }
+
+    fn get_config(&self) -> &Config {
         todo!()
     }
 }

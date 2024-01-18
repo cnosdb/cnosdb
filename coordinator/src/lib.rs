@@ -3,6 +3,7 @@ use std::fmt::Debug;
 use std::pin::Pin;
 use std::sync::Arc;
 
+use config::Config;
 use datafusion::arrow::record_batch::RecordBatch;
 use errors::CoordinatorError;
 use futures::Stream;
@@ -127,6 +128,8 @@ pub trait Coordinator: Send + Sync {
     ) -> CoordinatorResult<Vec<RecordBatch>>;
 
     fn metrics(&self) -> &Arc<CoordServiceMetrics>;
+
+    fn get_config(&self) -> &Config;
 }
 
 async fn get_vnode_all_info(

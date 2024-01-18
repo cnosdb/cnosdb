@@ -2375,6 +2375,7 @@ mod tests {
     use std::any::Any;
     use std::sync::Arc;
 
+    use coordinator::service_mock::MockCoordinator;
     use datafusion::arrow::datatypes::TimeUnit::Nanosecond;
     use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
     use datafusion::datasource::TableProvider;
@@ -2542,7 +2543,14 @@ mod tests {
         let context = ContextBuilder::new(user).build();
         let pool = UnboundedMemoryPool::default();
         SessionCtxFactory::default()
-            .create_session_ctx("", context, 0_u128, Arc::new(pool), None)
+            .create_session_ctx(
+                "",
+                context,
+                0_u128,
+                Arc::new(pool),
+                None,
+                Arc::new(MockCoordinator {}),
+            )
             .unwrap()
     }
 
