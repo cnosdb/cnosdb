@@ -633,7 +633,7 @@ impl Coordinator for CoordService {
         &self.metrics
     }
 
-    fn get_config(&self) -> &Config {
-        &self.config
+    fn get_config(&self) -> Config {
+        self.config.clone()
     }
 }

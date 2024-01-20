@@ -177,7 +177,8 @@ impl Coordinator for MockCoordinator {
         todo!()
     }
 
-    fn get_config(&self) -> &Config {
-        todo!()
+    fn get_config(&self) -> Config {
+        Config::default()
+        //todo!()
     }
 }
