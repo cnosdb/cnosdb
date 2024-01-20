@@ -129,7 +129,7 @@ pub trait Coordinator: Send + Sync {
 
     fn metrics(&self) -> &Arc<CoordServiceMetrics>;
 
-    fn get_config(&self) -> &Config;
+    fn get_config(&self) -> Config;
 }
 
 async fn get_vnode_all_info(
