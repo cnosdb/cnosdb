@@ -1212,6 +1212,7 @@ pub mod test {
             lv0_files: None,
             in_level: 1,
             out_level: 2,
+            out_time_range: TimeRange::all(),
         };
         let context = Arc::new(GlobalContext::new());
         context.set_file_id(next_file_id);

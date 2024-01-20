@@ -33,6 +33,9 @@ tokio-stream = { workspace = true }
 tonic = { workspace = true, features = ["tls", "transport"] }
 walkdir = { workspace = true }
 
+[target.'cfg(windows)'.dependencies]
+winapi = { workspace = true, features = ["tlhelp32"]}
+
 [features]
 default = []
 coordinator_e2e_test = []

@@ -172,6 +172,7 @@ pub enum TombstoneField {
 /// - loop begin
 /// - - field_type: u8 1 byte
 /// - - field_id: u64 8 bytes
+/// - - time_range_num: u32 4 bytes
 /// - - min: i64 8 bytes
 /// - - max: i64 8 bytes
 /// - loop end

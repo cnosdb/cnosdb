@@ -1147,7 +1147,6 @@ pub fn schedule_vnode_compaction(
         let tsf_id = vnode_rlock.tf_id;
         let compact_trigger_cold_duration = vnode_rlock.storage_opt.compact_trigger_cold_duration;
         let last_modified = vnode_rlock.last_modified.clone();
-        let compact_trigger_file_num = vnode_rlock.storage_opt.compact_trigger_file_num as usize;
         let cancellation_token = vnode_rlock.cancellation_token.clone();
         drop(vnode_rlock);
 
@@ -1161,31 +1160,32 @@ pub fn schedule_vnode_compaction(
             loop {
                 tokio::select! {
                     _ = check_interval.tick() => {
-                        // Check if vnode is cold.
-                        let ts_rlock = last_modified.read().await;
-                        if let Some(t) = *ts_rlock {
-                            if t.elapsed() >= compact_trigger_cold_duration {
-                                drop(ts_rlock);
-                                let mut ts_wlock = last_modified.write().await;
-                                *ts_wlock = Some(Instant::now());
-                                if let Err(e) = compact_task_sender.send(CompactTask::Cold(tsf_id)).await {
-                                    warn!("failed to send compact task({}), {}", tsf_id, e);
+                        if compact_trigger_cold_duration != Duration::ZERO {
+                            // compact_trigger_cold_duration > 0: check if vnode is cold.
+                            let ts_rlock = last_modified.read().await;
+                            if let Some(t) = *ts_rlock {
+                                if t.elapsed() >= compact_trigger_cold_duration {
+                                    drop(ts_rlock);
+                                    let mut ts_wlock = last_modified.write().await;
+                                    *ts_wlock = Some(Instant::now());
+                                    if let Err(e) = compact_task_sender.send(CompactTask::Cold(tsf_id)).await {
+                                        warn!("failed to send compact task({}), {}", tsf_id, e);
+                                    }
                                 }
                             }
                         }
 
-                        // Check if level-0 files is more than DEFAULT_COMPACT_TRIGGER_DETLA_FILE_NUM
+                        // Check if level-0 files is more than 0 .
                         let version = vnode.read().await.super_version().version.clone();
-                        let mut level0_files = 0_usize;
                         for file in version.levels_info()[0].files.iter() {
-                            if !file.is_compacting() {
-                                level0_files += 1;
+                            if file.is_compacting() {
+                                continue;
                             }
-                        }
-                        if level0_files >= compact_trigger_file_num {
+                            // If there is any l0-file, send a compact task.
                             if let Err(e) = compact_task_sender.send(CompactTask::Delta(tsf_id)).await {
                                 warn!("failed to send compact task({}), {}", tsf_id, e);
                             }
+                            break;
                         }
                     }
                     _ = cancellation_token.cancelled() => {

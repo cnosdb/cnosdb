@@ -16,7 +16,7 @@ use crate::version_set::VersionSet;
 const COMPACT_BATCH_CHECKING_SECONDS: u64 = 1;
 
 struct CompactTaskGroup {
-    /// Maps (vnode_id, is_delta_compaction) to should_flush_vnode.
+    /// Maps CompactTask to the number of times it inserted.
     compact_tasks: HashMap<CompactTask, usize>,
 }
 

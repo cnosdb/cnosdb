@@ -11,6 +11,7 @@ use std::sync::Arc;
 
 pub use compact::*;
 pub use flush::*;
+use models::predicate::domain::TimeRange;
 use models::Timestamp;
 use parking_lot::RwLock;
 pub use picker::*;
@@ -76,18 +77,25 @@ pub struct CompactReq {
 
     version: Arc<Version>,
     files: Vec<Arc<ColumnFile>>,
+    /// In delta compaction, files in levle-0 could be picked.
     lv0_files: Option<Vec<Arc<ColumnFile>>>,
     in_level: LevelId,
     out_level: LevelId,
+    /// The time_range of the data from the in_level to be compacted
+    /// into the out_level, only used in delta compaction.
+    out_time_range: TimeRange,
 }
 
 impl std::fmt::Display for CompactReq {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "tenant_database: {}, ts_family: {}, files: [",
+            "tenant_database: {}, ts_family: {}, in_level: {}, out_level: {:?}, time_range: {}, files: [",
             self.version.borrowed_database(),
             self.version.tf_id(),
+            self.in_level,
+            self.out_level,
+            self.out_time_range,
         )?;
         if !self.files.is_empty() {
             write!(
