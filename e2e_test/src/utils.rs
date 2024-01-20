@@ -3,6 +3,7 @@
 use core::panic;
 use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
@@ -908,23 +909,110 @@ fn kill_child_process(mut proc: Child, force: bool) {
 }
 
 #[cfg(windows)]
-fn kill_child_process(proc: &mut Child, force: bool) {
-    let pid = proc.id().to_string();
-    let mut kill = Command::new("taskkill.exe");
-    let mut killing_thread = if force {
+fn kill_child_process(mut proc: Child, force: bool) {
+    let pid = proc.id();
+
+    // TODO(zipper) find a way to pass a signal to cnosdb process to let it shutdown gracefully.
+
+    if force {
+        let mut kill = Command::new("taskkill.exe");
         println!("- Force killing child process {pid}...");
-        kill.args(["/PID", &pid, "/F"])
+        let mut killing_thread = kill
+            .args(["/PID", &pid.to_string(), "/F"])
             .spawn()
-            .expect("failed to run 'taskkill.exe /PID {pid} /F'")
+            .expect("failed to run 'taskkill.exe /PID {pid} /F'");
+        match killing_thread.wait() {
+            Ok(kill_exit_code) => {
+                if kill_exit_code.success() {
+                    println!("- Killed process {pid}, exit status: {kill_exit_code}");
+                } else {
+                    println!("- Killing process {pid} failed, exit status: {kill_exit_code}");
+                }
+            }
+            Err(e) => println!("- Process {pid} not running: {e}"),
+        }
     } else {
         println!("- Killing child process {pid}...");
-        kill.args(["/PID", &pid])
-            .spawn()
-            .expect("failed to run 'taskkill.exe /PID {pid}'")
+        unsafe {
+            // SAFETY: TODO
+            let proc_handle = winapi::um::processthreadsapi::OpenProcess(
+                winapi::um::winnt::PROCESS_TERMINATE,
+                winapi::shared::minwindef::FALSE,
+                pid,
+            );
+            if proc_handle.is_null() {
+                println!("Failed to open process.");
+                return;
+            }
+            winapi::um::processthreadsapi::TerminateProcess(proc_handle, 0);
+            winapi::um::handleapi::CloseHandle(proc_handle);
+        }
     };
-    match killing_thread.wait() {
-        Ok(kill_exit_code) => println!("- Killed process {pid}, exit status: {kill_exit_code}"),
-        Err(e) => println!("- Process {pid} not running: {e}"),
+
+    // Remove defunct process
+    if let Err(e) = proc.wait() {
+        println!("- Process {pid} not running: {e}");
+    }
+    drop(proc);
+
+    // Wait CnosDB shutdown.
+    // let wait_for_thread_milliseconds =
+    //     winapi::shared::minwindef::DWORD::try_from(1000_u32).expect("One of type: i32, u32, u64, u128");
+    loop {
+        // unsafe {
+        //     let ret = winapi::um::synchapi::WaitForSingleObject(
+        //         proc_handle,
+        //         wait_for_thread_milliseconds,
+        //     );
+        //     if ret == winapi::um::winbase::WAIT_ABANDONED {
+        //         break;
+        //     } else if ret == winapi::um::winbase::WAIT_OBJECT_0 {
+        //         println!("- Process {pid} exited");
+        //         break;
+        //     } else if ret == winapi::shared::winerror::WAIT_TIMEOUT {
+        //         continue;
+        //     }
+        //     if ret == winapi::um::winbase::WAIT_FAILED {
+        //         let err = std::io::Error::last_os_error();
+        //         println!("Failed waitting process exit: {err}");
+        //         break;
+        //     }
+        // }
+
+        let display_process = Command::new("tasklist.exe")
+            .args(["/FI", format!("PID eq {pid}").as_str()])
+            .output()
+            .expect("failed to run 'tasklist.exe /FI \"PID eq {pid}\"'");
+        let lines_count = BufReader::new(&display_process.stdout[..]).lines().count();
+        if lines_count > 1 {
+            // Multiple lines message to tell us that the process matches the filter "PID eq {pid}" is found.
+            println!("- Waiting for process {pid} to exit...");
+            thread::sleep(Duration::from_secs(1));
+        } else {
+            // One line message to tell us that the process matches the filter "PID eq {pid}" is not found.
+            println!("- Process {pid} exited");
+            break;
+        }
+    }
+}
+
+#[test]
+fn test() {
+    let pid = 38048;
+
+    unsafe {
+        let proc_handle = winapi::um::processthreadsapi::OpenProcess(
+            winapi::um::winnt::PROCESS_TERMINATE,
+            winapi::shared::minwindef::FALSE,
+            pid,
+        );
+        if proc_handle.is_null() {
+            println!("Failed to open process.");
+            return;
+        }
+        // winapi::um::processthreadsapi::TerminateProcess(proc_handle, 0);
+        winapi::um::processthreadsapi::TerminateProcess(proc_handle, 0);
+        winapi::um::handleapi::CloseHandle(proc_handle);
     }
 }
 

@@ -26,13 +26,10 @@ pub async fn run_compaction_job(
 ) -> Result<Option<(VersionEdit, HashMap<ColumnFileId, Arc<BloomFilter>>)>> {
     trace::info!("Compaction(delta): Running compaction job on {request}");
 
-    if request.files.is_empty() {
-        // Nothing to compact
-        return Ok(None);
-    }
     let lv0_files = match &request.lv0_files {
         Some(f) => {
             if f.is_empty() {
+                // Nothing to compact
                 return Ok(None);
             } else {
                 f
@@ -848,6 +845,7 @@ mod test {
             lv0_files: Some(delta_files),
             in_level: 0,
             out_level,
+            out_time_range: TimeRange::new(Timestamp::MIN, out_level_max_ts),
         };
         let context = Arc::new(GlobalContext::new());
         context.set_file_id(next_file_id);

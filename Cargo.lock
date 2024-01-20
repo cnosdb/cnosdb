@@ -1956,6 +1956,7 @@ dependencies = [
  "tokio-stream",
  "tonic",
  "walkdir",
+ "winapi",
 ]
 
 [[package]]
