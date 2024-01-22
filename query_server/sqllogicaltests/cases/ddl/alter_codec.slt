@@ -1,0 +1,32 @@
+statement ok
+DROP DATABASE IF EXISTS database0;
+
+statement ok
+CREATE DATABASE database0 WITH TTL '1000000';
+
+statement ok
+--#DATABASE = public
+
+statement ok
+drop table if exists air;
+
+statement ok
+CREATE TABLE air (
+visibility DOUBLE,
+temperature DOUBLE,
+pressure DOUBLE,
+TAGS(station)
+);
+
+query T
+describe table air;
+----
+"time" "TIMESTAMP(NANOSECOND)" "TIME" "DEFAULT"
+"station" "STRING" "TAG" "DEFAULT"
+"visibility" "DOUBLE" "FIELD" "DEFAULT"
+"temperature" "DOUBLE" "FIELD" "DEFAULT"
+"pressure" "DOUBLE" "FIELD" "DEFAULT"
+
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Semantic error: Unsupported encoding type Snappy for F64", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".+", "content\-length": "0"\} \}, source: None \}
+alter table air alter pressure set codec(snappy);

@@ -7,7 +7,9 @@ use std::time::Duration;
 use tokio::runtime::Runtime;
 
 use crate::cluster_def::{CnosdbClusterDefinition, DataNodeDefinition};
-use crate::utils::{kill_all, run_cluster, run_singleton, Client, CnosdbDataTestHelper};
+use crate::utils::{
+    kill_all, run_cluster, run_singleton, Client, CnosdbDataTestHelper, CnosdbMetaTestHelper,
+};
 use crate::{E2eError, E2eResult};
 
 const WAIT_BEFORE_RESTART_SECONDS: u64 = 1;
@@ -90,11 +92,11 @@ impl E2eExecutor {
             false,
             true,
         );
-        self.execute_steps_inner(&mut data, steps);
+        self.execute_steps_inner(&mut None, &mut data, steps);
     }
 
     fn execute_steps_in_cluster(&self, steps: &[Step]) {
-        let (_meta, data) = run_cluster(
+        let (meta, data) = run_cluster(
             &self.test_dir,
             self.runtime.clone(),
             &self.cluster_definition,
@@ -102,10 +104,16 @@ impl E2eExecutor {
             true,
         );
         let mut data = data.unwrap();
-        self.execute_steps_inner(&mut data, steps);
+        let mut meta = meta.unwrap();
+        self.execute_steps_inner(&mut Some(&mut meta), &mut data, steps);
     }
 
-    fn execute_steps_inner(&self, data: &mut CnosdbDataTestHelper, steps: &[Step]) {
+    fn execute_steps_inner(
+        &self,
+        meta: &mut Option<&mut CnosdbMetaTestHelper>,
+        data: &mut CnosdbDataTestHelper,
+        steps: &[Step],
+    ) {
         let fail_msg = |i: usize, step: &Step, result: &E2eResult<Vec<String>>| {
             format!(
                 "[{}.{}] steps[{i}] [{step}], result: {result:?}",
@@ -251,6 +259,11 @@ impl E2eExecutor {
                 Step::Sleep(seconds) => {
                     std::thread::sleep(Duration::from_secs(*seconds));
                 }
+                Step::StopMetaNode(meta_node_index) => {
+                    let meta = meta.as_mut().unwrap();
+                    let meta_node_def = meta.meta_node_definitions[*meta_node_index].clone();
+                    meta.stop_one_node(&meta_node_def.config_file_name, false);
+                }
             }
         }
     }
@@ -270,6 +283,7 @@ pub enum Step {
     RestartCluster,
     /// Sleep current thread for a while(in seconds)
     Sleep(u64),
+    StopMetaNode(usize),
 }
 
 impl std::fmt::Display for Step {
@@ -288,6 +302,7 @@ impl std::fmt::Display for Step {
             Step::StopDataNode(i) => write!(f, "StopDataNode of data node {i}"),
             Step::RestartCluster => write!(f, "RestartCluster"),
             Step::Sleep(d) => write!(f, "Sleep for {d} seconds"),
+            Step::StopMetaNode(i) => write!(f, "StopMeta of meta node {i}"),
         }
     }
 }
