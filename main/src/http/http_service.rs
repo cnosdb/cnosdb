@@ -13,7 +13,7 @@ use config::TLSConfig;
 use coordinator::service::CoordinatorRef;
 use fly_accept_encoding::Encoding;
 use http_protocol::encoding::EncodingExt;
-use http_protocol::header::{ACCEPT, AUTHORIZATION, PRIVATE_KEY};
+use http_protocol::header::{ACCEPT, APPLICATION_JSON, AUTHORIZATION, PRIVATE_KEY};
 use http_protocol::parameter::{DumpParam, SqlParam, WriteParam};
 use http_protocol::response::ErrorResponse;
 use meta::error::{MetaError, MetaResult};
@@ -27,7 +27,7 @@ use models::auth::privilege::{DatabasePrivilege, Privilege, TenantObjectPrivileg
 use models::consistency_level::ConsistencyLevel;
 use models::error_code::UnknownCodeWithMessage;
 use models::oid::{Identifier, Oid};
-use models::schema::{Precision, DEFAULT_CATALOG};
+use models::schema::{Precision, DEFAULT_CATALOG, DEFAULT_DATABASE};
 use protocol_parser::line_protocol::line_protocol_to_lines;
 use protocol_parser::lines_convert::parse_lines_to_points;
 use protocol_parser::open_tsdb::open_tsdb_to_lines;
@@ -219,6 +219,7 @@ impl HttpService {
     ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
         self.ping()
             .or(self.query())
+            .or(self.mock_influxdb_write())
             .or(self.metrics())
             .or(self.print_meta())
             .or(self.debug_pprof())
@@ -455,6 +456,62 @@ impl HttpService {
                         start,
                         HttpApiType::ApiV1Write,
                     );
+                    resp.map(|_| ResponseBuilder::ok()).map_err(reject::custom)
+                },
+            )
+    }
+
+    fn mock_influxdb_write(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        warp::path!("write")
+            .and(warp::post())
+            .and(warp::body::bytes())
+            .and(warp::query::query())
+            .and(self.with_dbms())
+            .and(self.with_coord())
+            .and_then(
+                |req: Bytes,
+                 mut query: HashMap<String, String>,
+                 dbms: DBMSRef,
+                 coord: CoordinatorRef| async move {
+                    let db = query.remove("db").unwrap_or(DEFAULT_DATABASE.to_string());
+                    let header = Header::with(
+                        Some(APPLICATION_JSON.to_string()),
+                        None,
+                        None,
+                        "Basic cm9vdDo=".to_string(),
+                    );
+                    let param = WriteParam {
+                        db: Some(db),
+                        precision: None,
+                        tenant: None,
+                    };
+                    let precision = Precision::NS;
+
+                    let ctx = construct_write_context_and_check_privilege(
+                        header,
+                        param,
+                        dbms,
+                        coord.clone(),
+                    )
+                    .await
+                    .map_err(reject::custom)?;
+
+                    let write_points_req =
+                        construct_write_lines_points_request(req, ctx.database())
+                            .map_err(reject::custom)?;
+
+                    let resp = coord_write_points_with_span_recorder(
+                        &coord,
+                        DEFAULT_CATALOG.to_string(),
+                        ConsistencyLevel::Any,
+                        precision,
+                        write_points_req,
+                        None,
+                    )
+                    .await;
+
                     resp.map(|_| ResponseBuilder::ok()).map_err(reject::custom)
                 },
             )
