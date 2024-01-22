@@ -1,0 +1,11 @@
+statement ok
+DROP DATABASE IF EXISTS database0;
+
+statement ok
+CREATE DATABASE database0 WITH TTL '1000000'
+
+statement ok
+drop table if exists test1;
+
+statement ok
+create external table test1 stored as csv with header row location './query_server/sqllogicaltests/data/tpch-csv/nation.csv';
