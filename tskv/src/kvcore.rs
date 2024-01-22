@@ -973,14 +973,12 @@ impl Engine for TsKv {
     ) -> Result<()> {
         // TODO(zipper): Store this action in WAL.
         if let Ok(db) = self.get_db(tenant, database).await {
-            let schema =
-                db.read()
-                    .await
-                    .get_table_schema(table)?
-                    .ok_or_else(|| SchemaError::TableNotFound {
-                        database: database.to_string(),
-                        table: table.to_string(),
-                    })?;
+            let schema = db.read().await.get_table_schema(table)?.ok_or_else(|| {
+                SchemaError::TableNotFound {
+                    database: database.to_string(),
+                    table: table.to_string(),
+                }
+            })?;
             let column_id = schema
                 .column(column_name)
                 .ok_or_else(|| SchemaError::FieldNotFound {
