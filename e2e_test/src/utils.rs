@@ -566,6 +566,14 @@ impl CnosdbMetaTestHelper {
             .spawn()
             .expect("failed to execute cnosdb-meta")
     }
+
+    pub fn stop_one_node(&mut self, config_file_name: &str, force: bool) {
+        let proc = self
+            .sub_processes
+            .remove(config_file_name)
+            .unwrap_or_else(|| panic!("No meta node created with {}", config_file_name));
+        kill_child_process(proc, force);
+    }
 }
 
 impl Drop for CnosdbMetaTestHelper {

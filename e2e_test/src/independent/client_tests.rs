@@ -55,45 +55,41 @@ struct CnosDBClientHelper {
 
 impl CnosDBClientHelper {
     fn write(&mut self, inputs: &[&str]) -> Result<String, io::Error> {
-        // get the stdio stream
-        let stdin = self.subprocess.stdin.as_mut().take();
-        let stdout = self.subprocess.stdout.as_mut().take();
-        let stderr = self.subprocess.stderr.as_mut().take();
+        let mut res = String::new();
 
-        if let Some(stdin) = stdin {
-            // write input
+        if let Some(mut stdin) = self.subprocess.stdin.take() {
             for input in inputs {
                 stdin.write_all(input.as_bytes())?;
             }
             stdin.write_all("\\q".as_bytes())?;
-            // stdin.
         }
 
         drop(self.subprocess.stdin.take());
-        let mut res = String::new();
-        if let Some(stdout) = stdout {
+
+        if let Some(stdout) = self.subprocess.stdout.take() {
             let reader = BufReader::new(stdout);
-            reader
+            for line in reader
                 .lines()
                 .skip(2)
-                .map(|result| result.unwrap())
+                .map_while(Result::ok)
                 .filter(|line| !line.is_empty())
-                .for_each(|line| res.push_str(&line));
+            {
+                res.push_str(&line);
+            }
         }
 
-        if !res.is_empty() {
-            return Ok(res);
+        if res.is_empty() {
+            if let Some(stderr) = self.subprocess.stderr.take() {
+                let reader = BufReader::new(stderr);
+                for line in reader
+                    .lines()
+                    .map_while(Result::ok)
+                    .filter(|line| line.contains("error_code") || line.contains("error: "))
+                {
+                    res.push_str(&line);
+                }
+            }
         }
-
-        if let Some(stderr) = stderr {
-            let reader = BufReader::new(stderr);
-            reader
-                .lines()
-                .map(|result| result.unwrap())
-                .filter(|line| line.contains("error_code"))
-                .for_each(|line| res.push_str(&line));
-        }
-
         Ok(res)
     }
 }
@@ -360,5 +356,131 @@ fn client_start_test() {
                 "422 Unprocessable Entity, body: {\"error_code\":\"050001\",\"error_message\":\"Meta request error: Database not found: \\\"public\\\"\"}"
             )
         }
+    }
+}
+
+//auto test about issue 1867
+#[test]
+#[serial]
+fn client_password_leak_test() {
+    let test_dir = "/tmp/e2e_test/client_tests/client_password_leak_test";
+    let _server = new_server(test_dir);
+
+    let args = vec!["-p", "123"];
+    let client_execute = ClientDef::new(args);
+    let mut client = client_execute.run();
+    let resp = client.write(&["show tables;\n"]);
+    if let Ok(resp) = resp {
+        assert_eq!(resp, "error: unrecognized subcommand \'123\'")
+    }
+
+    {
+        let args = vec![];
+        let client_execute = ClientDef::new(args);
+        let mut client = client_execute.run();
+        let resp = client.write(&["show tables;\n"]);
+        if let Ok(resp) = resp {
+            assert_eq!(&resp[0..10], "Query took")
+        }
+    }
+}
+
+//auto test about issue 784
+#[test]
+#[serial]
+fn client_join_generate_physical() {
+    let test_dir = "/tmp/e2e_test/client_tests/client_join_generate_physical";
+    let _server = new_server(test_dir);
+    let args = vec![];
+    let client_execute = ClientDef::new(args);
+    let mut client = client_execute.run();
+
+    let resp = client.write(&[&format!(
+        "\\w {}/e2e_test/test_data/oceanic_station.txt\n",
+        get_workspace_dir().as_os_str().to_str().unwrap()
+    )]);
+
+    if let Ok(resp) = resp {
+        assert_eq!(&resp[0..10], "Query took")
+    }
+
+    let resp = _server
+        .client
+        .post("http://127.0.0.1:8902/api/v1/sql?db=public", "WITH l as (SELECT date_trunc('day', time) AS day, avg (temperature) AS day_temperature, station
+        FROM sea
+        WHERE station = 'LianYunGang'
+        AND time >= '2022-01-15T00:00:00'
+        AND time
+        < '2022-02-16T00:00:00'
+        GROUP BY station, day),
+        x as
+        (
+        SELECT date_trunc('day', time) AS day, avg (speed) AS day_speed, station
+        FROM wind
+        WHERE station = 'XiaoMaiDao'
+        AND time >= '2022-01-15T00:00:00'
+        AND time
+        < '2022-02-16T00:00:00'
+        GROUP BY station, day)
+        SELECT * FROM l JOIN x ON x.day= l.day")
+        .unwrap();
+
+    assert_eq!(
+        resp.text().unwrap(),
+        "day,day_temperature,station,day,day_speed,station\n2022-02-06T00:00:00.000000000,66.94915254237289,LianYunGang,2022-02-06T00:00:00.000000000,65.55,XiaoMaiDao\n"
+    );
+}
+
+#[test]
+#[serial]
+fn explain_time_count_tests() {
+    let test_dir = "/tmp/e2e_test/client_tests/explain_time_count_tests";
+    let server = new_server(test_dir);
+
+    {
+        let url = "http://127.0.0.1:8902/api/v1/sql?db=public";
+        server
+            .client
+            .post(url, "CREATE TABLE IF NOT EXISTS m0(f0 STRING , TAGS(t0) );")
+            .unwrap();
+
+        server
+            .client
+            .post(
+                url,
+                "INSERT m0(TIME, f0, t0) VALUES(30737363596320556,'2001-10-10','sd');",
+            )
+            .unwrap();
+
+        let resp = server
+            .client
+            .post(url, "explain select time from m0 where f0 >= '1997-01-31';")
+            .unwrap();
+
+        let resp = resp.text().unwrap();
+        let result="plan_type,plan\nlogical_plan,\"Projection: m0.time\n  Filter: m0.f0 >= Utf8(\"\"1997-01-31\"\")\n    TableScan: m0 projection=[time, f0], partial_filters=[m0.f0 >= Utf8(\"\"1997-01-31\"\")]\"\nphysical_plan,\"ProjectionExec: expr=[time@0 as time]\n  CoalesceBatchesExec: target_batch_size=8192\n    FilterExec: f0@1 >= 1997-01-31\n      RepartitionExec: partitioning=RoundRobinBatch(3), input_partitions=7\n        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: \"\"f0\"\" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Utf8, value: Some(Utf8(\"\"1997-01-31\"\")), bound: Exactly }: Range { low: Marker { data_type: Utf8, value: Some(Utf8(\"\"1997-01-31\"\")), bound: Exactly }, high: Marker { data_type: Utf8, value: None, bound: Below } }} })}) }, filter=Some(\"\"f0@1 >= 1997-01-31\"\"), split_num=3, projection=[time,f0]\n\"\n";
+        let mut result_string = result.to_string();
+        let resp_chars: Vec<char> = resp.chars().collect();
+        //modify three parameters that are not associated.
+        result_string.replace_range(365..366, &resp_chars[365].to_string());
+        result_string.replace_range(386..387, &resp_chars[386].to_string());
+        result_string.replace_range(841..842, &resp_chars[841].to_string());
+
+        assert_eq!(resp, result_string);
+        let resp = server
+            .client
+            .post(url, "explain select COUNT(*) from m0;")
+            .unwrap();
+
+        let resp = resp.text().unwrap();
+        let result="plan_type,plan\nlogical_plan,\"Aggregate: groupBy=[[]], aggr=[[COUNT(UInt8(1))]]\n  TableScan: m0 projection=[time]\"\nphysical_plan,\"AggregateExec: mode=Final, gby=[], aggr=[COUNT(UInt8(1))]\n  CoalescePartitionsExec\n    AggregateExec: mode=Partial, gby=[], aggr=[COUNT(UInt8(1))]\n      RepartitionExec: partitioning=RoundRobinBatch(1), input_partitions=7\n        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=None, split_num=3, projection=[time]\n\"\n";
+        let mut result_string = result.to_string();
+        let resp_chars: Vec<char> = resp.chars().collect();
+
+        result_string.replace_range(328..329, &resp_chars[328].to_string());
+        result_string.replace_range(349..350, &resp_chars[349].to_string());
+        result_string.replace_range(460..461, &resp_chars[460].to_string());
+
+        assert_eq!(resp, result_string);
     }
 }

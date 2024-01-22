@@ -1,0 +1,31 @@
+statement ok
+DROP DATABASE IF EXISTS database0;
+
+statement ok
+CREATE DATABASE database0 WITH TTL '1000000'
+
+statement ok
+--#DATABASE = database0;
+
+statement ok
+DROP TABLE IF EXISTS m0;
+
+statement ok
+CREATE TABLE m0(f0 DOUBLE , TAGS(t0));
+
+query T
+desc table m0;
+----
+"time" "TIMESTAMP(NANOSECOND)" "TIME" "DEFAULT"
+"t0" "STRING" "TAG" "DEFAULT"
+"f0" "DOUBLE" "FIELD" "DEFAULT"
+
+query T
+insert into m0 values('2021-01-01', 't0000', 3.1415);
+----
+1
+
+query T
+select * from m0;
+----
+2021-01-01T00:00:00 "t0000" 3.1415
