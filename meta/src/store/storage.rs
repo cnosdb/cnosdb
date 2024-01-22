@@ -1262,15 +1262,21 @@ impl StateMachine {
         role: &TenantRoleIdentifier,
         tenant_name: &str,
     ) -> MetaResult<()> {
-        let key = KeyPath::member(cluster, tenant_name, user_id);
+        let member_key = KeyPath::member(cluster, tenant_name, user_id);
+        let role_key = KeyPath::role(cluster, tenant_name, role.name());
 
-        if self.contains_key(&key)? {
-            return Err(MetaError::UserAlreadyExists {
+        match (
+            self.contains_key(&member_key)?,
+            self.contains_key(&role_key)? || SystemTenantRole::try_from(role.name()).is_ok(),
+        ) {
+            (false, true) => self.insert(&member_key, &value_encode(&role)?),
+            (true, _) => Err(MetaError::UserAlreadyExists {
                 user: user_id.to_string(),
-            });
+            }),
+            (_, false) => Err(MetaError::RoleNotFound {
+                role: role.name().to_owned(),
+            }),
         }
-
-        self.insert(&key, &value_encode(&role)?)
     }
 
     fn process_remove_member_to_tenant(
@@ -1299,15 +1305,21 @@ impl StateMachine {
         role: &TenantRoleIdentifier,
         tenant_name: &str,
     ) -> MetaResult<()> {
-        let key = KeyPath::member(cluster, tenant_name, user_id);
+        let member_key = KeyPath::member(cluster, tenant_name, user_id);
+        let role_key = KeyPath::role(cluster, tenant_name, role.name());
 
-        if !self.contains_key(&key)? {
-            return Err(MetaError::UserNotFound {
+        match (
+            self.contains_key(&member_key)?,
+            self.contains_key(&role_key)? || SystemTenantRole::try_from(role.name()).is_ok(),
+        ) {
+            (true, true) => self.insert(&member_key, &value_encode(&role)?),
+            (false, _) => Err(MetaError::UserNotFound {
                 user: user_id.to_string(),
-            });
+            }),
+            (_, false) => Err(MetaError::RoleNotFound {
+                role: role.name().to_owned(),
+            }),
         }
-
-        self.insert(&key, &value_encode(&role)?)
     }
 
     fn process_create_role(
