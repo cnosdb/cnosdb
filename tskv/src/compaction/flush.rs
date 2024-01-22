@@ -222,9 +222,15 @@ pub async fn run_flush_memtable_job(
             path_delta,
         );
 
-        flush_task
+        if let Err(e) = flush_task
             .run(req.max_ts, &mut version_edits, &mut file_metas)
-            .await?;
+            .await
+        {
+            error!(
+                "Flush: Failed to flush ts_family {}, {}",
+                req.ts_family_id, e
+            );
+        }
 
         tsf.read().await.update_last_modified().await;
 
@@ -329,25 +335,28 @@ impl WriterWrapper {
             }
         };
 
-        // Split values for level-0 and levle-1.
-        let splited_values = match values.binary_search_by(|v| v.0.cmp(&self.max_level_ts)) {
-            Ok(i) => {
-                if i == values.len() - 1 {
-                    [values, &[]]
-                } else {
-                    [&values[..=i], &values[(i + 1)..]]
-                }
-            }
-            Err(i) => {
-                if i == 0 {
-                    [&[], values]
-                } else if i < values.len() {
-                    [&values[..i], &values[i..]]
-                } else {
-                    [values, &[]]
-                }
-            }
-        };
+        // // Split values for level-0 and levle-1.
+        // let splited_values = match values.binary_search_by(|v| v.0.cmp(&self.max_level_ts)) {
+        //     Ok(i) => {
+        //         if i == values.len() - 1 {
+        //             [values, &[]]
+        //         } else {
+        //             [&values[..=i], &values[(i + 1)..]]
+        //         }
+        //     }
+        //     Err(i) => {
+        //         if i == 0 {
+        //             [&[], values]
+        //         } else if i < values.len() {
+        //             [&values[..i], &values[i..]]
+        //         } else {
+        //             [values, &[]]
+        //         }
+        //     }
+        // };
+
+        // flush all data to delta level
+        let splited_values = [values, &[]];
         // Fill buffer and write to disk if buffer is full.
         for (level_idx, values) in splited_values.into_iter().enumerate() {
             for (ts, val) in values {
