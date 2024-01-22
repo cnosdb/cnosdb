@@ -13,9 +13,10 @@ pub use compaction::check::vnode_table_checksum_schema;
 use compaction::{CompactTask, FlushReq};
 use context::GlobalContext;
 use datafusion::arrow::record_batch::RecordBatch;
+use file_system::file_info::FileInfo;
 use models::meta_data::{NodeId, VnodeId};
 use models::predicate::domain::ColumnDomains;
-use models::{SeriesId, SeriesKey, Timestamp};
+use models::{SeriesId, SeriesKey};
 use serde::{Deserialize, Serialize};
 use summary::SummaryTask;
 use tokio::sync::mpsc::Sender;
@@ -27,7 +28,6 @@ pub use crate::error::{Error, Result};
 pub use crate::kv_option::Options;
 use crate::kv_option::StorageOptions;
 pub use crate::kvcore::TsKv;
-use crate::summary::CompactMeta;
 pub use crate::summary::{print_summary_statistics, Summary, VersionEdit};
 use crate::tseries_family::SuperVersion;
 // todo: add a method for print tsm statistics
@@ -148,32 +148,10 @@ pub struct TsKvContext {
 pub struct VnodeSnapshot {
     pub snapshot_id: String,
     pub node_id: NodeId,
-    pub tenant: String,
-    pub database: String,
     pub vnode_id: VnodeId,
-    pub files: Vec<SnapshotFileMeta>,
     pub last_seq_no: u64,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct SnapshotFileMeta {
-    pub file_id: ColumnFileId,
-    pub file_size: u64,
-    pub level: LevelId,
-    pub min_ts: Timestamp,
-    pub max_ts: Timestamp,
-}
-
-impl From<&CompactMeta> for SnapshotFileMeta {
-    fn from(cm: &CompactMeta) -> Self {
-        Self {
-            file_id: cm.file_id,
-            file_size: cm.file_size,
-            level: cm.level,
-            min_ts: cm.min_ts,
-            max_ts: cm.max_ts,
-        }
-    }
+    pub files_info: Vec<FileInfo>,
+    pub version_edit: VersionEdit,
 }
 
 pub mod test {

@@ -7,7 +7,7 @@ use crate::store::config::MetaInit;
 use crate::store::key_path::KeyPath;
 use crate::store::storage::StateMachine;
 
-pub async fn init_meta(storage: &StateMachine, init_data: MetaInit) {
+pub async fn init_meta(storage: &mut StateMachine, init_data: MetaInit) {
     if storage.is_meta_init().unwrap() {
         return;
     }

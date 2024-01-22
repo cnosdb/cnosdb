@@ -22,7 +22,7 @@ pub async fn start_singe_meta_server(
     size: usize,
 ) {
     let db_path = format!("{}/meta/{}.data", path, 0);
-    let storage = StateMachine::open(db_path, size).unwrap();
+    let mut storage = StateMachine::open(db_path, size).unwrap();
 
     let init_data = crate::store::config::MetaInit {
         cluster_name,
@@ -33,7 +33,7 @@ pub async fn start_singe_meta_server(
             models::schema::DEFAULT_DATABASE.to_string(),
         ],
     };
-    super::init::init_meta(&storage, init_data).await;
+    super::init::init_meta(&mut storage, init_data).await;
 
     tracing::info!("single meta http server start addr: {}", addr);
     let storage = Arc::new(RwLock::new(storage));
@@ -148,7 +148,7 @@ impl SingleServer {
         warp::path!("dump").and(self.with_storage()).and_then(
             |storage: Arc<RwLock<StateMachine>>| async move {
                 let data = storage
-                    .read()
+                    .write()
                     .await
                     .snapshot()
                     .await
@@ -234,7 +234,7 @@ impl SingleServer {
         warp::path!("debug").and(self.with_storage()).and_then(
             |storage: Arc<RwLock<StateMachine>>| async move {
                 let data = storage
-                    .read()
+                    .write()
                     .await
                     .dump()
                     .await

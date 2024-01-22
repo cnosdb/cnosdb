@@ -6,8 +6,8 @@ use std::sync::Arc;
 use openraft::async_trait::async_trait;
 use openraft::storage::{LogState, Snapshot};
 use openraft::{
-    Entry, EntryPayload, LogId, RaftLogReader, RaftSnapshotBuilder, RaftStorage, RaftTypeConfig,
-    SnapshotMeta, StorageError, StorageIOError, StoredMembership, Vote,
+    Entry, EntryPayload, LogId, MessageSummary, RaftLogReader, RaftSnapshotBuilder, RaftStorage,
+    RaftTypeConfig, SnapshotMeta, StorageError, StorageIOError, StoredMembership, Vote,
 };
 use serde::{Deserialize, Serialize};
 use trace::info;
@@ -68,18 +68,26 @@ impl NodeStorage {
 
     pub async fn destory(&self) -> ReplicationResult<()> {
         self.state.del_group(self.group_id())?;
-        self.engine.destory().await?;
+        self.engine.write().await.destory().await?;
 
         Ok(())
     }
 
     async fn create_snapshot(&self) -> ReplicationResult<SerializableSnapshot> {
-        let data = self.engine.snapshot().await?;
+        let mut engine = self.engine.write().await;
+        let data = engine.snapshot().await?;
         let snapshot = SerializableSnapshot {
             data,
             last_applied_log: self.state.get_last_applied_log(self.group_id())?,
             last_membership: self.state.get_last_membership(self.group_id())?,
         };
+
+        info!(
+            "raft node {} create snapshot data len {}, applied log {:?}",
+            self.id,
+            snapshot.data.len(),
+            snapshot.last_applied_log
+        );
 
         Ok(snapshot)
     }
@@ -90,7 +98,7 @@ impl NodeStorage {
         self.state
             .set_last_membership(self.group_id(), sm.last_membership)?;
 
-        self.engine.restore(&sm.data).await?;
+        self.engine.write().await.restore(&sm.data).await?;
 
         Ok(())
     }
@@ -120,6 +128,8 @@ impl RaftLogReader<TypeConfig> for Arc<NodeStorage> {
 
         let entries = self
             .raft_logs
+            .write()
+            .await
             .entries(start, end)
             .await
             .map_err(|e| StorageError::IO {
@@ -186,6 +196,8 @@ impl RaftStorage<TypeConfig> for Arc<NodeStorage> {
 
         let last = self
             .raft_logs
+            .write()
+            .await
             .last_entry()
             .await
             .map_err(|e| StorageIOError::read_logs(&e))?
@@ -246,14 +258,12 @@ impl RaftStorage<TypeConfig> for Arc<NodeStorage> {
         let end = entries.last().map_or(0, |ent| ent.log_id.index);
         debug!("Storage callback append_to_log entires:[{}~{}]", begin, end);
 
+        let mut logs = self.raft_logs.write().await;
         // Remove all entries overwritten by `ents`.
-        self.raft_logs
-            .del_after(begin)
+        logs.del_after(begin)
             .await
             .map_err(|e| StorageIOError::write_logs(&e))?;
-
-        self.raft_logs
-            .append(&entries)
+        logs.append(&entries)
             .await
             .map_err(|e| StorageIOError::write_logs(&e))?;
 
@@ -268,6 +278,8 @@ impl RaftStorage<TypeConfig> for Arc<NodeStorage> {
         );
 
         self.raft_logs
+            .write()
+            .await
             .del_after(log_id.index)
             .await
             .map_err(|e| StorageIOError::write_logs(&e))?;
@@ -287,6 +299,8 @@ impl RaftStorage<TypeConfig> for Arc<NodeStorage> {
             .map_err(|e| StorageIOError::write(&e))?;
 
         self.raft_logs
+            .write()
+            .await
             .del_before(log_id.index + 1)
             .await
             .map_err(|e| StorageIOError::write_logs(&e))?;
@@ -325,11 +339,12 @@ impl RaftStorage<TypeConfig> for Arc<NodeStorage> {
     ) -> Result<Vec<Response>, StorageError<RaftNodeId>> {
         let mut res = Vec::with_capacity(entries.len());
 
+        let mut engine = self.engine.write().await;
         for entry in entries {
             debug!(
-                "Storage callback apply_to_state_machine log_id: {:?}",
-                entry.log_id
-            );
+                "Storage callback apply_to_state_machine: {:?}",
+                entry.summary()
+            ); // term-raftid-index:payload type
 
             self.state
                 .set_last_applied_log(self.group_id(), entry.log_id)
@@ -346,8 +361,7 @@ impl RaftStorage<TypeConfig> for Arc<NodeStorage> {
                         index: entry.log_id.index,
                         raft_id: self.id,
                     };
-                    let rsp = self
-                        .engine
+                    let rsp = engine
                         .apply(&ctx, req)
                         .await
                         .map_err(|e| StorageIOError::write(&e))?;
@@ -450,6 +464,8 @@ impl RaftStorage<TypeConfig> for Arc<NodeStorage> {
 mod test {
     use std::sync::Arc;
 
+    use tokio::sync::RwLock;
+
     use super::NodeStorage;
     use crate::apply_store::HeedApplyStorage;
     use crate::entry_store::HeedEntryStorage;
@@ -475,8 +491,8 @@ mod test {
         let engine = HeedApplyStorage::open(path.path().join("engine"), max_size).unwrap();
 
         let state = Arc::new(state);
-        let entry: EntryStorageRef = Arc::new(entry);
-        let engine: ApplyStorageRef = Arc::new(engine);
+        let entry: EntryStorageRef = Arc::new(RwLock::new(entry));
+        let engine: ApplyStorageRef = Arc::new(RwLock::new(engine));
 
         let info = RaftNodeInfo {
             group_id: 2222,

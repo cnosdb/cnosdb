@@ -1,7 +1,6 @@
 use std::pin::Pin;
 use std::sync::Arc;
 
-use coordinator::file_info::get_files_meta;
 use coordinator::service::CoordinatorRef;
 use coordinator::{FAILED_RESPONSE_CODE, SUCCESS_RESPONSE_CODE};
 use futures::{Stream, TryStreamExt};
@@ -355,35 +354,19 @@ impl TskvService for TskvServiceImpl {
         }
     }
 
-    async fn get_vnode_snap_files_meta(
-        &self,
-        request: tonic::Request<GetVnodeSnapFilesMetaRequest>,
-    ) -> Result<tonic::Response<GetFilesMetaResponse>, tonic::Status> {
-        let inner = request.into_inner();
-        let owner = models::schema::make_owner(&inner.tenant, &inner.db);
-        let storage_opt = self.kv_inst.get_storage_options();
-
-        let path = storage_opt.snapshot_sub_dir(&owner, inner.vnode_id, inner.snapshot_id.as_str());
-        match get_files_meta(&path.as_path().to_string_lossy()).await {
-            Ok(files_meta) => {
-                info!("files meta: {:?} {:?}", path, files_meta);
-                Ok(tonic::Response::new(files_meta.into()))
-            }
-            Err(err) => Err(tonic::Status::new(tonic::Code::Internal, err.to_string())),
-        }
-    }
-
     type DownloadFileStream = ResponseStream<BatchBytesResponse>;
     async fn download_file(
         &self,
         request: tonic::Request<DownloadFileRequest>,
     ) -> Result<tonic::Response<Self::DownloadFileStream>, tonic::Status> {
         let inner = request.into_inner();
-        info!("download file info : {:?}", inner);
+        let opt = self.kv_inst.get_storage_options();
+        let filename = opt.path().join(inner.filename);
+        info!("request download file name: {:?}", filename);
 
         let (send, recv) = mpsc::channel(1024);
         tokio::spawn(async move {
-            if let Ok(mut file) = tokio::fs::File::open(inner.filename).await {
+            if let Ok(mut file) = tokio::fs::File::open(filename).await {
                 let mut buffer = vec![0; 8 * 1024];
                 while let Ok(len) = file.read(&mut buffer).await {
                     if len == 0 {
