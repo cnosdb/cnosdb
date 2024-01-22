@@ -446,8 +446,7 @@ impl AdminMeta {
         };
 
         let mut status = NodeStatus::default();
-        const MIN_AVALIBLE_DISK_SPACE: u64 = 1024 * 1024 * 1024;
-        if disk_free < MIN_AVALIBLE_DISK_SPACE {
+        if disk_free < self.config.storage.reserve_space {
             status = NodeStatus::NoDiskSpace;
         }
 
