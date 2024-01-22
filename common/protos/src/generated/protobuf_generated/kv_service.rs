@@ -46,37 +46,6 @@ pub struct WritePointsResponse {
 /// --------------------------------------------------------------------
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct FileInfo {
-    #[prost(string, tag = "1")]
-    pub md5: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub name: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "3")]
-    pub size: u64,
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetVnodeSnapFilesMetaRequest {
-    #[prost(string, tag = "1")]
-    pub tenant: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub db: ::prost::alloc::string::String,
-    #[prost(uint32, tag = "3")]
-    pub vnode_id: u32,
-    #[prost(string, tag = "4")]
-    pub snapshot_id: ::prost::alloc::string::String,
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetFilesMetaResponse {
-    #[prost(string, tag = "1")]
-    pub path: ::prost::alloc::string::String,
-    #[prost(message, repeated, tag = "2")]
-    pub infos: ::prost::alloc::vec::Vec<FileInfo>,
-}
-/// --------------------------------------------------------------------
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StatusResponse {
     #[prost(int32, tag = "1")]
     pub code: i32,
@@ -575,33 +544,6 @@ pub mod tskv_service_client {
                 .insert(GrpcMethod::new("kv_service.TSKVService", "DownloadFile"));
             self.inner.server_streaming(req, path, codec).await
         }
-        pub async fn get_vnode_snap_files_meta(
-            &mut self,
-            request: impl tonic::IntoRequest<super::GetVnodeSnapFilesMetaRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::GetFilesMetaResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/kv_service.TSKVService/GetVnodeSnapFilesMeta",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new("kv_service.TSKVService", "GetVnodeSnapFilesMeta"),
-                );
-            self.inner.unary(req, path, codec).await
-        }
         pub async fn tag_scan(
             &mut self,
             request: impl tonic::IntoRequest<super::QueryRecordBatchRequest>,
@@ -687,13 +629,6 @@ pub mod tskv_service_server {
             request: tonic::Request<super::DownloadFileRequest>,
         ) -> std::result::Result<
             tonic::Response<Self::DownloadFileStream>,
-            tonic::Status,
-        >;
-        async fn get_vnode_snap_files_meta(
-            &self,
-            request: tonic::Request<super::GetVnodeSnapFilesMetaRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::GetFilesMetaResponse>,
             tonic::Status,
         >;
         /// Server streaming response type for the TagScan method.
@@ -1150,52 +1085,6 @@ pub mod tskv_service_server {
                                 max_encoding_message_size,
                             );
                         let res = grpc.server_streaming(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/kv_service.TSKVService/GetVnodeSnapFilesMeta" => {
-                    #[allow(non_camel_case_types)]
-                    struct GetVnodeSnapFilesMetaSvc<T: TskvService>(pub Arc<T>);
-                    impl<
-                        T: TskvService,
-                    > tonic::server::UnaryService<super::GetVnodeSnapFilesMetaRequest>
-                    for GetVnodeSnapFilesMetaSvc<T> {
-                        type Response = super::GetFilesMetaResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::GetVnodeSnapFilesMetaRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                (*inner).get_vnode_snap_files_meta(request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = GetVnodeSnapFilesMetaSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)

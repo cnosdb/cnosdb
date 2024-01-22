@@ -25,7 +25,6 @@ use crate::errors::CoordinatorResult;
 use crate::service::CoordServiceMetrics;
 
 pub mod errors;
-pub mod file_info;
 pub mod metrics;
 pub mod raft;
 pub mod reader;

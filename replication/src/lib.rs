@@ -11,6 +11,7 @@ use network_client::NetworkConn;
 use node_store::NodeStorage;
 use openraft::storage::Adaptor;
 use openraft::{Entry, TokioRuntime};
+use tokio::sync::RwLock;
 
 pub mod apply_store;
 pub mod entry_store;
@@ -88,31 +89,31 @@ pub struct ApplyContext {
 
 #[async_trait]
 pub trait ApplyStorage: Send + Sync + Any {
-    async fn apply(&self, ctx: &ApplyContext, req: &Request) -> ReplicationResult<Response>;
-    async fn snapshot(&self) -> ReplicationResult<Vec<u8>>;
-    async fn restore(&self, snapshot: &[u8]) -> ReplicationResult<()>;
-    async fn destory(&self) -> ReplicationResult<()>;
+    async fn apply(&mut self, ctx: &ApplyContext, req: &Request) -> ReplicationResult<Response>;
+    async fn snapshot(&mut self) -> ReplicationResult<Vec<u8>>;
+    async fn restore(&mut self, snapshot: &[u8]) -> ReplicationResult<()>;
+    async fn destory(&mut self) -> ReplicationResult<()>;
 }
-pub type ApplyStorageRef = Arc<dyn ApplyStorage + Send + Sync>;
+pub type ApplyStorageRef = Arc<RwLock<dyn ApplyStorage + Send + Sync>>;
 
 #[async_trait]
 pub trait EntryStorage: Send + Sync {
     // Get the entry by index
-    async fn entry(&self, index: u64) -> ReplicationResult<Option<Entry<TypeConfig>>>;
+    async fn entry(&mut self, index: u64) -> ReplicationResult<Option<Entry<TypeConfig>>>;
 
     // Delete entries: from begin to index
-    async fn del_before(&self, index: u64) -> ReplicationResult<()>; // [0, index)
+    async fn del_before(&mut self, index: u64) -> ReplicationResult<()>; // [0, index)
 
     // Delete entries: from index to end
-    async fn del_after(&self, index: u64) -> ReplicationResult<()>; // [index, ...)
+    async fn del_after(&mut self, index: u64) -> ReplicationResult<()>; // [index, ...)
 
     // Write entries
-    async fn append(&self, ents: &[Entry<TypeConfig>]) -> ReplicationResult<()>;
+    async fn append(&mut self, ents: &[Entry<TypeConfig>]) -> ReplicationResult<()>;
 
     // Get the last entry
-    async fn last_entry(&self) -> ReplicationResult<Option<Entry<TypeConfig>>>;
+    async fn last_entry(&mut self) -> ReplicationResult<Option<Entry<TypeConfig>>>;
 
     // Get entries from begin to end
-    async fn entries(&self, begin: u64, end: u64) -> ReplicationResult<Vec<Entry<TypeConfig>>>; // [begin, end)
+    async fn entries(&mut self, begin: u64, end: u64) -> ReplicationResult<Vec<Entry<TypeConfig>>>; // [begin, end)
 }
-pub type EntryStorageRef = Arc<dyn EntryStorage>;
+pub type EntryStorageRef = Arc<RwLock<dyn EntryStorage>>;

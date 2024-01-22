@@ -30,27 +30,6 @@ message WritePointsResponse {
 }
 
 /* -------------------------------------------------------------------- */
-message FileInfo {
-    string md5 = 1;
-    string name = 2;
-    uint64 size = 3;
-}
-
-
-
-message GetVnodeSnapFilesMetaRequest {
-    string tenant = 1;
-    string db = 2;
-    uint32 vnode_id = 3;
-    string snapshot_id = 4;
-}
-
-message GetFilesMetaResponse {
-    string path = 1;
-    repeated FileInfo infos = 2;
-}
-
-/* -------------------------------------------------------------------- */
 message StatusResponse {
   int32 code = 1;
   string data = 2;
@@ -192,6 +171,5 @@ service TSKVService {
   rpc ExecDropRaftNode(DropRaftNodeRequest) returns (StatusResponse) {};
 
   rpc DownloadFile(DownloadFileRequest) returns (stream BatchBytesResponse) {};
-  rpc GetVnodeSnapFilesMeta(GetVnodeSnapFilesMetaRequest) returns (GetFilesMetaResponse) {};
   rpc TagScan(QueryRecordBatchRequest) returns (stream BatchBytesResponse) {};
 }

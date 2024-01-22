@@ -53,13 +53,13 @@ pub struct StateMachine {
 
 #[async_trait::async_trait]
 impl ApplyStorage for StateMachine {
-    async fn apply(&self, _ctx: &ApplyContext, req: &Request) -> ReplicationResult<Response> {
+    async fn apply(&mut self, _ctx: &ApplyContext, req: &Request) -> ReplicationResult<Response> {
         let req: WriteCommand = serde_json::from_slice(req)?;
 
         Ok(self.process_write_command(&req).into())
     }
 
-    async fn snapshot(&self) -> ReplicationResult<Vec<u8>> {
+    async fn snapshot(&mut self) -> ReplicationResult<Vec<u8>> {
         let mut hash_map = BTreeMap::new();
 
         let reader = self.env.read_txn()?;
@@ -75,7 +75,7 @@ impl ApplyStorage for StateMachine {
         Ok(json_str.as_bytes().to_vec())
     }
 
-    async fn restore(&self, snapshot: &[u8]) -> ReplicationResult<()> {
+    async fn restore(&mut self, snapshot: &[u8]) -> ReplicationResult<()> {
         let data: BtreeMapSnapshotData = serde_json::from_slice(snapshot).unwrap();
 
         let mut writer = self.env.write_txn()?;
@@ -88,7 +88,7 @@ impl ApplyStorage for StateMachine {
         Ok(())
     }
 
-    async fn destory(&self) -> ReplicationResult<()> {
+    async fn destory(&mut self) -> ReplicationResult<()> {
         Ok(())
     }
 }
@@ -125,7 +125,7 @@ impl StateMachine {
         Ok(())
     }
 
-    pub async fn dump(&self) -> MetaResult<String> {
+    pub async fn dump(&mut self) -> MetaResult<String> {
         let data = self.snapshot().await.map_err(MetaError::from)?;
 
         let data: BtreeMapSnapshotData = serde_json::from_slice(&data).map_err(MetaError::from)?;

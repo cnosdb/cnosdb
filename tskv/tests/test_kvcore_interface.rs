@@ -17,7 +17,7 @@ mod tests {
     use tokio::runtime::Runtime;
     use trace::{debug, error, info, init_default_global_tracing, warn};
     use tskv::file_system::file_manager;
-    use tskv::{file_utils, kv_option, Engine, SnapshotFileMeta, TsKv};
+    use tskv::{file_utils, kv_option, Engine, TsKv};
 
     /// Initializes a TsKv instance in specified directory, with an optional runtime,
     /// returns the TsKv and runtime.
@@ -315,38 +315,24 @@ mod tests {
         let vnode = runtime
             .block_on(tskv.open_tsfamily(tenant, database, vnode_id))
             .unwrap();
-        let (vnode_snapshot_sub_dir, mut vnode_snapshot) = {
+        let (vnode_snapshot_sub_dir, vnode_snapshot) = {
             // Test create snapshot.
             sleep_in_runtime(runtime.clone(), Duration::from_secs(3));
 
             let vnode_snap = runtime.block_on(vnode.create_snapshot()).unwrap();
+            for f in vnode_snap.version_edit.add_files.iter() {
+                let path = if f.is_delta {
+                    file_utils::make_delta_file(&vnode_delta_dir, f.file_id)
+                } else {
+                    file_utils::make_tsm_file(&vnode_tsm_dir, f.file_id)
+                };
 
-            assert_eq!(vnode_snap.tenant, tenant);
-            assert_eq!(vnode_snap.database, database);
-            assert_eq!(vnode_snap.vnode_id, 11);
-            let files = vnode_snap.files.clone();
-            let tsm_files: Vec<SnapshotFileMeta> =
-                files.clone().into_iter().filter(|f| f.level != 0).collect();
-            let delta_files: Vec<SnapshotFileMeta> =
-                files.into_iter().filter(|f| f.level == 0).collect();
-            assert_eq!(tsm_files.len(), 1);
-            assert_eq!(delta_files.len(), 1);
-
-            let tsm_file_path =
-                file_utils::make_tsm_file(vnode_tsm_dir, tsm_files.first().unwrap().file_id);
-            assert!(
-                file_manager::try_exists(&tsm_file_path),
-                "{} not exists",
-                tsm_file_path.display(),
-            );
-
-            let delta_file_path =
-                file_utils::make_delta_file(vnode_delta_dir, delta_files.first().unwrap().file_id);
-            assert!(
-                file_manager::try_exists(&delta_file_path),
-                "{} not exists",
-                delta_file_path.display(),
-            );
+                assert!(
+                    file_manager::try_exists(&path),
+                    "{} not exists",
+                    path.display(),
+                );
+            }
 
             (vnode_snapshot_dir.join(&vnode_snap.snapshot_id), vnode_snap)
         };
@@ -369,25 +355,18 @@ mod tests {
         let new_vnode_id = 12;
         let vnode_tsm_dir = storage_opt.tsm_dir(&tenant_database, new_vnode_id);
         let vnode_delta_dir = storage_opt.delta_dir(&tenant_database, new_vnode_id);
-        let vnode_move_dir = storage_opt.move_dir(&tenant_database, new_vnode_id);
-        vnode_snapshot.vnode_id = new_vnode_id;
 
         {
-            // Test apply snapshot
-            // 1. Restore files to migration directory.
-            std::fs::create_dir_all(&vnode_move_dir).unwrap();
-            dircpy::copy_dir(vnode_backup_dir, vnode_move_dir).unwrap();
+            let mut vnode = runtime
+                .block_on(tskv.open_tsfamily(tenant, database, new_vnode_id))
+                .unwrap();
 
-            // 2. Do test apply snapshot.
             runtime
-                .block_on(vnode.apply_snapshot(vnode_snapshot))
+                .block_on(vnode.apply_snapshot(vnode_snapshot, &vnode_backup_dir))
                 .unwrap();
             sleep_in_runtime(runtime.clone(), Duration::from_secs(3));
 
-            let vnode = runtime
-                .block_on(tskv.open_tsfamily(tenant, database, new_vnode_id))
-                .unwrap();
-            let summary = runtime.block_on(async move {
+            let version_edit = runtime.block_on(async move {
                 let mut file_metas = HashMap::new();
                 vnode
                     .ts_family
@@ -396,38 +375,21 @@ mod tests {
                     .build_version_edit(&mut file_metas)
             });
 
-            assert_eq!(summary.tsf_id, new_vnode_id);
-            assert_eq!(summary.add_files.len(), 2);
-            let tsm_files: Vec<SnapshotFileMeta> = summary
-                .add_files
-                .iter()
-                .filter(|f| !f.is_delta)
-                .map(From::from)
-                .collect();
-            let delta_files: Vec<SnapshotFileMeta> = summary
-                .add_files
-                .iter()
-                .filter(|f| f.is_delta)
-                .map(From::from)
-                .collect();
-            assert_eq!(tsm_files.len(), 1);
-            assert_eq!(delta_files.len(), 1);
+            assert_eq!(version_edit.tsf_id, new_vnode_id);
+            assert_eq!(version_edit.add_files.len(), 2);
+            for f in version_edit.add_files.iter() {
+                let path = if f.is_delta {
+                    file_utils::make_delta_file(&vnode_delta_dir, f.file_id)
+                } else {
+                    file_utils::make_tsm_file(&vnode_tsm_dir, f.file_id)
+                };
 
-            let tsm_file_path =
-                file_utils::make_tsm_file(vnode_tsm_dir, tsm_files.first().unwrap().file_id);
-            assert!(
-                file_manager::try_exists(&tsm_file_path),
-                "{} not exists",
-                tsm_file_path.display(),
-            );
-
-            let delta_file_path =
-                file_utils::make_delta_file(vnode_delta_dir, delta_files.first().unwrap().file_id);
-            assert!(
-                file_manager::try_exists(&delta_file_path),
-                "{} not exists",
-                delta_file_path.display(),
-            );
+                assert!(
+                    file_manager::try_exists(&path),
+                    "{} not exists",
+                    path.display(),
+                );
+            }
         }
 
         runtime.block_on(tskv.close());

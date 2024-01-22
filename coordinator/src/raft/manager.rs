@@ -11,10 +11,9 @@ use replication::multi_raft::MultiRaft;
 use replication::node_store::NodeStorage;
 use replication::raft_node::RaftNode;
 use replication::state_store::{RaftNodeSummary, StateStorage};
-use replication::{RaftNodeId, RaftNodeInfo, ReplicationConfig};
+use replication::{ApplyStorageRef, EntryStorageRef, RaftNodeId, RaftNodeInfo, ReplicationConfig};
 use tokio::sync::RwLock;
 use tracing::info;
-use tskv::wal::raft_store::RaftEntryStorage;
 use tskv::{wal, EngineRef};
 
 use super::TskvEngineStorage;
@@ -122,8 +121,8 @@ impl RaftNodesManager {
 
     pub async fn exec_drop_raft_node(
         &self,
-        tenant: &str,
-        db_name: &str,
+        _tenant: &str,
+        _db_name: &str,
         id: VnodeId,
         group_id: ReplicationSetId,
     ) -> CoordinatorResult<()> {
@@ -132,14 +131,6 @@ impl RaftNodesManager {
         if let Some(raft_node) = nodes.get_node(group_id) {
             raft_node.shutdown().await?;
             nodes.rm_node(group_id);
-
-            let vnode_id = raft_node.raft_id() as VnodeId;
-            if let Some(storage) = &self.kv_inst {
-                let err = storage.remove_tsfamily(tenant, db_name, vnode_id).await;
-                info!("drop raft node remove tsfamily: {:?}", err);
-            }
-
-            info!("success remove raft node({}) from group({})", id, group_id)
         } else {
             info!("can't found raft node({}) from group({})", id, group_id)
         }
@@ -259,11 +250,6 @@ impl RaftNodesManager {
         )
         .await?;
 
-        let vnode_id = raft_node.raft_id() as VnodeId;
-        if let Some(storage) = &self.kv_inst {
-            let err = storage.remove_tsfamily(tenant, db_name, vnode_id).await;
-            info!("destory replica group remove tsfamily: {:?}", err);
-        }
         self.raft_nodes.write().await.rm_node(replica_id);
 
         Ok(())
@@ -395,22 +381,16 @@ impl RaftNodesManager {
         };
 
         let raft_id = vnode_id as u64;
-        let storage = NodeStorage::open(
+        let storage = Arc::new(NodeStorage::open(
             raft_id,
             info.clone(),
             self.raft_state.clone(),
             engine.clone(),
             raft_logs,
-        )?;
+        )?);
 
-        let node = RaftNode::new(
-            raft_id,
-            info,
-            Arc::new(storage),
-            engine,
-            self.replication_config(),
-        )
-        .await?;
+        let repl_config = self.replication_config();
+        let node = RaftNode::new(raft_id, info, storage, repl_config).await?;
 
         let summary = RaftNodeSummary {
             raft_id,
@@ -430,17 +410,26 @@ impl RaftNodesManager {
         db_name: &str,
         vnode_id: VnodeId,
         group_id: ReplicationSetId,
-    ) -> CoordinatorResult<(Arc<TskvEngineStorage>, Arc<RaftEntryStorage>)> {
-        // 1. open raft engine storage
+    ) -> CoordinatorResult<(ApplyStorageRef, EntryStorageRef)> {
+        // 1. open vnode store
         let kv_inst = self.kv_inst.clone();
         let storage = kv_inst.ok_or(CoordinatorError::KvInstanceNotFound {
             node_id: self.node_id(),
         })?;
+        let mut vnode_store = storage.open_tsfamily(tenant, db_name, vnode_id).await?;
 
-        let vnode_store = storage.open_tsfamily(tenant, db_name, vnode_id).await?;
-        let vnode_store = Arc::new(vnode_store);
+        // 2. open raft logs storage
+        let owner = models::schema::make_owner(tenant, db_name);
+        let wal_option = tskv::kv_option::WalOptions::from(&self.config);
+        let wal = wal::VnodeWal::new(Arc::new(wal_option), Arc::new(owner), vnode_id).await?;
+        let mut raft_logs = wal::raft_store::RaftEntryStorage::new(wal);
+
+        // 3. recover data...
+        let _apply_id = self.raft_state.get_last_applied_log(group_id)?;
+        raft_logs.recover(&mut vnode_store).await?;
+
+        // 4. open raft apply storage
         let engine = TskvEngineStorage::open(
-            self.node_id(),
             tenant,
             db_name,
             vnode_id,
@@ -449,19 +438,9 @@ impl RaftNodesManager {
             storage,
             self.config.service.grpc_enable_gzip,
         );
-        let engine = Arc::new(engine);
 
-        // 2. open raft logs storage
-        let owner = models::schema::make_owner(tenant, db_name);
-        let wal_option = tskv::kv_option::WalOptions::from(&self.config);
-
-        let wal = wal::VnodeWal::new(Arc::new(wal_option), Arc::new(owner), vnode_id).await?;
-        let raft_logs = wal::raft_store::RaftEntryStorage::new(wal);
-        let raft_logs = Arc::new(raft_logs);
-
-        // 3. recover data...
-        let _apply_id = self.raft_state.get_last_applied_log(group_id)?;
-        raft_logs.recover(vnode_store).await?;
+        let engine = Arc::new(RwLock::new(engine));
+        let raft_logs = Arc::new(RwLock::new(raft_logs));
 
         Ok((engine, raft_logs))
     }
