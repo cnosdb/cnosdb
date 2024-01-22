@@ -972,24 +972,26 @@ impl Engine for TsKv {
         column_name: &str,
     ) -> Result<()> {
         // TODO(zipper): Store this action in WAL.
-        let db = self.get_db(tenant, database).await?;
-        let schema =
-            db.read()
-                .await
-                .get_table_schema(table)?
-                .ok_or_else(|| SchemaError::TableNotFound {
+        if let Ok(db) = self.get_db(tenant, database).await {
+            let schema =
+                db.read()
+                    .await
+                    .get_table_schema(table)?
+                    .ok_or_else(|| SchemaError::TableNotFound {
+                        database: database.to_string(),
+                        table: table.to_string(),
+                    })?;
+            let column_id = schema
+                .column(column_name)
+                .ok_or_else(|| SchemaError::FieldNotFound {
                     database: database.to_string(),
                     table: table.to_string(),
-                })?;
-        let column_id = schema
-            .column(column_name)
-            .ok_or_else(|| SchemaError::FieldNotFound {
-                database: database.to_string(),
-                table: table.to_string(),
-                field: column_name.to_string(),
-            })?
-            .id;
-        self.delete_columns(db, table, &[column_id]).await?;
+                    field: column_name.to_string(),
+                })?
+                .id;
+            self.delete_columns(db, table, &[column_id]).await?;
+        }
+
         Ok(())
     }
 
