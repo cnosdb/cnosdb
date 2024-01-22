@@ -1,0 +1,52 @@
+statement ok
+DROP DATABASE IF EXISTS db01;
+
+statement ok
+CREATE DATABASE db01;
+
+statement ok
+alter database db01 set ttl '1000000d';
+
+statement ok
+--#DATABASE = db01;
+
+statement ok
+drop table if exists dml_tbl;
+
+statement ok
+CREATE TABLE IF NOT EXISTS dml_tbl(f0 BIGINT , f1 bigint , TAGS(t0, t1) );
+
+statement ok
+INSERT dml_tbl(TIME, f0, f1, t0, t1)
+VALUES
+    ('1999-12-31 00:00:00.000', 111, 444, 'tag11', 'tag21'),
+    ('1999-12-31 00:00:00.005', 222, 444, 'tag12', 'tag22'),
+    ('1999-12-31 00:00:00.010', null, 222, 'tag12', 'tag23'),
+    ('1999-12-31 00:00:10.015', 444, 111, 'tag14', 'tag24'),
+    ('1999-12-31 00:00:10.020', 222, 0, 'tag14', 'tag21'),
+    ('1999-12-31 00:10:00.025', 333, 0, 'tag11', 'tag22'),
+    ('1999-12-31 00:10:00.030', 444, -1, 'tag11', 'tag23'),
+    ('1999-12-31 01:00:00.035', 555, 0, 'tag14', 'tag24');
+
+query T
+SELECT * FROM dml_tbl WHERE 0>-0.123 Order by Time;
+----
+1999-12-31T00:00:00 tag11 tag21 111 444
+1999-12-31T00:00:00.005 tag12 tag22 222 444
+1999-12-31T00:00:00.010 tag12 tag23 NULL 222
+1999-12-31T00:00:10.015 tag14 tag24 444 111
+1999-12-31T00:00:10.020 tag14 tag21 222 0
+1999-12-31T00:10:00.025 tag11 tag22 333 0
+1999-12-31T00:10:00.030 tag11 tag23 444 -1
+1999-12-31T01:00:00.035 tag14 tag24 555 0
+
+query T
+SELECT * FROM dml_tbl WHERE f1>-0.123 Order by Time;
+----
+1999-12-31T00:00:00 tag11 tag21 111 444
+1999-12-31T00:00:00.005 tag12 tag22 222 444
+1999-12-31T00:00:00.010 tag12 tag23 NULL 222
+1999-12-31T00:00:10.015 tag14 tag24 444 111
+1999-12-31T00:00:10.020 tag14 tag21 222 0
+1999-12-31T00:10:00.025 tag11 tag22 333 0
+1999-12-31T01:00:00.035 tag14 tag24 555 0
