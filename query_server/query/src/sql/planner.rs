@@ -1632,6 +1632,9 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         } = stmt;
 
         let role_name = normalize_ident(name);
+        if SystemTenantRole::try_from(role_name.as_str()).is_ok() {
+            return Err(QueryError::ForbiddenCreateSystemRole { role: role_name });
+        }
         let tenant_name = session.tenant();
         let tenant_id = *session.tenant_id();
 

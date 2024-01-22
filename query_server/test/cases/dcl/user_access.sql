@@ -3,32 +3,32 @@
 --#DATABASE=public
 --#SORT=true
 DROP USER root;
+DROP ROLE IF EXISTS role_a;
+DROP DATABASE IF EXISTS db_a;
 DROP TENANT IF EXISTS tenant_a;
-DROP TENANT IF EXISTS tenant_b;
 DROP USER IF EXISTS user_a;
 DROP USER IF EXISTS user_b;
 DROP USER IF EXISTS user_c;
-DROP ROLE IF EXISTS role_a;
 
 
-CREATE TENANT tenant_a;
+
 CREATE USER user_a;
-ALTER TENANT tenant_a ADD USER user_a AS owner;
-CREATE ROLE role_a INHERIT member;
-CREATE TENANT tenant_b;
+ALTER TENANT cnosdb ADD USER user_a AS owner;
+CREATE TENANT tenant_a;
 CREATE USER user_b;
-ALTER TENANT tenant_b ADD USER user_b AS owner;
+ALTER TENANT tenant_a ADD USER user_b AS owner;
 CREATE USER user_c;
 
 
---#TENANT=tenant_a
+--#TENANT=cnosdb
 --#USER_NAME=user_a
+CREATE ROLE role_a INHERIT member;
 CREATE DATABASE db_a;
 --#DATABASE=db_a
 CREATE TABLE air_a (visibility DOUBLE,temperature DOUBLE,pressure DOUBLE,TAGS(station));
 INSERT INTO air_a (TIME, station, visibility, temperature, pressure) VALUES(1666165200290401000, 'XiaoMaiDao', 56, 69, 77);
 SELECT * FROM air_a;
---#TENANT=tenant_b
+--#TENANT=tenant_a
 --#USER_NAME=user_b
 SELECT * FROM air_a;
 CREATE DATABASE db_b;
@@ -41,8 +41,9 @@ SELECT * FROM air_b;
 SELECT * FROM air_b;
 
 --#USER_NAME=root
---#TENANT=tenant_a
-ALTER TENANT tenant_a ADD USER user_c AS role_a;
+--#TENANT=cnosdb
+--#DATABASE=db_a
+ALTER TENANT cnosdb ADD USER user_c AS role_a;
 GRANT READ ON DATABASE db_a TO ROLE role_a;
 CREATE TABLE t1(id BIGINT);
 INSERT t1 VALUES (1, 1);
