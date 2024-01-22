@@ -4,6 +4,7 @@ use std::sync::Arc;
 use models::predicate::domain::{TimeRange, TimeRanges};
 use models::{utils as model_utils, ColumnId, FieldId, SeriesId, Timestamp};
 use tokio::runtime::Runtime;
+use tokio::sync::Semaphore;
 use trace::trace;
 
 use crate::tseries_family::{ColumnFile, SuperVersion};
@@ -38,6 +39,10 @@ pub async fn count_column_non_null_values(
     let column_files = Arc::new(super_version.column_files(&time_ranges));
     let mut jh_vec = Vec::with_capacity(series_ids.len());
 
+    // Limit the number of concurrent tasks.
+    let max_count_tasks = num_cpus::get().min(series_ids.len());
+    let count_tasks_limit = Arc::new(Semaphore::new(max_count_tasks));
+
     for series_id in series_ids.iter() {
         let count_object = if let Some(column_id) = column_id {
             let field_id = model_utils::unite_id(column_id, *series_id);
@@ -47,13 +52,15 @@ pub async fn count_column_non_null_values(
         };
         let sv_inner = super_version.clone();
         let cfs_inner = column_files.clone();
+        let trs_inner = time_ranges.clone();
 
-        jh_vec.push(runtime.spawn(count_non_null_values_inner(
-            sv_inner,
-            count_object,
-            cfs_inner,
-            time_ranges.clone(),
-        )));
+        let permit = count_tasks_limit.clone().acquire_owned().await.unwrap();
+        jh_vec.push(runtime.spawn(async move {
+            let ret =
+                count_non_null_values_inner(sv_inner, count_object, cfs_inner, trs_inner).await;
+            drop(permit);
+            ret
+        }));
     }
 
     let mut count_sum = 0_u64;
