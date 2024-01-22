@@ -442,7 +442,7 @@ impl CnosdbMetaTestHelper {
         );
         let proc = self.execute(&node_def);
         self.sub_processes.insert(node_def.config_file_name, proc);
-        thread::sleep(Duration::from_secs(3));
+        thread::sleep(Duration::from_secs(5));
 
         println!("- Init cnosdb-meta ...");
         let master_host = format!("http://{}", &self.meta_node_definitions[0].host_port);

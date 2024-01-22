@@ -238,6 +238,10 @@ impl ServiceBuilder {
     pub async fn build_singleton(&self, server: &mut Server) -> Option<EngineRef> {
         let meta_service = MetaService::new(self.cpu, self.config.clone());
         meta_service.start().await.unwrap();
+
+        // wait meta server ready!
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
         self.build_query_storage(server).await
     }
 

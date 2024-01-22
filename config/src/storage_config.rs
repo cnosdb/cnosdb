@@ -50,6 +50,9 @@ pub struct StorageConfig {
     #[serde(default = "StorageConfig::default_strict_write")]
     pub strict_write: bool,
 
+    #[serde(with = "bytes_num", default = "StorageConfig::default_reserve_space")]
+    pub reserve_space: u64,
+
     #[serde(
         with = "bytes_num",
         default = "StorageConfig::default_copyinto_trigger_flush_size"
@@ -96,6 +99,10 @@ impl StorageConfig {
 
     fn default_max_concurrent_compaction() -> u16 {
         4
+    }
+
+    fn default_reserve_space() -> u64 {
+        0
     }
 
     fn default_strict_write() -> bool {
@@ -165,6 +172,7 @@ impl Default for StorageConfig {
             max_compact_size: Self::default_max_compact_size(),
             max_concurrent_compaction: Self::default_max_concurrent_compaction(),
             strict_write: Self::default_strict_write(),
+            reserve_space: Self::default_reserve_space(),
             copyinto_trigger_flush_size: Self::default_copyinto_trigger_flush_size(),
         }
     }
