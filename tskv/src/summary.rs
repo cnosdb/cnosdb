@@ -78,6 +78,22 @@ impl From<&ColumnFile> for CompactMeta {
 }
 
 impl CompactMeta {
+    pub fn new_del_file_part(
+        level: LevelId,
+        file_id: ColumnFileId,
+        min_ts: Timestamp,
+        max_ts: Timestamp,
+    ) -> Self {
+        CompactMeta {
+            file_id,
+            level,
+            is_delta: level == 0,
+            min_ts,
+            max_ts,
+            ..Default::default()
+        }
+    }
+
     pub fn file_path(
         &self,
         storage_opt: &StorageOptions,
@@ -256,18 +272,12 @@ impl VersionEdit {
         &mut self,
         level: LevelId,
         file_id: ColumnFileId,
-        is_delta: bool,
         min_ts: Timestamp,
         max_ts: Timestamp,
     ) {
-        self.partly_del_files.push(CompactMeta {
-            file_id,
-            level,
-            is_delta,
-            min_ts,
-            max_ts,
-            ..Default::default()
-        });
+        self.partly_del_files.push(CompactMeta::new_del_file_part(
+            level, file_id, min_ts, max_ts,
+        ));
     }
 }
 

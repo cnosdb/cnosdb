@@ -54,9 +54,20 @@ pub struct StorageOptions {
 // database/data/ts_family_id/index
 impl StorageOptions {
     /// Get the maximum size of a TSM file that in the given level.
+    /// - level-0 : base_file_size * 4
+    /// - level-1 : base_file_size * 4
+    /// - level-2 : base_file_size * 8
+    /// - level-3 : base_file_size * 16
+    /// - level-4 : base_file_size * 64
     pub fn level_max_file_size(&self, lvl: u32) -> u64 {
-        let lvl_non_zero = if lvl == 0 { 1 } else { lvl };
-        self.base_file_size * lvl_non_zero as u64 * 4
+        match lvl {
+            0 => self.base_file_size * 4,
+            1 => self.base_file_size * 4,
+            2 => self.base_file_size * 8,
+            3 => self.base_file_size * 16,
+            4 => self.base_file_size * 64,
+            other_lvl => self.base_file_size * (2_u32.pow(other_lvl) * 4) as u64,
+        }
     }
 
     pub fn summary_dir(&self) -> PathBuf {

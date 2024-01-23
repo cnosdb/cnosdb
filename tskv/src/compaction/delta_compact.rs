@@ -37,28 +37,47 @@ pub async fn run_compaction_job(
         }
         None => return Ok(None),
     };
-    let tsm_file = request.files[0].clone();
-    let out_time_range = tsm_file.time_range();
+    let out_time_range = request.out_time_range;
 
     // Collect l0-files that can be deleted after compaction.
-    let mut l0_file_metas_will_delete = Vec::new();
+    let mut l0_file_metas_will_delete: Vec<CompactMeta> = Vec::new();
+    // Collect l0-files that partly deleted after compaction.
+    let mut l0_file_will_partly_delete: Vec<CompactMeta> = Vec::new();
     // Open l0-files and tsm-file to run compaction.
-    let mut tsm_readers = Vec::with_capacity(1 + lv0_files.len());
-    tsm_readers.push(request.version.get_tsm_reader(tsm_file.file_path()).await?);
+    let mut tsm_readers = if request.files.is_empty() {
+        Vec::with_capacity(lv0_files.len())
+    } else {
+        let mut v = Vec::with_capacity(1 + lv0_files.len());
+        v.push(
+            request
+                .version
+                .get_tsm_reader(request.files[0].file_path())
+                .await?,
+        );
+        v
+    };
     for file in lv0_files {
-        let tsm_reader = request.version.get_tsm_reader(file.file_path()).await?;
-        let compacted_all_excluded_time_range = tsm_reader
-            .add_tombstone_and_compact_to_tmp(*out_time_range)
+        let l0_file_reader = request.version.get_tsm_reader(file.file_path()).await?;
+        let compacted_all_excluded_time_range = l0_file_reader
+            .add_tombstone_and_compact_to_tmp(out_time_range)
             .await?;
         if compacted_all_excluded_time_range.includes(file.time_range()) {
-            // The tombstone indludex all of the l0-file, so delete it.
+            // The tombstone indludes all of the l0-file, so delete it.
             l0_file_metas_will_delete.push(CompactMeta::from(file.as_ref()));
+        } else {
+            // The tombstone inludes partly of the l0_file and the exlcuded range close to the edge.
+            l0_file_will_partly_delete.push(CompactMeta::new_del_file_part(
+                0,
+                file.file_id(),
+                out_time_range.min_ts,
+                out_time_range.max_ts,
+            ));
         }
-        tsm_readers.push(tsm_reader);
+        tsm_readers.push(l0_file_reader);
     }
 
     let max_block_size = TseriesFamily::MAX_DATA_BLOCK_SIZE as usize;
-    let mut state = CompactState::new(tsm_readers, *out_time_range, max_block_size);
+    let mut state = CompactState::new(tsm_readers, out_time_range, max_block_size);
     let mut writer_wrapper = WriterWrapper::new(&request, ctx.clone());
 
     let mut previous_merged_block = Option::<CompactingBlock>::None;
@@ -87,7 +106,7 @@ pub async fn run_compaction_job(
                 .merge_with_previous_block(
                     previous_merged_block.take(),
                     max_block_size,
-                    out_time_range,
+                    &out_time_range,
                     &mut merged_blks,
                 )
                 .await?;
@@ -125,6 +144,7 @@ pub async fn run_compaction_job(
         // Lvel 1-4 files can be deleted after compaction.
         version_edit.del_file(file.level(), file.file_id(), file.is_delta());
     }
+    version_edit.partly_del_files = l0_file_will_partly_delete;
 
     trace::info!(
         "Compaction(delta): Compact finished, version edits: {:?}",
@@ -263,9 +283,9 @@ impl CompactState {
         &mut self,
         field_id: FieldId,
         compacting_blk_meta_groups: &mut Vec<CompactingBlockMetaGroup>,
-    ) -> bool {
+    ) {
         if self.tmp_tsm_blk_meta_iters.is_empty() {
-            return false;
+            return;
         }
 
         let mut blk_metas: Vec<CompactingBlockMeta> =
@@ -280,6 +300,10 @@ impl CompactState {
                     blk_meta,
                 ));
             }
+        }
+        if blk_metas.is_empty() {
+            // Cannot load any data.
+            return;
         }
         // Sort by field_id, min_ts and max_ts.
         blk_metas.sort();
@@ -327,7 +351,6 @@ impl CompactState {
             "selected merging meta groups: {}",
             CompactingBlockMetaGroups(compacting_blk_meta_groups),
         );
-        true
     }
 }
 

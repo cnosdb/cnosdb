@@ -3,7 +3,6 @@
 use core::panic;
 use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
-use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
@@ -993,26 +992,6 @@ fn kill_child_process(mut proc: Child, force: bool) {
             println!("- Process {pid} exited");
             break;
         }
-    }
-}
-
-#[test]
-fn test() {
-    let pid = 38048;
-
-    unsafe {
-        let proc_handle = winapi::um::processthreadsapi::OpenProcess(
-            winapi::um::winnt::PROCESS_TERMINATE,
-            winapi::shared::minwindef::FALSE,
-            pid,
-        );
-        if proc_handle.is_null() {
-            println!("Failed to open process.");
-            return;
-        }
-        // winapi::um::processthreadsapi::TerminateProcess(proc_handle, 0);
-        winapi::um::processthreadsapi::TerminateProcess(proc_handle, 0);
-        winapi::um::handleapi::CloseHandle(proc_handle);
     }
 }
 

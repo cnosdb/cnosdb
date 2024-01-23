@@ -67,6 +67,20 @@ impl ColumnFile {
         }
     }
 
+    pub fn deep_copy(&self) -> Self {
+        Self {
+            file_id: self.file_id,
+            level: self.level,
+            time_range: self.time_range,
+            size: self.size,
+            field_id_filter: self.field_id_filter.clone(),
+            deleted: AtomicBool::new(self.is_deleted()),
+            compacting: AtomicBool::new(self.is_compacting()),
+            path: self.path.clone(),
+            tsm_reader_cache: self.tsm_reader_cache.clone(),
+        }
+    }
+
     pub fn file_id(&self) -> ColumnFileId {
         self.file_id
     }
@@ -508,6 +522,7 @@ impl Version {
     ) -> Version {
         let mut added_files: Vec<Vec<CompactMeta>> = vec![vec![]; 5];
         let mut deleted_files: Vec<HashSet<ColumnFileId>> = vec![HashSet::new(); 5];
+        let mut partly_deleted_files: HashSet<ColumnFileId> = HashSet::new();
         for ve in version_edits.into_iter() {
             if !ve.add_files.is_empty() {
                 ve.add_files.into_iter().for_each(|f| {
@@ -519,6 +534,11 @@ impl Version {
                     deleted_files[f.level as usize].insert(f.file_id);
                 });
             }
+            if !ve.partly_del_files.is_empty() {
+                ve.partly_del_files.into_iter().for_each(|f| {
+                    partly_deleted_files.insert(f.file_id);
+                });
+            }
         }
 
         let mut new_levels = LevelInfo::init_levels(
@@ -527,23 +547,42 @@ impl Version {
             self.storage_opt.clone(),
         );
         let weak_tsm_reader_cache = Arc::downgrade(&self.tsm_reader_cache);
-        for level in self.levels_info.iter() {
-            for file in level.files.iter() {
-                if deleted_files[file.level as usize].contains(&file.file_id) {
-                    file.mark_deleted();
-                    continue;
+        for (level_id, level) in self.levels_info.iter().enumerate() {
+            if level_id == 0 {
+                for file in level.files.iter() {
+                    if deleted_files[level_id].contains(&file.file_id) {
+                        file.mark_deleted();
+                        continue;
+                    }
+                    // Unmark compacting flag for level-0 files.
+                    if partly_deleted_files.contains(&file.file_id) {
+                        // Deep clone this ColumnFile and then unmark compacting flag.
+                        let file_copy = file.deep_copy();
+                        file_copy.unmark_compacting();
+                        new_levels[level_id].push_column_file(Arc::new(file_copy));
+                        continue;
+                    }
+                    new_levels[level_id].push_column_file(file.clone());
                 }
-                new_levels[level.level as usize].push_column_file(file.clone());
+            } else {
+                for file in level.files.iter() {
+                    if deleted_files[level_id].contains(&file.file_id) {
+                        file.mark_deleted();
+                        continue;
+                    }
+                    new_levels[level_id].push_column_file(file.clone());
+                }
             }
-            for file in added_files[level.level as usize].iter() {
+
+            for file in added_files[level_id].iter() {
                 let field_filter = file_metas.remove(&file.file_id).unwrap_or_default();
-                new_levels[level.level as usize].push_compact_meta(
+                new_levels[level_id].push_compact_meta(
                     file,
                     field_filter,
                     weak_tsm_reader_cache.clone(),
                 );
             }
-            new_levels[level.level as usize].update_time_range();
+            new_levels[level_id].update_time_range();
         }
 
         let mut new_version = Self {
