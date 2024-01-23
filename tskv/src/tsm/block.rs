@@ -1052,11 +1052,15 @@ impl DataBlockReader {
             false
         } else {
             let tr_idx_start = self.intersected_time_ranges_i;
-            for tr in self.intersected_time_ranges.time_ranges()[tr_idx_start..].iter() {
+            for tr in self
+                .intersected_time_ranges
+                .time_ranges()
+                .skip(tr_idx_start)
+            {
                 self.intersected_time_ranges_i += 1;
                 // Check if the DataBlock matches one of the intersected time ranges.
                 // TODO: sometimes the comparison in loop can stop earily.
-                if let Some((min, max)) = self.data_block.index_range(tr) {
+                if let Some((min, max)) = self.data_block.index_range(&tr) {
                     self.idx = min;
                     self.end_idx = max;
                     return true;

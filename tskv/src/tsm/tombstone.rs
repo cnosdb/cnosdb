@@ -383,8 +383,8 @@ impl TsmTombstone {
 
             if cache.all_excluded.max_time_range().overlaps(block_tr) {
                 for excluded_tr in cache.all_excluded.time_ranges() {
-                    if block_tr.overlaps(excluded_tr) {
-                        data_block.exclude(excluded_tr);
+                    if block_tr.overlaps(&excluded_tr) {
+                        data_block.exclude(&excluded_tr);
                     }
                 }
             }
@@ -392,7 +392,7 @@ impl TsmTombstone {
             if let Some(time_ranges) = cache.fields_excluded.get(&field_id) {
                 for t in time_ranges.time_ranges() {
                     if t.overlaps(block_tr) {
-                        data_block.exclude(t);
+                        data_block.exclude(&t);
                     }
                 }
             }
@@ -486,25 +486,22 @@ impl TsmTombstoneCache {
                 .entry(field_id)
                 .or_insert_with(TimeRanges::empty);
             tr_entry.extend_from_slice(&time_ranges);
-            tr_entry.compact();
         }
     }
 
     pub fn compact(&mut self) {
-        self.all_excluded.compact();
         // If all compacted time ranges equals to `all_excluded`, remove all fields.
         let mut all_excluded = true;
         let mut fields_excluded_size = 0_usize;
         for time_ranges in self.fields_excluded.values_mut() {
             // Compact time ranges of field with all_excluded.
-            time_ranges.extend_from_slice(self.all_excluded.time_ranges());
-            time_ranges.compact();
+            time_ranges.extend_from_slice(&self.all_excluded.time_ranges().collect::<Vec<_>>());
             fields_excluded_size += time_ranges.len();
             // Check if all compacted time ranges equals to `all_excluded`.
             if all_excluded {
                 let mut field_excluded_not_need = true;
                 for tr in time_ranges.time_ranges() {
-                    if !self.all_excluded.includes(tr) {
+                    if !self.all_excluded.includes(&tr) {
                         field_excluded_not_need = false;
                         break;
                     }
@@ -621,14 +618,15 @@ impl TsmTombstoneCache {
         let mut write_buf = Vec::with_capacity(MAX_RECORD_LEN);
         // Save field_excluded tombstones.
         for (field_id, time_ranges) in self.fields_excluded.iter() {
-            let mut time_ranges = time_ranges.time_ranges();
+            let time_ranges = time_ranges.time_ranges().collect::<Vec<_>>();
+            let mut index = 0_usize;
             while !time_ranges.is_empty() {
                 let encoded_time_ranges_num = Tombstone::encode_field_time_ranges(
                     &mut write_buf,
                     &TombstoneField::One(*field_id),
-                    time_ranges,
+                    &time_ranges[index..],
                 );
-                time_ranges = &time_ranges[encoded_time_ranges_num..];
+                index += encoded_time_ranges_num;
                 if write_buf.len() >= MAX_RECORD_LEN {
                     write_tombstone_record(writer, &write_buf).await?;
                     write_buf.clear();
@@ -636,14 +634,15 @@ impl TsmTombstoneCache {
             }
         }
         // Save all_excluded tombstone.
-        let mut time_ranges = self.all_excluded.time_ranges();
+        let time_ranges = self.all_excluded.time_ranges().collect::<Vec<_>>();
+        let mut index = 0_usize;
         while !time_ranges.is_empty() {
             let encoded_time_ranges_num = Tombstone::encode_field_time_ranges(
                 &mut write_buf,
                 &TombstoneField::All,
-                time_ranges,
+                &time_ranges[index..],
             );
-            time_ranges = &time_ranges[encoded_time_ranges_num..];
+            index += encoded_time_ranges_num;
             if write_buf.len() >= MAX_RECORD_LEN {
                 write_tombstone_record(writer, &write_buf).await?;
                 write_buf.clear();

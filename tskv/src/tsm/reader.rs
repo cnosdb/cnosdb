@@ -171,7 +171,7 @@ pub async fn print_tsm_statistics(path: impl AsRef<Path>, show_tombstone: bool) 
                 if time_ranges.is_empty() {
                     println!("None");
                 } else {
-                    for (i, tr) in time_ranges.time_ranges().iter().enumerate() {
+                    for (i, tr) in time_ranges.time_ranges().enumerate() {
                         if i == time_ranges.len() - 1 {
                             println!("({}, {})", tr.min_ts, tr.max_ts);
                         } else {
