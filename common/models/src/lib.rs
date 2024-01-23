@@ -1,3 +1,5 @@
+#![feature(btree_cursors)]
+
 use std::sync::Arc;
 
 pub use datafusion::sql::sqlparser::ast::Value as SqlParserValue;
