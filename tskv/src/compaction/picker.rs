@@ -267,6 +267,7 @@ impl DeltaCompactionPicker {
         let mut picked_l0_files: Vec<Arc<ColumnFile>> = vec![];
         let mut picked_size = 0_u64;
         let mut opened_l0_files: HashMap<u64, Arc<TsmReader>> = HashMap::new();
+        let mut exists_overlapped_compacting_tsm_file = false;
 
         for l0_file in levels[0].files.iter() {
             if l0_file.is_compacting() {
@@ -310,11 +311,15 @@ impl DeltaCompactionPicker {
                         if picked_tsm_file.is_some() {
                             break;
                         }
-                        if !tsm_file.time_range().overlaps(l0_file.time_range())
-                            || tsm_file.is_compacting()
-                        {
+                        if tsm_file.time_range().overlaps(l0_file.time_range()) {
+                            if tsm_file.is_compacting() {
+                                exists_overlapped_compacting_tsm_file = true;
+                                continue;
+                            }
+                        } else {
                             continue;
                         }
+
                         if Self::check_l0_file_overlap_with_tsm_file(
                             l0_file,
                             tsm_file.time_range(),
@@ -342,12 +347,20 @@ impl DeltaCompactionPicker {
         let (picked_level, picked_tsm_file, out_time_range) = if let Some((level, tsm_file)) =
             picked_tsm_file
         {
+            // Merege delta files with tsm-file.
             info!(
                 "Picker(delta): Picked level: {level}, tsm_file: {tsm_file}, l0_files: [ {} ]",
                 ColumnFiles(&picked_l0_files)
             );
             let out_time_range = *tsm_file.time_range();
             (level, vec![tsm_file], out_time_range)
+        } else if exists_overlapped_compacting_tsm_file {
+            // Exists compacting tsm files overlapped with lv-files, skip picking.
+            info!(
+                "Picker(delta): Picked nothing to keep order: l0_files: [ {} ]",
+                ColumnFiles(&picked_l0_files)
+            );
+            return None;
         } else if let Some((picked_level, out_time_range)) =
             Self::pick_lv0_files_into_lv14(levels, max_compact_size, &mut picked_l0_files)
         {
