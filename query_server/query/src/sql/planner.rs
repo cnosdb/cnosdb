@@ -1498,6 +1498,12 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             AlterUserOperation::Set(sql_option) => {
                 let user_options = sql_options_to_user_options(vec![sql_option])?;
                 if user_options.granted_admin().is_some() {
+                    if user_desc.is_root_admin() {
+                        return Err(QueryError::InvalidParam {
+                            reason: "The root user does not support changing granted_admin"
+                                .to_string(),
+                        });
+                    }
                     // 修改admin参数需要系统管理权限
                     privileges = vec![Privilege::Global(GlobalPrivilege::System)];
                 }
