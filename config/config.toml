@@ -1,5 +1,6 @@
 #reporting_disabled = false
 #node_id = 100 
+file_buffer_size = '1M'
 
 [deployment]
 #mode = 'singleton'

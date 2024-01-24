@@ -6,6 +6,8 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use check::{CheckConfig, CheckConfigResult};
+use codec::bytes_num;
+use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 
 pub use crate::cache_config::*;
@@ -47,6 +49,10 @@ pub struct Config {
     ///
     #[serde(default = "Config::default_host")]
     pub host: String,
+
+    ///
+    #[serde(with = "bytes_num", default = "Config::default_file_buffer_size")]
+    pub file_buffer_size: u64,
 
     ///
     #[serde(default = "Default::default")]
@@ -96,11 +102,15 @@ pub struct Config {
     pub trace: TraceConfig,
 }
 
+// TODO: All configuration items should use global variables
+pub static FILE_BUFFER_SIZE: OnceCell<usize> = OnceCell::new();
+
 impl Default for Config {
     fn default() -> Self {
         Self {
             reporting_disabled: Self::default_reporting_disabled(),
             host: Self::default_host(),
+            file_buffer_size: Self::default_file_buffer_size(),
             deployment: Default::default(),
             query: Default::default(),
             storage: Default::default(),
@@ -124,6 +134,10 @@ impl Config {
 
     fn default_host() -> String {
         "localhost".to_string()
+    }
+
+    fn default_file_buffer_size() -> u64 {
+        1024 * 1024
     }
 
     pub fn override_by_env(&mut self) {
@@ -183,6 +197,7 @@ pub fn get_config(path: impl AsRef<Path>) -> Result<Config, std::io::Error> {
         }
     };
     config.wal.introspect();
+    FILE_BUFFER_SIZE.get_or_init(|| config.file_buffer_size as usize);
     Ok(config)
 }
 
