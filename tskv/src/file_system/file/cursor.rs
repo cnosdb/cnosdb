@@ -1,9 +1,11 @@
 use std::io::{Error, ErrorKind, IoSlice, Result, SeekFrom};
 
+use config::FILE_BUFFER_SIZE;
+
 use crate::file_system::file::async_file::AsyncFile;
 use crate::file_system::file::IFile;
 
-const BUFFER_SIZE: usize = 1024 * 1024;
+const DEFAULT_FILE_BUFFER_SIZE: usize = 1024 * 1024;
 
 pub struct FileCursor {
     file: AsyncFile,
@@ -33,7 +35,8 @@ impl FileCursor {
 
     pub async fn write(&mut self, buf: &[u8]) -> Result<usize> {
         self.buf.extend_from_slice(buf);
-        self.try_flush(BUFFER_SIZE).await?;
+        self.try_flush(*FILE_BUFFER_SIZE.get_or_init(|| DEFAULT_FILE_BUFFER_SIZE))
+            .await?;
         Ok(buf.len())
     }
 
@@ -41,7 +44,8 @@ impl FileCursor {
         let sum = bufs.iter().fold(0, |acc, buf| acc + buf.len());
         self.buf.reserve(sum);
         bufs.iter().for_each(|buf| self.buf.extend_from_slice(buf));
-        self.try_flush(BUFFER_SIZE).await?;
+        self.try_flush(*FILE_BUFFER_SIZE.get_or_init(|| DEFAULT_FILE_BUFFER_SIZE))
+            .await?;
         Ok(sum)
     }
 
@@ -97,7 +101,7 @@ impl From<AsyncFile> for FileCursor {
         FileCursor {
             file,
             pos: 0,
-            buf: Vec::with_capacity(BUFFER_SIZE),
+            buf: Vec::with_capacity(*FILE_BUFFER_SIZE.get_or_init(|| DEFAULT_FILE_BUFFER_SIZE)),
         }
     }
 }
