@@ -26,37 +26,26 @@ pub async fn run_compaction_job(
 ) -> Result<Option<(VersionEdit, HashMap<ColumnFileId, Arc<BloomFilter>>)>> {
     trace::info!("Compaction(delta): Running compaction job on {request}");
 
-    let lv0_files = match &request.lv0_files {
-        Some(f) => {
-            if f.is_empty() {
-                // Nothing to compact
-                return Ok(None);
-            } else {
-                f
-            }
-        }
-        None => return Ok(None),
-    };
-    let out_time_range = request.out_time_range;
+    let (delta_files, level_file) = request.split_delta_and_level_files();
+    if delta_files.is_empty() {
+        return Ok(None);
+    }
+    let out_time_range = request.out_time_range();
 
     // Collect l0-files that can be deleted after compaction.
     let mut l0_file_metas_will_delete: Vec<CompactMeta> = Vec::new();
     // Collect l0-files that partly deleted after compaction.
-    let mut l0_file_will_partly_delete: Vec<CompactMeta> = Vec::new();
+    let mut l0_file_metas_will_partly_delete: Vec<CompactMeta> = Vec::new();
     // Open l0-files and tsm-file to run compaction.
-    let mut tsm_readers = if request.files.is_empty() {
-        Vec::with_capacity(lv0_files.len())
-    } else {
-        let mut v = Vec::with_capacity(1 + lv0_files.len());
-        v.push(
-            request
-                .version
-                .get_tsm_reader(request.files[0].file_path())
-                .await?,
-        );
-        v
+    let mut tsm_readers = match level_file {
+        None => Vec::with_capacity(delta_files.len()),
+        Some(f) => {
+            let mut tsm_readers = Vec::with_capacity(1 + delta_files.len());
+            tsm_readers.push(request.version.get_tsm_reader(f.file_path()).await?);
+            tsm_readers
+        }
     };
-    for file in lv0_files {
+    for file in delta_files {
         let l0_file_reader = request.version.get_tsm_reader(file.file_path()).await?;
         let compacted_all_excluded_time_range = l0_file_reader
             .add_tombstone_and_compact_to_tmp(out_time_range)
@@ -66,7 +55,7 @@ pub async fn run_compaction_job(
             l0_file_metas_will_delete.push(CompactMeta::from(file.as_ref()));
         } else {
             // The tombstone inludes partly of the l0_file and the exlcuded range close to the edge.
-            l0_file_will_partly_delete.push(CompactMeta::new_del_file_part(
+            l0_file_metas_will_partly_delete.push(CompactMeta::new_del_file_part(
                 0,
                 file.file_id(),
                 out_time_range.min_ts,
@@ -78,7 +67,7 @@ pub async fn run_compaction_job(
 
     let max_block_size = TseriesFamily::MAX_DATA_BLOCK_SIZE as usize;
     let mut state = CompactState::new(tsm_readers, out_time_range, max_block_size);
-    let mut writer_wrapper = WriterWrapper::new(&request, ctx.clone());
+    let mut writer_wrapper = WriterWrapper::new(&request, ctx.clone()).await?;
 
     let mut previous_merged_block = Option::<CompactingBlock>::None;
     let mut merging_blk_meta_groups = Vec::with_capacity(32);
@@ -87,15 +76,13 @@ pub async fn run_compaction_job(
     let mut curr_fid: Option<FieldId> = None;
     while let Some(fid) = state.next(&mut merging_blk_meta_groups).await {
         for blk_meta_group in merging_blk_meta_groups.drain(..) {
-            trace::trace!("merging meta group: {blk_meta_group}");
+            println!("merging meta group: {blk_meta_group}");
             if let Some(c_fid) = curr_fid {
                 if c_fid != fid {
                     // Iteration of next field id, write previous merged block.
                     if let Some(blk) = previous_merged_block.take() {
                         // Write the small previous merged block.
-                        trace::trace!(
-                            "write the previous compacting block (fid={curr_fid:?}): {blk}"
-                        );
+                        println!("write the previous compacting block (fid={curr_fid:?}): {blk}");
                         writer_wrapper.write(blk).await?;
                     }
                 }
@@ -124,17 +111,17 @@ pub async fn run_compaction_job(
                 if i == last_blk_idx && blk.len() < max_block_size {
                     // The last data block too small, try to extend to
                     // the next compacting blocks (current field id).
-                    trace::trace!("compacting block (fid={fid}) {blk} is too small, try to merge with the next compacting blocks");
+                    println!("compacting block (fid={fid}) {blk} is too small, try to merge with the next compacting blocks");
                     previous_merged_block = Some(blk);
                     break;
                 }
-                trace::trace!("write compacting block(fid={fid}): {blk}");
+                println!("write compacting block(fid={fid}): {blk}");
                 writer_wrapper.write(blk).await?;
             }
         }
     }
     if let Some(blk) = previous_merged_block {
-        trace::trace!("write the final compacting block(fid={curr_fid:?}): {blk}");
+        println!("write the final compacting block(fid={curr_fid:?}): {blk}");
         writer_wrapper.write(blk).await?;
     }
 
@@ -144,7 +131,7 @@ pub async fn run_compaction_job(
         // Lvel 1-4 files can be deleted after compaction.
         version_edit.del_file(file.level(), file.file_id(), file.is_delta());
     }
-    version_edit.partly_del_files = l0_file_will_partly_delete;
+    version_edit.partly_del_files = l0_file_metas_will_partly_delete;
 
     trace::info!(
         "Compaction(delta): Compact finished, version edits: {:?}",
@@ -201,6 +188,7 @@ impl CompactState {
     ) -> Option<FieldId> {
         // For each tsm-file, get next index reader for current iteration field id
         if let Some(field_id) = self.next_field() {
+            compacting_blk_meta_groups.clear();
             // Get all of block_metas of this field id, and group these block_metas.
             self.fill_compacting_block_meta_groups(field_id, compacting_blk_meta_groups);
 
@@ -214,21 +202,21 @@ impl CompactState {
 impl CompactState {
     /// Update tmp_tsm_blk_meta_iters for field id in next iteration.
     fn next_field(&mut self) -> Option<FieldId> {
-        trace::trace!("===============================");
+        println!("===============================");
 
         self.tmp_tsm_blk_meta_iters.clear();
         let mut curr_fid: FieldId;
 
         loop {
             if let Some(f) = self.compacting_files.peek() {
-                trace::trace!(
-                    "selected new field {:?} from file {} as current field id",
+                println!(
+                    "selected new field {} from file {} as current field id",
                     f.field_id,
                     f.tsm_reader.file_id()
                 );
                 curr_fid = f.field_id
             } else {
-                trace::trace!("no file to select, mark finished");
+                println!("no file to select, mark finished");
                 return None;
             }
 
@@ -237,7 +225,7 @@ impl CompactState {
                 loop_file_i = f.i;
                 if curr_fid == f.field_id {
                     if let Some(idx_meta) = f.peek() {
-                        trace::trace!(
+                        println!(
                             "for tsm file @{loop_file_i}, got idx_meta((field_id: {}, field_type: {:?}, block_count: {}, time_range: {:?}), put the @{} block iterator with filter: {:?}",
                             idx_meta.field_id(),
                             idx_meta.field_type(),
@@ -254,7 +242,7 @@ impl CompactState {
                         self.compacting_files.push(f);
                     } else {
                         // This tsm-file has been finished, do not push it back.
-                        trace::trace!("file {loop_file_i} is finished.");
+                        println!("file {loop_file_i} is finished.");
                     }
                 } else {
                     // This tsm-file do not need to compact at this time, push it back.
@@ -264,13 +252,13 @@ impl CompactState {
             }
 
             if !self.tmp_tsm_blk_meta_iters.is_empty() {
-                trace::trace!(
+                println!(
                     "selected {} blocks meta iterators",
                     self.tmp_tsm_blk_meta_iters.len()
                 );
                 break;
             } else {
-                trace::trace!("iteration field_id {curr_fid} is finished, trying next field.");
+                println!("iteration field_id {curr_fid} is finished, trying next field.");
                 continue;
             }
         }
@@ -341,13 +329,12 @@ impl CompactState {
             blk_meta_groups[head_idx] = head;
         }
 
-        compacting_blk_meta_groups.clear();
         for cbm_group in blk_meta_groups {
             if !cbm_group.is_empty() {
                 compacting_blk_meta_groups.push(cbm_group);
             }
         }
-        trace::trace!(
+        println!(
             "selected merging meta groups: {}",
             CompactingBlockMetaGroups(compacting_blk_meta_groups),
         );
@@ -401,7 +388,7 @@ impl CompactingBlockMetaGroup {
             && self.blk_metas[0].included_in_time_range(time_range)
         {
             // Only one compacting block and has no tombstone, write as raw block.
-            trace::trace!("only one compacting block without tombstone and time_range is entirely included by target level, handled as raw block");
+            println!("only one compacting block without tombstone and time_range is entirely included by target level, handled as raw block");
             let head_meta = &self.blk_metas[0].meta;
             let mut buf = Vec::with_capacity(head_meta.size() as usize);
             let data_len = self.blk_metas[0].get_raw_data(&mut buf).await?;
@@ -442,7 +429,7 @@ impl CompactingBlockMetaGroup {
             }
         } else {
             // One block with tombstone or multi compacting blocks, decode and merge these data block.
-            trace::trace!(
+            println!(
                 "there are {} compacting blocks, need to decode and merge",
                 self.blk_metas.len()
             );
@@ -532,7 +519,7 @@ fn chunk_data_block_into_compacting_blocks(
     max_block_size: usize,
     compacting_blocks: &mut Vec<CompactingBlock>,
 ) -> Result<()> {
-    trace::trace!("Chunking data block {}", data_block);
+    println!("Chunking data block {}", data_block);
     compacting_blocks.clear();
     if max_block_size == 0 || data_block.len() < max_block_size {
         // Data block elements less than max_block_size, do not encode it.
@@ -555,7 +542,7 @@ fn chunk_data_block_into_compacting_blocks(
             end = len.min(start + max_block_size);
         }
     }
-    trace::trace!(
+    println!(
         "Chunked compacting blocks: {}",
         CompactingBlocks(compacting_blocks)
     );
@@ -567,13 +554,11 @@ struct WriterWrapper {
     // Init values.
     ts_family_id: TseriesFamilyId,
     out_level: LevelId,
-    max_file_size: u64,
     tsm_dir: PathBuf,
-    context: Arc<GlobalContext>,
 
     // Temporary values.
     tsm_writer_full: bool,
-    tsm_writer: Option<TsmWriter>,
+    tsm_writer: TsmWriter,
 
     // Result values.
     version_edit: VersionEdit,
@@ -581,31 +566,66 @@ struct WriterWrapper {
 }
 
 impl WriterWrapper {
-    pub fn new(request: &CompactReq, context: Arc<GlobalContext>) -> Self {
+    pub async fn new(request: &CompactReq, context: Arc<GlobalContext>) -> Result<Self> {
         let ts_family_id = request.compact_task.ts_family_id();
-        Self {
+        let storage_opt = request.version.borrowed_storage_opt();
+        let tsm_dir = storage_opt.tsm_dir(request.version.borrowed_database(), ts_family_id);
+        // let max_file_size = storage_opt.level_max_file_size(request.out_level);
+        let file_id = context.file_id_next();
+        let tsm_writer = tsm::new_tsm_writer(tsm_dir, file_id, false, 0).await?;
+        trace::info!(
+            "Compaction(delta): File: {file_id} been created (level: {}).",
+            request.out_level,
+        );
+        Ok(Self {
             ts_family_id,
             out_level: request.out_level,
-            max_file_size: request
-                .version
-                .storage_opt()
-                .level_max_file_size(request.out_level),
             tsm_dir: request
                 .version
                 .borrowed_storage_opt()
                 .tsm_dir(request.version.borrowed_database(), ts_family_id),
-            context,
 
             tsm_writer_full: false,
-            tsm_writer: None,
+            tsm_writer,
 
             version_edit: VersionEdit::new(ts_family_id),
             file_metas: HashMap::new(),
-        }
+        })
     }
 
     pub async fn close(mut self) -> Result<(VersionEdit, HashMap<ColumnFileId, Arc<BloomFilter>>)> {
-        self.close_writer_and_append_compact_meta().await?;
+        self.tsm_writer
+            .write_index()
+            .await
+            .context(error::WriteTsmSnafu)?;
+        self.tsm_writer
+            .finish()
+            .await
+            .context(error::WriteTsmSnafu)?;
+
+        trace::info!(
+            "Compaction(delta): File: {} write finished (level: {}, {} B).",
+            self.tsm_writer.sequence(),
+            self.out_level,
+            self.tsm_writer.size()
+        );
+
+        let file_id = self.tsm_writer.sequence();
+        let cm = CompactMeta {
+            file_id,
+            file_size: self.tsm_writer.size(),
+            tsf_id: self.ts_family_id,
+            level: self.out_level,
+            min_ts: self.tsm_writer.min_ts(),
+            max_ts: self.tsm_writer.max_ts(),
+            high_seq: 0,
+            low_seq: 0,
+            is_delta: false,
+        };
+        self.version_edit.add_file(cm, self.tsm_writer.max_ts());
+        let bloom_filter = self.tsm_writer.into_bloom_filter();
+        self.file_metas.insert(file_id, Arc::new(bloom_filter));
+
         Ok((self.version_edit, self.file_metas))
     }
 
@@ -616,25 +636,17 @@ impl WriterWrapper {
                 field_id,
                 data_block,
                 ..
-            } => {
-                self.tsm_writer_mut()
-                    .await?
-                    .write_block(field_id, &data_block)
-                    .await
-            }
+            } => self.tsm_writer.write_block(field_id, &data_block).await,
             CompactingBlock::Encoded {
                 field_id,
                 data_block,
                 ..
             } => {
-                self.tsm_writer_mut()
-                    .await?
+                self.tsm_writer
                     .write_encoded_block(field_id, &data_block)
                     .await
             }
-            CompactingBlock::Raw { meta, raw, .. } => {
-                self.tsm_writer_mut().await?.write_raw(&meta, &raw).await
-            }
+            CompactingBlock::Raw { meta, raw, .. } => self.tsm_writer.write_raw(&meta, &raw).await,
         };
         match write_result {
             Ok(size) => Ok(size),
@@ -666,75 +678,12 @@ impl WriterWrapper {
             }
         }
     }
-
-    async fn tsm_writer_mut(&mut self) -> Result<&mut TsmWriter> {
-        if self.tsm_writer_full {
-            self.close_writer_and_append_compact_meta().await?;
-            self.new_writer_mut().await
-        } else {
-            match self.tsm_writer {
-                Some(ref mut w) => Ok(w),
-                None => self.new_writer_mut().await,
-            }
-        }
-    }
-
-    async fn new_writer_mut(&mut self) -> Result<&mut TsmWriter> {
-        let writer = tsm::new_tsm_writer(
-            &self.tsm_dir,
-            self.context.file_id_next(),
-            false,
-            self.max_file_size,
-        )
-        .await?;
-        trace::info!(
-            "Compaction(delta): File: {} been created (level: {}).",
-            writer.sequence(),
-            self.out_level,
-        );
-
-        self.tsm_writer_full = false;
-        Ok(self.tsm_writer.insert(writer))
-    }
-
-    async fn close_writer_and_append_compact_meta(&mut self) -> Result<()> {
-        if let Some(mut tsm_writer) = self.tsm_writer.take() {
-            tsm_writer
-                .write_index()
-                .await
-                .context(error::WriteTsmSnafu)?;
-            tsm_writer.finish().await.context(error::WriteTsmSnafu)?;
-
-            trace::info!(
-                "Compaction(delta): File: {} write finished (level: {}, {} B).",
-                tsm_writer.sequence(),
-                self.out_level,
-                tsm_writer.size()
-            );
-
-            let file_id = tsm_writer.sequence();
-            let cm = CompactMeta {
-                file_id,
-                file_size: tsm_writer.size(),
-                tsf_id: self.ts_family_id,
-                level: self.out_level,
-                min_ts: tsm_writer.min_ts(),
-                max_ts: tsm_writer.max_ts(),
-                high_seq: 0,
-                low_seq: 0,
-                is_delta: false,
-            };
-            self.version_edit.add_file(cm, tsm_writer.max_ts());
-            let bloom_filter = tsm_writer.into_bloom_filter();
-            self.file_metas.insert(file_id, Arc::new(bloom_filter));
-        }
-
-        Ok(())
-    }
 }
 
 #[cfg(test)]
 mod test {
+    use std::path::Path;
+
     use cache::ShardedAsyncCache;
     use models::{FieldId, Timestamp, ValueType};
 
@@ -746,7 +695,8 @@ mod test {
     use crate::file_system::file_manager;
     use crate::tseries_family::{ColumnFile, LevelInfo, Version};
     use crate::tsm::codec::DataBlockEncoding;
-    use crate::Options;
+    use crate::tsm::TsmTombstoneCache;
+    use crate::{file_utils, record_file, Options};
 
     #[test]
     fn test_chunk_merged_block() {
@@ -861,14 +811,14 @@ mod test {
             out_level_max_ts,
             Arc::new(ShardedAsyncCache::create_lru_sharded_cache(1)),
         ));
+        let mut files = delta_files;
+        files.extend_from_slice(&tsm_files);
         let compact_req = CompactReq {
             compact_task: CompactTask::Delta(vnode_id),
             version,
-            files: tsm_files,
-            lv0_files: Some(delta_files),
+            files,
             in_level: 0,
             out_level,
-            out_time_range: TimeRange::new(Timestamp::MIN, out_level_max_ts),
         };
         let context = Arc::new(GlobalContext::new());
         context.set_file_id(next_file_id);
@@ -883,6 +833,7 @@ mod test {
         max_ts: Timestamp,
         expected_data_desc: HashMap<FieldId, Vec<DataBlock>>,
         expected_data_level: LevelId,
+        expected_delta_tombstone_all_excluded: HashMap<ColumnFileId, TimeRanges>,
     ) {
         let _ = std::fs::remove_dir_all(dir);
         let tenant_database = Arc::new("cnosdb.dba".to_string());
@@ -896,8 +847,8 @@ mod test {
             std::fs::create_dir_all(&delta_dir).unwrap();
         }
 
-        let delta_files = write_data_block_desc(&delta_dir, delta_files_desc, true).await;
-        let tsm_files = write_data_block_desc(&tsm_dir, tsm_files_desc, false).await;
+        let delta_files = write_data_block_desc(&delta_dir, delta_files_desc, 0).await;
+        let tsm_files = write_data_block_desc(&tsm_dir, tsm_files_desc, 2).await;
         let next_file_id = delta_files_desc
             .iter()
             .map(|(_file_id, blk_desc, _tomb_desc)| {
@@ -934,6 +885,22 @@ mod test {
             expected_data_level,
         )
         .await;
+        check_delta_file_tombstone(delta_dir, expected_delta_tombstone_all_excluded).await;
+    }
+
+    async fn check_delta_file_tombstone(
+        dir: impl AsRef<Path>,
+        all_excludes: HashMap<ColumnFileId, TimeRanges>,
+    ) {
+        for (file_id, time_ranges) in all_excludes {
+            let tombstone_path = file_utils::make_tsm_tombstone_file_name(&dir, file_id);
+            let tombstone_path = tsm::tombstone_compact_tmp_path(&tombstone_path).unwrap();
+            let mut record_reader = record_file::Reader::open(tombstone_path).await.unwrap();
+            let tombstone = TsmTombstoneCache::load_from(&mut record_reader, false)
+                .await
+                .unwrap();
+            assert_eq!(tombstone.all_excluded(), &time_ranges);
+        }
     }
 
     /// Test compaction on level-0 (delta compaction) with multi-field.
@@ -1030,6 +997,11 @@ mod test {
             max_level_ts,
             expected_data_target_level,
             1,
+            HashMap::from([
+                (2, TimeRanges::new(vec![(2001, 5050).into()])),
+                (3, TimeRanges::new(vec![(2001, 5050).into()])),
+                (4, TimeRanges::new(vec![(2001, 5050).into()])),
+            ]),
         )
         .await;
     }
