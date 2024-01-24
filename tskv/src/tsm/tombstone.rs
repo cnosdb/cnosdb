@@ -636,7 +636,7 @@ impl TsmTombstoneCache {
         // Save all_excluded tombstone.
         let time_ranges = self.all_excluded.time_ranges().collect::<Vec<_>>();
         let mut index = 0_usize;
-        while !time_ranges.is_empty() {
+        while index < time_ranges.len() {
             let encoded_time_ranges_num = Tombstone::encode_field_time_ranges(
                 &mut write_buf,
                 &TombstoneField::All,

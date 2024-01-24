@@ -1209,10 +1209,8 @@ pub mod test {
             compact_task: CompactTask::Normal(vnode_id),
             version,
             files,
-            lv0_files: None,
             in_level: 1,
             out_level: 2,
-            out_time_range: TimeRange::all(),
         };
         let context = Arc::new(GlobalContext::new());
         context.set_file_id(next_file_id);
@@ -1478,11 +1476,11 @@ pub mod test {
     pub async fn write_data_block_desc(
         dir: impl AsRef<Path>,
         data_desc: &[TsmSchema],
-        is_delta: bool,
+        level: LevelId,
     ) -> Vec<Arc<ColumnFile>> {
         let mut column_files = Vec::new();
         for (tsm_sequence, tsm_desc, tombstone_desc) in data_desc.iter() {
-            let mut tsm_writer = tsm::new_tsm_writer(&dir, *tsm_sequence, is_delta, 0)
+            let mut tsm_writer = tsm::new_tsm_writer(&dir, *tsm_sequence, level == 0, 0)
                 .await
                 .unwrap();
             for &(val_type, fid, min_ts, max_ts) in tsm_desc.iter() {
@@ -1504,7 +1502,7 @@ pub mod test {
             tsm_tombstone.flush().await.unwrap();
             column_files.push(Arc::new(ColumnFile::new(
                 *tsm_sequence,
-                2,
+                level,
                 TimeRange::new(tsm_writer.min_ts(), tsm_writer.max_ts()),
                 tsm_writer.size(),
                 tsm_writer.path(),
@@ -1610,7 +1608,7 @@ pub mod test {
         }
         let max_level_ts = 6500;
 
-        let column_files = write_data_block_desc(&dir, &data_desc, false).await;
+        let column_files = write_data_block_desc(&dir, &data_desc, 2).await;
         let next_file_id = 4_u64;
 
         let (compact_req, kernel) = prepare_compaction(
@@ -1678,7 +1676,7 @@ pub mod test {
         }
         let max_level_ts = 6500;
 
-        let column_files = write_data_block_desc(&dir, &data_desc, false).await;
+        let column_files = write_data_block_desc(&dir, &data_desc, 2).await;
         let next_file_id = 4_u64;
         let (compact_req, kernel) = prepare_compaction(
             tenant_database,
@@ -1791,7 +1789,7 @@ pub mod test {
         }
         let max_level_ts = 6500;
 
-        let column_files = write_data_block_desc(&dir, &data_desc, false).await;
+        let column_files = write_data_block_desc(&dir, &data_desc, 2).await;
         let next_file_id = 4_u64;
         let (compact_req, kernel) = prepare_compaction(
             tenant_database,

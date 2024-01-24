@@ -77,25 +77,56 @@ pub struct CompactReq {
 
     version: Arc<Version>,
     files: Vec<Arc<ColumnFile>>,
-    /// In delta compaction, files in levle-0 could be picked.
-    lv0_files: Option<Vec<Arc<ColumnFile>>>,
     in_level: LevelId,
     out_level: LevelId,
-    /// The time_range of the data from the in_level to be compacted
-    /// into the out_level, only used in delta compaction.
-    out_time_range: TimeRange,
+}
+
+impl CompactReq {
+    /// Get the `out_time_range`, which is the time range of
+    /// the part of `files` that joined the compaction.
+    ///
+    /// - If it's a delta compaction(`in_level` is 0), the `out_time_range`
+    ///   is the time range of the level-1~4 file.
+    /// - If it's a normal compaction, the `out_time_range` is the time range
+    ///   of the out_level.
+    /// - Otherwise, return `TimeRange::none()`.
+    pub fn out_time_range(&self) -> TimeRange {
+        if self.in_level == 0 {
+            for f in self.files.iter() {
+                if !f.is_delta() {
+                    return *f.time_range();
+                }
+            }
+        }
+        if (self.out_level as usize) < self.version.levels_info().len() {
+            return self.version.levels_info()[self.out_level as usize].time_range;
+        }
+        return TimeRange::none();
+    }
+
+    /// Split the `files` into delta files and an optional level-1~4 file.
+    pub fn split_delta_and_level_files(&self) -> (Vec<Arc<ColumnFile>>, Option<Arc<ColumnFile>>) {
+        let (mut delta_files, mut level_files) = (vec![], Option::None);
+        for f in self.files.iter() {
+            if f.is_delta() {
+                delta_files.push(f.clone());
+            } else if level_files.is_none() {
+                level_files = Some(f.clone());
+            }
+        }
+        (delta_files, level_files)
+    }
 }
 
 impl std::fmt::Display for CompactReq {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "tenant_database: {}, ts_family: {}, in_level: {}, out_level: {:?}, time_range: {}, files: [",
+            "tenant_database: {}, ts_family: {}, in_level: {}, out_level: {:?}, files: [",
             self.version.borrowed_database(),
             self.version.tf_id(),
             self.in_level,
             self.out_level,
-            self.out_time_range,
         )?;
         if !self.files.is_empty() {
             write!(
@@ -117,34 +148,7 @@ impl std::fmt::Display for CompactReq {
                 )?;
             }
         }
-        write!(f, "]")?;
-
-        if let Some(lv0_files) = &self.lv0_files {
-            write!(f, ", lv0_files: [")?;
-            if !lv0_files.is_empty() {
-                write!(
-                    f,
-                    "{{ Level-{}, file_id: {}, time_range: {}-{} }}",
-                    lv0_files[0].level(),
-                    lv0_files[0].file_id(),
-                    lv0_files[0].time_range().min_ts,
-                    lv0_files[0].time_range().max_ts
-                )?;
-                for file in lv0_files.iter().skip(1) {
-                    write!(
-                        f,
-                        ", {{ Level-{}, file_id: {}, time_range: {}-{} }}",
-                        file.level(),
-                        file.file_id(),
-                        file.time_range().min_ts,
-                        file.time_range().max_ts
-                    )?;
-                }
-            }
-            write!(f, "]")?;
-        }
-
-        Ok(())
+        write!(f, "]")
     }
 }
 
