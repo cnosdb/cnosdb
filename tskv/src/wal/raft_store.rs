@@ -1,19 +1,21 @@
 use std::sync::Arc;
 
 use openraft::EntryPayload;
+use protos::kv_service::RaftWriteCommand;
+use protos::models_helper::parse_prost_bytes;
 use replication::errors::{ReplicationError, ReplicationResult};
-use replication::{ApplyStorageRef, EntryStorage, RaftNodeId, RaftNodeInfo, TypeConfig};
+use replication::{EntryStorage, RaftNodeId, RaftNodeInfo, TypeConfig};
 use tokio::sync::Mutex;
 
 use super::reader::WalRecordData;
 use crate::file_system::file_manager;
+use crate::vnode_store::VnodeStorage;
 use crate::wal::reader::{Block, WalReader};
-use crate::wal::{writer, VnodeWal};
+use crate::wal::VnodeWal;
 use crate::{file_utils, Error, Result};
 
 pub type RaftEntry = openraft::Entry<TypeConfig>;
 pub type RaftLogMembership = openraft::Membership<RaftNodeId, RaftNodeInfo>;
-pub type RaftRequestForWalWrite = writer::Task;
 
 pub struct RaftEntryStorage {
     inner: Arc<Mutex<RaftEntryStorageInner>>,
@@ -31,9 +33,9 @@ impl RaftEntryStorage {
     }
 
     /// Read WAL files to recover
-    pub async fn recover(&self, engine: ApplyStorageRef) -> Result<()> {
+    pub async fn recover(&self, vode_store: Arc<VnodeStorage>) -> Result<()> {
         let mut inner = self.inner.lock().await;
-        inner.recover(engine).await
+        inner.recover(vode_store).await
     }
 }
 
@@ -365,7 +367,7 @@ impl RaftEntryStorageInner {
     }
 
     /// Read WAL files to recover: engine, index, cache.
-    pub async fn recover(&mut self, engine: ApplyStorageRef) -> Result<()> {
+    pub async fn recover(&mut self, vode_store: Arc<VnodeStorage>) -> Result<()> {
         let wal_files = file_manager::list_file_names(self.wal.wal_dir());
         for file_name in wal_files {
             // If file name cannot be parsed to wal id, skip that file.
@@ -395,7 +397,11 @@ impl RaftEntryStorageInner {
                                     raft_id: self.wal.vnode_id as u64,
                                     apply_type: replication::APPLY_TYPE_WAL,
                                 };
-                                engine.apply(&ctx, req).await.unwrap();
+
+                                let request = parse_prost_bytes::<RaftWriteCommand>(req).unwrap();
+                                if let Some(command) = request.command {
+                                    vode_store.apply(&ctx, command).await.unwrap();
+                                }
                             }
 
                             self.mark_write_wal(entry, wal_id, r.pos);

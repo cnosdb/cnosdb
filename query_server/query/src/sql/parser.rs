@@ -352,10 +352,7 @@ impl<'a> ExtParser<'a> {
                 .unwrap_or_default();
             Ok(ExtStatement::ShowStreams(ast::ShowStreams { verbose }))
         } else {
-            self.expected(
-                "TABLES or DATABASES or SERIES or TAG or QUERIES or STREAMS",
-                self.parser.peek_token(),
-            )
+            parser_err!(format!("nonsupport: {}", self.parser.peek_token()))
         }
     }
 

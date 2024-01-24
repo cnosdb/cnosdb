@@ -1,5 +1,4 @@
 use async_trait::async_trait;
-use coordinator::VnodeManagerCmdType;
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::CopyVnode;
 use spi::Result;
@@ -25,16 +24,11 @@ impl DDLDefinitionTask for CopyVnodeTask {
 
         let meta = query_state_machine.meta.clone();
         let coord = query_state_machine.coord.clone();
-        if coord.using_raft_replication() {
-            let vnode_all_info = coordinator::get_vnode_all_info(meta, tenant, vnode_id).await?;
+        let vnode_all_info = coordinator::get_vnode_all_info(meta, tenant, vnode_id).await?;
 
-            let replica_id = vnode_all_info.repl_set_id;
-            let cmd_type = coordinator::VnodeManagerCmdType::AddRaftFollower(replica_id, node_id);
-            coord.vnode_manager(tenant, cmd_type).await?;
-        } else {
-            let cmd_type = VnodeManagerCmdType::Copy(vnode_id, node_id);
-            coord.vnode_manager(tenant, cmd_type).await?;
-        }
+        let replica_id = vnode_all_info.repl_set_id;
+        let cmd_type = coordinator::VnodeManagerCmdType::AddRaftFollower(replica_id, node_id);
+        coord.vnode_manager(tenant, cmd_type).await?;
 
         Ok(Output::Nil(()))
     }

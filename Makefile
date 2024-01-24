@@ -11,10 +11,10 @@ fmt:
 	cargo +nightly fmt --all
 
 clippy_check:
-	cargo clippy --workspace  --all-targets --features coordinator_e2e_test -- -D warnings
+	cargo clippy --workspace  --all-targets --features coordinator_e2e_test --features meta_e2e_test -- -D warnings
 
 clippy:
-	cargo clippy --workspace  --all-targets --features coordinator_e2e_test --fix --allow-staged
+	cargo clippy --workspace  --all-targets --features coordinator_e2e_test --features meta_e2e_test --fix --allow-staged
 
 build:
 	cargo build --workspace --bins

@@ -65,7 +65,7 @@ pub fn entry_override_to_duration(value: &mut Duration, env_key: &str) -> bool {
 
 fn parse_str_to_vec_string(s: &str) -> Option<Vec<String>> {
     let toml = "tmp = ".to_owned() + s;
-    let map: toml::value::Map<String, toml::Value> = toml::from_str(&toml).unwrap();
+    let map: toml::map::Map<String, toml::Value> = toml::from_str(&toml).unwrap();
     let val = map.get("tmp").unwrap();
     if let Some(arr) = val.as_array() {
         let mut res = vec![];

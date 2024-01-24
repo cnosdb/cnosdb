@@ -98,19 +98,19 @@ impl ::protobuf::Message for MetricMetadata {
             match tag {
                 8 => {
                     self.type_ = is.read_enum_or_unknown()?;
-                },
+                }
                 18 => {
                     self.metric_family_name = is.read_string()?;
-                },
+                }
                 34 => {
                     self.help = is.read_string()?;
-                },
+                }
                 42 => {
                     self.unit = is.read_string()?;
-                },
+                }
                 tag => {
                     ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
-                },
+                }
             };
         }
         ::std::result::Result::Ok(())
@@ -205,7 +205,7 @@ impl ::protobuf::reflect::ProtobufValue for MetricMetadata {
 
 /// Nested message and enums of message `MetricMetadata`
 pub mod metric_metadata {
-    #[derive(Clone,Copy,PartialEq,Eq,Debug,Hash)]
+    #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
     // @@protoc_insertion_point(enum:prometheus.MetricMetadata.MetricType)
     pub enum MetricType {
         // @@protoc_insertion_point(enum_value:prometheus.MetricMetadata.MetricType.UNKNOWN)
@@ -426,7 +426,7 @@ impl ::protobuf::reflect::ProtobufValue for Sample {
     type RuntimeType = ::protobuf::reflect::rt::RuntimeTypeMessage<Self>;
 }
 
-#[derive(PartialEq,Clone,Default,Debug)]
+#[derive(PartialEq, Clone, Default, Debug)]
 // @@protoc_insertion_point(message:prometheus.Exemplar)
 pub struct Exemplar {
     // message fields
@@ -493,16 +493,16 @@ impl ::protobuf::Message for Exemplar {
             match tag {
                 10 => {
                     self.labels.push(is.read_message()?);
-                },
+                }
                 17 => {
                     self.value = is.read_double()?;
-                },
+                }
                 24 => {
                     self.timestamp = is.read_int64()?;
-                },
+                }
                 tag => {
                     ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
-                },
+                }
             };
         }
         ::std::result::Result::Ok(())
@@ -594,7 +594,7 @@ impl ::protobuf::reflect::ProtobufValue for Exemplar {
 ///  The appendix of this design doc also explains the concept of float
 ///  histograms. This Histogram message can represent both, the usual
 ///  integer histogram as well as a float histogram.
-#[derive(PartialEq,Clone,Default,Debug)]
+#[derive(PartialEq, Clone, Default, Debug)]
 // @@protoc_insertion_point(message:prometheus.Histogram)
 pub struct Histogram {
     // message fields
@@ -860,64 +860,64 @@ impl ::protobuf::Message for Histogram {
             match tag {
                 8 => {
                     self.count = ::std::option::Option::Some(histogram::Count::CountInt(is.read_uint64()?));
-                },
+                }
                 17 => {
                     self.count = ::std::option::Option::Some(histogram::Count::CountFloat(is.read_double()?));
-                },
+                }
                 25 => {
                     self.sum = is.read_double()?;
-                },
+                }
                 32 => {
                     self.schema = is.read_sint32()?;
-                },
+                }
                 41 => {
                     self.zero_threshold = is.read_double()?;
-                },
+                }
                 48 => {
                     self.zero_count = ::std::option::Option::Some(histogram::Zero_count::ZeroCountInt(is.read_uint64()?));
-                },
+                }
                 57 => {
                     self.zero_count = ::std::option::Option::Some(histogram::Zero_count::ZeroCountFloat(is.read_double()?));
-                },
+                }
                 66 => {
                     self.negative_spans.push(is.read_message()?);
-                },
+                }
                 74 => {
                     is.read_repeated_packed_sint64_into(&mut self.negative_deltas)?;
-                },
+                }
                 72 => {
                     self.negative_deltas.push(is.read_sint64()?);
-                },
+                }
                 82 => {
                     is.read_repeated_packed_double_into(&mut self.negative_counts)?;
-                },
+                }
                 81 => {
                     self.negative_counts.push(is.read_double()?);
-                },
+                }
                 90 => {
                     self.positive_spans.push(is.read_message()?);
-                },
+                }
                 98 => {
                     is.read_repeated_packed_sint64_into(&mut self.positive_deltas)?;
-                },
+                }
                 96 => {
                     self.positive_deltas.push(is.read_sint64()?);
-                },
+                }
                 106 => {
                     is.read_repeated_packed_double_into(&mut self.positive_counts)?;
-                },
+                }
                 105 => {
                     self.positive_counts.push(is.read_double()?);
-                },
+                }
                 112 => {
                     self.reset_hint = is.read_enum_or_unknown()?;
-                },
+                }
                 120 => {
                     self.timestamp = is.read_int64()?;
-                },
+                }
                 tag => {
                     ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
-                },
+                }
             };
         }
         ::std::result::Result::Ok(())
@@ -962,20 +962,20 @@ impl ::protobuf::Message for Histogram {
             match v {
                 &histogram::Count::CountInt(v) => {
                     my_size += ::protobuf::rt::uint64_size(1, v);
-                },
+                }
                 &histogram::Count::CountFloat(v) => {
                     my_size += 1 + 8;
-                },
+                }
             };
         }
         if let ::std::option::Option::Some(ref v) = self.zero_count {
             match v {
                 &histogram::Zero_count::ZeroCountInt(v) => {
                     my_size += ::protobuf::rt::uint64_size(6, v);
-                },
+                }
                 &histogram::Zero_count::ZeroCountFloat(v) => {
                     my_size += 1 + 8;
-                },
+                }
             };
         }
         my_size += ::protobuf::rt::unknown_fields_size(self.special_fields.unknown_fields());
@@ -1021,20 +1021,20 @@ impl ::protobuf::Message for Histogram {
             match v {
                 &histogram::Count::CountInt(v) => {
                     os.write_uint64(1, v)?;
-                },
+                }
                 &histogram::Count::CountFloat(v) => {
                     os.write_double(2, v)?;
-                },
+                }
             };
         }
         if let ::std::option::Option::Some(ref v) = self.zero_count {
             match v {
                 &histogram::Zero_count::ZeroCountInt(v) => {
                     os.write_uint64(6, v)?;
-                },
+                }
                 &histogram::Zero_count::ZeroCountFloat(v) => {
                     os.write_double(7, v)?;
-                },
+                }
             };
         }
         os.write_unknown_fields(self.special_fields.unknown_fields())?;
@@ -1112,8 +1112,7 @@ impl ::protobuf::reflect::ProtobufValue for Histogram {
 
 /// Nested message and enums of message `Histogram`
 pub mod histogram {
-
-    #[derive(Clone,PartialEq,Debug)]
+    #[derive(Clone, PartialEq, Debug)]
     #[non_exhaustive]
     // @@protoc_insertion_point(oneof:prometheus.Histogram.count)
     pub enum Count {
@@ -1123,8 +1122,7 @@ pub mod histogram {
         CountFloat(f64),
     }
 
-    impl ::protobuf::Oneof for Count {
-    }
+    impl ::protobuf::Oneof for Count {}
 
     impl ::protobuf::OneofFull for Count {
         fn descriptor() -> ::protobuf::reflect::OneofDescriptor {
@@ -1139,7 +1137,7 @@ pub mod histogram {
         }
     }
 
-    #[derive(Clone,PartialEq,Debug)]
+    #[derive(Clone, PartialEq, Debug)]
     #[non_exhaustive]
     // @@protoc_insertion_point(oneof:prometheus.Histogram.zero_count)
     pub enum Zero_count {
@@ -1149,8 +1147,7 @@ pub mod histogram {
         ZeroCountFloat(f64),
     }
 
-    impl ::protobuf::Oneof for Zero_count {
-    }
+    impl ::protobuf::Oneof for Zero_count {}
 
     impl ::protobuf::OneofFull for Zero_count {
         fn descriptor() -> ::protobuf::reflect::OneofDescriptor {
@@ -1164,7 +1161,8 @@ pub mod histogram {
             ::protobuf::reflect::GeneratedOneofDescriptorData::new::<Zero_count>("zero_count")
         }
     }
-    #[derive(Clone,Copy,PartialEq,Eq,Debug,Hash)]
+
+    #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
     // @@protoc_insertion_point(enum:prometheus.Histogram.ResetHint)
     pub enum ResetHint {
         // @@protoc_insertion_point(enum_value:prometheus.Histogram.ResetHint.UNKNOWN)
@@ -1232,7 +1230,7 @@ pub mod histogram {
 ///  bucket counts in the Span. However, the protobuf representation is
 ///  more compact in the way the data is structured here (with all the
 ///  buckets in a single array separate from the Spans).
-#[derive(PartialEq,Clone,Default,Debug)]
+#[derive(PartialEq, Clone, Default, Debug)]
 // @@protoc_insertion_point(message:prometheus.BucketSpan)
 pub struct BucketSpan {
     // message fields
@@ -1289,13 +1287,13 @@ impl ::protobuf::Message for BucketSpan {
             match tag {
                 8 => {
                     self.offset = is.read_sint32()?;
-                },
+                }
                 16 => {
                     self.length = is.read_uint32()?;
-                },
+                }
                 tag => {
                     ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
-                },
+                }
             };
         }
         ::std::result::Result::Ok(())
@@ -1373,7 +1371,7 @@ impl ::protobuf::reflect::ProtobufValue for BucketSpan {
 }
 
 ///  TimeSeries represents samples and labels for a single time series.
-#[derive(PartialEq,Clone,Default,Debug)]
+#[derive(PartialEq, Clone, Default, Debug)]
 // @@protoc_insertion_point(message:prometheus.TimeSeries)
 pub struct TimeSeries {
     // message fields
@@ -1446,19 +1444,19 @@ impl ::protobuf::Message for TimeSeries {
             match tag {
                 10 => {
                     self.labels.push(is.read_message()?);
-                },
+                }
                 18 => {
                     self.samples.push(is.read_message()?);
-                },
+                }
                 26 => {
                     self.exemplars.push(is.read_message()?);
-                },
+                }
                 34 => {
                     self.histograms.push(is.read_message()?);
-                },
+                }
                 tag => {
                     ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
-                },
+                }
             };
         }
         ::std::result::Result::Ok(())
@@ -1555,7 +1553,7 @@ impl ::protobuf::reflect::ProtobufValue for TimeSeries {
     type RuntimeType = ::protobuf::reflect::rt::RuntimeTypeMessage<Self>;
 }
 
-#[derive(PartialEq,Clone,Default,Debug)]
+#[derive(PartialEq, Clone, Default, Debug)]
 // @@protoc_insertion_point(message:prometheus.Label)
 pub struct Label {
     // message fields
@@ -1612,13 +1610,13 @@ impl ::protobuf::Message for Label {
             match tag {
                 10 => {
                     self.name = is.read_string()?;
-                },
+                }
                 18 => {
                     self.value = is.read_string()?;
-                },
+                }
                 tag => {
                     ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
-                },
+                }
             };
         }
         ::std::result::Result::Ok(())
@@ -1695,7 +1693,7 @@ impl ::protobuf::reflect::ProtobufValue for Label {
     type RuntimeType = ::protobuf::reflect::rt::RuntimeTypeMessage<Self>;
 }
 
-#[derive(PartialEq,Clone,Default,Debug)]
+#[derive(PartialEq, Clone, Default, Debug)]
 // @@protoc_insertion_point(message:prometheus.Labels)
 pub struct Labels {
     // message fields
@@ -1745,10 +1743,10 @@ impl ::protobuf::Message for Labels {
             match tag {
                 10 => {
                     self.labels.push(is.read_message()?);
-                },
+                }
                 tag => {
                     ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
-                },
+                }
             };
         }
         ::std::result::Result::Ok(())
@@ -1819,7 +1817,7 @@ impl ::protobuf::reflect::ProtobufValue for Labels {
 }
 
 ///  Matcher specifies a rule, which can match or set of labels or not.
-#[derive(PartialEq,Clone,Default,Debug)]
+#[derive(PartialEq, Clone, Default, Debug)]
 // @@protoc_insertion_point(message:prometheus.LabelMatcher)
 pub struct LabelMatcher {
     // message fields
@@ -1883,16 +1881,16 @@ impl ::protobuf::Message for LabelMatcher {
             match tag {
                 8 => {
                     self.type_ = is.read_enum_or_unknown()?;
-                },
+                }
                 18 => {
                     self.name = is.read_string()?;
-                },
+                }
                 26 => {
                     self.value = is.read_string()?;
-                },
+                }
                 tag => {
                     ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
-                },
+                }
             };
         }
         ::std::result::Result::Ok(())
@@ -1979,7 +1977,7 @@ impl ::protobuf::reflect::ProtobufValue for LabelMatcher {
 
 /// Nested message and enums of message `LabelMatcher`
 pub mod label_matcher {
-    #[derive(Clone,Copy,PartialEq,Eq,Debug,Hash)]
+    #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
     // @@protoc_insertion_point(enum:prometheus.LabelMatcher.Type)
     pub enum Type {
         // @@protoc_insertion_point(enum_value:prometheus.LabelMatcher.Type.EQ)
@@ -2042,7 +2040,7 @@ pub mod label_matcher {
     }
 }
 
-#[derive(PartialEq,Clone,Default,Debug)]
+#[derive(PartialEq, Clone, Default, Debug)]
 // @@protoc_insertion_point(message:prometheus.ReadHints)
 pub struct ReadHints {
     // message fields
@@ -2134,28 +2132,28 @@ impl ::protobuf::Message for ReadHints {
             match tag {
                 8 => {
                     self.step_ms = is.read_int64()?;
-                },
+                }
                 18 => {
                     self.func = is.read_string()?;
-                },
+                }
                 24 => {
                     self.start_ms = is.read_int64()?;
-                },
+                }
                 32 => {
                     self.end_ms = is.read_int64()?;
-                },
+                }
                 42 => {
                     self.grouping.push(is.read_string()?);
-                },
+                }
                 48 => {
                     self.by = is.read_bool()?;
-                },
+                }
                 56 => {
                     self.range_ms = is.read_int64()?;
-                },
+                }
                 tag => {
                     ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
-                },
+                }
             };
         }
         ::std::result::Result::Ok(())
@@ -2274,7 +2272,7 @@ impl ::protobuf::reflect::ProtobufValue for ReadHints {
 
 ///  Chunk represents a TSDB chunk.
 ///  Time range [min, max] is inclusive.
-#[derive(PartialEq,Clone,Default,Debug)]
+#[derive(PartialEq, Clone, Default, Debug)]
 // @@protoc_insertion_point(message:prometheus.Chunk)
 pub struct Chunk {
     // message fields
@@ -2345,19 +2343,19 @@ impl ::protobuf::Message for Chunk {
             match tag {
                 8 => {
                     self.min_time_ms = is.read_int64()?;
-                },
+                }
                 16 => {
                     self.max_time_ms = is.read_int64()?;
-                },
+                }
                 24 => {
                     self.type_ = is.read_enum_or_unknown()?;
-                },
+                }
                 34 => {
                     self.data = is.read_bytes()?;
-                },
+                }
                 tag => {
                     ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
-                },
+                }
             };
         }
         ::std::result::Result::Ok(())
@@ -2453,7 +2451,7 @@ impl ::protobuf::reflect::ProtobufValue for Chunk {
 /// Nested message and enums of message `Chunk`
 pub mod chunk {
     ///  We require this to match chunkenc.Encoding.
-    #[derive(Clone,Copy,PartialEq,Eq,Debug,Hash)]
+    #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
     // @@protoc_insertion_point(enum:prometheus.Chunk.Encoding)
     pub enum Encoding {
         // @@protoc_insertion_point(enum_value:prometheus.Chunk.Encoding.UNKNOWN)
@@ -2513,7 +2511,7 @@ pub mod chunk {
 }
 
 ///  ChunkedSeries represents single, encoded time series.
-#[derive(PartialEq,Clone,Default,Debug)]
+#[derive(PartialEq, Clone, Default, Debug)]
 // @@protoc_insertion_point(message:prometheus.ChunkedSeries)
 pub struct ChunkedSeries {
     // message fields
@@ -2572,13 +2570,13 @@ impl ::protobuf::Message for ChunkedSeries {
             match tag {
                 10 => {
                     self.labels.push(is.read_message()?);
-                },
+                }
                 18 => {
                     self.chunks.push(is.read_message()?);
-                },
+                }
                 tag => {
                     ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
-                },
+                }
             };
         }
         ::std::result::Result::Ok(())

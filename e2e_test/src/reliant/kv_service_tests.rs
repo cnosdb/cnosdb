@@ -3,9 +3,7 @@
 use protos::kv_service::tskv_service_client::TskvServiceClient;
 use protos::kv_service::*;
 use protos::models::*;
-use protos::{self, models_helper};
-use tokio::sync::mpsc;
-use tokio_stream::wrappers::ReceiverStream;
+use protos::{self};
 use tonic::transport::{Certificate, Channel, ClientTlsConfig};
 use tonic::Request;
 
@@ -64,50 +62,5 @@ async fn test_tskv_ping() {
         eprintln!("{}", e);
     } else {
         println!("ping_resp:body(flatbuffer): {:?}", ping_response_body);
-    }
-}
-
-#[tokio::test]
-async fn test_tskv_write_points() {
-    let (tx, rx) = mpsc::channel(1);
-    tokio::spawn(async move {
-        for _ in 0..10 {
-            let mut fbb = flatbuffers::FlatBufferBuilder::new();
-            let points = models_helper::create_random_points_with_delta(&mut fbb, 1);
-            fbb.finish(points, None);
-            let points = fbb.finished_data().to_vec();
-            tx.send(WritePointsRequest {
-                version: 1,
-                meta: Some(Meta {
-                    tenant: "cnosdb".to_string(),
-                    user: None,
-                    password: None,
-                }),
-                points,
-            })
-            .await
-            .unwrap();
-        }
-    });
-    let req_stream = ReceiverStream::from(rx);
-
-    let mut client = get_client(false).await;
-
-    let mut resp_stream = client.write_points(req_stream).await.unwrap().into_inner();
-
-    loop {
-        match resp_stream.message().await {
-            Ok(Some(item)) => {
-                println!("\treceived: {:?}", item);
-            }
-            Ok(None) => {
-                println!("\t stream finished.");
-                break;
-            }
-            Err(err) => {
-                println!("{}", err);
-                break;
-            }
-        }
     }
 }

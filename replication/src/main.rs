@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 #![allow(unused)]
-#![feature(trait_upcasting)]
 
 use std::convert::Infallible as StdInfallible;
 use std::net::SocketAddr;
@@ -146,9 +145,7 @@ async fn start_warp_grpc_server(addr: String, node: RaftNode) -> ReplicationResu
             ))
         }))
         .await
-        .map_err(|err| ReplicationError::IOErrors {
-            msg: err.to_string(),
-        })?;
+        .unwrap();
 
     Ok(())
 }

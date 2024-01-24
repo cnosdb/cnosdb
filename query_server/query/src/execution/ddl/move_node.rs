@@ -24,19 +24,15 @@ impl DDLDefinitionTask for MoveVnodeTask {
 
         let meta = query_state_machine.meta.clone();
         let coord = query_state_machine.coord.clone();
-        if coord.using_raft_replication() {
-            let vnode_all_info = coordinator::get_vnode_all_info(meta, tenant, vnode_id).await?;
 
-            let replica_id = vnode_all_info.repl_set_id;
-            let cmd_type = coordinator::VnodeManagerCmdType::AddRaftFollower(replica_id, node_id);
-            coord.vnode_manager(tenant, cmd_type).await?;
+        let vnode_all_info = coordinator::get_vnode_all_info(meta, tenant, vnode_id).await?;
 
-            let cmd_type = coordinator::VnodeManagerCmdType::RemoveRaftNode(vnode_id);
-            coord.vnode_manager(tenant, cmd_type).await?;
-        } else {
-            let cmd_type = coordinator::VnodeManagerCmdType::Move(vnode_id, node_id);
-            coord.vnode_manager(tenant, cmd_type).await?;
-        };
+        let replica_id = vnode_all_info.repl_set_id;
+        let cmd_type = coordinator::VnodeManagerCmdType::AddRaftFollower(replica_id, node_id);
+        coord.vnode_manager(tenant, cmd_type).await?;
+
+        let cmd_type = coordinator::VnodeManagerCmdType::RemoveRaftNode(vnode_id);
+        coord.vnode_manager(tenant, cmd_type).await?;
 
         Ok(Output::Nil(()))
     }

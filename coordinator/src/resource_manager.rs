@@ -5,8 +5,8 @@ use models::meta_data::ReplicationSet;
 use models::schema::{ResourceInfo, ResourceOperator, ResourceStatus, TableSchema};
 use protos::kv_service::admin_command_request::Command::{self, DropDb, DropTab, UpdateTags};
 use protos::kv_service::{
-    raft_write_command, AdminCommandRequest, DropColumnRequest, DropDbRequest, DropTableRequest,
-    RaftWriteCommand, UpdateSetValue, UpdateTagsRequest,
+    raft_write_command, DropColumnRequest, DropTableRequest, RaftWriteCommand, UpdateSetValue,
+    UpdateTagsRequest,
 };
 use tokio::time::sleep;
 use tracing::{debug, error, info};
@@ -116,26 +116,15 @@ impl ResourceManager {
                     name: tenant_name.to_string(),
                 })?;
 
-        let req = AdminCommandRequest {
-            tenant: tenant_name.to_string(),
-            command: Some(DropDb(DropDbRequest {
-                db: db_name.to_string(),
-            })),
-        };
-
-        if coord.using_raft_replication() {
-            let buckets = tenant.get_db_info(db_name)?.map_or(vec![], |v| v.buckets);
-            for bucket in buckets {
-                for replica in bucket.shard_group {
-                    let cmd_type = VnodeManagerCmdType::DestoryRaftGroup(replica.id);
-                    coord.vnode_manager(tenant_name, cmd_type).await?;
-                }
+        let buckets = tenant.get_db_info(db_name)?.map_or(vec![], |v| v.buckets);
+        for bucket in buckets {
+            for replica in bucket.shard_group {
+                let cmd_type = VnodeManagerCmdType::DestoryRaftGroup(replica.id);
+                coord.vnode_manager(tenant_name, cmd_type).await?;
             }
-        } else {
-            coord.broadcast_command(req).await?;
         }
-        debug!("Drop database {} of tenant {}", db_name, tenant_name);
 
+        debug!("Drop database {} of tenant {}", db_name, tenant_name);
         tenant
             .drop_db(db_name)
             .await
@@ -159,44 +148,33 @@ impl ResourceManager {
                     name: tenant_name.to_string(),
                 })?;
 
-        if coord.using_raft_replication() {
-            let mut requests = vec![];
-            let db_info = tenant
-                .get_db_info(db_name)?
-                .ok_or(CoordinatorError::CommonError {
-                    msg: format!("database not found: {}", db_name),
-                })?;
+        let mut requests = vec![];
+        let db_info = tenant
+            .get_db_info(db_name)?
+            .ok_or(CoordinatorError::CommonError {
+                msg: format!("database not found: {}", db_name),
+            })?;
 
-            for bucket in db_info.buckets {
-                for replica in bucket.shard_group {
-                    let request = DropTableRequest {
-                        db: db_name.to_string(),
-                        table: table_name.to_string(),
-                    };
-                    let command = RaftWriteCommand {
-                        replica_id: replica.id,
-                        tenant: tenant_name.to_string(),
-                        db_name: db_name.to_string(),
-                        command: Some(raft_write_command::Command::DropTable(request)),
-                    };
-
-                    let request = coord.write_replica_by_raft(replica.clone(), command, None);
-                    requests.push(request);
-                }
-            }
-
-            for result in futures::future::join_all(requests).await {
-                result?
-            }
-        } else {
-            let req = AdminCommandRequest {
-                tenant: tenant_name.to_string(),
-                command: Some(DropTab(DropTableRequest {
+        for bucket in db_info.buckets {
+            for replica in bucket.shard_group {
+                let request = DropTableRequest {
                     db: db_name.to_string(),
                     table: table_name.to_string(),
-                })),
-            };
-            coord.broadcast_command(req).await?;
+                };
+                let command = RaftWriteCommand {
+                    replica_id: replica.id,
+                    tenant: tenant_name.to_string(),
+                    db_name: db_name.to_string(),
+                    command: Some(raft_write_command::Command::DropTable(request)),
+                };
+
+                let request = coord.write_replica_by_raft(replica.clone(), command, None);
+                requests.push(request);
+            }
+        }
+
+        for result in futures::future::join_all(requests).await {
+            result?
         }
 
         tenant
@@ -230,48 +208,35 @@ impl ResourceManager {
             }
 
             ResourceOperator::DropColumn(drop_column_name, table_schema) => {
-                if coord.using_raft_replication() {
-                    let mut requests = vec![];
-                    let db_info = tenant.get_db_info(&table_schema.db)?.ok_or(
-                        CoordinatorError::CommonError {
+                let mut requests = vec![];
+                let db_info =
+                    tenant
+                        .get_db_info(&table_schema.db)?
+                        .ok_or(CoordinatorError::CommonError {
                             msg: format!("database not found: {}", table_schema.db),
-                        },
-                    )?;
+                        })?;
 
-                    for bucket in db_info.buckets {
-                        for replica in bucket.shard_group {
-                            let request = DropColumnRequest {
-                                db: table_schema.db.to_string(),
-                                table: table_schema.name.to_string(),
-                                column: drop_column_name.to_string(),
-                            };
-                            let command = RaftWriteCommand {
-                                replica_id: replica.id,
-                                tenant: tenant_name.to_string(),
-                                db_name: table_schema.db.to_string(),
-                                command: Some(raft_write_command::Command::DropColumn(request)),
-                            };
-
-                            let request =
-                                coord.write_replica_by_raft(replica.clone(), command, None);
-                            requests.push(request);
-                        }
-                    }
-
-                    for result in futures::future::join_all(requests).await {
-                        result?
-                    }
-                } else {
-                    let req = AdminCommandRequest {
-                        tenant: tenant_name.to_string(),
-                        command: Some(Command::DropColumn(DropColumnRequest {
-                            db: table_schema.db.to_owned(),
+                for bucket in db_info.buckets {
+                    for replica in bucket.shard_group {
+                        let request = DropColumnRequest {
+                            db: table_schema.db.to_string(),
                             table: table_schema.name.to_string(),
-                            column: drop_column_name.clone(),
-                        })),
-                    };
+                            column: drop_column_name.to_string(),
+                        };
+                        let command = RaftWriteCommand {
+                            replica_id: replica.id,
+                            tenant: tenant_name.to_string(),
+                            db_name: table_schema.db.to_string(),
+                            command: Some(raft_write_command::Command::DropColumn(request)),
+                        };
 
-                    coord.broadcast_command(req).await?;
+                        let request = coord.write_replica_by_raft(replica.clone(), command, None);
+                        requests.push(request);
+                    }
+                }
+
+                for result in futures::future::join_all(requests).await {
+                    result?
                 }
 
                 tenant
@@ -316,34 +281,23 @@ impl ResourceManager {
             dry_run: false,
         };
 
-        if coord.using_raft_replication() {
-            let mut requests = vec![];
-            for replica in replica_set {
-                let command = RaftWriteCommand {
-                    replica_id: replica.id,
-                    tenant: tenant_name.to_string(),
-                    db_name: db_name.to_string(),
-                    command: Some(raft_write_command::Command::UpdateTags(
-                        update_tags_request.clone(),
-                    )),
-                };
-
-                let request = coord.write_replica_by_raft(replica.clone(), command, None);
-                requests.push(request);
-            }
-
-            for result in futures::future::join_all(requests).await {
-                result?
-            }
-        } else {
-            let req = AdminCommandRequest {
+        let mut requests = vec![];
+        for replica in replica_set {
+            let command = RaftWriteCommand {
+                replica_id: replica.id,
                 tenant: tenant_name.to_string(),
-                command: Some(UpdateTags(update_tags_request)),
+                db_name: db_name.to_string(),
+                command: Some(raft_write_command::Command::UpdateTags(
+                    update_tags_request.clone(),
+                )),
             };
 
-            coord
-                .broadcast_command_by_vnode(req, replica_set.to_vec())
-                .await?;
+            let request = coord.write_replica_by_raft(replica.clone(), command, None);
+            requests.push(request);
+        }
+
+        for result in futures::future::join_all(requests).await {
+            result?
         }
 
         Ok(true)

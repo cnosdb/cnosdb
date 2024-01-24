@@ -1,3 +1,5 @@
+#![allow(clippy::arc_with_non_send_sync)]
+
 use std::fmt;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -238,7 +240,7 @@ impl SchemableMemoryBatchReaderStream {
     pub fn new(schema: SchemaRef, batches: Vec<RecordBatch>) -> Self {
         Self {
             schema,
-            stream: Box::pin(futures::stream::iter(batches.into_iter())),
+            stream: Box::pin(futures::stream::iter(batches)),
         }
     }
 

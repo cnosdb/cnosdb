@@ -5,20 +5,23 @@ use std::time::Duration;
 use meta::model::MetaRef;
 use models::meta_data::{NodeId, VnodeId};
 use protos::kv_service::tskv_service_client::TskvServiceClient;
-use protos::kv_service::{GetFilesMetaResponse, GetVnodeSnapFilesMetaRequest, RaftWriteCommand};
+use protos::kv_service::{
+    DownloadFileRequest, GetFilesMetaResponse, GetVnodeSnapFilesMetaRequest, RaftWriteCommand,
+};
 use protos::models_helper::parse_prost_bytes;
 use protos::{tskv_service_time_out_client, DEFAULT_GRPC_SERVER_MESSAGE_LEN};
 use replication::errors::{ReplicationError, ReplicationResult};
 use replication::{ApplyContext, ApplyStorage};
+use tokio::io::AsyncWriteExt;
+use tokio_stream::StreamExt;
 use tonic::transport::Channel;
 use tower::timeout::Timeout;
-use tracing::info;
+use tracing::{error, info};
 use tskv::vnode_store::VnodeStorage;
 use tskv::VnodeSnapshot;
 
 use crate::errors::{CoordinatorError, CoordinatorResult};
 use crate::file_info::get_file_info;
-use crate::vnode_mgr::VnodeManager;
 
 pub mod manager;
 pub mod writer;
@@ -100,7 +103,7 @@ impl TskvEngineStorage {
 
             let filename = data_path.join(relative_filename);
             info!("begin download file: {:?} -> {:?}", info.name, filename);
-            VnodeManager::download_file(&info.name, &filename, client).await?;
+            Self::download_file(&info.name, &filename, client).await?;
 
             let filename = filename.to_string_lossy().to_string();
             let tmp_info = get_file_info(&filename).await?;
@@ -109,6 +112,49 @@ impl TskvEngineStorage {
                     msg: "download file md5 not match ".to_string(),
                 });
             }
+        }
+
+        Ok(())
+    }
+
+    async fn download_file(
+        download: &str,
+        filename: &Path,
+        client: &mut TskvServiceClient<Timeout<Channel>>,
+    ) -> CoordinatorResult<()> {
+        if let Some(dir) = filename.parent() {
+            tokio::fs::create_dir_all(dir).await?;
+        }
+
+        let mut file = tokio::fs::OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .read(true)
+            .write(true)
+            .open(filename)
+            .await?;
+
+        let request = tonic::Request::new(DownloadFileRequest {
+            filename: download.to_string(),
+        });
+        let mut resp_stream = client
+            .download_file(request)
+            .await
+            .map_err(tskv::Error::from)?
+            .into_inner();
+        while let Some(received) = resp_stream.next().await {
+            let received = received?;
+            if received.code != crate::SUCCESS_RESPONSE_CODE {
+                return Err(CoordinatorError::GRPCRequest {
+                    msg: format!(
+                        "server status: {}, {:?}",
+                        received.code,
+                        String::from_utf8(received.data)
+                    ),
+                });
+            }
+
+            file.write_all(&received.data).await?;
         }
 
         Ok(())
@@ -138,11 +184,8 @@ impl TskvEngineStorage {
 
         Ok(resp)
     }
-}
 
-#[async_trait::async_trait]
-impl ApplyStorage for TskvEngineStorage {
-    async fn apply(
+    async fn exec_apply(
         &self,
         ctx: &ApplyContext,
         req: &replication::Request,
@@ -157,6 +200,25 @@ impl ApplyStorage for TskvEngineStorage {
         }
 
         Ok(vec![])
+    }
+}
+
+#[async_trait::async_trait]
+impl ApplyStorage for TskvEngineStorage {
+    async fn apply(
+        &self,
+        ctx: &ApplyContext,
+        req: &replication::Request,
+    ) -> ReplicationResult<replication::Response> {
+        let apply_result = self.exec_apply(ctx, req).await;
+        if let Err(err) = &apply_result {
+            error!("replication apply failed: {:?}; {:?}", ctx, err);
+        }
+
+        match bincode::serialize(&apply_result) {
+            Ok(data) => Ok(data),
+            Err(err) => Ok(err.to_string().into()),
+        }
     }
 
     async fn snapshot(&self) -> ReplicationResult<Vec<u8>> {

@@ -250,7 +250,7 @@ mod test {
                 (1..=8, "[ 1 2 3 4 5 6 7 8 ]"),
                 (1..=9, "[ 2 3 4 5 6 7 8 9 ]"),
             ];
-            for (_i, (range, expected_result)) in cases.into_iter().enumerate() {
+            for (range, expected_result) in cases.into_iter() {
                 let mut buf: CircularBuffer<usize> = CircularBuffer::new(capacity);
                 range.for_each(|i| buf.push(i));
                 assert_eq!(buf.to_string(), expected_result);
@@ -265,9 +265,7 @@ mod test {
                 (1..=8, 1, vec![Some(1)], "[ 2 3 4 5 6 7 8 ]"),
                 (1..=9, 1, vec![Some(2)], "[ 3 4 5 6 7 8 9 ]"),
             ];
-            for (_i, (range, pop_count, pop_values, expected_result)) in
-                cases.into_iter().enumerate()
-            {
+            for (range, pop_count, pop_values, expected_result) in cases.into_iter() {
                 let mut buf: CircularBuffer<usize> = CircularBuffer::new(capacity);
                 range.for_each(|i| buf.push(i));
 

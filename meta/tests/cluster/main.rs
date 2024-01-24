@@ -3,20 +3,135 @@
 use std::process::Command;
 use std::{env, thread, time};
 
-// use std::time;
-use meta::{client, store::command};
-// use meta::store::command::*;
-// use meta::client::*;
-use models::{meta_data::NodeInfo, schema::Tenant};
-use sysinfo::{ProcessExt, System, SystemExt};
+use meta::client;
+use meta::store::command;
+use models::meta_data::NodeInfo;
+use models::schema::Tenant;
+use sysinfo::System;
+#[cfg(feature = "meta_e2e_test")]
+fn kill_cnosdb_meta_process(process_name: &str) {
+    let system = System::new_all();
+    for (pid, process) in system.processes() {
+        if process.name() == process_name {
+            println!("{}: {}", pid, process.name());
+            let output = Command::new("kill")
+                .args(["-9", &(pid.to_string())])
+                .output()
+                .expect("failed to execute process");
+            println!("status: {}", output.status);
+        }
+    }
+}
+#[cfg(feature = "meta_e2e_test")]
+fn star_meta_cluster() -> std::process::Output {
+    let res = env::current_dir().unwrap();
+    let res_str: String = res.into_os_string().into_string().unwrap();
+    let path = res_str + "/cluster.sh";
+    // println!("path: {}", path);
+    let output = Command::new("bash")
+        .arg(path)
+        .output()
+        .expect("failed to execute process");
+    output
+}
 
+#[cfg(feature = "meta_e2e_test")]
+async fn write_data_to_meta() {
+    use models::oid::UuidGenerator;
+
+    let node = NodeInfo {
+        id: 111,
+        grpc_addr: "".to_string(),
+    };
+    let req = command::WriteCommand::AddDataNode("cluster_xxx".to_string(), node);
+    let cli = client::MetaHttpClient::new("127.0.0.1:8901");
+    cli.write::<()>(&req).await.unwrap();
+    // let req = command::WriteCommand::CreateTenant(“cluster_xxx”.to_string(), (), ())
+    let oid = UuidGenerator::default().next_id();
+    let tenant = Tenant::new(
+        oid,
+        "test_add_tenant001".to_string(),
+        models::schema::TenantOptions::default(),
+    );
+    let req = command::WriteCommand::CreateTenant("cluster_xxx".to_string(), tenant);
+    let cli = client::MetaHttpClient::new("127.0.0.1:8901");
+    cli.write::<()>(&req).await.unwrap();
+}
+#[cfg(feature = "meta_e2e_test")]
+async fn drop_data_from_meta() {
+    let req = command::WriteCommand::DropTenant(
+        "cluster_xxx".to_string(),
+        "test_add_tenant001".to_string(),
+    );
+    let cli = client::MetaHttpClient::new("127.0.0.1:8901");
+    cli.write::<()>(&req).await.unwrap();
+}
+#[cfg(feature = "meta_e2e_test")]
+fn backup() -> std::process::Output {
+    let output = Command::new("curl")
+        .args(["http://127.0.0.1:8901/dump"])
+        .output()
+        .expect("failed to execute process");
+    println!("status: {}", output.status);
+    output
+}
+#[cfg(feature = "meta_e2e_test")]
+fn meta_restore() -> std::process::Output {
+    let output = Command::new("curl")
+        .args([
+            "-XPOST",
+            "http://127.0.0.1:8901/restore",
+            "-d",
+            "@/tmp/backup.json",
+        ])
+        .output()
+        .expect("failed to execute process");
+    println!("status: {}", output.status);
+    output
+}
+#[cfg(feature = "meta_e2e_test")]
+fn check_meta_info(port: String) -> std::process::Output {
+    let url = format!("http://127.0.0.1:{}/debug", port);
+    let output = Command::new("curl")
+        .args([url.as_str()])
+        .output()
+        .expect("failed to execute process");
+    println!("status: {}", output.status);
+    output
+}
+#[cfg(feature = "meta_e2e_test")]
+fn check_meta_info_metrics(port: String) -> std::process::Output {
+    let url = format!("http://127.0.0.1:{}/metrics", port);
+    let output = Command::new("curl")
+        .args([url.as_str()])
+        .output()
+        .expect("failed to execute process");
+    println!("status: {}", output.status);
+    output
+}
+#[cfg(feature = "meta_e2e_test")]
+fn kill_from_part_str(part_str: String) -> std::process::Output {
+    // let full_str = format!("ps -ef | grep {} | grep -v grep | awk '{print $2}'", part_str);
+    let full_str: String =
+        "ps -ef | grep ".to_string() + &part_str + "| grep -v grep | awk '{print $2}'";
+    let pro = Command::new("bash")
+        .args(["-c", full_str.as_str()])
+        .output()
+        .expect("failed to execute process");
+    println!("status: {:?}", pro);
+    let pid = String::from_utf8(pro.stdout).unwrap();
+    // let kill = "kill -9 ".to_string() + pid;
+    let kill = "kill -9 ".to_string() + &pid;
+    let pro = Command::new("bash")
+        .args(["-c", &kill])
+        .output()
+        .expect("failed to execute process");
+    println!("status: {:?}", pro);
+    pro
+}
 #[cfg(feature = "meta_e2e_test")]
 #[cfg(test)]
 mod tests {
-    // use std::{process::Output, thread};
-
-    // use meta::model::TenantManager;
-
     use super::*;
     #[tokio::test]
     async fn test_backup() {
@@ -318,125 +433,3 @@ mod tests {
 //     let pid = get_meta_node_pid();
 //     println!("pid: {:?}", pid);
 // }
-#[cfg(feature = "meta_e2e_test")]
-fn kill_cnosdb_meta_process(process_name: &str) {
-    let system = System::new_all();
-    let process_name = process_name;
-    for (pid, process) in system.processes() {
-        if process.name() == process_name {
-            println!("{}: {}", pid, process.name());
-            let output = Command::new("kill")
-                .args(["-9", &(pid.to_string())])
-                .output()
-                .expect("failed to execute process");
-            println!("status: {}", output.status);
-        }
-    }
-}
-#[cfg(feature = "meta_e2e_test")]
-fn star_meta_cluster() -> std::process::Output {
-    let res = env::current_dir().unwrap();
-    let res_str: String = res.into_os_string().into_string().unwrap();
-    let path = res_str + "/cluster.sh";
-    // println!("path: {}", path);
-    let output = Command::new("bash")
-        .arg(path)
-        .output()
-        .expect("failed to execute process");
-    output
-}
-
-#[cfg(feature = "meta_e2e_test")]
-async fn write_data_to_meta() {
-    use models::oid::UuidGenerator;
-
-    let node = NodeInfo {
-        id: 111,
-        grpc_addr: "".to_string(),
-    };
-    let req = command::WriteCommand::AddDataNode("cluster_xxx".to_string(), node);
-    let cli = client::MetaHttpClient::new("127.0.0.1:8901");
-    cli.write::<()>(&req).await.unwrap();
-    // let req = command::WriteCommand::CreateTenant(“cluster_xxx”.to_string(), (), ())
-    let oid = UuidGenerator::default().next_id();
-    let tenant = Tenant::new(
-        oid,
-        "test_add_tenant001".to_string(),
-        models::schema::TenantOptions::default(),
-    );
-    let req = command::WriteCommand::CreateTenant("cluster_xxx".to_string(), tenant);
-    let cli = client::MetaHttpClient::new("127.0.0.1:8901");
-    cli.write::<()>(&req).await.unwrap();
-}
-#[cfg(feature = "meta_e2e_test")]
-async fn drop_data_from_meta() {
-    let req = command::WriteCommand::DropTenant(
-        "cluster_xxx".to_string(),
-        "test_add_tenant001".to_string(),
-    );
-    let cli = client::MetaHttpClient::new("127.0.0.1:8901");
-    cli.write::<()>(&req).await.unwrap();
-}
-#[cfg(feature = "meta_e2e_test")]
-fn backup() -> std::process::Output {
-    let output = Command::new("curl")
-        .args(["http://127.0.0.1:8901/dump"])
-        .output()
-        .expect("failed to execute process");
-    println!("status: {}", output.status);
-    output
-}
-#[cfg(feature = "meta_e2e_test")]
-fn meta_restore() -> std::process::Output {
-    let output = Command::new("curl")
-        .args([
-            "-XPOST",
-            "http://127.0.0.1:8901/restore",
-            "-d",
-            "@/tmp/backup.json",
-        ])
-        .output()
-        .expect("failed to execute process");
-    println!("status: {}", output.status);
-    output
-}
-#[cfg(feature = "meta_e2e_test")]
-fn check_meta_info(port: String) -> std::process::Output {
-    let url = format!("http://127.0.0.1:{}/debug", port);
-    let output = Command::new("curl")
-        .args([url.as_str()])
-        .output()
-        .expect("failed to execute process");
-    println!("status: {}", output.status);
-    output
-}
-#[cfg(feature = "meta_e2e_test")]
-fn check_meta_info_metrics(port: String) -> std::process::Output {
-    let url = format!("http://127.0.0.1:{}/metrics", port);
-    let output = Command::new("curl")
-        .args([url.as_str()])
-        .output()
-        .expect("failed to execute process");
-    println!("status: {}", output.status);
-    output
-}
-#[cfg(feature = "meta_e2e_test")]
-fn kill_from_part_str(part_str: String) -> std::process::Output {
-    // let full_str = format!("ps -ef | grep {} | grep -v grep | awk '{print $2}'", part_str);
-    let full_str: String =
-        "ps -ef | grep ".to_string() + &part_str + "| grep -v grep | awk '{print $2}'";
-    let pro = Command::new("bash")
-        .args(["-c", full_str.as_str()])
-        .output()
-        .expect("failed to execute process");
-    println!("status: {:?}", pro);
-    let pid = String::from_utf8(pro.stdout).unwrap();
-    // let kill = "kill -9 ".to_string() + pid;
-    let kill = "kill -9 ".to_string() + &pid;
-    let pro = Command::new("bash")
-        .args(["-c", &kill])
-        .output()
-        .expect("failed to execute process");
-    println!("status: {:?}", pro);
-    pro
-}
