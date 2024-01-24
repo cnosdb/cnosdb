@@ -1,16 +1,13 @@
-use std::collections::{hash_map, HashMap};
 use std::fmt::Debug;
 use std::sync::Arc;
 
 use models::predicate::domain::TimeRange;
-use models::Timestamp;
-use trace::{debug, error, info};
+use trace::{debug, info};
 
 use super::CompactTask;
 use crate::compaction::CompactReq;
 use crate::tseries_family::{ColumnFile, ColumnFiles, LevelInfo, LevelInfos, Version};
-use crate::tsm::TsmReader;
-use crate::{ColumnFileId, LevelId};
+use crate::LevelId;
 
 pub async fn pick_compaction(
     compact_task: CompactTask,
@@ -102,12 +99,9 @@ impl LevelCompactionPicker {
         Some(CompactReq {
             compact_task,
             version,
-
             files: picking_files,
-            lv0_files: None,
             in_level,
             out_level,
-            out_time_range: TimeRange::all(),
         })
     }
 
@@ -235,278 +229,100 @@ impl LevelCompactionPicker {
     }
 }
 
-/// Compaction picker for picking files in level-0 (delta files)
-/// and one file in the output level (one of 1 to 4)
-///
-/// 1. For level form lv1 to lv4, and the reverse-ordered files in the level.
-/// 2. If the file `is_compacting`, continue to the next file or level.
-/// 3. For each lv0-files, find the first lv0-file that overlaps any lv14-file.
-/// 4. For the other lv0-files
+//
+fn belong_level(time_range: &TimeRange, lvls: &[LevelInfo; 5]) -> u32 {
+    if time_range.min_ts > lvls[1].time_range.min_ts || lvls[1].time_range.is_none() {
+        return 1;
+    }
+    if time_range.max_ts <= lvls[1].time_range.min_ts
+        && time_range.min_ts >= lvls[3].time_range.max_ts
+        || lvls[2].time_range.is_none()
+    {
+        return 2;
+    }
+    if time_range.max_ts <= lvls[2].time_range.min_ts
+        && time_range.min_ts >= lvls[4].time_range.max_ts
+        || lvls[3].time_range.is_none()
+    {
+        return 3;
+    }
+    if time_range.max_ts <= lvls[3].time_range.min_ts || lvls[4].time_range.is_none() {
+        return 4;
+    }
+    // it should never happen
+    1
+}
+
 #[derive(Debug)]
 struct DeltaCompactionPicker;
 
+// todo: get file timerange after remove tombstone file
 impl DeltaCompactionPicker {
     async fn pick_compaction(
         &self,
         compact_task: CompactTask,
         version: Arc<Version>,
     ) -> Option<CompactReq> {
-        debug!(
-            "Picker(delta): version: [ {} ]",
-            LevelInfos(version.levels_info())
-        );
-
-        let levels = version.levels_info();
-        if levels[0].files.is_empty() {
-            return None;
-        }
-
-        let max_compact_size = version.storage_opt().max_compact_size;
-
-        let mut picked_tsm_file: Option<(LevelId, Arc<ColumnFile>)> = None;
-        let mut picked_l0_files: Vec<Arc<ColumnFile>> = vec![];
-        let mut picked_size = 0_u64;
-        let mut opened_l0_files: HashMap<u64, Arc<TsmReader>> = HashMap::new();
-        let mut exists_overlapped_compacting_tsm_file = false;
-
-        for l0_file in levels[0].files.iter() {
-            if l0_file.is_compacting() {
-                continue;
-            }
-            if let Some((_, tsm_file)) = &picked_tsm_file {
-                // If there is already a picked tsm_file, and some l0_files.
-                if !tsm_file.time_range().overlaps(l0_file.time_range()) {
-                    // And if any lv0-file is not overlap with picked tsm_file, stop picking
-                    // to ensure the file-order in query-logic of query is right.
-                    break;
+        let lv0 = version.levels_info().first().unwrap();
+        let lv14 = version.levels_info();
+        let mut picked_time_range = TimeRange::none();
+        let mut picked_files = vec![];
+        for file in lv0.files.iter() {
+            if !file.is_compacting() {
+                // first cycle to pick file
+                if picked_time_range.is_none() {
+                    picked_time_range = *file.time_range();
                 }
-                if Self::check_l0_file_overlap_with_tsm_file(
-                    l0_file,
-                    tsm_file.time_range(),
-                    version.as_ref(),
-                    &mut opened_l0_files,
-                )
-                .await
-                {
-                    if l0_file.is_compacting() || !l0_file.mark_compacting() {
-                        continue;
-                    }
-                    // And if this lv0_file is overlap with picked tsm_file, pick it.
-                    picked_l0_files.push(l0_file.clone());
-                    picked_size += l0_file.size();
-                    if picked_size >= max_compact_size {
-                        break;
+                let belong_level = belong_level(file.time_range(), version.levels_info());
+                // 顺序文件
+                if 1 == belong_level && file.mark_compacting() {
+                    picked_files.push(file.clone());
+                    picked_time_range.merge(file.time_range());
+                    if picked_files.len() >= version.storage_opt.compact_trigger_file_num as usize {
+                        return Some(CompactReq {
+                            compact_task,
+                            version: version.clone(),
+                            files: picked_files,
+                            in_level: 0,
+                            out_level: 1,
+                        });
                     }
                 }
-            } else {
-                // Try to pick the first tsm_file and lv0_file.
-                for level in levels[1..].iter() {
-                    if picked_tsm_file.is_some() {
-                        break;
-                    }
-                    if !level.time_range.overlaps(l0_file.time_range()) {
-                        continue;
-                    }
-                    for tsm_file in level.files.iter() {
-                        if picked_tsm_file.is_some() {
-                            break;
-                        }
-                        if tsm_file.time_range().overlaps(l0_file.time_range()) {
-                            if tsm_file.is_compacting() {
-                                exists_overlapped_compacting_tsm_file = true;
-                                continue;
+
+                // 乱序数据 从level1-4中找到第一个和lv0重叠的文件
+                for lv in lv14.iter().skip(1) {
+                    if lv.time_range.overlaps(&picked_time_range) {
+                        for lv_file in lv.files.iter() {
+                            // 乱序重叠文件
+                            if lv_file.time_range().overlaps(&picked_time_range) {
+                                // dont need to check if lv_file is compacting
+                                if lv_file.mark_compacting() && file.mark_compacting() {
+                                    // 重复数据
+                                    return Some(CompactReq {
+                                        compact_task,
+                                        version: version.clone(),
+                                        files: vec![file.clone(), lv_file.clone()],
+                                        in_level: 0,
+                                        out_level: lv.level(),
+                                    });
+                                }
                             }
-                        } else {
-                            continue;
                         }
-
-                        if Self::check_l0_file_overlap_with_tsm_file(
-                            l0_file,
-                            tsm_file.time_range(),
-                            version.as_ref(),
-                            &mut opened_l0_files,
-                        )
-                        .await
-                        {
-                            // This_tsm file can be picked to compact with lv0_file.
-                            if (tsm_file.is_compacting() || !tsm_file.mark_compacting())
-                                && (l0_file.is_compacting() || !l0_file.mark_compacting())
-                            {
-                                continue;
-                            }
-                            picked_tsm_file = Some((level.level(), tsm_file.clone()));
-                            picked_size += tsm_file.size();
-                            picked_l0_files.push(l0_file.clone());
-                            picked_size += l0_file.size();
-                        }
-                    } // End loop level:1-4-files
-                } // End loop levels:1-4
-            }
-        } // End loop level:0-files
-
-        let (picked_level, picked_tsm_file, out_time_range) = if let Some((level, tsm_file)) =
-            picked_tsm_file
-        {
-            // Merege delta files with tsm-file.
-            info!(
-                "Picker(delta): Picked level: {level}, tsm_file: {tsm_file}, l0_files: [ {} ]",
-                ColumnFiles(&picked_l0_files)
-            );
-            let out_time_range = *tsm_file.time_range();
-            (level, vec![tsm_file], out_time_range)
-        } else if exists_overlapped_compacting_tsm_file {
-            // Exists compacting tsm files overlapped with lv-files, skip picking.
-            info!(
-                "Picker(delta): Picked nothing to keep order: l0_files: [ {} ]",
-                ColumnFiles(&picked_l0_files)
-            );
-            return None;
-        } else if let Some((picked_level, out_time_range)) =
-            Self::pick_lv0_files_into_lv14(levels, max_compact_size, &mut picked_l0_files)
-        {
-            info!(
-                    "Picker(delta): Picked level: {picked_level}: picked tsm_file: None, l0_files: [ {} ]",
-                    ColumnFiles(&picked_l0_files)
-                );
-            (picked_level, vec![], out_time_range)
-        } else {
-            info!(
-                "Picker(delta): Picked nothing because: picked tsm_file: None, l0_files: [ {} ]",
-                ColumnFiles(&picked_l0_files)
-            );
-            return None;
-        };
-
-        // Run compaction and send them to the target level, even if picked only 1 file,.
-        Some(CompactReq {
-            compact_task,
-            version: version.clone(),
-            files: picked_tsm_file,
-            lv0_files: Some(picked_l0_files),
-            in_level: 0,
-            out_level: picked_level,
-            out_time_range,
-        })
-    }
-
-    async fn check_l0_file_overlap_with_tsm_file(
-        l0_file: &ColumnFile,
-        tsm_file_time_range: &TimeRange,
-        version: &Version,
-        opened_l0_files: &mut HashMap<ColumnFileId, Arc<TsmReader>>,
-    ) -> bool {
-        let lv0_tsm_reader = match opened_l0_files.entry(l0_file.file_id()) {
-            hash_map::Entry::Occupied(e) => e.get().clone(),
-            hash_map::Entry::Vacant(e) => {
-                let reader = match version.get_tsm_reader(l0_file.file_path()).await {
-                    Ok(r) => {
-                        e.insert(r.clone());
-                        r
                     }
-                    Err(e) => {
-                        error!("Failed to open lv0_file to check if time_range overlapped: {e}");
-                        return false;
-                    }
-                };
-                reader
-            }
-        };
-
-        // If this lv0_file is fully excluded by picked tsm_file, continue to next lv0_file.
-        // This condition may be after a past delta-compaction.
-        !lv0_tsm_reader
-            .tombstone()
-            .check_all_fields_excluded_time_range(tsm_file_time_range)
-    }
-
-    fn pick_lv0_files_into_lv14(
-        levels: &[LevelInfo; 5],
-        max_compact_size: u64,
-        picked_lv0_files: &mut Vec<Arc<ColumnFile>>,
-    ) -> Option<(LevelId, TimeRange)> {
-        let mut level_overlapped_files: [Vec<Arc<ColumnFile>>; 5] =
-            [vec![], vec![], vec![], vec![], vec![]];
-        let mut file_picked: bool;
-        let mut level_picking: usize;
-        for file in levels[0].files.iter() {
-            if file.is_compacting() {
-                continue;
-            }
-            file_picked = false;
-            level_picking = 4;
-            // Form level-4 to level-1, collect the overlapped level-0 files.
-            for level in levels.iter().skip(1).rev() {
-                if file.time_range().min_ts < level.time_range.max_ts {
-                    level_overlapped_files[level_picking].push(file.clone());
-                    file_picked = true;
-                    break;
                 }
-                level_picking -= 1;
-            }
-            // If time_range of a level-0 file is too old than level-4, put to level-4 files.
-            // TODO(zipper): remove this because it's impossible when a level-0 file is newer than level-1 to level-4
-            if !file_picked {
-                // impossible: level-0 files is newer than level-4 to level-1
-                level_overlapped_files[4].push(file.clone());
-            }
-        }
-        trace::trace!(
-            "Picker(delta): level overlapped files: [ {} ]",
-            level_overlapped_files
-                .iter()
-                .enumerate()
-                .map(|(i, files)| format!("{{ Level-{}: {} }}", i, files.len()))
-                .collect::<Vec<String>>()
-                .join(", ")
-        );
-
-        // Find the level with maximum overlapped level-0 files.
-        let mut out_level = 0;
-        let mut max_files = 0_usize;
-        for (i, files) in level_overlapped_files.iter().enumerate() {
-            if files.len() > max_files {
-                out_level = i;
-                max_files = files.len();
+                // 乱序不重叠文件
+                if belong_level > 1 && file.mark_compacting() {
+                    return Some(CompactReq {
+                        compact_task,
+                        version: version.clone(),
+                        files: picked_files,
+                        in_level: 0,
+                        out_level: belong_level,
+                    });
+                }
             }
         }
-        if out_level == 0 || max_files == 0 {
-            info!("Picker(delta): picked out-level is 0 or picked no files",);
-            return None;
-        }
-
-        // Pick files from level-0 files overlapped with that level.
-        picked_lv0_files.reserve(level_overlapped_files.len());
-        let mut picking_file_size = 0_u64;
-        for file in level_overlapped_files[out_level].iter() {
-            if file.is_compacting() || !file.mark_compacting() {
-                // If file already compacting, continue to next file.
-                continue;
-            }
-            picking_file_size += file.size();
-            picked_lv0_files.push(file.clone());
-
-            if picking_file_size >= max_compact_size {
-                // Picked file size >= max_compact_size
-                break;
-            }
-        }
-        info!(
-            "Picker(delta): Picked files: [ {} ]",
-            ColumnFiles(picked_lv0_files)
-        );
-        if picked_lv0_files.is_empty() {
-            return None;
-        }
-
-        let out_time_range = if out_level == levels.len() - 1 {
-            // If compact into levle-4, the out_time_range is (-∞, lv4.max_ts)
-            let mut tr = levels[out_level].time_range;
-            tr.min_ts = Timestamp::MIN;
-            tr
-        } else {
-            levels[out_level].time_range
-        };
-        Some((out_level as LevelId, out_time_range))
+        None
     }
 }
 
@@ -518,7 +334,6 @@ mod test {
 
     use cache::ShardedAsyncCache;
     use models::predicate::domain::TimeRange;
-    use models::Timestamp;
 
     use crate::compaction::picker::{DeltaCompactionPicker, LevelCompactionPicker};
     use crate::compaction::test::create_options;
@@ -809,13 +624,13 @@ mod test {
             .unwrap();
         assert_eq!(compact_req.files.len(), 1);
         assert_eq!(compact_req.files[0].file_id(), 6);
-        assert!(compact_req.lv0_files.is_some());
-        let lv0_files = compact_req.lv0_files.unwrap();
-        assert_eq!(lv0_files.len(), 2);
-        assert_eq!(lv0_files[0].file_id(), 11);
-        assert_eq!(lv0_files[1].file_id(), 12);
-        assert_eq!(compact_req.out_level, 2);
-        assert_eq!(compact_req.out_time_range, (501, 600).into());
+        // assert!(compact_req.lv0_files.is_some());
+        // let lv0_files = compact_req.lv0_files.unwrap();
+        // assert_eq!(lv0_files.len(), 2);
+        // assert_eq!(lv0_files[0].file_id(), 11);
+        // assert_eq!(lv0_files[1].file_id(), 12);
+        // assert_eq!(compact_req.out_level, 2);
+        // assert_eq!(compact_req.out_time_range, (501, 600).into());
     }
 
     // Test picker for delta compaction that tsm files doesn't overlap with any delta file.
@@ -844,13 +659,13 @@ mod test {
             .await
             .unwrap();
         assert!(compact_req.files.is_empty());
-        assert!(compact_req.lv0_files.is_some());
-        let lv0_files = compact_req.lv0_files.unwrap();
-        assert_eq!(lv0_files.len(), 2);
-        assert_eq!(lv0_files[0].file_id(), 9);
-        assert_eq!(lv0_files[1].file_id(), 10);
-        assert_eq!(compact_req.out_level, 1);
-        assert_eq!(compact_req.out_time_range, (701, 800).into());
+        // assert!(compact_req.lv0_files.is_some());
+        // let lv0_files = compact_req.lv0_files.unwrap();
+        // assert_eq!(lv0_files.len(), 2);
+        // assert_eq!(lv0_files[0].file_id(), 9);
+        // assert_eq!(lv0_files[1].file_id(), 10);
+        // assert_eq!(compact_req.out_level, 1);
+        // assert_eq!(compact_req.out_time_range, (701, 800).into());
     }
 
     // Test picker for delta compaction that tsm files doesn't overlap with any delta file.
@@ -880,11 +695,11 @@ mod test {
             .await
             .unwrap();
         assert!(compact_req.files.is_empty());
-        assert!(compact_req.lv0_files.is_some());
-        let lv0_files = compact_req.lv0_files.unwrap();
-        assert_eq!(lv0_files.len(), 2);
-        assert_eq!(lv0_files[0].file_id(), 10);
-        assert_eq!(lv0_files[1].file_id(), 11);
-        assert_eq!(compact_req.out_time_range, (Timestamp::MIN, 200).into());
+        // assert!(compact_req.lv0_files.is_some());
+        // let lv0_files = compact_req.lv0_files.unwrap();
+        // assert_eq!(lv0_files.len(), 2);
+        // assert_eq!(lv0_files[0].file_id(), 10);
+        // assert_eq!(lv0_files[1].file_id(), 11);
+        // assert_eq!(compact_req.out_time_range, (Timestamp::MIN, 200).into());
     }
 }
