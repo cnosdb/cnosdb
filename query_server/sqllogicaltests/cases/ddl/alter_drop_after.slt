@@ -26,3 +26,7 @@ and tenant_name = 'tenant001';
 ----
 tenant001 
 
+
+statement ok
+drop tenant if exists tenant001;
+
