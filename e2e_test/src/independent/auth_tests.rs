@@ -129,24 +129,28 @@ fn test1() {
     {
         let client = Client::with_auth("root".to_string(), Some("abc".to_owned()));
 
-
         let resp = client
             .post("http://127.0.0.1:8902/api/v1/sql?db=public", "CREATE USER IF NOT EXISTS test WITH PASSWORD='123456', MUST_CHANGE_PASSWORD=false, COMMENT = 'test';")
             .unwrap();
         assert_response_is_ok!(resp);
 
         let resp = client
-            .post("http://127.0.0.1:8902/api/v1/sql?db=public", "alter user test set granted_admin = true;")
+            .post(
+                "http://127.0.0.1:8902/api/v1/sql?db=public",
+                "alter user test set granted_admin = true;",
+            )
             .unwrap();
         assert_response_is_ok!(resp);
-                
     }
     {
         let client = Client::with_auth("test".to_string(), Some("123456".to_owned()));
         let resp = client
-            .post("http://127.0.0.1:8902/api/v1/sql?db=public", "show databases;")
+            .post(
+                "http://127.0.0.1:8902/api/v1/sql?db=public",
+                "show databases;",
+            )
             .unwrap();
-        
+
         assert_eq!(resp.status(), status_code::OK);
         assert_eq!(
             resp.text().unwrap(),
