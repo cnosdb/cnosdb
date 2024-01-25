@@ -6,9 +6,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
 use crate::codec::duration;
-use crate::override_by_env::{
-    entry_override_to_duration, entry_override_to_vec_string, OverrideByEnv,
-};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MetaConfig {
@@ -28,16 +25,6 @@ impl MetaConfig {
 
     fn default_report_time_interval() -> Duration {
         Duration::from_secs(30)
-    }
-}
-
-impl OverrideByEnv for MetaConfig {
-    fn override_by_env(&mut self) {
-        entry_override_to_vec_string(&mut self.service_addr, "CNOSDB_META_SERVICE_ADDR");
-        entry_override_to_duration(
-            &mut self.report_time_interval,
-            "CNOSDB_META_REPORT_TIME_INTERVAL",
-        );
     }
 }
 

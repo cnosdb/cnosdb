@@ -1,24 +1,12 @@
-use std::env;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
-use crate::override_by_env::{entry_override, entry_override_option, OverrideByEnv};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TokioTrace {
     pub addr: String,
-}
-
-impl OverrideByEnv for Option<TokioTrace> {
-    fn override_by_env(&mut self) {
-        if env::var_os("CNOSDB_LOG_TOKIO_TRACE_ADDR").is_some() {
-            let mut addr = String::new();
-            entry_override(&mut addr, "CNOSDB_LOG_TOKIO_TRACE_ADDR");
-            *self = Some(TokioTrace { addr });
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -55,16 +43,6 @@ impl LogConfig {
 
     fn default_tokio_trace() -> Option<TokioTrace> {
         None
-    }
-}
-
-impl OverrideByEnv for LogConfig {
-    fn override_by_env(&mut self) {
-        entry_override(&mut self.level, "CNOSDB_LOG_LEVEL");
-        entry_override(&mut self.path, "CNOSDB_LOG_PATH");
-        entry_override_option(&mut self.max_file_count, "CNOSDB_LOG_MAX_FILE_COUNT");
-        entry_override(&mut self.file_rotation, "CNOSDB_LOG_FILE_ROTATION");
-        self.tokio_trace.override_by_env();
     }
 }
 
