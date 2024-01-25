@@ -1,7 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-use crate::override_by_env::{entry_override, entry_override_option, OverrideByEnv};
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct TraceConfig {
@@ -21,28 +19,6 @@ impl Default for TraceConfig {
             batch_report_max_spans: Default::default(),
             jaeger_endpoint: Default::default(),
         }
-    }
-}
-
-impl OverrideByEnv for TraceConfig {
-    fn override_by_env(&mut self) {
-        entry_override(
-            &mut self.auto_generate_span,
-            "CNOSDB_TRACE_AUTO_GENERATE_SPAN",
-        );
-        entry_override_option(
-            &mut self.max_spans_per_trace,
-            "CNOSDB_TRACE_MAX_SPANS_PER_TRACE",
-        );
-        entry_override(
-            &mut self.batch_report_interval_millis,
-            "CNOSDB_TRACE_BATCH_REPORT_INTERVAL_MILLIS",
-        );
-        entry_override_option(
-            &mut self.batch_report_max_spans,
-            "CNOSDB_TRACE_BATCH_REPORT_MAX_SPANS",
-        );
-        entry_override_option(&mut self.jaeger_endpoint, "CNOSDB_TRACE_JAEGER_ENDPOINT");
     }
 }
 

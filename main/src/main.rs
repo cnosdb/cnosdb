@@ -2,12 +2,11 @@
 #![recursion_limit = "256"]
 
 use std::fmt::Display;
-use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
 
 use clap::{command, Args, Parser, Subcommand, ValueEnum};
-use config::{Config, OverrideByEnv, VERSION};
+use config::{Config, VERSION};
 use memory_pool::GreedyMemoryPool;
 use metrics::init_tskv_metrics_recorder;
 use metrics::metric_register::MetricsRegister;
@@ -68,8 +67,8 @@ struct RunArgs {
     memory: Option<usize>,
 
     /// Path to configuration file.
-    #[arg(long, global = true)]
-    config: Option<String>,
+    #[arg(long, global = true, default_value = "/etc/cnosdb/cnosdb.conf")]
+    config: String,
 
     /// The deployment mode of CnosDB,
     #[arg(short = 'M', long, global = true, value_enum)]
@@ -163,10 +162,8 @@ fn main() -> Result<(), std::io::Error> {
         },
     };
 
-    let mut config = parse_config(run_args.config.as_ref());
-    let deployment_mode =
-        get_final_deployment_mode(run_args.deployment_mode, &config.deployment.mode)?;
-    set_cli_args_to_config(&run_args, &mut config);
+    let config = parse_config(&run_args);
+    let deployment_mode = get_deployment_mode(&config.deployment.mode)?;
 
     init_global_logging(&config.log, "tsdb.log");
     init_tskv_metrics_recorder();
@@ -216,28 +213,14 @@ fn main() -> Result<(), std::io::Error> {
     Ok(())
 }
 
-fn parse_config(config_path: Option<impl AsRef<Path>>) -> config::Config {
-    // priority: [specified config file] > [/etc/cnosdb/cnosdb.conf] > [$HOME/cnosdb/cnosdb.conf]
-    let mut global_config = if let Some(p) = config_path {
-        println!("----------\nStart with configuration:");
-        config::get_config(p).unwrap()
-    } else if Path::new("/etc/cnosdb/cnosdb.conf").exists() {
-        println!("----------\nStart with configuration:");
-        config::get_config("/etc/cnosdb/cnosdb.conf").unwrap()
-    } else if let Some(path) = dirs::home_dir() {
-        let path = path.join("cnosdb").join("cnosdb.conf");
-        if path.exists() {
-            config::get_config(path).unwrap()
-        } else {
-            config::Config::default()
-        }
-    } else {
-        config::Config::default()
-    };
-    global_config.override_by_env();
-    println!("{}----------", global_config.to_string_pretty());
-
-    global_config
+fn parse_config(run_args: &RunArgs) -> config::Config {
+    let mut config = config::get_config(&run_args.config).unwrap();
+    set_cli_args_to_config(run_args, &mut config);
+    println!("Start with configuration:");
+    println!("-----------------------------------------------------------");
+    println!("{}", config.to_string_pretty());
+    println!("-----------------------------------------------------------");
+    config
 }
 
 fn init_runtime(cores: Option<usize>) -> Result<Runtime, std::io::Error> {
@@ -259,17 +242,10 @@ fn init_runtime(cores: Option<usize>) -> Result<Runtime, std::io::Error> {
 }
 /// Merge the deployment configs(mode) between CLI arguments and config file,
 /// values in the CLI arguments (if any) has higher priority.
-fn get_final_deployment_mode(
-    arg_deployment_mode: Option<DeploymentMode>,
-    config_deployment_mode: &str,
-) -> Result<DeploymentMode, std::io::Error> {
-    if let Some(mode) = arg_deployment_mode {
-        Ok(mode)
-    } else {
-        match config_deployment_mode.parse::<DeploymentMode>() {
-            Ok(mode) => Ok(mode),
-            Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e)),
-        }
+fn get_deployment_mode(config_deployment_mode: &str) -> Result<DeploymentMode, std::io::Error> {
+    match config_deployment_mode.parse::<DeploymentMode>() {
+        Ok(mode) => Ok(mode),
+        Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e)),
     }
 }
 

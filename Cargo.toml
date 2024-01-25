@@ -69,6 +69,7 @@ diff = "0.1.13"
 dirs = "5.0.1"
 env_logger = "0.10.0"
 fast-float = "0.2.0"
+figment = "0.10.14"
 flatbuffers = "22.9"
 flate2 = "1.0.24"
 futures = { version = "0.3", default-features = false }

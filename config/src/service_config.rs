@@ -4,7 +4,6 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
-use crate::override_by_env::{entry_override, entry_override_option, OverrideByEnv};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ServiceConfig {
@@ -65,33 +64,6 @@ impl Default for ServiceConfig {
             vector_listen_port: ServiceConfig::default_vector_listen_port(),
             enable_report: ServiceConfig::default_enable_report(),
         }
-    }
-}
-
-impl OverrideByEnv for ServiceConfig {
-    fn override_by_env(&mut self) {
-        entry_override_option(
-            &mut self.http_listen_port,
-            "CNOSDB_SERVICE_HTTP_LISTEN_PORT",
-        );
-        entry_override_option(
-            &mut self.grpc_listen_port,
-            "CNOSDB_SERVICE_GRPC_LISTEN_PORT",
-        );
-        entry_override(
-            &mut self.grpc_enable_gzip,
-            "CNOSDB_SERVICE_GRPC_ENABLE_GZIP",
-        );
-        entry_override_option(
-            &mut self.flight_rpc_listen_port,
-            "CNOSDB_SERVICE_FLIGHT_RPC_LISTEN_PORT",
-        );
-        entry_override_option(&mut self.tcp_listen_port, "CNOSDB_SERVICE_TCP_LISTEN_PORT");
-        entry_override_option(
-            &mut self.vector_listen_port,
-            "CNOSDB_SERVICE_VECTOR_LISTEN_PORT",
-        );
-        entry_override(&mut self.enable_report, "CNOSDB_SERVICE_ENABLE_REPORT");
     }
 }
 
