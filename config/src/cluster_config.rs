@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigResult};
 use crate::codec::{bytes_num, duration};
-use crate::override_by_env::{entry_override, entry_override_to_duration, OverrideByEnv};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ClusterConfig {
@@ -76,45 +75,6 @@ impl ClusterConfig {
 
     fn default_install_snapshot_timeout() -> Duration {
         Duration::from_millis(3_600_000)
-    }
-}
-
-impl OverrideByEnv for ClusterConfig {
-    fn override_by_env(&mut self) {
-        entry_override(
-            &mut self.raft_logs_to_keep,
-            "CNOSDB_CLUSTER_RAFT_LOGS_TO_KEEP",
-        );
-
-        entry_override_to_duration(
-            &mut self.snapshot_holding_time,
-            "CNOSDB_CLUSTER_SNAPSHOT_HOLDING_TIME",
-        );
-
-        entry_override_to_duration(
-            &mut self.trigger_snapshot_interval,
-            "CNOSDB_CLUSTER_TRIGGER_SNAPSHOT_INTERVAL",
-        );
-
-        entry_override(
-            &mut self.lmdb_max_map_size,
-            "CNOSDB_CLUSTER_LMDB_MAX_MAP_SIZE",
-        );
-
-        entry_override_to_duration(
-            &mut self.heartbeat_interval,
-            "CNOSDB_CLUSTER_HEARTBEAT_INTERVAL",
-        );
-
-        entry_override_to_duration(
-            &mut self.send_append_entries_timeout,
-            "CNOSDB_CLUSTER_SEND_APPEND_ENTRIES_TIMEOUT",
-        );
-
-        entry_override_to_duration(
-            &mut self.install_snapshot_timeout,
-            "CNOSDB_CLUSTER_INSTALL_SNAPSHOT_TIMEOUT",
-        );
     }
 }
 

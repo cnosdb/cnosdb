@@ -220,7 +220,6 @@ impl TskvService for TskvServiceImpl {
         &self,
         request: tonic::Request<RaftWriteCommand>,
     ) -> Result<tonic::Response<BatchBytesResponse>, tonic::Status> {
-        let _span = get_span(request.extensions(), "grpc write_replica_points");
         let inner = request.into_inner();
 
         let client = self
