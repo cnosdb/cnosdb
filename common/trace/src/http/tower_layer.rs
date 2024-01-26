@@ -3,9 +3,9 @@ use std::task::{Context, Poll};
 
 use http::Request;
 use tower::{Layer, Service};
-use trace::warn;
 
-use crate::ctx::SpanContextExtractor;
+use super::http_ctx::span_context_from_http_headers;
+use crate::{warn, SpanContext};
 
 /// `TraceLayer` implements `tower::Layer` and can be used to decorate a
 /// `tower::Service` to collect information about requests flowing through it
@@ -15,15 +15,15 @@ use crate::ctx::SpanContextExtractor;
 /// - Extracting distributed trace context and attaching span context
 #[derive(Debug, Clone)]
 pub struct TraceLayer {
-    extractor: Arc<SpanContextExtractor>,
+    auto_generate_span: bool,
     name: Arc<str>,
 }
 
 impl TraceLayer {
     /// Create a new tower [`Layer`] for tracing
-    pub fn new(extractor: Arc<SpanContextExtractor>, name: &str) -> Self {
+    pub fn new(auto_generate_span: bool, name: &str) -> Self {
         Self {
-            extractor,
+            auto_generate_span,
             name: name.into(),
         }
     }
@@ -35,7 +35,7 @@ impl<S> Layer<S> for TraceLayer {
     fn layer(&self, service: S) -> Self::Service {
         TraceService {
             service,
-            extractor: self.extractor.clone(),
+            auto_generate_span: self.auto_generate_span,
             name: Arc::clone(&self.name),
         }
     }
@@ -44,7 +44,7 @@ impl<S> Layer<S> for TraceLayer {
 #[derive(Debug, Clone)]
 pub struct TraceService<S> {
     service: S,
-    extractor: Arc<SpanContextExtractor>,
+    auto_generate_span: bool,
     name: Arc<str>,
 }
 
@@ -61,19 +61,24 @@ where
     }
 
     fn call(&mut self, mut request: Request<R>) -> Self::Future {
-        match self.extractor.extract_from_headers(request.headers()) {
-            Ok(Some(ctx)) if ctx.sampled => {
+        match (
+            self.auto_generate_span,
+            span_context_from_http_headers(request.headers()),
+        ) {
+            (_, Ok(Some(ctx))) => {
                 request.extensions_mut().insert(ctx);
             }
-            Err(e) => {
+            (_, Err(e)) => {
                 warn!(
                     "parse trace context from request {}, error: {}",
                     self.name, e
                 );
             }
+            (true, _) => {
+                request.extensions_mut().insert(SpanContext::random());
+            }
             _ => {}
-        };
-
+        }
         self.service.call(request)
     }
 }

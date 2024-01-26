@@ -3,7 +3,6 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigResult};
-use crate::override_by_env::{entry_override, OverrideByEnv};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ClusterConfig {
@@ -42,35 +41,6 @@ impl ClusterConfig {
 
     fn default_install_snapshot_timeout() -> u64 {
         3600 * 1000
-    }
-}
-
-impl OverrideByEnv for ClusterConfig {
-    fn override_by_env(&mut self) {
-        entry_override(
-            &mut self.raft_logs_to_keep,
-            "CNOSDB_CLUSTER_RAFT_LOGS_TO_KEEP",
-        );
-
-        entry_override(
-            &mut self.lmdb_max_map_size,
-            "CNOSDB_CLUSTER_LMDB_MAX_MAP_SIZE",
-        );
-
-        entry_override(
-            &mut self.heartbeat_interval,
-            "CNOSDB_CLUSTER_HEARTBEAT_INTERVAL",
-        );
-
-        entry_override(
-            &mut self.send_append_entries_timeout,
-            "CNOSDB_CLUSTER_SEND_APPEND_ENTRIES_TIMEOUT",
-        );
-
-        entry_override(
-            &mut self.install_snapshot_timeout,
-            "CNOSDB_CLUSTER_INSTALL_SNAPSHOT_TIMEOUT",
-        );
     }
 }
 

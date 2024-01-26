@@ -9,7 +9,9 @@ use protos::models_helper::to_prost_bytes;
 use protos::{tskv_service_time_out_client, DEFAULT_GRPC_SERVER_MESSAGE_LEN};
 use replication::errors::ReplicationResult;
 use replication::raft_node::RaftNode;
-use trace::{debug, info, SpanContext, SpanRecorder};
+use trace::http::http_ctx::grpc_append_trace_context;
+use trace::span_ext::SpanExt;
+use trace::{debug, info, Span, SpanContext};
 use tskv::EngineRef;
 
 use super::manager::RaftNodesManager;
@@ -44,23 +46,23 @@ impl RaftWriter {
         &self,
         replica: &ReplicationSet,
         request: RaftWriteCommand,
-        span_recorder: SpanRecorder,
+        span: Span,
     ) -> CoordinatorResult<()> {
         let node_id = self.config.global.node_id;
         let leader_id = replica.leader_node_id;
         if leader_id == node_id && self.kv_inst.is_some() {
-            let span_recorder = span_recorder.child("write to local node or forward");
+            let span = Span::enter_with_parent("write to local node or forward", &span);
             let result = self
-                .write_to_local_or_forward(replica, request, span_recorder.span_ctx())
+                .write_to_local_or_forward(replica, request, span.context().as_ref())
                 .await;
 
             debug!("write to local {} {:?} {:?}", node_id, replica, result);
 
             result
         } else {
-            let span_recorder = span_recorder.child("write to remote node");
+            let span = Span::enter_with_parent("write to remote node", &span);
             let result = self
-                .write_to_remote(leader_id, request.clone(), span_recorder.span_ctx())
+                .write_to_remote(leader_id, request.clone(), span.context().as_ref())
                 .await;
             debug!("write to remote {} {:?} {:?}", leader_id, replica, result);
 
@@ -71,7 +73,7 @@ impl RaftWriter {
                     }
 
                     let result = self
-                        .write_to_remote(vnode.node_id, request.clone(), span_recorder.span_ctx())
+                        .write_to_remote(vnode.node_id, request.clone(), span.context().as_ref())
                         .await;
                     debug!(
                         "try write to remote {} {:?} {:?}",
@@ -208,7 +210,7 @@ impl RaftWriter {
         );
 
         let mut cmd = tonic::Request::new(request);
-        trace_http::ctx::append_trace_context(span_ctx, cmd.metadata_mut()).map_err(|_| {
+        grpc_append_trace_context(span_ctx, cmd.metadata_mut()).map_err(|_| {
             CoordinatorError::CommonError {
                 msg: "Parse trace_id, this maybe a bug".to_string(),
             }

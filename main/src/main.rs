@@ -2,22 +2,18 @@
 #![recursion_limit = "256"]
 
 use std::fmt::Display;
-use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
 
 use clap::{command, Args, Parser, Subcommand, ValueEnum};
-use config::{Config, OverrideByEnv, VERSION};
+use config::{Config, VERSION};
 use memory_pool::GreedyMemoryPool;
 use metrics::init_tskv_metrics_recorder;
 use metrics::metric_register::MetricsRegister;
-use once_cell::sync::Lazy;
-use parking_lot::Mutex;
 use tokio::runtime::Runtime;
-use trace::jaeger::jaeger_exporter;
-use trace::log::{CombinationTraceCollector, LogTraceCollector};
-use trace::{info, init_process_global_tracing, TraceExporter, WorkerGuard};
-use trace_http::ctx::{SpanContextExtractor, TraceHeaderParser};
+use trace::global_logging::init_global_logging;
+use trace::global_tracing::{finalize_global_tracing, init_global_tracing};
+use trace::info;
 
 use crate::report::ReportService;
 
@@ -30,9 +26,6 @@ mod signal;
 mod spi;
 mod tcp;
 mod vector;
-
-static GLOBAL_MAIN_LOG_GUARD: Lazy<Arc<Mutex<Option<Vec<WorkerGuard>>>>> =
-    Lazy::new(|| Arc::new(Mutex::new(None)));
 
 /// cli examples is here
 /// <https://github.com/clap-rs/clap/blob/v3.1.3/examples/git-derive.rs>
@@ -74,8 +67,8 @@ struct RunArgs {
     memory: Option<usize>,
 
     /// Path to configuration file.
-    #[arg(long, global = true)]
-    config: Option<String>,
+    #[arg(long, global = true, default_value = "/etc/cnosdb/cnosdb.conf")]
+    config: String,
 
     /// The deployment mode of CnosDB,
     #[arg(short = 'M', long, global = true, value_enum)]
@@ -169,24 +162,19 @@ fn main() -> Result<(), std::io::Error> {
         },
     };
 
-    let mut config = parse_config(run_args.config.as_ref());
-    let deployment_mode =
-        get_final_deployment_mode(run_args.deployment_mode, &config.deployment.mode)?;
-    set_cli_args_to_config(&run_args, &mut config);
+    let config = parse_config(&run_args);
+    let deployment_mode = get_deployment_mode(&config.deployment.mode)?;
 
-    init_process_global_tracing(
-        &config.log.path,
-        &config.log.level,
-        "tsdb.log",
-        config.log.tokio_trace.as_ref(),
-        &GLOBAL_MAIN_LOG_GUARD,
-    );
+    init_global_logging(&config.log, "tsdb.log");
     init_tskv_metrics_recorder();
 
     let runtime = Arc::new(init_runtime(Some(config.deployment.cpu))?);
     let mem_bytes = run_args.memory.unwrap_or(config.deployment.memory) * 1024 * 1024 * 1024;
     let memory_pool = Arc::new(GreedyMemoryPool::new(mem_bytes));
     runtime.clone().block_on(async move {
+        let mode = &config.deployment.mode;
+        let node_id = config.global.node_id;
+        init_global_tracing(&config.trace, format!("cnosdb_{mode}_{node_id}"));
         let builder = server::ServiceBuilder {
             cpu: config.deployment.cpu,
             config: config.clone(),
@@ -196,7 +184,6 @@ fn main() -> Result<(), std::io::Error> {
                 "node_id",
                 config.global.node_id.to_string(),
             )])),
-            span_context_extractor: build_span_context_extractor(&config),
         };
 
         let mut server = server::Server::default();
@@ -219,34 +206,21 @@ fn main() -> Result<(), std::io::Error> {
         if let Some(tskv) = storage {
             tskv.close().await;
         }
+        finalize_global_tracing();
 
         println!("CnosDB is stopped.");
     });
     Ok(())
 }
 
-fn parse_config(config_path: Option<impl AsRef<Path>>) -> config::Config {
-    // priority: [specified config file] > [/etc/cnosdb/cnosdb.conf] > [$HOME/cnosdb/cnosdb.conf]
-    let mut global_config = if let Some(p) = config_path {
-        println!("----------\nStart with configuration:");
-        config::get_config(p).unwrap()
-    } else if Path::new("/etc/cnosdb/cnosdb.conf").exists() {
-        println!("----------\nStart with configuration:");
-        config::get_config("/etc/cnosdb/cnosdb.conf").unwrap()
-    } else if let Some(path) = dirs::home_dir() {
-        let path = path.join("cnosdb").join("cnosdb.conf");
-        if path.exists() {
-            config::get_config(path).unwrap()
-        } else {
-            config::Config::default()
-        }
-    } else {
-        config::Config::default()
-    };
-    global_config.override_by_env();
-    println!("{}----------", global_config.to_string_pretty());
-
-    global_config
+fn parse_config(run_args: &RunArgs) -> config::Config {
+    let mut config = config::get_config(&run_args.config).unwrap();
+    set_cli_args_to_config(run_args, &mut config);
+    println!("Start with configuration:");
+    println!("-----------------------------------------------------------");
+    println!("{}", config.to_string_pretty());
+    println!("-----------------------------------------------------------");
+    config
 }
 
 fn init_runtime(cores: Option<usize>) -> Result<Runtime, std::io::Error> {
@@ -268,17 +242,10 @@ fn init_runtime(cores: Option<usize>) -> Result<Runtime, std::io::Error> {
 }
 /// Merge the deployment configs(mode) between CLI arguments and config file,
 /// values in the CLI arguments (if any) has higher priority.
-fn get_final_deployment_mode(
-    arg_deployment_mode: Option<DeploymentMode>,
-    config_deployment_mode: &str,
-) -> Result<DeploymentMode, std::io::Error> {
-    if let Some(mode) = arg_deployment_mode {
-        Ok(mode)
-    } else {
-        match config_deployment_mode.parse::<DeploymentMode>() {
-            Ok(mode) => Ok(mode),
-            Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e)),
-        }
+fn get_deployment_mode(config_deployment_mode: &str) -> Result<DeploymentMode, std::io::Error> {
+    match config_deployment_mode.parse::<DeploymentMode>() {
+        Ok(mode) => Ok(mode),
+        Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e)),
     }
 }
 
@@ -296,39 +263,4 @@ fn set_cli_args_to_config(args: &RunArgs, config: &mut Config) {
     if let Some(c) = args.cpu {
         config.deployment.cpu = c;
     }
-}
-
-fn build_span_context_extractor(config: &Config) -> Arc<SpanContextExtractor> {
-    let mut res: Vec<Arc<dyn TraceExporter>> = Vec::new();
-    let mode = &config.deployment.mode;
-    let node_id = config.global.node_id;
-    let service_name = format!("cnosdb_{mode}_{node_id}");
-
-    if let Some(trace_log_collector_config) = &config.trace.log {
-        info!(
-            "Log trace collector created, path: {}",
-            trace_log_collector_config.path.display()
-        );
-        res.push(Arc::new(LogTraceCollector::new(trace_log_collector_config)))
-    }
-
-    if let Some(trace_config) = &config.trace.jaeger {
-        let exporter =
-            jaeger_exporter(trace_config, service_name).expect("build jaeger trace exporter");
-        info!("Jaeger trace exporter created");
-        res.push(exporter);
-    }
-
-    // TODO HttpCollector
-    let collector: Option<Arc<dyn TraceExporter>> = if res.is_empty() {
-        None
-    } else if res.len() == 1 {
-        res.pop()
-    } else {
-        Some(Arc::new(CombinationTraceCollector::new(res)))
-    };
-
-    let parser = TraceHeaderParser::new(config.trace.auto_generate_span);
-
-    Arc::new(SpanContextExtractor::new(parser, collector))
 }

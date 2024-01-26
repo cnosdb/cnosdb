@@ -4,7 +4,6 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
-use crate::override_by_env::{entry_override, entry_override_to_vec_string, OverrideByEnv};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MetaConfig {
@@ -21,16 +20,6 @@ impl MetaConfig {
 
     fn default_report_time_interval_secs() -> u64 {
         30
-    }
-}
-
-impl OverrideByEnv for MetaConfig {
-    fn override_by_env(&mut self) {
-        entry_override_to_vec_string(&mut self.service_addr, "CNOSDB_META_SERVICE_ADDR");
-        entry_override(
-            &mut self.report_time_interval_secs,
-            "CNOSDB_META_REPORT_TIME_INTERVAL_SECS",
-        );
     }
 }
 

@@ -15,7 +15,8 @@ mod tests {
     use serial_test::serial;
     use tokio::runtime;
     use tokio::runtime::Runtime;
-    use trace::{debug, error, info, init_default_global_tracing, warn};
+    use trace::global_logging::init_default_global_tracing;
+    use trace::{debug, error, info, warn};
     use tskv::file_system::file_manager;
     use tskv::{file_utils, kv_option, Engine, SnapshotFileMeta, TsKv};
 

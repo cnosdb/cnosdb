@@ -9,7 +9,8 @@ use models::{ColumnId, SeriesId, SeriesKey};
 use protos::kv_service::{raft_write_command, WritePointsResponse, *};
 use snafu::ResultExt;
 use tokio::sync::RwLock;
-use trace::{debug, error, info, warn, SpanContext, SpanExt, SpanRecorder};
+use trace::span_ext::SpanExt;
+use trace::{debug, error, info, warn, Span, SpanContext};
 
 use crate::database::Database;
 use crate::error::Result;
@@ -81,9 +82,9 @@ impl VnodeStorage {
         ctx: &replication::ApplyContext,
         points: Vec<u8>,
         precision: Precision,
-        span_ctx: Option<&SpanContext>,
+        span_context: Option<&SpanContext>,
     ) -> Result<WritePointsResponse> {
-        let span_recorder = SpanRecorder::new(span_ctx.child_span("tskv engine write cache"));
+        let span = Span::from_context("tskv engine write cache", span_context);
         let fb_points = flatbuffers::root::<protos::models::Points>(&points)
             .context(crate::error::InvalidFlatbufferSnafu)?;
         let tables = fb_points.tables().ok_or(Error::InvalidPointTable)?;
@@ -94,7 +95,7 @@ impl VnodeStorage {
         }
 
         let write_group = {
-            let mut span_recorder = span_recorder.child("build write group");
+            let span = Span::enter_with_parent("build write group", &span);
             self.db
                 .read()
                 .await
@@ -107,13 +108,13 @@ impl VnodeStorage {
                 )
                 .await
                 .map_err(|err| {
-                    span_recorder.error(err.to_string());
+                    span.error(err.to_string());
                     err
                 })?
         };
 
         let res = {
-            let mut span_recorder = span_recorder.child("put points");
+            let span = Span::enter_with_parent("put points", &span);
             match self
                 .ts_family
                 .read()
@@ -122,7 +123,7 @@ impl VnodeStorage {
             {
                 Ok(points_number) => Ok(WritePointsResponse { points_number }),
                 Err(err) => {
-                    span_recorder.error(err.to_string());
+                    span.error(err.to_string());
                     Err(err)
                 }
             }

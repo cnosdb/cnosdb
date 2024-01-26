@@ -21,7 +21,8 @@ use protos::kv_service::QueryRecordBatchRequest;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Receiver;
 use tokio_util::sync::CancellationToken;
-use trace::{debug, error, SpanRecorder};
+use trace::span_ext::SpanExt as _;
+use trace::{debug, error, Span, SpanContext};
 
 use crate::error::Result;
 use crate::reader::Cursor;
@@ -401,7 +402,7 @@ pub struct RowIterator {
     /// Whether this iterator was finsihed.
     is_finished: bool,
     #[allow(unused)]
-    span_recorder: SpanRecorder,
+    span: Span,
     metrics_set: ExecutionPlanMetricsSet,
 }
 
@@ -523,17 +524,18 @@ impl Drop for RowIterator {
     fn drop(&mut self) {
         self.series_iter_closer.cancel();
 
-        if self.span_recorder.span_ctx().is_some() {
+        if SpanContext::from_span(&self.span).is_some() {
             let version_number = self.super_version.as_ref().map(|v| v.version_number);
             let ts_family_id = self.super_version.as_ref().map(|v| v.ts_family_id);
 
-            self.span_recorder
-                .set_metadata("version_number", format!("{version_number:?}"));
-            self.span_recorder
-                .set_metadata("ts_family_id", format!("{ts_family_id:?}"));
-            self.span_recorder.set_metadata("vnode_id", self.vnode_id);
-            self.span_recorder
-                .set_metadata("series_ids_num", self.series_ids.len());
+            self.span.add_properties(|| {
+                [
+                    ("version_number", format!("{version_number:?}")),
+                    ("ts_family_id", format!("{ts_family_id:?}")),
+                    ("vnode_id", self.vnode_id.to_string()),
+                    ("series_ids_num", self.series_ids.len().to_string()),
+                ]
+            });
 
             let metrics = self
                 .metrics_set
@@ -543,8 +545,8 @@ impl Drop for RowIterator {
                 .timestamps_removed();
 
             metrics.iter().for_each(|e| {
-                self.span_recorder
-                    .set_metadata(e.value().name().to_string(), e.value().to_string());
+                self.span
+                    .add_property(|| (e.value().name().to_string(), e.value().to_string()));
             });
         }
     }

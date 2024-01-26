@@ -16,7 +16,8 @@ use datafusion::physical_plan::{
 use models::predicate::domain::{PredicateRef, PushedAggregateFunction};
 use models::predicate::PlacedSplit;
 use models::schema::TskvTableSchemaRef;
-use trace::{debug, SpanContext, SpanExt, SpanRecorder};
+use trace::span_ext::SpanExt;
+use trace::{debug, Span, SpanContext};
 use tskv::reader::QueryOption;
 
 use super::tskv_exec::TableScanStream;
@@ -114,12 +115,14 @@ impl ExecutionPlan for AggregateFilterTskvExec {
         );
 
         let span_ctx = context.session_config().get_extension::<SpanContext>();
-        let span_recorder =
-            SpanRecorder::new(span_ctx.child_span("TableScanStream of AggregateFilterTskvExec"));
+        let span = Span::from_context(
+            "TableScanStream of AggregateFilterTskvExec",
+            span_ctx.as_deref(),
+        );
 
         let iterator = self
             .coord
-            .table_scan(query_opt, span_recorder.span_ctx())
+            .table_scan(query_opt, span.context().as_ref())
             .map_err(|e| DataFusionError::Internal(e.to_string()))?;
         let table_stream = TableScanStream::with_iterator(
             self.schema.clone(),
@@ -128,7 +131,7 @@ impl ExecutionPlan for AggregateFilterTskvExec {
             iterator,
             None,
             metrics,
-            span_recorder,
+            span,
         );
 
         Ok(Box::pin(table_stream))

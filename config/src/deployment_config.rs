@@ -3,7 +3,6 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
-use crate::override_by_env::{entry_override, OverrideByEnv};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DeploymentConfig {
@@ -26,14 +25,6 @@ impl DeploymentConfig {
 
     pub fn default_memory() -> usize {
         get_sys_mem_gb()
-    }
-}
-
-impl OverrideByEnv for DeploymentConfig {
-    fn override_by_env(&mut self) {
-        entry_override(&mut self.mode, "CNOSDB_DEPLOYMENT_MODE");
-        entry_override(&mut self.cpu, "CNOSDB_DEPLOYMENT_CPU");
-        entry_override(&mut self.memory, "CNOSDB_DEPLOYMENT_MEMORY");
     }
 }
 

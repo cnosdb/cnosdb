@@ -7,9 +7,10 @@ edition.workspace = true
 serde = { workspace = true }
 toml = { workspace = true }
 async-backtrace = { workspace = true, optional = true }
-sys-info = {workspace = true}
-num_cpus = {workspace = true}
+sys-info = { workspace = true }
+num_cpus = { workspace = true }
 once_cell = { workspace = true }
+figment = { workspace = true, features = ["toml", "env"] }
 
 [features]
 default = []

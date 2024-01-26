@@ -3,7 +3,6 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
-use crate::override_by_env::{entry_override, OverrideByEnv};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GlobalConfig {
@@ -32,15 +31,6 @@ impl GlobalConfig {
 
     fn default_store_metrics() -> bool {
         true
-    }
-}
-
-impl OverrideByEnv for GlobalConfig {
-    fn override_by_env(&mut self) {
-        entry_override(&mut self.node_id, "CNOSDB_GLOBAL_NODE_ID");
-        entry_override(&mut self.host, "CNOSDB_GLOBAL_HOST");
-        entry_override(&mut self.cluster_name, "CNOSDB_GLOBAL_CLUSTER_NAME");
-        entry_override(&mut self.store_metrics, "CNOSDB_GLOBAL_STORE_METRICS");
     }
 }
 

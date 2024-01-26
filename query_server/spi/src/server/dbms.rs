@@ -6,6 +6,7 @@ use datafusion::arrow::datatypes::{DataType, Field, Schema};
 use datafusion::arrow::record_batch::RecordBatch;
 use models::auth::role::UserRole;
 use models::auth::user::{User, UserDesc, UserInfo, UserOptionsBuilder};
+use trace::span_ext::SpanExt;
 use trace::SpanContext;
 
 use crate::query::execution::{Output, QueryStateMachine, QueryStateMachineRef};
@@ -125,8 +126,9 @@ impl DatabaseManagerSystem for DatabaseManagerSystemMock {
             &query_state_machine.query,
             query_state_machine
                 .session
-                .get_child_span_recorder("mock execute logical plan")
-                .span_ctx(),
+                .get_child_span("mock execute logical plan")
+                .context()
+                .as_ref(),
         )
         .await
     }

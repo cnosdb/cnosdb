@@ -57,6 +57,8 @@ partition = 16           # default memcache partition number
 [log]
 level = 'info'
 path = '/tmp/cnosdb/2001/log'
+max_file_count = 10
+file_rotation = "daily"
 
 [security]
 # [security.tls_config]
@@ -82,9 +84,4 @@ send_append_entries_timeout = 5000
 
 # [trace]
 # auto_generate_span = false
-# [trace.log]
-# path = '/var/log/cnosdb'
-# [trace.jaeger]
-# jaeger_agent_endpoint = 'http://localhost:14268/api/traces'
-# max_concurrent_exports = 2
-# max_queue_size = 4096
+# jaeger_endpoint = 'http://localhost:4317'

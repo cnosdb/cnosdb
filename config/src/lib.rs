@@ -1,9 +1,8 @@
-use std::fs::File;
-use std::io;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use check::{CheckConfig, CheckConfigResult};
+use figment::providers::{Env, Format, Toml};
+use figment::Figment;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 
@@ -14,7 +13,6 @@ pub use crate::global_config::*;
 pub use crate::limiter_config::*;
 pub use crate::log_config::*;
 pub use crate::meta_config::*;
-pub use crate::override_by_env::OverrideByEnv;
 pub use crate::query_config::*;
 pub use crate::security_config::*;
 pub use crate::service_config::*;
@@ -31,7 +29,6 @@ mod global_config;
 mod limiter_config;
 mod log_config;
 mod meta_config;
-mod override_by_env;
 mod query_config;
 mod security_config;
 mod service_config;
@@ -103,65 +100,11 @@ impl Config {
     }
 }
 
-impl OverrideByEnv for Config {
-    fn override_by_env(&mut self) {
-        self.global.override_by_env();
-        self.deployment.override_by_env();
-        self.meta.override_by_env();
-        self.query.override_by_env();
-        self.storage.override_by_env();
-        self.wal.override_by_env();
-        self.cache.override_by_env();
-        self.log.override_by_env();
-        self.security.override_by_env();
-        self.service.override_by_env();
-        self.cluster.override_by_env();
-        self.trace.override_by_env();
-    }
-}
-
-pub fn get_config(path: impl AsRef<Path>) -> Result<Config, std::io::Error> {
-    let path = path.as_ref();
-    let mut file = match File::open(path) {
-        Ok(file) => file,
-        Err(err) => {
-            return Err(io::Error::new(
-                err.kind(),
-                format!(
-                    "Failed to open configurtion file '{}': {:?}",
-                    path.display(),
-                    err
-                )
-                .as_str(),
-            ));
-        }
-    };
-    let mut content = String::new();
-    if let Err(err) = file.read_to_string(&mut content) {
-        return Err(io::Error::new(
-            err.kind(),
-            format!(
-                "Failed to read configurtion file '{}': {:?}",
-                path.display(),
-                err
-            )
-            .as_str(),
-        ));
-    }
-    let mut config: Config = match toml::from_str(&content) {
-        Ok(config) => config,
-        Err(err) => {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!(
-                    "Failed to parse configurtion file '{}': {:?}",
-                    path.display(),
-                    err
-                )
-                .as_str(),
-            ));
-        }
-    };
+pub fn get_config(path: impl AsRef<Path>) -> Result<Config, figment::Error> {
+    let figment = Figment::new()
+        .merge(Toml::file(path.as_ref()))
+        .merge(Env::prefixed("CNOSDB__").split("__"));
+    let mut config: Config = figment.extract()?;
     config.wal.introspect();
     Ok(config)
 }
