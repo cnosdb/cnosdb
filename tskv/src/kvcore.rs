@@ -125,6 +125,7 @@ impl TsKv {
         compaction::job::run(
             shared_options.storage.clone(),
             runtime,
+            compact_task_sender,
             compact_task_receiver,
             summary.global_context(),
             global_seq_ctx.clone(),
@@ -1255,7 +1256,7 @@ impl Engine for TsKv {
 
                 let version = ts_family.read().await.version();
                 if let Some(req) =
-                    compaction::pick_compaction(CompactTask::Normal(vnode_id), version).await
+                    compaction::pick_compaction(CompactTask::Delta(vnode_id), version).await
                 {
                     info!("Compaction request : {:}", req);
                     match compaction::run_compaction_job(req, self.global_ctx.clone()).await {

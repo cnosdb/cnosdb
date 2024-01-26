@@ -12,7 +12,6 @@ use std::sync::Arc;
 pub use compact::*;
 pub use flush::*;
 use models::predicate::domain::TimeRange;
-use models::Timestamp;
 use parking_lot::RwLock;
 pub use picker::*;
 use utils::BloomFilter;
@@ -72,6 +71,16 @@ impl PartialOrd for CompactTask {
     }
 }
 
+impl std::fmt::Display for CompactTask {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CompactTask::Normal(ts_family_id) => write!(f, "Normal({})", ts_family_id),
+            CompactTask::Cold(ts_family_id) => write!(f, "Cold({})", ts_family_id),
+            CompactTask::Delta(ts_family_id) => write!(f, "Delta({})", ts_family_id),
+        }
+    }
+}
+
 pub struct CompactReq {
     compact_task: CompactTask,
 
@@ -89,19 +98,28 @@ impl CompactReq {
     ///   is the time range of the level-1~4 file.
     /// - If it's a normal compaction, the `out_time_range` is the time range
     ///   of the out_level.
-    /// - Otherwise, return `TimeRange::none()`.
+    /// - Otherwise, return `TimeRange::all()`.
     pub fn out_time_range(&self) -> TimeRange {
         if self.in_level == 0 {
+            let mut out_time_range = TimeRange::none();
             for f in self.files.iter() {
                 if !f.is_delta() {
-                    return *f.time_range();
+                    out_time_range.merge(f.time_range());
                 }
+            }
+            if !out_time_range.is_none() {
+                return out_time_range;
             }
         }
         if (self.out_level as usize) < self.version.levels_info().len() {
-            return self.version.levels_info()[self.out_level as usize].time_range;
+            let level_time_range = self.version.levels_info()[self.out_level as usize].time_range;
+            if level_time_range.is_none() {
+                return TimeRange::all();
+            } else {
+                return level_time_range;
+            }
         }
-        return TimeRange::none();
+        TimeRange::none()
     }
 
     /// Split the `files` into delta files and an optional level-1~4 file.
@@ -122,11 +140,12 @@ impl std::fmt::Display for CompactReq {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "tenant_database: {}, ts_family: {}, in_level: {}, out_level: {:?}, files: [",
+            "tenant_database: {}, ts_family: {}, in_level: {}, out_level: {:?}, out_time_range: {}, files: [",
             self.version.borrowed_database(),
             self.version.tf_id(),
             self.in_level,
             self.out_level,
+            self.out_time_range(),
         )?;
         if !self.files.is_empty() {
             write!(
@@ -156,7 +175,6 @@ impl std::fmt::Display for CompactReq {
 pub struct FlushReq {
     pub ts_family_id: TseriesFamilyId,
     pub mems: Vec<Arc<RwLock<MemCache>>>,
-    pub max_ts: Timestamp,
     pub force_flush: bool,
 }
 

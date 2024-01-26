@@ -11,7 +11,7 @@ use utils::BloomFilter;
 use crate::compaction::compact::{CompactingBlock, CompactingBlockMeta, CompactingFile};
 use crate::compaction::{CompactReq, CompactingBlocks};
 use crate::context::GlobalContext;
-use crate::error::{self, Result};
+use crate::error::{self, ChannelSendError, Result};
 use crate::summary::{CompactMeta, VersionEdit};
 use crate::tseries_family::TseriesFamily;
 use crate::tsm::{
@@ -37,7 +37,7 @@ pub async fn run_compaction_job(
     // Collect l0-files that partly deleted after compaction.
     let mut l0_file_metas_will_partly_delete: Vec<CompactMeta> = Vec::new();
     // Open l0-files and tsm-file to run compaction.
-    let mut tsm_readers = match level_file {
+    let mut tsm_readers = match &level_file {
         None => Vec::with_capacity(delta_files.len()),
         Some(f) => {
             let mut tsm_readers = Vec::with_capacity(1 + delta_files.len());
@@ -76,13 +76,15 @@ pub async fn run_compaction_job(
     let mut curr_fid: Option<FieldId> = None;
     while let Some(fid) = state.next(&mut merging_blk_meta_groups).await {
         for blk_meta_group in merging_blk_meta_groups.drain(..) {
-            println!("merging meta group: {blk_meta_group}");
+            trace::trace!("merging meta group: {blk_meta_group}");
             if let Some(c_fid) = curr_fid {
                 if c_fid != fid {
                     // Iteration of next field id, write previous merged block.
                     if let Some(blk) = previous_merged_block.take() {
                         // Write the small previous merged block.
-                        println!("write the previous compacting block (fid={curr_fid:?}): {blk}");
+                        trace::trace!(
+                            "write the previous compacting block (fid={curr_fid:?}): {blk}"
+                        );
                         writer_wrapper.write(blk).await?;
                     }
                 }
@@ -111,26 +113,28 @@ pub async fn run_compaction_job(
                 if i == last_blk_idx && blk.len() < max_block_size {
                     // The last data block too small, try to extend to
                     // the next compacting blocks (current field id).
-                    println!("compacting block (fid={fid}) {blk} is too small, try to merge with the next compacting blocks");
+                    trace::trace!("compacting block (fid={fid}) {blk} is too small, try to merge with the next compacting blocks");
                     previous_merged_block = Some(blk);
                     break;
                 }
-                println!("write compacting block(fid={fid}): {blk}");
+                trace::trace!("write compacting block(fid={fid}): {blk}");
                 writer_wrapper.write(blk).await?;
             }
         }
     }
     if let Some(blk) = previous_merged_block {
-        println!("write the final compacting block(fid={curr_fid:?}): {blk}");
+        trace::trace!("write the final compacting block(fid={curr_fid:?}): {blk}");
         writer_wrapper.write(blk).await?;
     }
 
     let (mut version_edit, file_metas) = writer_wrapper.close().await?;
+    // Level 0 files that can be deleted after compaction.
     version_edit.del_files = l0_file_metas_will_delete;
-    for file in request.files {
-        // Lvel 1-4 files can be deleted after compaction.
-        version_edit.del_file(file.level(), file.file_id(), file.is_delta());
+    if let Some(f) = level_file {
+        // Lvel 1-4 file that can be deleted after compaction.
+        version_edit.del_file(f.level(), f.file_id(), f.is_delta());
     }
+    // Level 0 files that partly deleted after compaction.
     version_edit.partly_del_files = l0_file_metas_will_partly_delete;
 
     trace::info!(
@@ -202,21 +206,21 @@ impl CompactState {
 impl CompactState {
     /// Update tmp_tsm_blk_meta_iters for field id in next iteration.
     fn next_field(&mut self) -> Option<FieldId> {
-        println!("===============================");
+        trace::trace!("===============================");
 
         self.tmp_tsm_blk_meta_iters.clear();
         let mut curr_fid: FieldId;
 
         loop {
             if let Some(f) = self.compacting_files.peek() {
-                println!(
+                trace::trace!(
                     "selected new field {} from file {} as current field id",
                     f.field_id,
                     f.tsm_reader.file_id()
                 );
                 curr_fid = f.field_id
             } else {
-                println!("no file to select, mark finished");
+                trace::trace!("no file to select, mark finished");
                 return None;
             }
 
@@ -225,7 +229,7 @@ impl CompactState {
                 loop_file_i = f.i;
                 if curr_fid == f.field_id {
                     if let Some(idx_meta) = f.peek() {
-                        println!(
+                        trace::trace!(
                             "for tsm file @{loop_file_i}, got idx_meta((field_id: {}, field_type: {:?}, block_count: {}, time_range: {:?}), put the @{} block iterator with filter: {:?}",
                             idx_meta.field_id(),
                             idx_meta.field_type(),
@@ -242,7 +246,7 @@ impl CompactState {
                         self.compacting_files.push(f);
                     } else {
                         // This tsm-file has been finished, do not push it back.
-                        println!("file {loop_file_i} is finished.");
+                        trace::trace!("file {loop_file_i} is finished.");
                     }
                 } else {
                     // This tsm-file do not need to compact at this time, push it back.
@@ -252,13 +256,13 @@ impl CompactState {
             }
 
             if !self.tmp_tsm_blk_meta_iters.is_empty() {
-                println!(
+                trace::trace!(
                     "selected {} blocks meta iterators",
                     self.tmp_tsm_blk_meta_iters.len()
                 );
                 break;
             } else {
-                println!("iteration field_id {curr_fid} is finished, trying next field.");
+                trace::trace!("iteration field_id {curr_fid} is finished, trying next field.");
                 continue;
             }
         }
@@ -334,7 +338,7 @@ impl CompactState {
                 compacting_blk_meta_groups.push(cbm_group);
             }
         }
-        println!(
+        trace::trace!(
             "selected merging meta groups: {}",
             CompactingBlockMetaGroups(compacting_blk_meta_groups),
         );
@@ -388,7 +392,7 @@ impl CompactingBlockMetaGroup {
             && self.blk_metas[0].included_in_time_range(time_range)
         {
             // Only one compacting block and has no tombstone, write as raw block.
-            println!("only one compacting block without tombstone and time_range is entirely included by target level, handled as raw block");
+            trace::trace!("only one compacting block without tombstone and time_range is entirely included by target level, handled as raw block");
             let head_meta = &self.blk_metas[0].meta;
             let mut buf = Vec::with_capacity(head_meta.size() as usize);
             let data_len = self.blk_metas[0].get_raw_data(&mut buf).await?;
@@ -429,7 +433,7 @@ impl CompactingBlockMetaGroup {
             }
         } else {
             // One block with tombstone or multi compacting blocks, decode and merge these data block.
-            println!(
+            trace::trace!(
                 "there are {} compacting blocks, need to decode and merge",
                 self.blk_metas.len()
             );
@@ -449,12 +453,38 @@ impl CompactingBlockMetaGroup {
                         head_blk = data_block;
                     }
                 }
+                let (tx, mut rx) = tokio::sync::mpsc::channel::<DataBlock>(4);
+                let jh = tokio::spawn(async move {
+                    trace::trace!("Compaction(delta): Start task to merge data blocks");
+                    while let Some(blk) = rx.recv().await {
+                        head_blk = head_blk.merge(blk);
+                    }
+                    trace::trace!("Compaction(delta): Finished task to merge data blocks");
+                    head_blk
+                });
+                trace::trace!("=== Resolving {} blocks", self.blk_metas.len() - head_i - 1);
                 for blk_meta in self.blk_metas.iter_mut().skip(head_i + 1) {
                     // Merge decoded data block.
                     if let Some(blk) = blk_meta.get_data_block_opt(time_range).await? {
-                        head_blk = head_blk.merge(blk);
+                        if let Err(e) = tx.send(blk).await {
+                            trace::error!(
+                                "Compaction(delta): Failed to send data block to merge: {}",
+                                e.0
+                            );
+                            return Err(Error::ChannelSend {
+                                source: ChannelSendError::CompactDataBlock,
+                            });
+                        }
                     }
                 }
+                drop(tx);
+                let head_blk = match jh.await {
+                    Ok(blk) => blk,
+                    Err(e) => {
+                        trace::error!("Compaction(delta): Failed to merge data blocks: {:?}", e);
+                        return Err(Error::IO { source: e.into() });
+                    }
+                };
                 head_block = Some(head_blk);
             }
 
@@ -519,7 +549,7 @@ fn chunk_data_block_into_compacting_blocks(
     max_block_size: usize,
     compacting_blocks: &mut Vec<CompactingBlock>,
 ) -> Result<()> {
-    println!("Chunking data block {}", data_block);
+    trace::trace!("Chunking data block {}", data_block);
     compacting_blocks.clear();
     if max_block_size == 0 || data_block.len() < max_block_size {
         // Data block elements less than max_block_size, do not encode it.
@@ -542,7 +572,7 @@ fn chunk_data_block_into_compacting_blocks(
             end = len.min(start + max_block_size);
         }
     }
-    println!(
+    trace::trace!(
         "Chunked compacting blocks: {}",
         CompactingBlocks(compacting_blocks)
     );
@@ -622,7 +652,7 @@ impl WriterWrapper {
             low_seq: 0,
             is_delta: false,
         };
-        self.version_edit.add_file(cm, self.tsm_writer.max_ts());
+        self.version_edit.add_file(cm);
         let bloom_filter = self.tsm_writer.into_bloom_filter();
         self.file_metas.insert(file_id, Arc::new(bloom_filter));
 
@@ -652,20 +682,20 @@ impl WriterWrapper {
             Ok(size) => Ok(size),
             Err(WriteTsmError::WriteIO { source }) => {
                 // TODO try re-run compaction on other time.
-                trace::error!("Failed compaction: IO error when write tsm: {:?}", source);
+                trace::error!("Compaction(delta): IO error when write tsm: {:?}", source);
                 Err(Error::IO { source })
             }
             Err(WriteTsmError::Encode { source }) => {
                 // TODO try re-run compaction on other time.
                 trace::error!(
-                    "Failed compaction: encoding error when write tsm: {:?}",
+                    "Compaction(delta): Encoding error when write tsm: {:?}",
                     source
                 );
                 Err(Error::Encode { source })
             }
             Err(WriteTsmError::Finished { path }) => {
                 trace::error!(
-                    "Failed compaction: Trying write already finished tsm file: '{}'",
+                    "Compaction(delta): Trying write already finished tsm file: '{}'",
                     path.display()
                 );
                 Err(Error::WriteTsm {

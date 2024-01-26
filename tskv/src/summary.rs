@@ -245,7 +245,7 @@ impl VersionEdit {
         bincode::deserialize(buf).map_err(|e| Error::RecordFileDecode { source: (e) })
     }
 
-    pub fn add_file(&mut self, compact_meta: CompactMeta, max_level_ts: i64) {
+    pub fn add_file(&mut self, compact_meta: CompactMeta) {
         if compact_meta.high_seq != 0 {
             // ComapctMeta.seq_no only makes sense when flush.
             // In other processes, we set high_seq 0 .
@@ -254,7 +254,7 @@ impl VersionEdit {
         }
         self.has_file_id = true;
         self.file_id = self.file_id.max(compact_meta.file_id);
-        self.max_level_ts = max_level_ts;
+        self.max_level_ts = self.max_level_ts.max(compact_meta.max_ts);
         self.tsf_id = compact_meta.tsf_id;
         self.add_files.push(compact_meta);
     }
@@ -571,7 +571,8 @@ impl Summary {
 
         // For each TseriesFamily - VersionEdits，generate a new Version and then apply it.
         let version_set = self.version_set.read().await;
-        let mut partly_deleted_file_paths = Vec::new();
+        let mut partly_deleted_file_paths: Vec<PathBuf> = Vec::new();
+        let mut partly_deleted_files: HashSet<ColumnFileId> = HashSet::new();
         for (tsf_id, edits) in tsf_version_edits {
             let min_seq = tsf_min_seq.get(&tsf_id);
             if let Some(tsf) = version_set.get_tsfamily_by_tf_id(tsf_id).await {
@@ -585,6 +586,7 @@ impl Summary {
                             tenant_database.as_str(),
                             tsf_id,
                         ));
+                        partly_deleted_files.insert(compact_meta.file_id);
                     }
                 }
 
@@ -631,6 +633,11 @@ impl Summary {
                         }
                     }
                 }
+
+                // Mark all partly deleted files as not-compacting after ombstones are replaced with compact_tmp.
+                new_version
+                    .unmark_compacting_files(&partly_deleted_files)
+                    .await;
 
                 let flushed_mem_caches = mem_caches.get(&tsf_id);
                 trace::info!("Applying new version for ts_family {}.", tsf_id);
@@ -902,7 +909,7 @@ mod test {
             file_id: 100,
             ..Default::default()
         };
-        ve.add_file(add_file_100, 100_000_000);
+        ve.add_file(add_file_100);
 
         let del_file_101 = CompactMeta {
             file_id: 101,
@@ -1373,7 +1380,7 @@ mod test {
                 tsm_reader_cache,
             );
             tsf.write().await.new_version(version, None);
-            edit.add_file(meta, 1);
+            edit.add_file(meta);
             edits.push(edit);
 
             summary

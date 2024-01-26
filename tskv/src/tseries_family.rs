@@ -16,7 +16,7 @@ use models::{FieldId, SchemaId, SeriesId, Timestamp};
 use parking_lot::RwLock;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Sender;
-use tokio::sync::RwLock as AsyncRwLock;
+use tokio::sync::{RwLock as AsyncRwLock, RwLockWriteGuard as AsyncRwLockWriteGuard};
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 use trace::{debug, error, info, warn};
@@ -41,7 +41,7 @@ pub struct ColumnFile {
     size: u64,
     field_id_filter: Arc<BloomFilter>,
     deleted: AtomicBool,
-    compacting: AtomicBool,
+    compacting: Arc<AsyncRwLock<bool>>,
 
     path: PathBuf,
     tsm_reader_cache: Weak<ShardedAsyncCache<String, Arc<TsmReader>>>,
@@ -61,23 +61,9 @@ impl ColumnFile {
             size: meta.file_size,
             field_id_filter,
             deleted: AtomicBool::new(false),
-            compacting: AtomicBool::new(false),
+            compacting: Arc::new(AsyncRwLock::new(false)),
             path: path.as_ref().into(),
             tsm_reader_cache,
-        }
-    }
-
-    pub fn deep_copy(&self) -> Self {
-        Self {
-            file_id: self.file_id,
-            level: self.level,
-            time_range: self.time_range,
-            size: self.size,
-            field_id_filter: self.field_id_filter.clone(),
-            deleted: AtomicBool::new(self.is_deleted()),
-            compacting: AtomicBool::new(self.is_compacting()),
-            path: self.path.clone(),
-            tsm_reader_cache: self.tsm_reader_cache.clone(),
         }
     }
 
@@ -149,18 +135,22 @@ impl ColumnFile {
         self.deleted.store(true, Ordering::Release);
     }
 
-    pub fn is_compacting(&self) -> bool {
-        self.compacting.load(Ordering::Acquire)
+    pub async fn is_compacting(&self) -> bool {
+        *self.compacting.read().await
     }
 
-    pub fn mark_compacting(&self) -> bool {
-        self.compacting
-            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-            .is_ok()
+    pub async fn write_lock_compacting(&self) -> AsyncRwLockWriteGuard<'_, bool> {
+        self.compacting.write().await
     }
 
-    pub fn unmark_compacting(&self) {
-        self.compacting.store(false, Ordering::Release);
+    pub async fn mark_compacting(&self) -> bool {
+        let mut compacting = self.compacting.write().await;
+        if *compacting {
+            false
+        } else {
+            *compacting = true;
+            true
+        }
     }
 }
 
@@ -231,17 +221,8 @@ impl std::fmt::Display for ColumnFile {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{{ level:{}, file_id:{}, compacting:{}, time_range:{}-{}, file size:{} }}",
-            self.level,
-            self.file_id,
-            if self.is_compacting() {
-                "True"
-            } else {
-                "False"
-            },
-            self.time_range.min_ts,
-            self.time_range.max_ts,
-            self.size,
+            "{{ level:{}, file_id:{}, time_range:{}-{}, file size:{} }}",
+            self.level, self.file_id, self.time_range.min_ts, self.time_range.max_ts, self.size,
         )
     }
 }
@@ -262,7 +243,7 @@ impl ColumnFile {
             size,
             field_id_filter: Arc::new(BloomFilter::default()),
             deleted: AtomicBool::new(false),
-            compacting: AtomicBool::new(false),
+            compacting: Arc::new(AsyncRwLock::new(false)),
             path: path.as_ref().into(),
             tsm_reader_cache: Weak::new(),
         }
@@ -288,7 +269,7 @@ impl<'a, F: AsRef<ColumnFile>> std::fmt::Display for ColumnFiles<'a, F> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct LevelInfo {
     /// the time_range of column file is overlap in L0,
     /// the time_range of column file is not overlap in L0,
@@ -478,7 +459,7 @@ impl<'a> std::fmt::Display for LevelInfos<'a> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Version {
     pub ts_family_id: TseriesFamilyId,
     pub database: Arc<String>,
@@ -522,7 +503,6 @@ impl Version {
     ) -> Version {
         let mut added_files: Vec<Vec<CompactMeta>> = vec![vec![]; 5];
         let mut deleted_files: Vec<HashSet<ColumnFileId>> = vec![HashSet::new(); 5];
-        let mut partly_deleted_files: HashSet<ColumnFileId> = HashSet::new();
         for ve in version_edits.into_iter() {
             if !ve.add_files.is_empty() {
                 ve.add_files.into_iter().for_each(|f| {
@@ -534,11 +514,6 @@ impl Version {
                     deleted_files[f.level as usize].insert(f.file_id);
                 });
             }
-            if !ve.partly_del_files.is_empty() {
-                ve.partly_del_files.into_iter().for_each(|f| {
-                    partly_deleted_files.insert(f.file_id);
-                });
-            }
         }
 
         let mut new_levels = LevelInfo::init_levels(
@@ -548,30 +523,12 @@ impl Version {
         );
         let weak_tsm_reader_cache = Arc::downgrade(&self.tsm_reader_cache);
         for (level_id, level) in self.levels_info.iter().enumerate() {
-            if level_id == 0 {
-                for file in level.files.iter() {
-                    if deleted_files[level_id].contains(&file.file_id) {
-                        file.mark_deleted();
-                        continue;
-                    }
-                    // Unmark compacting flag for level-0 files.
-                    if partly_deleted_files.contains(&file.file_id) {
-                        // Deep clone this ColumnFile and then unmark compacting flag.
-                        let file_copy = file.deep_copy();
-                        file_copy.unmark_compacting();
-                        new_levels[level_id].push_column_file(Arc::new(file_copy));
-                        continue;
-                    }
-                    new_levels[level_id].push_column_file(file.clone());
+            for file in level.files.iter() {
+                if deleted_files[level_id].contains(&file.file_id) {
+                    file.mark_deleted();
+                    continue;
                 }
-            } else {
-                for file in level.files.iter() {
-                    if deleted_files[level_id].contains(&file.file_id) {
-                        file.mark_deleted();
-                        continue;
-                    }
-                    new_levels[level_id].push_column_file(file.clone());
-                }
+                new_levels[level_id].push_column_file(file.clone());
             }
 
             for file in added_files[level_id].iter() {
@@ -615,6 +572,20 @@ impl Version {
         self.max_level_ts = max_ts;
     }
 
+    pub async fn unmark_compacting_files(&self, files_ids: &HashSet<ColumnFileId>) {
+        if files_ids.is_empty() {
+            return;
+        }
+        for level in self.levels_info.iter() {
+            for file in level.files.iter() {
+                if files_ids.contains(&file.file_id) {
+                    let mut compacting = file.write_lock_compacting().await;
+                    *compacting = false;
+                }
+            }
+        }
+    }
+
     pub fn tf_id(&self) -> TseriesFamilyId {
         self.ts_family_id
     }
@@ -631,12 +602,25 @@ impl Version {
         &self.levels_info
     }
 
+    /// Get owned storage options.
     pub fn storage_opt(&self) -> Arc<StorageOptions> {
         self.storage_opt.clone()
     }
 
+    /// Get borrowed storage options.
     pub fn borrowed_storage_opt(&self) -> &StorageOptions {
         self.storage_opt.as_ref()
+    }
+
+    /// Build a new PathBuf for directory of tsm file.
+    pub fn tsm_dir(&self) -> PathBuf {
+        self.storage_opt.tsm_dir(&self.database, self.ts_family_id)
+    }
+
+    /// Build a new PathBuf for directory of delta file.
+    pub fn delta_dir(&self) -> PathBuf {
+        self.storage_opt
+            .delta_dir(&self.database, self.ts_family_id)
     }
 
     pub fn column_files(
@@ -974,24 +958,12 @@ impl TseriesFamily {
 
         // Mark these caches marked as `flushing` in current thread and collect them.
         filtered_caches.retain(|c| c.read().mark_flushing());
-
-        let max_cache_ts = filtered_caches
-            .iter()
-            .map(|m| m.read().max_ts())
-            .max()
-            .unwrap_or(i64::MIN);
-        let max_level_ts = self.version.max_level_ts;
-        let mut version = self.version.as_ref().clone();
-        version.max_level_ts = max_cache_ts.max(max_level_ts);
-        self.new_version(version, None);
-
         if filtered_caches.is_empty() {
             return None;
         }
 
         Some(FlushReq {
             ts_family_id: self.tf_id,
-            max_ts: max_level_ts,
             mems: filtered_caches,
             force_flush: force,
         })
@@ -1094,13 +1066,12 @@ impl TseriesFamily {
         let mut version_edit =
             VersionEdit::new_add_vnode(self.tf_id, owner.as_ref().clone(), self.seq_no);
         let version = self.version();
-        let max_level_ts = version.max_level_ts;
         for files in version.levels_info.iter() {
             for file in files.files.iter() {
                 let mut meta = CompactMeta::from(file.as_ref());
                 meta.tsf_id = files.tsf_id;
                 meta.high_seq = self.seq_no;
-                version_edit.add_file(meta, max_level_ts);
+                version_edit.add_file(meta);
                 file_metas.insert(file.file_id, file.field_id_filter.clone());
             }
         }
@@ -1215,17 +1186,17 @@ pub fn schedule_vnode_compaction(
                         }
 
                         // Check if level-0 files is more than 0 .
-                        let version = vnode.read().await.super_version().version.clone();
-                        for file in version.levels_info()[0].files.iter() {
-                            if file.is_compacting() {
-                                continue;
-                            }
-                            // If there is any l0-file, send a compact task.
-                            if let Err(e) = compact_task_sender.send(CompactTask::Delta(tsf_id)).await {
-                                warn!("failed to send compact task({}), {}", tsf_id, e);
-                            }
-                            break;
-                        }
+                        // let version = vnode.read().await.super_version().version.clone();
+                        // for file in version.levels_info()[0].files.iter() {
+                        //     if file.is_compacting().await {
+                        //         break;
+                        //     }
+                        //     // If there is any l0-file, send a compact task.
+                        //     if let Err(e) = compact_task_sender.send(CompactTask::Delta(tsf_id)).await {
+                        //         warn!("failed to send compact task({}), {}", tsf_id, e);
+                        //     }
+                        //     break;
+                        // }
                     }
                     _ = cancellation_token.cancelled() => {
                         break;
@@ -1327,23 +1298,20 @@ pub mod test_tseries_family {
         ];
         let tsm_reader_cache = Arc::new(ShardedAsyncCache::create_lru_sharded_cache(16));
         #[rustfmt::skip]
-            let version = Version::new(1, database, opt.storage.clone(), 1, levels, 3100, tsm_reader_cache);
+        let version = Version::new(1, database, opt.storage.clone(), 1, levels, 3100, tsm_reader_cache);
         let mut version_edits = Vec::new();
         let mut ve = VersionEdit::new(1);
-        ve.add_file(
-            CompactMeta {
-                file_id: 4,
-                file_size: 100,
-                tsf_id: 1,
-                level: 1,
-                min_ts: 3051,
-                max_ts: 3150,
-                high_seq: 2,
-                low_seq: 2,
-                is_delta: false,
-            },
-            3100,
-        );
+        ve.add_file(CompactMeta {
+            file_id: 4,
+            file_size: 100,
+            tsf_id: 1,
+            level: 1,
+            min_ts: 3051,
+            max_ts: 3150,
+            high_seq: 2,
+            low_seq: 2,
+            is_delta: false,
+        });
         version_edits.push(ve);
         let mut ve = VersionEdit::new(1);
         ve.del_file(1, 3, false);
@@ -1422,38 +1390,32 @@ pub mod test_tseries_family {
         ];
         let tsm_reader_cache = Arc::new(ShardedAsyncCache::create_lru_sharded_cache(16));
         #[rustfmt::skip]
-            let version = Version::new(1, database, opt.storage.clone(), 1, levels, 3150, tsm_reader_cache);
+        let version = Version::new(1, database, opt.storage.clone(), 1, levels, 3150, tsm_reader_cache);
 
         let mut version_edits = Vec::new();
         let mut ve = VersionEdit::new(1);
-        ve.add_file(
-            CompactMeta {
-                file_id: 5,
-                file_size: 150,
-                tsf_id: 1,
-                level: 2,
-                min_ts: 3001,
-                max_ts: 3150,
-                high_seq: 2,
-                low_seq: 2,
-                is_delta: false,
-            },
-            3150,
-        );
-        ve.add_file(
-            CompactMeta {
-                file_id: 6,
-                file_size: 2000,
-                tsf_id: 1,
-                level: 3,
-                min_ts: 1,
-                max_ts: 2000,
-                high_seq: 2,
-                low_seq: 2,
-                is_delta: false,
-            },
-            3150,
-        );
+        ve.add_file(CompactMeta {
+            file_id: 5,
+            file_size: 150,
+            tsf_id: 1,
+            level: 2,
+            min_ts: 3001,
+            max_ts: 3150,
+            high_seq: 2,
+            low_seq: 2,
+            is_delta: false,
+        });
+        ve.add_file(CompactMeta {
+            file_id: 6,
+            file_size: 2000,
+            tsf_id: 1,
+            level: 3,
+            min_ts: 1,
+            max_ts: 2000,
+            high_seq: 2,
+            low_seq: 2,
+            is_delta: false,
+        });
         version_edits.push(ve);
         let mut ve = VersionEdit::new(1);
         ve.del_file(1, 3, false);
@@ -1667,7 +1629,6 @@ pub mod test_tseries_family {
         let req_mem = vec![mem];
         let flush_seq = FlushReq {
             ts_family_id: 0,
-            max_ts: 0,
             mems: req_mem,
             force_flush: false,
         };
@@ -1759,7 +1720,7 @@ pub mod test_tseries_family {
                 .cloned()
                 .unwrap();
             let version = tsf.write().await.version();
-            version.levels_info[1]
+            let _blocks = version.levels_info[1]
                 .read_column_file(
                     ts_family_id,
                     0,
@@ -1770,7 +1731,7 @@ pub mod test_tseries_family {
                 )
                 .await;
 
-            let file = version.levels_info[1].files[0].clone();
+            let file = version.levels_info[0].files[0].clone();
 
             let dir = opt.storage.tsm_dir(&database, ts_family_id);
             let tombstone = TsmTombstone::open(dir, file.file_id).await.unwrap();
