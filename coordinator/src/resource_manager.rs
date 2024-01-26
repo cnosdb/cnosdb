@@ -3,7 +3,6 @@ use std::time::Duration;
 
 use models::meta_data::ReplicationSet;
 use models::schema::{ResourceInfo, ResourceOperator, ResourceStatus, TableSchema};
-use protos::kv_service::admin_command_request::Command::{self, DropDb, DropTab, UpdateTags};
 use protos::kv_service::{
     raft_write_command, DropColumnRequest, DropTableRequest, RaftWriteCommand, UpdateSetValue,
     UpdateTagsRequest,
