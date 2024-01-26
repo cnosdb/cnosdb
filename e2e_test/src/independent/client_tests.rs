@@ -4,6 +4,8 @@ use std::io::{self, BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 
+use serial_test::serial;
+
 use crate::utils::{get_workspace_dir, kill_all, run_singleton, Client, CnosdbDataTestHelper};
 use crate::{assert_response_is_ok, cluster_def};
 
@@ -116,6 +118,7 @@ fn new_server(test_dir: &str) -> CnosdbDataTestHelper {
 }
 
 #[test]
+#[serial]
 fn simple_test() {
     let test_dir = "/tmp/e2e_test/client_tests/simple_test";
     // just open the server
@@ -278,6 +281,7 @@ fn simple_test() {
 }
 
 #[test]
+#[serial]
 fn client_start_test() {
     let test_dir = "/tmp/e2e_test/client_tests/client_start_test";
     let _server = new_server(test_dir);
