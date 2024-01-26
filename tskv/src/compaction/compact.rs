@@ -3,7 +3,7 @@ use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
 use models::predicate::domain::TimeRange;
-use models::{FieldId, Timestamp};
+use models::FieldId;
 use snafu::ResultExt;
 use trace::{error, info, trace};
 use utils::BloomFilter;
@@ -841,7 +841,6 @@ pub async fn run_compaction_job(
             &mut file_metas,
             &mut version_edit,
             &request,
-            request.version.max_level_ts,
         )
         .await?;
     }
@@ -893,14 +892,7 @@ async fn write_tsm(
                 return Err(Error::Encode { source });
             }
             tsm::WriteTsmError::MaxFileSizeExceed { .. } => {
-                finish_write_tsm(
-                    tsm_writer,
-                    file_metas,
-                    version_edit,
-                    request,
-                    request.version.max_level_ts,
-                )
-                .await?;
+                finish_write_tsm(tsm_writer, file_metas, version_edit, request).await?;
                 return Ok(true);
             }
             tsm::WriteTsmError::Finished { path } => {
@@ -920,7 +912,6 @@ async fn finish_write_tsm(
     file_metas: &mut HashMap<ColumnFileId, Arc<BloomFilter>>,
     version_edit: &mut VersionEdit,
     request: &CompactReq,
-    max_level_ts: Timestamp,
 ) -> Result<()> {
     tsm_writer
         .write_index()
@@ -943,7 +934,7 @@ async fn finish_write_tsm(
         request.compact_task.ts_family_id(),
         request.out_level,
     );
-    version_edit.add_file(cm, max_level_ts);
+    version_edit.add_file(cm);
 
     Ok(())
 }

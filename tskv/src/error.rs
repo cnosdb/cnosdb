@@ -319,6 +319,9 @@ impl From<Status> for Error {
 pub enum ChannelSendError {
     #[snafu(display("Failed to send a WAL task"))]
     WalTask,
+
+    #[snafu(display("Failed to send a CompactDataBlock task"))]
+    CompactDataBlock,
 }
 
 #[derive(Snafu, Debug)]

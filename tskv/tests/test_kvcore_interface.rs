@@ -139,7 +139,7 @@ mod tests {
         });
 
         assert!(file_manager::try_exists(
-            "/tmp/test/kvcore/kvcore_flush/data/cnosdb.db/0/tsm"
+            "/tmp/test/kvcore/kvcore_flush/data/cnosdb.db/0/delta"
         ))
     }
 
@@ -223,9 +223,6 @@ mod tests {
             tokio::time::sleep(Duration::from_secs(3)).await;
         });
 
-        assert!(file_manager::try_exists(format!(
-            "/tmp/test/kvcore/kvcore_flush_delta/data/cnosdb.{database}/0/tsm"
-        )));
         assert!(file_manager::try_exists(format!(
             "/tmp/test/kvcore/kvcore_flush_delta/data/cnosdb.{database}/0/delta"
         )));

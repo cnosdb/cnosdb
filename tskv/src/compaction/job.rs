@@ -50,6 +50,7 @@ impl Default for CompactTaskGroup {
 pub fn run(
     storage_opt: Arc<StorageOptions>,
     runtime: Arc<Runtime>,
+    sender: Sender<CompactTask>,
     mut receiver: Receiver<CompactTask>,
     ctx: Arc<GlobalContext>,
     seq_ctx: Arc<GlobalSequenceContext>,
@@ -104,6 +105,7 @@ pub fn run(
                         let ctx_inner = ctx.clone();
                         let seq_ctx_inner = seq_ctx.clone();
                         let version_set_inner = version_set.clone();
+                        let compact_task_sender = sender.clone();
                         let summary_task_sender_inner = summary_task_sender.clone();
 
                         // Method acquire_owned() will return AcquireError if the semaphore has been closed.
@@ -149,8 +151,15 @@ pub fn run(
                                         in_level.to_string().as_str(),
                                         out_level.to_string().as_str(),
                                         start.elapsed().as_secs_f64(),
-                                    )
+                                    );
                                     // TODO Handle summary result using summary_rx.
+
+                                    // Send a normal compact request if it's a delta compaction.
+                                    if let CompactTask::Delta(vnode_id) = &compact_task {
+                                        let _ = compact_task_sender
+                                            .send(CompactTask::Normal(*vnode_id))
+                                            .await;
+                                    }
                                 }
                                 Ok(None) => {
                                     info!("There is nothing to compact.");
