@@ -38,12 +38,9 @@ where
         self.shard.get(index)?.lock().await.pop()
     }
 
-    pub async fn lock_shard(
-        &self,
-        key: &K,
-    ) -> Option<MutexGuard<'_, Box<dyn Cache<K = K, V = V>>>> {
+    pub async fn lock_shard(&self, key: &K) -> MutexGuard<'_, Box<dyn Cache<K = K, V = V>>> {
         let index = shard(&key, self.shard.len());
-        Some(self.shard.get(index)?.lock().await)
+        self.shard[index].lock().await
     }
 }
 
