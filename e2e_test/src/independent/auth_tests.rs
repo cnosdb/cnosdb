@@ -54,7 +54,7 @@ fn test1() {
         assert_eq!(resp.status(), status_code::UNPROCESSABLE_ENTITY);
         assert_eq!(
             resp.text().unwrap(),
-            "{\"error_code\":\"010016\",\"error_message\":\"Auth error: Access denied for user 'root' (using password) incorrect password attempt.\"}"
+            "{\"error_code\":\"010016\",\"error_message\":\"Auth error: Access denied for user 'root' (using xxx) username or password invalid\"}" 
         );
     }
     {
@@ -66,8 +66,8 @@ fn test1() {
         assert_eq!(resp.status(), status_code::UNPROCESSABLE_ENTITY);
         assert_eq!(
             resp.text().unwrap(),
-            "{\"error_code\":\"010016\",\"error_message\":\"Auth error: Access denied for user 'root' (using password) incorrect password attempt.\"}"
-        );
+            "{\"error_code\":\"010016\",\"error_message\":\"Auth error: Access denied for user 'root' (using xxx) username or password invalid\"}"
+         );
     }
     {
         let client = Client::with_auth("root".to_string(), Some("abc".to_owned()));
@@ -103,7 +103,7 @@ fn test1() {
         assert_eq!(resp.status(), status_code::UNPROCESSABLE_ENTITY);
         assert_eq!(
             resp.text().unwrap(),
-            "{\"error_code\":\"010016\",\"error_message\":\"Auth error: Password not set\"}"
+            "{\"error_code\":\"010016\",\"error_message\":\"Auth error: Access denied for user 'u1' (using xxx) username or password invalid\"}"
         );
     }
     {
@@ -125,5 +125,36 @@ fn test1() {
             .unwrap();
         assert_eq!(resp.status(), status_code::OK);
         assert_eq!(resp.text().unwrap(), "Int64(1)\n1\n");
+    }
+    {
+        let client = Client::with_auth("root".to_string(), Some("abc".to_owned()));
+
+        let resp = client
+            .post("http://127.0.0.1:8902/api/v1/sql?db=public", "CREATE USER IF NOT EXISTS test WITH PASSWORD='123456', MUST_CHANGE_PASSWORD=false, COMMENT = 'test';")
+            .unwrap();
+        assert_response_is_ok!(resp);
+
+        let resp = client
+            .post(
+                "http://127.0.0.1:8902/api/v1/sql?db=public",
+                "alter user test set granted_admin = true;",
+            )
+            .unwrap();
+        assert_response_is_ok!(resp);
+    }
+    {
+        let client = Client::with_auth("test".to_string(), Some("123456".to_owned()));
+        let resp = client
+            .post(
+                "http://127.0.0.1:8902/api/v1/sql?db=public",
+                "show databases;",
+            )
+            .unwrap();
+
+        assert_eq!(resp.status(), status_code::OK);
+        assert_eq!(
+            resp.text().unwrap(),
+            "database_name\npublic\nusage_schema\n"
+        )
     }
 }

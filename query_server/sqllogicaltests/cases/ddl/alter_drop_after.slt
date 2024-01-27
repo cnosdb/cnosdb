@@ -1,0 +1,32 @@
+#statement ok 
+#drop tenant if exists tenant001;
+
+statement ok
+create tenant if not exists tenant001 with drop_after = '7m';
+
+query T
+select tenant_name 
+from cluster_schema.tenants 
+where 
+tenant_options like '%after":{"time_num%' 
+and tenant_name = 'tenant001';
+----
+tenant001
+
+statement ok
+alter tenant tenant001 unset drop_after;
+
+
+query T
+select tenant_name 
+from cluster_schema.tenants 
+where 
+tenant_options like '%after":null%' 
+and tenant_name = 'tenant001';
+----
+tenant001 
+
+
+statement ok
+drop tenant if exists tenant001;
+
