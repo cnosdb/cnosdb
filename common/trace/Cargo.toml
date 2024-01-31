@@ -26,6 +26,7 @@ async-backtrace = { workspace = true, optional = true }
 rand = { workspace = true }
 chrono = { workspace = true }
 
+opentelemetry = { workspace = true }
 opentelemetry-jaeger = { workspace = true, features = [
     "hyper_collector_client",
     "rt-tokio",

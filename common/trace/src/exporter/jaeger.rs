@@ -3,12 +3,12 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use config::JaegerCollectorConfig;
-use opentelemetry_api::trace::{Event, TraceError};
-use opentelemetry_api::{trace, InstrumentationLibrary, Key, KeyValue, Value};
+use opentelemetry::trace::{self, Event, TraceError};
+use opentelemetry::{Key, KeyValue, Value};
 use opentelemetry_jaeger::config::collector::CollectorPipeline;
 use opentelemetry_sdk::export::trace::SpanData;
-use opentelemetry_sdk::trace::{BatchSpanProcessor, EvictedHashMap, EvictedQueue, SpanProcessor};
-use opentelemetry_sdk::{runtime, Resource};
+use opentelemetry_sdk::trace::{BatchSpanProcessor, EvictedQueue, SpanProcessor};
+use opentelemetry_sdk::{runtime, InstrumentationLibrary, Resource};
 
 use crate::{MetaValue, Span, SpanContext, SpanEvent, SpanId, SpanStatus, TraceExporter, TraceId};
 
@@ -89,16 +89,20 @@ impl From<Span> for SpanData {
         let start_time = start.unwrap_or_default().into();
         let end_time = end.unwrap_or_default().into();
 
-        let mut attributes = EvictedHashMap::new(u32::MAX, metadata.len());
+        let mut attributes = Vec::new();
         for (k, v) in metadata {
-            attributes.insert(KeyValue::new(key(k), v));
+            attributes.push(KeyValue::new(key(k), v));
         }
 
         let mut jaeger_events = EvictedQueue::new(events.len() as u32);
         jaeger_events.extend(events.into_iter().map(Event::from));
 
-        let instrumentation_lib =
-            InstrumentationLibrary::new("trace", Some(env!("CARGO_PKG_VERSION")), None);
+        let instrumentation_lib = InstrumentationLibrary::new(
+            "trace",
+            Some(env!("CARGO_PKG_VERSION")),
+            Option::<&'static str>::None,
+            None,
+        );
 
         SpanData {
             span_context: ctx.into(),
@@ -108,6 +112,7 @@ impl From<Span> for SpanData {
             start_time,
             end_time,
             attributes,
+            dropped_attributes_count: 0,
             events: jaeger_events,
             links: EvictedQueue::new(0),
             status: status.into(),
@@ -190,13 +195,13 @@ mod tests {
     use std::borrow::Cow;
     use std::time::SystemTime;
 
-    use opentelemetry_api::trace::{
+    use opentelemetry::trace::{
         SpanContext, SpanId, SpanKind, Status, TraceFlags, TraceId, TraceState,
     };
-    use opentelemetry_api::InstrumentationLibrary;
+    use opentelemetry::{InstrumentationLibrary, KeyValue};
     use opentelemetry_jaeger::config::collector::CollectorPipeline;
     use opentelemetry_sdk::export::trace::SpanData;
-    use opentelemetry_sdk::trace::{self, EvictedHashMap, EvictedQueue, SpanProcessor};
+    use opentelemetry_sdk::trace::{BatchSpanProcessor, EvictedQueue, SpanProcessor};
     use opentelemetry_sdk::{runtime, Resource};
 
     #[ignore = "environment"]
@@ -209,7 +214,7 @@ mod tests {
             .build_collector_exporter::<runtime::Tokio>()
             .unwrap();
 
-        let mut batch = trace::BatchSpanProcessor::builder(exporter, runtime::Tokio)
+        let mut batch = BatchSpanProcessor::builder(exporter, runtime::Tokio)
             .with_max_queue_size(4096)
             .build();
 
@@ -226,12 +231,18 @@ mod tests {
             name: "todo!()".into(),
             start_time: SystemTime::now(),
             end_time: SystemTime::now(),
-            attributes: EvictedHashMap::new(10, 10),
+            attributes: vec![KeyValue::new("10", 10)],
+            dropped_attributes_count: 0,
             events: EvictedQueue::new(10),
             links: EvictedQueue::new(5),
             status: Status::Ok,
             resource: Cow::Owned(Resource::default()),
-            instrumentation_lib: InstrumentationLibrary::new("xx", None, None),
+            instrumentation_lib: InstrumentationLibrary::new(
+                "xx",
+                Option::<&'static str>::None,
+                Option::<&'static str>::None,
+                None,
+            ),
         };
 
         batch.on_end(span);

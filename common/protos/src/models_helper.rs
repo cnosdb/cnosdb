@@ -1,4 +1,3 @@
-use protobuf::Message;
 #[cfg(feature = "test")]
 pub use test::*;
 
@@ -8,14 +7,14 @@ pub fn print_points(points: crate::models::Points) {
 
 pub fn parse_proto_bytes<T>(bytes: &[u8]) -> Result<T, protobuf::Error>
 where
-    T: Message,
+    T: protobuf::Message,
 {
     T::parse_from_bytes(bytes)
 }
 
 pub fn to_proto_bytes<T>(msg: T) -> Result<Vec<u8>, protobuf::Error>
 where
-    T: Message,
+    T: protobuf::Message,
 {
     msg.write_to_bytes()
 }
@@ -220,7 +219,7 @@ mod test {
         let mut points = vec![];
         for i in 0..num {
             let timestamp = if i <= num / 2 {
-                Local::now().timestamp_nanos()
+                Local::now().timestamp_nanos_opt().unwrap()
             } else {
                 1
             };
@@ -304,7 +303,7 @@ mod test {
         let mut points = vec![];
         for i in 0..num {
             let timestamp = if i % 2 == 0 {
-                Local::now().timestamp_nanos()
+                Local::now().timestamp_nanos_opt().unwrap()
             } else {
                 i64::MIN
             };
@@ -408,7 +407,7 @@ mod test {
 
         let mut points = vec![];
         for _ in 0..num {
-            let timestamp = Local::now().timestamp_nanos();
+            let timestamp = Local::now().timestamp_nanos_opt().unwrap();
             let mut tags = vec![];
             let tav = rand::random::<u8>().to_string();
             for _ in 0..19999 {
@@ -487,7 +486,7 @@ mod test {
             ];
         let field_keys = ["cpu", "mem"];
 
-        let now = Local::now().timestamp_nanos();
+        let now = Local::now().timestamp_nanos_opt().unwrap();
         let mut points = vec![];
         for i in 0..num as i64 {
             let timestamp = now + i;

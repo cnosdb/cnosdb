@@ -9,6 +9,7 @@ use models::auth::user::{UserInfo, ROOT, ROOT_PWD};
 use models::consistency_level::ConsistencyLevel::Any;
 use models::oid::Identifier;
 use models::schema::{Precision, DEFAULT_CATALOG, DEFAULT_DATABASE};
+use models::utils as model_utils;
 use protocol_parser::line_protocol::parser::Parser;
 use protocol_parser::lines_convert::parse_lines_to_points;
 use protos::kv_service::WritePointsRequest;
@@ -335,7 +336,7 @@ fn handle_vector_metric(mut metric: Metric) -> server::Result<String> {
     let timestamp = metric
         .timestamp
         .map(convert_timestamp)
-        .unwrap_or(Utc::now().timestamp_nanos());
+        .unwrap_or(model_utils::now_timestamp_nanos());
     line.push_str(&table);
 
     metric.tags_v1.remove(TENANT_FIELD);
@@ -831,13 +832,13 @@ fn vector_value_timestamp(value: Value) -> String {
             if let Ok(v) = s.parse::<i64>() {
                 v.to_string()
             } else if let Ok(dt) = dateparser::parse(s.as_str()) {
-                return dt.timestamp_nanos().to_string();
+                return dt.timestamp_nanos_opt().unwrap().to_string();
             } else {
-                return Utc::now().timestamp_nanos().to_string();
+                return model_utils::now_timestamp_nanos().to_string();
             }
         }
         Some(Kind::Integer(v)) => v.to_string(),
-        _ => Utc::now().timestamp_nanos().to_string(),
+        _ => model_utils::now_timestamp_nanos().to_string(),
     }
 }
 

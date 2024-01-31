@@ -306,10 +306,13 @@ mod test {
         "#;
         let err = toml::from_str::<Foo>(config_str).unwrap_err();
         let err_msg = format!("{}", err);
-        assert_eq!(
-            &err_msg,
-            "Unknown unit '['a']' in bytes number 'a1s' for key `number` at line 1 column 1"
-        );
+        let exp_err_msg = r#"TOML parse error at line 2, column 22
+  |
+2 |             number = "a1s"
+  |                      ^^^^^
+Unknown unit '['a']' in bytes number 'a1s'
+"#;
+        assert_eq!(&err_msg, exp_err_msg);
 
         let config_str = r#"
             number = "10_000_000_000_000Gib"
@@ -317,9 +320,12 @@ mod test {
         "#;
         let err = toml::from_str::<Foo>(config_str).unwrap_err();
         let err_msg = format!("{}", err);
-        assert_eq!(
-            &err_msg,
-            "Invalid bytes number (u64 overflow) '10_000_000_000_000Gib' for key `number` at line 1 column 1"
-        );
+        let exp_err_msg = r#"TOML parse error at line 2, column 22
+  |
+2 |             number = "10_000_000_000_000Gib"
+  |                      ^^^^^^^^^^^^^^^^^^^^^^^
+Invalid bytes number (u64 overflow) '10_000_000_000_000Gib'
+"#;
+        assert_eq!(&err_msg, exp_err_msg);
     }
 }

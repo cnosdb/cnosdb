@@ -3,6 +3,7 @@ use std::fmt;
 
 use arrow_flight::sql::{Any, ProstMessageExt};
 use arrow_flight::{FlightDescriptor, FlightEndpoint, IpcMessage, Location, SchemaAsIpc, Ticket};
+use base64::prelude::{Engine, BASE64_STANDARD};
 use datafusion::arrow::array::ArrayRef;
 use datafusion::arrow::buffer::Buffer;
 use datafusion::arrow::datatypes::{Schema, SchemaRef};
@@ -69,7 +70,7 @@ where
         None => format!("{}:", username),
     };
 
-    let token = format!("Basic {}", base64::encode(auth));
+    let token = BASE64_STANDARD.encode(auth);
 
     let token = AsciiMetadataValue::try_from(token).map_err(|e| e.to_string())?;
 

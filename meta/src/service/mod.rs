@@ -21,14 +21,14 @@ pub async fn init_meta(app: &Data<MetaApp>) {
         .must_change_password(true)
         .comment("system admin")
         .build();
-    let user_opt = if user_opt_res.is_err() {
+    let user_opt = if let Ok(user_opt) = user_opt_res {
+        user_opt
+    } else {
         error!(
             "failed init admin user {}, exit init meta",
             app.meta_init.admin_user
         );
         return;
-    } else {
-        user_opt_res.unwrap()
     };
     let oid = UuidGenerator::default().next_id();
     let user_desc = UserDesc::new(oid, app.meta_init.admin_user.clone(), user_opt, true);

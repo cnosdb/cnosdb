@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-use std::mem::MaybeUninit;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
@@ -529,17 +528,14 @@ impl Version {
         time_ranges: &TimeRanges,
         field_id: FieldId,
     ) -> [Option<Vec<Arc<ColumnFile>>>; 5] {
-        let mut res = MaybeUninit::uninit_array();
-        debug_assert!(self.levels_info.len().eq(&5));
+        let mut res: [Option<Vec<Arc<ColumnFile>>>; 5] = [None, None, None, None, None];
         for (res, level_info) in res.iter_mut().zip(self.levels_info.iter()) {
             let files = level_info.overlaps_column_files(time_ranges, field_id);
             if !files.is_empty() {
-                res.write(Some(files));
-            } else {
-                res.write(None);
+                *res = Some(files);
             }
         }
-        unsafe { MaybeUninit::array_assume_init(res) }
+        res
     }
 }
 

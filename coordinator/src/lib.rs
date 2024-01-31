@@ -1,4 +1,3 @@
-#![feature(stmt_expr_attributes)]
 use std::fmt::Debug;
 use std::pin::Pin;
 use std::sync::Arc;

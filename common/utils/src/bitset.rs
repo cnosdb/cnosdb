@@ -277,7 +277,11 @@ mod tests {
     }
 
     fn iter_set_bools(bools: &[bool]) -> impl Iterator<Item = usize> + '_ {
-        bools.iter().enumerate().filter_map(|(x, y)| y.then(|| x))
+        bools
+            .iter()
+            .enumerate()
+            .filter(|&(_x, y)| *y)
+            .map(|(x, _y)| x)
     }
 
     #[test]

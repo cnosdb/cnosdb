@@ -14,7 +14,7 @@ use meta::client::MetaHttpClient;
 use meta::store::config::Opt as MetaStoreConfig;
 use reqwest::blocking::{ClientBuilder, Request, RequestBuilder, Response};
 use reqwest::{Certificate, IntoUrl, Method, StatusCode};
-use sysinfo::{ProcessExt, ProcessRefreshKind, RefreshKind, System, SystemExt};
+use sysinfo::{ProcessRefreshKind, RefreshKind, System};
 use tokio::runtime::Runtime;
 
 use crate::cluster_def::{

@@ -11,12 +11,11 @@ use models::snappy::SnappyCodec;
 use protocol_parser::lines_convert::parse_lines_to_points;
 use protocol_parser::Line;
 use protos::kv_service::WritePointsRequest;
-use protos::models_helper::{parse_proto_bytes, to_proto_bytes};
-use protos::prompb::remote::{
-    Query as PromQuery, QueryResult, ReadRequest, ReadResponse, WriteRequest,
+use protos::models_helper::{parse_prost_bytes, to_prost_bytes};
+use protos::prompb::prometheus::label_matcher::Type;
+use protos::prompb::prometheus::{
+    Query as PromQuery, QueryResult, ReadRequest, ReadResponse, TimeSeries, WriteRequest,
 };
-use protos::prompb::types::label_matcher::Type;
-use protos::prompb::types::TimeSeries;
 use protos::FieldValue;
 use regex::Regex;
 use spi::server::dbms::DBMSRef;
@@ -90,7 +89,7 @@ impl PromRemoteSqlServer {
 
         self.codec.decompress(compressed, &mut decompressed, None)?;
 
-        parse_proto_bytes::<ReadRequest>(&decompressed).map_err(|source| {
+        parse_prost_bytes::<ReadRequest>(&decompressed).map_err(|source| {
             QueryError::InvalidRemoteReadReq {
                 source: Box::new(source),
             }
@@ -101,7 +100,7 @@ impl PromRemoteSqlServer {
         let mut decompressed = Vec::new();
         let compressed = req.to_byte_slice();
         self.codec.decompress(compressed, &mut decompressed, None)?;
-        parse_proto_bytes::<WriteRequest>(&decompressed).map_err(|source| {
+        parse_prost_bytes::<WriteRequest>(&decompressed).map_err(|source| {
             QueryError::InvalidRemoteWriteReq {
                 source: Box::new(source),
             }
@@ -167,16 +166,10 @@ impl PromRemoteSqlServer {
                 );
             }
 
-            results.push(QueryResult {
-                timeseries,
-                ..Default::default()
-            });
+            results.push(QueryResult { timeseries });
         }
 
-        Ok(ReadResponse {
-            results,
-            special_fields: Default::default(),
-        })
+        Ok(ReadResponse { results })
     }
 
     async fn process_single_sql(
@@ -211,10 +204,7 @@ impl PromRemoteSqlServer {
 
     async fn serialize_read_response(&self, read_response: ReadResponse) -> Result<Vec<u8>> {
         let mut compressed = Vec::new();
-        let input_buf =
-            to_proto_bytes(read_response).map_err(|source| QueryError::CommonError {
-                msg: source.to_string(),
-            })?;
+        let input_buf = to_prost_bytes(read_response);
         self.codec.compress(&input_buf, &mut compressed)?;
 
         Ok(compressed)
@@ -231,23 +221,15 @@ fn build_sql_with_table(
         end_timestamp_ms,
         matchers,
         hints: _,
-        special_fields: _,
     } = query;
 
     let mut tables = Vec::new();
     let mut filters = Vec::with_capacity(matchers.len());
 
     for m in matchers {
-        let type_ = m
-            .type_
-            .enum_value()
-            .map_err(|e| QueryError::InvalidRemoteReadReq {
-                source: format!("Unknown label matcher type: {e}").into(),
-            })?;
-
         if METRIC_NAME_LABEL == m.name {
-            match type_ {
-                Type::EQ => {
+            match m.r#type() {
+                Type::Eq => {
                     // Get schema of the specified table
                     let table_name = &m.value;
                     let table = meta
@@ -257,7 +239,7 @@ fn build_sql_with_table(
                         })?;
                     tables = vec![table];
                 }
-                Type::RE => {
+                Type::Re => {
                     // Filter table names through regular expressions,
                     // Get the schema of the remaining tables.
                     let pattern =
@@ -290,17 +272,17 @@ fn build_sql_with_table(
             continue;
         }
 
-        match type_ {
-            Type::EQ => {
+        match m.r#type() {
+            Type::Eq => {
                 filters.push(format!("{} = '{}'", m.name, m.value));
             }
-            Type::NEQ => {
+            Type::Neq => {
                 filters.push(format!("{} != '{}'", m.name, m.value));
             }
-            Type::RE => {
+            Type::Re => {
                 filters.push(format!("{} ~ '{}'", m.name, m.value));
             }
-            Type::NRE => {
+            Type::Nre => {
                 filters.push(format!("{} !~ '{}'", m.name, m.value));
             }
         }
@@ -364,7 +346,7 @@ mod test {
     use datafusion::arrow::datatypes::{DataType, Field, Schema, TimeUnit};
     use datafusion::arrow::record_batch::RecordBatch;
     use models::auth::user::{User, UserDesc, UserOptions};
-    use protos::prompb::types::{Label, Sample, TimeSeries};
+    use protos::prompb::prometheus::{Label, Sample, TimeSeries};
     use spi::query::execution::Output;
     use spi::query::recordbatch::RecordBatchStreamWrapper;
     use spi::service::protocol::{ContextBuilder, Query, QueryHandle, QueryId};
@@ -424,12 +406,10 @@ mod test {
             labels: vec![Label {
                 name: "tag".to_string(),
                 value: "tag1".to_string(),
-                ..Default::default()
             }],
             samples: vec![Sample {
                 value: 1.1_f64,
                 timestamp: 1673069176267_i64,
-                ..Default::default()
             }],
             ..Default::default()
         };

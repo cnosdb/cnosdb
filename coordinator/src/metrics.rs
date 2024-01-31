@@ -5,6 +5,7 @@ use metrics::label::Labels;
 use metrics::metric_type::MetricType;
 use metrics::metric_value::MetricValue;
 use metrics::reporter::Reporter;
+use models::utils as model_utils;
 use protocol_parser::lines_convert::parse_lines_to_points;
 use protocol_parser::Line;
 use protos::FieldValue;
@@ -37,7 +38,7 @@ impl LPLine {
             self.measure.as_ref(),
             tags,
             vec![("value", self.value.clone())],
-            chrono::Utc::now().timestamp_nanos(),
+            model_utils::now_timestamp_nanos(),
         )
     }
 }

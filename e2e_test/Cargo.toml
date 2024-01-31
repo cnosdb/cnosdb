@@ -14,13 +14,15 @@ protos = { path = "../common/protos", features = ["test"] }
 
 arrow-flight = { workspace = true, features = ["flight-sql-experimental"] }
 arrow-schema = { workspace = true, optional = false }
+tonic = { workspace = true, features = ["tls", "transport"] }
+
 chrono = { workspace = true }
 datafusion = { workspace = true }
 diff = { workspace = true }
 flatbuffers = { workspace = true }
 fly-accept-encoding = { workspace = true }
 futures = { workspace = true, default-features = false, features = ["alloc"] }
-protobuf = { workspace = true }
+prost = { workspace = true }
 rand = { workspace = true }
 regex = { workspace = true }
 reqwest = { workspace = true, features = ["rustls-tls", "json", "blocking"], default-features = false }
@@ -30,7 +32,6 @@ serial_test = { workspace = true }
 sysinfo = { workspace = true, optional = false }
 tokio = { workspace = true, features = ["full"] }
 tokio-stream = { workspace = true }
-tonic = { workspace = true, features = ["tls", "transport"] }
 walkdir = { workspace = true }
 
 [features]

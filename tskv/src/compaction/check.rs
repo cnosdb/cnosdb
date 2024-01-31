@@ -482,14 +482,15 @@ mod test {
     fn parse_nanos(datetime: &str) -> Timestamp {
         NaiveDateTime::parse_from_str(datetime, "%Y-%m-%d %H:%M:%S")
             .unwrap()
-            .timestamp_nanos()
+            .timestamp_nanos_opt()
+            .unwrap()
     }
 
     #[test]
     fn test_calc_blcok_time_range() {
         fn get_args(datetime: &str) -> (Timestamp, i64) {
             let datetime = NaiveDateTime::parse_from_str(datetime, "%Y-%m-%d %H:%M:%S").unwrap();
-            let timestamp = datetime.timestamp_nanos();
+            let timestamp = datetime.timestamp_nanos_opt().unwrap();
             let duration = Duration::minutes(30);
             let duration_nanos = duration.num_nanoseconds().unwrap();
             (timestamp, duration_nanos)

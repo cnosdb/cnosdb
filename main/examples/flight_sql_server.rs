@@ -17,6 +17,7 @@ use arrow_flight::sql::{
 use arrow_flight::{
     Action, FlightData, FlightDescriptor, FlightInfo, HandshakeRequest, HandshakeResponse, Ticket,
 };
+use base64::prelude::{Engine, BASE64_STANDARD};
 use futures::Stream;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status, Streaming};
@@ -51,7 +52,8 @@ impl FlightSqlService for FlightSqlServiceImpl {
             )))?;
         }
         let base64 = &authorization[basic.len()..];
-        let bytes = base64::decode(base64)
+        let bytes = BASE64_STANDARD
+            .decode(base64)
             .map_err(|_| Status::invalid_argument("authorization not parsable"))?;
         let str = String::from_utf8(bytes)
             .map_err(|_| Status::invalid_argument("authorization not parsable"))?;

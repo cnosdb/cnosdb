@@ -100,8 +100,7 @@ impl DataBlock for HintedOffBlock {
         self.tenant_len = byte_utils::decode_be_u32(header_buf[13..17].into());
         self.data_len = byte_utils::decode_be_u32(header_buf[17..21].into());
 
-        let mut buf = Vec::new();
-        buf.resize((self.data_len + self.tenant_len) as usize, 0);
+        let mut buf = vec![0; (self.data_len + self.tenant_len) as usize];
         read_size += file.read_exact(&mut buf).await?;
 
         self.tenant =

@@ -29,6 +29,6 @@ lazy_static = { workspace = true }
 duration-str = { workspace = true }
 futures = { workspace = true }
 arrow-flight = { workspace = true }
-tonic = { workspace = true }
+tonic = { workspace = true, features = ["tls", "transport"] }
 chrono = { workspace = true }
 rand = { workspace = true }

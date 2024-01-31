@@ -321,10 +321,7 @@ impl DatabaseSet {
     }
 
     pub fn push_table(&mut self, db: impl Into<String>, tbl: impl Into<String>) {
-        self.dbs
-            .entry(db.into())
-            .or_insert_with(TableSet::default)
-            .push_table(tbl);
+        self.dbs.entry(db.into()).or_default().push_table(tbl);
     }
 
     pub fn dbs(&self) -> Vec<&String> {

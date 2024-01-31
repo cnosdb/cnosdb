@@ -11,7 +11,7 @@ use meta::{client, store::command};
 // use meta::client::*;
 use models::{meta_data::NodeInfo, schema::Tenant};
 use openraft::Config;
-use sysinfo::{ProcessExt, System, SystemExt};
+use sysinfo::System;
 
 pub async fn new_async() -> Arc<Store> {
     let db_path = format!("{}/{}-{}.binlog", "./meta/journal", "test", "1");

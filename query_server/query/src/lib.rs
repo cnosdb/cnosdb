@@ -1,5 +1,3 @@
-#![feature(type_name_of_val)]
-#![feature(stmt_expr_attributes)]
 extern crate core;
 
 pub mod auth;

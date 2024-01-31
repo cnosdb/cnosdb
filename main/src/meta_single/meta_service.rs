@@ -161,7 +161,7 @@ pub async fn run_service(cpu: usize, opt: &Config) -> std::io::Result<()> {
         panic!("starting in singleton mode,only one meta is required");
     }
 
-    let meta_service = opt.cluster.meta_service_addr.get(0).unwrap().clone();
+    let meta_service = opt.cluster.meta_service_addr.first().unwrap().clone();
     let app = Data::new(MetaApp {
         http_addr: meta_service.clone(),
         store: state_machine,
@@ -197,11 +197,11 @@ pub async fn init_meta(app: &Data<MetaApp>, opt: &Config) {
         .must_change_password(true)
         .comment("system admin")
         .build();
-    let user_opt = if user_opt_res.is_err() {
+    let user_opt = if let Ok(user_opt) = user_opt_res {
+        user_opt
+    } else {
         error!("failed init admin user {}, exit init meta", ROOT);
         return;
-    } else {
-        user_opt_res.unwrap()
     };
     let oid = UuidGenerator::default().next_id();
     let user_desc = UserDesc::new(oid, ROOT.to_string(), user_opt, true);

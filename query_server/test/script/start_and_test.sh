@@ -5,34 +5,31 @@ set -e
 export HTTP_HOST=${HTTP_HOST:-"127.0.0.1:8902"}
 export URL="http://${HTTP_HOST}/api/v1/ping"
 
+ARG_MODE='query_tskv'
+ARG_CLEAN=0
+
 function usage() {
-  echo "Start CnosDB Server and run tests, you may need to start CnosDB Meta Server first."
+  echo 'Start CnosDB Server and run tests'
+  echo 'You need to start CnosDB Meta Server first, otherwise enable --singleton option.'
   echo
-  echo "USAGE:"
+  echo 'USAGE:'
   echo "    ${0} [OPTIONS]"
   echo
-  echo "OPTIONS:"
-  echo "    --singleton          Run singleton CnosDB Server (with Meta Service)"
+  echo 'OPTIONS:'
+  echo '    --singleton          Run singleton CnosDB Server (with Meta Service)'
+  echo '    --clean              Run cargo clean before building CnosDB Server'
   echo
 }
-
-CFG_PATH="./config/config_8902.toml"
-EXE_PATH="./target/test-ci/cnosdb"
-
-TEST_DATA_DIR="/tmp/cnosdb"
-DB_DIR=${TEST_DATA_DIR}"/1001"
-LOG_DIR=${TEST_DATA_DIR}"/logs"
-LOG_PATH=${LOG_DIR}"/start_and_test.data_node.8902.log"
-
-EXE_RUN_CMD=${EXE_PATH}" run"
-CARGO_RUN_CMD="cargo run --profile test-ci -- run"
 
 while [[ $# -gt 0 ]]; do
   key=${1}
   case ${key} in
   --singleton)
-    EXE_RUN_CMD=${EXE_RUN_CMD}" --deployment-mode singleton"
-    CARGO_RUN_CMD=${CARGO_RUN_CMD}" --deployment-mode singleton"
+    ARG_MODE='singleton'
+    shift 1
+    ;;
+  --clean)
+    ARG_CLEAN=1
     shift 1
     ;;
   -h | --help)
@@ -46,46 +43,66 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-function start_cnosdb() {
-  if [ -e ${EXE_PATH} ]; then
-    # nohup ./target/test-ci/cnosdb run --config ./config/config_8902.toml > /tmp/cnosdb/logs/start_and_test.data_node.8902.log 2>&1&
-    nohup ${EXE_RUN_CMD} --config ${CFG_PATH} >${LOG_PATH} 2>&1 &
-  else
-    # nohup cargo run --profile test-ci -- run --config ./config/config_8902.toml > /tmp/cnosdb/logs/start_and_test.data_node.8902.log 2>&1&
-    nohup ${CARGO_RUN_CMD} --config ${CFG_PATH} >${LOG_PATH} 2>&1 &
-  fi
-  echo $!
-}
+# This script is at $PROJ_DIR/query_server/test/script/start_and_test.sh
+PROJ_DIR=$(
+  cd $(dirname $0)
+  cd ../../..
+  pwd
+)
+CFG_PATH="${PROJ_DIR}/config/config_8902.toml"
 
-function wait_start() {
-  while [ "$(curl -s ${URL})" == "" ] && kill -0 ${PID}; do
-    sleep 2
-  done
-}
-# cargo run --package test -- --query-url http://127.0.0.1:8902 --storage-url http://127.0.0.1:7777
-function test() {
-  echo "Testing query/test" &&
-    cargo run --package test &&
-    echo "Testing sqllogicaltests" &&
-    cargo run --package sqllogicaltests &&
-    echo "Testing e2e_test" &&
-    cargo test --package e2e_test --lib -- reliant:: --nocapture
-}
+TEST_DATA_DIR="/tmp/cnosdb"
+DB_DIR=${TEST_DATA_DIR}"/1001"
+LOG_DIR=${TEST_DATA_DIR}"/logs"
+LOG_PATH=${LOG_DIR}"/start_and_test.data_node.8902.log"
+CARGO_ARGS='--profile test-ci --package main --bin cnosdb'
 
-echo "Starting cnosdb"
+# -------------------- Start and Test --------------------
+
+echo "=== CnosDB Start and Test ==="
+echo "ARG_MODE  = ${ARG_MODE}"
+echo "ARG_CLEAN = ${ARG_CLEAN}"
+echo "----------------------------------------"
 
 rm -rf ${DB_DIR}
 mkdir -p ${LOG_DIR}
 
-PID=$(start_cnosdb)
+echo "= Building CnosDB Server at ${PROJ_DIR}"
+if [ ${ARG_CLEAN} -eq 1 ]; then
+  cargo clean
+fi
+cargo build ${CARGO_ARGS}
 
-echo "Wait for CnosDB Server(pid=${PID}) startup to complete"
-trap "echo 'Received Ctrl+C, stopping.'" SIGINT
+echo "= Starting CnosDB Server with config: '${CFG_PATH}'."
+nohup cargo run ${CARGO_ARGS} -- run -M ${ARG_MODE} --config ${CFG_PATH} >${LOG_PATH} 2>&1 &
+PID=$!
 
-(wait_start && test) || EXIT_CODE=$?
+trap "echo '= Received Ctrl+C, stopping.'" SIGINT
 
-echo "Test complete, killing CnosDB Server(pid=${PID})"
+echo "= Wait for CnosDB Server(pid=${PID}) startup to complete."
+while [ -z "$(curl -s ${URL})" ]; do
+  if ! kill -0 ${PID} >/dev/null 2>&1; then
+    echo "= CnosDB Server(pid=${PID}) startup failed, printing logs."
+    cat $LOG_PATH
+    exit 1
+  fi
+  sleep 2
+done
 
+# cargo run --package test -- --query-url http://127.0.0.1:8902 --storage-url http://127.0.0.1:7777
+function test() {
+  echo "= Testing query/test" &&
+    cargo run --package test &&
+    echo "= Testing sqllogicaltests" &&
+    cargo run --package sqllogicaltests &&
+    echo "= Testing e2e_test" &&
+    cargo test --package e2e_test --lib -- reliant:: --nocapture
+}
+
+test || EXIT_CODE=$?
+
+echo "= Test completed, killing CnosDB Server(pid=${PID}) and cleaning up '${TEST_DATA_DIR}'."
 kill ${PID}
 rm -rf ${TEST_DATA_DIR}
+
 exit ${EXIT_CODE:-0}

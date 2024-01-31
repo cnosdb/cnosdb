@@ -792,10 +792,7 @@ impl TenantMeta {
             let mut data = self.data.write();
             if entry.tye == command::ENTRY_LOG_TYPE_SET {
                 if let Ok(info) = serde_json::from_str::<DatabaseSchema>(&entry.val) {
-                    let db = data
-                        .dbs
-                        .entry(db_name.to_string())
-                        .or_insert_with(DatabaseInfo::default);
+                    let db = data.dbs.entry(db_name.to_string()).or_default();
 
                     db.schema = info;
                 }

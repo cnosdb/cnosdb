@@ -289,8 +289,8 @@ mod test {
 
     type TupleList = Vec<(ScalarValue, ScalarValue)>;
 
+    #[rustfmt::skip]
     fn records_with_result() -> (TupleList, TupleList) {
-        #[rustfmt::skip]
         (vec![
             (ScalarValue::TimestampNanosecond(Some(0), None), ScalarValue::Utf8(Some("111".into()))),
             (ScalarValue::TimestampNanosecond(Some(3), None), ScalarValue::Utf8(Some("222".into()))),

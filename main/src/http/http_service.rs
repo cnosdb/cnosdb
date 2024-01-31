@@ -8,7 +8,6 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Instant;
 
-use chrono::Local;
 use config::TLSConfig;
 use coordinator::service::CoordinatorRef;
 use fly_accept_encoding::Encoding;
@@ -28,6 +27,7 @@ use models::consistency_level::ConsistencyLevel;
 use models::error_code::UnknownCodeWithMessage;
 use models::oid::{Identifier, Oid};
 use models::schema::{Precision, DEFAULT_CATALOG, DEFAULT_DATABASE};
+use models::utils as model_utils;
 use protocol_parser::line_protocol::line_protocol_to_lines;
 use protocol_parser::lines_convert::parse_lines_to_points;
 use protocol_parser::open_tsdb::open_tsdb_to_lines;
@@ -1189,7 +1189,7 @@ fn construct_write_lines_points_request(
     db: &str,
 ) -> Result<WritePointsRequest, HttpError> {
     let lines = String::from_utf8_lossy(req.as_ref());
-    let line_protocol_lines = line_protocol_to_lines(&lines, Local::now().timestamp_nanos())
+    let line_protocol_lines = line_protocol_to_lines(&lines, model_utils::now_timestamp_nanos())
         .map_err(|e| HttpError::ParseLineProtocol { source: e })?;
 
     let points = parse_lines_to_points(db, &line_protocol_lines);
@@ -1207,7 +1207,7 @@ fn construct_write_tsdb_points_request(
     ctx: &Context,
 ) -> Result<WritePointsRequest, HttpError> {
     let lines = String::from_utf8_lossy(req.as_ref());
-    let tsdb_protocol_lines = open_tsdb_to_lines(&lines, Local::now().timestamp_nanos())
+    let tsdb_protocol_lines = open_tsdb_to_lines(&lines, model_utils::now_timestamp_nanos())
         .map_err(|e| HttpError::ParseOpentsdbProtocol { source: e })?;
 
     let points = parse_lines_to_points(ctx.database(), &tsdb_protocol_lines);
