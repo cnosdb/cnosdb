@@ -50,8 +50,8 @@ impl Default for CompactTaskGroup {
 pub fn run(
     storage_opt: Arc<StorageOptions>,
     runtime: Arc<Runtime>,
-    sender: Sender<CompactTask>,
-    mut receiver: Receiver<CompactTask>,
+    compact_task_sender: Sender<CompactTask>,
+    mut compact_task_receiver: Receiver<CompactTask>,
     ctx: Arc<GlobalContext>,
     seq_ctx: Arc<GlobalSequenceContext>,
     version_set: Arc<RwLock<VersionSet>>,
@@ -105,7 +105,7 @@ pub fn run(
                         let ctx_inner = ctx.clone();
                         let seq_ctx_inner = seq_ctx.clone();
                         let version_set_inner = version_set.clone();
-                        let compact_task_sender = sender.clone();
+                        let compact_task_sender = compact_task_sender.clone();
                         let summary_task_sender_inner = summary_task_sender.clone();
 
                         // Method acquire_owned() will return AcquireError if the semaphore has been closed.
@@ -178,7 +178,7 @@ pub fn run(
     });
 
     runtime.spawn(async move {
-        while let Some(compact_task) = receiver.recv().await {
+        while let Some(compact_task) = compact_task_receiver.recv().await {
             compact_task_group_producer
                 .write()
                 .await

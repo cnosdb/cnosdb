@@ -1156,6 +1156,7 @@ pub fn schedule_vnode_compaction(
         let vnode_rlock = vnode.read().await;
         let tsf_id = vnode_rlock.tf_id;
         let compact_trigger_cold_duration = vnode_rlock.storage_opt.compact_trigger_cold_duration;
+        let compact_trigger_file_num = vnode_rlock.storage_opt.compact_trigger_file_num;
         let last_modified = vnode_rlock.last_modified.clone();
         let cancellation_token = vnode_rlock.cancellation_token.clone();
         drop(vnode_rlock);
@@ -1186,17 +1187,21 @@ pub fn schedule_vnode_compaction(
                         }
 
                         // Check if level-0 files is more than 0 .
-                        // let version = vnode.read().await.super_version().version.clone();
-                        // for file in version.levels_info()[0].files.iter() {
-                        //     if file.is_compacting().await {
-                        //         break;
-                        //     }
-                        //     // If there is any l0-file, send a compact task.
-                        //     if let Err(e) = compact_task_sender.send(CompactTask::Delta(tsf_id)).await {
-                        //         warn!("failed to send compact task({}), {}", tsf_id, e);
-                        //     }
-                        //     break;
-                        // }
+                        let version = vnode.read().await.super_version().version.clone();
+                        let mut level_0_files = 0_u32;
+                        for file in version.levels_info()[0].files.iter() {
+                            if file.is_deleted() || file.is_compacting().await {
+                                continue;
+                            }
+                            level_0_files += 1;
+                            if level_0_files >= compact_trigger_file_num {
+                                // If there is any l0-file, send a compact task.
+                                if let Err(e) = compact_task_sender.send(CompactTask::Delta(tsf_id)).await {
+                                    warn!("failed to send compact task({}), {}", tsf_id, e);
+                                }
+                                break;
+                            }
+                        }
                     }
                     _ = cancellation_token.cancelled() => {
                         break;
