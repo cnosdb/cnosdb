@@ -79,6 +79,18 @@ fn case1() {
             auth: None,
         },
         Step::RestartDataNode(0),
+
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Ddl { url, sql: "SELECT * FROM air", 
+            resp:Err(E2eError::Api {
+                status: StatusCode::UNPROCESSABLE_ENTITY,
+                url: None,
+                req: None,
+                resp: Some(r#"{"error_code":"010001","error_message":"Datafusion: Error during planning: Table not found, tenant: cnosdb db: public, table: air"}"#.to_string()),
+            }), },
+            auth: None,
+        },
+
         Step::CnosdbRequest {
             req: CnosdbRequest::Query { url, sql: "SHOW TABLES", resp: Ok(vec![]), sorted: false, regex: false, },
             auth: None,
