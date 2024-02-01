@@ -679,13 +679,45 @@ impl TsmTombstoneCache {
 pub mod test {
     use std::path::{Path, PathBuf};
 
-    use models::predicate::domain::TimeRanges;
+    use models::predicate::domain::{TimeRange, TimeRanges};
+    use models::FieldId;
 
     use super::{TombstoneField, TsmTombstone, TsmTombstoneCache};
     use crate::file_system::file_manager;
-    use crate::record_file;
+    use crate::record_file::{self, RecordDataType, RecordDataVersion};
 
-    pub async fn write_to_tsm_tombstone(path: impl AsRef<Path>, data: &TsmTombstoneCache) {
+    pub struct TombstoneLegacyV1 {
+        field_id: FieldId,
+        time_range: TimeRange,
+    }
+
+    pub async fn write_to_tsm_tombstone_v1(
+        path: impl AsRef<Path>,
+        tombstones: &[TombstoneLegacyV1],
+    ) {
+        let mut writer = record_file::Writer::open(path, record_file::RecordDataType::Tombstone)
+            .await
+            .unwrap();
+
+        let mut write_buf = [0_u8; 24];
+        // Save field_excluded tombstones.
+        for tombstone in tombstones.iter() {
+            write_buf[0..8].copy_from_slice(tombstone.field_id.to_be_bytes().as_slice());
+            write_buf[8..16].copy_from_slice(tombstone.time_range.min_ts.to_be_bytes().as_slice());
+            write_buf[16..24].copy_from_slice(tombstone.time_range.max_ts.to_be_bytes().as_slice());
+            writer
+                .write_record(
+                    RecordDataVersion::V1 as u8,
+                    RecordDataType::Tombstone as u8,
+                    &[&write_buf],
+                )
+                .await
+                .unwrap();
+        }
+        writer.close().await.unwrap();
+    }
+
+    pub async fn write_to_tsm_tombstone_v2(path: impl AsRef<Path>, data: &TsmTombstoneCache) {
         let mut writer = record_file::Writer::open(path, record_file::RecordDataType::Tombstone)
             .await
             .unwrap();
@@ -694,8 +726,42 @@ pub mod test {
     }
 
     #[tokio::test]
+    async fn test_read_legacy_v1() {
+        let dir = PathBuf::from("/tmp/test/tombstone/read_legacy_v1");
+        let _ = std::fs::remove_dir_all(&dir);
+        if !file_manager::try_exists(&dir) {
+            std::fs::create_dir_all(&dir).unwrap();
+        }
+
+        let path = dir.join("_000001.tombstone");
+        write_to_tsm_tombstone_v1(
+            &path,
+            &[
+                TombstoneLegacyV1 {
+                    field_id: 1,
+                    time_range: (1, 2).into(),
+                },
+                TombstoneLegacyV1 {
+                    field_id: 2,
+                    time_range: (1, 2).into(),
+                },
+                TombstoneLegacyV1 {
+                    field_id: 3,
+                    time_range: (1, 2).into(),
+                },
+            ],
+        )
+        .await;
+
+        let tombstone = TsmTombstone::with_path(&path).await.unwrap();
+        assert!(tombstone.overlaps_field_time_range(1, &(1, 2).into()));
+        assert!(tombstone.overlaps_field_time_range(2, &(1, 2).into()));
+        assert!(tombstone.overlaps_field_time_range(3, &(1, 2).into()));
+    }
+
+    #[tokio::test]
     async fn test_read_write() {
-        let dir = PathBuf::from("/tmp/test/tombstone/read_write".to_string());
+        let dir = PathBuf::from("/tmp/test/tombstone/read_write");
         let _ = std::fs::remove_dir_all(&dir);
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();

@@ -1696,6 +1696,7 @@ mod tests {
         assert!(!trs.is_boundless());
 
         assert!(trs_all.overlaps(&TimeRange::new(2, 3)));
+        assert!(trs_all.overlaps(&TimeRange::new(i64::MIN, i64::MAX)));
         assert!(trs.overlaps(&TimeRange::new(1, 2)));
         assert!(trs.overlaps(&TimeRange::new(2, 2)));
         assert!(trs.overlaps(&TimeRange::new(2, 3)));
@@ -1711,6 +1712,7 @@ mod tests {
         assert!(!trs.overlaps(&TimeRange::new(4, 5)));
 
         assert!(trs_all.includes(&TimeRange::new(2, 3)));
+        assert!(trs_all.includes(&TimeRange::new(i64::MIN, i64::MAX)));
         assert!(trs.includes(&TimeRange::new(2, 3)));
         assert!(trs.includes(&TimeRange::new(22, 33)));
         assert!(!trs.includes(&TimeRange::new(20, 30)));
@@ -1720,6 +1722,8 @@ mod tests {
         assert!(!trs.includes(&TimeRange::new(30, 40)));
 
         assert!(trs_all.contains(2));
+        assert!(trs_all.contains(i64::MIN));
+        assert!(trs_all.contains(i64::MAX));
         assert!(trs.contains(2));
         assert!(trs.contains(3));
         assert!(trs.contains(30));
@@ -1730,6 +1734,10 @@ mod tests {
         assert_eq!(
             trs_all.intersect(&TimeRange::new(1, 5)),
             Some(TimeRanges::new(vec![TimeRange::new(1, 5)]))
+        );
+        assert_eq!(
+            trs_all.intersect(&TimeRange::new(i64::MIN, i64::MAX)),
+            Some(TimeRanges::new(vec![TimeRange::new(i64::MIN, i64::MAX)]))
         );
         assert_eq!(trs.intersect(&TimeRange::new(0, 1)), None);
         assert_eq!(trs.intersect(&TimeRange::new(4, 5)), None);
@@ -1755,6 +1763,10 @@ mod tests {
                 TimeRange::new(2, 3),
                 TimeRange::new(22, 33)
             ]))
+        );
+        assert_eq!(
+            trs.intersect(&TimeRange::new(i64::MIN, i64::MAX)).as_ref(),
+            Some(&trs)
         );
 
         let mut trs = trs;

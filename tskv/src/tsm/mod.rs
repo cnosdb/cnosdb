@@ -22,7 +22,7 @@ pub use writer::{new_tsm_writer, TsmWriter, WriteTsmError, WriteTsmResult};
 #[cfg(test)]
 pub mod test {
     pub use super::reader::test::read_and_check;
-    pub use super::tombstone::test::write_to_tsm_tombstone;
+    pub use super::tombstone::test::write_to_tsm_tombstone_v2;
     pub use super::writer::test::write_to_tsm;
 }
 

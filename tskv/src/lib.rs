@@ -49,7 +49,6 @@ mod version_set;
 mod wal;
 
 pub type ColumnFileId = u64;
-type ColumnFileGeneration = u32;
 type TseriesFamilyId = u32;
 type LevelId = u32;
 
