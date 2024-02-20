@@ -317,3 +317,31 @@ select * from cluster_schema.tenants where tenant_name='t_001';
 
 statement ok
 recover tenant t_001;
+
+
+statement ok
+drop tenant if exists tenant001;
+
+statement ok
+create tenant tenant001;
+
+statement ok
+--#TENANT = tenant001
+
+statement ok
+create database cluster_schema;
+
+statement ok
+--#DATABASE = cluster_schema
+
+statement ok
+CREATE TABLE air (visibility DOUBLE,temperature DOUBLE,pressure DOUBLE,TAGS(station));
+
+statement ok
+INSERT INTO air (TIME, station, visibility, temperature, pressure) VALUES (now(), 'XiaoMaiDao1', 56, 69, 411);
+
+
+query I
+select count(*) from air;
+----
+1
