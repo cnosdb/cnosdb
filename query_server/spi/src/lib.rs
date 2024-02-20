@@ -521,9 +521,15 @@ pub enum QueryError {
         tenant: String,
     },
 
-    #[snafu(display("Couldn't Drop System Role {}", role))]
+    #[snafu(display("Couldn't drop system role {}", role))]
     #[error_code(code = 76)]
     ForbiddenDropSystemRole {
+        role: String,
+    },
+
+    #[snafu(display("Couldn't create a role with the same name as system role: {}", role))]
+    #[error_code(code = 77)]
+    ForbiddenCreateSystemRole {
         role: String,
     },
 }

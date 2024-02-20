@@ -217,6 +217,18 @@ impl VersionEdit {
         }
     }
 
+    pub fn update_vnode_id(&mut self, new_id: u32) {
+        self.tsf_id = new_id;
+
+        for f in self.add_files.iter_mut() {
+            f.tsf_id = new_id;
+        }
+
+        for f in self.del_files.iter_mut() {
+            f.tsf_id = new_id;
+        }
+    }
+
     pub fn encode(&self) -> Result<Vec<u8>> {
         bincode::serialize(self).map_err(|e| Error::RecordFileEncode { source: (e) })
     }

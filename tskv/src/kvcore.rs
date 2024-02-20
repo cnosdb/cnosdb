@@ -59,10 +59,10 @@ impl TsKv {
             mpsc::channel::<FlushReq>(shared_options.storage.flush_req_channel_cap);
         let (compact_task_sender, compact_task_receiver) =
             mpsc::channel::<CompactTask>(COMPACT_REQ_CHANNEL_CAP);
-
         let (summary_task_sender, summary_task_receiver) =
             mpsc::channel::<SummaryTask>(SUMMARY_REQ_CHANNEL_CAP);
         let (close_sender, _close_receiver) = broadcast::channel(1);
+
         let (version_set, summary) = Self::recover_summary(
             runtime.clone(),
             memory_pool.clone(),
@@ -72,19 +72,17 @@ impl TsKv {
             metrics.clone(),
         )
         .await;
+
         let ctx = Arc::new(TsKvContext {
             version_set,
-
             flush_task_sender,
             compact_task_sender,
             summary_task_sender,
-
             options: shared_options.clone(),
             global_ctx: summary.global_context(),
         });
 
         let compact_job = CompactJob::new(runtime.clone(), ctx.clone());
-
         let flush_job = FlushJob::new(runtime.clone(), ctx.clone());
 
         let core = Self {

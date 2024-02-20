@@ -15,6 +15,7 @@ use models::predicate::domain::{TimeRange, TimeRanges};
 use models::schema::{split_owner, TableColumn};
 use models::{ColumnId, FieldId, SeriesId, Timestamp};
 use parking_lot::RwLock;
+use snafu::ResultExt as _;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Sender;
 use tokio::time::Instant;
@@ -25,7 +26,7 @@ use utils::BloomFilter;
 use crate::compaction::{CompactTask, FlushReq};
 use crate::error::Result;
 use crate::file_system::file_manager;
-use crate::file_utils::{make_delta_file, make_tsm_file};
+use crate::file_utils::{self, make_delta_file, make_tsm_file};
 use crate::kv_option::{CacheOptions, StorageOptions};
 use crate::memcache::{MemCache, MemCacheStatistics, RowGroup};
 use crate::summary::{CompactMeta, VersionEdit};
@@ -1143,6 +1144,51 @@ impl TseriesFamily {
         }
 
         version_edit
+    }
+
+    pub async fn backup(&self, ve: &VersionEdit, snap_id: &str) -> Result<()> {
+        let opt = self.storage_opt();
+        let owner = self.tenant_database();
+        let tsm_dir = opt.tsm_dir(owner.as_str(), self.tf_id);
+        let delta_dir = opt.delta_dir(owner.as_str(), self.tf_id);
+        let snap_tsm_dir = opt.snapshot_tsm_dir(owner.as_str(), self.tf_id, snap_id);
+        let snap_delta_dir = opt.snapshot_delta_dir(owner.as_str(), self.tf_id, snap_id);
+
+        std::fs::create_dir_all(&snap_tsm_dir)?;
+        std::fs::create_dir_all(&snap_delta_dir)?;
+        for f in &ve.add_files {
+            // Get tsm/delta file path and snapshot file path
+            let (file_path, snapshot_path) = if f.is_delta {
+                (
+                    file_utils::make_delta_file(&delta_dir, f.file_id),
+                    file_utils::make_delta_file(&snap_delta_dir, f.file_id),
+                )
+            } else {
+                (
+                    file_utils::make_tsm_file(&tsm_dir, f.file_id),
+                    file_utils::make_tsm_file(&snap_tsm_dir, f.file_id),
+                )
+            };
+
+            // Create hard link to tsm/delta file.
+            debug!(
+                "Bakcup: creating hard link {} to {}.",
+                file_path.display(),
+                snapshot_path.display()
+            );
+            if let Err(e) =
+                std::fs::hard_link(&file_path, &snapshot_path).context(crate::error::IOSnafu)
+            {
+                error!(
+                    "Bakcup: failed to create hard link {} to {}: {e}.",
+                    file_path.display(),
+                    snapshot_path.display()
+                );
+                return Err(e);
+            }
+        }
+
+        Ok(())
     }
 
     pub fn tf_id(&self) -> TseriesFamilyId {

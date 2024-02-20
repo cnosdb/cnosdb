@@ -49,7 +49,7 @@ impl HeedApplyStorage {
 
 #[async_trait]
 impl ApplyStorage for HeedApplyStorage {
-    async fn apply(&self, ctx: &ApplyContext, req: &Request) -> ReplicationResult<Response> {
+    async fn apply(&mut self, ctx: &ApplyContext, req: &Request) -> ReplicationResult<Response> {
         #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
         struct RequestCommand {
             key: String,
@@ -64,7 +64,7 @@ impl ApplyStorage for HeedApplyStorage {
         Ok(req.value.into())
     }
 
-    async fn snapshot(&self) -> ReplicationResult<Vec<u8>> {
+    async fn snapshot(&mut self) -> ReplicationResult<Vec<u8>> {
         let mut hash_map = HashMap::new();
 
         let reader = self.env.read_txn()?;
@@ -80,7 +80,7 @@ impl ApplyStorage for HeedApplyStorage {
         Ok(json_str.as_bytes().to_vec())
     }
 
-    async fn restore(&self, snapshot: &[u8]) -> ReplicationResult<()> {
+    async fn restore(&mut self, snapshot: &[u8]) -> ReplicationResult<()> {
         let data: HashMapSnapshotData = serde_json::from_slice(snapshot).unwrap();
 
         let mut writer = self.env.write_txn()?;
@@ -93,7 +93,7 @@ impl ApplyStorage for HeedApplyStorage {
         Ok(())
     }
 
-    async fn destory(&self) -> ReplicationResult<()> {
+    async fn destory(&mut self) -> ReplicationResult<()> {
         Ok(())
     }
 }

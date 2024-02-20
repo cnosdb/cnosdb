@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use config::Config;
-use models::meta_data::VnodeId;
+use models::meta_data::{NodeId, VnodeId};
 
 use crate::TseriesFamilyId;
 
@@ -39,6 +39,7 @@ impl From<&Config> for Options {
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct StorageOptions {
     pub path: PathBuf,
+    pub node_id: NodeId,
     pub max_summary_size: u64,
     pub base_file_size: u64,
     pub flush_req_channel_cap: usize,
@@ -58,6 +59,10 @@ impl StorageOptions {
     pub fn level_max_file_size(&self, lvl: u32) -> u64 {
         // TODO(zipper): size of lvl-0 is zero?
         self.base_file_size * lvl as u64 * self.compact_trigger_file_num as u64
+    }
+
+    pub fn path(&self) -> PathBuf {
+        self.path.clone()
     }
 
     pub fn summary_dir(&self) -> PathBuf {
@@ -86,6 +91,18 @@ impl StorageOptions {
 
     pub fn move_dir(&self, database: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
         self.ts_family_dir(database, ts_family_id).join(MOVE_PATH)
+    }
+
+    pub fn fmt_snapshot_dir(
+        database: &str,
+        ts_family_id: TseriesFamilyId,
+        snapshot_id: &str,
+    ) -> PathBuf {
+        PathBuf::from(DATA_PATH)
+            .join(database)
+            .join(ts_family_id.to_string())
+            .join(T_SERIES_FAMILY_SNAPSHOT_PATH)
+            .join(snapshot_id)
     }
 
     pub fn snapshot_dir(&self, database: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
@@ -136,6 +153,7 @@ impl StorageOptions {
 impl From<&Config> for StorageOptions {
     fn from(config: &Config) -> Self {
         Self {
+            node_id: config.global.node_id,
             path: PathBuf::from(config.storage.path.clone()),
             max_summary_size: config.storage.max_summary_size,
             base_file_size: config.storage.base_file_size,

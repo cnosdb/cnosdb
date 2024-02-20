@@ -6,6 +6,7 @@ use std::fmt::Debug;
 use std::pin::Pin;
 use std::sync::Arc;
 
+use config::Config;
 use datafusion::arrow::record_batch::RecordBatch;
 use errors::CoordinatorError;
 use futures::Stream;
@@ -25,7 +26,6 @@ use crate::errors::CoordinatorResult;
 use crate::service::CoordServiceMetrics;
 
 pub mod errors;
-pub mod file_info;
 pub mod metrics;
 pub mod raft;
 pub mod reader;
@@ -153,6 +153,8 @@ pub trait Coordinator: Send + Sync {
         new_tags: Vec<UpdateSetValue>,
         record_batches: Vec<RecordBatch>,
     ) -> CoordinatorResult<()>;
+
+    fn get_config(&self) -> Config;
 }
 
 pub fn status_response_to_result(

@@ -680,7 +680,7 @@ fn case6() {
     let executor = E2eExecutor::new_cluster(
         "restart_tests",
         "case_6",
-        cluster_def::three_meta_two_data_bundled(),
+        cluster_def::one_meta_two_data_bundled(),
     );
     executor.execute_steps(&[
         Step::Sleep(30),

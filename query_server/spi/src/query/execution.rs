@@ -214,6 +214,7 @@ impl QueryStateMachine {
                     0,
                     Arc::new(UnboundedMemoryPool::default()),
                     span_context,
+                    Arc::new(MockCoordinator {}),
                 )
                 .expect("create test session ctx"),
             Arc::new(MockCoordinator {}),

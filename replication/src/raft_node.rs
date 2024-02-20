@@ -15,7 +15,6 @@ pub struct RaftNode {
     id: RaftNodeId,
     info: RaftNodeInfo,
     storage: Arc<NodeStorage>,
-    engine: ApplyStorageRef,
 
     raft: OpenRaftNode,
     config: ReplicationConfig,
@@ -26,7 +25,6 @@ impl RaftNode {
         id: RaftNodeId,
         info: RaftNodeInfo,
         storage: Arc<NodeStorage>,
-        engine: ApplyStorageRef,
         config: ReplicationConfig,
     ) -> ReplicationResult<Self> {
         let hb: u64 = config.heartbeat_interval;
@@ -62,7 +60,6 @@ impl RaftNode {
             storage,
             raft,
             config,
-            engine,
         })
     }
 
@@ -152,61 +149,4 @@ impl RaftNode {
     pub fn raft_metrics(&self) -> RaftMetrics<RaftNodeId, RaftNodeInfo> {
         self.raft.metrics().borrow().clone()
     }
-
-    pub fn apply_store(&self) -> ApplyStorageRef {
-        self.engine.clone()
-    }
-
-    // pub async fn raft_vote(
-    //     &self,
-    //     vote: VoteRequest<RaftNodeId>,
-    // ) -> ReplicationResult<VoteResponse<RaftNodeId>> {
-    //     let rsp = self
-    //         .raft
-    //         .vote(vote)
-    //         .await
-    //         .map_err(|err| ReplicationError::RaftInternalErr {
-    //             msg: format!("Vote raft execute failed: {}", err),
-    //         })?;
-
-    //     Ok(rsp)
-    // }
-
-    // pub async fn raft_append(
-    //     &self,
-    //     req: AppendEntriesRequest<TypeConfig>,
-    // ) -> ReplicationResult<AppendEntriesResponse<RaftNodeId>> {
-    //     let rsp = self.raft.append_entries(req).await.map_err(|err| {
-    //         ReplicationError::RaftInternalErr {
-    //             msg: format!("Append raft execute failed: {}", err),
-    //         }
-    //     })?;
-
-    //     Ok(rsp)
-    // }
-
-    // pub async fn raft_snapshot(
-    //     &self,
-    //     req: InstallSnapshotRequest<TypeConfig>,
-    // ) -> ReplicationResult<InstallSnapshotResponse<RaftNodeId>> {
-    //     let rsp = self.raft.install_snapshot(req).await.map_err(|err| {
-    //         ReplicationError::RaftInternalErr {
-    //             msg: format!("Snapshot raft execute failed: {}", err),
-    //         }
-    //     })?;
-
-    //     Ok(rsp)
-    // }
-
-    // pub async fn test_write_data(
-    //     &self,
-    //     req: Request,
-    // ) -> Result<
-    //     ClientWriteResponse<TypeConfig>,
-    //     openraft::error::RaftError<u64, ClientWriteError<u64, RaftNodeInfo>>,
-    // > {
-    //     let response = self.raft.client_write(req).await;
-
-    //     response
-    // }
 }

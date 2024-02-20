@@ -6,6 +6,7 @@ use std::time::Duration;
 use replication::network_http::RaftHttpAdmin;
 use replication::raft_node::RaftNode;
 use replication::ApplyStorage;
+use tokio::sync::RwLock;
 use trace::info;
 use tracing::debug;
 use warp::{hyper, Filter};
@@ -17,7 +18,7 @@ use crate::store::storage::{BtreeMapSnapshotData, StateMachine};
 
 pub struct HttpServer {
     pub node: Arc<RaftNode>,
-    pub storage: Arc<StateMachine>,
+    pub storage: Arc<RwLock<StateMachine>>,
     pub raft_admin: Arc<RaftHttpAdmin>,
 }
 
@@ -48,7 +49,7 @@ impl HttpServer {
 
     fn with_storage(
         &self,
-    ) -> impl Filter<Extract = (Arc<StateMachine>,), Error = StdInfallible> + Clone {
+    ) -> impl Filter<Extract = (Arc<RwLock<StateMachine>>,), Error = StdInfallible> + Clone {
         let storage = self.storage.clone();
         warp::any().map(move || storage.clone())
     }
@@ -58,12 +59,12 @@ impl HttpServer {
             .and(warp::body::bytes())
             .and(self.with_storage())
             .and_then(
-                |req: hyper::body::Bytes, storage: Arc<StateMachine>| async move {
+                |req: hyper::body::Bytes, storage: Arc<RwLock<StateMachine>>| async move {
                     let req: ReadCommand = serde_json::from_slice(&req)
                         .map_err(MetaError::from)
                         .map_err(warp::reject::custom)?;
 
-                    let rsp = storage.process_read_command(&req);
+                    let rsp = storage.read().await.process_read_command(&req);
                     let res: Result<String, warp::Rejection> = Ok(rsp);
                     res
                 },
@@ -116,7 +117,7 @@ impl HttpServer {
             .and(warp::body::bytes())
             .and(self.with_storage())
             .and_then(
-                |req: hyper::body::Bytes, storage: Arc<StateMachine>| async move {
+                |req: hyper::body::Bytes, storage: Arc<RwLock<StateMachine>>| async move {
                     let data = Self::process_watch(req, storage)
                         .await
                         .map_err(warp::reject::custom)?;
@@ -176,8 +177,10 @@ impl HttpServer {
     // curl -XPOST http://127.0.0.1:8901/restore --data-binary "@./meta_dump.data"
     fn dump(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
         warp::path!("dump").and(self.with_storage()).and_then(
-            |storage: Arc<StateMachine>| async move {
+            |storage: Arc<RwLock<StateMachine>>| async move {
                 let data = storage
+                    .write()
+                    .await
                     .snapshot()
                     .await
                     .map_err(MetaError::from)
@@ -208,7 +211,8 @@ impl HttpServer {
 
         let route = prefix.and(opt).and(warp::path::end());
         route.and(self.with_storage()).and_then(
-            |cluster: String, tenant: Option<String>, storage: Arc<StateMachine>| async move {
+            |cluster: String, tenant: Option<String>, storage: Arc<RwLock<StateMachine>>| async move {
+                let storage = storage.read().await;
                 let res = dump_impl(&cluster, tenant.as_deref(), &storage)
                     .await
                     .map_err(warp::reject::custom)?;
@@ -260,8 +264,13 @@ impl HttpServer {
 
     fn debug(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
         warp::path!("debug").and(self.with_storage()).and_then(
-            |storage: Arc<StateMachine>| async move {
-                let data = storage.dump().await.map_err(warp::reject::custom)?;
+            |storage: Arc<RwLock<StateMachine>>| async move {
+                let data = storage
+                    .write()
+                    .await
+                    .dump()
+                    .await
+                    .map_err(warp::reject::custom)?;
 
                 let res: Result<String, warp::Rejection> = Ok(data);
                 res
@@ -293,7 +302,7 @@ impl HttpServer {
 
     pub async fn process_watch(
         req: hyper::body::Bytes,
-        storage: Arc<StateMachine>,
+        storage: Arc<RwLock<StateMachine>>,
     ) -> MetaResult<String> {
         let req: (String, String, HashSet<String>, u64) = serde_json::from_slice(&req)?;
         let (client, cluster, tenants, base_ver) = req;
@@ -303,12 +312,15 @@ impl HttpServer {
         );
 
         let mut notify = {
-            let watch_data = storage.read_change_logs(&cluster, &tenants, base_ver);
+            let watch_data = storage
+                .read()
+                .await
+                .read_change_logs(&cluster, &tenants, base_ver);
             if watch_data.need_return(base_ver) {
                 return Ok(crate::store::storage::response_encode(Ok(watch_data)));
             }
 
-            storage.watch.subscribe()
+            storage.read().await.watch.subscribe()
         };
 
         let mut follow_ver = base_ver;
@@ -316,7 +328,10 @@ impl HttpServer {
         loop {
             let _ = tokio::time::timeout(Duration::from_secs(20), notify.recv()).await;
 
-            let watch_data = storage.read_change_logs(&cluster, &tenants, follow_ver);
+            let watch_data = storage
+                .read()
+                .await
+                .read_change_logs(&cluster, &tenants, follow_ver);
             debug!("watch notify {} {}.{}", client, base_ver, follow_ver);
             if watch_data.need_return(base_ver) || now.elapsed() > Duration::from_secs(30) {
                 return Ok(crate::store::storage::response_encode(Ok(watch_data)));

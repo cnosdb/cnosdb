@@ -39,6 +39,7 @@ max_compact_size = "2G"              # 2147483648
 max_concurrent_compaction = 4
 strict_write = false
 reserve_space = "0"
+copyinto_trigger_flush_size = "128M" # 134217728
 
 [wal]
 enabled = true

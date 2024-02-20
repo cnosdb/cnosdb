@@ -46,6 +46,18 @@ pub enum ReplicationError {
     #[snafu(display("Apply engine failed: {}", msg))]
     #[error_code(code = 11)]
     ApplyEngineErr { msg: String },
+
+    #[snafu(display("Create snapshot failed: {}", msg))]
+    #[error_code(code = 12)]
+    CreateSnapshotErr { msg: String },
+
+    #[snafu(display("Restore snapshot failed: {}", msg))]
+    #[error_code(code = 13)]
+    RestoreSnapshotErr { msg: String },
+
+    #[snafu(display("Destory raft node failed: {}", msg))]
+    #[error_code(code = 14)]
+    DestoryRaftNodeErr { msg: String },
 }
 
 impl From<std::io::Error> for ReplicationError {
