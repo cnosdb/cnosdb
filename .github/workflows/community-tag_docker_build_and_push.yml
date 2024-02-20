@@ -18,7 +18,6 @@ jobs:
           - cnosdb
           - cnosdb-meta
     runs-on: ubuntu-latest
-    if: github.repository_owner == 'cnosdb' && github.repository == 'cnosdb/cnosdb' && github.ref == 'refs/heads/LTS/2.3'
     steps:
       - name: Get tag
         id: get-tag
