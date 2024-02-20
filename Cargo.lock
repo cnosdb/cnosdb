@@ -3063,6 +3063,7 @@ dependencies = [
  "snafu",
  "spi",
  "sys-info",
+ "tikv-jemalloc-sys",
  "tikv-jemallocator",
  "tokio",
  "tokio-stream",
