@@ -3,5 +3,5 @@ select count(*) from information_schema.roles where role_name = 'owner';
 ----
 1
 
-statement error Couldn't Drop System Role owner
+statement error Couldn't drop system role owner
 drop role owner;
