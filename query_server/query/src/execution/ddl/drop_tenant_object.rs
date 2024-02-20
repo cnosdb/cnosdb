@@ -94,6 +94,7 @@ impl DDLDefinitionTask for DropTenantObjectTask {
                     tenant_name.clone() + "-" + name,
                     ResourceOperator::DropDatabase(tenant_name.clone(), name.clone()),
                     after,
+                    query_state_machine.coord.node_id(),
                 );
                 ResourceManager::add_resource_task(query_state_machine.coord.clone(), resourceinfo)
                     .await?;

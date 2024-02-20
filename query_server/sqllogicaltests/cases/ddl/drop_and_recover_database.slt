@@ -62,7 +62,7 @@ drop database db_delay after '3m';
 statement ok
 drop database db_delay after '1m';
 
-sleep 2m
+sleep 65s
 
 # check
 query 

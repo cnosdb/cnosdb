@@ -404,6 +404,9 @@ impl StateMachine {
                 let path = KeyPath::tenant_schema_name(cluster, tenant_name, db_name, table_name);
                 response_encode(self.get_struct::<TableSchema>(&path))
             }
+            ReadCommand::ResourceInfo(cluster, resource_name) => {
+                response_encode(self.process_read_resourceinfo_by_name(cluster, resource_name))
+            }
             ReadCommand::ResourceInfos(cluster) => {
                 response_encode(self.process_read_resourceinfos(cluster))
             }
@@ -503,6 +506,17 @@ impl StateMachine {
         debug!("returned members of path {}: {:?}", path, members);
 
         Ok(members)
+    }
+
+    pub fn process_read_resourceinfo_by_name(
+        &self,
+        cluster: &str,
+        name: &str,
+    ) -> MetaResult<Option<ResourceInfo>> {
+        let path = KeyPath::resourceinfos(cluster, name);
+        let res = self.get_struct::<ResourceInfo>(&path)?;
+
+        Ok(res)
     }
 
     pub fn process_read_resourceinfos(&self, cluster: &str) -> MetaResult<Vec<ResourceInfo>> {

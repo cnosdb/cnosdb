@@ -45,6 +45,7 @@ impl DDLDefinitionTask for RecoverTenantTask {
             tenant_name.clone(),
             ResourceOperator::DropTenant(tenant_name.clone()),
             &None,
+            query_state_machine.coord.node_id(),
         );
         resourceinfo.set_status(ResourceStatus::Cancel);
         resourceinfo.set_comment("");

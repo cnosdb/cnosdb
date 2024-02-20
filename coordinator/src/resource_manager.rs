@@ -1,14 +1,13 @@
-use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
-use meta::model::meta_admin::AdminMeta;
 use models::meta_data::ReplicationSet;
 use models::schema::{ResourceInfo, ResourceOperator, ResourceStatus, TableSchema};
-use models::utils::now_timestamp_nanos;
 use protos::kv_service::{
     raft_write_command, DropColumnRequest, DropTableRequest, RaftWriteCommand, UpdateSetValue,
     UpdateTagsRequest,
 };
+use tokio::time::sleep;
 use tracing::{debug, error, info};
 
 use crate::errors::*;
@@ -18,90 +17,9 @@ use crate::{Coordinator, VnodeManagerCmdType};
 pub struct ResourceManager {}
 
 impl ResourceManager {
-    pub async fn change_and_write(
-        admin_meta: Arc<AdminMeta>,
-        mut resourceinfo: ResourceInfo,
-        dest_status: ResourceStatus,
-        comment: &str,
-    ) -> CoordinatorResult<bool> {
-        resourceinfo.set_status(dest_status);
-        resourceinfo.set_comment(comment);
-        admin_meta
-            .write_resourceinfo(resourceinfo.get_name(), resourceinfo.clone())
-            .await
-            .map_err(|err| CoordinatorError::Meta { source: err })?;
-        Ok(true)
-    }
-
-    pub async fn check_and_run(coord: Arc<dyn Coordinator>) -> CoordinatorResult<bool> {
-        let (node_id, is_lock) = coord
-            .meta_manager()
-            .read_resourceinfos_mark()
-            .await
-            .map_err(|err| CoordinatorError::Meta { source: err })?;
-        if !is_lock {
-            // lock resourceinfos
-            coord
-                .meta_manager()
-                .write_resourceinfos_mark(coord.node_id(), true)
-                .await
-                .map_err(|err| CoordinatorError::Meta { source: err })?;
-
-            let mut is_need_loop = false;
-            loop {
-                let resourceinfos = coord
-                    .meta_manager()
-                    .read_resourceinfos()
-                    .await
-                    .map_err(|err| CoordinatorError::Meta { source: err })?;
-                let now = now_timestamp_nanos();
-                for mut resourceinfo in resourceinfos {
-                    if (*resourceinfo.get_status() == ResourceStatus::Schedule
-                        && resourceinfo.get_time() <= now)
-                        || *resourceinfo.get_status() == ResourceStatus::Failed
-                    {
-                        resourceinfo.increase_try_count();
-
-                        resourceinfo.set_status(ResourceStatus::Executing);
-                        if let Err(meta_err) = coord
-                            .meta_manager()
-                            .write_resourceinfo(resourceinfo.get_name(), resourceinfo.clone())
-                            .await
-                        {
-                            error!("{}", meta_err.to_string());
-                            is_need_loop = true;
-                            continue;
-                        }
-                        if let Err(coord_err) =
-                            ResourceManager::do_operator(coord.clone(), resourceinfo).await
-                        {
-                            error!("{}", coord_err.to_string());
-                            is_need_loop = true;
-                        }
-                    }
-                }
-                if !is_need_loop {
-                    // unlock resourceinfos
-                    coord
-                        .meta_manager()
-                        .write_resourceinfos_mark(coord.node_id(), false)
-                        .await
-                        .map_err(|err| CoordinatorError::Meta { source: err })?;
-                    return Ok(true);
-                }
-
-                let dur = tokio::time::Duration::from_secs(1);
-                tokio::time::sleep(dur).await;
-            }
-        } else {
-            info!("resource is executing by {}", node_id);
-            Ok(false)
-        }
-    }
-
-    async fn do_operator(
+    pub async fn do_operator(
         coord: Arc<dyn Coordinator>,
-        resourceinfo: ResourceInfo,
+        mut resourceinfo: ResourceInfo,
     ) -> CoordinatorResult<bool> {
         let operator_result = match resourceinfo.get_operator() {
             ResourceOperator::DropTenant(tenant_name) => {
@@ -137,19 +55,21 @@ impl ResourceManager {
                 .await
             }
         };
-
+        resourceinfo.set_is_new_add(false);
         let mut status_comment = (ResourceStatus::Successed, String::default());
         if let Err(coord_err) = &operator_result {
             status_comment.0 = ResourceStatus::Failed;
             status_comment.1 = coord_err.to_string();
+            resourceinfo.set_is_new_add(true);
         }
-        ResourceManager::change_and_write(
-            coord.meta_manager(),
-            resourceinfo.clone(),
-            status_comment.0,
-            &status_comment.1,
-        )
-        .await?;
+        resourceinfo.increase_try_count();
+        resourceinfo.set_status(status_comment.0);
+        resourceinfo.set_comment(&status_comment.1);
+        coord
+            .meta_manager()
+            .write_resourceinfo(resourceinfo.get_name(), resourceinfo.clone())
+            .await
+            .map_err(|err| CoordinatorError::Meta { source: err })?;
 
         operator_result
     }
@@ -386,23 +306,28 @@ impl ResourceManager {
         coord: Arc<dyn Coordinator>,
         mut resourceinfo: ResourceInfo,
     ) -> CoordinatorResult<bool> {
-        let resourceinfos = coord.meta_manager().read_resourceinfos().await?;
-        let mut resourceinfos_map: HashMap<String, ResourceInfo> = HashMap::default();
-        for resourceinfo in resourceinfos {
-            resourceinfos_map.insert(resourceinfo.get_name().to_string(), resourceinfo);
-        }
-
-        let name = resourceinfo.get_name();
-        if !resourceinfos_map.contains_key(name)
-            || *resourceinfos_map[name].get_status() == ResourceStatus::Schedule
-            || *resourceinfos_map[name].get_status() == ResourceStatus::Successed
-            || *resourceinfos_map[name].get_status() == ResourceStatus::Cancel
-            || *resourceinfos_map[name].get_status() == ResourceStatus::Fatal
+        let opt = coord
+            .meta_manager()
+            .read_resourceinfo_by_name(resourceinfo.get_name())
+            .await?;
+        if opt.is_none()
+            || opt.is_some_and(|old_resourceinfo| {
+                *old_resourceinfo.get_status() == ResourceStatus::Schedule
+                    || *old_resourceinfo.get_status() == ResourceStatus::Successed
+                    || *old_resourceinfo.get_status() == ResourceStatus::Cancel
+                    || *old_resourceinfo.get_status() == ResourceStatus::Fatal
+            })
         {
-            if *resourceinfo.get_status() == ResourceStatus::Executing {
-                resourceinfo.increase_try_count();
+            if *resourceinfo.get_status() == ResourceStatus::Schedule {
+                let (id, lock) = coord
+                    .meta_manager()
+                    .read_resourceinfos_mark()
+                    .await
+                    .map_err(|meta_err| CoordinatorError::Meta { source: meta_err })?;
+                if lock {
+                    resourceinfo.set_execute_node_id(id);
+                }
             }
-
             // write to meta
             coord
                 .meta_manager()
@@ -410,12 +335,47 @@ impl ResourceManager {
                 .await?;
 
             if *resourceinfo.get_status() == ResourceStatus::Executing {
-                // execute right now
-                ResourceManager::do_operator(coord, resourceinfo).await?;
+                // execute right now, if failed, retry later
+                ResourceManager::do_operator(coord.clone(), resourceinfo.clone()).await?;
             }
             Ok(true)
         } else {
             Ok(false)
+        }
+    }
+
+    pub async fn retry_failed_task(coord: Arc<dyn Coordinator>, resourceinfo: ResourceInfo) {
+        let base_sleep: u64 = 2;
+        sleep(Duration::from_secs(
+            base_sleep.pow(resourceinfo.get_try_count() as u32),
+        ))
+        .await;
+        let mut resourceinfo = resourceinfo;
+        resourceinfo.set_execute_node_id(coord.node_id());
+        while ResourceManager::do_operator(coord.clone(), resourceinfo.clone())
+            .await
+            .is_err()
+        {
+            sleep(Duration::from_secs(
+                base_sleep.pow(resourceinfo.get_try_count() as u32),
+            ))
+            .await;
+            let res = coord
+                .meta_manager()
+                .read_resourceinfo_by_name(resourceinfo.get_name())
+                .await;
+            match res {
+                Ok(Some(res)) => {
+                    resourceinfo = res;
+                }
+                Ok(None) => {
+                    error!("resourceinfo not found: {}", resourceinfo.get_name());
+                    break;
+                }
+                Err(err) => {
+                    error!("read resourceinfo failed: {}", err);
+                }
+            }
         }
     }
 }

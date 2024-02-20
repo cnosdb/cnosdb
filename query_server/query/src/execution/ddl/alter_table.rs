@@ -125,6 +125,7 @@ impl DDLDefinitionTask for AlterTableTask {
                     + &info.0,
                 info.1,
                 &None,
+                query_state_machine.coord.node_id(),
             );
             ResourceManager::add_resource_task(query_state_machine.coord.clone(), resourceinfo)
                 .await?;
