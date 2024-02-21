@@ -16,9 +16,9 @@ const TIME_STAMP_NAME: &str = "time";
 
 #[derive(Debug)]
 pub struct DBschemas {
+    meta: MetaRef,
     tenant_name: String,
     database_name: String,
-    client: MetaClientRef,
 }
 
 impl DBschemas {
@@ -29,13 +29,15 @@ impl DBschemas {
                 .ok_or(SchemaError::TenantNotFound {
                     tenant: db_schema.tenant_name().to_string(),
                 })?;
+
         if client.get_db_schema(db_schema.database_name())?.is_none() {
             client.create_db(db_schema.clone()).await?;
         }
+
         Ok(Self {
+            meta,
             tenant_name: db_schema.tenant_name().to_string(),
             database_name: db_schema.database_name().to_string(),
-            client,
         })
     }
 
@@ -46,6 +48,19 @@ impl DBschemas {
     pub fn tenant_name(&self) -> &str {
         &self.tenant_name
     }
+
+    async fn tenant_meta(&self) -> Result<MetaClientRef> {
+        let client =
+            self.meta
+                .tenant_meta(self.tenant_name())
+                .await
+                .ok_or(SchemaError::TenantNotFound {
+                    tenant: self.tenant_name().to_string(),
+                })?;
+
+        Ok(client)
+    }
+
     #[async_recursion]
     async fn check_field_type_or_else_add_impl<'a>(
         &self,
@@ -57,9 +72,9 @@ impl DBschemas {
         if get_schema_from_meta {
             self.get_table_schema_by_meta(fb_schema.table).await?;
         } else {
-            self.get_table_schema(fb_schema.table)?;
+            self.get_table_schema(fb_schema.table).await?;
         }
-        let opt_schema = self.get_table_schema(fb_schema.table)?;
+        let opt_schema = self.get_table_schema(fb_schema.table).await?;
         let mut schema = match opt_schema.as_ref() {
             Some(schema) => Cow::Borrowed(schema.as_ref()),
             None => {
@@ -69,7 +84,7 @@ impl DBschemas {
                     fb_schema.table.to_string(),
                     vec![],
                 );
-                let db_schema = self.db_schema()?;
+                let db_schema = self.db_schema().await?;
                 let precision = db_schema.config.precision_or_default();
                 schema.add_column(TableColumn::new_time_column(
                     schema.next_column_id(),
@@ -131,12 +146,13 @@ impl DBschemas {
                 }
             }
         }
+
+        let client = self.tenant_meta().await?;
         //schema changed store it
         let schema = if new_schema {
             schema.to_mut().schema_id = 0;
             let schema: TskvTableSchemaRef = schema.into_owned().into();
-            let res = self
-                .client
+            let res = client
                 .create_table(&TableSchema::TsKvTableSchema(schema.clone()))
                 .await;
             if let Err(MetaError::TableAlreadyExists { .. }) = res.as_ref() {
@@ -149,8 +165,7 @@ impl DBschemas {
         } else if schema_changed {
             schema.to_mut().schema_id += 1;
             let schema: TskvTableSchemaRef = schema.into_owned().into();
-            let res = self
-                .client
+            let res = client
                 .update_table(&TableSchema::TsKvTableSchema(schema.clone()))
                 .await;
             if let Err(MetaError::UpdateTableConflict { .. }) = &res {
@@ -177,26 +192,21 @@ impl DBschemas {
             .await
     }
 
-    pub fn client(&self) -> &MetaClientRef {
-        &self.client
-    }
-
     pub async fn check_create_table_res(
         &self,
         res: MetaResult<()>,
         schema: TskvTableSchemaRef,
     ) -> Result<()> {
+        let client = self.tenant_meta().await?;
         match res {
             Ok(_) => Ok(()),
             Err(e) => {
                 if let MetaError::TableAlreadyExists { .. } = e {
-                    let schema_get = self
-                        .client
+                    let schema_get = client
                         .get_tskv_table_schema(&schema.db, &schema.name)
                         .map_err(|e| MetaError::Retry { msg: e.to_string() })?;
                     let schema_get = match schema_get {
-                        None => self
-                            .client
+                        None => client
                             .get_tskv_table_schema_by_meta(&schema.db, &schema.name)
                             .await
                             .map_err(|e| MetaError::Retry { msg: e.to_string() })?
@@ -213,13 +223,11 @@ impl DBschemas {
                         Ok(())
                     } else {
                         for _ in 0..3 {
-                            let schema_get = self
-                                .client
+                            let schema_get = client
                                 .get_tskv_table_schema(&schema.db, &schema.name)
                                 .map_err(|e| MetaError::Retry { msg: e.to_string() })?;
                             let schema_get = match schema_get {
-                                None => self
-                                    .client
+                                None => client
                                     .get_tskv_table_schema_by_meta(&schema.db, &schema.name)
                                     .await
                                     .map_err(|e| MetaError::Retry { msg: e.to_string() })?
@@ -232,8 +240,7 @@ impl DBschemas {
                             let mut schema = schema.as_ref().clone();
                             schema.schema_id = schema_get.schema_id + 1;
                             let schema = Arc::new(schema);
-                            if self
-                                .client
+                            if client
                                 .update_table(&TableSchema::TsKvTableSchema(schema))
                                 .await
                                 .is_ok()
@@ -255,6 +262,7 @@ impl DBschemas {
         res: MetaResult<()>,
         schema: TskvTableSchemaRef,
     ) -> Result<()> {
+        let client = self.tenant_meta().await?;
         let mut schema_id = schema.schema_id;
         if let Err(ref e) = res {
             if matches!(e, MetaError::UpdateTableConflict { .. }) {
@@ -262,8 +270,7 @@ impl DBschemas {
                     let mut schema = schema.as_ref().clone();
                     schema_id += 1;
                     schema.schema_id = schema_id;
-                    if self
-                        .client
+                    if client
                         .update_table(&TableSchema::TsKvTableSchema(Arc::new(schema)))
                         .await
                         .is_ok()
@@ -278,9 +285,10 @@ impl DBschemas {
         Ok(())
     }
 
-    pub fn get_table_schema(&self, tab: &str) -> Result<Option<TskvTableSchemaRef>> {
+    pub async fn get_table_schema(&self, tab: &str) -> Result<Option<TskvTableSchemaRef>> {
         let schema = self
-            .client
+            .tenant_meta()
+            .await?
             .get_tskv_table_schema(&self.database_name, tab)?;
 
         Ok(schema)
@@ -288,30 +296,36 @@ impl DBschemas {
 
     pub async fn get_table_schema_by_meta(&self, tab: &str) -> Result<Option<TskvTableSchemaRef>> {
         let schema = self
-            .client
+            .tenant_meta()
+            .await?
             .get_tskv_table_schema_by_meta(&self.database_name, tab)
             .await?;
 
         Ok(schema)
     }
 
-    pub fn list_tables(&self) -> Result<Vec<String>> {
-        let tables = self.client.list_tables(&self.database_name)?;
+    pub async fn list_tables(&self) -> Result<Vec<String>> {
+        let tables = self.tenant_meta().await?.list_tables(&self.database_name)?;
+
         Ok(tables)
     }
 
     pub async fn del_table_schema(&self, tab: &str) -> Result<()> {
-        self.client.drop_table(&self.database_name, tab).await?;
+        self.tenant_meta()
+            .await?
+            .drop_table(&self.database_name, tab)
+            .await?;
         Ok(())
     }
 
-    pub fn db_schema(&self) -> Result<DatabaseSchema> {
-        let db_schema =
-            self.client
-                .get_db_schema(&self.database_name)?
-                .ok_or(MetaError::DatabaseNotFound {
-                    database: self.database_name.clone(),
-                })?;
+    pub async fn db_schema(&self) -> Result<DatabaseSchema> {
+        let db_schema = self
+            .tenant_meta()
+            .await?
+            .get_db_schema(&self.database_name)?
+            .ok_or(MetaError::DatabaseNotFound {
+                database: self.database_name.clone(),
+            })?;
         Ok(db_schema)
     }
 }

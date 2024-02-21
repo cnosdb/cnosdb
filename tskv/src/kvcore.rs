@@ -304,7 +304,7 @@ impl Engine for TsKv {
         let (schema, ts_index) = match self.ctx.version_set.read().await.get_db(tenant, database) {
             Some(db) => {
                 let db = db.read().await;
-                let schema = match db.get_table_schema(tab)? {
+                let schema = match db.get_table_schema(tab).await? {
                     None => return Ok(vec![]),
                     Some(schema) => schema,
                 };
