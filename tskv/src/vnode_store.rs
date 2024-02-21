@@ -139,7 +139,7 @@ impl VnodeStorage {
         // TODO Create global DropTable flag for droping the same table at the same time.
         let db_owner = self.db.read().await.owner();
         let schemas = self.db.read().await.get_schemas();
-        if let Some(fields) = schemas.get_table_schema(table)? {
+        if let Some(fields) = schemas.get_table_schema(table).await? {
             let column_ids: Vec<ColumnId> = fields.columns().iter().map(|f| f.id).collect();
             info!(
                 "Drop table: deleting {} columns in table: {db_owner}.{table}",
@@ -183,7 +183,8 @@ impl VnodeStorage {
             .db
             .read()
             .await
-            .get_table_schema(table)?
+            .get_table_schema(table)
+            .await?
             .ok_or_else(|| SchemaError::TableNotFound {
                 database: db_name.to_string(),
                 table: table.to_string(),
@@ -311,7 +312,7 @@ impl VnodeStorage {
 
         let tag_domains = predicate.tags_filter();
         let series_ids = {
-            let table_schema = match self.db.read().await.get_table_schema(&cmd.table)? {
+            let table_schema = match self.db.read().await.get_table_schema(&cmd.table).await? {
                 None => return Ok(()),
                 Some(schema) => schema,
             };
@@ -482,7 +483,7 @@ impl VnodeStorage {
         let db_rlock = self.db.read().await;
         let db_owner = db_rlock.owner();
         let schemas = db_rlock.get_schemas();
-        if let Some(fields) = schemas.get_table_schema(table)? {
+        if let Some(fields) = schemas.get_table_schema(table).await? {
             let table_column_ids: HashSet<ColumnId> =
                 fields.columns().iter().map(|f| f.id).collect();
             let mut to_drop_column_ids = Vec::with_capacity(column_ids.len());
@@ -527,7 +528,8 @@ impl VnodeStorage {
             .db
             .read()
             .await
-            .get_table_schema(table)?
+            .get_table_schema(table)
+            .await?
             .ok_or_else(|| SchemaError::TableNotFound {
                 database: db_name.to_string(),
                 table: table.to_string(),
