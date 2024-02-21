@@ -315,7 +315,11 @@ impl TsmTombstone {
         let mut cache = self.cache.lock().clone();
         cache.insert(TombstoneField::All, time_range);
         cache.compact();
-        trace::info!("Saving compact_tmp tombstone file '{}'", tmp_path.display());
+        trace::info!(
+            "Saving compact_tmp tombstone file '{}', all_excluded_ranges: {}",
+            tmp_path.display(),
+            cache.all_excluded()
+        );
         cache.save_to(&mut writer).await?;
         writer.close().await?;
 

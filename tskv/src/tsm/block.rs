@@ -387,13 +387,92 @@ impl DataBlock {
         }
     }
 
-    pub fn merge(&self, other: Self) -> Self {
-        let (mut i, mut j) = (0_usize, 0_usize);
+    /// Extend self with a range of timestamps and vlaues in the other.
+    fn extend_slice(&mut self, other: &Self, range: std::ops::Range<usize>) {
+        match (self, other) {
+            (
+                DataBlock::U64 {
+                    ts: ta, val: va, ..
+                },
+                DataBlock::U64 {
+                    ts: tb, val: vb, ..
+                },
+            ) => {
+                ta.extend_from_slice(&tb[range.start..range.end]);
+                va.extend_from_slice(&vb[range.start..range.end]);
+            }
+            (
+                DataBlock::I64 {
+                    ts: ta, val: va, ..
+                },
+                DataBlock::I64 {
+                    ts: tb, val: vb, ..
+                },
+            ) => {
+                ta.extend_from_slice(&tb[range.start..range.end]);
+                va.extend_from_slice(&vb[range.start..range.end]);
+            }
+            (
+                DataBlock::Str {
+                    ts: ta, val: va, ..
+                },
+                DataBlock::Str {
+                    ts: tb, val: vb, ..
+                },
+            ) => {
+                ta.extend_from_slice(&tb[range.start..range.end]);
+                va.extend_from_slice(&vb[range.start..range.end]);
+            }
+            (
+                DataBlock::F64 {
+                    ts: ta, val: va, ..
+                },
+                DataBlock::F64 {
+                    ts: tb, val: vb, ..
+                },
+            ) => {
+                ta.extend_from_slice(&tb[range.start..range.end]);
+                va.extend_from_slice(&vb[range.start..range.end]);
+            }
+            (
+                DataBlock::Bool {
+                    ts: ta, val: va, ..
+                },
+                DataBlock::Bool {
+                    ts: tb, val: vb, ..
+                },
+            ) => {
+                ta.extend_from_slice(&tb[range.start..range.end]);
+                va.extend_from_slice(&vb[range.start..range.end]);
+            }
+            _ => {}
+        }
+    }
+
+    /// Merge with an other data_block.
+    ///
+    /// Values with the same timestamp will be replaced with
+    /// a value with the same timestamp in the other.
+    pub fn merge(self, other: Self) -> Self {
         let len_1 = self.len();
+        if len_1 == 0 {
+            return other;
+        }
         let len_2 = other.len();
+        if len_2 == 0 {
+            return self;
+        }
+
         let ts_1 = self.ts();
         let ts_2 = other.ts();
+
+        let (mut i, mut j) = (ts_1.binary_search(&ts_2[0]).unwrap_or_else(|e| e), 0_usize);
+
         let mut blk = Self::new(self.len() + other.len(), self.field_type());
+        if i > 0 {
+            blk.extend_slice(&self, 0..i);
+        }
+
         while i < len_1 && j < len_2 {
             match ts_1[i].cmp(&ts_2[j]) {
                 std::cmp::Ordering::Less => {
@@ -403,7 +482,7 @@ impl DataBlock {
                     i += 1;
                 }
                 std::cmp::Ordering::Equal => {
-                    if let Some(t) = self.get(i) {
+                    if let Some(t) = other.get(j) {
                         blk.insert(t);
                     }
                     i += 1;
@@ -418,17 +497,9 @@ impl DataBlock {
             }
         }
         if i < len_1 {
-            for i1 in i..len_1 {
-                if let Some(t) = self.get(i1) {
-                    blk.insert(t);
-                }
-            }
+            blk.extend_slice(&self, i..len_1);
         } else if j < len_2 {
-            for j1 in j..len_2 {
-                if let Some(t) = other.get(j1) {
-                    blk.insert(t);
-                }
-            }
+            blk.extend_slice(&other, j..len_2);
         }
 
         blk
@@ -1163,7 +1234,7 @@ pub mod test {
     }
 
     #[test]
-    fn test_merge_blocks() {
+    fn test_merge_multiple_blocks() {
         #[rustfmt::skip]
         let res = DataBlock::merge_blocks(
             vec![
@@ -1177,6 +1248,137 @@ pub mod test {
         assert_eq!(res, vec![
             DataBlock::U64 { ts: vec![1, 2, 3, 4, 5], val: vec![10, 12, 13, 15, 50], enc: DataBlockEncoding::default() },
         ]);
+    }
+
+    #[test]
+    fn test_merge_blocks() {
+        fn do_merge(timestamps_1: Vec<i64>, timestamps_2: Vec<i64>) -> DataBlock {
+            let values_1 = timestamps_1.iter().map(|t| (*t as u64) * 10 + 1).collect();
+            let values_2 = timestamps_2.iter().map(|t| (*t as u64) * 10 + 2).collect();
+            let blk_1 = DataBlock::U64 {
+                ts: timestamps_1,
+                val: values_1,
+                enc: DataBlockEncoding::default(),
+            };
+            let blk_2 = DataBlock::U64 {
+                ts: timestamps_2,
+                val: values_2,
+                enc: DataBlockEncoding::default(),
+            };
+            blk_1.merge(blk_2)
+        }
+        {
+            assert_eq!(
+                do_merge(vec![3, 5, 7], vec![1, 2]),
+                DataBlock::U64 {
+                    ts: vec![1, 2, 3, 5, 7],
+                    val: vec![12, 22, 31, 51, 71],
+                    enc: DataBlockEncoding::default()
+                }
+            );
+            assert_eq!(
+                do_merge(vec![3, 5, 7], vec![1, 2, 3]),
+                DataBlock::U64 {
+                    ts: vec![1, 2, 3, 5, 7],
+                    val: vec![12, 22, 32, 51, 71],
+                    enc: DataBlockEncoding::default()
+                }
+            );
+            assert_eq!(
+                do_merge(vec![3, 5, 7], vec![2, 3]),
+                DataBlock::U64 {
+                    ts: vec![2, 3, 5, 7],
+                    val: vec![22, 32, 51, 71],
+                    enc: DataBlockEncoding::default()
+                }
+            );
+            assert_eq!(
+                do_merge(vec![3, 5, 7], vec![3, 4]),
+                DataBlock::U64 {
+                    ts: vec![3, 4, 5, 7],
+                    val: vec![32, 42, 51, 71],
+                    enc: DataBlockEncoding::default()
+                }
+            );
+        }
+        {
+            assert_eq!(
+                do_merge(vec![3, 5, 7], vec![1, 2, 4, 5, 6, 8, 9]),
+                DataBlock::U64 {
+                    ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9],
+                    val: vec![12, 22, 31, 42, 52, 62, 71, 82, 92],
+                    enc: DataBlockEncoding::default()
+                }
+            );
+            assert_eq!(
+                do_merge(vec![3, 5, 7], vec![4, 5, 6]),
+                DataBlock::U64 {
+                    ts: vec![3, 4, 5, 6, 7],
+                    val: vec![31, 42, 52, 62, 71],
+                    enc: DataBlockEncoding::default()
+                }
+            );
+            assert_eq!(
+                do_merge(vec![3, 5, 7], vec![4, 6]),
+                DataBlock::U64 {
+                    ts: vec![3, 4, 5, 6, 7],
+                    val: vec![31, 42, 51, 62, 71],
+                    enc: DataBlockEncoding::default()
+                }
+            );
+        }
+        {
+            assert_eq!(
+                do_merge(vec![3, 5, 7], vec![6, 7]),
+                DataBlock::U64 {
+                    ts: vec![3, 5, 6, 7],
+                    val: vec![31, 51, 62, 72],
+                    enc: DataBlockEncoding::default()
+                }
+            );
+            assert_eq!(
+                do_merge(vec![3, 5, 7], vec![7, 8]),
+                DataBlock::U64 {
+                    ts: vec![3, 5, 7, 8],
+                    val: vec![31, 51, 72, 82],
+                    enc: DataBlockEncoding::default()
+                }
+            );
+            assert_eq!(
+                do_merge(vec![3, 5, 7], vec![7, 8, 9]),
+                DataBlock::U64 {
+                    ts: vec![3, 5, 7, 8, 9],
+                    val: vec![31, 51, 72, 82, 92],
+                    enc: DataBlockEncoding::default()
+                }
+            );
+            assert_eq!(
+                do_merge(vec![3, 5, 7], vec![8, 9]),
+                DataBlock::U64 {
+                    ts: vec![3, 5, 7, 8, 9],
+                    val: vec![31, 51, 71, 82, 92],
+                    enc: DataBlockEncoding::default()
+                }
+            );
+        }
+        {
+            assert_eq!(
+                do_merge(vec![3, 5, 7], vec![]),
+                DataBlock::U64 {
+                    ts: vec![3, 5, 7],
+                    val: vec![31, 51, 71],
+                    enc: DataBlockEncoding::default()
+                }
+            );
+            assert_eq!(
+                do_merge(vec![], vec![7, 8]),
+                DataBlock::U64 {
+                    ts: vec![7, 8],
+                    val: vec![72, 82],
+                    enc: DataBlockEncoding::default()
+                }
+            );
+        }
     }
 
     #[test]

@@ -29,6 +29,8 @@ pub enum CompactTask {
     Delta(TseriesFamilyId),
     /// Flush memcaches and then compact the files in the in_level into the out_level.
     Cold(TseriesFamilyId),
+    /// Triggers compaction manually.
+    Manual(TseriesFamilyId),
 }
 
 impl CompactTask {
@@ -37,11 +39,13 @@ impl CompactTask {
             CompactTask::Normal(ts_family_id) => *ts_family_id,
             CompactTask::Cold(ts_family_id) => *ts_family_id,
             CompactTask::Delta(ts_family_id) => *ts_family_id,
+            CompactTask::Manual(ts_family_id) => *ts_family_id,
         }
     }
 
     fn priority(&self) -> usize {
         match self {
+            CompactTask::Manual(_) => 0,
             CompactTask::Delta(_) => 1,
             CompactTask::Normal(_) => 2,
             CompactTask::Cold(_) => 3,
@@ -67,6 +71,7 @@ impl std::fmt::Display for CompactTask {
             CompactTask::Normal(ts_family_id) => write!(f, "Normal({})", ts_family_id),
             CompactTask::Cold(ts_family_id) => write!(f, "Cold({})", ts_family_id),
             CompactTask::Delta(ts_family_id) => write!(f, "Delta({})", ts_family_id),
+            CompactTask::Manual(ts_family_id) => write!(f, "Manual({})", ts_family_id),
         }
     }
 }

@@ -154,7 +154,7 @@ impl CompactingBlockMetaGroup {
             return Ok(vec![]);
         }
         self.blk_metas
-            .sort_by(|a, b| a.reader_idx.cmp(&b.reader_idx).reverse());
+            .sort_by(|a, b| a.reader_idx.cmp(&b.reader_idx));
 
         let merged_block;
         if self.blk_metas.len() == 1 && !self.blk_metas[0].has_tombstone() {
@@ -1151,16 +1151,20 @@ pub mod test {
         expected_data_field_ids.sort();
         assert_eq!(data_field_ids, expected_data_field_ids);
 
-        for (k, v) in expected_data.iter() {
-            let data_blks = data.get(k).unwrap();
-            if v.len() != data_blks.len() {
-                let v_str = format_data_blocks(v.as_slice());
+        for (exp_field_id, exp_blks) in expected_data.iter() {
+            let data_blks = data.get(exp_field_id).unwrap();
+            if exp_blks.len() != data_blks.len() {
+                let ev_str = format_data_blocks(exp_blks.as_slice());
                 let data_blks_str = format_data_blocks(data_blks.as_slice());
-                panic!("fid={k}, v.len != data_blks.len:\n          v={v_str}\n  data_blks={data_blks_str}")
+                panic!("fid={exp_field_id}, v.len != data_blks.len:\n          v={ev_str}\n  data_blks={data_blks_str}")
             }
-            assert_eq!(v.len(), data_blks.len());
-            for (v_idx, v_blk) in v.iter().enumerate() {
-                assert_eq!(data_blks.get(v_idx).unwrap(), v_blk);
+            assert_eq!(exp_blks.len(), data_blks.len());
+            for (i, exp_blk) in exp_blks.iter().enumerate() {
+                assert_eq!(
+                    data_blks.get(i).unwrap(),
+                    exp_blk,
+                    "[fid:{exp_field_id}][blk:{i}] File data != Expected data"
+                );
             }
         }
     }
@@ -1274,26 +1278,26 @@ pub mod test {
         #[rustfmt::skip]
         let data = vec![
             HashMap::from([
-                (1, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6], enc: INT_BLOCK_ENCODING }]),
-                (2, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6], enc: INT_BLOCK_ENCODING }]),
-                (3, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6], enc: INT_BLOCK_ENCODING }]),
+                (1, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![114, 115, 116], enc: INT_BLOCK_ENCODING }]),
+                (2, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![124, 125, 126], enc: INT_BLOCK_ENCODING }]),
+                (3, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![134, 135, 136], enc: INT_BLOCK_ENCODING }]),
             ]),
             HashMap::from([
-                (1, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3], enc: INT_BLOCK_ENCODING }]),
-                (2, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3], enc: INT_BLOCK_ENCODING }]),
-                (3, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3], enc: INT_BLOCK_ENCODING }]),
+                (1, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![211, 212, 213], enc: INT_BLOCK_ENCODING }]),
+                (2, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![221, 222, 223], enc: INT_BLOCK_ENCODING }]),
+                (3, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![231, 232, 233], enc: INT_BLOCK_ENCODING }]),
             ]),
             HashMap::from([
-                (1, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], enc: INT_BLOCK_ENCODING }]),
-                (2, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], enc: INT_BLOCK_ENCODING }]),
-                (3, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], enc: INT_BLOCK_ENCODING }]),
+                (1, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![317, 318, 319], enc: INT_BLOCK_ENCODING }]),
+                (2, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![327, 328, 329], enc: INT_BLOCK_ENCODING }]),
+                (3, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![337, 338, 339], enc: INT_BLOCK_ENCODING }]),
             ]),
         ];
         #[rustfmt::skip]
         let expected_data = HashMap::from([
-            (1, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], enc: INT_BLOCK_ENCODING }]),
-            (2, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], enc: INT_BLOCK_ENCODING }]),
-            (3, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], enc: INT_BLOCK_ENCODING }]),
+            (1, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![211, 212, 213, 114, 115, 116, 317, 318, 319], enc: INT_BLOCK_ENCODING }]),
+            (2, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![221, 222, 223, 124, 125, 126, 327, 328, 329], enc: INT_BLOCK_ENCODING }]),
+            (3, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![231, 232, 233, 134, 135, 136, 337, 338, 339], enc: INT_BLOCK_ENCODING }]),
         ]);
 
         let dir = "/tmp/test/compaction/1";
@@ -1320,27 +1324,27 @@ pub mod test {
         #[rustfmt::skip]
         let data = vec![
             HashMap::from([
-                (1, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4], val: vec![1, 2, 3, 5], enc: INT_BLOCK_ENCODING }]),
-                (3, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4], val: vec![1, 2, 3, 5], enc: INT_BLOCK_ENCODING }]),
-                (4, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3], enc: INT_BLOCK_ENCODING }]),
+                (1, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4], val: vec![111, 112, 113, 114], enc: INT_BLOCK_ENCODING }]),
+                (3, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4], val: vec![131, 132, 133, 134], enc: INT_BLOCK_ENCODING }]),
+                (4, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![141, 142, 143], enc: INT_BLOCK_ENCODING }]),
             ]),
             HashMap::from([
-                (1, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6], enc: INT_BLOCK_ENCODING }]),
-                (2, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6], enc: INT_BLOCK_ENCODING }]),
-                (3, vec![DataBlock::I64 { ts: vec![4, 5, 6, 7], val: vec![4, 5, 6, 8], enc: INT_BLOCK_ENCODING }]),
+                (1, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![214, 215, 216], enc: INT_BLOCK_ENCODING }]),
+                (2, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![224, 225, 226], enc: INT_BLOCK_ENCODING }]),
+                (3, vec![DataBlock::I64 { ts: vec![4, 5, 6, 7], val: vec![234, 235, 236, 237], enc: INT_BLOCK_ENCODING }]),
             ]),
             HashMap::from([
-                (1, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], enc: INT_BLOCK_ENCODING }]),
-                (2, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], enc: INT_BLOCK_ENCODING }]),
-                (3, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], enc: INT_BLOCK_ENCODING }]),
+                (1, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![317, 318, 319], enc: INT_BLOCK_ENCODING }]),
+                (2, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![327, 328, 329], enc: INT_BLOCK_ENCODING }]),
+                (3, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![337, 338, 339], enc: INT_BLOCK_ENCODING }]),
             ]),
         ];
         #[rustfmt::skip]
         let expected_data = HashMap::from([
-            (1, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], enc: INT_BLOCK_ENCODING }]),
-            (2, vec![DataBlock::I64 { ts: vec![4, 5, 6, 7, 8, 9], val: vec![4, 5, 6, 7, 8, 9], enc: INT_BLOCK_ENCODING }]),
-            (3, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], enc: INT_BLOCK_ENCODING }]),
-            (4, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3], enc: INT_BLOCK_ENCODING }]),
+            (1, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![111, 112, 113, 214, 215, 216, 317, 318, 319], enc: INT_BLOCK_ENCODING }]),
+            (2, vec![DataBlock::I64 { ts: vec![4, 5, 6, 7, 8, 9], val: vec![224, 225, 226, 327, 328, 329], enc: INT_BLOCK_ENCODING }]),
+            (3, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![131, 132, 133, 234, 235, 236, 337, 338, 339], enc: INT_BLOCK_ENCODING }]),
+            (4, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![141, 142, 143], enc: INT_BLOCK_ENCODING }]),
         ]);
 
         let dir = "/tmp/test/compaction/2";

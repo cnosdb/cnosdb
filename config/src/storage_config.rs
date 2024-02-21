@@ -29,6 +29,9 @@ pub struct StorageConfig {
     #[serde(default = "StorageConfig::default_max_level")]
     pub max_level: u16,
 
+    #[serde(default = "StorageConfig::default_enable_compaction")]
+    pub enable_compaction: bool,
+
     #[serde(default = "StorageConfig::default_compact_trigger_file_num")]
     pub compact_trigger_file_num: u32,
 
@@ -83,6 +86,10 @@ impl StorageConfig {
 
     fn default_max_level() -> u16 {
         4
+    }
+
+    fn default_enable_compaction() -> bool {
+        true
     }
 
     fn default_compact_trigger_file_num() -> u32 {
@@ -167,6 +174,7 @@ impl Default for StorageConfig {
             flush_req_channel_cap: Self::default_flush_req_channel_cap(),
             max_cached_readers: Self::default_max_cached_readers(),
             max_level: Self::default_max_level(),
+            enable_compaction: Self::default_enable_compaction(),
             compact_trigger_file_num: Self::default_compact_trigger_file_num(),
             compact_trigger_cold_duration: Self::default_compact_trigger_cold_duration(),
             max_compact_size: Self::default_max_compact_size(),

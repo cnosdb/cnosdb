@@ -30,6 +30,11 @@ pub async fn pick_compaction(
                 .pick_compaction(compact_task, version)
                 .await
         }
+        CompactTask::Manual(_) => {
+            DeltaCompactionPicker
+                .pick_compaction(compact_task, version)
+                .await
+        }
     }
 }
 
@@ -269,6 +274,11 @@ impl DeltaCompactionPicker {
             Some(tomb_cache) => tomb_cache.all_excluded().clone(),
             None => return Ok(*file.time_range()),
         };
+        debug!(
+            "Picker(delta): file: {}, all_excluded time ranges: [ {} ]",
+            file.file_id(),
+            tomb_trs
+        );
         match file.time_range().exclude_time_ranges(&tomb_trs) {
             Some(trs) => {
                 if let Some(last_tr) = trs.time_ranges().last() {
@@ -356,13 +366,15 @@ impl DeltaCompactionPicker {
                             *lv_file_compacting = true;
                             *l0_file_compacting = true;
                             info!(
-                                "Picker(delta) [{pick_timestamp}]: picked two level files: level_0 files({}), level_0 file: {l0_file}, level file: {lv_file}",
+                                "Picker(delta) [{pick_timestamp}]: picked two level files: level_0 files({}), level file: {lv_file}",
                                 ColumnFiles(&picked_files)
                             );
+                            picked_files.push(l0_file.clone());
+                            picked_files.push(lv_file.clone());
                             return Some(CompactReq {
                                 compact_task,
                                 version: version.clone(),
-                                files: vec![l0_file.clone(), lv_file.clone()],
+                                files: picked_files,
                                 in_level: 0,
                                 out_level: lv.level(),
                             });

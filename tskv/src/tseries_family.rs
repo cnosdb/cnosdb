@@ -1154,6 +1154,9 @@ pub fn schedule_vnode_compaction(
 ) {
     let _jh = runtime.spawn(async move {
         let vnode_rlock = vnode.read().await;
+        if !vnode_rlock.storage_opt.enable_compaction {
+            return;
+        }
         let tsf_id = vnode_rlock.tf_id;
         let compact_trigger_cold_duration = vnode_rlock.storage_opt.compact_trigger_cold_duration;
         let compact_trigger_file_num = vnode_rlock.storage_opt.compact_trigger_file_num;
