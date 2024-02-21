@@ -721,9 +721,26 @@ impl FileFormatOptionsBuilder {
                     self.file_type = Some(file_type);
                 }
                 "delimiter" => {
+                    // only support csv
+                    if let Some(file_type) = &self.file_type {
+                        if *file_type != FileType::CSV {
+                            return Err(QueryError::Semantic {
+                                err: "delimiter and with_header fields are specific to CSV"
+                                    .to_string(),
+                            });
+                        }
+                    }
                     self.delimiter = Some(parse_char_value(value)?);
                 }
                 "with_header" => {
+                    if let Some(file_type) = &self.file_type {
+                        if *file_type != FileType::CSV {
+                            return Err(QueryError::Semantic {
+                                err: "delimiter and with_header fields are specific to CSV"
+                                    .to_string(),
+                            });
+                        }
+                    }
                     self.with_header = Some(parse_bool_value(value)?);
                 }
                 "file_compression_type" => {
