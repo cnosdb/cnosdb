@@ -175,7 +175,7 @@ select count(*) from local_to_table_json;
 ----
 8192
 
-query I
+statement error delimiter and with_header fields are specific to CSV
 copy into local_to_table_json from 'query_server/test/resource/json/part-0.json' FILE_FORMAT = (TYPE = 'JSON', DELIMITER = ',');
 ----
 10
