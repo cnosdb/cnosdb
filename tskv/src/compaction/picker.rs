@@ -232,7 +232,8 @@ impl LevelCompactionPicker {
 }
 
 /// For the given time_range of a file, return recommended level to compact in.
-/// If it returns 0, it means there is no files overlapped with the given time range.
+/// If it returns 0, it means that there are no files overlapped with the given
+/// time range in levels.
 fn adviced_out_level(time_range: &TimeRange, levels: &[LevelInfo; 5]) -> LevelId {
     if time_range.min_ts > levels[1].time_range.max_ts || levels[1].time_range.is_none() {
         // If lv-1 is (+∞，-∞), compact to lv-1.
@@ -275,9 +276,8 @@ impl DeltaCompactionPicker {
             None => return Ok(*file.time_range()),
         };
         debug!(
-            "Picker(delta): file: {}, all_excluded time ranges: [ {} ]",
+            "Picker(delta): file: {}, all_excluded time ranges: [ {tomb_trs} ]",
             file.file_id(),
-            tomb_trs
         );
         match file.time_range().exclude_time_ranges(&tomb_trs) {
             Some(trs) => {
@@ -305,10 +305,15 @@ impl DeltaCompactionPicker {
         let lv0 = &version.levels_info()[0];
         let lv14 = &version.levels_info()[1..];
         let mut picked_time_range = TimeRange::none();
-        let mut picked_compacting_wlocks = Vec::new();
-        let mut picked_files = vec![];
+        let mut picked_l0_compacting_wlocks = Vec::new();
+        let mut picked_l0_files = vec![];
         for l0_file in lv0.files.iter() {
             let mut l0_file_compacting = l0_file.write_lock_compacting().await;
+            debug!(
+                "Picker(delta) [{pick_timestamp}]: Level-0 file {} compacting: {}",
+                l0_file.file_id(),
+                *l0_file_compacting
+            );
             if *l0_file_compacting {
                 continue;
             }
@@ -335,18 +340,18 @@ impl DeltaCompactionPicker {
             // For well ordered lv0-files, merged to level 1
             if 0 == adviced_out_level {
                 *l0_file_compacting = true;
-                picked_compacting_wlocks.push(l0_file_compacting);
-                picked_files.push(l0_file.clone());
+                picked_l0_compacting_wlocks.push(l0_file_compacting);
+                picked_l0_files.push(l0_file.clone());
                 picked_time_range.merge(l0_file.time_range());
-                if picked_files.len() >= version.storage_opt.compact_trigger_file_num as usize {
+                if picked_l0_files.len() >= version.storage_opt.compact_trigger_file_num as usize {
                     info!(
-                        "Picker(delta) [{pick_timestamp}]: picked level_0 files({})",
-                        ColumnFiles(&picked_files)
+                        "Picker(delta) [{pick_timestamp}]: picked level_0 files({}) to level: 1",
+                        ColumnFiles(&picked_l0_files)
                     );
                     return Some(CompactReq {
                         compact_task,
                         version: version.clone(),
-                        files: picked_files,
+                        files: picked_l0_files,
                         in_level: 0,
                         out_level: 1,
                     });
@@ -354,27 +359,27 @@ impl DeltaCompactionPicker {
                 continue;
             }
 
+            // Release the previous picked l0_files.
+            for mut wlock in std::mem::take(&mut picked_l0_compacting_wlocks) {
+                *wlock = false;
+            }
+
             // Find the first file in level1-4 that overlaps with lv0-file
             for lv in lv14 {
-                if lv.time_range.overlaps(&picked_time_range) {
+                if lv.time_range.overlaps(&l0_file_remained_tr_last) {
                     for lv_file in lv.files.iter() {
                         let mut lv_file_compacting = lv_file.write_lock_compacting().await;
                         if *lv_file_compacting {
                             continue;
                         }
-                        if lv_file.time_range().overlaps(&picked_time_range) {
+                        if lv_file.time_range().overlaps(&l0_file_remained_tr_last) {
                             *lv_file_compacting = true;
                             *l0_file_compacting = true;
-                            info!(
-                                "Picker(delta) [{pick_timestamp}]: picked two level files: level_0 files({}), level file: {lv_file}",
-                                ColumnFiles(&picked_files)
-                            );
-                            picked_files.push(l0_file.clone());
-                            picked_files.push(lv_file.clone());
+                            info!("Picker(delta) [{pick_timestamp}]: picked two level files: level_0 file({l0_file}), level file: {lv_file} to level: {}", lv.level());
                             return Some(CompactReq {
                                 compact_task,
                                 version: version.clone(),
-                                files: picked_files,
+                                files: vec![l0_file.clone(), lv_file.clone()],
                                 in_level: 0,
                                 out_level: lv.level(),
                             });
@@ -386,10 +391,7 @@ impl DeltaCompactionPicker {
             // No file in level1-4 overlaps with lv0-file, compact lv0-file to adviced out-level.
             if adviced_out_level > 1 {
                 *l0_file_compacting = true;
-                info!(
-                    "Picker(delta) [{pick_timestamp}]: picked level_0 files({}), level_0 file: {l0_file}",
-                    ColumnFiles(&picked_files)
-                );
+                info!("Picker(delta) [{pick_timestamp}]: picked level_0 file: {l0_file} to level: {adviced_out_level}");
                 return Some(CompactReq {
                     compact_task,
                     version: version.clone(),
@@ -400,13 +402,9 @@ impl DeltaCompactionPicker {
             }
         }
 
-        for mut wlock in picked_compacting_wlocks {
-            *wlock = false;
-        }
-
         info!(
             "Picker(delta) [{pick_timestamp}]: picked nothing, level_0 files({})",
-            ColumnFiles(&picked_files)
+            ColumnFiles(&picked_l0_files)
         );
         None
     }
@@ -426,6 +424,7 @@ mod test {
     #[tokio::test]
     async fn test_pick_normal_compaction() {
         let dir = "/tmp/test/pick/normal_compaction";
+        let _ = std::fs::remove_dir_all(dir);
         // Some files in Level 1 will be picked and compact to Level 2.
         let opt = create_options(dir.to_string());
 
@@ -454,10 +453,11 @@ mod test {
         assert_eq!(compact_req.out_level, 2);
     }
 
-    // Test picker for delta compaction that tsm files overlaps with some delta files.
+    /// Test picker for delta compaction that tsm files overlaps with some delta files.
     #[tokio::test]
-    async fn test_pick_delta_compaction_with_tsm() {
-        let dir = "/tmp/test/pick/delta_compaction_with_tsm";
+    async fn test_pick_delta_compaction_with_tsm_1() {
+        let dir = "/tmp/test/pick/delta_compaction_with_tsm_1";
+        let _ = std::fs::remove_dir_all(dir);
         let opt = create_options(dir.to_string());
 
         let version = VersionSketch::new(dir, Arc::new("dba".to_string()), 1)
@@ -492,31 +492,95 @@ mod test {
         assert_eq!(compact_req.out_time_range(), (501, 600).into());
     }
 
+    /// Test picker for delta compaction that there are only level-0 and level-1 but
+    /// one delta files is eariler than level-1.
     #[tokio::test]
-    async fn test_adviced_out_level() {
-        let dir = "/tmp/test/pick/test_adviced_out_level";
+    async fn test_pick_delta_compaction_with_tsm_2() {
+        let dir = "/tmp/test/pick/delta_compaction_with_tsm_2";
+        let _ = std::fs::remove_dir_all(dir);
         let opt = create_options(dir.to_string());
 
         let version = VersionSketch::new(dir, Arc::new("dba".to_string()), 1)
-            .add(1, FileSketch(1, (701, 800), 100, false)) // Level#1, 701~800
-            .add(2, FileSketch(2, (401, 600), 200, false)) // Level#2, 401~600
-            .add(3, FileSketch(3, (201, 400), 300, false)) // level#3, 201, 400
-            .add(4, FileSketch(4, (1, 200), 400, false)) // level#4, 1~200
+            .add_t(0, FileSketch(11, (1, 600), 100, false), (401, 500)) // 1. Earlier than level-1, picked to lv2
+            .add(0, FileSketch(12, (100, 600), 10, false))
+            .add(1, FileSketch(7, (601, 650), 100, false))
+            .add(1, FileSketch(8, (651, 700), 100, false))
+            .add(1, FileSketch(9, (701, 750), 100, false))
+            .add(1, FileSketch(10, (751, 800), 100, false))
             .to_version_with_tsm(opt.storage.clone())
             .await;
-        let levels = version.levels_info();
 
-        assert_eq!(adviced_out_level(&TimeRange::new(801, 802), levels), 0);
-        assert_eq!(adviced_out_level(&TimeRange::new(800, 801), levels), 1);
-        assert_eq!(adviced_out_level(&TimeRange::new(700, 701), levels), 2);
-        assert_eq!(adviced_out_level(&TimeRange::new(601, 602), levels), 2);
-        assert_eq!(adviced_out_level(&TimeRange::new(-1, 0), levels), 4);
+        let compact_task = CompactTask::Delta(0);
+        let compact_req = DeltaCompactionPicker
+            .pick_compaction(compact_task, Arc::new(version))
+            .await
+            .unwrap();
+        let (lv0_files, lv14_file) = compact_req.split_delta_and_level_files();
+        assert!(lv14_file.is_none());
+        assert_eq!(lv0_files.len(), 1);
+        assert_eq!(lv0_files[0].file_id(), 11);
+        assert_eq!(compact_req.out_level, 2);
+        assert_eq!(compact_req.out_time_range(), TimeRange::all());
     }
 
-    // Test picker for delta compaction that tsm files doesn't overlap with any delta file.
+    #[tokio::test]
+    async fn test_adviced_out_level() {
+        {
+            let dir = "/tmp/test/pick/test_adviced_out_level/1";
+            let _ = std::fs::remove_dir_all(dir);
+            let opt = create_options(dir.to_string());
+
+            let version = VersionSketch::new(dir, Arc::new("dba".to_string()), 1)
+                .add(1, FileSketch(1, (701, 800), 100, false)) // Level#1, 701~800
+                .add(2, FileSketch(2, (401, 600), 200, false)) // Level#2, 401~600
+                .add(3, FileSketch(3, (201, 400), 300, false)) // level#3, 201, 400
+                .add(4, FileSketch(4, (1, 200), 400, false)) // level#4, 1~200
+                .to_version_with_tsm(opt.storage.clone())
+                .await;
+            let levels = version.levels_info();
+
+            assert_eq!(adviced_out_level(&TimeRange::new(801, 802), levels), 0);
+            assert_eq!(adviced_out_level(&TimeRange::new(800, 801), levels), 1);
+            assert_eq!(adviced_out_level(&TimeRange::new(700, 701), levels), 2);
+            assert_eq!(adviced_out_level(&TimeRange::new(601, 602), levels), 2);
+            assert_eq!(adviced_out_level(&TimeRange::new(-1, 0), levels), 4);
+        }
+        {
+            let dir = "/tmp/test/pick/test_adviced_out_level/2";
+            let _ = std::fs::remove_dir_all(dir);
+            let opt = create_options(dir.to_string());
+
+            let version = VersionSketch::new(dir, Arc::new("dba".to_string()), 1)
+                .add(1, FileSketch(1, (701, 800), 100, false)) // Level#1, 701~800
+                .to_version_with_tsm(opt.storage.clone())
+                .await;
+            let levels = version.levels_info();
+
+            assert_eq!(adviced_out_level(&TimeRange::new(801, 802), levels), 0);
+            assert_eq!(adviced_out_level(&TimeRange::new(800, 801), levels), 1);
+            assert_eq!(adviced_out_level(&TimeRange::new(700, 701), levels), 2);
+            assert_eq!(adviced_out_level(&TimeRange::new(601, 602), levels), 2);
+            assert_eq!(adviced_out_level(&TimeRange::new(-1, 0), levels), 2);
+        }
+        {
+            let dir = "/tmp/test/pick/test_adviced_out_level/3";
+            let _ = std::fs::remove_dir_all(dir);
+            let opt = create_options(dir.to_string());
+
+            let version = VersionSketch::new(dir, Arc::new("dba".to_string()), 1)
+                .to_version_with_tsm(opt.storage.clone())
+                .await;
+            let levels = version.levels_info();
+
+            assert_eq!(adviced_out_level(&TimeRange::new(801, 802), levels), 0);
+        }
+    }
+
+    /// Test picker for delta compaction that tsm files doesn't overlap with any delta file.
     #[tokio::test]
     async fn test_pick_delta_compaction_without_tsm_1() {
         let dir = "/tmp/test/pick/delta_compaction_without_tsm_1";
+        let _ = std::fs::remove_dir_all(dir);
         let opt = create_options(dir.to_string());
 
         let version = VersionSketch::new(dir, Arc::new("dba".to_string()), 1)
@@ -546,10 +610,11 @@ mod test {
         assert_eq!(compact_req.out_time_range(), (401, 600).into());
     }
 
-    // Test picker for delta compaction that tsm files doesn't overlap with any delta file.
+    /// Test picker for delta compaction that tsm files doesn't overlap with any delta file.
     #[tokio::test]
     async fn test_pick_delta_compaction_without_tsm_2() {
         let dir = "/tmp/test/pick/delta_compaction_without_tsm_2";
+        let _ = std::fs::remove_dir_all(dir);
         let opt = create_options(dir.to_string());
 
         let version = VersionSketch::new(dir, Arc::new("dba".to_string()), 1)

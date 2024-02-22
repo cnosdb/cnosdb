@@ -619,9 +619,7 @@ impl Summary {
                 }
                 for jh in replace_tombstone_compact_tmp_tasks {
                     match jh.await {
-                        Ok(Ok(_)) => {
-                            trace::info!("Successfully replaced tombstone with compact_tmp");
-                        }
+                        Ok(Ok(_)) => {}
                         Ok(Err(e)) => {
                             // TODO: This delta-compaction should be failed.
                             trace::error!("Failed to replace tombstone with compact_tmp: {e}");

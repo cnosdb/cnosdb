@@ -278,11 +278,14 @@ async fn count_non_null_values_in_files(
     let mut count = 0_u64;
     let mut ts_set: HashSet<Timestamp> = HashSet::with_capacity(tsm::MAX_BLOCK_VALUES as usize);
     for read_task in reader_blk_metas {
-        let blk = read_task
+        let blk = match read_task
             .tsm_reader
             .get_data_block(&read_task.block_meta)
-            .await
-            .unwrap();
+            .await?
+        {
+            Some(blk) => blk,
+            None => continue,
+        };
         let timestamps = blk.ts();
         if cached_time_range.overlaps(&read_task.time_range) {
             trace!(

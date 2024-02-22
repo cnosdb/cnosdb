@@ -57,6 +57,7 @@ const TOMBSTONE_HEADER_LEN_ALL: usize = 5; // 1 + 4
 const FIELD_TYPE_ONE: u8 = 0x00;
 const FIELD_TYPE_ALL: u8 = 0x01;
 
+/// A tombstone, records a field and some inclusive time ranges.
 #[derive(Debug, Clone)]
 pub struct Tombstone {
     pub field: TombstoneField,
@@ -316,7 +317,7 @@ impl TsmTombstone {
         cache.insert(TombstoneField::All, time_range);
         cache.compact();
         trace::info!(
-            "Saving compact_tmp tombstone file '{}', all_excluded_ranges: {}",
+            "Tombstone: Saving compact_tmp tombstone file '{}', all_excluded_ranges: {}",
             tmp_path.display(),
             cache.all_excluded()
         );
@@ -337,8 +338,8 @@ impl TsmTombstone {
 
         let tmp_path = tombstone_compact_tmp_path(&self.path)?;
         if file_manager::try_exists(&tmp_path) {
-            trace::info!(
-                "Converting compact_tmp tombstone file '{}' to real tombstone file '{}'",
+            trace::debug!(
+                "Tombstone: Converting compact_tmp tombstone file '{}' to real tombstone file '{}'",
                 tmp_path.display(),
                 self.path.display()
             );
@@ -378,6 +379,31 @@ impl TsmTombstone {
         self.cache
             .lock()
             .check_all_fields_excluded_time_range(time_range)
+    }
+
+    pub fn is_data_block_all_excluded_by_tombstones(
+        &self,
+        field_id: FieldId,
+        data_block: &DataBlock,
+    ) -> bool {
+        if let Some(block_tr_tuple) = data_block.time_range() {
+            let block_tr: &TimeRange = &block_tr_tuple.into();
+            let cache = self.cache.lock();
+            let mut all_excluded = cache.all_excluded.clone();
+            if all_excluded.includes(block_tr) {
+                return true;
+            }
+            if let Some(time_ranges) = cache.fields_excluded.get(&field_id) {
+                for t in time_ranges.time_ranges() {
+                    all_excluded.push(t);
+                }
+                if all_excluded.includes(block_tr) {
+                    return true;
+                }
+            }
+        }
+
+        false
     }
 
     pub fn data_block_exclude_tombstones(&self, field_id: FieldId, data_block: &mut DataBlock) {
@@ -689,6 +715,8 @@ pub mod test {
     use super::{TombstoneField, TsmTombstone, TsmTombstoneCache};
     use crate::file_system::file_manager;
     use crate::record_file::{self, RecordDataType, RecordDataVersion};
+    use crate::tsm::codec::DataBlockEncoding;
+    use crate::tsm::DataBlock;
 
     pub struct TombstoneLegacyV1 {
         field_id: FieldId,
@@ -916,6 +944,63 @@ pub mod test {
         assert!(!tombstone.check_all_fields_excluded_time_range(&(99, 102).into()));
         assert!(!tombstone.check_all_fields_excluded_time_range(&(-1, 0).into()));
         assert!(!tombstone.check_all_fields_excluded_time_range(&(201, 202).into()));
+    }
+
+    #[tokio::test]
+    async fn test_with_data_blocks() {
+        // is_data_block_excluded_by_tombstones
+        // data_block_exclude_tombstones
+        let dir = PathBuf::from("/tmp/test/tombstone/test_with_data_blocks".to_string());
+        let _ = std::fs::remove_dir_all(&dir);
+
+        let tombstone = TsmTombstone::open(&dir, 1).await.unwrap();
+        tombstone
+            .add_range(&[1, 2, 3], (1, 100).into(), None)
+            .await
+            .unwrap();
+        tombstone.flush().await.unwrap();
+        tombstone
+            .add_range_and_compact_to_tmp((50, 150).into())
+            .await
+            .unwrap();
+        tombstone.replace_with_compact_tmp().await.unwrap();
+        drop(tombstone);
+
+        let tombstone = TsmTombstone::open(&dir, 1).await.unwrap();
+        {
+            let mut data_block = DataBlock::U64 {
+                ts: vec![1, 150],
+                val: vec![10, 1500],
+                enc: DataBlockEncoding::default(),
+            };
+            assert!(tombstone.is_data_block_all_excluded_by_tombstones(1, &data_block));
+            tombstone.data_block_exclude_tombstones(1, &mut data_block);
+            assert_eq!(
+                data_block,
+                DataBlock::U64 {
+                    ts: vec![],
+                    val: vec![],
+                    enc: DataBlockEncoding::default(),
+                }
+            );
+        }
+        {
+            let mut data_block = DataBlock::U64 {
+                ts: vec![150, 151],
+                val: vec![1500, 1510],
+                enc: DataBlockEncoding::default(),
+            };
+            assert!(!tombstone.is_data_block_all_excluded_by_tombstones(1, &data_block));
+            tombstone.data_block_exclude_tombstones(1, &mut data_block);
+            assert_eq!(
+                data_block,
+                DataBlock::U64 {
+                    ts: vec![151],
+                    val: vec![1510],
+                    enc: DataBlockEncoding::default(),
+                }
+            );
+        }
     }
 
     #[test]

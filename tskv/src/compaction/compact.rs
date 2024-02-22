@@ -88,22 +88,29 @@ impl CompactingBlockMeta {
     }
 
     /// Read data block of block meta from reader.
-    pub async fn get_data_block(&self) -> Result<DataBlock> {
+    pub async fn get_data_block(&self) -> Result<Option<DataBlock>> {
         self.reader
             .get_data_block(&self.meta)
             .await
             .context(error::ReadTsmSnafu)
     }
 
-    /// Read data block of block meta from reader.
-    pub async fn get_data_block_opt(&self, time_range: &TimeRange) -> Result<Option<DataBlock>> {
+    /// Read data block of block meta from reader, and get the intersection with a time_range.
+    pub async fn get_data_block_intersection(
+        &self,
+        time_range: &TimeRange,
+    ) -> Result<Option<DataBlock>> {
         // It's impossible that the reader got None by meta,
         // or blk.intersection(time_range) returned None.
-        self.reader
+        match self
+            .reader
             .get_data_block(&self.meta)
             .await
-            .map(|blk| blk.intersection(time_range))
-            .context(error::ReadTsmSnafu)
+            .context(error::ReadTsmSnafu)?
+        {
+            Some(blk) => Ok(blk.intersection(time_range)),
+            None => Ok(None),
+        }
     }
 
     /// Read raw data of block meta from reader.
@@ -189,7 +196,7 @@ impl CompactingBlockMetaGroup {
                 let mut data_block = compacting_block.decode()?;
                 data_block.extend(decoded_raw_block);
 
-                merged_block = data_block;
+                merged_block = Some(data_block);
             } else {
                 // Raw block is not full, but nothing to merge with, directly return.
                 return Ok(vec![CompactingBlock::raw(
@@ -204,24 +211,42 @@ impl CompactingBlockMetaGroup {
                 "there are {} compacting blocks, need to decode and merge",
                 self.blk_metas.len()
             );
-            let head = &mut self.blk_metas[0];
-            let mut head_block = head.get_data_block().await?;
 
-            if let Some(compacting_block) = previous_block {
-                let mut data_block = compacting_block.decode()?;
-                data_block.extend(head_block);
-                head_block = data_block;
+            let (mut head_block, mut head_i) = (Option::<DataBlock>::None, 0_usize);
+            for (i, meta) in self.blk_metas.iter().enumerate() {
+                if let Some(blk) = meta.get_data_block().await? {
+                    head_block = Some(blk);
+                    head_i = i;
+                    break;
+                }
             }
 
-            for blk_meta in self.blk_metas[1..].iter_mut() {
-                // Merge decoded data block.
-                let blk_block = blk_meta.get_data_block().await?;
-                head_block = head_block.merge(blk_block);
+            if let Some(mut head_blk) = head_block.take() {
+                if let Some(compacting_block) = previous_block {
+                    let mut data_block = compacting_block.decode()?;
+                    data_block.extend(head_blk);
+                    head_blk = data_block;
+                }
+
+                for blk_meta in self.blk_metas.iter_mut().skip(head_i + 1) {
+                    // Merge decoded data block.
+                    if let Some(blk_block) = blk_meta.get_data_block().await? {
+                        head_blk = head_blk.merge(blk_block);
+                    }
+                }
+
+                head_block = Some(head_blk);
             }
+
             merged_block = head_block;
         }
 
-        chunk_merged_block(self.field_id, merged_block, max_block_size)
+        if let Some(blk) = merged_block {
+            chunk_merged_block(self.field_id, blk, max_block_size)
+        } else {
+            Ok(vec![])
+        }
+        // chunk_merged_block(self.field_id, merged_block, max_block_size)
     }
 
     pub fn into_compacting_block_metas(self) -> Vec<CompactingBlockMeta> {
@@ -1107,8 +1132,9 @@ pub mod test {
         for idx in tsm_reader.index_iterator() {
             let field_id = idx.field_id();
             for blk_meta in idx.block_iterator() {
-                let blk = tsm_reader.get_data_block(&blk_meta).await.unwrap();
-                data.entry(field_id).or_default().push(blk);
+                if let Some(blk) = tsm_reader.get_data_block(&blk_meta).await.unwrap() {
+                    data.entry(field_id).or_default().push(blk);
+                }
             }
         }
         data

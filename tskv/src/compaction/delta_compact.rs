@@ -441,7 +441,7 @@ impl CompactingBlockMetaGroup {
 
             let (mut head_block, mut head_i) = (Option::<DataBlock>::None, 0_usize);
             for (i, meta) in self.blk_metas.iter().enumerate() {
-                if let Some(blk) = meta.get_data_block_opt(time_range).await? {
+                if let Some(blk) = meta.get_data_block_intersection(time_range).await? {
                     head_block = Some(blk);
                     head_i = i;
                     break;
@@ -466,7 +466,7 @@ impl CompactingBlockMetaGroup {
                 trace::trace!("=== Resolving {} blocks", self.blk_metas.len() - head_i - 1);
                 for blk_meta in self.blk_metas.iter_mut().skip(head_i + 1) {
                     // Merge decoded data block.
-                    if let Some(blk) = blk_meta.get_data_block_opt(time_range).await? {
+                    if let Some(blk) = blk_meta.get_data_block_intersection(time_range).await? {
                         if let Err(e) = tx.send(blk).await {
                             trace::error!(
                                 "Compaction(delta): Failed to send data block to merge: {}",

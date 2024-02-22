@@ -91,7 +91,10 @@ impl CompactReq {
     ///
     /// - If it's a delta compaction(`in_level` is 0), the `out_time_range`
     ///   is the time range of the level-1~4 file.
+    ///   - If `out_level` is 1 but there is no level-1~4 file, return `TimeRange::all()`.
     /// - If it's a normal compaction, the `out_time_range` is all.
+    /// - If the level of the next of `out_level` has no files, the `out_time_range` is
+    ///   `[out_level.min_ts, +∞)`.
     /// - Otherwise, return `TimeRange::all()`.
     pub fn out_time_range(&self) -> TimeRange {
         if self.in_level == 0 {
@@ -103,22 +106,40 @@ impl CompactReq {
                 }
             }
             if !out_time_range.is_none() {
+                // Compact delta-files with level-file.
                 return out_time_range;
+            }
+            if self.out_level == 1 {
+                // Compact delta-files to level-file.
+                return TimeRange::all();
             }
         } else {
             // If it's a normal compaction:
             return TimeRange::all();
         }
-        // If it's a delta compaction and all files are delta files,
-        if (self.out_level as usize) < self.version.levels_info().len() {
-            let level_time_range = self.version.levels_info()[self.out_level as usize].time_range;
-            if level_time_range.is_none() {
-                // The out_level has no files.
+        // If it's a delta compaction and all files are delta files, use the out_level's time range.
+        if let Some(out_level) = self.version.levels_info().get(self.out_level as usize) {
+            if out_level.time_range.is_none() {
+                // The out_level has no files, move the whole of those picked files into the out_level.
                 return TimeRange::all();
-            } else {
-                return level_time_range;
             }
+            let mut out_time_range = out_level.time_range;
+
+            if let Some(out_level_next) = self
+                .version
+                .levels_info()
+                .get((self.out_level + 1) as usize)
+            {
+                if out_level_next.time_range.is_none() {
+                    // The out_level has some files but the next level has no files,
+                    // move part of those picked files into the out_level.
+                    out_time_range.max_ts = i64::MAX;
+                }
+            }
+
+            return out_time_range;
         }
+
         // Impossible.
         TimeRange::none()
     }
@@ -467,6 +488,114 @@ pub mod test {
         // This case doesn't need directory to exist.
         let dir = "/tmp/test/compaction/test_compact_req_methods_delta_compaction";
         let opt = create_options(dir.to_string());
+
+        {
+            // Merge delta files to level-1.
+            let version_sketch = VersionSketch::new(dir, Arc::new("t_d".to_string()), 1)
+                .add(0, FileSketch(1, (20, 30), 10, false))
+                .add(0, FileSketch(2, (30, 40), 10, false))
+                .add(1, FileSketch(3, (10, 20), 10, false));
+            let version = version_sketch.to_version(opt.storage.clone()).await;
+            let files = version.levels_info()[0].files.clone();
+            let req = CompactReq {
+                compact_task: CompactTask::Normal(1),
+                version: Arc::new(version),
+                files,
+                in_level: 0,
+                out_level: 1,
+            };
+
+            assert_eq!(req.out_time_range(), TimeRange::all());
+
+            let mut delta_files_exp = vec![];
+            version_sketch
+                .to_column_files(&opt.storage, &mut delta_files_exp, |l, _| l.0 == 0)
+                .await;
+            let (delta_files, level_file) = req.split_delta_and_level_files();
+            assert_eq!(
+                delta_files
+                    .iter()
+                    .map(|f| f.file_id())
+                    .collect::<Vec<ColumnFileId>>(),
+                delta_files_exp
+                    .iter()
+                    .map(|f| f.file_id())
+                    .collect::<Vec<ColumnFileId>>()
+            );
+            assert!(level_file.is_none());
+        }
+
+        {
+            // Merge delta files to an empty level: level-3.
+            let version_sketch = VersionSketch::new(dir, Arc::new("t_d".to_string()), 1)
+                .add(0, FileSketch(1, (1, 20), 10, false))
+                .add(0, FileSketch(2, (1, 20), 10, false))
+                .add(2, FileSketch(3, (1, 20), 10, false));
+            let version = version_sketch.to_version(opt.storage.clone()).await;
+            let files = version.levels_info()[0].files.clone();
+            let req = CompactReq {
+                compact_task: CompactTask::Normal(1),
+                version: Arc::new(version),
+                files,
+                in_level: 0,
+                out_level: 3,
+            };
+
+            assert_eq!(req.out_time_range(), TimeRange::all());
+
+            let mut delta_files_exp = vec![];
+            version_sketch
+                .to_column_files(&opt.storage, &mut delta_files_exp, |l, _| l.0 == 0)
+                .await;
+            let (delta_files, level_file) = req.split_delta_and_level_files();
+            assert_eq!(
+                delta_files
+                    .iter()
+                    .map(|f| f.file_id())
+                    .collect::<Vec<ColumnFileId>>(),
+                delta_files_exp
+                    .iter()
+                    .map(|f| f.file_id())
+                    .collect::<Vec<ColumnFileId>>()
+            );
+            assert!(level_file.is_none());
+        }
+
+        {
+            // Merge delta files to level-2 but level-3 is empty.
+            let version_sketch = VersionSketch::new(dir, Arc::new("t_d".to_string()), 1)
+                .add(0, FileSketch(1, (1, 20), 10, false))
+                .add(0, FileSketch(2, (1, 20), 10, false))
+                .add(2, FileSketch(3, (1, 20), 10, false));
+            let version = version_sketch.to_version(opt.storage.clone()).await;
+            let files = version.levels_info()[0].files.clone();
+            let req = CompactReq {
+                compact_task: CompactTask::Normal(1),
+                version: Arc::new(version),
+                files,
+                in_level: 0,
+                out_level: 2,
+            };
+
+            assert_eq!(req.out_time_range(), TimeRange::new(1, i64::MAX));
+
+            let mut delta_files_exp = vec![];
+            version_sketch
+                .to_column_files(&opt.storage, &mut delta_files_exp, |l, _| l.0 == 0)
+                .await;
+            let (delta_files, level_file) = req.split_delta_and_level_files();
+            assert_eq!(
+                delta_files
+                    .iter()
+                    .map(|f| f.file_id())
+                    .collect::<Vec<ColumnFileId>>(),
+                delta_files_exp
+                    .iter()
+                    .map(|f| f.file_id())
+                    .collect::<Vec<ColumnFileId>>()
+            );
+            assert!(level_file.is_none());
+        }
 
         {
             // Merge delta files with level files.
