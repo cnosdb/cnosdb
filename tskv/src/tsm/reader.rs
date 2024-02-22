@@ -494,7 +494,7 @@ impl TsmReader {
     }
 
     /// Returns a DataBlock without tombstone
-    pub async fn get_data_block(&self, block_meta: &BlockMeta) -> ReadTsmResult<DataBlock> {
+    pub async fn get_data_block(&self, block_meta: &BlockMeta) -> ReadTsmResult<Option<DataBlock>> {
         let _blk_range = (block_meta.min_ts(), block_meta.max_ts());
         let mut buf = vec![0_u8; block_meta.size() as usize];
         let mut blk = read_data_block(
@@ -505,9 +505,15 @@ impl TsmReader {
             block_meta.val_off(),
         )
         .await?;
+        if self
+            .tombstone
+            .is_data_block_all_excluded_by_tombstones(block_meta.field_id(), &blk)
+        {
+            return Ok(None);
+        }
         self.tombstone
             .data_block_exclude_tombstones(block_meta.field_id(), &mut blk);
-        Ok(blk)
+        Ok(Some(blk))
     }
 
     // Reads raw data from file and returns the read data size.
@@ -791,7 +797,8 @@ pub mod test {
                 let data_blk = reader
                     .get_data_block(&blk)
                     .await
-                    .context(error::ReadTsmSnafu)?;
+                    .context(error::ReadTsmSnafu)?
+                    .unwrap();
                 read_data.entry(idx.field_id()).or_default().push(data_blk);
             }
         }
@@ -852,7 +859,7 @@ pub mod test {
         let mut read_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::new();
         for idx in reader.index_iterator_opt(field_id) {
             for blk in idx.block_iterator_opt(time_ranges.clone()) {
-                let data_blk = reader.get_data_block(&blk).await.unwrap();
+                let data_blk = reader.get_data_block(&blk).await.unwrap().unwrap();
                 read_data.entry(idx.field_id()).or_default().push(data_blk);
             }
         }

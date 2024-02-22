@@ -78,6 +78,17 @@ pub fn run(
                 None => continue,
             };
             for (compact_task, _c) in compact_tasks {
+                if !storage_opt.enable_compaction {
+                    match &compact_task {
+                        t @ CompactTask::Manual(_) => {
+                            info!("Compaction is disabled but runs manually: {t:?}",);
+                        }
+                        _ => {
+                            continue;
+                        }
+                    }
+                }
+
                 let vnode_id = compact_task.ts_family_id();
                 let vnode_opt = version_set
                     .read()

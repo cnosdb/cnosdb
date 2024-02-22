@@ -665,7 +665,10 @@ impl FieldFileLocation {
             // Check if the time range of the BlockMeta intersected with the given time ranges.
             if let Some(intersected_tr) = self.time_ranges.intersect(&time_range) {
                 // Load a DataBlock from reader by BlockMeta.
-                let block = self.reader.get_data_block(&meta).await?;
+                let block = match self.reader.get_data_block(&meta).await? {
+                    Some(blk) => blk,
+                    None => continue,
+                };
                 let mut data_block_reader = DataBlockReader::new(block, intersected_tr);
                 if data_block_reader.has_next() {
                     return Ok(Some(data_block_reader));

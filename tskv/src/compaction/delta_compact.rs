@@ -132,7 +132,7 @@ pub async fn run_compaction_job(
     version_edit.del_files = l0_file_metas_will_delete;
     if let Some(f) = level_file {
         // Lvel 1-4 file that can be deleted after compaction.
-        version_edit.del_file(f.level(), f.file_id(), f.is_delta());
+        version_edit.del_files.push(f.as_ref().into());
     }
     // Level 0 files that partly deleted after compaction.
     version_edit.partly_del_files = l0_file_metas_will_partly_delete;
@@ -384,7 +384,7 @@ impl CompactingBlockMetaGroup {
             return Ok(());
         }
         self.blk_metas
-            .sort_by(|a, b| a.reader_idx.cmp(&b.reader_idx).reverse());
+            .sort_by(|a, b| a.reader_idx.cmp(&b.reader_idx));
 
         let mut merged_block = Option::<DataBlock>::None;
         if self.blk_metas.len() == 1
@@ -410,7 +410,8 @@ impl CompactingBlockMetaGroup {
                 ));
 
                 return Ok(());
-            } else if let Some(prev_compacting_block) = previous_block {
+            }
+            if let Some(prev_compacting_block) = previous_block {
                 // Raw block is not full, so decode and merge with compacting_block.
                 let decoded_raw_block = tsm::decode_data_block(
                     &buf,
@@ -440,7 +441,7 @@ impl CompactingBlockMetaGroup {
 
             let (mut head_block, mut head_i) = (Option::<DataBlock>::None, 0_usize);
             for (i, meta) in self.blk_metas.iter().enumerate() {
-                if let Some(blk) = meta.get_data_block_opt(time_range).await? {
+                if let Some(blk) = meta.get_data_block_intersection(time_range).await? {
                     head_block = Some(blk);
                     head_i = i;
                     break;
@@ -465,7 +466,7 @@ impl CompactingBlockMetaGroup {
                 trace::trace!("=== Resolving {} blocks", self.blk_metas.len() - head_i - 1);
                 for blk_meta in self.blk_metas.iter_mut().skip(head_i + 1) {
                     // Merge decoded data block.
-                    if let Some(blk) = blk_meta.get_data_block_opt(time_range).await? {
+                    if let Some(blk) = blk_meta.get_data_block_intersection(time_range).await? {
                         if let Err(e) = tx.send(blk).await {
                             trace::error!(
                                 "Compaction(delta): Failed to send data block to merge: {}",
@@ -582,13 +583,14 @@ fn chunk_data_block_into_compacting_blocks(
 
 struct WriterWrapper {
     // Init values.
+    context: Arc<GlobalContext>,
     ts_family_id: TseriesFamilyId,
     out_level: LevelId,
     tsm_dir: PathBuf,
 
     // Temporary values.
     tsm_writer_full: bool,
-    tsm_writer: TsmWriter,
+    tsm_writer: Option<TsmWriter>,
 
     // Result values.
     version_edit: VersionEdit,
@@ -600,23 +602,14 @@ impl WriterWrapper {
         let ts_family_id = request.compact_task.ts_family_id();
         let storage_opt = request.version.borrowed_storage_opt();
         let tsm_dir = storage_opt.tsm_dir(request.version.borrowed_database(), ts_family_id);
-        // let max_file_size = storage_opt.level_max_file_size(request.out_level);
-        let file_id = context.file_id_next();
-        let tsm_writer = tsm::new_tsm_writer(tsm_dir, file_id, false, 0).await?;
-        trace::info!(
-            "Compaction(delta): File: {file_id} been created (level: {}).",
-            request.out_level,
-        );
         Ok(Self {
+            context,
             ts_family_id,
             out_level: request.out_level,
-            tsm_dir: request
-                .version
-                .borrowed_storage_opt()
-                .tsm_dir(request.version.borrowed_database(), ts_family_id),
+            tsm_dir,
 
             tsm_writer_full: false,
-            tsm_writer,
+            tsm_writer: None,
 
             version_edit: VersionEdit::new(ts_family_id),
             file_metas: HashMap::new(),
@@ -624,39 +617,51 @@ impl WriterWrapper {
     }
 
     pub async fn close(mut self) -> Result<(VersionEdit, HashMap<ColumnFileId, Arc<BloomFilter>>)> {
-        self.tsm_writer
-            .write_index()
-            .await
-            .context(error::WriteTsmSnafu)?;
-        self.tsm_writer
-            .finish()
-            .await
-            .context(error::WriteTsmSnafu)?;
+        if let Some(mut tsm_writer) = self.tsm_writer {
+            tsm_writer
+                .write_index()
+                .await
+                .context(error::WriteTsmSnafu)?;
+            tsm_writer.finish().await.context(error::WriteTsmSnafu)?;
 
-        trace::info!(
-            "Compaction(delta): File: {} write finished (level: {}, {} B).",
-            self.tsm_writer.sequence(),
-            self.out_level,
-            self.tsm_writer.size()
-        );
+            trace::info!(
+                "Compaction(delta): File: {} write finished (level: {}, {} B).",
+                tsm_writer.sequence(),
+                self.out_level,
+                tsm_writer.size()
+            );
 
-        let file_id = self.tsm_writer.sequence();
-        let cm = CompactMeta {
-            file_id,
-            file_size: self.tsm_writer.size(),
-            tsf_id: self.ts_family_id,
-            level: self.out_level,
-            min_ts: self.tsm_writer.min_ts(),
-            max_ts: self.tsm_writer.max_ts(),
-            high_seq: 0,
-            low_seq: 0,
-            is_delta: false,
-        };
-        self.version_edit.add_file(cm);
-        let bloom_filter = self.tsm_writer.into_bloom_filter();
-        self.file_metas.insert(file_id, Arc::new(bloom_filter));
+            let file_id = tsm_writer.sequence();
+            let cm = CompactMeta {
+                file_id,
+                file_size: tsm_writer.size(),
+                tsf_id: self.ts_family_id,
+                level: self.out_level,
+                min_ts: tsm_writer.min_ts(),
+                max_ts: tsm_writer.max_ts(),
+                high_seq: 0,
+                low_seq: 0,
+                is_delta: false,
+            };
+            self.version_edit.add_file(cm);
+            let bloom_filter = tsm_writer.into_bloom_filter();
+            self.file_metas.insert(file_id, Arc::new(bloom_filter));
+        }
 
         Ok((self.version_edit, self.file_metas))
+    }
+
+    pub async fn writer(&mut self) -> Result<&mut TsmWriter> {
+        if self.tsm_writer.is_none() {
+            let file_id = self.context.file_id_next();
+            let tsm_writer = tsm::new_tsm_writer(&self.tsm_dir, file_id, false, 0).await?;
+            trace::info!(
+                "Compaction(delta): File: {file_id} been created (level: {}).",
+                self.out_level,
+            );
+            self.tsm_writer = Some(tsm_writer);
+        }
+        Ok(self.tsm_writer.as_mut().unwrap())
     }
 
     /// Write CompactingBlock to TsmWriter, fill file_metas and version_edit.
@@ -666,17 +671,31 @@ impl WriterWrapper {
                 field_id,
                 data_block,
                 ..
-            } => self.tsm_writer.write_block(field_id, &data_block).await,
+            } => {
+                if data_block.is_empty() {
+                    return Ok(0);
+                }
+                self.writer()
+                    .await?
+                    .write_block(field_id, &data_block)
+                    .await
+            }
             CompactingBlock::Encoded {
                 field_id,
                 data_block,
                 ..
             } => {
-                self.tsm_writer
+                if data_block.count == 0 {
+                    return Ok(0);
+                }
+                self.writer()
+                    .await?
                     .write_encoded_block(field_id, &data_block)
                     .await
             }
-            CompactingBlock::Raw { meta, raw, .. } => self.tsm_writer.write_raw(&meta, &raw).await,
+            CompactingBlock::Raw { meta, raw, .. } => {
+                self.writer().await?.write_raw(&meta, &raw).await
+            }
         };
         match write_result {
             Ok(size) => Ok(size),

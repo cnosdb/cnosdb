@@ -1715,6 +1715,15 @@ mod tests {
         assert!(trs_all.includes(&TimeRange::new(i64::MIN, i64::MAX)));
         assert!(trs.includes(&TimeRange::new(2, 3)));
         assert!(trs.includes(&TimeRange::new(22, 33)));
+        assert!(trs.includes(&TimeRange::new(23, 32)));
+        assert!(!trs.includes(&TimeRange::new(21, 33)));
+        assert!(!trs.includes(&TimeRange::new(22, 34)));
+        assert!(!trs.includes(&TimeRange::new(21, 34)));
+        assert!(trs.includes(&TimeRange::new(222, 333)));
+        assert!(trs.includes(&TimeRange::new(223, 332)));
+        assert!(!trs.includes(&TimeRange::new(221, 333)));
+        assert!(!trs.includes(&TimeRange::new(222, 334)));
+        assert!(!trs.includes(&TimeRange::new(221, 334)));
         assert!(!trs.includes(&TimeRange::new(20, 30)));
         assert!(!trs.includes(&TimeRange::new(1, 2)));
         assert!(!trs.includes(&TimeRange::new(3, 4)));
@@ -1730,6 +1739,8 @@ mod tests {
         assert!(!trs.contains(0));
         assert!(!trs.contains(4));
         assert!(!trs.contains(10));
+        assert!(!trs.contains(100));
+        assert!(!trs.contains(1000));
 
         assert_eq!(
             trs_all.intersect(&TimeRange::new(1, 5)),

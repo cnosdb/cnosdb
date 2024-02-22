@@ -29,7 +29,7 @@ use crate::file_utils::{make_delta_file_name, make_tsm_file_name};
 use crate::kv_option::{CacheOptions, StorageOptions};
 use crate::memcache::{DataType, FieldVal, MemCache, RowGroup};
 use crate::summary::{CompactMeta, VersionEdit};
-use crate::tsm::{self, DataBlock, TsmReader, TsmTombstone};
+use crate::tsm::{self, TsmReader, TsmTombstone};
 use crate::Error::CommonError;
 use crate::{ColumnFileId, LevelId, TseriesFamilyId};
 
@@ -368,12 +368,13 @@ impl LevelInfo {
         self.time_range = TimeRange::new(min_ts, max_ts);
     }
 
-    pub(self) async fn read_column_file(
+    #[cfg(test)]
+    pub async fn read_column_file(
         &self,
         _tf_id: u32,
         field_id: FieldId,
         time_range: &TimeRange,
-    ) -> Vec<DataBlock> {
+    ) -> Vec<Option<crate::tsm::DataBlock>> {
         let time_ranges = Arc::new(TimeRanges::with_inclusive_bounds(
             time_range.min_ts,
             time_range.max_ts,
@@ -1154,6 +1155,9 @@ pub fn schedule_vnode_compaction(
 ) {
     let _jh = runtime.spawn(async move {
         let vnode_rlock = vnode.read().await;
+        if !vnode_rlock.storage_opt.enable_compaction {
+            return;
+        }
         let tsf_id = vnode_rlock.tf_id;
         let compact_trigger_cold_duration = vnode_rlock.storage_opt.compact_trigger_cold_duration;
         let compact_trigger_file_num = vnode_rlock.storage_opt.compact_trigger_file_num;
