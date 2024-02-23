@@ -144,7 +144,7 @@ enum CliCommand {
 #[derive(Debug, Clone, Args, PartialOrd, PartialEq)]
 struct DumpDDL {
     #[arg(short, long)]
-    tenants: Vec<Option<String>>,
+    tenant: Vec<Option<String>>,
 }
 
 #[derive(Debug, Clone, Args, PartialOrd, PartialEq)]
@@ -216,7 +216,7 @@ pub async fn main() -> Result<(), anyhow::Error> {
 
     match args.subcommand {
         Some(CliCommand::DumpDDL(d)) => {
-            let res = ctx.dump(d.tenants).await?;
+            let res = ctx.dump(d.tenant).await?;
             println!("{}", res);
             return Ok(());
         }
