@@ -49,7 +49,7 @@ create user u5 with must_change_password=false;
 statement ok
 create user u6 with comment='';
 
-statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Expected =, found: ;", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Expected a value, found: ;", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
 create user u7 with comment;
 
 statement ok
