@@ -397,26 +397,34 @@ impl SessionContext {
         Ok(())
     }
 
-    pub async fn dump(&self, tenant: Option<String>) -> Result<String> {
+    pub async fn dump(&self, tenants:Vec<Option<String>>) -> Result<String> {
         let user_info = &self.session_config.user_info;
 
-        let param = DumpParam { tenant };
+        let mut res = String::new();
+        let tenants = if tenants.is_empty(){
+            vec![None]
+        }else{
+            tenants
+        };
 
-        let mut builder = self
-            .http_client
-            .get(API_V1_DUMP_SQL_DDL_PATH)
-            .basic_auth::<&str, &str>(&user_info.user, user_info.password.as_deref());
-        builder = if let Some(key) = &user_info.private_key {
-            let key = base64::encode(key);
-            builder.header(PRIVATE_KEY, key)
-        } else {
-            builder
+        for tenant in tenants{
+            let param = DumpParam{tenant};
+            let mut builder = self
+                .http_client
+                .get(API_V1_DUMP_SQL_DDL_PATH)
+                .basic_auth::<&str, &str>(&user_info.user, user_info.password.as_deref());
+            builder = if let Some(key) = &user_info.private_key {
+                let key = base64::encode(key);
+                builder.header(PRIVATE_KEY, key)
+            } else {
+                builder
+            }
+            .query(&param);
+
+            let resp = builder.send().await?;
+
+            res  += &resp.text().await?;
         }
-        .query(&param);
-
-        let resp = builder.send().await?;
-
-        let res = resp.text().await?;
         Ok(res)
     }
 }
