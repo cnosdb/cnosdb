@@ -446,6 +446,7 @@ impl CompactingBlockMetaGroup {
                 }
             }
             if let Some(mut head_blk) = head_block.take() {
+                // Merge with previous compacting block.
                 if let Some(prev_compacting_block) = previous_block {
                     if let Some(mut data_block) = prev_compacting_block.decode_opt(time_range)? {
                         data_block.extend(head_blk);
@@ -485,6 +486,11 @@ impl CompactingBlockMetaGroup {
                     }
                 };
                 head_block = Some(head_blk);
+            } else if let Some(prev_compacting_block) = previous_block {
+                // Use the previous compacting block.
+                if let Some(data_block) = prev_compacting_block.decode_opt(time_range)? {
+                    head_block = Some(data_block);
+                }
             }
 
             merged_block = head_block;
@@ -732,16 +738,19 @@ mod test {
     use std::path::Path;
 
     use cache::ShardedAsyncCache;
+    use models::codec::Encoding;
     use models::{FieldId, Timestamp, ValueType};
 
     use super::*;
     use crate::compaction::test::{
-        check_column_file, create_options, generate_data_block, write_data_block_desc, TsmSchema,
+        check_column_file, create_options, generate_data_block, write_data_block_desc,
+        write_data_blocks_to_column_file, TsmSchema,
     };
     use crate::compaction::CompactTask;
     use crate::file_system::file_manager;
     use crate::tseries_family::{ColumnFile, LevelInfo, Version};
     use crate::tsm::codec::DataBlockEncoding;
+    use crate::tsm::test::write_to_tsm_tombstone_v2;
     use crate::tsm::TsmTombstoneCache;
     use crate::{file_utils, record_file, Options};
 
@@ -873,6 +882,169 @@ mod test {
         (compact_req, context)
     }
 
+    const INT_BLOCK_ENCODING: DataBlockEncoding =
+        DataBlockEncoding::new(Encoding::Delta, Encoding::Delta);
+
+    #[tokio::test]
+    async fn test_delta_compaction_1() {
+        #[rustfmt::skip]
+        let data = vec![
+            HashMap::from([
+                (1, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![114, 115, 116], enc: INT_BLOCK_ENCODING }]),
+                (2, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![124, 125, 126], enc: INT_BLOCK_ENCODING }]),
+                (3, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![134, 135, 136], enc: INT_BLOCK_ENCODING }]),
+            ]),
+            HashMap::from([
+                (1, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![211, 212, 213], enc: INT_BLOCK_ENCODING }]),
+                (2, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![221, 222, 223], enc: INT_BLOCK_ENCODING }]),
+                (3, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![231, 232, 233], enc: INT_BLOCK_ENCODING }]),
+            ]),
+            HashMap::from([
+                (1, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![317, 318, 319], enc: INT_BLOCK_ENCODING }]),
+                (2, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![327, 328, 329], enc: INT_BLOCK_ENCODING }]),
+                (3, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![337, 338, 339], enc: INT_BLOCK_ENCODING }]),
+            ]),
+        ];
+        #[rustfmt::skip]
+        let expected_data = HashMap::from([
+            (1, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![211, 212, 213, 114, 115, 116, 317, 318, 319], enc: INT_BLOCK_ENCODING }]),
+            (2, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![221, 222, 223, 124, 125, 126, 327, 328, 329], enc: INT_BLOCK_ENCODING }]),
+            (3, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![231, 232, 233, 134, 135, 136, 337, 338, 339], enc: INT_BLOCK_ENCODING }]),
+        ]);
+
+        let dir = "/tmp/test/delta_compaction/1";
+        let _ = std::fs::remove_dir_all(dir);
+        let tenant_database = Arc::new("cnosdb.dba".to_string());
+        let opt = create_options(dir.to_string());
+        let dir = opt.storage.tsm_dir(&tenant_database, 1);
+        let max_level_ts = 9;
+
+        let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data, 0).await;
+        let (compact_req, kernel) = prepare_delta_compaction(
+            tenant_database,
+            opt,
+            next_file_id,
+            files,
+            vec![],
+            1,
+            max_level_ts,
+        );
+        let out_level = compact_req.out_level;
+        let (version_edit, _) = run_compaction_job(compact_req, kernel)
+            .await
+            .unwrap()
+            .unwrap();
+        check_column_file(dir, version_edit, expected_data, out_level).await;
+    }
+
+    /// Test compact with duplicate timestamp.
+    #[tokio::test]
+    async fn test_delta_compaction_2() {
+        #[rustfmt::skip]
+        let data = vec![
+            HashMap::from([
+                (1, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4], val: vec![111, 112, 113, 114], enc: INT_BLOCK_ENCODING }]),
+                (3, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4], val: vec![131, 132, 133, 134], enc: INT_BLOCK_ENCODING }]),
+                (4, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![141, 142, 143], enc: INT_BLOCK_ENCODING }]),
+            ]),
+            HashMap::from([
+                (1, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![214, 215, 216], enc: INT_BLOCK_ENCODING }]),
+                (2, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![224, 225, 226], enc: INT_BLOCK_ENCODING }]),
+                (3, vec![DataBlock::I64 { ts: vec![4, 5, 6, 7], val: vec![234, 235, 236, 237], enc: INT_BLOCK_ENCODING }]),
+            ]),
+            HashMap::from([
+                (1, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![317, 318, 319], enc: INT_BLOCK_ENCODING }]),
+                (2, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![327, 328, 329], enc: INT_BLOCK_ENCODING }]),
+                (3, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![337, 338, 339], enc: INT_BLOCK_ENCODING }]),
+            ]),
+        ];
+        #[rustfmt::skip]
+        let expected_data = HashMap::from([
+            (1, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![111, 112, 113, 214, 215, 216, 317, 318, 319], enc: INT_BLOCK_ENCODING }]),
+            (2, vec![DataBlock::I64 { ts: vec![4, 5, 6, 7, 8, 9], val: vec![224, 225, 226, 327, 328, 329], enc: INT_BLOCK_ENCODING }]),
+            (3, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![131, 132, 133, 234, 235, 236, 337, 338, 339], enc: INT_BLOCK_ENCODING }]),
+            (4, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![141, 142, 143], enc: INT_BLOCK_ENCODING }]),
+        ]);
+
+        let dir = "/tmp/test/delta_compaction/2";
+        let _ = std::fs::remove_dir_all(dir);
+        let tenant_database = Arc::new("cnosdb.dba".to_string());
+        let opt = create_options(dir.to_string());
+        let dir = opt.storage.tsm_dir(&tenant_database, 1);
+        let max_level_ts = 9;
+
+        let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data, 0).await;
+        let (compact_req, kernel) = prepare_delta_compaction(
+            tenant_database,
+            opt,
+            next_file_id,
+            files,
+            vec![],
+            1,
+            max_level_ts,
+        );
+        let out_level = compact_req.out_level;
+        let (version_edit, _) = run_compaction_job(compact_req, kernel)
+            .await
+            .unwrap()
+            .unwrap();
+        check_column_file(dir, version_edit, expected_data, out_level).await;
+    }
+
+    /// Test compact with tombstones.
+    #[tokio::test]
+    async fn test_delta_compaction_3() {
+        #[rustfmt::skip]
+        let data = vec![
+            HashMap::from([
+                (1, vec![DataBlock::I64 { ts: vec![1], val: vec![111], enc: INT_BLOCK_ENCODING }]),
+            ]),
+            HashMap::from([
+                (1, vec![DataBlock::I64 { ts: vec![2, 3, 4], val: vec![212, 213, 214], enc: INT_BLOCK_ENCODING }]),
+            ]),
+            HashMap::from([
+                (1, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![314, 315, 316], enc: INT_BLOCK_ENCODING }]),
+            ]),
+            HashMap::from([
+                (1, vec![DataBlock::I64 { ts: vec![8, 9], val: vec![418, 419], enc: INT_BLOCK_ENCODING }]),
+            ]),
+        ];
+        #[rustfmt::skip]
+        let expected_data = HashMap::from([
+            (1, vec![DataBlock::I64 { ts: vec![1, 8, 9], val: vec![111, 418, 419], enc: INT_BLOCK_ENCODING }]),
+        ]);
+
+        let dir = "/tmp/test/delta_compaction/3";
+        let _ = std::fs::remove_dir_all(dir);
+        let tenant_database = Arc::new("cnosdb.dba".to_string());
+        let opt = create_options(dir.to_string());
+        let dir = opt.storage.tsm_dir(&tenant_database, 1);
+        let max_level_ts = 9;
+
+        let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data, 0).await;
+        for f in files.iter().take(2 + 1).skip(1) {
+            let mut path = f.file_path().clone();
+            path.set_extension("tombstone");
+            write_to_tsm_tombstone_v2(path, &TsmTombstoneCache::with_all_excluded((2, 6).into()))
+                .await;
+        }
+        let (compact_req, kernel) = prepare_delta_compaction(
+            tenant_database,
+            opt,
+            next_file_id,
+            files,
+            vec![],
+            1,
+            max_level_ts,
+        );
+        let out_level = compact_req.out_level;
+        let (version_edit, _) = run_compaction_job(compact_req, kernel)
+            .await
+            .unwrap()
+            .unwrap();
+        check_column_file(dir, version_edit, expected_data, out_level).await;
+    }
+
     async fn test_delta_compaction(
         dir: &str,
         delta_files_desc: &[TsmSchema],
@@ -952,7 +1124,7 @@ mod test {
 
     /// Test compaction on level-0 (delta compaction) with multi-field.
     #[tokio::test]
-    async fn test_delta_compaction_1() {
+    async fn test_big_delta_compaction_1() {
         #[rustfmt::skip]
         let delta_files_desc: [TsmSchema; 3] = [
             // [( tsm_data:  tsm_sequence, vec![(ValueType, FieldId, Timestamp_Begin, Timestamp_end)],
@@ -1038,7 +1210,7 @@ mod test {
         ]);
 
         test_delta_compaction(
-            "/tmp/test/delta_compaction/1",
+            "/tmp/test/delta_compaction/big_1",
             &delta_files_desc,
             &[tsm_file_desc],
             max_level_ts,
