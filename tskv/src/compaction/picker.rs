@@ -234,15 +234,15 @@ impl LevelCompactionPicker {
 /// For the given time_range of a file, return recommended level to compact in.
 /// If it returns 0, it means that there are no files overlapped with the given
 /// time range in levels.
-fn adviced_out_level(time_range: &TimeRange, levels: &[LevelInfo; 5]) -> LevelId {
+fn advise_out_level(time_range: &TimeRange, levels: &[LevelInfo; 5]) -> LevelId {
     if time_range.min_ts > levels[1].time_range.max_ts || levels[1].time_range.is_none() {
         // If lv-1 is (+∞，-∞), compact to lv-1.
-        // If thte range is newer than level-1, return 0 to tell the caller that
+        // If the range is newer than level-1, return 0 to tell the caller that
         // there is no other level overlapped with the range.
         return 0;
     }
     if time_range.min_ts > levels[1].time_range.min_ts {
-        // If the range is overlapped with levle-1, compact with level-1 files.
+        // If the range is overlapped with level-1, compact with level-1 files.
         return 1;
     }
     if time_range.max_ts <= levels[1].time_range.min_ts
@@ -331,14 +331,14 @@ impl DeltaCompactionPicker {
                     }
                 };
 
-            let adviced_out_level =
-                adviced_out_level(&l0_file_remained_tr_last, version.levels_info());
+            let advised_out_level =
+                advise_out_level(&l0_file_remained_tr_last, version.levels_info());
             if picked_time_range.is_none() {
                 // First cycle to pick l0_file
                 picked_time_range = l0_file_remained_tr_last;
             }
             // For well ordered lv0-files, merged to level 1
-            if 0 == adviced_out_level {
+            if 0 == advised_out_level {
                 *l0_file_compacting = true;
                 picked_l0_compacting_wlocks.push(l0_file_compacting);
                 picked_l0_files.push(l0_file.clone());
@@ -388,16 +388,16 @@ impl DeltaCompactionPicker {
                 }
             }
 
-            // No file in level1-4 overlaps with lv0-file, compact lv0-file to adviced out-level.
-            if adviced_out_level > 1 {
+            // No file in level1-4 overlaps with lv0-file, compact lv0-file to advised out-level.
+            if advised_out_level > 1 {
                 *l0_file_compacting = true;
-                info!("Picker(delta) [{pick_timestamp}]: picked level_0 file: {l0_file} to level: {adviced_out_level}");
+                info!("Picker(delta) [{pick_timestamp}]: picked level_0 file: {l0_file} to level: {advised_out_level}");
                 return Some(CompactReq {
                     compact_task,
                     version: version.clone(),
                     files: vec![l0_file.clone()],
                     in_level: 0,
-                    out_level: adviced_out_level,
+                    out_level: advised_out_level,
                 });
             }
         }
@@ -416,7 +416,7 @@ mod test {
 
     use models::predicate::domain::TimeRange;
 
-    use super::adviced_out_level;
+    use super::advise_out_level;
     use crate::compaction::picker::{DeltaCompactionPicker, LevelCompactionPicker};
     use crate::compaction::test::{create_options, FileSketch, VersionSketch};
     use crate::compaction::CompactTask;
@@ -524,9 +524,9 @@ mod test {
     }
 
     #[tokio::test]
-    async fn test_adviced_out_level() {
+    async fn test_advise_out_level() {
         {
-            let dir = "/tmp/test/pick/test_adviced_out_level/1";
+            let dir = "/tmp/tesspick/test_adviced_out_level/1";
             let _ = std::fs::remove_dir_all(dir);
             let opt = create_options(dir.to_string());
 
@@ -539,11 +539,11 @@ mod test {
                 .await;
             let levels = version.levels_info();
 
-            assert_eq!(adviced_out_level(&TimeRange::new(801, 802), levels), 0);
-            assert_eq!(adviced_out_level(&TimeRange::new(800, 801), levels), 1);
-            assert_eq!(adviced_out_level(&TimeRange::new(700, 701), levels), 2);
-            assert_eq!(adviced_out_level(&TimeRange::new(601, 602), levels), 2);
-            assert_eq!(adviced_out_level(&TimeRange::new(-1, 0), levels), 4);
+            assert_eq!(advise_out_level(&TimeRange::new(801, 802), levels), 0);
+            assert_eq!(advise_out_level(&TimeRange::new(800, 801), levels), 1);
+            assert_eq!(advise_out_level(&TimeRange::new(700, 701), levels), 2);
+            assert_eq!(advise_out_level(&TimeRange::new(601, 602), levels), 2);
+            assert_eq!(advise_out_level(&TimeRange::new(-1, 0), levels), 4);
         }
         {
             let dir = "/tmp/test/pick/test_adviced_out_level/2";
@@ -556,11 +556,11 @@ mod test {
                 .await;
             let levels = version.levels_info();
 
-            assert_eq!(adviced_out_level(&TimeRange::new(801, 802), levels), 0);
-            assert_eq!(adviced_out_level(&TimeRange::new(800, 801), levels), 1);
-            assert_eq!(adviced_out_level(&TimeRange::new(700, 701), levels), 2);
-            assert_eq!(adviced_out_level(&TimeRange::new(601, 602), levels), 2);
-            assert_eq!(adviced_out_level(&TimeRange::new(-1, 0), levels), 2);
+            assert_eq!(advise_out_level(&TimeRange::new(801, 802), levels), 0);
+            assert_eq!(advise_out_level(&TimeRange::new(800, 801), levels), 1);
+            assert_eq!(advise_out_level(&TimeRange::new(700, 701), levels), 2);
+            assert_eq!(advise_out_level(&TimeRange::new(601, 602), levels), 2);
+            assert_eq!(advise_out_level(&TimeRange::new(-1, 0), levels), 2);
         }
         {
             let dir = "/tmp/test/pick/test_adviced_out_level/3";
@@ -572,7 +572,7 @@ mod test {
                 .await;
             let levels = version.levels_info();
 
-            assert_eq!(adviced_out_level(&TimeRange::new(801, 802), levels), 0);
+            assert_eq!(advise_out_level(&TimeRange::new(801, 802), levels), 0);
         }
     }
 

@@ -118,26 +118,32 @@ impl CompactReq {
             return TimeRange::all();
         }
         // If it's a delta compaction and all files are delta files, use the out_level's time range.
-        if let Some(out_level) = self.version.levels_info().get(self.out_level as usize) {
+        let levels = self.version.levels_info();
+        if let Some(out_level) = levels.get(self.out_level as usize) {
             if out_level.time_range.is_none() {
                 // The out_level has no files, move the whole of those picked files into the out_level.
                 return TimeRange::all();
             }
-            let mut out_time_range = out_level.time_range;
 
-            if let Some(out_level_next) = self
-                .version
-                .levels_info()
-                .get((self.out_level + 1) as usize)
-            {
-                if out_level_next.time_range.is_none() {
-                    // The out_level has some files but the next level has no files,
-                    // move part of those picked files into the out_level.
+            let mut out_time_range = out_level.time_range;
+            let out_level_next = (self.out_level + 1) as usize;
+            if out_level_next >= levels.len() {
+                // If the out_level is the max level, the min_ts of the range will be -∞.
+                out_time_range.min_ts = i64::MIN;
+                return out_time_range;
+            }
+            if levels[out_level_next].time_range.is_none() {
+                // The out_level has some files but the next level has no files,
+                // move part of those picked files into the out_level.
+                out_time_range.min_ts = i64::MIN;
+                if self.out_level == 1 {
+                    // If the out_level is lv-1, the max_ts of the range will be +∞.
                     out_time_range.max_ts = i64::MAX;
                 }
+                return out_time_range;
             }
 
-            return out_time_range;
+            return out_level.time_range;
         }
 
         // Impossible.
@@ -577,7 +583,7 @@ pub mod test {
                 out_level: 2,
             };
 
-            assert_eq!(req.out_time_range(), TimeRange::new(1, i64::MAX));
+            assert_eq!(req.out_time_range(), TimeRange::new(i64::MIN, 20));
 
             let mut delta_files_exp = vec![];
             version_sketch

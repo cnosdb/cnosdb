@@ -1319,6 +1319,22 @@ pub mod test {
                 }
             );
             assert_eq!(
+                do_merge(vec![3, 5, 7], vec![3, 5, 7]),
+                DataBlock::U64 {
+                    ts: vec![3, 5, 7],
+                    val: vec![32, 52, 72],
+                    enc: DataBlockEncoding::default()
+                }
+            );
+            assert_eq!(
+                do_merge(vec![3, 5, 7], vec![5]),
+                DataBlock::U64 {
+                    ts: vec![3, 5, 7],
+                    val: vec![31, 52, 71],
+                    enc: DataBlockEncoding::default()
+                }
+            );
+            assert_eq!(
                 do_merge(vec![3, 5, 7], vec![4, 6]),
                 DataBlock::U64 {
                     ts: vec![3, 4, 5, 6, 7],

@@ -1161,9 +1161,8 @@ pub mod test {
             {
                 if level == 0 {
                     return file_utils::make_delta_file_name(dir, f.file_id);
-                } else {
-                    return file_utils::make_tsm_file_name(dir, f.file_id);
                 }
+                return file_utils::make_tsm_file_name(dir, f.file_id);
             }
             panic!("VersionEdit::add_files doesn't contain any file matches level-{level}.");
         }
