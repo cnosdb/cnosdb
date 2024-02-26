@@ -29,6 +29,7 @@ impl ExtensionPlanner for TagScanPlanner {
             projection: _,
             projected_schema,
             filters,
+            count_col_name,
             fetch,
         }) = as_tag_scan_plan_node(node)
         {
@@ -37,6 +38,7 @@ impl ExtensionPlanner for TagScanPlanner {
                     session_state,
                     projected_schema.as_ref().into(),
                     filters,
+                    count_col_name.clone(),
                     *fetch,
                 )
                 .await?;

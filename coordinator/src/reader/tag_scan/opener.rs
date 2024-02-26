@@ -21,6 +21,7 @@ pub struct TemporaryTagScanOpener {
     kv_inst: Option<EngineRef>,
     meta: MetaRef,
     span_ctx: Option<SpanContext>,
+    count_col_name: Option<String>,
 }
 
 impl TemporaryTagScanOpener {
@@ -29,12 +30,14 @@ impl TemporaryTagScanOpener {
         kv_inst: Option<EngineRef>,
         meta: MetaRef,
         span_ctx: Option<&SpanContext>,
+        count_col_name: Option<String>,
     ) -> Self {
         Self {
             config,
             kv_inst,
             meta,
             span_ctx: span_ctx.cloned(),
+            count_col_name,
         }
     }
 }
@@ -49,6 +52,7 @@ impl VnodeOpener for TemporaryTagScanOpener {
         let admin_meta = self.meta.clone();
         let config = self.config.clone();
         let span_ctx = self.span_ctx.clone();
+        let count_col_name = self.count_col_name.clone();
 
         let future = async move {
             // TODO 请求路由的过程应该由通信框架决定，客户端只关心业务逻辑（请求目标和请求内容）
@@ -63,6 +67,7 @@ impl VnodeOpener for TemporaryTagScanOpener {
                     SpanRecorder::new(
                         span_ctx.child_span(format!("LocalTskvTagScanStream ({vnode_id})")),
                     ),
+                    count_col_name,
                 )
                 .map_err(CoordinatorError::from);
                 Ok(Box::pin(stream) as SendableCoordinatorRecordBatchStream)

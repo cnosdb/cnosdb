@@ -149,6 +149,7 @@ impl Coordinator for MockCoordinator {
         &self,
         option: QueryOption,
         _span_ctx: Option<&SpanContext>,
+        _agg_with_grouping: Option<String>,
     ) -> CoordinatorResult<SendableCoordinatorRecordBatchStream> {
         todo!("tag_scan")
     }

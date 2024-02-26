@@ -2,17 +2,20 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use datafusion::arrow::array::StringBuilder;
-use datafusion::arrow::datatypes::SchemaRef;
+use datafusion::arrow::datatypes::{Int64Type, SchemaRef};
 use datafusion::arrow::error::ArrowError;
 use datafusion::arrow::record_batch::RecordBatch;
 use futures::future::BoxFuture;
 use futures::{ready, Stream, StreamExt, TryFutureExt};
 use models::arrow::stream::MemoryRecordBatchStream;
-use models::arrow_array::build_arrow_array_builders;
+use models::arrow::DataType;
+use models::arrow_array::{build_arrow_array_builder, build_arrow_array_builders};
 use models::meta_data::VnodeId;
+use models::schema::ColumnType;
 use models::SeriesKey;
 use trace::SpanRecorder;
 
+use super::ArrayBuilderPtr;
 use crate::error::Result;
 use crate::reader::{QueryOption, SendableTskvRecordBatchStream};
 use crate::EngineRef;
@@ -29,6 +32,7 @@ impl LocalTskvTagScanStream {
         option: QueryOption,
         kv: EngineRef,
         span_recorder: SpanRecorder,
+        count_col_name: Option<String>,
     ) -> Self {
         let futrue = async move {
             let (tenant, db, table) = (
@@ -50,9 +54,21 @@ impl LocalTskvTagScanStream {
             }
 
             let mut batches = vec![];
-            for chunk in keys.chunks(option.batch_size) {
-                let record_batch = series_keys_to_record_batch(option.df_schema.clone(), chunk)?;
-                batches.push(record_batch)
+            if let Some(count_col_name) = count_col_name {
+                for chunk in keys.chunks(option.batch_size) {
+                    let record_batch = series_keys_len_to_record_batch(
+                        option.df_schema.clone(),
+                        &count_col_name,
+                        chunk,
+                    )?;
+                    batches.push(record_batch)
+                }
+            } else {
+                for chunk in keys.chunks(option.batch_size) {
+                    let record_batch =
+                        series_keys_to_record_batch(option.df_schema.clone(), chunk)?;
+                    batches.push(record_batch)
+                }
             }
 
             Ok(Box::pin(MemoryRecordBatchStream::new(batches)) as SendableTskvRecordBatchStream)
@@ -120,5 +136,28 @@ fn series_keys_to_record_batch(
         .map(|mut b| b.finish())
         .collect::<Vec<_>>();
     let record_batch = RecordBatch::try_new(schema.clone(), columns)?;
+    Ok(record_batch)
+}
+
+fn series_keys_len_to_record_batch(
+    schema: SchemaRef,
+    count_col_name: &str,
+    series_keys: &[SeriesKey],
+) -> Result<RecordBatch, ArrowError> {
+    let array_builder = build_arrow_array_builder(&DataType::Int64, 1)?;
+    let mut count: i64 = 0;
+    for key in series_keys {
+        if key
+            .tag_string_val(count_col_name)
+            .map_err(|e| ArrowError::ExternalError(Box::new(e)))?
+            .is_some()
+        {
+            count += 1;
+        }
+    }
+
+    let mut builder = ArrayBuilderPtr::new(array_builder, ColumnType::Tag);
+    builder.append_primitive::<Int64Type>(count);
+    let record_batch = RecordBatch::try_new(schema, vec![builder.ptr.finish()])?;
     Ok(record_batch)
 }
