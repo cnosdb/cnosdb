@@ -64,6 +64,7 @@ impl OptimizerRule for RewriteTagScan {
                                 projection: projection.clone(),
                                 projected_schema: projected_schema.clone(),
                                 filters: filters.clone(),
+                                count_col_name: None,
                                 fetch: *fetch,
                             }),
                         });

@@ -61,3 +61,13 @@ tag14 1999-12-31T00:00:00.020 111.0
 tag14 1999-12-31T00:00:00.030 222.0
 tag14 1999-12-31T00:00:00.040 222.0
 tag14 1999-12-31T00:00:00.050 222.0
+
+query T
+select count(t0) from gapfill_db.m2;
+----
+4
+
+query T
+select count(t1) from gapfill_db.m2;
+----
+4

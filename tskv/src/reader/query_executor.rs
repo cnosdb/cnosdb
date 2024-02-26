@@ -81,6 +81,7 @@ impl QueryExecutor {
                 SpanRecorder::new(
                     span_ctx.child_span(format!("LocalTskvTagScanStream ({})", vnode.id)),
                 ),
+                None,
             );
             streams.push(Box::pin(stream) as SendableTskvRecordBatchStream);
         });

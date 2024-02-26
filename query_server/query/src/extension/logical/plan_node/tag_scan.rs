@@ -20,6 +20,7 @@ pub struct TagScanPlanNode {
     pub projected_schema: DFSchemaRef,
     /// Optional expressions to be used as filters by the table provider
     pub filters: Vec<Expr>,
+    pub count_col_name: Option<String>,
     /// Optional number of rows to read
     pub fetch: Option<usize>,
 }
@@ -71,7 +72,8 @@ impl UserDefinedLogicalNodeCore for TagScanPlanNode {
     fn fmt_for_explain(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "TagScan: [{}]",
+            "TagScan: {}, projection=[{}]",
+            self.table_name,
             self.projected_schema.field_names().join(",")
         )
     }

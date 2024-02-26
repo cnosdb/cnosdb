@@ -449,6 +449,7 @@ impl Coordinator for CoordService {
         &self,
         option: QueryOption,
         span_ctx: Option<&SpanContext>,
+        count_col_name: Option<String>,
     ) -> CoordinatorResult<SendableCoordinatorRecordBatchStream> {
         let checker = self.build_query_checker(&option.table_schema.tenant);
 
@@ -457,6 +458,7 @@ impl Coordinator for CoordService {
             self.kv_inst.clone(),
             self.meta.clone(),
             span_ctx,
+            count_col_name,
         );
 
         Ok(Box::pin(CheckedCoordinatorRecordBatchStream::new(

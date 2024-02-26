@@ -30,6 +30,7 @@ use spi::query::session::SessionCtx;
 use spi::Result;
 use trace::debug;
 
+use crate::extension::logical::optimizer_rule::rewrite_count_tag::RewriteCountTag;
 use crate::extension::logical::optimizer_rule::rewrite_tag_scan::RewriteTagScan;
 use crate::sql::analyzer::DefaultAnalyzer;
 
@@ -99,6 +100,7 @@ impl Default for DefaultLogicalOptimizer {
             // df default rules end
             // cnosdb rules
             Arc::new(RewriteTagScan {}),
+            Arc::new(RewriteCountTag {}),
         ];
 
         Self { analyzer, rules }

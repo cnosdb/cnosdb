@@ -170,6 +170,7 @@ impl ClusterTable {
         ctx: &SessionState,
         projected_schema: SchemaRef,
         filters: &[Expr],
+        count_col_name: Option<String>,
         limit: Option<usize>,
     ) -> Result<Arc<dyn ExecutionPlan>> {
         let predicate = Arc::new(
@@ -198,6 +199,7 @@ impl ClusterTable {
             predicate,
             self.coord.clone(),
             splits,
+            count_col_name,
         )))
     }
 

@@ -109,6 +109,7 @@ pub trait Coordinator: Send + Sync {
         &self,
         option: QueryOption,
         span_ctx: Option<&SpanContext>,
+        count_col_name: Option<String>,
     ) -> CoordinatorResult<SendableCoordinatorRecordBatchStream>;
 
     async fn broadcast_command(&self, req: AdminCommandRequest) -> CoordinatorResult<()>;
