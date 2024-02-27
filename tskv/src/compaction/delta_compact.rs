@@ -394,9 +394,7 @@ impl CompactingBlockMetaGroup {
             // Only one compacting block and has no tombstone, write as raw block.
             trace::trace!("only one compacting block without tombstone and time_range is entirely included by target level, handled as raw block");
             let head_meta = &self.blk_metas[0].meta;
-            let mut buf = Vec::with_capacity(head_meta.size() as usize);
-            let data_len = self.blk_metas[0].get_raw_data(&mut buf).await?;
-            buf.truncate(data_len);
+            let buf = self.blk_metas[0].get_raw_data().await?;
 
             if head_meta.size() >= max_block_size as u64 {
                 // Raw data block is full, so do not merge with the previous, directly return.

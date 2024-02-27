@@ -52,7 +52,7 @@ impl WalReader {
     }
 
     /// Parses wal footer, returns sequence range.
-    pub fn parse_footer(footer: [u8; record_file::FILE_FOOTER_LEN]) -> Option<(u64, u64)> {
+    pub fn parse_footer(footer: Vec<u8>) -> Option<(u64, u64)> {
         let magic_number = decode_be_u32(&footer[0..4]);
         if magic_number != FOOTER_MAGIC_NUMBER {
             // There is no footer in wal file.

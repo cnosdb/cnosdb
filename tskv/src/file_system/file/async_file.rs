@@ -38,19 +38,24 @@ impl RawFile {
         }
     }
 
-    async fn pread(&self, pos: u64, data: &mut [u8]) -> Result<usize> {
+    async fn pread(&self, pos: u64, len: usize) -> Result<Vec<u8>> {
         #[cfg(feature = "io_uring")]
         {
+            let mut data = vec![0; len as usize];
             let completion = self.1.read_at(&self.0, &data, pos).await?;
-            Ok(data.len())
+            Ok(data)
         }
         #[cfg(not(feature = "io_uring"))]
         {
-            let len = data.len();
-            let ptr = data.as_ptr() as u64;
-            let fd = os::fd(self.0.as_ref());
-            let len = asyncify(move || os::pread(fd, pos, len, ptr)).await?;
-            Ok(len)
+            let fd = self.0.clone();
+            asyncify(move || {
+                let buf = vec![0; len];
+                let ptr = buf.as_ptr() as u64;
+                let fd = os::fd(fd.as_ref());
+                os::pread(fd, pos, len, ptr)?;
+                Ok(buf)
+            })
+            .await
         }
     }
 
@@ -136,8 +141,8 @@ impl IFile for AsyncFile {
         self.inner.pwrite(pos, data).await
     }
 
-    async fn read_at(&self, pos: u64, data: &mut [u8]) -> Result<usize> {
-        self.inner.pread(pos, data).await
+    async fn read_at(&self, pos: u64, len: usize) -> Result<Vec<u8>> {
+        self.inner.pread(pos, len).await
     }
 
     async fn sync_data(&self) -> Result<()> {

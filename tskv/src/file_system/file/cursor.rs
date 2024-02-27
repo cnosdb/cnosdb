@@ -27,9 +27,9 @@ impl FileCursor {
         self.pos = pos;
     }
 
-    pub async fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-        let read = self.file.read_at(self.pos, buf).await?;
-        self.pos += read as u64;
+    pub async fn read(&mut self, len: usize) -> Result<Vec<u8>> {
+        let read = self.file.read_at(self.pos, len).await?;
+        self.pos += len as u64;
         Ok(read)
     }
 
