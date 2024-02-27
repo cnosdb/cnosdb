@@ -234,11 +234,11 @@ mod test {
         assert_eq!(data.len(), len);
         let data: [u8; 4] = [4, 5, 6, 7];
         let _len = file.write_at(8, &data).await.unwrap();
-        let mut buf = [0_u8; 12];
-        let size = file.read_at(0, &mut buf).await.unwrap();
+        let len = 12;
+        let buf = file.read_at(0, 12).await.unwrap();
         let buf2 = [0, 1, 2, 3, 0, 0, 0, 0, 4, 5, 6, 7];
-        assert_eq!(buf2, buf);
-        assert_eq!(size, 12);
+        assert_eq!(buf2, buf.as_slice());
+        assert_eq!(len, buf.len() as u64);
     }
 
     #[tokio::test]
@@ -256,9 +256,9 @@ mod test {
             let len = file.write_at(0, &data).await.unwrap();
             assert_eq!(data.len(), len);
 
-            let mut buf = [0_u8; 2];
-            let size = file.read_at(1, &mut buf).await.unwrap();
-            assert_eq!(size, buf.len());
+            let len = 2;
+            let buf = file.read_at(1, len).await.unwrap();
+            assert_eq!(len, buf.len());
             assert_eq!(buf, [1, 2]);
         }
         {
@@ -270,9 +270,9 @@ mod test {
             let len = file.write_at(0, &data).await.unwrap();
             assert_eq!(data.len(), len);
 
-            let mut buf = [0_u8; 2];
-            let size = file.read_at(1, &mut buf).await.unwrap();
-            assert_eq!(size, 2);
+            let len = 2;
+            let buf = file.read_at(1, len).await.unwrap();
+            assert_eq!(len, buf.len());
             assert_eq!(buf, [2, 1]);
         }
         {
@@ -284,10 +284,10 @@ mod test {
             let len = file.write_at(file.len(), &data).await.unwrap();
             assert_eq!(data.len(), len);
 
-            let mut buf = [0_u8; 100];
-            let size = file.read_at(0, &mut buf).await.unwrap();
-            assert_eq!(size, 8);
-            assert_eq!(&buf[0..10], &[3, 2, 1, 0, 0, 1, 2, 3, 0, 0]);
+            let len = 8;
+            let buf = file.read_at(0, len).await.unwrap();
+            assert_eq!(len, buf.len());
+            assert_eq!(&buf[0..len], &[3, 2, 1, 0, 0, 1, 2, 3]);
         }
     }
 
@@ -312,28 +312,31 @@ mod test {
         }
         assert_eq!(len, file_len);
 
-        let mut buf = [0_u8; 8];
+        let len = 8;
 
         // Read 8 bytes at 1024.
-        len = file.read_at(1024, &mut buf).await.unwrap();
+        let buf = file.read_at(1024, len).await.unwrap();
         assert_eq!(len, buf.len());
         assert_eq!(buf, [0, 1, 2, 3, 0, 1, 2, 3]);
 
         // Write 4 bytes at 1024 and read 8 bytes.
-        len = file.write_at(1024, &[1, 1, 1, 1]).await.unwrap();
+        let len = file.write_at(1024, &[1, 1, 1, 1]).await.unwrap();
         assert_eq!(len, 4);
-        let size = file.read_at(1024, &mut buf).await.unwrap();
-        assert_eq!(size, buf.len());
+
+        let len = 8;
+        let buf = file.read_at(1024, len).await.unwrap();
+        assert_eq!(len, buf.len());
         assert_eq!(buf, [1, 1, 1, 1, 0, 1, 2, 3]);
 
         // Write 8 bytes at end -4 and read 7 bytes at end - 4.
         let new_chunk = [11, 12, 13, 14, 15, 16, 17, 18];
-        len = file
+        let len = file
             .write_at((file_len - 4) as u64, &new_chunk)
             .await
             .unwrap();
         assert_eq!(len, new_chunk.len());
-        len = file.read_at((file_len - 4) as u64, &mut buf).await.unwrap();
+        let len = 8;
+        let buf = file.read_at((file_len - 4) as u64, len).await.unwrap();
         assert_eq!(len, buf.len());
         assert_eq!(buf, new_chunk);
     }
@@ -347,11 +350,11 @@ mod test {
         let data = &[0, 1, 2, 3, 4, 5];
         {
             let file = file_manager::create_file(&path).await.unwrap();
-            let mut len = file.write_at(0, data).await.unwrap();
+            let len = file.write_at(0, data).await.unwrap();
             assert_eq!(len, data.len());
 
-            let mut buf = [0_u8; 2];
-            len = file.read_at(1, &mut buf).await.unwrap();
+            let len = 2;
+            let buf = file.read_at(1, len).await.unwrap();
             assert_eq!(len, buf.len());
             assert_eq!(buf, [1, 2]);
 
@@ -360,9 +363,9 @@ mod test {
 
         let file = file_manager::open_file(path).await.unwrap();
         assert_eq!(file.len(), 3);
-        let mut buf = vec![0; 3];
-        let len = file.read_at(0, &mut buf).await.unwrap();
-        assert_eq!(len, 3);
+        let len = 3;
+        let buf = file.read_at(0, len).await.unwrap();
+        assert_eq!(len, buf.len());
         assert_eq!(buf.as_slice(), &data[0..3]);
     }
 
@@ -379,10 +382,10 @@ mod test {
             assert_eq!(len, 5);
         }
         cursor.seek(SeekFrom::Start(0)).await.unwrap();
-        let mut buf = [0_u8; 8];
-        let len = cursor.read(&mut buf[0..5]).await.unwrap();
-        assert_eq!(len, 5);
-        assert_eq!(buf, [0, 1, 2, 3, 4, 0, 0, 0]);
+        let len = 5;
+        let buf = cursor.read(len).await.unwrap();
+        assert_eq!(len, buf.len());
+        assert_eq!(buf, [0, 1, 2, 3, 4]);
     }
 
     #[tokio::test]
@@ -401,9 +404,9 @@ mod test {
         cursor.write_vec(&ios).await.unwrap();
         cursor.try_flush(0).await.unwrap();
         cursor.seek(SeekFrom::Start(0)).await.unwrap();
-        let mut buf = [0_u8; 16];
-        let len = cursor.read(&mut buf).await.unwrap();
-        assert_eq!(len, 15);
+        let len = 16;
+        let buf = cursor.read(len).await.unwrap();
+        assert_eq!(len, buf.len());
         assert_eq!(buf, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 0]);
     }
 

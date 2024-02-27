@@ -5,8 +5,8 @@ use num_traits::ToPrimitive;
 use snafu::ResultExt;
 
 use super::{
-    file_crc_source_len, Reader, RecordDataType, FILE_FOOTER_LEN, FILE_MAGIC_NUMBER,
-    FILE_MAGIC_NUMBER_LEN, RECORD_MAGIC_NUMBER,
+    file_crc_source_len, Reader, RecordDataType, FILE_MAGIC_NUMBER, FILE_MAGIC_NUMBER_LEN,
+    RECORD_MAGIC_NUMBER,
 };
 use crate::error::{self, Error, Result};
 use crate::file_system::file::cursor::FileCursor;
@@ -15,7 +15,7 @@ use crate::file_system::file_manager;
 pub struct Writer {
     path: PathBuf,
     cursor: FileCursor,
-    footer: Option<[u8; FILE_FOOTER_LEN]>,
+    footer: Option<Vec<u8>>, // FILE_FOOTER_LEN,
     file_size: u64,
 }
 
@@ -47,7 +47,7 @@ impl Writer {
 
             // For writed file, skip to footer position, next write is at (file.len() - footer_len).
             // Note that footer_len may be zero.
-            let seek_pos_end = footer_data.map(|f| f.len()).unwrap_or(0);
+            let seek_pos_end = footer_data.as_ref().map(|f| f.len()).unwrap_or(0);
             // TODO: truncate this file using seek_pos_end.
             cursor
                 .seek(SeekFrom::End(-(seek_pos_end as i64)))
@@ -120,27 +120,22 @@ impl Writer {
         Ok(written_size)
     }
 
-    pub async fn write_footer(&mut self, mut footer: [u8; FILE_FOOTER_LEN]) -> Result<usize> {
+    pub async fn write_footer(&mut self, mut footer: Vec<u8>) -> Result<usize> {
         self.sync().await?;
         let pos = self.cursor.pos();
         // Get file crc
-        let mut buf = vec![0_u8; file_crc_source_len(self.file_size(), 0_usize)];
         self.cursor
             .seek(SeekFrom::Start(FILE_MAGIC_NUMBER_LEN as u64))
             .await?;
-        self.cursor
-            .read(&mut buf)
-            .await
-            .map_err(|e| Error::ReadFile {
-                path: self.path.clone(),
-                source: e,
-            })?;
+        let len = file_crc_source_len(self.file_size(), 0_usize);
+        let buf = self.cursor.read(len).await.map_err(|e| Error::ReadFile {
+            path: self.path.clone(),
+            source: e,
+        })?;
         let crc = crc32fast::hash(&buf);
 
         // Set file crc to footer
         footer[4..8].copy_from_slice(&crc.to_be_bytes());
-        self.footer = Some(footer);
-
         self.cursor.seek(SeekFrom::Start(pos)).await?;
         let res = self
             .cursor
@@ -157,11 +152,12 @@ impl Writer {
                 path: self.path.clone(),
                 source: e,
             })?;
+        self.footer = Some(footer);
         Ok(res)
     }
 
-    pub fn footer(&self) -> Option<[u8; FILE_FOOTER_LEN]> {
-        self.footer
+    pub fn footer(&self) -> Option<Vec<u8>> {
+        self.footer.clone()
     }
 
     pub async fn sync(&mut self) -> Result<()> {
@@ -204,7 +200,7 @@ mod test {
             let size = w.write_record(1, 1, &[d.as_slice()]).await?;
             println!("Writed new record(1, 1, {:?}) {} bytes", d, size);
         }
-        w.write_footer([0_u8; FILE_FOOTER_LEN]).await?;
+        w.write_footer([0_u8; FILE_FOOTER_LEN].to_vec()).await?;
         w.close().await?;
 
         println!("Testing read one record.");

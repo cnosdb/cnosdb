@@ -209,7 +209,6 @@ pub struct BinlogReader {
     cursor: FileCursor,
 
     body_buf: Vec<u8>,
-    header_buf: [u8; BLOCK_HEADER_SIZE],
 }
 
 impl BinlogReader {
@@ -224,18 +223,14 @@ impl BinlogReader {
         Ok(Self {
             id,
             cursor,
-            header_buf: [0_u8; BLOCK_HEADER_SIZE],
             body_buf: vec![],
         })
     }
 
-    async fn read_header(cursor: &mut FileCursor) -> IndexResult<[u8; SEGMENT_FILE_HEADER_SIZE]> {
-        let mut header_buf = [0_u8; SEGMENT_FILE_HEADER_SIZE];
-
+    async fn read_header(cursor: &mut FileCursor) -> IndexResult<Vec<u8>> {
         cursor.seek(SeekFrom::Start(0)).await?;
-        let _read = cursor.read(&mut header_buf[..]).await?;
-
-        Ok(header_buf)
+        let buf = cursor.read(SEGMENT_FILE_HEADER_SIZE).await?;
+        Ok(buf)
     }
 
     pub fn read_over(&mut self) -> bool {
@@ -265,16 +260,15 @@ impl BinlogReader {
 
         debug!("Read index binlog: cursor.pos={}", self.cursor.pos());
 
-        let read_bytes = self.cursor.read(&mut self.header_buf[..]).await?;
-        if read_bytes < BLOCK_HEADER_SIZE {
+        let buf = self.cursor.read(BLOCK_HEADER_SIZE).await?;
+        if buf.len() < BLOCK_HEADER_SIZE {
             return Err(IndexError::FileErrors {
-                msg: format!("read header length {} < {}", read_bytes, BLOCK_HEADER_SIZE),
+                msg: format!("read header length {} < {}", buf.len(), BLOCK_HEADER_SIZE),
             });
         }
-
-        let ts = byte_utils::decode_be_i64(self.header_buf[0..8].into());
-        let id = byte_utils::decode_be_u32(self.header_buf[8..12].into());
-        let data_len = byte_utils::decode_be_u32(self.header_buf[12..16].into());
+        let ts = byte_utils::decode_be_i64(buf[0..8].into());
+        let id = byte_utils::decode_be_u32(buf[8..12].into());
+        let data_len = byte_utils::decode_be_u32(buf[12..16].into());
         if data_len == 0 {
             return Ok(Some(SeriesKeyBlock {
                 ts,
@@ -284,7 +278,6 @@ impl BinlogReader {
             }));
         }
         debug!("Read Binlog Reader: data_len={}", data_len);
-
         if data_len > (self.file_len() - self.read_pos()) {
             error!(
                 "binlog read block error {}, {} {} ",
@@ -308,13 +301,14 @@ impl BinlogReader {
             self.body_buf.resize(data_len as usize, 0);
         }
 
-        let buf = &mut self.body_buf.as_mut_slice()[0..data_len as usize];
-        let read_bytes = self.cursor.read(buf).await?;
-        if read_bytes != data_len as usize {
+        let read_bytes = self.cursor.read(data_len as usize).await?;
+        if read_bytes.len() != data_len as usize {
             return Err(IndexError::FileErrors {
                 msg: format!(
                     "{} read block data error {} != {}",
-                    ts, read_bytes, data_len
+                    ts,
+                    read_bytes.len(),
+                    data_len
                 ),
             });
         }
@@ -323,7 +317,7 @@ impl BinlogReader {
             ts,
             series_id: id,
             data_len,
-            data: buf.to_vec(),
+            data: read_bytes,
         }))
     }
 }

@@ -23,7 +23,7 @@ pub struct Reader {
     buf: Vec<u8>,
     buf_len: usize,
     buf_use: usize,
-    footer: Option<[u8; FILE_FOOTER_LEN]>,
+    footer: Option<Vec<u8>>, //FILE_FOOTER_LEN
     footer_pos: u64,
 }
 
@@ -167,33 +167,32 @@ impl Reader {
     }
 
     /// Returns footer position and footer data.
-    pub async fn read_footer(path: impl AsRef<Path>) -> Result<(u64, [u8; FILE_FOOTER_LEN])> {
+    pub async fn read_footer(path: impl AsRef<Path>) -> Result<(u64, Vec<u8>)> {
         let path = path.as_ref();
         let file = file_manager::open_file(&path).await?;
         if file.len() < (FILE_MAGIC_NUMBER_LEN + FILE_FOOTER_LEN) as u64 {
             return Err(Error::NoFooter);
         }
 
-        // Get file crc
-        let mut buf = vec![0_u8; file_crc_source_len(file.len(), FILE_FOOTER_LEN)];
-        if let Err(e) = file.read_at(FILE_MAGIC_NUMBER_LEN as u64, &mut buf).await {
-            return Err(Error::ReadFile {
+        let len = file_crc_source_len(file.len(), FILE_FOOTER_LEN);
+        let buf = file
+            .read_at(FILE_MAGIC_NUMBER_LEN as u64, len)
+            .await
+            .map_err(|e| Error::ReadFile {
                 path: path.to_path_buf(),
                 source: e,
-            });
-        }
+            })?;
         let crc = crc32fast::hash(&buf);
 
         // Read footer
         let footer_pos = file.len() - FILE_FOOTER_LEN as u64;
-        let mut footer = [0_u8; FILE_FOOTER_LEN];
-        if let Err(e) = file.read_at(footer_pos, &mut footer[..]).await {
-            return Err(Error::ReadFile {
+        let footer = file
+            .read_at(footer_pos, FILE_FOOTER_LEN)
+            .await
+            .map_err(|e| Error::ReadFile {
                 path: path.to_path_buf(),
                 source: e,
-            });
-        }
-
+            })?;
         // Check file crc
         let footer_crc = decode_be_u32(
             &footer[FILE_FOOTER_MAGIC_NUMBER_LEN
@@ -209,8 +208,8 @@ impl Reader {
     }
 
     /// Returns a clone of file footer.
-    pub fn footer(&self) -> Option<[u8; FILE_FOOTER_LEN]> {
-        self.footer
+    pub fn footer(&self) -> Option<Vec<u8>> {
+        self.footer.clone()
     }
 
     async fn load_buf(&mut self) -> Result<()> {
@@ -223,14 +222,16 @@ impl Reader {
             self.pos,
             self.buf.len()
         );
-        self.buf_len = self
+        let buf = self
             .file
-            .read_at(self.pos as u64, &mut self.buf)
+            .read_at(self.pos as u64, self.buf.len())
             .await
             .map_err(|e| Error::ReadFile {
                 path: self.path.clone(),
                 source: e,
             })?;
+        self.buf_len = buf.len();
+        self.buf = buf;
         self.buf_use = 0;
         Ok(())
     }
@@ -277,22 +278,20 @@ pub(crate) mod test {
 
     impl Reader {
         pub(crate) async fn read_at(&mut self, pos: usize) -> Result<Record> {
-            let mut record_header_buf = [0_u8; RECORD_HEADER_LEN];
-            let len = match self.file.read_at(pos as u64, &mut record_header_buf).await {
-                Ok(len) => len,
+            let record_header_buf = match self.file.read_at(pos as u64, RECORD_HEADER_LEN).await {
+                Ok(buf) => buf,
                 Err(e) => {
                     return Err(Error::ReadFile {
                         path: self.path.clone(),
                         source: e,
-                    })
+                    });
                 }
             };
-            if len != RECORD_HEADER_LEN {
+            if record_header_buf.len() != RECORD_HEADER_LEN {
                 return Err(Error::RecordFileIo {
                     reason: format!("invalid record header (pos is {})", pos),
                 });
             }
-
             let mut p = 0_usize;
             let magic_number = decode_be_u32(&record_header_buf[p..p + RECORD_MAGIC_NUMBER_LEN]);
             if magic_number != RECORD_MAGIC_NUMBER {
@@ -312,8 +311,11 @@ pub(crate) mod test {
 
             // TODO: Reuse data vector.
             // TODO: Check if data_size is too large.
-            let mut data = vec![0_u8; data_size as usize];
-            let read_data_len = match self.file.read_at((pos + p) as u64, &mut data).await {
+            let data = match self
+                .file
+                .read_at((pos + p) as u64, data_size as usize)
+                .await
+            {
                 Ok(len) => len,
                 Err(e) => {
                     return Err(Error::ReadFile {
@@ -322,11 +324,13 @@ pub(crate) mod test {
                     });
                 }
             };
-            if read_data_len != data_size as usize {
+            if data.len() != data_size as usize {
                 return Err(Error::RecordFileIo {
                     reason: format!(
                         "data truncated to {} (pos is {}, len is {})",
-                        read_data_len, pos, data_size
+                        data.len(),
+                        pos,
+                        data_size
                     ),
                 });
             }

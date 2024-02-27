@@ -63,9 +63,8 @@ impl From<ReadTsmError> for Error {
 pub struct IndexFile {
     reader: Arc<AsyncFile>,
     bloom_filter: BloomFilter,
-    idx_meta_buf: [u8; INDEX_META_SIZE],
-    blk_meta_buf: [u8; BLOCK_META_SIZE],
-
+    idx_meta_buf: Vec<u8>, // INDEX_META_SIZE
+    blk_meta_buf: Vec<u8>, // BLOCK_META_SIZE
     index_offset: u64,
     pos: u64,
     end_pos: u64,
@@ -76,9 +75,8 @@ pub struct IndexFile {
 impl IndexFile {
     pub(crate) async fn open(reader: Arc<AsyncFile>) -> ReadTsmResult<Self> {
         let file_len = reader.len();
-        let mut footer = [0_u8; FOOTER_SIZE];
-        reader
-            .read_at(file_len - FOOTER_SIZE as u64, &mut footer)
+        let footer = reader
+            .read_at(file_len - FOOTER_SIZE as u64, FOOTER_SIZE)
             .await
             .context(ReadIOSnafu)?;
         let bloom_filter = BloomFilter::with_data(&footer[..BLOOM_FILTER_SIZE]);
@@ -86,8 +84,8 @@ impl IndexFile {
         Ok(Self {
             reader,
             bloom_filter,
-            idx_meta_buf: [0_u8; INDEX_META_SIZE],
-            blk_meta_buf: [0_u8; BLOCK_META_SIZE],
+            idx_meta_buf: Vec::new(),
+            blk_meta_buf: Vec::new(),
             index_offset,
             pos: index_offset,
             end_pos: file_len - FOOTER_SIZE as u64,
@@ -101,8 +99,9 @@ impl IndexFile {
         if self.pos >= self.end_pos {
             return Ok(None);
         }
-        self.reader
-            .read_at(self.pos, &mut self.idx_meta_buf[..])
+        self.idx_meta_buf = self
+            .reader
+            .read_at(self.pos, INDEX_META_SIZE)
             .await
             .context(ReadIOSnafu)?;
         self.pos += INDEX_META_SIZE as u64;
@@ -118,8 +117,9 @@ impl IndexFile {
         if self.index_block_idx >= self.index_block_count {
             return Ok(None);
         }
-        self.reader
-            .read_at(self.pos, &mut self.blk_meta_buf[..])
+        self.blk_meta_buf = self
+            .reader
+            .read_at(self.pos, BLOCK_META_SIZE)
             .await
             .context(ReadIOSnafu)?;
         self.pos += BLOCK_META_SIZE as u64;
@@ -199,11 +199,9 @@ pub async fn load_index(tsm_id: u64, reader: Arc<AsyncFile>) -> ReadTsmResult<In
             ),
         });
     }
-    let mut buf = [0u8; FOOTER_SIZE];
-
     // Read index data offset
-    reader
-        .read_at(len - FOOTER_SIZE as u64, &mut buf)
+    let buf = reader
+        .read_at(len - FOOTER_SIZE as u64, FOOTER_SIZE)
         .await
         .context(ReadIOSnafu)?;
     let bloom_filter = BloomFilter::with_data(&buf[..BLOOM_FILTER_SIZE]);
@@ -218,10 +216,9 @@ pub async fn load_index(tsm_id: u64, reader: Arc<AsyncFile>) -> ReadTsmResult<In
     }
     let data_len = (len - offset - FOOTER_SIZE as u64) as usize;
     // TODO if data_len is too big, read data part in parts and do not store it.
-    let mut data = vec![0_u8; data_len];
     // Read index data
-    reader
-        .read_at(offset, &mut data)
+    let data = reader
+        .read_at(offset, data_len)
         .await
         .context(ReadIOSnafu)?;
 
@@ -496,10 +493,9 @@ impl TsmReader {
     /// Returns a DataBlock without tombstone
     pub async fn get_data_block(&self, block_meta: &BlockMeta) -> ReadTsmResult<DataBlock> {
         let _blk_range = (block_meta.min_ts(), block_meta.max_ts());
-        let mut buf = vec![0_u8; block_meta.size() as usize];
         let mut blk = read_data_block(
             self.reader.clone(),
-            &mut buf,
+            block_meta.size() as usize,
             block_meta.field_type(),
             block_meta.offset(),
             block_meta.val_off(),
@@ -511,20 +507,15 @@ impl TsmReader {
     }
 
     // Reads raw data from file and returns the read data size.
-    pub async fn get_raw_data(
-        &self,
-        block_meta: &BlockMeta,
-        dst: &mut Vec<u8>,
-    ) -> ReadTsmResult<usize> {
+    pub async fn get_raw_data(&self, block_meta: &BlockMeta) -> ReadTsmResult<Vec<u8>> {
         let data_len = block_meta.size() as usize;
-        if dst.len() < data_len {
-            dst.resize(data_len, 0);
-        }
-        self.reader
-            .read_at(block_meta.offset(), &mut dst[..data_len])
+
+        let buf = self
+            .reader
+            .read_at(block_meta.offset(), data_len)
             .await
             .context(ReadIOSnafu)?;
-        Ok(data_len)
+        Ok(buf)
     }
 
     pub fn has_tombstone(&self) -> bool {
@@ -582,48 +573,15 @@ pub struct ColumnReader {
     buf: Vec<u8>,
 }
 
-impl ColumnReader {
-    pub fn new(reader: Arc<AsyncFile>, inner: BlockMetaIterator) -> Self {
-        Self {
-            reader,
-            inner,
-            buf: vec![],
-        }
-    }
-
-    async fn decode(&mut self, block_meta: &BlockMeta) -> ReadTsmResult<DataBlock> {
-        let (_offset, size) = (block_meta.offset(), block_meta.size());
-        self.buf.resize(size as usize, 0);
-        read_data_block(
-            self.reader.clone(),
-            &mut self.buf,
-            block_meta.field_type(),
-            block_meta.offset(),
-            block_meta.val_off(),
-        )
-        .await
-    }
-}
-
-impl ColumnReader {
-    pub async fn next(&mut self) -> Option<Result<DataBlock>> {
-        if let Some(dbm) = self.inner.next() {
-            let res = self.decode(&dbm).await.context(error::ReadTsmSnafu);
-            return Some(res);
-        }
-        None
-    }
-}
-
 async fn read_data_block(
     reader: Arc<AsyncFile>,
-    buf: &mut [u8],
+    val_len: usize,
     field_type: ValueType,
     offset: u64,
     val_off: u64,
 ) -> ReadTsmResult<DataBlock> {
-    reader.read_at(offset, buf).await.context(ReadIOSnafu)?;
-    decode_data_block(buf, field_type, val_off - offset)
+    let buf = reader.read_at(offset, val_len).await.context(ReadIOSnafu)?;
+    decode_data_block(&buf, field_type, val_off - offset)
 }
 
 pub fn decode_data_block(

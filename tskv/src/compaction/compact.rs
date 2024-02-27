@@ -107,9 +107,9 @@ impl CompactingBlockMeta {
     }
 
     /// Read raw data of block meta from reader.
-    pub async fn get_raw_data(&self, dst: &mut Vec<u8>) -> Result<usize> {
+    pub async fn get_raw_data(&self) -> Result<Vec<u8>> {
         self.reader
-            .get_raw_data(&self.meta, dst)
+            .get_raw_data(&self.meta)
             .await
             .context(error::ReadTsmSnafu)
     }
@@ -161,9 +161,7 @@ impl CompactingBlockMetaGroup {
             // Only one compacting block and has no tombstone, write as raw block.
             trace!("only one compacting block without tombstone, handled as raw block");
             let meta_0 = &self.blk_metas[0].meta;
-            let mut buf_0 = Vec::with_capacity(meta_0.size() as usize);
-            let data_len_0 = self.blk_metas[0].get_raw_data(&mut buf_0).await?;
-            buf_0.truncate(data_len_0);
+            let buf_0 = self.blk_metas[0].get_raw_data().await?;
 
             if meta_0.size() >= max_block_size as u64 {
                 // Raw data block is full, so do not merge with the previous, directly return.

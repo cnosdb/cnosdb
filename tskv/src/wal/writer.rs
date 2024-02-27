@@ -11,12 +11,12 @@ use crate::kv_option::WalOptions;
 use crate::record_file::{RecordDataType, RecordDataVersion};
 use crate::{record_file, Result};
 
-fn build_footer(min_sequence: u64, max_sequence: u64) -> [u8; record_file::FILE_FOOTER_LEN] {
+fn build_footer(min_sequence: u64, max_sequence: u64) -> Vec<u8> {
     let mut footer = [0_u8; record_file::FILE_FOOTER_LEN];
     footer[0..4].copy_from_slice(&FOOTER_MAGIC_NUMBER.to_be_bytes());
     footer[16..24].copy_from_slice(&min_sequence.to_be_bytes());
     footer[24..32].copy_from_slice(&max_sequence.to_be_bytes());
-    footer
+    footer.to_vec()
 }
 
 pub struct WalWriter {
