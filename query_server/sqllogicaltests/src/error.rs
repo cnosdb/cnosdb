@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use arrow::error::ArrowError;
 use snafu::Snafu;
 use sqllogictest::TestError;
@@ -7,20 +9,27 @@ pub type Result<T, E = SqlError> = std::result::Result<T, E>;
 
 #[derive(Debug, Snafu)]
 pub enum SqlError {
-    #[snafu(display("SqlLogicTest error: {source}"))]
+    #[snafu(display("SqlLogicTest error: {}", error_fmt(source)))]
     SqlLogicTest { source: TestError },
 
-    #[snafu(display("Arrow error: {source}"))]
+    #[snafu(display("Arrow error: {}", error_fmt(source)))]
     Arrow { source: ArrowError },
 
-    #[snafu(display("LineProtocol error: {source}"))]
+    #[snafu(display("LineProtocol error: {}", error_fmt(source)))]
     LineProtocol { source: TestError },
 
-    #[snafu(display("Http error: {err}"))]
+    #[snafu(display("Http error: {}", error_fmt(err)))]
     Http { err: String },
 
-    #[snafu(display("Other Error: {reason}"))]
+    #[snafu(display("Other Error: {}", error_fmt(reason)))]
     Other { reason: String },
+}
+
+fn error_fmt(e: impl Display) -> String {
+    e.to_string()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 impl From<TestError> for SqlError {

@@ -2,7 +2,7 @@ use arrow::array::ArrayRef;
 use arrow::datatypes::{DataType, Fields, SchemaRef};
 use arrow::error::ArrowError;
 use arrow::record_batch::RecordBatch;
-use arrow::util::display;
+use arrow::util::display::{ArrayFormatter, FormatOptions};
 
 use crate::instance::CnosDBColumnType;
 
@@ -37,7 +37,11 @@ fn convert_batch(batch: RecordBatch) -> Result<Vec<Vec<String>>, ArrowError> {
             batch
                 .columns()
                 .iter()
-                .map(|col| value_to_string(col, row))
+                .map(|col| {
+                    let options = FormatOptions::default().with_null(NULL);
+                    let formatter = ArrayFormatter::try_new(col, &options)?;
+                    value_to_string(col, row, formatter)
+                })
                 .collect::<Result<Vec<String>, ArrowError>>()
         })
         .collect()
@@ -51,7 +55,7 @@ fn expand_row(mut row: Vec<String>) -> Vec<Vec<String>> {
 
     // check last cell
     if let Some(cell) = row.pop() {
-        let lines: Vec<_> = cell.split('\n').collect();
+        let lines: Vec<_> = cell.split('\n').filter(|l| !l.is_empty()).collect();
 
         // no newlines in last cell
         if lines.len() < 2 {
@@ -77,12 +81,29 @@ fn expand_row(mut row: Vec<String>) -> Vec<Vec<String>> {
     }
 }
 
-pub fn value_to_string(col: &ArrayRef, row: usize) -> Result<String, ArrowError> {
-    if !col.is_valid(row) {
-        Ok(NULL.to_string())
-    } else {
-        display::array_value_to_string(col, row)
+pub fn value_to_string(
+    col: &ArrayRef,
+    row: usize,
+    formatter: ArrayFormatter,
+) -> Result<String, ArrowError> {
+    let mut res = formatter.value(row).try_to_string()?;
+    if col.data_type().equals_datatype(&DataType::Utf8) {
+        res = escape_string(&res);
     }
+    Ok(res)
+}
+
+fn escape_string(s: &str) -> String {
+    let mut res = String::with_capacity(s.len() + 2);
+    res.push('"');
+    for c in s.chars() {
+        if c == '"' {
+            res.push('\\');
+        }
+        res.push(c);
+    }
+    res.push('"');
+    res
 }
 
 /// Check two schemas for being equal for field names/types

@@ -1,0 +1,34 @@
+query 
+SELECT 1, 2, 3, 4;
+----
+1 2 3 4
+
+
+query 
+SELECT NOT(TRUE);
+----
+false
+
+
+query 
+SELECT NOT(FALSE);
+----
+true
+
+
+query 
+SELECT TRUE;
+----
+true
+
+statement ok
+--#DATABASE = abc
+
+query 
+SELECT 'Hello World';
+----
+"Hello World"
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Schema error: No field named \\"Hello World\\"\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT "Hello World";

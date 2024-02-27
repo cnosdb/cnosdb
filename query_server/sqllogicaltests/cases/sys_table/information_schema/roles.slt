@@ -1,0 +1,102 @@
+statement ok
+drop tenant if exists test_rs_tenant1;
+
+statement ok
+drop user if exists test_rs_u1;
+
+statement ok
+drop user if exists test_rs_u2;
+
+
+statement ok
+create tenant if not exists test_rs_tenant1;
+
+statement ok
+create user if not exists test_rs_u1;
+
+statement ok
+create user if not exists test_rs_u2;
+
+
+statement ok
+alter tenant test_rs_tenant1 add user test_rs_u1 as owner;
+
+statement ok
+alter tenant test_rs_tenant1 add user test_rs_u2 as member;
+
+
+statement ok
+--#TENANT=test_rs_tenant1
+--#USER_NAME=test_rs_u1
+
+statement ok
+create role if not exists test_rs_role1 inherit member;
+
+
+statement ok
+--#TENANT=test_rs_tenant1
+--#USER_NAME=root
+
+query T rowsort
+select * from information_schema.ROLES;
+----
+"member" "system" "NULL"
+"owner" "system" "NULL"
+"test_rs_role1" "custom" "member"
+
+
+statement ok
+--#TENANT=test_rs_tenant1
+--#USER_NAME=test_rs_u1
+
+query T rowsort
+select * from information_schema.ROLES;
+----
+"member" "system" "NULL"
+"owner" "system" "NULL"
+"test_rs_role1" "custom" "member"
+
+
+statement ok
+--#TENANT=test_rs_tenant1
+--#USER_NAME=test_rs_u2
+
+query T rowsort
+select * from information_schema.ROLES;
+----
+
+
+statement ok
+--#TENANT=test_rs_tenant1
+--#USER_NAME=root
+
+statement ok
+alter tenant test_rs_tenant1 remove user test_rs_u1;
+
+statement ok
+alter tenant test_rs_tenant1 remove user test_rs_u2;
+
+
+statement ok
+--#TENANT=test_rs_tenant1
+--#USER_NAME=root
+
+query T rowsort
+select * from information_schema.ROLES;
+----
+"member" "system" "NULL"
+"owner" "system" "NULL"
+"test_rs_role1" "custom" "member"
+
+
+statement ok
+--#TENANT=cnosdb
+--#USER_NAME=root
+
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Couldn't drop system role owner", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+drop role owner;
+
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Couldn't drop system role member", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+drop role member;

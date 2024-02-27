@@ -10,7 +10,7 @@ create database db_delay;
 query T
 select database_name from information_schema.databases where database_name = 'db_delay';
 ----
-db_delay
+"db_delay"
 
 # create table and write data
 statement ok
@@ -24,7 +24,7 @@ INSERT INTO db_delay.air (TIME, station, visibility, temperature, pressure) VALU
 query T
 select station, visibility, temperature, pressure from db_delay.air;
 ----
-XiaoMaiDao 56.0 69.0 77.0
+"XiaoMaiDao" 56.0 69.0 77.0
 
 # drop delay
 statement ok
@@ -34,7 +34,7 @@ drop database db_delay after '3m';
 query 
 select name,action,try_count,status from information_schema.resource_status where name = 'cnosdb-db_delay';
 ----
-cnosdb-db_delay DropDatabase 0 Schedule
+"cnosdb-db_delay" "DropDatabase" "0" "Schedule"
 
 # check is hidden
 query T
@@ -48,12 +48,12 @@ recover database db_delay;
 query 
 select name,action,try_count,status from information_schema.resource_status where name = 'cnosdb-db_delay';
 ----
-cnosdb-db_delay DropDatabase 0 Cancel
+"cnosdb-db_delay" "DropDatabase" "0" "Cancel"
 
 query T
 select database_name from information_schema.databases where database_name = 'db_delay';;
 ----
-db_delay
+"db_delay"
 
 # drop again
 statement ok
@@ -68,7 +68,7 @@ sleep 65s
 query 
 select name,action,try_count,status from information_schema.resource_status where name = 'cnosdb-db_delay';
 ----
-cnosdb-db_delay DropDatabase 1 Successed
+"cnosdb-db_delay" "DropDatabase" "1" "Successed"
 
 query T
 select database_name from information_schema.databases where database_name = 'db_delay';;

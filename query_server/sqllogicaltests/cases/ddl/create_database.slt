@@ -1,0 +1,44 @@
+statement ok
+--#DATABASE=createdatabase
+
+sleep 100ms
+statement ok
+DROP DATABASE IF EXISTS createdatabase;
+
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Meta: Database not found: \\"createdatabase\\"", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+CREATE TABLE test0(
+    column1 BIGINT CODEC(DELTA),
+    column2 STRING CODEC(GZIP),
+    column3 BIGINT UNSIGNED CODEC(NULL),
+    column4 BOOLEAN,
+    column5 DOUBLE CODEC(GORILLA),
+    TAGS(column6, column7));
+
+
+statement ok
+CREATE DATABASE createdatabase WITH TTL '100000d';
+
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Meta: Database not found: \\"createddddatabase\\"", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+CREATE TABLE createddddatabase.test0(
+    column1 BIGINT CODEC(DELTA),
+    column2 STRING CODEC(GZIP),
+    column3 BIGINT UNSIGNED CODEC(NULL),
+    column4 BOOLEAN,
+    column5 DOUBLE CODEC(GORILLA),
+    TAGS(column6, column7));
+
+
+statement ok
+CREATE TABLE test0(
+    column1 BIGINT CODEC(DELTA),
+    column2 STRING CODEC(GZIP),
+    column3 BIGINT UNSIGNED CODEC(NULL),
+    column4 BOOLEAN,
+    column5 DOUBLE CODEC(GORILLA),
+    TAGS(column6, column7));
+
+
+statement ok
+DROP DATABASE IF EXISTS createdatabase;

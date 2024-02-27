@@ -1,0 +1,73 @@
+statement ok
+--#DATABASE=alter_database
+
+sleep 100ms
+statement ok
+DROP DATABASE IF EXISTS alter_database;
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Meta: Database not found: \\"alter_database\\"", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+ALTER DATABASE alter_database Set TTL '30d';
+
+
+statement ok
+CREATE DATABASE alter_database WITH TTl '10d' SHARD 5 VNOdE_DURATiON '3d' REPLICA 1 pRECISIOn 'us';
+
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Expected end of statement, found: SHARD", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+ALTER DATABASE alter_database Set TTL '30d' SHARD 6;
+
+
+query 
+DESCRIBE DATABASE alter_database;
+----
+"10 Days" 5 "3 Days" 1 "US"
+
+
+statement ok
+ALTER DATABASE alter_database Set TTL '30d';
+
+
+query 
+DESCRIBE DATABASE alter_database;
+----
+"30 Days" 5 "3 Days" 1 "US"
+
+
+statement ok
+ALTER DATABASE alter_database Set SHARD 6;
+
+
+query 
+DESCRIBE DATABASE alter_database;
+----
+"30 Days" 6 "3 Days" 1 "US"
+
+
+statement ok
+ALTER DATABASE alter_database Set VNODE_DURATION '100d';
+
+
+query 
+DESCRIBE DATABASE alter_database;
+----
+"30 Days" 6 "100 Days" 1 "US"
+
+
+statement ok
+ALTER DATABASE alter_database Set REPLICA 1;
+
+
+query 
+DESCRIBE DATABASE alter_database;
+----
+"30 Days" 6 "100 Days" 1 "US"
+
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Semantic error: Can not alter database precision", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+ALTER DATABASE alter_database Set PRECision 'ms';
+
+
+query 
+DESCRIBE DATABASE alter_database;
+----
+"30 Days" 6 "100 Days" 1 "US"

@@ -1,0 +1,73 @@
+statement ok
+--#DATABASE=only_time_col
+
+sleep 100ms
+statement ok
+DROP DATABASE IF EXISTS only_time_col;
+
+statement ok
+CREATE DATABASE only_time_col WITH TTL '100000d';
+
+
+statement ok
+drop table if exists m2;
+
+statement ok
+CREATE TABLE IF NOT EXISTS m2(f0 BIGINT , f1 DOUBLE , TAGS(t0, t1, t2) );
+
+
+statement ok
+INSERT m2(TIME, f0, f1, t0, t1) VALUES(101, 111, 444, 'tag11', 'tag21');
+
+statement ok
+INSERT m2(TIME, f0, f1, t0, t1) VALUES(102, 222, 333, 'tag12', 'tag22');
+
+statement ok
+INSERT m2(TIME, f0, f1, t0, t1) VALUES(103, 333, 222, 'tag13', 'tag23');
+
+statement ok
+INSERT m2(TIME, f0, f1, t0, t1) VALUES(104, 444, 111, 'tag14', 'tag24');
+
+
+# expect error start
+query T rowsort
+select time from m2;
+----
+1970-01-01T00:00:00.000000101
+1970-01-01T00:00:00.000000102
+1970-01-01T00:00:00.000000103
+1970-01-01T00:00:00.000000104
+
+query T rowsort
+select time, t0 from m2;
+----
+1970-01-01T00:00:00.000000101 "tag11"
+1970-01-01T00:00:00.000000102 "tag12"
+1970-01-01T00:00:00.000000103 "tag13"
+1970-01-01T00:00:00.000000104 "tag14"
+
+query T rowsort
+select time, t0, t1 from m2;
+----
+1970-01-01T00:00:00.000000101 "tag11" "tag21"
+1970-01-01T00:00:00.000000102 "tag12" "tag22"
+1970-01-01T00:00:00.000000103 "tag13" "tag23"
+1970-01-01T00:00:00.000000104 "tag14" "tag24"
+
+# expect error end
+
+query T rowsort
+select time, f0 from m2;
+----
+1970-01-01T00:00:00.000000101 111
+1970-01-01T00:00:00.000000102 222
+1970-01-01T00:00:00.000000103 333
+1970-01-01T00:00:00.000000104 444
+
+query T rowsort
+select time, f1 from m2;
+----
+1970-01-01T00:00:00.000000101 444.0
+1970-01-01T00:00:00.000000102 333.0
+1970-01-01T00:00:00.000000103 222.0
+1970-01-01T00:00:00.000000104 111.0

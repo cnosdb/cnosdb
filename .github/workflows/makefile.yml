@@ -68,7 +68,7 @@ jobs:
       - name: Test
         shell: bash
         run: |
-          bash ./query_server/test/script/start_and_test.sh
+          bash ./query_server/sqllogicaltests/script/start_and_test.sh
 
   integration-test-singleton:
     name: "Integration Test Singleton"
@@ -82,7 +82,7 @@ jobs:
       - name: Test
         shell: bash
         run: |
-          bash ./query_server/test/script/start_and_test.sh --singleton
+          bash ./query_server/sqllogicaltests/script/start_and_test.sh --singleton
 
   integration-test-3meta:
     name: "Integration Test 3meta"
@@ -153,7 +153,7 @@ jobs:
   #    - name: Test
   #      shell: bash
   #      run: |
-  #        bash ./query_server/test/script/start_and_test_all.sh 3meta2data
+  #        bash ./query_server/sqllogicaltests/script/start_and_test_all.sh 3meta2data
 
   #integration-test-Separation-of-storage-and-computing:
   #  name: "Integration Test Separation of storage and computing"
@@ -167,7 +167,7 @@ jobs:
   #    - name: Test
   #      shell: bash
   #      run: |
-  #        bash ./query_server/test/script/start_and_test_all.sh 1meta_2data_1query_1tskv
+  #        bash ./query_server/sqllogicaltests/script/start_and_test_all.sh 1meta_2data_1query_1tskv
 
   #integration-test-coordinator:
   #  name: "Integration Test coordinator"

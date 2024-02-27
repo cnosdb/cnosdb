@@ -1,0 +1,19 @@
+statement ok
+--#DATABASE = usage_schema
+
+sleep 100ms
+query 
+DESCRIBE DATABASE usage_schema;
+----
+"INF" 1 "365 Days" 1 "NS"
+
+
+query 
+DESCRIBE TABLE vnode_disk_storage;
+----
+"time" "TIMESTAMP(NANOSECOND)" "TIME" "DEFAULT"
+"database" "STRING" "TAG" "DEFAULT"
+"node_id" "STRING" "TAG" "DEFAULT"
+"tenant" "STRING" "TAG" "DEFAULT"
+"vnode_id" "STRING" "TAG" "DEFAULT"
+"value" "BIGINT UNSIGNED" "FIELD" "DEFAULT"

@@ -8,7 +8,7 @@ CREATE USER user001 WITH PASSWORD = 'user001';
 query T
 select user_name,is_admin from cluster_schema.users where user_name = 'user001';
 ----
-user001 false
+"user001" false
 
 statement ok
 alter user user001 set granted_admin = true;
@@ -18,7 +18,7 @@ alter user user001 set granted_admin = true;
 query T
 select user_name,is_admin from cluster_schema.users where user_name = 'user001';
 ----
-user001 true
+"user001" true
 
 
 statement ok
@@ -28,7 +28,7 @@ alter user user001 set password='user';
 query T
 select user_name,is_admin from cluster_schema.users where user_name = 'user001';
 ----
-user001 true
+"user001" true
 
 statement error
 alter user root set granted_admin = true;

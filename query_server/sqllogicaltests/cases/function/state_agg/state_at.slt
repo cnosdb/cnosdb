@@ -6,19 +6,19 @@ select state_at(compact_state_agg(time, state), Timestamp '2020-01-01 10:30:00')
 query T
 select state_at(state_agg(time, state), Timestamp '2020-01-01 10:30:00') from states;
 ----
-running
+"running"
 
 query T
 select state_at(state_agg(time, state), Timestamp '2020-01-01 11:00:00') from states;
 ----
-running
+"running"
 
 query T
 select state_at(state_agg(time, state), Timestamp '2020-01-03 16:00:00') from states;
 ----
-error
+"error"
 
 query T
 select state_at(state_agg(time, state), Timestamp '2020-01-05 12:00:00') from states;
 ----
-NULL
+"NULL"

@@ -1,0 +1,119 @@
+statement ok
+drop user if exists test_au_u1;
+
+statement ok
+drop user if exists test_au_u2;
+
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: User 'root' is prohibited from being dropped", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+drop user root;
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Meta: The user test_au_u1 not found", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+drop user test_au_u1;
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Meta: The user test_au_u2 not found", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+drop user test_au_u2;
+
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Invalid parameter : The root user does not support changing granted_admin", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+alter user root set granted_admin = true;
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Invalid parameter : The root user does not support changing granted_admin", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+alter user root set granted_admin = false;
+
+
+statement ok
+create user if not exists test_au_u1;
+
+statement ok
+create user if not exists test_au_u2;
+
+
+statement ok
+alter tenant cnosdb add user test_au_u1 as member;
+
+statement ok
+alter tenant cnosdb add user test_au_u2 as member;
+
+
+statement ok
+--#TENANT=cnosdb
+--#USER_NAME=root
+
+query T rowsort
+select * from cluster_schema.users where user_name in ('root', 'test_au_u1', 'test_au_u2');
+----
+"root" true "{\"hash_password\":\"*****\",\"must_change_password\":true,\"comment\":\"system admin\"}"
+"test_au_u1" false "{\"hash_password\":\"*****\"}"
+"test_au_u2" false "{\"hash_password\":\"*****\"}"
+
+
+statement ok
+--#TENANT=cnosdb
+--#USER_NAME=test_au_u1
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Insufficient privileges, expected \[maintainer for system\]", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+alter user test_au_u1 set granted_admin = true;
+
+
+statement ok
+--#TENANT=cnosdb
+--#USER_NAME=root
+
+statement ok
+alter user test_au_u1 set granted_admin = true;
+
+
+statement ok
+--#TENANT=cnosdb
+--#USER_NAME=root
+
+query T rowsort
+select * from cluster_schema.users where user_name in ('root', 'test_au_u1', 'test_au_u2');
+----
+"root" true "{\"hash_password\":\"*****\",\"must_change_password\":true,\"comment\":\"system admin\"}"
+"test_au_u1" true "{\"hash_password\":\"*****\",\"granted_admin\":true}"
+"test_au_u2" false "{\"hash_password\":\"*****\"}"
+
+
+statement ok
+--#TENANT=cnosdb
+--#USER_NAME=test_au_u1
+
+statement ok
+alter user test_au_u2 set granted_admin = true;
+
+
+statement ok
+--#USER_NAME=test_au_u2
+
+statement ok
+alter user test_au_u2 set must_change_password = true;
+
+
+statement ok
+--#TENANT=cnosdb
+--#USER_NAME=root
+
+query T rowsort
+select * from cluster_schema.users where user_name in ('root', 'test_au_u1', 'test_au_u2');
+----
+"root" true "{\"hash_password\":\"*****\",\"must_change_password\":true,\"comment\":\"system admin\"}"
+"test_au_u1" true "{\"hash_password\":\"*****\",\"granted_admin\":true}"
+"test_au_u2" true "{\"hash_password\":\"*****\",\"must_change_password\":true,\"granted_admin\":true}"
+
+
+statement ok
+--#TENANT=cnosdb
+--#USER_NAME=root
+
+statement ok
+alter user test_au_u1 set granted_admin = false;
+
+
+statement ok
+--#TENANT=cnosdb
+--#USER_NAME=test_au_u1
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Insufficient privileges, expected \[maintainer for system\]", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+alter user test_au_u2 set granted_admin = false;

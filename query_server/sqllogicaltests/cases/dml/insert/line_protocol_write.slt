@@ -1,0 +1,34 @@
+
+statement ok
+drop database if exists test_lp_writer;
+
+statement ok
+create database test_lp_writer with TTL '10000d';
+
+
+statement ok
+drop user if exists writer;
+
+statement ok
+create user writer;
+
+
+statement ok
+drop role if exists lp_writer;
+
+statement ok
+create role lp_writer inherit member;
+
+
+statement ok
+grant read on database lp_writer to role lp_writer;
+
+statement ok
+alter tenant cnosdb add user writer as lp_writer;
+
+
+statement ok
+--#USER_NAME=writer
+--#DATABASE=test_lp_writer
+
+# TODO Beautify the error message

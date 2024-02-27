@@ -1,0 +1,86 @@
+statement ok
+drop tenant if exists test_ers_tenant1;
+
+statement ok
+drop user if exists test_ers_u1;
+
+statement ok
+drop user if exists test_ers_u2;
+
+statement ok
+drop user if exists test_ers_u3;
+
+
+statement ok
+create tenant if not exists test_ers_tenant1;
+
+statement ok
+create user if not exists test_ers_u1;
+
+statement ok
+create user if not exists test_ers_u2;
+
+statement ok
+create user if not exists test_ers_u3;
+
+
+statement ok
+alter tenant test_ers_tenant1 add user test_ers_u1 as owner;
+
+statement ok
+alter tenant test_ers_tenant1 add user test_ers_u2 as member;
+
+
+statement ok
+--#TENANT=test_ers_tenant1
+--#USER_NAME=test_ers_u1
+
+statement ok
+drop role if exists test_ers_role1;
+
+
+statement ok
+create role if not exists test_ers_role1 inherit member;
+
+
+statement ok
+alter tenant test_ers_tenant1 add user test_ers_u3 as test_ers_role1;
+
+
+statement ok
+--#TENANT=test_ers_tenant1
+--#USER_NAME=root
+
+query T rowsort
+select * from information_schema.ENABLED_ROLES;
+----
+
+
+statement ok
+--#TENANT=test_ers_tenant1
+--#USER_NAME=test_ers_u1
+
+query T rowsort
+select * from information_schema.ENABLED_ROLES;
+----
+"owner"
+
+
+statement ok
+--#TENANT=test_ers_tenant1
+--#USER_NAME=test_ers_u2
+
+query T rowsort
+select * from information_schema.ENABLED_ROLES;
+----
+"member"
+
+
+statement ok
+--#TENANT=test_ers_tenant1
+--#USER_NAME=test_ers_u3
+
+query T rowsort
+select * from information_schema.ENABLED_ROLES;
+----
+"test_ers_role1"

@@ -38,8 +38,8 @@ query T
 select t0, increase(time, f0 order by time) as increase
 from test_increase.test_increase group by t0 order by t0, increase;
 ----
-a 7
-b 7
+"a" 7
+"b" 7
 
 statement ok
 drop database test_increase;

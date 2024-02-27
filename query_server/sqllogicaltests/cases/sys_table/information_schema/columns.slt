@@ -1,0 +1,102 @@
+statement ok
+drop tenant if exists test_cols_tenant1;
+
+statement ok
+drop user if exists test_cols_u1;
+
+statement ok
+drop user if exists test_cols_u2;
+
+
+statement ok
+create tenant if not exists test_cols_tenant1;
+
+statement ok
+create user if not exists test_cols_u1;
+
+statement ok
+create user if not exists test_cols_u2;
+
+
+statement ok
+alter tenant test_cols_tenant1 add user root as member;
+
+statement ok
+alter tenant test_cols_tenant1 add user test_cols_u1 as owner;
+
+statement ok
+alter tenant test_cols_tenant1 add user test_cols_u2 as member;
+
+
+statement ok
+--#TENANT=test_cols_tenant1
+--#USER_NAME=root
+
+statement ok
+drop database if exists public2;
+
+statement ok
+create database if not exists public2;
+
+statement ok
+CREATE TABLE IF NOT EXISTS public2.test_info_schema_tbl2(
+    column1 BIGINT CODEC(DELTA),
+    column2 STRING CODEC(GZIP),
+    column3 BIGINT UNSIGNED CODEC(NULL),
+    column4 BOOLEAN,
+    column5 DOUBLE CODEC(GORILLA),
+    TAGS(column6, column7));
+
+
+statement ok
+--#TENANT=test_cols_tenant1
+--#USER_NAME=root
+
+# Can see all columns of all tables
+query T rowsort
+select * from information_schema.columns;
+----
+"test_cols_tenant1" "public2" "test_info_schema_tbl2" "column1" "FIELD" 3 "NULL" true "BIGINT" "DELTA"
+"test_cols_tenant1" "public2" "test_info_schema_tbl2" "column2" "FIELD" 4 "NULL" true "STRING" "GZIP"
+"test_cols_tenant1" "public2" "test_info_schema_tbl2" "column3" "FIELD" 5 "NULL" true "BIGINT UNSIGNED" "NULL"
+"test_cols_tenant1" "public2" "test_info_schema_tbl2" "column4" "FIELD" 6 "NULL" true "BOOLEAN" "DEFAULT"
+"test_cols_tenant1" "public2" "test_info_schema_tbl2" "column5" "FIELD" 7 "NULL" true "DOUBLE" "GORILLA"
+"test_cols_tenant1" "public2" "test_info_schema_tbl2" "column6" "TAG" 1 "NULL" true "STRING" "DEFAULT"
+"test_cols_tenant1" "public2" "test_info_schema_tbl2" "column7" "TAG" 2 "NULL" true "STRING" "DEFAULT"
+"test_cols_tenant1" "public2" "test_info_schema_tbl2" "time" "TIME" 0 "NULL" false "TIMESTAMP(NANOSECOND)" "DEFAULT"
+
+
+statement ok
+--#TENANT=test_cols_tenant1
+--#USER_NAME=test_cols_u1
+
+# Can see all columns of all tables
+query T rowsort
+select * from information_schema.columns;
+----
+"test_cols_tenant1" "public2" "test_info_schema_tbl2" "column1" "FIELD" 3 "NULL" true "BIGINT" "DELTA"
+"test_cols_tenant1" "public2" "test_info_schema_tbl2" "column2" "FIELD" 4 "NULL" true "STRING" "GZIP"
+"test_cols_tenant1" "public2" "test_info_schema_tbl2" "column3" "FIELD" 5 "NULL" true "BIGINT UNSIGNED" "NULL"
+"test_cols_tenant1" "public2" "test_info_schema_tbl2" "column4" "FIELD" 6 "NULL" true "BOOLEAN" "DEFAULT"
+"test_cols_tenant1" "public2" "test_info_schema_tbl2" "column5" "FIELD" 7 "NULL" true "DOUBLE" "GORILLA"
+"test_cols_tenant1" "public2" "test_info_schema_tbl2" "column6" "TAG" 1 "NULL" true "STRING" "DEFAULT"
+"test_cols_tenant1" "public2" "test_info_schema_tbl2" "column7" "TAG" 2 "NULL" true "STRING" "DEFAULT"
+"test_cols_tenant1" "public2" "test_info_schema_tbl2" "time" "TIME" 0 "NULL" false "TIMESTAMP(NANOSECOND)" "DEFAULT"
+
+
+statement ok
+--#TENANT=test_cols_tenant1
+--#USER_NAME=test_cols_u2
+
+# Can see all columns of all tables
+query T rowsort
+select * from information_schema.columns;
+----
+"test_cols_tenant1" "public2" "test_info_schema_tbl2" "column1" "FIELD" 3 "NULL" true "BIGINT" "DELTA"
+"test_cols_tenant1" "public2" "test_info_schema_tbl2" "column2" "FIELD" 4 "NULL" true "STRING" "GZIP"
+"test_cols_tenant1" "public2" "test_info_schema_tbl2" "column3" "FIELD" 5 "NULL" true "BIGINT UNSIGNED" "NULL"
+"test_cols_tenant1" "public2" "test_info_schema_tbl2" "column4" "FIELD" 6 "NULL" true "BOOLEAN" "DEFAULT"
+"test_cols_tenant1" "public2" "test_info_schema_tbl2" "column5" "FIELD" 7 "NULL" true "DOUBLE" "GORILLA"
+"test_cols_tenant1" "public2" "test_info_schema_tbl2" "column6" "TAG" 1 "NULL" true "STRING" "DEFAULT"
+"test_cols_tenant1" "public2" "test_info_schema_tbl2" "column7" "TAG" 2 "NULL" true "STRING" "DEFAULT"
+"test_cols_tenant1" "public2" "test_info_schema_tbl2" "time" "TIME" 0 "NULL" false "TIMESTAMP(NANOSECOND)" "DEFAULT"

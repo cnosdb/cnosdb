@@ -1,0 +1,67 @@
+statement ok
+--#DATABASE=bottom_func
+
+sleep 100ms
+statement ok
+drop database if exists bottom_func;
+
+statement ok
+create database bottom_func WITH TTL '100000d';
+
+
+statement ok
+drop table if exists m2;
+
+statement ok
+CREATE TABLE IF NOT EXISTS m2(f0 BIGINT , f1 DOUBLE , TAGS(t0, t1, t2) ); -- 1ms;
+
+
+statement ok
+INSERT m2(TIME, f0, f1, t0, t1) VALUES(101, 111, 444, 'tag11', 'tag21');
+
+statement ok
+INSERT m2(TIME, f0, f1, t0, t1) VALUES(102, 222, 333, 'tag12', 'tag22');
+
+statement ok
+INSERT m2(TIME, f0, f1, t0, t1) VALUES(103, 333, 222, 'tag13', 'tag23');
+
+statement ok
+INSERT m2(TIME, f0, f1, t0, t1) VALUES(104, 444, 111, 'tag14', 'tag24');
+
+
+query T rowsort
+select bottom(time, 2), t0,t1,t2,f0,f1 from m2;
+----
+1970-01-01T00:00:00.000000101 "tag11" "tag21" "NULL" 111 444.0
+1970-01-01T00:00:00.000000102 "tag12" "tag22" "NULL" 222 333.0
+
+query T rowsort
+select bottom(t0, 3), time,t1,t2,f0,f1 from m2;
+----
+"tag11" 1970-01-01T00:00:00.000000101 "tag21" "NULL" 111 444.0
+"tag12" 1970-01-01T00:00:00.000000102 "tag22" "NULL" 222 333.0
+"tag13" 1970-01-01T00:00:00.000000103 "tag23" "NULL" 333 222.0
+
+query T rowsort
+select bottom(t1, 2), time,t0,t2,f0,f1 from m2;
+----
+"tag21" 1970-01-01T00:00:00.000000101 "tag11" "NULL" 111 444.0
+"tag22" 1970-01-01T00:00:00.000000102 "tag12" "NULL" 222 333.0
+
+query T rowsort
+select bottom(f0, 2), time,t0,t1,t2,f1 from m2;
+----
+111 1970-01-01T00:00:00.000000101 "tag11" "tag21" "NULL" 444.0
+222 1970-01-01T00:00:00.000000102 "tag12" "tag22" "NULL" 333.0
+
+query T rowsort
+select bottom(f1, 3), time,t0,t1,t2,f0 from m2;
+----
+111.0 1970-01-01T00:00:00.000000104 "tag14" "tag24" "NULL" 444
+222.0 1970-01-01T00:00:00.000000103 "tag13" "tag23" "NULL" 333
+333.0 1970-01-01T00:00:00.000000102 "tag12" "tag22" "NULL" 222
+
+
+# error
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: transform_bottom_func_to_topk_node\\ncaused by\\nError during planning: 1\. There cannot be nested selection functions\. 2\. There cannot be multiple selection functions\., found: \[BOTTOM\(m2\.time,Int64\(2\)\), TOPK\(m2\.t0,Int64\(3\)\)\]", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select bottom(time, 2), topk(t0, 3) from m2;

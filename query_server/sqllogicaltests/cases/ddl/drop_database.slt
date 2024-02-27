@@ -1,0 +1,66 @@
+statement ok
+--#DATABASE=dropdatabase
+
+sleep 100ms
+statement ok
+DROP DATABASE IF EXISTS dropdatabase;
+
+statement ok
+CREATE DATABASE dropdatabase WITH TTL '100000d';
+
+
+statement ok
+CREATE TABLE test0(
+    column1 BIGINT CODEC(DELTA),
+    column2 STRING CODEC(GZIP),
+    column3 BIGINT UNSIGNED CODEC(NULL),
+    column4 BOOLEAN,
+    column5 DOUBLE CODEC(GORILLA),
+    TAGS(column6, column7));
+
+
+statement ok
+insert test0(TIME, column1, column2, column3, column4, column5, column6, column7) values (100, -1234, 'hello', 1234, false, 1.2, 'beijing', 'shanghai');
+
+
+statement ok
+DROP DATABASE dropdatabase;
+
+
+sleep 1s
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Meta: Database not found: \\"dropdatabase\\"", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+CREATE TABLE test0(
+    column1 BIGINT CODEC(DELTA),
+    column2 STRING CODEC(GZIP),
+    column3 BIGINT UNSIGNED CODEC(NULL),
+    column4 BOOLEAN,
+    column5 DOUBLE CODEC(GORILLA),
+    TAGS(column6, column7));
+
+
+sleep 1s
+statement ok
+CREATE DATABASE dropdatabase WITH TTL '100000d';
+
+
+statement ok
+CREATE TABLE test0(
+    column1 BIGINT CODEC(DELTA),
+    column2 STRING CODEC(GZIP),
+    column3 BIGINT UNSIGNED CODEC(NULL),
+    column4 BOOLEAN,
+    column5 DOUBLE CODEC(GORILLA),
+    TAGS(column6, column7));
+
+
+query 
+select ALL * from test0;
+----
+
+
+statement ok
+DROP DATABASE dropdatabase;
+
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Database \\"public\\" forbid drop", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+DROP DATABASE public;
