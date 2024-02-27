@@ -188,6 +188,21 @@ impl TSIndex {
         Ok(())
     }
 
+    pub async fn add_series_for_rebuild(&self, id: SeriesId, key: &SeriesKey) -> IndexResult<()> {
+        let key_buf = encode_series_key(key.table(), key.tags());
+        if self.storage.read().await.exist(&key_buf)? {
+            return Ok(());
+        }
+
+        if self.incr_id.load(Ordering::Relaxed) <= id {
+            self.incr_id.store(id + 1, Ordering::Relaxed);
+        }
+
+        self.add_series(id, key).await?;
+
+        Ok(())
+    }
+
     async fn recover_from_file(&mut self, reader_file: &mut BinlogReader) -> IndexResult<()> {
         let mut max_id = self.incr_id.load(Ordering::Relaxed);
         while let Some(block) = reader_file.next_block().await? {
@@ -290,7 +305,7 @@ impl TSIndex {
     pub async fn add_series_if_not_exists(
         &self,
         series_keys: Vec<SeriesKey>,
-    ) -> IndexResult<Vec<u32>> {
+    ) -> IndexResult<Vec<(u32, SeriesKey)>> {
         let mut ids = Vec::with_capacity(series_keys.len());
         let mut blocks_data = Vec::new();
         for series_key in series_keys.into_iter() {
@@ -298,13 +313,13 @@ impl TSIndex {
             {
                 let mut storage_w = self.storage.write().await;
                 if let Some(val) = storage_w.get(&key_buf)? {
-                    ids.push(byte_utils::decode_be_u32(&val));
+                    ids.push((byte_utils::decode_be_u32(&val), series_key));
                     continue;
                 }
                 let id = self.incr_id.fetch_add(1, Ordering::Relaxed) + 1;
                 storage_w.set(&key_buf, &id.to_be_bytes())?;
                 let block = AddSeries::new(utils::now_timestamp_nanos(), id, series_key.clone());
-                ids.push(id);
+                ids.push((id, series_key.clone()));
                 blocks_data.push(block);
 
                 // write cache
@@ -1112,12 +1127,12 @@ mod test {
                     .await
                     .unwrap();
                 tokio::time::sleep(Duration::from_millis(100)).await;
-                let last_key = ts_index.get_series_key(sid[0]).await.unwrap().unwrap();
+                let last_key = ts_index.get_series_key(sid[0].0).await.unwrap().unwrap();
                 assert_eq!(series_key.to_string(), last_key.to_string());
 
-                max_sid = max_sid.max(sid[0]);
+                max_sid = max_sid.max(sid[0].0);
                 println!("test_index#1: series {i} - '{series_key}' - id: {:?}", sid);
-                series_keys_sids.push(sid[0]);
+                series_keys_sids.push(sid[0].0);
             }
 
             // Test get series from index
@@ -1190,11 +1205,11 @@ mod test {
                     .await
                     .unwrap();
                 tokio::time::sleep(Duration::from_millis(100)).await;
-                let last_key = ts_index.get_series_key(sid[0]).await.unwrap().unwrap();
+                let last_key = ts_index.get_series_key(sid[0].0).await.unwrap().unwrap();
                 assert_eq!(series_key.to_string(), last_key.to_string());
 
-                assert!(sid[0] > prev_max_sid);
-                max_sid = max_sid.max(sid[0]);
+                assert!(sid[0].0 > prev_max_sid);
+                max_sid = max_sid.max(sid[0].0);
                 println!("test_index#2: series {i} - '{series_key}' - id: {:?}", sid);
             }
         }
@@ -1218,10 +1233,10 @@ mod test {
                 .await
                 .unwrap();
             tokio::time::sleep(Duration::from_millis(100)).await;
-            let last_key = ts_index.get_series_key(sid[0]).await.unwrap().unwrap();
+            let last_key = ts_index.get_series_key(sid[0].0).await.unwrap().unwrap();
             assert_eq!(series_key.to_string(), last_key.to_string());
 
-            assert!(sid[0] > prev_max_sid);
+            assert!(sid[0].0 > prev_max_sid);
             println!("test_index#3: series {i} - '{series_key}' - id: {:?}", sid);
         }
     }
@@ -1297,7 +1312,7 @@ mod test {
 
         // 校验写入成功
         for (sid, expected_series) in sids.iter().zip(series_keys.iter()) {
-            let series = ts_index.get_series_key(*sid).await.unwrap().unwrap();
+            let series = ts_index.get_series_key(sid.0).await.unwrap().unwrap();
             assert_eq!(expected_series, &series)
         }
 
@@ -1328,7 +1343,7 @@ mod test {
 
         // 校验修改成功
         for (sid, expected_series) in sids.iter().zip(series_keys.iter()) {
-            let series = ts_index.get_series_key(*sid).await.unwrap().unwrap();
+            let series = ts_index.get_series_key(sid.0).await.unwrap().unwrap();
             for (expected_tag, tag) in expected_series.tags.iter().zip(series.tags.iter()) {
                 if expected_tag.key == old_tag_name.as_bytes().to_vec() {
                     assert_eq!(new_tag_name.as_bytes().to_vec(), tag.key);
@@ -1388,7 +1403,7 @@ mod test {
 
         // 校验写入成功
         for (sid, expected_series) in sids.iter().zip(series_keys.iter()) {
-            let series = ts_index.get_series_key(*sid).await.unwrap().unwrap();
+            let series = ts_index.get_series_key(sid.0).await.unwrap().unwrap();
             assert_eq!(expected_series, &series)
         }
 
@@ -1417,7 +1432,7 @@ mod test {
 
         // 校验修改成功
         for (sid, expected_series) in sids.iter().zip(series_keys.iter()) {
-            let series = ts_index.get_series_key(*sid).await.unwrap().unwrap();
+            let series = ts_index.get_series_key(sid.0).await.unwrap().unwrap();
             if series != matched_series {
                 continue;
             }

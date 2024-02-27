@@ -228,7 +228,7 @@ impl Database {
         ts_index: Arc<index::ts_index::TSIndex>,
         recover_from_wal: bool,
         strict_write: Option<bool>,
-    ) -> Result<HashMap<SeriesId, RowGroup>> {
+    ) -> Result<HashMap<SeriesId, (SeriesKey, RowGroup)>> {
         let strict_write = strict_write.unwrap_or(self.opt.storage.strict_write);
 
         // (series id, schema id) -> RowGroup
@@ -281,16 +281,19 @@ impl Database {
         fb_schema: &FbSchema<'_>,
         columns: &Vector<ForwardsUOffset<Column>>,
         table_schema: TskvTableSchemaRef,
-        map: &mut HashMap<SeriesId, RowGroup>,
+        map: &mut HashMap<SeriesId, (SeriesKey, RowGroup)>,
         precision: Precision,
-        sids: &[u32],
+        sids: &[(u32, SeriesKey)],
     ) -> Result<()> {
-        let mut sid_map: HashMap<u32, Vec<usize>> = HashMap::new();
-        for (row_count, sid) in sids.iter().enumerate() {
-            let row_idx = sid_map.entry(*sid).or_default();
-            row_idx.push(row_count);
+        let mut sid_map: HashMap<u32, (SeriesKey, Vec<usize>)> = HashMap::new();
+        for (row_count, (sid, series_key)) in sids.iter().enumerate() {
+            let buf_and_row_idx = sid_map.entry(*sid).or_default();
+            if buf_and_row_idx.0.table().is_empty() && buf_and_row_idx.0.tags().is_empty() {
+                buf_and_row_idx.0 = series_key.clone();
+            }
+            buf_and_row_idx.1.push(row_count);
         }
-        for (sid, row_idx) in sid_map.into_iter() {
+        for (sid, (series_key_buf, row_idx)) in sid_map.into_iter() {
             let rows = RowData::point_to_row_data(
                 table_schema.as_ref(),
                 precision,
@@ -309,7 +312,7 @@ impl Database {
                 row_group.size += row.size();
                 row_group.rows.insert(row);
             }
-            let res = map.insert(sid, row_group);
+            let res = map.insert(sid, (series_key_buf, row_group));
             // every sid of different table is different
             debug_assert!(res.is_none())
         }
@@ -323,7 +326,7 @@ impl Database {
         row_num: usize,
         ts_index: Arc<index::ts_index::TSIndex>,
         recover_from_wal: bool,
-    ) -> Result<Vec<u32>> {
+    ) -> Result<Vec<(u32, SeriesKey)>> {
         let mut res_sids = Vec::with_capacity(row_num);
         let mut series_keys = Vec::with_capacity(row_num);
         for row_count in 0..row_num {
@@ -338,14 +341,14 @@ impl Database {
                 reason: e.to_string(),
             })?;
             if let Some(id) = ts_index.get_series_id(&series_key).await? {
-                res_sids.push(Some(id));
+                res_sids.push(Some((id, series_key)));
                 continue;
             }
 
             if recover_from_wal {
                 if let Some(id) = ts_index.get_deleted_series_id(&series_key).await? {
                     // 仅在 recover wal的时候有用
-                    res_sids.push(Some(id));
+                    res_sids.push(Some((id, series_key)));
                     continue;
                 }
             }

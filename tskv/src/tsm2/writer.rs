@@ -9,7 +9,7 @@ use models::codec::Encoding;
 use models::field_value::FieldVal;
 use models::predicate::domain::TimeRange;
 use models::schema::{ColumnType, TableColumn, TskvTableSchemaRef};
-use models::{SeriesId, ValueType};
+use models::{SeriesId, SeriesKey, ValueType};
 use snafu::ResultExt;
 use utils::bitset::BitSet;
 use utils::BloomFilter;
@@ -945,8 +945,8 @@ impl Tsm2Writer {
     pub async fn write_data(&mut self, groups: TsmWriteData) -> Result<()> {
         // write page data
         for (_, group) in groups {
-            for (series, datablock) in group {
-                self.write_datablock(series, datablock).await?;
+            for (series, (series_buf, datablock)) in group {
+                self.write_datablock(series, series_buf, datablock).await?;
             }
         }
         Ok(())
@@ -956,11 +956,14 @@ impl Tsm2Writer {
         &mut self,
         schema: TskvTableSchemaRef,
         series_id: SeriesId,
+        series_key: &SeriesKey,
     ) -> ColumnGroup {
         let chunks = self.page_specs.entry(schema.name.clone()).or_default();
-        let chunk = chunks
-            .entry(series_id)
-            .or_insert(Chunk::new(schema.name.clone(), series_id));
+        let chunk = chunks.entry(series_id).or_insert(Chunk::new(
+            schema.name.clone(),
+            series_id,
+            series_key.clone(),
+        ));
 
         ColumnGroup::new(chunk.next_column_group_id())
     }
@@ -968,6 +971,7 @@ impl Tsm2Writer {
     pub async fn write_datablock(
         &mut self,
         series_id: SeriesId,
+        series_key: SeriesKey,
         datablock: DataBlock2,
     ) -> Result<()> {
         if self.state == State::Finished {
@@ -980,7 +984,7 @@ impl Tsm2Writer {
         let schema = datablock.schema.clone();
         let pages = datablock.block_to_page()?;
 
-        self.write_pages(schema, series_id, pages, time_range)
+        self.write_pages(schema, series_id, series_key, pages, time_range)
             .await?;
         Ok(())
     }
@@ -989,6 +993,7 @@ impl Tsm2Writer {
         &mut self,
         schema: TskvTableSchemaRef,
         series_id: SeriesId,
+        series_key: SeriesKey,
         pages: Vec<Page>,
         time_range: TimeRange,
     ) -> Result<()> {
@@ -996,7 +1001,7 @@ impl Tsm2Writer {
             self.write_header().await?;
         }
 
-        let mut column_group = self.create_column_group(schema.clone(), series_id);
+        let mut column_group = self.create_column_group(schema.clone(), series_id, &series_key);
 
         let table = schema.name.clone();
         for page in pages {
@@ -1016,7 +1021,7 @@ impl Tsm2Writer {
             .entry(table.clone())
             .or_default()
             .entry(series_id)
-            .or_insert(Chunk::new(schema.name.clone(), series_id))
+            .or_insert(Chunk::new(schema.name.clone(), series_id, series_key))
             .push(column_group.into())?;
         Ok(())
     }
@@ -1032,7 +1037,8 @@ impl Tsm2Writer {
             self.write_header().await?;
         }
 
-        let mut new_column_group = self.create_column_group(schema.clone(), meta.series_id());
+        let mut new_column_group =
+            self.create_column_group(schema.clone(), meta.series_id(), meta.series_key());
 
         let mut offset = self.writer.pos();
         let size = self.writer.write(&raw).await?;
@@ -1057,11 +1063,12 @@ impl Tsm2Writer {
         }
         new_column_group.time_range_merge(column_group.time_range());
         let series_id = meta.series_id();
+        let series_key = meta.series_key().clone();
         self.page_specs
             .entry(table.clone())
             .or_default()
             .entry(series_id)
-            .or_insert(Chunk::new(table, series_id))
+            .or_insert(Chunk::new(table, series_id, series_key))
             .push(new_column_group.into())?;
 
         Ok(())
@@ -1075,16 +1082,21 @@ impl Tsm2Writer {
             CompactingBlock::Decoded {
                 data_block,
                 series_id,
+                series_key,
                 ..
-            } => self.write_datablock(series_id, data_block).await?,
+            } => {
+                self.write_datablock(series_id, series_key, data_block)
+                    .await?
+            }
             CompactingBlock::Encoded {
                 table_schema,
                 series_id,
+                series_key,
                 time_range,
                 data_block,
                 ..
             } => {
-                self.write_pages(table_schema, series_id, data_block, time_range)
+                self.write_pages(table_schema, series_id, series_key, data_block, time_range)
                     .await?
             }
             CompactingBlock::Raw {
@@ -1126,7 +1138,7 @@ mod test {
     use models::field_value::FieldVal;
     use models::predicate::domain::TimeRange;
     use models::schema::{ColumnType, TableColumn, TskvTableSchema};
-    use models::ValueType;
+    use models::{SeriesKey, ValueType};
 
     use crate::tsm2::reader::TSM2Reader;
     use crate::tsm2::writer::{Column, DataBlock2, Tsm2Writer};
@@ -1201,7 +1213,10 @@ mod test {
         let mut tsm_writer = Tsm2Writer::open(&PathBuf::from(path), 1, 0, false)
             .await
             .unwrap();
-        tsm_writer.write_datablock(1, data1.clone()).await.unwrap();
+        tsm_writer
+            .write_datablock(1, SeriesKey::default(), data1.clone())
+            .await
+            .unwrap();
         tsm_writer.finish().await.unwrap();
         let tsm_reader = TSM2Reader::open(tsm_writer.path).await.unwrap();
         let data2 = tsm_reader.read_datablock(1, 0).await.unwrap();

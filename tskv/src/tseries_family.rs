@@ -13,7 +13,7 @@ use metrics::metric_register::MetricsRegister;
 use models::meta_data::VnodeStatus;
 use models::predicate::domain::{TimeRange, TimeRanges};
 use models::schema::{split_owner, TableColumn};
-use models::{ColumnId, FieldId, SeriesId, Timestamp};
+use models::{ColumnId, FieldId, SeriesId, SeriesKey, Timestamp};
 use parking_lot::RwLock;
 use snafu::ResultExt as _;
 use tokio::runtime::Runtime;
@@ -27,6 +27,7 @@ use crate::compaction::{CompactTask, FlushReq};
 use crate::error::Result;
 use crate::file_system::file_manager;
 use crate::file_utils::{self, make_delta_file, make_tsm_file};
+use crate::index::ts_index::TSIndex;
 use crate::kv_option::{CacheOptions, StorageOptions};
 use crate::memcache::{MemCache, MemCacheStatistics, RowGroup};
 use crate::summary::{CompactMeta, VersionEdit};
@@ -1011,17 +1012,21 @@ impl TseriesFamily {
         }
     }
 
-    pub fn put_points(&self, seq: u64, points: HashMap<SeriesId, RowGroup>) -> Result<u64> {
+    pub fn put_points(
+        &self,
+        seq: u64,
+        points: HashMap<SeriesId, (SeriesKey, RowGroup)>,
+    ) -> Result<u64> {
         if self.status == VnodeStatus::Copying {
             return Err(CommonError {
                 reason: "vnode is moving please retry later".to_string(),
             });
         }
         let mut res = 0;
-        for (sid, group) in points {
+        for (sid, (series_key, group)) in points {
             let mem = self.mut_cache.read();
             res += group.rows.get_ref_rows().len();
-            mem.write_group(sid, seq, group)?;
+            mem.write_group(sid, series_key, seq, group)?;
         }
         Ok(res as u64)
     }
@@ -1189,6 +1194,38 @@ impl TseriesFamily {
         }
 
         Ok(())
+    }
+
+    pub async fn rebuild_index(&self) -> Result<Arc<TSIndex>> {
+        let index = TSIndex::new(
+            self.storage_opt
+                .index_dir(self.tenant_database.as_str(), self.tf_id),
+        )
+        .await?;
+
+        // cache index
+        let mut series_data = self.mut_cache.read().read_series_data();
+        for imut_cache in self.immut_cache.iter() {
+            series_data.extend(imut_cache.read().read_series_data());
+        }
+        for (sid, data) in series_data {
+            let series_key = data.read().series_key.clone();
+            index.add_series_for_rebuild(sid, &series_key).await?;
+        }
+
+        // tsm index
+        for level in self.version.levels_info.iter() {
+            for file in level.files.iter() {
+                let reader = self.version.get_tsm_reader2(file.file_path()).await?;
+                for chunk in reader.chunk().values() {
+                    index
+                        .add_series_for_rebuild(chunk.series_id(), chunk.series_key())
+                        .await?;
+                }
+            }
+        }
+
+        Ok(index)
     }
 
     pub fn tf_id(&self) -> TseriesFamilyId {
