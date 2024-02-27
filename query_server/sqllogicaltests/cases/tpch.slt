@@ -12,7 +12,7 @@ CREATE EXTERNAL TABLE IF NOT EXISTS customer (
     c_acctbal NUMERIC,
     c_mktsegment VARCHAR,
     c_comment VARCHAR
-) STORED AS CSV WITH HEADER ROW LOCATION 'query_server/sqllogicaltests/data/tpch-csv/customer.csv';
+) STORED AS CSV WITH HEADER ROW LOCATION 'query_server/sqllogicaltests/resource/tpch-csv/customer.csv';
 
 statement ok
 CREATE EXTERNAL TABLE IF NOT EXISTS lineitem (
@@ -32,7 +32,7 @@ CREATE EXTERNAL TABLE IF NOT EXISTS lineitem (
     l_shipinstruct VARCHAR,
     l_shipmode VARCHAR,
     l_comment VARCHAR
-) STORED AS CSV WITH HEADER ROW LOCATION 'query_server/sqllogicaltests/data/tpch-csv/lineitem.csv';
+) STORED AS CSV WITH HEADER ROW LOCATION 'query_server/sqllogicaltests/resource/tpch-csv/lineitem.csv';
 
 statement ok
 CREATE EXTERNAL TABLE IF NOT EXISTS nation (
@@ -40,7 +40,7 @@ CREATE EXTERNAL TABLE IF NOT EXISTS nation (
     n_name VARCHAR,
     n_regionkey INTEGER,
     n_comment VARCHAR
-) STORED AS CSV WITH HEADER ROW LOCATION 'query_server/sqllogicaltests/data/tpch-csv/nation.csv';
+) STORED AS CSV WITH HEADER ROW LOCATION 'query_server/sqllogicaltests/resource/tpch-csv/nation.csv';
 
 statement ok
 CREATE EXTERNAL TABLE IF NOT EXISTS orders (
@@ -53,7 +53,7 @@ CREATE EXTERNAL TABLE IF NOT EXISTS orders (
     o_clerk VARCHAR,
     o_shippriority INTEGER,
     o_comment VARCHAR
-) STORED AS CSV WITH HEADER ROW LOCATION 'query_server/sqllogicaltests/data/tpch-csv/orders.csv';
+) STORED AS CSV WITH HEADER ROW LOCATION 'query_server/sqllogicaltests/resource/tpch-csv/orders.csv';
 
 statement ok
 CREATE EXTERNAL TABLE IF NOT EXISTS part (
@@ -66,7 +66,7 @@ CREATE EXTERNAL TABLE IF NOT EXISTS part (
     p_container VARCHAR,
     p_retailprice NUMERIC,
     p_comment VARCHAR
-) STORED AS CSV WITH HEADER ROW LOCATION 'query_server/sqllogicaltests/data/tpch-csv/part.csv';
+) STORED AS CSV WITH HEADER ROW LOCATION 'query_server/sqllogicaltests/resource/tpch-csv/part.csv';
 
 statement ok
 CREATE EXTERNAL TABLE IF NOT EXISTS partsupp (
@@ -75,14 +75,14 @@ CREATE EXTERNAL TABLE IF NOT EXISTS partsupp (
     ps_availqty INTEGER,
     ps_supplycost NUMERIC,
     ps_comment VARCHAR
-) STORED AS CSV WITH HEADER ROW LOCATION 'query_server/sqllogicaltests/data/tpch-csv/partsupp.csv';
+) STORED AS CSV WITH HEADER ROW LOCATION 'query_server/sqllogicaltests/resource/tpch-csv/partsupp.csv';
 
 statement ok
 CREATE EXTERNAL TABLE IF NOT EXISTS region (
     r_regionkey INTEGER,
     r_name VARCHAR,
     r_comment VARCHAR
-) STORED AS CSV WITH HEADER ROW LOCATION 'query_server/sqllogicaltests/data/tpch-csv/region.csv';
+) STORED AS CSV WITH HEADER ROW LOCATION 'query_server/sqllogicaltests/resource/tpch-csv/region.csv';
 
 statement ok
 CREATE EXTERNAL TABLE IF NOT EXISTS supplier (
@@ -93,7 +93,7 @@ CREATE EXTERNAL TABLE IF NOT EXISTS supplier (
     s_phone VARCHAR,
     s_acctbal NUMERIC,
     s_comment VARCHAR
-) STORED AS CSV WITH HEADER ROW LOCATION 'query_server/sqllogicaltests/data/tpch-csv/supplier.csv';
+) STORED AS CSV WITH HEADER ROW LOCATION 'query_server/sqllogicaltests/resource/tpch-csv/supplier.csv';
 
 ##########
 ## TPC-H DDL
@@ -124,9 +124,9 @@ order by
     l_returnflag,
     l_linestatus;
 ----
-A F 27.0000000000 39890.8800000000 37497.42720000000000000000 40122.247104000000000000000000000000 27.00000000000000 39890.88000000000000 0.06000000000000 1
-N O 166.0000000000 205387.5000000000 191556.18880000000000000000 199866.759336000000000000000000000000 27.66666666666666 34231.25000000000000 0.07500000000000 6
-R F 94.0000000000 100854.5200000000 92931.39000000000000000000 92931.390000000000000000000000000000 47.00000000000000 50427.26000000000000 0.08000000000000 2
+"A" "F" 27.0000000000 39890.8800000000 37497.42720000000000000000 40122.247104000000000000000000000000 27.00000000000000 39890.88000000000000 0.06000000000000 1
+"N" "O" 166.0000000000 205387.5000000000 191556.18880000000000000000 199866.759336000000000000000000000000 27.66666666666666 34231.25000000000000 0.07500000000000 6
+"R" "F" 94.0000000000 100854.5200000000 92931.39000000000000000000 92931.390000000000000000000000000000 47.00000000000000 50427.26000000000000 0.08000000000000 2
 
 
 # q2
@@ -825,5 +825,5 @@ group by
 order by
     cntrycode;
 ----
-18 1 8324.0700000000
-30 1 7638.5700000000
+"18" 1 8324.0700000000
+"30" 1 7638.5700000000

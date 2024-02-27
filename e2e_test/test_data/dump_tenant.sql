@@ -48,7 +48,7 @@ alter tenant "cnosdb" add user "test_us_u2" as "member";
 alter tenant "cnosdb" add user "writer" as "lp_writer";
 create table "alter_table"."test" ("f1" BIGINT, "f0" BIGINT, "d0" DOUBLE, "s0" STRING, "b0" BOOLEAN, tags ("t0", "t1"));
 create table "avg_daily_driving_duration"."readings_kv" ("latitude" DOUBLE, "longitude" DOUBLE, "elevation" DOUBLE, "velocity" DOUBLE, "heading" DOUBLE, "grade" DOUBLE, "fuel_consumption" DOUBLE, "load_capacity" DOUBLE, "fuel_capacity" DOUBLE, "nominal_fuel_consumption" DOUBLE, tags ("name", "fleet", "driver", "model", "device_version"));
-create external table "avg_daily_driving_duration"."readings" stored as PARQUET location 'query_server/test/resource/parquet/part-0.parquet';
+create external table "avg_daily_driving_duration"."readings" stored as PARQUET location 'query_server/sqllogicaltests/resource/parquet/part-0.parquet';
 create table "bottom_func"."m2" ("f0" BIGINT, "f1" DOUBLE, tags ("t0", "t1", "t2"));
 create table "ci_table_db"."inner_csv" ("bigint_c" BIGINT, "string_c" STRING, "ubigint_c" BIGINT UNSIGNED, "boolean_c" BOOLEAN, "double_c" DOUBLE, tags ("tag1", "tag2"));
 create table "ci_table_db"."inner_csv_v2" ("string_c" STRING, "bigint_c" BIGINT, "boolean_c" BOOLEAN, "ubigint_c" BIGINT UNSIGNED, "double_c" DOUBLE, tags ("tag1", "tag2"));
@@ -75,7 +75,7 @@ create table "public"."test" ("column1" BIGINT, "column2" STRING, "column3" BIGI
 create table "public"."test_double_conv" ("fa" DOUBLE, "fb" DOUBLE, tags ("ta", "tb"));
 create table "public"."test_insert_subquery" ("fa" DOUBLE, "fb" DOUBLE, tags ("ta", "tb"));
 create table "public"."test_timestamp_conv" ("fa" DOUBLE, "fb" DOUBLE, tags ("ta", "tb"));
-create external table "public"."ci_location_tbl" stored as PARQUET location 'query_server/test/resource/parquet/part-0.parquet';
+create external table "public"."ci_location_tbl" stored as PARQUET location 'query_server/sqllogicaltests/resource/parquet/part-0.parquet';
 create external table "public"."ci_location_tbl2_ext" stored as PARQUET location 'file:///tmp/data/parquet_out2/';
 create external table "public"."ci_location_tbl_ext" stored as PARQUET location 'file:///tmp/data/parquet_out1/';
 create external table "public"."ci_location_tbl_ext_csv" ("time" TIMESTAMP, "name" STRING) stored as CSV with header row delimiter ',' location 'file:///tmp/data/csv_out/';

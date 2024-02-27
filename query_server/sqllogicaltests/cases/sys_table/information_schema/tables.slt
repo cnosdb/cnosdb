@@ -1,0 +1,79 @@
+statement ok
+drop tenant if exists test_tbls_tenant1;
+
+statement ok
+drop user if exists test_tbls_u1;
+
+statement ok
+drop user if exists test_tbls_u2;
+
+
+statement ok
+create tenant if not exists test_tbls_tenant1;
+
+statement ok
+create user if not exists test_tbls_u1;
+
+statement ok
+create user if not exists test_tbls_u2;
+
+
+statement ok
+alter tenant test_tbls_tenant1 add user test_tbls_u1 as owner;
+
+statement ok
+alter tenant test_tbls_tenant1 add user test_tbls_u2 as member;
+
+
+statement ok
+--#TENANT=test_tbls_tenant1
+--#USER_NAME=test_tbls_u1
+
+statement ok
+drop database if exists test_tbls_db1;
+
+statement ok
+create database if not exists test_tbls_db1;
+
+
+statement ok
+CREATE TABLE IF NOT EXISTS test_tbls_db1.test_info_schema_tbl(
+    column1 BIGINT CODEC(DELTA),
+    column2 STRING CODEC(GZIP),
+    column3 BIGINT UNSIGNED CODEC(NULL),
+    column4 BOOLEAN,
+    column5 DOUBLE CODEC(GORILLA),
+    TAGS(column6, column7));
+
+
+# CREATE EXTERNAL TABLE test_tbls_db1.readings
+# STORED AS PARQUET LOCATION 'query_server/sqllogicaltests/resource/parquet/part-0.parquet';
+
+statement ok
+--#TENANT=test_tbls_tenant1
+--#USER_NAME=root
+
+query T rowsort
+select * from information_schema.tables;
+----
+"test_tbls_tenant1" "test_tbls_db1" "test_info_schema_tbl" "TABLE" "TSKV" "TODO"
+
+
+statement ok
+--#TENANT=test_tbls_tenant1
+--#USER_NAME=test_tbls_u1
+
+query T rowsort
+select * from information_schema.tables;
+----
+"test_tbls_tenant1" "test_tbls_db1" "test_info_schema_tbl" "TABLE" "TSKV" "TODO"
+
+
+statement ok
+--#TENANT=test_tbls_tenant1
+--#USER_NAME=test_tbls_u2
+
+query T rowsort
+select * from information_schema.tables;
+----
+"test_tbls_tenant1" "test_tbls_db1" "test_info_schema_tbl" "TABLE" "TSKV" "TODO"

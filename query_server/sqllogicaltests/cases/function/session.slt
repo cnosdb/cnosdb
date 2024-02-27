@@ -17,17 +17,17 @@ drop database if exists db1;
 query 
 select current_user();
 ----
-root
+"root"
 
 query 
 select current_database();
 ----
-public
+"public"
 
 query 
 select current_tenant();
 ----
-cnosdb
+"cnosdb"
 
 query 
 select current_role();
@@ -59,22 +59,22 @@ statement ok
 query 
 select current_user();
 ----
-u1
+"u1"
 
 query 
 select current_database();
 ----
-db1
+"db1"
 
 query 
 select current_tenant();
 ----
-t1
+"t1"
 
 query 
 select current_role();
 ----
-r1
+"r1"
 
 query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Schema error: No field named current_user\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
 select current_user;

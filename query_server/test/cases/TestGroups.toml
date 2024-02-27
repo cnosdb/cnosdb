@@ -1,5 +1,0 @@
-[[groups]]
-name = "example"
-tests = ["hello", "world"] 
-parallel = true
-

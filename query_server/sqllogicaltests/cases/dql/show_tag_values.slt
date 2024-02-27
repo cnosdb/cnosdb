@@ -1,0 +1,154 @@
+statement ok
+--#DATABASE=show_tag_values
+
+sleep 100ms
+statement ok
+DROP DATABASE IF EXISTS show_tag_values;
+
+statement ok
+CREATE DATABASE show_tag_values WITH TTL '100000d';;
+
+
+
+statement ok
+--#LP_BEGIN
+test,t0=a,t1=b,t2=c f0=1,f1="2" 0
+test,t0=a f0=1 1
+test,t1=b f1="2" 2
+test,t2=c f0=1 3
+test,t0=a,t1=b f0=1 4
+test,t1=b,t2=c f0=1 5
+--#LP_END
+
+
+statement ok
+INSERT INTO test(TIME, t0, f0) VALUES (6, '', 1);
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Expected FROM, found: ;", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SHOW TAG VALUES;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Expected WITH, found: \.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SHOW TAG VALUES ON public FROM show_series.test;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Expected WITH, found: ;", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SHOW TAG VALUES FROM test;
+
+
+query T rowsort
+SHOW TAG VALUES FROM test WITH KEY IN (t0, t1, t2);
+----
+"t0" ""
+"t0" "a"
+"t1" "b"
+"t2" "c"
+
+query T rowsort
+SHOW TAG VALUES ON show_tag_values FROM test WITH KEY IN (t0, t1, t2);
+----
+"t0" ""
+"t0" "a"
+"t1" "b"
+"t2" "c"
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Schema error: No field named f0\. Valid fields are key, value\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SHOW TAG VALUES FROM test WITH KEY IN (t0, t1, t2) ORDER BY f0;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Schema error: No field named time\. Valid fields are key, value\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SHOW TAG VALUES FROM test WITH KEY IN (t0, t1, t2) ORDER BY time;
+
+query 
+SHOW TAG VALUES FROM test WITH KEY IN (t0, t1, t2) ORDER BY key, value;
+----
+"t0" ""
+"t0" "a"
+"t1" "b"
+"t2" "c"
+
+query 
+SHOW TAG VALUES FROM test WITH KEY IN (t0, t1, t2) ORDER BY key, value;
+----
+"t0" ""
+"t0" "a"
+"t1" "b"
+"t2" "c"
+
+query 
+SHOW TAG VALUES FROM test WITH KEY IN (t0, t1, t2) ORDER BY key ASC,  value DESC;
+----
+"t0" "a"
+"t0" ""
+"t1" "b"
+"t2" "c"
+
+query 
+SHOW TAG VALUES FROM test WITH KEY IN (t0, t1, t2) ORDER BY key DESC, value ASC;
+----
+"t2" "c"
+"t1" "b"
+"t0" ""
+"t0" "a"
+
+query 
+SHOW TAG VALUES FROM test WITH KEY IN (t0, t1, t2) ORDER BY key, value;
+----
+"t0" ""
+"t0" "a"
+"t1" "b"
+"t2" "c"
+
+query 
+SHOW TAG VALUES FROM test WITH KEY = "t0" ORDER BY key, value;
+----
+"t0" ""
+"t0" "a"
+
+query 
+SHOW TAG VALUES FROM test WITH KEY != "t0" ORDER BY key, value;
+----
+"t1" "b"
+"t2" "c"
+
+query 
+SHOW TAG VALUES FROM test WITH KEY NOT IN (t0, t1, t2) ORDER BY key, value;
+----
+
+query 
+SHOW TAG VALUES FROM test WITH KEY NOT IN (t0) ORDER BY key, value;
+----
+"t1" "b"
+"t2" "c"
+
+query 
+SHOW TAG VALUES FROM test WITH KEY IN (t0, t1, t2) WHERE time < now() ORDER BY key, value;
+----
+"t0" ""
+"t0" "a"
+"t1" "b"
+"t2" "c"
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Semantic error: SHOW SERIES does not support where clause contains field f1", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SHOW TAG VALUES FROM test WITH KEY IN (t0, t1, t2) WHERE f1 IS NOT NULL ORDER BY key, value;
+
+query 
+SHOW TAG VALUES FROM test WITH KEY IN (t0, t1, t2) WHERE t0 != '' ORDER BY key, value;
+----
+"t0" "a"
+"t1" "b"
+"t2" "c"
+
+query 
+SHOW TAG VALUES FROM test WITH KEY IN (t0, t1, t2) WHERE t0 IS NOT NULL ORDER BY key, value;
+----
+"t0" ""
+"t0" "a"
+"t1" "b"
+"t2" "c"
+
+query 
+SHOW TAG VALUES FROM test WITH KEY IN (t0, t1, t2) WHERE t1 = 'b' ORDER BY key, value;
+----
+"t0" "a"
+"t1" "b"
+"t2" "c"

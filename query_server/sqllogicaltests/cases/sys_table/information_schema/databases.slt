@@ -1,0 +1,76 @@
+statement ok
+drop tenant if exists test_dbs_tenant1;
+
+statement ok
+drop user if exists test_dbs_u1;
+
+statement ok
+drop user if exists test_dbs_u2;
+
+
+statement ok
+create tenant if not exists test_dbs_tenant1;
+
+statement ok
+create user if not exists test_dbs_u1;
+
+statement ok
+create user if not exists test_dbs_u2;
+
+
+statement ok
+alter tenant test_dbs_tenant1 add user test_dbs_u1 as owner;
+
+statement ok
+alter tenant test_dbs_tenant1 add user test_dbs_u2 as member;
+
+
+statement ok
+--#TENANT=test_dbs_tenant1
+--#USER_NAME=test_dbs_u1
+
+statement ok
+drop database if exists test_dbs_db1;
+
+statement ok
+drop database if exists test_dbs_db2;
+
+
+statement ok
+create database if not exists test_dbs_db1;
+
+statement ok
+create database if not exists test_dbs_db2;
+
+
+statement ok
+--#TENANT=test_dbs_tenant1
+--#USER_NAME=root
+
+query T rowsort
+select * from information_schema.DATABASES;
+----
+"test_dbs_tenant1" "test_dbs_db1" "INF" 1 "365 Days" 1 "NS"
+"test_dbs_tenant1" "test_dbs_db2" "INF" 1 "365 Days" 1 "NS"
+
+
+statement ok
+--#TENANT=test_dbs_tenant1
+--#USER_NAME=test_dbs_u1
+
+query T rowsort
+select * from information_schema.DATABASES;
+----
+"test_dbs_tenant1" "test_dbs_db1" "INF" 1 "365 Days" 1 "NS"
+"test_dbs_tenant1" "test_dbs_db2" "INF" 1 "365 Days" 1 "NS"
+
+
+statement ok
+--#TENANT=test_dbs_tenant1
+--#USER_NAME=test_dbs_u2
+
+query T rowsort
+select * from information_schema.DATABASES;
+----
+"test_dbs_tenant1" "test_dbs_db1" "INF" 1 "365 Days" 1 "NS"
+"test_dbs_tenant1" "test_dbs_db2" "INF" 1 "365 Days" 1 "NS"

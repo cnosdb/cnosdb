@@ -70,7 +70,7 @@ alter user u1 set password='123';
 query T
 SELECT * FROM cluster_schema.users where user_name='u1';
 ----
-u1 false {"hash_password":"*****"}
+"u1" false "{\"hash_password\":\"*****\"}"
 
 statement ok
 alter user u1 set must_change_password=true;
@@ -78,7 +78,7 @@ alter user u1 set must_change_password=true;
 query T
 SELECT * FROM cluster_schema.users where user_name='u1';
 ----
-u1 false {"hash_password":"*****","must_change_password":true}
+"u1" false "{\"hash_password\":\"*****\",\"must_change_password\":true}"
 
 statement ok
 alter user u1 set comment='abc';
@@ -86,7 +86,7 @@ alter user u1 set comment='abc';
 query T
 SELECT * FROM cluster_schema.users where user_name='u1';
 ----
-u1 false {"hash_password":"*****","must_change_password":true,"comment":"abc"}
+"u1" false "{\"hash_password\":\"*****\",\"must_change_password\":true,\"comment\":\"abc\"}"
 
 statement ok
 drop user u1;

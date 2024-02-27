@@ -1,0 +1,96 @@
+statement ok
+drop tenant if exists test_us_tenant1;
+
+statement ok
+drop user if exists test_us_u1;
+
+statement ok
+drop user if exists test_us_u2;
+
+
+statement ok
+create tenant if not exists test_us_tenant1;
+
+statement ok
+create user if not exists test_us_u1;
+
+statement ok
+create user if not exists test_us_u2;
+
+
+statement ok
+alter user test_us_u1 set comment = 'test comment';
+
+
+query 
+select * from cluster_schema.users where user_name = 'test_us_u1';
+----
+"test_us_u1" false "{\"hash_password\":\"*****\",\"comment\":\"test comment\"}"
+
+
+statement ok
+alter tenant cnosdb add user test_us_u1 as owner;
+
+statement ok
+alter tenant cnosdb add user test_us_u2 as member;
+
+
+statement ok
+alter tenant test_us_tenant1 add user test_us_u1 as owner;
+
+statement ok
+alter tenant test_us_tenant1 add user test_us_u2 as member;
+
+
+statement ok
+--#TENANT=cnosdb
+--#USER_NAME=root
+
+query T rowsort
+select * from cluster_schema.users where user_name in ('root', 'test_us_u1', 'test_us_u2');
+----
+"root" true "{\"hash_password\":\"*****\",\"must_change_password\":true,\"comment\":\"system admin\"}"
+"test_us_u1" false "{\"hash_password\":\"*****\",\"comment\":\"test comment\"}"
+"test_us_u2" false "{\"hash_password\":\"*****\"}"
+
+
+statement ok
+--#TENANT=cnosdb
+--#USER_NAME=test_us_u1
+
+query T rowsort
+select * from cluster_schema.users where user_name in ('root', 'test_us_u1', 'test_us_u2');
+----
+
+
+statement ok
+--#TENANT=cnosdb
+--#USER_NAME=test_us_u2
+
+query T rowsort
+select * from cluster_schema.users where user_name in ('root', 'test_us_u1', 'test_us_u2');
+----
+
+
+statement ok
+--#TENANT=test_us_tenant1
+--#USER_NAME=root
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Table not found, tenant: test_us_tenant1 db: cluster_schema, table: users", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select * from cluster_schema.users where user_name in ('root', 'test_us_u1', 'test_us_u2');
+
+
+statement ok
+--#TENANT=test_us_tenant1
+--#USER_NAME=test_us_u1
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Table not found, tenant: test_us_tenant1 db: cluster_schema, table: users", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select * from cluster_schema.users where user_name in ('root', 'test_us_u1', 'test_us_u2');
+
+
+statement ok
+--#TENANT=test_us_tenant1
+--#USER_NAME=test_us_u2
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Table not found, tenant: test_us_tenant1 db: cluster_schema, table: users", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select * from cluster_schema.users where user_name in ('root', 'test_us_u1', 'test_us_u2');

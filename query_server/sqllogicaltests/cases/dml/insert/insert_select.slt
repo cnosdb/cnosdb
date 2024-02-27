@@ -1,0 +1,144 @@
+sleep 100ms
+# normal
+
+statement ok
+drop table if exists public.test_insert_subquery;
+
+
+# public.test_insert_subquery(time i64, ta utf8, tb utf8, fa , fb)
+# insert all columns
+#   1. single record
+#   2. column name not match
+statement ok
+--#LP_BEGIN
+test_insert_subquery,ta=a1,tb=b1 fa=1,fb=2 3
+--#LP_END
+
+
+statement ok
+--#LP_BEGIN
+test_insert_subquery,ta=a1,tb=b1 fa=1,fb=2 1667456411000000000
+--#LP_END
+
+
+statement ok
+insert public.test_insert_subquery(TIME, ta, tb, fa, fb)
+select column1, column2, column3, column4, column5
+from
+(values
+    (1667456411000000007, '7a', '7b', 7, 7));
+
+
+query T rowsort
+select * from public.test_insert_subquery order by fa, fb;
+----
+1970-01-01T00:00:00.000000003 "a1" "b1" 1.0 2.0
+2022-11-03T06:20:11 "a1" "b1" 1.0 2.0
+2022-11-03T06:20:11.000000007 "7a" "7b" 7.0 7.0
+
+
+# insert all columns
+#   1. single record
+#   2. column name match
+statement ok
+insert public.test_insert_subquery(TIME, ta, tb, fa, fb)
+select TIME, ta, tb, fa, fb
+from
+(values
+    (1667456411000000008, '8a', '8b', 8, 8)) as t (TIME, ta, tb, fa, fb);
+
+
+query T rowsort
+select * from public.test_insert_subquery order by fa, fb;
+----
+1970-01-01T00:00:00.000000003 "a1" "b1" 1.0 2.0
+2022-11-03T06:20:11 "a1" "b1" 1.0 2.0
+2022-11-03T06:20:11.000000007 "7a" "7b" 7.0 7.0
+2022-11-03T06:20:11.000000008 "8a" "8b" 8.0 8.0
+
+
+# insert all columns
+#   1. single record
+#   2. column name *
+statement ok
+insert public.test_insert_subquery(TIME, ta, tb, fa, fb)
+select *
+from
+(values
+    (1667456411000000009, '9a', '9b', 9, 9)) as t (TIME, ta, tb, fa, fb);
+
+
+query T rowsort
+select * from public.test_insert_subquery order by fa, fb;
+----
+1970-01-01T00:00:00.000000003 "a1" "b1" 1.0 2.0
+2022-11-03T06:20:11 "a1" "b1" 1.0 2.0
+2022-11-03T06:20:11.000000007 "7a" "7b" 7.0 7.0
+2022-11-03T06:20:11.000000008 "8a" "8b" 8.0 8.0
+2022-11-03T06:20:11.000000009 "9a" "9b" 9.0 9.0
+
+
+# insert partial columns
+#   1. single record
+#   2. column name *
+#   3. not specify insert columns
+statement ok
+insert public.test_insert_subquery
+select *
+from
+(values
+    (1667456411000000009, '9a', '9b', 9, 9)) as t (TIME, ta, tb, fa, fb);
+
+
+query T rowsort
+select * from public.test_insert_subquery order by fa, fb;
+----
+1970-01-01T00:00:00.000000003 "a1" "b1" 1.0 2.0
+2022-11-03T06:20:11 "a1" "b1" 1.0 2.0
+2022-11-03T06:20:11.000000007 "7a" "7b" 7.0 7.0
+2022-11-03T06:20:11.000000008 "8a" "8b" 8.0 8.0
+2022-11-03T06:20:11.000000009 "9a" "9b" 9.0 9.0
+
+
+# error
+#   1. single record
+#   2. Insert columns and Source columns not match
+#   3. not specify insert columns
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Semantic error: Insert columns and Source columns not match", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+insert public.test_insert_subquery
+select TIME, ta
+from
+(values
+    (1667456411000000010, '10a', '10b', 10, 10)) as t (TIME, ta, tb, fa, fb);
+
+
+query T rowsort
+select * from public.test_insert_subquery order by fa, fb;
+----
+1970-01-01T00:00:00.000000003 "a1" "b1" 1.0 2.0
+2022-11-03T06:20:11 "a1" "b1" 1.0 2.0
+2022-11-03T06:20:11.000000007 "7a" "7b" 7.0 7.0
+2022-11-03T06:20:11.000000008 "8a" "8b" 8.0 8.0
+2022-11-03T06:20:11.000000009 "9a" "9b" 9.0 9.0
+
+
+# error
+#   1. single record
+#   2. Insert columns and Source columns not match
+#   3. specify partial insert columns
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Arrow: Cast error: Cannot cast string '10a' to value of Float64 type", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+insert public.test_insert_subquery(TIME, fa)
+select TIME, ta
+from
+(values
+    (1667456411000000010, '10a', '10b', 10, 10)) as t (TIME, ta, tb, fa, fb);
+
+
+query T rowsort
+select * from public.test_insert_subquery order by fa, fb;
+----
+1970-01-01T00:00:00.000000003 "a1" "b1" 1.0 2.0
+2022-11-03T06:20:11 "a1" "b1" 1.0 2.0
+2022-11-03T06:20:11.000000007 "7a" "7b" 7.0 7.0
+2022-11-03T06:20:11.000000008 "8a" "8b" 8.0 8.0
+2022-11-03T06:20:11.000000009 "9a" "9b" 9.0 9.0

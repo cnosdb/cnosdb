@@ -1,0 +1,58 @@
+statement ok
+drop tenant if exists test_ms_tenant1;
+
+statement ok
+drop user if exists test_ms_u1;
+
+statement ok
+drop user if exists test_ms_u2;
+
+
+statement ok
+create tenant if not exists test_ms_tenant1;
+
+statement ok
+create user if not exists test_ms_u1;
+
+statement ok
+create user if not exists test_ms_u2;
+
+
+statement ok
+alter tenant test_ms_tenant1 add user test_ms_u1 as owner;
+
+statement ok
+alter tenant test_ms_tenant1 add user test_ms_u2 as member;
+
+
+statement ok
+--#TENANT=test_ms_tenant1
+--#USER_NAME=root
+
+query T rowsort
+select * from information_schema.MEMBERS;
+----
+"test_ms_u1" "owner"
+"test_ms_u2" "member"
+
+
+statement ok
+--#TENANT=test_ms_tenant1
+--#USER_NAME=test_ms_u1
+
+query T rowsort
+select * from information_schema.MEMBERS;
+----
+"test_ms_u1" "owner"
+"test_ms_u2" "member"
+
+
+statement ok
+--#TENANT=test_ms_tenant1
+--#USER_NAME=test_ms_u2
+
+query T rowsort
+select * from information_schema.MEMBERS;
+----
+"test_ms_u1" "owner"
+"test_ms_u2" "member"

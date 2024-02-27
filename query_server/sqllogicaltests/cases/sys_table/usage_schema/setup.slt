@@ -8,7 +8,7 @@ DROP TABLE IF EXISTS readings_ext;
 statement ok
 CREATE EXTERNAL TABLE readings_ext
 STORED AS PARQUET
-LOCATION 'query_server/test/resource/parquet/part-0.parquet';
+LOCATION 'query_server/sqllogicaltests/resource/parquet/part-0.parquet';
 
 statement ok
 drop table IF EXISTS readings_kv;

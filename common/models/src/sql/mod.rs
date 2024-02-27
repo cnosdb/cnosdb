@@ -618,7 +618,7 @@ remote_bucket = {max = 100, initial = 0, refill = 100, interval = 100}
             name: "nation".to_string(),
             file_compression_type: "".to_string(),
             file_type: "csv".to_string(),
-            location: "query_server/sqllogicaltests/data/tpch-csv/nation.csv".to_string(),
+            location: "query_server/sqllogicaltests/resource/tpch-csv/nation.csv".to_string(),
             target_partitions: 0,
             table_partition_cols: vec![],
             has_header: true,
@@ -635,7 +635,7 @@ remote_bucket = {max = 100, initial = 0, refill = 100, interval = 100}
         };
         assert_eq!(
             schema.to_ddl_sql(false).unwrap(),
-            r#"create external table "test"."nation" ("n_nationkey" BIGINT UNSIGNED, "n_name" STRING, "n_regionkey" BIGINT, "n_comment" STRING) stored as csv with header row delimiter ',' location 'query_server/sqllogicaltests/data/tpch-csv/nation.csv';"#
+            r#"create external table "test"."nation" ("n_nationkey" BIGINT UNSIGNED, "n_name" STRING, "n_regionkey" BIGINT, "n_comment" STRING) stored as csv with header row delimiter ',' location 'query_server/sqllogicaltests/resource/tpch-csv/nation.csv';"#
         )
     }
 

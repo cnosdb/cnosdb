@@ -1,0 +1,57 @@
+statement ok
+--#DATABASE=create_external_table
+
+sleep 100ms
+statement ok
+DROP DATABASE IF EXISTS create_external_table;
+
+statement ok
+CREATE DATABASE create_external_table WITH TTL '100000d';
+
+
+statement ok
+CREATE EXTERNAL TABLE
+    cpu (
+        cpu_hz  DECIMAL(10,6) NOT NULL,
+        temp  DOUBLE NOT NULL,
+        version_num  BIGINT NOT NULL,
+        is_old  BOOLEAN NOT NULL,
+        weight  DECIMAL(12,7) NOT NULL
+    )
+    STORED AS CSV
+    WITH HEADER ROW
+    LOCATION 'query_server/query/tests/data/csv/decimal_data.csv';
+
+
+query T rowsort
+DESCRIBE TABLE create_external_table.cpu;
+----
+"cpu_hz" "Decimal128(10, 6)" "FIELD" "NULL"
+"is_old" "Boolean" "FIELD" "NULL"
+"temp" "Float64" "FIELD" "NULL"
+"version_num" "Int64" "FIELD" "NULL"
+"weight" "Decimal128(12, 7)" "FIELD" "NULL"
+
+
+statement ok
+drop table cpu;
+
+
+statement ok
+CREATE EXTERNAL TABLE
+    "create_external_table"."cpu" (
+        cpu_hz  DECIMAL(10,6) NOT NULL,
+        temp  DOUBLE NOT NULL,
+        version_num  BIGINT NOT NULL,
+        is_old  BOOLEAN NOT NULL,
+        weight  DECIMAL(12,7) NOT NULL
+    )
+    STORED AS CSV
+    WITH HEADER ROW
+    LOCATION 'query_server/query/tests/data/csv/decimal_data.csv';
+
+
+query T rowsort
+show tables on create_external_table;
+----
+"cpu"

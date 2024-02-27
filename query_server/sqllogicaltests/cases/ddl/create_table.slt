@@ -1,0 +1,274 @@
+statement ok
+--#DATABASE=createtable
+
+sleep 100ms
+statement ok
+DROP DATABASE IF EXISTS createtable;
+
+statement ok
+CREATE DATABASE createtable WITH TTL '100000d';
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Expected identifier, found: \)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+CREATE TABLE createtable."tesT"(column1 BIGINT,);
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Expected field columns when create table", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+CREATE TABLE createtable.tesT;
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Expected identifier, found: \)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+CREATE TABLE createtable.tesT(column1 BIGINT,);
+
+query T rowsort
+SHOW TABLES;
+----
+
+
+statement ok
+CREATE TABLE test0(
+    column1 BIGINT CODEC(DELTA),
+    column2 STRING CODEC(GZIP),
+    column3 BIGINT UNSIGNED CODEC(NULL),
+    column4 BOOLEAN,
+    column5 DOUBLE CODEC(GORILLA),
+    TAGS(column6, column7));
+
+
+statement ok
+insert createtable.test0(TIME, column1, column2, column3, column4, column5, column6, column7) values (100, -1234, 'hello', 1234, false, 1.2, 'beijing', 'shanghai');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Arrow: Cast error: Can't cast value \-1234 to type UInt64", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+insert createtable.test0(TIME, column1, column2, column3, column4, column5, column6, column7) values (101, -1234, 'hello', -1234, false, 1.2, 'beijing', 'shanghai');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Arrow: Cast error: Cannot cast string 'failed' to value of Float64 type", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+insert createtable.test0(TIME, column1, column2, column3, column4, column5, column6, column7) values (102, -1234, 'hello', 1234, false, 'failed', 'beijing', 'shanghai');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: This feature is not implemented: Unsupported CAST from Float64 to Timestamp\(Nanosecond, None\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+insert createtable.test0(TIME, column1, column2, column3, column4, column5, column6, column7) values (0.1, -1234, 'hello', 1234, true, 1.2, 'beijing', 'shanghai');
+
+statement ok
+insert createtable.test0(TIME, column1, column2, column3, column4, column5, column6, column7) values (103, -1234, 'hello', 1234, false, 1.2, 'beijing', 'shanghai');
+
+statement ok
+insert createtable.test0(TIME, column1, column2, column3, column4, column5, column6, column7) values (104, -1234, 'hello', 1234, false, 1.2, 'beijing', 'shanghai');
+
+statement ok
+insert createtable.test0(TIME, column2, column3, column4, column5, column6) values (100, 'hello', 1234, false, 1.2, 'beijing');
+
+statement ok
+insert createtable.test0(TIME, column1, column2, column3, column4, column5) values (100, -1234, 'hello', 1234, false, 1.2);
+
+
+
+query T rowsort
+select ALL * from createtable.test0;
+----
+1970-01-01T00:00:00.000000100 "NULL" "NULL" -1234 "hello" 1234 false 1.2
+1970-01-01T00:00:00.000000100 "beijing" "NULL" NULL "hello" 1234 false 1.2
+1970-01-01T00:00:00.000000100 "beijing" "shanghai" -1234 "hello" 1234 false 1.2
+1970-01-01T00:00:00.000000103 "beijing" "shanghai" -1234 "hello" 1234 false 1.2
+1970-01-01T00:00:00.000000104 "beijing" "shanghai" -1234 "hello" 1234 false 1.2
+
+query T rowsort
+select ALL * from test0;
+----
+1970-01-01T00:00:00.000000100 "NULL" "NULL" -1234 "hello" 1234 false 1.2
+1970-01-01T00:00:00.000000100 "beijing" "NULL" NULL "hello" 1234 false 1.2
+1970-01-01T00:00:00.000000100 "beijing" "shanghai" -1234 "hello" 1234 false 1.2
+1970-01-01T00:00:00.000000103 "beijing" "shanghai" -1234 "hello" 1234 false 1.2
+1970-01-01T00:00:00.000000104 "beijing" "shanghai" -1234 "hello" 1234 false 1.2
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Table not found, tenant: cnosdb db: public, table: test0", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select ALL * from public.test0;
+
+
+statement ok
+ALTER TABLE test0 DROP column2;
+
+
+query T rowsort
+select ALL * from test0;
+----
+1970-01-01T00:00:00.000000100 "NULL" "NULL" -1234 1234 false 1.2
+1970-01-01T00:00:00.000000100 "beijing" "NULL" NULL 1234 false 1.2
+1970-01-01T00:00:00.000000100 "beijing" "shanghai" -1234 1234 false 1.2
+1970-01-01T00:00:00.000000103 "beijing" "shanghai" -1234 1234 false 1.2
+1970-01-01T00:00:00.000000104 "beijing" "shanghai" -1234 1234 false 1.2
+
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Semantic error: Can't drop tag column column7\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+ALTER TABLE test0 DROP column7;
+
+
+query T rowsort
+SELECT ALL * FROM test0;
+----
+1970-01-01T00:00:00.000000100 "NULL" "NULL" -1234 1234 false 1.2
+1970-01-01T00:00:00.000000100 "beijing" "NULL" NULL 1234 false 1.2
+1970-01-01T00:00:00.000000100 "beijing" "shanghai" -1234 1234 false 1.2
+1970-01-01T00:00:00.000000103 "beijing" "shanghai" -1234 1234 false 1.2
+1970-01-01T00:00:00.000000104 "beijing" "shanghai" -1234 1234 false 1.2
+
+
+statement ok
+ALTER TABLE test0 ADD TAG column8;
+
+
+query T rowsort
+SELECT ALL * FROM test0;
+----
+1970-01-01T00:00:00.000000100 "NULL" "NULL" -1234 1234 false 1.2 "NULL"
+1970-01-01T00:00:00.000000100 "beijing" "NULL" NULL 1234 false 1.2 "NULL"
+1970-01-01T00:00:00.000000100 "beijing" "shanghai" -1234 1234 false 1.2 "NULL"
+1970-01-01T00:00:00.000000103 "beijing" "shanghai" -1234 1234 false 1.2 "NULL"
+1970-01-01T00:00:00.000000104 "beijing" "shanghai" -1234 1234 false 1.2 "NULL"
+
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Semantic error: column column7 already exists in table test0", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+ALTER TABLE test0 ADD TAG column7;
+
+
+query T rowsort
+SELECT ALL * FROM test0;
+----
+1970-01-01T00:00:00.000000100 "NULL" "NULL" -1234 1234 false 1.2 "NULL"
+1970-01-01T00:00:00.000000100 "beijing" "NULL" NULL 1234 false 1.2 "NULL"
+1970-01-01T00:00:00.000000100 "beijing" "shanghai" -1234 1234 false 1.2 "NULL"
+1970-01-01T00:00:00.000000103 "beijing" "shanghai" -1234 1234 false 1.2 "NULL"
+1970-01-01T00:00:00.000000104 "beijing" "shanghai" -1234 1234 false 1.2 "NULL"
+
+
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Semantic error: column time already exists in table cnosdb\.createtable\.test1", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+CREATE TABLE test1(
+    column0 TIMESTAMP CODEC(DELTA),
+    column1 BIGINT CODEC(DELTA),
+    column2 STRING CODEC(GZIP),
+    column3 BIGINT UNSIGNED CODEC(NULL),
+    column4 BOOLEAN,
+    column5 DOUBLE CODEC(GORILLA),
+    TAGS(column6, column7));
+
+
+statement ok
+CREATE TABLE test2(
+    column1 BIGINT CODEC(DELTA),
+    column2 STRING CODEC(GZIP),
+    column3 BIGINT UNSIGNED CODEC(NULL),
+    column4 BOOLEAN,
+    column5 DOUBLE CODEC(GORILLA));
+
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Meta: Table test0 already exists\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+CREATE TABLE test0(
+    column1 BIGINT CODEC(DELTA),
+    column2 STRING CODEC(GZIP),
+    column3 BIGINT UNSIGNED CODEC(NULL),
+    column4 BOOLEAN,
+    column5 DOUBLE CODEC(GORILLA),
+    TAGS(column6, column7));
+
+
+statement ok
+CREATE TABLE IF NOT EXISTS test0(
+    column1 BIGINT CODEC(DELTA),
+    column2 STRING CODEC(GZIP),
+    column3 BIGINT UNSIGNED CODEC(NULL),
+    column4 BOOLEAN,
+    column5 DOUBLE CODEC(GORILLA),
+    TAGS(column6, column7));
+
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Semantic error: Field or Tag have the same name column1", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+CREATE TABLE IF NOT EXISTS test3(
+    column1 BIGINT CODEC(DELTA),
+    column1 BIGINT CODEC(DELTA),
+    column2 STRING CODEC(GZIP),
+    column3 BIGINT UNSIGNED CODEC(NULL),
+    column4 BOOLEAN,
+    column5 DOUBLE CODEC(GORILLA),
+    TAGS(column6, column7));
+
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: DEL is not valid encoding", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+CREATE TABLE IF NOT EXISTS test4(
+    column1 BIGINT CODEC(DEL),
+    column2 STRING CODEC(GZIP),
+    column3 BIGINT UNSIGNED CODEC(NULL),
+    column4 BOOLEAN,
+    column5 DOUBLE CODEC(GORILLA),
+    TAGS(column6, column7));
+
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Semantic error: Unexpected data type BOOLE of column4, ", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+CREATE TABLE IF NOT EXISTS test5(
+    column1 BIGINT CODEC(DELTA),
+    column2 STRING CODEC(GZIP),
+    column3 BIGINT UNSIGNED CODEC(NULL),
+    column4 BOOLE,
+    column5 DOUBLE CODEC(GORILLA),
+    TAGS(column6, column7));
+
+
+statement ok
+CREATE TABLE IF NOT EXISTS test6(
+    column1 BIGINT CODEC(delta),
+    column2 STRING CODEC(GZIP),
+    column3 BIGINT UNSIGNED CODEC(null),
+    column4 BOOLEAN CODEC(BITPACK),
+    column5 DOUBLE CODEC(GORILLA),
+    TAGS(column6, column7));
+
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: expect codec encoding type in \(\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+CREATE TABLE IF NOT EXISTS test7(
+    column1 BIGINT CODEC(DELTA),
+    column2 STRING CODEC(GZIP),
+    column3 BIGINT UNSIGNED CODEC(),
+    column4 BOOLEAN,
+    column5 DOUBLE CODEC(GORILLA),
+    TAGS(column6, column7));
+
+
+statement ok
+DROP TABLE test0;
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Table not found, tenant: cnosdb db: createtable, table: test0", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT ALL * FROM test0;
+
+
+statement ok
+CREATE TABLE test0(
+    column1 BIGINT CODEC(DELTA),
+    column3 BIGINT UNSIGNED CODEC(NULL),
+    column4 BOOLEAN,
+    column5 DOUBLE CODEC(GORILLA),
+    TAGS(column6, column8, column7));
+
+
+query T rowsort
+SELECT ALL * FROM test0;
+----
+
+
+statement ok
+CREATE TABLE IF NOT EXISTS test8 (
+    column1 BIGINT CODEC(DELTA),
+    column2 BIGINT UNSIGNED CODEC(NULL),
+    column3 BOOLEAN
+);
+
+
+query T rowsort
+DESCRIBE TABLE test8;
+----
+"column1" "BIGINT" "FIELD" "DELTA"
+"column2" "BIGINT UNSIGNED" "FIELD" "NULL"
+"column3" "BOOLEAN" "FIELD" "DEFAULT"
+"time" "TIMESTAMP(NANOSECOND)" "TIME" "DEFAULT"
+
+statement ok
+DROP TABLE test8;
+
+
+statement ok
+DROP DATABASE IF EXISTS createtable;

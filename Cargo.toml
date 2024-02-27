@@ -17,7 +17,6 @@ members = [
     "common/cache",
     "query_server/spi",
     "query_server/query",
-    "query_server/test",
     "query_server/sqllogicaltests",
     "e2e_test",
     "coordinator",
