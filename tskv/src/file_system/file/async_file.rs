@@ -59,7 +59,7 @@ impl RawFile {
         }
     }
 
-    async fn sync_data(&self) -> Result<()> {
+    async fn sync_all(&self) -> Result<()> {
         #[cfg(feature = "io_uring")]
         {
             self.1.fsync(&self.0).await?;
@@ -68,7 +68,7 @@ impl RawFile {
         #[cfg(not(feature = "io_uring"))]
         {
             let file = self.0.clone();
-            asyncify(move || file.sync_data()).await
+            asyncify(move || file.sync_all()).await
         }
     }
 
@@ -145,8 +145,8 @@ impl IFile for AsyncFile {
         self.inner.pread(pos, len).await
     }
 
-    async fn sync_data(&self) -> Result<()> {
-        self.inner.sync_data().await
+    async fn sync_all(&self) -> Result<()> {
+        self.inner.sync_all().await
     }
 
     async fn truncate(&self, size: u64) -> Result<()> {
