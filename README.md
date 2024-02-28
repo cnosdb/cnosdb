@@ -136,7 +136,7 @@ make build
 
 #### Run CnosDB
 
-The following is a single node startup. If you need to start a cluster, see [Start a CnosDB Cluster](https://docs.cnosdb.com/en/latest/deploy/install.html#start-a-cnosdb-cluster)
+The following is a single node startup. If you need to start a cluster, see the [Deploy](https://docs.cnosdb.com/en/docs/deploy/) section.
 
 ```bash
 ./target/debug/cnosdb run -M singleton --config ./config/config.toml
@@ -173,7 +173,7 @@ cnosdb-cli
 - [SQL](https://docs.cnosdb.com/en/latest/reference/sql.html#insert)
 - [influxdb line-protocol](https://docs.influxdata.com/influxdb/v2.6/reference/syntax/line-protocol/)
 - [bulk loading](https://docs.cnosdb.com/en/latest/develop/write.html#load-data)
-- [telegraf](https://docs.cnosdb.com/en/latest/versatility/collect/telegraf.html)
+- [telegraf](https://docs.cnosdb.com/en/eco-integration/telegraf)
 
 The following will show an example of using cli to write data by SQL
 
@@ -239,7 +239,7 @@ Query took 0.038 seconds.
 ## Query data
 
 - [SQL](https://docs.cnosdb.com/en/latest/reference/sql.html), compatible with SQL standard.
-- [Prometheus remote read](https://docs.cnosdb.com/en/latest/versatility/collect/prometheus.html#remote-read).
+- [Prometheus remote read](https://docs.cnosdb.com/en/eco-integration/prometheus#remote-read).
 
 The following will show an example of SQL query using cli
 
