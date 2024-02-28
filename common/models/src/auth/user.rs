@@ -78,16 +78,16 @@ pub struct UserDesc {
     // ident
     name: String,
     options: UserOptions,
-    is_admin: bool,
+    is_root_admin: bool,
 }
 
 impl UserDesc {
-    pub fn new(id: Oid, name: String, options: UserOptions, is_admin: bool) -> Self {
+    pub fn new(id: Oid, name: String, options: UserOptions, is_root_admin: bool) -> Self {
         Self {
             id,
             name,
             options,
-            is_admin,
+            is_root_admin,
         }
     }
 
@@ -101,7 +101,7 @@ impl UserDesc {
 
     /// 初始的系统管理员
     pub fn is_root_admin(&self) -> bool {
-        self.is_admin
+        self.is_root_admin
     }
 
     /// 被授予的管理员权限

@@ -8,3 +8,7 @@ mod coordinator_tests;
 
 #[cfg(feature = "not_passed")]
 mod chaos_tests;
+
+mod auth_tests;
+mod client_tests;
+mod flush_tests;

@@ -352,10 +352,7 @@ impl<'a> ExtParser<'a> {
                 .unwrap_or_default();
             Ok(ExtStatement::ShowStreams(ast::ShowStreams { verbose }))
         } else {
-            self.expected(
-                "TABLES or DATABASES or SERIES or TAG or QUERIES or STREAMS",
-                self.parser.peek_token(),
-            )
+            parser_err!(format!("nonsupport: {}", self.parser.peek_token()))
         }
     }
 
@@ -665,7 +662,7 @@ impl<'a> ExtParser<'a> {
                 let role_name = self.parser.parse_identifier()?;
                 AlterTenantOperation::SetUser(user_name, role_name)
             } else {
-                let sql_option = self.parser.parse_sql_option()?;
+                let sql_option = ExtParser::parse_sql_option(&mut self.parser)?;
                 AlterTenantOperation::Set(sql_option)
             }
         } else if self.parse_cnos_keyword(CnosKeyWord::UNSET) {
@@ -686,7 +683,7 @@ impl<'a> ExtParser<'a> {
             let new_name = self.parser.parse_identifier()?;
             AlterUserOperation::RenameTo(new_name)
         } else if self.parser.parse_keyword(Keyword::SET) {
-            let sql_option = self.parser.parse_sql_option()?;
+            let sql_option = ExtParser::parse_sql_option(&mut self.parser)?;
             AlterUserOperation::Set(sql_option)
         } else {
             self.expected("RENAME,SET", self.parser.peek_token())?
@@ -892,14 +889,19 @@ impl<'a> ExtParser<'a> {
 
     fn parse_database_option(&mut self, options: &mut DatabaseOptions) -> Result<bool> {
         if self.parse_cnos_keyword(CnosKeyWord::TTL) {
+            let _ = self.parser.expect_token(&Token::Eq);
             options.ttl = Some(self.parse_string_value()?);
         } else if self.parse_cnos_keyword(CnosKeyWord::SHARD) {
+            let _ = self.parser.expect_token(&Token::Eq);
             options.shard_num = Some(self.parse_number::<u64>()?);
         } else if self.parse_cnos_keyword(CnosKeyWord::VNODE_DURATION) {
+            let _ = self.parser.expect_token(&Token::Eq);
             options.vnode_duration = Some(self.parse_string_value()?);
         } else if self.parse_cnos_keyword(CnosKeyWord::REPLICA) {
+            let _ = self.parser.expect_token(&Token::Eq);
             options.replica = Some(self.parse_number::<u64>()?);
         } else if self.parse_cnos_keyword(CnosKeyWord::PRECISION) {
+            let _ = self.parser.expect_token(&Token::Eq);
             options.precision = Some(self.parse_string_value()?);
         } else {
             return Ok(false);
@@ -1056,7 +1058,7 @@ impl<'a> ExtParser<'a> {
 
         let with_options = if self.parser.parse_keyword(Keyword::WITH) {
             self.parser
-                .parse_comma_separated(Parser::parse_sql_option)?
+                .parse_comma_separated(ExtParser::parse_sql_option)?
         } else {
             vec![]
         };
@@ -1097,7 +1099,7 @@ impl<'a> ExtParser<'a> {
 
         let with_options = if self.parser.parse_keyword(Keyword::WITH) {
             self.parser
-                .parse_comma_separated(Parser::parse_sql_option)?
+                .parse_comma_separated(ExtParser::parse_sql_option)?
         } else {
             vec![]
         };
@@ -1386,7 +1388,7 @@ impl<'a> ExtParser<'a> {
 
         let options = self
             .parser
-            .parse_comma_separated(Parser::parse_sql_option)?;
+            .parse_comma_separated(ExtParser::parse_sql_option)?;
 
         self.parser.expect_token(&Token::RParen)?;
 
@@ -1647,6 +1649,13 @@ impl<'a> ExtParser<'a> {
         };
         self.parser.expect_token(&Token::RParen)?;
         Ok(encoding)
+    }
+
+    fn parse_sql_option(parser: &mut Parser<'_>) -> Result<SqlOption, ParserError> {
+        let name = parser.parse_identifier()?;
+        let _ = parser.expect_token(&Token::Eq);
+        let value = parser.parse_value()?;
+        Ok(SqlOption { name, value })
     }
 }
 

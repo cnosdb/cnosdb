@@ -170,6 +170,8 @@ pub enum ReadCommand {
     TableSchema(String, String, String, String),
     // cluster
     ResourceInfos(String),
+    // cluster, resource_name
+    ResourceInfo(String, String),
     // cluster
     ResourceInfosMark(String),
 }

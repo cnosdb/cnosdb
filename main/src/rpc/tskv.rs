@@ -1,17 +1,15 @@
 use std::pin::Pin;
 use std::sync::Arc;
 
-use coordinator::file_info::get_files_meta;
 use coordinator::service::CoordinatorRef;
-use coordinator::vnode_mgr::VnodeManager;
 use coordinator::{FAILED_RESPONSE_CODE, SUCCESS_RESPONSE_CODE};
-use futures::{Stream, StreamExt, TryStreamExt};
+use futures::{Stream, TryStreamExt};
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::meta_data::VnodeInfo;
-use models::predicate::domain::{self, QueryArgs, QueryExpr, ResolvedPredicate};
-use models::schema::{Precision, TableColumn};
-use models::{record_batch_encode, SeriesKey};
+use models::predicate::domain::{self, QueryArgs, QueryExpr};
+use models::record_batch_encode;
+use models::schema::TableColumn;
 use protos::kv_service::tskv_service_server::TskvService;
 use protos::kv_service::*;
 use protos::models::{PingBody, PingBodyBuilder};
@@ -21,7 +19,7 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Extensions, Request, Response, Status};
 use trace::{debug, error, info, SpanContext, SpanExt, SpanRecorder};
-use tskv::error::{Error as TskvError, Result as TskvResult};
+use tskv::error::Result as TskvResult;
 use tskv::reader::query_executor::QueryExecutor;
 use tskv::reader::serialize::TonicRecordBatchEncoder;
 use tskv::reader::{QueryOption, SendableTskvRecordBatchStream};
@@ -57,142 +55,6 @@ impl TskvServiceImpl {
 
     fn tonic_status(&self, msg: String) -> tonic::Status {
         tonic::Status::new(tonic::Code::Internal, msg)
-    }
-
-    async fn admin_drop_db(
-        &self,
-        tenant: &str,
-        request: &DropDbRequest,
-    ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
-        if let Err(e) = self.kv_inst.drop_database(tenant, &request.db).await {
-            self.status_response(FAILED_RESPONSE_CODE, e.to_string())
-        } else {
-            self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
-        }
-    }
-
-    async fn admin_drop_table(
-        &self,
-        tenant: &str,
-        request: &DropTableRequest,
-    ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
-        if let Err(e) = self
-            .kv_inst
-            .drop_table(tenant, &request.db, &request.table)
-            .await
-        {
-            self.status_response(FAILED_RESPONSE_CODE, e.to_string())
-        } else {
-            self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
-        }
-    }
-
-    async fn admin_drop_column(
-        &self,
-        tenant: &str,
-        request: &DropColumnRequest,
-    ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
-        if let Err(e) = self
-            .kv_inst
-            .drop_table_column(tenant, &request.db, &request.table, &request.column)
-            .await
-        {
-            self.status_response(FAILED_RESPONSE_CODE, e.to_string())
-        } else {
-            self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
-        }
-    }
-
-    async fn admin_update_tags(
-        &self,
-        tenant: &str,
-        request: &UpdateTagsRequest,
-    ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
-        let UpdateTagsRequest {
-            db,
-            new_tags,
-            matched_series,
-            dry_run,
-        } = request;
-
-        let new_tags = new_tags
-            .iter()
-            .cloned()
-            .map(|UpdateSetValue { key, value }| tskv::UpdateSetValue { key, value })
-            .collect::<Vec<_>>();
-
-        let mut old_series = Vec::with_capacity(matched_series.len());
-        for series in matched_series.iter() {
-            let ss = SeriesKey::decode(series).map_err(|_| TskvError::InvalidParam {
-                reason:
-                    "Deserialize 'matched_series' of 'UpdateTagsRequest' failed, expected: SeriesKey"
-                        .to_string(),
-            })?;
-            old_series.push(ss);
-        }
-
-        self.kv_inst
-            .update_tags_value(tenant, db, &new_tags, &old_series, *dry_run)
-            .await?;
-
-        self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
-    }
-
-    async fn admin_delete_vnode(
-        &self,
-        tenant: &str,
-        request: &DeleteVnodeRequest,
-    ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
-        let meta = self.coord.meta_manager();
-        let manager = VnodeManager::new(
-            meta,
-            self.kv_inst.clone(),
-            self.coord.node_id(),
-            self.grpc_enable_gzip,
-        );
-        if let Err(err) = manager.drop_vnode(tenant, request.vnode_id).await {
-            self.status_response(FAILED_RESPONSE_CODE, err.to_string())
-        } else {
-            self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
-        }
-    }
-
-    async fn admin_copy_vnode(
-        &self,
-        tenant: &str,
-        request: &CopyVnodeRequest,
-    ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
-        let meta = self.coord.meta_manager();
-        let manager = VnodeManager::new(
-            meta,
-            self.kv_inst.clone(),
-            self.coord.node_id(),
-            self.grpc_enable_gzip,
-        );
-        if let Err(err) = manager.copy_vnode(tenant, request.vnode_id, true).await {
-            self.status_response(FAILED_RESPONSE_CODE, err.to_string())
-        } else {
-            self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
-        }
-    }
-
-    async fn admin_move_vnode(
-        &self,
-        tenant: &str,
-        request: &MoveVnodeRequest,
-    ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
-        let meta = self.coord.meta_manager();
-        let manager = VnodeManager::new(
-            meta,
-            self.kv_inst.clone(),
-            self.coord.node_id(),
-            self.grpc_enable_gzip,
-        );
-        if let Err(err) = manager.move_vnode(tenant, request.vnode_id).await {
-            self.status_response(FAILED_RESPONSE_CODE, err.to_string())
-        } else {
-            self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
-        }
     }
 
     async fn admin_compact_vnode(
@@ -365,67 +227,6 @@ impl TskvService for TskvServiceImpl {
         }))
     }
 
-    type WritePointsStream = ResponseStream<WritePointsResponse>;
-    // TODO remove, use `write_vnode_point` instead
-    async fn write_points(
-        &self,
-        request: tonic::Request<tonic::Streaming<WritePointsRequest>>,
-    ) -> Result<tonic::Response<Self::WritePointsStream>, tonic::Status> {
-        let mut stream = request.into_inner();
-        let (resp_sender, resp_receiver) = mpsc::channel(128);
-        while let Some(result) = stream.next().await {
-            match result {
-                Ok(req) => {
-                    let ret = self
-                        .kv_inst
-                        .write(None, 0, Precision::NS, req)
-                        .await
-                        .map_err(|err| tonic::Status::internal(err.to_string()));
-                    resp_sender.send(ret).await.expect("successful");
-                }
-                Err(status) => {
-                    match resp_sender.send(Err(status)).await {
-                        Ok(_) => (),
-                        Err(_err) => break, // response was dropped
-                    }
-                }
-            }
-        }
-
-        let out_stream = ReceiverStream::new(resp_receiver);
-
-        Ok(tonic::Response::new(Box::pin(out_stream)))
-    }
-
-    async fn write_vnode_points(
-        &self,
-        request: tonic::Request<WriteVnodeRequest>,
-    ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
-        let span_recorder = get_span_recorder(request.extensions(), "grpc write_vnode_points");
-        let inner = request.into_inner();
-        let request = WritePointsRequest {
-            version: 1,
-            meta: Some(Meta {
-                tenant: inner.tenant.clone(),
-                user: None,
-                password: None,
-            }),
-            points: inner.data,
-        };
-
-        let _ = self
-            .kv_inst
-            .write(
-                span_recorder.span_ctx(),
-                inner.vnode_id,
-                Precision::from(inner.precision as u8),
-                request,
-            )
-            .await?;
-
-        self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
-    }
-
     async fn exec_raft_write_command(
         &self,
         request: tonic::Request<RaftWriteCommand>,
@@ -514,29 +315,8 @@ impl TskvService for TskvServiceImpl {
 
         if let Some(command) = inner.command {
             let resp = match &command {
-                admin_command_request::Command::DropDb(command) => {
-                    self.admin_drop_db(&inner.tenant, command).await
-                }
-                admin_command_request::Command::DropTab(command) => {
-                    self.admin_drop_table(&inner.tenant, command).await
-                }
-                admin_command_request::Command::DelVnode(command) => {
-                    self.admin_delete_vnode(&inner.tenant, command).await
-                }
-                admin_command_request::Command::CopyVnode(command) => {
-                    self.admin_copy_vnode(&inner.tenant, command).await
-                }
-                admin_command_request::Command::MoveVnode(command) => {
-                    self.admin_move_vnode(&inner.tenant, command).await
-                }
                 admin_command_request::Command::CompactVnode(command) => {
                     self.admin_compact_vnode(&inner.tenant, command).await
-                }
-                admin_command_request::Command::DropColumn(command) => {
-                    self.admin_drop_column(&inner.tenant, command).await
-                }
-                admin_command_request::Command::UpdateTags(command) => {
-                    self.admin_update_tags(&inner.tenant, command).await
                 }
                 admin_command_request::Command::AddRaftFollower(command) => {
                     self.admin_add_raft_follower(&inner.tenant, command).await
@@ -574,113 +354,19 @@ impl TskvService for TskvServiceImpl {
         }
     }
 
-    async fn delete_from_table(
-        &self,
-        request: Request<DeleteFromTableRequest>,
-    ) -> Result<Response<StatusResponse>, Status> {
-        let inner = request.into_inner();
-
-        let predicate = match bincode::deserialize::<ResolvedPredicate>(&inner.predicate) {
-            Ok(p) => p,
-            Err(err) => {
-                return Err(Status::invalid_argument(format!(
-                    "Predicate of delete_from_table is invalid, error: {err}"
-                )))
-            }
-        };
-
-        self.kv_inst
-            .delete_from_table(
-                inner.vnode_id,
-                &inner.tenant,
-                &inner.database,
-                &inner.table,
-                &predicate,
-            )
-            .await?;
-
-        self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
-    }
-
-    async fn fetch_vnode_summary(
-        &self,
-        request: tonic::Request<FetchVnodeSummaryRequest>,
-    ) -> Result<tonic::Response<BatchBytesResponse>, tonic::Status> {
-        let inner = request.into_inner();
-        match self
-            .kv_inst
-            .get_vnode_summary(&inner.tenant, &inner.database, inner.vnode_id)
-            .await
-        {
-            Ok(opt_ve) => {
-                if let Some(ve) = opt_ve {
-                    match ve.encode() {
-                        Ok(bytes) => self.bytes_response(SUCCESS_RESPONSE_CODE, bytes),
-                        Err(err) => Err(self.tonic_status(err.to_string())),
-                    }
-                } else {
-                    self.bytes_response(SUCCESS_RESPONSE_CODE, vec![])
-                }
-            }
-            Err(err) => Err(self.tonic_status(err.to_string())),
-        }
-    }
-
-    async fn get_vnode_files_meta(
-        &self,
-        request: tonic::Request<GetVnodeFilesMetaRequest>,
-    ) -> Result<tonic::Response<GetFilesMetaResponse>, tonic::Status> {
-        let inner = request.into_inner();
-        let owner = models::schema::make_owner(&inner.tenant, &inner.db);
-        let storage_opt = self.kv_inst.get_storage_options();
-
-        if let Err(err) = self
-            .kv_inst
-            .prepare_copy_vnode(&inner.tenant, &inner.db, inner.vnode_id)
-            .await
-        {
-            return Err(tonic::Status::new(tonic::Code::Internal, err.to_string()));
-        }
-
-        let path = storage_opt.ts_family_dir(&owner, inner.vnode_id);
-        match get_files_meta(&path.as_path().to_string_lossy()).await {
-            Ok(files_meta) => {
-                info!("files meta: {:?} {:?}", path, files_meta);
-                Ok(tonic::Response::new(files_meta.into()))
-            }
-            Err(err) => Err(tonic::Status::new(tonic::Code::Internal, err.to_string())),
-        }
-    }
-
-    async fn get_vnode_snap_files_meta(
-        &self,
-        request: tonic::Request<GetVnodeSnapFilesMetaRequest>,
-    ) -> Result<tonic::Response<GetFilesMetaResponse>, tonic::Status> {
-        let inner = request.into_inner();
-        let owner = models::schema::make_owner(&inner.tenant, &inner.db);
-        let storage_opt = self.kv_inst.get_storage_options();
-
-        let path = storage_opt.snapshot_sub_dir(&owner, inner.vnode_id, inner.snapshot_id.as_str());
-        match get_files_meta(&path.as_path().to_string_lossy()).await {
-            Ok(files_meta) => {
-                info!("files meta: {:?} {:?}", path, files_meta);
-                Ok(tonic::Response::new(files_meta.into()))
-            }
-            Err(err) => Err(tonic::Status::new(tonic::Code::Internal, err.to_string())),
-        }
-    }
-
     type DownloadFileStream = ResponseStream<BatchBytesResponse>;
     async fn download_file(
         &self,
         request: tonic::Request<DownloadFileRequest>,
     ) -> Result<tonic::Response<Self::DownloadFileStream>, tonic::Status> {
         let inner = request.into_inner();
-        info!("download file info : {:?}", inner);
+        let opt = self.kv_inst.get_storage_options();
+        let filename = opt.path().join(inner.filename);
+        info!("request download file name: {:?}", filename);
 
         let (send, recv) = mpsc::channel(1024);
         tokio::spawn(async move {
-            if let Ok(mut file) = tokio::fs::File::open(inner.filename).await {
+            if let Ok(mut file) = tokio::fs::File::open(filename).await {
                 let mut buffer = vec![0; 8 * 1024];
                 while let Ok(len) = file.read(&mut buffer).await {
                     if len == 0 {

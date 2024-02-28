@@ -3,87 +3,66 @@ use std::fmt::Debug;
 use flatbuffers::InvalidFlatbuffer;
 use models::error_code::{ErrorCode, ErrorCoder};
 use protos::PointsError;
+use serde::{Deserialize, Serialize};
 use snafu::Snafu;
 use tonic::Status;
 
-#[derive(Snafu, Debug, ErrorCoder)]
+#[derive(Snafu, Serialize, Deserialize, Debug, ErrorCoder)]
 #[snafu(visibility(pub))]
 #[error_code(mod_code = "06")]
 pub enum ReplicationError {
-    StateStorageErr {
-        source: heed::Error,
-    },
-
-    #[snafu(display("Io error: {}", msg))]
+    #[snafu(display("stroage operation error: {}", msg))]
     #[error_code(code = 1)]
-    IOErrors {
-        msg: String,
-    },
-
-    #[snafu(display("Fails to send to channel: {}", msg))]
-    #[error_code(code = 2)]
-    ChannelSend {
-        msg: String,
-    },
-
-    #[snafu(display("Fails to recv from channel: {}", msg))]
-    #[error_code(code = 3)]
-    ChannelRecv {
-        msg: String,
-    },
+    StorageErr { msg: String },
 
     #[snafu(display("grpc client request error: {}", msg))]
     #[error_code(code = 4)]
-    GRPCRequest {
-        msg: String,
-    },
+    GRPCRequest { msg: String },
 
     #[snafu(display("message invalid encode/decode failed: {}", msg))]
     #[error_code(code = 5)]
-    MsgInvalid {
-        msg: String,
-    },
+    MsgInvalid { msg: String },
 
     #[snafu(display("ReplicationSet not found: {}", id))]
     #[error_code(code = 6)]
-    ReplicationSetNotFound {
-        id: u32,
-    },
+    ReplicationSetNotFound { id: u32 },
 
     #[snafu(display("Not enough valid replica of ReplicationSet({})", id))]
     #[error_code(code = 7)]
-    NoValidReplica {
-        id: u32,
-    },
+    NoValidReplica { id: u32 },
 
     #[snafu(display("Raft group not init: {}", id))]
     #[error_code(code = 8)]
-    GroupNotInit {
-        id: u32,
-    },
+    GroupNotInit { id: u32 },
 
     #[snafu(display("Raft group internal error: {}", msg))]
     #[error_code(code = 9)]
-    RaftInternalErr {
-        msg: String,
-    },
+    RaftInternalErr { msg: String },
 
     #[snafu(display("Process message timeout: {}", msg))]
     #[error_code(code = 10)]
-    ProcessTimeout {
-        msg: String,
-    },
+    ProcessTimeout { msg: String },
 
     #[snafu(display("Apply engine failed: {}", msg))]
     #[error_code(code = 11)]
-    ApplyEngineErr {
-        msg: String,
-    },
+    ApplyEngineErr { msg: String },
+
+    #[snafu(display("Create snapshot failed: {}", msg))]
+    #[error_code(code = 12)]
+    CreateSnapshotErr { msg: String },
+
+    #[snafu(display("Restore snapshot failed: {}", msg))]
+    #[error_code(code = 13)]
+    RestoreSnapshotErr { msg: String },
+
+    #[snafu(display("Destory raft node failed: {}", msg))]
+    #[error_code(code = 14)]
+    DestoryRaftNodeErr { msg: String },
 }
 
 impl From<std::io::Error> for ReplicationError {
     fn from(err: std::io::Error) -> Self {
-        ReplicationError::IOErrors {
+        ReplicationError::StorageErr {
             msg: err.to_string(),
         }
     }
@@ -91,30 +70,8 @@ impl From<std::io::Error> for ReplicationError {
 
 impl From<heed::Error> for ReplicationError {
     fn from(err: heed::Error) -> Self {
-        ReplicationError::StateStorageErr { source: err }
-    }
-}
-
-impl<T> From<tokio::sync::mpsc::error::SendError<T>> for ReplicationError {
-    fn from(err: tokio::sync::mpsc::error::SendError<T>) -> Self {
-        ReplicationError::ChannelSend {
+        ReplicationError::StorageErr {
             msg: err.to_string(),
-        }
-    }
-}
-
-impl From<tokio::sync::oneshot::error::RecvError> for ReplicationError {
-    fn from(err: tokio::sync::oneshot::error::RecvError) -> Self {
-        ReplicationError::ChannelRecv {
-            msg: err.to_string(),
-        }
-    }
-}
-
-impl From<Status> for ReplicationError {
-    fn from(s: Status) -> Self {
-        ReplicationError::GRPCRequest {
-            msg: format!("grpc status: {}", s),
         }
     }
 }

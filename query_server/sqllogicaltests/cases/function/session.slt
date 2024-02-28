@@ -41,6 +41,9 @@ statement ok
 create tenant t1;
 
 statement ok
+--#TENANT=t1
+
+statement ok
 create role r1 inherit member;
 
 statement ok
@@ -50,7 +53,6 @@ statement ok
 create database db1;
 
 statement ok
---#TENANT = t1
 --#USER_NAME = u1
 --#DATABASE = db1
 

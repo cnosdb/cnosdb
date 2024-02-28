@@ -73,10 +73,10 @@ test_rs_role1,custom,member
 
 -- EXECUTE SQL: drop role owner; --
 422 Unprocessable Entity
-{"error_code":"010076","error_message":"Couldn't Drop System Role owner"}
+{"error_code":"010076","error_message":"Couldn't drop system role owner"}
 -- ERROR:  --
 
 -- EXECUTE SQL: drop role member; --
 422 Unprocessable Entity
-{"error_code":"010076","error_message":"Couldn't Drop System Role member"}
+{"error_code":"010076","error_message":"Couldn't drop system role member"}
 -- ERROR:  --

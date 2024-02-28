@@ -5,7 +5,6 @@ use std::time::Duration;
 
 use meta::model::MetaRef;
 use models::meta_data::*;
-use models::schema::Precision;
 use protos::kv_service::*;
 use protos::{tskv_service_time_out_client, DEFAULT_GRPC_SERVER_MESSAGE_LEN};
 use replication::multi_raft::MultiRaft;
@@ -14,24 +13,16 @@ use replication::raft_node::RaftNode;
 use replication::state_store::{RaftNodeSummary, StateStorage};
 use replication::{ApplyStorageRef, EntryStorageRef, RaftNodeId, RaftNodeInfo, ReplicationConfig};
 use tokio::sync::RwLock;
-use tracing::{error, info};
+use tracing::info;
 use tskv::{wal, EngineRef};
 
+use super::TskvEngineStorage;
 use crate::errors::*;
 use crate::{get_replica_all_info, update_replication_set};
 
-pub struct RaftWriteRequest {
-    pub points: WritePointsRequest,
-    pub precision: Precision,
-}
-
 pub struct RaftNodesManager {
-    config: config::Config,
-    /// Unrapped config.cluster.grpc_listen_port.
-    grpc_listen_port: u16,
-    /// Is config.cluster.grpc_listen_port a Some(_).
-    enabled: bool,
     meta: MetaRef,
+    config: config::Config,
     kv_inst: Option<EngineRef>,
     raft_state: Arc<StateStorage>,
     raft_nodes: Arc<RwLock<MultiRaft>>,
@@ -41,22 +32,14 @@ impl RaftNodesManager {
     pub fn new(config: config::Config, meta: MetaRef, kv_inst: Option<EngineRef>) -> Self {
         let path = PathBuf::from(config.storage.path.clone()).join("raft-state");
         let state = StateStorage::open(path, config.cluster.lmdb_max_map_size).unwrap();
-        let grpc_listen_port = config.service.grpc_listen_port.unwrap_or(0);
-        let enabled = config.service.grpc_listen_port.is_some();
 
         Self {
-            config,
-            grpc_listen_port,
-            enabled,
             meta,
+            config,
             kv_inst,
             raft_state: Arc::new(state),
             raft_nodes: Arc::new(RwLock::new(MultiRaft::new())),
         }
-    }
-
-    pub fn enabled(&self) -> bool {
-        self.enabled
     }
 
     pub fn node_id(&self) -> u64 {
@@ -138,8 +121,8 @@ impl RaftNodesManager {
 
     pub async fn exec_drop_raft_node(
         &self,
-        tenant: &str,
-        db_name: &str,
+        _tenant: &str,
+        _db_name: &str,
         id: VnodeId,
         group_id: ReplicationSetId,
     ) -> CoordinatorResult<()> {
@@ -148,14 +131,6 @@ impl RaftNodesManager {
         if let Some(raft_node) = nodes.get_node(group_id) {
             raft_node.shutdown().await?;
             nodes.rm_node(group_id);
-
-            let vnode_id = raft_node.raft_id() as VnodeId;
-            if let Some(storage) = &self.kv_inst {
-                let err = storage.remove_tsfamily(tenant, db_name, vnode_id).await;
-                info!("drop raft node remove tsfamily: {:?}", err);
-            }
-
-            info!("success remove raft node({}) from group({})", id, group_id)
         } else {
             info!("can't found raft node({}) from group({})", id, group_id)
         }
@@ -212,9 +187,10 @@ impl RaftNodesManager {
     }
 
     async fn try_wait_leader_elected(&self, raft_node: Arc<RaftNode>) {
+        let group_id = raft_node.group_id();
         for _ in 0..10 {
             let result = raft_node.raw_raft().is_leader().await;
-            info!("try wait leader elected, check leader: {:?}", result);
+            info!("wait leader elected group: {}, {:?}", group_id, result);
             if let Err(err) = result {
                 if let Some(openraft::error::ForwardToLeader {
                     leader_id: Some(_id),
@@ -274,11 +250,6 @@ impl RaftNodesManager {
         )
         .await?;
 
-        let vnode_id = raft_node.raft_id() as VnodeId;
-        if let Some(storage) = &self.kv_inst {
-            let err = storage.remove_tsfamily(tenant, db_name, vnode_id).await;
-            info!("destory replica group remove tsfamily: {:?}", err);
-        }
         self.raft_nodes.write().await.rm_node(replica_id);
 
         Ok(())
@@ -396,45 +367,30 @@ impl RaftNodesManager {
         vnode_id: VnodeId,
         group_id: ReplicationSetId,
     ) -> CoordinatorResult<Arc<RaftNode>> {
-        if !self.enabled {
-            error!("Trying open local raft node that disabled grpc service: {group_id}.{vnode_id}");
-            return Err(CoordinatorError::InvalidInitialConfig {
-                msg: "grpc_listen_port is not set".to_string(),
-            });
-        }
         info!("Opening local raft node: {group_id}.{vnode_id}");
 
-        let engine = self.raft_node_engine(tenant, db_name, vnode_id).await?;
-        let entry = self
-            .raft_node_logs(tenant, db_name, vnode_id, group_id, engine.clone())
+        let (engine, raft_logs) = self
+            .open_vnode_storage(tenant, db_name, vnode_id, group_id)
             .await?;
 
-        let grpc_addr =
-            models::utils::build_address(&self.config.global.host, self.grpc_listen_port);
+        let port = self.config.service.grpc_listen_port.unwrap_or(0);
+        let grpc_addr = models::utils::build_address(&self.config.global.host, port);
         let info = RaftNodeInfo {
             group_id,
             address: grpc_addr,
         };
 
         let raft_id = vnode_id as u64;
-        let storage = NodeStorage::open(
+        let storage = Arc::new(NodeStorage::open(
             raft_id,
             info.clone(),
             self.raft_state.clone(),
             engine.clone(),
-            entry,
-        )?;
-        let config = ReplicationConfig {
-            cluster_name: self.config.global.cluster_name.clone(),
-            lmdb_max_map_size: self.config.cluster.lmdb_max_map_size,
-            grpc_enable_gzip: self.config.service.grpc_enable_gzip,
-            heartbeat_interval: self.config.cluster.heartbeat_interval,
-            raft_logs_to_keep: self.config.cluster.raft_logs_to_keep,
-            send_append_entries_timeout: self.config.cluster.send_append_entries_timeout,
-            install_snapshot_timeout: self.config.cluster.install_snapshot_timeout,
-        };
+            raft_logs,
+        )?);
 
-        let node = RaftNode::new(raft_id, info, Arc::new(storage), engine, config).await?;
+        let repl_config = self.replication_config();
+        let node = RaftNode::new(raft_id, info, storage, repl_config).await?;
 
         let summary = RaftNodeSummary {
             raft_id,
@@ -448,50 +404,57 @@ impl RaftNodesManager {
         Ok(Arc::new(node))
     }
 
-    async fn raft_node_logs(
+    async fn open_vnode_storage(
         &self,
         tenant: &str,
         db_name: &str,
         vnode_id: VnodeId,
         group_id: ReplicationSetId,
-        engine: ApplyStorageRef,
-    ) -> CoordinatorResult<EntryStorageRef> {
-        let owner = models::schema::make_owner(tenant, db_name);
-        let wal_option = tskv::kv_option::WalOptions::from(&self.config);
-
-        let wal = wal::VnodeWal::new(Arc::new(wal_option), Arc::new(owner), vnode_id).await?;
-        let raft_logs = wal::raft_store::RaftEntryStorage::new(wal);
-
-        let _apply_id = self.raft_state.get_last_applied_log(group_id)?;
-        raft_logs.recover(engine).await?;
-
-        Ok(Arc::new(raft_logs))
-    }
-
-    async fn raft_node_engine(
-        &self,
-        tenant: &str,
-        db_name: &str,
-        vnode_id: VnodeId,
-    ) -> CoordinatorResult<ApplyStorageRef> {
+    ) -> CoordinatorResult<(ApplyStorageRef, EntryStorageRef)> {
+        // 1. open vnode store
         let kv_inst = self.kv_inst.clone();
         let storage = kv_inst.ok_or(CoordinatorError::KvInstanceNotFound {
             node_id: self.node_id(),
         })?;
+        let mut vnode_store = storage.open_tsfamily(tenant, db_name, vnode_id).await?;
 
-        let vnode = storage.open_tsfamily(tenant, db_name, vnode_id).await?;
-        let engine = super::TskvEngineStorage::open(
-            self.node_id(),
+        // 2. open raft logs storage
+        let owner = models::schema::make_owner(tenant, db_name);
+        let wal_option = tskv::kv_option::WalOptions::from(&self.config);
+        let wal = wal::VnodeWal::new(Arc::new(wal_option), Arc::new(owner), vnode_id).await?;
+        let mut raft_logs = wal::raft_store::RaftEntryStorage::new(wal);
+
+        // 3. recover data...
+        let _apply_id = self.raft_state.get_last_applied_log(group_id)?;
+        raft_logs.recover(&mut vnode_store).await?;
+
+        // 4. open raft apply storage
+        let engine = TskvEngineStorage::open(
             tenant,
             db_name,
             vnode_id,
             self.meta.clone(),
-            Arc::new(vnode),
+            vnode_store.clone(),
             storage,
             self.config.service.grpc_enable_gzip,
         );
-        let engine: ApplyStorageRef = Arc::new(engine);
-        Ok(engine)
+
+        let engine = Arc::new(RwLock::new(engine));
+        let raft_logs = Arc::new(RwLock::new(raft_logs));
+
+        Ok((engine, raft_logs))
+    }
+
+    fn replication_config(&self) -> ReplicationConfig {
+        ReplicationConfig {
+            cluster_name: self.config.global.cluster_name.clone(),
+            lmdb_max_map_size: self.config.cluster.lmdb_max_map_size,
+            grpc_enable_gzip: self.config.service.grpc_enable_gzip,
+            heartbeat_interval: self.config.cluster.heartbeat_interval,
+            raft_logs_to_keep: self.config.cluster.raft_logs_to_keep,
+            send_append_entries_timeout: self.config.cluster.send_append_entries_timeout,
+            install_snapshot_timeout: self.config.cluster.install_snapshot_timeout,
+        }
     }
 
     async fn drop_remote_raft_node(

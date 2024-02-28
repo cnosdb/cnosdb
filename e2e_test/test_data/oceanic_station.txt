@@ -1,0 +1,3 @@
+air,station=XiaoMaiDao visibility=79,temperature=80,pressure=63 1673712000000000000
+wind,station=XiaoMaiDao speed=57,direction=56 1673712000000000000
+sea,station=XiaoMaiDao temperature=55 1673712000000000000

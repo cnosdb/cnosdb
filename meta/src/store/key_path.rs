@@ -24,6 +24,7 @@ pub const LIMITER: &str = "limiter";
 pub const DATA_NODES: &str = "data_nodes";
 pub const AUTO_INCR_ID: &str = "auto_incr_id";
 pub const DATA_NODES_METRICS: &str = "data_nodes_metrics";
+pub const RESOURCE_INFOS: &str = "resourceinfos";
 pub const RESOURCE_INFOS_MARK: &str = "resourceinfosmark";
 
 pub struct KeyPath {}

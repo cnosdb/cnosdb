@@ -79,6 +79,18 @@ fn case1() {
             auth: None,
         },
         Step::RestartDataNode(0),
+
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Ddl { url, sql: "SELECT * FROM air", 
+            resp:Err(E2eError::Api {
+                status: StatusCode::UNPROCESSABLE_ENTITY,
+                url: None,
+                req: None,
+                resp: Some(r#"{"error_code":"010001","error_message":"Datafusion: Error during planning: Table not found, tenant: cnosdb db: public, table: air"}"#.to_string()),
+            }), },
+            auth: None,
+        },
+
         Step::CnosdbRequest {
             req: CnosdbRequest::Query { url, sql: "SHOW TABLES", resp: Ok(vec![]), sorted: false, regex: false, },
             auth: None,
@@ -680,7 +692,7 @@ fn case6() {
     let executor = E2eExecutor::new_cluster(
         "restart_tests",
         "case_6",
-        cluster_def::three_meta_two_data_bundled(),
+        cluster_def::one_meta_two_data_bundled(),
     );
     executor.execute_steps(&[
         Step::Sleep(30),
@@ -709,6 +721,7 @@ fn case6() {
             auth: None,
         },
         Step::StopDataNode(1),
+        Step::Sleep(30),
         Step::CnosdbRequest {
             req: CnosdbRequest::Ddl {
                 url: url_cnosdb_public,
@@ -717,7 +730,6 @@ fn case6() {
             },
             auth: None,
         },
-        Step::Sleep(71),
         Step::CnosdbRequest {
             req: CnosdbRequest::Query {
                 url: url_cnosdb_public,
@@ -729,6 +741,7 @@ fn case6() {
             auth: None,
         },
         Step::StartDataNode(1),
+        Step::Sleep(30),
         Step::CnosdbRequest {
             req: CnosdbRequest::Query {
                 url: url_cnosdb_public,

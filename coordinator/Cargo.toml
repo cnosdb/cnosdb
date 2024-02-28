@@ -32,6 +32,7 @@ serde = { workspace = true, features = ["derive"] }
 tokio = { workspace = true, features = ["macros", "net", "parking_lot", "rt-multi-thread", "signal", "sync", "time", "tracing"] }
 tokio-stream = { workspace = true, features = ["net"] }
 tokio-util = { workspace = true }
+tokio-retry = { workspace = true }
 futures = { workspace = true, features = ["alloc"] }
 tower = { workspace = true }
 tonic = { workspace = true }

@@ -6,41 +6,20 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use datafusion::arrow::record_batch::RecordBatch;
 use models::meta_data::VnodeId;
-use models::predicate::domain::{ColumnDomains, ResolvedPredicate};
-use models::schema::Precision;
-use models::{SeriesId, SeriesKey, TagKey, TagValue};
-use protos::kv_service::{WritePointsRequest, WritePointsResponse};
-use protos::models as fb_models;
-use trace::{debug, SpanContext};
+use models::predicate::domain::ColumnDomains;
+use models::{SeriesId, SeriesKey};
 
 use crate::error::Result;
 use crate::kv_option::StorageOptions;
-use crate::summary::VersionEdit;
 use crate::tseries_family::SuperVersion;
 use crate::vnode_store::VnodeStorage;
-use crate::{Engine, TseriesFamilyId, UpdateSetValue};
+use crate::{Engine, TseriesFamilyId};
 
 #[derive(Debug, Default)]
 pub struct MockEngine {}
 
 #[async_trait]
 impl Engine for MockEngine {
-    async fn write(
-        &self,
-        _span_ctx: Option<&SpanContext>,
-        id: u32,
-        precision: Precision,
-        write_batch: WritePointsRequest,
-    ) -> Result<WritePointsResponse> {
-        debug!("writing point");
-        let points = Arc::new(write_batch.points);
-        let fb_points = flatbuffers::root::<fb_models::Points>(&points).unwrap();
-
-        debug!("writed point: {:?}", fb_points);
-
-        Ok(WritePointsResponse { points_number: 0 })
-    }
-
     async fn open_tsfamily(
         &self,
         tenant: &str,
@@ -55,11 +34,6 @@ impl Engine for MockEngine {
     }
 
     async fn flush_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()> {
-        Ok(())
-    }
-
-    async fn drop_database(&self, tenant: &str, database: &str) -> Result<()> {
-        println!("drop_database.sql {:?}", database);
         Ok(())
     }
 
@@ -82,33 +56,6 @@ impl Engine for MockEngine {
     // fn get_db_schema(&self, tenant: &str, name: &str) -> Result<Option<DatabaseSchema>> {
     //     Ok(Some(DatabaseSchema::new(tenant, name)))
     // }
-
-    async fn drop_table(&self, tenant: &str, database: &str, table: &str) -> Result<()> {
-        println!("drop_table db:{:?}, table:{:?}", database, table);
-        Ok(())
-    }
-
-    async fn update_tags_value(
-        &self,
-        tenant: &str,
-        database: &str,
-        new_tags: &[UpdateSetValue<TagKey, TagValue>],
-        matched_series: &[SeriesKey],
-        dry_run: bool,
-    ) -> Result<()> {
-        Ok(())
-    }
-
-    async fn delete_from_table(
-        &self,
-        vnode_id: VnodeId,
-        tenant: &str,
-        database: &str,
-        table: &str,
-        predicate: &ResolvedPredicate,
-    ) -> Result<()> {
-        todo!()
-    }
 
     async fn get_series_id_by_filter(
         &self,
@@ -141,44 +88,11 @@ impl Engine for MockEngine {
         todo!()
     }
 
-    async fn get_vnode_summary(
-        &self,
-        tenant: &str,
-        database: &str,
-        vnode_id: u32,
-    ) -> Result<Option<VersionEdit>> {
-        todo!()
-    }
-
-    async fn apply_vnode_summary(
-        &self,
-        tenant: &str,
-        database: &str,
-        vnode_id: u32,
-        summary: VersionEdit,
-    ) -> Result<()> {
-        todo!()
-    }
-
     // fn alter_database(&self, schema: &DatabaseSchema) -> Result<()> {
     //     todo!()
     // }
 
-    async fn drop_table_column(
-        &self,
-        tenant: &str,
-        database: &str,
-        table: &str,
-        column: &str,
-    ) -> Result<()> {
-        todo!()
-    }
-
     fn get_storage_options(&self) -> Arc<StorageOptions> {
-        todo!()
-    }
-
-    async fn drop_vnode(&self, id: TseriesFamilyId) -> Result<()> {
         todo!()
     }
 
@@ -191,8 +105,4 @@ impl Engine for MockEngine {
     }
 
     async fn close(&self) {}
-
-    async fn prepare_copy_vnode(&self, tenant: &str, database: &str, vnode_id: u32) -> Result<()> {
-        todo!()
-    }
 }

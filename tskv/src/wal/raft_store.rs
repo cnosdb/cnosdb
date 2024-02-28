@@ -1,90 +1,82 @@
-use std::sync::Arc;
-
 use openraft::EntryPayload;
+use protos::kv_service::RaftWriteCommand;
+use protos::models_helper::parse_prost_bytes;
 use replication::errors::{ReplicationError, ReplicationResult};
-use replication::{ApplyStorageRef, EntryStorage, RaftNodeId, RaftNodeInfo, TypeConfig};
-use tokio::sync::Mutex;
+use replication::{EntryStorage, RaftNodeId, RaftNodeInfo, TypeConfig};
 
 use super::reader::WalRecordData;
 use crate::file_system::file_manager;
+use crate::vnode_store::VnodeStorage;
 use crate::wal::reader::{Block, WalReader};
-use crate::wal::{writer, VnodeWal};
+use crate::wal::VnodeWal;
 use crate::{file_utils, Error, Result};
 
 pub type RaftEntry = openraft::Entry<TypeConfig>;
 pub type RaftLogMembership = openraft::Membership<RaftNodeId, RaftNodeInfo>;
-pub type RaftRequestForWalWrite = writer::Task;
 
 pub struct RaftEntryStorage {
-    inner: Arc<Mutex<RaftEntryStorageInner>>,
+    inner: RaftEntryStorageInner,
 }
 
 impl RaftEntryStorage {
     pub fn new(wal: VnodeWal) -> Self {
         Self {
-            inner: Arc::new(Mutex::new(RaftEntryStorageInner {
+            inner: RaftEntryStorageInner {
                 wal,
                 files_meta: vec![],
                 entry_cache: cache::CircularKVCache::new(256),
-            })),
+            },
         }
     }
 
     /// Read WAL files to recover
-    pub async fn recover(&self, engine: ApplyStorageRef) -> Result<()> {
-        let mut inner = self.inner.lock().await;
-        inner.recover(engine).await
+    pub async fn recover(&mut self, vode_store: &mut VnodeStorage) -> Result<()> {
+        self.inner.recover(vode_store).await
     }
 }
 
 #[async_trait::async_trait]
 impl EntryStorage for RaftEntryStorage {
-    async fn append(&self, entries: &[RaftEntry]) -> ReplicationResult<()> {
+    async fn append(&mut self, entries: &[RaftEntry]) -> ReplicationResult<()> {
         if entries.is_empty() {
             return Ok(());
         }
 
-        let mut inner = self.inner.lock().await;
         for ent in entries {
-            let (wal_id, pos) = inner
+            let (wal_id, pos) = self
+                .inner
                 .wal
                 .write_raft_entry(ent)
                 .await
                 .map_err(|e| ReplicationError::RaftInternalErr { msg: e.to_string() })?;
 
-            inner.mark_write_wal(ent.clone(), wal_id, pos);
+            self.inner.mark_write_wal(ent.clone(), wal_id, pos);
         }
         Ok(())
     }
 
-    async fn del_before(&self, seq_no: u64) -> ReplicationResult<()> {
-        let mut inner = self.inner.lock().await;
-        inner.mark_delete_before(seq_no).await;
+    async fn del_before(&mut self, seq_no: u64) -> ReplicationResult<()> {
+        self.inner.mark_delete_before(seq_no).await;
 
         Ok(())
     }
 
-    async fn del_after(&self, seq_no: u64) -> ReplicationResult<()> {
-        let mut inner = self.inner.lock().await;
-        inner.mark_delete_after(seq_no).await?;
+    async fn del_after(&mut self, seq_no: u64) -> ReplicationResult<()> {
+        self.inner.mark_delete_after(seq_no).await?;
 
         Ok(())
     }
 
-    async fn entry(&self, seq_no: u64) -> ReplicationResult<Option<RaftEntry>> {
-        let mut inner = self.inner.lock().await;
-
-        inner.read_raft_entry(seq_no).await
+    async fn entry(&mut self, seq_no: u64) -> ReplicationResult<Option<RaftEntry>> {
+        self.inner.read_raft_entry(seq_no).await
     }
 
-    async fn last_entry(&self) -> ReplicationResult<Option<RaftEntry>> {
-        let mut inner = self.inner.lock().await;
-        inner.wal_last_entry().await
+    async fn last_entry(&mut self) -> ReplicationResult<Option<RaftEntry>> {
+        self.inner.wal_last_entry().await
     }
 
-    async fn entries(&self, begin: u64, end: u64) -> ReplicationResult<Vec<RaftEntry>> {
-        let mut inner = self.inner.lock().await;
-        inner.read_raft_entry_range(begin, end).await
+    async fn entries(&mut self, begin: u64, end: u64) -> ReplicationResult<Vec<RaftEntry>> {
+        self.inner.read_raft_entry_range(begin, end).await
     }
 }
 
@@ -365,7 +357,7 @@ impl RaftEntryStorageInner {
     }
 
     /// Read WAL files to recover: engine, index, cache.
-    pub async fn recover(&mut self, engine: ApplyStorageRef) -> Result<()> {
+    pub async fn recover(&mut self, vode_store: &mut VnodeStorage) -> Result<()> {
         let wal_files = file_manager::list_file_names(self.wal.wal_dir());
         for file_name in wal_files {
             // If file name cannot be parsed to wal id, skip that file.
@@ -395,7 +387,11 @@ impl RaftEntryStorageInner {
                                     raft_id: self.wal.vnode_id as u64,
                                     apply_type: replication::APPLY_TYPE_WAL,
                                 };
-                                engine.apply(&ctx, req).await.unwrap();
+
+                                let request = parse_prost_bytes::<RaftWriteCommand>(req).unwrap();
+                                if let Some(command) = request.command {
+                                    vode_store.apply(&ctx, command).await.unwrap();
+                                }
                             }
 
                             self.mark_write_wal(entry, wal_id, r.pos);
@@ -429,6 +425,7 @@ mod test {
     use replication::node_store::NodeStorage;
     use replication::state_store::StateStorage;
     use replication::{ApplyStorageRef, EntryStorage, EntryStorageRef, RaftNodeInfo};
+    use tokio::sync::RwLock;
 
     use crate::wal::raft_store::{RaftEntry, RaftEntryStorage};
     use crate::wal::VnodeWal;
@@ -459,7 +456,7 @@ mod test {
         std::fs::create_dir_all(&dir).unwrap();
 
         let wal = get_vnode_wal(dir).await.unwrap();
-        let storage = RaftEntryStorage::new(wal);
+        let mut storage = RaftEntryStorage::new(wal);
 
         for i in 0..10 {
             let mut entry = RaftEntry::default();
@@ -509,14 +506,14 @@ mod test {
         let dir = dir.as_ref();
         let wal = get_vnode_wal(dir).await.unwrap();
         let entry = RaftEntryStorage::new(wal);
-        let entry: EntryStorageRef = Arc::new(entry);
+        let entry: EntryStorageRef = Arc::new(RwLock::new(entry));
 
         let size = 1024 * 1024 * 1024;
         let state = StateStorage::open(dir.join("state"), size).unwrap();
         let engine = HeedApplyStorage::open(dir.join("engine"), size).unwrap();
 
         let state = Arc::new(state);
-        let engine: ApplyStorageRef = Arc::new(engine);
+        let engine: ApplyStorageRef = Arc::new(RwLock::new(engine));
 
         let info = RaftNodeInfo {
             group_id: 2222,

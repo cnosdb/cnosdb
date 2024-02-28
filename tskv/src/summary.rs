@@ -217,6 +217,18 @@ impl VersionEdit {
         }
     }
 
+    pub fn update_vnode_id(&mut self, new_id: u32) {
+        self.tsf_id = new_id;
+
+        for f in self.add_files.iter_mut() {
+            f.tsf_id = new_id;
+        }
+
+        for f in self.del_files.iter_mut() {
+            f.tsf_id = new_id;
+        }
+    }
+
     pub fn encode(&self) -> Result<Vec<u8>> {
         bincode::serialize(self).map_err(|e| Error::RecordFileEncode { source: (e) })
     }
@@ -965,10 +977,8 @@ mod test {
                 .map_err(|e| format!("[{}] {e}", &self.test_case_name))
                 .unwrap();
 
-                let (wal_task_sender, _wal_task_receiver) = mpsc::channel(1);
                 let tskv_context = Arc::new(TsKvContext {
                     options: self.options.clone(),
-                    wal_sender: wal_task_sender,
                     flush_task_sender: self.flush_task_sender.clone(),
                     compact_task_sender: self.compact_task_sender.clone(),
                     summary_task_sender: self.summary_task_sender.clone(),
@@ -1151,7 +1161,7 @@ mod test {
                 edits.push(edit.clone());
             }
             summary_1
-                .apply_version_edit(edits.drain(..).collect(), HashMap::new(), HashMap::new())
+                .apply_version_edit(std::mem::take(&mut edits), HashMap::new(), HashMap::new())
                 .await
                 .unwrap();
 

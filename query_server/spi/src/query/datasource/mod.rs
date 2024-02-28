@@ -8,6 +8,7 @@ use object_store::path::Path;
 use object_store::ObjectStore;
 
 use super::logical_planner::ConnectionOptions;
+use super::session::SqlExecInfo;
 
 pub mod azure;
 pub mod gcs;
@@ -15,28 +16,38 @@ pub mod s3;
 pub mod stream;
 
 pub struct WriteContext {
+    query_id: String,
     location: Path,
     task_id: String,
     partition: usize,
     file_extension: String,
+    sql_exec_info: SqlExecInfo,
 }
 
 impl WriteContext {
     pub fn new(
+        query_id: String,
         location: Path,
         task_id: Option<String>,
         partition: usize,
         file_extension: String,
+        sql_exec_info: SqlExecInfo,
     ) -> Self {
         // If no task_id is specified, a uuid is used to generate one
         let task_id = task_id.unwrap_or_else(|| oid::uuid_u64().to_string());
 
         Self {
+            query_id,
             location,
             task_id,
             partition,
             file_extension,
+            sql_exec_info,
         }
+    }
+
+    pub fn query_id(&self) -> &str {
+        &self.query_id
     }
 
     pub fn location(&self) -> &Path {
@@ -53,6 +64,10 @@ impl WriteContext {
 
     pub fn file_extension(&self) -> &str {
         &self.file_extension
+    }
+
+    pub fn sql_exec_info(&self) -> &SqlExecInfo {
+        &self.sql_exec_info
     }
 }
 

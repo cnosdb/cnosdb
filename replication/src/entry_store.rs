@@ -43,7 +43,7 @@ impl HeedEntryStorage {
 
 #[async_trait]
 impl EntryStorage for HeedEntryStorage {
-    async fn append(&self, ents: &[Entry<TypeConfig>]) -> ReplicationResult<()> {
+    async fn append(&mut self, ents: &[Entry<TypeConfig>]) -> ReplicationResult<()> {
         if ents.is_empty() {
             return Ok(());
         }
@@ -60,7 +60,7 @@ impl EntryStorage for HeedEntryStorage {
         Ok(())
     }
 
-    async fn last_entry(&self) -> ReplicationResult<Option<Entry<TypeConfig>>> {
+    async fn last_entry(&mut self) -> ReplicationResult<Option<Entry<TypeConfig>>> {
         let reader = self.env.read_txn()?;
         if let Some((_, data)) = self.db.last(&reader)? {
             let entry = bincode::deserialize::<Entry<TypeConfig>>(&data)?;
@@ -70,7 +70,7 @@ impl EntryStorage for HeedEntryStorage {
         }
     }
 
-    async fn entry(&self, index: u64) -> ReplicationResult<Option<Entry<TypeConfig>>> {
+    async fn entry(&mut self, index: u64) -> ReplicationResult<Option<Entry<TypeConfig>>> {
         let reader = self.env.read_txn()?;
         if let Some(data) = self.db.get(&reader, &BEU64::new(index))? {
             let entry = bincode::deserialize::<Entry<TypeConfig>>(&data)?;
@@ -80,7 +80,7 @@ impl EntryStorage for HeedEntryStorage {
         }
     }
 
-    async fn entries(&self, low: u64, high: u64) -> ReplicationResult<Vec<Entry<TypeConfig>>> {
+    async fn entries(&mut self, low: u64, high: u64) -> ReplicationResult<Vec<Entry<TypeConfig>>> {
         let mut ents = vec![];
 
         let reader = self.env.read_txn()?;
@@ -94,7 +94,7 @@ impl EntryStorage for HeedEntryStorage {
         Ok(ents)
     }
 
-    async fn del_after(&self, index: u64) -> ReplicationResult<()> {
+    async fn del_after(&mut self, index: u64) -> ReplicationResult<()> {
         let mut writer = self.env.write_txn()?;
         let range = BEU64::new(index)..;
         self.db.delete_range(&mut writer, &range)?;
@@ -103,7 +103,7 @@ impl EntryStorage for HeedEntryStorage {
         Ok(())
     }
 
-    async fn del_before(&self, index: u64) -> ReplicationResult<()> {
+    async fn del_before(&mut self, index: u64) -> ReplicationResult<()> {
         let mut writer = self.env.write_txn()?;
         let range = ..BEU64::new(index);
         self.db.delete_range(&mut writer, &range)?;

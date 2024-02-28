@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures::TryFutureExt;
-use models::meta_data::{NodeId, NodeMetrics};
+use models::meta_data::NodeMetrics;
 use models::node_info::NodeStatus;
 use protos::raft_service::raft_service_server::RaftServiceServer;
 use replication::entry_store::HeedEntryStorage;
@@ -13,7 +13,7 @@ use replication::network_http::{EitherBody, RaftHttpAdmin, SyncSendError};
 use replication::node_store::NodeStorage;
 use replication::raft_node::RaftNode;
 use replication::state_store::StateStorage;
-use replication::{EntryStorageRef, RaftNodeInfo, ReplicationConfig};
+use replication::{RaftNodeInfo, ReplicationConfig};
 use tokio::sync::RwLock;
 use tower::Service;
 use tracing::warn;
@@ -38,8 +38,8 @@ pub async fn start_raft_node(opt: store::config::Opt) -> MetaResult<()> {
     let engine = StateMachine::open(path.join(format!("{}_data", id)), max_size)?;
 
     let state = Arc::new(state);
-    let engine = Arc::new(engine);
-    let entry: EntryStorageRef = Arc::new(entry);
+    let engine = Arc::new(RwLock::new(engine));
+    let entry = Arc::new(RwLock::new(entry));
 
     let info = RaftNodeInfo {
         group_id: 2222,
@@ -57,11 +57,14 @@ pub async fn start_raft_node(opt: store::config::Opt) -> MetaResult<()> {
         install_snapshot_timeout: opt.install_snapshot_timeout,
     };
 
-    let node = RaftNode::new(id, info, Arc::new(storage), engine.clone(), config)
+    let node = RaftNode::new(id, info, Arc::new(storage), config)
         .await
         .unwrap();
+    {
+        let mut engine_w = engine.write().await;
+        init_meta(&mut engine_w, opt.meta_init.clone()).await;
+    }
 
-    init_meta(&engine, opt.meta_init.clone()).await;
     tokio::spawn(detect_node_heartbeat(
         node.clone(),
         engine.clone(),
@@ -77,7 +80,7 @@ pub async fn start_raft_node(opt: store::config::Opt) -> MetaResult<()> {
 
 async fn detect_node_heartbeat(
     node: RaftNode,
-    storage: Arc<StateMachine>,
+    storage: Arc<RwLock<StateMachine>>,
     init_data: MetaInit,
     heartbeat_config: HeartBeatConfig,
 ) {
@@ -90,7 +93,10 @@ async fn detect_node_heartbeat(
         interval.tick().await;
 
         if let Ok(_leader) = node.raw_raft().is_leader().await {
-            let opt_list = storage.children_data::<NodeMetrics>(&metrics_path);
+            let opt_list = storage
+                .read()
+                .await
+                .children_data::<NodeMetrics>(&metrics_path);
 
             if let Ok(list) = opt_list {
                 let node_metrics_list: Vec<NodeMetrics> = list.into_values().collect();
@@ -115,30 +121,6 @@ async fn detect_node_heartbeat(
                                 tracing::error!("failed to change node status to unreachable");
                             }
                         }
-
-                        let resourceinfos_mark_path =
-                            KeyPath::resourceinfosmark(&init_data.cluster_name);
-                        let result =
-                            storage.children_data::<(NodeId, bool)>(&resourceinfos_mark_path);
-                        if let Ok(opt) = result {
-                            let node_id_is_lock_vec: Vec<(NodeId, bool)> =
-                                opt.into_values().collect();
-                            for node_id_is_lock in node_id_is_lock_vec {
-                                if node_id_is_lock.0 == node_metrics.id && node_id_is_lock.1 {
-                                    let req = WriteCommand::ResourceInfosMark(
-                                        init_data.cluster_name.clone(),
-                                        node_metrics.id,
-                                        false,
-                                    );
-
-                                    if let Ok(data) = serde_json::to_vec(&req) {
-                                        if node.raw_raft().client_write(data).await.is_err() {
-                                            tracing::error!("write resourceinfos_mark failed");
-                                        }
-                                    }
-                                }
-                            }
-                        }
                     }
                 }
             }
@@ -150,7 +132,7 @@ async fn detect_node_heartbeat(
 async fn start_warp_grpc_server(
     addr: String,
     node: RaftNode,
-    storage: Arc<StateMachine>,
+    storage: Arc<RwLock<StateMachine>>,
 ) -> MetaResult<()> {
     let node = Arc::new(node);
     let raft_admin = RaftHttpAdmin::new(node.clone());

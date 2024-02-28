@@ -42,6 +42,6 @@ drop tenant tenant_delay1;
 
 select name,action,try_count,status from information_schema.resource_status where name in ('tenant_delay', 'tenant_delay1') order by name;
 
---#SLEEP=120000
+--#SLEEP=65000
 
 select name,action,try_count,status from information_schema.resource_status where name in ('tenant_delay', 'tenant_delay1') order by name;

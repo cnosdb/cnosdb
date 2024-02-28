@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 #![allow(unused)]
-#![feature(trait_upcasting)]
 
 use std::convert::Infallible as StdInfallible;
 use std::net::SocketAddr;
@@ -64,21 +63,20 @@ async fn start_raft_node(
     http_addr: String,
     grpc_enable_gzip: bool,
 ) -> ReplicationResult<()> {
-    let path = format!("/tmp/cnosdb/{}", id);
+    let info = RaftNodeInfo {
+        group_id: 2222,
+        address: http_addr.clone(),
+    };
 
+    let path = format!("/tmp/cnosdb/{}", id);
     let max_size = 1024 * 1024 * 1024;
     let state = StateStorage::open(format!("{}-state", path), max_size)?;
     let entry = HeedEntryStorage::open(format!("{}-entry", path), max_size)?;
     let engine = HeedApplyStorage::open(format!("{}-engine", path), max_size)?;
 
     let state = Arc::new(state);
-    let entry: EntryStorageRef = Arc::new(entry);
-    let engine: ApplyStorageRef = Arc::new(engine);
-
-    let info = RaftNodeInfo {
-        group_id: 2222,
-        address: http_addr.clone(),
-    };
+    let entry = Arc::new(RwLock::new(entry));
+    let engine = Arc::new(RwLock::new(engine));
 
     let storage = NodeStorage::open(id, info.clone(), state, engine.clone(), entry)?;
     let storage = Arc::new(storage);
@@ -92,21 +90,22 @@ async fn start_raft_node(
         send_append_entries_timeout: 3 * 1000,
         install_snapshot_timeout: 300 * 1000,
     };
-
-    let node = RaftNode::new(id, info, storage, engine, config)
-        .await
-        .unwrap();
-
-    start_warp_grpc_server(http_addr, node).await?;
+    let node = RaftNode::new(id, info, storage, config).await.unwrap();
+    start_warp_grpc_server(http_addr, node, engine).await?;
 
     Ok(())
 }
 
 // **************************** http and grpc server ************************************** //
-async fn start_warp_grpc_server(addr: String, node: RaftNode) -> ReplicationResult<()> {
+async fn start_warp_grpc_server(
+    addr: String,
+    node: RaftNode,
+    engine: Arc<RwLock<HeedApplyStorage>>,
+) -> ReplicationResult<()> {
     let node = Arc::new(node);
     let raft_admin = RaftHttpAdmin::new(node.clone());
     let http_server = HttpServer {
+        engine,
         node: node.clone(),
         raft_admin: Arc::new(raft_admin),
     };
@@ -146,15 +145,14 @@ async fn start_warp_grpc_server(addr: String, node: RaftNode) -> ReplicationResu
             ))
         }))
         .await
-        .map_err(|err| ReplicationError::IOErrors {
-            msg: err.to_string(),
-        })?;
+        .unwrap();
 
     Ok(())
 }
 
 struct HttpServer {
     node: Arc<RaftNode>,
+    engine: Arc<RwLock<HeedApplyStorage>>,
     raft_admin: Arc<RaftHttpAdmin>,
 }
 
@@ -179,6 +177,15 @@ impl HttpServer {
         warp::serve(self.routes()).run(addr).await;
     }
 
+    fn with_engine(
+        &self,
+    ) -> impl Filter<Extract = (Arc<RwLock<HeedApplyStorage>>,), Error = StdInfallible> + Clone
+    {
+        let engine = self.engine.clone();
+
+        warp::any().map(move || engine.clone())
+    }
+
     fn with_raft_node(
         &self,
     ) -> impl Filter<Extract = (Arc<RaftNode>,), Error = StdInfallible> + Clone {
@@ -196,23 +203,25 @@ impl HttpServer {
     fn read(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
         warp::path!("read")
             .and(warp::body::bytes())
-            .and(self.with_raft_node())
-            .and_then(|req: hyper::body::Bytes, node: Arc<RaftNode>| async move {
-                let req: String = serde_json::from_slice(&req)
-                    .map_err(ReplicationError::from)
-                    .map_err(warp::reject::custom)?;
+            .and(self.with_engine())
+            .and_then(
+                |req: hyper::body::Bytes, engine: Arc<RwLock<HeedApplyStorage>>| async move {
+                    let req: String = serde_json::from_slice(&req)
+                        .map_err(ReplicationError::from)
+                        .map_err(warp::reject::custom)?;
 
-                let engine = node.apply_store();
-                let engine = Arc::downcast::<HeedApplyStorage>(engine).unwrap();
-                let rsp = engine
-                    .get(&req)
-                    .map_or_else(|err| Some(err.to_string()), |v| v)
-                    .unwrap_or("not found value by key".to_string());
+                    let rsp = engine
+                        .read()
+                        .await
+                        .get(&req)
+                        .map_or_else(|err| Some(err.to_string()), |v| v)
+                        .unwrap_or("not found value by key".to_string());
 
-                let res: Result<String, warp::Rejection> = Ok(rsp);
+                    let res: Result<String, warp::Rejection> = Ok(rsp);
 
-                res
-            })
+                    res
+                },
+            )
     }
 
     fn write(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {

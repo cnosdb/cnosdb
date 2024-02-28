@@ -1,53 +1,51 @@
-use std::path::Path;
-use std::sync::Arc;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use meta::model::MetaRef;
-use models::meta_data::{NodeId, VnodeId};
+use models::meta_data::VnodeId;
 use protos::kv_service::tskv_service_client::TskvServiceClient;
-use protos::kv_service::{GetFilesMetaResponse, GetVnodeSnapFilesMetaRequest, RaftWriteCommand};
+use protos::kv_service::{DownloadFileRequest, RaftWriteCommand};
 use protos::models_helper::parse_prost_bytes;
 use protos::{tskv_service_time_out_client, DEFAULT_GRPC_SERVER_MESSAGE_LEN};
 use replication::errors::{ReplicationError, ReplicationResult};
 use replication::{ApplyContext, ApplyStorage};
+use tokio::io::AsyncWriteExt;
+use tokio_stream::StreamExt;
 use tonic::transport::Channel;
 use tower::timeout::Timeout;
-use tracing::info;
+use tracing::{error, info};
+use tskv::file_system::file_info;
+use tskv::kv_option::StorageOptions;
 use tskv::vnode_store::VnodeStorage;
 use tskv::VnodeSnapshot;
 
 use crate::errors::{CoordinatorError, CoordinatorResult};
-use crate::file_info::get_file_info;
-use crate::vnode_mgr::VnodeManager;
 
 pub mod manager;
 pub mod writer;
 
 pub struct TskvEngineStorage {
-    node_id: NodeId,
     tenant: String,
     db_name: String,
     vnode_id: VnodeId,
     meta: MetaRef,
-    vnode: Arc<VnodeStorage>,
+    vnode: VnodeStorage,
     storage: tskv::EngineRef,
     grpc_enable_gzip: bool,
 }
 
 impl TskvEngineStorage {
     pub fn open(
-        node_id: NodeId,
         tenant: &str,
         db_name: &str,
         vnode_id: VnodeId,
         meta: MetaRef,
-        vnode: Arc<VnodeStorage>,
+        vnode: VnodeStorage,
         storage: tskv::EngineRef,
         grpc_enable_gzip: bool,
     ) -> Self {
         Self {
             meta,
-            node_id,
             vnode_id,
             storage,
             vnode,
@@ -57,7 +55,11 @@ impl TskvEngineStorage {
         }
     }
 
-    pub async fn download_snapshot(&self, snapshot: &VnodeSnapshot) -> CoordinatorResult<()> {
+    pub async fn download_snapshot(
+        &self,
+        dir: &PathBuf,
+        snapshot: &VnodeSnapshot,
+    ) -> CoordinatorResult<()> {
         let channel = self.meta.get_node_conn(snapshot.node_id).await?;
         let mut client = tskv_service_time_out_client(
             channel,
@@ -66,20 +68,15 @@ impl TskvEngineStorage {
             self.grpc_enable_gzip,
         );
 
-        let owner = models::schema::make_owner(&snapshot.tenant, &snapshot.database);
-        let path = self.storage.get_storage_options().snapshot_sub_dir(
-            &owner,
-            self.vnode_id,
-            &snapshot.snapshot_id,
-        );
-        info!("snapshot path: {:?}", path);
+        info!("download snapshot to path: {:?}", dir);
         if let Err(err) = self
-            .download_snapshot_files(&path, snapshot, &mut client)
+            .download_snapshot_files(dir, snapshot, &mut client)
             .await
         {
-            tokio::fs::remove_dir_all(&path).await?;
+            tokio::fs::remove_dir_all(&dir).await?;
             return Err(err);
         }
+
         info!("success download snapshot all files");
 
         Ok(())
@@ -87,23 +84,28 @@ impl TskvEngineStorage {
 
     async fn download_snapshot_files(
         &self,
-        data_path: &Path,
+        dir: &Path,
         snapshot: &VnodeSnapshot,
         client: &mut TskvServiceClient<Timeout<Channel>>,
     ) -> CoordinatorResult<()> {
-        let files_meta = self.get_snapshot_files_meta(snapshot, client).await?;
-        for info in files_meta.infos.iter() {
-            let relative_filename = info
-                .name
-                .strip_prefix(&(files_meta.path.clone() + "/"))
-                .unwrap();
+        let src_dir = StorageOptions::fmt_snapshot_dir(
+            &models::schema::make_owner(&self.tenant, &self.db_name),
+            snapshot.vnode_id,
+            &snapshot.snapshot_id,
+        );
 
-            let filename = data_path.join(relative_filename);
-            info!("begin download file: {:?} -> {:?}", info.name, filename);
-            VnodeManager::download_file(&info.name, &filename, client).await?;
+        for info in snapshot.files_info.iter() {
+            let filename = dir.join(&info.name);
+            let src_filename = src_dir.join(&info.name).to_string_lossy().to_string();
 
+            info!(
+                "begin download file:{} -> {:?}, from {}",
+                src_filename, filename, snapshot.node_id
+            );
+
+            Self::download_file(&src_filename, &filename, client).await?;
             let filename = filename.to_string_lossy().to_string();
-            let tmp_info = get_file_info(&filename).await?;
+            let tmp_info = file_info::get_file_info(&filename).await?;
             if tmp_info.md5 != info.md5 {
                 return Err(CoordinatorError::CommonError {
                     msg: "download file md5 not match ".to_string(),
@@ -114,35 +116,50 @@ impl TskvEngineStorage {
         Ok(())
     }
 
-    async fn get_snapshot_files_meta(
-        &self,
-        snapshot: &VnodeSnapshot,
+    async fn download_file(
+        download: &str,
+        filename: &Path,
         client: &mut TskvServiceClient<Timeout<Channel>>,
-    ) -> CoordinatorResult<GetFilesMetaResponse> {
-        let request = tonic::Request::new(GetVnodeSnapFilesMetaRequest {
-            tenant: snapshot.tenant.to_string(),
-            db: snapshot.database.to_string(),
-            vnode_id: snapshot.vnode_id,
-            snapshot_id: snapshot.snapshot_id.to_string(),
-        });
+    ) -> CoordinatorResult<()> {
+        if let Some(dir) = filename.parent() {
+            tokio::fs::create_dir_all(dir).await?;
+        }
 
-        let resp = client
-            .get_vnode_snap_files_meta(request)
+        let mut file = tokio::fs::OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .read(true)
+            .write(true)
+            .open(filename)
+            .await?;
+
+        let request = tonic::Request::new(DownloadFileRequest {
+            filename: download.to_string(),
+        });
+        let mut resp_stream = client
+            .download_file(request)
             .await
             .map_err(tskv::Error::from)?
             .into_inner();
-        info!(
-            "vnode id: {}, snapshot files meta: {:?}",
-            snapshot.vnode_id, resp
-        );
+        while let Some(received) = resp_stream.next().await {
+            let received = received?;
+            if received.code != crate::SUCCESS_RESPONSE_CODE {
+                return Err(CoordinatorError::GRPCRequest {
+                    msg: format!(
+                        "server status: {}, {:?}",
+                        received.code,
+                        String::from_utf8(received.data)
+                    ),
+                });
+            }
 
-        Ok(resp)
+            file.write_all(&received.data).await?;
+        }
+
+        Ok(())
     }
-}
 
-#[async_trait::async_trait]
-impl ApplyStorage for TskvEngineStorage {
-    async fn apply(
+    async fn exec_apply(
         &self,
         ctx: &ApplyContext,
         req: &replication::Request,
@@ -158,62 +175,64 @@ impl ApplyStorage for TskvEngineStorage {
 
         Ok(vec![])
     }
+}
 
-    async fn snapshot(&self) -> ReplicationResult<Vec<u8>> {
-        let mut snapshot =
-            self.vnode
-                .create_snapshot()
-                .await
-                .map_err(|err| ReplicationError::ApplyEngineErr {
-                    msg: err.to_string(),
-                })?;
+#[async_trait::async_trait]
+impl ApplyStorage for TskvEngineStorage {
+    async fn apply(
+        &mut self,
+        ctx: &ApplyContext,
+        req: &replication::Request,
+    ) -> ReplicationResult<replication::Response> {
+        let apply_result = self.exec_apply(ctx, req).await;
+        if let Err(err) = &apply_result {
+            error!("replication apply failed: {:?}; {:?}", ctx, err);
+        }
 
-        snapshot.node_id = self.node_id;
+        match bincode::serialize(&apply_result) {
+            Ok(data) => Ok(data),
+            Err(err) => Ok(err.to_string().into()),
+        }
+    }
+
+    async fn snapshot(&mut self) -> ReplicationResult<Vec<u8>> {
+        let snapshot = self.vnode.create_snapshot().await.map_err(|err| {
+            ReplicationError::CreateSnapshotErr {
+                msg: err.to_string(),
+            }
+        })?;
 
         let data = bincode::serialize(&snapshot)?;
         Ok(data)
     }
 
-    async fn restore(&self, data: &[u8]) -> ReplicationResult<()> {
+    async fn restore(&mut self, data: &[u8]) -> ReplicationResult<()> {
         let snapshot = bincode::deserialize::<VnodeSnapshot>(data)?;
-        self.download_snapshot(&snapshot).await.map_err(|err| {
-            ReplicationError::ApplyEngineErr {
-                msg: err.to_string(),
-            }
-        })?;
+        let opt = self.storage.get_storage_options();
+        let download_dir = opt.path().join(&snapshot.snapshot_id);
 
-        let owner = models::schema::make_owner(&snapshot.tenant, &snapshot.database);
-        let vnode_move_dir = self
-            .storage
-            .get_storage_options()
-            .move_dir(&owner, self.vnode_id);
-        let snapshot_dir = self.storage.get_storage_options().snapshot_sub_dir(
-            &owner,
-            self.vnode_id,
-            &snapshot.snapshot_id,
-        );
-        info!(
-            "rename snpshot dir to move dir: {:?} -> {:?}",
-            snapshot_dir, vnode_move_dir
-        );
-        tokio::fs::rename(&snapshot_dir, vnode_move_dir).await?;
-
-        let mut snapshot = snapshot.clone();
-        snapshot.vnode_id = self.vnode_id;
-        self.vnode.apply_snapshot(snapshot).await.map_err(|err| {
-            ReplicationError::ApplyEngineErr {
+        self.download_snapshot(&download_dir, &snapshot)
+            .await
+            .map_err(|err| ReplicationError::RestoreSnapshotErr {
                 msg: err.to_string(),
-            }
-        })?;
+            })?;
+
+        self.vnode
+            .apply_snapshot(snapshot, &download_dir)
+            .await
+            .map_err(|err| ReplicationError::RestoreSnapshotErr {
+                msg: err.to_string(),
+            })?;
 
         Ok(())
     }
 
-    async fn destory(&self) -> ReplicationResult<()> {
+    async fn destory(&mut self) -> ReplicationResult<()> {
+        info!("destory vnode id: {}", self.vnode_id);
         self.storage
             .remove_tsfamily(&self.tenant, &self.db_name, self.vnode_id)
             .await
-            .map_err(|err| ReplicationError::ApplyEngineErr {
+            .map_err(|err| ReplicationError::DestoryRaftNodeErr {
                 msg: err.to_string(),
             })?;
 

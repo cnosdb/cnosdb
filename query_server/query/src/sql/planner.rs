@@ -1632,6 +1632,9 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         } = stmt;
 
         let role_name = normalize_ident(name);
+        if SystemTenantRole::try_from(role_name.as_str()).is_ok() {
+            return Err(QueryError::ForbiddenCreateSystemRole { role: role_name });
+        }
         let tenant_name = session.tenant();
         let tenant_id = *session.tenant_id();
 
@@ -1808,6 +1811,12 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             AlterUserOperation::Set(sql_option) => {
                 let user_options = sql_options_to_user_options(vec![sql_option])?;
                 if user_options.granted_admin().is_some() {
+                    if user_desc.is_root_admin() {
+                        return Err(QueryError::InvalidParam {
+                            reason: "The root user does not support changing granted_admin"
+                                .to_string(),
+                        });
+                    }
                     // 修改admin参数需要系统管理权限
                     privileges = vec![Privilege::Global(GlobalPrivilege::System)];
                 }
@@ -2784,6 +2793,7 @@ mod tests {
     use std::any::Any;
     use std::sync::Arc;
 
+    use coordinator::service_mock::MockCoordinator;
     use datafusion::arrow::datatypes::TimeUnit::Nanosecond;
     use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
     use datafusion::datasource::TableProvider;
@@ -2952,7 +2962,14 @@ mod tests {
         let context = ContextBuilder::new(user).build();
         let pool = UnboundedMemoryPool::default();
         SessionCtxFactory::default()
-            .create_session_ctx("", &context, 0_u128, Arc::new(pool), None)
+            .create_session_ctx(
+                "",
+                &context,
+                0_u128,
+                Arc::new(pool),
+                None,
+                Arc::new(MockCoordinator {}),
+            )
             .unwrap()
     }
 

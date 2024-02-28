@@ -53,13 +53,13 @@ pub struct StateMachine {
 
 #[async_trait::async_trait]
 impl ApplyStorage for StateMachine {
-    async fn apply(&self, _ctx: &ApplyContext, req: &Request) -> ReplicationResult<Response> {
+    async fn apply(&mut self, _ctx: &ApplyContext, req: &Request) -> ReplicationResult<Response> {
         let req: WriteCommand = serde_json::from_slice(req)?;
 
         Ok(self.process_write_command(&req).into())
     }
 
-    async fn snapshot(&self) -> ReplicationResult<Vec<u8>> {
+    async fn snapshot(&mut self) -> ReplicationResult<Vec<u8>> {
         let mut hash_map = BTreeMap::new();
 
         let reader = self.env.read_txn()?;
@@ -75,7 +75,7 @@ impl ApplyStorage for StateMachine {
         Ok(json_str.as_bytes().to_vec())
     }
 
-    async fn restore(&self, snapshot: &[u8]) -> ReplicationResult<()> {
+    async fn restore(&mut self, snapshot: &[u8]) -> ReplicationResult<()> {
         let data: BtreeMapSnapshotData = serde_json::from_slice(snapshot).unwrap();
 
         let mut writer = self.env.write_txn()?;
@@ -88,7 +88,7 @@ impl ApplyStorage for StateMachine {
         Ok(())
     }
 
-    async fn destory(&self) -> ReplicationResult<()> {
+    async fn destory(&mut self) -> ReplicationResult<()> {
         Ok(())
     }
 }
@@ -125,7 +125,7 @@ impl StateMachine {
         Ok(())
     }
 
-    pub async fn dump(&self) -> MetaResult<String> {
+    pub async fn dump(&mut self) -> MetaResult<String> {
         let data = self.snapshot().await.map_err(MetaError::from)?;
 
         let data: BtreeMapSnapshotData = serde_json::from_slice(&data).map_err(MetaError::from)?;
@@ -404,6 +404,9 @@ impl StateMachine {
                 let path = KeyPath::tenant_schema_name(cluster, tenant_name, db_name, table_name);
                 response_encode(self.get_struct::<TableSchema>(&path))
             }
+            ReadCommand::ResourceInfo(cluster, resource_name) => {
+                response_encode(self.process_read_resourceinfo_by_name(cluster, resource_name))
+            }
             ReadCommand::ResourceInfos(cluster) => {
                 response_encode(self.process_read_resourceinfos(cluster))
             }
@@ -503,6 +506,17 @@ impl StateMachine {
         debug!("returned members of path {}: {:?}", path, members);
 
         Ok(members)
+    }
+
+    pub fn process_read_resourceinfo_by_name(
+        &self,
+        cluster: &str,
+        name: &str,
+    ) -> MetaResult<Option<ResourceInfo>> {
+        let path = KeyPath::resourceinfos(cluster, name);
+        let res = self.get_struct::<ResourceInfo>(&path)?;
+
+        Ok(res)
     }
 
     pub fn process_read_resourceinfos(&self, cluster: &str) -> MetaResult<Vec<ResourceInfo>> {
@@ -1262,15 +1276,21 @@ impl StateMachine {
         role: &TenantRoleIdentifier,
         tenant_name: &str,
     ) -> MetaResult<()> {
-        let key = KeyPath::member(cluster, tenant_name, user_id);
+        let member_key = KeyPath::member(cluster, tenant_name, user_id);
+        let role_key = KeyPath::role(cluster, tenant_name, role.name());
 
-        if self.contains_key(&key)? {
-            return Err(MetaError::UserAlreadyExists {
+        match (
+            self.contains_key(&member_key)?,
+            self.contains_key(&role_key)? || SystemTenantRole::try_from(role.name()).is_ok(),
+        ) {
+            (false, true) => self.insert(&member_key, &value_encode(&role)?),
+            (true, _) => Err(MetaError::UserAlreadyExists {
                 user: user_id.to_string(),
-            });
+            }),
+            (_, false) => Err(MetaError::RoleNotFound {
+                role: role.name().to_owned(),
+            }),
         }
-
-        self.insert(&key, &value_encode(&role)?)
     }
 
     fn process_remove_member_to_tenant(
@@ -1299,15 +1319,21 @@ impl StateMachine {
         role: &TenantRoleIdentifier,
         tenant_name: &str,
     ) -> MetaResult<()> {
-        let key = KeyPath::member(cluster, tenant_name, user_id);
+        let member_key = KeyPath::member(cluster, tenant_name, user_id);
+        let role_key = KeyPath::role(cluster, tenant_name, role.name());
 
-        if !self.contains_key(&key)? {
-            return Err(MetaError::UserNotFound {
+        match (
+            self.contains_key(&member_key)?,
+            self.contains_key(&role_key)? || SystemTenantRole::try_from(role.name()).is_ok(),
+        ) {
+            (true, true) => self.insert(&member_key, &value_encode(&role)?),
+            (false, _) => Err(MetaError::UserNotFound {
                 user: user_id.to_string(),
-            });
+            }),
+            (_, false) => Err(MetaError::RoleNotFound {
+                role: role.name().to_owned(),
+            }),
         }
-
-        self.insert(&key, &value_encode(&role)?)
     }
 
     fn process_create_role(

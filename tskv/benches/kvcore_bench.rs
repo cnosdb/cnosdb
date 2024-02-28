@@ -5,9 +5,9 @@ use memory_pool::GreedyMemoryPool;
 use meta::model::meta_admin::AdminMeta;
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
+use models::meta_data::VnodeId;
 use models::schema::Precision;
-use parking_lot::Mutex;
-use protos::kv_service::WritePointsRequest;
+use protos::kv_service::{raft_write_command, WriteDataRequest};
 use protos::models_helper;
 use tokio::runtime::{self, Runtime};
 use tskv::{Engine, TsKv};
@@ -39,10 +39,24 @@ async fn get_tskv() -> TsKv {
     .unwrap()
 }
 
-fn test_write(tskv: Arc<Mutex<TsKv>>, request: WritePointsRequest) {
-    let rt = Runtime::new().unwrap();
-    rt.block_on(tskv.lock().write(None, 0, Precision::NS, request))
-        .unwrap();
+fn tskv_write(
+    rt: Arc<Runtime>,
+    tskv: &TsKv,
+    tenant: &str,
+    db: &str,
+    id: VnodeId,
+    index: u64,
+    request: WriteDataRequest,
+) {
+    let apply_ctx = replication::ApplyContext {
+        index,
+        raft_id: id.into(),
+        apply_type: replication::APPLY_TYPE_WRITE,
+    };
+    let vnode_store = Arc::new(rt.block_on(tskv.open_tsfamily(tenant, db, id)).unwrap());
+
+    let command = raft_write_command::Command::WriteData(request);
+    rt.block_on(vnode_store.apply(&apply_ctx, command)).unwrap();
 }
 
 // fn test_insert_cache(tskv: Arc<Mutex<TsKv>>, buf: &[u8]) {
@@ -63,22 +77,28 @@ fn test_write(tskv: Arc<Mutex<TsKv>>, request: WritePointsRequest) {
 fn big_write(c: &mut Criterion) {
     c.bench_function("big_write", |b| {
         b.iter(|| {
-            let rt = Runtime::new().unwrap();
+            let rt = Arc::new(Runtime::new().unwrap());
             let tskv = rt.block_on(get_tskv());
-            for _i in 0..50 {
-                let _database = "db".to_string();
+
+            for index in 0..50 {
                 let mut fbb = flatbuffers::FlatBufferBuilder::new();
                 let points = models_helper::create_big_random_points(&mut fbb, "big_write", 10);
                 fbb.finish(points, None);
                 let points = fbb.finished_data().to_vec();
-
-                let request = WritePointsRequest {
-                    version: 1,
-                    meta: None,
-                    points,
+                let request = WriteDataRequest {
+                    data: points,
+                    precision: Precision::NS as u32,
                 };
-                rt.block_on(tskv.write(None, 0, Precision::NS, request))
-                    .unwrap();
+
+                tskv_write(
+                    rt.clone(),
+                    &tskv,
+                    "cnosdb",
+                    "public",
+                    0,
+                    index,
+                    request.clone(),
+                );
             }
         })
     });
@@ -86,23 +106,34 @@ fn big_write(c: &mut Criterion) {
 
 #[allow(dead_code)]
 fn run(c: &mut Criterion) {
-    let rt = Runtime::new().unwrap();
-    let tskv = Arc::new(Mutex::new(rt.block_on(get_tskv())));
+    let rt = Arc::new(Runtime::new().unwrap());
+    let tskv = rt.block_on(get_tskv());
     let _database = "db".to_string();
     let mut fbb = flatbuffers::FlatBufferBuilder::new();
     let points = models_helper::create_random_points_with_delta(&mut fbb, 1);
     fbb.finish(points, None);
     let points_str = fbb.finished_data();
     let points = points_str.to_vec();
-    let request = WritePointsRequest {
-        version: 1,
-        meta: None,
-        points,
+    let request = WriteDataRequest {
+        data: points,
+        precision: Precision::NS as u32,
     };
 
     // maybe 500 us
+    let mut index = 0;
     c.bench_function("write", |b| {
-        b.iter(|| test_write(tskv.clone(), request.clone()))
+        b.iter(|| {
+            index += 1;
+            tskv_write(
+                rt.clone(),
+                &tskv,
+                "cnosdb",
+                "public",
+                0,
+                index,
+                request.clone(),
+            );
+        })
     });
     // maybe 200 us
     // c.bench_function("insert_cache", |b| {

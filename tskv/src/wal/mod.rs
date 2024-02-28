@@ -39,35 +39,22 @@ pub mod raft_store;
 mod reader;
 pub mod writer;
 
-use std::collections::HashMap;
 use std::fmt::Display;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
 
 use minivec::MiniVec;
 use models::codec::Encoding;
 use models::meta_data::VnodeId;
-use models::predicate::domain::TimeRanges;
-use models::schema::Precision;
-use models::{SeriesId, SeriesKey};
 use snafu::ResultExt;
-use tokio::sync::{oneshot, RwLock};
-use tokio::time::timeout;
+use tokio::sync::oneshot;
 
 use self::reader::WalReader;
-use self::writer::{
-    ClearWalEntry, DeleteTableTask, DeleteTask, DeleteVnodeTask, UpdateSeriesKeys, WalWriter,
-    WriteTask,
-};
+use self::writer::WalWriter;
 use crate::file_system::file_manager;
 use crate::kv_option::WalOptions;
 use crate::tsm::codec::{get_str_codec, StringCodec};
-use crate::version_set::VersionSet;
-pub use crate::wal::reader::{
-    print_wal_statistics, Block, DeleteBlock, DeleteTableBlock, DeleteVnodeBlock,
-    UpdateSeriesKeysBlock, WriteBlock,
-};
+pub use crate::wal::reader::{print_wal_statistics, Block};
 use crate::{error, file_utils, Result};
 
 const WAL_TYPE_LEN: usize = 1;
@@ -95,12 +82,6 @@ type WriteResultReceiver = oneshot::Receiver<crate::Result<(u64, usize)>>;
 #[repr(u8)]
 #[derive(Eq, PartialEq, Clone, Copy, Debug)]
 pub enum WalType {
-    Write = 1,
-    DeleteVnode = 11,
-    DeleteTable = 21,
-    UpdateSeriesKeys = 22,
-    Delete = 23,
-    ClearWalEntry = 50,
     RaftBlankLog = 101,
     RaftNormalLog = 102,
     RaftMembershipLog = 103,
@@ -110,12 +91,6 @@ pub enum WalType {
 impl From<u8> for WalType {
     fn from(typ: u8) -> Self {
         match typ {
-            1 => WalType::Write,
-            11 => WalType::DeleteVnode,
-            21 => WalType::DeleteTable,
-            22 => WalType::UpdateSeriesKeys,
-            23 => WalType::Delete,
-            50 => WalType::ClearWalEntry,
             101 => WalType::RaftBlankLog,
             102 => WalType::RaftNormalLog,
             103 => WalType::RaftMembershipLog,
@@ -127,209 +102,12 @@ impl From<u8> for WalType {
 impl Display for WalType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            WalType::Write => write!(f, "write"),
-            WalType::DeleteVnode => write!(f, "delete_vnode"),
-            WalType::DeleteTable => write!(f, "delete_table"),
-            WalType::UpdateSeriesKeys => write!(f, "update_series_keys"),
-            WalType::Delete => write!(f, "delete"),
-            WalType::ClearWalEntry => write!(f, "clear_wal_entry"),
             WalType::RaftBlankLog => write!(f, "raft_log_blank"),
             WalType::RaftNormalLog => write!(f, "raft_log_normal"),
             WalType::RaftMembershipLog => write!(f, "raft_log_membership"),
             WalType::Unknown => write!(f, "unknown"),
         }
     }
-}
-
-pub struct WalTask {
-    pub seq: u64,
-    pub task: writer::Task,
-    pub result_sender: WriteResultSender,
-}
-
-impl WalTask {
-    pub fn new_write(
-        tenant: String,
-        database: String,
-        vnode_id: VnodeId,
-        precision: Precision,
-        points: Vec<u8>,
-    ) -> (WalTask, WriteResultReceiver) {
-        let (cb, rx) = oneshot::channel();
-        (
-            Self {
-                seq: 0,
-                task: writer::Task::new_write(tenant, database, vnode_id, precision, points),
-                result_sender: cb,
-            },
-            rx,
-        )
-    }
-
-    pub fn new_delete_vnode(
-        tenant: String,
-        database: String,
-        vnode_id: VnodeId,
-    ) -> (WalTask, WriteResultReceiver) {
-        let (cb, rx) = oneshot::channel();
-        (
-            Self {
-                seq: 0,
-                task: writer::Task::new_delete_vnode(tenant, database, vnode_id),
-                result_sender: cb,
-            },
-            rx,
-        )
-    }
-
-    pub fn new_delete_table(
-        tenant: String,
-        database: String,
-        table: String,
-    ) -> (WalTask, WriteResultReceiver) {
-        let (cb, rx) = oneshot::channel();
-        (
-            Self {
-                seq: 0,
-                task: writer::Task::new_delete_table(tenant, database, table),
-                result_sender: cb,
-            },
-            rx,
-        )
-    }
-
-    pub fn new_update_tags(
-        tenant: String,
-        database: String,
-        vnode_id: VnodeId,
-        old_series_keys: Vec<SeriesKey>,
-        new_series_keys: Vec<SeriesKey>,
-        series_ids: Vec<SeriesId>,
-    ) -> (WalTask, WriteResultReceiver) {
-        let (cb, rx) = oneshot::channel();
-        (
-            Self {
-                seq: 0,
-                task: writer::Task::new_update_series_keys(
-                    tenant,
-                    database,
-                    vnode_id,
-                    old_series_keys,
-                    new_series_keys,
-                    series_ids,
-                ),
-                result_sender: cb,
-            },
-            rx,
-        )
-    }
-
-    pub fn new_delete(
-        tenant: String,
-        database: String,
-        table: String,
-        vnode_id: VnodeId,
-        series_ids: Vec<SeriesId>,
-        time_ranges: TimeRanges,
-    ) -> (WalTask, WriteResultReceiver) {
-        let (cb, rx) = oneshot::channel();
-        (
-            Self {
-                seq: 0,
-                task: writer::Task::new_delete(
-                    tenant,
-                    database,
-                    table,
-                    vnode_id,
-                    series_ids,
-                    time_ranges,
-                ),
-                result_sender: cb,
-            },
-            rx,
-        )
-    }
-
-    pub fn new_clear_wal_entry(
-        tenant_database: String,
-        vnode_id: VnodeId,
-        sequence: u64,
-    ) -> (WalTask, WriteResultReceiver) {
-        let task = writer::Task::ClearWalEntry(ClearWalEntry {
-            tenant_database,
-            vnode_id,
-            sequence,
-        });
-
-        let (cb, rx) = oneshot::channel();
-        (
-            Self {
-                seq: 0,
-                task,
-                result_sender: cb,
-            },
-            rx,
-        )
-    }
-
-    pub fn new_from(wal_task: &WalTask, cb: WriteResultSender) -> WalTask {
-        WalTask {
-            seq: wal_task.seq,
-            task: wal_task.task.clone(),
-            result_sender: cb,
-        }
-    }
-
-    pub fn wal_entry_type(&self) -> WalType {
-        match self.task {
-            writer::Task::Write { .. } => WalType::Write,
-            writer::Task::DeleteVnode { .. } => WalType::DeleteVnode,
-            writer::Task::DeleteTable { .. } => WalType::DeleteTable,
-            writer::Task::UpdateSeriesKeys { .. } => WalType::UpdateSeriesKeys,
-            writer::Task::Delete { .. } => WalType::UpdateSeriesKeys,
-            writer::Task::ClearWalEntry { .. } => WalType::ClearWalEntry,
-        }
-    }
-
-    fn write_wal_result_sender(self) -> WriteResultSender {
-        self.result_sender
-    }
-
-    pub fn fail(self, e: crate::Error) -> crate::Result<()> {
-        self.write_wal_result_sender()
-            .send(Err(e))
-            .map_err(|_| crate::Error::ChannelSend {
-                source: crate::error::ChannelSendError::WalTask,
-            })
-    }
-
-    pub fn owner(&self) -> String {
-        self.task.tenant_database()
-    }
-
-    pub fn vnode_id(&self) -> Option<VnodeId> {
-        self.task.vnode_id()
-    }
-}
-
-#[async_trait::async_trait]
-pub trait Wal {
-    type Task;
-    type Block;
-
-    async fn write_at_seq_no(&mut self, seq_no: u64, task: WriteTask) -> Result<usize>;
-
-    async fn read_at_seq_no(&self, seq_no: u64) -> Result<Option<Block>>;
-
-    async fn check_to_delete(&mut self, min_seq_no: u64) -> Result<()>;
-
-    async fn flush(&mut self) -> Result<()>;
-
-    async fn close(&mut self) -> Result<()>;
-
-    fn current_wal_id(&self) -> u64;
-
-    fn current_seq_no(&self) -> u64;
 }
 
 pub struct VnodeWal {
@@ -457,105 +235,6 @@ impl VnodeWal {
         }
     }
 
-    /// Checks if wal file is full then writes data. Return data sequence and data size.
-    pub async fn write(&mut self, wal_task: WalTask) {
-        match self.write_inner_task(&wal_task.task).await {
-            Ok((seq, size)) => {
-                if let Err(e) = wal_task.result_sender.send(Ok((seq, size))) {
-                    // WAL job closed, leaving this write request.
-                    trace::warn!("send WAL write result failed: {:?}", e);
-                }
-            }
-            Err(e) => {
-                if wal_task.fail(e).is_err() {
-                    trace::error!("Failed to send roll WAL error to tskv");
-                }
-            }
-        }
-    }
-
-    async fn write_inner_task(&mut self, task: &writer::Task) -> Result<(u64, usize)> {
-        if let Err(err) = self.roll_wal_file(self.config.max_file_size).await {
-            trace::warn!("roll wal file failed: {}", err);
-        }
-
-        match task {
-            writer::Task::Write(WriteTask {
-                tenant,
-                vnode_id,
-                precision,
-                points,
-                ..
-            }) => {
-                self.current_wal
-                    .write(tenant, *vnode_id, *precision, points)
-                    .await
-            }
-            writer::Task::DeleteVnode(DeleteVnodeTask {
-                tenant,
-                database,
-                vnode_id,
-            }) => {
-                self.current_wal
-                    .delete_vnode(tenant, database, *vnode_id)
-                    .await
-            }
-            writer::Task::DeleteTable(DeleteTableTask {
-                tenant,
-                database,
-                table,
-            }) => self.current_wal.delete_table(tenant, database, table).await,
-            writer::Task::UpdateSeriesKeys(UpdateSeriesKeys {
-                tenant,
-                database,
-                vnode_id,
-                old_series_keys,
-                new_series_keys,
-                series_ids,
-            }) => {
-                self.current_wal
-                    .update_series_keys(
-                        tenant,
-                        database,
-                        *vnode_id,
-                        old_series_keys,
-                        new_series_keys,
-                        series_ids,
-                    )
-                    .await
-            }
-            writer::Task::Delete(DeleteTask {
-                tenant,
-                database,
-                table,
-                vnode_id,
-                series_ids,
-                time_ranges,
-            }) => {
-                self.current_wal
-                    .delete(tenant, database, table, *vnode_id, series_ids, time_ranges)
-                    .await
-            }
-            writer::Task::ClearWalEntry(ClearWalEntry {
-                tenant_database,
-                sequence,
-                vnode_id,
-                ..
-            }) => {
-                let _ = self.delete_wal_before_seq(*sequence).await;
-
-                trace::info!(
-                    "Clear WAL files: {}.{} before seq: {}",
-                    tenant_database,
-                    vnode_id,
-                    sequence,
-                );
-
-                Ok((0, 0))
-            }
-        }
-    }
-
     // delete wal files < seq
     async fn delete_wal_before_seq(&mut self, seq: u64) -> Result<()> {
         let mut delete_ids = vec![];
@@ -609,28 +288,6 @@ impl VnodeWal {
         }
     }
 
-    pub async fn recover(&self, min_log_seq: u64) -> Result<Vec<WalReader>> {
-        trace::warn!("Recover: reading wal from seq '{}'", min_log_seq);
-
-        let wal_files = file_manager::list_file_names(&self.wal_dir);
-        let mut wal_readers = vec![];
-        for file_name in wal_files {
-            let path = self.wal_dir.join(&file_name);
-            if !file_manager::try_exists(&path) {
-                continue;
-            }
-            let reader = reader::WalReader::open(&path).await?;
-
-            // If this file has no footer, try to read all it's records.
-            // If max_sequence of this file is greater than min_log_seq, read all it's records.
-            if reader.max_sequence() == 0 || reader.max_sequence() >= min_log_seq {
-                wal_readers.push(reader);
-            }
-        }
-
-        Ok(wal_readers)
-    }
-
     pub async fn sync(&self) -> Result<()> {
         self.current_wal.sync().await
     }
@@ -660,158 +317,6 @@ impl VnodeWal {
         self.current_wal.size()
     }
 
-    pub fn sync_interval(&self) -> std::time::Duration {
-        self.config.sync_interval
-    }
-}
-
-pub struct WalManager {
-    config: Arc<WalOptions>,
-    vnode_wal_map: HashMap<VnodeId, VnodeWal>,
-}
-
-unsafe impl Send for WalManager {}
-
-unsafe impl Sync for WalManager {}
-
-impl WalManager {
-    pub async fn open(
-        config: Arc<WalOptions>,
-        version_set: Arc<RwLock<VersionSet>>,
-    ) -> Result<Self> {
-        let mut vnode_wal_map = HashMap::new();
-        for (db_name, database) in version_set.read().await.get_all_db() {
-            let tenant_database = database.read().await.owner();
-            for vnode_id in database.read().await.ts_families().keys().copied() {
-                let wal_dir = config.wal_dir(db_name, vnode_id);
-                let file_names = file_manager::list_file_names(wal_dir.clone());
-                for f in file_names {
-                    let file_path = wal_dir.join(&f);
-                    match reader::read_footer(&file_path).await {
-                        Ok(Some((min_seq, max_seq))) => match file_utils::get_wal_file_id(&f) {
-                            Ok(file_id) => {
-                                trace::debug!(
-                                    "Open WAL file({file_id}) '{}' with sequence from {min_seq} to {max_seq}",
-                                    file_path.display(),
-                                );
-                            }
-                            Err(e) => {
-                                trace::error!("Failed to parse WAL file name for '{}': {e}", &f)
-                            }
-                        },
-                        Ok(None) => trace::warn!("Failed to parse WAL file footer for '{}'", &f),
-                        Err(e) => {
-                            trace::warn!("Failed to parse WAL file footer for '{}': {e}", &f)
-                        }
-                    }
-                }
-
-                let vnode_wal =
-                    VnodeWal::new(config.clone(), tenant_database.clone(), vnode_id).await?;
-                vnode_wal_map.insert(vnode_id, vnode_wal);
-            }
-        }
-
-        Ok(Self {
-            config,
-            vnode_wal_map,
-        })
-    }
-
-    pub async fn write(&mut self, wal_task: WalTask) -> Result<()> {
-        let vnode_id = wal_task.vnode_id();
-        match vnode_id {
-            None => {
-                let mut rxs = Vec::with_capacity(self.vnode_wal_map.len());
-                for (_, vnode_wal) in self.vnode_wal_map.iter_mut() {
-                    let (tx, rx) = oneshot::channel();
-                    let new_task = WalTask::new_from(&wal_task, tx);
-                    rxs.push((rx, vnode_wal.vnode_id));
-                    vnode_wal.write(new_task).await;
-                }
-
-                let mut ok = true;
-                for (rx, vnode_id) in rxs {
-                    if let Ok(Ok(Ok((_, _)))) = timeout(Duration::from_secs(5), rx).await {
-                        continue;
-                    }
-                    ok = false;
-                    trace::error!("Failed to write wal delete table in vnode {vnode_id}");
-                }
-                if ok {
-                    if let Err(e) = wal_task.write_wal_result_sender().send(Ok((0, 0))) {
-                        trace::error!("Failed to send wal delete table result: {e:?}");
-                    }
-                } else if let Err(e) =
-                    wal_task
-                        .write_wal_result_sender()
-                        .send(Err(error::Error::CommonError {
-                        reason:
-                            "Failed to write wal delete table in some vnodes, please check tskv log"
-                                .to_string(),
-                    }))
-                {
-                    trace::error!("Failed to send wal delete table result: {e:?}");
-                }
-            }
-            Some(vnode_id) => {
-                if let Some(vnode_wal) = self.vnode_wal_map.get_mut(&vnode_id) {
-                    vnode_wal.write(wal_task).await;
-                } else {
-                    let tenant_database = Arc::new(wal_task.owner());
-                    let mut vnode_wal =
-                        VnodeWal::new(self.config.clone(), tenant_database, vnode_id).await?;
-                    vnode_wal.write(wal_task).await;
-                    self.vnode_wal_map.insert(vnode_id, vnode_wal);
-                };
-            }
-        }
-        Ok(())
-    }
-
-    pub async fn recover(
-        &self,
-        vnode_min_seq_map: &HashMap<VnodeId, u64>,
-    ) -> Vec<(VnodeId, Vec<WalReader>)> {
-        let mut recover_task = vec![];
-        for (vnode_id, vnode_wal) in self.vnode_wal_map.iter() {
-            let min_seq = vnode_min_seq_map.get(vnode_id).copied().unwrap_or(0);
-            if let Ok(readers) = vnode_wal.recover(min_seq).await {
-                recover_task.push((*vnode_id, readers));
-            } else {
-                panic!("Failed to recover wal for vnode '{}'", vnode_id)
-            }
-        }
-        recover_task
-    }
-
-    pub async fn sync(&self) -> Result<()> {
-        let mut sync_task = vec![];
-        for (_, vnode_wal) in self.vnode_wal_map.iter() {
-            sync_task.push(vnode_wal.sync());
-        }
-        for res in futures::future::join_all(sync_task).await {
-            if let Err(e) = &res {
-                trace::error!("Failed to sync wal: {:?}", e);
-            }
-            res?
-        }
-        Ok(())
-    }
-
-    pub async fn close(&mut self) -> Result<()> {
-        let mut close_task = vec![];
-        for (_, vnode_wal) in self.vnode_wal_map.iter_mut() {
-            close_task.push(vnode_wal.close());
-        }
-        for res in futures::future::join_all(close_task).await {
-            if let Err(e) = res {
-                trace::error!("Failed to close wal: {:?}", e);
-                return Err(e);
-            }
-        }
-        Ok(())
-    }
     pub fn sync_interval(&self) -> std::time::Duration {
         self.config.sync_interval
     }
@@ -872,29 +377,13 @@ fn encode_wal_raft_entry(entry: &raft_store::RaftEntry) -> Result<Vec<u8>> {
 
 #[cfg(test)]
 mod test {
-    use core::panic;
     use std::collections::HashMap;
-    use std::path::Path;
-    use std::sync::Arc;
 
     use minivec::MiniVec;
-    use models::codec::Encoding;
     use models::field_value::FieldVal;
-    use models::schema::{make_owner, Precision};
     use models::Timestamp;
     use protos::models::FieldType;
-    use protos::{models as fb_models, models_helper};
-    use serial_test::serial;
-    use tokio::sync::RwLock;
-    use trace::init_default_global_tracing;
-
-    use crate::file_system::file_manager::list_file_names;
-    use crate::kv_option::WalOptions;
-    use crate::tsm::codec::{get_str_codec, StringCodec};
-    use crate::version_set::VersionSet;
-    use crate::wal::reader::{Block, WalReader};
-    use crate::wal::{WalManager, WalTask};
-    use crate::{error, Error, Result};
+    use protos::models_helper;
 
     fn random_write_data() -> Vec<u8> {
         let mut fbb = flatbuffers::FlatBufferBuilder::new();
@@ -930,265 +419,6 @@ mod test {
         );
         fbb.finish(ptr, None);
         (fbb.finished_data().to_vec(), map)
-    }
-
-    /// Check wal files in a directory by comparing wal blocks in file with data_expected.
-    /// - When wal reader returns Ok(Some(blk)), it compares blk.points() with expected data.
-    /// - When wal reader returns Ok(None), it goes to the next wal, but, if expected data is not
-    ///   vec![], it panics.
-    async fn check_wal_files(
-        wal_dir: impl AsRef<Path>,
-        data_expected: Vec<Vec<u8>>,
-        is_flatbuffer_points: bool,
-    ) -> Result<()> {
-        let wal_dir = wal_dir.as_ref();
-        let wal_files = list_file_names(wal_dir);
-        let mut data_iter = data_expected.iter();
-        for wal_file in wal_files {
-            let path = wal_dir.join(&wal_file);
-
-            let mut reader = WalReader::open(&path).await.unwrap();
-            let decoder = get_str_codec(Encoding::Zstd);
-            loop {
-                let ori_data = match data_iter.next() {
-                    Some(d) => d,
-                    None => {
-                        panic!("Unexpected data to compare that is less than file count.")
-                    }
-                };
-                match reader.next_wal_entry().await {
-                    Ok(Some(entry_block)) => {
-                        println!("Reading entry from wal file '{}'", path.display());
-                        match entry_block.block {
-                            Block::Write(entry) => {
-                                let ety_data = entry.points();
-                                if is_flatbuffer_points {
-                                    let mut data_buf = Vec::new();
-                                    decoder.decode(ety_data, &mut data_buf).unwrap();
-                                    assert_eq!(
-                                        data_buf[0].as_slice(),
-                                        ori_data.as_slice(),
-                                        "in '{wal_file}'"
-                                    );
-                                    if let Err(e) =
-                                        flatbuffers::root::<fb_models::Points>(&data_buf[0])
-                                    {
-                                        panic!(
-                                            "Unexpected data in wal file, ignored file '{}' because '{}'",
-                                            wal_dir.display(),
-                                            e
-                                        );
-                                    }
-                                } else {
-                                    assert_eq!(ety_data, ori_data.as_slice(), "in '{wal_file}'");
-                                }
-                            }
-                            Block::DeleteVnode(_) => todo!(),
-                            Block::DeleteTable(_) => todo!(),
-                            Block::RaftLog(_) => todo!(),
-                            Block::UpdateSeriesKeys(_) => todo!(),
-                            Block::Delete(_) => todo!(),
-                            Block::Unknown => todo!(),
-                        }
-                    }
-                    Ok(None) => {
-                        println!("Read none from wal file '{}'", path.display());
-                        if !ori_data.is_empty() {
-                            panic!("Read none but {ori_data:?} expected in file '{wal_file}'");
-                        }
-                        break;
-                    }
-                    Err(Error::WalTruncated) => {
-                        println!("WAL file truncated: {}", path.display());
-                        return Err(Error::WalTruncated);
-                    }
-                    Err(e) => {
-                        panic!("Failed to recover from {}: {:?}", path.display(), e);
-                    }
-                }
-            }
-        }
-        Ok(())
-    }
-
-    #[test]
-    fn test_read_and_write() {
-        let dir = "/tmp/test/wal/1".to_string();
-        let _ = std::fs::remove_dir_all(dir.clone()); // Ignore errors
-        let mut global_config = config::get_config_for_test();
-        global_config.wal.path = dir;
-        let wal_config = WalOptions::from(&global_config);
-        let tenant = "cnosdb";
-        let database = "test";
-        let vnode_id = 0;
-        let owner = make_owner(tenant, database);
-        let dest_dir = wal_config.wal_dir(&owner, vnode_id);
-        let runtime = Arc::new(tokio::runtime::Runtime::new().unwrap());
-        let vs = Arc::new(RwLock::new(VersionSet::build_empty_test(runtime.clone())));
-        let feature = async {
-            let mut mgr = WalManager::open(Arc::new(wal_config), vs.clone())
-                .await
-                .unwrap();
-            let mut data_vec = Vec::new();
-            for i in 1..=10_u64 {
-                let data = b"hello".to_vec();
-                data_vec.push(data.clone());
-                let (wal_task, rx) = WalTask::new_write(
-                    tenant.to_string(),
-                    database.to_string(),
-                    vnode_id,
-                    Precision::NS,
-                    data,
-                );
-                mgr.write(wal_task).await.unwrap();
-                let (seq, _) = rx.await.unwrap().unwrap();
-                assert_eq!(i, seq)
-            }
-            data_vec.push(vec![]);
-            mgr.close().await.unwrap();
-
-            check_wal_files(&dest_dir, data_vec, false).await.unwrap();
-        };
-        runtime.block_on(feature);
-    }
-
-    #[serial]
-    #[test]
-    fn test_roll_wal_file() {
-        init_default_global_tracing("tskv_log", "tskv.log", "debug");
-
-        let dir = "/tmp/test/wal/2".to_string();
-        let _ = std::fs::remove_dir_all(dir.clone()); // Ignore errors
-        let mut global_config = config::get_config_for_test();
-        global_config.wal.path = dir;
-        // Argument max_file_size is so small that there must a new wal file created.
-        global_config.wal.max_file_size = 1;
-        global_config.wal.sync = false;
-        global_config.wal.flush_trigger_total_file_size = 100;
-        let wal_config = WalOptions::from(&global_config);
-
-        let tenant = "cnosdb";
-        let database = "test";
-        let vnode_id = 0;
-        let tenant_database = make_owner(tenant, database);
-        let wal_dir = wal_config.wal_dir(&tenant_database, vnode_id);
-
-        let runtime = Arc::new(tokio::runtime::Runtime::new().unwrap());
-        let feature = async {
-            let mut mgr = WalManager::open(
-                Arc::new(wal_config),
-                Arc::new(RwLock::new(VersionSet::build_empty_test(runtime.clone()))),
-            )
-            .await
-            .unwrap();
-            let mut data_vec: Vec<Vec<u8>> = Vec::new();
-            data_vec.push(vec![]); // _000000.wal will be skipped.
-            for seq in 1..=10 {
-                let data = format!("{}", seq).into_bytes();
-                data_vec.push(data.clone());
-                let (wal_task, rx) = WalTask::new_write(
-                    tenant.to_string(),
-                    database.to_string(),
-                    vnode_id,
-                    Precision::NS,
-                    data,
-                );
-                mgr.write(wal_task).await.unwrap();
-                let (write_seq, _) = rx.await.unwrap().unwrap();
-                assert_eq!(seq, write_seq);
-                // there will be only 1 wal block in wal file.
-                data_vec.push(vec![]);
-            }
-            mgr.close().await.unwrap();
-
-            check_wal_files(wal_dir, data_vec, false).await.unwrap();
-        };
-        runtime.block_on(feature);
-    }
-
-    #[test]
-    fn test_read_truncated() {
-        init_default_global_tracing("tskv_log", "tskv.log", "debug");
-        let dir = "/tmp/test/wal/3".to_string();
-        let _ = std::fs::remove_dir_all(dir.clone()); // Ignore errors
-        let mut global_config = config::get_config_for_test();
-        global_config.wal.path = dir.clone();
-        let wal_config = WalOptions::from(&global_config);
-
-        let runtime = Arc::new(tokio::runtime::Runtime::new().unwrap());
-        let tenant = "cnosdb".to_string();
-
-        let feature = async {
-            let mut mgr = WalManager::open(
-                Arc::new(wal_config),
-                Arc::new(RwLock::new(VersionSet::build_empty_test(runtime.clone()))),
-            )
-            .await
-            .unwrap();
-            let coder = get_str_codec(Encoding::Zstd);
-            let mut data_vec: Vec<Vec<u8>> = Vec::new();
-
-            for _i in 0..10 {
-                let data = random_write_data();
-                data_vec.push(data.clone());
-
-                let mut enc_points = Vec::new();
-                coder
-                    .encode(&[&data], &mut enc_points)
-                    .map_err(|_| Error::ChannelSend {
-                        source: crate::error::ChannelSendError::WalTask,
-                    })
-                    .unwrap();
-                let (wal_task, rx) = WalTask::new_write(
-                    tenant.clone(),
-                    "test".to_string(),
-                    0,
-                    Precision::NS,
-                    enc_points,
-                );
-                mgr.write(wal_task).await.unwrap();
-                rx.await.unwrap().unwrap();
-            }
-            // Do not close wal manager, so footer won't write.
-
-            check_wal_files(dir, data_vec, true).await.unwrap();
-        };
-        runtime.block_on(feature);
-    }
-
-    async fn write_points_to_wal(
-        max_ts: i64,
-        tenant: String,
-        wal_mgr: &mut WalManager,
-        coder: Box<dyn StringCodec + Send + Sync>,
-        data_vec: &mut Vec<Vec<u8>>,
-        wrote_data: &mut HashMap<String, Vec<(Timestamp, FieldVal)>>,
-    ) {
-        for i in 1..=max_ts {
-            let (data, mem_data) = const_write_data(i, 1);
-            data_vec.push(data.clone());
-
-            for (col_name, values) in mem_data {
-                wrote_data.entry(col_name).or_default().extend(values);
-            }
-
-            let mut enc_points = Vec::new();
-            coder
-                .encode(&[&data], &mut enc_points)
-                .map_err(|_| Error::ChannelSend {
-                    source: error::ChannelSendError::WalTask,
-                })
-                .unwrap();
-            let (wal_task, rx) = WalTask::new_write(
-                tenant.clone(),
-                "dba".to_string(),
-                10,
-                Precision::NS,
-                enc_points,
-            );
-            wal_mgr.write(wal_task).await.unwrap();
-            rx.await.unwrap().unwrap();
-        }
     }
 
     #[test]

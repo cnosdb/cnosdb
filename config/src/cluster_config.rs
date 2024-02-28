@@ -7,9 +7,6 @@ use crate::override_by_env::{entry_override, OverrideByEnv};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ClusterConfig {
-    #[serde(default = "ClusterConfig::default_using_raft_replication")]
-    pub using_raft_replication: bool,
-
     #[serde(default = "ClusterConfig::default_raft_logs_to_keep")]
     pub raft_logs_to_keep: u64,
 
@@ -27,10 +24,6 @@ pub struct ClusterConfig {
 }
 
 impl ClusterConfig {
-    fn default_using_raft_replication() -> bool {
-        false
-    }
-
     fn default_raft_logs_to_keep() -> u64 {
         5000
     }
@@ -57,10 +50,6 @@ impl OverrideByEnv for ClusterConfig {
         entry_override(
             &mut self.raft_logs_to_keep,
             "CNOSDB_CLUSTER_RAFT_LOGS_TO_KEEP",
-        );
-        entry_override(
-            &mut self.using_raft_replication,
-            "CNOSDB_CLUSTER_USING_RAFT_REPLICATION",
         );
 
         entry_override(
@@ -89,7 +78,6 @@ impl Default for ClusterConfig {
     fn default() -> Self {
         Self {
             raft_logs_to_keep: ClusterConfig::default_raft_logs_to_keep(),
-            using_raft_replication: ClusterConfig::default_using_raft_replication(),
             lmdb_max_map_size: ClusterConfig::default_lmdb_max_map_size(),
             heartbeat_interval: ClusterConfig::default_heartbeat_interval(),
             send_append_entries_timeout: ClusterConfig::default_send_append_entries_timeout(),

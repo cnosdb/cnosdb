@@ -39,6 +39,7 @@ max_compact_size = "2G"              # 2147483648
 max_concurrent_compaction = 4
 strict_write = false
 reserve_space = "0"
+copyinto_trigger_flush_size = "128M" # 134217728
 
 [wal]
 enabled = true
@@ -73,16 +74,11 @@ enable_report = true
 
 
 [cluster]
-using_raft_replication = true
 raft_logs_to_keep = 5000
 lmdb_max_map_size = 1024000000
 heartbeat_interval = 3000
 install_snapshot_timeout = 3600000
 send_append_entries_timeout = 5000
-
-[hinted_off]
-enable = true
-path = '/tmp/cnosdb/2001/hh'
 
 # [trace]
 # auto_generate_span = false

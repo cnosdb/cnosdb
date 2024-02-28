@@ -11,13 +11,14 @@ use snafu::ResultExt;
 use tokio::sync::RwLock;
 use trace::{debug, error, info, warn, SpanContext, SpanExt, SpanRecorder};
 
+use crate::compaction::run_flush_memtable_job;
 use crate::database::Database;
 use crate::error::Result;
+use crate::file_system::file_info;
 use crate::index::ts_index::TSIndex;
 use crate::schema::error::SchemaError;
-use crate::summary::CompactMeta;
 use crate::tseries_family::TseriesFamily;
-use crate::{file_utils, Error, SnapshotFileMeta, TsKvContext, VersionEdit, VnodeSnapshot};
+use crate::{Error, TsKvContext, VnodeSnapshot};
 
 #[derive(Clone)]
 pub struct VnodeStorage {
@@ -134,11 +135,11 @@ impl VnodeStorage {
         res
     }
 
-    pub async fn drop_table(&self, table: &str) -> Result<()> {
+    async fn drop_table(&self, table: &str) -> Result<()> {
         // TODO Create global DropTable flag for droping the same table at the same time.
         let db_owner = self.db.read().await.owner();
         let schemas = self.db.read().await.get_schemas();
-        if let Some(fields) = schemas.get_table_schema(table)? {
+        if let Some(fields) = schemas.get_table_schema(table).await? {
             let column_ids: Vec<ColumnId> = fields.columns().iter().map(|f| f.id).collect();
             info!(
                 "Drop table: deleting {} columns in table: {db_owner}.{table}",
@@ -176,13 +177,14 @@ impl VnodeStorage {
         Ok(())
     }
 
-    pub async fn drop_table_column(&self, table: &str, column_name: &str) -> Result<()> {
+    async fn drop_table_column(&self, table: &str, column_name: &str) -> Result<()> {
         let db_name = self.db.read().await.db_name();
         let schema = self
             .db
             .read()
             .await
-            .get_table_schema(table)?
+            .get_table_schema(table)
+            .await?
             .ok_or_else(|| SchemaError::TableNotFound {
                 database: db_name.to_string(),
                 table: table.to_string(),
@@ -202,6 +204,42 @@ impl VnodeStorage {
         Ok(())
     }
 
+    /// Update the value of the tag type columns of the specified table
+    ///
+    /// `new_tags` is the new tags, and the tag key must be included in all series
+    ///
+    /// # Parameters
+    /// - `tenant` - The tenant name.
+    /// - `database` - The database name.
+    /// - `new_tags` - The tags and its new tag value.
+    /// - `matched_series` - The series that need to be updated.
+    /// - `dry_run` - Whether to only check if the `update_tags_value` is successful, if it is true, the update will not be performed.
+    ///
+    /// # Examples
+    ///
+    /// We have a table `tbl` as follows
+    ///
+    /// ```text
+    /// +----+-----+-----+-----+
+    /// | ts | tag1| tag2|field|
+    /// +----+-----+-----+-----+
+    /// | 1  | t1a | t2b | f1  |
+    /// +----+-----+-----+-----+
+    /// | 2  | t1a | t2c | f2  |
+    /// +----+-----+-----+-----+
+    /// | 3  | t1b | t2c | f3  |
+    /// +----+-----+-----+-----+
+    /// ```
+    ///
+    /// Execute the following update statement
+    ///
+    /// ```sql
+    /// UPDATE tbl SET tag1 = 't1c' WHERE tag2 = 't2c';
+    /// ```
+    ///
+    /// The `new_tags` is `[tag1 = 't1c']`, and the `matched_series` is `[(tag1 = 't1a', tag2 = 't2c'), (tag1 = 't1b', tag2 = 't2c')]`
+    ///
+    /// TODO Specify vnode id
     async fn update_tags_value(
         &self,
         ctx: &replication::ApplyContext,
@@ -274,7 +312,7 @@ impl VnodeStorage {
 
         let tag_domains = predicate.tags_filter();
         let series_ids = {
-            let table_schema = match self.db.read().await.get_table_schema(&cmd.table)? {
+            let table_schema = match self.db.read().await.get_table_schema(&cmd.table).await? {
                 None => return Ok(()),
                 Some(schema) => schema,
             };
@@ -298,277 +336,146 @@ impl VnodeStorage {
     /// For one Vnode, multi snapshot may exist at a time.
     pub async fn create_snapshot(&self) -> Result<VnodeSnapshot> {
         debug!("Snapshot: create snapshot on vnode: {}", self.id);
-
         let vnode_id = self.id;
-        let (vnode_optional, vnode_index_optional) = self
-            .ctx
-            .version_set
+
+        // Get snapshot directory.
+        let opt = self.ctx.options.storage.clone();
+        let owner = self.ts_family.read().await.tenant_database();
+
+        let time_str = chrono::Local::now().format("%Y%m%d_%H%M%S_%3f").to_string();
+        let snapshot_id = format!("snap_{}_{}", vnode_id, time_str);
+        let snapshot_dir = opt.snapshot_sub_dir(owner.as_str(), vnode_id, &snapshot_id);
+        let _ = std::fs::remove_dir_all(&snapshot_dir);
+
+        let (flush_req_optional, mut ve_summary_snapshot) = {
+            let mut vnode_wlock = self.ts_family.write().await;
+            vnode_wlock.switch_to_immutable();
+            let flush_req_optional = vnode_wlock.build_flush_req(true);
+
+            let mut _file_metas = HashMap::new();
+            let ve_summary_snapshot = vnode_wlock.build_version_edit(&mut _file_metas);
+            (flush_req_optional, ve_summary_snapshot)
+        };
+
+        // Run force flush
+        let mut last_seq_no = 0;
+        if let Some(flush_req) = flush_req_optional {
+            last_seq_no = flush_req.high_seq_no;
+            if let Some(flushed_ve) =
+                run_flush_memtable_job(flush_req, self.ctx.clone(), false).await?
+            {
+                // Normally flushed, and generated some tsm/delta files.
+                debug!("Snapshot: flush vnode {vnode_id} succeed.");
+                ve_summary_snapshot.add_files.extend(flushed_ve.add_files);
+            } else {
+                // Flushed but not generate any file.
+                warn!("Snapshot: flush vnode {vnode_id} did not generated any file.");
+            }
+        };
+
+        // Copy index directory.
+        let index_dir = opt.index_dir(owner.as_str(), vnode_id);
+        let snap_index_dir = opt.snapshot_index_dir(owner.as_str(), vnode_id, &snapshot_id);
+        if let Err(e) = self.ts_index.flush().await {
+            error!("Snapshot: failed to flush vnode index: {e}.");
+            return Err(Error::IndexErr { source: e });
+        }
+        if let Err(e) = dircpy::copy_dir(&index_dir, &snap_index_dir) {
+            error!(
+                "Snapshot: failed to copy index dir {:?} to {:?}: {e}",
+                index_dir, snap_index_dir
+            );
+            return Err(Error::IO { source: e });
+        }
+
+        // Do snapshot, tsm file system operations.
+        self.ts_family
             .read()
             .await
-            .get_tsfamily_tsindex_by_tf_id(vnode_id)
-            .await;
-        if let Some(vnode) = vnode_optional {
-            // Get snapshot directory.
-            let storage_opt = self.ctx.options.storage.clone();
-            let tenant_database = vnode.read().await.tenant_database();
+            .backup(&ve_summary_snapshot, &snapshot_id)
+            .await?;
 
-            let snapshot_id = chrono::Local::now().format("%d%m%Y_%H%M%S_%3f").to_string();
-            let snapshot_dir =
-                storage_opt.snapshot_sub_dir(tenant_database.as_str(), vnode_id, &snapshot_id);
-            let index_dir = storage_opt.index_dir(tenant_database.as_str(), vnode_id);
-            let delta_dir = storage_opt.delta_dir(tenant_database.as_str(), vnode_id);
-            let tsm_dir = storage_opt.tsm_dir(tenant_database.as_str(), vnode_id);
-            let snap_index_dir =
-                storage_opt.snapshot_index_dir(tenant_database.as_str(), vnode_id, &snapshot_id);
-            let snap_delta_dir =
-                storage_opt.snapshot_delta_dir(tenant_database.as_str(), vnode_id, &snapshot_id);
-            let snap_tsm_dir =
-                storage_opt.snapshot_tsm_dir(tenant_database.as_str(), vnode_id, &snapshot_id);
-
-            let (flush_req_optional, mut ve_summary_snapshot) = {
-                let mut vnode_wlock = vnode.write().await;
-                vnode_wlock.switch_to_immutable();
-                let flush_req_optional = vnode_wlock.build_flush_req(true);
-                let mut _file_metas = HashMap::new();
-                let ve_summary_snapshot = vnode_wlock.build_version_edit(&mut _file_metas);
-                (flush_req_optional, ve_summary_snapshot)
-            };
-
-            // Run force flush
-            let last_seq_no = match flush_req_optional {
-                Some(flush_req) => {
-                    let last_seq_no = flush_req.high_seq_no;
-                    if let Some(ve_flushed_files) = crate::compaction::run_flush_memtable_job(
-                        flush_req,
-                        self.ctx.clone(),
-                        false,
-                    )
-                    .await?
-                    {
-                        // Normally flushed, and generated some tsm/delta files.
-                        debug!("Snapshot: flush vnode {vnode_id} succeed.");
-                        ve_summary_snapshot
-                            .add_files
-                            .extend(ve_flushed_files.add_files);
-                    } else {
-                        // Flushed but not generate any file.
-                        warn!("Snapshot: flush vnode {vnode_id} did not generated any file.");
-                    }
-                    last_seq_no
-                }
-                None => 0,
-            };
-
-            // Do snapshot, file system operations.
-            let files = {
-                let _vnode_rlock = vnode.read().await;
-
-                debug!(
-                    "Snapshot: removing snapshot directory {}.",
-                    snapshot_dir.display()
-                );
-                let _ = std::fs::remove_dir_all(&snapshot_dir);
-
-                fn create_snapshot_dir(dir: &PathBuf) -> Result<()> {
-                    std::fs::create_dir_all(dir).with_context(|_| {
-                        debug!(
-                            "Snapshot: failed to create snapshot directory {}.",
-                            dir.display()
-                        );
-                        crate::error::CreateFileSnafu { path: dir.clone() }
-                    })
-                }
-                debug!(
-                    "Snapshot: creating snapshot directory {}.",
-                    snapshot_dir.display()
-                );
-                create_snapshot_dir(&snap_delta_dir)?;
-                create_snapshot_dir(&snap_tsm_dir)?;
-
-                // Copy index directory.
-                if let Some(vnode_index) = vnode_index_optional {
-                    if let Err(e) = vnode_index.flush().await {
-                        error!("Snapshot: failed to flush vnode index: {e}.");
-                        return Err(Error::IndexErr { source: e });
-                    }
-                    if let Err(e) = dircpy::copy_dir(&index_dir, &snap_index_dir) {
-                        error!(
-                            "Snapshot: failed to copy vnode index directory {} to {}: {e}",
-                            index_dir.display(),
-                            snap_index_dir.display()
-                        );
-                        return Err(Error::IO { source: e });
-                    }
-                } else {
-                    debug!("Snapshot: no vnode index, skipped coping.")
-                }
-
-                let mut files = Vec::with_capacity(ve_summary_snapshot.add_files.len());
-                for f in ve_summary_snapshot.add_files {
-                    // Get tsm/delta file path and snapshot file path
-                    let (file_path, snapshot_path) = if f.is_delta {
-                        (
-                            file_utils::make_delta_file(&delta_dir, f.file_id),
-                            file_utils::make_delta_file(&snap_delta_dir, f.file_id),
-                        )
-                    } else {
-                        (
-                            file_utils::make_tsm_file(&tsm_dir, f.file_id),
-                            file_utils::make_tsm_file(&snap_tsm_dir, f.file_id),
-                        )
-                    };
-
-                    files.push(SnapshotFileMeta::from(&f));
-
-                    // Create hard link to tsm/delta file.
-                    debug!(
-                        "Snapshot: creating hard link {} to {}.",
-                        file_path.display(),
-                        snapshot_path.display()
-                    );
-                    if let Err(e) = std::fs::hard_link(&file_path, &snapshot_path)
-                        .context(crate::error::IOSnafu)
-                    {
-                        error!(
-                            "Snapshot: failed to create hard link {} to {}: {e}.",
-                            file_path.display(),
-                            snapshot_path.display()
-                        );
-                        return Err(e);
-                    }
-                }
-
-                files
-            };
-
-            let (tenant, database) = models::schema::split_owner(tenant_database.as_str());
-            let snapshot = VnodeSnapshot {
-                snapshot_id,
-                node_id: 0,
-                tenant: tenant.to_string(),
-                database: database.to_string(),
-                vnode_id,
-                files,
-                last_seq_no,
-            };
-            debug!("Snapshot: created snapshot: {snapshot:?}");
-            Ok(snapshot)
-        } else {
-            // Vnode not found
-            warn!("Snapshot: vnode {vnode_id} not found.");
-            Err(Error::VnodeNotFound { vnode_id })
+        let mut files_info = file_info::get_files_info(&snapshot_dir).await?;
+        for info in files_info.iter_mut() {
+            if let Ok(value) = PathBuf::from(&info.name).strip_prefix(&snapshot_dir) {
+                info.name = value.to_string_lossy().to_string();
+            } else {
+                error!("strip snapshot file failed: {}", info.name);
+            }
         }
+
+        let snapshot = VnodeSnapshot {
+            snapshot_id,
+            vnode_id,
+            last_seq_no,
+            files_info,
+            node_id: opt.node_id,
+            //tsm_files: backup_tsm_files,
+            version_edit: ve_summary_snapshot,
+        };
+        debug!("Snapshot: created snapshot: {snapshot:?}");
+
+        Ok(snapshot)
     }
 
     /// Build a new Vnode from the VersionSnapshot, existing Vnode with the same VnodeId
     /// will be deleted.
-    pub async fn apply_snapshot(&self, snapshot: VnodeSnapshot) -> Result<()> {
+    pub async fn apply_snapshot(
+        &mut self,
+        snapshot: VnodeSnapshot,
+        shapshot_dir: &PathBuf,
+    ) -> Result<()> {
         debug!("Snapshot: apply snapshot {snapshot:?} to create new vnode.");
-        let VnodeSnapshot {
-            snapshot_id: _,
-            node_id: _,
-            tenant,
-            database,
-            vnode_id,
-            files,
-            last_seq_no,
-        } = snapshot;
-        let tenant_database = models::schema::make_owner(&tenant, &database);
+
+        let vnode_id = self.id;
+        let owner = self.ts_family.read().await.tenant_database();
         let storage_opt = self.ctx.options.storage.clone();
 
+        // delete already exist data
         let mut db_wlock = self.db.write().await;
-        if db_wlock.get_tsfamily(vnode_id).is_some() {
-            warn!("Snapshot: removing existing vnode {vnode_id}.");
-            db_wlock
-                .del_tsfamily(vnode_id, self.ctx.summary_task_sender.clone())
-                .await;
-            let vnode_dir = storage_opt.ts_family_dir(&tenant_database, vnode_id);
-            debug!(
-                "Snapshot: removing existing vnode directory {}.",
-                vnode_dir.display()
-            );
-            if let Err(e) = std::fs::remove_dir_all(&vnode_dir) {
-                error!(
-                    "Snapshot: failed to remove existing vnode directory {}.",
-                    vnode_dir.display()
-                );
-                return Err(Error::IO { source: e });
-            }
-        }
+        let summary_sender = self.ctx.summary_task_sender.clone();
+        db_wlock.del_tsfamily(vnode_id, summary_sender).await;
+        db_wlock.del_ts_index(vnode_id);
+        let vnode_dir = storage_opt.ts_family_dir(&owner, vnode_id);
+        let _ = std::fs::remove_dir_all(&vnode_dir);
 
-        let version_edit = VersionEdit {
-            has_seq_no: true,
-            seq_no: last_seq_no,
-            add_files: files
-                .iter()
-                .map(|f| CompactMeta {
-                    file_id: f.file_id,
-                    file_size: f.file_id,
-                    tsf_id: vnode_id,
-                    level: f.level,
-                    min_ts: f.min_ts,
-                    max_ts: f.max_ts,
-                    high_seq: last_seq_no,
-                    low_seq: 0,
-                    is_delta: f.level == 0,
-                })
-                .collect(),
-            add_tsf: true,
-            tsf_id: vnode_id,
-            tsf_name: tenant_database,
-            ..Default::default()
-        };
-        debug!("Snapshot: created version edit {version_edit:?}");
+        // move snashot data to vnode move dir
+        let move_dir = storage_opt.move_dir(&owner, vnode_id);
+        info!("apply snapshot rename {:?} -> {:?}", shapshot_dir, move_dir);
+        tokio::fs::create_dir_all(&move_dir).await?;
+        tokio::fs::rename(&shapshot_dir, &move_dir).await?;
 
-        // Create new vnode.
-        if let Err(e) = db_wlock
+        // apply data and reopen
+        let mut version_edit = snapshot.version_edit.clone();
+        version_edit.update_vnode_id(vnode_id);
+        let ts_family = db_wlock
             .add_tsfamily(vnode_id, Some(version_edit), self.ctx.clone())
-            .await
-        {
-            error!("Snapshot: failed to create vnode {vnode_id}: {e}");
-            return Err(e);
-        }
-        // Create series index for vnode.
-        if let Err(e) = db_wlock.get_ts_index_or_add(vnode_id).await {
-            error!("Snapshot: failed to create index for vnode {vnode_id}: {e}");
-            return Err(e);
-        }
+            .await?;
+        let ts_index = db_wlock.get_ts_index_or_add(vnode_id).await?;
+
+        self.ts_index = ts_index;
+        self.ts_family = ts_family;
 
         Ok(())
     }
 
     /// Delete the snapshot directory of a Vnode, all snapshots will be deleted.
     pub async fn delete_snapshot(&self) -> Result<()> {
-        let vnode_id = self.id;
-        debug!("Snapshot: create snapshot on vnode: {vnode_id}");
-        let vnode_optional = self
-            .ctx
-            .version_set
-            .read()
-            .await
-            .get_tsfamily_by_tf_id(vnode_id)
-            .await;
-        if let Some(vnode) = vnode_optional {
-            let tenant_database = vnode.read().await.tenant_database();
-            let storage_opt = self.ctx.options.storage.clone();
-            let snapshot_dir = storage_opt.snapshot_dir(tenant_database.as_str(), vnode_id);
-            debug!(
-                "Snapshot: removing snapshot directory {}.",
-                snapshot_dir.display()
+        debug!("Snapshot: delete snapshot on vnode: {}", self.id);
+
+        let owner = self.ts_family.read().await.tenant_database();
+        let storage_opt = self.ctx.options.storage.clone();
+
+        let snapshot_dir = storage_opt.snapshot_dir(owner.as_str(), self.id);
+        debug!("Snapshot: removing snapshot directory {:?}", snapshot_dir);
+        std::fs::remove_dir_all(&snapshot_dir).with_context(|_| {
+            error!(
+                "Snapshot: failed to remove snapshot directory {:?}",
+                snapshot_dir
             );
-            std::fs::remove_dir_all(&snapshot_dir).with_context(|_| {
-                error!(
-                    "Snapshot: failed to remove snapshot directory {}.",
-                    snapshot_dir.display()
-                );
-                crate::error::DeleteFileSnafu { path: snapshot_dir }
-            })?;
-            Ok(())
-        } else {
-            // Vnode not found
-            warn!("Snapshot: vnode {vnode_id} not found.");
-            Err(Error::VnodeNotFound { vnode_id })
-        }
+            crate::error::DeleteFileSnafu { path: snapshot_dir }
+        })?;
+        Ok(())
     }
 
     async fn drop_table_columns(&self, table: &str, column_ids: &[ColumnId]) -> Result<()> {
@@ -576,7 +483,7 @@ impl VnodeStorage {
         let db_rlock = self.db.read().await;
         let db_owner = db_rlock.owner();
         let schemas = db_rlock.get_schemas();
-        if let Some(fields) = schemas.get_table_schema(table)? {
+        if let Some(fields) = schemas.get_table_schema(table).await? {
             let table_column_ids: HashSet<ColumnId> =
                 fields.columns().iter().map(|f| f.id).collect();
             let mut to_drop_column_ids = Vec::with_capacity(column_ids.len());
@@ -607,7 +514,7 @@ impl VnodeStorage {
         Ok(())
     }
 
-    pub async fn delete(
+    async fn delete(
         &self,
         table: &str,
         series_ids: &[SeriesId],
@@ -621,7 +528,8 @@ impl VnodeStorage {
             .db
             .read()
             .await
-            .get_table_schema(table)?
+            .get_table_schema(table)
+            .await?
             .ok_or_else(|| SchemaError::TableNotFound {
                 database: db_name.to_string(),
                 table: table.to_string(),

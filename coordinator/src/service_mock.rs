@@ -4,6 +4,7 @@ use std::fmt::Debug;
 use std::sync::Arc;
 use std::todo;
 
+use config::Config;
 use datafusion::arrow::record_batch::RecordBatch;
 use meta::model::meta_admin::AdminMeta;
 use meta::model::meta_tenant::TenantMeta;
@@ -241,10 +242,6 @@ impl Coordinator for MockCoordinator {
         todo!()
     }
 
-    fn using_raft_replication(&self) -> bool {
-        false
-    }
-
     async fn update_tags_value(
         &self,
         table_schema: TskvTableSchemaRef,
@@ -252,5 +249,9 @@ impl Coordinator for MockCoordinator {
         record_batches: Vec<RecordBatch>,
     ) -> CoordinatorResult<()> {
         todo!()
+    }
+
+    fn get_config(&self) -> Config {
+        Config::default()
     }
 }

@@ -73,22 +73,6 @@ t0,a
 t1,b
 t2,c
 
--- EXECUTE SQL: SHOW TAG VALUES FROM test WITH KEY IN (t0, t1, t2) ORDER BY key ASC; --
-200 OK
-key,value
-t0,a
-t0,
-t1,b
-t2,c
-
--- EXECUTE SQL: SHOW TAG VALUES FROM test WITH KEY IN (t0, t1, t2) ORDER BY key DESC; --
-200 OK
-key,value
-t2,c
-t1,b
-t0,a
-t0,
-
 -- EXECUTE SQL: SHOW TAG VALUES FROM test WITH KEY IN (t0, t1, t2) ORDER BY key, value; --
 200 OK
 key,value

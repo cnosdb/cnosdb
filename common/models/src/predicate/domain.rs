@@ -24,7 +24,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use super::transformation::RowExpressionToDomainsVisitor;
 use super::utils::filter_to_time_ranges;
 use super::PlacedSplit;
-use crate::schema::{ColumnType, ScalarValueForkDF, TableColumn, TskvTableSchemaRef};
+use crate::schema::{ColumnType, TableColumn, TskvTableSchemaRef};
 use crate::{Error, Result, Timestamp};
 
 pub type PredicateRef = Arc<Predicate>;
@@ -432,7 +432,7 @@ impl Serialize for Marker {
     where
         S: serde::Serializer,
     {
-        let value: Option<ScalarValueForkDF> = self.value.clone().map(|e| e.into());
+        let value: Option<ScalarValue> = self.value.clone();
 
         let mut ve = serializer.serialize_struct("Marker", 3)?;
         ve.serialize_field("data_type", &self.data_type)?;
@@ -456,7 +456,7 @@ impl<'a> Deserialize<'a> for Marker {
 #[derive(Serialize, Deserialize)]
 struct MarkerSerialize {
     data_type: DataType,
-    value: Option<ScalarValueForkDF>,
+    value: Option<ScalarValue>,
     bound: Bound,
 }
 
@@ -469,7 +469,7 @@ impl From<MarkerSerialize> for Marker {
         } = mark;
         Self {
             data_type,
-            value: value.map(|e| e.into()),
+            value,
             bound,
         }
     }

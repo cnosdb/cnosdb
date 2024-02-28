@@ -242,7 +242,7 @@ impl Database {
 
             let fb_schema = FbSchema::from_fb_column(table_name, columns)?;
             let schema = if strict_write {
-                let schema = self.schemas.get_table_schema(fb_schema.table)?;
+                let schema = self.schemas.get_table_schema(fb_schema.table).await?;
 
                 schema.ok_or_else(|| Error::TableNotFound {
                     table: fb_schema.table.to_string(),
@@ -414,8 +414,8 @@ impl Database {
         Ok(res)
     }
 
-    pub fn get_table_schema(&self, table_name: &str) -> Result<Option<TskvTableSchemaRef>> {
-        Ok(self.schemas.get_table_schema(table_name)?)
+    pub async fn get_table_schema(&self, table_name: &str) -> Result<Option<TskvTableSchemaRef>> {
+        Ok(self.schemas.get_table_schema(table_name).await?)
     }
 
     pub fn get_tsfamily(&self, id: u32) -> Option<Arc<RwLock<TseriesFamily>>> {
@@ -471,8 +471,8 @@ impl Database {
         self.schemas.clone()
     }
 
-    pub fn get_schema(&self) -> Result<DatabaseSchema> {
-        Ok(self.schemas.db_schema()?)
+    pub async fn get_schema(&self) -> Result<DatabaseSchema> {
+        Ok(self.schemas.db_schema().await?)
     }
 
     pub fn owner(&self) -> Arc<String> {
