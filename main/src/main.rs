@@ -2,7 +2,6 @@
 #![recursion_limit = "256"]
 
 use std::fmt::Display;
-use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -74,8 +73,8 @@ struct RunArgs {
     memory: Option<usize>,
 
     /// Path to configuration file.
-    #[arg(long, global = true)]
-    config: Option<String>,
+    #[arg(long, global = true, default_value = "/etc/cnosdb/cnosdb.conf")]
+    config: String,
 
     /// The deployment mode of CnosDB,
     #[arg(short = 'M', long, global = true, value_enum)]
@@ -169,7 +168,7 @@ fn main() -> Result<(), std::io::Error> {
         },
     };
 
-    let mut config = parse_config(run_args.config.as_ref());
+    let mut config = parse_config(&run_args.config);
     let deployment_mode =
         get_final_deployment_mode(run_args.deployment_mode, &config.deployment.mode)?;
     set_cli_args_to_config(&run_args, &mut config);
@@ -225,28 +224,15 @@ fn main() -> Result<(), std::io::Error> {
     Ok(())
 }
 
-fn parse_config(config_path: Option<impl AsRef<Path>>) -> config::Config {
-    // priority: [specified config file] > [/etc/cnosdb/cnosdb.conf] > [$HOME/cnosdb/cnosdb.conf]
-    let mut global_config = if let Some(p) = config_path {
-        println!("----------\nStart with configuration:");
-        config::get_config(p).unwrap()
-    } else if Path::new("/etc/cnosdb/cnosdb.conf").exists() {
-        println!("----------\nStart with configuration:");
-        config::get_config("/etc/cnosdb/cnosdb.conf").unwrap()
-    } else if let Some(path) = dirs::home_dir() {
-        let path = path.join("cnosdb").join("cnosdb.conf");
-        if path.exists() {
-            config::get_config(path).unwrap()
-        } else {
-            config::Config::default()
-        }
-    } else {
-        config::Config::default()
-    };
-    global_config.override_by_env();
-    println!("{}----------", global_config.to_string_pretty());
+fn parse_config(config_file: &str) -> config::Config {
+    println!("-----------------------------------------------------------");
+    println!("Using Config File: {}\n", config_file);
+    let mut config = config::get_config(config_file).unwrap();
+    config.override_by_env();
+    println!("Start with configuration: \n{}", config.to_string_pretty());
+    println!("-----------------------------------------------------------");
 
-    global_config
+    config
 }
 
 fn init_runtime(cores: Option<usize>) -> Result<Runtime, std::io::Error> {

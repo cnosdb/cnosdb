@@ -41,7 +41,8 @@ impl LogConfig {
     }
 
     fn default_path() -> String {
-        "/var/log/cnosdb".to_string()
+        let path = std::path::Path::new("cnosdb_data").join("logs");
+        path.to_string_lossy().to_string()
     }
 
     pub fn override_by_env(&mut self) {

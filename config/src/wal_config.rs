@@ -40,7 +40,8 @@ impl WalConfig {
     }
 
     fn default_path() -> String {
-        "/var/lib/cnosdb/wal".to_string()
+        let path = std::path::Path::new("cnosdb_data").join("wal");
+        path.to_string_lossy().to_string()
     }
 
     fn default_wal_req_channel_cap() -> usize {
