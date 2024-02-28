@@ -127,7 +127,7 @@ make build
 
 #### 运行CnosDB
 
-以下为单节点启动，如需启动集群，见 [启动一个集群](https://docs.cnosdb.com/zh/guide/cluster/cluster.html#%E9%9B%86%E7%BE%A4%E5%90%AF%E5%8A%A8%E6%B5%81%E7%A8%8B)
+以下为单节点启动，如需启动集群，请参考 [部署](https://docs.cnosdb.com/docs/deploy/) 章节。
 
 ```bash
 ./target/debug/cnosdb run -M singleton --config ./config/config.toml
@@ -164,7 +164,7 @@ cnosdb-cli
 - [SQL写入](https://docs.cnosdb.com/zh/latest/reference/sql.html#insert)
 - [influxdb行协议](https://docs.influxdata.com/influxdb/v2.6/reference/syntax/line-protocol/)
 - [批量导入](https://docs.cnosdb.com/zh/latest/develop/write.html#load-data)
-- [telegraf](https://docs.cnosdb.com/en/latest/versatility/collect/telegraf.html)
+- [telegraf](https://docs.cnosdb.com/eco-integration/telegraf)
 
 下面将展示使用cli进行SQL写入的例子
 
@@ -230,7 +230,7 @@ Query took 0.038 seconds.
 ## 数据查询
 
 - [SQL](https://docs.cnosdb.com/zh/latest/reference/sql.html)，兼容SQL标准
-- [Prometheus remote read](https://docs.cnosdb.com/zh/latest/versatility/collect/prometheus.html#remote-read)
+- [Prometheus remote read](https://docs.cnosdb.com/eco-integration/prometheus#remote-read)
 
 下面将展示使用cli进行SQL查询的例子
 
