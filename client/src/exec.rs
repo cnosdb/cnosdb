@@ -117,7 +117,7 @@ pub async fn exec_from_repl(ctx: &mut SessionContext, print_options: &PrintOptio
         match rl.readline(format!("{} ❯ ", ctx.get_database()).as_str()) {
             Ok(line) if line.trim().starts_with('\\') => {
                 rl.add_history_entry(line.trim_end());
-                let command = line.trim().split_whitespace().collect::<Vec<_>>().join(" ");
+                let command = line.split_whitespace().collect::<Vec<_>>().join(" ");
                 if let Ok(cmd) = &command[1..].parse::<Command>() {
                     match cmd {
                         Command::Quit => break,
