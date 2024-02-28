@@ -58,9 +58,9 @@ impl FileCursor {
         Ok(())
     }
 
-    pub async fn sync_data(&mut self) -> Result<()> {
+    pub async fn sync_all(&mut self) -> Result<()> {
         self.try_flush(0).await?;
-        self.file.sync_data().await
+        self.file.sync_all().await
     }
 
     pub async fn seek(&mut self, pos: SeekFrom) -> Result<u64> {

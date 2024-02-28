@@ -161,7 +161,7 @@ impl Writer {
     }
 
     pub async fn sync(&mut self) -> Result<()> {
-        self.cursor.sync_data().await.context(error::SyncFileSnafu)
+        self.cursor.sync_all().await.context(error::SyncFileSnafu)
     }
 
     pub async fn close(&mut self) -> Result<()> {

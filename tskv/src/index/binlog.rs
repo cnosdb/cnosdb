@@ -156,7 +156,7 @@ impl BinlogWriter {
         header_buf[4..].copy_from_slice(&offset.to_be_bytes());
 
         file.write_at(0, &header_buf).await?;
-        file.sync_data().await?;
+        file.sync_all().await?;
 
         Ok(())
     }
@@ -198,7 +198,7 @@ impl BinlogWriter {
 
     pub async fn flush(&mut self) -> IndexResult<()> {
         // Do fsync
-        self.file.sync_data().await?;
+        self.file.sync_all().await?;
 
         Ok(())
     }

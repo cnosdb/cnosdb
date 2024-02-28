@@ -351,7 +351,7 @@ impl TsmWriter {
                 path: self.final_path.clone(),
             });
         }
-        self.writer.sync_data().await.context(WriteIOSnafu)?;
+        self.writer.sync_all().await.context(WriteIOSnafu)?;
         std::fs::rename(&self.tmp_path, &self.final_path).context(WriteIOSnafu)?;
         self.finished = true;
         Ok(())
