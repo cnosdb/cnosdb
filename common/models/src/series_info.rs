@@ -8,7 +8,7 @@ use crate::errors::{Error, Result};
 use crate::schema::TskvTableSchema;
 use crate::{tag, Tag, TagValue};
 
-#[derive(Serialize, Deserialize, Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Default, Debug, Clone, Hash, PartialEq, Eq)]
 pub struct SeriesKey {
     pub tags: Vec<Tag>,
     pub table: String,

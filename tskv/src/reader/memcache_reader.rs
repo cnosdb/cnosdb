@@ -263,7 +263,7 @@ mod tests {
     use models::field_value::FieldVal;
     use models::predicate::domain::{TimeRange, TimeRanges};
     use models::schema::{ColumnType, TableColumn, TskvTableSchema};
-    use models::{SeriesId, ValueType};
+    use models::{SeriesId, SeriesKey, ValueType};
 
     use super::MemCacheReader;
     use crate::memcache::{MemCache, OrderedRowsData, RowData, RowGroup};
@@ -312,7 +312,9 @@ mod tests {
         };
 
         let sid: SeriesId = 1;
-        mem_cache.write_group(sid, 1, row_group_1.clone()).unwrap();
+        mem_cache
+            .write_group(sid, SeriesKey::default(), 1, row_group_1.clone())
+            .unwrap();
 
         let trs = Arc::new(TimeRanges::new(vec![TimeRange::new(1, 3)]));
         let memcache_reader: Arc<dyn BatchReader> = MemCacheReader::try_new(

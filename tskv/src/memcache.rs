@@ -14,7 +14,7 @@ use models::predicate::domain::{TimeRange, TimeRanges};
 use models::schema::{
     timestamp_convert, ColumnType, Precision, TableColumn, TskvTableSchema, TskvTableSchemaRef,
 };
-use models::{ColumnId, RwLockRef, SeriesId, Timestamp};
+use models::{ColumnId, RwLockRef, SeriesId, SeriesKey, Timestamp};
 use parking_lot::RwLock;
 use protos::models::{Column, FieldType};
 use skiplist::OrderedSkipList;
@@ -263,14 +263,16 @@ pub struct RowGroup {
 #[derive(Debug)]
 pub struct SeriesData {
     pub series_id: SeriesId,
+    pub series_key: SeriesKey,
     pub range: TimeRange,
     pub groups: LinkedList<RowGroup>,
 }
 
 impl SeriesData {
-    fn new(series_id: SeriesId) -> Self {
+    fn new(series_id: SeriesId, series_key: SeriesKey) -> Self {
         Self {
             series_id,
+            series_key,
             range: TimeRange {
                 min_ts: i64::MAX,
                 max_ts: i64::MIN,
@@ -647,20 +649,20 @@ impl MemCache {
                 {
                     if !datablock.is_empty() {
                         if let Some(chunk) = chunk_group.get_mut(&table) {
-                            chunk.insert(*series_id, datablock);
+                            chunk.insert(*series_id, (data.series_key.clone(), datablock));
                         } else {
                             let mut chunk = BTreeMap::new();
-                            chunk.insert(*series_id, datablock);
+                            chunk.insert(*series_id, (data.series_key.clone(), datablock));
                             chunk_group.insert(table.clone(), chunk);
                         }
                     }
 
                     if !delta_datablock.is_empty() {
                         if let Some(chunk) = delta_chunk_group.get_mut(&table) {
-                            chunk.insert(*series_id, delta_datablock);
+                            chunk.insert(*series_id, (data.series_key.clone(), delta_datablock));
                         } else {
                             let mut chunk = BTreeMap::new();
-                            chunk.insert(*series_id, delta_datablock);
+                            chunk.insert(*series_id, (data.series_key.clone(), delta_datablock));
                             delta_chunk_group.insert(table, chunk);
                         }
                     }
@@ -697,7 +699,13 @@ impl MemCache {
         }
     }
 
-    pub fn write_group(&self, sid: SeriesId, seq: u64, group: RowGroup) -> Result<()> {
+    pub fn write_group(
+        &self,
+        sid: SeriesId,
+        series_key: SeriesKey,
+        seq: u64,
+        group: RowGroup,
+    ) -> Result<()> {
         self.seq_no.store(seq, Ordering::Relaxed);
         self.memory
             .write()
@@ -711,7 +719,7 @@ impl MemCache {
             drop(series_map);
             series_data_ptr_w.write(group);
         } else {
-            let mut series_data = SeriesData::new(sid);
+            let mut series_data = SeriesData::new(sid, series_key);
             series_data.write(group);
             series_map.insert(sid, Arc::new(RwLock::new(series_data)));
         }
@@ -876,7 +884,7 @@ pub(crate) mod test {
     use models::field_value::FieldVal;
     use models::predicate::domain::TimeRange;
     use models::schema::TskvTableSchema;
-    use models::{SchemaId, SeriesId, Timestamp};
+    use models::{SchemaId, SeriesId, SeriesKey, Timestamp};
     use parking_lot::RwLock;
 
     use super::{MemCache, OrderedRowsData, RowData, RowGroup};
@@ -913,7 +921,9 @@ pub(crate) mod test {
             rows,
             size: size_of::<RowGroup>() + size,
         };
-        cache.write_group(series_id, 1, row_group).unwrap();
+        cache
+            .write_group(series_id, SeriesKey::default(), 1, row_group)
+            .unwrap();
     }
 
     pub fn get_one_series_cache_data(
@@ -985,7 +995,7 @@ mod test_memcache {
     use models::field_value::FieldVal;
     use models::predicate::domain::TimeRange;
     use models::schema::{ColumnType, TableColumn, TskvTableSchema};
-    use models::{SeriesId, ValueType};
+    use models::{SeriesId, SeriesKey, ValueType};
 
     use super::{MemCache, OrderedRowsData, RowData, RowGroup};
 
@@ -1028,7 +1038,9 @@ mod test_memcache {
             rows,
             size: 10,
         };
-        mem_cache.write_group(sid, 1, row_group_1.clone()).unwrap();
+        mem_cache
+            .write_group(sid, SeriesKey::default(), 1, row_group_1.clone())
+            .unwrap();
         {
             let series_part = &mem_cache.partions[sid as usize].read();
             let series_data = series_part.get(&sid);
@@ -1068,7 +1080,9 @@ mod test_memcache {
             rows,
             size: 10,
         };
-        mem_cache.write_group(sid, 2, row_group_2.clone()).unwrap();
+        mem_cache
+            .write_group(sid, SeriesKey::default(), 2, row_group_2.clone())
+            .unwrap();
         {
             let series_part = &mem_cache.partions[sid as usize].read();
             let series_data = series_part.get(&sid);

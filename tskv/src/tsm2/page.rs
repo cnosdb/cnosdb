@@ -6,7 +6,7 @@ use datafusion::parquet::data_type::AsBytes;
 use models::field_value::FieldVal;
 use models::predicate::domain::TimeRange;
 use models::schema::{ColumnType, TableColumn, TskvTableSchema, TskvTableSchemaRef};
-use models::{SeriesId, ValueType};
+use models::{SeriesId, SeriesKey, ValueType};
 use serde::{Deserialize, Serialize};
 use utils::bitset::ImmutBitSet;
 use utils::BloomFilter;
@@ -283,17 +283,19 @@ pub struct Chunk {
 
     table_name: String,
     series_id: SeriesId,
+    series_key: SeriesKey,
 
     next_column_group_id: ColumnGroupID,
     column_groups: BTreeMap<ColumnGroupID, Arc<ColumnGroup>>,
 }
 
 impl Chunk {
-    pub fn new(table_name: String, series_id: SeriesId) -> Self {
+    pub fn new(table_name: String, series_id: SeriesId, series_key: SeriesKey) -> Self {
         Self {
             time_range: TimeRange::none(),
             table_name,
             series_id,
+            series_key,
             next_column_group_id: 0,
             column_groups: Default::default(),
         }
@@ -331,6 +333,10 @@ impl Chunk {
 
     pub fn series_id(&self) -> SeriesId {
         self.series_id
+    }
+
+    pub fn series_key(&self) -> &SeriesKey {
+        &self.series_key
     }
     pub fn serialize(&self) -> Result<Vec<u8>> {
         bincode::serialize(&self).map_err(|e| Error::Serialize { source: e.into() })

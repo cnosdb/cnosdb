@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use models::SeriesId;
+use models::{SeriesId, SeriesKey};
 
 use crate::tsm2::writer::DataBlock2;
 
@@ -21,6 +21,6 @@ const BLOOM_FILTER_BITS: u64 = 512;
 // 64 * 8
 const FOOTER_SIZE: usize = 129;
 
-pub type TsmWriteData = BTreeMap<String, BTreeMap<SeriesId, DataBlock2>>; // (table, (series_id, pages))
+pub type TsmWriteData = BTreeMap<String, BTreeMap<SeriesId, (SeriesKey, DataBlock2)>>; // (table, (series_id, pages))
 
 pub type ColumnGroupID = usize;

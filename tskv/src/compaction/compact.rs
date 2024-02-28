@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use models::predicate::domain::TimeRange;
 use models::schema::TskvTableSchemaRef;
-use models::SeriesId;
+use models::{SeriesId, SeriesKey};
 use trace::{info, trace};
 use utils::BloomFilter;
 
@@ -78,16 +78,18 @@ impl CompactingBlockMeta {
         }
     }
 
-    pub fn time_range(&self) -> TimeRange {
-        *self.meta.time_range()
-    }
-
-    pub fn overlaps(&self, other: &Self) -> bool {
-        self.meta.min_ts() <= other.meta.max_ts() && self.meta.max_ts() >= other.meta.min_ts()
-    }
-
-    pub fn overlaps_time_range(&self, time_range: &TimeRange) -> bool {
-        self.meta.min_ts() <= time_range.max_ts && self.meta.max_ts() >= time_range.min_ts
+    pub fn time_range(&self) -> Result<TimeRange> {
+        let column_group =
+            self.meta
+                .column_group()
+                .get(&self.column_group_id)
+                .ok_or(Error::CommonError {
+                    reason: format!(
+                        "column group {} not found in chunk {:?}",
+                        self.column_group_id, self.meta
+                    ),
+                })?;
+        Ok(*column_group.time_range())
     }
 
     pub async fn get_data_block_filter_by_tomb(&self) -> Result<DataBlock2> {
@@ -138,17 +140,19 @@ impl CompactingBlockMeta {
 #[derive(Clone)]
 pub(crate) struct CompactingBlockMetaGroup {
     series_id: SeriesId,
+    chunk: Arc<Chunk>,
     blk_metas: Vec<CompactingBlockMeta>,
     time_range: TimeRange,
 }
 impl CompactingBlockMetaGroup {
-    pub fn new(series_id: SeriesId, blk_meta: CompactingBlockMeta) -> Self {
-        let time_range = blk_meta.time_range();
-        Self {
+    pub fn new(series_id: SeriesId, blk_meta: CompactingBlockMeta) -> Result<Self> {
+        let time_range = blk_meta.time_range()?;
+        Ok(Self {
             series_id,
+            chunk: blk_meta.meta.clone(),
             blk_metas: vec![blk_meta],
             time_range,
-        }
+        })
     }
 
     pub fn overlaps(&self, other: &Self) -> bool {
@@ -261,7 +265,12 @@ impl CompactingBlockMetaGroup {
         if max_block_size == 0 || data_block.len() < max_block_size {
             // Data block elements less than max_block_size, do not encode it.
             // Try to merge with the next CompactingBlockMetaGroup.
-            merged_blks.push(CompactingBlock::decoded(0, self.series_id, data_block));
+            merged_blks.push(CompactingBlock::decoded(
+                0,
+                self.series_id,
+                self.chunk.series_key().clone(),
+                data_block,
+            ));
         } else {
             let len = data_block.len();
             let mut start = 0;
@@ -275,6 +284,7 @@ impl CompactingBlockMetaGroup {
                     0,
                     table_schema,
                     self.series_id,
+                    self.chunk.series_key().clone(),
                     time_range,
                     data_block_merge_pages,
                 ));
@@ -292,6 +302,7 @@ impl CompactingBlockMetaGroup {
                     0,
                     table_schema,
                     self.series_id,
+                    self.chunk.series_key().clone(),
                     time_range,
                     data_block_merge_pages,
                 ));
@@ -319,12 +330,14 @@ pub enum CompactingBlock {
     Decoded {
         priority: usize,
         series_id: SeriesId,
+        series_key: SeriesKey,
         data_block: DataBlock2,
     },
     Encoded {
         priority: usize,
         table_schema: TskvTableSchemaRef,
         series_id: SeriesId,
+        series_key: SeriesKey,
         time_range: TimeRange,
         data_block: Vec<Page>,
     },
@@ -341,11 +354,13 @@ impl CompactingBlock {
     pub fn decoded(
         priority: usize,
         series_id: SeriesId,
+        series_key: SeriesKey,
         data_block: DataBlock2,
     ) -> CompactingBlock {
         Self::Decoded {
             priority,
             series_id,
+            series_key,
             data_block,
         }
     }
@@ -354,12 +369,14 @@ impl CompactingBlock {
         priority: usize,
         table_schema: TskvTableSchemaRef,
         series_id: SeriesId,
+        series_key: SeriesKey,
         time_range: TimeRange,
         data_block: Vec<Page>,
     ) -> CompactingBlock {
         Self::Encoded {
             priority,
             series_id,
+            series_key,
             table_schema,
             time_range,
             data_block,
@@ -625,13 +642,13 @@ impl CompactIterator {
     }
 
     /// Collect merging `DataBlock`s.
-    async fn fetch_merging_block_meta_groups(&mut self) -> bool {
+    async fn fetch_merging_block_meta_groups(&mut self) -> Result<bool> {
         if self.tmp_tsm_blk_meta_iters.is_empty() {
-            return false;
+            return Ok(false);
         }
         let series_id = match self.curr_sid {
             Some(sid) => sid,
-            None => return false,
+            None => return Ok(false),
         };
 
         let mut blk_metas: Vec<CompactingBlockMeta> =
@@ -653,7 +670,7 @@ impl CompactIterator {
         let mut blk_meta_groups: Vec<CompactingBlockMetaGroup> =
             Vec::with_capacity(blk_metas.len());
         for blk_meta in blk_metas {
-            blk_meta_groups.push(CompactingBlockMetaGroup::new(series_id, blk_meta));
+            blk_meta_groups.push(CompactingBlockMetaGroup::new(series_id, blk_meta)?);
         }
         // Compact blk_meta_groups.
         let mut i = 0;
@@ -689,7 +706,7 @@ impl CompactIterator {
 
         self.merging_blk_meta_groups = blk_meta_groups;
 
-        true
+        Ok(true)
     }
 }
 
@@ -713,7 +730,7 @@ impl CompactIterator {
         }
 
         // Get all of block_metas of this field id, and merge these blocks
-        self.fetch_merging_block_meta_groups().await;
+        self.fetch_merging_block_meta_groups().await?;
 
         if let Some(g) = self.merging_blk_meta_groups.pop_front() {
             return Ok(Some(g));
@@ -928,7 +945,7 @@ pub mod test {
     use models::field_value::FieldVal;
     use models::predicate::domain::TimeRange;
     use models::schema::{ColumnType, TableColumn, TskvTableSchema};
-    use models::{SeriesId, ValueType};
+    use models::{SeriesId, SeriesKey, ValueType};
 
     use crate::compaction::{run_compaction_job, CompactReq};
     use crate::context::GlobalContext;
@@ -955,7 +972,7 @@ pub mod test {
             let mut writer = Tsm2Writer::open(&dir, file_seq, 0, false).await.unwrap();
             for (sid, data_blks) in d.iter() {
                 writer
-                    .write_datablock(*sid, data_blks.clone())
+                    .write_datablock(*sid, SeriesKey::default(), data_blks.clone())
                     .await
                     .unwrap();
             }
@@ -1902,7 +1919,10 @@ pub mod test {
                 .await
                 .unwrap();
             for arg in args.into_iter() {
-                tsm_writer.write_datablock(1, arg).await.unwrap();
+                tsm_writer
+                    .write_datablock(1, SeriesKey::default(), arg)
+                    .await
+                    .unwrap();
             }
             tsm_writer.finish().await.unwrap();
             column_files.push(Arc::new(ColumnFile::new(
@@ -2257,7 +2277,10 @@ pub mod test {
                 .await
                 .unwrap();
             for arg in args.into_iter() {
-                tsm_writer.write_datablock(1, arg).await.unwrap();
+                tsm_writer
+                    .write_datablock(1, SeriesKey::default(), arg)
+                    .await
+                    .unwrap();
             }
             tsm_writer.finish().await.unwrap();
             let mut tsm_tombstone = TsmTombstone::open(&dir, tsm_sequence).await.unwrap();
