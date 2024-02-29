@@ -1,3 +1,4 @@
+mod data_quality;
 #[cfg(test)]
 mod example;
 mod first;
@@ -26,6 +27,10 @@ pub const FIRST_UDAF_NAME: &str = "first";
 pub const LAST_UDAF_NAME: &str = "last";
 pub const MODE_UDAF_NAME: &str = "mode";
 pub const INCREASE_NAME: &str = "increase";
+pub const COMPLETENESS_UDF_NAME: &str = "completeness";
+pub const CONSISTENCY_UDF_NAME: &str = "consistency";
+pub const TIMELINESS_UDF_NAME: &str = "timeliness";
+pub const VALIDITY_UDF_NAME: &str = "validity";
 pub use gauge::GaugeData;
 pub use state_agg::StateAggData;
 
@@ -40,6 +45,7 @@ pub fn register_udafs(func_manager: &mut dyn FunctionMetadataManager) -> Result<
     last::register_udaf(func_manager)?;
     mode::register_udaf(func_manager)?;
     increase::register_udaf(func_manager)?;
+    data_quality::register_udafs(func_manager)?;
     Ok(())
 }
 
