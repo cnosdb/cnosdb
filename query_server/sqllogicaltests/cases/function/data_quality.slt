@@ -1,0 +1,102 @@
+statement ok
+drop table if exists data_quality_1;
+
+statement ok
+create table data_quality_1(value double);
+
+statement ok
+INSERT data_quality_1 VALUES (1, 12.34), (3, 34.54 ), (4, 1.43), (6, 14.03), (10, 12.30), (13, 11.54), (14, 112.20), (16, 14.44), (18, 134.02), (19, 116.34), (22, 1234.45), (24,10.36), (26, 124.21), (31, 6.34), (33, acos(12345));
+
+query 
+select completeness(time, value) from data_quality_1;
+----
+0.8235294117647058
+
+query 
+select consistency(time, value) from data_quality_1;
+----
+0.8666666666666667
+
+query 
+select timeliness(time, value) from data_quality_1;
+----
+0.9333333333333333
+
+query 
+select validity(time, value) from data_quality_1;
+----
+0.8
+
+
+statement ok
+drop table if exists data_quality_2;
+
+statement ok
+create table data_quality_2(value double);
+
+statement ok
+INSERT data_quality_2 VALUES (1, 12.34);
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Datafusion: Execution error: At least two non\-NaN values are needed", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select completeness(time, value) from data_quality_2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Datafusion: Execution error: At least two non\-NaN values are needed", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select consistency(time, value) from data_quality_2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Datafusion: Execution error: At least two non\-NaN values are needed", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select timeliness(time, value) from data_quality_2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Datafusion: Execution error: At least two non\-NaN values are needed", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select validity(time, value) from data_quality_2;
+
+
+statement ok
+drop table if exists data_quality_3;
+
+statement ok
+create table data_quality_3(value double);
+
+statement ok
+INSERT data_quality_3 VALUES (1, 12.34), (2, acos(12345)), (3, acos(12345));
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Datafusion: Execution error: At least two non\-NaN values are needed", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select completeness(time, value) from data_quality_3;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Datafusion: Execution error: At least two non\-NaN values are needed", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select consistency(time, value) from data_quality_3;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Datafusion: Execution error: At least two non\-NaN values are needed", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select timeliness(time, value) from data_quality_3;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Datafusion: Execution error: At least two non\-NaN values are needed", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select validity(time, value) from data_quality_3;
+
+
+statement ok
+drop table if exists data_quality_4;
+
+statement ok
+create table data_quality_4(value double);
+
+statement ok
+INSERT data_quality_4 VALUES (26, 124.21), (6, 14.03), (22, 1234.45), (10, 12.30), (1, 12.34), (31, 6.34), (3, 34.54 ), (4, 1.43), (13, 11.54), (14, 112.20), (16, 14.44), (18, 134.02), (19, 116.34), (24,10.36), (33, acos(12345));
+
+query 
+select completeness(time, value) from data_quality_4;
+----
+0.8235294117647058
+
+query 
+select consistency(time, value) from data_quality_4;
+----
+0.8666666666666667
+
+query 
+select timeliness(time, value) from data_quality_4;
+----
+0.9333333333333333
+
+query 
+select validity(time, value) from data_quality_4;
+----
+0.8
