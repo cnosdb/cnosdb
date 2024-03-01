@@ -59,7 +59,7 @@ pub fn run(
 ) {
     let runtime_inner = runtime.clone();
     let compact_task_group_producer = Arc::new(RwLock::new(CompactTaskGroup::default()));
-    let compact_task_group_comsumer = compact_task_group_producer.clone();
+    let compact_task_group_consumer = compact_task_group_producer.clone();
     runtime.spawn(async move {
         // TODO: Concurrent compactions should not over argument $cpu.
         let compaction_limit = Arc::new(Semaphore::new(
@@ -70,10 +70,10 @@ pub fn run(
 
         loop {
             check_interval.tick().await;
-            if compact_task_group_comsumer.read().await.is_empty() {
+            if compact_task_group_consumer.read().await.is_empty() {
                 continue;
             }
-            let compact_tasks = match compact_task_group_comsumer.write().await.try_take() {
+            let compact_tasks = match compact_task_group_consumer.write().await.try_take() {
                 Some(t) => t,
                 None => continue,
             };

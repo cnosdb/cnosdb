@@ -177,6 +177,14 @@ pub async fn open_create_file(path: impl AsRef<Path>) -> Result<AsyncFile> {
     get_file_manager().open_create_file(path).await
 }
 
+/// Move 'file' to 'file.del', for test of file deletions.
+pub fn fake_remove(path: impl AsRef<Path>) -> std::io::Result<()> {
+    let mut new_path = path.as_ref().to_path_buf();
+    let file_name = new_path.file_name().expect("file has name");
+    new_path.set_file_name(format!("{}.del", file_name.to_string_lossy()));
+    std::fs::rename(path, new_path)
+}
+
 #[cfg(test)]
 mod test {
     use std::io::{IoSlice, SeekFrom};
