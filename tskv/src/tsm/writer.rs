@@ -342,6 +342,9 @@ impl TsmWriter {
         )
         .await?;
 
+        self.size += len1 as u64;
+        self.size += len2 as u64;
+
         Ok(len1 + len2)
     }
 
