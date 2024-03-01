@@ -99,7 +99,7 @@ impl TskvEngineStorage {
             let src_filename = src_dir.join(&info.name).to_string_lossy().to_string();
 
             info!(
-                "begin download file:{} -> {:?}, from {}",
+                "begin download file {} -> {:?}, from {}",
                 src_filename, filename, snapshot.node_id
             );
 

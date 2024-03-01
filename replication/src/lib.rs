@@ -115,5 +115,7 @@ pub trait EntryStorage: Send + Sync {
 
     // Get entries from begin to end
     async fn entries(&mut self, begin: u64, end: u64) -> ReplicationResult<Vec<Entry<TypeConfig>>>; // [begin, end)
+
+    async fn destory(&mut self) -> ReplicationResult<()>;
 }
 pub type EntryStorageRef = Arc<RwLock<dyn EntryStorage>>;

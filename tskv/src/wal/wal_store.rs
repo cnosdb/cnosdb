@@ -3,6 +3,7 @@ use protos::kv_service::RaftWriteCommand;
 use protos::models_helper::parse_prost_bytes;
 use replication::errors::{ReplicationError, ReplicationResult};
 use replication::{EntryStorage, RaftNodeId, RaftNodeInfo, TypeConfig};
+use trace::info;
 
 use super::reader::WalRecordData;
 use crate::file_system::file_manager;
@@ -77,6 +78,16 @@ impl EntryStorage for RaftEntryStorage {
 
     async fn entries(&mut self, begin: u64, end: u64) -> ReplicationResult<Vec<RaftEntry>> {
         self.inner.read_raft_entry_range(begin, end).await
+    }
+
+    async fn destory(&mut self) -> ReplicationResult<()> {
+        let _ = self.inner.wal.close().await;
+
+        let path = self.inner.wal.wal_dir();
+        info!("Remove wal files: {:?}", path);
+        let _ = std::fs::remove_dir_all(path);
+
+        Ok(())
     }
 }
 
@@ -427,7 +438,7 @@ mod test {
     use replication::{ApplyStorageRef, EntryStorage, EntryStorageRef, RaftNodeInfo};
     use tokio::sync::RwLock;
 
-    use crate::wal::raft_store::{RaftEntry, RaftEntryStorage};
+    use crate::wal::wal_store::{RaftEntry, RaftEntryStorage};
     use crate::wal::VnodeWal;
     use crate::Result;
 

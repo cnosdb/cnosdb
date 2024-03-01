@@ -15,20 +15,20 @@ use snafu::ResultExt;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{oneshot, RwLock};
-use trace::{error, info};
+use trace::error;
 use utils::BloomFilter;
 
 use crate::compaction::CompactTask;
 use crate::error::{Result, SchemaSnafu};
 use crate::index::{self, IndexResult};
-use crate::kv_option::{Options, INDEX_PATH};
+use crate::kv_option::Options;
 use crate::memcache::{OrderedRowsData, RowData, RowGroup};
 use crate::schema::schemas::DBschemas;
 use crate::summary::{SummaryTask, VersionEdit};
 use crate::tseries_family::{LevelInfo, TseriesFamily, TsfFactory, Version};
 use crate::tsm2::reader::TSM2Reader;
 use crate::Error::{self};
-use crate::{file_utils, ColumnFileId, TsKvContext, TseriesFamilyId};
+use crate::{ColumnFileId, TsKvContext, TseriesFamilyId};
 
 pub type FlatBufferTable<'a> = flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Table<'a>>>;
 
@@ -123,86 +123,94 @@ impl Database {
             .insert(ver.tf_id(), Arc::new(RwLock::new(tf)));
     }
 
-    // todo: Maybe TseriesFamily::new() should be refactored.
-    #[allow(clippy::too_many_arguments)]
-    pub async fn add_tsfamily(
+    pub async fn create_tsfamily(
         &mut self,
         tsf_id: TseriesFamilyId,
-        version_edit: Option<VersionEdit>,
         ctx: Arc<TsKvContext>,
     ) -> Result<Arc<RwLock<TseriesFamily>>> {
-        let new_version_edit_seq_no = 0;
-        let (seq_no, version_edits, file_metas) = match version_edit {
-            Some(mut ve) => {
-                ve.tsf_id = tsf_id;
-                ve.has_seq_no = true;
-                ve.seq_no = new_version_edit_seq_no;
-                let mut file_metas = HashMap::with_capacity(ve.add_files.len());
-                for f in ve.add_files.iter_mut() {
-                    let new_file_id = ctx.global_ctx.file_id_next();
-                    f.tsf_id = tsf_id;
-                    let file_path = f
-                        .rename_file(&self.opt.storage, &self.owner, f.tsf_id, new_file_id)
-                        .await?;
-                    let file_reader = TSM2Reader::open(file_path).await?;
-                    let bloom_filter =
-                        Arc::new(file_reader.footer().series().bloom_filter().clone());
-                    file_metas.insert(new_file_id, bloom_filter);
-                }
-                for f in ve.del_files.iter_mut() {
-                    let new_file_id = ctx.global_ctx.file_id_next();
-                    f.tsf_id = tsf_id;
-                    f.rename_file(&self.opt.storage, &self.owner, f.tsf_id, new_file_id)
-                        .await?;
-                }
-                //move index
-                let origin_index = self
-                    .opt
-                    .storage
-                    .move_dir(&self.owner, tsf_id)
-                    .join(INDEX_PATH);
-                let new_index = self.opt.storage.index_dir(&self.owner, tsf_id);
-                info!("move index from {:?} to {:?}", &origin_index, &new_index);
-                file_utils::rename(origin_index, new_index).await?;
-                tokio::fs::remove_dir_all(self.opt.storage.move_dir(&self.owner, tsf_id)).await?;
-                (ve.seq_no, vec![ve], Some(file_metas))
-            }
-            None => (
-                new_version_edit_seq_no,
-                vec![VersionEdit::new_add_vnode(
-                    tsf_id,
-                    self.owner.as_ref().clone(),
-                    new_version_edit_seq_no,
-                )],
-                None,
-            ),
-        };
-
-        let cache =
-            cache::ShardedAsyncCache::create_lru_sharded_cache(self.opt.storage.max_cached_readers);
+        let tsm_reader_cache = Arc::new(cache::ShardedAsyncCache::create_lru_sharded_cache(
+            self.opt.storage.max_cached_readers,
+        ));
+        let levels = LevelInfo::init_levels(self.owner.clone(), tsf_id, self.opt.storage.clone());
+        let version_edits = vec![VersionEdit::new_add_vnode(
+            tsf_id,
+            self.owner.as_ref().clone(),
+            0,
+        )];
 
         let ver = Arc::new(Version::new(
             tsf_id,
             self.owner.clone(),
             self.opt.storage.clone(),
-            seq_no,
-            LevelInfo::init_levels(self.owner.clone(), tsf_id, self.opt.storage.clone()),
+            0,
+            levels,
             i64::MIN,
-            cache.into(),
+            tsm_reader_cache,
         ));
 
         let tf = self.tsf_factory.create_tsf(tsf_id, ver.clone());
         let tf = Arc::new(RwLock::new(tf));
-        if let Some(tsf) = self.ts_families.get(&tsf_id) {
-            return Ok(tsf.clone());
-        }
         self.ts_families.insert(tsf_id, tf.clone());
 
         let (task_state_sender, _task_state_receiver) = oneshot::channel();
-        let task = SummaryTask::new(version_edits, file_metas, None, task_state_sender);
+        let task = SummaryTask::new(version_edits, None, None, task_state_sender);
         if let Err(e) = ctx.summary_task_sender.send(task).await {
             error!("failed to send Summary task, {:?}", e);
         }
+
+        Ok(tf)
+    }
+
+    // todo: Maybe TseriesFamily::new() should be refactored.
+    pub async fn add_tsfamily(
+        &mut self,
+        tsf_id: TseriesFamilyId,
+        mut ve: VersionEdit,
+        ctx: Arc<TsKvContext>,
+    ) -> Result<Arc<RwLock<TseriesFamily>>> {
+        let mut file_metas = HashMap::with_capacity(ve.add_files.len());
+        for f in ve.add_files.iter_mut() {
+            let new_file_id = ctx.global_ctx.file_id_next();
+            let file_path = f
+                .rename_file(&self.opt.storage, &self.owner, f.tsf_id, new_file_id)
+                .await?;
+
+            let file_reader = TSM2Reader::open(file_path).await?;
+            let bloom_filter = Arc::new(file_reader.footer().series().bloom_filter().clone());
+            file_metas.insert(new_file_id, bloom_filter.clone());
+        }
+        for f in ve.del_files.iter_mut() {
+            let new_file_id = ctx.global_ctx.file_id_next();
+            f.rename_file(&self.opt.storage, &self.owner, f.tsf_id, new_file_id)
+                .await?;
+        }
+        tokio::fs::remove_dir_all(self.opt.storage.move_dir(&self.owner, tsf_id)).await?;
+
+        let levels = LevelInfo::init_levels(self.owner.clone(), tsf_id, self.opt.storage.clone());
+        let tsm_reader_cache = Arc::new(cache::ShardedAsyncCache::create_lru_sharded_cache(
+            self.opt.storage.max_cached_readers,
+        ));
+        let ver = Arc::new(Version::new(
+            tsf_id,
+            self.owner.clone(),
+            self.opt.storage.clone(),
+            ve.seq_no,
+            levels,
+            i64::MIN,
+            tsm_reader_cache,
+        ));
+
+        let tf = self.tsf_factory.create_tsf(tsf_id, ver.clone());
+        let tf = Arc::new(RwLock::new(tf));
+        self.ts_families.insert(tsf_id, tf.clone());
+
+        let (task_state_sender, _task_state_receiver) = oneshot::channel();
+        let task = SummaryTask::new(vec![ve], Some(file_metas), None, task_state_sender);
+        if let Err(e) = ctx.summary_task_sender.send(task).await {
+            error!("failed to send Summary task, {:?}", e);
+        }
+
+        //_task_state_receiver.await;
 
         Ok(tf)
     }
@@ -415,6 +423,18 @@ impl Database {
         }
 
         Ok(res)
+    }
+
+    pub async fn rebuild_tsfamily_index(
+        &mut self,
+        ts_family: Arc<RwLock<TseriesFamily>>,
+    ) -> Result<Arc<index::ts_index::TSIndex>> {
+        let id = ts_family.read().await.tf_id();
+        let ts_index = ts_family.read().await.rebuild_index().await?;
+
+        self.ts_indexes.insert(id, ts_index.clone());
+
+        Ok(ts_index)
     }
 
     pub async fn get_table_schema(&self, table_name: &str) -> Result<Option<TskvTableSchemaRef>> {

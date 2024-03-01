@@ -22,9 +22,8 @@ use crate::compaction::{
 use crate::database::Database;
 use crate::error::{self, Result};
 use crate::file_system::file_manager;
-use crate::index::ts_index;
 use crate::kv_option::{Options, StorageOptions};
-use crate::summary::{Summary, SummaryProcessor, SummaryTask, VersionEdit};
+use crate::summary::{Summary, SummaryProcessor, SummaryTask};
 use crate::tseries_family::{SuperVersion, TseriesFamily};
 use crate::version_set::VersionSet;
 use crate::vnode_store::VnodeStorage;
@@ -151,7 +150,8 @@ impl TsKv {
         let f = async move {
             let mut summary_processor = SummaryProcessor::new(Box::new(summary));
             while let Some(x) = summary_task_receiver.recv().await {
-                debug!("Apply Summary task");
+                info!("Apply Summary task: {:?}", x.request.version_edits);
+
                 summary_processor.batch(x);
                 summary_processor.apply().await;
             }
@@ -183,34 +183,17 @@ impl TsKv {
         Ok(db)
     }
 
-    pub(crate) async fn get_ts_index_or_else_create(
-        &self,
-        db: Arc<RwLock<Database>>,
-        id: TseriesFamilyId,
-    ) -> Result<Arc<ts_index::TSIndex>> {
-        let opt_index = db.read().await.get_ts_index(id);
-        match opt_index {
-            Some(v) => Ok(v),
-            None => db.write().await.get_ts_index_or_add(id).await,
-        }
-    }
-
     pub(crate) async fn get_tsfamily_or_else_create(
         &self,
         id: TseriesFamilyId,
-        ve: Option<VersionEdit>,
         db: Arc<RwLock<Database>>,
     ) -> Result<Arc<RwLock<TseriesFamily>>> {
-        let opt_tsf = db.read().await.get_tsfamily(id);
-        match opt_tsf {
-            Some(v) => Ok(v),
-            None => {
-                db.write()
-                    .await
-                    .add_tsfamily(id, ve, self.ctx.clone())
-                    .await
-            }
+        let mut db = db.write().await;
+        if let Some(tf) = db.get_tsfamily(id) {
+            return Ok(tf);
         }
+
+        db.create_tsfamily(id, self.ctx.clone()).await
     }
 }
 
@@ -223,12 +206,10 @@ impl Engine for TsKv {
         vnode_id: VnodeId,
     ) -> Result<VnodeStorage> {
         let db = self.get_db_or_else_create(tenant, db_name).await?;
-        let ts_index = self
-            .get_ts_index_or_else_create(db.clone(), vnode_id)
-            .await?;
 
+        let ts_index = db.write().await.get_ts_index_or_add(vnode_id).await?;
         let ts_family = self
-            .get_tsfamily_or_else_create(vnode_id, None, db.clone())
+            .get_tsfamily_or_else_create(vnode_id, db.clone())
             .await?;
 
         Ok(VnodeStorage {

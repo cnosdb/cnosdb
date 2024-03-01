@@ -1154,7 +1154,7 @@ mod test {
             for i in 0..20 {
                 db.write()
                     .await
-                    .add_tsfamily(i, None, ctx.clone())
+                    .create_tsfamily(i, ctx.clone())
                     .await
                     .expect("add tsfamily successfully");
                 let edit = VersionEdit::new_add_vnode(i, owned_database.to_string(), 0);
@@ -1237,7 +1237,7 @@ mod test {
                 .unwrap();
             db.write()
                 .await
-                .add_tsfamily(VNODE_ID, None, ctx)
+                .create_tsfamily(VNODE_ID, ctx)
                 .await
                 .expect("add vnode failed");
             let mut edits = vec![VersionEdit::new_add_vnode(

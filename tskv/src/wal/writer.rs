@@ -5,7 +5,7 @@ use crate::file_system::file_manager;
 use crate::kv_option::WalOptions;
 use crate::record_file::{RecordDataType, RecordDataVersion};
 use crate::wal::reader::WalReader;
-use crate::wal::{raft_store, reader, WalType, WAL_FOOTER_MAGIC_NUMBER};
+use crate::wal::{reader, wal_store, WalType, WAL_FOOTER_MAGIC_NUMBER};
 use crate::{record_file, Result};
 
 fn build_footer(min_sequence: u64, max_sequence: u64) -> [u8; record_file::FILE_FOOTER_LEN] {
@@ -69,7 +69,7 @@ impl WalWriter {
         })
     }
 
-    pub async fn append_raft_entry(&mut self, raft_entry: &raft_store::RaftEntry) -> Result<usize> {
+    pub async fn append_raft_entry(&mut self, raft_entry: &wal_store::RaftEntry) -> Result<usize> {
         let wal_type = match raft_entry.payload {
             openraft::EntryPayload::Blank => WalType::RaftNormalLog,
             openraft::EntryPayload::Normal(_) => WalType::RaftNormalLog,

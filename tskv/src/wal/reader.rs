@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use openraft::EntryPayload;
 
-use super::{raft_store, WalType, WAL_FOOTER_MAGIC_NUMBER, WAL_HEADER_LEN};
+use super::{wal_store, WalType, WAL_FOOTER_MAGIC_NUMBER, WAL_HEADER_LEN};
 use crate::byte_utils::{decode_be_u32, decode_be_u64};
 use crate::file_system::file_manager;
 use crate::{record_file, Error, Result};
@@ -185,7 +185,7 @@ impl WalRecordData {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Block {
-    RaftLog(raft_store::RaftEntry),
+    RaftLog(wal_store::RaftEntry),
     Unknown,
 }
 

@@ -69,6 +69,7 @@ impl NodeStorage {
     pub async fn destory(&self) -> ReplicationResult<()> {
         self.state.del_group(self.group_id())?;
         self.engine.write().await.destory().await?;
+        self.raft_logs.write().await.destory().await?;
 
         Ok(())
     }
@@ -419,9 +420,7 @@ impl RaftStorage<TypeConfig> for Arc<NodeStorage> {
             .await
             .map_err(|e| StorageIOError::write(&e))?;
 
-        self.state
-            .set_snapshot(self.group_id(), new_snapshot)
-            .map_err(|e| StorageIOError::write(&e))?;
+        let _ = self.build_snapshot().await?;
 
         Ok(())
     }

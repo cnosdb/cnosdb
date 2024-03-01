@@ -3,7 +3,7 @@ use std::fmt;
 use std::ops::{BitAnd, BitOr, Bound, RangeBounds};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use bytes::BufMut;
 use datafusion::arrow::datatypes::DataType;
@@ -122,7 +122,11 @@ impl TSIndex {
 
         ts_index.recover().await?;
         let ts_index = Arc::new(ts_index);
-        run_index_job(ts_index.clone(), binlog_change_reciver);
+        run_index_job(
+            Arc::<TSIndex>::downgrade(&ts_index),
+            ts_index.path.clone(),
+            binlog_change_reciver,
+        );
         info!(
             "Recovered index dir '{}', incr_id start at: {incr_id}",
             path.display()
@@ -926,11 +930,19 @@ pub fn encode_series_id_list(list: &[u32]) -> Vec<u8> {
     data
 }
 
-pub fn run_index_job(ts_index: Arc<TSIndex>, mut binlog_change_reciver: UnboundedReceiver<()>) {
+pub fn run_index_job(
+    ts_index: Weak<TSIndex>,
+    path: PathBuf,
+    mut binlog_change_reciver: UnboundedReceiver<()>,
+) {
     tokio::spawn(async move {
-        let path = ts_index.path.clone();
         let mut handle_file = HashMap::new();
         while (binlog_change_reciver.recv().await).is_some() {
+            let ts_index = match ts_index.upgrade() {
+                Some(ts_index) => ts_index,
+                None => break,
+            };
+
             let files = file_manager::list_file_names(&path);
             for filename in files.iter() {
                 if let Ok(file_id) = file_utils::get_index_binlog_file_id(filename) {
@@ -1055,6 +1067,8 @@ pub fn run_index_job(ts_index: Arc<TSIndex>, mut binlog_change_reciver: Unbounde
                 }
             }
         }
+
+        info!("build revert index job quit: {:?}", path);
     });
 }
 

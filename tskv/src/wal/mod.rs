@@ -35,8 +35,8 @@
 //! +------------+---------------+--------------+--------------+
 //! ```
 
-pub mod raft_store;
 mod reader;
+pub mod wal_store;
 pub mod writer;
 
 use std::fmt::Display;
@@ -263,7 +263,7 @@ impl VnodeWal {
         Ok(())
     }
 
-    async fn write_raft_entry(&mut self, raft_entry: &raft_store::RaftEntry) -> Result<(u64, u64)> {
+    async fn write_raft_entry(&mut self, raft_entry: &wal_store::RaftEntry) -> Result<(u64, u64)> {
         if let Err(err) = self.roll_wal_file(self.config.max_file_size).await {
             trace::warn!("roll wal file failed: {}", err);
         }
@@ -359,7 +359,7 @@ impl WalEntryCodec {
     }
 }
 
-fn decode_wal_raft_entry(buf: &[u8]) -> Result<raft_store::RaftEntry> {
+fn decode_wal_raft_entry(buf: &[u8]) -> Result<wal_store::RaftEntry> {
     let mut decoder = WalEntryCodec::new();
     let dec_data = decoder.decode(buf)?.ok_or(crate::Error::CommonError {
         reason: format!("raft entry decode is none, len: {}", buf.len()),
@@ -368,7 +368,7 @@ fn decode_wal_raft_entry(buf: &[u8]) -> Result<raft_store::RaftEntry> {
     bincode::deserialize(&dec_data).map_err(|e| crate::Error::Decode { source: e })
 }
 
-fn encode_wal_raft_entry(entry: &raft_store::RaftEntry) -> Result<Vec<u8>> {
+fn encode_wal_raft_entry(entry: &wal_store::RaftEntry) -> Result<Vec<u8>> {
     let bytes = bincode::serialize(entry).map_err(|e| crate::Error::Encode { source: e })?;
 
     let encoder = WalEntryCodec::new();

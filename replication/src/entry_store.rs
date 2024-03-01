@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -15,6 +15,7 @@ use crate::{EntryStorage, TypeConfig};
 type BEU64 = U64<BigEndian>;
 pub struct HeedEntryStorage {
     env: Env,
+    path: PathBuf,
     db: Database<OwnedType<BEU64>, OwnedSlice<u8>>,
 }
 
@@ -22,12 +23,13 @@ impl HeedEntryStorage {
     pub fn open(path: impl AsRef<Path>, size: usize) -> ReplicationResult<Self> {
         fs::create_dir_all(&path)?;
 
+        let path = path.as_ref().to_path_buf();
         let env = heed::EnvOpenOptions::new()
             .map_size(size)
             .max_dbs(1)
-            .open(path)?;
+            .open(path.clone())?;
         let db: Database<OwnedType<BEU64>, OwnedSlice<u8>> = env.create_database(Some("data"))?;
-        let storage = Self { env, db };
+        let storage = Self { env, db, path };
 
         Ok(storage)
     }
@@ -108,6 +110,12 @@ impl EntryStorage for HeedEntryStorage {
         let range = ..BEU64::new(index);
         self.db.delete_range(&mut writer, &range)?;
         writer.commit()?;
+
+        Ok(())
+    }
+
+    async fn destory(&mut self) -> ReplicationResult<()> {
+        fs::remove_dir_all(&self.path);
 
         Ok(())
     }

@@ -422,7 +422,7 @@ impl RaftNodesManager {
         let owner = models::schema::make_owner(tenant, db_name);
         let wal_option = tskv::kv_option::WalOptions::from(&self.config);
         let wal = wal::VnodeWal::new(Arc::new(wal_option), Arc::new(owner), vnode_id).await?;
-        let mut raft_logs = wal::raft_store::RaftEntryStorage::new(wal);
+        let mut raft_logs = wal::wal_store::RaftEntryStorage::new(wal);
 
         // 3. recover data...
         let _apply_id = self.raft_state.get_last_applied_log(group_id)?;
