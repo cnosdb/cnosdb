@@ -236,9 +236,11 @@ impl TimeRanges {
         self.max_ts = max(self.max_ts, time_range.max_ts);
         let timestamps = self
             .inner
-            .range(..=time_range.max_ts)
+            .range(..=time_range.max_ts.checked_add(1).unwrap_or(Timestamp::MAX))
             .rev()
-            .take_while(|(_, &max)| max >= time_range.min_ts)
+            .take_while(|(_, &max)| {
+                max >= time_range.min_ts.checked_sub(1).unwrap_or(Timestamp::MIN)
+            })
             .map(|(&min, _)| min)
             .collect::<Vec<_>>();
         let mut new_range = (time_range.min_ts, time_range.max_ts);
@@ -1801,6 +1803,171 @@ mod tests {
         assert_eq!(trs_all.min_ts(), i64::MIN);
         assert_eq!(trs_all.max_ts(), i64::MAX);
         assert!(trs_all.is_boundless());
+    }
+
+    #[test]
+    fn test_time_ranges_push() {
+        {
+            let mut trs = TimeRanges::new(vec![TimeRange::new(2, 3)]);
+            assert!(trs.includes(&(2, 3).into()));
+            trs.push(TimeRange::new(4, 5));
+            assert!(trs.includes(&(2, 3).into()));
+            assert!(trs.includes(&(3, 4).into()));
+            assert!(trs.includes(&(4, 5).into()));
+            assert!(trs.includes(&(2, 5).into()));
+            assert!(!trs.includes(&(1, 2).into()));
+            assert!(!trs.includes(&(5, 6).into()));
+            assert_eq!(
+                trs.time_ranges().collect::<Vec<_>>(),
+                vec![TimeRange::new(2, 5)]
+            );
+
+            trs.push(TimeRange::new(2, 3));
+            assert!(trs.includes(&(2, 3).into()));
+            assert!(trs.includes(&(3, 4).into()));
+            assert!(trs.includes(&(4, 5).into()));
+            assert!(trs.includes(&(2, 5).into()));
+            assert!(!trs.includes(&(1, 2).into()));
+            assert!(!trs.includes(&(5, 6).into()));
+            assert_eq!(
+                trs.time_ranges().collect::<Vec<_>>(),
+                vec![TimeRange::new(2, 5)]
+            );
+
+            trs.push(TimeRange::new(4, 5));
+            assert!(trs.includes(&(2, 3).into()));
+            assert!(trs.includes(&(3, 4).into()));
+            assert!(trs.includes(&(4, 5).into()));
+            assert!(trs.includes(&(2, 5).into()));
+            assert!(!trs.includes(&(1, 2).into()));
+            assert!(!trs.includes(&(5, 6).into()));
+            assert_eq!(
+                trs.time_ranges().collect::<Vec<_>>(),
+                vec![TimeRange::new(2, 5)]
+            );
+
+            trs.push(TimeRange::new(5, 6));
+            assert!(trs.includes(&(2, 3).into()));
+            assert!(trs.includes(&(3, 4).into()));
+            assert!(trs.includes(&(4, 5).into()));
+            assert!(trs.includes(&(2, 5).into()));
+            assert!(!trs.includes(&(1, 2).into()));
+            assert!(trs.includes(&(4, 5).into()));
+            assert!(trs.includes(&(4, 6).into()));
+            assert!(trs.includes(&(5, 6).into()));
+            assert!(!trs.includes(&(7, 8).into()));
+            assert_eq!(
+                trs.time_ranges().collect::<Vec<_>>(),
+                vec![TimeRange::new(2, 6)]
+            );
+        }
+        {
+            let mut trs = TimeRanges::new(vec![TimeRange::new(2, 3)]);
+            assert!(trs.includes(&(2, 3).into()));
+            assert!(!trs.includes(&(1, 2).into()));
+            assert!(!trs.includes(&(1, 3).into()));
+            trs.push(TimeRange::new(1, 2));
+            assert!(trs.includes(&(1, 2).into()));
+            assert!(trs.includes(&(1, 3).into()));
+            assert!(trs.includes(&(2, 3).into()));
+            assert!(!trs.includes(&(3, 4).into()));
+            assert_eq!(
+                trs.time_ranges().collect::<Vec<_>>(),
+                vec![TimeRange::new(1, 3)]
+            );
+        }
+        {
+            let mut trs = TimeRanges::new(vec![TimeRange::new(2, 3)]);
+
+            trs.push(TimeRange::new(5, 6));
+            assert!(!trs.includes(&(1, 2).into()));
+            assert!(trs.includes(&(2, 3).into()));
+            assert!(!trs.includes(&(3, 4).into()));
+            assert!(!trs.includes(&(4, 5).into()));
+            assert!(!trs.includes(&(4, 6).into()));
+            assert!(trs.includes(&(5, 6).into()));
+            assert!(!trs.includes(&(2, 5).into()));
+            assert!(!trs.includes(&(2, 6).into()));
+            assert_eq!(
+                trs.time_ranges().collect::<Vec<_>>(),
+                vec![TimeRange::new(2, 3), TimeRange::new(5, 6)]
+            );
+
+            trs.push(TimeRange::new(4, 5));
+            assert!(trs.includes(&(2, 3).into()));
+            assert!(trs.includes(&(3, 4).into()));
+            assert!(trs.includes(&(4, 5).into()));
+            assert!(trs.includes(&(2, 5).into()));
+            assert!(!trs.includes(&(1, 2).into()));
+            assert!(trs.includes(&(4, 5).into()));
+            assert!(trs.includes(&(4, 6).into()));
+            assert!(trs.includes(&(5, 6).into()));
+            assert!(!trs.includes(&(7, 8).into()));
+            assert_eq!(
+                trs.time_ranges().collect::<Vec<_>>(),
+                vec![TimeRange::new(2, 6)]
+            );
+        }
+        {
+            let mut trs = TimeRanges::new(vec![TimeRange::new(2, 3)]);
+            trs.push(TimeRange::new(5, 6));
+            trs.push(TimeRange::new(1, 6));
+            assert!(!trs.includes(&(0, 1).into()));
+            assert!(trs.includes(&(1, 3).into()));
+            assert!(trs.includes(&(1, 6).into()));
+            assert!(!trs.includes(&(1, 7).into()));
+            assert!(trs.includes(&(5, 6).into()));
+            assert!(!trs.includes(&(7, 8).into()));
+            assert_eq!(
+                trs.time_ranges().collect::<Vec<_>>(),
+                vec![TimeRange::new(1, 6)]
+            );
+        }
+        {
+            let mut trs = TimeRanges::new(vec![TimeRange::new(2, 3)]);
+
+            trs.push(TimeRange::new(2, 3));
+            assert!(!trs.includes(&(1, 2).into()));
+            assert!(trs.includes(&(2, 3).into()));
+            assert!(!trs.includes(&(3, 4).into()));
+            assert!(!trs.includes(&(4, 5).into()));
+            assert!(!trs.includes(&(2, 4).into()));
+            assert_eq!(
+                trs.time_ranges().collect::<Vec<_>>(),
+                vec![TimeRange::new(2, 3)]
+            );
+
+            trs.push(TimeRange::new(1, 3));
+            assert!(!trs.includes(&(0, 1).into()));
+            assert!(!trs.includes(&(0, 2).into()));
+            assert!(trs.includes(&(1, 2).into()));
+            assert!(trs.includes(&(1, 3).into()));
+            assert!(!trs.includes(&(1, 4).into()));
+            assert!(trs.includes(&(2, 3).into()));
+            assert!(!trs.includes(&(2, 4).into()));
+            assert_eq!(
+                trs.time_ranges().collect::<Vec<_>>(),
+                vec![TimeRange::new(1, 3)]
+            );
+        }
+        {
+            let mut trs = TimeRanges::new(vec![TimeRange::new(2, 3)]);
+
+            trs.push(TimeRange::new(1, 4));
+            assert!(!trs.includes(&(0, 1).into()));
+            assert!(!trs.includes(&(0, 2).into()));
+            assert!(trs.includes(&(1, 2).into()));
+            assert!(trs.includes(&(1, 3).into()));
+            assert!(trs.includes(&(1, 4).into()));
+            assert!(!trs.includes(&(1, 5).into()));
+            assert!(trs.includes(&(2, 3).into()));
+            assert!(trs.includes(&(2, 4).into()));
+            assert!(!trs.includes(&(2, 5).into()));
+            assert_eq!(
+                trs.time_ranges().collect::<Vec<_>>(),
+                vec![TimeRange::new(1, 4)]
+            );
+        }
     }
 
     #[test]

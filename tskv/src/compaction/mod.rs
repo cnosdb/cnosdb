@@ -83,73 +83,10 @@ pub struct CompactReq {
     files: Vec<Arc<ColumnFile>>,
     in_level: LevelId,
     out_level: LevelId,
+    out_time_range: TimeRange,
 }
 
 impl CompactReq {
-    /// Get the `out_time_range`, which is the time range of
-    /// the part of `files` that joined the compaction.
-    ///
-    /// - If it's a delta compaction(`in_level` is 0), the `out_time_range`
-    ///   is the time range of the level-1~4 file.
-    ///   - If `out_level` is 1 but there is no level-1~4 file, return `TimeRange::all()`.
-    /// - If it's a normal compaction, the `out_time_range` is all.
-    /// - If the level of the next of `out_level` has no files, the `out_time_range` is
-    ///   `[out_level.min_ts, +∞)`.
-    /// - Otherwise, return `TimeRange::all()`.
-    pub fn out_time_range(&self) -> TimeRange {
-        if self.in_level == 0 {
-            // If it's a delta compaction:
-            let mut out_time_range = TimeRange::none();
-            for f in self.files.iter() {
-                if !f.is_delta() {
-                    out_time_range.merge(f.time_range());
-                }
-            }
-            if !out_time_range.is_none() {
-                // Compact delta-files with level-file.
-                return out_time_range;
-            }
-            if self.out_level == 1 {
-                // Compact delta-files to level-file.
-                return TimeRange::all();
-            }
-        } else {
-            // If it's a normal compaction:
-            return TimeRange::all();
-        }
-        // If it's a delta compaction and all files are delta files, use the out_level's time range.
-        let levels = self.version.levels_info();
-        if let Some(out_level) = levels.get(self.out_level as usize) {
-            if out_level.time_range.is_none() {
-                // The out_level has no files, move the whole of those picked files into the out_level.
-                return TimeRange::all();
-            }
-
-            let mut out_time_range = out_level.time_range;
-            let out_level_next = (self.out_level + 1) as usize;
-            if out_level_next >= levels.len() {
-                // If the out_level is the max level, the min_ts of the range will be -∞.
-                out_time_range.min_ts = i64::MIN;
-                return out_time_range;
-            }
-            if levels[out_level_next].time_range.is_none() {
-                // The out_level has some files but the next level has no files,
-                // move part of those picked files into the out_level.
-                out_time_range.min_ts = i64::MIN;
-                if self.out_level == 1 {
-                    // If the out_level is lv-1, the max_ts of the range will be +∞.
-                    out_time_range.max_ts = i64::MAX;
-                }
-                return out_time_range;
-            }
-
-            return out_level.time_range;
-        }
-
-        // Impossible.
-        TimeRange::none()
-    }
-
     /// Split the `files` into delta files and an optional level-1~4 file. Only for delta compaction.
     pub fn split_delta_and_level_files(&self) -> (Vec<Arc<ColumnFile>>, Option<Arc<ColumnFile>>) {
         debug_assert!(self.in_level == 0);
@@ -174,7 +111,7 @@ impl std::fmt::Display for CompactReq {
             self.version.tf_id(),
             self.in_level,
             self.out_level,
-            self.out_time_range(),
+            self.out_time_range,
         )?;
         if !self.files.is_empty() {
             write!(
@@ -421,7 +358,7 @@ pub mod test {
     #[tokio::test]
     async fn test_generate_version() {
         let dir = "/tmp/test/compaction/test_generate_version";
-        let storage_opt = create_options(dir.to_string()).storage.clone();
+        let storage_opt = create_options(dir.to_string(), true).storage.clone();
         let vnode_sketch = VersionSketch::new(dir, Arc::new("dba".to_string()), 1)
             .add(0, FileSketch(6, (1, 10), 50, false))
             .add(0, FileSketch(7, (790, 800), 50, false))
@@ -493,7 +430,7 @@ pub mod test {
     async fn test_compact_req_methods_delta_compaction() {
         // This case doesn't need directory to exist.
         let dir = "/tmp/test/compaction/test_compact_req_methods_delta_compaction";
-        let opt = create_options(dir.to_string());
+        let opt = create_options(dir.to_string(), true);
 
         {
             // Merge delta files to level-1.
@@ -504,14 +441,13 @@ pub mod test {
             let version = version_sketch.to_version(opt.storage.clone()).await;
             let files = version.levels_info()[0].files.clone();
             let req = CompactReq {
-                compact_task: CompactTask::Normal(1),
+                compact_task: CompactTask::Delta(1),
                 version: Arc::new(version),
                 files,
                 in_level: 0,
                 out_level: 1,
+                out_time_range: (1, 20).into(),
             };
-
-            assert_eq!(req.out_time_range(), TimeRange::all());
 
             let mut delta_files_exp = vec![];
             version_sketch
@@ -534,20 +470,19 @@ pub mod test {
         {
             // Merge delta files to an empty level: level-3.
             let version_sketch = VersionSketch::new(dir, Arc::new("t_d".to_string()), 1)
-                .add(0, FileSketch(1, (1, 20), 10, false))
-                .add(0, FileSketch(2, (1, 20), 10, false))
-                .add(2, FileSketch(3, (1, 20), 10, false));
+                .add(0, FileSketch(1, (1, 9), 10, false))
+                .add(0, FileSketch(2, (1, 9), 10, false))
+                .add(2, FileSketch(3, (10, 20), 10, false));
             let version = version_sketch.to_version(opt.storage.clone()).await;
             let files = version.levels_info()[0].files.clone();
             let req = CompactReq {
-                compact_task: CompactTask::Normal(1),
+                compact_task: CompactTask::Delta(1),
                 version: Arc::new(version),
                 files,
                 in_level: 0,
                 out_level: 3,
+                out_time_range: (1, 9).into(),
             };
-
-            assert_eq!(req.out_time_range(), TimeRange::all());
 
             let mut delta_files_exp = vec![];
             version_sketch
@@ -570,20 +505,19 @@ pub mod test {
         {
             // Merge delta files to level-2 but level-3 is empty.
             let version_sketch = VersionSketch::new(dir, Arc::new("t_d".to_string()), 1)
-                .add(0, FileSketch(1, (1, 20), 10, false))
-                .add(0, FileSketch(2, (1, 20), 10, false))
-                .add(2, FileSketch(3, (1, 20), 10, false));
+                .add(0, FileSketch(1, (9, 20), 10, false))
+                .add(0, FileSketch(2, (9, 20), 10, false))
+                .add(2, FileSketch(3, (1, 10), 10, false));
             let version = version_sketch.to_version(opt.storage.clone()).await;
             let files = version.levels_info()[0].files.clone();
             let req = CompactReq {
-                compact_task: CompactTask::Normal(1),
+                compact_task: CompactTask::Delta(1),
                 version: Arc::new(version),
                 files,
                 in_level: 0,
                 out_level: 2,
+                out_time_range: (11, 20).into(),
             };
-
-            assert_eq!(req.out_time_range(), TimeRange::new(i64::MIN, 20));
 
             let mut delta_files_exp = vec![];
             version_sketch
@@ -611,17 +545,16 @@ pub mod test {
                 .add(2, FileSketch(3, (1, 10), 10, false));
             let version = version_sketch.to_version(opt.storage.clone()).await;
             let mut req = CompactReq {
-                compact_task: CompactTask::Normal(1),
+                compact_task: CompactTask::Delta(1),
                 version: Arc::new(version),
                 files: vec![],
                 in_level: 0,
                 out_level: 2,
+                out_time_range: (1, 10).into(),
             };
             version_sketch
                 .to_column_files(&opt.storage, &mut req.files, |_, _| true)
                 .await;
-
-            assert_eq!(req.out_time_range(), TimeRange::new(1, 10));
 
             let (mut delta_files_exp, mut level_files_exp) = (vec![], vec![]);
             version_sketch
@@ -654,17 +587,16 @@ pub mod test {
                 .add(0, FileSketch(2, (16, 20), 10, false));
             let version = version_sketch.to_version(opt.storage.clone()).await;
             let mut req = CompactReq {
-                compact_task: CompactTask::Normal(1),
+                compact_task: CompactTask::Delta(1),
                 version: Arc::new(version),
                 files: vec![],
                 in_level: 0,
                 out_level: 1,
+                out_time_range: (11, 20).into(),
             };
             version_sketch
                 .to_column_files(&opt.storage, &mut req.files, |_, _| true)
                 .await;
-
-            assert_eq!(req.out_time_range(), TimeRange::all());
 
             let mut delta_files_exp = vec![];
             version_sketch
@@ -693,17 +625,16 @@ pub mod test {
                 .add(2, FileSketch(4, (6, 10), 5, false));
             let version = version_sketch.to_version(opt.storage.clone()).await;
             let mut req = CompactReq {
-                compact_task: CompactTask::Normal(1),
+                compact_task: CompactTask::Delta(1),
                 version: Arc::new(version),
                 files: vec![],
                 in_level: 0,
                 out_level: 1,
+                out_time_range: TimeRange::all(),
             };
             version_sketch
                 .to_column_files(&opt.storage, &mut req.files, |l, _| l.0 == 0)
                 .await;
-
-            assert_eq!(req.out_time_range(), TimeRange::all());
 
             let mut delta_files_exp = vec![];
             version_sketch
@@ -728,7 +659,7 @@ pub mod test {
     async fn test_compact_req_methods_normal_compaction() {
         // This case doesn't need directory to exist.
         let dir = "/tmp/test/compaction/test_compact_req_methods_normal_compaction";
-        let opt = create_options(dir.to_string());
+        let opt = create_options(dir.to_string(), true);
 
         {
             // Merge level files to next level.
@@ -742,11 +673,11 @@ pub mod test {
                 files: vec![],
                 in_level: 1,
                 out_level: 2,
+                out_time_range: TimeRange::all(),
             };
             version_sketch
                 .to_column_files(&opt.storage, &mut req.files, |_, _| true)
                 .await;
-            assert_eq!(req.out_time_range(), TimeRange::all());
         }
 
         {
@@ -763,11 +694,12 @@ pub mod test {
                 files: vec![],
                 in_level: 1,
                 out_level: 2,
+                out_time_range: TimeRange::all(),
             };
             version_sketch
                 .to_column_files(&opt.storage, &mut req.files, |l, _| l.0 == 1)
                 .await;
-            assert_eq!(req.out_time_range(), TimeRange::all());
+            assert_eq!(req.out_time_range, TimeRange::all());
         }
     }
 }

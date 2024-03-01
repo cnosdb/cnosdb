@@ -488,7 +488,11 @@ impl TsmTombstoneCache {
         }
     }
 
+    ///  Append time_range, but if time_range is None, does nothing.
     pub fn insert(&mut self, tombstone_field: TombstoneField, time_range: TimeRange) {
+        if time_range.is_none() {
+            return;
+        }
         match tombstone_field {
             TombstoneField::One(field_id) => {
                 // Adding for ONE field: merge with existing tombstones.

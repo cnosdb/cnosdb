@@ -434,7 +434,11 @@ impl LevelInfo {
 
 impl std::fmt::Display for LevelInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{{ L:{}, files: [ ", self.level)?;
+        write!(
+            f,
+            "{{ L:{}, time_range: {}, files: [ ",
+            self.level, self.time_range,
+        )?;
         for (i, file) in self.files.iter().enumerate() {
             write!(f, "{}", file.as_ref())?;
             if i < self.files.len() - 1 {
@@ -574,6 +578,7 @@ impl Version {
     }
 
     pub async fn unmark_compacting_files(&self, files_ids: &HashSet<ColumnFileId>) {
+        trace::info!("unmark_compacting_files: {:?}", files_ids);
         if files_ids.is_empty() {
             return;
         }

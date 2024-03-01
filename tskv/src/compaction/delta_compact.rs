@@ -30,7 +30,7 @@ pub async fn run_compaction_job(
     if delta_files.is_empty() {
         return Ok(None);
     }
-    let out_time_range = request.out_time_range();
+    let out_time_range = request.out_time_range;
 
     // Collect l0-files that can be deleted after compaction.
     let mut l0_file_metas_will_delete: Vec<CompactMeta> = Vec::new();
@@ -51,10 +51,10 @@ pub async fn run_compaction_job(
             .add_tombstone_and_compact_to_tmp(out_time_range)
             .await?;
         if compacted_all_excluded_time_range.includes(file.time_range()) {
-            // The tombstone indludes all of the l0-file, so delete it.
+            // The tombstone includes all of the l0-file, so delete it.
             l0_file_metas_will_delete.push(CompactMeta::from(file.as_ref()));
         } else {
-            // The tombstone inludes partly of the l0_file and the exlcuded range close to the edge.
+            // The tombstone includes partly of the l0_file and the excluded range close to the edge.
             l0_file_metas_will_partly_delete.push(CompactMeta::new_del_file_part(
                 0,
                 file.file_id(),
@@ -848,12 +848,14 @@ mod test {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn prepare_delta_compaction(
         tenant_database: Arc<String>,
         opt: Arc<Options>,
         next_file_id: ColumnFileId,
         delta_files: Vec<Arc<ColumnFile>>,
         tsm_files: Vec<Arc<ColumnFile>>,
+        out_time_range: TimeRange,
         out_level: LevelId,
         out_level_max_ts: Timestamp,
     ) -> (CompactReq, Arc<GlobalContext>) {
@@ -875,6 +877,7 @@ mod test {
             files,
             in_level: 0,
             out_level,
+            out_time_range,
         };
         let context = Arc::new(GlobalContext::new());
         context.set_file_id(next_file_id);
@@ -915,7 +918,7 @@ mod test {
         let dir = "/tmp/test/delta_compaction/1";
         let _ = std::fs::remove_dir_all(dir);
         let tenant_database = Arc::new("cnosdb.dba".to_string());
-        let opt = create_options(dir.to_string());
+        let opt = create_options(dir.to_string(), true);
         let dir = opt.storage.tsm_dir(&tenant_database, 1);
         let max_level_ts = 9;
 
@@ -926,6 +929,7 @@ mod test {
             next_file_id,
             files,
             vec![],
+            (1, 9).into(),
             1,
             max_level_ts,
         );
@@ -969,7 +973,7 @@ mod test {
         let dir = "/tmp/test/delta_compaction/2";
         let _ = std::fs::remove_dir_all(dir);
         let tenant_database = Arc::new("cnosdb.dba".to_string());
-        let opt = create_options(dir.to_string());
+        let opt = create_options(dir.to_string(), true);
         let dir = opt.storage.tsm_dir(&tenant_database, 1);
         let max_level_ts = 9;
 
@@ -980,6 +984,7 @@ mod test {
             next_file_id,
             files,
             vec![],
+            (1, 9).into(),
             1,
             max_level_ts,
         );
@@ -1017,7 +1022,7 @@ mod test {
         let dir = "/tmp/test/delta_compaction/3";
         let _ = std::fs::remove_dir_all(dir);
         let tenant_database = Arc::new("cnosdb.dba".to_string());
-        let opt = create_options(dir.to_string());
+        let opt = create_options(dir.to_string(), true);
         let dir = opt.storage.tsm_dir(&tenant_database, 1);
         let max_level_ts = 9;
 
@@ -1034,6 +1039,7 @@ mod test {
             next_file_id,
             files,
             vec![],
+            (1, 9).into(),
             1,
             max_level_ts,
         );
@@ -1045,10 +1051,12 @@ mod test {
         check_column_file(dir, version_edit, expected_data, out_level).await;
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn test_delta_compaction(
         dir: &str,
         delta_files_desc: &[TsmSchema],
         tsm_files_desc: &[TsmSchema],
+        out_time_range: TimeRange,
         max_ts: Timestamp,
         expected_data_desc: HashMap<FieldId, Vec<DataBlock>>,
         expected_data_level: LevelId,
@@ -1056,7 +1064,7 @@ mod test {
     ) {
         let _ = std::fs::remove_dir_all(dir);
         let tenant_database = Arc::new("cnosdb.dba".to_string());
-        let opt = create_options(dir.to_string());
+        let opt = create_options(dir.to_string(), true);
         let tsm_dir = opt.storage.tsm_dir(&tenant_database, 1);
         if !file_manager::try_exists(&tsm_dir) {
             std::fs::create_dir_all(&tsm_dir).unwrap();
@@ -1086,6 +1094,7 @@ mod test {
             next_file_id,
             delta_files,
             tsm_files,
+            out_time_range,
             expected_data_level,
             max_ts,
         );
@@ -1211,8 +1220,9 @@ mod test {
 
         test_delta_compaction(
             "/tmp/test/delta_compaction/big_1",
-            &delta_files_desc,
-            &[tsm_file_desc],
+            &delta_files_desc, // (1,2500), (1,4500), (1001,6500)
+            &[tsm_file_desc],  // (2005,5050)
+            (2001, 5050).into(),
             max_level_ts,
             expected_data_target_level,
             1,
