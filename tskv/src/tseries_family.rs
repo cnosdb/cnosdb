@@ -544,7 +544,19 @@ impl Version {
                     weak_tsm_reader_cache.clone(),
                 );
             }
-            new_levels[level_id].update_time_range();
+        }
+
+        // Find the last level that has files and update the time_range of all levels.
+        let mut next_level_max_ts = Option::<Timestamp>::None;
+        for i in (1..=4).rev() {
+            let lv = &mut new_levels[i];
+            if lv.files.is_empty() {
+                if let Some(ts) = next_level_max_ts {
+                    lv.time_range = TimeRange::new(ts + 1, ts + 1);
+                }
+            } else {
+                next_level_max_ts = Some(lv.time_range.max_ts);
+            }
         }
 
         let mut new_version = Self {
@@ -578,7 +590,6 @@ impl Version {
     }
 
     pub async fn unmark_compacting_files(&self, files_ids: &HashSet<ColumnFileId>) {
-        trace::info!("unmark_compacting_files: {:?}", files_ids);
         if files_ids.is_empty() {
             return;
         }
@@ -906,11 +917,6 @@ impl TseriesFamily {
         flushed_mem_caches: Option<&Vec<Arc<RwLock<MemCache>>>>,
     ) {
         let version = Arc::new(new_version);
-        debug!(
-            "New version(level_info) for ts_family({}): {:?}",
-            self.tf_id,
-            &version.levels_info()
-        );
         if let Some(flushed_mem_caches) = flushed_mem_caches {
             let mut new_caches = Vec::with_capacity(self.immut_cache.len());
             for c in self.immut_cache.iter() {
@@ -929,6 +935,11 @@ impl TseriesFamily {
         }
         self.new_super_version(version.clone());
         self.seq_no = version.last_seq;
+        debug!(
+            "Setting new version for ts_family({}), levels: {}",
+            self.tf_id,
+            LevelInfos(version.levels_info())
+        );
         self.version = version;
     }
 
@@ -1189,7 +1200,7 @@ pub fn schedule_vnode_compaction(
                                     let mut ts_wlock = last_modified.write().await;
                                     *ts_wlock = Some(Instant::now());
                                     if let Err(e) = compact_task_sender.send(CompactTask::Cold(tsf_id)).await {
-                                        warn!("failed to send compact task({}), {}", tsf_id, e);
+                                        warn!("Scheduler(vnode: {}): Failed to send compact task: Cold({}), {}", tsf_id, tsf_id, e);
                                     }
                                 }
                             }
@@ -1206,7 +1217,7 @@ pub fn schedule_vnode_compaction(
                             if level_0_files >= compact_trigger_file_num {
                                 // If there is any l0-file, send a compact task.
                                 if let Err(e) = compact_task_sender.send(CompactTask::Delta(tsf_id)).await {
-                                    warn!("failed to send compact task({}), {}", tsf_id, e);
+                                    warn!("Scheduler(vnode: {}): Failed to send compact task: Delta({}), {}", tsf_id, tsf_id, e);
                                 }
                                 break;
                             }
@@ -1233,7 +1244,6 @@ pub mod test_tseries_family {
     use meta::model::MetaRef;
     use metrics::metric_register::MetricsRegister;
     use models::schema::{DatabaseSchema, TenantOptions};
-    use models::Timestamp;
     use parking_lot::RwLock;
     use tokio::sync::mpsc::{self, Receiver};
     use tokio::sync::RwLock as AsyncRwLock;
@@ -1370,6 +1380,7 @@ pub mod test_tseries_family {
         let database = Arc::new("test".to_string());
         let ts_family_id = 1;
         let tsm_dir = opt.storage.tsm_dir(&database, ts_family_id);
+        // [(none), (3001, 3150), (1, 2000), (none), (none)]
         #[rustfmt::skip]
         let levels = [
             LevelInfo::init(database.clone(), 0, 1, opt.storage.clone()),
@@ -1408,6 +1419,7 @@ pub mod test_tseries_family {
 
         let mut version_edits = Vec::new();
         let mut ve = VersionEdit::new(1);
+        // [(none), (none), (1, 3150), (none), (none)]
         ve.add_file(CompactMeta {
             file_id: 5,
             file_size: 150,
@@ -1440,14 +1452,12 @@ pub mod test_tseries_family {
         let new_version =
             version.copy_apply_version_edits(version_edits, &mut HashMap::new(), Some(3));
 
+        // [(none), (3151, 3151), (1, 3150), (none), (none)]
         assert_eq!(new_version.last_seq, 3);
         assert_eq!(new_version.max_level_ts, 3150);
 
         let lvl = new_version.levels_info.get(1).unwrap();
-        assert_eq!(
-            lvl.time_range,
-            TimeRange::new(Timestamp::MAX, Timestamp::MIN)
-        );
+        assert_eq!(lvl.time_range, TimeRange::new(3151, 3151));
         assert_eq!(lvl.files.len(), 0);
 
         let lvl = new_version.levels_info.get(2).unwrap();
