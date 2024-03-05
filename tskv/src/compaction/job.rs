@@ -220,7 +220,8 @@ impl CompactJobInner {
                                         let _ = ctx
                                             .summary_task_sender
                                             .send(SummaryTask::new(
-                                                vec![version_edit],
+                                                tsf.clone(),
+                                                version_edit,
                                                 Some(file_metas),
                                                 None,
                                                 summary_tx,

@@ -16,7 +16,6 @@ use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{oneshot, RwLock};
 use trace::error;
-use utils::BloomFilter;
 
 use crate::compaction::CompactTask;
 use crate::error::{Result, SchemaSnafu};
@@ -28,7 +27,7 @@ use crate::summary::{SummaryTask, VersionEdit};
 use crate::tseries_family::{LevelInfo, TseriesFamily, TsfFactory, Version};
 use crate::tsm2::reader::TSM2Reader;
 use crate::Error::{self};
-use crate::{ColumnFileId, TsKvContext, TseriesFamilyId};
+use crate::{TsKvContext, TseriesFamilyId};
 
 pub type FlatBufferTable<'a> = flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Table<'a>>>;
 
@@ -132,11 +131,7 @@ impl Database {
             self.opt.storage.max_cached_readers,
         ));
         let levels = LevelInfo::init_levels(self.owner.clone(), tsf_id, self.opt.storage.clone());
-        let version_edits = vec![VersionEdit::new_add_vnode(
-            tsf_id,
-            self.owner.as_ref().clone(),
-            0,
-        )];
+        let version_edit = VersionEdit::new_add_vnode(tsf_id, self.owner.as_ref().clone(), 0);
 
         let ver = Arc::new(Version::new(
             tsf_id,
@@ -152,11 +147,12 @@ impl Database {
         let tf = Arc::new(RwLock::new(tf));
         self.ts_families.insert(tsf_id, tf.clone());
 
-        let (task_state_sender, _task_state_receiver) = oneshot::channel();
-        let task = SummaryTask::new(version_edits, None, None, task_state_sender);
+        let (task_state_sender, task_state_receiver) = oneshot::channel();
+        let task = SummaryTask::new(tf.clone(), version_edit, None, None, task_state_sender);
         if let Err(e) = ctx.summary_task_sender.send(task).await {
             error!("failed to send Summary task, {:?}", e);
         }
+        let _ = task_state_receiver.await;
 
         Ok(tf)
     }
@@ -204,28 +200,29 @@ impl Database {
         let tf = Arc::new(RwLock::new(tf));
         self.ts_families.insert(tsf_id, tf.clone());
 
-        let (task_state_sender, _task_state_receiver) = oneshot::channel();
-        let task = SummaryTask::new(vec![ve], Some(file_metas), None, task_state_sender);
+        let (task_state_sender, task_state_receiver) = oneshot::channel();
+        let task = SummaryTask::new(tf.clone(), ve, Some(file_metas), None, task_state_sender);
         if let Err(e) = ctx.summary_task_sender.send(task).await {
             error!("failed to send Summary task, {:?}", e);
         }
 
-        //_task_state_receiver.await;
+        let _ = task_state_receiver.await;
 
         Ok(tf)
     }
 
     pub async fn del_tsfamily(&mut self, tf_id: u32, summary_task_sender: Sender<SummaryTask>) {
         if let Some(tf) = self.ts_families.remove(&tf_id) {
-            tf.read().await.close();
-        }
+            let edit = VersionEdit::new_del_vnode(tf_id);
+            let (task_state_sender, task_state_receiver) = oneshot::channel();
+            let task = SummaryTask::new(tf.clone(), edit, None, None, task_state_sender);
+            if let Err(e) = summary_task_sender.send(task).await {
+                error!("failed to send Summary task, {:?}", e);
+            }
 
-        // TODO(zipper): If no ts_family recovered from summary, do not write summary.
-        let edits = vec![VersionEdit::new_del_vnode(tf_id)];
-        let (task_state_sender, _task_state_receiver) = oneshot::channel();
-        let task = SummaryTask::new(edits, None, None, task_state_sender);
-        if let Err(e) = summary_task_sender.send(task).await {
-            error!("failed to send Summary task, {:?}", e);
+            let _ = task_state_receiver.await;
+
+            tf.read().await.close();
         }
     }
 
@@ -379,33 +376,6 @@ impl Database {
         let res_sids = res_sids.into_iter().flatten().collect::<Vec<_>>();
 
         Ok(res_sids)
-    }
-
-    /// Snapshots last version before `last_seq` of this database's all vnodes
-    /// or specified vnode by `vnode_id`.
-    ///
-    /// Generated version data will be inserted into `version_edits` and `file_metas`.
-    ///
-    /// - `version_edits` are for all vnodes and db-files,
-    /// - `file_metas` is for index data
-    /// (field-id filter) of db-files.
-    pub async fn snapshot(
-        &self,
-        vnode_id: Option<TseriesFamilyId>,
-        version_edits: &mut Vec<VersionEdit>,
-        file_metas: &mut HashMap<ColumnFileId, Arc<BloomFilter>>,
-    ) {
-        if let Some(tsf_id) = vnode_id.as_ref() {
-            if let Some(tsf) = self.ts_families.get(tsf_id) {
-                let ve = tsf.read().await.build_version_edit(file_metas);
-                version_edits.push(ve);
-            }
-        } else {
-            for tsf in self.ts_families.values() {
-                let ve = tsf.read().await.build_version_edit(file_metas);
-                version_edits.push(ve);
-            }
-        }
     }
 
     pub async fn get_series_key(

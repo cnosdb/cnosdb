@@ -1,0 +1,162 @@
+statement ok
+--#TENANT=cnosdb
+--#USER_NAME=root
+--#DATABASE=public
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: User 'root' is prohibited from being dropped", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+DROP USER root;
+
+statement ok
+DROP TENANT IF EXISTS tenant_a;
+
+statement ok
+DROP TENANT IF EXISTS tenant_b;
+
+statement ok
+DROP USER IF EXISTS user_a;
+
+statement ok
+DROP USER IF EXISTS user_b;
+
+statement ok
+DROP USER IF EXISTS user_c;
+
+statement ok
+DROP ROLE IF EXISTS role_a;
+
+
+
+statement ok
+CREATE TENANT tenant_a;
+
+statement ok
+CREATE USER user_a;
+
+statement ok
+ALTER TENANT tenant_a ADD USER user_a AS owner;
+
+statement ok
+CREATE ROLE role_a INHERIT member;
+
+statement ok
+CREATE TENANT tenant_b;
+
+statement ok
+CREATE USER user_b;
+
+statement ok
+ALTER TENANT tenant_b ADD USER user_b AS owner;
+
+statement ok
+CREATE USER user_c;
+
+
+
+statement ok
+--#TENANT=tenant_a
+--#USER_NAME=user_a
+
+statement ok
+CREATE DATABASE db_a;
+
+statement ok
+--#DATABASE=db_a
+
+statement ok
+CREATE TABLE air_a (visibility DOUBLE,temperature DOUBLE,pressure DOUBLE,TAGS(station));
+
+statement ok
+INSERT INTO air_a (TIME, station, visibility, temperature, pressure) VALUES(1666165200290401000, 'XiaoMaiDao', 56, 69, 77);
+
+query T rowsort
+SELECT * FROM air_a;
+----
+2022-10-19T07:40:00.290401 "XiaoMaiDao" 56.0 69.0 77.0
+
+statement ok
+--#TENANT=tenant_b
+--#USER_NAME=user_b
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Table not found, tenant: tenant_b db: db_a, table: air_a", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT * FROM air_a;
+
+statement ok
+CREATE DATABASE db_b;
+
+statement ok
+--#DATABASE=db_b
+
+statement ok
+CREATE TABLE air_b (visibility DOUBLE,temperature DOUBLE,pressure DOUBLE,TAGS(station));
+
+statement ok
+INSERT INTO air_b (TIME, station, visibility, temperature, pressure) VALUES(1666165200290401000, 'XiaoMaiDao', 56, 69, 77);
+
+query T rowsort
+SELECT * FROM air_b;
+----
+2022-10-19T07:40:00.290401 "XiaoMaiDao" 56.0 69.0 77.0
+
+
+statement ok
+--#USER_NAME=user_c
+
+query error Arrow error: Io error: Can't handshake status: Unauthenticated, message: "Auth error: The member user_c of tenant tenant_b not found", details: \[\], metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}
+SELECT * FROM air_b;
+
+
+statement ok
+--#USER_NAME=root
+--#TENANT=tenant_a
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Meta: The role role_a not found", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+ALTER TENANT tenant_a ADD USER user_c AS role_a;
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Meta: The role role_a not found", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+GRANT READ ON DATABASE db_a TO ROLE role_a;
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Meta: Database not found: \\"db_b\\"", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+CREATE TABLE t1(id BIGINT);
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Table not found, tenant: tenant_a db: db_b, table: t1", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+INSERT t1 VALUES (1, 1);
+
+
+statement ok
+--#USER_NAME=user_c
+
+query error Arrow error: Io error: Can't handshake status: Unauthenticated, message: "Auth error: The member user_c of tenant tenant_a not found", details: \[\], metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}
+SELECT * FROM t1;
+
+statement error Arrow error: Io error: Can't handshake status: Unauthenticated, message: "Auth error: The member user_c of tenant tenant_a not found", details: \[\], metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}
+INSERT t1 VALUES (2, 2);
+
+
+statement ok
+--#USER_NAME=root
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Meta: The role role_a not found", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+GRANT WRITE ON DATABASE db_a TO ROLE role_a;
+
+
+statement ok
+--#USER_NAME=user_c
+
+query error Arrow error: Io error: Can't handshake status: Unauthenticated, message: "Auth error: The member user_c of tenant tenant_a not found", details: \[\], metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}
+SELECT * FROM t1;
+
+statement error Arrow error: Io error: Can't handshake status: Unauthenticated, message: "Auth error: The member user_c of tenant tenant_a not found", details: \[\], metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}
+INSERT t1 VALUES (3, 3);
+
+
+statement ok
+--#USER_NAME=root
+
+statement ok
+DROP USER user_c;
+
+statement ok
+--#USER_NAME=user_c
+
+query error Arrow error: Io error: Can't handshake status: Unauthenticated, message: "Auth error: The user user_c not found", details: \[\], metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}
+SELECT * FROM t1;

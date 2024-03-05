@@ -1,0 +1,244 @@
+statement ok
+--#DATABASE=filter_push_down
+
+sleep 100ms
+statement ok
+DROP DATABASE IF EXISTS filter_push_down;
+
+statement ok
+CREATE DATABASE filter_push_down WITH TTL '100000d';
+
+
+statement ok
+CREATE TABLE m0(
+    f0 BIGINT CODEC(DELTA),
+    f1 STRING CODEC(GZIP),
+    f2 BIGINT UNSIGNED CODEC(NULL),
+    f3 BOOLEAN,
+    f4 DOUBLE CODEC(GORILLA),
+    TAGS(t0, t1));
+
+
+statement ok
+INSERT m0(TIME, f4, t0) VALUES(1041670293467254361, 0.507623643211476, '916053861');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: TskvError: Fields can't be empty", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+INSERT m0(TIME, f0) VALUES(2079939785551584142, NULL), (1243152233754651379, 12321); -- 0ms;
+
+statement ok
+INSERT m0(TIME, f1) VALUES(631407052613557553, 'TRUE'), (7486831592909450783, 'TRUE'); -- 0ms;
+
+statement ok
+INSERT m0(TIME, f2) VALUES(5867172425191822176, 888), (3986678807649375642, 999); -- 0ms;
+
+statement ok
+INSERT m0(TIME, f3) VALUES(7488251815539246350, FALSE); -- 0ms;
+
+statement ok
+INSERT m0(TIME, f4) VALUES(5414775681413349294, 1.111); -- 1ms;
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: TskvError: Fields can't be empty", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+INSERT m0(TIME, t0) VALUES(5414775681413349294, 't000'); -- 1ms;
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: TskvError: Fields can't be empty", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+INSERT m0(TIME, t1) VALUES(5414775681413349294, 't111'); -- 1ms;
+
+
+statement ok
+INSERT m0(TIME, t0, t1, f0, f1, f2, f3, f4)
+VALUES
+    (1, 'a', 'b', 11, '11', 11, true, 11.11),
+    (2, 'a', 'c', 12, '11', 11, false, 11.11),
+    (3, 'b', 'b', 13, '11', 11, false, 11.11),
+    (4, 'b', 'a', 14, '11', 11, true, 11.11),
+    (5, 'a', 'a', 11, '11', 11, true, 11.11),
+    (6, 'b', 'c', 15, '11', 11, false, 11.11); -- 1ms;
+
+
+query T rowsort
+select * from m0 order by time, t0, t1, f0;
+----
+1970-01-01T00:00:00.000000001 "a" "b" 11 "11" 11 true 11.11
+1970-01-01T00:00:00.000000002 "a" "c" 12 "11" 11 false 11.11
+1970-01-01T00:00:00.000000003 "b" "b" 13 "11" 11 false 11.11
+1970-01-01T00:00:00.000000004 "b" "a" 14 "11" 11 true 11.11
+1970-01-01T00:00:00.000000005 "a" "a" 11 "11" 11 true 11.11
+1970-01-01T00:00:00.000000006 "b" "c" 15 "11" 11 false 11.11
+1990-01-03T22:50:52.613557553 "NULL" "NULL" NULL "TRUE" NULL NULL NULL
+2003-01-04T08:51:33.467254361 "916053861" "NULL" NULL "NULL" NULL NULL 0.507623643211476
+2096-05-01T02:46:47.649375642 "NULL" "NULL" NULL "NULL" 999 NULL NULL
+2141-08-03T00:21:21.413349294 "NULL" "NULL" NULL "NULL" NULL NULL 1.111
+2155-12-04T02:07:05.191822176 "NULL" "NULL" NULL "NULL" 888 NULL NULL
+2207-04-02T03:26:32.909450783 "NULL" "NULL" NULL "TRUE" NULL NULL NULL
+2207-04-18T13:56:55.539246350 "NULL" "NULL" NULL "NULL" NULL false NULL
+
+
+# not support push_down 'not' expr
+query T rowsort
+SELECT ALL * FROM m0 AS M0 WHERE NOT ((('TOk')=(m0.t0)))
+UNION ALL
+SELECT ALL * FROM m0 AS M0  WHERE NOT (NOT ((('TOk')=(m0.t0))))
+UNION ALL
+SELECT ALL * FROM m0 AS M0  WHERE (NOT ((('TOk')=(m0.t0)))) IS NULL;
+----
+1970-01-01T00:00:00.000000001 "a" "b" 11 "11" 11 true 11.11
+1970-01-01T00:00:00.000000002 "a" "c" 12 "11" 11 false 11.11
+1970-01-01T00:00:00.000000003 "b" "b" 13 "11" 11 false 11.11
+1970-01-01T00:00:00.000000004 "b" "a" 14 "11" 11 true 11.11
+1970-01-01T00:00:00.000000005 "a" "a" 11 "11" 11 true 11.11
+1970-01-01T00:00:00.000000006 "b" "c" 15 "11" 11 false 11.11
+1990-01-03T22:50:52.613557553 "NULL" "NULL" NULL "TRUE" NULL NULL NULL
+2003-01-04T08:51:33.467254361 "916053861" "NULL" NULL "NULL" NULL NULL 0.507623643211476
+2096-05-01T02:46:47.649375642 "NULL" "NULL" NULL "NULL" 999 NULL NULL
+2141-08-03T00:21:21.413349294 "NULL" "NULL" NULL "NULL" NULL NULL 1.111
+2155-12-04T02:07:05.191822176 "NULL" "NULL" NULL "NULL" 888 NULL NULL
+2207-04-02T03:26:32.909450783 "NULL" "NULL" NULL "TRUE" NULL NULL NULL
+2207-04-18T13:56:55.539246350 "NULL" "NULL" NULL "NULL" NULL false NULL
+
+
+
+query T rowsort
+select * from m0 
+where time = 0;
+----
+
+
+query T rowsort
+select * from m0 
+where time > 3;
+----
+1970-01-01T00:00:00.000000004 "b" "a" 14 "11" 11 true 11.11
+1970-01-01T00:00:00.000000005 "a" "a" 11 "11" 11 true 11.11
+1970-01-01T00:00:00.000000006 "b" "c" 15 "11" 11 false 11.11
+1990-01-03T22:50:52.613557553 "NULL" "NULL" NULL "TRUE" NULL NULL NULL
+2003-01-04T08:51:33.467254361 "916053861" "NULL" NULL "NULL" NULL NULL 0.507623643211476
+2096-05-01T02:46:47.649375642 "NULL" "NULL" NULL "NULL" 999 NULL NULL
+2141-08-03T00:21:21.413349294 "NULL" "NULL" NULL "NULL" NULL NULL 1.111
+2155-12-04T02:07:05.191822176 "NULL" "NULL" NULL "NULL" 888 NULL NULL
+2207-04-02T03:26:32.909450783 "NULL" "NULL" NULL "TRUE" NULL NULL NULL
+2207-04-18T13:56:55.539246350 "NULL" "NULL" NULL "NULL" NULL false NULL
+
+
+query T rowsort
+select * from m0 
+where t0 = 'xx';
+----
+
+
+query T rowsort
+select * from m0 
+where t0 = 'a';
+----
+1970-01-01T00:00:00.000000001 "a" "b" 11 "11" 11 true 11.11
+1970-01-01T00:00:00.000000002 "a" "c" 12 "11" 11 false 11.11
+1970-01-01T00:00:00.000000005 "a" "a" 11 "11" 11 true 11.11
+
+
+query T rowsort
+select * from m0 
+where t0 = 'a' and t1 = 'b';
+----
+1970-01-01T00:00:00.000000001 "a" "b" 11 "11" 11 true 11.11
+
+
+# not support push down
+query T rowsort
+select * from m0 
+where t0 = 'a' or t1 = 'b';
+----
+1970-01-01T00:00:00.000000001 "a" "b" 11 "11" 11 true 11.11
+1970-01-01T00:00:00.000000002 "a" "c" 12 "11" 11 false 11.11
+1970-01-01T00:00:00.000000003 "b" "b" 13 "11" 11 false 11.11
+1970-01-01T00:00:00.000000005 "a" "a" 11 "11" 11 true 11.11
+
+
+query T rowsort
+select * from m0 
+where t0 = 'a' and f0 = 11;
+----
+1970-01-01T00:00:00.000000001 "a" "b" 11 "11" 11 true 11.11
+1970-01-01T00:00:00.000000005 "a" "a" 11 "11" 11 true 11.11
+
+
+query T rowsort
+select * from m0 
+where t0 = 'a' and f0 > 12;
+----
+
+
+query T rowsort
+select * from m0 
+where t0 = 'a' or f0 = 11;
+----
+1970-01-01T00:00:00.000000001 "a" "b" 11 "11" 11 true 11.11
+1970-01-01T00:00:00.000000002 "a" "c" 12 "11" 11 false 11.11
+1970-01-01T00:00:00.000000005 "a" "a" 11 "11" 11 true 11.11
+
+
+query T rowsort
+select * from m0 
+where t0 = 'a' or f0 > 12;
+----
+1970-01-01T00:00:00.000000001 "a" "b" 11 "11" 11 true 11.11
+1970-01-01T00:00:00.000000002 "a" "c" 12 "11" 11 false 11.11
+1970-01-01T00:00:00.000000003 "b" "b" 13 "11" 11 false 11.11
+1970-01-01T00:00:00.000000004 "b" "a" 14 "11" 11 true 11.11
+1970-01-01T00:00:00.000000005 "a" "a" 11 "11" 11 true 11.11
+1970-01-01T00:00:00.000000006 "b" "c" 15 "11" 11 false 11.11
+
+
+query T rowsort
+select * from m0 
+where t0 = 'a' and f0 = 11 and time > 3;
+----
+1970-01-01T00:00:00.000000005 "a" "a" 11 "11" 11 true 11.11
+
+
+# not support push down
+query T rowsort
+select * from m0 
+where t0 = 'a' and f0 = 11 or time > 3;
+----
+1970-01-01T00:00:00.000000001 "a" "b" 11 "11" 11 true 11.11
+1970-01-01T00:00:00.000000004 "b" "a" 14 "11" 11 true 11.11
+1970-01-01T00:00:00.000000005 "a" "a" 11 "11" 11 true 11.11
+1970-01-01T00:00:00.000000006 "b" "c" 15 "11" 11 false 11.11
+1990-01-03T22:50:52.613557553 "NULL" "NULL" NULL "TRUE" NULL NULL NULL
+2003-01-04T08:51:33.467254361 "916053861" "NULL" NULL "NULL" NULL NULL 0.507623643211476
+2096-05-01T02:46:47.649375642 "NULL" "NULL" NULL "NULL" 999 NULL NULL
+2141-08-03T00:21:21.413349294 "NULL" "NULL" NULL "NULL" NULL NULL 1.111
+2155-12-04T02:07:05.191822176 "NULL" "NULL" NULL "NULL" 888 NULL NULL
+2207-04-02T03:26:32.909450783 "NULL" "NULL" NULL "TRUE" NULL NULL NULL
+2207-04-18T13:56:55.539246350 "NULL" "NULL" NULL "NULL" NULL false NULL
+
+
+query T rowsort
+explain
+select * from m0 
+where t0 = null;
+----
+"
+"CoalesceBatchesExec: target_batch_size=8192
+"Filter: m0.t0 = Utf8(NULL)
+"logical_plan"
+"physical_plan"
+------TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=Some(\"t0@1 = NULL\"), split_num=7, projection=[time,t0,t1,f0,f1,f2,f3,f4]
+----RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=7
+--FilterExec: t0@1 = NULL
+--TableScan: m0 projection=[time, t0, t1, f0, f1, f2, f3, f4], partial_filters=[m0.t0 = Utf8(NULL)]"
+
+
+query T rowsort
+explain
+select * from m0 
+where t0 > null;
+----
+"
+"CoalesceBatchesExec: target_batch_size=8192
+"Filter: m0.t0 > Utf8(NULL)
+"logical_plan"
+"physical_plan"
+------TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=Some(\"t0@1 > NULL\"), split_num=7, projection=[time,t0,t1,f0,f1,f2,f3,f4]
+----RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=7
+--FilterExec: t0@1 > NULL
+--TableScan: m0 projection=[time, t0, t1, f0, f1, f2, f3, f4], partial_filters=[m0.t0 > Utf8(NULL)]"

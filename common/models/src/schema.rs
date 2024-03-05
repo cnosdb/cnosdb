@@ -1220,6 +1220,15 @@ impl Duration {
             Precision::NS => self.to_nanoseconds(),
         }
     }
+
+    pub fn drop_after_output(&self) -> String {
+        match &self.unit {
+            DurationUnit::Minutes => format!("{}m", self.time_num),
+            DurationUnit::Hour => format!("{}h", self.time_num),
+            DurationUnit::Day => format!("{}d", self.time_num),
+            _ => String::from(""),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

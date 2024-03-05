@@ -4,14 +4,14 @@ query T
 select time, t0, t1, t2, f0, f1
 from dml_tbl order by time, t0, t1, t2;
 ----
-1999-12-31T00:00:00 tag11 tag21 NULL 111 444
-1999-12-31T00:00:00.005 tag12 tag22 NULL 222 444
-1999-12-31T00:00:00.010 tag12 tag23 NULL NULL 222
-1999-12-31T00:00:10.015 tag14 tag24 NULL 444 111
-1999-12-31T00:00:10.020 tag14 tag21 NULL 222 555
-1999-12-31T00:10:00.025 tag11 tag22 NULL 333 555
-1999-12-31T00:10:00.030 tag11 tag23 NULL 444 333
-1999-12-31T01:00:00.035 tag14 tag24 NULL 555 222
+1999-12-31T00:00:00 "tag11" "tag21" "NULL" 111 444
+1999-12-31T00:00:00.005 "tag12" "tag22" "NULL" 222 444
+1999-12-31T00:00:00.010 "tag12" "tag23" "NULL" NULL 222
+1999-12-31T00:00:10.015 "tag14" "tag24" "NULL" 444 111
+1999-12-31T00:00:10.020 "tag14" "tag21" "NULL" 222 555
+1999-12-31T00:10:00.025 "tag11" "tag22" "NULL" 333 555
+1999-12-31T00:10:00.030 "tag11" "tag23" "NULL" 444 333
+1999-12-31T01:00:00.035 "tag14" "tag24" "NULL" 555 222
 
 
 # 单time过滤
@@ -22,13 +22,13 @@ query T
 select time, t0, t1, t2, f0, f1
 from dml_tbl order by time, t0, t1, t2;
 ----
-1999-12-31T00:00:00.005 tag12 tag22 NULL 222 444
-1999-12-31T00:00:00.010 tag12 tag23 NULL NULL 222
-1999-12-31T00:00:10.015 tag14 tag24 NULL 444 111
-1999-12-31T00:00:10.020 tag14 tag21 NULL 222 555
-1999-12-31T00:10:00.025 tag11 tag22 NULL 333 555
-1999-12-31T00:10:00.030 tag11 tag23 NULL 444 333
-1999-12-31T01:00:00.035 tag14 tag24 NULL 555 222
+1999-12-31T00:00:00.005 "tag12" "tag22" "NULL" 222 444
+1999-12-31T00:00:00.010 "tag12" "tag23" "NULL" NULL 222
+1999-12-31T00:00:10.015 "tag14" "tag24" "NULL" 444 111
+1999-12-31T00:00:10.020 "tag14" "tag21" "NULL" 222 555
+1999-12-31T00:10:00.025 "tag11" "tag22" "NULL" 333 555
+1999-12-31T00:10:00.030 "tag11" "tag23" "NULL" 444 333
+1999-12-31T01:00:00.035 "tag14" "tag24" "NULL" 555 222
 
 # 单 tag过滤
 statement ok
@@ -38,11 +38,11 @@ query T
 select time, t0, t1, t2, f0, f1
 from dml_tbl order by time, t0, t1, t2;
 ----
-1999-12-31T00:00:00.005 tag12 tag22 NULL 222 444
-1999-12-31T00:00:00.010 tag12 tag23 NULL NULL 222
-1999-12-31T00:00:10.015 tag14 tag24 NULL 444 111
-1999-12-31T00:00:10.020 tag14 tag21 NULL 222 555
-1999-12-31T01:00:00.035 tag14 tag24 NULL 555 222
+1999-12-31T00:00:00.005 "tag12" "tag22" "NULL" 222 444
+1999-12-31T00:00:00.010 "tag12" "tag23" "NULL" NULL 222
+1999-12-31T00:00:10.015 "tag14" "tag24" "NULL" 444 111
+1999-12-31T00:00:10.020 "tag14" "tag21" "NULL" 222 555
+1999-12-31T01:00:00.035 "tag14" "tag24" "NULL" 555 222
 
 # tag隐式转换
 statement ok
@@ -52,11 +52,11 @@ query T
 select time, t0, t1, t2, f0, f1
 from dml_tbl order by time, t0, t1, t2;
 ----
-1999-12-31T00:00:00.005 tag12 tag22 NULL 222 444
-1999-12-31T00:00:00.010 tag12 tag23 NULL NULL 222
-1999-12-31T00:00:10.015 tag14 tag24 NULL 444 111
-1999-12-31T00:00:10.020 tag14 tag21 NULL 222 555
-1999-12-31T01:00:00.035 tag14 tag24 NULL 555 222
+1999-12-31T00:00:00.005 "tag12" "tag22" "NULL" 222 444
+1999-12-31T00:00:00.010 "tag12" "tag23" "NULL" NULL 222
+1999-12-31T00:00:10.015 "tag14" "tag24" "NULL" 444 111
+1999-12-31T00:00:10.020 "tag14" "tag21" "NULL" 222 555
+1999-12-31T01:00:00.035 "tag14" "tag24" "NULL" 555 222
 
 # tag & time混合过滤
 statement ok
@@ -66,10 +66,10 @@ query T
 select time, t0, t1, t2, f0, f1
 from dml_tbl order by time, t0, t1, t2;
 ----
-1999-12-31T00:00:00.010 tag12 tag23 NULL NULL 222
-1999-12-31T00:00:10.015 tag14 tag24 NULL 444 111
-1999-12-31T00:00:10.020 tag14 tag21 NULL 222 555
-1999-12-31T01:00:00.035 tag14 tag24 NULL 555 222
+1999-12-31T00:00:00.010 "tag12" "tag23" "NULL" NULL 222
+1999-12-31T00:00:10.015 "tag14" "tag24" "NULL" 444 111
+1999-12-31T00:00:10.020 "tag14" "tag21" "NULL" 222 555
+1999-12-31T01:00:00.035 "tag14" "tag24" "NULL" 555 222
 
 # 对 field 过滤
 statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: This feature is not implemented: Filtering on the field column on the tskv table in delete statement", .*
@@ -84,10 +84,10 @@ query T
 select time, t0, t1, t2, f0, f1
 from dml_tbl order by time, t0, t1, t2;
 ----
-1999-12-31T00:00:00.010 tag12 tag23 NULL NULL 222
-1999-12-31T00:00:10.015 tag14 tag24 NULL 444 111
-1999-12-31T00:00:10.020 tag14 tag21 NULL 222 555
-1999-12-31T01:00:00.035 tag14 tag24 NULL 555 222
+1999-12-31T00:00:00.010 "tag12" "tag23" "NULL" NULL 222
+1999-12-31T00:00:10.015 "tag14" "tag24" "NULL" 444 111
+1999-12-31T00:00:10.020 "tag14" "tag21" "NULL" 222 555
+1999-12-31T01:00:00.035 "tag14" "tag24" "NULL" 555 222
 
 statement ok
 delete from dml_tbl f1 where time = '1999-12-31T00:00:00.010';
@@ -96,9 +96,9 @@ query T
 select time, t0, t1, t2, f0, f1
 from dml_tbl order by time, t0, t1, t2;
 ----
-1999-12-31T00:00:10.015 tag14 tag24 NULL 444 111
-1999-12-31T00:00:10.020 tag14 tag21 NULL 222 555
-1999-12-31T01:00:00.035 tag14 tag24 NULL 555 222
+1999-12-31T00:00:10.015 "tag14" "tag24" "NULL" 444 111
+1999-12-31T00:00:10.020 "tag14" "tag21" "NULL" 222 555
+1999-12-31T01:00:00.035 "tag14" "tag24" "NULL" 555 222
 
 statement ok
 delete from dml_tbl time where time = '1999-12-31T00:00:10.020';
@@ -107,8 +107,8 @@ query T
 select time, t0, t1, t2, f0, f1
 from dml_tbl order by time, t0, t1, t2;
 ----
-1999-12-31T00:00:10.015 tag14 tag24 NULL 444 111
-1999-12-31T01:00:00.035 tag14 tag24 NULL 555 222
+1999-12-31T00:00:10.015 "tag14" "tag24" "NULL" 444 111
+1999-12-31T01:00:00.035 "tag14" "tag24" "NULL" 555 222
 
 statement ok
 delete from dml_tbl;
@@ -121,12 +121,12 @@ from dml_tbl order by time, t0, t1, t2;
 query T
 desc table dml_tbl;
 ----
-time TIMESTAMP(NANOSECOND) TIME DEFAULT
-t0 STRING TAG DEFAULT
-t1 STRING TAG DEFAULT
-t2 STRING TAG DEFAULT
-f0 BIGINT FIELD DEFAULT
-f1 BIGINT FIELD DEFAULT
+"time" "TIMESTAMP(NANOSECOND)" "TIME" "DEFAULT"
+"t0" "STRING" "TAG" "DEFAULT"
+"t1" "STRING" "TAG" "DEFAULT"
+"t2" "STRING" "TAG" "DEFAULT"
+"f0" "BIGINT" "FIELD" "DEFAULT"
+"f1" "BIGINT" "FIELD" "DEFAULT"
 
 query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Table not found, tenant: cnosdb db: public, table: dml_not_exist", *
 delete from dml_not_exist;
@@ -134,16 +134,16 @@ delete from dml_not_exist;
 query 
 select time, t0, t1, f0_bigint, f1_bigint_unsign from dml_tb2 order by time, t0, t1, f0_bigint, f1_bigint_unsign;
 ----
-1999-12-31T00:00:00 t000 t109 -1 1
-1999-12-31T00:00:00.005 t001 t108 1 1
-1999-12-31T00:00:00.010 t002 t107 -9 1
-1999-12-31T00:00:00.015 t003 t106 155 1
-1999-12-31T00:00:00.020 t004 t105 1 1
-1999-12-31T00:00:00.025 t005 t104 132 1
-1999-12-31T00:00:00.030 t006 t103 321 1
-1999-12-31T00:00:00.035 t009 t100 165 1
-1999-12-31T00:00:00.040 t007 t101 41 1
-1999-12-31T00:00:00.045 t008 t102 451 10
+1999-12-31T00:00:00 "t000" "t109" -1 1
+1999-12-31T00:00:00.005 "t001" "t108" 1 1
+1999-12-31T00:00:00.010 "t002" "t107" -9 1
+1999-12-31T00:00:00.015 "t003" "t106" 155 1
+1999-12-31T00:00:00.020 "t004" "t105" 1 1
+1999-12-31T00:00:00.025 "t005" "t104" 132 1
+1999-12-31T00:00:00.030 "t006" "t103" 321 1
+1999-12-31T00:00:00.035 "t009" "t100" 165 1
+1999-12-31T00:00:00.040 "t007" "t101" 41 1
+1999-12-31T00:00:00.045 "t008" "t102" 451 10
 
 query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: This feature is not implemented: Filtering on the field column on the tskv table in delete statement", *
 delete from dml_tb2 where f0_bigint = -1 and time = '1999-12-31T00:00:00';
@@ -151,16 +151,16 @@ delete from dml_tb2 where f0_bigint = -1 and time = '1999-12-31T00:00:00';
 query 
 select time, t0, t1, f0_bigint, f1_bigint_unsign from dml_tb2 order by time, t0, t1, f0_bigint, f1_bigint_unsign;
 ----
-1999-12-31T00:00:00 t000 t109 -1 1
-1999-12-31T00:00:00.005 t001 t108 1 1
-1999-12-31T00:00:00.010 t002 t107 -9 1
-1999-12-31T00:00:00.015 t003 t106 155 1
-1999-12-31T00:00:00.020 t004 t105 1 1
-1999-12-31T00:00:00.025 t005 t104 132 1
-1999-12-31T00:00:00.030 t006 t103 321 1
-1999-12-31T00:00:00.035 t009 t100 165 1
-1999-12-31T00:00:00.040 t007 t101 41 1
-1999-12-31T00:00:00.045 t008 t102 451 10
+1999-12-31T00:00:00 "t000" "t109" -1 1
+1999-12-31T00:00:00.005 "t001" "t108" 1 1
+1999-12-31T00:00:00.010 "t002" "t107" -9 1
+1999-12-31T00:00:00.015 "t003" "t106" 155 1
+1999-12-31T00:00:00.020 "t004" "t105" 1 1
+1999-12-31T00:00:00.025 "t005" "t104" 132 1
+1999-12-31T00:00:00.030 "t006" "t103" 321 1
+1999-12-31T00:00:00.035 "t009" "t100" 165 1
+1999-12-31T00:00:00.040 "t007" "t101" 41 1
+1999-12-31T00:00:00.045 "t008" "t102" 451 10
 
 query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: This feature is not implemented: Filtering on the field column on the tskv table in delete statement", *
 delete from dml_tb2 where f0_bigint = -1 and time = '1999-12-31T00:00:00' and t0 = 't00';
@@ -168,16 +168,16 @@ delete from dml_tb2 where f0_bigint = -1 and time = '1999-12-31T00:00:00' and t0
 query 
 select time, t0, t1, f0_bigint, f1_bigint_unsign from dml_tb2 order by time, t0, t1, f0_bigint, f1_bigint_unsign;
 ----
-1999-12-31T00:00:00 t000 t109 -1 1
-1999-12-31T00:00:00.005 t001 t108 1 1
-1999-12-31T00:00:00.010 t002 t107 -9 1
-1999-12-31T00:00:00.015 t003 t106 155 1
-1999-12-31T00:00:00.020 t004 t105 1 1
-1999-12-31T00:00:00.025 t005 t104 132 1
-1999-12-31T00:00:00.030 t006 t103 321 1
-1999-12-31T00:00:00.035 t009 t100 165 1
-1999-12-31T00:00:00.040 t007 t101 41 1
-1999-12-31T00:00:00.045 t008 t102 451 10
+1999-12-31T00:00:00 "t000" "t109" -1 1
+1999-12-31T00:00:00.005 "t001" "t108" 1 1
+1999-12-31T00:00:00.010 "t002" "t107" -9 1
+1999-12-31T00:00:00.015 "t003" "t106" 155 1
+1999-12-31T00:00:00.020 "t004" "t105" 1 1
+1999-12-31T00:00:00.025 "t005" "t104" 132 1
+1999-12-31T00:00:00.030 "t006" "t103" 321 1
+1999-12-31T00:00:00.035 "t009" "t100" 165 1
+1999-12-31T00:00:00.040 "t007" "t101" 41 1
+1999-12-31T00:00:00.045 "t008" "t102" 451 10
 
 query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Schema error: No field named times\. Valid fields are time, t0, t1, t2, t3, f0_bigint, f1_bigint_unsign, f2_boolean, f3_string, f4_double, loc0_point, loc1_linestring, loc2_polygon, loc3_multipoint, loc4_multilinestring, loc5_multipolygon, loc6_geometrycollection\.", *
 DELETE FROM dml_tb2 WHERE times = '1999-12-31T00:00:00.111';
@@ -185,13 +185,13 @@ DELETE FROM dml_tb2 WHERE times = '1999-12-31T00:00:00.111';
 query 
 select time, t0, t1, f0_bigint, f1_bigint_unsign from dml_tb2 order by time, t0, t1, f0_bigint, f1_bigint_unsign;
 ----
-1999-12-31T00:00:00 t000 t109 -1 1
-1999-12-31T00:00:00.005 t001 t108 1 1
-1999-12-31T00:00:00.010 t002 t107 -9 1
-1999-12-31T00:00:00.015 t003 t106 155 1
-1999-12-31T00:00:00.020 t004 t105 1 1
-1999-12-31T00:00:00.025 t005 t104 132 1
-1999-12-31T00:00:00.030 t006 t103 321 1
-1999-12-31T00:00:00.035 t009 t100 165 1
-1999-12-31T00:00:00.040 t007 t101 41 1
-1999-12-31T00:00:00.045 t008 t102 451 10
+1999-12-31T00:00:00 "t000" "t109" -1 1
+1999-12-31T00:00:00.005 "t001" "t108" 1 1
+1999-12-31T00:00:00.010 "t002" "t107" -9 1
+1999-12-31T00:00:00.015 "t003" "t106" 155 1
+1999-12-31T00:00:00.020 "t004" "t105" 1 1
+1999-12-31T00:00:00.025 "t005" "t104" 132 1
+1999-12-31T00:00:00.030 "t006" "t103" 321 1
+1999-12-31T00:00:00.035 "t009" "t100" 165 1
+1999-12-31T00:00:00.040 "t007" "t101" 41 1
+1999-12-31T00:00:00.045 "t008" "t102" 451 10

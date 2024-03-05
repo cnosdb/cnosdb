@@ -1,0 +1,218 @@
+statement ok
+drop tenant if exists test_dps_tenant;
+
+
+statement ok
+drop user if exists test_dps_u0;
+
+statement ok
+drop user if exists test_dps_u1;
+
+statement ok
+drop user if exists test_dps_u2;
+
+statement ok
+drop user if exists test_dps_u3;
+
+
+statement ok
+create tenant if not exists test_dps_tenant;
+
+statement ok
+create user if not exists test_dps_u0;
+
+statement ok
+create user if not exists test_dps_u1;
+
+statement ok
+create user if not exists test_dps_u2;
+
+statement ok
+create user if not exists test_dps_u3;
+
+
+statement ok
+alter tenant test_dps_tenant add user test_dps_u0 as owner;
+
+
+statement ok
+--#TENANT=test_dps_tenant
+--#USER_NAME=test_dps_u0
+
+statement ok
+drop role if exists test_dps_role0;
+
+statement ok
+drop role if exists test_dps_role1;
+
+statement ok
+drop role if exists test_dps_role2;
+
+statement ok
+drop role if exists test_dps_role3;
+
+
+statement ok
+create role if not exists test_dps_role1 inherit member;
+
+statement ok
+create role if not exists test_dps_role2 inherit member;
+
+statement ok
+create role if not exists test_dps_role3 inherit member;
+
+
+statement ok
+drop database if exists test_dps_db;
+
+statement ok
+create database if not exists test_dps_db with ttl '100000d';
+
+
+# role1 read
+statement ok
+grant read on database test_dps_db to test_dps_role1;
+
+
+# role2 write
+statement ok
+grant write on database test_dps_db to role test_dps_role2;
+
+
+# role3 all
+statement ok
+grant all on database test_dps_db to test_dps_role3;
+
+
+# u1 read only
+statement ok
+alter tenant test_dps_tenant add user test_dps_u1 as test_dps_role1;
+
+# u2 write
+statement ok
+alter tenant test_dps_tenant add user test_dps_u2 as test_dps_role2;
+
+# u3 all
+statement ok
+alter tenant test_dps_tenant add user test_dps_u3 as test_dps_role3;
+
+
+statement ok
+--#USER_NAME=root
+
+query T rowsort
+select * from information_schema.DATABASE_PRIVILEGES;
+----
+"test_dps_tenant" "test_dps_db" "All" "test_dps_role3"
+"test_dps_tenant" "test_dps_db" "Read" "test_dps_role1"
+"test_dps_tenant" "test_dps_db" "Write" "test_dps_role2"
+
+
+statement ok
+--#USER_NAME=test_dps_u0
+
+query T rowsort
+select * from information_schema.DATABASE_PRIVILEGES;
+----
+"test_dps_tenant" "test_dps_db" "All" "test_dps_role3"
+"test_dps_tenant" "test_dps_db" "Read" "test_dps_role1"
+"test_dps_tenant" "test_dps_db" "Write" "test_dps_role2"
+
+
+statement ok
+--#USER_NAME=test_dps_u1
+
+query T rowsort
+select * from information_schema.DATABASE_PRIVILEGES;
+----
+"test_dps_tenant" "test_dps_db" "Read" "test_dps_role1"
+
+
+statement ok
+--#USER_NAME=test_dps_u2
+
+query T rowsort
+select * from information_schema.DATABASE_PRIVILEGES;
+----
+"test_dps_tenant" "test_dps_db" "Write" "test_dps_role2"
+
+
+statement ok
+--#USER_NAME=test_dps_u3
+
+query T rowsort
+select * from information_schema.DATABASE_PRIVILEGES;
+----
+"test_dps_tenant" "test_dps_db" "All" "test_dps_role3"
+
+
+
+statement ok
+--#USER_NAME=test_dps_u0
+--#DATABASE=test_dps_db
+
+statement ok
+create table test_dps_table(a bigint, tags(b));
+
+statement ok
+insert into table test_dps_table(time, a, b) values (1, 1, '1');
+
+
+statement ok
+--#USER_NAME=test_dps_u1
+--#DATABASE=test_dps_db
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Semantic error: Column c not exists in table test_dps_table", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+alter table test_dps_table drop c;
+
+query T rowsort
+select * from test_dps_table;
+----
+1970-01-01T00:00:00.000000001 "1" 1
+
+
+statement ok
+--#USER_NAME=test_dps_u2
+--#DATABASE=test_dps_db
+
+
+statement ok
+insert into test_dps_table(time, a, b) values (2, 2, '2');
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Semantic error: Column c not exists in table test_dps_table", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+alter table test_dps_table drop c;
+
+query T rowsort
+select * from test_dps_table;
+----
+1970-01-01T00:00:00.000000001 "1" 1
+1970-01-01T00:00:00.000000002 "2" 2
+
+
+statement ok
+--#USER_NAME=test_dps_u3
+--#DATABASE=test_dps_db
+
+statement ok
+create table test_dps_table1(a bigint, tags(b));
+
+statement ok
+insert into test_dps_table(time, a, b) values (2, 2, '2');
+
+statement ok
+alter table test_dps_table add field c double codec(default);
+
+statement ok
+alter table test_dps_table add tag d;
+
+statement ok
+alter table test_dps_table drop c;
+
+query T rowsort
+select * from test_dps_table;
+----
+1970-01-01T00:00:00.000000001 "1" 1 "NULL"
+1970-01-01T00:00:00.000000002 "2" 2 "NULL"
+
+statement ok
+drop table test_dps_table;

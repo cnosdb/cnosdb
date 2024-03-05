@@ -1,0 +1,131 @@
+statement ok
+--#DATABASE=show_series
+
+sleep 100ms
+statement ok
+DROP DATABASE IF EXISTS show_series;
+
+statement ok
+CREATE DATABASE show_series WITH TTL '100000d';
+
+
+
+statement ok
+--#LP_BEGIN
+test,t0=a,t1=b,t2=c f0=1,f1="2" 0
+test,t0=a f0=1 1
+test,t1=b f1="2" 2
+test,t2=c f0=1 3
+test,t0=a,t1=b f0=1 4
+test,t1=b,t2=c f0=1 5
+--#LP_END
+
+
+statement ok
+INSERT INTO test(TIME, t0, f0) VALUES (6, '', 1);
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Expected FROM, found: ;", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SHOW SERIES;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Expected end of statement, found: \.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SHOW SERIES ON public FROM show_series.test;
+
+query T rowsort
+SHOW SERIES FROM test;
+----
+"test,t0="
+"test,t0=a"
+"test,t0=a,t1=b"
+"test,t0=a,t1=b,t2=c"
+"test,t1=b"
+"test,t1=b,t2=c"
+"test,t2=c"
+
+query T rowsort
+SHOW SERIES ON show_series FROM test;
+----
+"test,t0="
+"test,t0=a"
+"test,t0=a,t1=b"
+"test,t0=a,t1=b,t2=c"
+"test,t1=b"
+"test,t1=b,t2=c"
+"test,t2=c"
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Schema error: No field named f0\. Valid fields are key\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SHOW SERIES FROM test ORDER BY f0;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Schema error: No field named time\. Valid fields are key\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SHOW SERIES FROM test ORDER BY time;
+
+query 
+SHOW SERIES FROM test ORDER BY key;
+----
+"test,t0="
+"test,t0=a"
+"test,t0=a,t1=b"
+"test,t0=a,t1=b,t2=c"
+"test,t1=b"
+"test,t1=b,t2=c"
+"test,t2=c"
+
+query 
+SHOW SERIES FROM test ORDER BY key ASC;
+----
+"test,t0="
+"test,t0=a"
+"test,t0=a,t1=b"
+"test,t0=a,t1=b,t2=c"
+"test,t1=b"
+"test,t1=b,t2=c"
+"test,t2=c"
+
+query 
+SHOW SERIES FROM test ORDER BY key DESC;
+----
+"test,t2=c"
+"test,t1=b,t2=c"
+"test,t1=b"
+"test,t0=a,t1=b,t2=c"
+"test,t0=a,t1=b"
+"test,t0=a"
+"test,t0="
+
+query 
+SHOW SERIES FROM test WHERE time < now() ORDER BY key;
+----
+"test,t0="
+"test,t0=a"
+"test,t0=a,t1=b"
+"test,t0=a,t1=b,t2=c"
+"test,t1=b"
+"test,t1=b,t2=c"
+"test,t2=c"
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Semantic error: SHOW SERIES does not support where clause contains field f1", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SHOW SERIES FROM test WHERE f1 IS NOT NULL ORDER BY key;
+
+query 
+SHOW SERIES FROM test WHERE t0 != '' ORDER BY key;
+----
+"test,t0=a"
+"test,t0=a,t1=b"
+"test,t0=a,t1=b,t2=c"
+
+query 
+SHOW SERIES FROM test WHERE t0 IS NOT NULL ORDER BY key;
+----
+"test,t0="
+"test,t0=a"
+"test,t0=a,t1=b"
+"test,t0=a,t1=b,t2=c"
+
+query 
+SHOW SERIES FROM test WHERE t1 = 'b' ORDER BY key;
+----
+"test,t0=a,t1=b"
+"test,t0=a,t1=b,t2=c"
+"test,t1=b"
+"test,t1=b,t2=c"

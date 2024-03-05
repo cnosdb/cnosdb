@@ -1,0 +1,100 @@
+statement ok
+drop tenant if exists tenant_delay;
+
+
+statement ok
+create tenant tenant_delay with drop_after='7';
+
+
+statement ok
+--#TENANT=tenant_delay
+
+sleep 100ms
+
+query 
+SHOW DATABASES;
+----
+
+
+statement ok
+--#TENANT=cnosdb
+
+sleep 100ms
+
+statement ok
+drop tenant tenant_delay after '3m';
+
+
+statement ok
+--#TENANT=tenant_delay
+
+sleep 100ms
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build query state machine: Auth error: The tenant not found", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SHOW DATABASES;
+
+
+statement ok
+--#TENANT=cnosdb
+
+sleep 100ms
+
+query 
+select name,action,try_count,status from information_schema.resource_status where name = 'tenant_delay';
+----
+"tenant_delay" "DropTenant" "0" "Schedule"
+
+
+statement ok
+recover tenant tenant_delay;
+
+
+query 
+select name,action,try_count,status from information_schema.resource_status where name = 'tenant_delay';
+----
+"tenant_delay" "DropTenant" "0" "Cancel"
+
+
+statement ok
+--#TENANT=tenant_delay
+
+sleep 100ms
+
+query 
+SHOW DATABASES;
+----
+
+
+statement ok
+--#TENANT=cnosdb
+
+sleep 100ms
+
+statement ok
+create tenant tenant_delay1 with drop_after='7';
+
+statement ok
+alter tenant tenant_delay1 set drop_after='1m';
+
+
+statement ok
+drop tenant tenant_delay after '1m';
+
+statement ok
+drop tenant tenant_delay1;
+
+
+query 
+select name,action,try_count,status from information_schema.resource_status where name in ('tenant_delay', 'tenant_delay1') order by name;
+----
+"tenant_delay" "DropTenant" "0" "Schedule"
+"tenant_delay1" "DropTenant" "0" "Schedule"
+
+
+sleep 2m
+
+query 
+select name,action,try_count,status from information_schema.resource_status where name in ('tenant_delay', 'tenant_delay1') order by name;
+----
+"tenant_delay" "DropTenant" "1" "Successed"
+"tenant_delay1" "DropTenant" "1" "Successed"

@@ -45,18 +45,18 @@ statement ok
 query PTTRR
 select * from test1;
 ----
-2022-11-03T06:20:11.000001 a1 b1 1.0 2.0
+2022-11-03T06:20:11.000001 "a1" "b1" 1.0 2.0
 
 query PTTR
 select * from test2;
 ----
-2022-11-03T06:20:11.000001 a1 b1 1.0
+2022-11-03T06:20:11.000001 "a1" "b1" 1.0
 
 query PTTR
 select * from nice order by host;
 ----
-2022-11-03T06:20:11.000001 lga web01 18.0
-2022-11-03T06:20:11.000002 lga web02 9.0
+2022-11-03T06:20:11.000001 "lga" "web01" 18.0
+2022-11-03T06:20:11.000002 "lga" "web02" 9.0
 
 statement ok
 drop database cli_precision;
@@ -101,15 +101,15 @@ statement ok
 query PTTRR
 select * from test1;
 ----
-2022-11-03T06:20:11 a1 b1 1.0 2.0
+2022-11-03T06:20:11 "a1" "b1" 1.0 2.0
 
 query PTTR
 select * from test2;
 ----
-2022-11-03T06:20:11 a1 b1 1.0
+2022-11-03T06:20:11 "a1" "b1" 1.0
 
 query PTTR
 select * from nice order by host;
 ----
-2022-11-03T06:20:11 lga web01 18.0
-2022-11-03T06:20:11 lga web02 9.0
+2022-11-03T06:20:11 "lga" "web01" 18.0
+2022-11-03T06:20:11 "lga" "web02" 9.0

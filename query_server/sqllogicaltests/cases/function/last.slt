@@ -7,14 +7,14 @@ include ./setup.slt
 query 
 select time, t0, t1, t2, f0, f1 from func_tbl order by time, t0, t1;
 ----
-1999-12-31T00:00:00 tag11 tag21 NULL 111 444
-1999-12-31T00:00:00.005 tag12 tag22 NULL 222 444
-1999-12-31T00:00:00.010 tag12 tag23 NULL 333 222
-1999-12-31T00:00:10.015 tag14 tag24 NULL 444 111
-1999-12-31T00:00:10.020 tag14 tag21 NULL 222 555
-1999-12-31T00:10:00.025 tag11 tag22 NULL 333 555
-1999-12-31T00:10:00.030 tag11 tag23 NULL 444 333
-1999-12-31T01:00:00.035 tag14 tag24 NULL 555 222
+1999-12-31T00:00:00 "tag11" "tag21" "NULL" 111 444
+1999-12-31T00:00:00.005 "tag12" "tag22" "NULL" 222 444
+1999-12-31T00:00:00.010 "tag12" "tag23" "NULL" 333 222
+1999-12-31T00:00:10.015 "tag14" "tag24" "NULL" 444 111
+1999-12-31T00:00:10.020 "tag14" "tag21" "NULL" 222 555
+1999-12-31T00:10:00.025 "tag11" "tag22" "NULL" 333 555
+1999-12-31T00:10:00.030 "tag11" "tag23" "NULL" 444 333
+1999-12-31T01:00:00.035 "tag14" "tag24" "NULL" 555 222
 
 query 
 select last(time, f1) from func_tbl;
@@ -29,9 +29,9 @@ select last(time, f0) from func_tbl;
 query 
 select last(time, f0), t0 from func_tbl group by t0 order by t0;
 ----
-444 tag11
-333 tag12
-555 tag14
+444 "tag11"
+333 "tag12"
+555 "tag14"
 
 query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function \\"last\\" does not accept 1 function arguments\.",.*
 select last(time) from func_tbl;
@@ -59,7 +59,7 @@ select last(time, f1_bigint_unsign) from func_tb3;
 query 
 select last(time, f2_boolean) from func_tb3;
 ----
-1
+"1"
 
 query 
 select last(time, f4_double) from func_tb3;
@@ -69,47 +69,47 @@ select last(time, f4_double) from func_tb3;
 query 
 select last(time, f3_string) from func_tb3;
 ----
-string6434300
+"string6434300"
 
 query 
 select last(time, loc0_point) from func_tb3;
 ----
-POINT(34 22)
+"POINT(34 22)"
 
 query 
 select last(time, loc1_LINESTRING) from func_tb3;
 ----
-LINESTRING (30 10, 10 30, 40 40)
+"LINESTRING (30 10, 10 30, 40 40)"
 
 query 
 select last(time, loc2_POLYGON) from func_tb3;
 ----
-POLYGON ((30 10, 40 40, 20 40, 10 20, 30 10))
+"POLYGON ((30 10, 40 40, 20 40, 10 20, 30 10))"
 
 query 
 select last(time, loc3_MULTIPOINT) from func_tb3;
 ----
-MULTIPOINT ((10 40), (40 30), (20 20), (30 140))
+"MULTIPOINT ((10 40), (40 30), (20 20), (30 140))"
 
 query 
 select last(time, loc4_MULTILINESTRING) from func_tb3;
 ----
-MULTILINESTRING ((10 10, 20 20, 10 40),(40 40, 30 30, 40 20, 30 140))
+"MULTILINESTRING ((10 10, 20 20, 10 40),(40 40, 30 30, 40 20, 30 140))"
 
 query 
 select last(time, loc5_MULTIPOLYGON) from func_tb3;
 ----
-MULTIPOLYGON (((30 20, 45 40, 10 40, 30 20)),((15 5, 40 10, 10 240, 5 10, 15 5)))
+"MULTIPOLYGON (((30 20, 45 40, 10 40, 30 20)),((15 5, 40 10, 10 240, 5 10, 15 5)))"
 
 query 
 select last(time, loc6_GEOMETRYCOLLECTION) from func_tb3;
 ----
-GEOMETRYCOLLECTION (POINT (40 10),LINESTRING (10 10, 230 20, 10 40),POLYGON ((40 40, 20 45, 45 30, 40 40)))
+"GEOMETRYCOLLECTION (POINT (40 10),LINESTRING (10 10, 230 20, 10 40),POLYGON ((40 40, 20 45, 45 30, 40 40)))"
 
 query 
 select last(time, t0) from func_tb3;
 ----
-t008
+"t008"
 
 query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Schema error: No field named t000\. Valid fields are func_tb3\.time, func_tb3\.t0, func_tb3\.t1, func_tb3\.t2, func_tb3\.t3, func_tb3\.f0_bigint, func_tb3\.f1_bigint_unsign, func_tb3\.f2_boolean, func_tb3\.f3_string, func_tb3\.f4_double, func_tb3\.loc0_point, func_tb3\.loc1_linestring, func_tb3\.loc2_polygon, func_tb3\.loc3_multipoint, func_tb3\.loc4_multilinestring, func_tb3\.loc5_multipolygon, func_tb3\.loc6_geometrycollection\.", *
 select last(time, t000) from func_tb3;

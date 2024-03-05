@@ -11,11 +11,11 @@ CREATE TABLE air (
 query T
 describe table air;
 ----
-time TIMESTAMP(NANOSECOND) TIME  DEFAULT
-station STRING TAG DEFAULT
-visibility DOUBLE FIELD DEFAULT
-temperature DOUBLE FIELD DEFAULT
-pressure DOUBLE FIELD DEFAULT
+"time" "TIMESTAMP(NANOSECOND)" "TIME" "DEFAULT"
+"station" "STRING" "TAG" "DEFAULT"
+"visibility" "DOUBLE" "FIELD" "DEFAULT"
+"temperature" "DOUBLE" "FIELD" "DEFAULT"
+"pressure" "DOUBLE" "FIELD" "DEFAULT"
 
 
 statement ok
@@ -24,12 +24,12 @@ ALTER TABLE air ADD FIELD humidity DOUBLE;
 query T
 describe table air;
 ----
-time TIMESTAMP(NANOSECOND) TIME  DEFAULT
-station STRING TAG DEFAULT
-visibility DOUBLE FIELD DEFAULT
-temperature DOUBLE FIELD DEFAULT
-pressure DOUBLE FIELD DEFAULT
-humidity DOUBLE FIELD DEFAULT
+"time" "TIMESTAMP(NANOSECOND)" "TIME" "DEFAULT"
+"station" "STRING" "TAG" "DEFAULT"
+"visibility" "DOUBLE" "FIELD" "DEFAULT"
+"temperature" "DOUBLE" "FIELD" "DEFAULT"
+"pressure" "DOUBLE" "FIELD" "DEFAULT"
+"humidity" "DOUBLE" "FIELD" "DEFAULT"
 
 statement ok
 ALTER TABLE air DROP humidity;
@@ -37,8 +37,8 @@ ALTER TABLE air DROP humidity;
 query T
 describe table air;
 ----
-time TIMESTAMP(NANOSECOND) TIME  DEFAULT
-station STRING TAG DEFAULT
-visibility DOUBLE FIELD DEFAULT
-temperature DOUBLE FIELD DEFAULT
-pressure DOUBLE FIELD DEFAULT
+"time" "TIMESTAMP(NANOSECOND)" "TIME" "DEFAULT"
+"station" "STRING" "TAG" "DEFAULT"
+"visibility" "DOUBLE" "FIELD" "DEFAULT"
+"temperature" "DOUBLE" "FIELD" "DEFAULT"
+"pressure" "DOUBLE" "FIELD" "DEFAULT"

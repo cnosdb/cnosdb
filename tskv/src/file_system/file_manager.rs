@@ -70,7 +70,7 @@ impl FileManager {
         self.open_file_with(path, opt).await
     }
 
-    fn create_dir_if_not_exists(parent: Option<&Path>) -> Result<()> {
+    pub fn create_dir_if_not_exists(parent: Option<&Path>) -> Result<()> {
         if let Some(p) = parent {
             if !try_exists(p) {
                 fs::create_dir_all(p).context(error::IOSnafu)?;
@@ -175,6 +175,14 @@ pub async fn create_file(path: impl AsRef<Path>) -> Result<AsyncFile> {
 #[inline(always)]
 pub async fn open_create_file(path: impl AsRef<Path>) -> Result<AsyncFile> {
     get_file_manager().open_create_file(path).await
+}
+
+pub fn remove_if_exists(path: impl AsRef<Path>) -> Result<()> {
+    if try_exists(&path) {
+        fs::remove_file(path)?;
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

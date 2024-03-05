@@ -1,0 +1,57 @@
+statement ok
+--#DATABASE=db_precision
+
+sleep 100ms
+statement ok
+DROP DATABASE IF EXISTS db_precision;
+
+statement ok
+CREATE DATABASE db_precision WITH TTL '100000d' precision 'us';
+
+
+statement ok
+--#LP_BEGIN
+test,ta=a1,tb=b1 fa=1,fb=2 1667456411000010001
+--#LP_END
+
+
+query 
+select * from test;
+----
+2022-11-03T06:20:11.000010 "a1" "b1" 1.0 2.0
+
+
+statement ok
+drop database db_precision;
+
+
+statement ok
+CREATE DATABASE db_precision WITH TTL '100000d' precision 'ms';
+
+
+statement ok
+create table test(col bigint);
+
+
+statement ok
+insert into test(time, col) values (1667456411001, 10);
+
+
+query 
+select * from test;
+----
+2022-11-03T06:20:11.001 10
+
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Semantic error: Can not alter database precision", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+alter database db_precision set precision 'us';
+
+
+statement ok
+create table ms_t (value BIGINT,tags(str));
+
+statement ok
+insert into ms_t (time,str,value) values (1682049219172428000,'asd',1);
+
+query error Arrow error: Cast error: Failed to convert 1682049219172428000 to datetime for Timestamp\(Millisecond, None\)
+select * from ms_t;

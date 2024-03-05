@@ -128,8 +128,9 @@ impl TSIndex {
             binlog_change_reciver,
         );
         info!(
-            "Recovered index dir '{}', incr_id start at: {incr_id}",
-            path.display()
+            "Recovered index dir '{}', incr id start at: {:?}",
+            path.display(),
+            ts_index.incr_id,
         );
 
         Ok(ts_index)

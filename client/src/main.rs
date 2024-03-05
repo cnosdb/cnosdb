@@ -144,7 +144,7 @@ enum CliCommand {
 #[derive(Debug, Clone, Args, PartialOrd, PartialEq)]
 struct DumpDDL {
     #[arg(short, long)]
-    tenant: Option<String>,
+    tenant: Vec<Option<String>>,
 }
 
 #[derive(Debug, Clone, Args, PartialOrd, PartialEq)]

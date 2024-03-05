@@ -2,22 +2,22 @@
 ## Query
 ##########
 
-query
+query 
 select count(@@cluster_name);
 ----
 1
 
-query
+query 
 select count(@@server_version);
 ----
 1
 
-query
+query 
 select count(@@deployment_mode);
 ----
 1
 
-query
+query 
 select count(@@node_id);
 ----
 1

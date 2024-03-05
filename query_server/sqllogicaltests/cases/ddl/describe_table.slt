@@ -1,0 +1,76 @@
+sleep 100ms
+statement ok
+--#DATABASE=createtable
+
+statement ok
+DROP DATABASE IF EXISTS createtable;
+
+
+statement ok
+CREATE DATABASE createtable WITH TTL '100000d';
+
+
+statement ok
+DROP TABLE IF EXISTS test0;
+
+
+statement ok
+CREATE TABLE test0(
+    column1 BIGINT CODEC(DELTA),
+    column2 STRING CODEC(GZIP),
+    column3 BIGINT UNSIGNED CODEC(NULL),
+    column4 BOOLEAN,
+    column5 DOUBLE CODEC(GORILLA),
+    TAGS(column6, column7));
+
+
+query T rowsort
+DESCRIBE TABLE test0;
+----
+"column1" "BIGINT" "FIELD" "DELTA"
+"column2" "STRING" "FIELD" "GZIP"
+"column3" "BIGINT UNSIGNED" "FIELD" "NULL"
+"column4" "BOOLEAN" "FIELD" "DEFAULT"
+"column5" "DOUBLE" "FIELD" "GORILLA"
+"column6" "STRING" "TAG" "DEFAULT"
+"column7" "STRING" "TAG" "DEFAULT"
+"time" "TIMESTAMP(NANOSECOND)" "TIME" "DEFAULT"
+
+
+statement ok
+CREATE TABLE test1(
+    column1 BIGINT CODEC(DELTA),
+    column2 STRING CODEC(GZIP),
+    column3 BIGINT UNSIGNED CODEC(NULL),
+    column4 BOOLEAN,
+    column5 DOUBLE CODEC(GORILLA),
+    TAGS(column6, column7));
+
+
+query T rowsort
+DESCRIBE TABLE test1;
+----
+"column1" "BIGINT" "FIELD" "DELTA"
+"column2" "STRING" "FIELD" "GZIP"
+"column3" "BIGINT UNSIGNED" "FIELD" "NULL"
+"column4" "BOOLEAN" "FIELD" "DEFAULT"
+"column5" "DOUBLE" "FIELD" "GORILLA"
+"column6" "STRING" "TAG" "DEFAULT"
+"column7" "STRING" "TAG" "DEFAULT"
+"time" "TIMESTAMP(NANOSECOND)" "TIME" "DEFAULT"
+
+
+statement ok
+DROP TABLE IF EXISTS test2;
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Meta: Table not found: \\"cnosdb\.createtable\.test2\\"", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+DESCRIBE TABLE test2;
+
+
+statement ok
+DROP TABLE IF EXISTS test0;
+
+
+statement ok
+DROP DATABASE createtable;

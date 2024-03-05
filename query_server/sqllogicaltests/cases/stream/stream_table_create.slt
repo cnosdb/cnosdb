@@ -9,11 +9,11 @@ CREATE TABLE t1
 query T
 DESCRIBE TABLE t1;
 ----
-time TIMESTAMP(NANOSECOND) TIME DEFAULT
-station STRING TAG DEFAULT
-pressure DOUBLE FIELD DEFAULT
-temperature DOUBLE FIELD DEFAULT
-visibility DOUBLE FIELD DEFAULT
+"time" "TIMESTAMP(NANOSECOND)" "TIME" "DEFAULT"
+"station" "STRING" "TAG" "DEFAULT"
+"pressure" "DOUBLE" "FIELD" "DEFAULT"
+"temperature" "DOUBLE" "FIELD" "DEFAULT"
+"visibility" "DOUBLE" "FIELD" "DEFAULT"
 
 
 statement ok
@@ -33,5 +33,3 @@ statement error Invalid option
 CREATE STREAM TABLE t1_stream(time TIMESTAMP, station STRING, pressure DOUBLE, temperature DOUBLE, visibility DOUBLE) 
     WITH (db = 'public', table = 't1', event_time_column = 'pressure')
     engine = tskv;
-
-

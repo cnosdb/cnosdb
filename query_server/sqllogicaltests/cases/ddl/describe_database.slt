@@ -1,0 +1,59 @@
+sleep 100ms
+statement ok
+DROP DATABASE IF EXISTS test1;
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Meta: Database not found: \\"test1\\"", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+DESCRIBE DATABASE test1;
+
+
+statement ok
+CREATE DATABASE IF NOT EXISTS test1;
+
+
+query T rowsort
+DESCRIBE DATABASE test1;
+----
+"INF" 1 "365 Days" 1 "NS"
+
+
+statement ok
+CREATE DATABASE IF NOT EXISTS describetest2;
+
+
+query T rowsort
+DESCRIBE DATABASE describetest2;
+----
+"INF" 1 "365 Days" 1 "NS"
+
+
+statement ok
+DROP DATABASE IF EXISTS describetest2;
+
+
+statement ok
+DROP DATABASE IF EXISTS test1;
+
+
+statement ok
+DROP DATABASE IF EXISTS describe_database;
+
+
+statement ok
+CREATE DATABASE IF NOT EXISTS describe_database with ttl '10d';
+
+statement ok
+--#DATABASE=describe_database
+
+statement ok
+CREATE TABLE test0(
+                      column1 BIGINT CODEC(DELTA),
+                      column2 STRING CODEC(GZIP),
+                      column3 BIGINT UNSIGNED CODEC(NULL),
+                      column4 BOOLEAN,
+                      column5 DOUBLE CODEC(GORILLA),
+                      TAGS(column6, column7));
+
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: Meta request error: Operation not support: create expired bucket", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+insert describe_database.test0(TIME, column1, column2, column3, column4, column5, column6, column7) values (100, -1234, 'hello', 1234, false, 1.2, 'beijing', 'shanghai');

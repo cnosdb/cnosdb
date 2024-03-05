@@ -12,7 +12,7 @@ DROP TABLE IF EXISTS readings_ext;
 statement ok
 CREATE EXTERNAL TABLE readings_ext
 STORED AS PARQUET
-LOCATION 'query_server/test/resource/parquet/part-0.parquet';
+LOCATION 'query_server/sqllogicaltests/resource/parquet/part-0.parquet';
 
 statement ok
 drop table IF EXISTS readings_kv;
@@ -72,10 +72,10 @@ insert into readings_kv select * from readings_ext limit 10;
 query T
 explain select * from TskvTable where name = 'Luffy';
 ----
-logical_plan
-Watermark: event_time=time, delay=0ms
---Filter: tskvtable.name = Utf8("Luffy")
-----StreamScan: [tskvtable.time,tskvtable.name,tskvtable.driver,tskvtable.elevation]
+"logical_plan"
+"Watermark: event_time=time, delay=0ms
+--Filter: tskvtable.name = Utf8(\"Luffy\")
+----StreamScan: [tskvtable.time,tskvtable.name,tskvtable.driver,tskvtable.elevation]"
 
 # create stream job
 statement ok
@@ -105,11 +105,11 @@ sleep 7s
 query 
 select * from readings_agg order by time,name;
 ----
-2022-01-01T00:00:00 truck_3152 153.0
-2022-01-01T04:00:00 test 111.0
-2022-01-01T04:05:00 test 111.0
-2022-01-01T04:20:00 test 111.0
-2022-01-01T04:25:00 test 333.0
+2022-01-01T00:00:00 "truck_3152" 153.0
+2022-01-01T04:00:00 "test" 111.0
+2022-01-01T04:05:00 "test" 111.0
+2022-01-01T04:20:00 "test" 111.0
+2022-01-01T04:25:00 "test" 333.0
 
 statement ok
 insert into readings_kv(time, name, elevation) values('2022-01-01T04:31:00', 'test', 111);
@@ -125,13 +125,13 @@ sleep 7s
 query 
 select * from readings_agg order by time,name;
 ----
-2022-01-01T00:00:00 truck_3152 153.0
-2022-01-01T04:00:00 test 111.0
-2022-01-01T04:05:00 test 111.0
-2022-01-01T04:20:00 test 111.0
-2022-01-01T04:25:00 test 333.0
-2022-01-01T04:30:00 test 111.0
-2022-01-01T04:35:00 test 333.0
+2022-01-01T00:00:00 "truck_3152" 153.0
+2022-01-01T04:00:00 "test" 111.0
+2022-01-01T04:05:00 "test" 111.0
+2022-01-01T04:20:00 "test" 111.0
+2022-01-01T04:25:00 "test" 333.0
+2022-01-01T04:30:00 "test" 111.0
+2022-01-01T04:35:00 "test" 333.0
 
 statement ok
 insert into readings_kv(time, name, elevation) values('2022-01-01T04:41:00', 'test', 111);
@@ -147,15 +147,15 @@ sleep 7s
 query 
 select * from readings_agg order by time,name;
 ----
-2022-01-01T00:00:00 truck_3152 153.0
-2022-01-01T04:00:00 test 111.0
-2022-01-01T04:05:00 test 111.0
-2022-01-01T04:20:00 test 111.0
-2022-01-01T04:25:00 test 333.0
-2022-01-01T04:30:00 test 111.0
-2022-01-01T04:35:00 test 333.0
-2022-01-01T04:40:00 test 111.0
-2022-01-01T04:45:00 test 333.0
+2022-01-01T00:00:00 "truck_3152" 153.0
+2022-01-01T04:00:00 "test" 111.0
+2022-01-01T04:05:00 "test" 111.0
+2022-01-01T04:20:00 "test" 111.0
+2022-01-01T04:25:00 "test" 333.0
+2022-01-01T04:30:00 "test" 111.0
+2022-01-01T04:35:00 "test" 333.0
+2022-01-01T04:40:00 "test" 111.0
+2022-01-01T04:45:00 "test" 333.0
 
 statement ok
 insert into readings_kv(time, name, elevation) values('2022-01-01T04:51:00', 'test', 111);
@@ -171,17 +171,17 @@ sleep 7s
 query 
 select * from readings_agg order by time,name;
 ----
-2022-01-01T00:00:00 truck_3152 153.0
-2022-01-01T04:00:00 test 111.0
-2022-01-01T04:05:00 test 111.0
-2022-01-01T04:20:00 test 111.0
-2022-01-01T04:25:00 test 333.0
-2022-01-01T04:30:00 test 111.0
-2022-01-01T04:35:00 test 333.0
-2022-01-01T04:40:00 test 111.0
-2022-01-01T04:45:00 test 333.0
-2022-01-01T04:50:00 test 111.0
-2022-01-01T04:55:00 test 333.0
+2022-01-01T00:00:00 "truck_3152" 153.0
+2022-01-01T04:00:00 "test" 111.0
+2022-01-01T04:05:00 "test" 111.0
+2022-01-01T04:20:00 "test" 111.0
+2022-01-01T04:25:00 "test" 333.0
+2022-01-01T04:30:00 "test" 111.0
+2022-01-01T04:35:00 "test" 333.0
+2022-01-01T04:40:00 "test" 111.0
+2022-01-01T04:45:00 "test" 333.0
+2022-01-01T04:50:00 "test" 111.0
+2022-01-01T04:55:00 "test" 333.0
 
 statement ok
 insert into readings_kv(time, name, elevation) values('2022-01-01T05:00:00', 'test', 111);
@@ -197,17 +197,17 @@ sleep 7s
 query 
 select * from readings_agg order by time,name;
 ----
-2022-01-01T00:00:00 truck_3152 153.0
-2022-01-01T04:00:00 test 111.0
-2022-01-01T04:05:00 test 111.0
-2022-01-01T04:20:00 test 111.0
-2022-01-01T04:25:00 test 333.0
-2022-01-01T04:30:00 test 111.0
-2022-01-01T04:35:00 test 333.0
-2022-01-01T04:40:00 test 111.0
-2022-01-01T04:45:00 test 333.0
-2022-01-01T04:50:00 test 111.0
-2022-01-01T04:55:00 test 333.0
-2022-01-01T05:00:00 test 111.0
-2022-01-01T05:10:00 test 111.0
-2022-01-01T05:20:00 test 111.0
+2022-01-01T00:00:00 "truck_3152" 153.0
+2022-01-01T04:00:00 "test" 111.0
+2022-01-01T04:05:00 "test" 111.0
+2022-01-01T04:20:00 "test" 111.0
+2022-01-01T04:25:00 "test" 333.0
+2022-01-01T04:30:00 "test" 111.0
+2022-01-01T04:35:00 "test" 333.0
+2022-01-01T04:40:00 "test" 111.0
+2022-01-01T04:45:00 "test" 333.0
+2022-01-01T04:50:00 "test" 111.0
+2022-01-01T04:55:00 "test" 333.0
+2022-01-01T05:00:00 "test" 111.0
+2022-01-01T05:10:00 "test" 111.0
+2022-01-01T05:20:00 "test" 111.0
