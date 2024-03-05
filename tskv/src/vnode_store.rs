@@ -433,9 +433,6 @@ impl VnodeStorage {
                 .await?
         };
 
-        // TODO ....... delete
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-
         let mut db_wlock = self.db.write().await;
         let ts_index = db_wlock.rebuild_tsfamily_index(ts_family.clone()).await?;
 
