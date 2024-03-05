@@ -5,6 +5,7 @@ use datafusion::datasource::file_format::file_type::{FileCompressionType, FileTy
 use crate::arrow::arrow_data_type_to_sql_data_type;
 use crate::auth::role::CustomTenantRole;
 use crate::auth::user::UserDesc;
+use crate::codec::Encoding;
 use crate::datafusion::SqlParserValue;
 use crate::oid::{Identifier, Oid};
 use crate::schema::{
@@ -43,6 +44,12 @@ impl ToDDLSql for Tenant {
             .comment
             .as_ref()
             .map(|a| ("comment", SqlParserValue::SingleQuotedString(a.to_string())));
+        let drop_after = option.get_drop_after().as_ref().map(|time| {
+            (
+                "drop_after",
+                SqlParserValue::SingleQuotedString(time.drop_after_output()),
+            )
+        });
         let limit = option
             .limiter_config
             .as_ref()
@@ -56,6 +63,7 @@ impl ToDDLSql for Tenant {
             })
             .transpose()?;
         sql_opts.push(comment);
+        sql_opts.push(drop_after);
         sql_opts.push(limit);
         let str = sql_option_to_sql_str(sql_opts);
         if !str.is_empty() {
@@ -287,8 +295,13 @@ impl ToDDLSql for TskvTableSchema {
             .filter(|c| c.column_type.is_field())
             .for_each(|c| {
                 if let ColumnType::Field(v_t) = c.column_type {
-                    res.push_str(format!("\"{}\" {}, ", c.name, v_t.to_sql_type_str()).as_str())
+                    res.push_str(format!("\"{}\" {}", c.name, v_t.to_sql_type_str()).as_str())
                 }
+
+                if c.encoding != Encoding::Default {
+                    res.push_str(format!(" CODEC({})", c.encoding.as_str()).as_str());
+                }
+                res.push_str(", ");
             });
 
         let tags = self
