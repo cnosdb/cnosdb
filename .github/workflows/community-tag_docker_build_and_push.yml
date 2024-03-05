@@ -17,6 +17,9 @@ jobs:
         image:
           - cnosdb
           - cnosdb-meta
+        version:
+          - release
+          - memcheck
     runs-on: ubuntu-latest
     if: github.repository_owner == 'cnosdb' && github.repository == 'cnosdb/cnosdb' && github.ref == 'refs/heads/LTS/2.3'
     steps:
@@ -38,6 +41,10 @@ jobs:
           echo "/opt/zig-linux-x86_64-0.11.0" >> $GITHUB_PATH
           cargo install cargo-zigbuild
       - uses: actions/checkout@v3
+      - name: clean pkg
+        shell: bash
+        run: |
+          bash ./.github/tools/free_disk_space.sh
       - name: Install dependencies
         shell: bash
         run: |
@@ -61,30 +68,44 @@ jobs:
       -
         name: Compiler
         run: |
-          rustup target add aarch64-unknown-linux-gnu
+          rustup target add aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu
           mkdir -p linux/amd64 linux/arm64
-          if [[ "${{ matrix.image }}" = "cnosdb" ]]; then
-            cargo zigbuild --package main --package client --release --target aarch64-unknown-linux-gnu
-            cargo zigbuild --package main --package client --release --target x86_64-unknown-linux-gnu
+          if [[ "${{ matrix.version }}" = "release" ]] && [[ "${{ matrix.image }}" = "cnosdb" ]]; then
+            cargo zigbuild --package main --package client --release --target aarch64-unknown-linux-gnu --target x86_64-unknown-linux-gnu
             mv ./target/aarch64-unknown-linux-gnu/release/cnosdb ./linux/arm64/cnosdb
             mv ./target/aarch64-unknown-linux-gnu/release/cnosdb-cli ./linux/arm64/cnosdb-cli
             mv ./target/x86_64-unknown-linux-gnu/release/cnosdb ./linux/amd64/cnosdb
             mv ./target/x86_64-unknown-linux-gnu/release/cnosdb-cli ./linux/amd64/cnosdb-cli
-          else
-            cargo zigbuild --package meta --release --target aarch64-unknown-linux-gnu
-            cargo zigbuild --package meta --release --target x86_64-unknown-linux-gnu
+          elif [[ "${{ matrix.version }}" = "release" ]] && [[ "${{ matrix.image }}" = "cnosdb-meta" ]]; then
+            cargo zigbuild --package meta --release --target aarch64-unknown-linux-gnu --target x86_64-unknown-linux-gnu
             mv ./target/aarch64-unknown-linux-gnu/release/cnosdb-meta ./linux/arm64/cnosdb-meta
             mv ./target/x86_64-unknown-linux-gnu/release/cnosdb-meta ./linux/amd64/cnosdb-meta
+          elif [[ "${{ matrix.version }}" = "memcheck" ]] && [[ "${{ matrix.image }}" = "cnosdb" ]]; then
+            RUSTFLAGS=-Zsanitizer=address cargo build --package main --package client --profile test-ci --target x86_64-unknown-linux-gnu
+            mv ./target/x86_64-unknown-linux-gnu/test-ci/cnosdb ./linux/amd64/cnosdb
+            mv ./target/x86_64-unknown-linux-gnu/test-ci/cnosdb-cli ./linux/amd64/cnosdb-cli
+          elif [[ "${{ matrix.version }}" = "memcheck" ]] && [[ "${{ matrix.image }}" = "cnosdb-meta" ]]; then
+            RUSTFLAGS=-Zsanitizer=address cargo build --package meta --profile test-ci --target x86_64-unknown-linux-gnu
+            mv ./target/x86_64-unknown-linux-gnu/test-ci/cnosdb-meta ./linux/amd64/cnosdb-meta
           fi
+          make clean
       -
         name: Build and push
         run: |
-          if [[ "${{ matrix.image }}" = "cnosdb" ]]; then
+          if [[ "${{ matrix.version }}" = "release" ]] && [[ "${{ matrix.image }}" = "cnosdb" ]]; then
             docker buildx build -f docker/Dockerfile --platform linux/amd64,linux/arm64 \
               -t cnosdb/${{matrix.image}}:community-${{ steps.get-tag.outputs.TAG }} \
               --build-arg="git_hash=${{ github.sha }}" . --push
-          else
+          elif [[ "${{ matrix.version }}" = "release" ]] && [[ "${{ matrix.image }}" = "cnosdb-meta" ]]; then
             docker buildx build -f docker/Dockerfile_meta --platform linux/amd64,linux/arm64 \
               -t cnosdb/${{matrix.image}}:community-${{ steps.get-tag.outputs.TAG }} \
+              --build-arg="git_hash=${{ github.sha }}" . --push
+          elif [[ "${{ matrix.version }}" = "memcheck" ]] && [[ "${{ matrix.image }}" = "cnosdb" ]]; then
+            docker buildx build -f docker/Dockerfile --platform linux/amd64 \
+              -t cnosdb/${{matrix.image}}:community-${{ steps.get-tag.outputs.TAG }}-memcheck \
+              --build-arg="git_hash=${{ github.sha }}" . --push
+          elif [[ "${{ matrix.version }}" = "memcheck" ]] && [[ "${{ matrix.image }}" = "cnosdb-meta" ]]; then
+            docker buildx build -f docker/Dockerfile_meta --platform linux/amd64 \
+              -t cnosdb/${{matrix.image}}:community-${{ steps.get-tag.outputs.TAG }}-memcheck \
               --build-arg="git_hash=${{ github.sha }}" . --push
           fi
