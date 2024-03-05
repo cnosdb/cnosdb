@@ -8,7 +8,6 @@ use models::meta_data::VnodeId;
 use models::predicate::domain::ColumnDomains;
 use models::schema::{make_owner, DatabaseSchema};
 use models::{SeriesId, SeriesKey};
-use snafu::ResultExt;
 use tokio::runtime::Runtime;
 use tokio::sync::broadcast::{self, Sender as BroadcastSender};
 use tokio::sync::mpsc::{self, Receiver, Sender};
@@ -17,14 +16,14 @@ use trace::{debug, error, info, warn};
 
 use crate::compaction::job::{CompactJob, FlushJob};
 use crate::compaction::{
-    self, check, run_flush_memtable_job, CompactTask, FlushReq, LevelCompactionPicker, Picker,
+    self, check, run_flush_memtable_job, CompactTask, LevelCompactionPicker, Picker,
 };
 use crate::database::Database;
-use crate::error::{self, Result};
+use crate::error::Result;
 use crate::file_system::file_manager;
 use crate::index::ts_index;
 use crate::kv_option::{Options, StorageOptions};
-use crate::summary::{Summary, SummaryProcessor, SummaryTask, VersionEdit};
+use crate::summary::{Summary, SummaryTask, VersionEdit};
 use crate::tseries_family::{SuperVersion, TseriesFamily};
 use crate::version_set::VersionSet;
 use crate::vnode_store::VnodeStorage;
@@ -49,20 +48,17 @@ pub struct TsKv {
 impl TsKv {
     pub async fn open(
         meta_manager: MetaRef,
-        opt: Options,
+        options: Options,
         runtime: Arc<Runtime>,
         memory_pool: MemoryPoolRef,
         metrics: Arc<MetricsRegister>,
     ) -> Result<TsKv> {
-        let shared_options = Arc::new(opt);
-        let (flush_task_sender, flush_task_receiver) =
-            mpsc::channel::<FlushReq>(shared_options.storage.flush_req_channel_cap);
-        let (compact_task_sender, compact_task_receiver) =
-            mpsc::channel::<CompactTask>(COMPACT_REQ_CHANNEL_CAP);
-        let (summary_task_sender, summary_task_receiver) =
-            mpsc::channel::<SummaryTask>(SUMMARY_REQ_CHANNEL_CAP);
-        let (close_sender, _close_receiver) = broadcast::channel(1);
+        let flush_channel_cap = options.storage.flush_req_channel_cap;
+        let (flush_task_sender, flush_task_receiver) = mpsc::channel(flush_channel_cap);
+        let (compact_task_sender, compact_task_receiver) = mpsc::channel(COMPACT_REQ_CHANNEL_CAP);
+        let (summary_task_sender, summary_task_receiver) = mpsc::channel(SUMMARY_REQ_CHANNEL_CAP);
 
+        let shared_options = Arc::new(options);
         let (version_set, summary) = Self::recover_summary(
             runtime.clone(),
             memory_pool.clone(),
@@ -82,9 +78,9 @@ impl TsKv {
             global_ctx: summary.global_context(),
         });
 
+        let (close_sender, _close_receiver) = broadcast::channel(1);
         let compact_job = CompactJob::new(runtime.clone(), ctx.clone());
         let flush_job = FlushJob::new(runtime.clone(), ctx.clone());
-
         let core = Self {
             ctx,
             meta_manager,
@@ -119,11 +115,8 @@ impl TsKv {
         metrics: Arc<MetricsRegister>,
     ) -> (Arc<RwLock<VersionSet>>, Summary) {
         let summary_dir = opt.storage.summary_dir();
-        if !file_manager::try_exists(&summary_dir) {
-            std::fs::create_dir_all(&summary_dir)
-                .context(error::IOSnafu)
-                .unwrap();
-        }
+        file_manager::FileManager::create_dir_if_not_exists(Some(&summary_dir)).unwrap();
+
         let summary_file = file_utils::make_summary_file(&summary_dir, 0);
         let summary = if file_manager::try_exists(&summary_file) {
             Summary::recover(
@@ -147,16 +140,31 @@ impl TsKv {
         (version_set, summary)
     }
 
-    fn run_summary_job(&self, summary: Summary, mut summary_task_receiver: Receiver<SummaryTask>) {
-        let f = async move {
-            let mut summary_processor = SummaryProcessor::new(Box::new(summary));
-            while let Some(x) = summary_task_receiver.recv().await {
-                debug!("Apply Summary task");
-                summary_processor.batch(x);
-                summary_processor.apply().await;
+    fn run_summary_job(
+        &self,
+        mut summary: Summary,
+        mut summary_task_receiver: Receiver<SummaryTask>,
+    ) {
+        self.runtime.spawn(async move {
+            let mut roll_file_time_stamp = models::utils::now_timestamp_secs();
+
+            while let Some(task) = summary_task_receiver.recv().await {
+                let result = summary.apply_version_edit(&task.request).await;
+                if let Err(err) = task.call_back.send(result) {
+                    trace::info!("Response apply version edit failed: {:?}", err);
+                }
+
+                // Try to rolling summary file every 10mins
+                if models::utils::now_timestamp_secs() - roll_file_time_stamp > 10 * 60 {
+                    if let Err(err) = summary.roll_summary_file().await {
+                        error!("roll summary file failed: {:?}", err);
+                    } else {
+                        roll_file_time_stamp = models::utils::now_timestamp_secs();
+                    }
+                }
             }
-        };
-        self.runtime.spawn(f);
+        });
+
         info!("Summary task handler started");
     }
 
@@ -405,7 +413,8 @@ impl Engine for TsKv {
                                 .ctx
                                 .summary_task_sender
                                 .send(SummaryTask::new(
-                                    vec![version_edit],
+                                    ts_family.clone(),
+                                    version_edit,
                                     Some(file_metas),
                                     None,
                                     summary_tx,
@@ -476,7 +485,7 @@ impl TsKv {
         self.ctx.summary_task_sender.clone()
     }
 
-    pub(crate) fn flush_task_sender(&self) -> Sender<FlushReq> {
+    pub(crate) fn flush_task_sender(&self) -> Sender<compaction::FlushReq> {
         self.ctx.flush_task_sender.clone()
     }
 

@@ -9,15 +9,14 @@ use snafu::ResultExt;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::RwLock;
-use utils::BloomFilter;
 
 use crate::compaction::CompactTask;
 use crate::database::{Database, DatabaseFactory};
 use crate::error::{MetaSnafu, Result};
 use crate::index::ts_index::TSIndex;
-use crate::summary::VersionEdit;
+use crate::summary::SummaryRequest;
 use crate::tseries_family::{TseriesFamily, Version};
-use crate::{ColumnFileId, Options, TseriesFamilyId};
+use crate::{Options, TseriesFamilyId};
 
 #[derive(Debug)]
 pub struct VersionSet {
@@ -186,16 +185,27 @@ impl VersionSet {
     /// Generated data is `VersionEdit`s for all vnodes and db-files,
     /// and `HashMap<ColumnFileId, Arc<BloomFilter>>` for index data
     /// (field-id filter) of db-files.
-    pub async fn snapshot(&self) -> (Vec<VersionEdit>, HashMap<ColumnFileId, Arc<BloomFilter>>) {
-        let mut version_edits = vec![];
-        let mut file_metas: HashMap<ColumnFileId, Arc<BloomFilter>> = HashMap::new();
+    pub async fn snapshot_version_edit(&self) -> Vec<SummaryRequest> {
+        let mut requests = vec![];
         for db in self.dbs.values() {
-            db.read()
-                .await
-                .snapshot(None, &mut version_edits, &mut file_metas)
-                .await;
+            let db_reader = db.read().await;
+            let ts_families = db_reader.ts_families();
+            for (_, tsf) in ts_families.iter() {
+                let mut file_metas = HashMap::new();
+                let ve = tsf.read().await.build_version_edit(&mut file_metas);
+
+                let request = SummaryRequest {
+                    version_edit: ve,
+                    ts_family: tsf.clone(),
+                    mem_caches: None,
+                    file_metas: Some(file_metas),
+                };
+
+                requests.push(request);
+            }
         }
-        (version_edits, file_metas)
+
+        requests
     }
 
     pub async fn get_tsfamily_seq_no_map(&self) -> HashMap<TseriesFamilyId, u64> {
