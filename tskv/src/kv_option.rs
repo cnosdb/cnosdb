@@ -175,8 +175,8 @@ pub struct QueryOptions {
     pub auth_enabled: bool,
     pub query_sql_limit: u64,
     pub write_sql_limit: u64,
-    pub read_timeout_ms: u64,
-    pub write_timeout_ms: u64,
+    pub read_timeout: Duration,
+    pub write_timeout: Duration,
     pub stream_trigger_cpu: usize,
     pub stream_executor_cpu: usize,
 }
@@ -188,8 +188,8 @@ impl From<&Config> for QueryOptions {
             auth_enabled: config.query.auth_enabled,
             query_sql_limit: config.query.query_sql_limit,
             write_sql_limit: config.query.write_sql_limit,
-            read_timeout_ms: config.query.read_timeout_ms,
-            write_timeout_ms: config.query.write_timeout_ms,
+            read_timeout: config.query.read_timeout,
+            write_timeout: config.query.write_timeout,
             stream_trigger_cpu: config.query.stream_trigger_cpu,
             stream_executor_cpu: config.query.stream_executor_cpu,
         }

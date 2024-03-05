@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use config::QueryConfig;
 use futures::TryStreamExt;
 use meta::model::MetaRef;
@@ -95,7 +93,7 @@ impl VnodeOpener for TemporaryTagScanOpener {
                     })?;
                     let mut client = tskv_service_time_out_client(
                         channel,
-                        Duration::from_millis(config.read_timeout_ms),
+                        config.read_timeout,
                         DEFAULT_GRPC_SERVER_MESSAGE_LEN,
                         grpc_enable_gzip,
                     );

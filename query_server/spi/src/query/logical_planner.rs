@@ -160,8 +160,8 @@ impl DDLPlan {
     pub fn schema(&self) -> SchemaRef {
         match self {
             DDLPlan::ChecksumGroup(_) => Arc::new(Schema::new(vec![
-                Field::new("VNODE_ID", DataType::UInt32, false),
-                Field::new("CHECK_SUM", DataType::Utf8, false),
+                Field::new("vnode_id", DataType::UInt32, false),
+                Field::new("check_sum", DataType::Utf8, false),
             ])),
             _ => Arc::new(Schema::empty()),
         }

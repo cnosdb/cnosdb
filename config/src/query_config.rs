@@ -1,24 +1,26 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
-use crate::override_by_env::{entry_override, OverrideByEnv};
+use crate::codec::{bytes_num, duration};
+use crate::override_by_env::{entry_override, entry_override_to_duration, OverrideByEnv};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct QueryConfig {
     #[serde(default = "QueryConfig::default_max_server_connections")]
     pub max_server_connections: u32,
-    #[serde(default = "QueryConfig::default_query_sql_limit")]
+    #[serde(with = "bytes_num", default = "QueryConfig::default_query_sql_limit")]
     pub query_sql_limit: u64,
-    #[serde(default = "QueryConfig::default_write_sql_limit")]
+    #[serde(with = "bytes_num", default = "QueryConfig::default_write_sql_limit")]
     pub write_sql_limit: u64,
     #[serde(default = "QueryConfig::default_auth_enabled")]
     pub auth_enabled: bool,
-    #[serde(default = "QueryConfig::default_read_timeout_ms")]
-    pub read_timeout_ms: u64,
-    #[serde(default = "QueryConfig::default_write_timeout_ms")]
-    pub write_timeout_ms: u64,
+    #[serde(with = "duration", default = "QueryConfig::default_read_timeout")]
+    pub read_timeout: Duration,
+    #[serde(with = "duration", default = "QueryConfig::default_write_timeout")]
+    pub write_timeout: Duration,
     #[serde(default = "QueryConfig::default_stream_trigger_cpu")]
     pub stream_trigger_cpu: usize,
     #[serde(default = "QueryConfig::default_stream_executor_cpu")]
@@ -42,16 +44,18 @@ impl QueryConfig {
         false
     }
 
-    fn default_read_timeout_ms() -> u64 {
-        3 * 1000
+    fn default_read_timeout() -> Duration {
+        Duration::from_millis(3_000)
     }
 
-    fn default_write_timeout_ms() -> u64 {
-        3 * 1000
+    fn default_write_timeout() -> Duration {
+        Duration::from_millis(3_000)
     }
+
     fn default_stream_trigger_cpu() -> usize {
         1
     }
+
     fn default_stream_executor_cpu() -> usize {
         2
     }
@@ -66,8 +70,8 @@ impl OverrideByEnv for QueryConfig {
         entry_override(&mut self.query_sql_limit, "CNOSDB_QUERY_QUERY_SQL_LIMIT");
         entry_override(&mut self.write_sql_limit, "CNOSDB_QUERY_WRITE_SQL_LIMIT");
         entry_override(&mut self.auth_enabled, "CNOSDB_QUERY_AUTH_ENABLED");
-        entry_override(&mut self.read_timeout_ms, "CNOSDB_QUERY_READ_TIMEOUT_MS");
-        entry_override(&mut self.write_timeout_ms, "CNOSDB_QUERY_WRITE_TIMEOUT_MS");
+        entry_override_to_duration(&mut self.read_timeout, "CNOSDB_QUERY_READ_TIMEOUT");
+        entry_override_to_duration(&mut self.write_timeout, "CNOSDB_QUERY_WRITE_TIMEOUT");
         entry_override(
             &mut self.stream_trigger_cpu,
             "CNOSDB_QUERY_STREAM_TRIGGER_CPU",
@@ -86,8 +90,8 @@ impl Default for QueryConfig {
             query_sql_limit: Self::default_query_sql_limit(),
             write_sql_limit: Self::default_write_sql_limit(),
             auth_enabled: Self::default_auth_enabled(),
-            read_timeout_ms: Self::default_read_timeout_ms(),
-            write_timeout_ms: Self::default_write_timeout_ms(),
+            read_timeout: Self::default_read_timeout(),
+            write_timeout: Self::default_write_timeout(),
             stream_trigger_cpu: Self::default_stream_trigger_cpu(),
             stream_executor_cpu: Self::default_stream_executor_cpu(),
         }
@@ -121,19 +125,19 @@ impl CheckConfig for QueryConfig {
             })
         }
 
-        if self.read_timeout_ms < 10 {
+        if self.read_timeout.as_nanos() < Duration::from_millis(10).as_nanos() {
             ret.add_warn(CheckConfigItemResult {
                 config: config_name.clone(),
-                item: "read_timeout_ms".to_string(),
-                message: "'read_timeout_ms' maybe too small(less than 10)".to_string(),
+                item: "read_timeout".to_string(),
+                message: "'read_timeout' maybe too small(less than 10)".to_string(),
             })
         }
 
-        if self.write_timeout_ms < 10 {
+        if self.write_timeout.as_nanos() < Duration::from_millis(10).as_nanos() {
             ret.add_warn(CheckConfigItemResult {
                 config: config_name.clone(),
-                item: "write_timeout_ms".to_string(),
-                message: "'write_timeout_ms' maybe too small(less than 10)".to_string(),
+                item: "write_timeout".to_string(),
+                message: "'write_timeout' maybe too small(less than 10)".to_string(),
             })
         }
 
