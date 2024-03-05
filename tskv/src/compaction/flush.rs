@@ -17,7 +17,7 @@ use crate::memcache::MemCache;
 use crate::summary::{CompactMetaBuilder, SummaryTask, VersionEdit};
 use crate::tseries_family::Version;
 use crate::tsm2::writer::Tsm2Writer;
-use crate::{ColumnFileId, TsKvContext, TseriesFamilyId};
+use crate::{ColumnFileId, Error, TsKvContext, TseriesFamilyId};
 
 pub struct FlushTask {
     ts_family_id: TseriesFamilyId,
@@ -140,49 +140,51 @@ pub async fn run_flush_memtable_job(
     let mut version_edit = None;
     let mut file_metas: HashMap<ColumnFileId, Arc<BloomFilter>> = HashMap::new();
 
-    let get_tsf_result = ctx
+    let tsf = ctx
         .version_set
         .read()
         .await
         .get_tsfamily_by_tf_id(req.ts_family_id)
-        .await;
-    if let Some(tsf) = get_tsf_result {
-        // todo: build path by vnode data
-        let (storage_opt, version, database) = {
-            let tsf_rlock = tsf.read().await;
-            tsf_rlock.update_last_modified().await;
-            (
-                tsf_rlock.storage_opt(),
-                tsf_rlock.version(),
-                tsf_rlock.tenant_database(),
-            )
-        };
+        .await
+        .ok_or(Error::VnodeNotFound {
+            vnode_id: req.ts_family_id,
+        })?;
 
-        let path_tsm = storage_opt.tsm_dir(&database, req.ts_family_id);
-        let path_delta = storage_opt.delta_dir(&database, req.ts_family_id);
+    // todo: build path by vnode data
+    let (storage_opt, version, database) = {
+        let tsf_rlock = tsf.read().await;
+        tsf_rlock.update_last_modified().await;
+        (
+            tsf_rlock.storage_opt(),
+            tsf_rlock.version(),
+            tsf_rlock.tenant_database(),
+        )
+    };
 
-        let flush_task = FlushTask::new(
-            req.ts_family_id,
-            req.mems.clone(),
-            req.low_seq_no,
-            req.high_seq_no,
-            ctx.global_ctx.clone(),
-            path_tsm,
-            path_delta,
-        );
+    let path_tsm = storage_opt.tsm_dir(&database, req.ts_family_id);
+    let path_delta = storage_opt.delta_dir(&database, req.ts_family_id);
 
-        if let Ok((ve, fm)) = flush_task.tsm2_run(version.clone()).await {
-            let _ = version_edit.insert(ve);
-            file_metas = fm;
-        }
+    let flush_task = FlushTask::new(
+        req.ts_family_id,
+        req.mems.clone(),
+        req.low_seq_no,
+        req.high_seq_no,
+        ctx.global_ctx.clone(),
+        path_tsm,
+        path_delta,
+    );
 
-        tsf.read().await.update_last_modified().await;
-        if trigger_compact {
-            let _ = ctx
-                .compact_task_sender
-                .send(CompactTask::Vnode(req.ts_family_id))
-                .await;
-        }
+    if let Ok((ve, fm)) = flush_task.tsm2_run(version.clone()).await {
+        let _ = version_edit.insert(ve);
+        file_metas = fm;
+    }
+
+    tsf.read().await.update_last_modified().await;
+    if trigger_compact {
+        let _ = ctx
+            .compact_task_sender
+            .send(CompactTask::Vnode(req.ts_family_id))
+            .await;
     }
 
     // If there are no data to be flushed but it's a force flush,
@@ -202,9 +204,10 @@ pub async fn run_flush_memtable_job(
     if let Some(ref ve) = version_edit {
         let (task_state_sender, task_state_receiver) = oneshot::channel();
         let task = SummaryTask::new(
-            vec![ve.clone()],
+            tsf.clone(),
+            ve.clone(),
             Some(file_metas),
-            Some(HashMap::from([(req.ts_family_id, req.mems)])),
+            Some(req.mems),
             task_state_sender,
         );
 

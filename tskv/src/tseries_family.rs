@@ -1302,14 +1302,12 @@ pub mod test_tseries_family {
 
     use cache::ShardedAsyncCache;
     use models::Timestamp;
-    use tokio::sync::mpsc::Receiver;
 
     use super::{ColumnFile, LevelInfo};
     use crate::file_utils::make_tsm_file;
     use crate::kv_option::{Options, StorageOptions};
-    use crate::summary::{CompactMeta, SummaryTask, VersionEdit};
+    use crate::summary::{CompactMeta, VersionEdit};
     use crate::tseries_family::{TimeRange, Version};
-    use crate::version_set::VersionSet;
     use crate::TseriesFamilyId;
 
     #[tokio::test]
@@ -1568,35 +1566,5 @@ pub mod test_tseries_family {
             max_level_ts,
             tsm_reader_cache,
         )
-    }
-
-    // Util function for testing with summary modification.
-    async fn update_ts_family_version(
-        version_set: Arc<tokio::sync::RwLock<VersionSet>>,
-        ts_family_id: TseriesFamilyId,
-        mut summary_task_receiver: Receiver<SummaryTask>,
-    ) {
-        let mut version_edits: Vec<VersionEdit> = Vec::new();
-        let mut min_seq: u64 = 0;
-        while let Some(summary_task) = summary_task_receiver.recv().await {
-            for edit in summary_task.request.version_edits.into_iter() {
-                if edit.tsf_id == ts_family_id {
-                    version_edits.push(edit.clone());
-                    if edit.has_seq_no {
-                        min_seq = edit.seq_no;
-                    }
-                }
-            }
-        }
-        let version_set = version_set.write().await;
-        if let Some(ts_family) = version_set.get_tsfamily_by_tf_id(ts_family_id).await {
-            let mut ts_family = ts_family.write().await;
-            let new_version = ts_family.version().copy_apply_version_edits(
-                version_edits,
-                &mut HashMap::new(),
-                Some(min_seq),
-            );
-            ts_family.new_version(new_version, None);
-        }
     }
 }
