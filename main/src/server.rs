@@ -115,8 +115,8 @@ pub(crate) struct ServiceBuilder {
     pub span_context_extractor: Arc<SpanContextExtractor>,
 }
 
-async fn regular_report_node_metrics(meta: MetaRef, heartbeat_interval: u64) {
-    let mut interval = time::interval(Duration::from_secs(heartbeat_interval));
+async fn regular_report_node_metrics(meta: MetaRef, heartbeat_interval: Duration) {
+    let mut interval = time::interval(heartbeat_interval);
 
     loop {
         interval.tick().await;
@@ -137,7 +137,7 @@ impl ServiceBuilder {
         meta.add_data_node().await.unwrap();
         tokio::spawn(regular_report_node_metrics(
             meta.clone(),
-            self.config.meta.report_time_interval_secs,
+            self.config.meta.report_time_interval,
         ));
 
         let kv_inst = self
@@ -200,7 +200,7 @@ impl ServiceBuilder {
         meta.add_data_node().await.unwrap();
         tokio::spawn(regular_report_node_metrics(
             meta.clone(),
-            self.config.meta.report_time_interval_secs,
+            self.config.meta.report_time_interval,
         ));
 
         let kv_inst = self
@@ -245,7 +245,7 @@ impl ServiceBuilder {
             self.config.storage.path.clone(),
             self.config.global.cluster_name.clone(),
             self.config.meta.service_addr[0].clone(),
-            self.config.cluster.lmdb_max_map_size,
+            self.config.cluster.lmdb_max_map_size.try_into().unwrap(),
         )
         .await;
 

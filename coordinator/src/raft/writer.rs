@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::time::Duration;
 
 use memory_pool::MemoryPoolRef;
 use meta::model::MetaRef;
@@ -199,10 +198,10 @@ impl RaftWriter {
                 error: error.to_string(),
             }
         })?;
-        let timeout = self.config.query.write_timeout_ms;
+        let timeout = self.config.query.write_timeout;
         let mut client = tskv_service_time_out_client(
             channel,
-            Duration::from_millis(timeout),
+            timeout,
             DEFAULT_GRPC_SERVER_MESSAGE_LEN,
             self.config.service.grpc_enable_gzip,
         );

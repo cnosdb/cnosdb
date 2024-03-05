@@ -1,26 +1,40 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigResult};
-use crate::override_by_env::{entry_override, OverrideByEnv};
+use crate::codec::{bytes_num, duration};
+use crate::override_by_env::{entry_override, entry_override_to_duration, OverrideByEnv};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ClusterConfig {
     #[serde(default = "ClusterConfig::default_raft_logs_to_keep")]
     pub raft_logs_to_keep: u64,
 
-    #[serde(default = "ClusterConfig::default_lmdb_max_map_size")]
-    pub lmdb_max_map_size: usize,
+    #[serde(
+        with = "bytes_num",
+        default = "ClusterConfig::default_lmdb_max_map_size"
+    )]
+    pub lmdb_max_map_size: u64,
 
-    #[serde(default = "ClusterConfig::default_heartbeat_interval")]
-    pub heartbeat_interval: u64,
+    #[serde(
+        with = "duration",
+        default = "ClusterConfig::default_heartbeat_interval"
+    )]
+    pub heartbeat_interval: Duration,
 
-    #[serde(default = "ClusterConfig::default_send_append_entries_timeout")]
-    pub send_append_entries_timeout: u64, //ms
+    #[serde(
+        with = "duration",
+        default = "ClusterConfig::default_send_append_entries_timeout"
+    )]
+    pub send_append_entries_timeout: Duration, //ms
 
-    #[serde(default = "ClusterConfig::default_install_snapshot_timeout")]
-    pub install_snapshot_timeout: u64, //ms
+    #[serde(
+        with = "duration",
+        default = "ClusterConfig::default_install_snapshot_timeout"
+    )]
+    pub install_snapshot_timeout: Duration, //ms
 }
 
 impl ClusterConfig {
@@ -28,20 +42,20 @@ impl ClusterConfig {
         5000
     }
 
-    fn default_lmdb_max_map_size() -> usize {
+    fn default_lmdb_max_map_size() -> u64 {
         1024 * 1024 * 1024
     }
 
-    fn default_heartbeat_interval() -> u64 {
-        10 * 1000
+    fn default_heartbeat_interval() -> Duration {
+        Duration::from_millis(10_000)
     }
 
-    fn default_send_append_entries_timeout() -> u64 {
-        5 * 1000
+    fn default_send_append_entries_timeout() -> Duration {
+        Duration::from_millis(5_000)
     }
 
-    fn default_install_snapshot_timeout() -> u64 {
-        3600 * 1000
+    fn default_install_snapshot_timeout() -> Duration {
+        Duration::from_millis(3_600_000)
     }
 }
 
@@ -57,17 +71,17 @@ impl OverrideByEnv for ClusterConfig {
             "CNOSDB_CLUSTER_LMDB_MAX_MAP_SIZE",
         );
 
-        entry_override(
+        entry_override_to_duration(
             &mut self.heartbeat_interval,
             "CNOSDB_CLUSTER_HEARTBEAT_INTERVAL",
         );
 
-        entry_override(
+        entry_override_to_duration(
             &mut self.send_append_entries_timeout,
             "CNOSDB_CLUSTER_SEND_APPEND_ENTRIES_TIMEOUT",
         );
 
-        entry_override(
+        entry_override_to_duration(
             &mut self.install_snapshot_timeout,
             "CNOSDB_CLUSTER_INSTALL_SNAPSHOT_TIMEOUT",
         );

@@ -31,7 +31,8 @@ pub struct RaftNodesManager {
 impl RaftNodesManager {
     pub fn new(config: config::Config, meta: MetaRef, kv_inst: Option<EngineRef>) -> Self {
         let path = PathBuf::from(config.storage.path.clone()).join("raft-state");
-        let state = StateStorage::open(path, config.cluster.lmdb_max_map_size).unwrap();
+        let state =
+            StateStorage::open(path, config.cluster.lmdb_max_map_size.try_into().unwrap()).unwrap();
 
         Self {
             meta,
@@ -448,12 +449,14 @@ impl RaftNodesManager {
     fn replication_config(&self) -> ReplicationConfig {
         ReplicationConfig {
             cluster_name: self.config.global.cluster_name.clone(),
-            lmdb_max_map_size: self.config.cluster.lmdb_max_map_size,
+            lmdb_max_map_size: self.config.cluster.lmdb_max_map_size.try_into().unwrap(),
             grpc_enable_gzip: self.config.service.grpc_enable_gzip,
-            heartbeat_interval: self.config.cluster.heartbeat_interval,
+            heartbeat_interval: self.config.cluster.heartbeat_interval.as_millis() as u64,
             raft_logs_to_keep: self.config.cluster.raft_logs_to_keep,
-            send_append_entries_timeout: self.config.cluster.send_append_entries_timeout,
-            install_snapshot_timeout: self.config.cluster.install_snapshot_timeout,
+            send_append_entries_timeout: self.config.cluster.send_append_entries_timeout.as_millis()
+                as u64,
+            install_snapshot_timeout: self.config.cluster.install_snapshot_timeout.as_millis()
+                as u64,
         }
     }
 
