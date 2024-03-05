@@ -148,7 +148,7 @@ dateparser = "0.1.7"
 
 [workspace.package]
 edition = "2021"
-version = "2.3.4"
+version = "2.3.5"
 
 # When you want to debug a third-party library,
 # you can use patch,
