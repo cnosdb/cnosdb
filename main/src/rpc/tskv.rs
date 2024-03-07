@@ -263,7 +263,7 @@ impl TskvServiceImpl {
             .collect::<Vec<_>>();
 
         let executor = QueryExecutor::new(option, run_time, meta, kv_inst);
-        executor.local_node_tag_scan(vnodes, span_ctx)
+        executor.local_node_tag_scan(vnodes, span_ctx, args.count_col_name)
     }
 }
 

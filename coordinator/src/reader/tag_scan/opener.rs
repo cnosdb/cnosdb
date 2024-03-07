@@ -76,7 +76,7 @@ impl VnodeOpener for TemporaryTagScanOpener {
                 let mut request = {
                     let vnode_ids = vec![vnode_id];
                     let req = option
-                        .to_query_record_batch_request(vnode_ids)
+                        .to_query_record_batch_request(vnode_ids, count_col_name)
                         .map_err(CoordinatorError::from)?;
                     tonic::Request::new(req)
                 };

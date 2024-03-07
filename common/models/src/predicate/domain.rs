@@ -1485,6 +1485,7 @@ pub struct QueryArgs {
 
     pub limit: Option<usize>,
     pub batch_size: usize,
+    pub count_col_name: Option<String>,
 }
 
 impl QueryArgs {
