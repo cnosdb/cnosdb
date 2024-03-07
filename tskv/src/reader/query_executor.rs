@@ -71,6 +71,7 @@ impl QueryExecutor {
         &self,
         vnodes: Vec<VnodeInfo>,
         span_ctx: Option<&SpanContext>,
+        count_col_name: Option<String>,
     ) -> Result<SendableTskvRecordBatchStream> {
         let mut streams = Vec::with_capacity(vnodes.len());
         vnodes.into_iter().for_each(|vnode| {
@@ -81,7 +82,7 @@ impl QueryExecutor {
                 SpanRecorder::new(
                     span_ctx.child_span(format!("LocalTskvTagScanStream ({})", vnode.id)),
                 ),
-                None,
+                count_col_name.clone(),
             );
             streams.push(Box::pin(stream) as SendableTskvRecordBatchStream);
         });

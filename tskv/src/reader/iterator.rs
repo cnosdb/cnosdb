@@ -375,11 +375,13 @@ impl QueryOption {
     pub fn to_query_record_batch_request(
         &self,
         vnode_ids: Vec<VnodeId>,
+        count_col_name: Option<String>,
     ) -> Result<QueryRecordBatchRequest, models::Error> {
         let args = QueryArgs {
             vnode_ids,
             limit: self.split.limit(),
             batch_size: self.batch_size,
+            count_col_name,
         };
         let expr = QueryExpr {
             split: self.split.clone(),

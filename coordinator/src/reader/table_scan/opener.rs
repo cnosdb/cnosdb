@@ -83,7 +83,7 @@ impl VnodeOpener for TemporaryTableScanOpener {
                 let mut request = {
                     let vnode_ids = vec![vnode_id];
                     let req = option
-                        .to_query_record_batch_request(vnode_ids)
+                        .to_query_record_batch_request(vnode_ids, None)
                         .map_err(CoordinatorError::from)?;
                     tonic::Request::new(req)
                 };
