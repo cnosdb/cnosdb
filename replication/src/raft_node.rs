@@ -1,8 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
+use std::time::Duration;
 
 use openraft::storage::Adaptor;
-use openraft::{RaftMetrics, SnapshotPolicy};
+use openraft::{OptionalSend, RaftMetrics, SnapshotPolicy};
 use tracing::info;
 
 use crate::errors::{ReplicationError, ReplicationResult};
@@ -121,9 +122,10 @@ impl RaftNode {
     pub async fn raft_change_membership(
         &self,
         list: BTreeSet<RaftNodeId>,
+        retain: bool,
     ) -> ReplicationResult<()> {
         self.raft
-            .change_membership(list, false)
+            .change_membership(list, retain)
             .await
             .map_err(|err| ReplicationError::RaftInternalErr {
                 msg: format!("Change membership raft execute failed: {}", err),
@@ -143,6 +145,25 @@ impl RaftNode {
         self.storage.destory().await?;
 
         Ok(())
+    }
+
+    pub async fn wait_condition<FUN>(
+        &self,
+        func: FUN,
+        timeout: Duration,
+        message: String,
+    ) -> ReplicationResult<RaftMetrics<RaftNodeId, RaftNodeInfo>>
+    where
+        FUN: Fn(&RaftMetrics<RaftNodeId, RaftNodeInfo>) -> bool + OptionalSend,
+    {
+        let waiter = self.raft.wait(Some(timeout));
+
+        waiter
+            .metrics(func, &message)
+            .await
+            .map_err(|err| ReplicationError::RaftInternalErr {
+                msg: format!("wait condition: {}, error: {}", message, err),
+            })
     }
 
     /// Get the latest metrics of the cluster

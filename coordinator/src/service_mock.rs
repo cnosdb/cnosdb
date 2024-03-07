@@ -54,6 +54,14 @@ impl Coordinator for MockCoordinator {
         Some(Arc::new(TenantMeta::mock()))
     }
 
+    async fn exec_admin_command_on_node(
+        &self,
+        node_id: u64,
+        req: AdminCommandRequest,
+    ) -> CoordinatorResult<()> {
+        todo!()
+    }
+
     async fn write_replica_by_raft(
         &self,
         replica: ReplicationSet,
@@ -208,18 +216,6 @@ impl Coordinator for MockCoordinator {
         predicate: &ResolvedPredicate,
     ) -> CoordinatorResult<()> {
         todo!("delete_from_table")
-    }
-
-    async fn broadcast_command(&self, req: AdminCommandRequest) -> CoordinatorResult<()> {
-        Ok(())
-    }
-
-    async fn broadcast_command_by_vnode(
-        &self,
-        req: AdminCommandRequest,
-        shards: Vec<ReplicationSet>,
-    ) -> CoordinatorResult<()> {
-        Ok(())
     }
 
     async fn vnode_manager(

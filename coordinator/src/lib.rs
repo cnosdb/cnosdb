@@ -74,6 +74,12 @@ pub trait Coordinator: Send + Sync {
         predicate: ResolvedPredicateRef,
     ) -> CoordinatorResult<Vec<ReplicationSet>>;
 
+    async fn exec_admin_command_on_node(
+        &self,
+        node_id: u64,
+        req: AdminCommandRequest,
+    ) -> CoordinatorResult<()>;
+
     async fn write_replica_by_raft(
         &self,
         replica: ReplicationSet,
@@ -121,14 +127,6 @@ pub trait Coordinator: Send + Sync {
         &self,
         table: &ResolvedTable,
         predicate: &ResolvedPredicate,
-    ) -> CoordinatorResult<()>;
-
-    async fn broadcast_command(&self, req: AdminCommandRequest) -> CoordinatorResult<()>;
-
-    async fn broadcast_command_by_vnode(
-        &self,
-        req: AdminCommandRequest,
-        shards: Vec<ReplicationSet>,
     ) -> CoordinatorResult<()>;
 
     /// A manager to manage vnode.
