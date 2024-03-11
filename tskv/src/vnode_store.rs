@@ -9,7 +9,7 @@ use models::{ColumnId, SeriesId, SeriesKey};
 use protos::kv_service::{raft_write_command, WritePointsResponse, *};
 use snafu::ResultExt;
 use tokio::sync::RwLock;
-use trace::{debug, error, info, warn, SpanContext, SpanExt, SpanRecorder};
+use trace::{debug, error, info, SpanContext, SpanExt, SpanRecorder};
 
 use crate::compaction::run_flush_memtable_job;
 use crate::database::Database;
@@ -347,52 +347,32 @@ impl VnodeStorage {
         let snapshot_dir = opt.snapshot_sub_dir(owner.as_str(), vnode_id, &snapshot_id);
         let _ = std::fs::remove_dir_all(&snapshot_dir);
 
-        let (flush_req_optional, mut ve_summary_snapshot) = {
+        // Run force flush
+        let flush_req = {
             let mut vnode_wlock = self.ts_family.write().await;
             vnode_wlock.switch_to_immutable();
-            let flush_req_optional = vnode_wlock.build_flush_req(true);
 
-            let mut _file_metas = HashMap::new();
-            let ve_summary_snapshot = vnode_wlock.build_version_edit(&mut _file_metas);
-            (flush_req_optional, ve_summary_snapshot)
+            vnode_wlock.build_flush_req(true)
         };
 
-        // Run force flush
         let mut last_seq_no = 0;
-        if let Some(flush_req) = flush_req_optional {
+        if let Some(flush_req) = flush_req {
             last_seq_no = flush_req.high_seq_no;
-            if let Some(flushed_ve) =
-                run_flush_memtable_job(flush_req, self.ctx.clone(), false).await?
-            {
-                // Normally flushed, and generated some tsm/delta files.
-                debug!("Snapshot: flush vnode {vnode_id} succeed.");
-                ve_summary_snapshot.add_files.extend(flushed_ve.add_files);
-            } else {
-                // Flushed but not generate any file.
-                warn!("Snapshot: flush vnode {vnode_id} did not generated any file.");
-            }
+            run_flush_memtable_job(flush_req, self.ctx.clone(), false).await?;
         };
 
-        // Copy index directory.
-        let index_dir = opt.index_dir(owner.as_str(), vnode_id);
-        let snap_index_dir = opt.snapshot_index_dir(owner.as_str(), vnode_id, &snapshot_id);
-        if let Err(e) = self.ts_index.flush().await {
-            error!("Snapshot: failed to flush vnode index: {e}.");
-            return Err(Error::IndexErr { source: e });
-        }
-        if let Err(e) = dircpy::copy_dir(&index_dir, &snap_index_dir) {
-            error!(
-                "Snapshot: failed to copy index dir {:?} to {:?}: {e}",
-                index_dir, snap_index_dir
-            );
-            return Err(Error::IO { source: e });
-        }
+        let mut _file_metas = HashMap::new();
+        let ve_snapshot = self
+            .ts_family
+            .write()
+            .await
+            .build_version_edit(&mut _file_metas);
 
         // Do snapshot, tsm file system operations.
         self.ts_family
             .read()
             .await
-            .backup(&ve_summary_snapshot, &snapshot_id)
+            .backup(&ve_snapshot, &snapshot_id)
             .await?;
 
         let mut files_info = file_info::get_files_info(&snapshot_dir).await?;
@@ -410,10 +390,9 @@ impl VnodeStorage {
             last_seq_no,
             files_info,
             node_id: opt.node_id,
-            //tsm_files: backup_tsm_files,
-            version_edit: ve_summary_snapshot,
+            version_edit: ve_snapshot,
         };
-        debug!("Snapshot: created snapshot: {snapshot:?}");
+        info!("Snapshot: created snapshot: {snapshot:?}");
 
         Ok(snapshot)
     }
@@ -425,33 +404,37 @@ impl VnodeStorage {
         snapshot: VnodeSnapshot,
         shapshot_dir: &PathBuf,
     ) -> Result<()> {
-        debug!("Snapshot: apply snapshot {snapshot:?} to create new vnode.");
+        info!("Snapshot: apply snapshot {snapshot:?}");
 
         let vnode_id = self.id;
         let owner = self.ts_family.read().await.tenant_database();
         let storage_opt = self.ctx.options.storage.clone();
 
-        // delete already exist data
+        let ts_family = {
+            // delete already exist data
+            let mut db_wlock = self.db.write().await;
+            let summary_sender = self.ctx.summary_task_sender.clone();
+            db_wlock.del_tsfamily(vnode_id, summary_sender).await;
+            db_wlock.del_ts_index(vnode_id);
+            let vnode_dir = storage_opt.ts_family_dir(&owner, vnode_id);
+            let _ = std::fs::remove_dir_all(&vnode_dir);
+
+            // move snapshot data to vnode move dir
+            let move_dir = storage_opt.move_dir(&owner, vnode_id);
+            info!("apply snapshot rename {:?} -> {:?}", shapshot_dir, move_dir);
+            tokio::fs::create_dir_all(&move_dir).await?;
+            tokio::fs::rename(&shapshot_dir, &move_dir).await?;
+
+            // apply data and reopen
+            let mut version_edit = snapshot.version_edit.clone();
+            version_edit.update_vnode_id(vnode_id);
+            db_wlock
+                .add_tsfamily(vnode_id, version_edit, self.ctx.clone())
+                .await?
+        };
+
         let mut db_wlock = self.db.write().await;
-        let summary_sender = self.ctx.summary_task_sender.clone();
-        db_wlock.del_tsfamily(vnode_id, summary_sender).await;
-        db_wlock.del_ts_index(vnode_id);
-        let vnode_dir = storage_opt.ts_family_dir(&owner, vnode_id);
-        let _ = std::fs::remove_dir_all(&vnode_dir);
-
-        // move snashot data to vnode move dir
-        let move_dir = storage_opt.move_dir(&owner, vnode_id);
-        info!("apply snapshot rename {:?} -> {:?}", shapshot_dir, move_dir);
-        tokio::fs::create_dir_all(&move_dir).await?;
-        tokio::fs::rename(&shapshot_dir, &move_dir).await?;
-
-        // apply data and reopen
-        let mut version_edit = snapshot.version_edit.clone();
-        version_edit.update_vnode_id(vnode_id);
-        let ts_family = db_wlock
-            .add_tsfamily(vnode_id, Some(version_edit), self.ctx.clone())
-            .await?;
-        let ts_index = db_wlock.get_ts_index_or_add(vnode_id).await?;
+        let ts_index = db_wlock.rebuild_tsfamily_index(ts_family.clone()).await?;
 
         self.ts_index = ts_index;
         self.ts_family = ts_family;

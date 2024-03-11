@@ -190,21 +190,43 @@ impl RaftNodesManager {
     async fn try_wait_leader_elected(&self, raft_node: Arc<RaftNode>) {
         let group_id = raft_node.group_id();
         for _ in 0..10 {
-            let result = raft_node.raw_raft().is_leader().await;
+            let result = self.assert_leader_node(raft_node.clone()).await;
             info!("wait leader elected group: {}, {:?}", group_id, result);
-            if let Err(err) = result {
-                if let Some(openraft::error::ForwardToLeader {
-                    leader_id: Some(_id),
-                    leader_node: Some(_node),
-                }) = err.forward_to_leader()
-                {
-                    break;
-                }
-            } else {
+            if result.is_ok() {
+                break;
+            }
+
+            if let Err(CoordinatorError::RaftForwardToLeader {
+                replica_id: _,
+                leader_vnode_id: _,
+            }) = result
+            {
                 break;
             }
 
             tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+        }
+    }
+
+    async fn assert_leader_node(&self, raft_node: Arc<RaftNode>) -> CoordinatorResult<()> {
+        let result = raft_node.raw_raft().is_leader().await;
+        if let Err(err) = result {
+            if let Some(openraft::error::ForwardToLeader {
+                leader_id: Some(id),
+                leader_node: Some(node),
+            }) = err.forward_to_leader()
+            {
+                Err(CoordinatorError::RaftForwardToLeader {
+                    replica_id: node.group_id,
+                    leader_vnode_id: *id as u32,
+                })
+            } else {
+                Err(CoordinatorError::RaftGroupError {
+                    msg: format!("group-{}, is_leader failed: {}", raft_node.group_id(), err),
+                })
+            }
+        } else {
+            Ok(())
         }
     }
 
@@ -216,16 +238,13 @@ impl RaftNodesManager {
     ) -> CoordinatorResult<()> {
         let all_info = get_replica_all_info(self.meta.clone(), tenant, replica_id).await?;
         let replica = all_info.replica_set.clone();
-        if replica.leader_node_id != self.node_id() {
-            return Err(CoordinatorError::LeaderIsWrong {
-                replica: replica.clone(),
-            });
-        }
 
         let raft_node = self.get_node_or_build(tenant, db_name, &replica).await?;
+        self.assert_leader_node(raft_node.clone()).await?;
+
         let mut members = BTreeSet::new();
         members.insert(raft_node.raft_id());
-        raft_node.raft_change_membership(members).await?;
+        raft_node.raft_change_membership(members, false).await?;
 
         for vnode in replica.vnodes.iter() {
             if vnode.node_id == self.node_id() {
@@ -266,13 +285,9 @@ impl RaftNodesManager {
         let follower_addr = self.meta.node_info_by_id(follower_nid).await?.grpc_addr;
         let all_info = get_replica_all_info(self.meta.clone(), tenant, replica_id).await?;
         let replica = all_info.replica_set.clone();
-        if replica.leader_node_id != self.node_id() {
-            return Err(CoordinatorError::LeaderIsWrong {
-                replica: replica.clone(),
-            });
-        }
 
         let raft_node = self.get_node_or_build(tenant, db_name, &replica).await?;
+        self.assert_leader_node(raft_node.clone()).await?;
 
         let new_vnode_id = self.meta.retain_id(1).await?;
         let new_vnode = VnodeInfo {
@@ -296,7 +311,7 @@ impl RaftNodesManager {
         for vnode in replica.vnodes.iter() {
             members.insert(vnode.id as RaftNodeId);
         }
-        raft_node.raft_change_membership(members).await?;
+        raft_node.raft_change_membership(members, false).await?;
 
         update_replication_set(
             self.meta.clone(),
@@ -321,22 +336,17 @@ impl RaftNodesManager {
     ) -> CoordinatorResult<()> {
         let all_info = get_replica_all_info(self.meta.clone(), tenant, replica_id).await?;
         let replica = all_info.replica_set.clone();
-        if replica.leader_node_id != self.node_id() {
-            return Err(CoordinatorError::LeaderIsWrong {
-                replica: replica.clone(),
-            });
-        }
-
-        let mut members = BTreeSet::new();
-        for vnode in replica.vnodes.iter() {
-            if vnode.id != vnode_id {
-                members.insert(vnode.id as RaftNodeId);
-            }
-        }
-
         if let Some(vnode) = replica.vnode(vnode_id) {
             let raft_node = self.get_node_or_build(tenant, db_name, &replica).await?;
-            raft_node.raft_change_membership(members).await?;
+            self.assert_leader_node(raft_node.clone()).await?;
+
+            let mut members = BTreeSet::new();
+            for vnode in replica.vnodes.iter() {
+                if vnode.id != vnode_id {
+                    members.insert(vnode.id as RaftNodeId);
+                }
+            }
+            raft_node.raft_change_membership(members, false).await?;
 
             if vnode.node_id == self.node_id() {
                 self.exec_drop_raft_node(tenant, db_name, vnode.id, replica.id)
@@ -423,7 +433,7 @@ impl RaftNodesManager {
         let owner = models::schema::make_owner(tenant, db_name);
         let wal_option = tskv::kv_option::WalOptions::from(&self.config);
         let wal = wal::VnodeWal::new(Arc::new(wal_option), Arc::new(owner), vnode_id).await?;
-        let mut raft_logs = wal::raft_store::RaftEntryStorage::new(wal);
+        let mut raft_logs = wal::wal_store::RaftEntryStorage::new(wal);
 
         // 3. recover data...
         let _apply_id = self.raft_state.get_last_applied_log(group_id)?;

@@ -1,6 +1,7 @@
 use std::pin::Pin;
 use std::sync::Arc;
 
+use coordinator::errors::{CoordinatorError, CoordinatorResult};
 use coordinator::service::CoordinatorRef;
 use coordinator::{FAILED_RESPONSE_CODE, SUCCESS_RESPONSE_CODE};
 use futures::{Stream, TryStreamExt};
@@ -57,16 +58,73 @@ impl TskvServiceImpl {
         tonic::Status::new(tonic::Code::Internal, msg)
     }
 
-    async fn admin_compact_vnode(
+    async fn warp_exec_admin_command(
         &self,
-        _tenant: &str,
-        request: &CompactVnodeRequest,
-    ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
-        if let Err(err) = self.kv_inst.compact(request.vnode_ids.clone()).await {
-            self.status_response(FAILED_RESPONSE_CODE, err.to_string())
-        } else {
-            self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
+        tenant: &str,
+        command: &admin_command_request::Command,
+    ) -> CoordinatorResult<()> {
+        let result = match command {
+            admin_command_request::Command::CompactVnode(command) => {
+                info!("compact vnodes: {:?}", command.vnode_ids);
+
+                self.kv_inst
+                    .compact(command.vnode_ids.clone())
+                    .await
+                    .map_err(|err| err.into())
+            }
+
+            admin_command_request::Command::AddRaftFollower(command) => {
+                let raft_manager = self.coord.raft_manager();
+                raft_manager
+                    .add_follower_to_group(
+                        tenant,
+                        &command.db_name,
+                        command.follower_nid,
+                        command.replica_id,
+                    )
+                    .await
+            }
+
+            admin_command_request::Command::RemoveRaftNode(command) => {
+                let raft_manager = self.coord.raft_manager();
+                raft_manager
+                    .remove_node_from_group(
+                        tenant,
+                        &command.db_name,
+                        command.vnode_id,
+                        command.replica_id,
+                    )
+                    .await
+            }
+
+            admin_command_request::Command::DestoryRaftGroup(command) => {
+                let raft_manager = self.coord.raft_manager();
+                raft_manager
+                    .destory_replica_group(tenant, &command.db_name, command.replica_id)
+                    .await
+            }
+        };
+
+        info!("admin command: {:?}, result: {:?}", command, result);
+        if let Err(CoordinatorError::RaftForwardToLeader {
+            replica_id: _,
+            leader_vnode_id: vnode_id,
+        }) = result
+        {
+            let meta = self.coord.meta_manager();
+            let info = coordinator::get_vnode_all_info(meta, tenant, vnode_id).await?;
+            let req = AdminCommandRequest {
+                tenant: tenant.to_string(),
+                command: Some(command.clone()),
+            };
+
+            return self
+                .coord
+                .exec_admin_command_on_node(info.node_id, req)
+                .await;
         }
+
+        result
     }
 
     async fn admin_fetch_vnode_checksum(
@@ -81,63 +139,6 @@ impl TskvServiceImpl {
             },
             // TODO(zipper): Add error message in BatchBytesResponse
             Err(_) => self.bytes_response(FAILED_RESPONSE_CODE, vec![]),
-        }
-    }
-    async fn admin_add_raft_follower(
-        &self,
-        tenant: &str,
-        request: &AddRaftFollowerRequest,
-    ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
-        let raft_manager = self.coord.raft_manager();
-        if let Err(err) = raft_manager
-            .add_follower_to_group(
-                tenant,
-                &request.db_name,
-                request.follower_nid,
-                request.replica_id,
-            )
-            .await
-        {
-            self.status_response(FAILED_RESPONSE_CODE, err.to_string())
-        } else {
-            self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
-        }
-    }
-
-    async fn admin_remove_raft_node(
-        &self,
-        tenant: &str,
-        request: &RemoveRaftNodeRequest,
-    ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
-        let raft_manager = self.coord.raft_manager();
-        if let Err(err) = raft_manager
-            .remove_node_from_group(
-                tenant,
-                &request.db_name,
-                request.vnode_id,
-                request.replica_id,
-            )
-            .await
-        {
-            self.status_response(FAILED_RESPONSE_CODE, err.to_string())
-        } else {
-            self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
-        }
-    }
-
-    async fn admin_destory_raft_group(
-        &self,
-        tenant: &str,
-        request: &DestoryRaftGroupRequest,
-    ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
-        let raft_manager = self.coord.raft_manager();
-        if let Err(err) = raft_manager
-            .destory_replica_group(tenant, &request.db_name, request.replica_id)
-            .await
-        {
-            self.status_response(FAILED_RESPONSE_CODE, err.to_string())
-        } else {
-            self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
         }
     }
 
@@ -314,23 +315,11 @@ impl TskvService for TskvServiceImpl {
         let inner = request.into_inner();
 
         if let Some(command) = inner.command {
-            let resp = match &command {
-                admin_command_request::Command::CompactVnode(command) => {
-                    self.admin_compact_vnode(&inner.tenant, command).await
-                }
-                admin_command_request::Command::AddRaftFollower(command) => {
-                    self.admin_add_raft_follower(&inner.tenant, command).await
-                }
-                admin_command_request::Command::RemoveRaftNode(command) => {
-                    self.admin_remove_raft_node(&inner.tenant, command).await
-                }
-                admin_command_request::Command::DestoryRaftGroup(command) => {
-                    self.admin_destory_raft_group(&inner.tenant, command).await
-                }
-            };
-
-            info!("admin command: {:?}, result: {:?}", command, resp);
-            resp
+            if let Err(err) = self.warp_exec_admin_command(&inner.tenant, &command).await {
+                self.status_response(FAILED_RESPONSE_CODE, err.to_string())
+            } else {
+                self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
+            }
         } else {
             self.status_response(FAILED_RESPONSE_CODE, "Command is None".to_string())
         }

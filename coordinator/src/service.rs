@@ -470,29 +470,6 @@ impl CoordService {
         Ok(())
     }
 
-    async fn exec_admin_command_on_node(
-        &self,
-        node_id: u64,
-        req: AdminCommandRequest,
-    ) -> CoordinatorResult<()> {
-        let channel = self.meta.get_node_conn(node_id).await?;
-
-        let mut client = tskv_service_time_out_client(
-            channel,
-            Duration::from_secs(60 * 60),
-            DEFAULT_GRPC_SERVER_MESSAGE_LEN,
-            self.config.service.grpc_enable_gzip,
-        );
-        let request = tonic::Request::new(req.clone());
-
-        let response = client
-            .exec_admin_command(request)
-            .await
-            .map_err(tskv::Error::from)?
-            .into_inner();
-        status_response_to_result(&response)
-    }
-
     async fn prune_shards(
         &self,
         tenant: &str,
@@ -660,6 +637,29 @@ impl Coordinator for CoordService {
         }
 
         Ok(replica_sets)
+    }
+
+    async fn exec_admin_command_on_node(
+        &self,
+        node_id: u64,
+        req: AdminCommandRequest,
+    ) -> CoordinatorResult<()> {
+        let channel = self.meta.get_node_conn(node_id).await?;
+
+        let mut client = tskv_service_time_out_client(
+            channel,
+            Duration::from_secs(60 * 60),
+            DEFAULT_GRPC_SERVER_MESSAGE_LEN,
+            self.config.service.grpc_enable_gzip,
+        );
+        let request = tonic::Request::new(req.clone());
+
+        let response = client
+            .exec_admin_command(request)
+            .await
+            .map_err(tskv::Error::from)?
+            .into_inner();
+        status_response_to_result(&response)
     }
 
     async fn exec_write_replica_points(
@@ -977,55 +977,6 @@ impl Coordinator for CoordService {
             result?
         }
 
-        Ok(())
-    }
-
-    async fn broadcast_command(&self, req: AdminCommandRequest) -> CoordinatorResult<()> {
-        let nodes = self.meta.data_nodes().await;
-
-        let now = tokio::time::Instant::now();
-        let mut requests = vec![];
-        for node in nodes.iter() {
-            info!("exec command:{:?} on node:{:?}, now:{:?}", req, node, now);
-
-            requests.push(self.exec_admin_command_on_node(node.id, req.clone()));
-        }
-
-        for result in futures::future::join_all(requests).await {
-            debug!(
-                "exec command:{:?} at:{:?}, elapsed:{:?}, result:{:?}",
-                req,
-                now,
-                now.elapsed(),
-                result
-            );
-            result?
-        }
-        Ok(())
-    }
-
-    async fn broadcast_command_by_vnode(
-        &self,
-        req: AdminCommandRequest,
-        shards: Vec<ReplicationSet>,
-    ) -> CoordinatorResult<()> {
-        let mut all_node_id = HashSet::new();
-        let mut requests = Vec::new();
-
-        shards.iter().for_each(|replication_set| {
-            replication_set.vnodes.iter().for_each(|vnode| {
-                let node_id = vnode.node_id;
-                if all_node_id.insert(node_id) {
-                    requests.push(self.exec_admin_command_on_node(node_id, req.clone()))
-                }
-            });
-        });
-        drop(all_node_id);
-
-        // 使用异步，并发请求
-        for res in futures::future::join_all(requests).await {
-            res?
-        }
         Ok(())
     }
 

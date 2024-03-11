@@ -210,7 +210,7 @@ pub enum CoordinatorError {
         "Forward to Leader (replcia id: {replica_id} leader vnode id: {leader_vnode_id})"
     ))]
     #[error_code(code = 29)]
-    ForwardToLeader {
+    RaftForwardToLeader {
         replica_id: u32,
         leader_vnode_id: u32,
     },

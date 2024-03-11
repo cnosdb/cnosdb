@@ -107,7 +107,7 @@ impl RaftWriter {
         self.pre_check_write_to_raft(&request).await?;
         let raft_data = to_prost_bytes(request.clone());
         let result = self.write_to_raft(raft, raft_data).await;
-        if let Err(CoordinatorError::ForwardToLeader {
+        if let Err(CoordinatorError::RaftForwardToLeader {
             replica_id: _,
             leader_vnode_id,
         }) = result
@@ -245,7 +245,7 @@ impl RaftWriter {
                     leader_node: Some(leader_node),
                 }) = err.forward_to_leader()
                 {
-                    Err(CoordinatorError::ForwardToLeader {
+                    Err(CoordinatorError::RaftForwardToLeader {
                         leader_vnode_id: (*leader_id) as u32,
                         replica_id: leader_node.group_id,
                     })

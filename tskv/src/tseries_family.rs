@@ -1176,7 +1176,7 @@ impl TseriesFamily {
             };
 
             // Create hard link to tsm/delta file.
-            debug!(
+            info!(
                 "Bakcup: creating hard link {} to {}.",
                 file_path.display(),
                 snapshot_path.display()
@@ -1197,11 +1197,12 @@ impl TseriesFamily {
     }
 
     pub async fn rebuild_index(&self) -> Result<Arc<TSIndex>> {
-        let index = TSIndex::new(
-            self.storage_opt
-                .index_dir(self.tenant_database.as_str(), self.tf_id),
-        )
-        .await?;
+        let path = self
+            .storage_opt
+            .index_dir(self.tenant_database.as_str(), self.tf_id);
+        let _ = std::fs::remove_dir_all(path.clone());
+
+        let index = TSIndex::new(path).await?;
 
         // cache index
         let mut series_data = self.mut_cache.read().read_series_data();
@@ -1224,6 +1225,8 @@ impl TseriesFamily {
                 }
             }
         }
+
+        index.flush().await?;
 
         Ok(index)
     }
