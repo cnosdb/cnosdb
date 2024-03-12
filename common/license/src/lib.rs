@@ -7,6 +7,7 @@ use std::{fs, io};
 use rsa::pkcs1;
 use serde::{Deserialize, Serialize};
 use snafu::Snafu;
+use base64::prelude::{BASE64_STANDARD, Engine};
 
 const AES_IV: &str = "HdeK5LOtDhdjh*9G";
 const AES_KEY: &str = "Co7f#ki&Y@xK!OLPOwiaAWP&(Jn9dfje";
@@ -93,7 +94,7 @@ impl LicenseConfig {
         let key: [u8; 32] = AES_KEY.as_bytes().try_into().unwrap();
 
         let enc_data = rsa_aes::RsaAes::aes256_encrypt(&data, &key, &iv);
-        self.signature = base64::encode(enc_data);
+        self.signature = BASE64_STANDARD.encode(enc_data);
 
         let data = serde_json::to_string_pretty(self).expect("encode to json failed");
 
@@ -104,7 +105,7 @@ impl LicenseConfig {
 
     pub fn verify(&self) -> LicenseResult<()> {
         let enc_data =
-            base64::decode(&self.signature).map_err(|err| LicenseError::CommonError {
+            BASE64_STANDARD.decode(&self.signature).map_err(|err| LicenseError::CommonError {
                 msg: format!("base64 decode error: {}", err),
             })?;
 

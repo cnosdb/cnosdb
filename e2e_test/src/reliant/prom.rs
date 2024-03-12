@@ -2,10 +2,12 @@
 
 use http_protocol::status_code;
 use models::snappy::SnappyCodec;
-use protobuf::Message;
-use protos::models_helper::{parse_proto_bytes, to_proto_bytes};
-use protos::prompb::remote::{Query, QueryResult, ReadRequest, ReadResponse, WriteRequest};
-use protos::prompb::types::{label_matcher, Label, LabelMatcher, Sample, TimeSeries};
+use prost::Message;
+use protos::models_helper::{parse_prost_bytes, to_prost_bytes};
+use protos::prompb::prometheus::{
+    label_matcher, Label, LabelMatcher, Query, QueryResult, ReadRequest, ReadResponse, Sample,
+    TimeSeries, WriteRequest,
+};
 use reqwest::Method;
 
 use crate::assert_response_is_ok;
@@ -13,32 +15,30 @@ use crate::utils::Client;
 
 fn serialize<T: Message>(msg: T) -> Vec<u8> {
     let mut compressed = Vec::new();
-    let input_buf = to_proto_bytes(msg).unwrap();
+    let input_buf = to_prost_bytes(msg);
     SnappyCodec::default()
         .compress(&input_buf, &mut compressed)
         .unwrap();
     compressed
 }
 
-fn deserialize<T: Message>(compressed: &[u8]) -> T {
+fn deserialize<T: Message + Default>(compressed: &[u8]) -> T {
     let mut decompressed = Vec::new();
     SnappyCodec::default()
         .decompress(compressed, &mut decompressed, None)
         .unwrap();
-    parse_proto_bytes::<T>(&decompressed).unwrap()
+    parse_prost_bytes::<T>(&decompressed).unwrap()
 }
 
 fn labels() -> Vec<Label> {
     let table_name_label = Label {
         name: "__name__".to_string(),
         value: "test_prom".to_string(),
-        ..Default::default()
     };
 
     let tag_label = Label {
         name: "tag1".to_string(),
         value: "todo!()".to_string(),
-        ..Default::default()
     };
     vec![table_name_label, tag_label]
 }
@@ -47,7 +47,6 @@ fn test_write_req() -> Vec<u8> {
     let sample = Sample {
         value: 1.1,
         timestamp: 1686819776617,
-        ..Default::default()
     };
 
     let timeseries = TimeSeries {
@@ -66,16 +65,14 @@ fn test_write_req() -> Vec<u8> {
 
 fn test_read_req() -> Vec<u8> {
     let table_name_label_matcher = LabelMatcher {
-        type_: label_matcher::Type::EQ.into(),
+        r#type: label_matcher::Type::Eq.into(),
         name: "__name__".to_string(),
         value: "test_prom".to_string(),
-        ..Default::default()
     };
     let label_matcher = LabelMatcher {
-        type_: label_matcher::Type::EQ.into(),
+        r#type: label_matcher::Type::Eq.into(),
         name: "tag1".to_string(),
         value: "todo!()".to_string(),
-        ..Default::default()
     };
 
     let query = Query {
@@ -97,7 +94,6 @@ fn test_read_resp() -> ReadResponse {
     let sample = Sample {
         value: 1.1,
         timestamp: 1686819776617,
-        ..Default::default()
     };
 
     let timeseries = TimeSeries {
@@ -108,12 +104,10 @@ fn test_read_resp() -> ReadResponse {
 
     let result = QueryResult {
         timeseries: vec![timeseries],
-        ..Default::default()
     };
 
     ReadResponse {
         results: vec![result],
-        ..Default::default()
     }
 }
 

@@ -560,7 +560,7 @@ impl CoordService {
             Vec::new();
         let request = WriteDataRequest {
             precision: precision as u32,
-            data: Arc::unwrap_or_clone(points.clone()),
+            data: Arc::unwrap_or_clone(points),
         };
         let request = RaftWriteCommand {
             replica_id: info.id,

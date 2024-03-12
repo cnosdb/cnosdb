@@ -1,4 +1,4 @@
-#![feature(stmt_expr_attributes)]
+#![recursion_limit = "256"]
 extern crate core;
 
 pub mod auth;

@@ -20,7 +20,7 @@ diff = { workspace = true }
 flatbuffers = { workspace = true }
 fly-accept-encoding = { workspace = true }
 futures = { workspace = true, default-features = false, features = ["alloc"] }
-protobuf = { workspace = true }
+prost = { workspace = true }
 rand = { workspace = true }
 regex = { workspace = true }
 reqwest = { workspace = true, features = ["rustls-tls", "json", "blocking"], default-features = false }

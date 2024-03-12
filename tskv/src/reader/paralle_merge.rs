@@ -45,7 +45,7 @@ impl BatchReader for ParallelMergeAdapter {
         let streams = self
             .inputs
             .iter()
-            .map(|e| -> Result<BoxStream<_>> { Ok(e.process()?) })
+            .map(|e| -> Result<BoxStream<_>> { Ok(Box::pin(e.process()?)) })
             .collect::<Result<Vec<_>>>()?;
 
         let stream = ParallelMergeStream::new(None, streams);

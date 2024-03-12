@@ -2,6 +2,7 @@ use std::io::BufRead;
 use std::path::Path;
 
 use anyhow::anyhow;
+use base64::prelude::{Engine, BASE64_STANDARD};
 use datafusion::arrow::record_batch::RecordBatch;
 use fly_accept_encoding::Encoding;
 use http_protocol::encoding::EncodingExt;
@@ -290,7 +291,7 @@ impl SessionContext {
         }
 
         builder = if let Some(key) = &user_info.private_key {
-            let key = base64::encode(key);
+            let key = BASE64_STANDARD.encode(key);
             builder.header(PRIVATE_KEY, key)
         } else {
             builder
@@ -414,7 +415,7 @@ impl SessionContext {
                 .get(API_V1_DUMP_SQL_DDL_PATH)
                 .basic_auth::<&str, &str>(&user_info.user, user_info.password.as_deref());
             builder = if let Some(key) = &user_info.private_key {
-                let key = base64::encode(key);
+                let key = BASE64_STANDARD.encode(key);
                 builder.header(PRIVATE_KEY, key)
             } else {
                 builder

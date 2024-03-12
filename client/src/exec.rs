@@ -7,6 +7,7 @@ use std::time::Instant;
 
 use anyhow::bail;
 use rustyline::error::ReadlineError;
+use rustyline::history::DefaultHistory;
 use rustyline::Editor;
 
 use crate::command::{Command, OutputFormat};
@@ -107,7 +108,7 @@ pub async fn exec_from_files(
 
 /// run and execute SQL statements and commands against a context with the given print options
 pub async fn exec_from_repl(ctx: &mut SessionContext, print_options: &PrintOptions) {
-    let mut rl = Editor::<CliHelper>::new();
+    let mut rl = Editor::<CliHelper, DefaultHistory>::new().unwrap();
     rl.set_helper(Some(CliHelper::default()));
     rl.load_history(".history").ok();
 
@@ -116,7 +117,7 @@ pub async fn exec_from_repl(ctx: &mut SessionContext, print_options: &PrintOptio
     loop {
         match rl.readline(format!("{} ❯ ", ctx.get_database()).as_str()) {
             Ok(line) if line.trim().starts_with('\\') => {
-                rl.add_history_entry(line.trim_end());
+                rl.add_history_entry(line.trim_end()).unwrap();
                 let command = line.split_whitespace().collect::<Vec<_>>().join(" ");
                 if let Ok(cmd) = &command[1..].parse::<Command>() {
                     match cmd {
@@ -154,7 +155,7 @@ pub async fn exec_from_repl(ctx: &mut SessionContext, print_options: &PrintOptio
             }
 
             Ok(line) => {
-                rl.add_history_entry(line.trim_end());
+                rl.add_history_entry(line.trim_end()).unwrap();
                 match exec_and_print(ctx, &print_options, line).await {
                     Ok(_) => {}
                     Err(err) => eprintln!("{:?}", err),

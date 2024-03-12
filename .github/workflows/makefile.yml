@@ -68,7 +68,7 @@ jobs:
       - name: Test
         shell: bash
         run: |
-          bash ./query_server/sqllogicaltests/script/start_and_test.sh
+          bash ./query_server/sqllogicaltests/script/start_and_test.sh --clean
 
   integration-test-singleton:
     name: "Integration Test Singleton"
@@ -82,7 +82,7 @@ jobs:
       - name: Test
         shell: bash
         run: |
-          bash ./query_server/sqllogicaltests/script/start_and_test.sh --singleton
+          bash ./query_server/sqllogicaltests/script/start_and_test.sh --singleton --clean
 
   integration-test-3meta:
     name: "Integration Test 3meta"

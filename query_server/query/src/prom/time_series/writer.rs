@@ -7,7 +7,7 @@ use datafusion::arrow::datatypes::{
 };
 use datafusion::arrow::record_batch::RecordBatch;
 use models::schema::TIME_FIELD_NAME;
-use protos::prompb::types::{Label, Sample, TimeSeries};
+use protos::prompb::prometheus::{Label, Sample, TimeSeries};
 use spi::{QueryError, Result};
 use trace::debug;
 
@@ -48,7 +48,6 @@ impl Writer<'_> {
             labels.push(Label {
                 name: tag_name.to_string(),
                 value: tag_value,
-                ..Default::default()
             });
         }
 
@@ -142,7 +141,6 @@ impl Writer<'_> {
         let sample = Sample {
             value: sample_value,
             timestamp: sample_timestamp_ms,
-            ..Default::default()
         };
 
         // save Sample
