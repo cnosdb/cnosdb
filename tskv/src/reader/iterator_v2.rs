@@ -145,7 +145,7 @@ async fn build_stream(
         )
         .await?
     {
-        return Ok(reader.process()?);
+        return Ok(Box::pin(reader.process()?));
     }
 
     Ok(Box::pin(EmptySchemableTskvRecordBatchStream::new(

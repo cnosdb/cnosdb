@@ -273,9 +273,12 @@ mod test {
         "#;
         let err = toml::from_str::<Foo>(config_str).unwrap_err();
         let err_msg = format!("{}", err);
-        assert_eq!(
-            &err_msg,
-            "Unknown unit '['a']' in duration 'a1s' for key `duration` at line 1 column 1"
-        );
+        let exp_err_msg = r#"TOML parse error at line 2, column 24
+  |
+2 |             duration = "a1s"
+  |                        ^^^^^
+Unknown unit '['a']' in duration 'a1s'
+"#;
+        assert_eq!(&err_msg, exp_err_msg);
     }
 }

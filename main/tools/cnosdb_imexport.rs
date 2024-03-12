@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 #![allow(unused)]
 
+use base64::prelude::{Engine, BASE64_STANDARD};
 use chrono::prelude::*;
 use clap::{command, Args, Parser, Subcommand};
 use meta::store::key_path::{self, KeyPath};
@@ -458,7 +459,10 @@ async fn cnosdb_http_client(
     let rsp = client
         .post(&url)
         .header(ACCEPT, "application/json")
-        .header(AUTHORIZATION, format!("Basic {}", base64::encode(user_pw)))
+        .header(
+            AUTHORIZATION,
+            format!("Basic {}", BASE64_STANDARD.encode(user_pw)),
+        )
         .body(sql)
         .send()
         .await

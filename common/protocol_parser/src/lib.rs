@@ -1,5 +1,3 @@
-#![feature(allocator_api)]
-#![feature(hash_raw_entry)]
 extern crate core;
 
 use std::borrow::Cow;

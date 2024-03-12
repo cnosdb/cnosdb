@@ -20,11 +20,12 @@ use crate::{Error, FieldValue, Line, Result};
 pub fn line_to_batches(lines: &[Line]) -> Result<HashMap<String, MutableBatch>> {
     let mut batches = HashMap::new();
     for line in lines.iter() {
-        let table = &*line.table;
-        let (_, batch) = batches
-            .raw_entry_mut()
-            .from_key(table)
-            .or_insert_with(|| (table.to_string(), MutableBatch::new()));
+        let batch = match batches.get_mut(line.table.as_ref()) {
+            Some(b) => b,
+            None => batches
+                .entry(line.table.to_string())
+                .or_insert_with(MutableBatch::new),
+        };
         let row_count = batch.row_count;
         for (tag_key, tag_value) in line.tags.iter() {
             let col = batch

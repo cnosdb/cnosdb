@@ -1,9 +1,6 @@
 #![allow(dead_code)]
 #![allow(unreachable_patterns)]
-#![feature(maybe_uninit_array_assume_init)]
-#![feature(maybe_uninit_uninit_array)]
-#![feature(bound_map)]
-#![feature(exclusive_range_pattern)]
+#![recursion_limit = "256"]
 
 use std::fmt::Debug;
 use std::sync::Arc;

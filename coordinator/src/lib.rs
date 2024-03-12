@@ -1,5 +1,3 @@
-#![feature(stmt_expr_attributes)]
-#![feature(allocator_api)]
 #![recursion_limit = "256"]
 
 use std::fmt::Debug;

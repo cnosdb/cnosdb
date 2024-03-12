@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use bytes::Bytes;
 use protocol_parser::Line;
-use protos::prompb::remote::WriteRequest;
+use protos::prompb::prometheus::WriteRequest;
 use trace::SpanContext;
 
 use crate::service::protocol::Context;

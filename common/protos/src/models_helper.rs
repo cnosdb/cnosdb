@@ -1,4 +1,3 @@
-use protobuf::Message;
 #[cfg(feature = "test")]
 pub use test::*;
 
@@ -8,14 +7,14 @@ pub fn print_points(points: crate::models::Points) {
 
 pub fn parse_proto_bytes<T>(bytes: &[u8]) -> Result<T, protobuf::Error>
 where
-    T: Message,
+    T: protobuf::Message,
 {
     T::parse_from_bytes(bytes)
 }
 
 pub fn to_proto_bytes<T>(msg: T) -> Result<Vec<u8>, protobuf::Error>
 where
-    T: Message,
+    T: protobuf::Message,
 {
     msg.write_to_bytes()
 }

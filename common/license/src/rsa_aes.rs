@@ -4,6 +4,7 @@ use std::fs;
 
 use aes::cipher::block_padding::Pkcs7;
 use aes::cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit};
+use base64::prelude::{BASE64_STANDARD, Engine};
 use md5::{Digest, Md5};
 use rsa::pkcs1::{DecodeRsaPublicKey, EncodeRsaPrivateKey, EncodeRsaPublicKey};
 use rsa::pkcs8::LineEnding;
@@ -103,8 +104,8 @@ impl RsaAes {
             .expect("failed to sign");
         assert_ne!(&data[..], &enc_data[..]);
 
-        let base64_str = base64::encode(&enc_data);
-        let enc_data = base64::decode(base64_str).unwrap();
+        let base64_str = BASE64_STANDARD.encode(&enc_data);
+        let enc_data = BASE64_STANDARD.decode(base64_str).unwrap();
 
         let public_key = RsaPublicKey::from_pkcs1_pem(&public_str).unwrap();
 

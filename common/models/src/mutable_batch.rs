@@ -28,18 +28,17 @@ impl MutableBatch {
     }
 
     pub fn column_mut(&mut self, name: &str, col_type: PhysicalCType) -> Result<&mut Column> {
-        let columns_len = self.columns.len();
-        let column_idx = self
-            .column_names
-            .raw_entry_mut()
-            .from_key(name)
-            .or_insert_with(|| (name.to_string(), columns_len))
-            .1;
-        if *column_idx == columns_len {
-            self.columns.push(Column::new(self.row_count, col_type)?);
-        }
+        let column_idx = match self.column_names.get(name) {
+            Some(column_idx) => *column_idx,
+            None => {
+                let column_idx = self.columns.len();
+                self.column_names.insert(name.to_string(), column_idx);
+                self.columns.push(Column::new(self.row_count, col_type)?);
+                column_idx
+            }
+        };
 
-        Ok(&mut self.columns[*column_idx] as _)
+        Ok(&mut self.columns[column_idx] as _)
     }
 
     pub fn finish(&mut self) {

@@ -1,5 +1,3 @@
-#![feature(hash_raw_entry)]
-
 use std::sync::Arc;
 
 pub use error_code;
