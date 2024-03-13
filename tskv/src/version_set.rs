@@ -7,10 +7,8 @@ use metrics::metric_register::MetricsRegister;
 use models::schema::{make_owner, split_owner, DatabaseSchema};
 use snafu::ResultExt;
 use tokio::runtime::Runtime;
-use tokio::sync::mpsc::Sender;
 use tokio::sync::RwLock;
 
-use crate::compaction::CompactTask;
 use crate::database::{Database, DatabaseFactory};
 use crate::error::{MetaSnafu, Result};
 use crate::index::ts_index::TSIndex;
@@ -65,7 +63,6 @@ impl VersionSet {
         runtime: Arc<Runtime>,
         memory_pool: MemoryPoolRef,
         ver_set: HashMap<TseriesFamilyId, Arc<Version>>,
-        compact_task_sender: Sender<CompactTask>,
         metrics_register: Arc<MetricsRegister>,
     ) -> Result<Self> {
         let mut dbs = HashMap::new();
@@ -88,9 +85,7 @@ impl VersionSet {
             )));
 
             let tf_id = ver.tf_id();
-            db.write()
-                .await
-                .open_tsfamily(runtime.clone(), ver, compact_task_sender.clone());
+            db.write().await.open_tsfamily(ver);
             db.write().await.get_ts_index_or_add(tf_id).await?;
         }
 

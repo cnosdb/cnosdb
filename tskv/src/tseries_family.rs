@@ -2,7 +2,6 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
-use std::time::Duration;
 
 use arrow_array::RecordBatch;
 use cache::{AsyncCache, ShardedAsyncCache};
@@ -15,14 +14,13 @@ use models::schema::{split_owner, TableColumn};
 use models::{ColumnId, FieldId, SeriesId, SeriesKey, Timestamp};
 use parking_lot::RwLock;
 use snafu::ResultExt as _;
-use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Sender;
+use tokio::sync::RwLock as TokioRwLock;
 use tokio::time::Instant;
-use tokio_util::sync::CancellationToken;
-use trace::{debug, error, info, warn};
+use trace::{debug, error, info};
 use utils::BloomFilter;
 
-use crate::compaction::{CompactTask, FlushReq};
+use crate::compaction::{run_flush_memtable_job, FlushReq};
 use crate::error::Result;
 use crate::file_system::file_manager;
 use crate::file_utils::{self, make_delta_file, make_tsm_file};
@@ -35,7 +33,7 @@ use crate::tsm2::page::PageMeta;
 use crate::tsm2::reader::TSM2Reader;
 use crate::tsm2::ColumnGroupID;
 use crate::Error::CommonError;
-use crate::{tsm, ColumnFileId, LevelId, Options, TseriesFamilyId};
+use crate::{tsm, ColumnFileId, LevelId, Options, TsKvContext, TseriesFamilyId};
 
 #[derive(Debug)]
 pub struct ColumnFile {
@@ -242,7 +240,7 @@ impl ColumnFile {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LevelInfo {
     /// the time_range of column file is overlap in L0,
     /// the time_range of column file is not overlap in L0,
@@ -411,23 +409,20 @@ impl Version {
     /// Creates new Version using current Version and `VersionEdit`s.
     pub fn copy_apply_version_edits(
         &self,
-        version_edits: Vec<VersionEdit>,
+        ve: VersionEdit,
         file_metas: &mut HashMap<ColumnFileId, Arc<BloomFilter>>,
-        last_seq: Option<u64>,
     ) -> Version {
         let mut added_files: Vec<Vec<CompactMeta>> = vec![vec![]; 5];
         let mut deleted_files: Vec<HashSet<ColumnFileId>> = vec![HashSet::new(); 5];
-        for ve in version_edits.into_iter() {
-            if !ve.add_files.is_empty() {
-                ve.add_files.into_iter().for_each(|f| {
-                    added_files[f.level as usize].push(f);
-                });
-            }
-            if !ve.del_files.is_empty() {
-                ve.del_files.into_iter().for_each(|f| {
-                    deleted_files[f.level as usize].insert(f.file_id);
-                });
-            }
+        if !ve.add_files.is_empty() {
+            ve.add_files.into_iter().for_each(|f| {
+                added_files[f.level as usize].push(f);
+            });
+        }
+        if !ve.del_files.is_empty() {
+            ve.del_files.into_iter().for_each(|f| {
+                deleted_files[f.level as usize].insert(f.file_id);
+            });
         }
 
         let mut new_levels = LevelInfo::init_levels(
@@ -456,10 +451,10 @@ impl Version {
         }
 
         let mut new_version = Self {
+            last_seq: ve.seq_no,
             ts_family_id: self.ts_family_id,
             tenant_database: self.tenant_database.clone(),
             storage_opt: self.storage_opt.clone(),
-            last_seq: last_seq.unwrap_or(self.last_seq),
             max_level_ts: self.max_level_ts,
             levels_info: new_levels,
             tsm2_reader_cache: self.tsm2_reader_cache.clone(),
@@ -552,11 +547,6 @@ impl Version {
         self.last_seq
     }
 
-    #[cfg(test)]
-    pub fn levels_info_mut(&mut self) -> &mut [LevelInfo; 5] {
-        &mut self.levels_info
-    }
-
     pub async fn statistics(
         &self,
         series_ids: &[SeriesId],
@@ -575,6 +565,24 @@ impl Version {
             }
         }
         result
+    }
+
+    #[cfg(test)]
+    pub fn levels_info_mut(&mut self) -> &mut [LevelInfo; 5] {
+        &mut self.levels_info
+    }
+
+    #[cfg(test)]
+    pub fn inner(&self) -> Self {
+        Self {
+            ts_family_id: self.ts_family_id,
+            tenant_database: self.tenant_database.clone(),
+            storage_opt: self.storage_opt.clone(),
+            last_seq: self.last_seq,
+            max_level_ts: self.max_level_ts,
+            levels_info: self.levels_info.clone(),
+            tsm2_reader_cache: self.tsm2_reader_cache.clone(),
+        }
     }
 }
 
@@ -820,12 +828,9 @@ impl TsfFactory {
             immut_cache: vec![],
             super_version,
             super_version_id: AtomicU64::new(0),
-            version: version.clone(),
             cache_opt: self.options.cache.clone(),
             storage_opt: self.options.storage.clone(),
-            seq_no: version.last_seq,
             last_modified: Arc::new(Default::default()),
-            cancellation_token: CancellationToken::new(),
             memory_pool: self.memory_pool.clone(),
             tsf_metrics,
             status: VnodeStatus::Running,
@@ -841,12 +846,9 @@ pub struct TseriesFamily {
     immut_cache: Vec<Arc<RwLock<MemCache>>>,
     super_version: Arc<SuperVersion>,
     super_version_id: AtomicU64,
-    version: Arc<Version>,
     cache_opt: Arc<CacheOptions>,
     storage_opt: Arc<StorageOptions>,
-    seq_no: u64,
     last_modified: Arc<tokio::sync::RwLock<Option<Instant>>>,
-    cancellation_token: CancellationToken,
     memory_pool: MemoryPoolRef,
     tsf_metrics: TsfMetrics,
     status: VnodeStatus,
@@ -871,7 +873,6 @@ impl TseriesFamily {
         Self {
             tf_id,
             tenant_database: tenant_database.clone(),
-            seq_no: version.last_seq,
             mut_cache: mm.clone(),
             immut_cache: Default::default(),
             super_version: Arc::new(SuperVersion::new(
@@ -885,11 +886,9 @@ impl TseriesFamily {
                 0,
             )),
             super_version_id: AtomicU64::new(0),
-            version,
             cache_opt,
             storage_opt,
             last_modified: Arc::new(tokio::sync::RwLock::new(None)),
-            cancellation_token: CancellationToken::new(),
             memory_pool,
             tsf_metrics: TsfMetrics::new(register, tenant_database.as_str(), tf_id as u64),
             status: VnodeStatus::Running,
@@ -916,10 +915,9 @@ impl TseriesFamily {
     /// then create new SuperVersion, update seq_no
     pub fn new_version(
         &mut self,
-        new_version: Version,
+        version: Arc<Version>,
         flushed_mem_caches: Option<&Vec<Arc<RwLock<MemCache>>>>,
     ) {
-        let version = Arc::new(new_version);
         debug!(
             "New version(level_info) for ts_family({}): {:?}",
             self.tf_id,
@@ -942,20 +940,21 @@ impl TseriesFamily {
             self.immut_cache = new_caches;
         }
         self.new_super_version(version.clone());
-        self.seq_no = version.last_seq;
-        self.version = version;
     }
 
     pub fn switch_to_immutable(&mut self) {
+        let seq_no = self.mut_cache.read().seq_no();
         self.immut_cache.push(self.mut_cache.clone());
+
         self.mut_cache = Arc::from(RwLock::new(MemCache::new(
             self.tf_id,
             self.cache_opt.max_buffer_size,
             self.cache_opt.partition,
-            self.seq_no,
+            seq_no,
             &self.memory_pool,
         )));
-        self.new_super_version(self.version.clone());
+
+        self.new_super_version(self.version());
     }
 
     /// Check if there are immutable caches to flush and build a `FlushReq`,
@@ -981,17 +980,17 @@ impl TseriesFamily {
         if filtered_caches.is_empty() {
             return None;
         }
+
         let (mut high_seq_no, mut low_seq_no) = (0, u64::MAX);
         for mem in filtered_caches.iter() {
-            let seq_no = mem.read().seq_no();
-            high_seq_no = seq_no.max(high_seq_no);
-            low_seq_no = seq_no.min(low_seq_no);
+            high_seq_no = high_seq_no.max(mem.read().seq_no());
+            low_seq_no = low_seq_no.min(mem.read().min_seq_no());
         }
 
         Some(FlushReq {
+            owner: self.tenant_database().to_string(),
             ts_family_id: self.tf_id,
             mems: filtered_caches,
-            force_flush: force,
             low_seq_no,
             high_seq_no,
         })
@@ -1044,6 +1043,10 @@ impl TseriesFamily {
         *self.last_modified.write().await = Some(Instant::now());
     }
 
+    pub async fn get_last_modified(&self) -> Option<tokio::time::Instant> {
+        *self.last_modified.read().await
+    }
+
     pub fn update_status(&mut self, status: VnodeStatus) {
         self.status = status;
     }
@@ -1089,40 +1092,6 @@ impl TseriesFamily {
         }
     }
 
-    pub fn schedule_compaction(&self, runtime: Arc<Runtime>, sender: Sender<CompactTask>) {
-        let tsf_id = self.tf_id;
-        let compact_trigger_cold_duration = self.storage_opt.compact_trigger_cold_duration;
-        let last_modified = self.last_modified.clone();
-        let cancellation_token = self.cancellation_token.clone();
-        let _jh = runtime.spawn(async move {
-            if compact_trigger_cold_duration == Duration::ZERO {} else {
-                let mut cold_check_interval = tokio::time::interval(Duration::from_secs(10));
-                cold_check_interval.tick().await;
-                loop {
-                    tokio::select! {
-                        _ = cold_check_interval.tick() => {
-                            let last_modified = last_modified.read().await;
-                            if let Some(t) = *last_modified {
-                                if t.elapsed() >= compact_trigger_cold_duration {
-                                    if let Err(e) = sender.send(CompactTask::ColdVnode(tsf_id)).await {
-                                        warn!("failed to send compact task({}), {}", tsf_id, e);
-                                    }
-                                }
-                            }
-                        }
-                        _ = cancellation_token.cancelled() => {
-                            break;
-                        }
-                    }
-                }
-            }
-        });
-    }
-
-    pub fn close(&self) {
-        self.cancellation_token.cancel();
-    }
-
     /// Snapshots last version before `last_seq` of this vnode.
     ///
     /// Db-files' index data (field-id filter) will be inserted into `file_metas`.
@@ -1130,15 +1099,16 @@ impl TseriesFamily {
         &self,
         file_metas: &mut HashMap<ColumnFileId, Arc<BloomFilter>>,
     ) -> VersionEdit {
-        let mut version_edit =
-            VersionEdit::new_add_vnode(self.tf_id, (*self.tenant_database).clone(), self.seq_no);
         let version = self.version();
+        let owner = (*self.tenant_database).clone();
+        let seq_no = version.last_seq();
         let max_level_ts = version.max_level_ts;
+
+        let mut version_edit = VersionEdit::new_add_vnode(self.tf_id, owner, seq_no);
         for files in version.levels_info.iter() {
             for file in files.files.iter() {
                 let mut meta = CompactMeta::from(file.as_ref());
                 meta.tsf_id = files.tsf_id;
-                meta.high_seq = self.seq_no;
                 version_edit.add_file(meta, max_level_ts);
                 file_metas.insert(file.file_id, file.series_id_filter.clone());
             }
@@ -1211,9 +1181,9 @@ impl TseriesFamily {
         }
 
         // tsm index
-        for level in self.version.levels_info.iter() {
+        for level in self.version().levels_info.iter() {
             for file in level.files.iter() {
-                let reader = self.version.get_tsm_reader2(file.file_path()).await?;
+                let reader = self.version().get_tsm_reader2(file.file_path()).await?;
                 for chunk in reader.chunk().values() {
                     index
                         .add_series_for_rebuild(chunk.series_id(), chunk.series_key())
@@ -1225,6 +1195,25 @@ impl TseriesFamily {
         index.flush().await?;
 
         Ok(index)
+    }
+
+    pub async fn flush(
+        ctx: Arc<TsKvContext>,
+        tsfamily: Arc<TokioRwLock<TseriesFamily>>,
+        trigger_compact: bool,
+    ) -> Result<()> {
+        let request = {
+            let mut tsfamily = tsfamily.write().await;
+            tsfamily.switch_to_immutable();
+            tsfamily.build_flush_req(true)
+        };
+
+        // Run flush job and trigger compaction.
+        if let Some(req) = request {
+            run_flush_memtable_job(req, ctx, trigger_compact).await?;
+        }
+
+        Ok(())
     }
 
     pub fn tf_id(&self) -> TseriesFamilyId {
@@ -1248,15 +1237,11 @@ impl TseriesFamily {
     }
 
     pub fn version(&self) -> Arc<Version> {
-        self.version.clone()
+        self.super_version.version.clone()
     }
 
     pub fn storage_opt(&self) -> Arc<StorageOptions> {
         self.storage_opt.clone()
-    }
-
-    pub fn seq_no(&self) -> u64 {
-        self.seq_no
     }
 
     pub fn get_delta_dir(&self) -> PathBuf {
@@ -1269,7 +1254,7 @@ impl TseriesFamily {
     }
 
     pub fn disk_storage(&self) -> u64 {
-        self.version
+        self.version()
             .levels_info
             .iter()
             .map(|l| l.disk_storage())
@@ -1285,12 +1270,6 @@ impl TseriesFamily {
     }
     pub fn can_compaction(&self) -> bool {
         self.status == VnodeStatus::Running
-    }
-}
-
-impl Drop for TseriesFamily {
-    fn drop(&mut self) {
-        self.cancellation_token.cancel();
     }
 }
 
@@ -1333,7 +1312,7 @@ pub mod test_tseries_family {
         global_config.storage.path = dir.to_string();
         let opt = Arc::new(Options::from(&global_config));
 
-        let database = Arc::new("test".to_string());
+        let database = Arc::new("cnosdb.test".to_string());
         let ts_family_id = 1;
         let tsm_dir = opt.storage.tsm_dir(&database, ts_family_id);
         #[rustfmt::skip]
@@ -1370,15 +1349,15 @@ pub mod test_tseries_family {
         let tsm_reader_cache = Arc::new(ShardedAsyncCache::create_lru_sharded_cache(16));
         let version = Version::new(
             1,
-            database,
+            database.clone(),
             opt.storage.clone(),
             1,
             levels,
             3100,
             tsm_reader_cache,
         );
-        let mut version_edits = Vec::new();
-        let mut ve = VersionEdit::new(1);
+
+        let mut ve = VersionEdit::new_update_vnode(1, database.to_string(), 1);
         #[rustfmt::skip]
         ve.add_file(
             CompactMeta {
@@ -1388,18 +1367,15 @@ pub mod test_tseries_family {
                 level: 1,
                 min_ts: 3051,
                 max_ts: 3150,
-                high_seq: 2,
-                low_seq: 2,
                 is_delta: false,
             },
             3100,
         );
-        version_edits.push(ve);
-        let mut ve = VersionEdit::new(1);
+        let version = version.copy_apply_version_edits(ve, &mut HashMap::new());
+
+        let mut ve = VersionEdit::new_update_vnode(1, database.to_string(), 3);
         ve.del_file(1, 3, false);
-        version_edits.push(ve);
-        let new_version =
-            version.copy_apply_version_edits(version_edits, &mut HashMap::new(), Some(3));
+        let new_version = version.copy_apply_version_edits(ve, &mut HashMap::new());
 
         assert_eq!(new_version.last_seq, 3);
         assert_eq!(new_version.max_level_ts, 3150);
@@ -1435,7 +1411,7 @@ pub mod test_tseries_family {
         global_config.storage.path = dir.to_string();
         let opt = Arc::new(Options::from(&global_config));
 
-        let database = Arc::new("test".to_string());
+        let database = Arc::new("cnosdb.test".to_string());
         let ts_family_id = 1;
         let tsm_dir = opt.storage.tsm_dir(&database, ts_family_id);
         #[rustfmt::skip]
@@ -1472,10 +1448,9 @@ pub mod test_tseries_family {
         ];
         let tsm_reader_cache = Arc::new(ShardedAsyncCache::create_lru_sharded_cache(16));
         #[rustfmt::skip]
-            let version = Version::new(1, database, opt.storage.clone(), 1, levels, 3150, tsm_reader_cache);
+            let version = Version::new(1, database.clone(), opt.storage.clone(), 1, levels, 3150, tsm_reader_cache);
 
-        let mut version_edits = Vec::new();
-        let mut ve = VersionEdit::new(1);
+        let mut ve = VersionEdit::new_update_vnode(1, database.to_string(), 1);
         #[rustfmt::skip]
         ve.add_file(
             CompactMeta {
@@ -1485,8 +1460,6 @@ pub mod test_tseries_family {
                 level: 2,
                 min_ts: 3001,
                 max_ts: 3150,
-                high_seq: 2,
-                low_seq: 2,
                 is_delta: false,
             },
             3150,
@@ -1500,21 +1473,18 @@ pub mod test_tseries_family {
                 level: 3,
                 min_ts: 1,
                 max_ts: 2000,
-                high_seq: 2,
-                low_seq: 2,
                 is_delta: false,
             },
             3150,
         );
-        version_edits.push(ve);
-        let mut ve = VersionEdit::new(1);
+        let version = version.copy_apply_version_edits(ve, &mut HashMap::new());
+
+        let mut ve = VersionEdit::new_update_vnode(1, database.to_string(), 3);
         ve.del_file(1, 3, false);
         ve.del_file(1, 4, false);
         ve.del_file(2, 1, false);
         ve.del_file(2, 2, false);
-        version_edits.push(ve);
-        let new_version =
-            version.copy_apply_version_edits(version_edits, &mut HashMap::new(), Some(3));
+        let new_version = version.copy_apply_version_edits(ve, &mut HashMap::new());
 
         assert_eq!(new_version.last_seq, 3);
         assert_eq!(new_version.max_level_ts, 3150);

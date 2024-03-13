@@ -795,9 +795,13 @@ pub async fn run_compaction_job(
         tsm_writer.file_id(),
         request.out_level
     );
-    let mut version_edit = VersionEdit::new(tsf_id);
-    let mut file_metas: HashMap<ColumnFileId, Arc<BloomFilter>> = HashMap::new();
 
+    let mut file_metas: HashMap<ColumnFileId, Arc<BloomFilter>> = HashMap::new();
+    let mut version_edit = VersionEdit::new_update_vnode(
+        tsf_id,
+        request.database.to_string(),
+        request.version.last_seq(),
+    );
     let mut previous_merged_block: Option<CompactingBlock> = None;
     let mut sid = iter.curr_sid;
     while let Some(blk_meta_group) = iter.next().await? {
@@ -926,8 +930,6 @@ fn new_compact_meta(
         level,
         min_ts: tsm_writer.min_ts(),
         max_ts: tsm_writer.max_ts(),
-        high_seq: 0,
-        low_seq: 0,
         is_delta: false,
     }
 }
@@ -1065,7 +1067,7 @@ pub mod test {
     }
 
     fn get_result_file_path(dir: impl AsRef<Path>, version_edit: VersionEdit) -> PathBuf {
-        if version_edit.has_file_id && !version_edit.add_files.is_empty() {
+        if !version_edit.add_files.is_empty() {
             let file_id = version_edit.add_files.first().unwrap().file_id;
             return file_utils::make_tsm_file(dir, file_id);
         }

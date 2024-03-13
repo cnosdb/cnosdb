@@ -53,7 +53,8 @@ impl FlushTask {
     pub async fn tsm2_run(
         self,
         version: Arc<Version>,
-    ) -> Result<(VersionEdit, HashMap<u64, Arc<BloomFilter>>)> {
+        edit: &mut VersionEdit,
+    ) -> Result<HashMap<u64, Arc<BloomFilter>>> {
         let mut tsm_writer = None;
         let mut delta_writer = None;
         let mut file_metas = HashMap::new();
@@ -87,7 +88,6 @@ impl FlushTask {
 
         let compact_meta_builder = CompactMetaBuilder::new(self.ts_family_id);
         let mut max_level_ts = version.max_level_ts();
-        let mut edit = VersionEdit::new(self.ts_family_id);
 
         if let Some(mut tsm_writer) = tsm_writer {
             tsm_writer.finish().await?;
@@ -125,7 +125,7 @@ impl FlushTask {
             edit.add_file(delta_meta, max_level_ts);
         }
 
-        Ok((edit, file_metas))
+        Ok(file_metas)
     }
 }
 
@@ -133,11 +133,10 @@ pub async fn run_flush_memtable_job(
     req: FlushReq,
     ctx: Arc<TsKvContext>,
     trigger_compact: bool,
-) -> Result<Option<VersionEdit>> {
+) -> Result<()> {
     let req_str = format!("{req}");
     info!("Flush: running: {req_str}");
 
-    let mut version_edit = None;
     let mut file_metas: HashMap<ColumnFileId, Arc<BloomFilter>> = HashMap::new();
 
     let tsf = ctx
@@ -174,8 +173,12 @@ pub async fn run_flush_memtable_job(
         path_delta,
     );
 
-    if let Ok((ve, fm)) = flush_task.tsm2_run(version.clone()).await {
-        let _ = version_edit.insert(ve);
+    let mut version_edit =
+        VersionEdit::new_update_vnode(req.ts_family_id, req.owner, req.high_seq_no);
+    if let Ok(fm) = flush_task
+        .tsm2_run(version.clone(), &mut version_edit)
+        .await
+    {
         file_metas = fm;
     }
 
@@ -183,17 +186,10 @@ pub async fn run_flush_memtable_job(
     if trigger_compact {
         let _ = ctx
             .compact_task_sender
-            .send(CompactTask::Vnode(req.ts_family_id))
+            .send(CompactTask {
+                tsf_id: req.ts_family_id,
+            })
             .await;
-    }
-
-    // If there are no data to be flushed but it's a force flush,
-    // just write an empty VersionEdit with the max seq_no to the summary.
-    if version_edit.is_none() && req.force_flush {
-        let mut ve = VersionEdit::new(req.ts_family_id);
-        ve.has_seq_no = true;
-        ve.seq_no = 0; // Fixme
-        let _ = version_edit.insert(ve);
     }
 
     info!(
@@ -201,29 +197,27 @@ pub async fn run_flush_memtable_job(
         version_edit
     );
 
-    if let Some(ref ve) = version_edit {
-        let (task_state_sender, task_state_receiver) = oneshot::channel();
-        let task = SummaryTask::new(
-            tsf.clone(),
-            ve.clone(),
-            Some(file_metas),
-            Some(req.mems),
-            task_state_sender,
-        );
+    let (task_state_sender, task_state_receiver) = oneshot::channel();
+    let task = SummaryTask::new(
+        tsf.clone(),
+        version_edit,
+        Some(file_metas),
+        Some(req.mems),
+        task_state_sender,
+    );
 
-        if let Err(e) = ctx.summary_task_sender.send(task).await {
-            warn!("Flush: failed to send summary task for {req_str}: {e}",);
-        }
-
-        if timeout(Duration::from_secs(10), task_state_receiver)
-            .await
-            .is_err()
-        {
-            error!("Flush: failed to receive summary task result in 10 seconds for {req_str}",);
-        }
+    if let Err(e) = ctx.summary_task_sender.send(task).await {
+        warn!("Flush: failed to send summary task for {req_str}: {e}",);
     }
 
-    Ok(version_edit)
+    if timeout(Duration::from_secs(10), task_state_receiver)
+        .await
+        .is_err()
+    {
+        error!("Flush: failed to receive summary task result in 10 seconds for {req_str}",);
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

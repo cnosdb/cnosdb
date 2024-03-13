@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::{atomic, Arc};
 use std::time::{Duration, Instant};
@@ -16,26 +15,25 @@ use crate::{TsKvContext, TseriesFamilyId};
 const COMPACT_BATCH_CHECKING_SECONDS: u64 = 1;
 
 struct CompactProcessor {
-    vnode_ids: HashMap<TseriesFamilyId, bool>,
+    vnode_ids: Vec<TseriesFamilyId>,
 }
 
 impl CompactProcessor {
-    fn insert(&mut self, vnode_id: TseriesFamilyId, should_flush: bool) {
-        let old_should_flush = self.vnode_ids.entry(vnode_id).or_insert(should_flush);
-        if should_flush && !*old_should_flush {
-            *old_should_flush = should_flush
+    fn insert(&mut self, vnode_id: TseriesFamilyId) {
+        if !self.vnode_ids.contains(&vnode_id) {
+            self.vnode_ids.push(vnode_id)
         }
     }
 
-    fn take(&mut self) -> HashMap<TseriesFamilyId, bool> {
-        std::mem::replace(&mut self.vnode_ids, HashMap::with_capacity(32))
+    fn take(&mut self) -> Vec<TseriesFamilyId> {
+        std::mem::replace(&mut self.vnode_ids, Vec::with_capacity(32))
     }
 }
 
 impl Default for CompactProcessor {
     fn default() -> Self {
         Self {
-            vnode_ids: HashMap::with_capacity(32),
+            vnode_ids: Vec::with_capacity(32),
         }
     }
 }
@@ -104,15 +102,7 @@ impl CompactJobInner {
         let compact_processor = self.compact_processor.clone();
         self.runtime.spawn(async move {
             while let Some(compact_task) = compact_task_receiver.recv().await {
-                // Vnode id to compact & whether vnode be flushed before compact
-                let (vnode_id, flush_vnode) = match compact_task {
-                    CompactTask::Vnode(id) => (id, false),
-                    CompactTask::ColdVnode(id) => (id, true),
-                };
-                compact_processor
-                    .write()
-                    .await
-                    .insert(vnode_id, flush_vnode);
+                compact_processor.write().await.insert(compact_task.tsf_id);
             }
         });
     }
@@ -159,7 +149,7 @@ impl CompactJobInner {
                 let vnode_ids_for_debug = vnode_ids.clone();
                 let now = Instant::now();
                 info!("Compacting on vnode(job start): {:?}", &vnode_ids_for_debug);
-                for (vnode_id, flush_vnode) in vnode_ids {
+                for vnode_id in vnode_ids {
                     let ts_family = ctx
                         .version_set
                         .read()
@@ -197,21 +187,6 @@ impl CompactJobInner {
                                 let _sub_running_compaction_guard = DeferGuard(Some(|| {
                                     running_compaction.fetch_sub(1, atomic::Ordering::SeqCst);
                                 }));
-
-                                if flush_vnode {
-                                    let mut tsf_wlock = tsf.write().await;
-                                    tsf_wlock.switch_to_immutable();
-                                    let flush_req = tsf_wlock.build_flush_req(true);
-                                    drop(tsf_wlock);
-                                    if let Some(req) = flush_req {
-                                        if let Err(e) =
-                                            flush::run_flush_memtable_job(req, ctx.clone(), false)
-                                                .await
-                                        {
-                                            error!("Failed to flush vnode {}: {:?}", vnode_id, e);
-                                        }
-                                    }
-                                }
 
                                 match super::run_compaction_job(req, ctx.global_ctx.clone()).await {
                                     Ok(Some((version_edit, file_metas))) => {
@@ -344,23 +319,18 @@ mod test {
     #[test]
     fn test_build_compact_batch() {
         let mut compact_batch_builder = CompactProcessor::default();
-        compact_batch_builder.insert(1, false);
-        compact_batch_builder.insert(2, false);
-        compact_batch_builder.insert(1, true);
-        compact_batch_builder.insert(3, true);
+        compact_batch_builder.insert(1);
+        compact_batch_builder.insert(2);
+        compact_batch_builder.insert(1);
+        compact_batch_builder.insert(3);
         assert_eq!(compact_batch_builder.vnode_ids.len(), 3);
-        let mut keys: Vec<TseriesFamilyId> =
-            compact_batch_builder.vnode_ids.keys().cloned().collect();
+
+        let mut keys: Vec<TseriesFamilyId> = compact_batch_builder.vnode_ids.clone();
         keys.sort();
         assert_eq!(keys, vec![1, 2, 3]);
-        assert_eq!(compact_batch_builder.vnode_ids.get(&1), Some(&true));
-        assert_eq!(compact_batch_builder.vnode_ids.get(&2), Some(&false));
-        assert_eq!(compact_batch_builder.vnode_ids.get(&3), Some(&true));
+
         let vnode_ids = compact_batch_builder.take();
-        assert_eq!(vnode_ids.len(), 3);
-        assert_eq!(vnode_ids.get(&1), Some(&true));
-        assert_eq!(vnode_ids.get(&2), Some(&false));
-        assert_eq!(vnode_ids.get(&3), Some(&true));
+        assert_eq!(vnode_ids, vec![1, 2, 3]);
     }
 
     #[test]
