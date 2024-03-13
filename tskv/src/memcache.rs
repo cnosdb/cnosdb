@@ -285,7 +285,7 @@ impl SeriesData {
         self.range.merge(&group.range);
 
         for item in self.groups.iter_mut() {
-            if item.schema.schema_id == group.schema.schema_id {
+            if item.schema.schema_version == group.schema.schema_version {
                 item.range.merge(&group.range);
                 group.rows.get_rows().into_iter().for_each(|row| {
                     item.rows.insert(row);
@@ -325,7 +325,7 @@ impl SeriesData {
         for item in self.groups.iter_mut() {
             let mut schema_t = item.schema.as_ref().clone();
             schema_t.change_column(column_name, new_column.clone());
-            schema_t.schema_id += 1;
+            schema_t.schema_version += 1;
             item.schema = Arc::new(schema_t)
         }
     }
@@ -334,7 +334,7 @@ impl SeriesData {
         for item in self.groups.iter_mut() {
             let mut schema_t = item.schema.as_ref().clone();
             schema_t.add_column(new_column.clone());
-            schema_t.schema_id += 1;
+            schema_t.schema_version += 1;
             item.schema = Arc::new(schema_t)
         }
     }
@@ -884,7 +884,7 @@ pub(crate) mod test {
     use models::field_value::FieldVal;
     use models::predicate::domain::TimeRange;
     use models::schema::TskvTableSchema;
-    use models::{SchemaId, SeriesId, SeriesKey, Timestamp};
+    use models::{SchemaVersion, SeriesId, SeriesKey, Timestamp};
     use parking_lot::RwLock;
 
     use super::{MemCache, OrderedRowsData, RowData, RowGroup};
@@ -892,7 +892,7 @@ pub(crate) mod test {
     pub fn put_rows_to_cache(
         cache: &MemCache,
         series_id: SeriesId,
-        schema_id: SchemaId,
+        schema_id: SchemaVersion,
         mut schema: TskvTableSchema,
         time_range: (Timestamp, Timestamp),
         put_none: bool,
@@ -914,7 +914,7 @@ pub(crate) mod test {
             rows.insert(RowData { ts, fields });
         }
 
-        schema.schema_id = schema_id;
+        schema.schema_version = schema_id;
         let row_group = RowGroup {
             schema: schema.into(),
             range: TimeRange::from(time_range),
@@ -1021,7 +1021,7 @@ mod test_memcache {
                 TableColumn::new(4, "f_col_1".to_string(), ColumnType::Field(ValueType::Float), Default::default()),
             ],
         );
-        schema_1.schema_id = 1;
+        schema_1.schema_version = 1;
         let mut rows = OrderedRowsData::new();
         rows.insert(RowData {
             ts: 1,
@@ -1063,7 +1063,7 @@ mod test_memcache {
                 TableColumn::new(5, "f_col_2".to_string(), ColumnType::Field(ValueType::Integer), Default::default()),
             ],
         );
-        schema_2.schema_id = 2;
+        schema_2.schema_version = 2;
         let mut rows = OrderedRowsData::new();
         rows.insert(RowData {
             ts: 3,

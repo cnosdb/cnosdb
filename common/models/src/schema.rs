@@ -42,7 +42,7 @@ use crate::utils::{
     MINUTES_MICROS, MINUTES_MILLS, MINUTES_NANOS,
 };
 use crate::value_type::ValueType;
-use crate::{ColumnId, Error, PhysicalDType, SchemaId, Timestamp};
+use crate::{ColumnId, Error, PhysicalDType, SchemaVersion, Timestamp};
 
 pub type TskvTableSchemaRef = Arc<TskvTableSchema>;
 
@@ -320,7 +320,7 @@ pub struct TskvTableSchema {
     pub tenant: String,
     pub db: String,
     pub name: String,
-    pub schema_id: SchemaId,
+    pub schema_version: SchemaVersion,
     next_column_id: ColumnId,
 
     columns: Vec<TableColumn>,
@@ -330,13 +330,13 @@ pub struct TskvTableSchema {
 
 impl PartialOrd for TskvTableSchema {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.schema_id.cmp(&other.schema_id))
+        Some(self.schema_version.cmp(&other.schema_version))
     }
 }
 
 impl Ord for TskvTableSchema {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.schema_id.cmp(&other.schema_id)
+        self.schema_version.cmp(&other.schema_version)
     }
 }
 
@@ -346,7 +346,7 @@ impl Default for TskvTableSchema {
             tenant: DEFAULT_CATALOG.to_string(),
             db: DEFAULT_DATABASE.to_string(),
             name: "template".to_string(),
-            schema_id: 0,
+            schema_version: 0,
             next_column_id: 0,
             columns: Default::default(),
             columns_index: Default::default(),
@@ -384,7 +384,7 @@ impl TskvTableSchema {
             tenant,
             db,
             name,
-            schema_id: 0,
+            schema_version: 0,
             next_column_id: columns.len() as ColumnId,
             columns,
             columns_index,

@@ -5,8 +5,8 @@ use std::task::{Context, Poll};
 use arrow::datatypes::SchemaRef;
 use arrow_array::RecordBatch;
 use datafusion::physical_plan::metrics::{ExecutionPlanMetricsSet, MetricBuilder, Time};
+use datafusion::physical_plan::sorts::cursor::{Cursor, FieldArray, FieldValues};
 use futures::{ready, Stream};
-use models::datafusion::cursor::{Cursor, FieldArray, FieldValues};
 
 use crate::reader::batch_builder::BatchMergeBuilder;
 use crate::reader::metrics::BaselineMetrics;
@@ -413,8 +413,8 @@ mod test {
     use arrow_array::{Int64Array, RecordBatch};
     use arrow_schema::{DataType, Field, Fields, Schema, SchemaRef};
     use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
+    use datafusion::physical_plan::sorts::cursor::FieldArray;
     use futures::StreamExt;
-    use models::datafusion::cursor::FieldArray;
 
     use crate::reader::partitioned_stream::ColumnCursorStream;
     use crate::reader::sort_merge::SortPreservingMergeStream;

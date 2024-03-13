@@ -9,7 +9,7 @@ use models::codec::Encoding;
 use models::field_value::FieldVal;
 use models::predicate::domain::TimeRange;
 use models::schema::{ColumnType, TableColumn, TskvTableSchemaRef};
-use models::{SeriesId, SeriesKey, ValueType};
+use models::{ColumnId, SeriesId, SeriesKey, ValueType};
 use snafu::ResultExt;
 use utils::bitset::BitSet;
 use utils::BloomFilter;
@@ -103,14 +103,6 @@ pub struct Column {
 }
 
 impl Column {
-    pub fn new(column_type: ColumnType, valid: BitSet, data: ColumnData) -> Column {
-        Column {
-            column_type,
-            valid,
-            data,
-        }
-    }
-
     pub fn empty(column_type: ColumnType) -> Result<Column> {
         let valid = BitSet::new();
         let column = Self {
@@ -274,9 +266,20 @@ impl Column {
         let mut buf = vec![];
         let statistics = match &self.data {
             ColumnData::F64(array, min, max) => {
+                let target_array = array
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(idx, val)| {
+                        if self.valid.get(idx) {
+                            Some(*val)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>();
                 let encoder = get_f64_codec(desc.encoding);
                 encoder
-                    .encode(array, &mut buf)
+                    .encode(&target_array, &mut buf)
                     .map_err(|e| Error::Encode { source: e })?;
                 PageStatistics::F64(ValueStatistics::new(
                     Some(*min),
@@ -286,9 +289,20 @@ impl Column {
                 ))
             }
             ColumnData::I64(array, min, max) => {
+                let target_array = array
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(idx, val)| {
+                        if self.valid.get(idx) {
+                            Some(*val)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>();
                 let encoder = get_i64_codec(desc.encoding);
                 encoder
-                    .encode(array, &mut buf)
+                    .encode(&target_array, &mut buf)
                     .map_err(|e| Error::Encode { source: e })?;
                 PageStatistics::I64(ValueStatistics::new(
                     Some(*min),
@@ -298,9 +312,20 @@ impl Column {
                 ))
             }
             ColumnData::U64(array, min, max) => {
+                let target_array = array
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(idx, val)| {
+                        if self.valid.get(idx) {
+                            Some(*val)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>();
                 let encoder = get_u64_codec(desc.encoding);
                 encoder
-                    .encode(array, &mut buf)
+                    .encode(&target_array, &mut buf)
                     .map_err(|e| Error::Encode { source: e })?;
                 PageStatistics::U64(ValueStatistics::new(
                     Some(*min),
@@ -310,12 +335,20 @@ impl Column {
                 ))
             }
             ColumnData::String(array, min, max) => {
+                let target_array = array
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(idx, val)| {
+                        if self.valid.get(idx) {
+                            Some(val.as_bytes())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>();
                 let encoder = get_str_codec(desc.encoding);
                 encoder
-                    .encode(
-                        &array.iter().map(|it| it.as_bytes()).collect::<Vec<_>>(),
-                        &mut buf,
-                    )
+                    .encode(&target_array, &mut buf)
                     .map_err(|e| Error::Encode { source: e })?;
                 PageStatistics::Bytes(ValueStatistics::new(
                     Some(min.as_bytes().to_vec()),
@@ -325,9 +358,20 @@ impl Column {
                 ))
             }
             ColumnData::Bool(array, min, max) => {
+                let target_array = array
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(idx, val)| {
+                        if self.valid.get(idx) {
+                            Some(*val)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>();
                 let encoder = get_bool_codec(desc.encoding);
                 encoder
-                    .encode(array, &mut buf)
+                    .encode(&target_array, &mut buf)
                     .map_err(|e| Error::Encode { source: e })?;
                 PageStatistics::Bool(ValueStatistics::new(
                     Some(*min),
@@ -494,7 +538,7 @@ impl DataBlock2 {
     pub fn merge(&mut self, other: DataBlock2) -> Result<DataBlock2> {
         self.schema_check(&other)?;
 
-        let schema = if self.schema.schema_id > other.schema.schema_id {
+        let schema = if self.schema.schema_version > other.schema.schema_version {
             self.schema.clone()
         } else {
             other.schema.clone()
@@ -505,8 +549,8 @@ impl DataBlock2 {
         for field in schema.fields() {
             let mut merge_column =
                 Column::empty_with_cap(field.column_type.clone(), time_array.len())?;
-            let column_self = self.column(&field.name);
-            let column_other = other.column(&field.name);
+            let column_self = self.column(field.id);
+            let column_other = other.column(field.id);
             for idx in sort_index.iter() {
                 match idx {
                     Merge::SelfTs(index) => {
@@ -648,9 +692,9 @@ impl DataBlock2 {
         Ok(())
     }
 
-    pub fn column(&self, name: &str) -> Option<&Column> {
+    pub fn column(&self, id: ColumnId) -> Option<&Column> {
         for (index, col_des) in self.cols_desc.iter().enumerate() {
-            if col_des.name == name {
+            if col_des.id == id {
                 return Some(&self.cols[index]);
             }
         }

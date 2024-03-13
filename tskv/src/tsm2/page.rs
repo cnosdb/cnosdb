@@ -82,9 +82,14 @@ impl Page {
                 ts_codec
                     .decode(data_buffer, &mut target)
                     .map_err(|e| Error::Decode { source: e })?;
-                for (i, v) in target.iter().enumerate() {
+                let mut target = target.into_iter();
+                for i in 0..bitset.len() {
                     if bitset.get(i) {
-                        col.push(Some(FieldVal::Integer(*v)));
+                        col.push(Some(FieldVal::Integer(target.next().ok_or(
+                            Error::TsmPageError {
+                                reason: "data buffer not enough".to_string(),
+                            },
+                        )?)));
                     } else {
                         col.push(None);
                     }
@@ -97,9 +102,14 @@ impl Page {
                 ts_codec
                     .decode(data_buffer, &mut target)
                     .map_err(|e| Error::Decode { source: e })?;
-                for (i, v) in target.iter().enumerate() {
+                let mut target = target.into_iter();
+                for i in 0..bitset.len() {
                     if bitset.get(i) {
-                        col.push(Some(FieldVal::Float(*v)));
+                        col.push(Some(FieldVal::Float(target.next().ok_or(
+                            Error::TsmPageError {
+                                reason: "data buffer not enough".to_string(),
+                            },
+                        )?)));
                     } else {
                         col.push(None);
                     }
@@ -112,9 +122,14 @@ impl Page {
                 ts_codec
                     .decode(data_buffer, &mut target)
                     .map_err(|e| Error::Decode { source: e })?;
-                for (i, v) in target.iter().enumerate() {
+                let mut target = target.into_iter();
+                for i in 0..bitset.len() {
                     if bitset.get(i) {
-                        col.push(Some(FieldVal::Unsigned(*v)));
+                        col.push(Some(FieldVal::Unsigned(target.next().ok_or(
+                            Error::TsmPageError {
+                                reason: "data buffer not enough".to_string(),
+                            },
+                        )?)));
                     } else {
                         col.push(None);
                     }
@@ -127,9 +142,14 @@ impl Page {
                 ts_codec
                     .decode(data_buffer, &mut target)
                     .map_err(|e| Error::Decode { source: e })?;
-                for (i, v) in target.iter().enumerate() {
+                let mut target = target.into_iter();
+                for i in 0..bitset.len() {
                     if bitset.get(i) {
-                        col.push(Some(FieldVal::Boolean(*v)));
+                        col.push(Some(FieldVal::Boolean(target.next().ok_or(
+                            Error::TsmPageError {
+                                reason: "data buffer not enough".to_string(),
+                            },
+                        )?)));
                     } else {
                         col.push(None);
                     }
@@ -142,9 +162,14 @@ impl Page {
                 ts_codec
                     .decode(data_buffer, &mut target)
                     .map_err(|e| Error::Decode { source: e })?;
-                for (i, v) in target.iter().enumerate() {
+                let mut target = target.into_iter();
+                for i in 0..bitset.len() {
                     if bitset.get(i) {
-                        col.push(Some(FieldVal::Bytes(v.clone())));
+                        col.push(Some(FieldVal::Bytes(target.next().ok_or(
+                            Error::TsmPageError {
+                                reason: "data buffer not enough".to_string(),
+                            },
+                        )?)));
                     } else {
                         col.push(None);
                     }

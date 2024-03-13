@@ -44,7 +44,7 @@ impl DDLDefinitionTask for AlterTableTask {
             AlterTableAction::AddColumn { table_column } => {
                 let table_column = table_column.to_owned();
                 schema.add_column(table_column.clone());
-                schema.schema_id += 1;
+                schema.schema_version += 1;
 
                 Some((
                     table_column.name.clone(),
@@ -54,7 +54,7 @@ impl DDLDefinitionTask for AlterTableTask {
 
             AlterTableAction::DropColumn { column_name } => {
                 schema.drop_column(column_name);
-                schema.schema_id += 1;
+                schema.schema_version += 1;
 
                 Some((
                     column_name.clone(),
@@ -73,7 +73,7 @@ impl DDLDefinitionTask for AlterTableTask {
                     });
                 }
                 schema.change_column(column_name, new_column.clone());
-                schema.schema_id += 1;
+                schema.schema_version += 1;
 
                 Some((
                     column_name.clone(),
@@ -98,7 +98,7 @@ impl DDLDefinitionTask for AlterTableTask {
                                 old_column.encoding,
                             );
                             schema.change_column(old_column_name, new_column);
-                            schema.schema_id += 1;
+                            schema.schema_version += 1;
                         } else {
                             return Err(QueryError::ColumnNotFound {
                                 col: old_column_name.to_owned(),

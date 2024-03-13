@@ -294,7 +294,7 @@ mod tests {
                 ),
             ],
         );
-        schema_1.schema_id = 1;
+        schema_1.schema_version = 1;
         let mut rows = OrderedRowsData::new();
         rows.insert(RowData {
             ts: 1,

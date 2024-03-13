@@ -963,7 +963,7 @@ impl StateMachine {
         if let Some(val) = self.get_struct::<TableSchema>(&key)? {
             match (val, schema) {
                 (TableSchema::TsKvTableSchema(val), TableSchema::TsKvTableSchema(schema)) => {
-                    if val.schema_id + 1 != schema.schema_id {
+                    if val.schema_version + 1 != schema.schema_version {
                         return Err(MetaError::UpdateTableConflict {
                             name: schema.name.clone(),
                         });

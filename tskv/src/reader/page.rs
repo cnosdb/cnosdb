@@ -7,11 +7,12 @@ use arrow_array::builder::StringBuilder;
 use arrow_array::types::{Float64Type, Int64Type, UInt64Type};
 use arrow_array::{ArrayRef, BooleanArray, PrimitiveArray};
 use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
+use minivec::MiniVec;
 use models::arrow::stream::BoxStream;
 use models::predicate::domain::TimeRange;
 use models::schema::PhysicalCType;
 use models::{PhysicalDType, SeriesId};
-use utils::bitset::{BitSet, ImmutBitSet};
+use utils::bitset::NullBitset;
 
 use super::column_group::ColumnGroupReaderMetrics;
 use crate::tsm::codec::{
@@ -111,7 +112,7 @@ async fn page_to_arrow_array_with_tomb(
         let column = time_page.to_column()?;
         let time_ranges =
             tombstone.get_overlapped_time_ranges(series_id, page.meta.column.id, &time_range);
-        let mut null_bitset = column.valid().clone();
+        let mut null_bitset = page.null_bitset().to_bitset();
         for time_range in time_ranges {
             let start_index = column
                 .binary_search_for_i64_col(time_range.min_ts)
@@ -152,6 +153,17 @@ fn data_buf_to_arrow_array(
             ts_codec
                 .decode(data_buffer, &mut target)
                 .map_err(|e| Error::Decode { source: e })?;
+            let mut iter_target = target.into_iter();
+            let mut target = Vec::with_capacity(null_bitset.len());
+            for i in 0..null_bitset.len() {
+                if null_bitset.get(i) {
+                    target.push(iter_target.next().ok_or(Error::CommonError {
+                        reason: "target is not enough".to_string(),
+                    })?);
+                } else {
+                    target.push(MiniVec::new());
+                }
+            }
 
             let mut builder = StringBuilder::with_capacity(num_values, 128);
 
@@ -174,6 +186,18 @@ fn data_buf_to_arrow_array(
                 .decode(data_buffer, &mut target)
                 .map_err(|e| Error::Decode { source: e })?;
 
+            let mut iter_target = target.into_iter();
+            let mut target = Vec::with_capacity(null_bitset.len());
+            for i in 0..null_bitset.len() {
+                if null_bitset.get(i) {
+                    target.push(iter_target.next().ok_or(Error::CommonError {
+                        reason: "target is not enough".to_string(),
+                    })?);
+                } else {
+                    target.push(0);
+                }
+            }
+
             let data_mutable_buffer = MutableBuffer::from_vec(target);
 
             let nulls = Some(null_mutable_buffer);
@@ -192,6 +216,18 @@ fn data_buf_to_arrow_array(
             ts_codec
                 .decode(data_buffer, &mut target)
                 .map_err(|e| Error::Decode { source: e })?;
+
+            let mut iter_target = target.into_iter();
+            let mut target = Vec::with_capacity(null_bitset.len());
+            for i in 0..null_bitset.len() {
+                if null_bitset.get(i) {
+                    target.push(iter_target.next().ok_or(Error::CommonError {
+                        reason: "target is not enough".to_string(),
+                    })?);
+                } else {
+                    target.push(0.0);
+                }
+            }
 
             let data_mutable_buffer = MutableBuffer::from_vec(target);
 
@@ -212,6 +248,18 @@ fn data_buf_to_arrow_array(
                 .decode(data_buffer, &mut target)
                 .map_err(|e| Error::Decode { source: e })?;
 
+            let mut iter_target = target.into_iter();
+            let mut target = Vec::with_capacity(null_bitset.len());
+            for i in 0..null_bitset.len() {
+                if null_bitset.get(i) {
+                    target.push(iter_target.next().ok_or(Error::CommonError {
+                        reason: "target is not enough".to_string(),
+                    })?);
+                } else {
+                    target.push(0);
+                }
+            }
+
             let data_mutable_buffer = MutableBuffer::from_vec(target);
 
             let nulls = Some(null_mutable_buffer);
@@ -231,6 +279,18 @@ fn data_buf_to_arrow_array(
                 .decode(data_buffer, &mut target)
                 .map_err(|e| Error::Decode { source: e })?;
 
+            let mut iter_target = target.into_iter();
+            let mut target = Vec::with_capacity(null_bitset.len());
+            for i in 0..null_bitset.len() {
+                if null_bitset.get(i) {
+                    target.push(iter_target.next().ok_or(Error::CommonError {
+                        reason: "target is not enough".to_string(),
+                    })?);
+                } else {
+                    target.push(0);
+                }
+            }
+
             let data_mutable_buffer = MutableBuffer::from_vec(target);
 
             let nulls = Some(null_mutable_buffer);
@@ -249,6 +309,19 @@ fn data_buf_to_arrow_array(
             ts_codec
                 .decode(data_buffer, &mut target)
                 .map_err(|e| Error::Decode { source: e })?;
+
+            let mut iter_target = target.into_iter();
+            let mut target = Vec::with_capacity(null_bitset.len());
+            for i in 0..null_bitset.len() {
+                if null_bitset.get(i) {
+                    target.push(iter_target.next().ok_or(Error::CommonError {
+                        reason: "target is not enough".to_string(),
+                    })?);
+                } else {
+                    target.push(false);
+                }
+            }
+
             // TODO target 应为 bitset
             let data_mutable_buffer = BooleanBuffer::from(target);
 
@@ -263,27 +336,6 @@ fn data_buf_to_arrow_array(
     };
 
     Ok(array)
-}
-
-enum NullBitset<'a> {
-    Ref(ImmutBitSet<'a>),
-    Own(BitSet),
-}
-
-impl NullBitset<'_> {
-    fn get(&self, i: usize) -> bool {
-        match self {
-            NullBitset::Ref(bitset) => bitset.get(i),
-            NullBitset::Own(bitset) => bitset.get(i),
-        }
-    }
-
-    fn null_bitset_slice(&self) -> Vec<u8> {
-        match self {
-            NullBitset::Ref(bitset) => bitset.bytes().to_vec(),
-            NullBitset::Own(bitset) => bitset.bytes().to_vec(),
-        }
-    }
 }
 
 #[cfg(test)]

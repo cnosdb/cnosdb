@@ -6,7 +6,6 @@ use crate::tsm2::writer::DataBlock2;
 
 pub(crate) mod page;
 pub mod reader;
-mod scan_config;
 pub mod statistics;
 mod types;
 pub mod writer;

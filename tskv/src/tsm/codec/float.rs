@@ -34,9 +34,10 @@ pub fn f64_gorilla_encode(
     if src.is_empty() {
         return Ok(());
     }
-    if dst.capacity() < 9 {
-        dst.reserve_exact(9 - dst.capacity()); // room for encoding type, block
-                                               // size and a value
+    dst.push(Encoding::Gorilla as u8);
+    if dst.capacity() < 10 {
+        dst.reserve_exact(10 - dst.capacity()); // room for encoding type, block
+                                                // size and a value
     }
 
     // write encoding type
@@ -70,7 +71,7 @@ pub fn f64_gorilla_encode(
             continue;
         }
 
-        while n >> 3 >= dst.len() {
+        while (n >> 3) + 1 >= dst.len() {
             dst.push(0); // make room
         }
 
@@ -78,7 +79,7 @@ pub fn f64_gorilla_encode(
         // delta value to the output
         // n&7 - current bit in current byte
         // n>>3 - current byte
-        dst[n >> 3] |= 128 >> (n & 7); // set the current bit of the current byte
+        dst[(n >> 3) + 1] |= 128 >> (n & 7); // set the current bit of the current byte
         n += 1;
 
         // next, write the delta to the output
@@ -89,7 +90,7 @@ pub fn f64_gorilla_encode(
         leading &= 0b0001_1111;
 
         // a minimum of two further bits will be required
-        if (n + 2) >> 3 >= dst.len() {
+        if ((n + 2) >> 3) + 1 >= dst.len() {
             dst.push(0);
         }
 
@@ -97,7 +98,7 @@ pub fn f64_gorilla_encode(
             n += 1; // write leading bit
 
             let l = 64 - prev_leading - prev_trailing; // none-zero bit count
-            while (n + 1) >> 3 >= dst.len() {
+            while ((n + 1) >> 3) + 1 >= dst.len() {
                 dst.push(0); // grow to accommodate bits.
             }
 
@@ -109,7 +110,7 @@ pub fn f64_gorilla_encode(
                 // the current byte has not been completely filled
                 written = if l < 8 - m { l } else { 8 - m };
                 let mask = v >> 56; // move 8 MSB to 8 LSB
-                dst[n >> 3] |= (mask >> m) as u8;
+                dst[(n >> 3) + 1] |= (mask >> m) as u8;
                 n += written as usize;
 
                 if l - written == 0 {
@@ -119,11 +120,11 @@ pub fn f64_gorilla_encode(
             }
 
             let vv = v << written; // move written bits out of the way
-            while (n >> 3) + 8 >= dst.len() {
+            while ((n >> 3) + 8) + 1 >= dst.len() {
                 dst.push(0);
             }
             // TODO(edd): maybe this can be optimised?
-            let k = n >> 3;
+            let k = (n >> 3) + 1;
             let vv_bytes = &vv.to_be_bytes();
             dst[k..k + 8].clone_from_slice(&vv_bytes[0..(k + 8 - k)]);
 
@@ -133,11 +134,11 @@ pub fn f64_gorilla_encode(
             prev_trailing = trailing;
 
             // set a single bit to indicate a value will follow
-            dst[n >> 3] |= 128 >> (n & 7); // set the current bit on the current byte
+            dst[(n >> 3) + 1] |= 128 >> (n & 7); // set the current bit on the current byte
             n += 1;
 
             // write 5 bits of leading
-            if (n + 5) >> 3 >= dst.len() {
+            if ((n + 5) >> 3) + 1 >= dst.len() {
                 dst.push(0);
             }
 
@@ -149,12 +150,12 @@ pub fn f64_gorilla_encode(
 
             if m <= 3 {
                 // 5 bits fit in current byte
-                dst[n >> 3] |= (mask >> m) as u8;
+                dst[(n >> 3) + 1] |= (mask >> m) as u8;
                 n += l;
             } else {
                 // not enough bits available in current byte
                 let written = 8 - m;
-                dst[n >> 3] |= (mask >> m) as u8; // some of mask will get lost
+                dst[(n >> 3) + 1] |= (mask >> m) as u8; // some of mask will get lost
                 n += written;
 
                 // next the lost part of mask needs to be written into the next byte
@@ -162,7 +163,7 @@ pub fn f64_gorilla_encode(
                 mask >>= 56;
 
                 m = n & 7; // new current bit
-                dst[n >> 3] |= (mask >> m) as u8;
+                dst[(n >> 3) + 1] |= (mask >> m) as u8;
                 n += l - written;
             }
 
@@ -172,7 +173,7 @@ pub fn f64_gorilla_encode(
             // us in the other case (v_delta == 0). So instead we write out a 0
             // and adjust it back to 64 on unpacking.
             let sig_bits = 64 - leading - trailing;
-            if (n + 6) >> 3 >= dst.len() {
+            if ((n + 6) >> 3) + 1 >= dst.len() {
                 dst.push(0);
             }
 
@@ -181,11 +182,11 @@ pub fn f64_gorilla_encode(
             v = sig_bits << 58; // move 6 LSB of sig_bits to MSB
             let mut mask = v >> 56; // move 6 MSB to 8 LSB
             if m <= 2 {
-                dst[n >> 3] |= (mask >> m) as u8; // the 6 bits fit in the current byte
+                dst[(n >> 3) + 1] |= (mask >> m) as u8; // the 6 bits fit in the current byte
                 n += l;
             } else {
                 let written = 8 - m;
-                dst[n >> 3] |= (mask >> m) as u8; // fill rest of current byte
+                dst[(n >> 3) + 1] |= (mask >> m) as u8; // fill rest of current byte
                 n += written;
 
                 // next, write the lost part of mask into the next byte
@@ -193,7 +194,7 @@ pub fn f64_gorilla_encode(
                 mask >>= 56;
 
                 m = n & 7; // recompute current bit to write
-                dst[n >> 3] |= (mask >> m) as u8;
+                dst[(n >> 3) + 1] |= (mask >> m) as u8;
                 n += l - written;
             }
 
@@ -201,7 +202,7 @@ pub fn f64_gorilla_encode(
             m = n & 7;
             l = sig_bits as usize;
             v = (v_delta >> trailing) << (64 - l); // move l LSB into MSB
-            while (n + l) >> 3 >= dst.len() {
+            while ((n + l) >> 3) + 1 >= dst.len() {
                 dst.push(0);
             }
 
@@ -210,7 +211,7 @@ pub fn f64_gorilla_encode(
                 // current byte not full
                 written = if l < 8 - m { l } else { 8 - m };
                 mask = v >> 56; // move 8 MSB to 8 LSB
-                dst[n >> 3] |= (mask >> m) as u8;
+                dst[(n >> 3) + 1] |= (mask >> m) as u8;
                 n += written;
 
                 if l - written == 0 {
@@ -221,12 +222,12 @@ pub fn f64_gorilla_encode(
 
             // shift remaining bits and write out
             let vv = v << written; // remove bits written in previous byte
-            while (n >> 3) + 8 >= dst.len() {
+            while ((n >> 3) + 8) + 1 >= dst.len() {
                 dst.push(0);
             }
 
             // TODO(edd): maybe this can be optimised?
-            let k = n >> 3;
+            let k = (n >> 3) + 1;
             let vv_bytes = &vv.to_be_bytes();
             dst[k..k + 8].clone_from_slice(&vv_bytes[0..(k + 8 - k)]);
             n += l - written;
@@ -234,12 +235,11 @@ pub fn f64_gorilla_encode(
         prev = cur;
     }
 
-    let mut length = n >> 3;
+    let mut length = (n >> 3) + 1;
     if n & 7 > 0 {
         length += 1;
     }
     dst.truncate(length);
-    dst.insert(0, Encoding::Gorilla as u8);
     Ok(())
 }
 
@@ -359,6 +359,9 @@ pub fn f64_gorilla_decode(
     src: &[u8],
     dst: &mut Vec<f64>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    if src.is_empty() {
+        return Ok(());
+    }
     let src = &src[1..];
     decode_with_sentinel(src, dst, SENTINEL)
 }

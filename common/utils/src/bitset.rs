@@ -251,7 +251,7 @@ impl<'a> ImmutBitSet<'a> {
     }
 
     pub fn get(&self, idx: usize) -> bool {
-        assert!(idx <= self.len);
+        assert!(idx < self.len);
 
         let byte_idx = idx >> 3;
         let bit_idx = idx & 7;
@@ -295,6 +295,10 @@ impl<'a> ImmutBitSet<'a> {
     pub fn is_all_unset(&self) -> bool {
         self.buffer.iter().all(|&v| v == 0)
     }
+
+    pub fn to_bitset(&self) -> BitSet {
+        BitSet::new_without_check(self.len, self.buffer.to_vec())
+    }
 }
 
 impl<'a> PartialEq for ImmutBitSet<'a> {
@@ -311,6 +315,41 @@ impl<'a> PartialEq for ImmutBitSet<'a> {
         }
         let mask = 0xFF >> (8 - (self.len & 7));
         (self.buffer[bound] & mask) == (other.buffer[bound] & mask)
+    }
+}
+
+pub enum NullBitset<'a> {
+    Ref(ImmutBitSet<'a>),
+    Own(BitSet),
+}
+
+impl NullBitset<'_> {
+    pub fn get(&self, i: usize) -> bool {
+        match self {
+            NullBitset::Ref(bitset) => bitset.get(i),
+            NullBitset::Own(bitset) => bitset.get(i),
+        }
+    }
+
+    pub fn null_bitset_slice(&self) -> Vec<u8> {
+        match self {
+            NullBitset::Ref(bitset) => bitset.bytes().to_vec(),
+            NullBitset::Own(bitset) => bitset.bytes().to_vec(),
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        match self {
+            NullBitset::Ref(bitset) => bitset.len(),
+            NullBitset::Own(bitset) => bitset.len(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        match self {
+            NullBitset::Ref(bitset) => bitset.is_empty(),
+            NullBitset::Own(bitset) => bitset.is_empty(),
+        }
     }
 }
 
