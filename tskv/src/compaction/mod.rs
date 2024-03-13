@@ -17,9 +17,8 @@ use crate::memcache::MemCache;
 use crate::tseries_family::{ColumnFile, Version};
 use crate::{LevelId, TseriesFamilyId};
 
-pub enum CompactTask {
-    Vnode(TseriesFamilyId),
-    ColdVnode(TseriesFamilyId),
+pub struct CompactTask {
+    pub tsf_id: TseriesFamilyId,
 }
 
 pub struct CompactReq {
@@ -33,9 +32,9 @@ pub struct CompactReq {
 }
 
 pub struct FlushReq {
+    pub owner: String,
     pub ts_family_id: TseriesFamilyId,
     pub mems: Vec<Arc<RwLock<MemCache>>>,
-    pub force_flush: bool,
     pub low_seq_no: u64,
     pub high_seq_no: u64,
 }
@@ -44,12 +43,12 @@ impl std::fmt::Display for FlushReq {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "FlushReq on vnode: {}, low_seq_no: {}, high_seq_no: {} caches_num: {}, force_flush: {}",
+            "FlushReq owner: {}, on vnode: {}, low_seq_no: {}, high_seq_no: {} caches_num: {}",
+            self.owner,
             self.ts_family_id,
             self.low_seq_no,
             self.high_seq_no,
             self.mems.len(),
-            self.force_flush,
         )
     }
 }

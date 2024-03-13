@@ -12,12 +12,10 @@ use models::schema::{DatabaseSchema, Precision, TskvTableSchema, TskvTableSchema
 use models::{SeriesId, SeriesKey};
 use protos::models::{Column, ColumnType, FieldType, Table};
 use snafu::ResultExt;
-use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{oneshot, RwLock};
 use trace::error;
 
-use crate::compaction::CompactTask;
 use crate::error::{Result, SchemaSnafu};
 use crate::index::{self, IndexResult};
 use crate::kv_option::Options;
@@ -109,15 +107,9 @@ impl Database {
         Ok(db)
     }
 
-    pub fn open_tsfamily(
-        &mut self,
-        runtime: Arc<Runtime>,
-        ver: Arc<Version>,
-        compact_task_sender: Sender<CompactTask>,
-    ) {
+    pub fn open_tsfamily(&mut self, ver: Arc<Version>) {
         let tf_id = ver.tf_id();
         let tf = self.tsf_factory.create_tsf(tf_id, ver.clone());
-        tf.schedule_compaction(runtime, compact_task_sender);
         self.ts_families
             .insert(ver.tf_id(), Arc::new(RwLock::new(tf)));
     }
@@ -192,7 +184,7 @@ impl Database {
             self.opt.storage.clone(),
             ve.seq_no,
             levels,
-            i64::MIN,
+            ve.max_level_ts,
             tsm_reader_cache,
         ));
 
@@ -213,7 +205,9 @@ impl Database {
 
     pub async fn del_tsfamily(&mut self, tf_id: u32, summary_task_sender: Sender<SummaryTask>) {
         if let Some(tf) = self.ts_families.remove(&tf_id) {
-            let edit = VersionEdit::new_del_vnode(tf_id);
+            let owner = tf.read().await.tenant_database();
+            let seq = tf.read().await.version().last_seq();
+            let edit = VersionEdit::new_del_vnode(tf_id, owner.to_string(), seq);
             let (task_state_sender, task_state_receiver) = oneshot::channel();
             let task = SummaryTask::new(tf.clone(), edit, None, None, task_state_sender);
             if let Err(e) = summary_task_sender.send(task).await {
@@ -221,8 +215,6 @@ impl Database {
             }
 
             let _ = task_state_receiver.await;
-
-            tf.read().await.close();
         }
     }
 

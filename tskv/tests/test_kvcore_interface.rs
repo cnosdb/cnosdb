@@ -120,7 +120,19 @@ mod tests {
             precision: Precision::NS as u32,
         };
 
-        tskv_write(rt, &tskv, "cnosdb", "public", 0, 1, request);
+        tskv_write(rt.clone(), &tskv, "cnosdb", "public", 0, 1, request);
+        rt.block_on(async move {
+            tskv.flush_tsfamily("cnosdb", "public", 0).await.unwrap();
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            let ts_family = tskv
+                .open_tsfamily("cnosdb", "public", 0)
+                .await
+                .unwrap()
+                .ts_family;
+
+            let last_seq = ts_family.read().await.version().last_seq();
+            assert_eq!(last_seq, 1)
+        });
 
         println!("Leave serial test: test_kvcore_write");
     }
@@ -150,8 +162,19 @@ mod tests {
         tskv_write(rt.clone(), &tskv, "cnosdb", "db", 0, 3, request.clone());
         tskv_write(rt.clone(), &tskv, "cnosdb", "db", 0, 4, request.clone());
 
-        rt.block_on(async {
-            tokio::time::sleep(Duration::from_secs(3)).await;
+        rt.block_on(async move {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+
+            tskv.flush_tsfamily("cnosdb", "db", 0).await.unwrap();
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            let ts_family = tskv
+                .open_tsfamily("cnosdb", "db", 0)
+                .await
+                .unwrap()
+                .ts_family;
+
+            let last_seq = ts_family.read().await.version().last_seq();
+            assert_eq!(last_seq, 4)
         });
 
         assert!(file_manager::try_exists(
@@ -212,8 +235,20 @@ mod tests {
         tskv_write(rt.clone(), &tskv, "cnosdb", database, 0, 3, request.clone());
         tskv_write(rt.clone(), &tskv, "cnosdb", database, 0, 4, request.clone());
 
+        let db_cloned = database;
         rt.block_on(async {
-            tokio::time::sleep(Duration::from_secs(12)).await;
+            tokio::time::sleep(Duration::from_secs(2)).await;
+
+            tskv.flush_tsfamily("cnosdb", db_cloned, 0).await.unwrap();
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            let ts_family = tskv
+                .open_tsfamily("cnosdb", db_cloned, 0)
+                .await
+                .unwrap()
+                .ts_family;
+
+            let last_seq = ts_family.read().await.version().last_seq();
+            assert_eq!(last_seq, 4)
         });
 
         assert!(file_manager::try_exists(format!(

@@ -17,7 +17,6 @@ use tokio::sync::oneshot::Sender as OneShotSender;
 use tokio::sync::RwLock;
 use utils::BloomFilter;
 
-use crate::compaction::CompactTask;
 use crate::context::GlobalContext;
 use crate::error::{Error, Result};
 use crate::kv_option::{Options, StorageOptions, DELTA_PATH, TSM_PATH};
@@ -38,8 +37,6 @@ pub struct CompactMeta {
     pub level: LevelId,
     pub min_ts: Timestamp,
     pub max_ts: Timestamp,
-    pub high_seq: u64,
-    pub low_seq: u64,
     pub is_delta: bool,
 }
 
@@ -52,8 +49,6 @@ impl Default for CompactMeta {
             level: 0,
             min_ts: Timestamp::MAX,
             max_ts: Timestamp::MIN,
-            high_seq: u64::MIN,
-            low_seq: u64::MIN,
             is_delta: false,
         }
     }
@@ -149,16 +144,13 @@ impl CompactMetaBuilder {
             min_ts,
             max_ts,
             is_delta: level == 0,
-            ..Default::default()
         }
     }
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct VersionEdit {
-    pub has_seq_no: bool,
     pub seq_no: u64,
-    pub has_file_id: bool,
     pub file_id: u64,
     pub max_level_ts: Timestamp,
     pub add_files: Vec<CompactMeta>,
@@ -173,9 +165,7 @@ pub struct VersionEdit {
 impl Default for VersionEdit {
     fn default() -> Self {
         Self {
-            has_seq_no: false,
             seq_no: 0,
-            has_file_id: false,
             file_id: 0,
             max_level_ts: i64::MIN,
             add_files: vec![],
@@ -189,28 +179,36 @@ impl Default for VersionEdit {
 }
 
 impl VersionEdit {
-    pub fn new(vnode_id: TseriesFamilyId) -> Self {
+    pub fn new_update_vnode(vnode_id: u32, owner: String, seq_no: u64) -> Self {
         Self {
+            seq_no,
+            add_tsf: false,
+            del_tsf: false,
+            tsf_name: owner,
             tsf_id: vnode_id,
+
             ..Default::default()
         }
     }
 
     pub fn new_add_vnode(vnode_id: u32, owner: String, seq_no: u64) -> Self {
         Self {
+            seq_no,
+            add_tsf: true,
             tsf_id: vnode_id,
             tsf_name: owner,
-            add_tsf: true,
-            has_seq_no: true,
-            seq_no,
+
             ..Default::default()
         }
     }
 
-    pub fn new_del_vnode(vnode_id: u32) -> Self {
+    pub fn new_del_vnode(vnode_id: u32, owner: String, seq_no: u64) -> Self {
         Self {
-            tsf_id: vnode_id,
+            seq_no,
             del_tsf: true,
+            tsf_id: vnode_id,
+            tsf_name: owner,
+
             ..Default::default()
         }
     }
@@ -270,13 +268,6 @@ impl VersionEdit {
     }
 
     pub fn add_file(&mut self, compact_meta: CompactMeta, max_level_ts: i64) {
-        if compact_meta.high_seq != 0 {
-            // ComapctMeta.seq_no only makes sense when flush.
-            // In other processes, we set high_seq 0 .
-            self.has_seq_no = true;
-            self.seq_no = compact_meta.high_seq;
-        }
-        self.has_file_id = true;
         self.file_id = self.file_id.max(compact_meta.file_id);
         self.max_level_ts = max(self.max_level_ts, max_level_ts);
         self.add_files.push(compact_meta);
@@ -294,8 +285,8 @@ impl VersionEdit {
 
 impl Display for VersionEdit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "seq_no: {}, file_id: {}, add_files: {}, del_files: {}, del_tsf: {}, add_tsf: {}, tsf_id: {}, tsf_name: {}, has_seq_no: {}, has_file_id: {}, max_level_ts: {}",
-               self.seq_no, self.file_id, self.add_files.len(), self.del_files.len(), self.del_tsf, self.add_tsf, self.tsf_id, self.tsf_name, self.has_seq_no, self.has_file_id, self.max_level_ts)
+        write!(f, "seq_no: {}, file_id: {}, add_files: {}, del_files: {}, del_tsf: {}, add_tsf: {}, tsf_id: {}, tsf_name: {}, max_level_ts: {}",
+               self.seq_no, self.file_id, self.add_files.len(), self.del_files.len(), self.del_tsf, self.add_tsf, self.tsf_id, self.tsf_name, self.max_level_ts)
     }
 }
 
@@ -360,7 +351,6 @@ impl Summary {
         opt: Arc<Options>,
         runtime: Arc<Runtime>,
         memory_pool: MemoryPoolRef,
-        compact_task_sender: Sender<CompactTask>,
         load_field_filter: bool,
         metrics_register: Arc<MetricsRegister>,
     ) -> Result<Self> {
@@ -380,7 +370,6 @@ impl Summary {
             opt.clone(),
             runtime.clone(),
             memory_pool,
-            compact_task_sender,
             load_field_filter,
             metrics_register.clone(),
         )
@@ -410,7 +399,6 @@ impl Summary {
         opt: Arc<Options>,
         runtime: Arc<Runtime>,
         memory_pool: MemoryPoolRef,
-        compact_task_sender: Sender<CompactTask>,
         load_field_filter: bool,
         metrics_register: Arc<MetricsRegister>,
     ) -> Result<VersionSet> {
@@ -428,11 +416,7 @@ impl Summary {
                             .entry(ed.tsf_name.clone())
                             .or_insert_with(|| Arc::new(ed.tsf_name.clone()));
                         tsf_database_map.insert(ed.tsf_id, db_ref.clone());
-                        if ed.has_file_id {
-                            tsf_edits_map.insert(ed.tsf_id, vec![ed]);
-                        } else {
-                            tsf_edits_map.insert(ed.tsf_id, vec![]);
-                        }
+                        tsf_edits_map.insert(ed.tsf_id, vec![ed]);
                     } else if ed.del_tsf {
                         tsf_edits_map.remove(&ed.tsf_id);
                         tsf_database_map.remove(&ed.tsf_id);
@@ -449,9 +433,7 @@ impl Summary {
         }
 
         let mut versions = HashMap::new();
-        let mut max_seq_no_all = 0_u64;
-        let mut has_file_id = false;
-        let mut max_file_id_all = 0_u64;
+        let mut max_file_id = 0_u64;
         for (tsf_id, edits) in tsf_edits_map {
             let database = tsf_database_map.remove(&tsf_id).unwrap();
 
@@ -459,15 +441,9 @@ impl Summary {
             let mut max_seq_no = 0;
             let mut max_level_ts = i64::MIN;
             for e in edits {
-                if e.has_seq_no {
-                    max_seq_no = std::cmp::max(max_seq_no, e.seq_no);
-                    max_seq_no_all = std::cmp::max(max_seq_no_all, e.seq_no);
-                }
-                if e.has_file_id {
-                    has_file_id = true;
-                    max_file_id_all = std::cmp::max(max_file_id_all, e.file_id);
-                }
+                max_seq_no = std::cmp::max(max_seq_no, e.seq_no);
                 max_level_ts = std::cmp::max(max_level_ts, e.max_level_ts);
+                max_file_id = std::cmp::max(max_file_id, e.file_id);
                 for m in e.del_files {
                     files.remove(&m.file_id);
                 }
@@ -509,19 +485,9 @@ impl Summary {
             versions.insert(tsf_id, Arc::new(ver));
         }
 
-        if has_file_id {
-            ctx.set_file_id(max_file_id_all + 1);
-        }
-        let vs = VersionSet::new(
-            meta,
-            opt,
-            runtime,
-            memory_pool,
-            versions,
-            compact_task_sender,
-            metrics_register,
-        )
-        .await?;
+        ctx.set_file_id(max_file_id + 1);
+        let vs =
+            VersionSet::new(meta, opt, runtime, memory_pool, versions, metrics_register).await?;
         Ok(vs)
     }
 
@@ -542,11 +508,6 @@ impl Summary {
             .await?;
         self.writer.sync().await?;
 
-        let mut min_seq = None;
-        if request.version_edit.has_seq_no {
-            min_seq = Some(request.version_edit.seq_no);
-        }
-
         // Generate a new Version and then apply it.
         trace::info!("Applying new version for ts_family {}.", tsf_id);
         let mut file_metas = HashMap::new();
@@ -559,8 +520,9 @@ impl Summary {
             .read()
             .await
             .version()
-            .copy_apply_version_edits(vec![request.version_edit.clone()], &mut file_metas, min_seq);
+            .copy_apply_version_edits(request.version_edit.clone(), &mut file_metas);
 
+        let new_version = Arc::new(new_version);
         request
             .ts_family
             .write()
@@ -625,38 +587,35 @@ pub async fn print_summary_statistics(path: impl AsRef<Path>) {
                     println!("  Delete ts_family: {}", ve.tsf_id);
                     println!("------------------------------------------------------------");
                 }
-                if ve.has_seq_no {
-                    println!("  Presist sequence: {}", ve.seq_no);
-                    println!("------------------------------------------------------------");
+
+                println!("  Presist sequence: {}", ve.seq_no);
+                println!("------------------------------------------------------------");
+
+                if ve.add_files.is_empty() && ve.del_files.is_empty() {
+                    println!("  Add file: None. Delete file: None.");
                 }
-                if ve.has_file_id {
-                    if ve.add_files.is_empty() && ve.del_files.is_empty() {
-                        println!("  Add file: None. Delete file: None.");
+                if !ve.add_files.is_empty() {
+                    let mut buffer = String::new();
+                    ve.add_files.iter().for_each(|f| {
+                        buffer.push_str(
+                            format!("{} (level: {}, {} B), ", f.file_id, f.level, f.file_size)
+                                .as_str(),
+                        )
+                    });
+                    if !buffer.is_empty() {
+                        buffer.truncate(buffer.len() - 2);
                     }
-                    if !ve.add_files.is_empty() {
-                        let mut buffer = String::new();
-                        ve.add_files.iter().for_each(|f| {
-                            buffer.push_str(
-                                format!("{} (level: {}, {} B), ", f.file_id, f.level, f.file_size)
-                                    .as_str(),
-                            )
-                        });
-                        if !buffer.is_empty() {
-                            buffer.truncate(buffer.len() - 2);
-                        }
-                        println!("  Add file:[ {} ]", buffer);
+                    println!("  Add file:[ {} ]", buffer);
+                }
+                if !ve.del_files.is_empty() {
+                    let mut buffer = String::new();
+                    ve.del_files.iter().for_each(|f| {
+                        buffer.push_str(format!("{} (level: {}), ", f.file_id, f.level).as_str())
+                    });
+                    if !buffer.is_empty() {
+                        buffer.truncate(buffer.len() - 2);
                     }
-                    if !ve.del_files.is_empty() {
-                        let mut buffer = String::new();
-                        ve.del_files.iter().for_each(|f| {
-                            buffer
-                                .push_str(format!("{} (level: {}), ", f.file_id, f.level).as_str())
-                        });
-                        if !buffer.is_empty() {
-                            buffer.truncate(buffer.len() - 2);
-                        }
-                        println!("  Delete file:[ {} ]", buffer);
-                    }
+                    println!("  Delete file:[ {} ]", buffer);
                 }
             }
             Err(Error::Eof) => break,
@@ -713,14 +672,13 @@ impl SummaryScheduler {
 
 #[cfg(test)]
 mod test {
-    use std::collections::HashMap;
     use std::sync::Arc;
 
     use config::Config;
     use memory_pool::GreedyMemoryPool;
     use meta::model::meta_admin::AdminMeta;
     use metrics::metric_register::MetricsRegister;
-    use models::schema::TenantOptions;
+    use models::schema::{make_owner, TenantOptions};
     use tokio::runtime::Runtime;
     use utils::BloomFilter;
 
@@ -836,7 +794,6 @@ mod test {
                 Arc::new(options),
                 runtime,
                 test_helper.memory_pool.clone(),
-                test_helper.tskv.context().compact_task_sender.clone(),
                 false,
                 Arc::new(MetricsRegister::default()),
             )
@@ -865,7 +822,6 @@ mod test {
 
         let runtime_clone = test_helper.runtime.clone();
         let options = Arc::new(kv_option::Options::from(&test_helper.config));
-        let compact_task_sender = test_helper.tskv.context().compact_task_sender.clone();
 
         runtime_clone.block_on(async move {
             test_helper
@@ -879,7 +835,6 @@ mod test {
                 options.clone(),
                 test_helper.runtime.clone(),
                 test_helper.memory_pool.clone(),
-                compact_task_sender.clone(),
                 false,
                 Arc::new(MetricsRegister::default()),
             )
@@ -899,7 +854,6 @@ mod test {
                 options.clone(),
                 test_helper.runtime.clone(),
                 test_helper.memory_pool.clone(),
-                compact_task_sender,
                 false,
                 Arc::new(MetricsRegister::default()),
             )
@@ -923,7 +877,6 @@ mod test {
         let tenant = "cnosdb";
         let database = "test_recover_summary_with_roll_0";
         let options = Arc::new(kv_option::Options::from(&test_helper.config));
-        let compact_task_sender = test_helper.tskv.context().compact_task_sender.clone();
 
         // Create database, add some vnodes then delete some vnodes.
         test_helper.runtime.block_on(async {
@@ -949,7 +902,6 @@ mod test {
                 options,
                 test_helper.runtime.clone(),
                 test_helper.memory_pool.clone(),
-                compact_task_sender,
                 false,
                 Arc::new(MetricsRegister::default()),
             )
@@ -973,7 +925,6 @@ mod test {
         let tenant = "cnosdb";
         let database = "test_recover_summary_with_roll_1";
         let options = Arc::new(kv_option::Options::from(&test_helper.config));
-        let compact_task_sender = test_helper.tskv.context().compact_task_sender.clone();
         let summary_task_sender = test_helper.tskv.context().summary_task_sender.clone();
 
         // Create database, add some vnodes and delete some vnodes..
@@ -985,15 +936,11 @@ mod test {
                 .expect("add tsfamily successfully");
 
             // Go to the next version.
-            let mut version = vnode
-                .ts_family
-                .read()
-                .await
-                .version()
-                .copy_apply_version_edits(vec![], &mut HashMap::new(), None);
+            let version = vnode.ts_family.read().await.version();
             let tsm_reader_cache = Arc::downgrade(version.tsm2_reader_cache());
 
-            let mut edit = VersionEdit::new(VNODE_ID);
+            let owner = make_owner(tenant, database);
+            let mut edit = VersionEdit::new_update_vnode(VNODE_ID, owner, 100);
             let meta = CompactMeta {
                 file_id: 15,
                 is_delta: false,
@@ -1002,14 +949,16 @@ mod test {
                 min_ts: 1,
                 max_ts: 1,
                 tsf_id: VNODE_ID,
-                high_seq: 1,
-                ..Default::default()
             };
+
+            let mut version = version.inner();
             version.levels_info_mut()[1].push_compact_meta(
                 &meta,
                 Arc::new(BloomFilter::default()),
                 tsm_reader_cache,
             );
+
+            let version = Arc::new(version);
             vnode.ts_family.write().await.new_version(version, None);
             edit.add_file(meta, 1);
 
@@ -1024,7 +973,6 @@ mod test {
                 options.clone(),
                 test_helper.runtime.clone(),
                 test_helper.memory_pool.clone(),
-                compact_task_sender,
                 false,
                 Arc::new(MetricsRegister::default()),
             )
@@ -1033,7 +981,7 @@ mod test {
 
             let vs = summary.version_set.read().await;
             let tsf = vs.get_tsfamily_by_tf_id(VNODE_ID).await.unwrap();
-            assert_eq!(tsf.read().await.version().last_seq(), 1);
+            assert_eq!(tsf.read().await.version().last_seq(), 100);
             assert_eq!(tsf.read().await.version().levels_info()[1].tsf_id, VNODE_ID);
             assert!(!tsf.read().await.version().levels_info()[1].files[0].is_delta());
             assert_eq!(
