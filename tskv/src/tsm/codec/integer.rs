@@ -47,6 +47,7 @@ pub fn i64_zigzag_simple8b_encode(
     if src.is_empty() {
         return Ok(());
     }
+    dst.push(Encoding::Delta as u8);
 
     let mut max: u64 = 0;
     let mut deltas = i64_to_u64_vector(src);
@@ -74,15 +75,14 @@ pub fn i64_zigzag_simple8b_encode(
             // count is the number of deltas repeating excluding first value.
             encode_rle(deltas[0], deltas[1], deltas.len() as u64 - 1, dst);
             // 4 high bits of first byte used for the encoding type
-            dst[0] |= (DeltaEncoding::Rle as u8) << 4;
-            dst.insert(0, Encoding::Delta as u8);
+            dst[1] |= (DeltaEncoding::Rle as u8) << 4;
             return Ok(());
         }
     }
 
     // write block uncompressed
     if max > simple8b::MAX_VALUE {
-        let cap = 1 + (deltas.len() * 8); // 8 bytes per value plus header byte
+        let cap = 2 + (deltas.len() * 8); // 8 bytes per value plus header byte
         if dst.capacity() < cap {
             dst.reserve_exact(cap - dst.capacity());
         }
@@ -90,7 +90,6 @@ pub fn i64_zigzag_simple8b_encode(
         for delta in &deltas {
             dst.extend_from_slice(&delta.to_be_bytes());
         }
-        dst.insert(0, Encoding::Delta as u8);
         return Ok(());
     }
 
@@ -99,7 +98,6 @@ pub fn i64_zigzag_simple8b_encode(
     dst.push((DeltaEncoding::Simple8b as u8) << 4);
     dst.extend_from_slice(&deltas[0].to_be_bytes()); // encode first value
     simple8b::encode(&deltas[1..], dst)?;
-    dst.insert(0, Encoding::Delta as u8);
     Ok(())
 }
 
@@ -133,7 +131,7 @@ fn encode_rle(v: u64, delta: u64, count: u64, dst: &mut Vec<u8>) {
     use super::MAX_VAR_INT_64;
     dst.push(0); // save a byte for encoding type
     dst.extend_from_slice(&v.to_be_bytes()); // write the first value in as a byte array.
-    let mut n = 9;
+    let mut n = 10;
 
     if dst.len() - n <= MAX_VAR_INT_64 {
         dst.resize(n + MAX_VAR_INT_64, 0);

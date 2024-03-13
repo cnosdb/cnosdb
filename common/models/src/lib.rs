@@ -40,7 +40,7 @@ pub mod sql;
 
 pub type ShardId = u64;
 pub type CatalogId = u64;
-pub type SchemaId = u64;
+pub type SchemaVersion = u64;
 pub type SeriesId = u32;
 pub type TableId = u64;
 pub type ColumnId = u32;

@@ -150,7 +150,7 @@ impl DBschemas {
         let client = self.tenant_meta().await?;
         //schema changed store it
         let schema = if new_schema {
-            schema.to_mut().schema_id = 0;
+            schema.to_mut().schema_version = 0;
             let schema: TskvTableSchemaRef = schema.into_owned().into();
             let res = client
                 .create_table(&TableSchema::TsKvTableSchema(schema.clone()))
@@ -163,7 +163,7 @@ impl DBschemas {
             }
             schema
         } else if schema_changed {
-            schema.to_mut().schema_id += 1;
+            schema.to_mut().schema_version += 1;
             let schema: TskvTableSchemaRef = schema.into_owned().into();
             let res = client
                 .update_table(&TableSchema::TsKvTableSchema(schema.clone()))
@@ -238,7 +238,7 @@ impl DBschemas {
                                 Some(schema) => schema,
                             };
                             let mut schema = schema.as_ref().clone();
-                            schema.schema_id = schema_get.schema_id + 1;
+                            schema.schema_version = schema_get.schema_version + 1;
                             let schema = Arc::new(schema);
                             if client
                                 .update_table(&TableSchema::TsKvTableSchema(schema))
@@ -263,13 +263,13 @@ impl DBschemas {
         schema: TskvTableSchemaRef,
     ) -> Result<()> {
         let client = self.tenant_meta().await?;
-        let mut schema_id = schema.schema_id;
+        let mut schema_id = schema.schema_version;
         if let Err(ref e) = res {
             if matches!(e, MetaError::UpdateTableConflict { .. }) {
                 for _ in 0..3 {
                     let mut schema = schema.as_ref().clone();
                     schema_id += 1;
-                    schema.schema_id = schema_id;
+                    schema.schema_version = schema_id;
                     if client
                         .update_table(&TableSchema::TsKvTableSchema(Arc::new(schema)))
                         .await

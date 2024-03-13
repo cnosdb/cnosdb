@@ -52,7 +52,6 @@ pub mod sort_merge;
 pub mod table_scan;
 pub mod tag_scan;
 pub mod test_util;
-pub mod tskv_stream_adapter;
 
 pub type PredicateRef = Arc<Predicate>;
 

@@ -1630,7 +1630,7 @@ pub mod test {
             ColumnType::Field(ValueType::Float),
             Encoding::default(),
         ));
-        schema2.schema_id += 1;
+        schema2.schema_version += 1;
 
         let schema1 = Arc::new(schema1);
         let schema2 = Arc::new(schema2);
@@ -1988,7 +1988,7 @@ pub mod test {
             ColumnType::Field(ValueType::Float),
             Encoding::default(),
         ));
-        schema2.schema_id += 1;
+        schema2.schema_version += 1;
 
         let schema1 = Arc::new(schema1);
         let schema2 = Arc::new(schema2);

@@ -27,28 +27,29 @@ pub fn bool_bitpack_encode(
     if src.is_empty() {
         return Ok(());
     }
+    dst.push(Encoding::BitPack as u8);
 
     let size = HEADER_LEN + 8 + ((src.len() + 7) / 8); // Header + Num bools + bool data.
-    dst.resize(size, 0);
+    dst.resize(size + 1, 0);
 
     // Store the encoding type in the 4 high bits of the first byte
-    dst[0] = BOOLEAN_COMPRESSED_BIT_PACKED << 4;
+    dst[1] = BOOLEAN_COMPRESSED_BIT_PACKED << 4;
 
     let mut n = 8u64; // Current bit in current byte.
 
     // Encode the number of booleans written.
     let len_u64: u64 = src.len().try_into()?;
-    let i = len_u64.encode_var(&mut dst[1..]);
+    let i = len_u64.encode_var(&mut dst[2..]);
     let step: u64 = (i * 8).try_into()?;
     n += step;
 
     for &v in src {
         let index: usize = (n >> 3).try_into()?;
         if v {
-            dst[index] |= 128 >> (n & 7); // Set current bit on current byte.
+            dst[index + 1] |= 128 >> (n & 7); // Set current bit on current byte.
         } else {
-            dst[index] &= !(128 >> (n & 7)); // Clear current bit on current
-                                             // byte.
+            dst[index + 1] &= !(128 >> (n & 7)); // Clear current bit on current
+                                                 // byte.
         }
         n += 1;
     }
@@ -59,8 +60,7 @@ pub fn bool_bitpack_encode(
     }
     let length: usize = length.try_into()?;
 
-    dst.truncate(length);
-    dst.insert(0, Encoding::BitPack as u8);
+    dst.truncate(length + 1);
 
     Ok(())
 }
