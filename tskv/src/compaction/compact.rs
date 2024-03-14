@@ -13,17 +13,17 @@ use crate::context::GlobalContext;
 use crate::error::Result;
 use crate::summary::{CompactMeta, VersionEdit};
 use crate::tseries_family::TseriesFamily;
-use crate::tsm2::page::{Chunk, ColumnGroup, Page};
-use crate::tsm2::reader::{decode_pages, decode_pages_buf, TSM2MetaData, TSM2Reader};
-use crate::tsm2::writer::{DataBlock2, Tsm2Writer};
-use crate::tsm2::ColumnGroupID;
+use crate::tsm::page::{Chunk, ColumnGroup, Page};
+use crate::tsm::reader::{decode_pages, decode_pages_buf, TsmMetaData, TsmReader};
+use crate::tsm::writer::{DataBlock, TsmWriter};
+use crate::tsm::ColumnGroupID;
 use crate::{ColumnFileId, Error, LevelId, TseriesFamilyId};
 
 /// Temporary compacting data block meta
 #[derive(Clone)]
 pub(crate) struct CompactingBlockMeta {
     reader_idx: usize,
-    reader: Arc<TSM2Reader>,
+    reader: Arc<TsmReader>,
     meta: Arc<Chunk>,
     column_group_id: ColumnGroupID,
 }
@@ -66,7 +66,7 @@ impl Ord for CompactingBlockMeta {
 impl CompactingBlockMeta {
     pub fn new(
         tsm_reader_idx: usize,
-        tsm_reader: Arc<TSM2Reader>,
+        tsm_reader: Arc<TsmReader>,
         chunk: Arc<Chunk>,
         column_group_id: ColumnGroupID,
     ) -> Self {
@@ -92,7 +92,7 @@ impl CompactingBlockMeta {
         Ok(*column_group.time_range())
     }
 
-    pub async fn get_data_block_filter_by_tomb(&self) -> Result<DataBlock2> {
+    pub async fn get_data_block_filter_by_tomb(&self) -> Result<DataBlock> {
         let sid = self.meta.series_id();
         let mut data_block = self
             .reader
@@ -111,7 +111,7 @@ impl CompactingBlockMeta {
             .await
     }
 
-    pub fn tsm_meta(&self) -> Arc<TSM2MetaData> {
+    pub fn tsm_meta(&self) -> Arc<TsmMetaData> {
         self.reader.tsm_meta_data()
     }
 
@@ -258,7 +258,7 @@ impl CompactingBlockMetaGroup {
 
     fn chunk_merged_block(
         &self,
-        data_block: DataBlock2,
+        data_block: DataBlock,
         max_block_size: usize,
     ) -> Result<Vec<CompactingBlock>> {
         let mut merged_blks = Vec::new();
@@ -331,7 +331,7 @@ pub enum CompactingBlock {
         priority: usize,
         series_id: SeriesId,
         series_key: SeriesKey,
-        data_block: DataBlock2,
+        data_block: DataBlock,
     },
     Encoded {
         priority: usize,
@@ -355,7 +355,7 @@ impl CompactingBlock {
         priority: usize,
         series_id: SeriesId,
         series_key: SeriesKey,
-        data_block: DataBlock2,
+        data_block: DataBlock,
     ) -> CompactingBlock {
         Self::Decoded {
             priority,
@@ -399,7 +399,7 @@ impl CompactingBlock {
         }
     }
 
-    pub fn decode(self) -> Result<DataBlock2> {
+    pub fn decode(self) -> Result<DataBlock> {
         match self {
             CompactingBlock::Decoded { data_block, .. } => Ok(data_block),
             CompactingBlock::Encoded {
@@ -448,13 +448,13 @@ impl CompactingBlock {
 
 struct CompactingFile {
     i: usize,
-    tsm_reader: Arc<TSM2Reader>,
+    tsm_reader: Arc<TsmReader>,
     series_idx: usize,
     series_ids: Vec<SeriesId>,
 }
 
 impl CompactingFile {
-    fn new(i: usize, tsm_reader: Arc<TSM2Reader>) -> Self {
+    fn new(i: usize, tsm_reader: Arc<TsmReader>) -> Self {
         let mut series_ids = {
             let chunks = tsm_reader.chunk_group();
             chunks
@@ -514,7 +514,7 @@ impl PartialOrd for CompactingFile {
 }
 
 pub(crate) struct CompactIterator {
-    tsm_readers: Vec<Arc<TSM2Reader>>,
+    tsm_readers: Vec<Arc<TsmReader>>,
     compacting_files: BinaryHeap<Pin<Box<CompactingFile>>>,
     /// Maximum values in generated CompactingBlock
     max_data_block_size: usize,
@@ -529,7 +529,7 @@ pub(crate) struct CompactIterator {
     /// Index to mark `Peekable<BlockMetaIterator>` in witch `TsmReader`,
     /// tmp_tsm_blks[i] is in self.tsm_readers[ tmp_tsm_blk_tsm_reader_idx[i] ]
     tmp_tsm_blk_tsm_reader_idx: Vec<usize>,
-    /// When a TSM file at index i is ended, finished_idxes[i] is set to true.
+    /// When a Tsm file at index i is ended, finished_idxes[i] is set to true.
     finished_readers: Vec<bool>,
     /// How many finished_idxes is set to true.
     finished_reader_cnt: usize,
@@ -558,7 +558,7 @@ impl Default for CompactIterator {
 
 impl CompactIterator {
     pub(crate) fn new(
-        tsm_readers: Vec<Arc<TSM2Reader>>,
+        tsm_readers: Vec<Arc<TsmReader>>,
         max_data_block_size: usize,
         decode_non_overlap_blocks: bool,
     ) -> Self {
@@ -776,10 +776,7 @@ pub async fn run_compaction_job(
     let tsf_id = request.ts_family_id;
     let mut tsm_readers = Vec::new();
     for col_file in request.files.iter() {
-        let tsm_reader = request
-            .version
-            .get_tsm_reader2(col_file.file_path())
-            .await?;
+        let tsm_reader = request.version.get_tsm_reader(col_file.file_path()).await?;
         tsm_readers.push(tsm_reader);
     }
 
@@ -788,7 +785,7 @@ pub async fn run_compaction_job(
     let tsm_dir = request.storage_opt.tsm_dir(&request.database, tsf_id);
     let max_file_size = request.storage_opt.level_max_file_size(request.out_level);
     let mut tsm_writer =
-        Tsm2Writer::open(&tsm_dir, kernel.file_id_next(), max_file_size, false).await?;
+        TsmWriter::open(&tsm_dir, kernel.file_id_next(), max_file_size, false).await?;
     // let mut tsm_writer = tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0).await?;
     info!(
         "Compaction: File: {} been created (level: {}).",
@@ -815,7 +812,7 @@ pub async fn run_compaction_job(
                 .await?
                 {
                     tsm_writer =
-                        Tsm2Writer::open(&tsm_dir, kernel.file_id_next(), max_file_size, false)
+                        TsmWriter::open(&tsm_dir, kernel.file_id_next(), max_file_size, false)
                             .await?;
                 }
             }
@@ -849,7 +846,7 @@ pub async fn run_compaction_job(
             .await?
             {
                 tsm_writer =
-                    Tsm2Writer::open(&tsm_dir, kernel.file_id_next(), max_file_size, false).await?;
+                    TsmWriter::open(&tsm_dir, kernel.file_id_next(), max_file_size, false).await?;
             }
         }
     }
@@ -887,7 +884,7 @@ pub async fn run_compaction_job(
 }
 
 async fn handle_finish_write_tsm_meta(
-    tsm_writer: &mut Tsm2Writer,
+    tsm_writer: &mut TsmWriter,
     file_metas: &mut HashMap<ColumnFileId, Arc<BloomFilter>>,
     version_edit: &mut VersionEdit,
     request: &CompactReq,
@@ -915,7 +912,7 @@ async fn handle_finish_write_tsm_meta(
 }
 
 fn new_compact_meta(
-    tsm_writer: &Tsm2Writer,
+    tsm_writer: &TsmWriter,
     tsf_id: TseriesFamilyId,
     level: LevelId,
 ) -> CompactMeta {
@@ -954,13 +951,13 @@ pub mod test {
     use crate::kv_option::Options;
     use crate::summary::VersionEdit;
     use crate::tseries_family::{ColumnFile, LevelInfo, Version};
+    use crate::tsm::reader::TsmReader;
+    use crate::tsm::writer::{Column, DataBlock, TsmWriter};
     use crate::tsm::TsmTombstone;
-    use crate::tsm2::reader::TSM2Reader;
-    use crate::tsm2::writer::{Column, DataBlock2, Tsm2Writer};
 
     pub(crate) async fn write_data_blocks_to_column_file(
         dir: impl AsRef<Path>,
-        data: Vec<HashMap<SeriesId, DataBlock2>>,
+        data: Vec<HashMap<SeriesId, DataBlock>>,
     ) -> (u64, Vec<Arc<ColumnFile>>) {
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
@@ -969,7 +966,7 @@ pub mod test {
         let mut file_seq = 0;
         for (i, d) in data.iter().enumerate() {
             file_seq = i as u64 + 1;
-            let mut writer = Tsm2Writer::open(&dir, file_seq, 0, false).await.unwrap();
+            let mut writer = TsmWriter::open(&dir, file_seq, 0, false).await.unwrap();
             for (sid, data_blks) in d.iter() {
                 writer
                     .write_datablock(*sid, SeriesKey::default(), data_blks.clone())
@@ -993,8 +990,8 @@ pub mod test {
 
     async fn read_data_blocks_from_column_file(
         path: impl AsRef<Path>,
-    ) -> HashMap<SeriesId, Vec<DataBlock2>> {
-        let tsm_reader = TSM2Reader::open(&path).await.unwrap();
+    ) -> HashMap<SeriesId, Vec<DataBlock>> {
+        let tsm_reader = TsmReader::open(&path).await.unwrap();
         let mut data = HashMap::new();
         for (sid, chunk) in tsm_reader.chunk() {
             let mut blks = vec![];
@@ -1077,7 +1074,7 @@ pub mod test {
     async fn check_column_file(
         dir: impl AsRef<Path>,
         version_edit: VersionEdit,
-        expected_data: HashMap<SeriesId, Vec<DataBlock2>>,
+        expected_data: HashMap<SeriesId, Vec<DataBlock>>,
     ) {
         let path = get_result_file_path(dir, version_edit);
         let mut data = read_data_blocks_from_column_file(path).await;
@@ -1173,7 +1170,7 @@ pub mod test {
             ],
         );
         let schema = Arc::new(schema);
-        let data1 = DataBlock2::new(
+        let data1 = DataBlock::new(
             schema.clone(),
             ts_column(vec![1, 2, 3]),
             schema.time_column(),
@@ -1189,7 +1186,7 @@ pub mod test {
             ],
         );
 
-        let data2 = DataBlock2::new(
+        let data2 = DataBlock::new(
             schema.clone(),
             ts_column(vec![4, 5, 6]),
             schema.time_column(),
@@ -1205,7 +1202,7 @@ pub mod test {
             ],
         );
 
-        let data3 = DataBlock2::new(
+        let data3 = DataBlock::new(
             schema.clone(),
             ts_column(vec![7, 8, 9]),
             schema.time_column(),
@@ -1221,7 +1218,7 @@ pub mod test {
             ],
         );
 
-        let expected_data = DataBlock2::new(
+        let expected_data = DataBlock::new(
             schema.clone(),
             ts_column(vec![1, 2, 3, 4, 5, 6, 7, 8, 9]),
             schema.time_column(),
@@ -1294,7 +1291,7 @@ pub mod test {
             ],
         );
         let schema = Arc::new(schema);
-        let data1 = DataBlock2::new(
+        let data1 = DataBlock::new(
             schema.clone(),
             ts_column(vec![4, 5, 6]),
             schema.time_column(),
@@ -1310,7 +1307,7 @@ pub mod test {
             ],
         );
 
-        let data2 = DataBlock2::new(
+        let data2 = DataBlock::new(
             schema.clone(),
             ts_column(vec![1, 2, 3]),
             schema.time_column(),
@@ -1326,7 +1323,7 @@ pub mod test {
             ],
         );
 
-        let data3 = DataBlock2::new(
+        let data3 = DataBlock::new(
             schema.clone(),
             ts_column(vec![7, 8, 9]),
             schema.time_column(),
@@ -1342,7 +1339,7 @@ pub mod test {
             ],
         );
 
-        let expected_data = DataBlock2::new(
+        let expected_data = DataBlock::new(
             schema.clone(),
             ts_column(vec![1, 2, 3, 4, 5, 6, 7, 8, 9]),
             schema.time_column(),
@@ -1421,7 +1418,7 @@ pub mod test {
             ],
         );
         let schema = Arc::new(schema);
-        let data1 = DataBlock2::new(
+        let data1 = DataBlock::new(
             schema.clone(),
             ts_column(vec![1, 2, 3, 4]),
             schema.time_column(),
@@ -1437,7 +1434,7 @@ pub mod test {
             ],
         );
 
-        let data2 = DataBlock2::new(
+        let data2 = DataBlock::new(
             schema.clone(),
             ts_column(vec![4, 5, 6, 7]),
             schema.time_column(),
@@ -1453,7 +1450,7 @@ pub mod test {
             ],
         );
 
-        let data3 = DataBlock2::new(
+        let data3 = DataBlock::new(
             schema.clone(),
             ts_column(vec![7, 8, 9]),
             schema.time_column(),
@@ -1469,7 +1466,7 @@ pub mod test {
             ],
         );
 
-        let expected_data = DataBlock2::new(
+        let expected_data = DataBlock::new(
             schema.clone(),
             ts_column(vec![1, 2, 3, 4, 5, 6, 7, 8, 9]),
             schema.time_column(),
@@ -1639,7 +1636,7 @@ pub mod test {
             (
                 1_u64,
                 vec![
-                    DataBlock2::new(
+                    DataBlock::new(
                         schema1.clone(),
                         generate_column_ts(1, 1000),
                         schema1.time_column(),
@@ -1650,7 +1647,7 @@ pub mod test {
                         ],
                         schema1.fields(),
                     ),
-                    DataBlock2::new(
+                    DataBlock::new(
                         schema1.clone(),
                         generate_column_ts(1001, 2000),
                         schema1.time_column(),
@@ -1661,7 +1658,7 @@ pub mod test {
                         ],
                         schema1.fields(),
                     ),
-                    DataBlock2::new(
+                    DataBlock::new(
                         schema1.clone(),
                         generate_column_ts(2001, 2500),
                         schema1.time_column(),
@@ -1677,7 +1674,7 @@ pub mod test {
             (
                 2,
                 vec![
-                    DataBlock2::new(
+                    DataBlock::new(
                         schema2.clone(),
                         generate_column_ts(1, 1000),
                         schema2.time_column(),
@@ -1689,7 +1686,7 @@ pub mod test {
                         ],
                         schema2.fields(),
                     ),
-                    DataBlock2::new(
+                    DataBlock::new(
                         schema2.clone(),
                         generate_column_ts(1001, 2000),
                         schema2.time_column(),
@@ -1701,7 +1698,7 @@ pub mod test {
                         ],
                         schema2.fields(),
                     ),
-                    DataBlock2::new(
+                    DataBlock::new(
                         schema2.clone(),
                         generate_column_ts(2001, 3000),
                         schema2.time_column(),
@@ -1713,7 +1710,7 @@ pub mod test {
                         ],
                         schema2.fields(),
                     ),
-                    DataBlock2::new(
+                    DataBlock::new(
                         schema2.clone(),
                         generate_column_ts(3001, 4000),
                         schema2.time_column(),
@@ -1725,7 +1722,7 @@ pub mod test {
                         ],
                         schema2.fields(),
                     ),
-                    DataBlock2::new(
+                    DataBlock::new(
                         schema2.clone(),
                         generate_column_ts(4001, 4500),
                         schema2.time_column(),
@@ -1742,7 +1739,7 @@ pub mod test {
             (
                 3,
                 vec![
-                    DataBlock2::new(
+                    DataBlock::new(
                         schema2.clone(),
                         generate_column_ts(1001, 2000),
                         schema2.time_column(),
@@ -1754,7 +1751,7 @@ pub mod test {
                         ],
                         schema2.fields(),
                     ),
-                    DataBlock2::new(
+                    DataBlock::new(
                         schema2.clone(),
                         generate_column_ts(2001, 3000),
                         schema2.time_column(),
@@ -1766,7 +1763,7 @@ pub mod test {
                         ],
                         schema2.fields(),
                     ),
-                    DataBlock2::new(
+                    DataBlock::new(
                         schema2.clone(),
                         generate_column_ts(3001, 4000),
                         schema2.time_column(),
@@ -1778,7 +1775,7 @@ pub mod test {
                         ],
                         schema2.fields(),
                     ),
-                    DataBlock2::new(
+                    DataBlock::new(
                         schema2.clone(),
                         generate_column_ts(4001, 5000),
                         schema2.time_column(),
@@ -1790,7 +1787,7 @@ pub mod test {
                         ],
                         schema2.fields(),
                     ),
-                    DataBlock2::new(
+                    DataBlock::new(
                         schema2.clone(),
                         generate_column_ts(5001, 6000),
                         schema2.time_column(),
@@ -1802,7 +1799,7 @@ pub mod test {
                         ],
                         schema2.fields(),
                     ),
-                    DataBlock2::new(
+                    DataBlock::new(
                         schema2.clone(),
                         generate_column_ts(6001, 6500),
                         schema2.time_column(),
@@ -1817,8 +1814,8 @@ pub mod test {
                 ],
             ),
         ];
-        let expected_data: Vec<DataBlock2> = vec![
-            DataBlock2::new(
+        let expected_data: Vec<DataBlock> = vec![
+            DataBlock::new(
                 schema2.clone(),
                 generate_column_ts(1, 1000),
                 schema2.time_column(),
@@ -1830,7 +1827,7 @@ pub mod test {
                 ],
                 schema2.fields(),
             ),
-            DataBlock2::new(
+            DataBlock::new(
                 schema2.clone(),
                 generate_column_ts(1001, 2000),
                 schema2.time_column(),
@@ -1842,7 +1839,7 @@ pub mod test {
                 ],
                 schema2.fields(),
             ),
-            DataBlock2::new(
+            DataBlock::new(
                 schema2.clone(),
                 generate_column_ts(2001, 3000),
                 schema2.time_column(),
@@ -1854,7 +1851,7 @@ pub mod test {
                 ],
                 schema2.fields(),
             ),
-            DataBlock2::new(
+            DataBlock::new(
                 schema2.clone(),
                 generate_column_ts(3001, 4000),
                 schema2.time_column(),
@@ -1866,7 +1863,7 @@ pub mod test {
                 ],
                 schema2.fields(),
             ),
-            DataBlock2::new(
+            DataBlock::new(
                 schema2.clone(),
                 generate_column_ts(4001, 5000),
                 schema2.time_column(),
@@ -1878,7 +1875,7 @@ pub mod test {
                 ],
                 schema2.fields(),
             ),
-            DataBlock2::new(
+            DataBlock::new(
                 schema2.clone(),
                 generate_column_ts(5001, 6000),
                 schema2.time_column(),
@@ -1890,7 +1887,7 @@ pub mod test {
                 ],
                 schema2.fields(),
             ),
-            DataBlock2::new(
+            DataBlock::new(
                 schema2.clone(),
                 generate_column_ts(6001, 6500),
                 schema2.time_column(),
@@ -1915,9 +1912,7 @@ pub mod test {
 
         let mut column_files = Vec::new();
         for (tsm_sequence, args) in data_desc.into_iter() {
-            let mut tsm_writer = Tsm2Writer::open(&dir, tsm_sequence, 0, false)
-                .await
-                .unwrap();
+            let mut tsm_writer = TsmWriter::open(&dir, tsm_sequence, 0, false).await.unwrap();
             for arg in args.into_iter() {
                 tsm_writer
                     .write_datablock(1, SeriesKey::default(), arg)
@@ -1997,7 +1992,7 @@ pub mod test {
             (
                 1_u64,
                 vec![
-                    DataBlock2::new(
+                    DataBlock::new(
                         schema1.clone(),
                         generate_column_ts(1, 1000),
                         schema1.time_column(),
@@ -2008,7 +2003,7 @@ pub mod test {
                         ],
                         schema1.fields(),
                     ),
-                    DataBlock2::new(
+                    DataBlock::new(
                         schema1.clone(),
                         generate_column_ts(1001, 2000),
                         schema1.time_column(),
@@ -2019,7 +2014,7 @@ pub mod test {
                         ],
                         schema1.fields(),
                     ),
-                    DataBlock2::new(
+                    DataBlock::new(
                         schema1.clone(),
                         generate_column_ts(2001, 2500),
                         schema1.time_column(),
@@ -2035,7 +2030,7 @@ pub mod test {
             (
                 2,
                 vec![
-                    DataBlock2::new(
+                    DataBlock::new(
                         schema2.clone(),
                         generate_column_ts(1, 1000),
                         schema2.time_column(),
@@ -2047,7 +2042,7 @@ pub mod test {
                         ],
                         schema2.fields(),
                     ),
-                    DataBlock2::new(
+                    DataBlock::new(
                         schema2.clone(),
                         generate_column_ts(1001, 2000),
                         schema2.time_column(),
@@ -2059,7 +2054,7 @@ pub mod test {
                         ],
                         schema2.fields(),
                     ),
-                    DataBlock2::new(
+                    DataBlock::new(
                         schema2.clone(),
                         generate_column_ts(2001, 3000),
                         schema2.time_column(),
@@ -2071,7 +2066,7 @@ pub mod test {
                         ],
                         schema2.fields(),
                     ),
-                    DataBlock2::new(
+                    DataBlock::new(
                         schema2.clone(),
                         generate_column_ts(3001, 4000),
                         schema2.time_column(),
@@ -2083,7 +2078,7 @@ pub mod test {
                         ],
                         schema2.fields(),
                     ),
-                    DataBlock2::new(
+                    DataBlock::new(
                         schema2.clone(),
                         generate_column_ts(4001, 4500),
                         schema2.time_column(),
@@ -2100,7 +2095,7 @@ pub mod test {
             (
                 3,
                 vec![
-                    DataBlock2::new(
+                    DataBlock::new(
                         schema2.clone(),
                         generate_column_ts(1001, 2000),
                         schema2.time_column(),
@@ -2112,7 +2107,7 @@ pub mod test {
                         ],
                         schema2.fields(),
                     ),
-                    DataBlock2::new(
+                    DataBlock::new(
                         schema2.clone(),
                         generate_column_ts(2001, 3000),
                         schema2.time_column(),
@@ -2124,7 +2119,7 @@ pub mod test {
                         ],
                         schema2.fields(),
                     ),
-                    DataBlock2::new(
+                    DataBlock::new(
                         schema2.clone(),
                         generate_column_ts(3001, 4000),
                         schema2.time_column(),
@@ -2136,7 +2131,7 @@ pub mod test {
                         ],
                         schema2.fields(),
                     ),
-                    DataBlock2::new(
+                    DataBlock::new(
                         schema2.clone(),
                         generate_column_ts(4001, 5000),
                         schema2.time_column(),
@@ -2148,7 +2143,7 @@ pub mod test {
                         ],
                         schema2.fields(),
                     ),
-                    DataBlock2::new(
+                    DataBlock::new(
                         schema2.clone(),
                         generate_column_ts(5001, 6000),
                         schema2.time_column(),
@@ -2160,7 +2155,7 @@ pub mod test {
                         ],
                         schema2.fields(),
                     ),
-                    DataBlock2::new(
+                    DataBlock::new(
                         schema2.clone(),
                         generate_column_ts(6001, 6500),
                         schema2.time_column(),
@@ -2175,8 +2170,8 @@ pub mod test {
                 ],
             ),
         ];
-        let expected_data: Vec<DataBlock2> = vec![
-            DataBlock2::new(
+        let expected_data: Vec<DataBlock> = vec![
+            DataBlock::new(
                 schema2.clone(),
                 generate_column_ts(1, 1000),
                 schema2.time_column(),
@@ -2188,7 +2183,7 @@ pub mod test {
                 ],
                 schema2.fields(),
             ),
-            DataBlock2::new(
+            DataBlock::new(
                 schema2.clone(),
                 generate_column_ts(1001, 2000),
                 schema2.time_column(),
@@ -2200,7 +2195,7 @@ pub mod test {
                 ],
                 schema2.fields(),
             ),
-            DataBlock2::new(
+            DataBlock::new(
                 schema2.clone(),
                 generate_column_ts(2001, 3000),
                 schema2.time_column(),
@@ -2212,7 +2207,7 @@ pub mod test {
                 ],
                 schema2.fields(),
             ),
-            DataBlock2::new(
+            DataBlock::new(
                 schema2.clone(),
                 generate_column_ts(3001, 4000),
                 schema2.time_column(),
@@ -2224,7 +2219,7 @@ pub mod test {
                 ],
                 schema2.fields(),
             ),
-            DataBlock2::new(
+            DataBlock::new(
                 schema2.clone(),
                 generate_column_ts(4001, 5000),
                 schema2.time_column(),
@@ -2236,7 +2231,7 @@ pub mod test {
                 ],
                 schema2.fields(),
             ),
-            DataBlock2::new(
+            DataBlock::new(
                 schema2.clone(),
                 generate_column_ts(5001, 6000),
                 schema2.time_column(),
@@ -2248,7 +2243,7 @@ pub mod test {
                 ],
                 schema2.fields(),
             ),
-            DataBlock2::new(
+            DataBlock::new(
                 schema2.clone(),
                 generate_column_ts(6001, 6500),
                 schema2.time_column(),
@@ -2273,9 +2268,7 @@ pub mod test {
 
         let mut column_files = Vec::new();
         for (tsm_sequence, args) in data_desc.into_iter() {
-            let mut tsm_writer = Tsm2Writer::open(&dir, tsm_sequence, 0, false)
-                .await
-                .unwrap();
+            let mut tsm_writer = TsmWriter::open(&dir, tsm_sequence, 0, false).await.unwrap();
             for arg in args.into_iter() {
                 tsm_writer
                     .write_datablock(1, SeriesKey::default(), arg)

@@ -16,7 +16,7 @@ use crate::error::Result;
 use crate::memcache::MemCache;
 use crate::summary::{CompactMetaBuilder, SummaryTask, VersionEdit};
 use crate::tseries_family::Version;
-use crate::tsm2::writer::Tsm2Writer;
+use crate::tsm::writer::TsmWriter;
 use crate::{ColumnFileId, Error, TsKvContext, TseriesFamilyId};
 
 pub struct FlushTask {
@@ -50,7 +50,7 @@ impl FlushTask {
         }
     }
 
-    pub async fn tsm2_run(
+    pub async fn run(
         self,
         version: Arc<Version>,
     ) -> Result<(VersionEdit, HashMap<u64, Arc<BloomFilter>>)> {
@@ -62,13 +62,13 @@ impl FlushTask {
             let (group, delta_group) = memcache.read().to_chunk_group(version.clone())?;
             if tsm_writer.is_none() && !group.is_empty() {
                 tsm_writer = Some(
-                    Tsm2Writer::open(&self.path_tsm, self.global_context.file_id_next(), 0, false)
+                    TsmWriter::open(&self.path_tsm, self.global_context.file_id_next(), 0, false)
                         .await?,
                 );
             }
             if delta_writer.is_none() && !delta_group.is_empty() {
                 delta_writer = Some(
-                    Tsm2Writer::open(
+                    TsmWriter::open(
                         &self.path_delta,
                         self.global_context.file_id_next(),
                         0,
@@ -174,7 +174,7 @@ pub async fn run_flush_memtable_job(
         path_delta,
     );
 
-    if let Ok((ve, fm)) = flush_task.tsm2_run(version.clone()).await {
+    if let Ok((ve, fm)) = flush_task.run(version.clone()).await {
         let _ = version_edit.insert(ve);
         file_metas = fm;
     }

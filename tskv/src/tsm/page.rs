@@ -17,8 +17,8 @@ use crate::error::Result;
 use crate::tsm::codec::{
     get_bool_codec, get_encoding, get_f64_codec, get_i64_codec, get_str_codec, get_u64_codec,
 };
-use crate::tsm2::writer::Column;
-use crate::tsm2::ColumnGroupID;
+use crate::tsm::writer::Column;
+use crate::tsm::ColumnGroupID;
 use crate::Error;
 
 #[derive(Debug)]
@@ -695,8 +695,8 @@ mod test {
     use models::predicate::domain::TimeRange;
     use utils::BloomFilter;
 
-    use crate::tsm2::page::{Footer, SeriesMeta, TableMeta};
-    use crate::tsm2::BLOOM_FILTER_BITS;
+    use crate::tsm::page::{Footer, SeriesMeta, TableMeta};
+    use crate::tsm::BLOOM_FILTER_BITS;
 
     #[test]
     fn test1() {

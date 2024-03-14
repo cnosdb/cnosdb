@@ -23,12 +23,11 @@ use crate::file_utils::{make_delta_file, make_tsm_file};
 use crate::tsm::codec::{
     get_bool_codec, get_f64_codec, get_i64_codec, get_str_codec, get_u64_codec,
 };
-use crate::tsm::TsmTombstone;
-use crate::tsm2::page::{
+use crate::tsm::page::{
     Chunk, ChunkGroup, ChunkGroupMeta, ChunkGroupWriteSpec, ChunkStatics, ChunkWriteSpec,
     ColumnGroup, Footer, Page, PageMeta, PageStatistics, PageWriteSpec, SeriesMeta, TableMeta,
 };
-use crate::tsm2::{TsmWriteData, BLOOM_FILTER_BITS};
+use crate::tsm::{TsmTombstone, TsmWriteData, BLOOM_FILTER_BITS};
 use crate::{Error, Result};
 
 // #[derive(Debug, Clone)]
@@ -445,7 +444,7 @@ impl ColumnData {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct DataBlock2 {
+pub struct DataBlock {
     schema: TskvTableSchemaRef,
     ts: Column,
     ts_desc: TableColumn,
@@ -459,7 +458,7 @@ enum Merge {
     Equal(usize, usize),
 }
 
-impl DataBlock2 {
+impl DataBlock {
     const BLOCK_SIZE: usize = 1000;
 
     pub fn new(
@@ -469,7 +468,7 @@ impl DataBlock2 {
         cols: Vec<Column>,
         cols_desc: Vec<TableColumn>,
     ) -> Self {
-        DataBlock2 {
+        DataBlock {
             schema,
             ts,
             ts_desc,
@@ -491,7 +490,7 @@ impl DataBlock2 {
         Ok(pages)
     }
 
-    pub fn merge(&mut self, other: DataBlock2) -> Result<DataBlock2> {
+    pub fn merge(&mut self, other: DataBlock) -> Result<DataBlock> {
         self.schema_check(&other)?;
 
         let schema = if self.schema.schema_id > other.schema.schema_id {
@@ -552,7 +551,7 @@ impl DataBlock2 {
         time_array
             .iter()
             .for_each(|it| ts_col.push(Some(FieldVal::Integer(*it))));
-        let datablock = DataBlock2::new(schema, ts_col, self.ts_desc.clone(), columns, columns_des);
+        let datablock = DataBlock::new(schema, ts_col, self.ts_desc.clone(), columns, columns_des);
 
         // todo: split datablock to blocks
         // let mut blocks = Vec::with_capacity(time_array.len() / Self::BLOCK_SIZE + 1);
@@ -561,7 +560,7 @@ impl DataBlock2 {
         Ok(datablock)
     }
 
-    fn sort_index_and_time_col(&self, other: &DataBlock2) -> Result<(Vec<Merge>, Vec<i64>)> {
+    fn sort_index_and_time_col(&self, other: &DataBlock) -> Result<(Vec<Merge>, Vec<i64>)> {
         let mut sort_index = Vec::with_capacity(self.len() + other.len());
         let mut time_array = Vec::new();
         let (mut index_self, mut index_other) = (0_usize, 0_usize);
@@ -628,7 +627,7 @@ impl DataBlock2 {
         self.ts.data.is_empty()
     }
 
-    pub fn schema_check(&self, other: &DataBlock2) -> Result<()> {
+    pub fn schema_check(&self, other: &DataBlock) -> Result<()> {
         if self.schema.name != other.schema.name
             || self.schema.db != other.schema.db
             || self.schema.tenant != other.schema.tenant
@@ -657,7 +656,7 @@ impl DataBlock2 {
         None
     }
 
-    pub fn chunk(&self, start: usize, end: usize) -> Result<DataBlock2> {
+    pub fn chunk(&self, start: usize, end: usize) -> Result<DataBlock> {
         if start > end || end > self.len() {
             return Err(Error::CommonError {
                 reason: "start or end index out of range".to_string(),
@@ -670,7 +669,7 @@ impl DataBlock2 {
             .iter()
             .map(|column| column.chunk(start, end))
             .collect::<Result<Vec<_>>>()?;
-        let datablock = DataBlock2::new(
+        let datablock = DataBlock::new(
             self.schema.clone(),
             ts_column,
             self.ts_desc.clone(),
@@ -758,7 +757,7 @@ const HEADER_LEN: u64 = 5;
 const TSM_MAGIC: [u8; 4] = 0x12CDA16_u32.to_be_bytes();
 const VERSION: [u8; 1] = [1];
 
-pub struct Tsm2Writer {
+pub struct TsmWriter {
     file_id: u64,
     min_ts: i64,
     max_ts: i64,
@@ -784,7 +783,7 @@ pub struct Tsm2Writer {
 }
 
 //MutableRecordBatch
-impl Tsm2Writer {
+impl TsmWriter {
     pub async fn open(
         path_buf: &impl AsRef<Path>,
         file_id: u64,
@@ -972,11 +971,11 @@ impl Tsm2Writer {
         &mut self,
         series_id: SeriesId,
         series_key: SeriesKey,
-        datablock: DataBlock2,
+        datablock: DataBlock,
     ) -> Result<()> {
         if self.state == State::Finished {
             return Err(Error::CommonError {
-                reason: "Tsm2Writer has been finished".to_string(),
+                reason: "TsmWriter has been finished".to_string(),
             });
         }
 
@@ -1140,8 +1139,8 @@ mod test {
     use models::schema::{ColumnType, TableColumn, TskvTableSchema};
     use models::{SeriesKey, ValueType};
 
-    use crate::tsm2::reader::TSM2Reader;
-    use crate::tsm2::writer::{Column, DataBlock2, Tsm2Writer};
+    use crate::tsm::reader::TsmReader;
+    use crate::tsm::writer::{Column, DataBlock, TsmWriter};
 
     fn i64_column(data: Vec<i64>) -> Column {
         let mut col = Column::empty(ColumnType::Field(ValueType::Integer)).unwrap();
@@ -1193,7 +1192,7 @@ mod test {
             ],
         );
         let schema = Arc::new(schema);
-        let data1 = DataBlock2::new(
+        let data1 = DataBlock::new(
             schema.clone(),
             ts_column(vec![1, 2, 3]),
             schema.time_column(),
@@ -1209,8 +1208,8 @@ mod test {
             ],
         );
 
-        let path = "/tmp/test/tsm2";
-        let mut tsm_writer = Tsm2Writer::open(&PathBuf::from(path), 1, 0, false)
+        let path = "/tmp/test/tsm";
+        let mut tsm_writer = TsmWriter::open(&PathBuf::from(path), 1, 0, false)
             .await
             .unwrap();
         tsm_writer
@@ -1218,7 +1217,7 @@ mod test {
             .await
             .unwrap();
         tsm_writer.finish().await.unwrap();
-        let tsm_reader = TSM2Reader::open(tsm_writer.path).await.unwrap();
+        let tsm_reader = TsmReader::open(tsm_writer.path).await.unwrap();
         let data2 = tsm_reader.read_datablock(1, 0).await.unwrap();
         assert_eq!(data1, data2);
         let time_range = data2.time_range().unwrap();

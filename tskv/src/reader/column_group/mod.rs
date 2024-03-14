@@ -19,8 +19,8 @@ use super::{
     BatchReader, BatchReaderRef, SchemableTskvRecordBatchStream,
     SendableSchemableTskvRecordBatchStream,
 };
-use crate::tsm2::page::{ColumnGroup, PageWriteSpec};
-use crate::tsm2::reader::TSM2Reader;
+use crate::tsm::page::{ColumnGroup, PageWriteSpec};
+use crate::tsm::reader::TsmReader;
 use crate::Result;
 
 pub struct ColumnGroupReader {
@@ -31,7 +31,7 @@ pub struct ColumnGroupReader {
 }
 impl ColumnGroupReader {
     pub fn try_new(
-        reader: Arc<TSM2Reader>,
+        reader: Arc<TsmReader>,
         series_id: SeriesId,
         column_group: Arc<ColumnGroup>,
         projection: &[ColumnId],
@@ -259,7 +259,7 @@ fn convert_data_type_if_necessary(array: ArrayRef, target_type: &DataType) -> Re
 }
 
 pub struct ReaderBuilder {
-    reader: Arc<TSM2Reader>,
+    reader: Arc<TsmReader>,
     series_id: SeriesId,
     time_page_meta: Arc<PageWriteSpec>,
     time_range: TimeRange,
@@ -268,7 +268,7 @@ pub struct ReaderBuilder {
 
 impl ReaderBuilder {
     pub fn new(
-        reader: Arc<TSM2Reader>,
+        reader: Arc<TsmReader>,
         series_id: SeriesId,
         time_page_meta: Arc<PageWriteSpec>,
         time_range: TimeRange,
@@ -309,7 +309,7 @@ mod tests {
     use crate::reader::page::tests::TestPageReader;
     use crate::reader::page::PageReaderRef;
     use crate::reader::BatchReader;
-    use crate::tsm2::page::ColumnGroup;
+    use crate::tsm::page::ColumnGroup;
 
     #[tokio::test]
     async fn test_column_group_reader() {

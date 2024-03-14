@@ -21,8 +21,8 @@ use parking_lot::RwLock;
 
 use self::utils::{CombinedRecordBatchStream, TimeRangeProvider};
 use crate::memcache::SeriesData;
-use crate::tsm2::page::Chunk;
-use crate::tsm2::reader::TSM2Reader;
+use crate::tsm::page::Chunk;
+use crate::tsm::reader::TsmReader;
 use crate::{Error, Result};
 
 mod batch_builder;
@@ -31,7 +31,6 @@ mod column_group;
 pub mod display;
 pub mod filter;
 mod function_register;
-mod iterator_v2;
 
 mod iterator;
 mod memcache_reader;
@@ -277,7 +276,7 @@ impl Stream for SchemableMemoryBatchReaderStream {
 
 #[derive(Clone)]
 pub enum DataReference {
-    Chunk(Arc<Chunk>, Arc<TSM2Reader>),
+    Chunk(Arc<Chunk>, Arc<TsmReader>),
     Memcache(Arc<RwLock<SeriesData>>, Arc<TimeRanges>),
 }
 

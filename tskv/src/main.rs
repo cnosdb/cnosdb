@@ -80,7 +80,7 @@ async fn main() {
 
     if show_tsm {
         if let Some(p) = tsm_path {
-            println!("TSM Path: {}, ShowTombstone: {}", p, show_tombstone);
+            println!("Tsm Path: {}, ShowTombstone: {}", p, show_tombstone);
             // tskv::print_tsm_statistics(p, show_tombstone).await;
         }
     }

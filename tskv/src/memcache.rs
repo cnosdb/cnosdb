@@ -24,8 +24,8 @@ use utils::bitset::ImmutBitSet;
 use crate::database::FbSchema;
 use crate::error::Result;
 use crate::tseries_family::Version;
-use crate::tsm2::writer::{Column as ColumnData, DataBlock2};
-use crate::tsm2::TsmWriteData;
+use crate::tsm::writer::{Column as ColumnData, DataBlock};
+use crate::tsm::TsmWriteData;
 use crate::{Error, TseriesFamilyId};
 
 // use skiplist::ordered_skiplist::OrderedSkipList;
@@ -513,7 +513,7 @@ impl SeriesData {
     pub fn build_data_block(
         &self,
         version: Arc<Version>,
-    ) -> Result<Option<(String, DataBlock2, DataBlock2)>> {
+    ) -> Result<Option<(String, DataBlock, DataBlock)>> {
         if let Some(schema) = self.get_schema() {
             let field_ids = schema.fields_id();
 
@@ -573,14 +573,14 @@ impl SeriesData {
             }
             return Ok(Some((
                 schema.name.clone(),
-                DataBlock2::new(
+                DataBlock::new(
                     schema.clone(),
                     time_array,
                     schema.time_column(),
                     cols,
                     cols_desc.clone(),
                 ),
-                DataBlock2::new(
+                DataBlock::new(
                     schema.clone(),
                     delta_time_array,
                     schema.time_column(),

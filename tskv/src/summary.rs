@@ -24,7 +24,7 @@ use crate::kv_option::{Options, StorageOptions, DELTA_PATH, TSM_PATH};
 use crate::memcache::MemCache;
 use crate::record_file::{Reader, RecordDataType, RecordDataVersion, Writer};
 use crate::tseries_family::{ColumnFile, LevelInfo, TseriesFamily, Version};
-use crate::tsm2::reader::TSM2Reader;
+use crate::tsm::reader::TsmReader;
 use crate::version_set::VersionSet;
 use crate::{byte_utils, file_utils, ColumnFileId, LevelId, TseriesFamilyId};
 
@@ -485,7 +485,7 @@ impl Summary {
             for meta in files.into_values() {
                 let field_filter = if load_field_filter {
                     let tsm_path = meta.file_path(opt.storage.as_ref(), &database, tsf_id);
-                    let tsm_reader = TSM2Reader::open(tsm_path).await?;
+                    let tsm_reader = TsmReader::open(tsm_path).await?;
                     let bloom_filter = tsm_reader.footer().series.bloom_filter();
                     Arc::new(bloom_filter.clone())
                 } else {
@@ -991,7 +991,7 @@ mod test {
                 .await
                 .version()
                 .copy_apply_version_edits(vec![], &mut HashMap::new(), None);
-            let tsm_reader_cache = Arc::downgrade(version.tsm2_reader_cache());
+            let tsm_reader_cache = Arc::downgrade(version.tsm_reader_cache());
 
             let mut edit = VersionEdit::new(VNODE_ID);
             let meta = CompactMeta {

@@ -289,14 +289,14 @@ pub(crate) async fn vnode_checksum(_vnode: Arc<RwLock<TseriesFamily>>) -> Result
 //     let vnode_rlock = vnode.read().await;
 //     (vnode_rlock.version(), vnode_rlock.tf_id())
 // };
-// let mut readers: Vec<Arc<TSM2Reader>> = Vec::new();
+// let mut readers: Vec<Arc<TsmReader>> = Vec::new();
 // let tsm_paths: Vec<&PathBuf> = version
 //     .levels_info()
 //     .iter()
 //     .flat_map(|l| l.files.iter().map(|f| f.file_path()))
 //     .collect();
 // for p in tsm_paths {
-//     let r = version.get_tsm_reader2(p).await?;
+//     let r = version.get_tsm_reader(p).await?;
 //     readers.push(r);
 // }
 //

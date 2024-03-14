@@ -25,7 +25,7 @@ use crate::memcache::{OrderedRowsData, RowData, RowGroup};
 use crate::schema::schemas::DBschemas;
 use crate::summary::{SummaryTask, VersionEdit};
 use crate::tseries_family::{LevelInfo, TseriesFamily, TsfFactory, Version};
-use crate::tsm2::reader::TSM2Reader;
+use crate::tsm::reader::TsmReader;
 use crate::Error::{self};
 use crate::{TsKvContext, TseriesFamilyId};
 
@@ -171,7 +171,7 @@ impl Database {
                 .rename_file(&self.opt.storage, &self.owner, f.tsf_id, new_file_id)
                 .await?;
 
-            let file_reader = TSM2Reader::open(file_path).await?;
+            let file_reader = TsmReader::open(file_path).await?;
             let bloom_filter = Arc::new(file_reader.footer().series().bloom_filter().clone());
             file_metas.insert(new_file_id, bloom_filter.clone());
         }
