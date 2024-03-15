@@ -12,20 +12,19 @@ use crate::error::Result;
 use crate::file_system::file::async_file::AsyncFile;
 use crate::file_system::file::IFile;
 use crate::file_system::file_manager;
-use crate::tsm::TsmTombstone;
-use crate::tsm2::page::{Chunk, ChunkGroup, ChunkGroupMeta, Footer, Page, PageMeta, PageWriteSpec};
-use crate::tsm2::writer::{Column, DataBlock2};
-use crate::tsm2::{ColumnGroupID, FOOTER_SIZE};
+use crate::tsm::page::{Chunk, ChunkGroup, ChunkGroupMeta, Footer, Page, PageMeta, PageWriteSpec};
+use crate::tsm::writer::{Column, DataBlock};
+use crate::tsm::{ColumnGroupID, TsmTombstone, FOOTER_SIZE};
 use crate::{file_utils, Error};
 
-pub struct TSM2MetaData {
+pub struct TsmMetaData {
     footer: Arc<Footer>,
     chunk_group_meta: Arc<ChunkGroupMeta>,
     chunk_group: BTreeMap<String, Arc<ChunkGroup>>,
     chunk: BTreeMap<SeriesId, Arc<Chunk>>,
 }
 
-impl TSM2MetaData {
+impl TsmMetaData {
     pub fn new(
         footer: Arc<Footer>,
         chunk_group_meta: Arc<ChunkGroupMeta>,
@@ -76,15 +75,15 @@ impl TSM2MetaData {
 }
 
 #[derive(Clone)]
-pub struct TSM2Reader {
+pub struct TsmReader {
     file_location: PathBuf,
     file_id: u64,
     reader: Arc<AsyncFile>,
-    tsm_meta: Arc<TSM2MetaData>,
+    tsm_meta: Arc<TsmMetaData>,
     tombstone: Arc<TsmTombstone>,
 }
 
-impl TSM2Reader {
+impl TsmReader {
     pub async fn open(tsm_path: impl AsRef<Path>) -> Result<Self> {
         let path = tsm_path.as_ref().to_path_buf();
         let reader = Arc::new(file_manager::open_file(&path).await?);
@@ -99,7 +98,7 @@ impl TSM2Reader {
         let tombstone_path = path.parent().unwrap_or_else(|| Path::new("/"));
         let tombstone = Arc::new(TsmTombstone::open(tombstone_path, file_id).await?);
 
-        let tsm_meta = Arc::new(TSM2MetaData::new(
+        let tsm_meta = Arc::new(TsmMetaData::new(
             footer,
             chunk_group_meta,
             chunk_group,
@@ -143,7 +142,7 @@ impl TSM2Reader {
         &self.tsm_meta.chunk
     }
 
-    pub fn tsm_meta_data(&self) -> Arc<TSM2MetaData> {
+    pub fn tsm_meta_data(&self) -> Arc<TsmMetaData> {
         self.tsm_meta.clone()
     }
 
@@ -260,7 +259,7 @@ impl TSM2Reader {
         &self,
         series_id: SeriesId,
         column_group_id: ColumnGroupID,
-    ) -> Result<DataBlock2> {
+    ) -> Result<DataBlock> {
         let column_group = self.read_series_pages(series_id, column_group_id).await?;
         let schema = self
             .tsm_meta
@@ -313,9 +312,9 @@ pub fn decode_buf_to_pages(
     Ok(pages)
 }
 
-impl Debug for TSM2Reader {
+impl Debug for TsmReader {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("TSMReader")
+        f.debug_struct("TsmReader")
             .field("file_id", &self.file_id)
             .field("footer", &self.tsm_meta.footer)
             .field("chunk_group_meta", &self.tsm_meta.chunk_group_meta)
@@ -386,9 +385,10 @@ async fn read_page(reader: Arc<AsyncFile>, page_spec: &PageWriteSpec) -> Result<
     Ok(page)
 }
 
-pub fn decode_pages(pages: Vec<Page>, table_schema: TskvTableSchemaRef) -> Result<DataBlock2> {
+pub fn decode_pages(pages: Vec<Page>, table_schema: TskvTableSchemaRef) -> Result<DataBlock> {
     let mut time_column_desc = table_schema.time_column();
-    let mut time_column = Column::empty_with_cap(time_column_desc.column_type.clone(), 0)?;
+    let mut time_column =
+        Column::empty_with_cap(time_column_desc.column_type.to_physical_type(), 0)?;
 
     let mut other_columns_desc = Vec::new();
     let mut other_columns = Vec::new();
@@ -404,7 +404,7 @@ pub fn decode_pages(pages: Vec<Page>, table_schema: TskvTableSchemaRef) -> Resul
         }
     }
 
-    Ok(DataBlock2::new(
+    Ok(DataBlock::new(
         table_schema,
         time_column,
         time_column_desc,
@@ -418,7 +418,7 @@ pub fn decode_pages_buf(
     chunk: Arc<Chunk>,
     column_group_id: ColumnGroupID,
     table_schema: TskvTableSchemaRef,
-) -> Result<DataBlock2> {
+) -> Result<DataBlock> {
     let pages = decode_buf_to_pages(chunk, column_group_id, pages_buf)?;
     let data_block = decode_pages(pages, table_schema)?;
     Ok(data_block)

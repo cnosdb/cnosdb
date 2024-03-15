@@ -5,8 +5,8 @@ use arrow::datatypes::{Field, Schema, SchemaRef};
 use datafusion::parquet::data_type::AsBytes;
 use models::field_value::FieldVal;
 use models::predicate::domain::TimeRange;
-use models::schema::{ColumnType, TableColumn, TskvTableSchema, TskvTableSchemaRef};
-use models::{SeriesId, SeriesKey, ValueType};
+use models::schema::{PhysicalCType, TableColumn, TskvTableSchema, TskvTableSchemaRef};
+use models::{PhysicalDType, SeriesId, SeriesKey};
 use serde::{Deserialize, Serialize};
 use utils::bitset::ImmutBitSet;
 use utils::BloomFilter;
@@ -17,8 +17,8 @@ use crate::error::Result;
 use crate::tsm::codec::{
     get_bool_codec, get_encoding, get_f64_codec, get_i64_codec, get_str_codec, get_u64_codec,
 };
-use crate::tsm2::writer::Column;
-use crate::tsm2::ColumnGroupID;
+use crate::tsm::writer::Column;
+use crate::tsm::ColumnGroupID;
 use crate::Error;
 
 #[derive(Debug)]
@@ -65,17 +65,17 @@ impl Page {
     }
 
     pub fn to_column(&self) -> Result<Column> {
-        let col_type = self.meta.column.column_type.clone();
+        let col_type = self.meta.column.column_type.to_physical_type();
         let mut col = Column::empty_with_cap(col_type.clone(), self.meta.num_values as usize)?;
         let data_buffer = self.data_buffer();
         let bitset = self.null_bitset();
         match col_type {
-            ColumnType::Tag => {
+            PhysicalCType::Tag => {
                 return Err(Error::TsmPageError {
                     reason: "tag column not support now".to_string(),
                 });
             }
-            ColumnType::Time(_) | ColumnType::Field(ValueType::Integer) => {
+            PhysicalCType::Time(_) | PhysicalCType::Field(PhysicalDType::Integer) => {
                 let encoding = get_encoding(data_buffer);
                 let ts_codec = get_i64_codec(encoding);
                 let mut target = Vec::new();
@@ -95,7 +95,7 @@ impl Page {
                     }
                 }
             }
-            ColumnType::Field(ValueType::Float) => {
+            PhysicalCType::Field(PhysicalDType::Float) => {
                 let encoding = get_encoding(data_buffer);
                 let ts_codec = get_f64_codec(encoding);
                 let mut target = Vec::new();
@@ -115,7 +115,7 @@ impl Page {
                     }
                 }
             }
-            ColumnType::Field(ValueType::Unsigned) => {
+            PhysicalCType::Field(PhysicalDType::Unsigned) => {
                 let encoding = get_encoding(data_buffer);
                 let ts_codec = get_u64_codec(encoding);
                 let mut target = Vec::new();
@@ -135,7 +135,7 @@ impl Page {
                     }
                 }
             }
-            ColumnType::Field(ValueType::Boolean) => {
+            PhysicalCType::Field(PhysicalDType::Boolean) => {
                 let encoding = get_encoding(data_buffer);
                 let ts_codec = get_bool_codec(encoding);
                 let mut target = Vec::new();
@@ -155,7 +155,7 @@ impl Page {
                     }
                 }
             }
-            ColumnType::Field(ValueType::String) | ColumnType::Field(ValueType::Geometry(_)) => {
+            PhysicalCType::Field(PhysicalDType::String) => {
                 let encoding = get_encoding(data_buffer);
                 let ts_codec = get_str_codec(encoding);
                 let mut target = Vec::new();
@@ -175,7 +175,7 @@ impl Page {
                     }
                 }
             }
-            ColumnType::Field(ValueType::Unknown) => {
+            PhysicalCType::Field(PhysicalDType::Unknown) => {
                 return Err(Error::UnsupportedDataType {
                     dt: "unknown".to_string(),
                 });
@@ -720,8 +720,8 @@ mod test {
     use models::predicate::domain::TimeRange;
     use utils::BloomFilter;
 
-    use crate::tsm2::page::{Footer, SeriesMeta, TableMeta};
-    use crate::tsm2::BLOOM_FILTER_BITS;
+    use crate::tsm::page::{Footer, SeriesMeta, TableMeta};
+    use crate::tsm::BLOOM_FILTER_BITS;
 
     #[test]
     fn test1() {
