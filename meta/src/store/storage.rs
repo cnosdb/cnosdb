@@ -812,7 +812,11 @@ impl StateMachine {
         }
         let key = KeyPath::data_node_id(cluster, node.id);
         let value = value_encode(node)?;
-        self.insert(&key, &value)
+        let res = self.insert(&key, &value);
+        if res.is_ok() {
+            let _ = self.process_write_resourceinfos_mark(cluster, node.id, true);
+        }
+        res
     }
 
     fn process_add_node_metrics(
