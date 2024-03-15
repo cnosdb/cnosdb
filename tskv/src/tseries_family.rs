@@ -28,10 +28,9 @@ use crate::index::ts_index::TSIndex;
 use crate::kv_option::{CacheOptions, StorageOptions};
 use crate::memcache::{MemCache, MemCacheStatistics, RowGroup};
 use crate::summary::{CompactMeta, VersionEdit};
-use crate::tsm::TsmTombstone;
-use crate::tsm2::page::PageMeta;
-use crate::tsm2::reader::TSM2Reader;
-use crate::tsm2::ColumnGroupID;
+use crate::tsm::page::PageMeta;
+use crate::tsm::reader::TsmReader;
+use crate::tsm::{ColumnGroupID, TsmTombstone};
 use crate::Error::CommonError;
 use crate::{tsm, ColumnFileId, LevelId, Options, TsKvContext, TseriesFamilyId};
 
@@ -47,7 +46,7 @@ pub struct ColumnFile {
     compacting: AtomicBool,
 
     path: PathBuf,
-    tsm_reader_cache: Weak<ShardedAsyncCache<String, Arc<TSM2Reader>>>,
+    tsm_reader_cache: Weak<ShardedAsyncCache<String, Arc<TsmReader>>>,
 }
 
 impl ColumnFile {
@@ -55,7 +54,7 @@ impl ColumnFile {
         meta: &CompactMeta,
         path: impl AsRef<Path>,
         series_id_filter: Arc<BloomFilter>,
-        tsm_reader_cache: Weak<ShardedAsyncCache<String, Arc<TSM2Reader>>>,
+        tsm_reader_cache: Weak<ShardedAsyncCache<String, Arc<TsmReader>>>,
     ) -> Self {
         Self {
             file_id: meta.file_id,
@@ -295,7 +294,7 @@ impl LevelInfo {
         &mut self,
         compact_meta: &CompactMeta,
         series_filter: Arc<BloomFilter>,
-        tsm_reader_cache: Weak<ShardedAsyncCache<String, Arc<TSM2Reader>>>,
+        tsm_reader_cache: Weak<ShardedAsyncCache<String, Arc<TsmReader>>>,
     ) {
         let file_path = if compact_meta.is_delta {
             let base_dir = self.storage_opt.delta_dir(&self.database, self.tsf_id);
@@ -381,7 +380,7 @@ pub struct Version {
     /// The max timestamp of write batch in wal flushed to column file.
     max_level_ts: i64,
     levels_info: [LevelInfo; 5],
-    tsm2_reader_cache: Arc<ShardedAsyncCache<String, Arc<TSM2Reader>>>,
+    tsm_reader_cache: Arc<ShardedAsyncCache<String, Arc<TsmReader>>>,
 }
 
 impl Version {
@@ -393,7 +392,7 @@ impl Version {
         last_seq: u64,
         levels_info: [LevelInfo; 5],
         max_level_ts: i64,
-        tsm2_reader_cache: Arc<ShardedAsyncCache<String, Arc<TSM2Reader>>>,
+        tsm_reader_cache: Arc<ShardedAsyncCache<String, Arc<TsmReader>>>,
     ) -> Self {
         Self {
             ts_family_id,
@@ -402,7 +401,7 @@ impl Version {
             last_seq,
             max_level_ts,
             levels_info,
-            tsm2_reader_cache,
+            tsm_reader_cache,
         }
     }
 
@@ -430,7 +429,7 @@ impl Version {
             self.ts_family_id,
             self.storage_opt.clone(),
         );
-        let weak_tsm_reader_cache = Arc::downgrade(&self.tsm2_reader_cache);
+        let weak_tsm_reader_cache = Arc::downgrade(&self.tsm_reader_cache);
         for level in self.levels_info.iter() {
             for file in level.files.iter() {
                 if deleted_files[file.level as usize].contains(&file.file_id) {
@@ -457,7 +456,7 @@ impl Version {
             storage_opt: self.storage_opt.clone(),
             max_level_ts: self.max_level_ts,
             levels_info: new_levels,
-            tsm2_reader_cache: self.tsm2_reader_cache.clone(),
+            tsm_reader_cache: self.tsm_reader_cache.clone(),
         };
         new_version.update_max_level_ts();
         new_version
@@ -501,17 +500,15 @@ impl Version {
         vec![]
     }
 
-    pub async fn get_tsm_reader2(&self, path: impl AsRef<Path>) -> Result<Arc<TSM2Reader>> {
+    pub async fn get_tsm_reader(&self, path: impl AsRef<Path>) -> Result<Arc<TsmReader>> {
         let path = path.as_ref().display().to_string();
-        let tsm_reader = match self.tsm2_reader_cache.get(&path).await {
+        let tsm_reader = match self.tsm_reader_cache.get(&path).await {
             Some(val) => val,
-            None => match self.tsm2_reader_cache.get(&path).await {
+            None => match self.tsm_reader_cache.get(&path).await {
                 Some(val) => val,
                 None => {
-                    let tsm_reader = Arc::new(TSM2Reader::open(&path).await?);
-                    self.tsm2_reader_cache
-                        .insert(path, tsm_reader.clone())
-                        .await;
+                    let tsm_reader = Arc::new(TsmReader::open(&path).await?);
+                    self.tsm_reader_cache.insert(path, tsm_reader.clone()).await;
                     tsm_reader
                 }
             },
@@ -539,8 +536,8 @@ impl Version {
         self.max_level_ts
     }
 
-    pub fn tsm2_reader_cache(&self) -> &Arc<ShardedAsyncCache<String, Arc<TSM2Reader>>> {
-        &self.tsm2_reader_cache
+    pub fn tsm_reader_cache(&self) -> &Arc<ShardedAsyncCache<String, Arc<TsmReader>>> {
+        &self.tsm_reader_cache
     }
 
     pub fn last_seq(&self) -> u64 {
@@ -558,7 +555,7 @@ impl Version {
                 if file.is_deleted() || !file.overlap(&time_predicate) {
                     continue;
                 }
-                let reader = self.get_tsm_reader2(file.file_path()).await.unwrap();
+                let reader = self.get_tsm_reader(file.file_path()).await.unwrap();
                 let fid = reader.file_id();
                 let sts = reader.statistics(series_ids, time_predicate).await.unwrap();
                 result.insert(fid, sts);
@@ -581,7 +578,7 @@ impl Version {
             last_seq: self.last_seq,
             max_level_ts: self.max_level_ts,
             levels_info: self.levels_info.clone(),
-            tsm2_reader_cache: self.tsm2_reader_cache.clone(),
+            tsm_reader_cache: self.tsm_reader_cache.clone(),
         }
     }
 }
@@ -1183,7 +1180,7 @@ impl TseriesFamily {
         // tsm index
         for level in self.version().levels_info.iter() {
             for file in level.files.iter() {
-                let reader = self.version().get_tsm_reader2(file.file_path()).await?;
+                let reader = self.version().get_tsm_reader(file.file_path()).await?;
                 for chunk in reader.chunk().values() {
                     index
                         .add_series_for_rebuild(chunk.series_id(), chunk.series_key())

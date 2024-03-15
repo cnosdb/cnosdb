@@ -19,8 +19,8 @@ use crate::tsm::codec::{
     get_bool_codec, get_encoding, get_f64_codec, get_i64_codec, get_str_codec, get_ts_codec,
     get_u64_codec,
 };
-use crate::tsm2::page::{Page, PageMeta, PageWriteSpec};
-use crate::tsm2::reader::TSM2Reader;
+use crate::tsm::page::{Page, PageMeta, PageWriteSpec};
+use crate::tsm::reader::TsmReader;
 use crate::{Error, Result};
 
 pub type PageReaderRef = Arc<dyn PageReader>;
@@ -31,7 +31,7 @@ pub trait PageReader {
 #[derive(Clone)]
 pub struct PrimitiveArrayReader {
     date_type: PhysicalDType,
-    reader: Arc<TSM2Reader>,
+    reader: Arc<TsmReader>,
     page_meta: PageWriteSpec,
 
     // only used for tombstone filter
@@ -45,7 +45,7 @@ pub struct PrimitiveArrayReader {
 impl PrimitiveArrayReader {
     pub fn new(
         date_type: PhysicalDType,
-        reader: Arc<TSM2Reader>,
+        reader: Arc<TsmReader>,
         page_meta: &PageWriteSpec,
         series_id: SeriesId,
         time_page_meta: Arc<PageWriteSpec>,
@@ -81,7 +81,7 @@ impl PageReader for PrimitiveArrayReader {
 }
 
 async fn read(
-    reader: Arc<TSM2Reader>,
+    reader: Arc<TsmReader>,
     page_meta: PageWriteSpec,
     series_id: SeriesId,
     time_page_meta: Arc<PageWriteSpec>,
@@ -101,7 +101,7 @@ async fn read(
 
 async fn page_to_arrow_array_with_tomb(
     page: Page,
-    reader: Arc<TSM2Reader>,
+    reader: Arc<TsmReader>,
     series_id: SeriesId,
     time_page_meta: Arc<PageWriteSpec>,
     time_range: TimeRange,
@@ -355,8 +355,8 @@ pub(crate) mod tests {
     use models::{PhysicalDType, ValueType};
 
     use super::{NullBitset, PageReader};
-    use crate::tsm2::page::Page;
-    use crate::tsm2::writer::Column;
+    use crate::tsm::page::Page;
+    use crate::tsm::writer::Column;
     use crate::Result;
 
     pub struct TestPageReader<T> {
@@ -454,7 +454,7 @@ pub(crate) mod tests {
     }
 
     fn page(row_nums: usize, ct: ColumnType) -> Page {
-        let mut col = Column::empty_with_cap(ct.clone(), row_nums).unwrap();
+        let mut col = Column::empty_with_cap(ct.to_physical_type(), row_nums).unwrap();
 
         for i in 0..row_nums {
             let val = if i % 2 == 0 {

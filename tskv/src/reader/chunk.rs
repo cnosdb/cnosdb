@@ -6,7 +6,7 @@ use datafusion::physical_optimizer::pruning::PruningPredicate;
 use super::column_group::statistics::ColumnGroupsStatisticsWrapper;
 use super::Predicate;
 use crate::reader::utils::reassign_predicate_columns;
-use crate::tsm2::page::ColumnGroup;
+use crate::tsm::page::ColumnGroup;
 use crate::Result;
 
 pub fn filter_column_groups(
@@ -63,8 +63,8 @@ mod tests {
 
     use crate::reader::chunk::filter_column_groups_indices;
     use crate::reader::Predicate;
-    use crate::tsm2::page::{ColumnGroup, PageMeta, PageStatistics, PageWriteSpec};
-    use crate::tsm2::statistics::ValueStatistics;
+    use crate::tsm::page::{ColumnGroup, PageMeta, PageStatistics, PageWriteSpec};
+    use crate::tsm::statistics::ValueStatistics;
 
     /// ```text
     ///                     time            tag1            field1

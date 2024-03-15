@@ -51,7 +51,6 @@ mod schema;
 mod summary;
 mod tseries_family;
 pub mod tsm;
-pub mod tsm2;
 mod version_set;
 pub mod vnode_store;
 pub mod wal;
