@@ -696,14 +696,14 @@ fn case6() {
     let executor = E2eExecutor::new_cluster(
         "restart_tests",
         "case_6",
-        cluster_def::one_meta_three_data(),
+        cluster_def::three_meta_two_data_bundled(),
     );
     executor.execute_steps(&[
         Step::Sleep(5),
         Step::CnosdbRequest {
             req: CnosdbRequest::Ddl {
                 url: url_cnosdb_public,
-                sql: "create database db1 with replica 3",
+                sql: "create database db1 with replica 2",
                 resp: Ok(()),
             },
             auth: None,
@@ -725,12 +725,17 @@ fn case6() {
             auth: None,
         },
         Step::StopDataNode(1),
-        Step::Sleep(10),
+        Step::Sleep(2),
         Step::CnosdbRequest {
             req: CnosdbRequest::Ddl {
                 url: url_cnosdb_public,
                 sql: "drop database db1",
-                resp: Ok(()),
+                resp: Err(E2eError::Api {
+                    status: StatusCode::UNPROCESSABLE_ENTITY,
+                    url: None,
+                    req: None,
+                    resp: None,
+                }),
             },
             auth: None,
         },
@@ -738,7 +743,7 @@ fn case6() {
             req: CnosdbRequest::Query {
                 url: url_cnosdb_public,
                 sql: "select name,action,try_count,status from information_schema.resource_status where name = 'cnosdb-db1'",
-                resp: Ok(vec!["name,action,try_count,status", r"cnosdb-db1,DropDatabase,\d+,Successed"]),
+                resp: Ok(vec!["name,action,try_count,status", r"cnosdb-db1,DropDatabase,\d+,Failed"]),
                 sorted: false,
                 regex: true,
             },

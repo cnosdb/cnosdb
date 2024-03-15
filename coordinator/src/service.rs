@@ -235,20 +235,6 @@ impl CoordService {
                 if !resourceinfo.get_is_new_add() {
                     return Ok(()); // ignore the old task
                 }
-                // if unlocked, grab the lock
-                if !coord
-                    .meta_manager()
-                    .read_resourceinfos_mark()
-                    .await
-                    .map_err(|meta_err| CoordinatorError::Meta { source: meta_err })?
-                    .1
-                {
-                    coord
-                        .meta_manager()
-                        .write_resourceinfos_mark(coord.node_id(), true)
-                        .await
-                        .map_err(|meta_err| CoordinatorError::Meta { source: meta_err })?;
-                }
 
                 // if current node get the lock, handle meta modify
                 let (id, lock) = coord
@@ -308,16 +294,37 @@ impl CoordService {
                     .await
                     .map_err(|meta_err| CoordinatorError::Meta { source: meta_err })?;
                 if node_metrics.id == id && lock {
-                    coord
+                    // unlock the dead node
+                    if let Err(e) = coord
                         .meta_manager()
                         .write_resourceinfos_mark(node_metrics.id, false)
                         .await
-                        .map_err(|meta_err| CoordinatorError::Meta { source: meta_err })?;
-                    coord
+                    {
+                        match e {
+                            MetaError::ResourceInfosMarkIsLock { .. } => {
+                                return Ok(());
+                            }
+                            _ => {
+                                return Err(CoordinatorError::Meta { source: e });
+                            }
+                        }
+                    }
+
+                    // grap lock again
+                    if let Err(e) = coord
                         .meta_manager()
                         .write_resourceinfos_mark(coord.node_id(), true)
                         .await
-                        .map_err(|meta_err| CoordinatorError::Meta { source: meta_err })?;
+                    {
+                        match e {
+                            MetaError::ResourceInfosMarkIsLock { .. } => {
+                                return Ok(());
+                            }
+                            _ => {
+                                return Err(CoordinatorError::Meta { source: e });
+                            }
+                        }
+                    }
                 }
 
                 // if current node get the lock, get the dead node task
