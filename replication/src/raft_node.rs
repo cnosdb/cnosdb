@@ -39,7 +39,8 @@ impl RaftNode {
             election_timeout_max: 5 * hb,
             install_snapshot_timeout: config.install_snapshot_timeout,
             replication_lag_threshold: keep_logs,
-            snapshot_policy: SnapshotPolicy::LogsSinceLast(keep_logs),
+            snapshot_policy: SnapshotPolicy::Never,
+            //snapshot_policy: SnapshotPolicy::LogsSinceLast(keep_logs),
             max_in_snapshot_log_to_keep: keep_logs,
             cluster_name: config.cluster_name.clone(),
             ..Default::default()

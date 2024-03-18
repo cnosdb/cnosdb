@@ -2,7 +2,7 @@
 #![allow(unreachable_patterns)]
 #![recursion_limit = "256"]
 
-use std::fmt::Debug;
+use std::fmt::{Debug, Display, Formatter};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -10,7 +10,6 @@ pub use compaction::check::vnode_table_checksum_schema;
 use compaction::{CompactTask, FlushReq};
 use context::GlobalContext;
 use datafusion::arrow::record_batch::RecordBatch;
-use file_system::file_info::FileInfo;
 use models::meta_data::{NodeId, VnodeId};
 use models::predicate::domain::ColumnDomains;
 use models::{SeriesId, SeriesKey};
@@ -18,6 +17,7 @@ use serde::{Deserialize, Serialize};
 use summary::SummaryTask;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::RwLock;
+use tseries_family::Version;
 use version_set::VersionSet;
 use vnode_store::VnodeStorage;
 
@@ -141,14 +141,25 @@ pub struct TsKvContext {
     pub summary_task_sender: Sender<SummaryTask>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct VnodeSnapshot {
-    pub snapshot_id: String,
     pub node_id: NodeId,
     pub vnode_id: VnodeId,
     pub last_seq_no: u64,
-    pub files_info: Vec<FileInfo>,
+    pub create_time: String,
     pub version_edit: VersionEdit,
+
+    #[serde(skip_serializing, skip_deserializing)]
+    pub version: Option<Arc<Version>>,
+    #[serde(skip_serializing, skip_deserializing)]
+    pub active_time: i64, //active timestamp
+}
+
+impl Display for VnodeSnapshot {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "node id: {}, vnode id: {}, last seq no: {}, create time: {}, active time: {}, ve: {:?}",    
+         self.node_id, self.vnode_id, self.last_seq_no, self.create_time, self.active_time, self.version_edit)
+    }
 }
 
 pub mod test {

@@ -75,6 +75,7 @@ enable_report = true
 
 [cluster]
 raft_logs_to_keep = 5000
+snapshot_holding_time = "3600s"
 lmdb_max_map_size = "1024000000B"
 heartbeat_interval = "3000ms"
 install_snapshot_timeout = "3600000ms"

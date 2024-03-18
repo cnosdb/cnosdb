@@ -13,6 +13,12 @@ pub struct ClusterConfig {
     pub raft_logs_to_keep: u64,
 
     #[serde(
+        with = "duration",
+        default = "ClusterConfig::default_snapshot_holding_time"
+    )]
+    pub snapshot_holding_time: Duration,
+
+    #[serde(
         with = "bytes_num",
         default = "ClusterConfig::default_lmdb_max_map_size"
     )]
@@ -42,6 +48,10 @@ impl ClusterConfig {
         5000
     }
 
+    fn default_snapshot_holding_time() -> Duration {
+        Duration::from_secs(3600)
+    }
+
     fn default_lmdb_max_map_size() -> u64 {
         1024 * 1024 * 1024
     }
@@ -64,6 +74,11 @@ impl OverrideByEnv for ClusterConfig {
         entry_override(
             &mut self.raft_logs_to_keep,
             "CNOSDB_CLUSTER_RAFT_LOGS_TO_KEEP",
+        );
+
+        entry_override_to_duration(
+            &mut self.snapshot_holding_time,
+            "CNOSDB_CLUSTER_SNAPSHOT_HOLDING_TIME",
         );
 
         entry_override(
@@ -92,6 +107,7 @@ impl Default for ClusterConfig {
     fn default() -> Self {
         Self {
             raft_logs_to_keep: ClusterConfig::default_raft_logs_to_keep(),
+            snapshot_holding_time: ClusterConfig::default_snapshot_holding_time(),
             lmdb_max_map_size: ClusterConfig::default_lmdb_max_map_size(),
             heartbeat_interval: ClusterConfig::default_heartbeat_interval(),
             send_append_entries_timeout: ClusterConfig::default_send_append_entries_timeout(),

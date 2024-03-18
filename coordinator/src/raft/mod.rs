@@ -8,14 +8,14 @@ use protos::kv_service::{DownloadFileRequest, RaftWriteCommand};
 use protos::models_helper::parse_prost_bytes;
 use protos::{tskv_service_time_out_client, DEFAULT_GRPC_SERVER_MESSAGE_LEN};
 use replication::errors::{ReplicationError, ReplicationResult};
-use replication::{ApplyContext, ApplyStorage};
+use replication::{ApplyContext, ApplyStorage, SnapshotMode};
 use tokio::io::AsyncWriteExt;
 use tokio_stream::StreamExt;
 use tonic::transport::Channel;
 use tower::timeout::Timeout;
 use tracing::{error, info};
-use tskv::file_system::file_info;
-use tskv::kv_option::StorageOptions;
+use tskv::file_system::file_manager;
+use tskv::kv_option::DATA_PATH;
 use tskv::vnode_store::VnodeStorage;
 use tskv::VnodeSnapshot;
 
@@ -88,15 +88,16 @@ impl TskvEngineStorage {
         snapshot: &VnodeSnapshot,
         client: &mut TskvServiceClient<Timeout<Channel>>,
     ) -> CoordinatorResult<()> {
-        let src_dir = StorageOptions::fmt_snapshot_dir(
-            &models::schema::make_owner(&self.tenant, &self.db_name),
-            snapshot.vnode_id,
-            &snapshot.snapshot_id,
-        );
+        let src_dir = PathBuf::from(DATA_PATH)
+            .join(&snapshot.version_edit.tsf_name)
+            .join(snapshot.vnode_id.to_string());
 
-        for info in snapshot.files_info.iter() {
-            let filename = dir.join(&info.name);
-            let src_filename = src_dir.join(&info.name).to_string_lossy().to_string();
+        for info in snapshot.version_edit.add_files.iter() {
+            let filename = dir.join(info.relative_path());
+            let src_filename = src_dir
+                .join(info.relative_path())
+                .to_string_lossy()
+                .to_string();
 
             info!(
                 "begin download file {} -> {:?}, from {}",
@@ -105,10 +106,13 @@ impl TskvEngineStorage {
 
             Self::download_file(&src_filename, &filename, client).await?;
             let filename = filename.to_string_lossy().to_string();
-            let tmp_info = file_info::get_file_info(&filename).await?;
-            if tmp_info.md5 != info.md5 {
+            let length = file_manager::get_file_length(&filename).await?;
+            if info.file_size != length {
                 return Err(CoordinatorError::CommonError {
-                    msg: "download file md5 not match ".to_string(),
+                    msg: format!(
+                        "download file length not match {} -> {}",
+                        info.file_size, length
+                    ),
                 });
             }
         }
@@ -195,21 +199,26 @@ impl ApplyStorage for TskvEngineStorage {
         }
     }
 
-    async fn snapshot(&mut self) -> ReplicationResult<Vec<u8>> {
-        let snapshot = self.vnode.create_snapshot().await.map_err(|err| {
+    async fn snapshot(&mut self, mode: SnapshotMode) -> ReplicationResult<(Vec<u8>, Option<u64>)> {
+        let snapshot = self.vnode.create_snapshot(mode).await.map_err(|err| {
             ReplicationError::CreateSnapshotErr {
                 msg: err.to_string(),
             }
         })?;
 
+        let index = snapshot.last_seq_no;
         let data = bincode::serialize(&snapshot)?;
-        Ok(data)
+        Ok((data, Some(index)))
     }
 
     async fn restore(&mut self, data: &[u8]) -> ReplicationResult<()> {
         let snapshot = bincode::deserialize::<VnodeSnapshot>(data)?;
         let opt = self.storage.get_storage_options();
-        let download_dir = opt.path().join(&snapshot.snapshot_id);
+        let snapshot_name = format!(
+            "snap_{}_{}_{}_{}",
+            snapshot.node_id, snapshot.vnode_id, snapshot.last_seq_no, snapshot.create_time
+        );
+        let download_dir = opt.path().join(snapshot_name);
 
         self.download_snapshot(&download_dir, &snapshot)
             .await
@@ -218,11 +227,13 @@ impl ApplyStorage for TskvEngineStorage {
             })?;
 
         self.vnode
-            .apply_snapshot(snapshot, &download_dir)
+            .apply_snapshot(snapshot, download_dir.as_path())
             .await
             .map_err(|err| ReplicationError::RestoreSnapshotErr {
                 msg: err.to_string(),
             })?;
+
+        tokio::fs::remove_dir_all(download_dir).await?;
 
         Ok(())
     }

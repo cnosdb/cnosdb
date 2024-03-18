@@ -12,6 +12,7 @@ mod tests {
     use models::schema::{make_owner, Precision, TenantOptions};
     use protos::kv_service::{raft_write_command, WriteDataRequest};
     use protos::models_helper;
+    use replication::SnapshotMode;
     use serial_test::serial;
     use tokio::runtime;
     use tokio::runtime::Runtime;
@@ -322,8 +323,6 @@ mod tests {
         let storage_opt = tskv.get_storage_options();
         let vnode_tsm_dir = storage_opt.tsm_dir(&tenant_database, vnode_id);
         let vnode_delta_dir = storage_opt.delta_dir(&tenant_database, vnode_id);
-        let vnode_snapshot_dir = storage_opt.snapshot_dir(&tenant_database, vnode_id);
-        let vnode_backup_dir = dir.join("backup_for_test");
 
         {
             // Write test data
@@ -347,14 +346,19 @@ mod tests {
             );
         }
 
-        let vnode = runtime
+        let mut vnode = runtime
             .block_on(tskv.open_tsfamily(tenant, database, vnode_id))
             .unwrap();
-        let (vnode_snapshot_sub_dir, vnode_snapshot) = {
+        runtime
+            .block_on(tskv.flush_tsfamily(tenant, database, vnode_id))
+            .unwrap();
+        let vnode_snapshot = {
             // Test create snapshot.
             sleep_in_runtime(runtime.clone(), Duration::from_secs(3));
 
-            let vnode_snap = runtime.block_on(vnode.create_snapshot()).unwrap();
+            let vnode_snap = runtime
+                .block_on(vnode.create_snapshot(SnapshotMode::GetSnapshot))
+                .unwrap();
             for f in vnode_snap.version_edit.add_files.iter() {
                 let path = if f.is_delta {
                     file_utils::make_delta_file(&vnode_delta_dir, f.file_id)
@@ -369,23 +373,12 @@ mod tests {
                 );
             }
 
-            (vnode_snapshot_dir.join(&vnode_snap.snapshot_id), vnode_snap)
+            vnode_snap
         };
 
-        {
-            // Test delete snapshot.
-            // 1. Backup files.
-            dircpy::copy_dir(vnode_snapshot_sub_dir, &vnode_backup_dir).unwrap();
-
-            // 2. Do test delete snapshot.
-            runtime.block_on(vnode.delete_snapshot()).unwrap();
-            sleep_in_runtime(runtime.clone(), Duration::from_secs(3));
-            assert!(
-                !file_manager::try_exists(&vnode_snapshot_dir),
-                "{} still exists unexpectedly",
-                vnode_snapshot_dir.display()
-            );
-        }
+        let vnode_backup_dir = dir.join("backup_for_test");
+        let vnode_data_dir = storage_opt.ts_family_dir(&tenant_database, vnode_id);
+        dircpy::copy_dir(vnode_data_dir, &vnode_backup_dir).unwrap();
 
         let new_vnode_id = 12;
         let vnode_tsm_dir = storage_opt.tsm_dir(&tenant_database, new_vnode_id);
@@ -397,7 +390,7 @@ mod tests {
                 .unwrap();
 
             runtime
-                .block_on(vnode.apply_snapshot(vnode_snapshot, &vnode_backup_dir))
+                .block_on(vnode.apply_snapshot(vnode_snapshot, vnode_backup_dir.as_path()))
                 .unwrap();
             sleep_in_runtime(runtime.clone(), Duration::from_secs(3));
 

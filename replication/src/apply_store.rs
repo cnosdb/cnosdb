@@ -10,7 +10,7 @@ use heed::{Database, Env};
 use serde::{Deserialize, Serialize};
 
 use crate::errors::{ReplicationError, ReplicationResult};
-use crate::{ApplyContext, ApplyStorage, RaftNodeId, Request, Response};
+use crate::{ApplyContext, ApplyStorage, RaftNodeId, Request, Response, SnapshotMode};
 
 // --------------------------------------------------------------------------- //
 #[derive(Serialize, Deserialize)]
@@ -64,9 +64,8 @@ impl ApplyStorage for HeedApplyStorage {
         Ok(req.value.into())
     }
 
-    async fn snapshot(&mut self) -> ReplicationResult<Vec<u8>> {
+    async fn snapshot(&mut self, mode: SnapshotMode) -> ReplicationResult<(Vec<u8>, Option<u64>)> {
         let mut hash_map = HashMap::new();
-
         let reader = self.env.read_txn()?;
         let iter = self.db.iter(&reader)?;
         for pair in iter {
@@ -77,7 +76,7 @@ impl ApplyStorage for HeedApplyStorage {
         let data = HashMapSnapshotData { map: hash_map };
         let json_str = serde_json::to_string(&data).unwrap();
 
-        Ok(json_str.as_bytes().to_vec())
+        Ok((json_str.as_bytes().to_vec(), None))
     }
 
     async fn restore(&mut self, snapshot: &[u8]) -> ReplicationResult<()> {

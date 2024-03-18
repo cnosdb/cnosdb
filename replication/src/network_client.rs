@@ -132,9 +132,11 @@ impl RaftNetwork<TypeConfig> for TargetClient {
         &mut self,
         req: AppendEntriesRequest<TypeConfig>,
     ) -> Result<AppendEntriesResponse<RaftNodeId>, RPCError> {
+        // let begin = req.entries.first().map_or(0, |ent| ent.log_id.index);
+        // let end = req.entries.last().map_or(0, |ent| ent.log_id.index);
         // debug!(
-        //     "Network callback send_append_entries target:{}, req: {:?}",
-        //     self.target, req
+        //     "Network callback send_append_entries target:{}, entries: [{}-{}]",
+        //     self.target, begin, end
         // );
 
         let channel = self
@@ -173,11 +175,11 @@ impl RaftNetwork<TypeConfig> for TargetClient {
         &mut self,
         req: InstallSnapshotRequest<TypeConfig>,
     ) -> Result<InstallSnapshotResponse<RaftNodeId>, RPCError<InstallSnapshotError>> {
-        // debug!(
-        //     "Network callback send_install_snapshot target:{}, req: {:?}",
-        //     self.target,
-        //     req.summary()
-        // );
+        debug!(
+            "Network callback send_install_snapshot target:{}, req: {:?}",
+            self.target,
+            req.summary()
+        );
 
         let channel = self
             .conn
