@@ -18,7 +18,7 @@ use super::{
 };
 use crate::reader::metrics::BaselineMetrics;
 use crate::reader::utils::reassign_predicate_columns;
-use crate::Result;
+use crate::TskvResult;
 
 pub struct DataFilter {
     predicate: Arc<Predicate>,
@@ -39,7 +39,7 @@ impl DataFilter {
     }
 }
 impl BatchReader for DataFilter {
-    fn process(&self) -> Result<SendableSchemableTskvRecordBatchStream> {
+    fn process(&self) -> TskvResult<SendableSchemableTskvRecordBatchStream> {
         let input = self.input.process()?;
         let schema = input.schema();
         debug!(
@@ -88,7 +88,7 @@ impl SchemableTskvRecordBatchStream for DataFilterStream {
 }
 
 impl DataFilterStream {
-    fn poll_inner(&mut self, cx: &mut Context<'_>) -> Poll<Option<Result<RecordBatch>>> {
+    fn poll_inner(&mut self, cx: &mut Context<'_>) -> Poll<Option<TskvResult<RecordBatch>>> {
         loop {
             match self.input.poll_next_unpin(cx) {
                 Poll::Ready(value) => match value {
@@ -119,7 +119,7 @@ impl DataFilterStream {
 }
 
 impl Stream for DataFilterStream {
-    type Item = Result<RecordBatch>;
+    type Item = TskvResult<RecordBatch>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let poll = self.poll_inner(cx);
@@ -130,7 +130,7 @@ impl Stream for DataFilterStream {
 fn batch_filter(
     batch: &RecordBatch,
     predicate: &Arc<dyn PhysicalExpr>,
-) -> Result<RecordBatch, DataFusionError> {
+) -> TskvResult<RecordBatch, DataFusionError> {
     predicate
         .evaluate(batch)
         .map(|v| v.into_array(batch.num_rows()))

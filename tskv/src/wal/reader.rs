@@ -5,10 +5,10 @@ use openraft::EntryPayload;
 use super::{wal_store, WalType, WAL_FOOTER_MAGIC_NUMBER, WAL_HEADER_LEN};
 use crate::byte_utils::{decode_be_u32, decode_be_u64};
 use crate::file_system::file_manager;
-use crate::{record_file, Error, Result};
+use crate::{record_file, TskvError, TskvResult};
 
 /// Reads a wal file and parse footer, returns sequence range
-pub async fn read_footer(path: impl AsRef<Path>) -> Result<Option<(u64, u64)>> {
+pub async fn read_footer(path: impl AsRef<Path>) -> TskvResult<Option<(u64, u64)>> {
     if file_manager::try_exists(&path) {
         let reader = WalReader::open(path).await?;
         Ok(Some((reader.min_sequence, reader.max_sequence)))
@@ -41,7 +41,7 @@ pub struct WalReader {
 }
 
 impl WalReader {
-    pub async fn open(path: impl AsRef<Path>) -> Result<Self> {
+    pub async fn open(path: impl AsRef<Path>) -> TskvResult<Self> {
         let reader = record_file::Reader::open(&path).await?;
 
         let mut has_footer = true;
@@ -79,32 +79,32 @@ impl WalReader {
         self.has_footer
     }
 
-    pub async fn next_wal_entry(&mut self) -> Result<Option<WalRecordData>> {
+    pub async fn next_wal_entry(&mut self) -> TskvResult<Option<WalRecordData>> {
         loop {
             let data = match self.inner.read_record().await {
                 Ok(r) => r.data,
-                Err(Error::Eof) => {
+                Err(TskvError::Eof) => {
                     return Ok(None);
                 }
-                Err(Error::RecordFileHashCheckFailed { .. }) => continue,
+                Err(TskvError::RecordFileHashCheckFailed { .. }) => continue,
                 Err(e) => {
                     trace::error!("Error reading wal: {:?}", e);
-                    return Err(Error::WalTruncated);
+                    return Err(TskvError::WalTruncated);
                 }
             };
             return Ok(Some(WalRecordData::new(data)));
         }
     }
 
-    pub async fn read_wal_record_data(&mut self, pos: u64) -> Result<Option<WalRecordData>> {
+    pub async fn read_wal_record_data(&mut self, pos: u64) -> TskvResult<Option<WalRecordData>> {
         self.inner.reload_metadata().await?;
         match self.inner.read_record_at(pos as usize).await {
             Ok(r) => Ok(Some(WalRecordData::new(r.data))),
-            Err(Error::Eof) => Ok(None),
-            Err(e @ Error::RecordFileHashCheckFailed { .. }) => Err(e),
+            Err(TskvError::Eof) => Ok(None),
+            Err(e @ TskvError::RecordFileHashCheckFailed { .. }) => Err(e),
             Err(e) => {
                 trace::error!("Error reading wal: {:?}", e);
-                Err(Error::WalTruncated)
+                Err(TskvError::WalTruncated)
             }
         }
     }
@@ -218,7 +218,7 @@ pub async fn print_wal_statistics(path: impl AsRef<Path>) {
                 println!("============================================================");
                 break;
             }
-            Err(Error::WalTruncated) => {
+            Err(TskvError::WalTruncated) => {
                 println!("============================================================");
                 println!("WAL file truncated");
                 break;

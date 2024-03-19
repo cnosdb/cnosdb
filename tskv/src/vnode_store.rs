@@ -13,12 +13,12 @@ use trace::{debug, error, info, SpanContext, SpanExt, SpanRecorder};
 
 use crate::compaction::run_flush_memtable_job;
 use crate::database::Database;
-use crate::error::Result;
+use crate::error::TskvResult;
 use crate::file_system::file_info;
 use crate::index::ts_index::TSIndex;
 use crate::schema::error::SchemaError;
 use crate::tseries_family::TseriesFamily;
-use crate::{Error, TsKvContext, VnodeSnapshot};
+use crate::{TsKvContext, TskvError, VnodeSnapshot};
 
 #[derive(Clone)]
 pub struct VnodeStorage {
@@ -34,7 +34,7 @@ impl VnodeStorage {
         &self,
         ctx: &replication::ApplyContext,
         command: raft_write_command::Command,
-    ) -> Result<Vec<u8>> {
+    ) -> TskvResult<Vec<u8>> {
         match command {
             raft_write_command::Command::WriteData(cmd) => {
                 let precision = Precision::from(cmd.precision as u8);
@@ -83,11 +83,11 @@ impl VnodeStorage {
         points: Vec<u8>,
         precision: Precision,
         span_ctx: Option<&SpanContext>,
-    ) -> Result<WritePointsResponse> {
+    ) -> TskvResult<WritePointsResponse> {
         let span_recorder = SpanRecorder::new(span_ctx.child_span("tskv engine write cache"));
         let fb_points = flatbuffers::root::<protos::models::Points>(&points)
             .context(crate::error::InvalidFlatbufferSnafu)?;
-        let tables = fb_points.tables().ok_or(Error::InvalidPointTable)?;
+        let tables = fb_points.tables().ok_or(TskvError::InvalidPointTable)?;
 
         let (mut recover_from_wal, mut strict_write) = (false, None);
         if ctx.apply_type == replication::APPLY_TYPE_WAL {
@@ -135,7 +135,7 @@ impl VnodeStorage {
         res
     }
 
-    async fn drop_table(&self, table: &str) -> Result<()> {
+    async fn drop_table(&self, table: &str) -> TskvResult<()> {
         // TODO Create global DropTable flag for droping the same table at the same time.
         let db_owner = self.db.read().await.owner();
         let schemas = self.db.read().await.get_schemas();
@@ -177,7 +177,7 @@ impl VnodeStorage {
         Ok(())
     }
 
-    async fn drop_table_column(&self, table: &str, column_name: &str) -> Result<()> {
+    async fn drop_table_column(&self, table: &str, column_name: &str) -> TskvResult<()> {
         let db_name = self.db.read().await.db_name();
         let schema = self
             .db
@@ -244,7 +244,7 @@ impl VnodeStorage {
         &self,
         ctx: &replication::ApplyContext,
         cmd: &UpdateTagsRequest,
-    ) -> Result<()> {
+    ) -> TskvResult<()> {
         let new_tags = cmd
             .new_tags
             .iter()
@@ -260,7 +260,7 @@ impl VnodeStorage {
         let mut series = Vec::with_capacity(cmd.matched_series.len());
         for key in cmd.matched_series.iter() {
             let ss = SeriesKey::decode(key).map_err(|_| {
-                Error::InvalidParam {
+                TskvError::InvalidParam {
             reason:
                 "Deserialize 'matched_series' of 'UpdateTagsRequest' failed, expected: SeriesKey"
                     .to_string(),
@@ -296,16 +296,16 @@ impl VnodeStorage {
                 err
             );
 
-            return Err(crate::error::Error::IndexErr { source: err });
+            return Err(crate::error::TskvError::IndexErr { source: err });
         }
 
         Ok(())
     }
 
-    async fn delete_from_table(&self, cmd: &DeleteFromTableRequest) -> Result<()> {
+    async fn delete_from_table(&self, cmd: &DeleteFromTableRequest) -> TskvResult<()> {
         let predicate =
             bincode::deserialize::<ResolvedPredicate>(&cmd.predicate).map_err(|err| {
-                Error::InvalidParam {
+                TskvError::InvalidParam {
                     reason: format!("Predicate of delete_from_table is invalid, error: {err}"),
                 }
             })?;
@@ -334,7 +334,7 @@ impl VnodeStorage {
     /// Then return VnodeSnapshot.
     ///
     /// For one Vnode, multi snapshot may exist at a time.
-    pub async fn create_snapshot(&self) -> Result<VnodeSnapshot> {
+    pub async fn create_snapshot(&self) -> TskvResult<VnodeSnapshot> {
         debug!("Snapshot: create snapshot on vnode: {}", self.id);
         let vnode_id = self.id;
 
@@ -403,7 +403,7 @@ impl VnodeStorage {
         &mut self,
         snapshot: VnodeSnapshot,
         shapshot_dir: &PathBuf,
-    ) -> Result<()> {
+    ) -> TskvResult<()> {
         info!("Snapshot: apply snapshot {snapshot:?}");
 
         let vnode_id = self.id;
@@ -443,7 +443,7 @@ impl VnodeStorage {
     }
 
     /// Delete the snapshot directory of a Vnode, all snapshots will be deleted.
-    pub async fn delete_snapshot(&self) -> Result<()> {
+    pub async fn delete_snapshot(&self) -> TskvResult<()> {
         debug!("Snapshot: delete snapshot on vnode: {}", self.id);
 
         let owner = self.ts_family.read().await.tenant_database();
@@ -461,7 +461,7 @@ impl VnodeStorage {
         Ok(())
     }
 
-    async fn drop_table_columns(&self, table: &str, column_ids: &[ColumnId]) -> Result<()> {
+    async fn drop_table_columns(&self, table: &str, column_ids: &[ColumnId]) -> TskvResult<()> {
         // TODO Create global DropTable flag for droping the same table at the same time.
         let db_rlock = self.db.read().await;
         let db_owner = db_rlock.owner();
@@ -502,7 +502,7 @@ impl VnodeStorage {
         table: &str,
         series_ids: &[SeriesId],
         time_ranges: &TimeRanges,
-    ) -> Result<()> {
+    ) -> TskvResult<()> {
         let vnode = self.ts_family.read().await;
         let db_name = self.db.read().await.db_name();
         vnode.delete_series_by_time_ranges(series_ids, time_ranges);

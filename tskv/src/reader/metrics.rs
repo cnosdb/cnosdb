@@ -6,7 +6,7 @@ use datafusion::physical_plan::metrics::{
     BaselineMetrics as DFBaselineMetrics, ExecutionPlanMetricsSet, RecordOutput,
 };
 
-use crate::Result;
+use crate::TskvResult;
 
 #[derive(Debug, Clone)]
 pub struct BaselineMetrics {
@@ -32,8 +32,8 @@ impl BaselineMetrics {
 
     pub fn record_poll(
         &self,
-        poll: Poll<Option<Result<RecordBatch>>>,
-    ) -> Poll<Option<Result<RecordBatch>>> {
+        poll: Poll<Option<TskvResult<RecordBatch>>>,
+    ) -> Poll<Option<TskvResult<RecordBatch>>> {
         if let Poll::Ready(maybe_batch) = &poll {
             match maybe_batch {
                 Some(Ok(batch)) => {

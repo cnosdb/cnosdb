@@ -9,7 +9,7 @@ use models::meta_data::VnodeId;
 use models::predicate::domain::ColumnDomains;
 use models::{SeriesId, SeriesKey};
 
-use crate::error::Result;
+use crate::error::TskvResult;
 use crate::kv_option::StorageOptions;
 use crate::tseries_family::SuperVersion;
 use crate::vnode_store::VnodeStorage;
@@ -25,15 +25,15 @@ impl Engine for MockEngine {
         tenant: &str,
         db_name: &str,
         vnode_id: VnodeId,
-    ) -> Result<VnodeStorage> {
+    ) -> TskvResult<VnodeStorage> {
         todo!()
     }
 
-    async fn remove_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()> {
+    async fn remove_tsfamily(&self, tenant: &str, database: &str, id: u32) -> TskvResult<()> {
         Ok(())
     }
 
-    async fn flush_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()> {
+    async fn flush_tsfamily(&self, tenant: &str, database: &str, id: u32) -> TskvResult<()> {
         Ok(())
     }
 
@@ -64,7 +64,7 @@ impl Engine for MockEngine {
         tab: &str,
         id: SeriesId,
         filter: &ColumnDomains<String>,
-    ) -> Result<Vec<SeriesId>> {
+    ) -> TskvResult<Vec<SeriesId>> {
         Ok(vec![])
     }
 
@@ -75,7 +75,7 @@ impl Engine for MockEngine {
         table: &str,
         vnode_id: VnodeId,
         series_id: &[SeriesId],
-    ) -> Result<Vec<SeriesKey>> {
+    ) -> TskvResult<Vec<SeriesKey>> {
         Ok(vec![])
     }
 
@@ -84,7 +84,7 @@ impl Engine for MockEngine {
         tenant: &str,
         db: &str,
         vnode_id: u32,
-    ) -> Result<Option<Arc<SuperVersion>>> {
+    ) -> TskvResult<Option<Arc<SuperVersion>>> {
         todo!()
     }
 
@@ -96,11 +96,11 @@ impl Engine for MockEngine {
         todo!()
     }
 
-    async fn compact(&self, vnode_ids: Vec<TseriesFamilyId>) -> Result<()> {
+    async fn compact(&self, vnode_ids: Vec<TseriesFamilyId>) -> TskvResult<()> {
         todo!()
     }
 
-    async fn get_vnode_hash_tree(&self, vnode_ids: VnodeId) -> Result<RecordBatch> {
+    async fn get_vnode_hash_tree(&self, vnode_ids: VnodeId) -> TskvResult<RecordBatch> {
         todo!()
     }
 

@@ -12,7 +12,7 @@ use crate::reader::{
     BatchReader, BatchReaderRef, SchemableTskvRecordBatchStream,
     SendableSchemableTskvRecordBatchStream,
 };
-use crate::{Error, Result};
+use crate::{TskvError, TskvResult};
 
 pub struct ParallelMergeAdapter {
     schema: SchemaRef,
@@ -25,9 +25,9 @@ impl ParallelMergeAdapter {
         schema: SchemaRef,
         inputs: Vec<BatchReaderRef>,
         limit: Option<usize>,
-    ) -> Result<Self> {
+    ) -> TskvResult<Self> {
         if inputs.is_empty() {
-            return Err(Error::CommonError {
+            return Err(TskvError::CommonError {
                 reason: "No inputs provided for ParallelMergeAdapter".to_string(),
             });
         }
@@ -41,12 +41,12 @@ impl ParallelMergeAdapter {
 }
 
 impl BatchReader for ParallelMergeAdapter {
-    fn process(&self) -> Result<SendableSchemableTskvRecordBatchStream> {
+    fn process(&self) -> TskvResult<SendableSchemableTskvRecordBatchStream> {
         let streams = self
             .inputs
             .iter()
-            .map(|e| -> Result<BoxStream<_>> { Ok(Box::pin(e.process()?)) })
-            .collect::<Result<Vec<_>>>()?;
+            .map(|e| -> TskvResult<BoxStream<_>> { Ok(Box::pin(e.process()?)) })
+            .collect::<TskvResult<Vec<_>>>()?;
 
         let stream = ParallelMergeStream::new(None, streams);
 
@@ -68,7 +68,7 @@ impl BatchReader for ParallelMergeAdapter {
 
 pub struct SchemableParallelMergeStream {
     schema: SchemaRef,
-    stream: ParallelMergeStream<Error>,
+    stream: ParallelMergeStream<TskvError>,
     remain: Option<usize>,
 }
 
@@ -79,7 +79,7 @@ impl SchemableTskvRecordBatchStream for SchemableParallelMergeStream {
 }
 
 impl Stream for SchemableParallelMergeStream {
-    type Item = Result<RecordBatch>;
+    type Item = TskvResult<RecordBatch>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         return match ready!(self.stream.poll_next_unpin(cx)) {

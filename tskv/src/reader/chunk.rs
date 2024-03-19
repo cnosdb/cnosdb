@@ -6,14 +6,14 @@ use datafusion::physical_optimizer::pruning::PruningPredicate;
 use super::column_group::statistics::ColumnGroupsStatisticsWrapper;
 use super::Predicate;
 use crate::reader::utils::reassign_predicate_columns;
-use crate::tsm::page::ColumnGroup;
-use crate::Result;
+use crate::tsm::column_group::ColumnGroup;
+use crate::TskvResult;
 
 pub fn filter_column_groups(
     cgs: Vec<Arc<ColumnGroup>>,
     predicate: &Option<Arc<Predicate>>,
     chunk_schema: SchemaRef,
-) -> Result<Vec<Arc<ColumnGroup>>> {
+) -> TskvResult<Vec<Arc<ColumnGroup>>> {
     if let Some(indices) = filter_column_groups_indices(&cgs, predicate, chunk_schema)? {
         let cgs = indices
             .into_iter()
@@ -31,7 +31,7 @@ fn filter_column_groups_indices(
     cgs: &[Arc<ColumnGroup>],
     predicate: &Option<Arc<Predicate>>,
     chunk_schema: SchemaRef,
-) -> Result<Option<Vec<bool>>> {
+) -> TskvResult<Option<Vec<bool>>> {
     if let Some(predicate) = predicate {
         let new_predicate = reassign_predicate_columns(predicate.clone(), chunk_schema.clone())?;
         let statistics = ColumnGroupsStatisticsWrapper(cgs);
@@ -63,7 +63,8 @@ mod tests {
 
     use crate::reader::chunk::filter_column_groups_indices;
     use crate::reader::Predicate;
-    use crate::tsm::page::{ColumnGroup, PageMeta, PageStatistics, PageWriteSpec};
+    use crate::tsm::column_group::ColumnGroup;
+    use crate::tsm::page::{PageMeta, PageStatistics, PageWriteSpec};
     use crate::tsm::statistics::ValueStatistics;
 
     /// ```text

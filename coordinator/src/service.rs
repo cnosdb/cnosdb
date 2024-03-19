@@ -58,7 +58,7 @@ use tokio_retry::Retry;
 use tonic::transport::Channel;
 use tower::timeout::Timeout;
 use trace::{debug, error, info, SpanContext, SpanExt, SpanRecorder};
-use tskv::{EngineRef, Error};
+use tskv::{EngineRef, TskvError};
 use utils::BkdrHasher;
 
 use crate::errors::*;
@@ -519,7 +519,7 @@ impl CoordService {
         let response = client
             .exec_admin_fetch_command(request)
             .await
-            .map_err(tskv::Error::from)?
+            .map_err(tskv::TskvError::from)?
             .into_inner();
         match record_batch_decode(&response.data) {
             Ok(r) => Ok(r),
@@ -657,7 +657,7 @@ impl Coordinator for CoordService {
         let response = client
             .exec_admin_command(request)
             .await
-            .map_err(tskv::Error::from)?
+            .map_err(tskv::TskvError::from)?
             .into_inner();
         status_response_to_result(&response)
     }
@@ -837,7 +837,7 @@ impl Coordinator for CoordService {
 
             if !has_fileds {
                 return Err(CoordinatorError::TskvError {
-                    source: Error::FieldsIsEmpty,
+                    source: TskvError::FieldsIsEmpty,
                 });
             }
 
@@ -1154,7 +1154,7 @@ impl Coordinator for CoordService {
 
             let id = table_schema
                 .column(&tag_name)
-                .ok_or({ Error::ColumnNotFound { column: tag_name } })?
+                .ok_or({ TskvError::ColumnNotFound { column: tag_name } })?
                 .id;
             new_tag.key = format!("{id}").into_bytes();
         }

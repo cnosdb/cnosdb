@@ -16,9 +16,9 @@ use models::schema::TskvTableSchemaRef;
 use models::SeriesKey;
 use trace::SpanRecorder;
 
-use crate::error::Result;
+use crate::error::TskvResult;
 use crate::reader::{QueryOption, SendableTskvRecordBatchStream};
-use crate::{EngineRef, Error};
+use crate::{EngineRef, TskvError};
 
 pub struct LocalTskvTagScanStream {
     state: StreamState,
@@ -83,7 +83,7 @@ impl LocalTskvTagScanStream {
         }
     }
 
-    fn poll_inner(&mut self, cx: &mut Context<'_>) -> Poll<Option<Result<RecordBatch>>> {
+    fn poll_inner(&mut self, cx: &mut Context<'_>) -> Poll<Option<TskvResult<RecordBatch>>> {
         loop {
             match &mut self.state {
                 StreamState::Open(future) => match ready!(future.try_poll_unpin(cx)) {
@@ -99,14 +99,14 @@ impl LocalTskvTagScanStream {
 }
 
 impl Stream for LocalTskvTagScanStream {
-    type Item = Result<RecordBatch>;
+    type Item = TskvResult<RecordBatch>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         self.poll_inner(cx)
     }
 }
 
-pub type StreamFuture = BoxFuture<'static, Result<SendableTskvRecordBatchStream>>;
+pub type StreamFuture = BoxFuture<'static, TskvResult<SendableTskvRecordBatchStream>>;
 
 enum StreamState {
     Open(StreamFuture),
@@ -117,17 +117,18 @@ fn series_keys_to_record_batch(
     tskv_table_schema: TskvTableSchemaRef,
     schema: SchemaRef,
     series_keys: &[SeriesKey],
-) -> Result<RecordBatch, Error> {
+) -> TskvResult<RecordBatch, TskvError> {
     let tag_key_array = schema.fields.iter().map(|f| f.name()).collect::<Vec<_>>();
     let new_schema = dictionary_filed_to_string(schema.clone());
     let mut array_builders = build_arrow_array_builders(&new_schema, series_keys.len())?;
     for key in series_keys {
         for (k, array_builder) in tag_key_array.iter().zip(&mut array_builders) {
-            let c = tskv_table_schema
-                .column(k.as_str())
-                .ok_or_else(|| Error::ColumnNotFound {
-                    column: k.to_string(),
-                })?;
+            let c =
+                tskv_table_schema
+                    .column(k.as_str())
+                    .ok_or_else(|| TskvError::ColumnNotFound {
+                        column: k.to_string(),
+                    })?;
 
             let tag_value = key
                 .tag_string_val(c.id.to_string().as_str())
@@ -145,7 +146,7 @@ fn series_keys_to_record_batch(
         .map(|mut b| b.finish())
         .zip(schema.fields().iter().map(|f| f.data_type()))
         .map(|(a, d)| arrow::compute::cast(&a, d))
-        .collect::<Result<Vec<_>, ArrowError>>()?;
+        .collect::<TskvResult<Vec<_>, ArrowError>>()?;
 
     let record_batch = RecordBatch::try_new(schema.clone(), columns)?;
     Ok(record_batch)

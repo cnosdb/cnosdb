@@ -1,4 +1,9 @@
+pub mod chunk;
+pub mod chunk_group;
 pub mod codec;
+pub mod column_group;
+pub mod data_block;
+pub mod footer;
 pub(crate) mod page;
 pub mod reader;
 pub mod statistics;
@@ -12,7 +17,7 @@ use std::collections::BTreeMap;
 use models::{SeriesId, SeriesKey};
 pub use tombstone::{Tombstone, TsmTombstone, TOMBSTONE_FILE_SUFFIX};
 
-use crate::tsm::writer::DataBlock;
+use crate::tsm::data_block::DataBlock;
 
 pub(crate) const MAX_BLOCK_VALUES: u32 = 1000;
 
