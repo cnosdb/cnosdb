@@ -18,7 +18,7 @@ use trace::{debug, error, info, warn};
 use crate::compaction::job::{CompactJob, FlushJob};
 use crate::compaction::{self, check, LevelCompactionPicker, Picker};
 use crate::database::Database;
-use crate::error::Result;
+use crate::error::TskvResult;
 use crate::file_system::file_manager;
 use crate::kv_option::{Options, StorageOptions};
 use crate::summary::{Summary, SummaryTask};
@@ -50,7 +50,7 @@ impl TsKv {
         runtime: Arc<Runtime>,
         memory_pool: MemoryPoolRef,
         metrics: Arc<MetricsRegister>,
-    ) -> Result<TsKv> {
+    ) -> TskvResult<TsKv> {
         let flush_channel_cap = options.storage.flush_req_channel_cap;
         let (flush_task_sender, flush_task_receiver) = mpsc::channel(flush_channel_cap);
         let (compact_task_sender, compact_task_receiver) = mpsc::channel(COMPACT_REQ_CHANNEL_CAP);
@@ -198,7 +198,7 @@ impl TsKv {
         &self,
         tenant: &str,
         db_name: &str,
-    ) -> Result<Arc<RwLock<Database>>> {
+    ) -> TskvResult<Arc<RwLock<Database>>> {
         if let Some(db) = self.ctx.version_set.read().await.get_db(tenant, db_name) {
             return Ok(db);
         }
@@ -217,7 +217,7 @@ impl TsKv {
         &self,
         id: TseriesFamilyId,
         db: Arc<RwLock<Database>>,
-    ) -> Result<Arc<RwLock<TseriesFamily>>> {
+    ) -> TskvResult<Arc<RwLock<TseriesFamily>>> {
         let mut db = db.write().await;
         if let Some(tf) = db.get_tsfamily(id) {
             return Ok(tf);
@@ -234,7 +234,7 @@ impl Engine for TsKv {
         tenant: &str,
         db_name: &str,
         vnode_id: VnodeId,
-    ) -> Result<VnodeStorage> {
+    ) -> TskvResult<VnodeStorage> {
         let db = self.get_db_or_else_create(tenant, db_name).await?;
 
         let ts_index = db.write().await.get_ts_index_or_add(vnode_id).await?;
@@ -251,7 +251,12 @@ impl Engine for TsKv {
         })
     }
 
-    async fn remove_tsfamily(&self, tenant: &str, database: &str, vnode_id: VnodeId) -> Result<()> {
+    async fn remove_tsfamily(
+        &self,
+        tenant: &str,
+        database: &str,
+        vnode_id: VnodeId,
+    ) -> TskvResult<()> {
         if let Some(db) = self.ctx.version_set.read().await.get_db(tenant, database) {
             let mut db_wlock = db.write().await;
             db_wlock.del_ts_index(vnode_id);
@@ -281,7 +286,12 @@ impl Engine for TsKv {
         Ok(())
     }
 
-    async fn flush_tsfamily(&self, tenant: &str, database: &str, vnode_id: VnodeId) -> Result<()> {
+    async fn flush_tsfamily(
+        &self,
+        tenant: &str,
+        database: &str,
+        vnode_id: VnodeId,
+    ) -> TskvResult<()> {
         if let Some(db) = self.ctx.version_set.read().await.get_db(tenant, database) {
             if let Some(tsfamily) = db.read().await.get_tsfamily(vnode_id) {
                 TseriesFamily::flush(self.ctx.clone(), tsfamily, true).await?;
@@ -302,7 +312,7 @@ impl Engine for TsKv {
         tab: &str,
         vnode_id: VnodeId,
         filter: &ColumnDomains<String>,
-    ) -> Result<Vec<SeriesId>> {
+    ) -> TskvResult<Vec<SeriesId>> {
         let (schema, ts_index) = match self.ctx.version_set.read().await.get_db(tenant, database) {
             Some(db) => {
                 let db = db.read().await;
@@ -331,7 +341,7 @@ impl Engine for TsKv {
         _table: &str,
         vnode_id: VnodeId,
         series_id: &[SeriesId],
-    ) -> Result<Vec<SeriesKey>> {
+    ) -> TskvResult<Vec<SeriesKey>> {
         if let Some(db) = self.ctx.version_set.read().await.get_db(tenant, database) {
             Ok(db.read().await.get_series_key(vnode_id, series_id).await?)
         } else {
@@ -344,7 +354,7 @@ impl Engine for TsKv {
         tenant: &str,
         database: &str,
         vnode_id: VnodeId,
-    ) -> Result<Option<Arc<SuperVersion>>> {
+    ) -> TskvResult<Option<Arc<SuperVersion>>> {
         let version_set = self.ctx.version_set.read().await;
         // Comment it, It's not a error, Maybe the data not right!
         // if !version_set.db_exists(tenant, database) {
@@ -371,7 +381,7 @@ impl Engine for TsKv {
         self.ctx.options.storage.clone()
     }
 
-    async fn compact(&self, vnode_ids: Vec<TseriesFamilyId>) -> Result<()> {
+    async fn compact(&self, vnode_ids: Vec<TseriesFamilyId>) -> TskvResult<()> {
         for vnode_id in vnode_ids {
             if let Some(ts_family) = self
                 .ctx
@@ -426,7 +436,7 @@ impl Engine for TsKv {
         Ok(())
     }
 
-    async fn get_vnode_hash_tree(&self, vnode_id: VnodeId) -> Result<RecordBatch> {
+    async fn get_vnode_hash_tree(&self, vnode_id: VnodeId) -> TskvResult<RecordBatch> {
         for database in self.ctx.version_set.read().await.get_all_db().values() {
             let db = database.read().await;
             if let Some(ts_family) = db.ts_families().get(&vnode_id).cloned() {

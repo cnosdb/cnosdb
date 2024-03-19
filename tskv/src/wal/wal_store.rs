@@ -10,7 +10,7 @@ use crate::file_system::file_manager;
 use crate::vnode_store::VnodeStorage;
 use crate::wal::reader::{Block, WalReader};
 use crate::wal::VnodeWal;
-use crate::{file_utils, Error, Result};
+use crate::{file_utils, TskvError, TskvResult};
 
 pub type RaftEntry = openraft::Entry<TypeConfig>;
 pub type RaftLogMembership = openraft::Membership<RaftNodeId, RaftNodeInfo>;
@@ -31,7 +31,7 @@ impl RaftEntryStorage {
     }
 
     /// Read WAL files to recover
-    pub async fn recover(&mut self, vode_store: &mut VnodeStorage) -> Result<()> {
+    pub async fn recover(&mut self, vode_store: &mut VnodeStorage) -> TskvResult<()> {
         self.inner.recover(vode_store).await
     }
 }
@@ -368,7 +368,7 @@ impl RaftEntryStorageInner {
     }
 
     /// Read WAL files to recover: engine, index, cache.
-    pub async fn recover(&mut self, vode_store: &mut VnodeStorage) -> Result<()> {
+    pub async fn recover(&mut self, vode_store: &mut VnodeStorage) -> TskvResult<()> {
         let wal_files = file_manager::list_file_names(self.wal.wal_dir());
         for file_name in wal_files {
             // If file name cannot be parsed to wal id, skip that file.
@@ -408,13 +408,13 @@ impl RaftEntryStorageInner {
                             self.mark_write_wal(entry, wal_id, r.pos);
                         }
                     }
-                    Err(Error::Eof) => {
+                    Err(TskvError::Eof) => {
                         break;
                     }
-                    Err(Error::RecordFileHashCheckFailed { .. }) => continue,
+                    Err(TskvError::RecordFileHashCheckFailed { .. }) => continue,
                     Err(e) => {
                         trace::error!("Error reading wal: {:?}", e);
-                        return Err(Error::WalTruncated);
+                        return Err(TskvError::WalTruncated);
                     }
                 }
             }
@@ -440,9 +440,9 @@ mod test {
 
     use crate::wal::wal_store::{RaftEntry, RaftEntryStorage};
     use crate::wal::VnodeWal;
-    use crate::Result;
+    use crate::TskvResult;
 
-    pub async fn get_vnode_wal(dir: impl AsRef<Path>) -> Result<VnodeWal> {
+    pub async fn get_vnode_wal(dir: impl AsRef<Path>) -> TskvResult<VnodeWal> {
         let dir = dir.as_ref();
         let owner = make_owner("cnosdb", "test_db");
         let owner = Arc::new(owner);

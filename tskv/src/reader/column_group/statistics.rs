@@ -5,7 +5,8 @@ use arrow_array::ArrayRef;
 use datafusion::physical_optimizer::pruning::PruningStatistics;
 use datafusion::scalar::ScalarValue;
 
-use crate::tsm::page::{ColumnGroup, PageStatistics};
+use crate::tsm::column_group::ColumnGroup;
+use crate::tsm::page::PageStatistics;
 
 pub struct ColumnGroupsStatisticsWrapper<'a>(pub &'a [Arc<ColumnGroup>]);
 

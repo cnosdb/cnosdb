@@ -22,7 +22,7 @@ use trace::error;
 
 use crate::file_system::file_manager;
 use crate::record_file::{self, RecordDataType, RecordDataVersion};
-use crate::{byte_utils, file_utils, Error, Result};
+use crate::{byte_utils, file_utils, TskvError, TskvResult};
 
 pub const TOMBSTONE_FILE_SUFFIX: &str = "tombstone";
 const FOOTER_MAGIC_NUMBER: u32 = u32::from_be_bytes([b'r', b'o', b'm', b'b']);
@@ -59,7 +59,7 @@ pub struct TsmTombstone {
 }
 
 impl TsmTombstone {
-    pub async fn open(path: impl AsRef<Path>, tsm_file_id: u64) -> Result<Self> {
+    pub async fn open(path: impl AsRef<Path>, tsm_file_id: u64) -> TskvResult<Self> {
         let path = file_utils::make_tsm_tombstone_file(path, tsm_file_id);
         let (mut reader, writer) = if file_manager::try_exists(&path) {
             (
@@ -82,7 +82,7 @@ impl TsmTombstone {
     }
 
     #[cfg(test)]
-    pub async fn with_path(path: impl AsRef<Path>) -> Result<Self> {
+    pub async fn with_path(path: impl AsRef<Path>) -> TskvResult<Self> {
         let path = path.as_ref();
         let parent = path.parent().expect("a valid tsm/tombstone file path");
         let tsm_file_id = file_utils::get_tsm_file_id_by_path(path)?;
@@ -92,12 +92,12 @@ impl TsmTombstone {
     async fn load_all(
         reader: &mut record_file::Reader,
         tombstones: &mut HashMap<(SeriesId, ColumnId), Vec<TimeRange>>,
-    ) -> Result<()> {
+    ) -> TskvResult<()> {
         loop {
             let data = match reader.read_record().await {
                 Ok(r) => r.data,
-                Err(Error::Eof) => break,
-                Err(Error::RecordFileHashCheckFailed { .. }) => continue,
+                Err(TskvError::Eof) => break,
+                Err(TskvError::RecordFileHashCheckFailed { .. }) => continue,
                 Err(e) => return Err(e),
             };
             if data.len() < ENTRY_LEN {
@@ -128,7 +128,7 @@ impl TsmTombstone {
         &mut self,
         columns: &[(SeriesId, ColumnId)],
         time_range: &TimeRange,
-    ) -> Result<()> {
+    ) -> TskvResult<()> {
         let mut writer_lock = self.writer.lock().await;
         if writer_lock.is_none() {
             *writer_lock =
@@ -161,7 +161,7 @@ impl TsmTombstone {
         Ok(())
     }
 
-    pub async fn flush(&self) -> Result<()> {
+    pub async fn flush(&self) -> TskvResult<()> {
         if let Some(w) = self.writer.lock().await.as_mut() {
             w.sync().await?;
         }

@@ -20,7 +20,7 @@ use models::schema::TIME_FIELD;
 
 use super::metrics::BaselineMetrics;
 use super::{Predicate, SchemableTskvRecordBatchStream, SendableSchemableTskvRecordBatchStream};
-use crate::{Error, Result};
+use crate::{TskvError, TskvResult};
 
 pub struct OverlappingSegments<T: TimeRangeProvider> {
     segments: Vec<T>,
@@ -128,10 +128,10 @@ impl CombinedRecordBatchStream {
         schema: SchemaRef,
         entries: Vec<SendableSchemableTskvRecordBatchStream>,
         metrics: &ExecutionPlanMetricsSet,
-    ) -> Result<Self> {
+    ) -> TskvResult<Self> {
         for s in &entries {
             if s.schema().fields() != schema.fields() {
-                return Err(Error::MismatchedSchema {
+                return Err(TskvError::MismatchedSchema {
                     msg: format!(
                         "in combined stream. Expected: {:?}, got {:?}",
                         schema,
@@ -156,7 +156,7 @@ impl SchemableTskvRecordBatchStream for CombinedRecordBatchStream {
 }
 
 impl Stream for CombinedRecordBatchStream {
-    type Item = Result<RecordBatch>;
+    type Item = TskvResult<RecordBatch>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         use Poll::*;
@@ -199,7 +199,7 @@ impl Stream for CombinedRecordBatchStream {
 pub fn reassign_predicate_columns(
     pred: Arc<Predicate>,
     file_schema: SchemaRef,
-) -> Result<Option<Arc<dyn PhysicalExpr>>, DataFusionError> {
+) -> TskvResult<Option<Arc<dyn PhysicalExpr>>, DataFusionError> {
     let full_schema = pred.schema();
     let mut rewriter = PredicateColumnsReassigner {
         file_schema: file_schema.clone(),
@@ -253,7 +253,7 @@ impl TreeNodeRewriter for PredicateColumnsReassigner {
     fn mutate(
         &mut self,
         expr: Arc<dyn PhysicalExpr>,
-    ) -> Result<Arc<dyn PhysicalExpr>, DataFusionError> {
+    ) -> TskvResult<Arc<dyn PhysicalExpr>, DataFusionError> {
         if let Some(column) = expr.as_any().downcast_ref::<Column>() {
             // find the column index in file schema
             let index = match self.file_schema.index_of(column.name()) {
@@ -308,7 +308,9 @@ pub fn time_field_from_schema(schema: &Schema) -> std::result::Result<(usize, &F
     })
 }
 
-pub fn time_column_from_record_batch(record_batch: &RecordBatch) -> Result<&ArrayRef, ArrowError> {
+pub fn time_column_from_record_batch(
+    record_batch: &RecordBatch,
+) -> TskvResult<&ArrayRef, ArrowError> {
     record_batch.column_by_name(TIME_FIELD).ok_or_else(|| {
         ArrowError::SchemaError(format!("Unable to get field named \"{TIME_FIELD}\"."))
     })

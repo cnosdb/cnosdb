@@ -6,7 +6,7 @@ use models::record_batch_encode;
 use protos::kv_service::BatchBytesResponse;
 use trace::SpanRecorder;
 
-use crate::error::{Error as TskvError, Result};
+use crate::error::{TskvError, TskvResult};
 use crate::reader::SendableTskvRecordBatchStream;
 
 pub struct TonicRecordBatchEncoder {
@@ -25,7 +25,7 @@ impl TonicRecordBatchEncoder {
 }
 
 impl Stream for TonicRecordBatchEncoder {
-    type Item = Result<BatchBytesResponse>;
+    type Item = TskvResult<BatchBytesResponse>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         match ready!(self.input.poll_next_unpin(cx)) {

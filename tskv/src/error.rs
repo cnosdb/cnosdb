@@ -5,6 +5,7 @@ use datafusion::error::DataFusionError;
 use error_code::{ErrorCode, ErrorCoder};
 use http_protocol::response::ErrorResponse;
 use meta::error::MetaError;
+use models::column_data::ColumnDataError;
 use models::meta_data::VnodeId;
 use protos::PointsError;
 use snafu::Snafu;
@@ -15,12 +16,12 @@ use crate::record_file;
 use crate::schema::error::SchemaError;
 use crate::tsm::page::Page;
 
-pub type Result<T, E = Error> = std::result::Result<T, E>;
+pub type TskvResult<T, E = TskvError> = std::result::Result<T, E>;
 
 #[derive(Snafu, Debug, ErrorCoder)]
 #[snafu(visibility(pub))]
 #[error_code(mod_code = "02")]
-pub enum Error {
+pub enum TskvError {
     #[snafu(display("Invalid http error response: {}", error))]
     ErrorResponse {
         error: ErrorResponse,
@@ -127,6 +128,12 @@ pub enum Error {
     #[error_code(code = 16)]
     TagError {
         reason: String,
+    },
+
+    #[snafu(display("ColumnDataError: {}", source))]
+    #[error_code(code = 17)]
+    ColumnDataError {
+        source: ColumnDataError,
     },
 
     // Internal Error
@@ -344,46 +351,46 @@ pub enum Error {
     },
 }
 
-impl From<PointsError> for Error {
+impl From<PointsError> for TskvError {
     fn from(value: PointsError) -> Self {
-        Error::Points { source: value }
+        TskvError::Points { source: value }
     }
 }
 
-impl From<SchemaError> for Error {
+impl From<SchemaError> for TskvError {
     fn from(value: SchemaError) -> Self {
         match value {
             SchemaError::Meta { source } => Self::Meta { source },
-            other => Error::Schema { source: other },
+            other => TskvError::Schema { source: other },
         }
     }
 }
 
-impl From<IndexError> for Error {
+impl From<IndexError> for TskvError {
     fn from(value: IndexError) -> Self {
-        Error::IndexErr { source: value }
+        TskvError::IndexErr { source: value }
     }
 }
 
-impl From<std::io::Error> for Error {
+impl From<std::io::Error> for TskvError {
     fn from(value: std::io::Error) -> Self {
-        Error::IO { source: value }
+        TskvError::IO { source: value }
     }
 }
 
-impl From<MetaError> for Error {
+impl From<MetaError> for TskvError {
     fn from(source: MetaError) -> Self {
-        Error::Meta { source }
+        TskvError::Meta { source }
     }
 }
 
-impl From<ArrowError> for Error {
+impl From<ArrowError> for TskvError {
     fn from(source: ArrowError) -> Self {
-        Error::Arrow { source }
+        TskvError::Arrow { source }
     }
 }
 
-impl From<DataFusionError> for Error {
+impl From<DataFusionError> for TskvError {
     fn from(source: DataFusionError) -> Self {
         match source {
             DataFusionError::External(e) if e.downcast_ref::<MetaError>().is_some() => Self::Meta {
@@ -414,11 +421,11 @@ impl From<DataFusionError> for Error {
     }
 }
 
-impl Error {
+impl TskvError {
     pub fn error_code(&self) -> &dyn ErrorCode {
         match self {
-            Error::Meta { source } => source.error_code(),
-            Error::ErrorResponse { error } => error,
+            TskvError::Meta { source } => source.error_code(),
+            TskvError::ErrorResponse { error } => error,
             _ => self,
         }
     }
@@ -442,8 +449,8 @@ impl Error {
 
 // default conversion from CoordinatorError to tonic treats everything
 // other than `Status` as an internal error
-impl From<Error> for Status {
-    fn from(value: Error) -> Self {
+impl From<TskvError> for Status {
+    fn from(value: TskvError) -> Self {
         let error_resp = ErrorResponse::new(value.error_code());
 
         match serde_json::to_string(&error_resp) {
@@ -457,16 +464,16 @@ impl From<Error> for Status {
     }
 }
 
-impl From<Status> for Error {
+impl From<Status> for TskvError {
     fn from(source: Status) -> Self {
         let error_message = source.message();
         match source.code() {
             Code::Internal => {
                 match serde_json::from_str::<ErrorResponse>(error_message) {
-                    Ok(error) => Error::ErrorResponse { error },
+                    Ok(error) => TskvError::ErrorResponse { error },
                     Err(err) => {
                         // Deserialization tskv error failed, maybe a bug
-                        Error::CommonError {
+                        TskvError::CommonError {
                             reason: err.to_string(),
                         }
                     }
@@ -475,7 +482,7 @@ impl From<Status> for Error {
             Code::Unknown => {
                 // The server will return this exception if serialization of tskv error fails, maybe a bug
                 trace::error!("The server will return this exception if serialization of tskv error fails, maybe a bug");
-                Error::CommonError {
+                TskvError::CommonError {
                     reason: error_message.to_string(),
                 }
             }
@@ -500,7 +507,7 @@ pub enum ChannelReceiveError {
 
 #[test]
 fn test_mod_code() {
-    let e = Error::Schema {
+    let e = TskvError::Schema {
         source: SchemaError::TableNotFound {
             database: String::new(),
             table: String::new(),

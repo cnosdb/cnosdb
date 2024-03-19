@@ -139,7 +139,7 @@ impl TskvEngineStorage {
         let mut resp_stream = client
             .download_file(request)
             .await
-            .map_err(tskv::Error::from)?
+            .map_err(tskv::TskvError::from)?
             .into_inner();
         while let Some(received) = resp_stream.next().await {
             let received = received?;

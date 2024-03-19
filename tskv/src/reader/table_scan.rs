@@ -11,9 +11,9 @@ use trace::SpanRecorder;
 
 use super::{iterator, SendableTskvRecordBatchStream};
 use crate::reader::QueryOption;
-use crate::{EngineRef, Error};
+use crate::{EngineRef, TskvError};
 
-type Result<T, E = Error> = std::result::Result<T, E>;
+type Result<T, E = TskvError> = std::result::Result<T, E>;
 
 pub struct LocalTskvTableScanStream {
     state: StreamState,
@@ -69,7 +69,7 @@ impl Stream for LocalTskvTableScanStream {
     }
 }
 
-pub type RowIteratorFuture = BoxFuture<'static, Result<SendableTskvRecordBatchStream, Error>>;
+pub type RowIteratorFuture = BoxFuture<'static, Result<SendableTskvRecordBatchStream, TskvError>>;
 
 enum StreamState {
     Open {

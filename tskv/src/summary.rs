@@ -18,7 +18,7 @@ use tokio::sync::RwLock;
 use utils::BloomFilter;
 
 use crate::context::GlobalContext;
-use crate::error::{Error, Result};
+use crate::error::{TskvError, TskvResult};
 use crate::kv_option::{Options, StorageOptions, DELTA_PATH, TSM_PATH};
 use crate::memcache::MemCache;
 use crate::record_file::{Reader, RecordDataType, RecordDataVersion, Writer};
@@ -94,7 +94,7 @@ impl CompactMeta {
         database: &str,
         ts_family_id: TseriesFamilyId,
         file_id: ColumnFileId,
-    ) -> Result<PathBuf> {
+    ) -> TskvResult<PathBuf> {
         let old_name = if self.is_delta {
             let base_dir = storage_opt
                 .move_dir(database, ts_family_id)
@@ -225,19 +225,19 @@ impl VersionEdit {
         }
     }
 
-    pub fn encode(&self) -> Result<Vec<u8>> {
-        bincode::serialize(self).map_err(|e| Error::RecordFileEncode { source: (e) })
+    pub fn encode(&self) -> TskvResult<Vec<u8>> {
+        bincode::serialize(self).map_err(|e| TskvError::RecordFileEncode { source: (e) })
     }
 
-    pub fn decode(buf: &[u8]) -> Result<Self> {
-        bincode::deserialize(buf).map_err(|e| Error::RecordFileDecode { source: (e) })
+    pub fn decode(buf: &[u8]) -> TskvResult<Self> {
+        bincode::deserialize(buf).map_err(|e| TskvError::RecordFileDecode { source: (e) })
     }
 
-    pub fn encode_vec(data: &[Self]) -> Result<Vec<u8>> {
+    pub fn encode_vec(data: &[Self]) -> TskvResult<Vec<u8>> {
         let mut buf: Vec<u8> = Vec::with_capacity(data.len() * 32);
         for ve in data {
             let ve_buf =
-                bincode::serialize(ve).map_err(|e| Error::RecordFileEncode { source: (e) })?;
+                bincode::serialize(ve).map_err(|e| TskvError::RecordFileEncode { source: (e) })?;
             let pos = buf.len();
             buf.resize(pos + 4 + ve_buf.len(), 0_u8);
             buf[pos..pos + 4].copy_from_slice((ve_buf.len() as u32).to_be_bytes().as_slice());
@@ -247,7 +247,7 @@ impl VersionEdit {
         Ok(buf)
     }
 
-    pub fn decode_vec(buf: &[u8]) -> Result<Vec<Self>> {
+    pub fn decode_vec(buf: &[u8]) -> TskvResult<Vec<Self>> {
         let mut list: Vec<Self> = Vec::with_capacity(buf.len() / 32 + 1);
         let mut pos = 0_usize;
         while pos < buf.len() {
@@ -309,7 +309,7 @@ impl Summary {
         meta: MetaRef,
         memory_pool: MemoryPoolRef,
         metrics_register: Arc<MetricsRegister>,
-    ) -> Result<Self> {
+    ) -> TskvResult<Self> {
         let db = VersionEdit::default();
         let path = file_utils::make_summary_file(opt.storage.summary_dir(), 0);
         let mut w = Writer::open(path, RecordDataType::Summary).await.unwrap();
@@ -353,7 +353,7 @@ impl Summary {
         memory_pool: MemoryPoolRef,
         load_field_filter: bool,
         metrics_register: Arc<MetricsRegister>,
-    ) -> Result<Self> {
+    ) -> TskvResult<Self> {
         let summary_path = opt.storage.summary_dir();
         let path = file_utils::make_summary_file(&summary_path, 0);
         let writer = Writer::open(path, RecordDataType::Summary).await.unwrap();
@@ -401,7 +401,7 @@ impl Summary {
         memory_pool: MemoryPoolRef,
         load_field_filter: bool,
         metrics_register: Arc<MetricsRegister>,
-    ) -> Result<VersionSet> {
+    ) -> TskvResult<VersionSet> {
         let mut tsf_edits_map: HashMap<TseriesFamilyId, Vec<VersionEdit>> = HashMap::new();
         let mut database_map: HashMap<String, Arc<String>> = HashMap::new();
         let mut tsf_database_map: HashMap<TseriesFamilyId, Arc<String>> = HashMap::new();
@@ -424,8 +424,8 @@ impl Summary {
                         data.push(ed);
                     }
                 }
-                Err(Error::Eof) => break,
-                Err(Error::RecordFileHashCheckFailed { .. }) => continue,
+                Err(TskvError::Eof) => break,
+                Err(TskvError::RecordFileHashCheckFailed { .. }) => continue,
                 Err(e) => {
                     return Err(e);
                 }
@@ -492,7 +492,7 @@ impl Summary {
     }
 
     /// Write VersionEdits into summary file, generate and then apply new Versions for TseriesFamilies.
-    pub async fn apply_version_edit(&mut self, request: &SummaryRequest) -> Result<()> {
+    pub async fn apply_version_edit(&mut self, request: &SummaryRequest) -> TskvResult<()> {
         // Write VersionEdits into summary file and join VersionEdits by Database/TseriesFamilyId.
         let tsf_id = request.ts_family.read().await.tf_id();
 
@@ -533,7 +533,7 @@ impl Summary {
         Ok(())
     }
 
-    pub async fn roll_summary_file(&mut self) -> Result<()> {
+    pub async fn roll_summary_file(&mut self) -> TskvResult<()> {
         if self.writer.file_size() < self.opt.storage.max_summary_size {
             return Ok(());
         }
@@ -618,8 +618,8 @@ pub async fn print_summary_statistics(path: impl AsRef<Path>) {
                     println!("  Delete file:[ {} ]", buffer);
                 }
             }
-            Err(Error::Eof) => break,
-            Err(Error::RecordFileHashCheckFailed { .. }) => continue,
+            Err(TskvError::Eof) => break,
+            Err(TskvError::RecordFileHashCheckFailed { .. }) => continue,
             Err(err) => panic!("Errors when read summary file: {}", err),
         }
         println!("============================================================");
@@ -636,7 +636,7 @@ pub struct SummaryRequest {
 #[derive(Debug)]
 pub struct SummaryTask {
     pub request: SummaryRequest,
-    pub call_back: OneShotSender<Result<()>>,
+    pub call_back: OneShotSender<TskvResult<()>>,
 }
 
 impl SummaryTask {
@@ -645,7 +645,7 @@ impl SummaryTask {
         version_edit: VersionEdit,
         file_metas: Option<HashMap<ColumnFileId, Arc<BloomFilter>>>,
         mem_caches: Option<Vec<Arc<SyncRwLock<MemCache>>>>,
-        call_back: OneShotSender<Result<()>>,
+        call_back: OneShotSender<TskvResult<()>>,
     ) -> Self {
         Self {
             call_back,

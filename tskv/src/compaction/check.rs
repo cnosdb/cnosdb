@@ -9,7 +9,7 @@ use models::predicate::domain::TimeRange;
 use models::{utils as model_utils, ColumnId, FieldId, SeriesId, Timestamp};
 use tokio::sync::RwLock;
 
-use crate::error::{Error, Result};
+use crate::error::{TskvError, TskvResult};
 use crate::tseries_family::TseriesFamily;
 use crate::TseriesFamilyId;
 
@@ -213,7 +213,7 @@ pub fn vnode_field_time_range_table_checksum_schema() -> SchemaRef {
 /// | vnode_id | checksum |
 /// | -------- | -------- |
 /// | 1        | a1a2a3a4 |
-pub(crate) async fn vnode_checksum(_vnode: Arc<RwLock<TseriesFamily>>) -> Result<RecordBatch> {
+pub(crate) async fn vnode_checksum(_vnode: Arc<RwLock<TseriesFamily>>) -> TskvResult<RecordBatch> {
     // let vnode_id = vnode.read().await.tf_id();
     // let root_node = vnode_hash_tree(vnode).await?;
     //
@@ -232,7 +232,7 @@ pub(crate) async fn vnode_checksum(_vnode: Arc<RwLock<TseriesFamily>>) -> Result
     // .map_err(|err| Error::CommonError {
     //     reason: format!("get checksum fail, {}", err),
     // })
-    Err(Error::Unimplemented {
+    Err(TskvError::Unimplemented {
         msg: "checksum unimplemented".to_string(),
     })
 }

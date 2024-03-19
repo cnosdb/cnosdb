@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 
-use crate::Result;
+use crate::TskvResult;
 
 #[derive(Serialize, Deserialize, Default, Debug, Clone)]
 pub struct FileInfo {
@@ -14,7 +14,7 @@ pub struct FileInfo {
     pub size: u64,
 }
 
-pub async fn get_files_info(dir: &PathBuf) -> Result<Vec<FileInfo>> {
+pub async fn get_files_info(dir: &PathBuf) -> TskvResult<Vec<FileInfo>> {
     let mut infos = vec![];
     for name in recursive_list_files(dir).iter() {
         let info = get_file_info(name).await?;
@@ -24,7 +24,7 @@ pub async fn get_files_info(dir: &PathBuf) -> Result<Vec<FileInfo>> {
     Ok(infos)
 }
 
-pub async fn get_file_info(name: &str) -> Result<FileInfo> {
+pub async fn get_file_info(name: &str) -> TskvResult<FileInfo> {
     let mut file = File::open(name).await?;
     let file_meta = file.metadata().await?;
 

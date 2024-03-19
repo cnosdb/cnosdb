@@ -125,18 +125,18 @@ impl RaftWriter {
                 raft_write_command::Command::WriteData(request) => {
                     let fb_points = flatbuffers::root::<protos::models::Points>(&request.data)
                         .map_err(|err| CoordinatorError::TskvError {
-                            source: tskv::Error::InvalidFlatbuffer { source: err },
+                            source: tskv::TskvError::InvalidFlatbuffer { source: err },
                         })?;
 
                     let _ = fb_points.tables().ok_or(CoordinatorError::TskvError {
-                        source: tskv::Error::InvalidPointTable,
+                        source: tskv::TskvError::InvalidPointTable,
                     })?;
 
                     let total_memory = self.config.deployment.memory * 1024 * 1024 * 1024;
                     if request.data.len() > total_memory.saturating_sub(self.memory_pool.reserved())
                     {
                         return Err(CoordinatorError::TskvError {
-                            source: tskv::Error::MemoryExhausted,
+                            source: tskv::TskvError::MemoryExhausted,
                         });
                     }
                 }

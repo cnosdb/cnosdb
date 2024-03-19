@@ -5,7 +5,7 @@ use regex::Regex;
 use tokio::fs;
 
 use crate::file_system::file_manager;
-use crate::{Error, Result};
+use crate::{TskvError, TskvResult};
 
 lazy_static! {
     static ref SUMMARY_FILE_NAME_PATTERN: Regex = Regex::new(r"summary-\d{6}").unwrap();
@@ -33,17 +33,17 @@ pub fn check_summary_file_name(file_name: &str) -> bool {
 }
 
 /// Rename a file, from old path to new path.
-pub async fn rename(old_name: impl AsRef<Path>, new_name: impl AsRef<Path>) -> Result<()> {
+pub async fn rename(old_name: impl AsRef<Path>, new_name: impl AsRef<Path>) -> TskvResult<()> {
     fs::create_dir_all(new_name.as_ref().parent().unwrap()).await?;
     fs::rename(old_name, new_name)
         .await
-        .map_err(|e| Error::IO { source: e })
+        .map_err(|e| TskvError::IO { source: e })
 }
 
 /// Get id from a summary file's name.
-pub fn get_summary_file_id(file_name: &str) -> Result<u64> {
+pub fn get_summary_file_id(file_name: &str) -> TskvResult<u64> {
     if !check_summary_file_name(file_name) {
-        return Err(Error::InvalidFileName {
+        return Err(TskvError::InvalidFileName {
             file_name: file_name.to_string(),
             message: "summary file name does not contain an id".to_string(),
         });
@@ -51,7 +51,7 @@ pub fn get_summary_file_id(file_name: &str) -> Result<u64> {
     let (_, file_number) = file_name.split_at(8);
     file_number
         .parse::<u64>()
-        .map_err(|_| Error::InvalidFileName {
+        .map_err(|_| TskvError::InvalidFileName {
             file_name: file_name.to_string(),
             message: "summary file name contains an invalid id".to_string(),
         })
@@ -69,9 +69,9 @@ pub fn check_index_binlog_file_name(file_name: &str) -> bool {
 }
 
 /// Get id from a index binlog file's name.
-pub fn get_index_binlog_file_id(file_name: &str) -> Result<u64> {
+pub fn get_index_binlog_file_id(file_name: &str) -> TskvResult<u64> {
     if !check_index_binlog_file_name(file_name) {
-        return Err(Error::InvalidFileName {
+        return Err(TskvError::InvalidFileName {
             file_name: file_name.to_string(),
             message: "index binlog file name does not contain an id".to_string(),
         });
@@ -79,7 +79,7 @@ pub fn get_index_binlog_file_id(file_name: &str) -> Result<u64> {
     let file_number = &file_name[1..7];
     file_number
         .parse::<u64>()
-        .map_err(|_| Error::InvalidFileName {
+        .map_err(|_| TskvError::InvalidFileName {
             file_name: file_name.to_string(),
             message: "index binlog file name contains an invalid id".to_string(),
         })
@@ -97,9 +97,9 @@ pub fn check_wal_file_name(file_name: &str) -> bool {
 }
 
 /// Get id from a WAL file's name.
-pub fn get_wal_file_id(file_name: &str) -> Result<u64> {
+pub fn get_wal_file_id(file_name: &str) -> TskvResult<u64> {
     if !check_wal_file_name(file_name) {
-        return Err(Error::InvalidFileName {
+        return Err(TskvError::InvalidFileName {
             file_name: file_name.to_string(),
             message: "wal file name does not contain an id".to_string(),
         });
@@ -107,7 +107,7 @@ pub fn get_wal_file_id(file_name: &str) -> Result<u64> {
     let file_number = &file_name[1..7];
     file_number
         .parse::<u64>()
-        .map_err(|_| Error::InvalidFileName {
+        .map_err(|_| TskvError::InvalidFileName {
             file_name: file_name.to_string(),
             message: "wal file name contains an invalid id".to_string(),
         })
@@ -123,7 +123,7 @@ pub fn make_tsm_file(dir: impl AsRef<Path>, sequence: u64) -> PathBuf {
 }
 
 /// Get id from a TSM file's name.
-pub fn get_tsm_file_id_by_path(tsm_path: impl AsRef<Path>) -> Result<u64> {
+pub fn get_tsm_file_id_by_path(tsm_path: impl AsRef<Path>) -> TskvResult<u64> {
     let path = tsm_path.as_ref();
     let file_name = path
         .file_name()
@@ -131,7 +131,7 @@ pub fn get_tsm_file_id_by_path(tsm_path: impl AsRef<Path>) -> Result<u64> {
         .to_str()
         .expect("file name must be UTF-8 string");
     if file_name.len() == 1 {
-        return Err(Error::InvalidFileName {
+        return Err(TskvError::InvalidFileName {
             file_name: file_name.to_string(),
             message: "tsm file name contains an invalid id".to_string(),
         });
@@ -141,7 +141,7 @@ pub fn get_tsm_file_id_by_path(tsm_path: impl AsRef<Path>) -> Result<u64> {
     let file_number = &file_name[start..end];
     file_number
         .parse::<u64>()
-        .map_err(|_| Error::InvalidFileName {
+        .map_err(|_| TskvError::InvalidFileName {
             file_name: file_name.to_string(),
             message: "tsm file name contains an invalid id".to_string(),
         })
@@ -171,7 +171,7 @@ pub fn get_max_sequence_file_name<F>(
     get_sequence: F,
 ) -> Option<(PathBuf, u64)>
 where
-    F: Fn(&str) -> Result<u64>,
+    F: Fn(&str) -> TskvResult<u64>,
 {
     let segments = file_manager::list_file_names(dir);
     if segments.is_empty() {
@@ -219,9 +219,9 @@ pub fn get_file_id_range(dir: impl AsRef<Path>, suffix: &str) -> Option<(u64, u6
     }
 
     let pattern = Regex::new(&(r"_\d{6}\.".to_string() + suffix)).unwrap();
-    let get_file_id = |file_name: &str| -> Result<u64> {
+    let get_file_id = |file_name: &str| -> TskvResult<u64> {
         if !pattern.is_match(file_name) {
-            return Err(Error::InvalidFileName {
+            return Err(TskvError::InvalidFileName {
                 file_name: file_name.to_string(),
                 message: "index binlog file name does not contain an id".to_string(),
             });
@@ -230,7 +230,7 @@ pub fn get_file_id_range(dir: impl AsRef<Path>, suffix: &str) -> Option<(u64, u6
         let file_number = &file_name[1..7];
         file_number
             .parse::<u64>()
-            .map_err(|_| Error::InvalidFileName {
+            .map_err(|_| TskvError::InvalidFileName {
                 file_name: file_name.to_string(),
                 message: "index binlog file name contains an invalid id".to_string(),
             })

@@ -9,7 +9,7 @@ use trace::{SpanContext, SpanExt, SpanRecorder};
 
 use super::table_scan::LocalTskvTableScanStream;
 use super::tag_scan::LocalTskvTagScanStream;
-use crate::error::Result;
+use crate::error::TskvResult;
 use crate::reader::{QueryOption, SendableTskvRecordBatchStream};
 use crate::EngineRef;
 
@@ -39,8 +39,8 @@ impl QueryExecutor {
         &self,
         vnodes: Vec<VnodeInfo>,
         span_ctx: Option<&SpanContext>,
-    ) -> Result<SendableTskvRecordBatchStream> {
-        let mut streams: Vec<BoxStream<Result<RecordBatch>>> = Vec::with_capacity(vnodes.len());
+    ) -> TskvResult<SendableTskvRecordBatchStream> {
+        let mut streams: Vec<BoxStream<TskvResult<RecordBatch>>> = Vec::with_capacity(vnodes.len());
 
         vnodes.into_iter().for_each(|vnode| {
             let input = Box::pin(LocalTskvTableScanStream::new(
@@ -65,7 +65,7 @@ impl QueryExecutor {
         &self,
         vnodes: Vec<VnodeInfo>,
         span_ctx: Option<&SpanContext>,
-    ) -> Result<SendableTskvRecordBatchStream> {
+    ) -> TskvResult<SendableTskvRecordBatchStream> {
         let mut streams = Vec::with_capacity(vnodes.len());
         vnodes.into_iter().for_each(|vnode| {
             let stream = LocalTskvTagScanStream::new(

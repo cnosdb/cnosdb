@@ -20,7 +20,7 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Extensions, Request, Response, Status};
 use trace::{debug, error, info, SpanContext, SpanExt, SpanRecorder};
-use tskv::error::Result as TskvResult;
+use tskv::error::TskvResult;
 use tskv::reader::query_executor::QueryExecutor;
 use tskv::reader::serialize::TonicRecordBatchEncoder;
 use tskv::reader::{QueryOption, SendableTskvRecordBatchStream};

@@ -23,7 +23,7 @@ mod result_format;
 #[snafu(visibility(pub))]
 pub enum Error {
     Tskv {
-        source: tskv::Error,
+        source: tskv::TskvError,
     },
 
     Coordinator {
@@ -111,8 +111,8 @@ pub enum Error {
     },
 }
 
-impl From<tskv::Error> for Error {
-    fn from(value: tskv::Error) -> Self {
+impl From<tskv::TskvError> for Error {
+    fn from(value: tskv::TskvError) -> Self {
         Error::Tskv { source: value }
     }
 }
@@ -234,7 +234,7 @@ mod tests {
     #[test]
     fn test_tskv_error() {
         let resp: Response = Error::Tskv {
-            source: tskv::Error::CommonError {
+            source: tskv::TskvError::CommonError {
                 reason: "".to_string(),
             },
         }

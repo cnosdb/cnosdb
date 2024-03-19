@@ -21,7 +21,7 @@ use trace::{debug, error, info};
 use utils::BloomFilter;
 
 use crate::compaction::{run_flush_memtable_job, FlushReq};
-use crate::error::Result;
+use crate::error::TskvResult;
 use crate::file_system::file_manager;
 use crate::file_utils::{self, make_delta_file, make_tsm_file};
 use crate::index::ts_index::TSIndex;
@@ -31,7 +31,7 @@ use crate::summary::{CompactMeta, VersionEdit};
 use crate::tsm::page::PageMeta;
 use crate::tsm::reader::TsmReader;
 use crate::tsm::{ColumnGroupID, TsmTombstone};
-use crate::Error::CommonError;
+use crate::TskvError::CommonError;
 use crate::{tsm, ColumnFileId, LevelId, Options, TsKvContext, TseriesFamilyId};
 
 #[derive(Debug)]
@@ -130,7 +130,7 @@ impl ColumnFile {
         series_id: SeriesId,
         column_id: ColumnId,
         time_range: &TimeRange,
-    ) -> Result<()> {
+    ) -> TskvResult<()> {
         let dir = self.path.parent().expect("file has parent");
         // TODO flock tombstone file.
         let mut tombstone = TsmTombstone::open(dir, self.file_id).await?;
@@ -500,7 +500,7 @@ impl Version {
         vec![]
     }
 
-    pub async fn get_tsm_reader(&self, path: impl AsRef<Path>) -> Result<Arc<TsmReader>> {
+    pub async fn get_tsm_reader(&self, path: impl AsRef<Path>) -> TskvResult<Arc<TsmReader>> {
         let path = path.as_ref().display().to_string();
         let tsm_reader = match self.tsm_reader_cache.get(&path).await {
             Some(val) => val,
@@ -715,7 +715,7 @@ impl SuperVersion {
         series_ids: &[SeriesId],
         column_ids: &[ColumnId],
         time_range: &TimeRange,
-    ) -> Result<()> {
+    ) -> TskvResult<()> {
         let column_files =
             self.column_files_by_sid_and_time(series_ids, &TimeRanges::new(vec![*time_range]));
         for sid in series_ids {
@@ -1008,7 +1008,7 @@ impl TseriesFamily {
         &self,
         seq: u64,
         points: HashMap<SeriesId, (SeriesKey, RowGroup)>,
-    ) -> Result<u64> {
+    ) -> TskvResult<u64> {
         if self.status == VnodeStatus::Copying {
             return Err(CommonError {
                 reason: "vnode is moving please retry later".to_string(),
@@ -1114,7 +1114,7 @@ impl TseriesFamily {
         version_edit
     }
 
-    pub async fn backup(&self, ve: &VersionEdit, snap_id: &str) -> Result<()> {
+    pub async fn backup(&self, ve: &VersionEdit, snap_id: &str) -> TskvResult<()> {
         let opt = self.storage_opt();
         let owner = self.tenant_database();
         let tsm_dir = opt.tsm_dir(owner.as_str(), self.tf_id);
@@ -1159,7 +1159,7 @@ impl TseriesFamily {
         Ok(())
     }
 
-    pub async fn rebuild_index(&self) -> Result<Arc<TSIndex>> {
+    pub async fn rebuild_index(&self) -> TskvResult<Arc<TSIndex>> {
         let path = self
             .storage_opt
             .index_dir(self.tenant_database.as_str(), self.tf_id);
@@ -1198,7 +1198,7 @@ impl TseriesFamily {
         ctx: Arc<TsKvContext>,
         tsfamily: Arc<TokioRwLock<TseriesFamily>>,
         trigger_compact: bool,
-    ) -> Result<()> {
+    ) -> TskvResult<()> {
         let request = {
             let mut tsfamily = tsfamily.write().await;
             tsfamily.switch_to_immutable();

@@ -11,7 +11,7 @@ use super::{
     BatchReader, BatchReaderRef, SchemableTskvRecordBatchStream,
     SendableSchemableTskvRecordBatchStream,
 };
-use crate::Result;
+use crate::TskvResult;
 
 pub struct TraceCollectorBatcherReaderProxy {
     inner: BatchReaderRef,
@@ -39,7 +39,7 @@ impl TraceCollectorBatcherReaderProxy {
 }
 
 impl BatchReader for TraceCollectorBatcherReaderProxy {
-    fn process(&self) -> Result<SendableSchemableTskvRecordBatchStream> {
+    fn process(&self) -> TskvResult<SendableSchemableTskvRecordBatchStream> {
         let input = self.inner.process()?;
 
         // 如果开启了 trace，则将 input 包装成 TraceCollectorStream 用于采集 trace 信息
@@ -76,7 +76,7 @@ impl SchemableTskvRecordBatchStream for TraceCollectorStream {
 }
 
 impl Stream for TraceCollectorStream {
-    type Item = Result<RecordBatch>;
+    type Item = TskvResult<RecordBatch>;
 
     fn poll_next(
         mut self: std::pin::Pin<&mut Self>,
