@@ -10,6 +10,7 @@ use models::field_value::FieldVal;
 use models::predicate::domain::TimeRange;
 use models::schema::{PhysicalCType, TableColumn, TskvTableSchemaRef};
 use models::{ColumnId, PhysicalDType, SeriesId, SeriesKey};
+use num_traits::ToBytes;
 use snafu::ResultExt;
 use utils::bitset::BitSet;
 use utils::BloomFilter;
@@ -385,8 +386,12 @@ impl Column {
             }
         };
         let mut data = vec![];
+        let mut hasher = crc32fast::Hasher::new();
+        hasher.update(&buf);
+        let data_crc = hasher.finalize().to_be_bytes();
         data.extend_from_slice(&len_bitset.to_be_bytes());
         data.extend_from_slice(&data_len.to_be_bytes());
+        data.extend_from_slice(&data_crc);
         data.extend_from_slice(self.valid.bytes());
         data.extend_from_slice(&buf);
         let bytes = bytes::Bytes::from(data);

@@ -13,6 +13,7 @@ use tonic::{Code, Status};
 use crate::index::IndexError;
 use crate::record_file;
 use crate::schema::error::SchemaError;
+use crate::tsm::page::Page;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -235,6 +236,14 @@ pub enum Error {
         crc: u32,
         crc_calculated: u32,
         record: record_file::Record,
+    },
+
+    /// This error is handled by the caller of tsm_file::page
+    #[snafu(display("TSM Page CRC not match , expected: {crc}, calculated: {crc_calculated}",))]
+    TSMPageFileHashCheckFailed {
+        crc: u32,
+        crc_calculated: u32,
+        page: Page,
     },
 
     #[snafu(display("Failed to do encode: {}", source))]

@@ -307,7 +307,8 @@ pub fn decode_buf_to_pages(
             meta: page.meta.clone(),
             bytes: Bytes::from(page_buf.to_vec()),
         };
-        pages.push(page);
+        let page_result = page.crc_validation()?;
+        pages.push(page_result);
     }
     Ok(pages)
 }
@@ -382,7 +383,7 @@ async fn read_page(reader: Arc<AsyncFile>, page_spec: &PageWriteSpec) -> Result<
         meta: page_spec.meta().clone(),
         bytes: Bytes::from(buffer),
     };
-    Ok(page)
+    page.crc_validation()
 }
 
 pub fn decode_pages(pages: Vec<Page>, table_schema: TskvTableSchemaRef) -> Result<DataBlock> {

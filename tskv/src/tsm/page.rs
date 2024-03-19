@@ -25,6 +25,7 @@ use crate::Error;
 pub struct Page {
     /// 4 bits for bitset len
     /// 8 bits for data len
+    /// 4 bits for crc32 len
     /// bitset len bits for BitSet
     /// the bits of rest for data
     pub(crate) bytes: bytes::Bytes,
@@ -48,6 +49,25 @@ impl Page {
         &self.meta.column
     }
 
+    pub fn crc_validation(&self) -> Result<Page> {
+        let bytes = self.bytes().clone();
+        let meta = self.meta().clone();
+        let data_crc = decode_be_u32(&bytes[12..16]);
+        let mut hasher = crc32fast::Hasher::new();
+        let bitset_len = decode_be_u32(&self.bytes[0..4]) as usize;
+        hasher.update(&bytes[16 + bitset_len..]);
+        let data_crc_calculated = hasher.finalize();
+        if data_crc != data_crc_calculated {
+            // If crc not match, try to return error.
+            return Err(Error::TSMPageFileHashCheckFailed {
+                crc: data_crc,
+                crc_calculated: data_crc_calculated,
+                page: Page { bytes, meta },
+            });
+        }
+        Ok(Page { bytes, meta })
+    }
+
     pub fn null_bitset(&self) -> ImmutBitSet<'_> {
         let data_len = decode_be_u64(&self.bytes[4..12]) as usize;
         let bitset_buffer = self.null_bitset_slice();
@@ -56,12 +76,12 @@ impl Page {
 
     pub fn null_bitset_slice(&self) -> &[u8] {
         let bitset_len = decode_be_u32(&self.bytes[0..4]) as usize;
-        &self.bytes[12..12 + bitset_len]
+        &self.bytes[16..16 + bitset_len]
     }
 
     pub fn data_buffer(&self) -> &[u8] {
         let bitset_len = decode_be_u32(&self.bytes[0..4]) as usize;
-        &self.bytes[12 + bitset_len..]
+        &self.bytes[16 + bitset_len..]
     }
 
     pub fn to_column(&self) -> Result<Column> {
@@ -717,11 +737,50 @@ impl SeriesMeta {
 
 #[cfg(test)]
 mod test {
+    use arrow::datatypes::ToByteSlice;
     use models::predicate::domain::TimeRange;
+    use models::schema::{ColumnType, TableColumn};
+    use models::ValueType;
+    use utils::bitset::BitSet;
     use utils::BloomFilter;
 
-    use crate::tsm::page::{Footer, SeriesMeta, TableMeta};
+    use crate::tsm::page::{Footer, Page, PageMeta, PageStatistics, SeriesMeta, TableMeta};
+    use crate::tsm::statistics::ValueStatistics;
     use crate::tsm::BLOOM_FILTER_BITS;
+
+    fn create_test_page() -> Page {
+        let field_column = TableColumn::new(
+            1,
+            "field1".to_string(),
+            ColumnType::Field(ValueType::Integer),
+            Default::default(),
+        );
+
+        let pagemeta = PageMeta {
+            num_values: 1,
+            column: field_column,
+            statistics: PageStatistics::I64(ValueStatistics::new(Some(1), Some(3), None, 1)),
+        };
+
+        let buf = b"hello world".to_byte_slice();
+        let data_len = 1_u64;
+        let valid = BitSet::new();
+        let len_bitset = valid.byte_len() as u32;
+
+        let mut hasher = crc32fast::Hasher::new();
+        hasher.update(buf);
+        let data_crc = hasher.finalize().to_be_bytes();
+
+        let mut data = vec![];
+        data.extend_from_slice(&len_bitset.to_be_bytes());
+        data.extend_from_slice(&data_len.to_be_bytes());
+        data.extend_from_slice(&data_crc);
+        data.extend_from_slice(valid.bytes());
+        data.extend_from_slice(buf);
+
+        let bytes = bytes::Bytes::from(data);
+        Page::new(bytes, pagemeta.clone())
+    }
 
     #[test]
     fn test1() {
@@ -746,5 +805,12 @@ mod test {
         println!("bytes: {:?}", bytess.len());
         let footer = Footer::deserialize(&bytess).unwrap();
         assert_eq!(footer, expect_footer);
+    }
+
+    #[test]
+    fn test_page_crc_validation() {
+        let page = create_test_page();
+        let result = page.crc_validation();
+        assert!(result.is_ok());
     }
 }
