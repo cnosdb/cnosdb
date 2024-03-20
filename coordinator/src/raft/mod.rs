@@ -136,24 +136,11 @@ impl TskvEngineStorage {
         let request = tonic::Request::new(DownloadFileRequest {
             filename: download.to_string(),
         });
-        let mut resp_stream = client
-            .download_file(request)
-            .await
-            .map_err(tskv::Error::from)?
-            .into_inner();
+        let mut resp_stream = client.download_file(request).await?.into_inner();
         while let Some(received) = resp_stream.next().await {
             let received = received?;
-            if received.code != crate::SUCCESS_RESPONSE_CODE {
-                return Err(CoordinatorError::GRPCRequest {
-                    msg: format!(
-                        "server status: {}, {:?}",
-                        received.code,
-                        String::from_utf8(received.data)
-                    ),
-                });
-            }
-
-            file.write_all(&received.data).await?;
+            let data = crate::errors::decode_grpc_response(received)?;
+            file.write_all(&data).await?;
         }
 
         Ok(())

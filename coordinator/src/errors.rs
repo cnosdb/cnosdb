@@ -11,7 +11,6 @@ use models::schema::Precision;
 use models::Timestamp;
 use protos::PointsError;
 use snafu::Snafu;
-use tonic::Status;
 
 #[derive(Snafu, Debug, ErrorCoder)]
 #[snafu(visibility(pub))]
@@ -122,18 +121,10 @@ pub enum CoordinatorError {
         id: u32,
     },
 
-    #[snafu(display("Node failover: {}, error: {}", id, error))]
+    #[snafu(display("pre-execution failed: {}", error))]
     #[error_code(code = 16)]
-    FailoverNode {
-        id: u64,
+    PreExecution {
         error: String,
-    },
-
-    #[snafu(display("Request timeout: {}", id))]
-    #[error_code(code = 17)]
-    RequestTimeout {
-        id: u32,
-        elapsed: String,
     },
 
     #[snafu(display("kv instance not found: node_id:{}", node_id))]
@@ -323,10 +314,16 @@ impl From<tokio::sync::oneshot::error::RecvError> for CoordinatorError {
     }
 }
 
-impl From<Status> for CoordinatorError {
-    fn from(s: Status) -> Self {
-        CoordinatorError::GRPCRequest {
-            msg: format!("grpc status: {}", s),
+impl From<tonic::Status> for CoordinatorError {
+    fn from(status: tonic::Status) -> Self {
+        match status.code() {
+            tonic::Code::Internal => CoordinatorError::GRPCRequest {
+                msg: format!("status code: {}, message; {}", status.code(), status),
+            },
+
+            _ => CoordinatorError::PreExecution {
+                error: format!("{}", status),
+            },
         }
     }
 }
@@ -350,6 +347,63 @@ impl CoordinatorError {
 impl From<flatbuffers::InvalidFlatbuffer> for CoordinatorError {
     fn from(value: InvalidFlatbuffer) -> Self {
         Self::InvalidFlatbuffer { source: value }
+    }
+}
+
+pub const FORWARD_TO_LEADER_CODE: i32 = -2;
+pub const FAILED_RESPONSE_CODE: i32 = -1;
+pub const SUCCESS_RESPONSE_CODE: i32 = 1;
+
+pub fn encode_grpc_response(
+    result: CoordinatorResult<Vec<u8>>,
+) -> tonic::Response<protos::kv_service::BatchBytesResponse> {
+    match result {
+        Ok(data) => tonic::Response::new(protos::kv_service::BatchBytesResponse {
+            data,
+            code: SUCCESS_RESPONSE_CODE,
+        }),
+
+        Err(err) => {
+            if let CoordinatorError::RaftForwardToLeader {
+                replica_id,
+                leader_vnode_id: new_leader,
+            } = err
+            {
+                tonic::Response::new(protos::kv_service::BatchBytesResponse {
+                    data: format!("{}-{}", replica_id, new_leader).into(),
+                    code: FORWARD_TO_LEADER_CODE,
+                })
+            } else {
+                tonic::Response::new(protos::kv_service::BatchBytesResponse {
+                    data: err.to_string().into_bytes(),
+                    code: FAILED_RESPONSE_CODE,
+                })
+            }
+        }
+    }
+}
+
+pub fn decode_grpc_response(
+    status: protos::kv_service::BatchBytesResponse,
+) -> CoordinatorResult<Vec<u8>> {
+    if status.code == SUCCESS_RESPONSE_CODE {
+        Ok(status.data)
+    } else if status.code == FORWARD_TO_LEADER_CODE {
+        let data = String::from_utf8_lossy(&status.data).to_string();
+        let strs: Vec<&str> = data.split('-').collect();
+        let replica_id = strs[0].parse::<u32>().unwrap_or_default();
+        let leader_vnode_id = strs[1].parse::<u32>().unwrap_or_default();
+        Err(CoordinatorError::RaftForwardToLeader {
+            replica_id,
+            leader_vnode_id,
+        })
+    } else {
+        let mut len = 256;
+        if status.data.len() < len {
+            len = status.data.len();
+        }
+        let tmp = String::from_utf8_lossy(&status.data[..len]).to_string();
+        Err(CoordinatorError::GRPCRequest { msg: tmp })
     }
 }
 

@@ -15,7 +15,6 @@ pub struct PingResponse {
     #[prost(bytes = "vec", tag = "2")]
     pub body: ::prost::alloc::vec::Vec<u8>,
 }
-/// --------------------------------------------------------------------
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Meta {
@@ -28,123 +27,9 @@ pub struct Meta {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct WritePointsRequest {
-    #[prost(uint64, tag = "1")]
-    pub version: u64,
-    #[prost(message, optional, tag = "2")]
-    pub meta: ::core::option::Option<Meta>,
-    /// flatbuffers bytes ( models::Points )
-    #[prost(bytes = "vec", tag = "3")]
-    pub points: ::prost::alloc::vec::Vec<u8>,
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WritePointsResponse {
     #[prost(uint64, tag = "1")]
     pub points_number: u64,
-}
-/// --------------------------------------------------------------------
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct StatusResponse {
-    #[prost(int32, tag = "1")]
-    pub code: i32,
-    #[prost(string, tag = "2")]
-    pub data: ::prost::alloc::string::String,
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct CompactVnodeRequest {
-    #[prost(uint32, repeated, tag = "1")]
-    pub vnode_ids: ::prost::alloc::vec::Vec<u32>,
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct AddRaftFollowerRequest {
-    #[prost(string, tag = "1")]
-    pub db_name: ::prost::alloc::string::String,
-    #[prost(uint32, tag = "2")]
-    pub replica_id: u32,
-    #[prost(uint64, tag = "3")]
-    pub follower_nid: u64,
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct RemoveRaftNodeRequest {
-    #[prost(string, tag = "1")]
-    pub db_name: ::prost::alloc::string::String,
-    #[prost(uint32, tag = "2")]
-    pub replica_id: u32,
-    #[prost(uint32, tag = "3")]
-    pub vnode_id: u32,
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct DestoryRaftGroupRequest {
-    #[prost(string, tag = "1")]
-    pub db_name: ::prost::alloc::string::String,
-    #[prost(uint32, tag = "2")]
-    pub replica_id: u32,
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct AdminCommandRequest {
-    #[prost(string, tag = "1")]
-    pub tenant: ::prost::alloc::string::String,
-    #[prost(oneof = "admin_command_request::Command", tags = "7, 13, 14, 15")]
-    pub command: ::core::option::Option<admin_command_request::Command>,
-}
-/// Nested message and enum types in `AdminCommandRequest`.
-pub mod admin_command_request {
-    #[allow(clippy::derive_partial_eq_without_eq)]
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Command {
-        #[prost(message, tag = "7")]
-        CompactVnode(super::CompactVnodeRequest),
-        #[prost(message, tag = "13")]
-        AddRaftFollower(super::AddRaftFollowerRequest),
-        #[prost(message, tag = "14")]
-        RemoveRaftNode(super::RemoveRaftNodeRequest),
-        #[prost(message, tag = "15")]
-        DestoryRaftGroup(super::DestoryRaftGroupRequest),
-    }
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct FetchVnodeChecksumRequest {
-    #[prost(uint32, tag = "1")]
-    pub vnode_id: u32,
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct AdminFetchCommandRequest {
-    #[prost(string, tag = "1")]
-    pub tenant: ::prost::alloc::string::String,
-    #[prost(oneof = "admin_fetch_command_request::Command", tags = "8")]
-    pub command: ::core::option::Option<admin_fetch_command_request::Command>,
-}
-/// Nested message and enum types in `AdminFetchCommandRequest`.
-pub mod admin_fetch_command_request {
-    #[allow(clippy::derive_partial_eq_without_eq)]
-    #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Command {
-        #[prost(message, tag = "8")]
-        FetchVnodeChecksum(super::FetchVnodeChecksumRequest),
-    }
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct DeleteFromTableRequest {
-    #[prost(string, tag = "1")]
-    pub tenant: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub database: ::prost::alloc::string::String,
-    #[prost(string, tag = "3")]
-    pub table: ::prost::alloc::string::String,
-    #[prost(bytes = "vec", tag = "4")]
-    pub predicate: ::prost::alloc::vec::Vec<u8>,
-    #[prost(uint32, tag = "5")]
-    pub vnode_id: u32,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -154,46 +39,7 @@ pub struct BatchBytesResponse {
     #[prost(bytes = "vec", tag = "2")]
     pub data: ::prost::alloc::vec::Vec<u8>,
 }
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct DownloadFileRequest {
-    #[prost(string, tag = "1")]
-    pub filename: ::prost::alloc::string::String,
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct QueryRecordBatchRequest {
-    #[prost(bytes = "vec", tag = "1")]
-    pub args: ::prost::alloc::vec::Vec<u8>,
-    #[prost(bytes = "vec", tag = "2")]
-    pub expr: ::prost::alloc::vec::Vec<u8>,
-    #[prost(bytes = "vec", tag = "3")]
-    pub aggs: ::prost::alloc::vec::Vec<u8>,
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct OpenRaftNodeRequest {
-    #[prost(string, tag = "1")]
-    pub tenant: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub db_name: ::prost::alloc::string::String,
-    #[prost(uint32, tag = "3")]
-    pub vnode_id: u32,
-    #[prost(uint32, tag = "4")]
-    pub replica_id: u32,
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct DropRaftNodeRequest {
-    #[prost(string, tag = "1")]
-    pub tenant: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub db_name: ::prost::alloc::string::String,
-    #[prost(uint32, tag = "3")]
-    pub vnode_id: u32,
-    #[prost(uint32, tag = "4")]
-    pub replica_id: u32,
-}
+/// --------------------------------------------------------------------
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WriteDataRequest {
@@ -242,6 +88,20 @@ pub struct UpdateTagsRequest {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DeleteFromTableRequest {
+    #[prost(string, tag = "1")]
+    pub tenant: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub database: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub table: ::prost::alloc::string::String,
+    #[prost(bytes = "vec", tag = "4")]
+    pub predicate: ::prost::alloc::vec::Vec<u8>,
+    #[prost(uint32, tag = "5")]
+    pub vnode_id: u32,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RaftWriteCommand {
     #[prost(string, tag = "1")]
     pub tenant: ::prost::alloc::string::String,
@@ -268,6 +128,117 @@ pub mod raft_write_command {
         #[prost(message, tag = "8")]
         UpdateTags(super::UpdateTagsRequest),
     }
+}
+/// --------------------------------------------------------------------
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CompactVnodeRequest {
+    #[prost(uint32, repeated, tag = "1")]
+    pub vnode_ids: ::prost::alloc::vec::Vec<u32>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct FetchChecksumRequest {
+    #[prost(uint32, tag = "1")]
+    pub vnode_id: u32,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct OpenRaftNodeRequest {
+    #[prost(string, tag = "1")]
+    pub tenant: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub db_name: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "3")]
+    pub vnode_id: u32,
+    #[prost(uint32, tag = "4")]
+    pub replica_id: u32,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DropRaftNodeRequest {
+    #[prost(string, tag = "1")]
+    pub tenant: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub db_name: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "3")]
+    pub vnode_id: u32,
+    #[prost(uint32, tag = "4")]
+    pub replica_id: u32,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AddRaftFollowerRequest {
+    #[prost(string, tag = "1")]
+    pub db_name: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "2")]
+    pub replica_id: u32,
+    #[prost(uint64, tag = "3")]
+    pub follower_nid: u64,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RemoveRaftNodeRequest {
+    #[prost(string, tag = "1")]
+    pub db_name: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "2")]
+    pub replica_id: u32,
+    #[prost(uint32, tag = "3")]
+    pub vnode_id: u32,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DestoryRaftGroupRequest {
+    #[prost(string, tag = "1")]
+    pub db_name: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "2")]
+    pub replica_id: u32,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AdminCommand {
+    #[prost(string, tag = "1")]
+    pub tenant: ::prost::alloc::string::String,
+    #[prost(oneof = "admin_command::Command", tags = "2, 3, 4, 5, 6, 7, 8")]
+    pub command: ::core::option::Option<admin_command::Command>,
+}
+/// Nested message and enum types in `AdminCommand`.
+pub mod admin_command {
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Command {
+        #[prost(message, tag = "2")]
+        CompactVnode(super::CompactVnodeRequest),
+        #[prost(message, tag = "3")]
+        OpenRaftNode(super::OpenRaftNodeRequest),
+        #[prost(message, tag = "4")]
+        DropRaftNode(super::DropRaftNodeRequest),
+        #[prost(message, tag = "5")]
+        FetchChecksum(super::FetchChecksumRequest),
+        #[prost(message, tag = "6")]
+        AddRaftFollower(super::AddRaftFollowerRequest),
+        #[prost(message, tag = "7")]
+        RemoveRaftNode(super::RemoveRaftNodeRequest),
+        #[prost(message, tag = "8")]
+        DestoryRaftGroup(super::DestoryRaftGroupRequest),
+    }
+}
+/// --------------------------------------------------------------------
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DownloadFileRequest {
+    #[prost(string, tag = "1")]
+    pub filename: ::prost::alloc::string::String,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct QueryRecordBatchRequest {
+    #[prost(bytes = "vec", tag = "1")]
+    pub args: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "2")]
+    pub expr: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "3")]
+    pub aggs: ::prost::alloc::vec::Vec<u8>,
 }
 /// Generated client implementations.
 pub mod tskv_service_client {
@@ -377,148 +348,6 @@ pub mod tskv_service_client {
                 .insert(GrpcMethod::new("kv_service.TSKVService", "Ping"));
             self.inner.unary(req, path, codec).await
         }
-        pub async fn query_record_batch(
-            &mut self,
-            request: impl tonic::IntoRequest<super::QueryRecordBatchRequest>,
-        ) -> std::result::Result<
-            tonic::Response<tonic::codec::Streaming<super::BatchBytesResponse>>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/kv_service.TSKVService/QueryRecordBatch",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("kv_service.TSKVService", "QueryRecordBatch"));
-            self.inner.server_streaming(req, path, codec).await
-        }
-        pub async fn exec_raft_write_command(
-            &mut self,
-            request: impl tonic::IntoRequest<super::RaftWriteCommand>,
-        ) -> std::result::Result<tonic::Response<super::StatusResponse>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/kv_service.TSKVService/ExecRaftWriteCommand",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new("kv_service.TSKVService", "ExecRaftWriteCommand"),
-                );
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn exec_admin_command(
-            &mut self,
-            request: impl tonic::IntoRequest<super::AdminCommandRequest>,
-        ) -> std::result::Result<tonic::Response<super::StatusResponse>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/kv_service.TSKVService/ExecAdminCommand",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("kv_service.TSKVService", "ExecAdminCommand"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn exec_admin_fetch_command(
-            &mut self,
-            request: impl tonic::IntoRequest<super::AdminFetchCommandRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::BatchBytesResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/kv_service.TSKVService/ExecAdminFetchCommand",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new("kv_service.TSKVService", "ExecAdminFetchCommand"),
-                );
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn exec_open_raft_node(
-            &mut self,
-            request: impl tonic::IntoRequest<super::OpenRaftNodeRequest>,
-        ) -> std::result::Result<tonic::Response<super::StatusResponse>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/kv_service.TSKVService/ExecOpenRaftNode",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("kv_service.TSKVService", "ExecOpenRaftNode"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn exec_drop_raft_node(
-            &mut self,
-            request: impl tonic::IntoRequest<super::DropRaftNodeRequest>,
-        ) -> std::result::Result<tonic::Response<super::StatusResponse>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/kv_service.TSKVService/ExecDropRaftNode",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("kv_service.TSKVService", "ExecDropRaftNode"));
-            self.inner.unary(req, path, codec).await
-        }
         pub async fn download_file(
             &mut self,
             request: impl tonic::IntoRequest<super::DownloadFileRequest>,
@@ -569,6 +398,81 @@ pub mod tskv_service_client {
                 .insert(GrpcMethod::new("kv_service.TSKVService", "TagScan"));
             self.inner.server_streaming(req, path, codec).await
         }
+        pub async fn query_record_batch(
+            &mut self,
+            request: impl tonic::IntoRequest<super::QueryRecordBatchRequest>,
+        ) -> std::result::Result<
+            tonic::Response<tonic::codec::Streaming<super::BatchBytesResponse>>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/kv_service.TSKVService/QueryRecordBatch",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("kv_service.TSKVService", "QueryRecordBatch"));
+            self.inner.server_streaming(req, path, codec).await
+        }
+        pub async fn raft_write(
+            &mut self,
+            request: impl tonic::IntoRequest<super::RaftWriteCommand>,
+        ) -> std::result::Result<
+            tonic::Response<super::BatchBytesResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/kv_service.TSKVService/RaftWrite",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("kv_service.TSKVService", "RaftWrite"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn admin_request(
+            &mut self,
+            request: impl tonic::IntoRequest<super::AdminCommand>,
+        ) -> std::result::Result<
+            tonic::Response<super::BatchBytesResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/kv_service.TSKVService/AdminRequest",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("kv_service.TSKVService", "AdminRequest"));
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -582,42 +486,6 @@ pub mod tskv_service_server {
             &self,
             request: tonic::Request<super::PingRequest>,
         ) -> std::result::Result<tonic::Response<super::PingResponse>, tonic::Status>;
-        /// Server streaming response type for the QueryRecordBatch method.
-        type QueryRecordBatchStream: futures_core::Stream<
-                Item = std::result::Result<super::BatchBytesResponse, tonic::Status>,
-            >
-            + Send
-            + 'static;
-        async fn query_record_batch(
-            &self,
-            request: tonic::Request<super::QueryRecordBatchRequest>,
-        ) -> std::result::Result<
-            tonic::Response<Self::QueryRecordBatchStream>,
-            tonic::Status,
-        >;
-        async fn exec_raft_write_command(
-            &self,
-            request: tonic::Request<super::RaftWriteCommand>,
-        ) -> std::result::Result<tonic::Response<super::StatusResponse>, tonic::Status>;
-        async fn exec_admin_command(
-            &self,
-            request: tonic::Request<super::AdminCommandRequest>,
-        ) -> std::result::Result<tonic::Response<super::StatusResponse>, tonic::Status>;
-        async fn exec_admin_fetch_command(
-            &self,
-            request: tonic::Request<super::AdminFetchCommandRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::BatchBytesResponse>,
-            tonic::Status,
-        >;
-        async fn exec_open_raft_node(
-            &self,
-            request: tonic::Request<super::OpenRaftNodeRequest>,
-        ) -> std::result::Result<tonic::Response<super::StatusResponse>, tonic::Status>;
-        async fn exec_drop_raft_node(
-            &self,
-            request: tonic::Request<super::DropRaftNodeRequest>,
-        ) -> std::result::Result<tonic::Response<super::StatusResponse>, tonic::Status>;
         /// Server streaming response type for the DownloadFile method.
         type DownloadFileStream: futures_core::Stream<
                 Item = std::result::Result<super::BatchBytesResponse, tonic::Status>,
@@ -641,6 +509,33 @@ pub mod tskv_service_server {
             &self,
             request: tonic::Request<super::QueryRecordBatchRequest>,
         ) -> std::result::Result<tonic::Response<Self::TagScanStream>, tonic::Status>;
+        /// Server streaming response type for the QueryRecordBatch method.
+        type QueryRecordBatchStream: futures_core::Stream<
+                Item = std::result::Result<super::BatchBytesResponse, tonic::Status>,
+            >
+            + Send
+            + 'static;
+        async fn query_record_batch(
+            &self,
+            request: tonic::Request<super::QueryRecordBatchRequest>,
+        ) -> std::result::Result<
+            tonic::Response<Self::QueryRecordBatchStream>,
+            tonic::Status,
+        >;
+        async fn raft_write(
+            &self,
+            request: tonic::Request<super::RaftWriteCommand>,
+        ) -> std::result::Result<
+            tonic::Response<super::BatchBytesResponse>,
+            tonic::Status,
+        >;
+        async fn admin_request(
+            &self,
+            request: tonic::Request<super::AdminCommand>,
+        ) -> std::result::Result<
+            tonic::Response<super::BatchBytesResponse>,
+            tonic::Status,
+        >;
     }
     /// --------------------------------------------------------------------
     #[derive(Debug)]
@@ -764,284 +659,6 @@ pub mod tskv_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/kv_service.TSKVService/QueryRecordBatch" => {
-                    #[allow(non_camel_case_types)]
-                    struct QueryRecordBatchSvc<T: TskvService>(pub Arc<T>);
-                    impl<
-                        T: TskvService,
-                    > tonic::server::ServerStreamingService<
-                        super::QueryRecordBatchRequest,
-                    > for QueryRecordBatchSvc<T> {
-                        type Response = super::BatchBytesResponse;
-                        type ResponseStream = T::QueryRecordBatchStream;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::ResponseStream>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::QueryRecordBatchRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                (*inner).query_record_batch(request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = QueryRecordBatchSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.server_streaming(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/kv_service.TSKVService/ExecRaftWriteCommand" => {
-                    #[allow(non_camel_case_types)]
-                    struct ExecRaftWriteCommandSvc<T: TskvService>(pub Arc<T>);
-                    impl<
-                        T: TskvService,
-                    > tonic::server::UnaryService<super::RaftWriteCommand>
-                    for ExecRaftWriteCommandSvc<T> {
-                        type Response = super::StatusResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::RaftWriteCommand>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                (*inner).exec_raft_write_command(request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = ExecRaftWriteCommandSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/kv_service.TSKVService/ExecAdminCommand" => {
-                    #[allow(non_camel_case_types)]
-                    struct ExecAdminCommandSvc<T: TskvService>(pub Arc<T>);
-                    impl<
-                        T: TskvService,
-                    > tonic::server::UnaryService<super::AdminCommandRequest>
-                    for ExecAdminCommandSvc<T> {
-                        type Response = super::StatusResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::AdminCommandRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                (*inner).exec_admin_command(request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = ExecAdminCommandSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/kv_service.TSKVService/ExecAdminFetchCommand" => {
-                    #[allow(non_camel_case_types)]
-                    struct ExecAdminFetchCommandSvc<T: TskvService>(pub Arc<T>);
-                    impl<
-                        T: TskvService,
-                    > tonic::server::UnaryService<super::AdminFetchCommandRequest>
-                    for ExecAdminFetchCommandSvc<T> {
-                        type Response = super::BatchBytesResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::AdminFetchCommandRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                (*inner).exec_admin_fetch_command(request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = ExecAdminFetchCommandSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/kv_service.TSKVService/ExecOpenRaftNode" => {
-                    #[allow(non_camel_case_types)]
-                    struct ExecOpenRaftNodeSvc<T: TskvService>(pub Arc<T>);
-                    impl<
-                        T: TskvService,
-                    > tonic::server::UnaryService<super::OpenRaftNodeRequest>
-                    for ExecOpenRaftNodeSvc<T> {
-                        type Response = super::StatusResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::OpenRaftNodeRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                (*inner).exec_open_raft_node(request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = ExecOpenRaftNodeSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/kv_service.TSKVService/ExecDropRaftNode" => {
-                    #[allow(non_camel_case_types)]
-                    struct ExecDropRaftNodeSvc<T: TskvService>(pub Arc<T>);
-                    impl<
-                        T: TskvService,
-                    > tonic::server::UnaryService<super::DropRaftNodeRequest>
-                    for ExecDropRaftNodeSvc<T> {
-                        type Response = super::StatusResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::DropRaftNodeRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                (*inner).exec_drop_raft_node(request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = ExecDropRaftNodeSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
                 "/kv_service.TSKVService/DownloadFile" => {
                     #[allow(non_camel_case_types)]
                     struct DownloadFileSvc<T: TskvService>(pub Arc<T>);
@@ -1131,6 +748,142 @@ pub mod tskv_service_server {
                                 max_encoding_message_size,
                             );
                         let res = grpc.server_streaming(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/kv_service.TSKVService/QueryRecordBatch" => {
+                    #[allow(non_camel_case_types)]
+                    struct QueryRecordBatchSvc<T: TskvService>(pub Arc<T>);
+                    impl<
+                        T: TskvService,
+                    > tonic::server::ServerStreamingService<
+                        super::QueryRecordBatchRequest,
+                    > for QueryRecordBatchSvc<T> {
+                        type Response = super::BatchBytesResponse;
+                        type ResponseStream = T::QueryRecordBatchStream;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::ResponseStream>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::QueryRecordBatchRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).query_record_batch(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = QueryRecordBatchSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.server_streaming(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/kv_service.TSKVService/RaftWrite" => {
+                    #[allow(non_camel_case_types)]
+                    struct RaftWriteSvc<T: TskvService>(pub Arc<T>);
+                    impl<
+                        T: TskvService,
+                    > tonic::server::UnaryService<super::RaftWriteCommand>
+                    for RaftWriteSvc<T> {
+                        type Response = super::BatchBytesResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::RaftWriteCommand>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move { (*inner).raft_write(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = RaftWriteSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/kv_service.TSKVService/AdminRequest" => {
+                    #[allow(non_camel_case_types)]
+                    struct AdminRequestSvc<T: TskvService>(pub Arc<T>);
+                    impl<T: TskvService> tonic::server::UnaryService<super::AdminCommand>
+                    for AdminRequestSvc<T> {
+                        type Response = super::BatchBytesResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::AdminCommand>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).admin_request(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = AdminRequestSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)

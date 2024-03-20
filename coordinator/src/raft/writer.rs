@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use memory_pool::MemoryPoolRef;
 use meta::model::MetaRef;
@@ -8,117 +9,24 @@ use protos::models_helper::to_prost_bytes;
 use protos::{tskv_service_time_out_client, DEFAULT_GRPC_SERVER_MESSAGE_LEN};
 use replication::errors::ReplicationResult;
 use replication::raft_node::RaftNode;
-use trace::{debug, info, SpanContext, SpanRecorder};
-use tskv::EngineRef;
+use trace::debug;
 
 use super::manager::RaftNodesManager;
-use crate::errors::*;
+use crate::{errors::*, TskvLeaderCaller};
 
-pub struct RaftWriter {
-    meta: MetaRef,
-    config: config::Config,
-    kv_inst: Option<EngineRef>,
-    memory_pool: MemoryPoolRef,
-    raft_manager: Arc<RaftNodesManager>,
+pub struct TskvRaftWriter {
+    pub meta: MetaRef,
+    pub node_id: NodeId,
+    pub timeout: Duration,
+    pub enable_gzip: bool,
+    pub total_memory: usize,
+    pub memory_pool: MemoryPoolRef,
+    pub raft_manager: Arc<RaftNodesManager>,
+
+    pub request: RaftWriteCommand,
 }
 
-impl RaftWriter {
-    pub fn new(
-        meta: MetaRef,
-        config: config::Config,
-        kv_inst: Option<EngineRef>,
-        memory_pool: MemoryPoolRef,
-        raft_manager: Arc<RaftNodesManager>,
-    ) -> Self {
-        Self {
-            meta,
-            config,
-            kv_inst,
-            memory_pool,
-            raft_manager,
-        }
-    }
-
-    pub async fn write_to_replica(
-        &self,
-        replica: &ReplicationSet,
-        request: RaftWriteCommand,
-        span_recorder: SpanRecorder,
-    ) -> CoordinatorResult<()> {
-        let node_id = self.config.global.node_id;
-        let leader_id = replica.leader_node_id;
-        if leader_id == node_id && self.kv_inst.is_some() {
-            let span_recorder = span_recorder.child("write to local node or forward");
-            let result = self
-                .write_to_local_or_forward(replica, request, span_recorder.span_ctx())
-                .await;
-
-            debug!("write to local {} {:?} {:?}", node_id, replica, result);
-
-            result
-        } else {
-            let span_recorder = span_recorder.child("write to remote node");
-            let result = self
-                .write_to_remote(leader_id, request.clone(), span_recorder.span_ctx())
-                .await;
-            debug!("write to remote {} {:?} {:?}", leader_id, replica, result);
-
-            if let Err(CoordinatorError::FailoverNode { .. }) = result {
-                for vnode in replica.vnodes.iter() {
-                    if vnode.node_id == leader_id {
-                        continue;
-                    }
-
-                    let result = self
-                        .write_to_remote(vnode.node_id, request.clone(), span_recorder.span_ctx())
-                        .await;
-                    debug!(
-                        "try write to remote {} {:?} {:?}",
-                        vnode.node_id, replica, result
-                    );
-
-                    if result.is_ok() {
-                        return Ok(());
-                    }
-
-                    if let Err(CoordinatorError::FailoverNode { .. }) = result {
-                        continue;
-                    } else {
-                        return result;
-                    }
-                }
-            }
-
-            result
-        }
-    }
-
-    pub async fn write_to_local_or_forward(
-        &self,
-        replica: &ReplicationSet,
-        request: RaftWriteCommand,
-        span_ctx: Option<&SpanContext>,
-    ) -> CoordinatorResult<()> {
-        let raft = self
-            .raft_manager
-            .get_node_or_build(&request.tenant, &request.db_name, replica)
-            .await?;
-
-        self.pre_check_write_to_raft(&request).await?;
-        let raft_data = to_prost_bytes(request.clone());
-        let result = self.write_to_raft(raft, raft_data).await;
-        if let Err(CoordinatorError::RaftForwardToLeader {
-            replica_id: _,
-            leader_vnode_id,
-        }) = result
-        {
-            self.process_leader_change(leader_vnode_id, request, span_ctx)
-                .await
-        } else {
-            result
-        }
-    }
-
+impl TskvRaftWriter {
     async fn pre_check_write_to_raft(&self, request: &RaftWriteCommand) -> CoordinatorResult<()> {
         if let Some(command) = &request.command {
             match command {
@@ -132,8 +40,10 @@ impl RaftWriter {
                         source: tskv::Error::InvalidPointTable,
                     })?;
 
-                    let total_memory = self.config.deployment.memory * 1024 * 1024 * 1024;
-                    if request.data.len() > total_memory.saturating_sub(self.memory_pool.reserved())
+                    if request.data.len()
+                        > self
+                            .total_memory
+                            .saturating_sub(self.memory_pool.reserved())
                     {
                         return Err(CoordinatorError::TskvError {
                             source: tskv::Error::MemoryExhausted,
@@ -151,80 +61,22 @@ impl RaftWriter {
         Ok(())
     }
 
-    async fn process_leader_change(
-        &self,
-        leader_vnode_id: VnodeId,
-        request: RaftWriteCommand,
-        span_ctx: Option<&SpanContext>,
-    ) -> CoordinatorResult<()> {
-        let vnode_id = leader_vnode_id;
-        let all_info =
-            crate::get_vnode_all_info(self.meta.clone(), &request.tenant, vnode_id).await?;
-
-        let rsp = self
-            .meta
-            .tenant_meta(&request.tenant)
-            .await
-            .ok_or(CoordinatorError::TenantNotFound {
-                name: request.tenant.clone(),
-            })?
-            .change_repl_set_leader(
-                &all_info.db_name,
-                all_info.bucket_id,
-                request.replica_id,
-                all_info.node_id,
-                vnode_id,
-            )
-            .await;
-
-        info!(
-            "change replica set({}) leader to vnode({}); {:?}",
-            request.replica_id, vnode_id, rsp
-        );
-
-        self.write_to_remote(all_info.node_id, request, span_ctx)
-            .await
-    }
-
-    async fn write_to_remote(
-        &self,
-        leader_id: u64,
-        request: RaftWriteCommand,
-        span_ctx: Option<&SpanContext>,
-    ) -> CoordinatorResult<()> {
+    async fn write_to_remote(&self, leader_id: u64) -> CoordinatorResult<()> {
         let channel = self.meta.get_node_conn(leader_id).await.map_err(|error| {
-            CoordinatorError::FailoverNode {
-                id: leader_id,
+            CoordinatorError::PreExecution {
                 error: error.to_string(),
             }
         })?;
-        let timeout = self.config.query.write_timeout;
         let mut client = tskv_service_time_out_client(
             channel,
-            timeout,
+            self.timeout,
             DEFAULT_GRPC_SERVER_MESSAGE_LEN,
-            self.config.service.grpc_enable_gzip,
+            self.enable_gzip,
         );
 
-        let mut cmd = tonic::Request::new(request);
-        trace_http::ctx::append_trace_context(span_ctx, cmd.metadata_mut()).map_err(|_| {
-            CoordinatorError::CommonError {
-                msg: "Parse trace_id, this maybe a bug".to_string(),
-            }
-        })?;
-
+        let cmd = tonic::Request::new(self.request.clone());
         let begin_time = models::utils::now_timestamp_millis();
-        let response = client
-            .exec_raft_write_command(cmd)
-            .await
-            .map_err(|err| match err.code() {
-                tonic::Code::Internal => CoordinatorError::TskvError { source: err.into() },
-                _ => CoordinatorError::FailoverNode {
-                    id: leader_id,
-                    error: format!("{err:?}"),
-                },
-            })?
-            .into_inner();
+        let response = client.raft_write(cmd).await?.into_inner();
 
         let use_time = models::utils::now_timestamp_millis() - begin_time;
         if use_time > 200 {
@@ -234,7 +86,8 @@ impl RaftWriter {
             )
         }
 
-        crate::status_response_to_result(&response)
+        decode_grpc_response(response)?;
+        Ok(())
     }
 
     async fn write_to_raft(&self, raft: Arc<RaftNode>, data: Vec<u8>) -> CoordinatorResult<()> {
@@ -265,5 +118,31 @@ impl RaftWriter {
                 Ok(())
             }
         }
+    }
+
+    pub async fn write_to_local(&self, replica: &ReplicationSet) -> CoordinatorResult<Vec<u8>> {
+        let raft = self
+            .raft_manager
+            .get_node_or_build(&self.request.tenant, &self.request.db_name, replica)
+            .await?;
+
+        self.pre_check_write_to_raft(&self.request).await?;
+        let raft_data = to_prost_bytes(&self.request);
+        self.write_to_raft(raft, raft_data).await?;
+
+        Ok(vec![])
+    }
+}
+
+#[async_trait::async_trait]
+impl TskvLeaderCaller for TskvRaftWriter {
+    async fn call(&self, replica: &ReplicationSet, node_id: u64) -> CoordinatorResult<Vec<u8>> {
+        if node_id == self.node_id {
+            self.write_to_local(replica).await?;
+        } else {
+            self.write_to_remote(node_id).await?;
+        }
+
+        Ok(vec![])
     }
 }

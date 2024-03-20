@@ -200,7 +200,7 @@ impl PromRemoteSqlServer {
 
     async fn serialize_read_response(&self, read_response: ReadResponse) -> Result<Vec<u8>> {
         let mut compressed = Vec::new();
-        let input_buf = to_prost_bytes(read_response);
+        let input_buf = to_prost_bytes(&read_response);
         self.codec.compress(&input_buf, &mut compressed)?;
 
         Ok(compressed)

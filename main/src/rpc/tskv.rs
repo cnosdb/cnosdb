@@ -1,9 +1,8 @@
 use std::pin::Pin;
 use std::sync::Arc;
 
-use coordinator::errors::{CoordinatorError, CoordinatorResult};
+use coordinator::errors::{encode_grpc_response, CoordinatorError, CoordinatorResult};
 use coordinator::service::CoordinatorRef;
-use coordinator::{FAILED_RESPONSE_CODE, SUCCESS_RESPONSE_CODE};
 use futures::{Stream, TryStreamExt};
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
@@ -38,107 +37,76 @@ pub struct TskvServiceImpl {
 }
 
 impl TskvServiceImpl {
-    fn status_response(
-        &self,
-        code: i32,
-        data: String,
-    ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
-        Ok(tonic::Response::new(StatusResponse { code, data }))
-    }
-
-    fn bytes_response(
-        &self,
-        code: i32,
-        data: Vec<u8>,
-    ) -> Result<tonic::Response<BatchBytesResponse>, tonic::Status> {
-        Ok(tonic::Response::new(BatchBytesResponse { code, data }))
-    }
-
-    fn tonic_status(&self, msg: String) -> tonic::Status {
+    fn internal_status(&self, msg: String) -> tonic::Status {
         tonic::Status::new(tonic::Code::Internal, msg)
     }
 
-    async fn warp_exec_admin_command(
+    async fn warp_admin_request(
         &self,
         tenant: &str,
-        command: &admin_command_request::Command,
-    ) -> CoordinatorResult<()> {
-        let result = match command {
-            admin_command_request::Command::CompactVnode(command) => {
-                info!("compact vnodes: {:?}", command.vnode_ids);
-
-                self.kv_inst
-                    .compact(command.vnode_ids.clone())
-                    .await
-                    .map_err(|err| err.into())
+        command: &admin_command::Command,
+    ) -> CoordinatorResult<Vec<u8>> {
+        match command {
+            admin_command::Command::CompactVnode(req) => {
+                self.kv_inst.compact(req.vnode_ids.clone()).await?;
+                Ok(vec![])
             }
 
-            admin_command_request::Command::AddRaftFollower(command) => {
-                let raft_manager = self.coord.raft_manager();
-                raft_manager
+            admin_command::Command::OpenRaftNode(req) => {
+                self.coord
+                    .raft_manager()
+                    .exec_open_raft_node(tenant, &req.db_name, req.vnode_id, req.replica_id)
+                    .await?;
+                Ok(vec![])
+            }
+
+            admin_command::Command::DropRaftNode(req) => {
+                self.coord
+                    .raft_manager()
+                    .exec_drop_raft_node(tenant, &req.db_name, req.vnode_id, req.replica_id)
+                    .await?;
+                Ok(vec![])
+            }
+
+            admin_command::Command::FetchChecksum(req) => {
+                let record = self.kv_inst.get_vnode_hash_tree(req.vnode_id).await?;
+                let data = record_batch_encode(&record)?;
+                Ok(data)
+            }
+
+            admin_command::Command::AddRaftFollower(command) => {
+                self.coord
+                    .raft_manager()
                     .add_follower_to_group(
                         tenant,
                         &command.db_name,
                         command.follower_nid,
                         command.replica_id,
                     )
-                    .await
+                    .await?;
+                Ok(vec![])
             }
 
-            admin_command_request::Command::RemoveRaftNode(command) => {
-                let raft_manager = self.coord.raft_manager();
-                raft_manager
+            admin_command::Command::RemoveRaftNode(command) => {
+                self.coord
+                    .raft_manager()
                     .remove_node_from_group(
                         tenant,
                         &command.db_name,
                         command.vnode_id,
                         command.replica_id,
                     )
-                    .await
+                    .await?;
+                Ok(vec![])
             }
 
-            admin_command_request::Command::DestoryRaftGroup(command) => {
-                let raft_manager = self.coord.raft_manager();
-                raft_manager
+            admin_command::Command::DestoryRaftGroup(command) => {
+                self.coord
+                    .raft_manager()
                     .destory_replica_group(tenant, &command.db_name, command.replica_id)
-                    .await
+                    .await?;
+                Ok(vec![])
             }
-        };
-
-        info!("admin command: {:?}, result: {:?}", command, result);
-        if let Err(CoordinatorError::RaftForwardToLeader {
-            replica_id: _,
-            leader_vnode_id: vnode_id,
-        }) = result
-        {
-            let meta = self.coord.meta_manager();
-            let info = coordinator::get_vnode_all_info(meta, tenant, vnode_id).await?;
-            let req = AdminCommandRequest {
-                tenant: tenant.to_string(),
-                command: Some(command.clone()),
-            };
-
-            return self
-                .coord
-                .exec_admin_command_on_node(info.node_id, req)
-                .await;
-        }
-
-        result
-    }
-
-    async fn admin_fetch_vnode_checksum(
-        &self,
-        _tenant: &str,
-        request: &FetchVnodeChecksumRequest,
-    ) -> Result<tonic::Response<BatchBytesResponse>, tonic::Status> {
-        match self.kv_inst.get_vnode_hash_tree(request.vnode_id).await {
-            Ok(record) => match record_batch_encode(&record) {
-                Ok(bytes) => self.bytes_response(SUCCESS_RESPONSE_CODE, bytes),
-                Err(_) => self.bytes_response(FAILED_RESPONSE_CODE, vec![]),
-            },
-            // TODO(zipper): Add error message in BatchBytesResponse
-            Err(_) => self.bytes_response(FAILED_RESPONSE_CODE, vec![]),
         }
     }
 
@@ -228,118 +196,41 @@ impl TskvService for TskvServiceImpl {
         }))
     }
 
-    async fn exec_raft_write_command(
+    async fn raft_write(
         &self,
         request: tonic::Request<RaftWriteCommand>,
-    ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
-        let span = get_span_recorder(request.extensions(), "grpc write_replica_points");
+    ) -> Result<tonic::Response<BatchBytesResponse>, tonic::Status> {
         let inner = request.into_inner();
 
         let client = self
             .coord
             .tenant_meta(&inner.tenant)
             .await
-            .ok_or(tonic::Status::new(
-                tonic::Code::Internal,
-                format!("Not Found tenant({}) meta", inner.tenant),
-            ))?;
+            .ok_or(self.internal_status(format!("Not Found tenant({}) meta", inner.tenant)))?;
 
         let replica = client
             .get_replication_set(inner.replica_id)
-            .ok_or(tonic::Status::new(
-                tonic::Code::Internal,
-                format!("Not Found Replica Set({})", inner.replica_id),
-            ))?;
+            .ok_or(self.internal_status(format!("Not Found Replica Set({})", inner.replica_id)))?;
 
-        if let Err(err) = self
-            .coord
-            .exec_write_replica_points(replica, inner, span.span_ctx())
-            .await
-        {
-            self.status_response(FAILED_RESPONSE_CODE, err.to_string())
-        } else {
-            self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
-        }
+        let writer = self.coord.tskv_raft_writer(inner);
+        let result = writer.write_to_local(&replica).await;
+
+        Ok(encode_grpc_response(result))
     }
 
-    async fn exec_open_raft_node(
+    async fn admin_request(
         &self,
-        request: tonic::Request<OpenRaftNodeRequest>,
-    ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
+        request: tonic::Request<AdminCommand>,
+    ) -> std::result::Result<tonic::Response<BatchBytesResponse>, tonic::Status> {
         let inner = request.into_inner();
-
-        if let Err(err) = self
-            .coord
-            .raft_manager()
-            .exec_open_raft_node(
-                &inner.tenant,
-                &inner.db_name,
-                inner.vnode_id,
-                inner.replica_id,
-            )
-            .await
-        {
-            self.status_response(FAILED_RESPONSE_CODE, err.to_string())
-        } else {
-            self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
-        }
-    }
-
-    async fn exec_drop_raft_node(
-        &self,
-        request: tonic::Request<DropRaftNodeRequest>,
-    ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
-        let inner = request.into_inner();
-
-        if let Err(err) = self
-            .coord
-            .raft_manager()
-            .exec_drop_raft_node(
-                &inner.tenant,
-                &inner.db_name,
-                inner.vnode_id,
-                inner.replica_id,
-            )
-            .await
-        {
-            self.status_response(FAILED_RESPONSE_CODE, err.to_string())
-        } else {
-            self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
-        }
-    }
-
-    async fn exec_admin_command(
-        &self,
-        request: tonic::Request<AdminCommandRequest>,
-    ) -> Result<tonic::Response<StatusResponse>, tonic::Status> {
-        let inner = request.into_inner();
-
         if let Some(command) = inner.command {
-            if let Err(err) = self.warp_exec_admin_command(&inner.tenant, &command).await {
-                self.status_response(FAILED_RESPONSE_CODE, err.to_string())
-            } else {
-                self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
-            }
+            info!("Exec admin request: {:?}", command);
+            let result = self.warp_admin_request(&inner.tenant, &command).await;
+            Ok(encode_grpc_response(result))
         } else {
-            self.status_response(FAILED_RESPONSE_CODE, "Command is None".to_string())
-        }
-    }
-
-    async fn exec_admin_fetch_command(
-        &self,
-        request: Request<AdminFetchCommandRequest>,
-    ) -> Result<Response<BatchBytesResponse>, Status> {
-        let inner = request.into_inner();
-
-        if let Some(command) = inner.command {
-            match &command {
-                admin_fetch_command_request::Command::FetchVnodeChecksum(command) => {
-                    self.admin_fetch_vnode_checksum(&inner.tenant, command)
-                        .await
-                }
-            }
-        } else {
-            self.bytes_response(FAILED_RESPONSE_CODE, vec![])
+            Ok(encode_grpc_response(Err(CoordinatorError::CommonError {
+                msg: "Command is None".to_string(),
+            })))
         }
     }
 
@@ -364,7 +255,7 @@ impl TskvService for TskvServiceImpl {
 
                     let _ = send
                         .send(Ok(BatchBytesResponse {
-                            code: SUCCESS_RESPONSE_CODE,
+                            code: coordinator::errors::SUCCESS_RESPONSE_CODE,
                             data: (buffer[0..len]).to_vec(),
                         }))
                         .await;
@@ -388,17 +279,17 @@ impl TskvService for TskvServiceImpl {
 
         let args = match QueryArgs::decode(&inner.args) {
             Ok(args) => args,
-            Err(err) => return Err(self.tonic_status(err.to_string())),
+            Err(err) => return Err(self.internal_status(err.to_string())),
         };
 
         let expr = match QueryExpr::decode(&inner.expr) {
             Ok(expr) => expr,
-            Err(err) => return Err(self.tonic_status(err.to_string())),
+            Err(err) => return Err(self.internal_status(err.to_string())),
         };
 
         let aggs = match domain::decode_agg(&inner.aggs) {
             Ok(aggs) => aggs,
-            Err(err) => return Err(self.tonic_status(err.to_string())),
+            Err(err) => return Err(self.internal_status(err.to_string())),
         };
 
         let service = self.clone();
@@ -424,17 +315,17 @@ impl TskvService for TskvServiceImpl {
         &self,
         request: Request<QueryRecordBatchRequest>,
     ) -> Result<Response<Self::TagScanStream>, Status> {
-        let span_recorder = get_span_recorder(request.extensions(), "grpc query_record_batch");
+        let span_recorder = get_span_recorder(request.extensions(), "grpc tag_scan");
         let inner = request.into_inner();
 
         let args = match QueryArgs::decode(&inner.args) {
             Ok(args) => args,
-            Err(err) => return Err(self.tonic_status(err.to_string())),
+            Err(err) => return Err(self.internal_status(err.to_string())),
         };
 
         let expr = match QueryExpr::decode(&inner.expr) {
             Ok(expr) => expr,
-            Err(err) => return Err(self.tonic_status(err.to_string())),
+            Err(err) => return Err(self.internal_status(err.to_string())),
         };
 
         let stream = {
