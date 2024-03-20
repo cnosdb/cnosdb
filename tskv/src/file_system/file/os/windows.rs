@@ -13,7 +13,7 @@ pub fn fd(file: &File) -> usize {
     file.as_raw_handle() as usize
 }
 
-pub fn pread(raw_handle: usize, pos: u64, len: usize, buf_ptr: u64) -> Result<usize> {
+pub fn pread(raw_handle: usize, pos: usize, len: usize, buf_ptr: u64) -> Result<usize> {
     let mut bytes: DWORD = 0;
     let mut ov = overlapped(pos);
     check_err(unsafe {

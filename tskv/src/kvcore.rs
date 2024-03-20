@@ -20,13 +20,14 @@ use crate::compaction::{
 };
 use crate::database::Database;
 use crate::error::Result;
-use crate::file_system::file_manager;
+use crate::file_system::{async_filesystem, FileSystem};
 use crate::kv_option::{Options, StorageOptions};
 use crate::summary::{Summary, SummaryTask};
 use crate::tseries_family::{SuperVersion, TseriesFamily};
 use crate::version_set::VersionSet;
 use crate::vnode_store::VnodeStorage;
 use crate::{file_utils, Engine, TsKvContext, TseriesFamilyId};
+use crate::file_system::async_filesystem::{LocalFileSystem, LocalFileType};
 
 // TODO: A small summay channel capacity can cause a block
 pub const COMPACT_REQ_CHANNEL_CAP: usize = 1024;
@@ -114,10 +115,10 @@ impl TsKv {
         metrics: Arc<MetricsRegister>,
     ) -> (Arc<RwLock<VersionSet>>, Summary) {
         let summary_dir = opt.storage.summary_dir();
-        file_manager::FileManager::create_dir_if_not_exists(Some(&summary_dir)).unwrap();
+        LocalFileSystem::create_dir_if_not_exists(Some(&summary_dir)).unwrap();
 
         let summary_file = file_utils::make_summary_file(&summary_dir, 0);
-        let summary = if file_manager::try_exists(&summary_file) {
+        let summary = if LocalFileSystem::try_exists(&summary_file) {
             Summary::recover(
                 meta,
                 opt,

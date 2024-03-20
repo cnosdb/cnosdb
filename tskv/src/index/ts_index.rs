@@ -18,8 +18,8 @@ use trace::{debug, error, info};
 use super::binlog::{AddSeries, DeleteSeries, IndexBinlog, IndexBinlogBlock, UpdateSeriesKey};
 use super::cache::ForwardIndexCache;
 use super::{IndexEngine, IndexError, IndexResult};
-use crate::file_system::file::IFile;
-use crate::file_system::file_manager;
+use crate::file_system::async_filesystem;
+use crate::file_system::file::WritableFile;
 use crate::index::binlog::{BinlogReader, BinlogWriter};
 use crate::index::ts_index::fmt::Debug;
 use crate::{byte_utils, file_utils, Error, UpdateSetValue};
@@ -138,7 +138,7 @@ impl TSIndex {
 
     async fn recover(&mut self) -> IndexResult<()> {
         let path = self.path.clone();
-        let files = file_manager::list_file_names(&path);
+        let files = async_filesystem::list_file_names(&path);
         for filename in files.iter() {
             if let Ok(file_id) = file_utils::get_index_binlog_file_id(filename) {
                 let file_path = path.join(filename);
@@ -357,7 +357,7 @@ impl TSIndex {
         }
 
         let log_dir = self.path.clone();
-        let files = file_manager::list_file_names(&log_dir);
+        let files = async_filesystem::list_file_names(&log_dir);
         for filename in files.iter() {
             if let Ok(file_id) = file_utils::get_index_binlog_file_id(filename) {
                 if current_id != file_id {
@@ -944,11 +944,11 @@ pub fn run_index_job(
                 None => break,
             };
 
-            let files = file_manager::list_file_names(&path);
+            let files = async_filesystem::list_file_names(&path);
             for filename in files.iter() {
                 if let Ok(file_id) = file_utils::get_index_binlog_file_id(filename) {
                     let file_path = path.join(filename);
-                    let file = match file_manager::open_file(&file_path).await {
+                    let file = match async_filesystem::open_file(&file_path).await {
                         Ok(f) => f,
                         Err(e) => {
                             error!(
@@ -960,7 +960,7 @@ pub fn run_index_job(
                         }
                     };
 
-                    if file.len() <= *handle_file.get(&file_id).unwrap_or(&0) {
+                    if file.file_size() <= *handle_file.get(&file_id).unwrap_or(&0) {
                         continue;
                     }
 

@@ -9,9 +9,9 @@ use models::schema::{TskvTableSchemaRef, TIME_FIELD};
 use models::SeriesId;
 
 use crate::error::Result;
+use crate::file_system::async_filesystem;
 use crate::file_system::file::async_file::AsyncFile;
-use crate::file_system::file::IFile;
-use crate::file_system::file_manager;
+use crate::file_system::file::WritableFile;
 use crate::tsm::TsmTombstone;
 use crate::tsm2::page::{Chunk, ChunkGroup, ChunkGroupMeta, Footer, Page, PageMeta, PageWriteSpec};
 use crate::tsm2::writer::{Column, DataBlock2};
@@ -87,7 +87,7 @@ pub struct TSM2Reader {
 impl TSM2Reader {
     pub async fn open(tsm_path: impl AsRef<Path>) -> Result<Self> {
         let path = tsm_path.as_ref().to_path_buf();
-        let reader = Arc::new(file_manager::open_file(&path).await?);
+        let reader = Arc::new(async_filesystem::open_file(&path).await?);
 
         let file_id = file_utils::get_tsm_file_id_by_path(&path)?;
 
@@ -326,7 +326,7 @@ impl Debug for TSM2Reader {
 }
 
 pub async fn read_footer(reader: Arc<AsyncFile>) -> Result<Footer> {
-    let pos = reader.len() - (FOOTER_SIZE as u64);
+    let pos = reader.file_size() - (FOOTER_SIZE as u64);
     let mut buffer = vec![0u8; FOOTER_SIZE];
     reader.read_at(pos, &mut buffer).await?;
     Footer::deserialize(&buffer)

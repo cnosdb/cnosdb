@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::file_system::file_manager;
+use crate::file_system::async_filesystem;
 use crate::kv_option::WalOptions;
 use crate::record_file::{RecordDataType, RecordDataVersion};
 use crate::wal::reader::WalReader;
@@ -40,7 +40,7 @@ impl WalWriter {
         let path = path.as_ref();
 
         // Use min_sequence existing in file, otherwise in parameter
-        let (writer, min_sequence, max_sequence) = if file_manager::try_exists(path) {
+        let (writer, min_sequence, max_sequence) = if async_filesystem::try_exists(path) {
             let writer = record_file::Writer::open(path, RecordDataType::Wal).await?;
             let (min_sequence, max_sequence) = match writer.footer() {
                 Some(footer) => reader::parse_footer(footer).unwrap_or((min_seq, min_seq)),

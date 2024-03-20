@@ -51,7 +51,7 @@ use tokio::sync::oneshot;
 
 use self::reader::WalReader;
 use self::writer::WalWriter;
-use crate::file_system::file_manager;
+use crate::file_system::async_filesystem;
 use crate::kv_option::WalOptions;
 use crate::tsm::codec::{get_str_codec, StringCodec};
 pub use crate::wal::reader::{print_wal_statistics, Block};
@@ -238,7 +238,7 @@ impl VnodeWal {
     // delete wal files < seq
     async fn delete_wal_before_seq(&mut self, seq: u64) -> Result<()> {
         let mut delete_ids = vec![];
-        let wal_files = file_manager::list_file_names(self.wal_dir());
+        let wal_files = async_filesystem::list_file_names(self.wal_dir());
         for file_name in wal_files {
             // If file name cannot be parsed to wal id, skip that file.
             let wal_id = match file_utils::get_wal_file_id(&file_name) {

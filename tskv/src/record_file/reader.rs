@@ -12,14 +12,14 @@ use super::{
 };
 use crate::byte_utils::decode_be_u32;
 use crate::error::{self, Error, Result};
+use crate::file_system::async_filesystem;
 use crate::file_system::file::async_file::AsyncFile;
-use crate::file_system::file::IFile;
-use crate::file_system::file_manager;
+use crate::file_system::file::WritableFile;
 
 /// Returns footer position and footer data.
 pub async fn read_footer(path: impl AsRef<Path>) -> Result<(u64, [u8; FILE_FOOTER_LEN])> {
     let path = path.as_ref();
-    let file = file_manager::open_file(&path).await?;
+    let file = async_filesystem::open_file(&path).await?;
     read_footer_from(&file, path).await
 }
 
@@ -28,12 +28,12 @@ pub async fn read_footer_from(
     file: &AsyncFile,
     file_path: impl AsRef<Path>,
 ) -> Result<(u64, [u8; FILE_FOOTER_LEN])> {
-    if file.len() < (FILE_MAGIC_NUMBER_LEN + FILE_FOOTER_LEN) as u64 {
+    if file.file_size() < (FILE_MAGIC_NUMBER_LEN + FILE_FOOTER_LEN) as u64 {
         return Err(Error::NoFooter);
     }
 
     // Get file crc
-    let mut buf = vec![0_u8; file_crc_source_len(file.len(), FILE_FOOTER_LEN)];
+    let mut buf = vec![0_u8; file_crc_source_len(file.file_size(), FILE_FOOTER_LEN)];
     if let Err(e) = file.read_at(FILE_MAGIC_NUMBER_LEN as u64, &mut buf).await {
         return Err(Error::ReadFile {
             path: file_path.as_ref().to_path_buf(),
@@ -43,7 +43,7 @@ pub async fn read_footer_from(
     let crc = crc32fast::hash(&buf);
 
     // Read footer
-    let footer_pos = file.len() - FILE_FOOTER_LEN as u64;
+    let footer_pos = file.file_size() - FILE_FOOTER_LEN as u64;
     let mut footer = [0_u8; FILE_FOOTER_LEN];
     if let Err(e) = file.read_at(footer_pos, &mut footer[..]).await {
         return Err(Error::ReadFile {
@@ -81,10 +81,10 @@ pub struct Reader {
 impl Reader {
     pub async fn open(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
-        let file = file_manager::open_file(path).await?;
+        let file = async_filesystem::open_file(path).await?;
         let (footer_pos, footer) = match read_footer_from(&file, path).await {
             Ok((p, f)) => (p, Some(f)),
-            Err(Error::NoFooter) => (file.len(), None),
+            Err(Error::NoFooter) => (file.file_size(), None),
             Err(e) => {
                 trace::error!(
                     "Record file: Failed to read footer in '{}': {e}",
@@ -93,7 +93,7 @@ impl Reader {
                 return Err(e);
             }
         };
-        let file_len = file.len();
+        let file_len = file.file_size();
         let records_len = if footer_pos == file_len {
             // If there is no footer
             file_len - FILE_MAGIC_NUMBER_LEN as u64

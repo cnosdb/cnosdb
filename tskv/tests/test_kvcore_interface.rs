@@ -16,7 +16,7 @@ mod tests {
     use tokio::runtime;
     use tokio::runtime::Runtime;
     use trace::{debug, error, info, init_default_global_tracing, warn};
-    use tskv::file_system::file_manager;
+    use tskv::file_system::async_filesystem;
     use tskv::{file_utils, kv_option, Engine, TsKv};
 
     /// Initializes a TsKv instance in specified directory, with an optional runtime,
@@ -154,7 +154,7 @@ mod tests {
             tokio::time::sleep(Duration::from_secs(3)).await;
         });
 
-        assert!(file_manager::try_exists(
+        assert!(async_filesystem::try_exists(
             "/tmp/test/kvcore/kvcore_flush/data/cnosdb.db/0/tsm"
         ));
         println!("Leave serial test: test_kvcore_flush");
@@ -216,10 +216,10 @@ mod tests {
             tokio::time::sleep(Duration::from_secs(12)).await;
         });
 
-        assert!(file_manager::try_exists(format!(
+        assert!(async_filesystem::try_exists(format!(
             "/tmp/test/kvcore/kvcore_flush_delta/data/cnosdb.{database}/0/tsm"
         )));
-        assert!(file_manager::try_exists(format!(
+        assert!(async_filesystem::try_exists(format!(
             "/tmp/test/kvcore/kvcore_flush_delta/data/cnosdb.{database}/0/delta"
         )));
         println!("Leave serial test: test_kvcore_flush_delta");
@@ -328,7 +328,7 @@ mod tests {
                 };
 
                 assert!(
-                    file_manager::try_exists(&path),
+                    async_filesystem::try_exists(&path),
                     "{} not exists",
                     path.display(),
                 );
@@ -346,7 +346,7 @@ mod tests {
             runtime.block_on(vnode.delete_snapshot()).unwrap();
             sleep_in_runtime(runtime.clone(), Duration::from_secs(3));
             assert!(
-                !file_manager::try_exists(&vnode_snapshot_dir),
+                !async_filesystem::try_exists(&vnode_snapshot_dir),
                 "{} still exists unexpectedly",
                 vnode_snapshot_dir.display()
             );
@@ -385,7 +385,7 @@ mod tests {
                 };
 
                 assert!(
-                    file_manager::try_exists(&path),
+                    async_filesystem::try_exists(&path),
                     "{} not exists",
                     path.display(),
                 );

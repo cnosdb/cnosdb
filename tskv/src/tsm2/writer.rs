@@ -17,8 +17,8 @@ use utils::BloomFilter;
 use super::statistics::ValueStatistics;
 use crate::compaction::CompactingBlock;
 use crate::error::IOSnafu;
-use crate::file_system::file::cursor::FileCursor;
-use crate::file_system::file_manager;
+use crate::file_system::async_filesystem;
+use crate::file_system::file::stream_writer::FileStreamWriter;
 use crate::file_utils::{make_delta_file, make_tsm_file};
 use crate::tsm::codec::{
     get_bool_codec, get_f64_codec, get_i64_codec, get_str_codec, get_u64_codec,
@@ -769,7 +769,7 @@ pub struct Tsm2Writer {
     series_bloom_filter: BloomFilter,
     // todo: table object id bloom filter
     // table_bloom_filter: BloomFilter,
-    writer: FileCursor,
+    writer: FileStreamWriter,
     options: WriteOptions,
     table_schemas: HashMap<String, TskvTableSchemaRef>,
 
@@ -796,11 +796,11 @@ impl Tsm2Writer {
         } else {
             make_tsm_file(path_buf, file_id)
         };
-        let file_cursor = file_manager::create_file(&file_path).await?;
+        let file_cursor = async_filesystem::create_file(&file_path).await?;
         let writer = Self::new(file_path, file_cursor.into(), file_id, max_size);
         Ok(writer)
     }
-    fn new(path: PathBuf, writer: FileCursor, file_id: u64, max_size: u64) -> Self {
+    fn new(path: PathBuf, writer: FileStreamWriter, file_id: u64, max_size: u64) -> Self {
         Self {
             file_id,
             max_ts: i64::MIN,

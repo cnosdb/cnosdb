@@ -10,14 +10,14 @@ use super::{
     FILE_MAGIC_NUMBER_LEN, RECORD_MAGIC_NUMBER,
 };
 use crate::error::{self, Error, Result};
+use crate::file_system::async_filesystem;
 use crate::file_system::file::async_file::AsyncFile;
-use crate::file_system::file::IFile;
-use crate::file_system::file_manager;
+use crate::file_system::file::stream_writer::FileStreamWriter;
+use crate::file_system::file::WritableFile;
 
 pub struct Writer {
     path: PathBuf,
-    file: Arc<AsyncFile>,
-
+    file: FileStreamWriter,
     footer: Option<[u8; FILE_FOOTER_LEN]>,
     pos: u64,
     file_size: u64,
@@ -26,7 +26,7 @@ pub struct Writer {
 impl Writer {
     pub async fn open(path: impl AsRef<Path>, _data_type: RecordDataType) -> Result<Self> {
         let path = path.as_ref();
-        let file = file_manager::open_create_file(path).await?;
+        let file = async_filesystem::open_create_file(path).await?;
         if file.is_empty() {
             // For new file, write file magic number, next write is at 4.
             let file_size = file
@@ -58,7 +58,7 @@ impl Writer {
             let footer_len = footer.map(|f| f.len()).unwrap_or(0);
             // Truncate this file to overwrite footer data.
             let file_size = file
-                .len()
+                .file_size()
                 .checked_sub(footer_len as u64)
                 .unwrap_or(FILE_MAGIC_NUMBER_LEN as u64);
             file.truncate(file_size).await?;

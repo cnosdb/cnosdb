@@ -4,12 +4,12 @@ use openraft::EntryPayload;
 
 use super::{wal_store, WalType, WAL_FOOTER_MAGIC_NUMBER, WAL_HEADER_LEN};
 use crate::byte_utils::{decode_be_u32, decode_be_u64};
-use crate::file_system::file_manager;
+use crate::file_system::async_filesystem;
 use crate::{record_file, Error, Result};
 
 /// Reads a wal file and parse footer, returns sequence range
 pub async fn read_footer(path: impl AsRef<Path>) -> Result<Option<(u64, u64)>> {
-    if file_manager::try_exists(&path) {
+    if async_filesystem::try_exists(&path) {
         let reader = WalReader::open(path).await?;
         Ok(Some((reader.min_sequence, reader.max_sequence)))
     } else {

@@ -6,7 +6,7 @@ use replication::{EntryStorage, RaftNodeId, RaftNodeInfo, TypeConfig};
 use trace::info;
 
 use super::reader::WalRecordData;
-use crate::file_system::file_manager;
+use crate::file_system::async_filesystem;
 use crate::vnode_store::VnodeStorage;
 use crate::wal::reader::{Block, WalReader};
 use crate::wal::VnodeWal;
@@ -369,7 +369,7 @@ impl RaftEntryStorageInner {
 
     /// Read WAL files to recover: engine, index, cache.
     pub async fn recover(&mut self, vode_store: &mut VnodeStorage) -> Result<()> {
-        let wal_files = file_manager::list_file_names(self.wal.wal_dir());
+        let wal_files = async_filesystem::list_file_names(self.wal.wal_dir());
         for file_name in wal_files {
             // If file name cannot be parsed to wal id, skip that file.
             let wal_id = match file_utils::get_wal_file_id(&file_name) {
@@ -377,7 +377,7 @@ impl RaftEntryStorageInner {
                 Err(_) => continue,
             };
             let path = self.wal.wal_dir().join(&file_name);
-            if !file_manager::try_exists(&path) {
+            if !async_filesystem::try_exists(&path) {
                 continue;
             }
             let reader = self.wal.wal_reader(wal_id).await?;

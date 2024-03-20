@@ -24,7 +24,7 @@ use utils::BloomFilter;
 
 use crate::compaction::{CompactTask, FlushReq};
 use crate::error::Result;
-use crate::file_system::file_manager;
+use crate::file_system::async_filesystem;
 use crate::file_utils::{self, make_delta_file, make_tsm_file};
 use crate::index::ts_index::TSIndex;
 use crate::kv_option::{CacheOptions, StorageOptions};
@@ -198,7 +198,7 @@ impl Drop for ColumnFile {
             }
 
             let tombstone_path = self.tombstone_path();
-            if file_manager::try_exists(&tombstone_path) {
+            if async_filesystem::try_exists(&tombstone_path) {
                 if let Err(e) = std::fs::remove_file(&tombstone_path) {
                     error!(
                         "Failed to remove tsm tombstone '{}': {e}",

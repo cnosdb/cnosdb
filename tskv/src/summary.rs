@@ -577,7 +577,7 @@ impl Summary {
         }
 
         let new_path = file_utils::make_summary_file_tmp(self.opt.storage.summary_dir());
-        crate::file_system::file_manager::remove_if_exists(&new_path)?;
+        crate::file_system::async_filesystem::remove_if_exists(&new_path)?;
 
         let requests = self.version_set.read().await.snapshot_version_edit().await;
         self.writer = Writer::open(&new_path, RecordDataType::Summary).await?;
