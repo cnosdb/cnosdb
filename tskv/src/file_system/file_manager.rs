@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use once_cell::sync::OnceCell;
 use snafu::{ResultExt, Snafu};
+use tokio::fs::File;
 
 use crate::file_system::file::async_file::{AsyncFile, FsRuntime};
 use crate::{error, TskvError, TskvResult};
@@ -175,6 +176,12 @@ pub async fn create_file(path: impl AsRef<Path>) -> TskvResult<AsyncFile> {
 #[inline(always)]
 pub async fn open_create_file(path: impl AsRef<Path>) -> TskvResult<AsyncFile> {
     get_file_manager().open_create_file(path).await
+}
+
+pub async fn get_file_length(name: &str) -> TskvResult<u64> {
+    let file = File::open(name).await?;
+    let file_meta = file.metadata().await?;
+    Ok(file_meta.len())
 }
 
 pub fn remove_if_exists(path: impl AsRef<Path>) -> TskvResult<()> {

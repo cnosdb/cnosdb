@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::mem::size_of;
+use std::path::Path;
 use std::sync::Arc;
 
 use flatbuffers::{ForwardsUOffset, Vector};
@@ -152,34 +153,38 @@ impl Database {
     // todo: Maybe TseriesFamily::new() should be refactored.
     pub async fn add_tsfamily(
         &mut self,
-        tsf_id: TseriesFamilyId,
         mut ve: VersionEdit,
+        data_dir: &Path,
         ctx: Arc<TsKvContext>,
     ) -> TskvResult<Arc<RwLock<TseriesFamily>>> {
+        let new_dir = self.opt.storage.ts_family_dir(&self.owner, ve.tsf_id);
+        let new_dir = new_dir.as_path();
+
         let mut file_metas = HashMap::with_capacity(ve.add_files.len());
         for f in ve.add_files.iter_mut() {
             let new_file_id = ctx.global_ctx.file_id_next();
-            let file_path = f
-                .rename_file(&self.opt.storage, &self.owner, f.tsf_id, new_file_id)
-                .await?;
+            let file_path = f.rename_file(data_dir, new_dir, new_file_id).await?;
 
             let file_reader = TsmReader::open(file_path).await?;
             let bloom_filter = Arc::new(file_reader.footer().series().bloom_filter().clone());
             file_metas.insert(new_file_id, bloom_filter.clone());
+
+            f.file_id = new_file_id;
         }
         for f in ve.del_files.iter_mut() {
             let new_file_id = ctx.global_ctx.file_id_next();
-            f.rename_file(&self.opt.storage, &self.owner, f.tsf_id, new_file_id)
-                .await?;
-        }
-        tokio::fs::remove_dir_all(self.opt.storage.move_dir(&self.owner, tsf_id)).await?;
+            f.rename_file(data_dir, new_dir, new_file_id).await?;
 
-        let levels = LevelInfo::init_levels(self.owner.clone(), tsf_id, self.opt.storage.clone());
+            f.file_id = new_file_id;
+        }
+
+        let levels =
+            LevelInfo::init_levels(self.owner.clone(), ve.tsf_id, self.opt.storage.clone());
         let tsm_reader_cache = Arc::new(cache::ShardedAsyncCache::create_lru_sharded_cache(
             self.opt.storage.max_cached_readers,
         ));
         let ver = Arc::new(Version::new(
-            tsf_id,
+            ve.tsf_id,
             self.owner.clone(),
             self.opt.storage.clone(),
             ve.seq_no,
@@ -188,9 +193,9 @@ impl Database {
             tsm_reader_cache,
         ));
 
-        let tf = self.tsf_factory.create_tsf(tsf_id, ver.clone());
+        let tf = self.tsf_factory.create_tsf(ve.tsf_id, ver.clone());
         let tf = Arc::new(RwLock::new(tf));
-        self.ts_families.insert(tsf_id, tf.clone());
+        self.ts_families.insert(ve.tsf_id, tf.clone());
 
         let (task_state_sender, task_state_receiver) = oneshot::channel();
         let task = SummaryTask::new(tf.clone(), ve, Some(file_metas), None, task_state_sender);

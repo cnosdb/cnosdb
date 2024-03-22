@@ -80,6 +80,11 @@ pub type Response = Vec<u8>;
 pub const APPLY_TYPE_WAL: u32 = 1;
 pub const APPLY_TYPE_WRITE: u32 = 2;
 
+pub enum SnapshotMode {
+    GetSnapshot,
+    BuildSnapshot,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq, Default)]
 pub struct ApplyContext {
     pub index: u64,
@@ -90,7 +95,7 @@ pub struct ApplyContext {
 #[async_trait]
 pub trait ApplyStorage: Send + Sync + Any {
     async fn apply(&mut self, ctx: &ApplyContext, req: &Request) -> ReplicationResult<Response>;
-    async fn snapshot(&mut self) -> ReplicationResult<Vec<u8>>;
+    async fn snapshot(&mut self, mode: SnapshotMode) -> ReplicationResult<(Vec<u8>, Option<u64>)>;
     async fn restore(&mut self, snapshot: &[u8]) -> ReplicationResult<()>;
     async fn destory(&mut self) -> ReplicationResult<()>;
 }

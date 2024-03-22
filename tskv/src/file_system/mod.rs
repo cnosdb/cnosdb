@@ -7,7 +7,6 @@ use async_trait::async_trait;
 use tokio::fs::File;
 
 pub(crate) mod file;
-pub mod file_info;
 pub mod file_manager;
 pub mod queue;
 

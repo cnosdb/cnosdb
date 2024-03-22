@@ -11,7 +11,7 @@ use models::meta_data::*;
 use models::oid::{Identifier, Oid, UuidGenerator};
 use models::schema::{DatabaseSchema, ResourceInfo, TableSchema, Tenant, TenantOptions};
 use replication::errors::ReplicationResult;
-use replication::{ApplyContext, ApplyStorage, Request, Response};
+use replication::{ApplyContext, ApplyStorage, Request, Response, SnapshotMode};
 use serde::{Deserialize, Serialize};
 use trace::{debug, error, info};
 
@@ -59,7 +59,7 @@ impl ApplyStorage for StateMachine {
         Ok(self.process_write_command(&req).into())
     }
 
-    async fn snapshot(&mut self) -> ReplicationResult<Vec<u8>> {
+    async fn snapshot(&mut self, _mode: SnapshotMode) -> ReplicationResult<(Vec<u8>, Option<u64>)> {
         let mut hash_map = BTreeMap::new();
 
         let reader = self.env.read_txn()?;
@@ -72,7 +72,7 @@ impl ApplyStorage for StateMachine {
         let data = BtreeMapSnapshotData { map: hash_map };
         let json_str = serde_json::to_string(&data).unwrap();
 
-        Ok(json_str.as_bytes().to_vec())
+        Ok((json_str.as_bytes().to_vec(), None))
     }
 
     async fn restore(&mut self, snapshot: &[u8]) -> ReplicationResult<()> {
@@ -126,7 +126,10 @@ impl StateMachine {
     }
 
     pub async fn dump(&mut self) -> MetaResult<String> {
-        let data = self.snapshot().await.map_err(MetaError::from)?;
+        let (data, _) = self
+            .snapshot(SnapshotMode::GetSnapshot)
+            .await
+            .map_err(MetaError::from)?;
 
         let data: BtreeMapSnapshotData = serde_json::from_slice(&data).map_err(MetaError::from)?;
 

@@ -49,6 +49,7 @@ use protocol_parser::Line;
 use protos::kv_service::admin_command_request::Command::*;
 use protos::kv_service::tskv_service_client::TskvServiceClient;
 use protos::kv_service::*;
+use replication::multi_raft::MultiRaft;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::{self, Receiver};
 use tokio::task::JoinHandle;
@@ -165,6 +166,11 @@ impl CoordService {
             kv_inst.clone(),
         ));
         raft_manager.start_all_raft_node().await.unwrap();
+
+        tokio::spawn(MultiRaft::trigger_snapshot_purge_logs(
+            raft_manager.multi_raft(),
+            10 * 60,
+        ));
 
         let raft_writer = Arc::new(RaftWriter::new(
             meta.clone(),

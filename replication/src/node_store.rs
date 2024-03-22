@@ -1,3 +1,4 @@
+use std::default;
 use std::fmt::Debug;
 use std::io::Cursor;
 use std::ops::RangeBounds;
@@ -6,34 +7,25 @@ use std::sync::Arc;
 use openraft::async_trait::async_trait;
 use openraft::storage::{LogState, Snapshot};
 use openraft::{
-    Entry, EntryPayload, LogId, MessageSummary, RaftLogReader, RaftSnapshotBuilder, RaftStorage,
-    RaftTypeConfig, SnapshotMeta, StorageError, StorageIOError, StoredMembership, Vote,
+    Entry, EntryPayload, LogId, LogIdOptionExt, MessageSummary, RaftLogReader, RaftSnapshotBuilder,
+    RaftStorage, RaftTypeConfig, SnapshotMeta, StorageError, StorageIOError, StoredMembership,
+    Vote,
 };
 use serde::{Deserialize, Serialize};
 use trace::info;
 use tracing::debug;
 
-use crate::errors::ReplicationResult;
+use crate::errors::{ReplicationError, ReplicationResult};
 use crate::state_store::StateStorage;
 use crate::{
-    ApplyContext, ApplyStorageRef, EntryStorageRef, RaftNodeId, RaftNodeInfo, Response, TypeConfig,
+    ApplyContext, ApplyStorageRef, EntryStorageRef, RaftNodeId, RaftNodeInfo, Response,
+    SnapshotMode, TypeConfig,
 };
 
-#[derive(Serialize, Deserialize, Debug, Default, Clone)]
-pub struct SerializableSnapshot {
-    pub last_applied_log: Option<LogId<RaftNodeId>>,
-    pub last_membership: StoredMembership<RaftNodeId, RaftNodeInfo>,
-
-    /// Application data.
-    pub data: Vec<u8>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct StoredSnapshot {
-    pub meta: SnapshotMeta<RaftNodeId, RaftNodeInfo>,
-
-    /// The data of the Serializable-Snapshot.
     pub data: Vec<u8>,
+    pub meta: SnapshotMeta<RaftNodeId, RaftNodeInfo>,
 }
 
 // #[derive(Clone)]
@@ -74,32 +66,121 @@ impl NodeStorage {
         Ok(())
     }
 
-    async fn create_snapshot(&self) -> ReplicationResult<SerializableSnapshot> {
-        let mut engine = self.engine.write().await;
-        let data = engine.snapshot().await?;
-        let snapshot = SerializableSnapshot {
-            data,
-            last_applied_log: self.state.get_last_applied_log(self.group_id())?,
-            last_membership: self.state.get_last_membership(self.group_id())?,
+    fn get_snapshot_id(&self, log_id: &Option<LogId<u64>>) -> ReplicationResult<String> {
+        let snapshot_idx = self.state.incr_snapshot_index(self.group_id(), 1)?;
+        let snapshot_id = if let Some(log_id) = log_id {
+            format!("{}-{}-{}", log_id.leader_id, log_id.index, snapshot_idx)
+        } else {
+            "".to_string()
         };
 
+        Ok(snapshot_id)
+    }
+
+    async fn get_snapshot_log_id(&self, seq_no: u64) -> ReplicationResult<Option<LogId<u64>>> {
+        if let Some(entry) = self.raft_logs.write().await.entry(seq_no).await? {
+            if entry.log_id.index == seq_no {
+                return Ok(Some(entry.log_id));
+            }
+        }
+
+        if let Some(log_id) = self.state.get_snapshot_applied_log(self.group_id())? {
+            if log_id.index == seq_no {
+                return Ok(Some(log_id));
+            }
+        }
+
+        if let Some(log_id) = self.state.get_last_applied_log(self.group_id())? {
+            if log_id.index == seq_no {
+                return Ok(Some(log_id));
+            }
+        }
+
+        Ok(None)
+    }
+
+    fn get_snapshot_membership(
+        &self,
+        seq_no: u64,
+    ) -> ReplicationResult<StoredMembership<u64, RaftNodeInfo>> {
+        let mut distance = u64::MAX;
+        let mut mem_ship = self.state.get_last_membership(self.group_id())?;
+
+        let memberships = self.state.get_memberships(self.group_id())?;
+        for (_, value) in memberships.iter() {
+            if let Some(logid) = value.log_id() {
+                if logid.index > seq_no {
+                    continue;
+                }
+
+                if seq_no - logid.index < distance {
+                    mem_ship = value.clone();
+                    distance = seq_no - logid.index;
+                }
+            }
+        }
+
+        Ok(mem_ship)
+    }
+
+    async fn get_snapshot_meta(
+        &self,
+        seq_no: Option<u64>,
+    ) -> ReplicationResult<SnapshotMeta<u64, RaftNodeInfo>> {
+        if let Some(seq_no) = seq_no {
+            let last_log_id = self.get_snapshot_log_id(seq_no).await?;
+            let last_membership = self.get_snapshot_membership(seq_no)?;
+            let snapshot_id = self.get_snapshot_id(&last_log_id)?;
+
+            let _ = self.state.clear_memberships(self.group_id(), seq_no);
+
+            Ok(SnapshotMeta {
+                snapshot_id,
+                last_log_id,
+                last_membership,
+            })
+        } else {
+            let last_log_id = self.state.get_last_applied_log(self.group_id())?;
+            let last_membership = self.state.get_last_membership(self.group_id())?;
+            let snapshot_id = self.get_snapshot_id(&last_log_id)?;
+
+            if let Some(index) = last_log_id.index() {
+                let _ = self.state.clear_memberships(self.group_id(), index);
+            }
+
+            Ok(SnapshotMeta {
+                snapshot_id,
+                last_log_id,
+                last_membership,
+            })
+        }
+    }
+
+    async fn create_snapshot(&self, mode: SnapshotMode) -> ReplicationResult<StoredSnapshot> {
+        let mut engine = self.engine.write().await;
+        let (data, index) = engine.snapshot(mode).await?;
+        let meta = self.get_snapshot_meta(index).await?;
+        let snapshot = StoredSnapshot { data, meta };
+
         info!(
-            "raft node {} create snapshot data len {}, applied log {:?}",
-            self.id,
+            "create snapshot index: {:?}, data len {}, meta {:?}",
+            index,
             snapshot.data.len(),
-            snapshot.last_applied_log
+            snapshot.meta
         );
 
         Ok(snapshot)
     }
 
-    async fn apply_snapshot(&self, sm: SerializableSnapshot) -> ReplicationResult<()> {
-        let log_id = sm.last_applied_log.unwrap_or_default();
-        self.state.set_last_applied_log(self.group_id(), log_id)?;
-        self.state
-            .set_last_membership(self.group_id(), sm.last_membership)?;
+    async fn apply_snapshot(&self, snap: StoredSnapshot) -> ReplicationResult<()> {
+        let group_id = self.group_id();
+        let log_id = snap.meta.last_log_id.unwrap_or_default();
+        let membership = snap.meta.last_membership;
+        self.state.set_last_applied_log(group_id, log_id)?;
+        self.state.set_last_membership(group_id, membership)?;
+        self.state.set_snapshot_applied_log(group_id, log_id)?;
 
-        self.engine.write().await.restore(&sm.data).await?;
+        self.engine.write().await.restore(&snap.data).await?;
 
         Ok(())
     }
@@ -145,44 +226,16 @@ impl RaftLogReader<TypeConfig> for Arc<NodeStorage> {
 impl RaftSnapshotBuilder<TypeConfig> for Arc<NodeStorage> {
     #[tracing::instrument(level = "trace", skip(self))]
     async fn build_snapshot(&mut self) -> Result<Snapshot<TypeConfig>, StorageError<RaftNodeId>> {
-        debug!("Storage callback build_snapshot");
+        info!("Storage callback build_snapshot");
 
         let snapshot = self
-            .create_snapshot()
+            .create_snapshot(SnapshotMode::BuildSnapshot)
             .await
             .map_err(|e| StorageIOError::read_state_machine(&e))?;
-        let snap_data =
-            bincode::serialize(&snapshot).map_err(|e| StorageIOError::read_state_machine(&e))?;
-
-        let snapshot_idx = self
-            .state
-            .incr_snapshot_index(self.group_id(), 1)
-            .map_err(|e| StorageIOError::write_state_machine(&e))?;
-
-        let snapshot_id = if let Some(last) = snapshot.last_applied_log {
-            format!("{}-{}-{}", last.leader_id, last.index, snapshot_idx)
-        } else {
-            format!("--{}", snapshot_idx)
-        };
-
-        let meta = SnapshotMeta {
-            snapshot_id,
-            last_log_id: snapshot.last_applied_log,
-            last_membership: snapshot.last_membership,
-        };
-
-        let snapshot_stored = StoredSnapshot {
-            meta: meta.clone(),
-            data: snap_data.clone(),
-        };
-
-        self.state
-            .set_snapshot(self.group_id(), snapshot_stored)
-            .map_err(|e| StorageIOError::write_state_machine(&e))?;
 
         Ok(Snapshot {
-            meta,
-            snapshot: Box::new(Cursor::new(snap_data)),
+            meta: snapshot.meta,
+            snapshot: Box::new(Cursor::new(snapshot.data)),
         })
     }
 }
@@ -191,6 +244,18 @@ impl RaftSnapshotBuilder<TypeConfig> for Arc<NodeStorage> {
 impl RaftStorage<TypeConfig> for Arc<NodeStorage> {
     type LogReader = Self;
     type SnapshotBuilder = Self;
+
+    async fn get_log_reader(&mut self) -> Self::LogReader {
+        debug!("Storage callback get_log_reader");
+
+        self.clone()
+    }
+
+    async fn get_snapshot_builder(&mut self) -> Self::SnapshotBuilder {
+        debug!("Storage callback get_snapshot_builder");
+
+        self.clone()
+    }
 
     async fn get_log_state(&mut self) -> StorageResult<LogState<TypeConfig>> {
         debug!("Storage callback get_log_state");
@@ -293,7 +358,7 @@ impl RaftStorage<TypeConfig> for Arc<NodeStorage> {
         &mut self,
         log_id: LogId<RaftNodeId>,
     ) -> Result<(), StorageError<RaftNodeId>> {
-        debug!("Storage callback purge_logs_upto log_id: {:?}", log_id);
+        info!("Storage callback purge_logs_upto log_id: {:?}", log_id);
 
         self.state
             .set_last_purged(self.group_id(), log_id)
@@ -331,6 +396,55 @@ impl RaftStorage<TypeConfig> for Arc<NodeStorage> {
             .map_err(|e| StorageIOError::read_state_machine(&e))?;
 
         Ok((log_id, member_ship))
+    }
+
+    #[tracing::instrument(level = "trace", skip(self))]
+    async fn begin_receiving_snapshot(
+        &mut self,
+    ) -> Result<Box<<TypeConfig as RaftTypeConfig>::SnapshotData>, StorageError<RaftNodeId>> {
+        debug!("Storage callback begin_receiving_snapshot");
+
+        Ok(Box::new(Cursor::new(Vec::new())))
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, snapshot))]
+    async fn install_snapshot(
+        &mut self,
+        meta: &SnapshotMeta<RaftNodeId, RaftNodeInfo>,
+        snapshot: Box<<TypeConfig as RaftTypeConfig>::SnapshotData>,
+    ) -> Result<(), StorageError<RaftNodeId>> {
+        debug!(
+            "Storage callback install_snapshot size: {}",
+            snapshot.get_ref().len()
+        );
+
+        let updated_snapshot = StoredSnapshot {
+            meta: meta.clone(),
+            data: snapshot.into_inner(),
+        };
+
+        self.apply_snapshot(updated_snapshot)
+            .await
+            .map_err(|e| StorageIOError::write(&e))?;
+
+        Ok(())
+    }
+
+    #[tracing::instrument(level = "trace", skip(self))]
+    async fn get_current_snapshot(
+        &mut self,
+    ) -> Result<Option<Snapshot<TypeConfig>>, StorageError<RaftNodeId>> {
+        info!("Storage callback get_current_snapshot");
+
+        let snapshot = self
+            .create_snapshot(SnapshotMode::GetSnapshot)
+            .await
+            .map_err(|e| StorageIOError::read_state_machine(&e))?;
+
+        Ok(Some(Snapshot {
+            meta: snapshot.meta,
+            snapshot: Box::new(Cursor::new(snapshot.data)),
+        }))
     }
 
     #[tracing::instrument(level = "trace", skip(self, entries))]
@@ -384,79 +498,6 @@ impl RaftStorage<TypeConfig> for Arc<NodeStorage> {
         }
 
         Ok(res)
-    }
-
-    #[tracing::instrument(level = "trace", skip(self))]
-    async fn begin_receiving_snapshot(
-        &mut self,
-    ) -> Result<Box<<TypeConfig as RaftTypeConfig>::SnapshotData>, StorageError<RaftNodeId>> {
-        debug!("Storage callback begin_receiving_snapshot");
-
-        Ok(Box::new(Cursor::new(Vec::new())))
-    }
-
-    #[tracing::instrument(level = "trace", skip(self, snapshot))]
-    async fn install_snapshot(
-        &mut self,
-        meta: &SnapshotMeta<RaftNodeId, RaftNodeInfo>,
-        snapshot: Box<<TypeConfig as RaftTypeConfig>::SnapshotData>,
-    ) -> Result<(), StorageError<RaftNodeId>> {
-        debug!(
-            "Storage callback install_snapshot size: {}",
-            snapshot.get_ref().len()
-        );
-
-        let new_snapshot = StoredSnapshot {
-            meta: meta.clone(),
-            data: snapshot.into_inner(),
-        };
-
-        // Update the state machine.
-
-        let updated_snapshot: SerializableSnapshot = bincode::deserialize(&new_snapshot.data)
-            .map_err(|e| StorageIOError::read_snapshot(Some(new_snapshot.meta.signature()), &e))?;
-
-        self.apply_snapshot(updated_snapshot)
-            .await
-            .map_err(|e| StorageIOError::write(&e))?;
-
-        let _ = self.build_snapshot().await?;
-
-        Ok(())
-    }
-
-    #[tracing::instrument(level = "trace", skip(self))]
-    async fn get_current_snapshot(
-        &mut self,
-    ) -> Result<Option<Snapshot<TypeConfig>>, StorageError<RaftNodeId>> {
-        debug!("Storage callback get_current_snapshot");
-
-        match self
-            .state
-            .get_snapshot(self.group_id())
-            .map_err(|e| StorageIOError::read_state_machine(&e))?
-        {
-            Some(snapshot) => {
-                let data = snapshot.data.clone();
-                Ok(Some(Snapshot {
-                    meta: snapshot.meta,
-                    snapshot: Box::new(Cursor::new(data)),
-                }))
-            }
-            None => Ok(None),
-        }
-    }
-
-    async fn get_log_reader(&mut self) -> Self::LogReader {
-        debug!("Storage callback get_log_reader");
-
-        self.clone()
-    }
-
-    async fn get_snapshot_builder(&mut self) -> Self::SnapshotBuilder {
-        debug!("Storage callback get_snapshot_builder");
-
-        self.clone()
     }
 }
 

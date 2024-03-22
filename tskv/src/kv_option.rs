@@ -11,11 +11,9 @@ use crate::TseriesFamilyId;
 
 const SUMMARY_PATH: &str = "summary";
 pub const INDEX_PATH: &str = "index";
-const DATA_PATH: &str = "data";
+pub const DATA_PATH: &str = "data";
 pub const TSM_PATH: &str = "tsm";
 pub const DELTA_PATH: &str = "delta";
-pub const MOVE_PATH: &str = "move";
-pub const T_SERIES_FAMILY_SNAPSHOT_PATH: &str = "snapshot";
 
 #[derive(Debug, Clone)]
 pub struct Options {
@@ -50,6 +48,7 @@ pub struct StorageOptions {
     pub max_compact_size: u64,
     pub max_concurrent_compaction: u16,
     pub strict_write: bool,
+    pub snapshot_holding_time: i64,
 }
 
 // database/data/ts_family_id/tsm
@@ -88,66 +87,6 @@ impl StorageOptions {
     pub fn delta_dir(&self, database: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
         self.ts_family_dir(database, ts_family_id).join(DELTA_PATH)
     }
-
-    pub fn move_dir(&self, database: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
-        self.ts_family_dir(database, ts_family_id).join(MOVE_PATH)
-    }
-
-    pub fn fmt_snapshot_dir(
-        database: &str,
-        ts_family_id: TseriesFamilyId,
-        snapshot_id: &str,
-    ) -> PathBuf {
-        PathBuf::from(DATA_PATH)
-            .join(database)
-            .join(ts_family_id.to_string())
-            .join(T_SERIES_FAMILY_SNAPSHOT_PATH)
-            .join(snapshot_id)
-    }
-
-    pub fn snapshot_dir(&self, database: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
-        self.ts_family_dir(database, ts_family_id)
-            .join(T_SERIES_FAMILY_SNAPSHOT_PATH)
-    }
-
-    pub fn snapshot_sub_dir(
-        &self,
-        database: &str,
-        ts_family_id: TseriesFamilyId,
-        snapshot_id: &str,
-    ) -> PathBuf {
-        self.snapshot_dir(database, ts_family_id).join(snapshot_id)
-    }
-
-    pub fn snapshot_index_dir(
-        &self,
-        database: &str,
-        ts_family_id: TseriesFamilyId,
-        snapshot_id: &str,
-    ) -> PathBuf {
-        self.snapshot_sub_dir(database, ts_family_id, snapshot_id)
-            .join(INDEX_PATH)
-    }
-
-    pub fn snapshot_tsm_dir(
-        &self,
-        database: &str,
-        ts_family_id: TseriesFamilyId,
-        snapshot_id: &str,
-    ) -> PathBuf {
-        self.snapshot_sub_dir(database, ts_family_id, snapshot_id)
-            .join(TSM_PATH)
-    }
-
-    pub fn snapshot_delta_dir(
-        &self,
-        database: &str,
-        ts_family_id: TseriesFamilyId,
-        snapshot_id: &str,
-    ) -> PathBuf {
-        self.snapshot_sub_dir(database, ts_family_id, snapshot_id)
-            .join(DELTA_PATH)
-    }
 }
 
 impl From<&Config> for StorageOptions {
@@ -165,6 +104,7 @@ impl From<&Config> for StorageOptions {
             max_compact_size: config.storage.max_compact_size,
             max_concurrent_compaction: config.storage.max_concurrent_compaction,
             strict_write: config.storage.strict_write,
+            snapshot_holding_time: config.cluster.snapshot_holding_time.as_secs() as i64,
         }
     }
 }

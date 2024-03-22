@@ -25,7 +25,7 @@ use crate::summary::{Summary, SummaryTask};
 use crate::tseries_family::{SuperVersion, TseriesFamily};
 use crate::version_set::VersionSet;
 use crate::vnode_store::VnodeStorage;
-use crate::{file_utils, Engine, TsKvContext, TseriesFamilyId};
+use crate::{file_utils, Engine, TsKvContext, TseriesFamilyId, VnodeSnapshot};
 
 // TODO: A small summay channel capacity can cause a block
 pub const COMPACT_REQ_CHANNEL_CAP: usize = 1024;
@@ -248,6 +248,7 @@ impl Engine for TsKv {
             ts_family,
             id: vnode_id,
             ctx: self.ctx.clone(),
+            snapshot: VnodeSnapshot::default(),
         })
     }
 

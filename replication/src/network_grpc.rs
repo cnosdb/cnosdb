@@ -4,6 +4,7 @@ use openraft::raft::*;
 use protos::raft_service::raft_service_server::RaftService;
 use protos::raft_service::*;
 use tokio::sync::RwLock;
+use trace::debug;
 
 use crate::multi_raft::MultiRaft;
 use crate::raft_node::RaftNode;
@@ -42,6 +43,8 @@ impl RaftService for RaftCBServer {
     ) -> std::result::Result<tonic::Response<RaftResponse>, tonic::Status> {
         let inner = request.into_inner();
 
+        debug!("Network callback recv raft_vote  req: {:?}", inner);
+
         let vote = match serde_json::from_str::<VoteRequest<RaftNodeId>>(&inner.data) {
             Ok(val) => val,
             Err(err) => return Err(tonic::Status::new(tonic::Code::Internal, err.to_string())),
@@ -65,6 +68,10 @@ impl RaftService for RaftCBServer {
             Ok(val) => val,
             Err(err) => return Err(tonic::Status::new(tonic::Code::Internal, err.to_string())),
         };
+        debug!(
+            "Network callback recv raft_snapshot  req: {:?}",
+            snapshot.meta
+        );
 
         let node = self.get_node(inner.group_id).await?;
         let res = node.raw_raft().install_snapshot(snapshot).await;
@@ -83,6 +90,13 @@ impl RaftService for RaftCBServer {
             Ok(val) => val,
             Err(err) => return Err(tonic::Status::new(tonic::Code::Internal, err.to_string())),
         };
+
+        // let begin = entries.entries.first().map_or(0, |ent| ent.log_id.index);
+        // let end = entries.entries.last().map_or(0, |ent| ent.log_id.index);
+        // debug!(
+        //     "Network callback recv raft_append_entries  entries: [{}-{}]",
+        //     begin, end
+        // );
 
         let node = self.get_node(inner.group_id).await?;
         let res = node.raw_raft().append_entries(entries).await;

@@ -88,33 +88,38 @@ impl CompactMeta {
         }
     }
 
-    pub async fn rename_file(
-        &mut self,
-        storage_opt: &StorageOptions,
-        database: &str,
-        ts_family_id: TseriesFamilyId,
-        file_id: ColumnFileId,
-    ) -> TskvResult<PathBuf> {
-        let old_name = if self.is_delta {
-            let base_dir = storage_opt
-                .move_dir(database, ts_family_id)
-                .join(DELTA_PATH);
+    pub fn relative_path(&self) -> PathBuf {
+        if self.is_delta {
+            let base_dir = PathBuf::from(DELTA_PATH);
             file_utils::make_delta_file(base_dir, self.file_id)
         } else {
-            let base_dir = storage_opt.move_dir(database, ts_family_id).join(TSM_PATH);
+            let base_dir = PathBuf::from(TSM_PATH);
             file_utils::make_tsm_file(base_dir, self.file_id)
+        }
+    }
+
+    pub async fn rename_file(
+        &self,
+        old_dir: &Path,
+        new_dir: &Path,
+        new_id: ColumnFileId,
+    ) -> TskvResult<PathBuf> {
+        let old_id = self.file_id;
+        let (old_name, new_name) = if self.is_delta {
+            (
+                file_utils::make_delta_file(old_dir.join(DELTA_PATH), old_id),
+                file_utils::make_delta_file(new_dir.join(DELTA_PATH), new_id),
+            )
+        } else {
+            (
+                file_utils::make_tsm_file(old_dir.join(TSM_PATH), old_id),
+                file_utils::make_tsm_file(new_dir.join(TSM_PATH), new_id),
+            )
         };
 
-        let new_name = if self.is_delta {
-            let base_dir = storage_opt.delta_dir(database, ts_family_id);
-            file_utils::make_delta_file(base_dir, file_id)
-        } else {
-            let base_dir = storage_opt.tsm_dir(database, ts_family_id);
-            file_utils::make_tsm_file(base_dir, file_id)
-        };
         trace::info!("rename file from {:?} to {:?}", &old_name, &new_name);
-        file_utils::rename(old_name, &new_name).await?;
-        self.file_id = file_id;
+        file_utils::rename(&old_name, &new_name).await?;
+
         Ok(new_name)
     }
 }

@@ -1,5 +1,6 @@
-use std::fs;
+use std::collections::HashMap;
 use std::path::Path;
+use std::{default, fs};
 
 use heed::flags::Flags;
 use heed::types::*;
@@ -21,8 +22,20 @@ impl Key {
         format!("applied_log_{}", id)
     }
 
+    fn snapshot_applied_log(id: u32) -> String {
+        format!("snapshot_applied_log_{}", id)
+    }
+
     fn membership(id: u32) -> String {
         format!("membership_{}", id)
+    }
+
+    fn membership_list_prefix(id: u32) -> String {
+        format!("membership_{}_", id)
+    }
+
+    fn membership_list(id: u32, index: u64) -> String {
+        format!("membership_{}_{}", id, index)
     }
 
     fn purged_log_id(id: u32) -> String {
@@ -157,7 +170,68 @@ impl StateStorage {
     ) -> ReplicationResult<()> {
         let mut writer = self.writer_txn()?;
         self.set(&mut writer, &Key::membership(group_id), &membership)?;
+        if let Some(log_id) = membership.log_id() {
+            self.set(
+                &mut writer,
+                &Key::membership_list(group_id, log_id.index),
+                &membership,
+            )?;
+        }
+
         writer.commit()?;
+
+        Ok(())
+    }
+
+    pub fn get_memberships(
+        &self,
+        group_id: u32,
+    ) -> ReplicationResult<HashMap<String, StoredMembership<RaftNodeId, RaftNodeInfo>>> {
+        let reader = self.reader_txn()?;
+        let mem_ship: StoredMembership<RaftNodeId, RaftNodeInfo> = self
+            .get(&reader, &Key::membership(group_id))?
+            .unwrap_or_default();
+
+        let mut memberships = HashMap::new();
+        let mut iter = self
+            .db
+            .prefix_iter(&reader, &Key::membership_list_prefix(group_id))?;
+        while let Some((key, data)) = iter.next().transpose()? {
+            let value = serde_json::from_slice(&data)?;
+            memberships.insert(key.to_string(), value);
+        }
+
+        Ok(memberships)
+    }
+
+    pub fn clear_memberships(&self, group_id: u32, index: u64) -> ReplicationResult<()> {
+        let mut min_distance = u64::MAX;
+        let mut min_distance_key = String::default();
+
+        let mut clear_keys = vec![];
+        let memberships = self.get_memberships(group_id)?;
+        for (key, value) in memberships.iter() {
+            if let Some(logid) = value.log_id() {
+                if logid.index > index {
+                    continue;
+                }
+
+                if index - logid.index < min_distance {
+                    if !min_distance_key.is_empty() {
+                        clear_keys.push(min_distance_key);
+                    }
+
+                    min_distance = index - logid.index;
+                    min_distance_key = key.to_string();
+                } else {
+                    clear_keys.push(key.to_string())
+                }
+            } else {
+                clear_keys.push(key.to_string())
+            }
+        }
+
+        self.del_keys(&clear_keys)?;
 
         Ok(())
     }
@@ -179,6 +253,30 @@ impl StateStorage {
     ) -> ReplicationResult<()> {
         let mut writer = self.writer_txn()?;
         self.set(&mut writer, &Key::applied_log(group_id), &log_id)?;
+        writer.commit()?;
+
+        Ok(())
+    }
+
+    pub fn get_snapshot_applied_log(
+        &self,
+        group_id: u32,
+    ) -> ReplicationResult<Option<LogId<RaftNodeId>>> {
+        let reader = self.reader_txn()?;
+        let key = Key::snapshot_applied_log(group_id);
+        let log_id: Option<LogId<RaftNodeId>> = self.get(&reader, &key)?;
+
+        Ok(log_id)
+    }
+
+    pub fn set_snapshot_applied_log(
+        &self,
+        group_id: u32,
+        log_id: LogId<RaftNodeId>,
+    ) -> ReplicationResult<()> {
+        let mut writer = self.writer_txn()?;
+        let key = Key::snapshot_applied_log(group_id);
+        self.set(&mut writer, &key, &log_id)?;
         writer.commit()?;
 
         Ok(())
@@ -278,6 +376,16 @@ impl StateStorage {
         Ok(())
     }
 
+    pub fn del_keys(&self, keys: &[String]) -> ReplicationResult<()> {
+        let mut writer = self.writer_txn()?;
+        for key in keys {
+            self.del(&mut writer, key)?;
+        }
+        writer.commit()?;
+
+        Ok(())
+    }
+
     pub fn all_nodes_summary(&self) -> ReplicationResult<Vec<RaftNodeSummary>> {
         let mut nodes_summary = vec![];
         let reader = self.reader_txn()?;
@@ -292,6 +400,7 @@ impl StateStorage {
     }
 
     pub fn del_group(&self, group_id: u32) -> ReplicationResult<()> {
+        let memberships = self.get_memberships(group_id)?;
         let mut writer = self.writer_txn()?;
         self.del(&mut writer, &Key::applied_log(group_id))?;
         self.del(&mut writer, &Key::membership(group_id))?;
@@ -301,6 +410,10 @@ impl StateStorage {
         self.del(&mut writer, &Key::snapshot_key(group_id))?;
         self.del(&mut writer, &Key::already_init_key(group_id))?;
         self.del(&mut writer, &Key::node_summary(group_id))?;
+        self.del(&mut writer, &Key::snapshot_applied_log(group_id))?;
+        for (key, _) in memberships {
+            self.del(&mut writer, &key)?;
+        }
         writer.commit()?;
 
         Ok(())
@@ -323,6 +436,16 @@ mod test {
 
     use heed::types::*;
     use heed::Database;
+
+    use super::StateStorage;
+
+    #[test]
+    #[ignore]
+    fn dump_raft_state() {
+        let path = "/tmp/cnosdb/2001/db/raft-state";
+        let state = StateStorage::open(path, 1024 * 1024 * 1024).unwrap();
+        state.debug();
+    }
 
     #[test]
     #[ignore]
