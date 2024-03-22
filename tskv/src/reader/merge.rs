@@ -9,7 +9,7 @@ use super::{
     SendableSchemableTskvRecordBatchStream,
 };
 use crate::reader::sort_merge::sort_merge;
-use crate::Result;
+use crate::TskvResult;
 
 /// 对相同series的数据进行合并
 pub struct DataMerger {
@@ -35,7 +35,7 @@ impl DataMerger {
         }
     }
 
-    fn process_sort_merge(&self) -> Result<SendableSchemableTskvRecordBatchStream> {
+    fn process_sort_merge(&self) -> TskvResult<SendableSchemableTskvRecordBatchStream> {
         if self.inputs.is_empty() {
             return Ok(Box::pin(EmptySchemableTskvRecordBatchStream::new(
                 self.schema.clone(),
@@ -45,7 +45,7 @@ impl DataMerger {
             .inputs
             .iter()
             .map(|e| e.process())
-            .collect::<Result<Vec<_>>>()?;
+            .collect::<TskvResult<Vec<_>>>()?;
         sort_merge(
             streams,
             self.schema.clone(),
@@ -57,7 +57,7 @@ impl DataMerger {
 }
 
 impl BatchReader for DataMerger {
-    fn process(&self) -> Result<SendableSchemableTskvRecordBatchStream> {
+    fn process(&self) -> TskvResult<SendableSchemableTskvRecordBatchStream> {
         self.process_sort_merge()
     }
 

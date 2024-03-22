@@ -9,11 +9,11 @@ use models::meta_data::VnodeId;
 use tokio::runtime::Runtime;
 use trace::SpanRecorder;
 
-use super::{iterator_v2, SendableTskvRecordBatchStream};
+use super::{iterator, SendableTskvRecordBatchStream};
 use crate::reader::QueryOption;
-use crate::{EngineRef, Error};
+use crate::{EngineRef, TskvError};
 
-type Result<T, E = Error> = std::result::Result<T, E>;
+type Result<T, E = TskvError> = std::result::Result<T, E>;
 
 pub struct LocalTskvTableScanStream {
     state: StreamState,
@@ -29,7 +29,7 @@ impl LocalTskvTableScanStream {
         runtime: Arc<Runtime>,
         span_recorder: SpanRecorder,
     ) -> Self {
-        let iter_future = Box::pin(iterator_v2::execute(
+        let iter_future = Box::pin(iterator::execute(
             runtime,
             kv_inst,
             option,
@@ -69,7 +69,7 @@ impl Stream for LocalTskvTableScanStream {
     }
 }
 
-pub type RowIteratorFuture = BoxFuture<'static, Result<SendableTskvRecordBatchStream, Error>>;
+pub type RowIteratorFuture = BoxFuture<'static, Result<SendableTskvRecordBatchStream, TskvError>>;
 
 enum StreamState {
     Open {

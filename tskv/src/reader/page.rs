@@ -19,19 +19,19 @@ use crate::tsm::codec::{
     get_bool_codec, get_encoding, get_f64_codec, get_i64_codec, get_str_codec, get_ts_codec,
     get_u64_codec,
 };
-use crate::tsm2::page::{Page, PageMeta, PageWriteSpec};
-use crate::tsm2::reader::TSM2Reader;
-use crate::{Error, Result};
+use crate::tsm::page::{Page, PageMeta, PageWriteSpec};
+use crate::tsm::reader::TsmReader;
+use crate::{TskvError, TskvResult};
 
 pub type PageReaderRef = Arc<dyn PageReader>;
 pub trait PageReader {
-    fn process(&self) -> Result<BoxStream<Result<ArrayRef>>>;
+    fn process(&self) -> TskvResult<BoxStream<TskvResult<ArrayRef>>>;
 }
 
 #[derive(Clone)]
 pub struct PrimitiveArrayReader {
     date_type: PhysicalDType,
-    reader: Arc<TSM2Reader>,
+    reader: Arc<TsmReader>,
     page_meta: PageWriteSpec,
 
     // only used for tombstone filter
@@ -45,7 +45,7 @@ pub struct PrimitiveArrayReader {
 impl PrimitiveArrayReader {
     pub fn new(
         date_type: PhysicalDType,
-        reader: Arc<TSM2Reader>,
+        reader: Arc<TsmReader>,
         page_meta: &PageWriteSpec,
         series_id: SeriesId,
         time_page_meta: Arc<PageWriteSpec>,
@@ -66,7 +66,7 @@ impl PrimitiveArrayReader {
 }
 
 impl PageReader for PrimitiveArrayReader {
-    fn process(&self) -> Result<BoxStream<Result<ArrayRef>>> {
+    fn process(&self) -> TskvResult<BoxStream<TskvResult<ArrayRef>>> {
         let metrics = ColumnGroupReaderMetrics::new(self.metrics.as_ref());
 
         Ok(Box::pin(futures::stream::once(read(
@@ -81,13 +81,13 @@ impl PageReader for PrimitiveArrayReader {
 }
 
 async fn read(
-    reader: Arc<TSM2Reader>,
+    reader: Arc<TsmReader>,
     page_meta: PageWriteSpec,
     series_id: SeriesId,
     time_page_meta: Arc<PageWriteSpec>,
     time_range: TimeRange,
     metrics: ColumnGroupReaderMetrics,
-) -> Result<ArrayRef> {
+) -> TskvResult<ArrayRef> {
     let page = {
         let _timer = metrics.elapsed_page_scan_time().timer();
         metrics.page_read_count().add(1);
@@ -101,11 +101,11 @@ async fn read(
 
 async fn page_to_arrow_array_with_tomb(
     page: Page,
-    reader: Arc<TSM2Reader>,
+    reader: Arc<TsmReader>,
     series_id: SeriesId,
     time_page_meta: Arc<PageWriteSpec>,
     time_range: TimeRange,
-) -> Result<ArrayRef> {
+) -> TskvResult<ArrayRef> {
     let tombstone = reader.tombstone();
     let null_bitset = if tombstone.overlaps(series_id, page.meta.column.id, &time_range) {
         let time_page = reader.read_page(&time_page_meta).await?;
@@ -115,10 +115,14 @@ async fn page_to_arrow_array_with_tomb(
         let mut null_bitset = page.null_bitset().to_bitset();
         for time_range in time_ranges {
             let start_index = column
+                .data()
                 .binary_search_for_i64_col(time_range.min_ts)
+                .map_err(|e| TskvError::ColumnDataError { source: e })?
                 .unwrap_or_else(|x| x);
             let end_index = column
+                .data()
                 .binary_search_for_i64_col(time_range.max_ts)
+                .map_err(|e| TskvError::ColumnDataError { source: e })?
                 .map(|x| x + 1)
                 .unwrap_or_else(|x| x);
             null_bitset.clear_bits(start_index, end_index);
@@ -137,7 +141,7 @@ fn data_buf_to_arrow_array(
     data_buffer: &[u8],
     meta: &PageMeta,
     null_bitset: NullBitset,
-) -> Result<ArrayRef> {
+) -> TskvResult<ArrayRef> {
     let data_type = meta.column.column_type.to_physical_type();
     let num_values = meta.num_values as usize;
 
@@ -152,12 +156,12 @@ fn data_buf_to_arrow_array(
             let mut target = Vec::new();
             ts_codec
                 .decode(data_buffer, &mut target)
-                .map_err(|e| Error::Decode { source: e })?;
+                .map_err(|e| TskvError::Decode { source: e })?;
             let mut iter_target = target.into_iter();
             let mut target = Vec::with_capacity(null_bitset.len());
             for i in 0..null_bitset.len() {
                 if null_bitset.get(i) {
-                    target.push(iter_target.next().ok_or(Error::CommonError {
+                    target.push(iter_target.next().ok_or(TskvError::CommonError {
                         reason: "target is not enough".to_string(),
                     })?);
                 } else {
@@ -184,13 +188,13 @@ fn data_buf_to_arrow_array(
             let mut target = Vec::new();
             ts_codec
                 .decode(data_buffer, &mut target)
-                .map_err(|e| Error::Decode { source: e })?;
+                .map_err(|e| TskvError::Decode { source: e })?;
 
             let mut iter_target = target.into_iter();
             let mut target = Vec::with_capacity(null_bitset.len());
             for i in 0..null_bitset.len() {
                 if null_bitset.get(i) {
-                    target.push(iter_target.next().ok_or(Error::CommonError {
+                    target.push(iter_target.next().ok_or(TskvError::CommonError {
                         reason: "target is not enough".to_string(),
                     })?);
                 } else {
@@ -215,13 +219,13 @@ fn data_buf_to_arrow_array(
             let mut target = Vec::new();
             ts_codec
                 .decode(data_buffer, &mut target)
-                .map_err(|e| Error::Decode { source: e })?;
+                .map_err(|e| TskvError::Decode { source: e })?;
 
             let mut iter_target = target.into_iter();
             let mut target = Vec::with_capacity(null_bitset.len());
             for i in 0..null_bitset.len() {
                 if null_bitset.get(i) {
-                    target.push(iter_target.next().ok_or(Error::CommonError {
+                    target.push(iter_target.next().ok_or(TskvError::CommonError {
                         reason: "target is not enough".to_string(),
                     })?);
                 } else {
@@ -246,13 +250,13 @@ fn data_buf_to_arrow_array(
             let mut target = Vec::new();
             ts_codec
                 .decode(data_buffer, &mut target)
-                .map_err(|e| Error::Decode { source: e })?;
+                .map_err(|e| TskvError::Decode { source: e })?;
 
             let mut iter_target = target.into_iter();
             let mut target = Vec::with_capacity(null_bitset.len());
             for i in 0..null_bitset.len() {
                 if null_bitset.get(i) {
-                    target.push(iter_target.next().ok_or(Error::CommonError {
+                    target.push(iter_target.next().ok_or(TskvError::CommonError {
                         reason: "target is not enough".to_string(),
                     })?);
                 } else {
@@ -277,13 +281,13 @@ fn data_buf_to_arrow_array(
             let mut target = Vec::new();
             ts_codec
                 .decode(data_buffer, &mut target)
-                .map_err(|e| Error::Decode { source: e })?;
+                .map_err(|e| TskvError::Decode { source: e })?;
 
             let mut iter_target = target.into_iter();
             let mut target = Vec::with_capacity(null_bitset.len());
             for i in 0..null_bitset.len() {
                 if null_bitset.get(i) {
-                    target.push(iter_target.next().ok_or(Error::CommonError {
+                    target.push(iter_target.next().ok_or(TskvError::CommonError {
                         reason: "target is not enough".to_string(),
                     })?);
                 } else {
@@ -308,13 +312,13 @@ fn data_buf_to_arrow_array(
             let mut target = Vec::new();
             ts_codec
                 .decode(data_buffer, &mut target)
-                .map_err(|e| Error::Decode { source: e })?;
+                .map_err(|e| TskvError::Decode { source: e })?;
 
             let mut iter_target = target.into_iter();
             let mut target = Vec::with_capacity(null_bitset.len());
             for i in 0..null_bitset.len() {
                 if null_bitset.get(i) {
-                    target.push(iter_target.next().ok_or(Error::CommonError {
+                    target.push(iter_target.next().ok_or(TskvError::CommonError {
                         reason: "target is not enough".to_string(),
                     })?);
                 } else {
@@ -329,7 +333,7 @@ fn data_buf_to_arrow_array(
             Arc::new(array)
         }
         PhysicalCType::Field(PhysicalDType::Unknown) => {
-            return Err(Error::UnsupportedDataType {
+            return Err(TskvError::UnsupportedDataType {
                 dt: "Unknown".to_string(),
             })
         }
@@ -355,9 +359,9 @@ pub(crate) mod tests {
     use models::{PhysicalDType, ValueType};
 
     use super::{NullBitset, PageReader};
-    use crate::tsm2::page::Page;
-    use crate::tsm2::writer::Column;
-    use crate::Result;
+    use crate::tsm::data_block::MutableColumn;
+    use crate::tsm::page::Page;
+    use crate::TskvResult;
 
     pub struct TestPageReader<T> {
         _phantom_data: PhantomData<T>,
@@ -374,7 +378,7 @@ pub(crate) mod tests {
     }
 
     impl PageReader for TestPageReader<f64> {
-        fn process(&self) -> Result<BoxStream<Result<ArrayRef>>> {
+        fn process(&self) -> TskvResult<BoxStream<TskvResult<ArrayRef>>> {
             let mut builder = Float64Array::builder(self.row_nums);
             for i in 0..self.row_nums {
                 if i % 2 == 0 {
@@ -390,7 +394,7 @@ pub(crate) mod tests {
     }
 
     impl PageReader for TestPageReader<i64> {
-        fn process(&self) -> Result<BoxStream<Result<ArrayRef>>> {
+        fn process(&self) -> TskvResult<BoxStream<TskvResult<ArrayRef>>> {
             let mut builder = Int64Array::builder(self.row_nums);
             for i in 0..self.row_nums {
                 if i % 2 == 0 {
@@ -406,7 +410,7 @@ pub(crate) mod tests {
     }
 
     impl PageReader for TestPageReader<u64> {
-        fn process(&self) -> Result<BoxStream<Result<ArrayRef>>> {
+        fn process(&self) -> TskvResult<BoxStream<TskvResult<ArrayRef>>> {
             let mut builder = UInt64Array::builder(self.row_nums);
             for i in 0..self.row_nums {
                 if i % 2 == 0 {
@@ -422,7 +426,7 @@ pub(crate) mod tests {
     }
 
     impl PageReader for TestPageReader<String> {
-        fn process(&self) -> Result<BoxStream<Result<ArrayRef>>> {
+        fn process(&self) -> TskvResult<BoxStream<TskvResult<ArrayRef>>> {
             let mut builder = StringBuilder::new();
             for i in 0..self.row_nums {
                 if i % 2 == 0 {
@@ -438,7 +442,7 @@ pub(crate) mod tests {
     }
 
     impl PageReader for TestPageReader<bool> {
-        fn process(&self) -> Result<BoxStream<Result<ArrayRef>>> {
+        fn process(&self) -> TskvResult<BoxStream<TskvResult<ArrayRef>>> {
             let mut builder = BooleanBuilder::new();
             for i in 0..self.row_nums {
                 if i % 2 == 0 {
@@ -454,7 +458,9 @@ pub(crate) mod tests {
     }
 
     fn page(row_nums: usize, ct: ColumnType) -> Page {
-        let mut col = Column::empty_with_cap(ct.clone(), row_nums).unwrap();
+        let col_schema = TableColumn::new_with_default("col".to_string(), ct.clone());
+
+        let mut col = MutableColumn::empty_with_cap(col_schema, row_nums).unwrap();
 
         for i in 0..row_nums {
             let val = if i % 2 == 0 {
@@ -472,12 +478,10 @@ pub(crate) mod tests {
                 }
             };
 
-            col.push(val);
+            col.push(val).unwrap();
         }
 
-        let col_schema = TableColumn::new_with_default("col".to_string(), ct);
-
-        col.col_to_page(&col_schema).unwrap()
+        Page::col_to_page(&col).unwrap()
     }
 
     #[tokio::test]

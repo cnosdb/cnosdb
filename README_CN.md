@@ -31,7 +31,7 @@
     •
     <a href="https://docs.cnosdb.com/zh/guide/quick_start.html">Quick Start</a>
     •
-    <a href="https://github.com/cnosdb/cnosdb/issues/1414">Eco-Integration</a>
+    <a href="https://docs.cnosdb.com/eco-integration/">Eco-Integration</a>
 </h3>
 
 [English](./README.md) | 简体中文

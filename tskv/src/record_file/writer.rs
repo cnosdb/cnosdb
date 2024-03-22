@@ -9,7 +9,7 @@ use super::{
     file_crc_source_len, reader, RecordDataType, FILE_FOOTER_LEN, FILE_MAGIC_NUMBER,
     FILE_MAGIC_NUMBER_LEN, RECORD_MAGIC_NUMBER,
 };
-use crate::error::{self, Error, Result};
+use crate::error::{self, TskvError, TskvResult};
 use crate::file_system::file::async_file::AsyncFile;
 use crate::file_system::file::IFile;
 use crate::file_system::file_manager;
@@ -24,7 +24,7 @@ pub struct Writer {
 }
 
 impl Writer {
-    pub async fn open(path: impl AsRef<Path>, _data_type: RecordDataType) -> Result<Self> {
+    pub async fn open(path: impl AsRef<Path>, _data_type: RecordDataType) -> TskvResult<Self> {
         let path = path.as_ref();
         let file = file_manager::open_create_file(path).await?;
         if file.is_empty() {
@@ -43,7 +43,7 @@ impl Writer {
         } else {
             let footer = match reader::read_footer(&path).await {
                 Ok((_, f)) => Some(f),
-                Err(Error::NoFooter) => None,
+                Err(TskvError::NoFooter) => None,
                 Err(e) => {
                     trace::error!(
                         "Failed to read footer of record_file '{}': {e}",
@@ -79,7 +79,7 @@ impl Writer {
         data_version: u8,
         data_type: u8,
         data: R,
-    ) -> Result<usize>
+    ) -> TskvResult<usize>
     where
         D: AsRef<[u8]>,
         R: AsRef<[D]>,
@@ -89,7 +89,7 @@ impl Writer {
         let data_len = match data_len.to_u32() {
             Some(v) => v,
             None => {
-                return Err(Error::InvalidParam {
+                return Err(TskvError::InvalidParam {
                     reason: format!(
                         "record(type: {}) length ({}) is not a valid u32, ignore this record",
                         data_type,
@@ -125,7 +125,7 @@ impl Writer {
             .file
             .write_vec(self.pos, &mut write_buf)
             .await
-            .map_err(|e| Error::WriteFile {
+            .map_err(|e| TskvError::WriteFile {
                 path: self.path.clone(),
                 source: e,
             })?;
@@ -134,7 +134,7 @@ impl Writer {
         Ok(written_size)
     }
 
-    pub async fn write_footer(&mut self, footer: &mut [u8; FILE_FOOTER_LEN]) -> Result<usize> {
+    pub async fn write_footer(&mut self, footer: &mut [u8; FILE_FOOTER_LEN]) -> TskvResult<usize> {
         self.sync().await?;
 
         // Get file crc
@@ -142,7 +142,7 @@ impl Writer {
         self.file
             .read_at(FILE_MAGIC_NUMBER_LEN as u64, &mut buf)
             .await
-            .map_err(|e| Error::ReadFile {
+            .map_err(|e| TskvError::ReadFile {
                 path: self.path.clone(),
                 source: e,
             })?;
@@ -156,7 +156,7 @@ impl Writer {
             self.file
                 .write_at(self.pos, footer)
                 .await
-                .map_err(|e| Error::WriteFile {
+                .map_err(|e| TskvError::WriteFile {
                     path: self.path.clone(),
                     source: e,
                 })?;
@@ -165,7 +165,7 @@ impl Writer {
         Ok(written_size)
     }
 
-    pub async fn truncate(&mut self, size: u64) -> Result<()> {
+    pub async fn truncate(&mut self, size: u64) -> TskvResult<()> {
         self.file.truncate(size).await?;
         self.pos = size;
         self.file_size = size;
@@ -173,11 +173,11 @@ impl Writer {
         Ok(())
     }
 
-    pub async fn sync(&self) -> Result<()> {
+    pub async fn sync(&self) -> TskvResult<()> {
         self.file.sync_data().await.context(error::SyncFileSnafu)
     }
 
-    pub async fn close(&mut self) -> Result<()> {
+    pub async fn close(&mut self) -> TskvResult<()> {
         self.sync().await
     }
 

@@ -5,7 +5,7 @@ use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use trace::{debug, info};
 
-use crate::error::Result;
+use crate::error::TskvResult;
 use crate::file_system::file_manager::{self};
 use crate::file_system::DataBlock;
 use crate::{byte_utils, file_utils};
@@ -32,7 +32,7 @@ pub struct Queue {
 }
 
 impl Queue {
-    pub async fn new(config: QueueConfig) -> Result<Self> {
+    pub async fn new(config: QueueConfig) -> TskvResult<Self> {
         let suffix = config.file_suffix.clone();
         let data_dir = PathBuf::from(config.data_path.clone());
         if !file_manager::try_exists(&data_dir) {
@@ -65,7 +65,7 @@ impl Queue {
         })
     }
 
-    pub async fn write_bytes(&mut self, data: &[u8]) -> Result<()> {
+    pub async fn write_bytes(&mut self, data: &[u8]) -> TskvResult<()> {
         if self.write_file_size > self.config.max_file_size {
             let _ = self.roll_write_file().await;
         }
@@ -76,7 +76,7 @@ impl Queue {
         Ok(())
     }
 
-    pub async fn write<Block>(&mut self, block: &Block) -> Result<()>
+    pub async fn write<Block>(&mut self, block: &Block) -> TskvResult<()>
     where
         Block: DataBlock,
     {
@@ -90,7 +90,7 @@ impl Queue {
         Ok(())
     }
 
-    pub async fn read<Block>(&mut self, block: &mut Block) -> Result<()>
+    pub async fn read<Block>(&mut self, block: &mut Block) -> TskvResult<()>
     where
         Block: DataBlock,
     {
@@ -107,7 +107,7 @@ impl Queue {
         Ok(())
     }
 
-    pub async fn commit(&mut self) -> Result<()> {
+    pub async fn commit(&mut self) -> TskvResult<()> {
         let seek_cur = self.read_file.seek(SeekFrom::Current(0)).await?;
         Queue::write_offset(&mut self.read_file, seek_cur).await?;
         debug!("queue commit offset id:{}@{}", self.read_file_id, seek_cur);
@@ -116,13 +116,13 @@ impl Queue {
         Ok(())
     }
 
-    pub async fn close(&mut self) -> Result<()> {
+    pub async fn close(&mut self) -> TskvResult<()> {
         self.write_file.flush().await?;
 
         Ok(())
     }
 
-    pub async fn size(&mut self) -> Result<u64> {
+    pub async fn size(&mut self) -> TskvResult<u64> {
         let mut size = 0;
         let mut index = self.read_file_id;
         loop {
@@ -150,7 +150,7 @@ impl Queue {
         Ok(size)
     }
 
-    async fn open_write_file(file_name: impl AsRef<Path>) -> Result<(File, u64)> {
+    async fn open_write_file(file_name: impl AsRef<Path>) -> TskvResult<(File, u64)> {
         let mut file = tokio::fs::OpenOptions::new()
             .create(true)
             .write(true)
@@ -171,7 +171,7 @@ impl Queue {
         Ok((file, file_size))
     }
 
-    async fn open_read_file(file_name: impl AsRef<Path>) -> Result<(File, u64)> {
+    async fn open_read_file(file_name: impl AsRef<Path>) -> TskvResult<(File, u64)> {
         let mut file = tokio::fs::OpenOptions::new()
             .create(true)
             .read(true)
@@ -186,7 +186,7 @@ impl Queue {
         Ok((file, offset))
     }
 
-    async fn roll_write_file(&mut self) -> Result<()> {
+    async fn roll_write_file(&mut self) -> TskvResult<()> {
         debug!("queue file '{}' is full", self.write_file_id);
 
         let new_file_id = self.write_file_id + 1;
@@ -206,7 +206,7 @@ impl Queue {
         Ok(())
     }
 
-    async fn roll_read_file(&mut self) -> Result<()> {
+    async fn roll_read_file(&mut self) -> TskvResult<()> {
         debug!("queue file: {} read over", self.read_file_id);
 
         let new_file_id = self.read_file_id + 1;

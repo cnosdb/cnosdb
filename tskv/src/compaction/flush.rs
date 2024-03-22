@@ -12,12 +12,12 @@ use utils::BloomFilter;
 
 use crate::compaction::{CompactTask, FlushReq};
 use crate::context::GlobalContext;
-use crate::error::Result;
+use crate::error::TskvResult;
 use crate::memcache::MemCache;
 use crate::summary::{CompactMetaBuilder, SummaryTask, VersionEdit};
 use crate::tseries_family::Version;
-use crate::tsm2::writer::Tsm2Writer;
-use crate::{ColumnFileId, Error, TsKvContext, TseriesFamilyId};
+use crate::tsm::writer::TsmWriter;
+use crate::{ColumnFileId, TsKvContext, TseriesFamilyId, TskvError};
 
 pub struct FlushTask {
     ts_family_id: TseriesFamilyId,
@@ -50,11 +50,11 @@ impl FlushTask {
         }
     }
 
-    pub async fn tsm2_run(
+    pub async fn run(
         self,
         version: Arc<Version>,
         edit: &mut VersionEdit,
-    ) -> Result<HashMap<u64, Arc<BloomFilter>>> {
+    ) -> TskvResult<HashMap<u64, Arc<BloomFilter>>> {
         let mut tsm_writer = None;
         let mut delta_writer = None;
         let mut file_metas = HashMap::new();
@@ -63,13 +63,13 @@ impl FlushTask {
             let (group, delta_group) = memcache.read().to_chunk_group(version.clone())?;
             if tsm_writer.is_none() && !group.is_empty() {
                 tsm_writer = Some(
-                    Tsm2Writer::open(&self.path_tsm, self.global_context.file_id_next(), 0, false)
+                    TsmWriter::open(&self.path_tsm, self.global_context.file_id_next(), 0, false)
                         .await?,
                 );
             }
             if delta_writer.is_none() && !delta_group.is_empty() {
                 delta_writer = Some(
-                    Tsm2Writer::open(
+                    TsmWriter::open(
                         &self.path_delta,
                         self.global_context.file_id_next(),
                         0,
@@ -133,7 +133,7 @@ pub async fn run_flush_memtable_job(
     req: FlushReq,
     ctx: Arc<TsKvContext>,
     trigger_compact: bool,
-) -> Result<()> {
+) -> TskvResult<()> {
     let req_str = format!("{req}");
     info!("Flush: running: {req_str}");
 
@@ -145,7 +145,7 @@ pub async fn run_flush_memtable_job(
         .await
         .get_tsfamily_by_tf_id(req.ts_family_id)
         .await
-        .ok_or(Error::VnodeNotFound {
+        .ok_or(TskvError::VnodeNotFound {
             vnode_id: req.ts_family_id,
         })?;
 
@@ -175,10 +175,7 @@ pub async fn run_flush_memtable_job(
 
     let mut version_edit =
         VersionEdit::new_update_vnode(req.ts_family_id, req.owner, req.high_seq_no);
-    if let Ok(fm) = flush_task
-        .tsm2_run(version.clone(), &mut version_edit)
-        .await
-    {
+    if let Ok(fm) = flush_task.run(version.clone(), &mut version_edit).await {
         file_metas = fm;
     }
 

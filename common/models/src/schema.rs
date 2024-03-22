@@ -782,6 +782,22 @@ impl ColumnType {
             },
         }
     }
+
+    pub fn to_physical_type(&self) -> PhysicalCType {
+        match self {
+            Self::Tag => PhysicalCType::Tag,
+            Self::Time(unit) => PhysicalCType::Time(unit.clone()),
+            Self::Field(value_type) => PhysicalCType::Field(value_type.to_physical_type()),
+        }
+    }
+
+    pub fn to_physical_data_type(&self) -> PhysicalDType {
+        match self {
+            Self::Tag => PhysicalDType::String,
+            Self::Time(_) => PhysicalDType::Integer,
+            Self::Field(value_type) => value_type.to_physical_type(),
+        }
+    }
 }
 
 impl Display for ColumnType {
@@ -1424,21 +1440,12 @@ impl PhysicalCType {
     pub fn default_time() -> Self {
         Self::Time(TimeUnit::Nanosecond)
     }
-}
 
-impl ColumnType {
-    pub fn to_physical_type(&self) -> PhysicalCType {
-        match self {
-            Self::Tag => PhysicalCType::Tag,
-            Self::Time(unit) => PhysicalCType::Time(unit.clone()),
-            Self::Field(value_type) => PhysicalCType::Field(value_type.to_physical_type()),
-        }
-    }
     pub fn to_physical_data_type(&self) -> PhysicalDType {
         match self {
             Self::Tag => PhysicalDType::String,
             Self::Time(_) => PhysicalDType::Integer,
-            Self::Field(value_type) => value_type.to_physical_type(),
+            Self::Field(value_type) => *value_type,
         }
     }
 }

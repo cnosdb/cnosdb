@@ -21,9 +21,9 @@ use parking_lot::RwLock;
 
 use self::utils::{CombinedRecordBatchStream, TimeRangeProvider};
 use crate::memcache::SeriesData;
-use crate::tsm2::page::Chunk;
-use crate::tsm2::reader::TSM2Reader;
-use crate::{Error, Result};
+use crate::tsm::chunk::Chunk;
+use crate::tsm::reader::TsmReader;
+use crate::{TskvError, TskvResult};
 
 mod batch_builder;
 mod chunk;
@@ -31,7 +31,6 @@ mod column_group;
 pub mod display;
 pub mod filter;
 mod function_register;
-mod iterator_v2;
 
 mod iterator;
 mod memcache_reader;
@@ -123,11 +122,12 @@ impl Projection {
     }
 }
 
-pub type SendableTskvRecordBatchStream = Pin<Box<dyn Stream<Item = Result<RecordBatch>> + Send>>;
+pub type SendableTskvRecordBatchStream =
+    Pin<Box<dyn Stream<Item = TskvResult<RecordBatch>> + Send>>;
 
 pub type SendableSchemableTskvRecordBatchStream =
-    Pin<Box<dyn SchemableTskvRecordBatchStream<Item = Result<RecordBatch>> + Send>>;
-pub trait SchemableTskvRecordBatchStream: Stream<Item = Result<RecordBatch>> {
+    Pin<Box<dyn SchemableTskvRecordBatchStream<Item = TskvResult<RecordBatch>> + Send>>;
+pub trait SchemableTskvRecordBatchStream: Stream<Item = TskvResult<RecordBatch>> {
     fn schema(&self) -> SchemaRef;
 }
 
@@ -145,7 +145,7 @@ impl SchemableTskvRecordBatchStream for EmptySchemableTskvRecordBatchStream {
     }
 }
 impl Stream for EmptySchemableTskvRecordBatchStream {
-    type Item = Result<RecordBatch>;
+    type Item = TskvResult<RecordBatch>;
 
     fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         Poll::Ready(None)
@@ -154,7 +154,7 @@ impl Stream for EmptySchemableTskvRecordBatchStream {
 
 pub type BatchReaderRef = Arc<dyn BatchReader>;
 pub trait BatchReader {
-    fn process(&self) -> Result<SendableSchemableTskvRecordBatchStream>;
+    fn process(&self) -> TskvResult<SendableSchemableTskvRecordBatchStream>;
     fn fmt_as(&self, f: &mut fmt::Formatter) -> fmt::Result;
     fn children(&self) -> Vec<BatchReaderRef>;
 }
@@ -170,14 +170,14 @@ impl CombinedBatchReader {
 }
 
 impl BatchReader for CombinedBatchReader {
-    fn process(&self) -> Result<SendableSchemableTskvRecordBatchStream> {
+    fn process(&self) -> TskvResult<SendableSchemableTskvRecordBatchStream> {
         let streams = self
             .readers
             .iter()
             // CombinedRecordBatchStream 是倒序遍历，所以此处 rev 反转一下
             .rev()
             .map(|e| e.process())
-            .collect::<Result<Vec<_>>>()?;
+            .collect::<TskvResult<Vec<_>>>()?;
 
         if let Some(s) = streams.first() {
             return Ok(Box::pin(CombinedRecordBatchStream::try_new(
@@ -215,7 +215,7 @@ impl MemoryBatchReader {
 }
 
 impl BatchReader for MemoryBatchReader {
-    fn process(&self) -> Result<SendableSchemableTskvRecordBatchStream> {
+    fn process(&self) -> TskvResult<SendableSchemableTskvRecordBatchStream> {
         let stream = SchemableMemoryBatchReaderStream::new(self.schema.clone(), self.data.clone());
 
         Ok(Box::pin(stream))
@@ -264,7 +264,7 @@ impl SchemableTskvRecordBatchStream for SchemableMemoryBatchReaderStream {
 }
 
 impl Stream for SchemableMemoryBatchReaderStream {
-    type Item = Result<RecordBatch>;
+    type Item = TskvResult<RecordBatch>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         match ready!(self.stream.poll_next_unpin(cx)) {
@@ -276,7 +276,7 @@ impl Stream for SchemableMemoryBatchReaderStream {
 
 #[derive(Clone)]
 pub enum DataReference {
-    Chunk(Arc<Chunk>, Arc<TSM2Reader>),
+    Chunk(Arc<Chunk>, Arc<TsmReader>),
     Memcache(Arc<RwLock<SeriesData>>, Arc<TimeRanges>),
 }
 
@@ -318,5 +318,5 @@ pub trait Cursor: Send + Sync {
         matches!(self.column_type(), PhysicalCType::Field(_))
     }
     fn column_type(&self) -> PhysicalCType;
-    async fn next(&mut self) -> Result<Option<DataType>, Error>;
+    async fn next(&mut self) -> TskvResult<Option<DataType>, TskvError>;
 }

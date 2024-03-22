@@ -55,7 +55,7 @@ use crate::file_system::file_manager;
 use crate::kv_option::WalOptions;
 use crate::tsm::codec::{get_str_codec, StringCodec};
 pub use crate::wal::reader::{print_wal_statistics, Block};
-use crate::{error, file_utils, Result};
+use crate::{error, file_utils, TskvResult};
 
 const WAL_TYPE_LEN: usize = 1;
 const WAL_SEQUENCE_LEN: usize = 8;
@@ -76,8 +76,8 @@ const WAL_FOOTER_MAGIC_NUMBER_LEN: usize = 4;
 const SEGMENT_MAGIC: [u8; 4] = [0x57, 0x47, 0x4c, 0x00];
 
 /// A channel sender that send write WAL result: `(seq_no: u64, written_size: usize)`
-type WriteResultSender = oneshot::Sender<crate::Result<(u64, usize)>>;
-type WriteResultReceiver = oneshot::Receiver<crate::Result<(u64, usize)>>;
+type WriteResultSender = oneshot::Sender<crate::TskvResult<(u64, usize)>>;
+type WriteResultReceiver = oneshot::Receiver<crate::TskvResult<(u64, usize)>>;
 
 #[repr(u8)]
 #[derive(Eq, PartialEq, Clone, Copy, Debug)]
@@ -123,7 +123,7 @@ impl VnodeWal {
         config: Arc<WalOptions>,
         tenant_database: Arc<String>,
         vnode_id: VnodeId,
-    ) -> Result<Self> {
+    ) -> TskvResult<Self> {
         let wal_dir = config.wal_dir(&tenant_database, vnode_id);
         let writer_file = Self::open_writer(config.clone(), &wal_dir).await?;
         Ok(Self {
@@ -135,7 +135,7 @@ impl VnodeWal {
         })
     }
 
-    pub async fn open_writer(config: Arc<WalOptions>, wal_dir: &Path) -> Result<WalWriter> {
+    pub async fn open_writer(config: Arc<WalOptions>, wal_dir: &Path) -> TskvResult<WalWriter> {
         // Create a new wal file every time it starts.
         let (pre_max_seq, next_file_id) =
             match file_utils::get_max_sequence_file_name(wal_dir, file_utils::get_wal_file_id) {
@@ -155,7 +155,7 @@ impl VnodeWal {
         Ok(writer_file)
     }
 
-    async fn roll_wal_file(&mut self, max_file_size: u64) -> Result<()> {
+    async fn roll_wal_file(&mut self, max_file_size: u64) -> TskvResult<()> {
         if self.current_wal.size() > max_file_size {
             trace::info!(
                 "WAL '{}' is full at seq '{}', begin rolling.",
@@ -191,7 +191,12 @@ impl VnodeWal {
         Ok(())
     }
 
-    pub async fn truncate_wal_file(&mut self, file_id: u64, pos: u64, seq_no: u64) -> Result<()> {
+    pub async fn truncate_wal_file(
+        &mut self,
+        file_id: u64,
+        pos: u64,
+        seq_no: u64,
+    ) -> TskvResult<()> {
         if self.current_wal_id() == file_id {
             self.current_wal.truncate(pos, seq_no).await;
             self.current_wal.sync().await?;
@@ -206,7 +211,7 @@ impl VnodeWal {
         Ok(())
     }
 
-    pub async fn rollback_wal_writer(&mut self, del_ids: &[u64]) -> Result<()> {
+    pub async fn rollback_wal_writer(&mut self, del_ids: &[u64]) -> TskvResult<()> {
         for wal_id in del_ids {
             let file_path = file_utils::make_wal_file(self.wal_dir(), *wal_id);
             trace::info!("Removing wal file '{}'", file_path.display());
@@ -236,7 +241,7 @@ impl VnodeWal {
     }
 
     // delete wal files < seq
-    async fn delete_wal_before_seq(&mut self, seq: u64) -> Result<()> {
+    async fn delete_wal_before_seq(&mut self, seq: u64) -> TskvResult<()> {
         let mut delete_ids = vec![];
         let wal_files = file_manager::list_file_names(self.wal_dir());
         for file_name in wal_files {
@@ -263,7 +268,10 @@ impl VnodeWal {
         Ok(())
     }
 
-    async fn write_raft_entry(&mut self, raft_entry: &wal_store::RaftEntry) -> Result<(u64, u64)> {
+    async fn write_raft_entry(
+        &mut self,
+        raft_entry: &wal_store::RaftEntry,
+    ) -> TskvResult<(u64, u64)> {
         if let Err(err) = self.roll_wal_file(self.config.max_file_size).await {
             trace::warn!("roll wal file failed: {}", err);
         }
@@ -275,7 +283,7 @@ impl VnodeWal {
         Ok((wal_id, pos))
     }
 
-    pub async fn wal_reader(&mut self, wal_id: u64) -> Result<WalReader> {
+    pub async fn wal_reader(&mut self, wal_id: u64) -> TskvResult<WalReader> {
         if wal_id == self.current_wal_id() {
             // Use the same wal as the writer.
             let reader = self.current_wal.new_reader();
@@ -288,12 +296,12 @@ impl VnodeWal {
         }
     }
 
-    pub async fn sync(&self) -> Result<()> {
+    pub async fn sync(&self) -> TskvResult<()> {
         self.current_wal.sync().await
     }
 
     /// Close current record file, return count of bytes appended as footer.
-    pub async fn close(&mut self) -> Result<usize> {
+    pub async fn close(&mut self) -> TskvResult<usize> {
         self.current_wal.close().await
     }
 
@@ -341,7 +349,7 @@ impl WalEntryCodec {
         }
     }
 
-    pub fn decode(&mut self, data: &[u8]) -> Result<Option<MiniVec<u8>>> {
+    pub fn decode(&mut self, data: &[u8]) -> TskvResult<Option<MiniVec<u8>>> {
         self.buffer.truncate(0);
         self.codec
             .decode(data, &mut self.buffer)
@@ -349,7 +357,7 @@ impl WalEntryCodec {
         Ok(self.buffer.drain(..).next())
     }
 
-    pub fn encode(&self, data: &[u8]) -> Result<Vec<u8>> {
+    pub fn encode(&self, data: &[u8]) -> TskvResult<Vec<u8>> {
         let mut enc_data = Vec::with_capacity(data.len() / 2);
         self.codec
             .encode(&[data], &mut enc_data)
@@ -359,17 +367,17 @@ impl WalEntryCodec {
     }
 }
 
-fn decode_wal_raft_entry(buf: &[u8]) -> Result<wal_store::RaftEntry> {
+fn decode_wal_raft_entry(buf: &[u8]) -> TskvResult<wal_store::RaftEntry> {
     let mut decoder = WalEntryCodec::new();
-    let dec_data = decoder.decode(buf)?.ok_or(crate::Error::CommonError {
+    let dec_data = decoder.decode(buf)?.ok_or(crate::TskvError::CommonError {
         reason: format!("raft entry decode is none, len: {}", buf.len()),
     })?;
 
-    bincode::deserialize(&dec_data).map_err(|e| crate::Error::Decode { source: e })
+    bincode::deserialize(&dec_data).map_err(|e| crate::TskvError::Decode { source: e })
 }
 
-fn encode_wal_raft_entry(entry: &wal_store::RaftEntry) -> Result<Vec<u8>> {
-    let bytes = bincode::serialize(entry).map_err(|e| crate::Error::Encode { source: e })?;
+fn encode_wal_raft_entry(entry: &wal_store::RaftEntry) -> TskvResult<Vec<u8>> {
+    let bytes = bincode::serialize(entry).map_err(|e| crate::TskvError::Encode { source: e })?;
 
     let encoder = WalEntryCodec::new();
     encoder.encode(&bytes)

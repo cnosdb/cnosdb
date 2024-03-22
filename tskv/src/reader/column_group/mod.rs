@@ -19,9 +19,10 @@ use super::{
     BatchReader, BatchReaderRef, SchemableTskvRecordBatchStream,
     SendableSchemableTskvRecordBatchStream,
 };
-use crate::tsm2::page::{ColumnGroup, PageWriteSpec};
-use crate::tsm2::reader::TSM2Reader;
-use crate::Result;
+use crate::tsm::column_group::ColumnGroup;
+use crate::tsm::page::PageWriteSpec;
+use crate::tsm::reader::TsmReader;
+use crate::TskvResult;
 
 pub struct ColumnGroupReader {
     column_group: Arc<ColumnGroup>,
@@ -31,13 +32,13 @@ pub struct ColumnGroupReader {
 }
 impl ColumnGroupReader {
     pub fn try_new(
-        reader: Arc<TSM2Reader>,
+        reader: Arc<TsmReader>,
         series_id: SeriesId,
         column_group: Arc<ColumnGroup>,
         projection: &[ColumnId],
         _batch_size: usize,
         metrics: Arc<ExecutionPlanMetricsSet>,
-    ) -> Result<Self> {
+    ) -> TskvResult<Self> {
         let columns = projection.iter().filter_map(|e| {
             column_group
                 .pages()
@@ -57,7 +58,7 @@ impl ColumnGroupReader {
         let page_readers = columns
             .clone()
             .map(|e| reader_builder.build(e))
-            .collect::<Result<Vec<_>>>()?;
+            .collect::<TskvResult<Vec<_>>>()?;
 
         let fields = columns
             .map(|e| &e.meta().column)
@@ -89,12 +90,12 @@ impl ColumnGroupReader {
 }
 
 impl BatchReader for ColumnGroupReader {
-    fn process(&self) -> Result<SendableSchemableTskvRecordBatchStream> {
+    fn process(&self) -> TskvResult<SendableSchemableTskvRecordBatchStream> {
         let streams = self
             .page_readers
             .iter()
             .map(|r| r.process())
-            .collect::<Result<Vec<_>>>()?;
+            .collect::<TskvResult<Vec<_>>>()?;
 
         Ok(Box::pin(ColumnGroupRecordBatchStream {
             schema: self.schema.clone(),
@@ -126,7 +127,7 @@ struct ColumnGroupRecordBatchStream {
 
     /// Stream entries
     column_arrays: Vec<ArrayRef>,
-    streams: Vec<BoxStream<Result<ArrayRef>>>,
+    streams: Vec<BoxStream<TskvResult<ArrayRef>>>,
 
     metrics: ColumnGroupReaderMetrics,
 }
@@ -138,7 +139,7 @@ impl SchemableTskvRecordBatchStream for ColumnGroupRecordBatchStream {
 }
 
 impl ColumnGroupRecordBatchStream {
-    fn poll_inner(&mut self, cx: &mut Context<'_>) -> Poll<Option<Result<RecordBatch>>> {
+    fn poll_inner(&mut self, cx: &mut Context<'_>) -> Poll<Option<TskvResult<RecordBatch>>> {
         let schema = self.schema.clone();
         let column_nums = self.streams.len();
 
@@ -181,7 +182,7 @@ impl ColumnGroupRecordBatchStream {
 }
 
 impl Stream for ColumnGroupRecordBatchStream {
-    type Item = Result<RecordBatch>;
+    type Item = TskvResult<RecordBatch>;
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let poll = self.poll_inner(cx);
         self.metrics.record_poll(poll)
@@ -241,13 +242,13 @@ impl ColumnGroupReaderMetrics {
 
     pub fn record_poll(
         &self,
-        poll: Poll<Option<Result<RecordBatch>>>,
-    ) -> Poll<Option<Result<RecordBatch>>> {
+        poll: Poll<Option<TskvResult<RecordBatch>>>,
+    ) -> Poll<Option<TskvResult<RecordBatch>>> {
         self.inner.record_poll(poll)
     }
 }
 
-fn convert_data_type_if_necessary(array: ArrayRef, target_type: &DataType) -> Result<ArrayRef> {
+fn convert_data_type_if_necessary(array: ArrayRef, target_type: &DataType) -> TskvResult<ArrayRef> {
     if array.data_type() != target_type {
         match cast::cast(&array, target_type) {
             Ok(array) => Ok(array),
@@ -259,7 +260,7 @@ fn convert_data_type_if_necessary(array: ArrayRef, target_type: &DataType) -> Re
 }
 
 pub struct ReaderBuilder {
-    reader: Arc<TSM2Reader>,
+    reader: Arc<TsmReader>,
     series_id: SeriesId,
     time_page_meta: Arc<PageWriteSpec>,
     time_range: TimeRange,
@@ -268,7 +269,7 @@ pub struct ReaderBuilder {
 
 impl ReaderBuilder {
     pub fn new(
-        reader: Arc<TSM2Reader>,
+        reader: Arc<TsmReader>,
         series_id: SeriesId,
         time_page_meta: Arc<PageWriteSpec>,
         time_range: TimeRange,
@@ -283,7 +284,7 @@ impl ReaderBuilder {
         }
     }
 
-    pub fn build(&self, page_meta: &PageWriteSpec) -> Result<PageReaderRef> {
+    pub fn build(&self, page_meta: &PageWriteSpec) -> TskvResult<PageReaderRef> {
         let data_type = page_meta.meta().column.column_type.to_physical_data_type();
         Ok(Arc::new(PrimitiveArrayReader::new(
             data_type,
@@ -309,7 +310,7 @@ mod tests {
     use crate::reader::page::tests::TestPageReader;
     use crate::reader::page::PageReaderRef;
     use crate::reader::BatchReader;
-    use crate::tsm2::page::ColumnGroup;
+    use crate::tsm::column_group::ColumnGroup;
 
     #[tokio::test]
     async fn test_column_group_reader() {

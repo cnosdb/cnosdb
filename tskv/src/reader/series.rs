@@ -17,7 +17,7 @@ use super::{
     BatchReader, BatchReaderRef, SchemableTskvRecordBatchStream,
     SendableSchemableTskvRecordBatchStream,
 };
-use crate::{Error, Result};
+use crate::{TskvError, TskvResult};
 
 /// 添加 SeriesKey 对应的 tag 列到 RecordBatch
 pub struct SeriesReader {
@@ -47,7 +47,7 @@ impl SeriesReader {
 }
 
 impl BatchReader for SeriesReader {
-    fn process(&self) -> Result<SendableSchemableTskvRecordBatchStream> {
+    fn process(&self) -> TskvResult<SendableSchemableTskvRecordBatchStream> {
         let input = self.input.process()?;
 
         let ori_schema = input.schema();
@@ -56,12 +56,12 @@ impl BatchReader for SeriesReader {
         let mut append_column_values = Vec::with_capacity(self.skey.tags().len());
         for Tag { key, value } in self.skey.tags() {
             let column_id = std::str::from_utf8(key)
-                .map_err(|err| Error::InvalidUtf8 {
+                .map_err(|err| TskvError::InvalidUtf8 {
                     message: format!("Convert tag {key:?}"),
                     source: err,
                 })?
                 .parse::<ColumnId>()
-                .map_err(|err| Error::TagError {
+                .map_err(|err| TskvError::TagError {
                     reason: format!("Convert tag {key:?} to column id failed, because: {}", err),
                 })?;
 
@@ -79,10 +79,11 @@ impl BatchReader for SeriesReader {
             )]));
 
             let field = Arc::new(field);
-            let array = String::from_utf8(value.to_vec()).map_err(|err| Error::InvalidUtf8 {
-                message: format!("Convert tag {}'s value: {:?}", field.name(), value),
-                source: err.utf8_error(),
-            })?;
+            let array =
+                String::from_utf8(value.to_vec()).map_err(|err| TskvError::InvalidUtf8 {
+                    message: format!("Convert tag {}'s value: {:?}", field.name(), value),
+                    source: err.utf8_error(),
+                })?;
             append_column.push(field);
             append_column_values.push(array);
         }
@@ -132,7 +133,7 @@ impl SchemableTskvRecordBatchStream for SeriesReaderStream {
 }
 
 impl SeriesReaderStream {
-    fn poll_inner(&mut self, cx: &mut Context<'_>) -> Poll<Option<Result<RecordBatch>>> {
+    fn poll_inner(&mut self, cx: &mut Context<'_>) -> Poll<Option<TskvResult<RecordBatch>>> {
         match ready!(self.input.poll_next_unpin(cx)) {
             Some(Ok(batch)) => {
                 // 记录补齐tag列所用时间
@@ -162,7 +163,7 @@ impl SeriesReaderStream {
 }
 
 impl Stream for SeriesReaderStream {
-    type Item = Result<RecordBatch>;
+    type Item = TskvResult<RecordBatch>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let cloned_time = self.metrics.elapsed_compute().clone();
@@ -204,8 +205,8 @@ impl SeriesReaderMetrics {
 
     pub fn record_poll(
         &self,
-        poll: Poll<Option<Result<RecordBatch>>>,
-    ) -> Poll<Option<Result<RecordBatch>>> {
+        poll: Poll<Option<TskvResult<RecordBatch>>>,
+    ) -> Poll<Option<TskvResult<RecordBatch>>> {
         self.inner.record_poll(poll)
     }
 }

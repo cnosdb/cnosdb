@@ -8,7 +8,7 @@ use snafu::{ResultExt, Snafu};
 use tokio::fs::File;
 
 use crate::file_system::file::async_file::{AsyncFile, FsRuntime};
-use crate::{error, Error, Result};
+use crate::{error, TskvError, TskvResult};
 
 #[derive(Snafu, Debug)]
 pub enum FileError {
@@ -55,23 +55,23 @@ impl FileManager {
         &self,
         path: impl AsRef<Path>,
         options: OpenOptions,
-    ) -> Result<AsyncFile> {
+    ) -> TskvResult<AsyncFile> {
         AsyncFile::open(path.as_ref(), self.fs_runtime.clone(), options)
             .await
-            .map_err(|e| Error::OpenFile {
+            .map_err(|e| TskvError::OpenFile {
                 path: path.as_ref().to_path_buf(),
                 source: e,
             })
     }
 
     /// Open a file to read,.
-    pub async fn open_file(&self, path: impl AsRef<Path>) -> Result<AsyncFile> {
+    pub async fn open_file(&self, path: impl AsRef<Path>) -> TskvResult<AsyncFile> {
         let mut opt = OpenOptions::new();
         opt.read(true);
         self.open_file_with(path, opt).await
     }
 
-    pub fn create_dir_if_not_exists(parent: Option<&Path>) -> Result<()> {
+    pub fn create_dir_if_not_exists(parent: Option<&Path>) -> TskvResult<()> {
         if let Some(p) = parent {
             if !try_exists(p) {
                 fs::create_dir_all(p).context(error::IOSnafu)?;
@@ -81,7 +81,7 @@ impl FileManager {
     }
 
     /// Create a file if not exists, overwrite if already existed.
-    pub async fn create_file(&self, path: impl AsRef<Path>) -> Result<AsyncFile> {
+    pub async fn create_file(&self, path: impl AsRef<Path>) -> TskvResult<AsyncFile> {
         let p = path.as_ref();
         Self::create_dir_if_not_exists(p.parent())?;
         let mut opt = OpenOptions::new();
@@ -90,7 +90,7 @@ impl FileManager {
     }
 
     /// Open a file to read or write, if file does not exists then create it.
-    pub async fn open_create_file(&self, path: impl AsRef<Path>) -> Result<AsyncFile> {
+    pub async fn open_create_file(&self, path: impl AsRef<Path>) -> TskvResult<AsyncFile> {
         let p = path.as_ref();
         Self::create_dir_if_not_exists(p.parent())?;
         let mut opt = OpenOptions::new();
@@ -162,29 +162,29 @@ pub fn try_exists(path: impl AsRef<Path>) -> bool {
 
 /// Open a file to read,.
 #[inline(always)]
-pub async fn open_file(path: impl AsRef<Path>) -> Result<AsyncFile> {
+pub async fn open_file(path: impl AsRef<Path>) -> TskvResult<AsyncFile> {
     get_file_manager().open_file(path).await
 }
 
 /// Create a file if not exists, overwrite if already existed.
 #[inline(always)]
-pub async fn create_file(path: impl AsRef<Path>) -> Result<AsyncFile> {
+pub async fn create_file(path: impl AsRef<Path>) -> TskvResult<AsyncFile> {
     get_file_manager().create_file(path).await
 }
 
 /// Open a file to read or write, if file does not exists then create it.
 #[inline(always)]
-pub async fn open_create_file(path: impl AsRef<Path>) -> Result<AsyncFile> {
+pub async fn open_create_file(path: impl AsRef<Path>) -> TskvResult<AsyncFile> {
     get_file_manager().open_create_file(path).await
 }
 
-pub async fn get_file_length(name: &str) -> Result<u64> {
+pub async fn get_file_length(name: &str) -> TskvResult<u64> {
     let file = File::open(name).await?;
     let file_meta = file.metadata().await?;
     Ok(file_meta.len())
 }
 
-pub fn remove_if_exists(path: impl AsRef<Path>) -> Result<()> {
+pub fn remove_if_exists(path: impl AsRef<Path>) -> TskvResult<()> {
     if try_exists(&path) {
         fs::remove_file(path)?;
     }

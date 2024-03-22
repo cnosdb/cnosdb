@@ -30,7 +30,7 @@ pub type DFResult<T> = datafusion::common::Result<T>;
 #[error_code(mod_code = "01")]
 pub enum QueryError {
     TsKv {
-        source: tskv::Error,
+        source: tskv::TskvError,
     },
 
     Meta {
@@ -553,8 +553,8 @@ impl From<DataFusionError> for QueryError {
                 }
             }
 
-            DataFusionError::External(e) if e.downcast_ref::<tskv::Error>().is_some() => {
-                let e = *e.downcast::<tskv::Error>().unwrap();
+            DataFusionError::External(e) if e.downcast_ref::<tskv::TskvError>().is_some() => {
+                let e = *e.downcast::<tskv::TskvError>().unwrap();
                 QueryError::from(e)
             }
 
@@ -596,11 +596,11 @@ impl From<CoordinatorError> for QueryError {
     }
 }
 
-impl From<tskv::Error> for QueryError {
-    fn from(value: tskv::Error) -> Self {
+impl From<tskv::TskvError> for QueryError {
+    fn from(value: tskv::TskvError) -> Self {
         match value {
-            tskv::Error::DatafusionError { source } => QueryError::from(source),
-            tskv::Error::Arrow { source } => QueryError::from(source),
+            tskv::TskvError::DatafusionError { source } => QueryError::from(source),
+            tskv::TskvError::Arrow { source } => QueryError::from(source),
             e => Self::TsKv { source: e },
         }
     }
@@ -627,9 +627,9 @@ impl From<ArrowError> for QueryError {
                     source: *e.downcast::<MetaError>().unwrap(),
                 }
             }
-            ArrowError::ExternalError(e) if e.downcast_ref::<tskv::Error>().is_some() => {
+            ArrowError::ExternalError(e) if e.downcast_ref::<tskv::TskvError>().is_some() => {
                 QueryError::TsKv {
-                    source: *e.downcast::<tskv::Error>().unwrap(),
+                    source: *e.downcast::<tskv::TskvError>().unwrap(),
                 }
             }
             ArrowError::ExternalError(e) if e.downcast_ref::<DataFusionError>().is_some() => {
