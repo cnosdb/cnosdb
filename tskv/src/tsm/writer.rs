@@ -4,777 +4,26 @@ use std::io::IoSlice;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use minivec::MiniVec;
 use models::codec::Encoding;
-use models::field_value::FieldVal;
 use models::predicate::domain::TimeRange;
-use models::schema::{PhysicalCType, TableColumn, TskvTableSchemaRef};
-use models::{ColumnId, PhysicalDType, SeriesId, SeriesKey};
+use models::schema::TskvTableSchemaRef;
+use models::{SeriesId, SeriesKey};
 use snafu::ResultExt;
-use utils::bitset::BitSet;
 use utils::BloomFilter;
 
-use super::statistics::ValueStatistics;
 use crate::compaction::CompactingBlock;
 use crate::error::IOSnafu;
 use crate::file_system::file::cursor::FileCursor;
 use crate::file_system::file_manager;
 use crate::file_utils::{make_delta_file, make_tsm_file};
-use crate::tsm::codec::{
-    get_bool_codec, get_f64_codec, get_i64_codec, get_str_codec, get_u64_codec,
-};
-use crate::tsm::page::{
-    Chunk, ChunkGroup, ChunkGroupMeta, ChunkGroupWriteSpec, ChunkStatics, ChunkWriteSpec,
-    ColumnGroup, Footer, Page, PageMeta, PageStatistics, PageWriteSpec, SeriesMeta, TableMeta,
-};
-use crate::tsm::{TsmTombstone, TsmWriteData, BLOOM_FILTER_BITS};
-use crate::{Error, Result};
-
-// #[derive(Debug, Clone)]
-// pub enum Array {
-//     F64(Vec<Option<f64>>),
-//     I64(Vec<Option<i64>>),
-//     U64(Vec<Option<u64>>),
-//     String(Vec<Option<MiniVec<u8>>>),
-//     Bool(Vec<Option<bool>>),
-// }
-//
-// impl Array {
-//     pub fn push(&mut self, value: Option<FieldVal>) {
-//         match (self, value) {
-//             (Array::F64(array), Some(FieldVal::Float(v))) => array.push(Some(v)),
-//             (Array::F64(array), None) => array.push(None),
-//
-//             (Array::I64(array), Some(FieldVal::Integer(v))) => array.push(Some(v)),
-//             (Array::I64(array), None) => array.push(None),
-//
-//             (Array::U64(array), Some(FieldVal::Unsigned(v))) => array.push(Some(v)),
-//             (Array::U64(array), None) => array.push(None),
-//
-//             (Array::String(array), Some(FieldVal::Bytes(v))) => array.push(Some(v)),
-//             (Array::String(array), None) => array.push(None),
-//
-//             (Array::Bool(array), Some(FieldVal::Boolean(v))) => array.push(Some(v)),
-//             (Array::Bool(array), None) => array.push(None),
-//             _ => { panic!("invalid type: array type does not match filed type") }
-//         }
-//     }
-// }
-//
-//
-// #[derive(Debug, Clone)]
-// pub enum Array2 {
-//     F64(Vec<Option<f64>>),
-//     I64(Vec<Option<i64>>),
-//     U64(Vec<Option<u64>>),
-//     String(Vec<Option<MiniVec<u8>>>),
-//     Bool(Vec<Option<bool>>),
-// }
-//
-// impl Array2 {
-//     pub fn push(&mut self, value: Option<FieldVal>) {
-//         match (self, value) {
-//             (Array2::F64(array), Some(FieldVal::Float(v))) => array.push(Some(v)),
-//             (Array2::F64(array), None) => array.push(None),
-//
-//             (Array2::I64(array), Some(FieldVal::Integer(v))) => array.push(Some(v)),
-//             (Array2::I64(array), None) => array.push(None),
-//
-//             (Array2::U64(array), Some(FieldVal::Unsigned(v))) => array.push(Some(v)),
-//             (Array2::U64(array), None) => array.push(None),
-//
-//             (Array2::String(array), Some(FieldVal::Bytes(v))) => array.push(Some(v)),
-//             (Array2::String(array), None) => array.push(None),
-//
-//             (Array2::Bool(array), Some(FieldVal::Boolean(v))) => array.push(Some(v)),
-//             (Array2::Bool(array), None) => array.push(None),
-//             _ => { panic!("invalid type: array type does not match filed type") }
-//         }
-//     }
-// }
-
-/// max size 1024
-#[derive(Debug, Clone, PartialEq)]
-pub struct Column {
-    column_type: PhysicalCType,
-    valid: BitSet,
-    data: ColumnData,
-}
-
-impl Column {
-    pub fn empty(column_type: PhysicalCType) -> Result<Column> {
-        let valid = BitSet::new();
-        let column = Self {
-            column_type: column_type.clone(),
-            valid,
-            data: match column_type.clone() {
-                PhysicalCType::Tag => ColumnData::String(vec![], String::new(), String::new()),
-                PhysicalCType::Time(_) => ColumnData::I64(vec![], i64::MAX, i64::MIN),
-                PhysicalCType::Field(ref field_type) => match field_type {
-                    PhysicalDType::Float => ColumnData::F64(vec![], f64::MAX, f64::MIN),
-                    PhysicalDType::Integer => ColumnData::I64(vec![], i64::MAX, i64::MIN),
-                    PhysicalDType::Unsigned => ColumnData::U64(vec![], u64::MAX, u64::MIN),
-                    PhysicalDType::Boolean => ColumnData::Bool(vec![], false, true),
-                    PhysicalDType::String => {
-                        ColumnData::String(vec![], String::new(), String::new())
-                    }
-                    PhysicalDType::Unknown => {
-                        return Err(Error::UnsupportedDataType {
-                            dt: "unknown".to_string(),
-                        })
-                    }
-                },
-            },
-        };
-        Ok(column)
-    }
-
-    pub fn empty_with_cap(column_type: PhysicalCType, cap: usize) -> Result<Column> {
-        let valid = BitSet::with_size(cap);
-        let column = Self {
-            column_type: column_type.clone(),
-            valid,
-            data: match column_type {
-                PhysicalCType::Tag => {
-                    ColumnData::String(Vec::with_capacity(cap), String::new(), String::new())
-                }
-                PhysicalCType::Time(_) => {
-                    ColumnData::I64(Vec::with_capacity(cap), i64::MAX, i64::MIN)
-                }
-                PhysicalCType::Field(ref field_type) => match field_type {
-                    PhysicalDType::Float => {
-                        ColumnData::F64(Vec::with_capacity(cap), f64::MAX, f64::MIN)
-                    }
-                    PhysicalDType::Integer => {
-                        ColumnData::I64(Vec::with_capacity(cap), i64::MAX, i64::MIN)
-                    }
-                    PhysicalDType::Unsigned => {
-                        ColumnData::U64(Vec::with_capacity(cap), u64::MAX, u64::MIN)
-                    }
-                    PhysicalDType::Boolean => {
-                        ColumnData::Bool(Vec::with_capacity(cap), false, true)
-                    }
-                    PhysicalDType::String => {
-                        ColumnData::String(Vec::with_capacity(cap), String::new(), String::new())
-                    }
-                    PhysicalDType::Unknown => {
-                        return Err(Error::UnsupportedDataType {
-                            dt: "unknown".to_string(),
-                        })
-                    }
-                },
-            },
-        };
-        Ok(column)
-    }
-
-    pub fn push(&mut self, value: Option<FieldVal>) {
-        match (&mut self.data, value) {
-            (ColumnData::F64(ref mut value, min, max), Some(FieldVal::Float(val))) => {
-                if *max < val {
-                    *max = val;
-                }
-                if *min > val {
-                    *min = val;
-                }
-                value.push(val);
-                let idx = value.len() - 1;
-                self.valid.append_unset_and_set(idx);
-            }
-            (ColumnData::F64(ref mut value, ..), None) => {
-                value.push(0.0);
-                if self.valid.len() < value.len() {
-                    self.valid.append_unset(1);
-                }
-            }
-            (ColumnData::I64(ref mut value, min, max), Some(FieldVal::Integer(val))) => {
-                if *max < val {
-                    *max = val;
-                }
-                if *min > val {
-                    *min = val;
-                }
-                value.push(val);
-                let idx = value.len() - 1;
-                self.valid.append_unset_and_set(idx);
-            }
-            (ColumnData::I64(ref mut value, ..), None) => {
-                value.push(0);
-                if self.valid.len() < value.len() {
-                    self.valid.append_unset(1);
-                }
-            }
-            (ColumnData::U64(ref mut value, min, max), Some(FieldVal::Unsigned(val))) => {
-                if *max < val {
-                    *max = val;
-                }
-                if *min > val {
-                    *min = val;
-                }
-                value.push(val);
-                let idx = value.len() - 1;
-                self.valid.append_unset_and_set(idx);
-            }
-            (ColumnData::U64(ref mut value, ..), None) => {
-                value.push(0);
-                if self.valid.len() < value.len() {
-                    self.valid.append_unset(1);
-                }
-            }
-            //todo: need to change string to Bytes type in ColumnData
-            (ColumnData::String(ref mut value, min, max), Some(FieldVal::Bytes(val))) => {
-                let val = String::from_utf8(val.to_vec()).unwrap();
-                if *max < val {
-                    *max = val.clone();
-                }
-                if *min > val {
-                    *min = val.clone();
-                }
-                value.push(val);
-                let idx = value.len() - 1;
-                self.valid.append_unset_and_set(idx);
-            }
-            (ColumnData::String(ref mut value, ..), None) => {
-                value.push(String::new());
-                if self.valid.len() < value.len() {
-                    self.valid.append_unset(1);
-                }
-            }
-            (ColumnData::Bool(ref mut value, min, max), Some(FieldVal::Boolean(val))) => {
-                if !(*max) & val {
-                    *max = val;
-                }
-                if *min & !val {
-                    *min = val;
-                }
-                value.push(val);
-                let idx = value.len() - 1;
-                self.valid.append_unset_and_set(idx);
-            }
-            (ColumnData::Bool(ref mut value, ..), None) => {
-                value.push(false);
-                if self.valid.len() < value.len() {
-                    self.valid.append_unset(1);
-                }
-            }
-            _ => {
-                panic!("Column type mismatch")
-            }
-        }
-    }
-    pub fn col_to_page(&self, desc: &TableColumn) -> Result<Page> {
-        let null_count = 1;
-        let len_bitset = self.valid.byte_len() as u32;
-        let data_len = self.len() as u64;
-        let mut buf = vec![];
-        let statistics = match &self.data {
-            ColumnData::F64(array, min, max) => {
-                let target_array = array
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(idx, val)| {
-                        if self.valid.get(idx) {
-                            Some(*val)
-                        } else {
-                            None
-                        }
-                    })
-                    .collect::<Vec<_>>();
-                let encoder = get_f64_codec(desc.encoding);
-                encoder
-                    .encode(&target_array, &mut buf)
-                    .map_err(|e| Error::Encode { source: e })?;
-                PageStatistics::F64(ValueStatistics::new(
-                    Some(*min),
-                    Some(*max),
-                    None,
-                    null_count,
-                ))
-            }
-            ColumnData::I64(array, min, max) => {
-                let target_array = array
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(idx, val)| {
-                        if self.valid.get(idx) {
-                            Some(*val)
-                        } else {
-                            None
-                        }
-                    })
-                    .collect::<Vec<_>>();
-                let encoder = get_i64_codec(desc.encoding);
-                encoder
-                    .encode(&target_array, &mut buf)
-                    .map_err(|e| Error::Encode { source: e })?;
-                PageStatistics::I64(ValueStatistics::new(
-                    Some(*min),
-                    Some(*max),
-                    None,
-                    null_count,
-                ))
-            }
-            ColumnData::U64(array, min, max) => {
-                let target_array = array
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(idx, val)| {
-                        if self.valid.get(idx) {
-                            Some(*val)
-                        } else {
-                            None
-                        }
-                    })
-                    .collect::<Vec<_>>();
-                let encoder = get_u64_codec(desc.encoding);
-                encoder
-                    .encode(&target_array, &mut buf)
-                    .map_err(|e| Error::Encode { source: e })?;
-                PageStatistics::U64(ValueStatistics::new(
-                    Some(*min),
-                    Some(*max),
-                    None,
-                    null_count,
-                ))
-            }
-            ColumnData::String(array, min, max) => {
-                let target_array = array
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(idx, val)| {
-                        if self.valid.get(idx) {
-                            Some(val.as_bytes())
-                        } else {
-                            None
-                        }
-                    })
-                    .collect::<Vec<_>>();
-                let encoder = get_str_codec(desc.encoding);
-                encoder
-                    .encode(&target_array, &mut buf)
-                    .map_err(|e| Error::Encode { source: e })?;
-                PageStatistics::Bytes(ValueStatistics::new(
-                    Some(min.as_bytes().to_vec()),
-                    Some(max.as_bytes().to_vec()),
-                    None,
-                    null_count,
-                ))
-            }
-            ColumnData::Bool(array, min, max) => {
-                let target_array = array
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(idx, val)| {
-                        if self.valid.get(idx) {
-                            Some(*val)
-                        } else {
-                            None
-                        }
-                    })
-                    .collect::<Vec<_>>();
-                let encoder = get_bool_codec(desc.encoding);
-                encoder
-                    .encode(&target_array, &mut buf)
-                    .map_err(|e| Error::Encode { source: e })?;
-                PageStatistics::Bool(ValueStatistics::new(
-                    Some(*min),
-                    Some(*max),
-                    None,
-                    null_count,
-                ))
-            }
-        };
-        let mut data = vec![];
-        data.extend_from_slice(&len_bitset.to_be_bytes());
-        data.extend_from_slice(&data_len.to_be_bytes());
-        data.extend_from_slice(self.valid.bytes());
-        data.extend_from_slice(&buf);
-        let bytes = bytes::Bytes::from(data);
-        let meta = PageMeta {
-            num_values: self.data.len() as u32,
-            column: desc.clone(),
-            statistics,
-        };
-        Ok(Page { bytes, meta })
-    }
-
-    pub fn get(&self, index: usize) -> Option<FieldVal> {
-        if self.valid.len() <= index || self.data.len() <= index {
-            return None;
-        }
-        if self.valid.get(index) {
-            self.data.get(index)
-        } else {
-            None
-        }
-    }
-
-    pub fn chunk(&self, start: usize, end: usize) -> Result<Column> {
-        let mut column = Column::empty_with_cap(self.column_type.clone(), end - start)?;
-        for index in start..end {
-            column.push(self.get(index));
-        }
-        Ok(column)
-    }
-
-    pub fn len(&self) -> usize {
-        self.data.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.data.is_empty()
-    }
-
-    pub fn is_all_set(&self) -> bool {
-        self.valid.is_all_set()
-    }
-
-    /// only use for Timastamp column, other will return Err(0)
-    pub fn binary_search_for_i64_col(&self, value: i64) -> Result<usize, usize> {
-        self.data.binary_search_for_i64_col(value)
-    }
-
-    pub fn valid(&self) -> &BitSet {
-        &self.valid
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum ColumnData {
-    ///   array   min, max
-    F64(Vec<f64>, f64, f64),
-    I64(Vec<i64>, i64, i64),
-    U64(Vec<u64>, u64, u64),
-    String(Vec<String>, String, String),
-    Bool(Vec<bool>, bool, bool),
-}
-
-impl ColumnData {
-    pub fn get(&self, index: usize) -> Option<FieldVal> {
-        return match self {
-            ColumnData::F64(data, _, _) => data.get(index).map(|val| FieldVal::Float(*val)),
-            ColumnData::I64(data, _, _) => data.get(index).map(|val| FieldVal::Integer(*val)),
-            ColumnData::U64(data, _, _) => data.get(index).map(|val| FieldVal::Unsigned(*val)),
-            ColumnData::String(data, _, _) => data
-                .get(index)
-                .map(|val| FieldVal::Bytes(MiniVec::from(val.as_str()))),
-            ColumnData::Bool(data, _, _) => data.get(index).map(|val| FieldVal::Boolean(*val)),
-        };
-    }
-
-    pub fn len(&self) -> usize {
-        match self {
-            ColumnData::F64(data, _, _) => data.len(),
-            ColumnData::I64(data, _, _) => data.len(),
-            ColumnData::U64(data, _, _) => data.len(),
-            ColumnData::String(data, _, _) => data.len(),
-            ColumnData::Bool(data, _, _) => data.len(),
-        }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        match self {
-            ColumnData::F64(data, _, _) => data.is_empty(),
-            ColumnData::I64(data, _, _) => data.is_empty(),
-            ColumnData::U64(data, _, _) => data.is_empty(),
-            ColumnData::String(data, _, _) => data.is_empty(),
-            ColumnData::Bool(data, _, _) => data.is_empty(),
-        }
-    }
-
-    /// only use for Timastamp column, other will return Err(0)
-    pub fn binary_search_for_i64_col(&self, value: i64) -> Result<usize, usize> {
-        match self {
-            ColumnData::I64(data, ..) => data.binary_search(&value),
-            _ => Err(0),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct DataBlock {
-    schema: TskvTableSchemaRef,
-    ts: Column,
-    ts_desc: TableColumn,
-    cols: Vec<Column>,
-    cols_desc: Vec<TableColumn>,
-}
-
-enum Merge {
-    SelfTs(usize),
-    OtherTs(usize),
-    Equal(usize, usize),
-}
-
-impl DataBlock {
-    const BLOCK_SIZE: usize = 1000;
-
-    pub fn new(
-        schema: TskvTableSchemaRef,
-        ts: Column,
-        ts_desc: TableColumn,
-        cols: Vec<Column>,
-        cols_desc: Vec<TableColumn>,
-    ) -> Self {
-        DataBlock {
-            schema,
-            ts,
-            ts_desc,
-            cols,
-            cols_desc,
-        }
-    }
-
-    pub fn schema(&self) -> TskvTableSchemaRef {
-        self.schema.clone()
-    }
-
-    pub fn block_to_page(&self) -> Result<Vec<Page>> {
-        let mut pages = Vec::with_capacity(self.cols.len() + 1);
-        pages.push(self.ts.col_to_page(&self.ts_desc)?);
-        for (col, desc) in self.cols.iter().zip(self.cols_desc.iter()) {
-            pages.push(col.col_to_page(desc)?);
-        }
-        Ok(pages)
-    }
-
-    pub fn merge(&mut self, other: DataBlock) -> Result<DataBlock> {
-        self.schema_check(&other)?;
-
-        let schema = if self.schema.schema_version > other.schema.schema_version {
-            self.schema.clone()
-        } else {
-            other.schema.clone()
-        };
-        let (sort_index, time_array) = self.sort_index_and_time_col(&other)?;
-        let mut columns = Vec::new();
-        let mut columns_des = Vec::new();
-        for field in schema.fields() {
-            let mut merge_column =
-                Column::empty_with_cap(field.column_type.to_physical_type(), time_array.len())?;
-            let column_self = self.column(field.id);
-            let column_other = other.column(field.id);
-            for idx in sort_index.iter() {
-                match idx {
-                    Merge::SelfTs(index) => {
-                        if let Some(column_self) = column_self {
-                            merge_column.push(column_self.get(*index));
-                        } else {
-                            merge_column.push(None);
-                        }
-                    }
-                    Merge::OtherTs(index) => {
-                        if let Some(column_other) = column_other {
-                            merge_column.push(column_other.get(*index));
-                        } else {
-                            merge_column.push(None);
-                        }
-                    }
-                    Merge::Equal(index_self, index_other) => {
-                        let field_self = if let Some(column_self) = column_self {
-                            column_self.get(*index_self)
-                        } else {
-                            None
-                        };
-                        let field_other = if let Some(column_other) = column_other {
-                            column_other.get(*index_other)
-                        } else {
-                            None
-                        };
-                        if field_self.is_some() {
-                            merge_column.push(field_self);
-                        } else {
-                            merge_column.push(field_other);
-                        }
-                    }
-                }
-            }
-            columns.push(merge_column);
-            columns_des.push(field.clone());
-        }
-
-        let mut ts_col = Column::empty_with_cap(
-            self.ts_desc.column_type.to_physical_type(),
-            time_array.len(),
-        )?;
-
-        time_array
-            .iter()
-            .for_each(|it| ts_col.push(Some(FieldVal::Integer(*it))));
-        let datablock = DataBlock::new(schema, ts_col, self.ts_desc.clone(), columns, columns_des);
-
-        // todo: split datablock to blocks
-        // let mut blocks = Vec::with_capacity(time_array.len() / Self::BLOCK_SIZE + 1);
-        // blocks.push(datablock);
-
-        Ok(datablock)
-    }
-
-    fn sort_index_and_time_col(&self, other: &DataBlock) -> Result<(Vec<Merge>, Vec<i64>)> {
-        let mut sort_index = Vec::with_capacity(self.len() + other.len());
-        let mut time_array = Vec::new();
-        let (mut index_self, mut index_other) = (0_usize, 0_usize);
-        let (self_len, other_len) = (self.len(), other.len());
-        while index_self < self_len && index_other < other_len {
-            match (&self.ts.data, &other.ts.data) {
-                (ColumnData::I64(ref data1, ..), ColumnData::I64(ref data2, ..)) => {
-                    match data1[index_self].cmp(&data2[index_other]) {
-                        std::cmp::Ordering::Less => {
-                            sort_index.push(Merge::SelfTs(index_self));
-                            time_array.push(data1[index_self]);
-                            index_self += 1;
-                        }
-                        std::cmp::Ordering::Greater => {
-                            sort_index.push(Merge::OtherTs(index_other));
-                            time_array.push(data2[index_other]);
-                            index_other += 1;
-                        }
-                        std::cmp::Ordering::Equal => {
-                            sort_index.push(Merge::Equal(index_self, index_other));
-                            time_array.push(data1[index_self]);
-                            index_self += 1;
-                            index_other += 1;
-                        }
-                    }
-                }
-                _ => {
-                    return Err(Error::DataBlockError {
-                        reason: "Time column does not support except i64 physical data type"
-                            .to_string(),
-                    })
-                }
-            }
-        }
-
-        match (&self.ts.data, &other.ts.data) {
-            (ColumnData::I64(ref data1, ..), ColumnData::I64(ref data2, ..)) => {
-                while index_self < self_len {
-                    sort_index.push(Merge::SelfTs(index_self));
-                    time_array.push(data1[index_self]);
-                    index_self += 1;
-                }
-                while index_other < other_len {
-                    sort_index.push(Merge::OtherTs(index_other));
-                    time_array.push(data2[index_other]);
-                    index_other += 1;
-                }
-            }
-            _ => {
-                return Err(Error::DataBlockError {
-                    reason: "Time column does not support except i64 physical data type"
-                        .to_string(),
-                })
-            }
-        }
-        Ok((sort_index, time_array))
-    }
-
-    pub fn len(&self) -> usize {
-        self.ts.data.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.ts.data.is_empty()
-    }
-
-    pub fn schema_check(&self, other: &DataBlock) -> Result<()> {
-        if self.schema.name != other.schema.name
-            || self.schema.db != other.schema.db
-            || self.schema.tenant != other.schema.tenant
-        {
-            return Err(Error::CommonError {
-                reason: format!(
-                    "schema name not match in datablock merge, self: {}.{}.{}, other: {}.{}.{}",
-                    self.schema.tenant,
-                    self.schema.db,
-                    self.schema.name,
-                    other.schema.tenant,
-                    other.schema.db,
-                    other.schema.name
-                ),
-            });
-        }
-        Ok(())
-    }
-
-    pub fn column(&self, id: ColumnId) -> Option<&Column> {
-        for (index, col_des) in self.cols_desc.iter().enumerate() {
-            if col_des.id == id {
-                return Some(&self.cols[index]);
-            }
-        }
-        None
-    }
-
-    pub fn chunk(&self, start: usize, end: usize) -> Result<DataBlock> {
-        if start > end || end > self.len() {
-            return Err(Error::CommonError {
-                reason: "start or end index out of range".to_string(),
-            });
-        }
-
-        let ts_column = self.ts.chunk(start, end)?;
-        let other_colums = self
-            .cols
-            .iter()
-            .map(|column| column.chunk(start, end))
-            .collect::<Result<Vec<_>>>()?;
-        let datablock = DataBlock::new(
-            self.schema.clone(),
-            ts_column,
-            self.ts_desc.clone(),
-            other_colums,
-            self.cols_desc.clone(),
-        );
-
-        Ok(datablock)
-    }
-
-    pub fn filter_by_tomb(
-        &mut self,
-        tombstone: Arc<TsmTombstone>,
-        series_id: SeriesId,
-    ) -> Result<()> {
-        let time_range = self.time_range()?;
-        for (column, col_desc) in self.cols.iter_mut().zip(self.cols_desc.iter()) {
-            let time_ranges =
-                tombstone.get_overlapped_time_ranges(series_id, col_desc.id, &time_range);
-            for time_range in time_ranges {
-                let index_begin = self
-                    .ts
-                    .data
-                    .binary_search_for_i64_col(time_range.min_ts)
-                    .unwrap_or_else(|index| index);
-                let index_end = self
-                    .ts
-                    .data
-                    .binary_search_for_i64_col(time_range.max_ts)
-                    .map(|index| index + 1)
-                    .unwrap_or_else(|index| index);
-                if index_begin == index_end {
-                    continue;
-                }
-                column.valid.clear_bits(index_begin, index_end);
-            }
-        }
-        Ok(())
-    }
-
-    pub fn time_range(&self) -> Result<TimeRange> {
-        match self.ts {
-            Column {
-                data: ColumnData::I64(_, min, max),
-                ..
-            } => Ok(TimeRange {
-                min_ts: min,
-                max_ts: max,
-            }),
-            _ => Err(Error::DataBlockError {
-                reason: "Time column does not support except i64 physical data type".to_string(),
-            }),
-        }
-    }
-}
+use crate::tsm::chunk::{Chunk, ChunkStatics, ChunkWriteSpec};
+use crate::tsm::chunk_group::{ChunkGroup, ChunkGroupMeta, ChunkGroupWriteSpec};
+use crate::tsm::column_group::ColumnGroup;
+use crate::tsm::data_block::DataBlock;
+use crate::tsm::footer::{Footer, SeriesMeta, TableMeta};
+use crate::tsm::page::{Page, PageWriteSpec};
+use crate::tsm::{TsmWriteData, BLOOM_FILTER_BITS};
+use crate::{TskvError, TskvResult};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum State {
@@ -839,7 +88,7 @@ impl TsmWriter {
         file_id: u64,
         max_size: u64,
         is_delta: bool,
-    ) -> Result<Self> {
+    ) -> TskvResult<Self> {
         let file_path = if is_delta {
             make_delta_file(path_buf, file_id)
         } else {
@@ -897,7 +146,7 @@ impl TsmWriter {
         self.state == State::Finished
     }
 
-    pub async fn write_header(&mut self) -> Result<usize> {
+    pub async fn write_header(&mut self) -> TskvResult<usize> {
         let size = self
             .writer
             .write_vec(
@@ -915,14 +164,14 @@ impl TsmWriter {
     }
 
     /// todo: write footer
-    pub async fn write_footer(&mut self) -> Result<usize> {
+    pub async fn write_footer(&mut self) -> TskvResult<usize> {
         let buf = self.footer.serialize()?;
         let size = self.writer.write(&buf).await.context(IOSnafu)?;
         self.size += size;
         Ok(size)
     }
 
-    pub async fn write_chunk_group(&mut self) -> Result<()> {
+    pub async fn write_chunk_group(&mut self) -> TskvResult<()> {
         for (table, group) in &self.chunk_specs {
             let chunk_group_offset = self.writer.pos();
             let buf = group.serialize()?;
@@ -941,7 +190,7 @@ impl TsmWriter {
         Ok(())
     }
 
-    pub async fn write_chunk_group_specs(&mut self, series: SeriesMeta) -> Result<()> {
+    pub async fn write_chunk_group_specs(&mut self, series: SeriesMeta) -> TskvResult<()> {
         let chunk_group_specs_offset = self.writer.pos();
         let buf = self.chunk_group_specs.serialize()?;
         let chunk_group_specs_size = self.writer.write(&buf).await?;
@@ -957,7 +206,7 @@ impl TsmWriter {
         Ok(())
     }
 
-    pub async fn write_chunk(&mut self) -> Result<SeriesMeta> {
+    pub async fn write_chunk(&mut self) -> TskvResult<SeriesMeta> {
         let chunk_offset = self.writer.pos();
         for (table, group) in &self.page_specs {
             for (series, chunk) in group {
@@ -991,7 +240,7 @@ impl TsmWriter {
         );
         Ok(series)
     }
-    pub async fn write_data(&mut self, groups: TsmWriteData) -> Result<()> {
+    pub async fn write_data(&mut self, groups: TsmWriteData) -> TskvResult<()> {
         // write page data
         for (_, group) in groups {
             for (series, (series_buf, datablock)) in group {
@@ -1022,15 +271,15 @@ impl TsmWriter {
         series_id: SeriesId,
         series_key: SeriesKey,
         datablock: DataBlock,
-    ) -> Result<()> {
+    ) -> TskvResult<()> {
         if self.state == State::Finished {
-            return Err(Error::CommonError {
+            return Err(TskvError::CommonError {
                 reason: "TsmWriter has been finished".to_string(),
             });
         }
 
         let time_range = datablock.time_range()?;
-        let schema = datablock.schema.clone();
+        let schema = datablock.schema();
         let pages = datablock.block_to_page()?;
 
         self.write_pages(schema, series_id, series_key, pages, time_range)
@@ -1045,7 +294,7 @@ impl TsmWriter {
         series_key: SeriesKey,
         pages: Vec<Page>,
         time_range: TimeRange,
-    ) -> Result<()> {
+    ) -> TskvResult<()> {
         if self.state == State::Initialised {
             self.write_header().await?;
         }
@@ -1081,7 +330,7 @@ impl TsmWriter {
         meta: Arc<Chunk>,
         column_group_id: usize,
         raw: Vec<u8>,
-    ) -> Result<()> {
+    ) -> TskvResult<()> {
         if self.state == State::Initialised {
             self.write_header().await?;
         }
@@ -1094,12 +343,12 @@ impl TsmWriter {
         self.size += size;
 
         let table = schema.name.to_string();
-        let column_group = meta
-            .column_group()
-            .get(&column_group_id)
-            .ok_or(Error::CommonError {
-                reason: format!("column group not found: {}", column_group_id),
-            })?;
+        let column_group =
+            meta.column_group()
+                .get(&column_group_id)
+                .ok_or(TskvError::CommonError {
+                    reason: format!("column group not found: {}", column_group_id),
+                })?;
         for spec in column_group.pages() {
             let spec = PageWriteSpec {
                 offset,
@@ -1126,7 +375,7 @@ impl TsmWriter {
     pub async fn write_compacting_block(
         &mut self,
         compacting_block: CompactingBlock,
-    ) -> Result<()> {
+    ) -> TskvResult<()> {
         match compacting_block {
             CompactingBlock::Decoded {
                 data_block,
@@ -1167,7 +416,7 @@ impl TsmWriter {
         Ok(())
     }
 
-    pub async fn finish(&mut self) -> Result<()> {
+    pub async fn finish(&mut self) -> TskvResult<()> {
         let series_meta = self.write_chunk().await?;
         self.write_chunk_group().await?;
         self.write_chunk_group_specs(series_meta).await?;
@@ -1186,24 +435,37 @@ mod test {
     use models::codec::Encoding;
     use models::field_value::FieldVal;
     use models::predicate::domain::TimeRange;
-    use models::schema::{ColumnType, PhysicalCType, TableColumn, TskvTableSchema};
-    use models::{PhysicalDType, SeriesKey, ValueType};
+    use models::schema::{ColumnType, TableColumn, TskvTableSchema};
+    use models::{SeriesKey, ValueType};
 
+    use crate::tsm::data_block::MutableColumn;
     use crate::tsm::reader::TsmReader;
-    use crate::tsm::writer::{Column, DataBlock, TsmWriter};
+    use crate::tsm::writer::{DataBlock, TsmWriter};
 
-    fn i64_column(data: Vec<i64>) -> Column {
-        let mut col = Column::empty(PhysicalCType::Field(PhysicalDType::Integer)).unwrap();
+    fn i64_column(data: Vec<i64>) -> MutableColumn {
+        let mut col = MutableColumn::empty(TableColumn::new(
+            1,
+            "f1".to_string(),
+            ColumnType::Field(ValueType::Integer),
+            Encoding::default(),
+        ))
+        .unwrap();
         for datum in data {
-            col.push(Some(FieldVal::Integer(datum)))
+            col.push(Some(FieldVal::Integer(datum))).unwrap()
         }
         col
     }
 
-    fn ts_column(data: Vec<i64>) -> Column {
-        let mut col = Column::empty(PhysicalCType::Time(TimeUnit::Nanosecond)).unwrap();
+    fn ts_column(data: Vec<i64>) -> MutableColumn {
+        let mut col = MutableColumn::empty(TableColumn::new(
+            0,
+            "time".to_string(),
+            ColumnType::Time(TimeUnit::Nanosecond),
+            Encoding::default(),
+        ))
+        .unwrap();
         for datum in data {
-            col.push(Some(FieldVal::Integer(datum)))
+            col.push(Some(FieldVal::Integer(datum))).unwrap()
         }
         col
     }
@@ -1245,16 +507,10 @@ mod test {
         let data1 = DataBlock::new(
             schema.clone(),
             ts_column(vec![1, 2, 3]),
-            schema.time_column(),
             vec![
                 i64_column(vec![1, 2, 3]),
                 i64_column(vec![1, 2, 3]),
                 i64_column(vec![1, 2, 3]),
-            ],
-            vec![
-                schema.column("f1").cloned().unwrap(),
-                schema.column("f2").cloned().unwrap(),
-                schema.column("f3").cloned().unwrap(),
             ],
         );
 

@@ -12,12 +12,12 @@ use utils::BloomFilter;
 
 use crate::compaction::{CompactTask, FlushReq};
 use crate::context::GlobalContext;
-use crate::error::Result;
+use crate::error::TskvResult;
 use crate::memcache::MemCache;
 use crate::summary::{CompactMetaBuilder, SummaryTask, VersionEdit};
 use crate::tseries_family::Version;
 use crate::tsm::writer::TsmWriter;
-use crate::{ColumnFileId, Error, TsKvContext, TseriesFamilyId};
+use crate::{ColumnFileId, TsKvContext, TseriesFamilyId, TskvError};
 
 pub struct FlushTask {
     ts_family_id: TseriesFamilyId,
@@ -54,7 +54,7 @@ impl FlushTask {
         self,
         version: Arc<Version>,
         edit: &mut VersionEdit,
-    ) -> Result<HashMap<u64, Arc<BloomFilter>>> {
+    ) -> TskvResult<HashMap<u64, Arc<BloomFilter>>> {
         let mut tsm_writer = None;
         let mut delta_writer = None;
         let mut file_metas = HashMap::new();
@@ -133,7 +133,7 @@ pub async fn run_flush_memtable_job(
     req: FlushReq,
     ctx: Arc<TsKvContext>,
     trigger_compact: bool,
-) -> Result<()> {
+) -> TskvResult<()> {
     let req_str = format!("{req}");
     info!("Flush: running: {req_str}");
 
@@ -145,7 +145,7 @@ pub async fn run_flush_memtable_job(
         .await
         .get_tsfamily_by_tf_id(req.ts_family_id)
         .await
-        .ok_or(Error::VnodeNotFound {
+        .ok_or(TskvError::VnodeNotFound {
             vnode_id: req.ts_family_id,
         })?;
 

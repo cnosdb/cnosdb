@@ -5,14 +5,13 @@ use std::ops::Bound::Included;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
-use datafusion::arrow::datatypes::TimeUnit;
 use flatbuffers::{ForwardsUOffset, Vector};
 use memory_pool::{MemoryConsumer, MemoryPoolRef, MemoryReservation};
 use minivec::MiniVec;
 use models::field_value::FieldVal;
 use models::predicate::domain::{TimeRange, TimeRanges};
 use models::schema::{
-    timestamp_convert, PhysicalCType, Precision, TableColumn, TskvTableSchema, TskvTableSchemaRef,
+    timestamp_convert, Precision, TableColumn, TskvTableSchema, TskvTableSchemaRef,
 };
 use models::{ColumnId, RwLockRef, SeriesId, SeriesKey, Timestamp};
 use parking_lot::RwLock;
@@ -22,11 +21,11 @@ use trace::error;
 use utils::bitset::ImmutBitSet;
 
 use crate::database::FbSchema;
-use crate::error::Result;
+use crate::error::TskvResult;
 use crate::tseries_family::Version;
-use crate::tsm::writer::{Column as ColumnData, DataBlock};
+use crate::tsm::data_block::{DataBlock, MutableColumn};
 use crate::tsm::TsmWriteData;
-use crate::{Error, TseriesFamilyId};
+use crate::{TseriesFamilyId, TskvError};
 
 // use skiplist::ordered_skiplist::OrderedSkipList;
 
@@ -43,7 +42,7 @@ impl RowData {
         columns: &Vector<ForwardsUOffset<Column>>,
         fb_schema: &FbSchema,
         row_idx: Vec<usize>,
-    ) -> Result<Vec<RowData>> {
+    ) -> TskvResult<Vec<RowData>> {
         let fields_id = schema.fields_id();
         let mut res = Vec::with_capacity(row_idx.len());
         for row_count in row_idx.into_iter() {
@@ -162,16 +161,17 @@ impl RowData {
             }
 
             if !has_fields {
-                return Err(Error::FieldsIsEmpty);
+                return Err(TskvError::FieldsIsEmpty);
             }
 
             let ts_column = columns.get(fb_schema.time_index);
             let ts = ts_column.int_values()?.get(row_count);
             let to_precision = schema.time_column_precision();
-            let ts =
-                timestamp_convert(from_precision, to_precision, ts).ok_or(Error::CommonError {
+            let ts = timestamp_convert(from_precision, to_precision, ts).ok_or(
+                TskvError::CommonError {
                     reason: "timestamp overflow".to_string(),
-                })?;
+                },
+            )?;
             res.push(RowData { ts, fields });
         }
         Ok(res)
@@ -513,19 +513,17 @@ impl SeriesData {
     pub fn build_data_block(
         &self,
         version: Arc<Version>,
-    ) -> Result<Option<(String, DataBlock, DataBlock)>> {
+    ) -> TskvResult<Option<(String, DataBlock, DataBlock)>> {
         if let Some(schema) = self.get_schema() {
             let field_ids = schema.fields_id();
 
             let mut cols = schema
                 .fields()
                 .iter()
-                .map(|col| ColumnData::empty(col.column_type.to_physical_type()))
-                .collect::<Result<Vec<_>>>()?;
+                .map(|col| MutableColumn::empty(col.clone()))
+                .collect::<TskvResult<Vec<_>>>()?;
             let mut delta_cols = cols.clone();
-            let mut time_array = ColumnData::empty(PhysicalCType::Time(TimeUnit::from(
-                schema.time_column_precision(),
-            )))?;
+            let mut time_array = MutableColumn::empty(schema.time_column())?;
 
             let mut delta_time_array = time_array.clone();
             let mut cols_desc = vec![None; schema.field_num()];
@@ -534,10 +532,10 @@ impl SeriesData {
                 for row in values {
                     match row.ts.cmp(&version.max_level_ts()) {
                         cmp::Ordering::Greater => {
-                            time_array.push(Some(FieldVal::Integer(row.ts)));
+                            time_array.push(Some(FieldVal::Integer(row.ts)))?;
                         }
                         _ => {
-                            delta_time_array.push(Some(FieldVal::Integer(row.ts)));
+                            delta_time_array.push(Some(FieldVal::Integer(row.ts)))?;
                         }
                     }
                     for col in schema.fields().iter() {
@@ -545,10 +543,10 @@ impl SeriesData {
                             let field = row.fields.get(*index).and_then(|v| v.clone());
                             match row.ts.cmp(&version.max_level_ts()) {
                                 cmp::Ordering::Greater => {
-                                    cols[*index].push(field);
+                                    cols[*index].push(field)?;
                                 }
                                 _ => {
-                                    delta_cols[*index].push(field);
+                                    delta_cols[*index].push(field)?;
                                 }
                             }
                             if cols_desc[*index].is_none() {
@@ -561,32 +559,20 @@ impl SeriesData {
 
             let cols_desc = cols_desc.into_iter().flatten().collect::<Vec<_>>();
             if cols_desc.len() != cols.len() {
-                return Err(Error::CommonError {
+                return Err(TskvError::CommonError {
                     reason: "Invalid cols_desc".to_string(),
                 });
             }
 
-            if !time_array.is_all_set() || !delta_time_array.is_all_set() {
-                return Err(Error::CommonError {
+            if !time_array.valid().is_all_set() || !delta_time_array.valid().is_all_set() {
+                return Err(TskvError::CommonError {
                     reason: "Invalid time array in DataBlock".to_string(),
                 });
             }
             return Ok(Some((
                 schema.name.clone(),
-                DataBlock::new(
-                    schema.clone(),
-                    time_array,
-                    schema.time_column(),
-                    cols,
-                    cols_desc.clone(),
-                ),
-                DataBlock::new(
-                    schema.clone(),
-                    delta_time_array,
-                    schema.time_column(),
-                    delta_cols,
-                    cols_desc,
-                ),
+                DataBlock::new(schema.clone(), time_array, cols),
+                DataBlock::new(schema.clone(), delta_time_array, delta_cols),
             )));
         }
         Ok(None)
@@ -624,7 +610,10 @@ pub struct MemCache {
 }
 
 impl MemCache {
-    pub fn to_chunk_group(&self, version: Arc<Version>) -> Result<(TsmWriteData, TsmWriteData)> {
+    pub fn to_chunk_group(
+        &self,
+        version: Arc<Version>,
+    ) -> TskvResult<(TsmWriteData, TsmWriteData)> {
         let partions: HashMap<SeriesId, Arc<RwLock<SeriesData>>> = self
             .partions
             .iter()
@@ -642,7 +631,7 @@ impl MemCache {
         let mut delta_chunk_group: TsmWriteData = BTreeMap::new();
         partions
             .iter()
-            .try_for_each(|(series_id, v)| -> Result<()> {
+            .try_for_each(|(series_id, v)| -> TskvResult<()> {
                 let data = v.read();
                 if let Some((table, datablock, delta_datablock)) =
                     data.build_data_block(version.clone())?
@@ -705,12 +694,12 @@ impl MemCache {
         series_key: SeriesKey,
         seq: u64,
         group: RowGroup,
-    ) -> Result<()> {
+    ) -> TskvResult<()> {
         self.seq_no.store(seq, Ordering::Relaxed);
         self.memory
             .write()
             .try_grow(group.size)
-            .map_err(|_| Error::MemoryExhausted)?;
+            .map_err(|_| TskvError::MemoryExhausted)?;
         let index = (sid as usize) % self.part_count;
         let mut series_map = self.partions[index].write();
         if let Some(series_data) = series_map.get(&sid) {

@@ -6,7 +6,7 @@ use crate::kv_option::WalOptions;
 use crate::record_file::{RecordDataType, RecordDataVersion};
 use crate::wal::reader::WalReader;
 use crate::wal::{reader, wal_store, WalType, WAL_FOOTER_MAGIC_NUMBER};
-use crate::{record_file, Result};
+use crate::{record_file, TskvResult};
 
 fn build_footer(min_sequence: u64, max_sequence: u64) -> [u8; record_file::FILE_FOOTER_LEN] {
     let mut footer = [0_u8; record_file::FILE_FOOTER_LEN];
@@ -36,7 +36,7 @@ impl WalWriter {
         id: u64,
         path: impl AsRef<Path>,
         min_seq: u64,
-    ) -> Result<Self> {
+    ) -> TskvResult<Self> {
         let path = path.as_ref();
 
         // Use min_sequence existing in file, otherwise in parameter
@@ -69,7 +69,10 @@ impl WalWriter {
         })
     }
 
-    pub async fn append_raft_entry(&mut self, raft_entry: &wal_store::RaftEntry) -> Result<usize> {
+    pub async fn append_raft_entry(
+        &mut self,
+        raft_entry: &wal_store::RaftEntry,
+    ) -> TskvResult<usize> {
         let wal_type = match raft_entry.payload {
             openraft::EntryPayload::Blank => WalType::RaftNormalLog,
             openraft::EntryPayload::Normal(_) => WalType::RaftNormalLog,
@@ -96,11 +99,11 @@ impl WalWriter {
         Ok(written_size)
     }
 
-    pub async fn sync(&self) -> Result<()> {
+    pub async fn sync(&self) -> TskvResult<()> {
         self.inner.sync().await
     }
 
-    pub async fn close(&mut self) -> Result<usize> {
+    pub async fn close(&mut self) -> TskvResult<usize> {
         trace::info!(
             "Wal '{}' closing with sequence: [{}, {})",
             self.path.display(),

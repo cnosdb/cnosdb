@@ -16,7 +16,7 @@ use tokio::sync::mpsc::Sender;
 use tokio::sync::{oneshot, RwLock};
 use trace::error;
 
-use crate::error::{Result, SchemaSnafu};
+use crate::error::{SchemaSnafu, TskvResult};
 use crate::index::{self, IndexResult};
 use crate::kv_option::Options;
 use crate::memcache::{OrderedRowsData, RowData, RowGroup};
@@ -24,7 +24,7 @@ use crate::schema::schemas::DBschemas;
 use crate::summary::{SummaryTask, VersionEdit};
 use crate::tseries_family::{LevelInfo, TseriesFamily, TsfFactory, Version};
 use crate::tsm::reader::TsmReader;
-use crate::Error::{self};
+use crate::TskvError::{self};
 use crate::{TsKvContext, TseriesFamilyId};
 
 pub type FlatBufferTable<'a> = flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Table<'a>>>;
@@ -65,7 +65,7 @@ impl DatabaseFactory {
         }
     }
 
-    pub async fn create_database(&self, schema: DatabaseSchema) -> Result<Database> {
+    pub async fn create_database(&self, schema: DatabaseSchema) -> TskvResult<Database> {
         Database::new(
             schema,
             self.opt.clone(),
@@ -84,7 +84,7 @@ impl Database {
         meta: MetaRef,
         memory_pool: MemoryPoolRef,
         metrics_register: Arc<MetricsRegister>,
-    ) -> Result<Self> {
+    ) -> TskvResult<Self> {
         let owner = Arc::new(schema.owner());
         let tsf_factory = TsfFactory::new(
             owner.clone(),
@@ -118,7 +118,7 @@ impl Database {
         &mut self,
         tsf_id: TseriesFamilyId,
         ctx: Arc<TsKvContext>,
-    ) -> Result<Arc<RwLock<TseriesFamily>>> {
+    ) -> TskvResult<Arc<RwLock<TseriesFamily>>> {
         let tsm_reader_cache = Arc::new(cache::ShardedAsyncCache::create_lru_sharded_cache(
             self.opt.storage.max_cached_readers,
         ));
@@ -155,7 +155,7 @@ impl Database {
         tsf_id: TseriesFamilyId,
         mut ve: VersionEdit,
         ctx: Arc<TsKvContext>,
-    ) -> Result<Arc<RwLock<TseriesFamily>>> {
+    ) -> TskvResult<Arc<RwLock<TseriesFamily>>> {
         let mut file_metas = HashMap::with_capacity(ve.add_files.len());
         for f in ve.add_files.iter_mut() {
             let new_file_id = ctx.global_ctx.file_id_next();
@@ -225,14 +225,14 @@ impl Database {
         ts_index: Arc<index::ts_index::TSIndex>,
         recover_from_wal: bool,
         strict_write: Option<bool>,
-    ) -> Result<HashMap<SeriesId, (SeriesKey, RowGroup)>> {
+    ) -> TskvResult<HashMap<SeriesId, (SeriesKey, RowGroup)>> {
         let strict_write = strict_write.unwrap_or(self.opt.storage.strict_write);
 
         // (series id, schema id) -> RowGroup
         let mut map = HashMap::new();
         for table in tables {
             let table_name = table.tab_ext()?;
-            let columns = table.columns().ok_or(Error::CommonError {
+            let columns = table.columns().ok_or(TskvError::CommonError {
                 reason: "table missing columns".to_string(),
             })?;
             let num_rows = table.num_rows() as usize;
@@ -241,7 +241,7 @@ impl Database {
             let schema = if strict_write {
                 let schema = self.schemas.get_table_schema(fb_schema.table).await?;
 
-                schema.ok_or_else(|| Error::TableNotFound {
+                schema.ok_or_else(|| TskvError::TableNotFound {
                     table: fb_schema.table.to_string(),
                 })?
             } else {
@@ -281,7 +281,7 @@ impl Database {
         map: &mut HashMap<SeriesId, (SeriesKey, RowGroup)>,
         precision: Precision,
         sids: &[(u32, SeriesKey)],
-    ) -> Result<()> {
+    ) -> TskvResult<()> {
         let mut sid_map: HashMap<u32, (SeriesKey, Vec<usize>)> = HashMap::new();
         for (row_count, (sid, series_key)) in sids.iter().enumerate() {
             let buf_and_row_idx = sid_map.entry(*sid).or_default();
@@ -323,7 +323,7 @@ impl Database {
         row_num: usize,
         ts_index: Arc<index::ts_index::TSIndex>,
         recover_from_wal: bool,
-    ) -> Result<Vec<(u32, SeriesKey)>> {
+    ) -> TskvResult<Vec<(u32, SeriesKey)>> {
         let mut res_sids = Vec::with_capacity(row_num);
         let mut series_keys = Vec::with_capacity(row_num);
         for row_count in 0..row_num {
@@ -334,7 +334,7 @@ impl Database {
                 &fb_schema.tag_indexes,
                 row_count,
             )
-            .map_err(|e| Error::CommonError {
+            .map_err(|e| TskvError::CommonError {
                 reason: e.to_string(),
             })?;
             if let Some(id) = ts_index.get_series_id(&series_key).await? {
@@ -360,7 +360,7 @@ impl Database {
             .into_iter();
         for item in res_sids.iter_mut() {
             if item.is_none() {
-                *item = Some(ids.next().ok_or(Error::CommonError {
+                *item = Some(ids.next().ok_or(TskvError::CommonError {
                     reason: "add series failed, new series id is missing".to_string(),
                 })?);
             }
@@ -390,7 +390,7 @@ impl Database {
     pub async fn rebuild_tsfamily_index(
         &mut self,
         ts_family: Arc<RwLock<TseriesFamily>>,
-    ) -> Result<Arc<index::ts_index::TSIndex>> {
+    ) -> TskvResult<Arc<index::ts_index::TSIndex>> {
         let id = ts_family.read().await.tf_id();
         let ts_index = ts_family.read().await.rebuild_index().await?;
 
@@ -399,7 +399,10 @@ impl Database {
         Ok(ts_index)
     }
 
-    pub async fn get_table_schema(&self, table_name: &str) -> Result<Option<TskvTableSchemaRef>> {
+    pub async fn get_table_schema(
+        &self,
+        table_name: &str,
+    ) -> TskvResult<Option<TskvTableSchemaRef>> {
         Ok(self.schemas.get_table_schema(table_name).await?)
     }
 
@@ -438,7 +441,10 @@ impl Database {
         self.ts_indexes.clone()
     }
 
-    pub async fn get_ts_index_or_add(&mut self, id: u32) -> Result<Arc<index::ts_index::TSIndex>> {
+    pub async fn get_ts_index_or_add(
+        &mut self,
+        id: u32,
+    ) -> TskvResult<Arc<index::ts_index::TSIndex>> {
         if let Some(v) = self.ts_indexes.get(&id) {
             return Ok(v.clone());
         }
@@ -456,7 +462,7 @@ impl Database {
         self.schemas.clone()
     }
 
-    pub async fn get_schema(&self) -> Result<DatabaseSchema> {
+    pub async fn get_schema(&self) -> TskvResult<DatabaseSchema> {
         Ok(self.schemas.db_schema().await?)
     }
 
@@ -491,7 +497,7 @@ impl<'a> FbSchema<'a> {
     pub fn from_fb_column(
         table: &'a str,
         columns: Vector<'a, ForwardsUOffset<Column<'a>>>,
-    ) -> Result<FbSchema<'a>> {
+    ) -> TskvResult<FbSchema<'a>> {
         let mut time_index = usize::MAX;
         let mut tag_indexes = vec![];
         let mut tag_names = vec![];
@@ -506,7 +512,7 @@ impl<'a> FbSchema<'a> {
                 }
                 ColumnType::Tag => {
                     tag_indexes.push(index);
-                    let column_name = column.name().ok_or(Error::CommonError {
+                    let column_name = column.name().ok_or(TskvError::CommonError {
                         reason: "Tag column name not found in flatbuffer columns".to_string(),
                     })?;
 
@@ -514,7 +520,7 @@ impl<'a> FbSchema<'a> {
                 }
                 ColumnType::Field => {
                     field_indexes.push(index);
-                    field_names.push(column.name().ok_or(Error::CommonError {
+                    field_names.push(column.name().ok_or(TskvError::CommonError {
                         reason: "Field column name not found in flatbuffer columns".to_string(),
                     })?);
                     field_types.push(column.field_type());
@@ -524,13 +530,13 @@ impl<'a> FbSchema<'a> {
         }
 
         if time_index == usize::MAX {
-            return Err(Error::CommonError {
+            return Err(TskvError::CommonError {
                 reason: "Time column not found in flatbuffer columns".to_string(),
             });
         }
 
         if field_indexes.is_empty() {
-            return Err(Error::CommonError {
+            return Err(TskvError::CommonError {
                 reason: "Field column not found in flatbuffer columns".to_string(),
             });
         }

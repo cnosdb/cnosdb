@@ -8,14 +8,17 @@ use models::predicate::domain::TimeRange;
 use models::schema::{TskvTableSchemaRef, TIME_FIELD};
 use models::SeriesId;
 
-use crate::error::Result;
+use crate::error::TskvResult;
 use crate::file_system::file::async_file::AsyncFile;
 use crate::file_system::file::IFile;
 use crate::file_system::file_manager;
-use crate::tsm::page::{Chunk, ChunkGroup, ChunkGroupMeta, Footer, Page, PageMeta, PageWriteSpec};
-use crate::tsm::writer::{Column, DataBlock};
+use crate::tsm::chunk::Chunk;
+use crate::tsm::chunk_group::{ChunkGroup, ChunkGroupMeta};
+use crate::tsm::data_block::{DataBlock, MutableColumn};
+use crate::tsm::footer::Footer;
+use crate::tsm::page::{Page, PageMeta, PageWriteSpec};
 use crate::tsm::{ColumnGroupID, TsmTombstone, FOOTER_SIZE};
-use crate::{file_utils, Error};
+use crate::{file_utils, TskvError};
 
 pub struct TsmMetaData {
     footer: Arc<Footer>,
@@ -84,7 +87,7 @@ pub struct TsmReader {
 }
 
 impl TsmReader {
-    pub async fn open(tsm_path: impl AsRef<Path>) -> Result<Self> {
+    pub async fn open(tsm_path: impl AsRef<Path>) -> TskvResult<Self> {
         let path = tsm_path.as_ref().to_path_buf();
         let reader = Arc::new(file_manager::open_file(&path).await?);
 
@@ -154,7 +157,7 @@ impl TsmReader {
         &self,
         series_ids: &[SeriesId],
         time_range: TimeRange,
-    ) -> Result<BTreeMap<SeriesId, Vec<(ColumnGroupID, Vec<PageMeta>)>>> {
+    ) -> TskvResult<BTreeMap<SeriesId, Vec<(ColumnGroupID, Vec<PageMeta>)>>> {
         let meta = self.tsm_meta.clone();
         let mut map = BTreeMap::new();
         for series_id in series_ids {
@@ -180,34 +183,7 @@ impl TsmReader {
         Ok(map)
     }
 
-    // pub async fn read_pages(
-    //     &mut self,
-    //     series_ids: &[SeriesId],
-    //     column_id: &[ColumnId],
-    // ) -> Result<Vec<Page>> {
-    //     let mut res = Vec::new();
-    //     let meta = self.tsm_meta.clone();
-    //     let footer = meta.footer();
-    //     let bloom_filter = footer.series().bloom_filter();
-    //     let reader = self.reader.clone();
-    //     for sid in series_ids {
-    //         if !bloom_filter.contains(sid.as_bytes()) {
-    //             continue;
-    //         }
-    //         let chunk = self.chunk().get(sid).ok_or(Error::CommonError {
-    //             reason: format!("chunk for series id : {} not found", sid),
-    //         })?;
-    //         for pages in chunk.pages() {
-    //             if column_id.contains(&pages.meta.column.id) {
-    //                 let page = read_page(reader.clone(), pages).await?;
-    //                 res.push(page);
-    //             }
-    //         }
-    //     }
-    //     Ok(res)
-    // }
-
-    pub async fn read_page(&self, page_spec: &PageWriteSpec) -> Result<Page> {
+    pub async fn read_page(&self, page_spec: &PageWriteSpec) -> TskvResult<Page> {
         read_page(self.reader.clone(), page_spec).await
     }
 
@@ -215,7 +191,7 @@ impl TsmReader {
         &self,
         series_id: SeriesId,
         column_group_id: ColumnGroupID,
-    ) -> Result<Vec<Page>> {
+    ) -> TskvResult<Vec<Page>> {
         let chunk = self.chunk();
         let reader = self.reader.clone();
         if let Some(chunk) = chunk.get(&series_id) {
@@ -238,7 +214,7 @@ impl TsmReader {
         &self,
         series_id: SeriesId,
         column_group_id: ColumnGroupID,
-    ) -> Result<Vec<u8>> {
+    ) -> TskvResult<Vec<u8>> {
         let chunk = self.chunk();
         if let Some(chunk) = chunk.get(&series_id) {
             for (id, column_group) in chunk.column_group() {
@@ -259,14 +235,14 @@ impl TsmReader {
         &self,
         series_id: SeriesId,
         column_group_id: ColumnGroupID,
-    ) -> Result<DataBlock> {
+    ) -> TskvResult<DataBlock> {
         let column_group = self.read_series_pages(series_id, column_group_id).await?;
-        let schema = self
-            .tsm_meta
-            .table_schema_by_sid(series_id)
-            .ok_or(Error::CommonError {
-                reason: format!("table schema for series id : {} not found", series_id),
-            })?;
+        let schema =
+            self.tsm_meta
+                .table_schema_by_sid(series_id)
+                .ok_or(TskvError::CommonError {
+                    reason: format!("table schema for series id : {} not found", series_id),
+                })?;
         let data_block = decode_pages(column_group, schema)?;
 
         Ok(data_block)
@@ -285,29 +261,31 @@ pub fn decode_buf_to_pages(
     chunk: Arc<Chunk>,
     column_group_id: ColumnGroupID,
     pages_buf: &[u8],
-) -> Result<Vec<Page>> {
-    let column_group = chunk
-        .column_group()
-        .get(&column_group_id)
-        .ok_or(Error::CommonError {
-            reason: format!(
-                "column group for column group id : {} not found",
-                column_group_id
-            ),
-        })?;
+) -> TskvResult<Vec<Page>> {
+    let column_group =
+        chunk
+            .column_group()
+            .get(&column_group_id)
+            .ok_or(TskvError::CommonError {
+                reason: format!(
+                    "column group for column group id : {} not found",
+                    column_group_id
+                ),
+            })?;
     let mut pages = Vec::with_capacity(column_group.pages().len());
 
     for page in column_group.pages() {
         let offset = (page.offset() - column_group.pages_offset()) as usize;
         let end = offset + page.size;
-        let page_buf = pages_buf.get(offset..end).ok_or(Error::CommonError {
+        let page_buf = pages_buf.get(offset..end).ok_or(TskvError::CommonError {
             reason: "page_buf get error".to_string(),
         })?;
         let page = Page {
             meta: page.meta.clone(),
             bytes: Bytes::from(page_buf.to_vec()),
         };
-        pages.push(page);
+        let page_result = page.crc_validation()?;
+        pages.push(page_result);
     }
     Ok(pages)
 }
@@ -324,7 +302,7 @@ impl Debug for TsmReader {
     }
 }
 
-pub async fn read_footer(reader: Arc<AsyncFile>) -> Result<Footer> {
+pub async fn read_footer(reader: Arc<AsyncFile>) -> TskvResult<Footer> {
     let pos = reader.len() - (FOOTER_SIZE as u64);
     let mut buffer = vec![0u8; FOOTER_SIZE];
     reader.read_at(pos, &mut buffer).await?;
@@ -334,7 +312,7 @@ pub async fn read_footer(reader: Arc<AsyncFile>) -> Result<Footer> {
 pub async fn read_chunk_group_meta(
     reader: Arc<AsyncFile>,
     footer: &Footer,
-) -> Result<ChunkGroupMeta> {
+) -> TskvResult<ChunkGroupMeta> {
     let pos = footer.table.chunk_group_offset();
     let mut buffer = vec![0u8; footer.table.chunk_group_size()];
     reader.read_at(pos, &mut buffer).await?; // read chunk group meta
@@ -345,7 +323,7 @@ pub async fn read_chunk_group_meta(
 pub async fn read_chunk_groups(
     reader: Arc<AsyncFile>,
     chunk_group_meta: &ChunkGroupMeta,
-) -> Result<BTreeMap<String, Arc<ChunkGroup>>> {
+) -> TskvResult<BTreeMap<String, Arc<ChunkGroup>>> {
     let mut specs = BTreeMap::new();
     for chunk in chunk_group_meta.tables().values() {
         let pos = chunk.chunk_group_offset();
@@ -360,7 +338,7 @@ pub async fn read_chunk_groups(
 pub async fn read_chunk(
     reader: Arc<AsyncFile>,
     chunk_group: &BTreeMap<String, Arc<ChunkGroup>>,
-) -> Result<BTreeMap<SeriesId, Arc<Chunk>>> {
+) -> TskvResult<BTreeMap<SeriesId, Arc<Chunk>>> {
     let mut chunks = BTreeMap::new();
     for group in chunk_group.values() {
         for chunk_spec in group.chunks() {
@@ -374,7 +352,7 @@ pub async fn read_chunk(
     Ok(chunks)
 }
 
-async fn read_page(reader: Arc<AsyncFile>, page_spec: &PageWriteSpec) -> Result<Page> {
+async fn read_page(reader: Arc<AsyncFile>, page_spec: &PageWriteSpec) -> TskvResult<Page> {
     let pos = page_spec.offset();
     let mut buffer = vec![0u8; page_spec.size()];
     reader.read_at(pos, &mut buffer).await?;
@@ -382,35 +360,24 @@ async fn read_page(reader: Arc<AsyncFile>, page_spec: &PageWriteSpec) -> Result<
         meta: page_spec.meta().clone(),
         bytes: Bytes::from(buffer),
     };
-    Ok(page)
+    page.crc_validation()
 }
 
-pub fn decode_pages(pages: Vec<Page>, table_schema: TskvTableSchemaRef) -> Result<DataBlock> {
-    let mut time_column_desc = table_schema.time_column();
-    let mut time_column =
-        Column::empty_with_cap(time_column_desc.column_type.to_physical_type(), 0)?;
+pub fn decode_pages(pages: Vec<Page>, table_schema: TskvTableSchemaRef) -> TskvResult<DataBlock> {
+    let mut time_column = MutableColumn::empty_with_cap(table_schema.time_column(), 0)?;
 
-    let mut other_columns_desc = Vec::new();
     let mut other_columns = Vec::new();
 
     for page in pages {
         let column = page.to_column()?;
         if page.desc().name == TIME_FIELD {
-            time_column_desc = page.desc().clone();
             time_column = column;
         } else {
-            other_columns_desc.push(page.desc().clone());
             other_columns.push(column);
         }
     }
 
-    Ok(DataBlock::new(
-        table_schema,
-        time_column,
-        time_column_desc,
-        other_columns,
-        other_columns_desc,
-    ))
+    Ok(DataBlock::new(table_schema, time_column, other_columns))
 }
 
 pub fn decode_pages_buf(
@@ -418,7 +385,7 @@ pub fn decode_pages_buf(
     chunk: Arc<Chunk>,
     column_group_id: ColumnGroupID,
     table_schema: TskvTableSchemaRef,
-) -> Result<DataBlock> {
+) -> TskvResult<DataBlock> {
     let pages = decode_buf_to_pages(chunk, column_group_id, pages_buf)?;
     let data_block = decode_pages(pages, table_schema)?;
     Ok(data_block)

@@ -12,7 +12,7 @@ use crate::reader::batch_builder::BatchMergeBuilder;
 use crate::reader::metrics::BaselineMetrics;
 use crate::reader::partitioned_stream::{ColumnCursorStream, PartitionedStream};
 use crate::reader::{SchemableTskvRecordBatchStream, SendableSchemableTskvRecordBatchStream};
-use crate::Result;
+use crate::TskvResult;
 
 macro_rules! primitive_merge_helper {
     ($t:ty, $($v:ident),+) => {
@@ -38,7 +38,7 @@ pub fn sort_merge(
     batch_size: usize,
     column_name: &str,
     metrics: &ExecutionPlanMetricsSet,
-) -> Result<SendableSchemableTskvRecordBatchStream> {
+) -> TskvResult<SendableSchemableTskvRecordBatchStream> {
     use arrow_array::*;
 
     // Special case single column comparisons with optimized cursor implementations
@@ -48,7 +48,7 @@ pub fn sort_merge(
         _ => {}
     }
 
-    Err(crate::error::Error::Unimplemented {
+    Err(crate::error::TskvError::Unimplemented {
         msg: format!("Not implement batch merge for {}", data_type),
     })
 }
@@ -108,7 +108,7 @@ impl<T: FieldValues> Cursor for ColumnCursor<T> {
     }
 }
 
-type CursorStream<C> = Box<dyn PartitionedStream<Output = Result<(C, RecordBatch)>>>;
+type CursorStream<C> = Box<dyn PartitionedStream<Output = TskvResult<(C, RecordBatch)>>>;
 
 /// Stores metrics about the table writer execution.
 #[derive(Debug, Clone)]
@@ -140,8 +140,8 @@ impl SortMergeMetrics {
 
     pub fn record_poll(
         &self,
-        poll: Poll<Option<Result<RecordBatch>>>,
-    ) -> Poll<Option<Result<RecordBatch>>> {
+        poll: Poll<Option<TskvResult<RecordBatch>>>,
+    ) -> Poll<Option<TskvResult<RecordBatch>>> {
         self.inner.record_poll(poll)
     }
 }
@@ -220,7 +220,7 @@ impl<T: FieldArray + Unpin> SortPreservingMergeStream<T> {
         }
     }
 
-    fn maybe_poll_stream(&mut self, cx: &mut Context<'_>, idx: usize) -> Poll<Result<()>> {
+    fn maybe_poll_stream(&mut self, cx: &mut Context<'_>, idx: usize) -> Poll<TskvResult<()>> {
         if self.cursors[idx].is_some() {
             // Cursor is not finished - don't need a new RecordBatch yet
             return Poll::Ready(Ok(()));
@@ -237,7 +237,7 @@ impl<T: FieldArray + Unpin> SortPreservingMergeStream<T> {
         }
     }
 
-    fn poll_next_inner(&mut self, cx: &mut Context<'_>) -> Poll<Option<Result<RecordBatch>>> {
+    fn poll_next_inner(&mut self, cx: &mut Context<'_>) -> Poll<Option<TskvResult<RecordBatch>>> {
         // try to initialize the loser tree
         if self.loser_tree.is_empty() {
             // Ensure all non-exhausted streams have a cursor from which
@@ -392,7 +392,7 @@ impl<T: FieldArray + Unpin> SortPreservingMergeStream<T> {
 impl<T: Unpin + FieldArray> Unpin for SortPreservingMergeStream<T> {}
 
 impl<T: FieldArray + Unpin> Stream for SortPreservingMergeStream<T> {
-    type Item = Result<RecordBatch>;
+    type Item = TskvResult<RecordBatch>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let res = self.poll_next_inner(cx);
@@ -425,7 +425,7 @@ mod test {
         batches: Vec<RecordBatch>,
         batch_size: usize,
         sort_column: &str,
-    ) -> crate::Result<SortPreservingMergeStream<T>> {
+    ) -> crate::TskvResult<SortPreservingMergeStream<T>> {
         let streams = batches
             .into_iter()
             .map(|b| {

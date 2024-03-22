@@ -37,7 +37,7 @@
     •
     <a href="https://docs.cnosdb.com/en/latest/start/quick_start.html">Quick Start</a>
     •
-    <a href="https://github.com/cnosdb/cnosdb/issues/1414">Eco-Integration</a>
+    <a href="https://docs.cnosdb.com/en/eco-integration">Eco-Integration</a>
 </h3>
 
 

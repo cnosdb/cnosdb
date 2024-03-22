@@ -53,7 +53,7 @@ use tokio_retry::strategy::{jitter, ExponentialBackoff};
 use tokio_retry::Retry;
 
 use trace::{debug, error, info, SpanContext, SpanExt, SpanRecorder};
-use tskv::{EngineRef, Error};
+use tskv::{EngineRef, TskvError};
 use utils::BkdrHasher;
 
 use crate::errors::*;
@@ -831,7 +831,7 @@ impl Coordinator for CoordService {
 
             if !has_fileds {
                 return Err(CoordinatorError::TskvError {
-                    source: Error::FieldsIsEmpty,
+                    source: TskvError::FieldsIsEmpty,
                 });
             }
 
@@ -1127,7 +1127,7 @@ impl Coordinator for CoordService {
 
             let id = table_schema
                 .column(&tag_name)
-                .ok_or(Error::ColumnNotFound { column: tag_name })?
+                .ok_or(TskvError::ColumnNotFound { column: tag_name })?
                 .id;
             new_tag.key = format!("{id}").into_bytes();
         }

@@ -21,7 +21,7 @@ use tokio::sync::RwLock;
 use version_set::VersionSet;
 use vnode_store::VnodeStorage;
 
-pub use crate::error::{Error, Result};
+pub use crate::error::{TskvError, TskvResult};
 pub use crate::kv_option::Options;
 use crate::kv_option::StorageOptions;
 pub use crate::kvcore::TsKv;
@@ -77,14 +77,24 @@ pub trait Engine: Send + Sync + Debug {
         tenant: &str,
         db_name: &str,
         vnode_id: VnodeId,
-    ) -> Result<VnodeStorage>;
+    ) -> TskvResult<VnodeStorage>;
 
     /// Remove the storage unit(caches and files) managed by engine,
     /// then remove directory of the storage unit.
-    async fn remove_tsfamily(&self, tenant: &str, database: &str, vnode_id: VnodeId) -> Result<()>;
+    async fn remove_tsfamily(
+        &self,
+        tenant: &str,
+        database: &str,
+        vnode_id: VnodeId,
+    ) -> TskvResult<()>;
 
     /// Flush all caches of the storage unit into a file.
-    async fn flush_tsfamily(&self, tenant: &str, database: &str, vnode_id: VnodeId) -> Result<()>;
+    async fn flush_tsfamily(
+        &self,
+        tenant: &str,
+        database: &str,
+        vnode_id: VnodeId,
+    ) -> TskvResult<()>;
 
     /// Read index of a storage unit, find series ids that matches the filter.
     async fn get_series_id_by_filter(
@@ -94,7 +104,7 @@ pub trait Engine: Send + Sync + Debug {
         table: &str,
         vnode_id: VnodeId,
         filter: &ColumnDomains<String>,
-    ) -> Result<Vec<SeriesId>>;
+    ) -> TskvResult<Vec<SeriesId>>;
 
     /// Read index of a storage unit, get `SeriesKey` of the geiven series id.
     async fn get_series_key(
@@ -104,7 +114,7 @@ pub trait Engine: Send + Sync + Debug {
         table: &str,
         vnode_id: VnodeId,
         series_id: &[SeriesId],
-    ) -> Result<Vec<SeriesKey>>;
+    ) -> TskvResult<Vec<SeriesKey>>;
 
     /// Get a `SuperVersion` that contains the latest version of caches and files
     /// of the storage unit.
@@ -113,17 +123,17 @@ pub trait Engine: Send + Sync + Debug {
         tenant: &str,
         database: &str,
         vnode_id: u32,
-    ) -> Result<Option<Arc<SuperVersion>>>;
+    ) -> TskvResult<Option<Arc<SuperVersion>>>;
 
     /// Get the storage options which was used to install the engine.
     fn get_storage_options(&self) -> Arc<StorageOptions>;
 
     /// For the specified storage units, flush all caches into files, then compact
     /// files into larger files.
-    async fn compact(&self, vnode_ids: Vec<TseriesFamilyId>) -> Result<()>;
+    async fn compact(&self, vnode_ids: Vec<TseriesFamilyId>) -> TskvResult<()>;
 
     /// Get a compressed hash_tree(ID and checksum of each vnode) of engine.
-    async fn get_vnode_hash_tree(&self, vnode_id: VnodeId) -> Result<RecordBatch>;
+    async fn get_vnode_hash_tree(&self, vnode_id: VnodeId) -> TskvResult<RecordBatch>;
 
     /// Close all background jobs of engine.
     async fn close(&self);

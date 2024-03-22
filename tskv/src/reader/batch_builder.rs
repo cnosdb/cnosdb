@@ -7,7 +7,7 @@ use arrow_array::{Array, RecordBatch};
 use datafusion::common::DataFusionError;
 use datafusion::physical_plan::sorts::cursor::{FieldArray, FieldValues};
 
-use crate::{Error, Result};
+use crate::{TskvError, TskvResult};
 
 #[derive(Debug, Copy, Clone, Default)]
 struct BatchCursor {
@@ -69,7 +69,7 @@ impl<T: FieldArray> BatchMergeBuilder<T> {
     }
 
     /// Append the next row from `stream_idx`
-    pub fn push_row(&mut self, stream_idx: usize, column_idx: usize) -> Result<()> {
+    pub fn push_row(&mut self, stream_idx: usize, column_idx: usize) -> TskvResult<()> {
         let cursor = &mut self.cursors[stream_idx];
         let row_idx = cursor.row_idx;
         cursor.row_idx += 1;
@@ -116,7 +116,7 @@ impl<T: FieldArray> BatchMergeBuilder<T> {
                         self.last_same_rows.push((now_batch_idx, now_row_idx));
                     }
                     Ordering::Greater => {
-                        return Err(Error::CommonError {
+                        return Err(TskvError::CommonError {
                             reason: "data in stream is not sorted".to_string(),
                         });
                     }
@@ -126,7 +126,7 @@ impl<T: FieldArray> BatchMergeBuilder<T> {
         Ok(())
     }
 
-    pub fn take_last_and_merge(&mut self) -> Result<(), DataFusionError> {
+    pub fn take_last_and_merge(&mut self) -> TskvResult<(), DataFusionError> {
         match self.last_same_rows.len() {
             0 => {}
             1 => {
@@ -171,7 +171,7 @@ impl<T: FieldArray> BatchMergeBuilder<T> {
     /// Will then drop any batches for which all rows have been yielded to the output
     ///
     /// Returns `None` if no pending rows
-    pub fn build_record_batch(&mut self) -> Result<Option<RecordBatch>> {
+    pub fn build_record_batch(&mut self) -> TskvResult<Option<RecordBatch>> {
         if self.is_empty() {
             return Ok(None);
         }

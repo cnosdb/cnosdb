@@ -20,7 +20,7 @@ use super::{
 use crate::memcache::{RowData, SeriesData};
 use crate::reader::iterator::{ArrayBuilderPtr, RowIterator};
 use crate::reader::utils::TimeRangeProvider;
-use crate::Result;
+use crate::TskvResult;
 
 enum MemcacheReadMode {
     FieldScan,
@@ -49,7 +49,7 @@ impl MemCacheReader {
         time_ranges: Arc<TimeRanges>,
         batch_size: usize,
         projection: &[ColumnId],
-    ) -> Result<Option<Arc<Self>>> {
+    ) -> TskvResult<Option<Arc<Self>>> {
         if let Some(tskv_schema) = series_data.read().get_schema() {
             // filter columns by projection
             let mut columns: Vec<TableColumn> = Vec::with_capacity(projection.len());
@@ -79,7 +79,7 @@ impl MemCacheReader {
         }
     }
 
-    fn read_data_and_build_array(&self) -> Result<Vec<ArrayBuilderPtr>> {
+    fn read_data_and_build_array(&self) -> TskvResult<Vec<ArrayBuilderPtr>> {
         let mut builders = Vec::with_capacity(self.columns.len());
         // build builders to RecordBatch
         for item in self.columns.iter() {
@@ -168,7 +168,7 @@ impl MemCacheReader {
 }
 
 impl BatchReader for MemCacheReader {
-    fn process(&self) -> Result<SendableSchemableTskvRecordBatchStream> {
+    fn process(&self) -> TskvResult<SendableSchemableTskvRecordBatchStream> {
         let builders = self.read_data_and_build_array()?;
         let fields = self.columns.iter().map(Field::from).collect::<Vec<_>>();
         let schema = Arc::new(Schema::new(fields));
@@ -207,7 +207,7 @@ impl SchemableTskvRecordBatchStream for MemcacheRecordBatchStream {
 }
 
 impl Stream for MemcacheRecordBatchStream {
-    type Item = Result<RecordBatch>;
+    type Item = TskvResult<RecordBatch>;
     fn poll_next(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let schema = self.schema.clone();
         let column_nums = self.column_arrays.len();
@@ -241,7 +241,7 @@ impl Stream for MemcacheRecordBatchStream {
 fn convert_data_type_if_necessary(
     array: ArrayRef,
     target_type: &arrow_schema::DataType,
-) -> Result<ArrayRef> {
+) -> TskvResult<ArrayRef> {
     if array.data_type() != target_type {
         match cast::cast(&array, target_type) {
             Ok(array) => Ok(array),

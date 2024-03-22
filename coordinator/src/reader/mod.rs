@@ -136,7 +136,7 @@ impl<O: VnodeOpener> CheckedCoordinatorRecordBatchStream<O> {
                                 );
                             }
                             Err(err) => {
-                                if tskv::Error::vnode_broken_code(err.error_code().code()) {
+                                if tskv::TskvError::vnode_broken_code(err.error_code().code()) {
                                     let id = self.vnode.id;
                                     let meta = self.meta.clone();
                                     let tenant = self.option.tenant_name();

@@ -11,13 +11,13 @@ use super::{
     RECORD_MAGIC_NUMBER, RECORD_MAGIC_NUMBER_LEN,
 };
 use crate::byte_utils::decode_be_u32;
-use crate::error::{self, Error, Result};
+use crate::error::{self, TskvError, TskvResult};
 use crate::file_system::file::async_file::AsyncFile;
 use crate::file_system::file::IFile;
 use crate::file_system::file_manager;
 
 /// Returns footer position and footer data.
-pub async fn read_footer(path: impl AsRef<Path>) -> Result<(u64, [u8; FILE_FOOTER_LEN])> {
+pub async fn read_footer(path: impl AsRef<Path>) -> TskvResult<(u64, [u8; FILE_FOOTER_LEN])> {
     let path = path.as_ref();
     let file = file_manager::open_file(&path).await?;
     read_footer_from(&file, path).await
@@ -27,15 +27,15 @@ pub async fn read_footer(path: impl AsRef<Path>) -> Result<(u64, [u8; FILE_FOOTE
 pub async fn read_footer_from(
     file: &AsyncFile,
     file_path: impl AsRef<Path>,
-) -> Result<(u64, [u8; FILE_FOOTER_LEN])> {
+) -> TskvResult<(u64, [u8; FILE_FOOTER_LEN])> {
     if file.len() < (FILE_MAGIC_NUMBER_LEN + FILE_FOOTER_LEN) as u64 {
-        return Err(Error::NoFooter);
+        return Err(TskvError::NoFooter);
     }
 
     // Get file crc
     let mut buf = vec![0_u8; file_crc_source_len(file.len(), FILE_FOOTER_LEN)];
     if let Err(e) = file.read_at(FILE_MAGIC_NUMBER_LEN as u64, &mut buf).await {
-        return Err(Error::ReadFile {
+        return Err(TskvError::ReadFile {
             path: file_path.as_ref().to_path_buf(),
             source: e,
         });
@@ -46,7 +46,7 @@ pub async fn read_footer_from(
     let footer_pos = file.len() - FILE_FOOTER_LEN as u64;
     let mut footer = [0_u8; FILE_FOOTER_LEN];
     if let Err(e) = file.read_at(footer_pos, &mut footer[..]).await {
-        return Err(Error::ReadFile {
+        return Err(TskvError::ReadFile {
             path: file_path.as_ref().to_path_buf(),
             source: e,
         });
@@ -60,7 +60,7 @@ pub async fn read_footer_from(
 
     // If crc doesn't match, this file may not contain a footer.
     if crc != footer_crc {
-        Err(Error::NoFooter)
+        Err(TskvError::NoFooter)
     } else {
         Ok((footer_pos, footer))
     }
@@ -79,12 +79,12 @@ pub struct Reader {
 }
 
 impl Reader {
-    pub async fn open(path: impl AsRef<Path>) -> Result<Self> {
+    pub async fn open(path: impl AsRef<Path>) -> TskvResult<Self> {
         let path = path.as_ref();
         let file = file_manager::open_file(path).await?;
         let (footer_pos, footer) = match read_footer_from(&file, path).await {
             Ok((p, f)) => (p, Some(f)),
-            Err(Error::NoFooter) => (file.len(), None),
+            Err(TskvError::NoFooter) => (file.len(), None),
             Err(e) => {
                 trace::error!(
                     "Record file: Failed to read footer in '{}': {e}",
@@ -141,14 +141,14 @@ impl Reader {
     }
 
     /// Set self.pos, load buffer if needed.
-    async fn set_pos(&mut self, pos: usize) -> Result<()> {
+    async fn set_pos(&mut self, pos: usize) -> TskvResult<()> {
         if self.pos - self.buf_use == pos {
             self.pos = pos;
             self.buf_use = 0;
             return Ok(());
         }
         if pos as u64 > self.file_len {
-            return Err(Error::Eof);
+            return Err(TskvError::Eof);
         }
 
         match self.pos.cmp(&pos) {
@@ -179,7 +179,7 @@ impl Reader {
     }
 
     /// Returns a position where to read the header and the header slice.
-    async fn find_record_header(&mut self) -> Result<(usize, &[u8])> {
+    async fn find_record_header(&mut self) -> TskvResult<(usize, &[u8])> {
         loop {
             let magic_number_sli = self.read_buf(RECORD_MAGIC_NUMBER_LEN).await?;
             let magic_number = decode_be_u32(magic_number_sli);
@@ -198,11 +198,11 @@ impl Reader {
     /// - Eof - file reads to a end.
     /// - RecordFileInvalidDataSize - file is broken that data size is too big.
     /// - RecordFileHashCheckFailed - file may be broken that data crc not match.
-    pub async fn read_record(&mut self) -> Result<Record> {
+    pub async fn read_record(&mut self) -> TskvResult<Record> {
         // The previous position, if the previous error is not the HashCheckFailed,
         // this value will be updated.
         if (self.pos + RECORD_HEADER_LEN) as u64 >= self.footer_pos {
-            return Err(Error::Eof);
+            return Err(TskvError::Eof);
         }
 
         let (header_pos, header) = self.find_record_header().await?;
@@ -234,7 +234,7 @@ impl Reader {
                         "Record file: Failed to read data: file_size: {}, Data size ({}) at pos {} is greater than bytes readed ({})",
                         file_len, data_size, data_pos, record_bytes.len()
                     );
-                    return Err(Error::RecordFileInvalidDataSize {
+                    return Err(TskvError::RecordFileInvalidDataSize {
                         pos: header_pos as u64,
                         len: data_size,
                     });
@@ -263,7 +263,7 @@ impl Reader {
                 data_size + RECORD_HEADER_LEN as u32
             );
             self.set_pos(header_pos + 1).await?;
-            return Err(Error::RecordFileHashCheckFailed {
+            return Err(TskvError::RecordFileHashCheckFailed {
                 crc: data_crc,
                 crc_calculated: data_crc_calculated,
                 record: Record {
@@ -283,7 +283,7 @@ impl Reader {
         })
     }
 
-    pub async fn read_record_at(&mut self, pos: usize) -> Result<Record> {
+    pub async fn read_record_at(&mut self, pos: usize) -> TskvResult<Record> {
         self.set_pos(pos).await?;
         self.read_record().await
     }
@@ -294,7 +294,7 @@ impl Reader {
     }
 
     /// Load buf from self.pos, reset self.buf_len and self.buf_use.
-    async fn load_buf(&mut self) -> Result<()> {
+    async fn load_buf(&mut self) -> TskvResult<()> {
         trace::trace!(
             "Record file: Trying load buf at {} for {} bytes",
             self.pos,
@@ -304,7 +304,7 @@ impl Reader {
             .file
             .read_at(self.pos as u64, &mut self.buf)
             .await
-            .map_err(|e| Error::ReadFile {
+            .map_err(|e| TskvError::ReadFile {
                 path: self.path.clone(),
                 source: e,
             })?;
@@ -312,7 +312,7 @@ impl Reader {
         Ok(())
     }
 
-    async fn read_buf(&mut self, size: usize) -> Result<&[u8]> {
+    async fn read_buf(&mut self, size: usize) -> TskvResult<&[u8]> {
         if self.buf.len() < size {
             self.buf.resize(size, 0_u8);
         }
@@ -323,7 +323,7 @@ impl Reader {
         Ok(&self.buf[self.buf_use..right_bound])
     }
 
-    pub async fn reload_metadata(&mut self) -> Result<()> {
+    pub async fn reload_metadata(&mut self) -> TskvResult<()> {
         let meta = tokio::fs::metadata(&self.path)
             .await
             .context(error::IOSnafu)?;
@@ -357,7 +357,7 @@ pub(crate) mod test {
 
     use super::Reader;
     use crate::byte_utils;
-    use crate::error::Error;
+    use crate::error::TskvError;
     use crate::record_file::writer::test::record_length;
     use crate::record_file::{
         RecordDataType, Writer, FILE_FOOTER_LEN, FILE_MAGIC_NUMBER, FILE_MAGIC_NUMBER_LEN,
@@ -494,7 +494,7 @@ pub(crate) mod test {
         } else {
             // EOF expected, `Error` is not able to Eq, so use match.
             match ret {
-                Err(Error::Eof) => {}
+                Err(TskvError::Eof) => {}
                 Err(e) => panic!("Unexpected error: {e}, Error::EOF was expected."),
                 Ok((header_pos, _)) => {
                     panic!("Unexpected Ok((header_pos, header)) at {header_pos}, Error::EOF was expected.", )
@@ -549,7 +549,7 @@ pub(crate) mod test {
             assert_eq!(&record.data, data);
             // Test read twice, EOF expected, `Error` is not able to Eq, so use match.
             match reader.read_record().await {
-                Err(Error::Eof) => {}
+                Err(TskvError::Eof) => {}
                 Err(e) => panic!("Unexpected error: {e}, Error::EOF was expected."),
                 Ok(r) => panic!(
                     "Unexpected Ok(record) at pos {}, Error::EOF was expected.",

@@ -38,7 +38,7 @@ use super::{
     DataReference, EmptySchemableTskvRecordBatchStream, Predicate, PredicateRef, Projection,
     SendableTskvRecordBatchStream,
 };
-use crate::error::Result;
+use crate::error::TskvResult;
 use crate::reader::chunk::filter_column_groups;
 use crate::reader::column_group::ColumnGroupReader;
 use crate::reader::filter::DataFilter;
@@ -51,7 +51,7 @@ use crate::reader::{BatchReaderRef, CombinedBatchReader, Cursor};
 use crate::schema::error::SchemaError;
 use crate::tseries_family::{CacheGroup, ColumnFile, SuperVersion};
 use crate::tsm::reader::TsmReader;
-use crate::{EngineRef, Error};
+use crate::{EngineRef, TskvError};
 pub type CursorPtr = Box<dyn Cursor>;
 
 pub struct ArrayBuilderPtr {
@@ -94,10 +94,10 @@ impl ArrayBuilderPtr {
         value_type: PhysicalDType,
         value: Option<DataType>,
         column_name: &str,
-    ) -> Result<()> {
+    ) -> TskvResult<()> {
         match value_type {
             PhysicalDType::Unknown => {
-                return Err(Error::CommonError {
+                return Err(TskvError::CommonError {
                     reason: format!("unknown type of column '{}'", column_name),
                 });
             }
@@ -350,7 +350,7 @@ impl SeriesGroupBatchReaderFactory {
         span_recorder: SpanRecorder,
         series_ids: &[u32],
         predicate: Option<PredicateRef>,
-    ) -> Result<Option<BatchReaderRef>> {
+    ) -> TskvResult<Option<BatchReaderRef>> {
         let metrics = SeriesGroupBatchReaderMetrics::new(
             &self.metrics_set,
             self.super_version.ts_family_id as usize,
@@ -437,7 +437,7 @@ impl SeriesGroupBatchReaderFactory {
                 )
                 .transpose()
             })
-            .collect::<Result<Vec<_>>>()?;
+            .collect::<TskvResult<Vec<_>>>()?;
 
         if series_readers.is_empty() {
             return Ok(None);
@@ -486,7 +486,7 @@ impl SeriesGroupBatchReaderFactory {
         &self,
         vnode_id: VnodeId,
         series_ids: &[SeriesId],
-    ) -> Result<Vec<SeriesKey>> {
+    ) -> TskvResult<Vec<SeriesKey>> {
         // 通过sid获取serieskey
         let sid_keys = self
             .engine
@@ -506,7 +506,7 @@ impl SeriesGroupBatchReaderFactory {
     async fn filter_chunks(
         column_files: &[(Arc<ColumnFile>, Arc<TsmReader>)],
         sid: SeriesId,
-    ) -> Result<Vec<DataReference>> {
+    ) -> TskvResult<Vec<DataReference>> {
         // 选择含有series的所有文件
         let files = column_files
             .iter()
@@ -532,7 +532,7 @@ impl SeriesGroupBatchReaderFactory {
         caches: CacheGroup,
         sid: SeriesId,
         time_ranges: Arc<TimeRanges>,
-    ) -> Result<Vec<DataReference>> {
+    ) -> TskvResult<Vec<DataReference>> {
         let mut rowgroups = Vec::new();
         for cache in caches
             .immut_cache
@@ -563,7 +563,7 @@ impl SeriesGroupBatchReaderFactory {
         projection: &[ColumnId],
         predicate: &Option<Arc<Predicate>>,
         metrics: &SeriesGroupBatchReaderMetrics,
-    ) -> Result<Option<BatchReaderRef>> {
+    ) -> TskvResult<Option<BatchReaderRef>> {
         let chunk_reader: Option<BatchReaderRef> = match chunk {
             DataReference::Chunk(chunk, reader) => {
                 let chunk_schema = chunk.schema();
@@ -588,7 +588,7 @@ impl SeriesGroupBatchReaderFactory {
                         )?;
                         Ok(Arc::new(column_group_reader) as BatchReaderRef)
                     })
-                    .collect::<Result<Vec<_>>>()?;
+                    .collect::<TskvResult<Vec<_>>>()?;
 
                 Some(Arc::new(CombinedBatchReader::new(batch_readers)))
             }
@@ -619,7 +619,7 @@ impl SeriesGroupBatchReaderFactory {
         projection: &Projection,
         predicate: &Option<Arc<Predicate>>,
         metrics: &SeriesGroupBatchReaderMetrics,
-    ) -> Result<Vec<BatchReaderRef>> {
+    ) -> TskvResult<Vec<BatchReaderRef>> {
         let projection = if chunks.len() > 1 {
             // 需要进行合并去重，所以必须含有time列
             projection.fields_with_time()
@@ -655,7 +655,7 @@ impl SeriesGroupBatchReaderFactory {
         schema: SchemaRef,
         time_fields_schema: SchemaRef,
         metrics: &SeriesGroupBatchReaderMetrics,
-    ) -> Result<Option<BatchReaderRef>> {
+    ) -> TskvResult<Option<BatchReaderRef>> {
         if chunks.is_empty() {
             return Ok(None);
         }
@@ -679,7 +679,7 @@ impl SeriesGroupBatchReaderFactory {
 
         let readers = grouped_chunks
             .into_iter()
-            .map(|chunks| -> Result<BatchReaderRef> {
+            .map(|chunks| -> TskvResult<BatchReaderRef> {
                 let chunk_readers = self.build_chunk_readers(
                     chunks.segments(),
                     batch_size,
@@ -714,7 +714,7 @@ impl SeriesGroupBatchReaderFactory {
 
                 Ok(reader)
             })
-            .collect::<Result<Vec<_>>>()?;
+            .collect::<TskvResult<Vec<_>>>()?;
 
         let limit = predicate.as_ref().and_then(|p| p.limit());
         // 根据 series key 补齐对应的 tag 列
@@ -758,7 +758,10 @@ impl Drop for SeriesGroupBatchReaderFactory {
 ///
 /// Returns an `Error` if a column is not found in the table schema.
 ///
-fn project_time_fields(table_schema: &TskvTableSchemaRef, schema: &SchemaRef) -> Result<SchemaRef> {
+fn project_time_fields(
+    table_schema: &TskvTableSchemaRef,
+    schema: &SchemaRef,
+) -> TskvResult<SchemaRef> {
     let mut fields = vec![];
     for field in schema.fields() {
         if let Some(col) = table_schema.column(field.name()) {
@@ -766,7 +769,7 @@ fn project_time_fields(table_schema: &TskvTableSchemaRef, schema: &SchemaRef) ->
                 fields.push(field.clone());
             }
         } else {
-            return Err(Error::Schema {
+            return Err(TskvError::Schema {
                 source: SchemaError::ColumnNotFound {
                     column: field.name().to_string(),
                 },
@@ -924,7 +927,7 @@ impl QueryOption {
     pub fn to_query_record_batch_request(
         &self,
         vnode_ids: Vec<VnodeId>,
-    ) -> Result<QueryRecordBatchRequest, models::Error> {
+    ) -> TskvResult<QueryRecordBatchRequest, models::Error> {
         let args = QueryArgs {
             vnode_ids,
             limit: self.split.limit(),
@@ -958,7 +961,7 @@ pub struct RowIterator {
     super_version: Option<Arc<SuperVersion>>,
     /// List of series id filtered from engine.
     series_ids: Arc<Vec<SeriesId>>,
-    series_iter_receiver: Receiver<Option<Result<RecordBatch>>>,
+    series_iter_receiver: Receiver<Option<TskvResult<RecordBatch>>>,
     series_iter_closer: CancellationToken,
     /// Whether this iterator was finsihed.
     is_finished: bool,
@@ -968,7 +971,7 @@ pub struct RowIterator {
 }
 
 impl RowIterator {
-    fn build_record_builders(query_option: &QueryOption) -> Result<Vec<ArrayBuilderPtr>> {
+    fn build_record_builders(query_option: &QueryOption) -> TskvResult<Vec<ArrayBuilderPtr>> {
         // Get builders for aggregating.
         if let Some(aggregates) = query_option.aggregates.as_ref() {
             let mut builders: Vec<ArrayBuilderPtr> = Vec::with_capacity(aggregates.len());
@@ -999,7 +1002,7 @@ impl RowIterator {
     pub fn new_column_builder(
         column_type: &PhysicalCType,
         batch_size: usize,
-    ) -> Result<Box<dyn ArrayBuilder>> {
+    ) -> TskvResult<Box<dyn ArrayBuilder>> {
         Ok(match column_type {
             PhysicalCType::Tag => {
                 Box::new(StringBuilder::with_capacity(batch_size, batch_size * 32))
@@ -1025,14 +1028,14 @@ impl RowIterator {
                     Box::new(StringBuilder::with_capacity(batch_size, batch_size * 32))
                 }
                 PhysicalDType::Unknown => {
-                    return Err(Error::CommonError {
+                    return Err(TskvError::CommonError {
                         reason: "failed to create column builder: unkown column type".to_string(),
                     })
                 }
             },
         })
     }
-    pub async fn next(&mut self) -> Option<Result<RecordBatch>> {
+    pub async fn next(&mut self) -> Option<TskvResult<RecordBatch>> {
         if self.is_finished {
             return None;
         }
@@ -1051,7 +1054,7 @@ impl RowIterator {
             }
             let empty_result =
                 RecordBatch::try_new(self.query_option.df_schema.clone(), empty_cols).map_err(
-                    |err| Error::CommonError {
+                    |err| TskvError::CommonError {
                         reason: format!("iterator fail, {}", err),
                     },
                 );
@@ -1117,7 +1120,7 @@ pub async fn execute(
     query_option: QueryOption,
     vnode_id: VnodeId,
     span_recorder: SpanRecorder,
-) -> Result<SendableTskvRecordBatchStream> {
+) -> TskvResult<SendableTskvRecordBatchStream> {
     let super_version = {
         let mut span_recorder = span_recorder.child("get super version");
         engine
@@ -1157,7 +1160,7 @@ async fn build_stream(
     query_option: QueryOption,
     vnode_id: VnodeId,
     span_recorder: SpanRecorder,
-) -> Result<SendableTskvRecordBatchStream> {
+) -> TskvResult<SendableTskvRecordBatchStream> {
     let series_ids = {
         let mut span_recorder = span_recorder.child("get series ids by filter");
         engine
@@ -1198,7 +1201,7 @@ async fn build_stream(
 
     if query_option.aggregates.is_some() {
         // TODO: 重新实现聚合下推
-        return Err(Error::CommonError {
+        return Err(TskvError::CommonError {
             reason: "aggregates push down is not supported yet".to_string(),
         });
     }

@@ -22,7 +22,7 @@ use crate::file_system::file::IFile;
 use crate::file_system::file_manager;
 use crate::index::binlog::{BinlogReader, BinlogWriter};
 use crate::index::ts_index::fmt::Debug;
-use crate::{byte_utils, file_utils, Error, UpdateSetValue};
+use crate::{byte_utils, file_utils, TskvError, UpdateSetValue};
 
 const SERIES_ID_PREFIX: &str = "_id_";
 const SERIES_KEY_PREFIX: &str = "_key_";
@@ -420,7 +420,7 @@ impl TSIndex {
         &self,
         table_schema: &TskvTableSchema,
         tag_domains: &ColumnDomains<String>,
-    ) -> Result<Vec<u32>, Error> {
+    ) -> Result<Vec<u32>, TskvError> {
         let tab = table_schema.name.as_str();
         if tag_domains.is_all() {
             // Match all records
@@ -442,7 +442,7 @@ impl TSIndex {
         for (k, v) in domains.iter() {
             let id = table_schema
                 .column(k)
-                .ok_or_else(|| Error::ColumnNotFound {
+                .ok_or_else(|| TskvError::ColumnNotFound {
                     column: k.to_string(),
                 })?
                 .id;

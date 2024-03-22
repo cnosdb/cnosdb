@@ -17,7 +17,7 @@ use snafu::Snafu;
 #[error_code(mod_code = "05")]
 pub enum CoordinatorError {
     TskvError {
-        source: tskv::Error,
+        source: tskv::TskvError,
     },
 
     Meta {
@@ -241,10 +241,10 @@ impl From<io::Error> for CoordinatorError {
     }
 }
 
-impl From<tskv::Error> for CoordinatorError {
-    fn from(err: tskv::Error) -> Self {
+impl From<tskv::TskvError> for CoordinatorError {
+    fn from(err: tskv::TskvError) -> Self {
         match err {
-            tskv::Error::Meta { source } => CoordinatorError::Meta { source },
+            tskv::TskvError::Meta { source } => CoordinatorError::Meta { source },
 
             other => CoordinatorError::TskvError { source: other },
         }
@@ -268,9 +268,9 @@ impl From<ArrowError> for CoordinatorError {
                     source: *e.downcast::<MetaError>().unwrap(),
                 }
             }
-            ArrowError::ExternalError(e) if e.downcast_ref::<tskv::Error>().is_some() => {
+            ArrowError::ExternalError(e) if e.downcast_ref::<tskv::TskvError>().is_some() => {
                 CoordinatorError::TskvError {
-                    source: *e.downcast::<tskv::Error>().unwrap(),
+                    source: *e.downcast::<tskv::TskvError>().unwrap(),
                 }
             }
             ArrowError::ExternalError(e) if e.downcast_ref::<ArrowError>().is_some() => {

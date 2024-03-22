@@ -15,7 +15,7 @@ use super::{
     BatchReader, BatchReaderRef, SchemableTskvRecordBatchStream,
     SendableSchemableTskvRecordBatchStream,
 };
-use crate::Result;
+use crate::TskvResult;
 
 /// 对数据模式进行调整和对齐，使其与预期完整和一致
 /// 输入schema与输出schema含有同名字段但类型不一致时，不做检查，使用输入schema的字段数据类型
@@ -40,7 +40,7 @@ impl SchemaAlignmenter {
 }
 
 impl BatchReader for SchemaAlignmenter {
-    fn process(&self) -> Result<SendableSchemableTskvRecordBatchStream> {
+    fn process(&self) -> TskvResult<SendableSchemableTskvRecordBatchStream> {
         let input = self.input.process()?;
         let input_schema = input.schema();
         if let Some(schema_mapping) = build_schema_mapping(&self.schema, &input_schema) {
@@ -151,7 +151,7 @@ impl SchemableTskvRecordBatchStream for SchemaAlignmenterStream {
 }
 
 impl Stream for SchemaAlignmenterStream {
-    type Item = Result<RecordBatch>;
+    type Item = TskvResult<RecordBatch>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let poll = match self.input.poll_next_unpin(cx) {
@@ -193,7 +193,7 @@ impl Stream for SchemaAlignmenterStream {
 fn reorder_and_align_schema(
     schema_mapping: &SchemaMapping,
     batch: RecordBatch,
-) -> Result<RecordBatch, ArrowError> {
+) -> TskvResult<RecordBatch, ArrowError> {
     let mut fields = vec![];
     let mut columns = vec![];
 

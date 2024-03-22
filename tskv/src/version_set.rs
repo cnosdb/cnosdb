@@ -10,7 +10,7 @@ use tokio::runtime::Runtime;
 use tokio::sync::RwLock;
 
 use crate::database::{Database, DatabaseFactory};
-use crate::error::{MetaSnafu, Result};
+use crate::error::{MetaSnafu, TskvResult};
 use crate::index::ts_index::TSIndex;
 use crate::summary::SummaryRequest;
 use crate::tseries_family::{TseriesFamily, Version};
@@ -64,7 +64,7 @@ impl VersionSet {
         memory_pool: MemoryPoolRef,
         ver_set: HashMap<TseriesFamilyId, Arc<Version>>,
         metrics_register: Arc<MetricsRegister>,
-    ) -> Result<Self> {
+    ) -> TskvResult<Self> {
         let mut dbs = HashMap::new();
         let db_factory = DatabaseFactory::new(meta.clone(), memory_pool, metrics_register, opt);
 
@@ -96,7 +96,7 @@ impl VersionSet {
         })
     }
 
-    pub async fn create_db(&mut self, schema: DatabaseSchema) -> Result<Arc<RwLock<Database>>> {
+    pub async fn create_db(&mut self, schema: DatabaseSchema) -> TskvResult<Arc<RwLock<Database>>> {
         let db = self
             .dbs
             .entry(schema.owner())

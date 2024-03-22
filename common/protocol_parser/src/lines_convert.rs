@@ -6,7 +6,8 @@ use datafusion::arrow::array::{
 };
 use datafusion::arrow::datatypes::{SchemaRef, TimeUnit};
 use flatbuffers::{FlatBufferBuilder, WIPOffset};
-use models::mutable_batch::{ColumnData, MutableBatch};
+use models::column_data::PrimaryColumnData;
+use models::mutable_batch::MutableBatch;
 use models::schema::{PhysicalCType as ColumnType, TskvTableSchemaRef};
 use models::PhysicalDType as ValueType;
 use protos::models::{
@@ -33,12 +34,14 @@ pub fn line_to_batches(lines: &[Line]) -> Result<HashMap<String, MutableBatch>> 
                 .map_err(|e| Error::Common {
                     content: format!("Error getting column: {}", e),
                 })?;
-            match &mut col.data {
-                ColumnData::String(data) => {
+            match &mut col.column_data.primary_data {
+                PrimaryColumnData::String(data, ..) => {
                     data.resize(row_count + 1, String::new());
                     data[row_count] = tag_value.to_string();
-                    col.valid.append_unset(row_count - col.valid.len());
-                    col.valid.append_set(1);
+                    col.column_data
+                        .valid
+                        .append_unset(row_count - col.column_data.valid.len());
+                    col.column_data.valid.append_set(1);
                 }
                 _ => {
                     return Err(Error::Common {
@@ -55,12 +58,14 @@ pub fn line_to_batches(lines: &[Line]) -> Result<HashMap<String, MutableBatch>> 
                         .map_err(|e| Error::Common {
                             content: format!("Error getting column: {}", e),
                         })?;
-                    match &mut col.data {
-                        ColumnData::U64(data) => {
+                    match &mut col.column_data.primary_data {
+                        PrimaryColumnData::U64(data, ..) => {
                             data.resize(row_count + 1, 0);
                             data[row_count] = *value;
-                            col.valid.append_unset(row_count - col.valid.len());
-                            col.valid.append_set(1);
+                            col.column_data
+                                .valid
+                                .append_unset(row_count - col.column_data.valid.len());
+                            col.column_data.valid.append_set(1);
                         }
                         _ => {
                             return Err(Error::Common {
@@ -75,12 +80,14 @@ pub fn line_to_batches(lines: &[Line]) -> Result<HashMap<String, MutableBatch>> 
                         .map_err(|e| Error::Common {
                             content: format!("Error getting column: {}", e),
                         })?;
-                    match &mut col.data {
-                        ColumnData::I64(data) => {
+                    match &mut col.column_data.primary_data {
+                        PrimaryColumnData::I64(data, ..) => {
                             data.resize(row_count + 1, 0);
                             data[row_count] = *value;
-                            col.valid.append_unset(row_count - col.valid.len());
-                            col.valid.append_set(1);
+                            col.column_data
+                                .valid
+                                .append_unset(row_count - col.column_data.valid.len());
+                            col.column_data.valid.append_set(1);
                         }
                         _ => {
                             return Err(Error::Common {
@@ -95,12 +102,14 @@ pub fn line_to_batches(lines: &[Line]) -> Result<HashMap<String, MutableBatch>> 
                         .map_err(|e| Error::Common {
                             content: format!("Error getting column: {}", e),
                         })?;
-                    match &mut col.data {
-                        ColumnData::String(data) => {
+                    match &mut col.column_data.primary_data {
+                        PrimaryColumnData::String(data, ..) => {
                             data.resize(row_count + 1, String::new());
                             data[row_count] = String::from_utf8(value.to_vec()).unwrap();
-                            col.valid.append_unset(row_count - col.valid.len());
-                            col.valid.append_set(1);
+                            col.column_data
+                                .valid
+                                .append_unset(row_count - col.column_data.valid.len());
+                            col.column_data.valid.append_set(1);
                         }
                         _ => {
                             return Err(Error::Common {
@@ -115,12 +124,14 @@ pub fn line_to_batches(lines: &[Line]) -> Result<HashMap<String, MutableBatch>> 
                         .map_err(|e| Error::Common {
                             content: format!("Error getting column: {}", e),
                         })?;
-                    match &mut col.data {
-                        ColumnData::F64(data) => {
+                    match &mut col.column_data.primary_data {
+                        PrimaryColumnData::F64(data, ..) => {
                             data.resize(row_count + 1, 0.0);
                             data[row_count] = *value;
-                            col.valid.append_unset(row_count - col.valid.len());
-                            col.valid.append_set(1);
+                            col.column_data
+                                .valid
+                                .append_unset(row_count - col.column_data.valid.len());
+                            col.column_data.valid.append_set(1);
                         }
                         _ => {
                             return Err(Error::Common {
@@ -135,12 +146,14 @@ pub fn line_to_batches(lines: &[Line]) -> Result<HashMap<String, MutableBatch>> 
                         .map_err(|e| Error::Common {
                             content: format!("Error getting column: {}", e),
                         })?;
-                    match &mut col.data {
-                        ColumnData::Bool(data) => {
+                    match &mut col.column_data.primary_data {
+                        PrimaryColumnData::Bool(data, ..) => {
                             data.resize(row_count + 1, false);
                             data[row_count] = *value;
-                            col.valid.append_unset(row_count - col.valid.len());
-                            col.valid.append_set(1);
+                            col.column_data
+                                .valid
+                                .append_unset(row_count - col.column_data.valid.len());
+                            col.column_data.valid.append_set(1);
                         }
                         _ => {
                             return Err(Error::Common {
@@ -158,12 +171,14 @@ pub fn line_to_batches(lines: &[Line]) -> Result<HashMap<String, MutableBatch>> 
             .map_err(|e| Error::Common {
                 content: format!("Error getting column: {}", e),
             })?;
-        match col.data {
-            ColumnData::I64(ref mut data) => {
+        match col.column_data.primary_data {
+            PrimaryColumnData::I64(ref mut data, ..) => {
                 data.resize(row_count + 1, 0);
                 data[row_count] = time;
-                col.valid.append_unset(row_count - col.valid.len());
-                col.valid.append_set(1);
+                col.column_data
+                    .valid
+                    .append_unset(row_count - col.column_data.valid.len());
+                col.column_data.valid.append_set(1);
             }
             _ => {
                 return Err(Error::Common {
@@ -198,26 +213,26 @@ pub fn mutable_batches_to_point(db: &str, batches: HashMap<String, MutableBatch>
                 ColumnType::Time(_) => FbColumnType::Time,
             };
 
-            let (field_type, values) = match column.data {
-                ColumnData::F64(ref values) => {
+            let (field_type, values) = match column.column_data.primary_data {
+                PrimaryColumnData::F64(ref values, ..) => {
                     let values = fbb.create_vector(values);
                     let mut values_builder = ValuesBuilder::new(fbb);
                     values_builder.add_float_value(values);
                     (FieldType::Float, values_builder.finish())
                 }
-                ColumnData::I64(ref values) => {
+                PrimaryColumnData::I64(ref values, ..) => {
                     let values = fbb.create_vector(values);
                     let mut values_builder = ValuesBuilder::new(fbb);
                     values_builder.add_int_value(values);
                     (FieldType::Integer, values_builder.finish())
                 }
-                ColumnData::U64(ref values) => {
+                PrimaryColumnData::U64(ref values, ..) => {
                     let values = fbb.create_vector(values);
                     let mut values_builder = ValuesBuilder::new(fbb);
                     values_builder.add_uint_value(values);
                     (FieldType::Unsigned, values_builder.finish())
                 }
-                ColumnData::String(ref values) => {
+                PrimaryColumnData::String(ref values, ..) => {
                     let values = values
                         .iter()
                         .map(|s| fbb.create_string(s))
@@ -227,7 +242,7 @@ pub fn mutable_batches_to_point(db: &str, batches: HashMap<String, MutableBatch>
                     values_builder.add_string_value(values);
                     (FieldType::String, values_builder.finish())
                 }
-                ColumnData::Bool(ref values) => {
+                PrimaryColumnData::Bool(ref values, ..) => {
                     let values = fbb.create_vector(values);
                     let mut values_builder = ValuesBuilder::new(fbb);
                     values_builder.add_bool_value(values);
@@ -235,7 +250,7 @@ pub fn mutable_batches_to_point(db: &str, batches: HashMap<String, MutableBatch>
                 }
             };
             let column_name = fbb.create_string(field_name);
-            let nullbits = fbb.create_vector(column.valid.bytes());
+            let nullbits = fbb.create_vector(column.column_data.valid.bytes());
             let mut column_builder = ColumnBuilder::new(fbb);
             column_builder.add_field_type(field_type);
             column_builder.add_column_type(fb_column_type);
@@ -332,14 +347,13 @@ pub fn build_string_column<'a>(
             content: format!("column {} is not string", col_name),
         })?;
 
-    let mut nullbits = BitSet::new();
+    let mut nullbits = BitSet::with_size(array.len());
     let mut col_values = Vec::with_capacity(array.len());
-    array.iter().for_each(|value| {
+    array.iter().enumerate().for_each(|(idx, value)| {
         if let Some(value) = value {
-            nullbits.append_set(1);
+            nullbits.append_unset_and_set(idx);
             col_values.push(fbb.create_string(value));
         } else {
-            nullbits.append_unset(1);
             col_values.push(fbb.create_string(""));
         }
     });
@@ -378,14 +392,13 @@ pub fn build_timestamp_column<'a>(
                 .ok_or(Error::Common {
                     content: format!("column {} is not int64", col_name),
                 })?;
-            let mut nullbits = BitSet::new();
+            let mut nullbits = BitSet::with_size(values.len());
             let mut col_values = Vec::with_capacity(values.len());
-            values.iter().for_each(|value| {
+            values.iter().enumerate().for_each(|(idx, value)| {
                 if let Some(value) = value {
-                    nullbits.append_set(1);
+                    nullbits.append_unset_and_set(idx);
                     col_values.push(value);
                 } else {
-                    nullbits.append_unset(1);
                     col_values.push(0);
                 }
             });
@@ -398,14 +411,13 @@ pub fn build_timestamp_column<'a>(
                 .ok_or(Error::Common {
                     content: format!("column {} is not int64", col_name),
                 })?;
-            let mut nullbits = BitSet::new();
+            let mut nullbits = BitSet::with_size(values.len());
             let mut col_values = Vec::with_capacity(values.len());
-            values.iter().for_each(|value| {
+            values.iter().enumerate().for_each(|(idx, value)| {
                 if let Some(value) = value {
-                    nullbits.append_set(1);
+                    nullbits.append_unset_and_set(idx);
                     col_values.push(value);
                 } else {
-                    nullbits.append_unset(1);
                     col_values.push(0);
                 }
             });
@@ -418,14 +430,13 @@ pub fn build_timestamp_column<'a>(
                 .ok_or(Error::Common {
                     content: format!("column {} is not int64", col_name),
                 })?;
-            let mut nullbits = BitSet::new();
+            let mut nullbits = BitSet::with_size(values.len());
             let mut col_values = Vec::with_capacity(values.len());
-            values.iter().for_each(|value| {
+            values.iter().enumerate().for_each(|(idx, value)| {
                 if let Some(value) = value {
-                    nullbits.append_set(1);
+                    nullbits.append_unset_and_set(idx);
                     col_values.push(value);
                 } else {
-                    nullbits.append_unset(1);
                     col_values.push(0);
                 }
             });
@@ -458,14 +469,13 @@ pub fn build_i64_column<'a>(
         .ok_or(Error::Common {
             content: format!("column {} is not int64", col_name),
         })?;
-    let mut nullbits = BitSet::new();
+    let mut nullbits = BitSet::with_size(values.len());
     let mut col_values = Vec::with_capacity(values.len());
-    values.iter().for_each(|value| {
+    values.iter().enumerate().for_each(|(idx, value)| {
         if let Some(value) = value {
-            nullbits.append_set(1);
+            nullbits.append_unset_and_set(idx);
             col_values.push(value);
         } else {
-            nullbits.append_unset(1);
             col_values.push(0);
         }
     });
@@ -495,14 +505,13 @@ pub fn build_f64_column<'a>(
         .ok_or(Error::Common {
             content: format!("column {} is not float64", col_name),
         })?;
-    let mut nullbits = BitSet::new();
+    let mut nullbits = BitSet::with_size(values.len());
     let mut col_values = Vec::with_capacity(values.len());
-    values.iter().for_each(|value| {
+    values.iter().enumerate().for_each(|(idx, value)| {
         if let Some(value) = value {
-            nullbits.append_set(1);
+            nullbits.append_unset_and_set(idx);
             col_values.push(value);
         } else {
-            nullbits.append_unset(1);
             col_values.push(0.0);
         }
     });
@@ -532,14 +541,13 @@ pub fn build_u64_column<'a>(
         .ok_or(Error::Common {
             content: format!("column {} is not uint64", col_name),
         })?;
-    let mut nullbits = BitSet::new();
+    let mut nullbits = BitSet::with_size(values.len());
     let mut col_values = Vec::with_capacity(values.len());
-    values.iter().for_each(|value| {
+    values.iter().enumerate().for_each(|(idx, value)| {
         if let Some(value) = value {
-            nullbits.append_set(1);
+            nullbits.append_unset_and_set(idx);
             col_values.push(value);
         } else {
-            nullbits.append_unset(1);
             col_values.push(0);
         }
     });
@@ -569,14 +577,13 @@ pub fn build_bool_column<'a>(
         .ok_or(Error::Common {
             content: format!("column {} is not bool", col_name),
         })?;
-    let mut nullbits = BitSet::new();
+    let mut nullbits = BitSet::with_size(values.len());
     let mut col_values = Vec::with_capacity(values.len());
-    values.iter().for_each(|value| {
+    values.iter().enumerate().for_each(|(idx, value)| {
         if let Some(value) = value {
-            nullbits.append_set(1);
+            nullbits.append_unset_and_set(idx);
             col_values.push(value);
         } else {
-            nullbits.append_unset(1);
             col_values.push(false);
         }
     });
