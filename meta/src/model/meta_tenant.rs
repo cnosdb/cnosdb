@@ -761,26 +761,30 @@ impl TenantMeta {
         self.client.write::<()>(&req).await
     }
 
-    pub async fn change_repl_set_leader(
-        &self,
-        db_name: &str,
-        bucket_id: u32,
-        repl_id: ReplicationSetId,
-        leader_node_id: NodeId,
-        leader_vnode_id: VnodeId,
-    ) -> MetaResult<()> {
+    pub async fn replica_new_leader(&self, new_leader: VnodeId) -> MetaResult<NodeId> {
+        let info = self
+            .get_vnode_all_info(new_leader)
+            .ok_or(MetaError::VnodeNotFound { id: new_leader })?;
+
         let args = command::ChangeReplSetLeaderArgs {
-            repl_id,
-            bucket_id,
-            leader_node_id,
-            leader_vnode_id,
-            db_name: db_name.to_string(),
+            repl_id: info.repl_set_id,
+            bucket_id: info.bucket_id,
+            leader_node_id: info.node_id,
+            leader_vnode_id: info.vnode_id,
+            db_name: info.db_name.clone(),
             cluster: self.cluster.clone(),
             tenant: self.tenant_name(),
         };
 
+        info!(
+            "change replica set({}) new leader({})",
+            info.repl_set_id, new_leader
+        );
+
         let req = command::WriteCommand::ChangeReplSetLeader(args);
-        self.client.write::<()>(&req).await
+        self.client.write::<()>(&req).await?;
+
+        Ok(info.node_id)
     }
 
     pub async fn version(&self) -> u64 {

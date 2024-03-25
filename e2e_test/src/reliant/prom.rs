@@ -15,7 +15,7 @@ use crate::utils::Client;
 
 fn serialize<T: Message>(msg: T) -> Vec<u8> {
     let mut compressed = Vec::new();
-    let input_buf = to_prost_bytes(msg);
+    let input_buf = to_prost_bytes(&msg);
     SnappyCodec::default()
         .compress(&input_buf, &mut compressed)
         .unwrap();

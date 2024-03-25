@@ -12,31 +12,93 @@ message PingResponse {
   bytes body = 2;
 }
 
-/* -------------------------------------------------------------------- */
 message Meta {
   string tenant = 1;
   optional string user = 2;
   optional string password = 3;
 }
 
-message WritePointsRequest {
-  uint64 version = 1;
-  Meta meta = 2;
-  bytes points = 3; // flatbuffers bytes ( models::Points )
-}
-
 message WritePointsResponse {
   uint64 points_number = 1;
 }
 
-/* -------------------------------------------------------------------- */
-message StatusResponse {
+message BatchBytesResponse {
   int32 code = 1;
-  string data = 2;
+  bytes data = 2;
 }
 
+/* -------------------------------------------------------------------- */
+message WriteDataRequest {
+  bytes data = 1;
+  uint32 precision = 2;
+}
+
+message DropTableRequest {
+  string db = 1;
+  string table = 2;
+}
+
+message DropColumnRequest {
+  string db = 1;
+  string table = 2;
+  string column = 3;
+}
+
+message UpdateSetValue {
+  bytes key = 1;
+  optional bytes value = 2;
+}
+
+message UpdateTagsRequest {
+  string db = 1;
+  repeated UpdateSetValue new_tags = 2;
+  repeated bytes matched_series = 3;
+  bool dry_run = 4;
+}
+
+message DeleteFromTableRequest {
+  string tenant = 1;
+  string database = 2;
+  string table = 3;
+  bytes predicate = 4;
+  uint32 vnode_id = 5;
+}
+
+message RaftWriteCommand {
+  string tenant = 1;
+  string db_name = 2;
+  uint32 replica_id = 3;
+  oneof command {
+    WriteDataRequest write_data = 4;
+    DropTableRequest drop_table = 5;
+    DropColumnRequest drop_column = 6;
+    DeleteFromTableRequest delete_from_table = 7;
+    UpdateTagsRequest update_tags = 8;
+  }
+}
+
+
+/* -------------------------------------------------------------------- */
 message CompactVnodeRequest {
     repeated uint32 vnode_ids = 1;
+}
+
+message FetchChecksumRequest {
+    uint32 vnode_id = 1;
+}
+
+message OpenRaftNodeRequest {
+    string tenant = 1;
+    string db_name = 2;
+    uint32 vnode_id = 3;
+    uint32 replica_id = 4;
+}
+
+message DropRaftNodeRequest {
+    string tenant = 1;
+    string db_name = 2;
+    uint32 vnode_id = 3;
+    uint32 replica_id = 4;
 }
 
 message AddRaftFollowerRequest {
@@ -56,44 +118,23 @@ message DestoryRaftGroupRequest {
     uint32 replica_id = 2;
 }
 
-message AdminCommandRequest {
+message AdminCommand {
   string tenant = 1;
   oneof command {
-    CompactVnodeRequest compact_vnode = 7;
-    AddRaftFollowerRequest add_raft_follower = 13;
-    RemoveRaftNodeRequest remove_raft_node = 14;
-    DestoryRaftGroupRequest destory_raft_group = 15;
+    CompactVnodeRequest compact_vnode = 2;
+    OpenRaftNodeRequest open_raft_node = 3;
+    DropRaftNodeRequest drop_raft_node = 4;
+    FetchChecksumRequest fetch_checksum = 5;
+
+    AddRaftFollowerRequest add_raft_follower = 6;
+    RemoveRaftNodeRequest remove_raft_node = 7;
+    DestoryRaftGroupRequest destory_raft_group = 8;
   }
-}
-
-message FetchVnodeChecksumRequest {
-    uint32 vnode_id = 1;
-}
-
-message AdminFetchCommandRequest {
-  string tenant = 1;
-  oneof command {
-    FetchVnodeChecksumRequest fetch_vnode_checksum = 8;
-  }
-}
-
-message DeleteFromTableRequest {
-  string tenant = 1;
-  string database = 2;
-  string table = 3;
-  bytes predicate = 4;
-  uint32 vnode_id = 5;
 }
 
 /* -------------------------------------------------------------------- */
-
-message BatchBytesResponse {
-  int32 code = 1;
-  bytes data = 2;
-}
-
 message DownloadFileRequest {
-    string filename = 1;
+  string filename = 1;
 }
 
 message QueryRecordBatchRequest {
@@ -102,74 +143,14 @@ message QueryRecordBatchRequest {
     bytes aggs = 3;
 }
 
-
-message OpenRaftNodeRequest {
-    string tenant = 1;
-    string db_name = 2;
-    uint32 vnode_id = 3;
-    uint32 replica_id = 4;
-}
-
-message DropRaftNodeRequest {
-    string tenant = 1;
-    string db_name = 2;
-    uint32 vnode_id = 3;
-    uint32 replica_id = 4;
-}
-
-message WriteDataRequest {
-    bytes data = 1;
-    uint32 precision = 2;
-}
-
-message DropTableRequest {
-    string db = 1;
-    string table = 2;
-}
-
-message DropColumnRequest {
-    string db = 1;
-    string table = 2;
-    string column = 3;
-}
-
-message UpdateSetValue {
-    bytes key = 1;
-    optional bytes value = 2;
-}
-
-message UpdateTagsRequest {
-    string db = 1;
-    repeated UpdateSetValue new_tags = 2;
-    repeated bytes matched_series = 3;
-    bool dry_run = 4;
-}
-
-message RaftWriteCommand {
-  string tenant = 1;
-  string db_name = 2;
-  uint32 replica_id = 3;
-  oneof command {
-    WriteDataRequest write_data = 4;
-    DropTableRequest drop_table = 5;
-    DropColumnRequest drop_column = 6;
-    DeleteFromTableRequest delete_from_table = 7;
-    UpdateTagsRequest update_tags = 8;
-  }
-}
-
-
 /* -------------------------------------------------------------------- */
 service TSKVService {
   rpc Ping(PingRequest) returns (PingResponse) {};
-
-  rpc QueryRecordBatch(QueryRecordBatchRequest) returns (stream BatchBytesResponse) {};
-  rpc ExecRaftWriteCommand(RaftWriteCommand) returns (StatusResponse) {};
-  rpc ExecAdminCommand(AdminCommandRequest) returns (StatusResponse) {};
-  rpc ExecAdminFetchCommand(AdminFetchCommandRequest) returns (BatchBytesResponse) {};
-  rpc ExecOpenRaftNode(OpenRaftNodeRequest) returns (StatusResponse) {};
-  rpc ExecDropRaftNode(DropRaftNodeRequest) returns (StatusResponse) {};
-
   rpc DownloadFile(DownloadFileRequest) returns (stream BatchBytesResponse) {};
+
   rpc TagScan(QueryRecordBatchRequest) returns (stream BatchBytesResponse) {};
+  rpc QueryRecordBatch(QueryRecordBatchRequest) returns (stream BatchBytesResponse) {};
+
+  rpc RaftWrite(RaftWriteCommand) returns (BatchBytesResponse) {};
+  rpc AdminRequest(AdminCommand) returns (BatchBytesResponse) {};
 }

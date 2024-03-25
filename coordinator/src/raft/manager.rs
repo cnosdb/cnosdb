@@ -6,7 +6,6 @@ use std::time::Duration;
 use meta::model::MetaRef;
 use models::meta_data::*;
 use protos::kv_service::*;
-use protos::{tskv_service_time_out_client, DEFAULT_GRPC_SERVER_MESSAGE_LEN};
 use replication::multi_raft::MultiRaft;
 use replication::node_store::NodeStorage;
 use replication::raft_node::RaftNode;
@@ -18,6 +17,7 @@ use tskv::{wal, EngineRef};
 
 use super::TskvEngineStorage;
 use crate::errors::*;
+use crate::tskv_executor::TskvAdminRequest;
 use crate::{get_replica_all_info, update_replication_set};
 
 pub struct RaftNodesManager {
@@ -477,30 +477,26 @@ impl RaftNodesManager {
         vnode: &VnodeInfo,
         replica_id: ReplicationSetId,
     ) -> CoordinatorResult<()> {
-        let channel = self.meta.get_node_conn(vnode.node_id).await?;
-        let mut client = tskv_service_time_out_client(
-            channel,
-            Duration::from_secs(5),
-            DEFAULT_GRPC_SERVER_MESSAGE_LEN,
-            self.config.service.grpc_enable_gzip,
-        );
-
-        let cmd = tonic::Request::new(DropRaftNodeRequest {
-            replica_id,
-            vnode_id: vnode.id,
-            db_name: db_name.to_string(),
+        let request = AdminCommand {
             tenant: tenant.to_string(),
-        });
+            command: Some(admin_command::Command::DropRaftNode(DropRaftNodeRequest {
+                replica_id,
+                vnode_id: vnode.id,
+                db_name: db_name.to_string(),
+                tenant: tenant.to_string(),
+            })),
+        };
 
-        let response = client
-            .exec_drop_raft_node(cmd)
-            .await
-            .map_err(|err| CoordinatorError::GRPCRequest {
-                msg: err.to_string(),
-            })?
-            .into_inner();
+        let caller = TskvAdminRequest {
+            request,
+            meta: self.meta.clone(),
+            timeout: Duration::from_secs(60),
+            enable_gzip: self.config.service.grpc_enable_gzip,
+        };
 
-        crate::status_response_to_result(&response)
+        caller.do_request(vnode.node_id).await?;
+
+        Ok(())
     }
 
     async fn open_remote_raft_node(
@@ -515,28 +511,25 @@ impl RaftNodesManager {
             vnode.node_id, replica_id, vnode.id
         );
 
-        let channel = self.meta.get_node_conn(vnode.node_id).await?;
-        let mut client = tskv_service_time_out_client(
-            channel,
-            Duration::from_secs(5),
-            DEFAULT_GRPC_SERVER_MESSAGE_LEN,
-            self.config.service.grpc_enable_gzip,
-        );
-        let cmd = tonic::Request::new(OpenRaftNodeRequest {
-            replica_id,
-            vnode_id: vnode.id,
-            db_name: db_name.to_string(),
+        let request = AdminCommand {
             tenant: tenant.to_string(),
-        });
+            command: Some(admin_command::Command::OpenRaftNode(OpenRaftNodeRequest {
+                replica_id,
+                vnode_id: vnode.id,
+                db_name: db_name.to_string(),
+                tenant: tenant.to_string(),
+            })),
+        };
 
-        let response = client
-            .exec_open_raft_node(cmd)
-            .await
-            .map_err(|err| CoordinatorError::GRPCRequest {
-                msg: err.to_string(),
-            })?
-            .into_inner();
+        let caller = TskvAdminRequest {
+            request,
+            meta: self.meta.clone(),
+            timeout: Duration::from_secs(60),
+            enable_gzip: self.config.service.grpc_enable_gzip,
+        };
 
-        crate::status_response_to_result(&response)
+        caller.do_request(vnode.node_id).await?;
+
+        Ok(())
     }
 }

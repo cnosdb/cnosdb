@@ -27,8 +27,8 @@ impl DDLDefinitionTask for CopyVnodeTask {
         let vnode_all_info = coordinator::get_vnode_all_info(meta, tenant, vnode_id).await?;
 
         let replica_id = vnode_all_info.repl_set_id;
-        let cmd_type = coordinator::VnodeManagerCmdType::AddRaftFollower(replica_id, node_id);
-        coord.vnode_manager(tenant, cmd_type).await?;
+        let cmd_type = coordinator::ReplicationCmdType::AddRaftFollower(replica_id, node_id);
+        coord.replication_manager(tenant, cmd_type).await?;
 
         Ok(Output::Nil(()))
     }

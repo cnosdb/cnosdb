@@ -86,8 +86,7 @@ impl VnodeOpener for TemporaryTagScanOpener {
 
                 let resp_stream = {
                     let channel = admin_meta.get_node_conn(node_id).await.map_err(|error| {
-                        CoordinatorError::FailoverNode {
-                            id: node_id,
+                        CoordinatorError::PreExecution {
                             error: error.to_string(),
                         }
                     })?;
@@ -97,14 +96,7 @@ impl VnodeOpener for TemporaryTagScanOpener {
                         DEFAULT_GRPC_SERVER_MESSAGE_LEN,
                         grpc_enable_gzip,
                     );
-                    client
-                        .tag_scan(request)
-                        .await
-                        .map_err(|error| CoordinatorError::FailoverNode {
-                            id: node_id,
-                            error: format!("{error:?}"),
-                        })?
-                        .into_inner()
+                    client.tag_scan(request).await?.into_inner()
                 };
 
                 Ok(Box::pin(TonicRecordBatchDecoder::new(resp_stream))

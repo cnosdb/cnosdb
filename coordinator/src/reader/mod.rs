@@ -101,7 +101,7 @@ impl<O: VnodeOpener> CheckedCoordinatorRecordBatchStream<O> {
                             self.state = StreamState::Scan(stream, ScanState::Scan);
                         }
                         Err(err) => {
-                            if let CoordinatorError::FailoverNode { id: _, ref error } = err {
+                            if let CoordinatorError::PreExecution { ref error } = err {
                                 if let Some(vnode) = self.option.split.pop_front() {
                                     warn!("failover reader try to read another vnode: {:?}, error: {}", vnode, error);
                                     self.vnode = vnode;

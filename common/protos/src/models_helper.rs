@@ -19,7 +19,7 @@ where
     msg.write_to_bytes()
 }
 
-pub fn to_prost_bytes<T>(msg: T) -> Vec<u8>
+pub fn to_prost_bytes<T>(msg: &T) -> Vec<u8>
 where
     T: prost::Message,
 {
