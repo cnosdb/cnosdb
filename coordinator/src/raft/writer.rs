@@ -12,7 +12,8 @@ use replication::raft_node::RaftNode;
 use trace::debug;
 
 use super::manager::RaftNodesManager;
-use crate::{errors::*, TskvLeaderCaller};
+use crate::errors::*;
+use crate::TskvLeaderCaller;
 
 pub struct TskvRaftWriter {
     pub meta: MetaRef,

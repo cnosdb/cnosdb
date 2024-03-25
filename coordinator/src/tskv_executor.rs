@@ -1,13 +1,14 @@
-use std::{collections::VecDeque, time::Duration};
+use std::collections::VecDeque;
+use std::time::Duration;
 
 use meta::model::MetaRef;
 use models::meta_data::*;
-use protos::{
-    kv_service::AdminCommand, tskv_service_time_out_client, DEFAULT_GRPC_SERVER_MESSAGE_LEN,
-};
+use protos::kv_service::AdminCommand;
+use protos::{tskv_service_time_out_client, DEFAULT_GRPC_SERVER_MESSAGE_LEN};
 use trace::info;
 
-use crate::{errors::*, TskvLeaderCaller};
+use crate::errors::*;
+use crate::TskvLeaderCaller;
 
 pub struct TskvAdminRequest {
     pub meta: MetaRef,

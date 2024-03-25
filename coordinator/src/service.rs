@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 #![allow(clippy::type_complexity)]
 
 use std::collections::HashMap;
@@ -17,7 +16,6 @@ use datafusion::arrow::array::{
 use datafusion::arrow::compute::take;
 use datafusion::arrow::datatypes::{DataType, TimeUnit};
 use datafusion::arrow::record_batch::RecordBatch;
-
 use memory_pool::MemoryPoolRef;
 use meta::error::MetaError;
 use meta::model::{MetaClientRef, MetaRef};
@@ -34,7 +32,7 @@ use models::oid::Identifier;
 use models::predicate::domain::{ResolvedPredicate, ResolvedPredicateRef, TimeRange, TimeRanges};
 use models::schema::{
     timestamp_convert, ColumnType, Precision, ResourceInfo, ResourceOperator, ResourceStatus,
-    TskvTableSchemaRef, DEFAULT_CATALOG, TIME_FIELD,
+    TskvTableSchemaRef, DEFAULT_CATALOG, TIME_FIELD, USAGE_SCHEMA,
 };
 use models::utils::now_timestamp_nanos;
 use models::{record_batch_decode, SeriesKey, Tag};
@@ -43,7 +41,6 @@ use protocol_parser::lines_convert::{
 };
 use protocol_parser::Line;
 use protos::kv_service::admin_command::Command::*;
-
 use protos::kv_service::*;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Receiver;
@@ -51,7 +48,6 @@ use tokio::task::JoinHandle;
 use tokio::time::Instant;
 use tokio_retry::strategy::{jitter, ExponentialBackoff};
 use tokio_retry::Retry;
-
 use trace::{debug, error, info, SpanContext, SpanExt, SpanRecorder};
 use tskv::{EngineRef, TskvError};
 use utils::BkdrHasher;
@@ -69,7 +65,6 @@ use crate::{
     get_replica_all_info, get_vnode_all_info, Coordinator, QueryOption, ReplicationCmdType,
     SendableCoordinatorRecordBatchStream,
 };
-use models::schema::USAGE_SCHEMA;
 
 pub type CoordinatorRef = Arc<dyn Coordinator>;
 
