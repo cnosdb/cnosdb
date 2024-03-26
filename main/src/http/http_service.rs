@@ -1422,7 +1422,7 @@ async fn coord_write_eslog(
     let mut span_recorder = SpanRecorder::new(span_context.child_span("write points"));
     let mut res: String = String::new();
 
-    let table_exist = {
+    let mut table_exist = {
         if let Some(meta) = coord.meta_manager().tenant_meta(tenant).await {
             meta.get_table_schema(db, table).unwrap().is_some()
         } else {
@@ -1441,9 +1441,10 @@ async fn coord_write_eslog(
             .map_err(|e| HttpError::ParseESLog { source: e })?;
         if let Command::Create(_) = es.command {
             if table_exist {
-                res = format!("{}-create table has exist", i).to_string();
+                res = format!("The {}th command fails because the table '{}' already exists and cannot be created repeatedly\n", i + 1, table).to_string();
                 break;
             }
+            table_exist = true;
         }
         lines.push(line);
     }
