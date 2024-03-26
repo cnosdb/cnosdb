@@ -13,7 +13,7 @@ use coordinator::service::CoordinatorRef;
 use fly_accept_encoding::Encoding;
 use http_protocol::encoding::EncodingExt;
 use http_protocol::header::{ACCEPT, APPLICATION_JSON, AUTHORIZATION, PRIVATE_KEY};
-use http_protocol::parameter::{DebugParam, DumpParam, SqlParam, WriteParam};
+use http_protocol::parameter::{DebugParam, DumpParam, ESLogParam, SqlParam, WriteParam};
 use http_protocol::response::ErrorResponse;
 use meta::error::{MetaError, MetaResult};
 use meta::limiter::RequestLimiter;
@@ -27,6 +27,8 @@ use models::error_code::UnknownCodeWithMessage;
 use models::oid::{Identifier, Oid};
 use models::schema::{Precision, DEFAULT_CATALOG, DEFAULT_DATABASE};
 use models::utils::now_timestamp_nanos;
+use protocol_parser::es_log::es_log_to_lines;
+use protocol_parser::es_log::parser::{es_parse_to_line, Command, ESLog, Fields};
 use protocol_parser::line_protocol::line_protocol_to_lines;
 use protocol_parser::open_tsdb::open_tsdb_to_lines;
 use protocol_parser::{DataPoint, Line};
@@ -230,6 +232,7 @@ impl HttpService {
             .or(self.write_open_tsdb())
             .or(self.put_open_tsdb())
             .or(self.write_line_protocol())
+            .or(self.write_es_log())
     }
 
     fn routes_store(
@@ -1020,6 +1023,104 @@ impl HttpService {
                     .map_err(reject::custom)
             })
     }
+
+    fn write_es_log(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        warp::path!("api" / "v1" / "es" / "write")
+            .and(warp::post())
+            .and(warp::body::content_length_limit(self.write_body_limit))
+            .and(warp::body::bytes())
+            .and(self.handle_header())
+            .and(warp::query::<ESLogParam>())
+            .and(self.with_dbms())
+            .and(self.with_coord())
+            .and(self.with_http_metrics())
+            .and(self.with_hostaddr())
+            .and(self.handle_span_header())
+            .and_then(
+                |mut req: Bytes,
+                 header: Header,
+                 param: ESLogParam,
+                 dbms: DBMSRef,
+                 coord: CoordinatorRef,
+                 metrics: Arc<HttpMetrics>,
+                 addr: String,
+                 parent_span_ctx: Option<SpanContext>| async move {
+                    let start = Instant::now();
+                    let span_recorder =
+                        SpanRecorder::new(parent_span_ctx.child_span("rest es log write"));
+                    let span_context = span_recorder.span_ctx();
+
+                    let req_len = req.len();
+                    let content_encoding = get_content_encoding_from_header(&header)?;
+                    if let Some(encoding) = content_encoding {
+                        req = encoding.decode(req).map_err(|e| {
+                            trace::error!("Failed to decode request, err: {}", e);
+                            reject::custom(HttpError::DecodeRequest { source: e })
+                        })?;
+                    }
+
+                    let write_param = WriteParam {
+                        precision: None,
+                        tenant: param.tenant,
+                        db: param.db,
+                    };
+
+                    if param.table.is_none() {
+                        return Err(reject::custom(HttpError::ParseESLog {
+                            source: protocol_parser::ESLogError::Common {
+                                content: "table param is None".to_string(),
+                            },
+                        }));
+                    }
+                    let ctx = {
+                        let mut span_recorder =
+                            SpanRecorder::new(span_context.child_span("construct write context"));
+                        let ctx = construct_write_context_and_check_privilege(
+                            header,
+                            write_param,
+                            dbms,
+                            coord.clone(),
+                        )
+                        .await
+                        .map_err(reject::custom)?;
+                        span_recorder.record(ctx)
+                    };
+
+                    http_limiter_check_write(&coord.meta_manager(), ctx.tenant(), req_len).await?;
+
+                    let eslog = {
+                        let mut span_recorder =
+                            SpanRecorder::new(span_context.child_span("try parse req to es log"));
+                        span_recorder.set_metadata("bytes", req.len());
+                        try_parse_es_req(&req).map_err(reject::custom)?
+                    };
+
+                    let resp = coord_write_eslog(
+                        &coord,
+                        ctx.tenant(),
+                        ctx.database(),
+                        &param.table.unwrap(),
+                        eslog,
+                        param.time_field,
+                        param.msg_field,
+                        span_context,
+                    )
+                    .await;
+
+                    http_record_write_metrics(
+                        &metrics,
+                        &ctx,
+                        &addr,
+                        req_len,
+                        start,
+                        HttpApiType::ApiV1ESLogWrite,
+                    );
+                    resp.map_err(reject::custom)
+                },
+            )
+    }
 }
 
 #[async_trait::async_trait]
@@ -1255,6 +1356,111 @@ fn construct_write_tsdb_points_json_request(req: &Bytes) -> Result<Vec<Line>, Ht
     .collect::<Vec<Line>>();
 
     Ok(tsdb_datapoints)
+}
+
+// todo if all the command are index, you can call this func to transfer str to line directly
+fn _try_parse_req_to_log_lines(
+    req: &Bytes,
+    table: String,
+    time_alias: Option<String>,
+    msg_alias: Option<String>,
+) -> Result<Vec<Line>, HttpError> {
+    let lines = simdutf8::basic::from_utf8(req.as_ref())
+        .map_err(|e| HttpError::InvalidUTF8 { source: e })?;
+
+    let es_log_lines = es_log_to_lines(lines, table, time_alias, msg_alias)
+        .map_err(|e| HttpError::ParseESLog { source: e })?;
+    Ok(es_log_lines)
+}
+
+fn try_parse_es_req(req: &Bytes) -> Result<Vec<ESLog>, HttpError> {
+    let mut eslogs = vec![];
+
+    let lines = simdutf8::basic::from_utf8(req.as_ref())
+        .map_err(|e| HttpError::InvalidUTF8 { source: e })?;
+
+    let json_chunk: Vec<&str> = lines.trim().split('\n').collect();
+    let mut i = 0;
+    let n = json_chunk.len();
+    /*
+    because the es log is a pair of command and fields like:
+    { "index" : { "_index" : "test", "_id" : "1" } }
+    { "field1" : "value1" }
+    { "create" : { "_index" : "test", "_id" : "3" } }
+    { "field1" : "value3" }
+    */
+    if n % 2 != 0 {
+        return Err(HttpError::ParseESLog {
+            source: protocol_parser::ESLogError::InvaildSyntax,
+        });
+    }
+
+    while i < n {
+        let command: Command = serde_json::from_str(json_chunk[i])
+            .map_err(|e| HttpError::ParseESLogJson { source: e })?;
+        let fields: Fields = serde_json::from_str(json_chunk[i + 1])
+            .map_err(|e| HttpError::ParseESLogJson { source: e })?;
+
+        eslogs.push(ESLog { fields, command });
+
+        i += 2;
+    }
+
+    Ok(eslogs)
+}
+
+async fn coord_write_eslog(
+    coord: &CoordinatorRef,
+    tenant: &str,
+    db: &str,
+    table: &str,
+    es_log: Vec<ESLog>,
+    time_alias: Option<String>,
+    msg_alias: Option<String>,
+    span_context: Option<&SpanContext>,
+) -> Result<Response, HttpError> {
+    let mut span_recorder = SpanRecorder::new(span_context.child_span("write points"));
+    let mut res: String = String::new();
+
+    let table_exist = {
+        if let Some(meta) = coord.meta_manager().tenant_meta(tenant).await {
+            meta.get_table_schema(db, table).unwrap().is_some()
+        } else {
+            return Err(HttpError::ParseESLog {
+                source: protocol_parser::ESLogError::InvaildSyntax,
+            });
+        }
+    };
+    let mut lines = Vec::new();
+
+    let time_key = time_alias.unwrap_or_default();
+    let msg_key = msg_alias.unwrap_or_default();
+
+    for (i, es) in es_log.iter().enumerate() {
+        let line = es_parse_to_line(es, table, &time_key, &msg_key)
+            .map_err(|e| HttpError::ParseESLog { source: e })?;
+        if let Command::Create(_) = es.command {
+            if table_exist {
+                res = format!("{}-create table has exist", i).to_string();
+                break;
+            }
+        }
+        lines.push(line);
+    }
+
+    coord
+        .write_lines(tenant, db, Precision::NS, lines, span_recorder.span_ctx())
+        .await
+        .map_err(|e| {
+            span_recorder.error(e.to_string());
+            e
+        })?;
+
+    if res.is_empty() {
+        Ok(ResponseBuilder::ok())
+    } else {
+        Ok(ResponseBuilder::new(warp::http::StatusCode::OK).build(res.into_bytes()))
+    }
 }
 
 async fn coord_write_points_with_span_recorder(
