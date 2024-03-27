@@ -17,8 +17,9 @@ use utils::BloomFilter;
 use super::statistics::ValueStatistics;
 use crate::compaction::CompactingBlock;
 use crate::error::IOSnafu;
-use crate::file_system::async_filesystem;
+use crate::file_system::async_filesystem::{LocalFileSystem, LocalFileType};
 use crate::file_system::file::stream_writer::FileStreamWriter;
+use crate::file_system::FileSystem;
 use crate::file_utils::{make_delta_file, make_tsm_file};
 use crate::tsm::codec::{
     get_bool_codec, get_f64_codec, get_i64_codec, get_str_codec, get_u64_codec,
@@ -769,7 +770,7 @@ pub struct Tsm2Writer {
     series_bloom_filter: BloomFilter,
     // todo: table object id bloom filter
     // table_bloom_filter: BloomFilter,
-    writer: FileStreamWriter,
+    writer: Box<FileStreamWriter>,
     options: WriteOptions,
     table_schemas: HashMap<String, TskvTableSchemaRef>,
 
@@ -796,11 +797,15 @@ impl Tsm2Writer {
         } else {
             make_tsm_file(path_buf, file_id)
         };
-        let file_cursor = async_filesystem::create_file(&file_path).await?;
-        let writer = Self::new(file_path, file_cursor.into(), file_id, max_size);
+        let file_system = LocalFileSystem::new(LocalFileType::ThreadPool);
+        let file = file_system
+            .open_file_writer(&file_path)
+            .await
+            .map_err(|e| Error::FileSystemError { source: e })?;
+        let writer = Self::new(file_path, file, file_id, max_size);
         Ok(writer)
     }
-    fn new(path: PathBuf, writer: FileStreamWriter, file_id: u64, max_size: u64) -> Self {
+    fn new(path: PathBuf, writer: Box<FileStreamWriter>, file_id: u64, max_size: u64) -> Self {
         Self {
             file_id,
             max_ts: i64::MIN,
@@ -875,7 +880,7 @@ impl Tsm2Writer {
 
     pub async fn write_chunk_group(&mut self) -> Result<()> {
         for (table, group) in &self.chunk_specs {
-            let chunk_group_offset = self.writer.pos();
+            let chunk_group_offset = self.writer.len() as u64;
             let buf = group.serialize()?;
             let chunk_group_size = self.writer.write(&buf).await?;
             self.size += chunk_group_size;
@@ -893,7 +898,7 @@ impl Tsm2Writer {
     }
 
     pub async fn write_chunk_group_specs(&mut self, series: SeriesMeta) -> Result<()> {
-        let chunk_group_specs_offset = self.writer.pos();
+        let chunk_group_specs_offset = self.writer.len() as u64;
         let buf = self.chunk_group_specs.serialize()?;
         let chunk_group_specs_size = self.writer.write(&buf).await?;
         self.size += chunk_group_specs_size;
@@ -909,10 +914,10 @@ impl Tsm2Writer {
     }
 
     pub async fn write_chunk(&mut self) -> Result<SeriesMeta> {
-        let chunk_offset = self.writer.pos();
+        let chunk_offset = self.writer.len() as u64;
         for (table, group) in &self.page_specs {
             for (series, chunk) in group {
-                let chunk_offset = self.writer.pos();
+                let chunk_offset = self.writer.len() as u64;
                 let buf = chunk.serialize()?;
                 let chunk_size = self.writer.write(&buf).await?;
                 self.size += chunk_size;
@@ -934,7 +939,7 @@ impl Tsm2Writer {
                 self.series_bloom_filter.insert(&series.to_be_bytes());
             }
         }
-        let chunk_size = self.writer.pos() - chunk_offset;
+        let chunk_size = self.writer.len() as u64 - chunk_offset;
         let series = SeriesMeta::new(
             self.series_bloom_filter.bytes().to_vec(),
             chunk_offset,
@@ -1005,7 +1010,7 @@ impl Tsm2Writer {
 
         let table = schema.name.clone();
         for page in pages {
-            let offset = self.writer.pos();
+            let offset = self.writer.len() as u64;
             let size = self.writer.write(&page.bytes).await?;
             self.size += size;
             let spec = PageWriteSpec {
@@ -1040,7 +1045,7 @@ impl Tsm2Writer {
         let mut new_column_group =
             self.create_column_group(schema.clone(), meta.series_id(), meta.series_key());
 
-        let mut offset = self.writer.pos();
+        let mut offset = self.writer.len() as u64;
         let size = self.writer.write(&raw).await?;
         self.size += size;
 

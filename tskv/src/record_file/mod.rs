@@ -53,11 +53,11 @@ pub const FILE_FOOTER_CRC32_NUMBER_LEN: usize = 4;
 /// If file_len > file_crc_source_len, footer crc32_number is
 /// hash(file[header_len..header_len + 1024]), otherwise
 /// hash(file[header_len..file_len - footer_len])
-pub fn file_crc_source_len(file_len: u64, file_footer_len: usize) -> usize {
-    if file_len > (FILE_MAGIC_NUMBER_LEN + 1024 + file_footer_len) as u64 {
+pub fn file_crc_source_len(file_len: usize, file_footer_len: usize) -> usize {
+    if file_len > (FILE_MAGIC_NUMBER_LEN + 1024 + file_footer_len) {
         1024
     } else {
-        (file_len - (FILE_MAGIC_NUMBER_LEN + file_footer_len) as u64) as usize
+        file_len - (FILE_MAGIC_NUMBER_LEN + file_footer_len)
     }
 }
 

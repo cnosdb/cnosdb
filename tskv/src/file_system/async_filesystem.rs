@@ -2,15 +2,14 @@ use std::fs;
 use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 
-use snafu::{ResultExt, Snafu};
+use snafu::Snafu;
 
+use crate::file_system::error::{FileSystemError, FileSystemResult};
 use crate::file_system::file::async_file::AsyncFile;
 use crate::file_system::file::mmap_file::MmapFile;
 use crate::file_system::file::stream_reader::FileStreamReader;
 use crate::file_system::file::stream_writer::FileStreamWriter;
-use crate::file_system::file::{ReadableFile, WritableFile};
 use crate::file_system::FileSystem;
-use crate::{error, Result};
 
 #[derive(Snafu, Debug)]
 pub enum FileError {
@@ -42,37 +41,53 @@ pub struct LocalFileSystem {
     file_type: LocalFileType, // ThreadPool, Mmap, Aio, IoUring
 }
 
+impl LocalFileSystem {
+    pub fn new(file_type: LocalFileType) -> Self {
+        Self { file_type }
+    }
+}
+
 unsafe impl Send for LocalFileSystem {}
 unsafe impl Sync for LocalFileSystem {}
 #[async_trait::async_trait]
 impl FileSystem for LocalFileSystem {
-    async fn open_file_reader(&self, path: impl AsRef<Path>) -> Result<Box<FileStreamReader>> {
+    async fn open_file_reader(
+        &self,
+        path: impl AsRef<Path> + Send + Sync,
+    ) -> FileSystemResult<Box<FileStreamReader>> {
         match self.file_type {
             LocalFileType::ThreadPool => Self::read_thread_pool_file(path).await,
             LocalFileType::Mmap => Self::read_mmap_file(path).await,
             _ => unimplemented!(),
         }
     }
-    async fn open_file_writer(&self, path: impl AsRef<Path>) -> Result<Box<FileStreamWriter>> {
+    async fn open_file_writer(
+        &self,
+        path: impl AsRef<Path> + Send + Sync,
+    ) -> FileSystemResult<Box<FileStreamWriter>> {
         match self.file_type {
             LocalFileType::ThreadPool => Self::write_thread_pool_file(path).await,
             LocalFileType::Mmap => Self::write_mmap_file(path).await,
             _ => unimplemented!(),
         }
     }
-    fn remove(path: impl AsRef<Path>) -> Result<()> {
-        fs::remove_file(path).context(error::IOSnafu)?;
+    fn remove(path: impl AsRef<Path>) -> FileSystemResult<()> {
+        fs::remove_file(path).map_err(|e| FileSystemError::StdIOError { source: e })?;
         Ok(())
     }
-    fn rename(old_filename: impl AsRef<Path>, new_filename: impl AsRef<Path>) -> Result<()> {
-        fs::rename(old_filename, new_filename).context(error::IOSnafu)?;
+    fn rename(
+        old_filename: impl AsRef<Path>,
+        new_filename: impl AsRef<Path>,
+    ) -> FileSystemResult<()> {
+        fs::rename(old_filename, new_filename)
+            .map_err(|e| FileSystemError::StdIOError { source: e })?;
         Ok(())
     }
 
-    fn create_dir_if_not_exists(parent: Option<&Path>) -> Result<()> {
+    fn create_dir_if_not_exists(parent: Option<&Path>) -> FileSystemResult<()> {
         if let Some(p) = parent {
             if !Self::try_exists(p) {
-                fs::create_dir_all(p).context(error::IOSnafu)?;
+                fs::create_dir_all(p).map_err(|e| FileSystemError::StdIOError { source: e })?;
             }
         }
         Ok(())
@@ -138,6 +153,7 @@ impl FileSystem for LocalFileSystem {
     }
 }
 
+#[derive(Debug, Clone)]
 pub enum LocalFileType {
     ThreadPool,
     Mmap,
@@ -147,42 +163,68 @@ pub enum LocalFileType {
 
 impl LocalFileSystem {
     /// Open a file to read.
-    pub async fn read_mmap_file(path: impl AsRef<Path>) -> Result<Box<FileStreamReader>> {
+    pub async fn read_mmap_file(path: impl AsRef<Path>) -> FileSystemResult<Box<FileStreamReader>> {
         let mut opt = OpenOptions::new();
-        opt.read(true);
-        let file = MmapFile::open(path, opt).await?;
-        Ok(Box::new(FileStreamReader::new(Box::new(file))))
+        opt.read(true).write(true);
+        let file = MmapFile::open(&path, opt)
+            .await
+            .map_err(|e| FileSystemError::StdIOError { source: e })?;
+        Ok(Box::new(FileStreamReader::new(
+            Box::new(file),
+            path.as_ref().to_path_buf(),
+        )))
     }
 
     /// Open a file to read or write, if file does not exists then create it.
-    pub async fn write_mmap_file(path: impl AsRef<Path>) -> Result<Box<FileStreamWriter>> {
+    pub async fn write_mmap_file(
+        path: impl AsRef<Path>,
+    ) -> FileSystemResult<Box<FileStreamWriter>> {
         let p = path.as_ref();
         Self::create_dir_if_not_exists(p.parent())?;
         let mut opt = OpenOptions::new();
-        opt.write(true).create(true);
-        let file = MmapFile::open(path, opt).await?;
-        Ok(Box::new(FileStreamWriter::new(Box::new(file))))
+        opt.write(true).create(true).read(true);
+        let file = MmapFile::open(&path, opt)
+            .await
+            .map_err(|e| FileSystemError::StdIOError { source: e })?;
+        Ok(Box::new(FileStreamWriter::new(
+            Box::new(file),
+            p.to_path_buf(),
+        )))
     }
 
-    pub async fn read_thread_pool_file(path: impl AsRef<Path>) -> Result<Box<FileStreamReader>> {
+    pub async fn read_thread_pool_file(
+        path: impl AsRef<Path>,
+    ) -> FileSystemResult<Box<FileStreamReader>> {
         let mut opt = OpenOptions::new();
         opt.read(true);
-        let file = AsyncFile::open(path, opt).await?;
-        Ok(Box::new(FileStreamReader::new(Box::new(file))))
+        let file = AsyncFile::open(&path, opt)
+            .await
+            .map_err(|e| FileSystemError::StdIOError { source: e })?;
+        Ok(Box::new(FileStreamReader::new(
+            Box::new(file),
+            path.as_ref().to_path_buf(),
+        )))
     }
 
-    pub async fn write_thread_pool_file(path: impl AsRef<Path>) -> Result<Box<FileStreamWriter>> {
+    pub async fn write_thread_pool_file(
+        path: impl AsRef<Path>,
+    ) -> FileSystemResult<Box<FileStreamWriter>> {
         let p = path.as_ref();
         Self::create_dir_if_not_exists(p.parent())?;
         let mut opt = OpenOptions::new();
         opt.write(true).create(true);
-        let file = AsyncFile::open(path, opt).await?;
-        Ok(Box::new(FileStreamWriter::new(Box::new(file))))
+        let file = AsyncFile::open(&path, opt)
+            .await
+            .map_err(|e| FileSystemError::StdIOError { source: e })?;
+        Ok(Box::new(FileStreamWriter::new(
+            Box::new(file),
+            p.to_path_buf(),
+        )))
     }
 
-    pub fn remove_if_exists(path: impl AsRef<Path>) -> Result<()> {
+    pub fn remove_if_exists(path: impl AsRef<Path>) -> FileSystemResult<()> {
         if Self::try_exists(&path) {
-            fs::remove_file(path)?;
+            fs::remove_file(path).map_err(|e| FileSystemError::StdIOError { source: e })?;
         }
         Ok(())
     }
@@ -208,46 +250,25 @@ impl LocalFileSystem {
 
 #[cfg(test)]
 mod test {
+    use std::io::SeekFrom;
     use std::path::PathBuf;
 
-    use trace::info;
-
     use super::LocalFileSystem;
-    use crate::file_system::async_filesystem;
-    use crate::file_system::file::stream_writer::FileStreamWriter;
-    use crate::file_system::file::WritableFile;
-
-    #[tokio::test]
-    async fn test_get_instance() {
-        let file_manager_1 = async_filesystem::get_file_system();
-        info!("0x{:X}", file_manager_1 as *const LocalFileSystem as usize);
-        let file_manager_2 = async_filesystem::get_file_system();
-        info!("0x{:X}", file_manager_2 as *const LocalFileSystem as usize);
-        assert_eq!(
-            file_manager_1 as *const LocalFileSystem as usize,
-            file_manager_2 as *const LocalFileSystem as usize
-        );
-
-        let file_manager_3 = LocalFileSystem::new();
-        info!("0x{:X}", &file_manager_3 as *const LocalFileSystem as usize);
-        assert_ne!(
-            file_manager_1 as *const LocalFileSystem as usize,
-            &file_manager_3 as *const LocalFileSystem as usize
-        );
-    }
+    use crate::file_system::FileSystem;
 
     #[tokio::test]
     async fn test_open_file() {
         let dir = "/tmp/test/file_manager/test_open_file";
         let _ = std::fs::remove_dir_all(dir);
         let path = PathBuf::from(dir).join("test.txt");
+        let file_system = LocalFileSystem::new(super::LocalFileType::Mmap);
 
-        let open_file_ret_1 = async_filesystem::open_file(&path).await;
+        let open_file_ret_1 = file_system.open_file_reader(&path).await;
         assert!(open_file_ret_1.is_err());
 
-        let _ = async_filesystem::create_file(&path).await.unwrap();
+        let _ = file_system.open_file_writer(&path).await.unwrap();
 
-        let open_file_ret_2 = async_filesystem::open_file(&path).await;
+        let open_file_ret_2 = file_system.open_file_reader(&path).await;
         assert!(open_file_ret_2.is_ok());
     }
 
@@ -256,15 +277,18 @@ mod test {
         let dir = "/tmp/test/file_manager/test_io_basic";
         let _ = std::fs::remove_dir_all(dir);
         let path = PathBuf::from(dir).join("test.txt");
+        let file_system = LocalFileSystem::new(super::LocalFileType::ThreadPool);
 
         {
             // Test creating a new file and write.
-            let file = async_filesystem::create_file(&path).await.unwrap();
+            let mut file = file_system.open_file_writer(&path).await.unwrap();
 
             let data = [0, 1, 2, 3];
             // Write 4 bytes data.
-            let len = file.write_at(0, &data).await.unwrap();
+            let len = file.write(&data).await.unwrap();
             assert_eq!(data.len(), len);
+
+            let file = file_system.open_file_reader(&path).await.unwrap();
 
             let mut buf = [0_u8; 2];
             let size = file.read_at(1, &mut buf).await.unwrap();
@@ -273,12 +297,15 @@ mod test {
         }
         {
             // Test overwriting a file.
-            let file = async_filesystem::create_file(&path).await.unwrap();
+            let mut file = file_system.open_file_writer(&path).await.unwrap();
+            file.seek(SeekFrom::Start(0)).await.unwrap();
 
             let data = [3, 2, 1, 0];
             // Write 4 bytes data.
-            let len = file.write_at(0, &data).await.unwrap();
+            let len = file.write(&data).await.unwrap();
             assert_eq!(data.len(), len);
+
+            let file = file_system.open_file_reader(&path).await.unwrap();
 
             let mut buf = [0_u8; 2];
             let size = file.read_at(1, &mut buf).await.unwrap();
@@ -287,12 +314,14 @@ mod test {
         }
         {
             // Test appending a file.
-            let file = async_filesystem::create_file(&path).await.unwrap();
+            let mut file = file_system.open_file_writer(&path).await.unwrap();
 
             let data = [0, 1, 2, 3];
             // Append 4 bytes data.
-            let len = file.write_at(file.file_size(), &data).await.unwrap();
+            let len = file.write(&data).await.unwrap();
             assert_eq!(data.len(), len);
+
+            let file = file_system.open_file_reader(&path).await.unwrap();
 
             let mut buf = [0_u8; 100];
             let size = file.read_at(0, &mut buf).await.unwrap();
@@ -313,37 +342,40 @@ mod test {
             data.extend_from_slice(chunk);
         }
 
-        let file = async_filesystem::create_file(&path).await.unwrap();
-        let mut len = 0_usize;
+        let file_system = LocalFileSystem::new(super::LocalFileType::ThreadPool);
+
+        let mut write_file = file_system.open_file_writer(&path).await.unwrap();
         // Write 32MB data.
         let file_len = data.len() * 32;
         for _ in 0..32 {
-            len += file.write_at(len as u64, &data).await.unwrap();
+            write_file.write(&data).await.unwrap();
         }
-        assert_eq!(len, file_len);
+        assert_eq!(write_file.len(), file_len);
 
         let mut buf = [0_u8; 8];
+        let read_file = file_system.open_file_reader(&path).await.unwrap();
 
         // Read 8 bytes at 1024.
-        len = file.read_at(1024, &mut buf).await.unwrap();
-        assert_eq!(len, buf.len());
+        read_file.read_at(1024, &mut buf).await.unwrap();
         assert_eq!(buf, [0, 1, 2, 3, 0, 1, 2, 3]);
 
         // Write 4 bytes at 1024 and read 8 bytes.
-        len = file.write_at(1024, &[1, 1, 1, 1]).await.unwrap();
+        write_file.seek(SeekFrom::Start(1024)).await.unwrap();
+        let mut len = write_file.write(&[1, 1, 1, 1]).await.unwrap();
         assert_eq!(len, 4);
-        let size = file.read_at(1024, &mut buf).await.unwrap();
+        let size = read_file.read_at(1024, &mut buf).await.unwrap();
         assert_eq!(size, buf.len());
         assert_eq!(buf, [1, 1, 1, 1, 0, 1, 2, 3]);
 
         // Write 8 bytes at end -4 and read 7 bytes at end - 4.
         let new_chunk = [11, 12, 13, 14, 15, 16, 17, 18];
-        len = file
-            .write_at((file_len - 4) as u64, &new_chunk)
+        write_file
+            .seek(SeekFrom::Start((file_len - 4) as u64))
             .await
             .unwrap();
+        len = write_file.write(&new_chunk).await.unwrap();
         assert_eq!(len, new_chunk.len());
-        len = file.read_at((file_len - 4) as u64, &mut buf).await.unwrap();
+        len = read_file.read_at(file_len - 4, &mut buf).await.unwrap();
         assert_eq!(len, buf.len());
         assert_eq!(buf, new_chunk);
     }
@@ -353,25 +385,27 @@ mod test {
         let dir = "/tmp/test/file_manager/test_truncate";
         let _ = std::fs::remove_dir_all(dir);
         let path = PathBuf::from(dir).join("test.txt");
+        let file_system = LocalFileSystem::new(super::LocalFileType::ThreadPool);
 
         let data = &[0, 1, 2, 3, 4, 5];
         {
-            let file = async_filesystem::create_file(&path).await.unwrap();
-            let mut len = file.write_at(0, data).await.unwrap();
+            let mut write_file = file_system.open_file_writer(&path).await.unwrap();
+            let read_file = file_system.open_file_reader(&path).await.unwrap();
+            let mut len = write_file.write(data).await.unwrap();
             assert_eq!(len, data.len());
 
             let mut buf = [0_u8; 2];
-            len = file.read_at(1, &mut buf).await.unwrap();
+            len = read_file.read_at(1, &mut buf).await.unwrap();
             assert_eq!(len, buf.len());
             assert_eq!(buf, [1, 2]);
 
-            file.truncate(3).await.unwrap();
+            write_file.truncate(3).await.unwrap();
         }
 
-        let file = async_filesystem::open_file(path).await.unwrap();
-        assert_eq!(file.file_size(), 3);
+        let read_file = file_system.open_file_reader(&path).await.unwrap();
+        assert_eq!(read_file.len(), 3);
         let mut buf = vec![0; 3];
-        let len = file.read_at(0, &mut buf).await.unwrap();
+        let len = read_file.read_at(0, &mut buf).await.unwrap();
         assert_eq!(len, 3);
         assert_eq!(buf.as_slice(), &data[0..3]);
     }
@@ -381,16 +415,17 @@ mod test {
         let dir = "/tmp/test/file_manager/test_cursor";
         let _ = std::fs::remove_dir_all(dir);
         let path = PathBuf::from(dir).join("test.txt");
+        let file_system = LocalFileSystem::new(super::LocalFileType::ThreadPool);
+        let mut write_file = file_system.open_file_writer(&path).await.unwrap();
+        let mut read_file = file_system.open_file_reader(&path).await.unwrap();
 
-        let file = async_filesystem::create_file(&path).await.unwrap();
-        let mut cursor: FileStreamWriter = file.into();
         for _ in 0..16 {
-            let len = cursor.write(&[0, 1, 2, 3, 4]).await.unwrap();
+            let len = write_file.write(&[0, 1, 2, 3, 4]).await.unwrap();
             assert_eq!(len, 5);
         }
-        cursor.set_pos(5);
+        read_file.seek(SeekFrom::Start(5)).unwrap();
         let mut buf = [0_u8; 8];
-        let len = cursor.read(&mut buf[0..5]).await.unwrap();
+        let len = read_file.read(&mut buf[0..5]).await.unwrap();
         assert_eq!(len, 5);
         assert_eq!(buf, [0, 1, 2, 3, 4, 0, 0, 0]);
     }

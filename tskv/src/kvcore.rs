@@ -20,14 +20,14 @@ use crate::compaction::{
 };
 use crate::database::Database;
 use crate::error::Result;
-use crate::file_system::{async_filesystem, FileSystem};
+use crate::file_system::async_filesystem::LocalFileSystem;
+use crate::file_system::FileSystem;
 use crate::kv_option::{Options, StorageOptions};
 use crate::summary::{Summary, SummaryTask};
 use crate::tseries_family::{SuperVersion, TseriesFamily};
 use crate::version_set::VersionSet;
 use crate::vnode_store::VnodeStorage;
 use crate::{file_utils, Engine, TsKvContext, TseriesFamilyId};
-use crate::file_system::async_filesystem::{LocalFileSystem, LocalFileType};
 
 // TODO: A small summay channel capacity can cause a block
 pub const COMPACT_REQ_CHANNEL_CAP: usize = 1024;

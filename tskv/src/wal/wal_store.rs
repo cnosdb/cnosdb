@@ -6,7 +6,8 @@ use replication::{EntryStorage, RaftNodeId, RaftNodeInfo, TypeConfig};
 use trace::info;
 
 use super::reader::WalRecordData;
-use crate::file_system::async_filesystem;
+use crate::file_system::async_filesystem::LocalFileSystem;
+use crate::file_system::FileSystem;
 use crate::vnode_store::VnodeStorage;
 use crate::wal::reader::{Block, WalReader};
 use crate::wal::VnodeWal;
@@ -51,7 +52,7 @@ impl EntryStorage for RaftEntryStorage {
                 .await
                 .map_err(|e| ReplicationError::RaftInternalErr { msg: e.to_string() })?;
 
-            self.inner.mark_write_wal(ent.clone(), wal_id, pos);
+            self.inner.mark_write_wal(ent.clone(), wal_id, pos).await;
         }
         Ok(())
     }
@@ -203,7 +204,7 @@ struct RaftEntryStorageInner {
 }
 
 impl RaftEntryStorageInner {
-    fn mark_write_wal(&mut self, entry: RaftEntry, wal_id: u64, pos: u64) {
+    async fn mark_write_wal(&mut self, entry: RaftEntry, wal_id: u64, pos: u64) {
         let index = entry.log_id.index;
         if let Some(item) = self
             .files_meta
@@ -218,7 +219,7 @@ impl RaftEntryStorageInner {
                 min_seq: u64::MAX,
                 max_seq: u64::MAX,
                 entry_index: vec![],
-                reader: self.wal.current_wal.new_reader(),
+                reader: self.wal.current_wal.new_reader().await,
             };
 
             item.entry_index.reserve(8 * 1024);
@@ -369,7 +370,7 @@ impl RaftEntryStorageInner {
 
     /// Read WAL files to recover: engine, index, cache.
     pub async fn recover(&mut self, vode_store: &mut VnodeStorage) -> Result<()> {
-        let wal_files = async_filesystem::list_file_names(self.wal.wal_dir());
+        let wal_files = LocalFileSystem::list_file_names(self.wal.wal_dir());
         for file_name in wal_files {
             // If file name cannot be parsed to wal id, skip that file.
             let wal_id = match file_utils::get_wal_file_id(&file_name) {
@@ -377,7 +378,7 @@ impl RaftEntryStorageInner {
                 Err(_) => continue,
             };
             let path = self.wal.wal_dir().join(&file_name);
-            if !async_filesystem::try_exists(&path) {
+            if !LocalFileSystem::try_exists(&path) {
                 continue;
             }
             let reader = self.wal.wal_reader(wal_id).await?;
@@ -405,7 +406,7 @@ impl RaftEntryStorageInner {
                                 }
                             }
 
-                            self.mark_write_wal(entry, wal_id, r.pos);
+                            self.mark_write_wal(entry, wal_id, r.pos).await;
                         }
                     }
                     Err(Error::Eof) => {

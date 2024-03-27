@@ -44,8 +44,8 @@ impl WritableFile for AsyncFile {
 
 #[async_trait::async_trait]
 impl file::ReadableFile for AsyncFile {
-    async fn read_at(&self, pos: u64, data: &mut [u8]) -> Result<usize> {
-        self.inner.pread(pos as usize, data).await
+    async fn read_at(&self, pos: usize, data: &mut [u8]) -> Result<usize> {
+        self.inner.pread(pos, data).await
     }
 
     fn file_size(&self) -> usize {
@@ -87,17 +87,19 @@ mod test {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use crate::file_system::file::async_file::AsyncFile;
+    use crate::file_system::async_filesystem::LocalFileType;
     use crate::file_system::file::raw_file::FsRuntime;
-    use crate::file_system::file::WritableFile;
+    use crate::file_system::FileSystem;
 
     #[tokio::test]
     #[ignore]
     async fn test() {
-        let runtime = Arc::new(FsRuntime::new_runtime());
+        let _runtime = Arc::new(FsRuntime::new_runtime());
         let mut opt = OpenOptions::new();
         opt.read(true).write(true).create(true).append(true);
-        let file = AsyncFile::open("test.txt", runtime, opt).await.unwrap();
+        let file_system =
+            crate::file_system::async_filesystem::LocalFileSystem::new(LocalFileType::ThreadPool);
+        let mut file = file_system.open_file_writer("test.txt").await.unwrap();
         let start_time = std::time::Instant::now();
         let target_duration = Duration::from_secs(5);
         let mut pos = 0;
@@ -106,7 +108,7 @@ mod test {
             if elapsed > target_duration {
                 break;
             }
-            pos += file.write_at(pos, b"hello worldhello worldhello worldhello worldhello worldhello worldhello worldhello worldhello worldh").await.unwrap() as u64;
+            pos += file.write(b"hello worldhello worldhello worldhello worldhello worldhello worldhello worldhello worldhello worldh").await.unwrap();
         }
         println!("write {} bytes", pos);
     }

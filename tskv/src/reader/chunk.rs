@@ -131,8 +131,8 @@ mod tests {
         let mut cgs = vec![];
         for (idx, ((time_s, tag_s), field_s)) in time_statistics
             .into_iter()
-            .zip(tag_statistics.into_iter())
-            .zip(field_statistics.into_iter())
+            .zip(tag_statistics)
+            .zip(field_statistics)
             .enumerate()
         {
             let mut cg = ColumnGroup::new(idx);

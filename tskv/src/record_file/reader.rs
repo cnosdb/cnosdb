@@ -1,6 +1,5 @@
 use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use snafu::ResultExt;
 
@@ -12,29 +11,33 @@ use super::{
 };
 use crate::byte_utils::decode_be_u32;
 use crate::error::{self, Error, Result};
-use crate::file_system::async_filesystem;
-use crate::file_system::file::async_file::AsyncFile;
-use crate::file_system::file::WritableFile;
+use crate::file_system::async_filesystem::{LocalFileSystem, LocalFileType};
+use crate::file_system::file::stream_reader::FileStreamReader;
+use crate::file_system::FileSystem;
 
 /// Returns footer position and footer data.
-pub async fn read_footer(path: impl AsRef<Path>) -> Result<(u64, [u8; FILE_FOOTER_LEN])> {
+pub async fn read_footer(path: impl AsRef<Path>) -> Result<(usize, [u8; FILE_FOOTER_LEN])> {
     let path = path.as_ref();
-    let file = async_filesystem::open_file(&path).await?;
+    let file_system = LocalFileSystem::new(LocalFileType::Mmap);
+    let file = file_system
+        .open_file_reader(path)
+        .await
+        .map_err(|e| Error::FileSystemError { source: e })?;
     read_footer_from(&file, path).await
 }
 
 /// Returns footer position and footer data.
 pub async fn read_footer_from(
-    file: &AsyncFile,
+    file: &FileStreamReader,
     file_path: impl AsRef<Path>,
-) -> Result<(u64, [u8; FILE_FOOTER_LEN])> {
-    if file.file_size() < (FILE_MAGIC_NUMBER_LEN + FILE_FOOTER_LEN) as u64 {
+) -> Result<(usize, [u8; FILE_FOOTER_LEN])> {
+    if file.len() < (FILE_MAGIC_NUMBER_LEN + FILE_FOOTER_LEN) {
         return Err(Error::NoFooter);
     }
 
     // Get file crc
-    let mut buf = vec![0_u8; file_crc_source_len(file.file_size(), FILE_FOOTER_LEN)];
-    if let Err(e) = file.read_at(FILE_MAGIC_NUMBER_LEN as u64, &mut buf).await {
+    let mut buf = vec![0_u8; file_crc_source_len(file.len(), FILE_FOOTER_LEN)];
+    if let Err(e) = file.read_at(FILE_MAGIC_NUMBER_LEN, &mut buf).await {
         return Err(Error::ReadFile {
             path: file_path.as_ref().to_path_buf(),
             source: e,
@@ -43,7 +46,7 @@ pub async fn read_footer_from(
     let crc = crc32fast::hash(&buf);
 
     // Read footer
-    let footer_pos = file.file_size() - FILE_FOOTER_LEN as u64;
+    let footer_pos = file.len() - FILE_FOOTER_LEN;
     let mut footer = [0_u8; FILE_FOOTER_LEN];
     if let Err(e) = file.read_at(footer_pos, &mut footer[..]).await {
         return Err(Error::ReadFile {
@@ -68,23 +71,27 @@ pub async fn read_footer_from(
 
 pub struct Reader {
     path: PathBuf,
-    file: Arc<AsyncFile>,
-    file_len: u64,
+    file: Box<FileStreamReader>,
+    file_len: usize,
     pos: usize,
     buf: Vec<u8>,
     buf_len: usize,
     buf_use: usize,
     footer: Option<[u8; FILE_FOOTER_LEN]>,
-    footer_pos: u64,
+    footer_pos: usize,
 }
 
 impl Reader {
     pub async fn open(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
-        let file = async_filesystem::open_file(path).await?;
+        let file_system = LocalFileSystem::new(LocalFileType::Mmap);
+        let file = file_system
+            .open_file_reader(path)
+            .await
+            .map_err(|e| Error::FileSystemError { source: e })?;
         let (footer_pos, footer) = match read_footer_from(&file, path).await {
             Ok((p, f)) => (p, Some(f)),
-            Err(Error::NoFooter) => (file.file_size(), None),
+            Err(Error::NoFooter) => (file.len(), None),
             Err(e) => {
                 trace::error!(
                     "Record file: Failed to read footer in '{}': {e}",
@@ -93,17 +100,17 @@ impl Reader {
                 return Err(e);
             }
         };
-        let file_len = file.file_size();
+        let file_len = file.len();
         let records_len = if footer_pos == file_len {
             // If there is no footer
-            file_len - FILE_MAGIC_NUMBER_LEN as u64
+            file_len - FILE_MAGIC_NUMBER_LEN
         } else {
-            file_len - FILE_FOOTER_LEN as u64 - FILE_MAGIC_NUMBER_LEN as u64
+            file_len - FILE_FOOTER_LEN - FILE_MAGIC_NUMBER_LEN
         };
-        let buf_size = records_len.min(READER_BUF_SIZE as u64) as usize;
+        let buf_size = records_len.min(READER_BUF_SIZE);
         Ok(Self {
             path: path.to_path_buf(),
-            file: Arc::new(file),
+            file,
             file_len,
             pos: FILE_MAGIC_NUMBER_LEN,
             buf: vec![0_u8; buf_size],
@@ -115,18 +122,18 @@ impl Reader {
     }
 
     pub(super) fn new(
-        file: Arc<AsyncFile>,
+        file: Box<FileStreamReader>,
         path: PathBuf,
-        len: u64,
+        len: usize,
         footer: Option<[u8; FILE_FOOTER_LEN]>,
     ) -> Self {
         let records_len = if footer.is_none() {
             // If there is no footer
-            len - FILE_MAGIC_NUMBER_LEN as u64
+            len - FILE_MAGIC_NUMBER_LEN
         } else {
-            len - FILE_FOOTER_LEN as u64 - FILE_MAGIC_NUMBER_LEN as u64
+            len - FILE_FOOTER_LEN - FILE_MAGIC_NUMBER_LEN
         };
-        let buf_size = records_len.min(READER_BUF_SIZE as u64) as usize;
+        let buf_size = records_len.min(READER_BUF_SIZE);
         Self {
             path,
             file,
@@ -147,7 +154,7 @@ impl Reader {
             self.buf_use = 0;
             return Ok(());
         }
-        if pos as u64 > self.file_len {
+        if pos > self.file_len {
             return Err(Error::Eof);
         }
 
@@ -201,7 +208,7 @@ impl Reader {
     pub async fn read_record(&mut self) -> Result<Record> {
         // The previous position, if the previous error is not the HashCheckFailed,
         // this value will be updated.
-        if (self.pos + RECORD_HEADER_LEN) as u64 >= self.footer_pos {
+        if (self.pos + RECORD_HEADER_LEN) >= self.footer_pos {
             return Err(Error::Eof);
         }
 
@@ -302,7 +309,7 @@ impl Reader {
         );
         self.buf_len = self
             .file
-            .read_at(self.pos as u64, &mut self.buf)
+            .read_at(self.pos, &mut self.buf)
             .await
             .map_err(|e| Error::ReadFile {
                 path: self.path.clone(),
@@ -327,7 +334,7 @@ impl Reader {
         let meta = tokio::fs::metadata(&self.path)
             .await
             .context(error::IOSnafu)?;
-        self.file_len = meta.len();
+        self.file_len = meta.len() as usize;
         if self.footer.is_none() {
             self.footer_pos = self.file_len;
         }
@@ -338,12 +345,12 @@ impl Reader {
         self.path.clone()
     }
 
-    pub fn len(&self) -> u64 {
+    pub fn len(&self) -> usize {
         self.file_len
     }
 
     pub fn is_empty(&self) -> bool {
-        self.file.is_empty()
+        self.file.len() == 0
     }
 
     pub fn pos(&self) -> usize {
@@ -534,13 +541,13 @@ pub(crate) mod test {
             let mut reader = Reader::open(&path).await.unwrap();
             assert_eq!(reader.pos, 4);
             assert_eq!(
-                reader.buf.len() as u64,
-                reader.len() - FILE_MAGIC_NUMBER_LEN as u64 - FILE_FOOTER_LEN as u64
+                reader.buf.len(),
+                reader.len() - FILE_MAGIC_NUMBER_LEN - FILE_FOOTER_LEN
             );
             assert_eq!(reader.buf_len, 0);
             assert_eq!(reader.buf_use, 0);
             assert_eq!(reader.footer, Some(footer));
-            assert_eq!(reader.footer_pos, reader.len() - FILE_FOOTER_LEN as u64);
+            assert_eq!(reader.footer_pos, reader.len() - FILE_FOOTER_LEN);
             // Test read record.
             let record = reader.read_record().await.unwrap();
             assert_eq!(record.pos, 4);

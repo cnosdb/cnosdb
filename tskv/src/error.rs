@@ -10,6 +10,7 @@ use protos::PointsError;
 use snafu::Snafu;
 use tonic::{Code, Status};
 
+use crate::file_system::error::FileSystemError;
 use crate::index::IndexError;
 use crate::record_file;
 use crate::schema::error::SchemaError;
@@ -126,6 +127,12 @@ pub enum Error {
     #[error_code(code = 16)]
     TagError {
         reason: String,
+    },
+
+    #[snafu(display("FileSystemError: {}", source))]
+    #[error_code(code = 17)]
+    FileSystemError {
+        source: FileSystemError,
     },
 
     // Internal Error

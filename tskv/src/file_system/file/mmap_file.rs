@@ -1,4 +1,4 @@
-use std::fs::{File, OpenOptions};
+use std::fs::OpenOptions;
 use std::io::Result;
 use std::path::Path;
 use std::sync::Arc;
@@ -70,7 +70,7 @@ impl WritableFile for MmapFile {
 
 #[async_trait::async_trait]
 impl ReadableFile for MmapFile {
-    async fn read_at(&self, pos: u64, data: &mut [u8]) -> Result<usize> {
+    async fn read_at(&self, pos: usize, data: &mut [u8]) -> Result<usize> {
         let mmap = self.mmap.clone();
         let size = self.size;
         let len = data.len();
@@ -78,7 +78,7 @@ impl ReadableFile for MmapFile {
         let size = asyncify(move || {
             unsafe {
                 let memory = std::slice::from_raw_parts(mmap.as_ptr(), size);
-                let src = memory.as_ptr().add(pos as usize);
+                let src = memory.as_ptr().add(pos);
                 ptr::copy_nonoverlapping(src, mem::transmute(dst), len);
             }
             Ok(len)

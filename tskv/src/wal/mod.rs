@@ -51,7 +51,8 @@ use tokio::sync::oneshot;
 
 use self::reader::WalReader;
 use self::writer::WalWriter;
-use crate::file_system::async_filesystem;
+use crate::file_system::async_filesystem::LocalFileSystem;
+use crate::file_system::FileSystem;
 use crate::kv_option::WalOptions;
 use crate::tsm::codec::{get_str_codec, StringCodec};
 pub use crate::wal::reader::{print_wal_statistics, Block};
@@ -238,7 +239,7 @@ impl VnodeWal {
     // delete wal files < seq
     async fn delete_wal_before_seq(&mut self, seq: u64) -> Result<()> {
         let mut delete_ids = vec![];
-        let wal_files = async_filesystem::list_file_names(self.wal_dir());
+        let wal_files = LocalFileSystem::list_file_names(self.wal_dir());
         for file_name in wal_files {
             // If file name cannot be parsed to wal id, skip that file.
             let wal_id = match file_utils::get_wal_file_id(&file_name) {
@@ -278,7 +279,7 @@ impl VnodeWal {
     pub async fn wal_reader(&mut self, wal_id: u64) -> Result<WalReader> {
         if wal_id == self.current_wal_id() {
             // Use the same wal as the writer.
-            let reader = self.current_wal.new_reader();
+            let reader = self.current_wal.new_reader().await;
             Ok(reader)
         } else {
             let wal_dir = self.config.wal_dir(&self.tenant_database, self.vnode_id);
@@ -288,7 +289,7 @@ impl VnodeWal {
         }
     }
 
-    pub async fn sync(&self) -> Result<()> {
+    pub async fn sync(&mut self) -> Result<()> {
         self.current_wal.sync().await
     }
 

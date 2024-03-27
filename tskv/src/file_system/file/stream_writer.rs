@@ -1,6 +1,6 @@
 use std::io::{Error, ErrorKind, IoSlice, Result, SeekFrom};
+use std::path::PathBuf;
 
-use crate::file_system::file::async_file::AsyncFile;
 use crate::file_system::file::WritableFile;
 
 #[derive(Debug)]
@@ -45,19 +45,23 @@ pub struct FileStreamWriter {
     file: Box<dyn WritableFile>,
     pos: usize,
     buf: Buffer,
+    path: PathBuf,
 }
 
 impl FileStreamWriter {
-    pub fn new(file: Box<dyn WritableFile>) -> Self {
+    pub fn new(file: Box<dyn WritableFile>, path_buf: PathBuf) -> Self {
+        let pos = file.file_size();
         Self {
             file,
-            pos: 0,
+            pos,
             buf: Buffer {
                 data: Vec::new(),
                 buffer_size: 1024 * 1024,
             },
+            path: path_buf,
         }
     }
+
     fn set_pos(&mut self, pos: usize) {
         self.pos = pos;
     }
@@ -121,10 +125,21 @@ impl FileStreamWriter {
         Ok(self.pos)
     }
 
+    pub async fn truncate(&mut self, size: usize) -> Result<()> {
+        self.file.truncate(size as u64).await?;
+        self.pos = size;
+        Ok(())
+    }
+
     pub fn len(&self) -> usize {
         self.file.file_size()
     }
+
     pub fn is_empty(&self) -> bool {
         self.file.is_empty()
+    }
+
+    pub fn path(&self) -> &PathBuf {
+        &self.path
     }
 }

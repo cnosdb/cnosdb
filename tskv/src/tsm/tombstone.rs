@@ -20,7 +20,8 @@ use models::{ColumnId, SeriesId};
 use tokio::sync::Mutex as AsyncMutex;
 use trace::error;
 
-use crate::file_system::async_filesystem;
+use crate::file_system::async_filesystem::LocalFileSystem;
+use crate::file_system::FileSystem;
 use crate::record_file::{self, RecordDataType, RecordDataVersion};
 use crate::{byte_utils, file_utils, Error, Result};
 
@@ -61,7 +62,7 @@ pub struct TsmTombstone {
 impl TsmTombstone {
     pub async fn open(path: impl AsRef<Path>, tsm_file_id: u64) -> Result<Self> {
         let path = file_utils::make_tsm_tombstone_file(path, tsm_file_id);
-        let (mut reader, writer) = if async_filesystem::try_exists(&path) {
+        let (mut reader, writer) = if LocalFileSystem::try_exists(&path) {
             (
                 Some(record_file::Reader::open(&path).await?),
                 Some(record_file::Writer::open(&path, RecordDataType::Tombstone).await?),
@@ -214,13 +215,14 @@ mod test {
     use models::predicate::domain::TimeRange;
 
     use super::TsmTombstone;
-    use crate::file_system::async_filesystem;
+    use crate::file_system::async_filesystem::LocalFileSystem;
+    use crate::file_system::FileSystem;
 
     #[tokio::test]
     async fn test_write_read_1() {
         let dir = PathBuf::from("/tmp/test/tombstone/1".to_string());
         let _ = std::fs::remove_dir_all(&dir);
-        if !async_filesystem::try_exists(&dir) {
+        if !LocalFileSystem::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
         }
         let mut tombstone = TsmTombstone::open(&dir, 1).await.unwrap();
@@ -246,7 +248,7 @@ mod test {
     async fn test_write_read_2() {
         let dir = PathBuf::from("/tmp/test/tombstone/2".to_string());
         let _ = std::fs::remove_dir_all(&dir);
-        if !async_filesystem::try_exists(&dir) {
+        if !LocalFileSystem::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
         }
 
@@ -290,7 +292,7 @@ mod test {
     async fn test_write_read_3() {
         let dir = PathBuf::from("/tmp/test/tombstone/3".to_string());
         let _ = std::fs::remove_dir_all(&dir);
-        if !async_filesystem::try_exists(&dir) {
+        if !LocalFileSystem::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
         }
 
