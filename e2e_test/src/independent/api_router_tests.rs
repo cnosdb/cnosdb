@@ -74,7 +74,8 @@ fn es_api_test() {
         Step::CnosdbRequest {
             req: CnosdbRequest::Write {
                 url: "http://127.0.0.1:8902/api/v1/es/write", 
-                req: "",
+                req: r#"{"create":{}}
+                {"msg":"test"}"#,
                 resp: Err(E2eError::Api {
                     status: StatusCode::UNPROCESSABLE_ENTITY,
                     url: None,
