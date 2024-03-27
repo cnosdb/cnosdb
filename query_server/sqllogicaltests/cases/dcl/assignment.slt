@@ -1,0 +1,49 @@
+statement ok
+drop database if exists test01;
+
+statement ok
+drop database if exists test02;
+
+statement ok
+drop tenant if exists tenant_test01;
+
+statement ok
+drop tenant if exists tenant_test02;
+
+statement ok
+drop table if exists test001;
+
+statement ok
+create database test01 WITH TTL '1000000d';
+
+statement ok
+create database test02 WITH TTL='1000000d';
+
+statement ok
+create tenant tenant_test01 with comment 'test1';
+
+statement ok
+create tenant tenant_test02 with comment='test2';
+
+statement ok
+alter tenant tenant_test01 set comment ' ';
+
+statement ok
+alter tenant tenant_test02 set comment = ' ';
+
+statement ok
+create table test001(d1 double);
+
+query I
+copy into 'file:///tmp/data/csv_out/'
+FROM test001
+file_format = (type 'csv');
+----
+0
+
+query I
+copy into 'file:///tmp/data/csv_out/'
+FROM test001
+file_format = (type='csv');
+----
+0
