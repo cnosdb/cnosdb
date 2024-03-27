@@ -109,6 +109,18 @@ pub enum Error {
     InvalidUTF8 {
         source: simdutf8::basic::Utf8Error,
     },
+
+    #[snafu(display("Error parsing message: {}", source))]
+    #[error_code(code = 16)]
+    ParseESLog {
+        source: protocol_parser::ESLogError,
+    },
+
+    #[snafu(display("Error parsing message: {}", source))]
+    #[error_code(code = 17)]
+    ParseESLogJson {
+        source: serde_json::Error,
+    },
 }
 
 impl From<tskv::TskvError> for Error {
@@ -174,6 +186,8 @@ impl From<&Error> for Response {
             | Error::NotFoundTenant { .. }
             | Error::EncodeResponse { .. }
             | Error::ParseLineProtocol { .. }
+            | Error::ParseESLog { .. }
+            | Error::ParseESLogJson { .. }
             | Error::InvalidUTF8 { .. } => {
                 ResponseBuilder::new(UNPROCESSABLE_ENTITY).json(&error_resp)
             }

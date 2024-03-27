@@ -10,6 +10,7 @@ pub enum HttpApiType {
 
     ApiV1Sql,
     ApiV1PromRead,
+    ApiV1ESLogWrite,
 }
 
 impl Display for HttpApiType {
@@ -33,6 +34,10 @@ impl Display for HttpApiType {
             HttpApiType::ApiV1PromRead => {
                 write!(f, "api/v1/prom/read")
             }
+
+            HttpApiType::ApiV1ESLogWrite => {
+                write!(f, "api/v1/es/write")
+            }
         }
     }
 }
@@ -44,6 +49,7 @@ pub fn metrics_record_db(api: &HttpApiType) -> bool {
         | HttpApiType::ApiV1OpenTsDBPut
         | HttpApiType::ApiV1OpenTsDBWrite
         | HttpApiType::ApiV1PromWrite
+        | HttpApiType::ApiV1ESLogWrite
         | HttpApiType::ApiV1PromRead => true,
         HttpApiType::ApiV1Sql => false,
     }
