@@ -484,3 +484,42 @@ fn explain_time_count_tests() {
         assert_eq!(resp, result_string);
     }
 }
+
+#[test]
+#[serial]
+fn split_test() {
+    // test for issue2019
+    let test_dir = "/tmp/e2e_test/client_tests/split_test";
+    // just open the server
+    let server = new_server(test_dir);
+
+    {
+        // data prepare
+        let url = "http://127.0.0.1:8902/api/v1/sql?db=public";
+        server
+            .client
+            .post(url, "create table test(str_col string, tags(ta));")
+            .unwrap();
+
+        let resp = server
+            .client
+            .post(url, "insert into test(str_col,ta)values('a1','str;str');")
+            .unwrap();
+
+        assert_response_is_ok!(resp);
+
+        let resp = server
+            .client
+            .post(url, "insert into test(str_col,ta)values('a2',';str');")
+            .unwrap();
+
+        assert_response_is_ok!(resp);
+
+        let resp = server
+            .client
+            .post(url, "select str_col,ta from test order by str_col;")
+            .unwrap();
+
+        assert_eq!(resp.text().unwrap(), "str_col,ta\na1,str;str\na2,;str\n");
+    }
+}
