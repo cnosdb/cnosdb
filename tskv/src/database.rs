@@ -422,18 +422,27 @@ impl Database {
         vnode_id: Option<TseriesFamilyId>,
         version_edits: &mut Vec<VersionEdit>,
         file_metas: &mut HashMap<ColumnFileId, Arc<BloomFilter>>,
-    ) {
+    ) -> Result<()> {
         if let Some(tsf_id) = vnode_id.as_ref() {
             if let Some(tsf) = self.ts_families.get(tsf_id) {
-                let ve = tsf.read().await.snapshot(self.owner.clone(), file_metas);
+                let ve = tsf
+                    .read()
+                    .await
+                    .snapshot(self.owner.clone(), file_metas)
+                    .await?;
                 version_edits.push(ve);
             }
         } else {
             for tsf in self.ts_families.values() {
-                let ve = tsf.read().await.snapshot(self.owner.clone(), file_metas);
+                let ve = tsf
+                    .read()
+                    .await
+                    .snapshot(self.owner.clone(), file_metas)
+                    .await?;
                 version_edits.push(ve);
             }
         }
+        Ok(())
     }
 
     pub async fn get_series_key(&self, vnode_id: u32, sid: u32) -> IndexResult<Option<SeriesKey>> {

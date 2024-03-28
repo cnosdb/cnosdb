@@ -39,7 +39,7 @@ pub struct ColumnFile {
     level: LevelId,
     time_range: TimeRange,
     size: u64,
-    field_id_filter: Arc<BloomFilter>,
+    field_id_filter: AsyncRwLock<Option<Arc<BloomFilter>>>,
     deleted: AtomicBool,
     compacting: Arc<AsyncRwLock<bool>>,
 
@@ -51,7 +51,7 @@ impl ColumnFile {
     pub fn with_compact_data(
         meta: &CompactMeta,
         path: impl AsRef<Path>,
-        field_id_filter: Arc<BloomFilter>,
+        field_id_filter: AsyncRwLock<Option<Arc<BloomFilter>>>,
         tsm_reader_cache: Weak<ShardedAsyncCache<String, Arc<TsmReader>>>,
     ) -> Self {
         Self {
@@ -101,25 +101,60 @@ impl ColumnFile {
         self.time_range.overlaps(time_range)
     }
 
-    pub fn contains_field_id(&self, field_id: FieldId) -> bool {
-        self.field_id_filter.contains(&field_id.to_be_bytes())
+    pub async fn contains_field_id(&self, field_id: FieldId) -> Result<bool> {
+        if let Some(filter) = self.field_id_filter.read().await.as_ref() {
+            Ok(filter.contains(&field_id.to_be_bytes()))
+        } else {
+            let bloom_fillter = self.load_bloom_fillter().await?;
+            let res = bloom_fillter.contains(&field_id.to_be_bytes());
+            *self.field_id_filter.write().await = Some(bloom_fillter);
+            Ok(res)
+        }
     }
 
-    pub fn contains_any_field_id(&self, field_ids: &[FieldId]) -> bool {
+    async fn load_bloom_fillter(&self) -> Result<Arc<BloomFilter>> {
+        if let Some(filter) = self.field_id_filter.read().await.as_ref() {
+            return Ok(filter.clone());
+        }
+        let bloom_fillter = if let Some(tsm_reader_cache) = self.tsm_reader_cache.upgrade() {
+            let reader = match tsm_reader_cache
+                .get(&format!("{}", self.path.display()))
+                .await
+            {
+                Some(r) => r,
+                None => {
+                    let reader = TsmReader::open(&self.path).await?;
+                    let reader = Arc::new(reader);
+                    tsm_reader_cache
+                        .insert(self.path.display().to_string(), reader.clone())
+                        .await;
+                    reader
+                }
+            };
+            reader.bloom_filter()
+        } else {
+            TsmReader::open(&self.path).await?.bloom_filter()
+        };
+        *self.field_id_filter.write().await = Some(bloom_fillter.clone());
+        Ok(bloom_fillter)
+    }
+
+    pub async fn contains_any_field_id(&self, field_ids: &[FieldId]) -> Result<bool> {
         for field_id in field_ids {
-            if self.field_id_filter.contains(&field_id.to_be_bytes()) {
-                return true;
+            if self.contains_field_id(*field_id).await? {
+                return Ok(true);
             }
         }
-        false
+        Ok(false)
     }
 
     pub async fn add_tombstone(&self, field_ids: &[FieldId], time_range: TimeRange) -> Result<()> {
         let dir = self.path.parent().expect("file has parent");
         // TODO flock tombstone file.
         let tombstone = TsmTombstone::open(dir, self.file_id).await?;
+        let bloom_filter = self.load_bloom_fillter().await?;
         tombstone
-            .add_range(field_ids, time_range, Some(self.field_id_filter.clone()))
+            .add_range(field_ids, time_range, Some(bloom_filter))
             .await?;
         tombstone.flush().await?;
         Ok(())
@@ -241,7 +276,7 @@ impl ColumnFile {
             level,
             time_range,
             size,
-            field_id_filter: Arc::new(BloomFilter::default()),
+            field_id_filter: AsyncRwLock::new(Some(Arc::new(BloomFilter::default()))),
             deleted: AtomicBool::new(false),
             compacting: Arc::new(AsyncRwLock::new(false)),
             path: path.as_ref().into(),
@@ -249,7 +284,7 @@ impl ColumnFile {
         }
     }
 
-    pub fn set_field_id_filter(&mut self, field_id_filter: Arc<BloomFilter>) {
+    pub fn set_field_id_filter(&mut self, field_id_filter: AsyncRwLock<Option<Arc<BloomFilter>>>) {
         self.field_id_filter = field_id_filter;
     }
 }
@@ -323,7 +358,7 @@ impl LevelInfo {
     pub fn push_compact_meta(
         &mut self,
         compact_meta: &CompactMeta,
-        field_filter: Arc<BloomFilter>,
+        field_filter: AsyncRwLock<Option<Arc<BloomFilter>>>,
         tsm_reader_cache: Weak<ShardedAsyncCache<String, Arc<TsmReader>>>,
     ) {
         let file_path = if compact_meta.is_delta {
@@ -416,19 +451,19 @@ impl LevelInfo {
         self.level
     }
 
-    pub fn overlaps_column_files(
+    pub async fn overlaps_column_files(
         &self,
         time_ranges: &TimeRanges,
         field_id: FieldId,
-    ) -> Vec<Arc<ColumnFile>> {
-        let mut res = self
-            .files
-            .iter()
-            .filter(|f| time_ranges.overlaps(f.time_range()) && f.contains_field_id(field_id))
-            .cloned()
-            .collect::<Vec<Arc<ColumnFile>>>();
+    ) -> Result<Vec<Arc<ColumnFile>>> {
+        let mut res = Vec::new();
+        for file in self.files.iter() {
+            if time_ranges.overlaps(file.time_range()) && file.contains_field_id(field_id).await? {
+                res.push(file.clone());
+            }
+        }
         res.sort_by_key(|f| *f.time_range());
-        res
+        Ok(res)
     }
 }
 
@@ -505,7 +540,7 @@ impl Version {
         version_edits: Vec<VersionEdit>,
         file_metas: &mut HashMap<ColumnFileId, Arc<BloomFilter>>,
         last_seq: Option<u64>,
-    ) -> Version {
+    ) -> Result<Version> {
         let mut added_files: Vec<Vec<CompactMeta>> = vec![vec![]; 5];
         let mut deleted_files: Vec<HashSet<ColumnFileId>> = vec![HashSet::new(); 5];
         for ve in version_edits.into_iter() {
@@ -537,10 +572,13 @@ impl Version {
             }
 
             for file in added_files[level_id].iter() {
-                let field_filter = file_metas.remove(&file.file_id).unwrap_or_default();
+                let field_filter = file_metas.remove(&file.file_id).unwrap_or_else(|| {
+                    error!("missing bloom filter for file_id: {}", file.file_id);
+                    Arc::new(BloomFilter::default())
+                });
                 new_levels[level_id].push_compact_meta(
                     file,
-                    field_filter,
+                    AsyncRwLock::new(Some(field_filter)),
                     weak_tsm_reader_cache.clone(),
                 );
             }
@@ -558,7 +596,7 @@ impl Version {
             tsm_reader_cache: self.tsm_reader_cache.clone(),
         };
         new_version.update_max_level_ts();
-        new_version
+        Ok(new_version)
     }
 
     fn update_max_level_ts(&mut self) {
@@ -647,21 +685,24 @@ impl Version {
             .delta_dir(&self.database, self.ts_family_id)
     }
 
-    pub fn column_files(
+    pub async fn column_files(
         &self,
         field_ids: &[FieldId],
         time_range: &TimeRange,
-    ) -> Vec<Arc<ColumnFile>> {
-        self.levels_info
-            .iter()
-            .filter(|level| level.time_range.overlaps(time_range))
-            .flat_map(|level| {
-                level.files.iter().filter(|f| {
-                    f.time_range().overlaps(time_range) && f.contains_any_field_id(field_ids)
-                })
-            })
-            .cloned()
-            .collect()
+    ) -> Result<Vec<Arc<ColumnFile>>> {
+        let mut res = Vec::new();
+        for level_info in self.levels_info.iter() {
+            if level_info.time_range.overlaps(time_range) {
+                for file in level_info.files.iter() {
+                    if file.time_range().overlaps(time_range)
+                        && file.contains_any_field_id(field_ids).await?
+                    {
+                        res.push(file.clone());
+                    }
+                }
+            }
+        }
+        Ok(res)
     }
 
     // todo:
@@ -684,22 +725,25 @@ impl Version {
     }
 
     // return: l0 , l1-l4 files
-    pub fn get_level_files(
+    pub async fn get_level_files(
         &self,
         time_ranges: &TimeRanges,
         field_id: FieldId,
-    ) -> [Option<Vec<Arc<ColumnFile>>>; 5] {
+    ) -> Result<[Option<Vec<Arc<ColumnFile>>>; 5]> {
         let mut res = MaybeUninit::uninit_array();
         debug_assert!(self.levels_info.len().eq(&5));
         for (res, level_info) in res.iter_mut().zip(self.levels_info.iter()) {
-            let files = level_info.overlaps_column_files(time_ranges, field_id);
+            let files = level_info
+                .overlaps_column_files(time_ranges, field_id)
+                .await?;
             if !files.is_empty() {
                 res.write(Some(files));
             } else {
                 res.write(None);
             }
         }
-        unsafe { MaybeUninit::array_assume_init(res) }
+        let ans = unsafe { MaybeUninit::array_assume_init(res) };
+        Ok(ans)
     }
 }
 
@@ -1082,11 +1126,11 @@ impl TseriesFamily {
     /// Snapshots last version before `last_seq` of this vnode.
     ///
     /// Db-files' index data (field-id filter) will be inserted into `file_metas`.
-    pub fn snapshot(
+    pub async fn snapshot(
         &self,
         owner: Arc<String>,
         file_metas: &mut HashMap<ColumnFileId, Arc<BloomFilter>>,
-    ) -> VersionEdit {
+    ) -> Result<VersionEdit> {
         let mut version_edit =
             VersionEdit::new_add_vnode(self.tf_id, owner.as_ref().clone(), self.seq_no);
         let version = self.version();
@@ -1096,11 +1140,12 @@ impl TseriesFamily {
                 meta.tsf_id = files.tsf_id;
                 meta.high_seq = self.seq_no;
                 version_edit.add_file(meta);
-                file_metas.insert(file.file_id, file.field_id_filter.clone());
+                let bloom_filter = file.load_bloom_fillter().await?;
+                file_metas.insert(file.file_id, bloom_filter);
             }
         }
 
-        version_edit
+        Ok(version_edit)
     }
 
     pub fn tf_id(&self) -> TseriesFamilyId {
@@ -1274,7 +1319,7 @@ pub mod test_tseries_family {
     fn test_version_update_max_ts_of_levels() {
         let opt = Arc::new(StorageOptions::default());
         let db = Arc::new("test".to_string());
-        let bloom_filter = Arc::new(BloomFilter::new(2));
+        let bloom_filter = Some(Arc::new(BloomFilter::new(2)));
         let lru_cache = ShardedAsyncCache::create_lru_sharded_cache(2);
         let reader_cache: Arc<ShardedAsyncCache<String, Arc<TsmReader>>> = Arc::new(lru_cache);
         {
@@ -1294,7 +1339,7 @@ pub mod test_tseries_family {
                     file_id: 1, file_size: 1, tsf_id: 1, level: 4, high_seq: 1, low_seq: 1, is_delta: false,
                     min_ts: 1000, max_ts: 2000,
                 },
-                bloom_filter.clone(), Arc::downgrade(&reader_cache),
+                AsyncRwLock::new(bloom_filter.clone()), Arc::downgrade(&reader_cache),
             );
             Version::update_max_ts_of_levels(&mut levels);
             assert!(levels[0].time_range.is_none());
@@ -1311,7 +1356,7 @@ pub mod test_tseries_family {
                     file_id: 1, file_size: 1, tsf_id: 1, level: 1, high_seq: 1, low_seq: 1, is_delta: false,
                     min_ts: 3001, max_ts: 4000,
                 },
-                bloom_filter.clone(), Arc::downgrade(&reader_cache),
+                AsyncRwLock::new(bloom_filter.clone()), Arc::downgrade(&reader_cache),
             );
             #[rustfmt::skip]
             levels[3].push_compact_meta(
@@ -1319,7 +1364,7 @@ pub mod test_tseries_family {
                     file_id: 1, file_size: 1, tsf_id: 1, level: 3, high_seq: 1, low_seq: 1, is_delta: false,
                     min_ts: 2001, max_ts: 3000,
                 },
-                bloom_filter.clone(), Arc::downgrade(&reader_cache),
+                AsyncRwLock::new(bloom_filter.clone()), Arc::downgrade(&reader_cache),
             );
             Version::update_max_ts_of_levels(&mut levels);
             assert!(levels[0].time_range.is_none());
@@ -1336,7 +1381,7 @@ pub mod test_tseries_family {
                     file_id: 1, file_size: 1, tsf_id: 1, level: 4, high_seq: 1, low_seq: 1, is_delta: false,
                     min_ts: 1, max_ts: i64::MAX,
                 },
-                bloom_filter, Arc::downgrade(&reader_cache),
+                AsyncRwLock::new(bloom_filter), Arc::downgrade(&reader_cache),
             );
             Version::update_max_ts_of_levels(&mut levels);
             assert!(levels[0].time_range.is_none());
@@ -1425,8 +1470,9 @@ pub mod test_tseries_family {
         let mut ve = VersionEdit::new(1);
         ve.del_file(1, 3, false);
         version_edits.push(ve);
-        let new_version =
-            version.copy_apply_version_edits(version_edits, &mut HashMap::new(), Some(3));
+        let new_version = version
+            .copy_apply_version_edits(version_edits, &mut HashMap::new(), Some(3))
+            .unwrap();
 
         assert_eq!(new_version.last_seq, 3);
         assert_eq!(new_version.max_level_ts, 3150);
@@ -1534,8 +1580,9 @@ pub mod test_tseries_family {
         ve.del_file(2, 1, false);
         ve.del_file(2, 2, false);
         version_edits.push(ve);
-        let new_version =
-            version.copy_apply_version_edits(version_edits, &mut HashMap::new(), Some(3));
+        let new_version = version
+            .copy_apply_version_edits(version_edits, &mut HashMap::new(), Some(3))
+            .unwrap();
 
         // [(none), (3151, 3151), (1, 3150), (none), (none)]
         assert_eq!(new_version.last_seq, 3);
@@ -1665,8 +1712,12 @@ pub mod test_tseries_family {
         mut summary_task_receiver: Receiver<SummaryTask>,
     ) {
         let mut version_edits: Vec<VersionEdit> = Vec::new();
+        let mut file_metas = HashMap::new();
         let mut min_seq: u64 = 0;
         while let Some(summary_task) = summary_task_receiver.recv().await {
+            if let Some(ref metas) = summary_task.file_metas {
+                file_metas.extend(metas.clone());
+            }
             for edit in summary_task.request.version_edits.into_iter() {
                 if edit.tsf_id == ts_family_id {
                     version_edits.push(edit.clone());
@@ -1679,11 +1730,10 @@ pub mod test_tseries_family {
         let version_set = version_set.write().await;
         if let Some(ts_family) = version_set.get_tsfamily_by_tf_id(ts_family_id).await {
             let mut ts_family = ts_family.write().await;
-            let new_version = ts_family.version().copy_apply_version_edits(
-                version_edits,
-                &mut HashMap::new(),
-                Some(min_seq),
-            );
+            let new_version = ts_family
+                .version()
+                .copy_apply_version_edits(version_edits, &mut file_metas, Some(min_seq))
+                .unwrap();
             ts_family.new_version(new_version, None);
         }
     }

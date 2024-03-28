@@ -196,16 +196,18 @@ impl VersionSet {
     /// Generated data is `VersionEdit`s for all vnodes and db-files,
     /// and `HashMap<ColumnFileId, Arc<BloomFilter>>` for index data
     /// (field-id filter) of db-files.
-    pub async fn snapshot(&self) -> (Vec<VersionEdit>, HashMap<ColumnFileId, Arc<BloomFilter>>) {
+    pub async fn snapshot(
+        &self,
+    ) -> Result<(Vec<VersionEdit>, HashMap<ColumnFileId, Arc<BloomFilter>>)> {
         let mut version_edits = vec![];
         let mut file_metas: HashMap<ColumnFileId, Arc<BloomFilter>> = HashMap::new();
         for db in self.dbs.values() {
             db.read()
                 .await
                 .snapshot(None, &mut version_edits, &mut file_metas)
-                .await;
+                .await?;
         }
-        (version_edits, file_metas)
+        Ok((version_edits, file_metas))
     }
 
     /// Try to build and send `FlushReq`s to flush job for all ts_families.

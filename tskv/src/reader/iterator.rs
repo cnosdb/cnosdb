@@ -1391,7 +1391,7 @@ impl SeriesGroupRowIterator {
         field_id: FieldId,
         value_type: ValueType,
     ) -> Result<(Option<Level0TSDataStream>, Option<Level14TSDataStream>)> {
-        let mut level_files = version.get_level_files(&time_ranges, field_id);
+        let mut level_files = version.get_level_files(&time_ranges, field_id).await?;
 
         let l0 = match level_files[0].take() {
             Some(fs) => Some(
