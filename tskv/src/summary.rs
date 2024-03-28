@@ -24,7 +24,6 @@ use crate::kv_option::{Options, StorageOptions, DELTA_PATH, TSM_PATH};
 use crate::memcache::MemCache;
 use crate::record_file::{Reader, RecordDataType, RecordDataVersion, Writer};
 use crate::tseries_family::{ColumnFile, LevelInfo, Version};
-use crate::tsm::TsmReader;
 use crate::version_set::VersionSet;
 use crate::{file_utils, ColumnFileId, LevelId, TseriesFamilyId};
 
@@ -351,7 +350,6 @@ impl Summary {
         flush_task_sender: Sender<FlushReq>,
         sequence_task_sender: Sender<GlobalSequenceTask>,
         compact_task_sender: Sender<CompactTask>,
-        load_field_filter: bool,
         metrics_register: Arc<MetricsRegister>,
     ) -> Result<Self> {
         let summary_path = opt.storage.summary_dir();
@@ -372,7 +370,6 @@ impl Summary {
             memory_pool,
             flush_task_sender,
             compact_task_sender,
-            load_field_filter,
             metrics_register.clone(),
         )
         .await?;
@@ -403,7 +400,6 @@ impl Summary {
         memory_pool: MemoryPoolRef,
         flush_task_sender: Sender<FlushReq>,
         compact_task_sender: Sender<CompactTask>,
-        load_field_filter: bool,
         metrics_register: Arc<MetricsRegister>,
     ) -> Result<VersionSet> {
         let mut tsf_edits_map: HashMap<TseriesFamilyId, Vec<VersionEdit>> = HashMap::new();
@@ -476,16 +472,9 @@ impl Summary {
             let weak_tsm_reader_cache = Arc::downgrade(&tsm_reader_cache);
             let mut levels = LevelInfo::init_levels(database.clone(), tsf_id, opt.storage.clone());
             for meta in files.into_values() {
-                let field_filter = if load_field_filter {
-                    let tsm_path = meta.file_path(opt.storage.as_ref(), &database, tsf_id);
-                    let tsm_reader = TsmReader::open(tsm_path).await?;
-                    tsm_reader.bloom_filter()
-                } else {
-                    Arc::new(BloomFilter::default())
-                };
                 levels[meta.level as usize].push_compact_meta(
                     &meta,
-                    field_filter,
+                    RwLock::new(None),
                     weak_tsm_reader_cache.clone(),
                 );
             }
@@ -595,7 +584,7 @@ impl Summary {
                     edits,
                     &mut file_metas,
                     min_seq.copied(),
-                );
+                )?;
 
                 // Try to replace tombstones with compact_tmp.
                 let mut replace_tombstone_compact_tmp_tasks =
@@ -666,7 +655,7 @@ impl Summary {
         if self.writer.file_size() >= self.opt.storage.max_summary_size {
             let (edits, file_metas) = {
                 let vs = self.version_set.read().await;
-                vs.snapshot().await
+                vs.snapshot().await?
             };
 
             let new_path = &file_utils::make_summary_file_tmp(self.opt.storage.summary_dir());
@@ -884,8 +873,8 @@ mod test {
     use metrics::metric_register::MetricsRegister;
     use models::schema::{make_owner, DatabaseSchema, TenantOptions};
     use tokio::runtime::Runtime;
-    use tokio::sync::mpsc;
     use tokio::sync::mpsc::Sender;
+    use tokio::sync::{mpsc, RwLock};
     use tokio::task::JoinHandle;
     use utils::BloomFilter;
 
@@ -1072,7 +1061,6 @@ mod test {
                     self.flush_task_sender.clone(),
                     self.global_seq_task_sender.clone(),
                     self.compact_task_sender.clone(),
-                    false,
                     Arc::new(MetricsRegister::default()),
                 ))
                 .unwrap()
@@ -1353,11 +1341,16 @@ mod test {
                 let vs = summary.version_set.read().await;
                 vs.get_tsfamily_by_tf_id(VNODE_ID).await.unwrap()
             };
-            let mut version = tsf.read().await.version().copy_apply_version_edits(
-                edits.clone(),
-                &mut HashMap::new(),
-                None,
-            );
+            let mut version = tsf
+                .read()
+                .await
+                .version()
+                .copy_apply_version_edits(
+                    edits.clone(),
+                    &mut HashMap::from([(15, Arc::new(BloomFilter::default()))]),
+                    None,
+                )
+                .unwrap();
             let tsm_reader_cache = Arc::downgrade(&version.tsm_reader_cache);
 
             let mut edit = VersionEdit::new(VNODE_ID);
@@ -1374,7 +1367,7 @@ mod test {
             };
             version.levels_info[1].push_compact_meta(
                 &meta,
-                Arc::new(BloomFilter::default()),
+                RwLock::new(Some(Arc::new(BloomFilter::default()))),
                 tsm_reader_cache,
             );
             tsf.write().await.new_version(version, None);
@@ -1382,7 +1375,11 @@ mod test {
             edits.push(edit);
 
             summary
-                .apply_version_edit(edits, HashMap::new(), HashMap::new())
+                .apply_version_edit(
+                    edits,
+                    HashMap::from([(15, Arc::new(BloomFilter::default()))]),
+                    HashMap::new(),
+                )
                 .await
                 .unwrap();
         });

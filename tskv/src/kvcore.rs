@@ -168,7 +168,6 @@ impl TsKv {
                 flush_task_sender,
                 global_seq_task_sender,
                 compact_task_sender,
-                true,
                 metrics.clone(),
             )
             .await
@@ -511,7 +510,11 @@ impl TsKv {
                     );
 
                     let version = ts_family.read().await.super_version();
-                    for column_file in version.version.column_files(&field_ids, &time_range) {
+                    for column_file in version
+                        .version
+                        .column_files(&field_ids, &time_range)
+                        .await?
+                    {
                         column_file.add_tombstone(&field_ids, time_range).await?;
                     }
                 } else {
@@ -564,7 +567,11 @@ impl TsKv {
                     ts_family.write().await.delete_columns(&field_ids);
 
                     let version = ts_family.read().await.super_version();
-                    for column_file in version.version.column_files(&field_ids, &time_range) {
+                    for column_file in version
+                        .version
+                        .column_files(&field_ids, &time_range)
+                        .await?
+                    {
                         column_file.add_tombstone(&field_ids, time_range).await?;
                     }
                 } else {
@@ -1137,7 +1144,11 @@ impl Engine for TsKv {
             // TODO: Send file_metas to the destination node.
             let mut file_metas = HashMap::new();
             if let Some(tsf) = db.get_tsfamily(vnode_id) {
-                let ve = tsf.read().await.snapshot(db.owner(), &mut file_metas);
+                let ve = tsf
+                    .read()
+                    .await
+                    .snapshot(db.owner(), &mut file_metas)
+                    .await?;
                 // it used for move vnode, set vnode status running at last
                 tsf.write().await.update_status(VnodeStatus::Running);
                 Ok(Some(ve))
