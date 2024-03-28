@@ -276,7 +276,7 @@ pub fn decode_buf_to_pages(
 
     for page in column_group.pages() {
         let offset = (page.offset() - column_group.pages_offset()) as usize;
-        let end = offset + page.size;
+        let end = offset + page.size as usize;
         let page_buf = pages_buf.get(offset..end).ok_or(TskvError::CommonError {
             reason: "page_buf get error".to_string(),
         })?;
@@ -314,7 +314,7 @@ pub async fn read_chunk_group_meta(
     footer: &Footer,
 ) -> TskvResult<ChunkGroupMeta> {
     let pos = footer.table.chunk_group_offset();
-    let mut buffer = vec![0u8; footer.table.chunk_group_size()];
+    let mut buffer = vec![0u8; footer.table.chunk_group_size() as usize];
     reader.read_at(pos, &mut buffer).await?; // read chunk group meta
     let specs = ChunkGroupMeta::deserialize(&buffer)?;
     Ok(specs)
@@ -327,7 +327,7 @@ pub async fn read_chunk_groups(
     let mut specs = BTreeMap::new();
     for chunk in chunk_group_meta.tables().values() {
         let pos = chunk.chunk_group_offset();
-        let mut buffer = vec![0u8; chunk.chunk_group_size()];
+        let mut buffer = vec![0u8; chunk.chunk_group_size() as usize];
         reader.read_at(pos, &mut buffer).await?; // read chunk group meta
         let group = Arc::new(ChunkGroup::deserialize(&buffer)?);
         specs.insert(chunk.name().to_string(), group);
@@ -343,7 +343,7 @@ pub async fn read_chunk(
     for group in chunk_group.values() {
         for chunk_spec in group.chunks() {
             let pos = chunk_spec.chunk_offset();
-            let mut buffer = vec![0u8; chunk_spec.chunk_size()];
+            let mut buffer = vec![0u8; chunk_spec.chunk_size() as usize];
             reader.read_at(pos, &mut buffer).await?;
             let chunk = Arc::new(Chunk::deserialize(&buffer)?);
             chunks.insert(chunk_spec.series_id, chunk);
@@ -354,7 +354,7 @@ pub async fn read_chunk(
 
 async fn read_page(reader: Arc<AsyncFile>, page_spec: &PageWriteSpec) -> TskvResult<Page> {
     let pos = page_spec.offset();
-    let mut buffer = vec![0u8; page_spec.size()];
+    let mut buffer = vec![0u8; page_spec.size() as usize];
     reader.read_at(pos, &mut buffer).await?;
     let page = Page {
         meta: page_spec.meta().clone(),

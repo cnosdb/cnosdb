@@ -16,7 +16,7 @@ pub struct ColumnGroup {
 }
 
 impl ColumnGroup {
-    pub fn new(id: usize) -> Self {
+    pub fn new(id: u64) -> Self {
         Self {
             column_group_id: id,
             pages_offset: 0,
@@ -57,7 +57,7 @@ impl ColumnGroup {
         if self.size != 0 {
             debug_assert_eq!(self.pages_offset + self.size, page.offset);
         }
-        self.size += page.size as u64;
+        self.size += page.size;
         self.pages.push(page);
     }
 

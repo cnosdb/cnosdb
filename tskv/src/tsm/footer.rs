@@ -61,11 +61,11 @@ pub struct TableMeta {
     // todo: bloomfilter, store table object id
     // bloom_filter: BloomFilter,
     chunk_group_offset: u64,
-    chunk_group_size: usize,
+    chunk_group_size: u64,
 }
 
 impl TableMeta {
-    pub fn new(chunk_group_offset: u64, chunk_group_size: usize) -> Self {
+    pub fn new(chunk_group_offset: u64, chunk_group_size: u64) -> Self {
         Self {
             chunk_group_offset,
             chunk_group_size,
@@ -76,7 +76,7 @@ impl TableMeta {
         self.chunk_group_offset
     }
 
-    pub fn chunk_group_size(&self) -> usize {
+    pub fn chunk_group_size(&self) -> u64 {
         self.chunk_group_size
     }
 }

@@ -136,7 +136,7 @@ impl Chunk {
 pub struct ChunkWriteSpec {
     pub(crate) series_id: SeriesId,
     pub(crate) chunk_offset: u64,
-    pub(crate) chunk_size: usize,
+    pub(crate) chunk_size: u64,
     pub(crate) statics: ChunkStatics,
 }
 
@@ -144,7 +144,7 @@ impl ChunkWriteSpec {
     pub fn new(
         series_id: SeriesId,
         chunk_offset: u64,
-        chunk_size: usize,
+        chunk_size: u64,
         statics: ChunkStatics,
     ) -> Self {
         Self {
@@ -163,7 +163,7 @@ impl ChunkWriteSpec {
         self.chunk_offset
     }
 
-    pub fn chunk_size(&self) -> usize {
+    pub fn chunk_size(&self) -> u64 {
         self.chunk_size
     }
 
