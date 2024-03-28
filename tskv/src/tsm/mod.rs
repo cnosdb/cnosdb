@@ -32,8 +32,8 @@ pub(crate) const MAX_BLOCK_VALUES: u32 = 1000;
 const HEADER_SIZE: usize = 5;
 const INDEX_META_SIZE: usize = 11;
 const BLOCK_META_SIZE: usize = 44;
-const BLOOM_FILTER_SIZE: usize = 64;
-const BLOOM_FILTER_BITS: u64 = 512; // 64 * 8
+const BLOOM_FILTER_SIZE: usize = 1024 * 1024 / 8; // 128KB
+const BLOOM_FILTER_BITS: u64 = 1024 * 1024; // 1MB
 const FOOTER_SIZE: usize = BLOOM_FILTER_SIZE + 8; // 72
 
 pub trait BlockReader {
