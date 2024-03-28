@@ -19,8 +19,12 @@ pub use tombstone::{Tombstone, TsmTombstone, TOMBSTONE_FILE_SUFFIX};
 
 use crate::tsm::data_block::DataBlock;
 
-const BLOOM_FILTER_BITS: u64 = 512; // 64 * 8
-const FOOTER_SIZE: usize = 129;
+const HEADER_SIZE: usize = 5;
+const INDEX_META_SIZE: usize = 11;
+const BLOCK_META_SIZE: usize = 44;
+const BLOOM_FILTER_SIZE: usize = 1024 * 1024 / 8; // 128KB
+const BLOOM_FILTER_BITS: u64 = 1024 * 1024; // 1MB
+const FOOTER_SIZE: usize = BLOOM_FILTER_SIZE + 8;
 
 pub type TsmWriteData = BTreeMap<String, BTreeMap<SeriesId, (SeriesKey, DataBlock)>>; // (table, (series_id, pages))
 
