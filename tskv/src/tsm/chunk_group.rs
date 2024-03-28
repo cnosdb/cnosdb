@@ -58,7 +58,7 @@ pub struct ChunkGroupWriteSpec {
     // pub(crate) id: TableId,
     pub(crate) table_schema: Arc<TskvTableSchema>,
     pub(crate) chunk_group_offset: u64,
-    pub(crate) chunk_group_size: usize,
+    pub(crate) chunk_group_size: u64,
     pub(crate) time_range: TimeRange,
     pub(crate) count: usize,
 }
@@ -67,7 +67,7 @@ impl ChunkGroupWriteSpec {
     pub fn new(
         table_schema: TskvTableSchemaRef,
         chunk_group_offset: u64,
-        chunk_group_size: usize,
+        chunk_group_size: u64,
         time_range: TimeRange,
         count: usize,
     ) -> Self {
@@ -88,7 +88,7 @@ impl ChunkGroupWriteSpec {
         self.chunk_group_offset
     }
 
-    pub fn chunk_group_size(&self) -> usize {
+    pub fn chunk_group_size(&self) -> u64 {
         self.chunk_group_size
     }
 

@@ -136,7 +136,7 @@ mod tests {
             .zip(field_statistics.into_iter())
             .enumerate()
         {
-            let mut cg = ColumnGroup::new(idx);
+            let mut cg = ColumnGroup::new(idx as u64);
             cg.push(PageWriteSpec::new(
                 0,
                 0,

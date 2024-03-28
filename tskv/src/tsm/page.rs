@@ -358,12 +358,12 @@ pub enum PageStatistics {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PageWriteSpec {
     pub(crate) offset: u64,
-    pub(crate) size: usize,
+    pub(crate) size: u64,
     pub(crate) meta: PageMeta,
 }
 
 impl PageWriteSpec {
-    pub fn new(offset: u64, size: usize, meta: PageMeta) -> Self {
+    pub fn new(offset: u64, size: u64, meta: PageMeta) -> Self {
         Self { offset, size, meta }
     }
 
@@ -371,7 +371,7 @@ impl PageWriteSpec {
         self.offset
     }
 
-    pub fn size(&self) -> usize {
+    pub fn size(&self) -> u64 {
         self.size
     }
 

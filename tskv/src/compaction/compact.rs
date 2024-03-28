@@ -940,7 +940,7 @@ fn new_compact_meta(
 ) -> CompactMeta {
     CompactMeta {
         file_id: tsm_writer.file_id(),
-        file_size: tsm_writer.size() as u64,
+        file_size: tsm_writer.size(),
         tsf_id,
         level,
         min_ts: tsm_writer.min_ts(),
@@ -999,7 +999,7 @@ pub mod test {
                 file_seq,
                 2,
                 TimeRange::new(writer.min_ts(), writer.max_ts()),
-                writer.size() as u64,
+                writer.size(),
                 false,
                 writer.path(),
             );

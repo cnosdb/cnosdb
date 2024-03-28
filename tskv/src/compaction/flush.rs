@@ -97,7 +97,7 @@ impl FlushTask {
             );
             let tsm_meta = compact_meta_builder.build(
                 tsm_writer.file_id(),
-                tsm_writer.size() as u64,
+                tsm_writer.size(),
                 1,
                 tsm_writer.min_ts(),
                 tsm_writer.max_ts(),
@@ -115,7 +115,7 @@ impl FlushTask {
 
             let delta_meta = compact_meta_builder.build(
                 delta_writer.file_id(),
-                delta_writer.size() as u64,
+                delta_writer.size(),
                 0,
                 delta_writer.min_ts(),
                 delta_writer.max_ts(),
@@ -180,14 +180,6 @@ pub async fn run_flush_memtable_job(
     }
 
     tsf.read().await.update_last_modified().await;
-    if trigger_compact {
-        let _ = ctx
-            .compact_task_sender
-            .send(CompactTask {
-                tsf_id: req.ts_family_id,
-            })
-            .await;
-    }
 
     info!(
         "Flush: completed: {req_str}, version edit: {:?}",
@@ -212,6 +204,15 @@ pub async fn run_flush_memtable_job(
         .is_err()
     {
         error!("Flush: failed to receive summary task result in 10 seconds for {req_str}",);
+    }
+
+    if trigger_compact {
+        let _ = ctx
+            .compact_task_sender
+            .send(CompactTask {
+                tsf_id: req.ts_family_id,
+            })
+            .await;
     }
 
     Ok(())

@@ -30,4 +30,4 @@ const FOOTER_SIZE: usize = 129;
 
 pub type TsmWriteData = BTreeMap<String, BTreeMap<SeriesId, (SeriesKey, DataBlock)>>; // (table, (series_id, pages))
 
-pub type ColumnGroupID = usize;
+pub type ColumnGroupID = u64;
