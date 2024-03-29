@@ -1036,7 +1036,11 @@ impl RowIterator {
             series_ids: self.series_ids.clone(),
             start,
             end,
-            batch_size: self.query_option.batch_size,
+            batch_size: self
+                .query_option
+                .split
+                .limit()
+                .unwrap_or(self.query_option.batch_size),
             i: start,
             columns: Vec::with_capacity(self.query_option.table_schema.columns().len()),
             is_finished: false,
