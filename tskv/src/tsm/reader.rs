@@ -20,8 +20,9 @@ use crate::tsm::codec::{
 use crate::tsm::tombstone::TsmTombstone;
 use crate::tsm::{
     get_data_block_meta_unchecked, get_index_meta_unchecked, BlockEntry, BlockMeta, DataBlock,
-    Index, IndexEntry, IndexMeta, BLOCK_META_SIZE, BLOOM_FILTER_SIZE, FOOTER_SIZE, INDEX_META_SIZE,
-    MAX_BLOCK_VALUES,
+    Index, IndexEntry, IndexMeta, BLOCK_META_SIZE, BLOOM_FILTER_BITS, BLOOM_FILTER_SIZE,
+    FOOTER_MAGIC_LEN, FOOTER_MAGIC_V1, FOOTER_SIZE, INDEX_META_SIZE, MAX_BLOCK_VALUES,
+    OLD_BLOOM_FILTER_SIZE, OLD_FOOTER_SIZE,
 };
 
 pub type ReadTsmResult<T, E = ReadTsmError> = std::result::Result<T, E>;
@@ -191,6 +192,83 @@ pub async fn print_tsm_statistics(path: impl AsRef<Path>, show_tombstone: bool) 
 
 pub async fn load_index(tsm_id: u64, reader: Arc<AsyncFile>) -> ReadTsmResult<Index> {
     let len = reader.len();
+    if len < FOOTER_MAGIC_LEN {
+        return Err(ReadTsmError::Invalid {
+            reason: format!(
+                "TSM file ({}) size less than FOOTER_MAGIC_LEN({})",
+                tsm_id, FOOTER_SIZE
+            ),
+        });
+    }
+
+    let buf = reader
+        .read_at(len - FOOTER_MAGIC_LEN, FOOTER_MAGIC_LEN as usize)
+        .await
+        .context(ReadIOSnafu)?;
+    if buf == FOOTER_MAGIC_V1.as_bytes() {
+        load_index_v2(tsm_id, reader).await
+    } else {
+        load_index_v1(tsm_id, reader).await
+    }
+}
+
+pub async fn load_index_v1(tsm_id: u64, reader: Arc<AsyncFile>) -> ReadTsmResult<Index> {
+    let len = reader.len();
+    if len < OLD_FOOTER_SIZE as u64 {
+        return Err(ReadTsmError::Invalid {
+            reason: format!(
+                "TSM file ({}) size less than OLD_FOOTER_SIZE({})",
+                tsm_id, OLD_FOOTER_SIZE
+            ),
+        });
+    }
+
+    // Read index data offset
+    let buf = reader
+        .read_at(len - OLD_FOOTER_SIZE as u64, OLD_FOOTER_SIZE)
+        .await
+        .context(ReadIOSnafu)?;
+
+    let offset = decode_be_u64(&buf[OLD_BLOOM_FILTER_SIZE..]);
+    if offset > len - OLD_FOOTER_SIZE as u64 {
+        return Err(ReadTsmError::Invalid {
+            reason: format!(
+                "TSM file ({}) size less than index offset({})",
+                tsm_id, offset
+            ),
+        });
+    }
+    let data_len = (len - offset - OLD_FOOTER_SIZE as u64) as usize;
+    // TODO if data_len is too big, read data part in parts and do not store it.
+    // Read index data
+    let data = reader
+        .read_at(offset, data_len)
+        .await
+        .context(ReadIOSnafu)?;
+
+    // Decode index data
+    let assumed_field_count = (data_len / (INDEX_META_SIZE + BLOCK_META_SIZE)) + 1;
+    let mut field_id_offs: Vec<(FieldId, usize)> = Vec::with_capacity(assumed_field_count);
+    let mut pos = 0_usize;
+    while pos < data_len {
+        field_id_offs.push((decode_be_u64(&data[pos..pos + 8]), pos));
+        pos += INDEX_META_SIZE + BLOCK_META_SIZE * decode_be_u16(&data[pos + 9..pos + 11]) as usize;
+    }
+    field_id_offs.sort_unstable_by_key(|e| e.0);
+    let mut bloom_filter = BloomFilter::new(BLOOM_FILTER_BITS);
+    for (field_id, _) in &field_id_offs {
+        bloom_filter.insert(&field_id.to_be_bytes());
+    }
+    Ok(Index::new(
+        tsm_id,
+        Arc::new(bloom_filter),
+        data,
+        field_id_offs,
+    ))
+}
+
+pub async fn load_index_v2(tsm_id: u64, reader: Arc<AsyncFile>) -> ReadTsmResult<Index> {
+    let len = reader.len();
     if len < FOOTER_SIZE as u64 {
         return Err(ReadTsmError::Invalid {
             reason: format!(
@@ -199,13 +277,14 @@ pub async fn load_index(tsm_id: u64, reader: Arc<AsyncFile>) -> ReadTsmResult<In
             ),
         });
     }
+
     // Read index data offset
     let buf = reader
         .read_at(len - FOOTER_SIZE as u64, FOOTER_SIZE)
         .await
         .context(ReadIOSnafu)?;
     let bloom_filter = BloomFilter::with_data(&buf[..BLOOM_FILTER_SIZE]);
-    let offset = decode_be_u64(&buf[BLOOM_FILTER_SIZE..]);
+    let offset = decode_be_u64(&buf[BLOOM_FILTER_SIZE..BLOOM_FILTER_SIZE + 8]);
     if offset > len - FOOTER_SIZE as u64 {
         return Err(ReadTsmError::Invalid {
             reason: format!(

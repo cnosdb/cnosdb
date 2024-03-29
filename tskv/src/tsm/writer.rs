@@ -6,7 +6,7 @@ use models::{FieldId, Timestamp};
 use snafu::{ResultExt, Snafu};
 use utils::BloomFilter;
 
-use super::EncodedDataBlock;
+use super::{EncodedDataBlock, FOOTER_MAGIC_V1};
 use crate::error::{self, Error, Result};
 use crate::file_system::file::cursor::FileCursor;
 use crate::file_system::file_manager;
@@ -527,6 +527,7 @@ async fn write_footer_to(
             [
                 IoSlice::new(bloom_filter.bytes()),
                 IoSlice::new(index_offset.to_be_bytes().as_slice()),
+                IoSlice::new(FOOTER_MAGIC_V1.as_bytes()),
             ]
             .as_mut_slice(),
         )

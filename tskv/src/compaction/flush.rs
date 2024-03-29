@@ -630,7 +630,7 @@ pub mod flush_tests {
             max_level_ts_before: max_level_ts,
             max_level_ts_after: 18,
             expected_delta_data: vec![expected_delta_data],
-            expected_file_size: vec![132326],
+            expected_file_size: vec![132330],
             expected_min_ts: vec![1],
             expected_max_ts: vec![18],
         }
