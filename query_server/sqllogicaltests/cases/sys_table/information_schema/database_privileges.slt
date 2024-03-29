@@ -69,6 +69,10 @@ statement ok
 create database if not exists test_dps_db with ttl '100000d';
 
 
+# test not exist database
+statement error Database not found
+grant read on database test_not_exist to test_dps_role1;
+
 # role1 read
 statement ok
 grant read on database test_dps_db to test_dps_role1;
