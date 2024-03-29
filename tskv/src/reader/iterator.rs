@@ -1027,6 +1027,10 @@ impl RowIterator {
     ) {
         let row_cols: Vec<Option<DataType>> =
             vec![None; self.query_option.table_schema.columns().len()];
+        let batch_size = std::cmp::min(
+            self.query_option.batch_size,
+            self.query_option.split.limit().unwrap_or(usize::MAX),
+        );
         let mut iter = SeriesGroupRowIterator {
             runtime: self.runtime.clone(),
             engine: self.engine.clone(),
@@ -1036,11 +1040,7 @@ impl RowIterator {
             series_ids: self.series_ids.clone(),
             start,
             end,
-            batch_size: self
-                .query_option
-                .split
-                .limit()
-                .unwrap_or(self.query_option.batch_size),
+            batch_size,
             i: start,
             columns: Vec::with_capacity(self.query_option.table_schema.columns().len()),
             is_finished: false,
