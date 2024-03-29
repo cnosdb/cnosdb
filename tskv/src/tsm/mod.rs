@@ -34,7 +34,13 @@ const INDEX_META_SIZE: usize = 11;
 const BLOCK_META_SIZE: usize = 44;
 const BLOOM_FILTER_SIZE: usize = 1024 * 1024 / 8; // 128KB
 const BLOOM_FILTER_BITS: u64 = 1024 * 1024; // 1MB
-const FOOTER_SIZE: usize = BLOOM_FILTER_SIZE + 8; // 72
+const FOOTER_SIZE: usize = BLOOM_FILTER_SIZE + 8 + 4; // 72
+
+const OLD_BLOOM_FILTER_SIZE: usize = 64;
+const OLD_BLOOM_FILTER_BITS: usize = 512;
+const OLD_FOOTER_SIZE: usize = OLD_BLOOM_FILTER_SIZE + 8;
+const FOOTER_MAGIC_V1: &str = "TSM1";
+const FOOTER_MAGIC_LEN: u64 = 4;
 
 pub trait BlockReader {
     fn decode(&mut self, block: &BlockMeta) -> crate::error::Result<DataBlock>;
