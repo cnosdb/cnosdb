@@ -772,6 +772,23 @@ impl TsfMetrics {
     pub fn record_cache_size(&self, size: u64) {
         self.vnode_cache_size.set(size)
     }
+
+    pub fn drop(register: &MetricsRegister, owner: &str, vnode_id: u64) {
+        let (tenant, db) = split_owner(owner);
+        let metric = register.metric::<U64Gauge>("vnode_disk_storage", "disk storage of vnode");
+        metric.remove([
+            ("tenant", tenant),
+            ("database", db),
+            ("vnode_id", vnode_id.to_string().as_str()),
+        ]);
+
+        let metric = register.metric::<U64Gauge>("vnode_cache_size", "cache size of vnode");
+        metric.remove([
+            ("tenant", tenant),
+            ("database", db),
+            ("vnode_id", vnode_id.to_string().as_str()),
+        ]);
+    }
 }
 
 #[derive(Debug)]
@@ -832,6 +849,11 @@ impl TsfFactory {
             tsf_metrics,
             status: VnodeStatus::Running,
         }
+    }
+
+    pub fn drop_tsf(&self, tf_id: u32) {
+        //todo other's thing may need to drop
+        TsfMetrics::drop(&self.metrics_register, self.database.as_str(), tf_id as u64);
     }
 }
 

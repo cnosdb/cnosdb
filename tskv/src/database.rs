@@ -207,6 +207,7 @@ impl Database {
         if let Some(tf) = self.ts_families.remove(&tf_id) {
             let owner = tf.read().await.tenant_database();
             let seq = tf.read().await.version().last_seq();
+            self.tsf_factory.drop_tsf(tf_id);
             let edit = VersionEdit::new_del_vnode(tf_id, owner.to_string(), seq);
             let (task_state_sender, task_state_receiver) = oneshot::channel();
             let task = SummaryTask::new(tf.clone(), edit, None, None, task_state_sender);
