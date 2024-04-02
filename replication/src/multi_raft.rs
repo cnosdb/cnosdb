@@ -42,9 +42,9 @@ impl MultiRaft {
         self.raft_nodes.contains_key(&id)
     }
 
-    pub async fn trigger_snapshot_purge_logs(nodes: Arc<RwLock<MultiRaft>>, seconds: u64) {
+    pub async fn trigger_snapshot_purge_logs(nodes: Arc<RwLock<MultiRaft>>, dur: Duration) {
         loop {
-            tokio::time::sleep(Duration::from_secs(seconds)).await;
+            tokio::time::sleep(dur).await;
 
             info!("------------ Begin nodes trigger snapshot ------------");
             let nodes = nodes.read().await;

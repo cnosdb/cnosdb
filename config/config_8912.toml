@@ -78,6 +78,7 @@ raft_logs_to_keep = 5000
 snapshot_holding_time = "3600s"
 lmdb_max_map_size = "1024000000B"
 heartbeat_interval = "3000ms"
+trigger_snapshot_interval = "600s"
 install_snapshot_timeout = "3600000ms"
 send_append_entries_timeout = "5000ms"
 

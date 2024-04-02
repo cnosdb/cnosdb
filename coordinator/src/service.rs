@@ -159,7 +159,7 @@ impl CoordService {
 
         tokio::spawn(MultiRaft::trigger_snapshot_purge_logs(
             raft_manager.multi_raft(),
-            10 * 60,
+            config.cluster.trigger_snapshot_interval,
         ));
 
         let coord = Arc::new(Self {
