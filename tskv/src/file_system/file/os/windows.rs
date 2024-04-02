@@ -6,6 +6,7 @@ use std::os::windows::io::AsRawHandle;
 use std::os::windows::prelude::RawHandle;
 
 use winapi::shared::minwindef::*;
+use winapi::shared::winerror::ERROR_HANDLE_EOF;
 use winapi::um::fileapi::*;
 use winapi::um::minwinbase::OVERLAPPED;
 
@@ -62,7 +63,12 @@ fn overlapped(pos: u64) -> OVERLAPPED {
 
 fn check_err(r: BOOL) -> Result<()> {
     if r == FALSE {
-        Err(Error::last_os_error())
+        let e = Error::last_os_error();
+        if e.raw_os_error() == Some(ERROR_HANDLE_EOF as i32) {
+            Ok(())
+        } else {
+            Err(e)
+        }
     } else {
         Ok(())
     }

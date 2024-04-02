@@ -95,8 +95,7 @@ impl VnodeOpener for TemporaryTableScanOpener {
 
                 let resp_stream = {
                     let channel = meta.get_node_conn(node_id).await.map_err(|error| {
-                        CoordinatorError::FailoverNode {
-                            id: node_id,
+                        CoordinatorError::PreExecution {
                             error: error.to_string(),
                         }
                     })?;
@@ -106,14 +105,7 @@ impl VnodeOpener for TemporaryTableScanOpener {
                         DEFAULT_GRPC_SERVER_MESSAGE_LEN,
                         grpc_enable_gzip,
                     );
-                    client
-                        .query_record_batch(request)
-                        .await
-                        .map_err(|error| CoordinatorError::FailoverNode {
-                            id: node_id,
-                            error: format!("{error:?}"),
-                        })?
-                        .into_inner()
+                    client.query_record_batch(request).await?.into_inner()
                 };
 
                 Ok(Box::pin(TonicRecordBatchDecoder::new(resp_stream))

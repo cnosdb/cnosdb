@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use coordinator::VnodeManagerCmdType;
+use coordinator::ReplicationCmdType;
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::DropVnode;
 use spi::Result;
@@ -25,8 +25,8 @@ impl DDLDefinitionTask for DropVnodeTask {
 
         let coord = query_state_machine.coord.clone();
 
-        let cmd_type = VnodeManagerCmdType::RemoveRaftNode(vnode_id);
-        coord.vnode_manager(tenant, cmd_type).await?;
+        let cmd_type = ReplicationCmdType::RemoveRaftNode(vnode_id);
+        coord.replication_manager(tenant, cmd_type).await?;
 
         Ok(Output::Nil(()))
     }

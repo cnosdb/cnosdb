@@ -127,9 +127,11 @@ struct CliArgs {
     #[arg(long, default_value = "false")]
     chunked: bool,
 
+    /// Stop when an error is encounter
     #[arg(long, default_value = "false")]
     error_stop: bool,
 
+    /// Enable client command
     #[arg(long, default_value = "false")]
     process_cli_command: bool,
 }
@@ -141,17 +143,22 @@ enum CliCommand {
     RestoreDumpDDL(RestoreDumpDDL),
 }
 
+/// Dump ddl to files, Support multi tenants
 #[derive(Debug, Clone, Args, PartialOrd, PartialEq)]
 struct DumpDDL {
+    /// Dump tenants
     #[arg(short, long)]
     tenant: Vec<Option<String>>,
 }
 
+/// Restore database from files
 #[derive(Debug, Clone, Args, PartialOrd, PartialEq)]
 struct RestoreDumpDDL {
+    /// Tenant wanna restore
     #[arg(short, long)]
     tenant: Option<String>,
 
+    /// Restore files
     #[arg()]
     files: Vec<String>,
 }

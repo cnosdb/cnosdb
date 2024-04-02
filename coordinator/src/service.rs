@@ -1,14 +1,12 @@
-#![allow(dead_code)]
-#![allow(unused)]
 #![allow(clippy::type_complexity)]
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt::Debug;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use std::{mem, thread, vec};
+use std::{mem, vec};
 
 use config::Config;
 use datafusion::arrow::array::{
@@ -18,11 +16,6 @@ use datafusion::arrow::array::{
 use datafusion::arrow::compute::take;
 use datafusion::arrow::datatypes::{DataType, TimeUnit};
 use datafusion::arrow::record_batch::RecordBatch;
-use datafusion::logical_expr::now;
-use datafusion::physical_plan::SendableRecordBatchStream;
-use futures::executor::block_on;
-use futures::StreamExt;
-use md5::digest::generic_array::arr;
 use memory_pool::MemoryPoolRef;
 use meta::error::MetaError;
 use meta::model::{MetaClientRef, MetaRef};
@@ -31,33 +24,31 @@ use metrics::label::Labels;
 use metrics::metric::Metric;
 use metrics::metric_register::MetricsRegister;
 use models::meta_data::{
-    ExpiredBucketInfo, MetaModifyType, ReplicationSet, ReplicationSetId, VnodeInfo, VnodeStatus,
+    ExpiredBucketInfo, MetaModifyType, NodeId, ReplicationSet, ReplicationSetId, VnodeId,
+    VnodeStatus,
 };
 use models::object_reference::ResolvedTable;
 use models::oid::Identifier;
 use models::predicate::domain::{ResolvedPredicate, ResolvedPredicateRef, TimeRange, TimeRanges};
 use models::schema::{
     timestamp_convert, ColumnType, Precision, ResourceInfo, ResourceOperator, ResourceStatus,
-    TskvTableSchema, TskvTableSchemaRef, DEFAULT_CATALOG, TIME_FIELD,
+    TskvTableSchemaRef, DEFAULT_CATALOG, TIME_FIELD, USAGE_SCHEMA,
 };
 use models::utils::now_timestamp_nanos;
-use models::{record_batch_decode, ColumnId, SeriesKey, Tag};
+use models::{record_batch_decode, SeriesKey, Tag};
 use protocol_parser::lines_convert::{
     arrow_array_to_points, line_to_batches, mutable_batches_to_point,
 };
 use protocol_parser::Line;
-use protos::kv_service::admin_command_request::Command::*;
-use protos::kv_service::tskv_service_client::TskvServiceClient;
+use protos::kv_service::admin_command::Command::*;
 use protos::kv_service::*;
 use replication::multi_raft::MultiRaft;
 use tokio::runtime::Runtime;
-use tokio::sync::mpsc::{self, Receiver};
+use tokio::sync::mpsc::Receiver;
 use tokio::task::JoinHandle;
-use tokio::time::{sleep, Instant};
+use tokio::time::Instant;
 use tokio_retry::strategy::{jitter, ExponentialBackoff};
 use tokio_retry::Retry;
-use tonic::transport::Channel;
-use tower::timeout::Timeout;
 use trace::{debug, error, info, SpanContext, SpanExt, SpanRecorder};
 use tskv::{EngineRef, TskvError};
 use utils::BkdrHasher;
@@ -65,29 +56,28 @@ use utils::BkdrHasher;
 use crate::errors::*;
 use crate::metrics::LPReporter;
 use crate::raft::manager::RaftNodesManager;
-use crate::raft::writer::RaftWriter;
+use crate::raft::writer::TskvRaftWriter;
 use crate::reader::table_scan::opener::TemporaryTableScanOpener;
 use crate::reader::tag_scan::opener::TemporaryTagScanOpener;
 use crate::reader::{CheckFuture, CheckedCoordinatorRecordBatchStream};
 use crate::resource_manager::ResourceManager;
+use crate::tskv_executor::{TskvAdminRequest, TskvLeaderExecutor};
 use crate::{
-    get_replica_all_info, get_vnode_all_info, status_response_to_result, Coordinator, QueryOption,
-    SendableCoordinatorRecordBatchStream, VnodeManagerCmdType, VnodeSummarizerCmdType,
+    get_replica_all_info, get_vnode_all_info, Coordinator, QueryOption, ReplicationCmdType,
+    SendableCoordinatorRecordBatchStream,
 };
 
 pub type CoordinatorRef = Arc<dyn Coordinator>;
-
-use models::schema::USAGE_SCHEMA;
-use protos::{tskv_service_time_out_client, DEFAULT_GRPC_SERVER_MESSAGE_LEN};
 
 #[derive(Clone)]
 pub struct CoordService {
     node_id: u64,
     meta: MetaRef,
     config: Config,
+
     runtime: Arc<Runtime>,
     kv_inst: Option<EngineRef>,
-    raft_writer: Arc<RaftWriter>,
+    memory_pool: MemoryPoolRef,
     metrics: Arc<CoordServiceMetrics>,
     raft_manager: Arc<RaftNodesManager>,
     async_task_joinhandle: Arc<Mutex<HashMap<String, JoinHandle<()>>>>,
@@ -172,19 +162,10 @@ impl CoordService {
             10 * 60,
         ));
 
-        let raft_writer = Arc::new(RaftWriter::new(
-            meta.clone(),
-            config.clone(),
-            kv_inst.clone(),
-            memory_pool,
-            raft_manager.clone(),
-        ));
-
         let coord = Arc::new(Self {
             runtime,
             kv_inst,
-
-            raft_writer,
+            memory_pool,
             raft_manager,
             meta: meta.clone(),
             config: config.clone(),
@@ -237,23 +218,9 @@ impl CoordService {
         modify_data: MetaModifyType,
     ) -> CoordinatorResult<()> {
         match modify_data {
-            MetaModifyType::ResourceInfo(mut resourceinfo) => {
+            MetaModifyType::ResourceInfo(resourceinfo) => {
                 if !resourceinfo.get_is_new_add() {
                     return Ok(()); // ignore the old task
-                }
-                // if unlocked, grab the lock
-                if !coord
-                    .meta_manager()
-                    .read_resourceinfos_mark()
-                    .await
-                    .map_err(|meta_err| CoordinatorError::Meta { source: meta_err })?
-                    .1
-                {
-                    coord
-                        .meta_manager()
-                        .write_resourceinfos_mark(coord.node_id(), true)
-                        .await
-                        .map_err(|meta_err| CoordinatorError::Meta { source: meta_err })?;
                 }
 
                 // if current node get the lock, handle meta modify
@@ -314,16 +281,37 @@ impl CoordService {
                     .await
                     .map_err(|meta_err| CoordinatorError::Meta { source: meta_err })?;
                 if node_metrics.id == id && lock {
-                    coord
+                    // unlock the dead node
+                    if let Err(e) = coord
                         .meta_manager()
                         .write_resourceinfos_mark(node_metrics.id, false)
                         .await
-                        .map_err(|meta_err| CoordinatorError::Meta { source: meta_err })?;
-                    coord
+                    {
+                        match e {
+                            MetaError::ResourceInfosMarkIsLock { .. } => {
+                                return Ok(());
+                            }
+                            _ => {
+                                return Err(CoordinatorError::Meta { source: e });
+                            }
+                        }
+                    }
+
+                    // grap lock again
+                    if let Err(e) = coord
                         .meta_manager()
                         .write_resourceinfos_mark(coord.node_id(), true)
                         .await
-                        .map_err(|meta_err| CoordinatorError::Meta { source: meta_err })?;
+                    {
+                        match e {
+                            MetaError::ResourceInfosMarkIsLock { .. } => {
+                                return Ok(());
+                            }
+                            _ => {
+                                return Err(CoordinatorError::Meta { source: e });
+                            }
+                        }
+                    }
                 }
 
                 // if current node get the lock, get the dead node task
@@ -365,7 +353,8 @@ impl CoordService {
                                 }
                             }
                             ResourceStatus::Executing => {
-                                ResourceManager::add_resource_task(coord, resourceinfo).await;
+                                let _ =
+                                    ResourceManager::add_resource_task(coord, resourceinfo).await;
                             }
                             ResourceStatus::Failed => {
                                 if let Ok(mut joinhandle_map) = coord.failed_task_joinhandle.lock()
@@ -406,7 +395,7 @@ impl CoordService {
             error!("failed to execute the async task: {}", meta_err.to_string());
         }
         // execute, if failed, retry later
-        ResourceManager::do_operator(coord.clone(), resourceinfo.clone()).await;
+        let _ = ResourceManager::do_operator(coord.clone(), resourceinfo.clone()).await;
     }
 
     async fn db_ttl_service(coord: Arc<CoordService>) {
@@ -508,26 +497,21 @@ impl CoordService {
         Box::pin(checker)
     }
 
-    async fn exec_admin_fetch_command_on_node(
+    async fn vnode_checksum_on_node(
         &self,
-        node_id: u64,
-        req: AdminFetchCommandRequest,
+        tenant: &str,
+        node_id: NodeId,
+        vnode_id: VnodeId,
     ) -> CoordinatorResult<RecordBatch> {
-        let channel = self.meta.get_node_conn(node_id).await?;
+        let request = AdminCommand {
+            tenant: tenant.to_string(),
+            command: Some(admin_command::Command::FetchChecksum(
+                FetchChecksumRequest { vnode_id },
+            )),
+        };
 
-        let request = tonic::Request::new(req.clone());
-        let mut client = tskv_service_time_out_client(
-            channel,
-            Duration::from_secs(60 * 60),
-            DEFAULT_GRPC_SERVER_MESSAGE_LEN,
-            self.config.service.grpc_enable_gzip,
-        );
-        let response = client
-            .exec_admin_fetch_command(request)
-            .await
-            .map_err(tskv::TskvError::from)?
-            .into_inner();
-        match record_batch_decode(&response.data) {
+        let data = self.admin_command_on_node(node_id, request).await?;
+        match record_batch_decode(&data) {
             Ok(r) => Ok(r),
             Err(e) => Err(CoordinatorError::ArrowError { source: e }),
         }
@@ -581,6 +565,40 @@ impl CoordService {
 
         Ok(requests)
     }
+
+    async fn admin_command_on_leader(
+        &self,
+        replica: ReplicationSet,
+        request: AdminCommand,
+    ) -> CoordinatorResult<()> {
+        let tenant = request.tenant.clone();
+        let caller = TskvAdminRequest {
+            request,
+            meta: self.meta.clone(),
+            timeout: Duration::from_secs(3600),
+            enable_gzip: self.config.service.grpc_enable_gzip,
+        };
+        let executor = TskvLeaderExecutor {
+            meta: self.meta.clone(),
+        };
+        executor.do_request(&tenant, &replica, &caller).await?;
+        Ok(())
+    }
+
+    async fn admin_command_on_node(
+        &self,
+        node_id: u64,
+        request: AdminCommand,
+    ) -> CoordinatorResult<Vec<u8>> {
+        let caller = TskvAdminRequest {
+            request,
+            meta: self.meta.clone(),
+            timeout: Duration::from_secs(3600),
+            enable_gzip: self.config.service.grpc_enable_gzip,
+        };
+
+        caller.do_request(node_id).await
+    }
 }
 
 //***************************** Coordinator Interface ***************************************** */
@@ -604,6 +622,19 @@ impl Coordinator for CoordService {
 
     async fn tenant_meta(&self, tenant: &str) -> Option<MetaClientRef> {
         self.meta.tenant_meta(tenant).await
+    }
+
+    fn tskv_raft_writer(&self, request: RaftWriteCommand) -> TskvRaftWriter {
+        TskvRaftWriter {
+            request,
+            meta: self.meta.clone(),
+            node_id: self.node_id,
+            memory_pool: self.memory_pool.clone(),
+            raft_manager: self.raft_manager.clone(),
+            timeout: self.config.query.write_timeout,
+            enable_gzip: self.config.service.grpc_enable_gzip,
+            total_memory: self.config.deployment.memory * 1024 * 1024 * 1024,
+        }
     }
 
     async fn table_vnodes(
@@ -645,56 +676,21 @@ impl Coordinator for CoordService {
         Ok(replica_sets)
     }
 
-    async fn exec_admin_command_on_node(
-        &self,
-        node_id: u64,
-        req: AdminCommandRequest,
-    ) -> CoordinatorResult<()> {
-        let channel = self.meta.get_node_conn(node_id).await?;
-
-        let mut client = tskv_service_time_out_client(
-            channel,
-            Duration::from_secs(60 * 60),
-            DEFAULT_GRPC_SERVER_MESSAGE_LEN,
-            self.config.service.grpc_enable_gzip,
-        );
-        let request = tonic::Request::new(req.clone());
-
-        let response = client
-            .exec_admin_command(request)
-            .await
-            .map_err(tskv::TskvError::from)?
-            .into_inner();
-        status_response_to_result(&response)
-    }
-
-    async fn exec_write_replica_points(
-        &self,
-        replica: ReplicationSet,
-        request: RaftWriteCommand,
-        span_ctx: Option<&SpanContext>,
-    ) -> CoordinatorResult<()> {
-        self.raft_writer
-            .write_to_local_or_forward(&replica, request, span_ctx)
-            .await
-    }
-
     async fn write_replica_by_raft(
         &self,
         replica: ReplicationSet,
         request: RaftWriteCommand,
-        span_ctx: Option<&SpanContext>,
+        _span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<()> {
-        self.raft_writer
-            .write_to_replica(
-                &replica,
-                request,
-                SpanRecorder::new(span_ctx.child_span(format!(
-                    "write to replica {} on node {}",
-                    replica.id, self.node_id
-                ))),
-            )
-            .await
+        let tenant = request.tenant.clone();
+        let writer = self.tskv_raft_writer(request);
+        let executor = TskvLeaderExecutor {
+            meta: self.meta.clone(),
+        };
+
+        executor.do_request(&tenant, &replica, &writer).await?;
+
+        Ok(())
     }
 
     async fn write_lines<'a>(
@@ -946,8 +942,6 @@ impl Coordinator for CoordService {
         table: &ResolvedTable,
         predicate: &ResolvedPredicate,
     ) -> CoordinatorResult<()> {
-        let nodes = self.meta.data_nodes().await;
-
         let replicas = self
             .prune_shards(
                 table.tenant(),
@@ -986,42 +980,38 @@ impl Coordinator for CoordService {
         Ok(())
     }
 
-    async fn vnode_manager(
+    async fn replication_manager(
         &self,
         tenant: &str,
-        cmd_type: VnodeManagerCmdType,
+        cmd_type: ReplicationCmdType,
     ) -> CoordinatorResult<()> {
-        let (grpc_req, req_node_id) = match cmd_type {
-            VnodeManagerCmdType::AddRaftFollower(replica_id, node_id) => {
-                let all_info = get_replica_all_info(self.meta.clone(), tenant, replica_id).await?;
-                if all_info.replica_set.by_node_id(node_id).is_some() {
+        let (request, replica) = match cmd_type {
+            ReplicationCmdType::AddRaftFollower(replica_id, node_id) => {
+                let replica = get_replica_all_info(self.meta.clone(), tenant, replica_id).await?;
+                if replica.replica_set.by_node_id(node_id).is_some() {
                     return Err(CoordinatorError::CommonError {
                         msg: format!("A Replication Already in {}", node_id),
                     });
                 }
-
                 (
-                    AdminCommandRequest {
+                    AdminCommand {
                         tenant: tenant.to_string(),
                         command: Some(AddRaftFollower(AddRaftFollowerRequest {
-                            db_name: all_info.db_name,
-                            replica_id: all_info.replica_set.id,
+                            db_name: replica.db_name,
+                            replica_id: replica.replica_set.id,
                             follower_nid: node_id,
                         })),
                     },
-                    all_info.replica_set.leader_node_id,
+                    replica.replica_set,
                 )
             }
 
-            VnodeManagerCmdType::RemoveRaftNode(vnode_id) => {
+            ReplicationCmdType::RemoveRaftNode(vnode_id) => {
                 let all_info = get_vnode_all_info(self.meta.clone(), tenant, vnode_id).await?;
                 let replica_id = all_info.repl_set_id;
-                let replica = get_replica_all_info(self.meta.clone(), tenant, replica_id)
-                    .await?
-                    .replica_set;
-
+                let replica = get_replica_all_info(self.meta.clone(), tenant, replica_id).await?;
                 (
-                    AdminCommandRequest {
+                    AdminCommand {
                         tenant: tenant.to_string(),
                         command: Some(RemoveRaftNode(RemoveRaftNodeRequest {
                             vnode_id,
@@ -1029,104 +1019,91 @@ impl Coordinator for CoordService {
                             db_name: all_info.db_name,
                         })),
                     },
-                    replica.leader_node_id,
+                    replica.replica_set,
                 )
             }
 
-            VnodeManagerCmdType::DestoryRaftGroup(replica_id) => {
-                let all_info = get_replica_all_info(self.meta.clone(), tenant, replica_id).await?;
-
+            ReplicationCmdType::DestoryRaftGroup(replica_id) => {
+                let replica = get_replica_all_info(self.meta.clone(), tenant, replica_id).await?;
                 (
-                    AdminCommandRequest {
+                    AdminCommand {
                         tenant: tenant.to_string(),
                         command: Some(DestoryRaftGroup(DestoryRaftGroupRequest {
                             replica_id,
-                            db_name: all_info.db_name,
+                            db_name: replica.db_name.clone(),
                         })),
                     },
-                    all_info.replica_set.leader_node_id,
+                    replica.replica_set,
                 )
-            }
-
-            VnodeManagerCmdType::Compact(vnode_ids) => {
-                // Group vnode ids by node id.
-                let mut node_vnode_ids_map: HashMap<u64, Vec<u32>> = HashMap::new();
-                for vnode_id in vnode_ids.iter() {
-                    let vnode = get_vnode_all_info(self.meta.clone(), tenant, *vnode_id).await?;
-                    node_vnode_ids_map
-                        .entry(vnode.node_id)
-                        .or_default()
-                        .push(*vnode_id);
-                }
-                let nodes = self.meta.data_nodes().await;
-
-                // Send grouped vnode ids to nodes.
-                let mut req_futures = vec![];
-                for node in nodes {
-                    if let Some(vnode_ids) = node_vnode_ids_map.remove(&node.id) {
-                        let cmd = AdminCommandRequest {
-                            tenant: tenant.to_string(),
-                            command: Some(CompactVnode(CompactVnodeRequest { vnode_ids })),
-                        };
-                        req_futures.push(self.exec_admin_command_on_node(node.id, cmd));
-                    }
-                }
-
-                for res in futures::future::join_all(req_futures).await {
-                    res?
-                }
-
-                return Ok(());
             }
         };
 
-        self.exec_admin_command_on_node(req_node_id, grpc_req).await
+        self.admin_command_on_leader(replica, request).await
     }
 
-    async fn vnode_summarizer(
-        &self,
-        tenant: &str,
-        cmd_type: VnodeSummarizerCmdType,
-    ) -> CoordinatorResult<Vec<RecordBatch>> {
-        match cmd_type {
-            VnodeSummarizerCmdType::Checksum(replica_id) => {
-                let replica = get_replica_all_info(self.meta.clone(), tenant, replica_id)
-                    .await?
-                    .replica_set;
+    async fn compact_vnodes(&self, tenant: &str, vnode_ids: Vec<VnodeId>) -> CoordinatorResult<()> {
+        // Group vnode ids by node id.
+        let mut node_vnode_ids_map: HashMap<u64, Vec<u32>> = HashMap::new();
+        for vnode_id in vnode_ids.iter() {
+            let vnode = get_vnode_all_info(self.meta.clone(), tenant, *vnode_id).await?;
+            node_vnode_ids_map
+                .entry(vnode.node_id)
+                .or_default()
+                .push(*vnode_id);
+        }
+        let nodes = self.meta.data_nodes().await;
 
-                // Group vnode ids by node id.
-                let mut node_vnode_ids_map: HashMap<u64, Vec<u32>> = HashMap::new();
-                for vnode in replica.vnodes {
-                    node_vnode_ids_map
-                        .entry(vnode.node_id)
-                        .or_default()
-                        .push(vnode.id);
-                }
-
-                let nodes = self.meta.data_nodes().await;
-
-                // Send grouped vnode ids to nodes.
-                let mut req_futures = vec![];
-                for node in nodes {
-                    if let Some(vnode_ids) = node_vnode_ids_map.remove(&node.id) {
-                        for vnode_id in vnode_ids {
-                            let cmd = AdminFetchCommandRequest {
-                                tenant: tenant.to_string(),
-                                command: Some(
-                                    admin_fetch_command_request::Command::FetchVnodeChecksum(
-                                        FetchVnodeChecksumRequest { vnode_id },
-                                    ),
-                                ),
-                            };
-                            req_futures.push(self.exec_admin_fetch_command_on_node(node.id, cmd));
-                        }
-                    }
-                }
-                let record_batches = futures::future::try_join_all(req_futures).await?;
-
-                return Ok(record_batches);
+        // Send grouped vnode ids to nodes.
+        let mut req_futures = vec![];
+        for node in nodes {
+            if let Some(vnode_ids) = node_vnode_ids_map.remove(&node.id) {
+                let cmd = AdminCommand {
+                    tenant: tenant.to_string(),
+                    command: Some(CompactVnode(CompactVnodeRequest { vnode_ids })),
+                };
+                req_futures.push(self.admin_command_on_node(node.id, cmd));
             }
         }
+
+        for res in futures::future::join_all(req_futures).await {
+            res?;
+        }
+
+        return Ok(());
+    }
+
+    async fn replica_checksum(
+        &self,
+        tenant: &str,
+        replica_id: ReplicationSetId,
+    ) -> CoordinatorResult<Vec<RecordBatch>> {
+        let replica = get_replica_all_info(self.meta.clone(), tenant, replica_id)
+            .await?
+            .replica_set;
+
+        // Group vnode ids by node id.
+        let mut node_vnode_ids_map: HashMap<u64, Vec<u32>> = HashMap::new();
+        for vnode in replica.vnodes {
+            node_vnode_ids_map
+                .entry(vnode.node_id)
+                .or_default()
+                .push(vnode.id);
+        }
+
+        let nodes = self.meta.data_nodes().await;
+
+        // Send grouped vnode ids to nodes.
+        let mut req_futures = vec![];
+        for node in nodes {
+            if let Some(vnode_ids) = node_vnode_ids_map.remove(&node.id) {
+                for vnode_id in vnode_ids {
+                    req_futures.push(self.vnode_checksum_on_node(tenant, node.id, vnode_id));
+                }
+            }
+        }
+        let record_batches = futures::future::try_join_all(req_futures).await?;
+
+        Ok(record_batches)
     }
 
     fn metrics(&self) -> &Arc<CoordServiceMetrics> {
@@ -1151,8 +1128,6 @@ impl Coordinator for CoordService {
                     name: tenant.to_string(),
                 })?;
 
-        let mut min_ts = i64::MIN;
-        let mut max_ts = i64::MAX;
         let mut series_keys = vec![];
         for new_tag in new_tags.iter_mut() {
             let key = mem::take(&mut new_tag.key);
@@ -1160,7 +1135,7 @@ impl Coordinator for CoordService {
 
             let id = table_schema
                 .column(&tag_name)
-                .ok_or({ TskvError::ColumnNotFound { column: tag_name } })?
+                .ok_or(TskvError::ColumnNotFound { column: tag_name })?
                 .id;
             new_tag.key = format!("{id}").into_bytes();
         }

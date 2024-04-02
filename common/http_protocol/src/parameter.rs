@@ -30,3 +30,13 @@ pub struct DumpParam {
 pub struct DebugParam {
     pub id: Option<u32>,
 }
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub struct ESLogParam {
+    pub tenant: Option<String>,
+    pub db: Option<String>,
+    pub table: Option<String>,
+    pub msg_field: Option<String>,
+    pub time_field: Option<String>,
+}

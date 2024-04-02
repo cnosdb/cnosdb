@@ -161,8 +161,7 @@ pub struct VersionEdit {
     pub add_files: Vec<CompactMeta>,
     pub del_files: Vec<CompactMeta>,
 
-    pub del_tsf: bool,
-    pub add_tsf: bool,
+    pub act_tsf: VnodeAction,
     pub tsf_id: TseriesFamilyId,
     pub tsf_name: String,
 }
@@ -175,8 +174,7 @@ impl Default for VersionEdit {
             max_level_ts: i64::MIN,
             add_files: vec![],
             del_files: vec![],
-            del_tsf: false,
-            add_tsf: false,
+            act_tsf: VnodeAction::Update,
             tsf_id: 0,
             tsf_name: String::from(""),
         }
@@ -187,8 +185,7 @@ impl VersionEdit {
     pub fn new_update_vnode(vnode_id: u32, owner: String, seq_no: u64) -> Self {
         Self {
             seq_no,
-            add_tsf: false,
-            del_tsf: false,
+            act_tsf: VnodeAction::Update,
             tsf_name: owner,
             tsf_id: vnode_id,
 
@@ -199,7 +196,7 @@ impl VersionEdit {
     pub fn new_add_vnode(vnode_id: u32, owner: String, seq_no: u64) -> Self {
         Self {
             seq_no,
-            add_tsf: true,
+            act_tsf: VnodeAction::Add,
             tsf_id: vnode_id,
             tsf_name: owner,
 
@@ -210,7 +207,7 @@ impl VersionEdit {
     pub fn new_del_vnode(vnode_id: u32, owner: String, seq_no: u64) -> Self {
         Self {
             seq_no,
-            del_tsf: true,
+            act_tsf: VnodeAction::Delete,
             tsf_id: vnode_id,
             tsf_name: owner,
 
@@ -290,8 +287,25 @@ impl VersionEdit {
 
 impl Display for VersionEdit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "seq_no: {}, file_id: {}, add_files: {}, del_files: {}, del_tsf: {}, add_tsf: {}, tsf_id: {}, tsf_name: {}, max_level_ts: {}",
-               self.seq_no, self.file_id, self.add_files.len(), self.del_files.len(), self.del_tsf, self.add_tsf, self.tsf_id, self.tsf_name, self.max_level_ts)
+        write!(f, "seq_no: {}, file_id: {}, add_files: {}, del_files: {}, act_tsf: {}, tsf_id: {}, tsf_name: {}, max_level_ts: {}",
+               self.seq_no, self.file_id, self.add_files.len(), self.del_files.len(), self.act_tsf, self.tsf_id, self.tsf_name, self.max_level_ts)
+    }
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub enum VnodeAction {
+    Add,
+    Delete,
+    Update,
+}
+
+impl Display for VnodeAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            VnodeAction::Add => write!(f, "Add"),
+            VnodeAction::Delete => write!(f, "Delete"),
+            VnodeAction::Update => write!(f, "Update"),
+        }
     }
 }
 
@@ -416,13 +430,13 @@ impl Summary {
             match res {
                 Ok(result) => {
                     let ed = VersionEdit::decode(&result.data)?;
-                    if ed.add_tsf {
+                    if ed.act_tsf == VnodeAction::Add {
                         let db_ref = database_map
                             .entry(ed.tsf_name.clone())
                             .or_insert_with(|| Arc::new(ed.tsf_name.clone()));
                         tsf_database_map.insert(ed.tsf_id, db_ref.clone());
                         tsf_edits_map.insert(ed.tsf_id, vec![ed]);
-                    } else if ed.del_tsf {
+                    } else if ed.act_tsf == VnodeAction::Delete {
                         tsf_edits_map.remove(&ed.tsf_id);
                         tsf_database_map.remove(&ed.tsf_id);
                     } else if let Some(data) = tsf_edits_map.get_mut(&ed.tsf_id) {
@@ -584,11 +598,11 @@ pub async fn print_summary_statistics(path: impl AsRef<Path>) {
                 println!("VersionEdit #{}, vnode_id: {}", i, ve.tsf_id);
                 println!("------------------------------------------------------------");
                 i += 1;
-                if ve.add_tsf {
+                if ve.act_tsf == VnodeAction::Add {
                     println!("  Add ts_family: {}", ve.tsf_id);
                     println!("------------------------------------------------------------");
                 }
-                if ve.del_tsf {
+                if ve.act_tsf == VnodeAction::Delete {
                     println!("  Delete ts_family: {}", ve.tsf_id);
                     println!("------------------------------------------------------------");
                 }

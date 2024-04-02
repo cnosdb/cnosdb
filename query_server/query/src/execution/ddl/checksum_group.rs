@@ -1,5 +1,4 @@
 use async_trait::async_trait;
-use coordinator::VnodeSummarizerCmdType;
 use datafusion::arrow::datatypes::SchemaRef;
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::ChecksumGroup;
@@ -27,8 +26,7 @@ impl DDLDefinitionTask for ChecksumGroupTask {
         let tenant = query_state_machine.session.tenant();
 
         let coord = query_state_machine.coord.clone();
-        let cmd_type = VnodeSummarizerCmdType::Checksum(replication_set_id);
-        let checksums = coord.vnode_summarizer(tenant, cmd_type).await?;
+        let checksums = coord.replica_checksum(tenant, replication_set_id).await?;
         let stream = RecordBatchStreamWrapper::new(self.schema.clone(), checksums);
         Ok(Output::StreamData(Box::pin(stream)))
     }

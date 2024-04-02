@@ -94,4 +94,9 @@ impl<T: MetricRecorder> Metric<T> {
         let mut guard = self.shard.values.lock();
         guard.insert(labels.into(), recorder);
     }
+
+    pub fn remove(&self, labels: impl Into<Labels>) {
+        let mut guard = self.shard.values.lock();
+        guard.remove(&labels.into());
+    }
 }

@@ -9,13 +9,16 @@ use datafusion::arrow::record_batch::RecordBatch;
 use errors::CoordinatorError;
 use futures::Stream;
 use meta::model::{MetaClientRef, MetaRef};
-use models::meta_data::{ReplicaAllInfo, ReplicationSet, ReplicationSetId, VnodeAllInfo};
+use models::meta_data::{
+    NodeId, ReplicaAllInfo, ReplicationSet, ReplicationSetId, VnodeAllInfo, VnodeId,
+};
 use models::object_reference::ResolvedTable;
 use models::predicate::domain::{ResolvedPredicate, ResolvedPredicateRef};
 use models::schema::{Precision, TskvTableSchemaRef};
 use protocol_parser::Line;
-use protos::kv_service::{AdminCommandRequest, RaftWriteCommand, UpdateSetValue};
+use protos::kv_service::{RaftWriteCommand, UpdateSetValue};
 use raft::manager::RaftNodesManager;
+use raft::writer::TskvRaftWriter;
 use trace::SpanContext;
 use tskv::reader::QueryOption;
 use tskv::EngineRef;
@@ -30,31 +33,19 @@ pub mod reader;
 pub mod resource_manager;
 pub mod service;
 pub mod service_mock;
-
-pub const FAILED_RESPONSE_CODE: i32 = -1;
-pub const FINISH_RESPONSE_CODE: i32 = 0;
-pub const SUCCESS_RESPONSE_CODE: i32 = 1;
+pub mod tskv_executor;
 
 pub type SendableCoordinatorRecordBatchStream =
     Pin<Box<dyn Stream<Item = CoordinatorResult<RecordBatch>> + Send>>;
 
 #[derive(Debug, Clone)]
-pub enum VnodeManagerCmdType {
-    /// vnode id list
-    Compact(Vec<u32>),
-
+pub enum ReplicationCmdType {
     /// replica set id, dst nod id
     AddRaftFollower(u32, u64),
     /// vnode id
     RemoveRaftNode(u32),
     /// replica set id
     DestoryRaftGroup(u32),
-}
-
-#[derive(Debug, Clone)]
-pub enum VnodeSummarizerCmdType {
-    /// replication set id
-    Checksum(u32),
 }
 
 #[async_trait::async_trait]
@@ -65,6 +56,8 @@ pub trait Coordinator: Send + Sync {
     fn raft_manager(&self) -> Arc<RaftNodesManager>;
     async fn tenant_meta(&self, tenant: &str) -> Option<MetaClientRef>;
 
+    fn tskv_raft_writer(&self, request: RaftWriteCommand) -> TskvRaftWriter;
+
     /// get all vnodes of a table to quering
     async fn table_vnodes(
         &self,
@@ -72,20 +65,7 @@ pub trait Coordinator: Send + Sync {
         predicate: ResolvedPredicateRef,
     ) -> CoordinatorResult<Vec<ReplicationSet>>;
 
-    async fn exec_admin_command_on_node(
-        &self,
-        node_id: u64,
-        req: AdminCommandRequest,
-    ) -> CoordinatorResult<()>;
-
     async fn write_replica_by_raft(
-        &self,
-        replica: ReplicationSet,
-        request: RaftWriteCommand,
-        span_ctx: Option<&SpanContext>,
-    ) -> CoordinatorResult<()>;
-
-    async fn exec_write_replica_points(
         &self,
         replica: ReplicationSet,
         request: RaftWriteCommand,
@@ -127,18 +107,20 @@ pub trait Coordinator: Send + Sync {
         predicate: &ResolvedPredicate,
     ) -> CoordinatorResult<()>;
 
+    async fn compact_vnodes(&self, tenant: &str, vnode_ids: Vec<VnodeId>) -> CoordinatorResult<()>;
+
     /// A manager to manage vnode.
-    async fn vnode_manager(
+    async fn replication_manager(
         &self,
         tenant: &str,
-        cmd_type: VnodeManagerCmdType,
+        cmd_type: ReplicationCmdType,
     ) -> CoordinatorResult<()>;
 
     /// A summarizer to summarize vnode info.
-    async fn vnode_summarizer(
+    async fn replica_checksum(
         &self,
         tenant: &str,
-        cmd_type: VnodeSummarizerCmdType,
+        replica_id: ReplicationSetId,
     ) -> CoordinatorResult<Vec<RecordBatch>>;
 
     fn metrics(&self) -> &Arc<CoordServiceMetrics>;
@@ -153,16 +135,9 @@ pub trait Coordinator: Send + Sync {
     fn get_config(&self) -> Config;
 }
 
-pub fn status_response_to_result(
-    status: &protos::kv_service::StatusResponse,
-) -> errors::CoordinatorResult<()> {
-    if status.code == SUCCESS_RESPONSE_CODE {
-        Ok(())
-    } else {
-        Err(errors::CoordinatorError::GRPCRequest {
-            msg: status.data.clone(),
-        })
-    }
+#[async_trait::async_trait]
+pub trait TskvLeaderCaller: Send + Sync {
+    async fn call(&self, replica: &ReplicationSet, node_id: NodeId) -> CoordinatorResult<Vec<u8>>;
 }
 
 pub async fn get_vnode_all_info(

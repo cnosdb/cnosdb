@@ -11,7 +11,7 @@ use tokio::time::sleep;
 use tracing::{debug, error, info};
 
 use crate::errors::*;
-use crate::{Coordinator, VnodeManagerCmdType};
+use crate::{Coordinator, ReplicationCmdType};
 
 #[derive(Clone)]
 pub struct ResourceManager {}
@@ -118,8 +118,8 @@ impl ResourceManager {
         let buckets = tenant.get_db_info(db_name)?.map_or(vec![], |v| v.buckets);
         for bucket in buckets {
             for replica in bucket.shard_group {
-                let cmd_type = VnodeManagerCmdType::DestoryRaftGroup(replica.id);
-                coord.vnode_manager(tenant_name, cmd_type).await?;
+                let cmd_type = ReplicationCmdType::DestoryRaftGroup(replica.id);
+                coord.replication_manager(tenant_name, cmd_type).await?;
             }
         }
 

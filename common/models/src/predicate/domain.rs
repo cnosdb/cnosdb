@@ -947,7 +947,7 @@ impl Serialize for ValueEntry {
             .try_into()
             .map_err(serde::ser::Error::custom)?;
 
-        let value_buf = to_prost_bytes(value);
+        let value_buf = to_prost_bytes(&value);
 
         let mut ve = serializer.serialize_struct("ValueEntry", 2)?;
         ve.serialize_field("data_type", &self.data_type)?;
