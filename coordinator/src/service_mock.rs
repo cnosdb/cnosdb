@@ -9,12 +9,12 @@ use datafusion::arrow::record_batch::RecordBatch;
 use meta::model::meta_admin::AdminMeta;
 use meta::model::meta_tenant::TenantMeta;
 use meta::model::{MetaClientRef, MetaRef};
-use models::meta_data::{ReplicationSet, VnodeInfo, VnodeStatus};
+use models::meta_data::{ReplicationSet, ReplicationSetId, VnodeId, VnodeInfo, VnodeStatus};
 use models::object_reference::ResolvedTable;
 use models::predicate::domain::{ResolvedPredicate, ResolvedPredicateRef};
 use models::schema::{Precision, TskvTableSchemaRef};
 use protocol_parser::Line;
-use protos::kv_service::{AdminCommandRequest, RaftWriteCommand, UpdateSetValue};
+use protos::kv_service::{RaftWriteCommand, UpdateSetValue};
 use trace::SpanContext;
 use tskv::engine_mock::MockEngine;
 use tskv::reader::QueryOption;
@@ -22,10 +22,9 @@ use tskv::EngineRef;
 
 use crate::errors::CoordinatorResult;
 use crate::raft::manager::RaftNodesManager;
+use crate::raft::writer::TskvRaftWriter;
 use crate::service::CoordServiceMetrics;
-use crate::{
-    Coordinator, SendableCoordinatorRecordBatchStream, VnodeManagerCmdType, VnodeSummarizerCmdType,
-};
+use crate::{Coordinator, ReplicationCmdType, SendableCoordinatorRecordBatchStream};
 
 pub const WITH_NONEMPTY_DATABASE_FOR_TEST: &str = "with_nonempty_database";
 
@@ -54,11 +53,11 @@ impl Coordinator for MockCoordinator {
         Some(Arc::new(TenantMeta::mock()))
     }
 
-    async fn exec_admin_command_on_node(
-        &self,
-        node_id: u64,
-        req: AdminCommandRequest,
-    ) -> CoordinatorResult<()> {
+    async fn compact_vnodes(&self, tenant: &str, vnode_ids: Vec<VnodeId>) -> CoordinatorResult<()> {
+        todo!()
+    }
+
+    fn tskv_raft_writer(&self, request: RaftWriteCommand) -> TskvRaftWriter {
         todo!()
     }
 
@@ -163,15 +162,6 @@ impl Coordinator for MockCoordinator {
         Ok(vec![])
     }
 
-    async fn exec_write_replica_points(
-        &self,
-        replica: ReplicationSet,
-        request: RaftWriteCommand,
-        span_ctx: Option<&SpanContext>,
-    ) -> CoordinatorResult<()> {
-        todo!()
-    }
-
     async fn write_lines<'a>(
         &self,
         tenant: &str,
@@ -218,18 +208,18 @@ impl Coordinator for MockCoordinator {
         todo!("delete_from_table")
     }
 
-    async fn vnode_manager(
+    async fn replication_manager(
         &self,
         tenant: &str,
-        cmd_type: VnodeManagerCmdType,
+        cmd_type: ReplicationCmdType,
     ) -> CoordinatorResult<()> {
         Ok(())
     }
 
-    async fn vnode_summarizer(
+    async fn replica_checksum(
         &self,
         tenant: &str,
-        cmd_type: VnodeSummarizerCmdType,
+        replica_id: ReplicationSetId,
     ) -> CoordinatorResult<Vec<RecordBatch>> {
         Ok(vec![])
     }
