@@ -412,10 +412,10 @@ mod test {
         cursor.write_vec(&ios).await.unwrap();
         cursor.try_flush(0).await.unwrap();
         cursor.seek(SeekFrom::Start(0)).await.unwrap();
-        let len = 16;
+        let len = 15;
         let buf = cursor.read(len).await.unwrap();
         assert_eq!(len, buf.len());
-        assert_eq!(buf, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 0]);
+        assert_eq!(buf, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
     }
 
     #[test]

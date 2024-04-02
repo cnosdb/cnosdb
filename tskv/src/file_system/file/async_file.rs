@@ -49,10 +49,13 @@ impl RawFile {
         {
             let fd = self.0.clone();
             asyncify(move || {
-                let buf = vec![0; len];
+                let mut buf = vec![0; len];
                 let ptr = buf.as_ptr() as u64;
                 let fd = os::fd(fd.as_ref());
-                os::pread(fd, pos, len, ptr)?;
+                let size = os::pread(fd, pos, len, ptr)?;
+                if len > size {
+                    buf.truncate(size);
+                }
                 Ok(buf)
             })
             .await
@@ -137,8 +140,28 @@ impl IFile for AsyncFile {
         Ok((p - pos) as usize)
     }
 
-    async fn write_at(&self, pos: u64, data: &[u8]) -> Result<usize> {
-        self.inner.pwrite(pos, data).await
+    /// Write all data to the file at the specified position.
+    async fn write_at(&self, pos: u64, buf: &[u8]) -> Result<usize> {
+        let mut pos = pos;
+        let mut buf = buf;
+        let len = buf.len();
+        while !buf.is_empty() {
+            match self.inner.pwrite(pos, buf).await {
+                Ok(0) => {
+                    return Err(Error::new(
+                        ErrorKind::WriteZero,
+                        "failed to write whole buffer",
+                    ));
+                }
+                Ok(n) => {
+                    buf = &buf[n..];
+                    pos += n as u64;
+                }
+                Err(ref e) if e.kind() == ErrorKind::Interrupted => {}
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(len)
     }
 
     async fn read_at(&self, pos: u64, len: usize) -> Result<Vec<u8>> {
