@@ -1,0 +1,57 @@
+include ./../setup.slt
+
+##########
+## Query
+##########
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function Min expects 1 arguments, but 0 were provided", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select min() from func_tbl;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Internal error: Create physical name does not support wildcard\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select min(*) from func_tbl;
+
+query 
+select min(time) from func_tbl;
+----
+1999-12-31T00:00:00
+
+query 
+select min(t0) from func_tbl;
+----
+"tag11"
+
+query 
+select min(f0) from func_tb2;
+----
+1000
+
+query 
+select min(f1) from func_tb2;
+----
+2000.0
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function Min expects 1 arguments, but 2 were provided", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select min(f0, f1) from func_tb2;
+
+query 
+select min(f2) from func_tb2;
+----
+false
+
+query 
+select min(f3) from func_tb2;
+----
+"f3001"
+
+query 
+select min(f4) from func_tb2;
+----
+-40002
+
+query 
+select min(3) from func_tb2;
+----
+3
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Datafusion: Internal error: Min/Max accumulator not implemented for type Null\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select min(null) from func_tb2;

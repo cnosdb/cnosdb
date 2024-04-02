@@ -1,8 +1,55 @@
-include ./setup.slt
+include ./../setup.slt
 
 ##########
 ## Query
 ##########
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function \\"first\\" does not accept 0 function arguments\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select first() from func_tbl;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function \\"first\\" does not accept 1 function arguments\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select first(time) from func_tbl;
+
+query 
+select first(time, t0) from func_tbl;
+----
+"tag11"
+
+query 
+select first(time, f0) from func_tb2;
+----
+1000
+
+query 
+select first(time, f1) from func_tb2;
+----
+2010.0
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'first\(UInt64, Float64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tfirst\(Timestamp\(Second, None\), Utf8\)\\n\\tfirst\(Timestamp\(Millisecond, None\), Utf8\)\\n\\tfirst\(Timestamp\(Microsecond, None\), Utf8\)\\n\\tfirst\(Timestamp\(Nanosecond, None\), Utf8\)\\n\\tfirst\(Timestamp\(Second, None\), LargeUtf8\)\\n\\tfirst\(Timestamp\(Millisecond, None\), LargeUtf8\)\\n\\tfirst\(Timestamp\(Microsecond, None\), LargeUtf8\)\\n\\tfirst\(Timestamp\(Nanosecond, None\), LargeUtf8\)\\n\\tfirst\(Timestamp\(Second, None\), Int8\)\\n\\tfirst\(Timestamp\(Millisecond, None\), Int8\)\\n\\tfirst\(Timestamp\(Microsecond, None\), Int8\)\\n\\tfirst\(Timestamp\(Nanosecond, None\), Int8\)\\n\\tfirst\(Timestamp\(Second, None\), Int16\)\\n\\tfirst\(Timestamp\(Millisecond, None\), Int16\)\\n\\tfirst\(Timestamp\(Microsecond, None\), Int16\)\\n\\tfirst\(Timestamp\(Nanosecond, None\), Int16\)\\n\\tfirst\(Timestamp\(Second, None\), Int32\)\\n\\tfirst\(Timestamp\(Millisecond, None\), Int32\)\\n\\tfirst\(Timestamp\(Microsecond, None\), Int32\)\\n\\tfirst\(Timestamp\(Nanosecond, None\), Int32\)\\n\\tfirst\(Timestamp\(Second, None\), Int64\)\\n\\tfirst\(Timestamp\(Millisecond, None\), Int64\)\\n\\tfirst\(Timestamp\(Microsecond, None\), Int64\)\\n\\tfirst\(Timestamp\(Nanosecond, None\), Int64\)\\n\\tfirst\(Timestamp\(Second, None\), UInt8\)\\n\\tfirst\(Timestamp\(Millisecond, None\), UInt8\)\\n\\tfirst\(Timestamp\(Microsecond, None\), UInt8\)\\n\\tfirst\(Timestamp\(Nanosecond, None\), UInt8\)\\n\\tfirst\(Timestamp\(Second, None\), UInt16\)\\n\\tfirst\(Timestamp\(Millisecond, None\), UInt16\)\\n\\tfirst\(Timestamp\(Microsecond, None\), UInt16\)\\n\\tfirst\(Timestamp\(Nanosecond, None\), UInt16\)\\n\\tfirst\(Timestamp\(Second, None\), UInt32\)\\n\\tfirst\(Timestamp\(Millisecond, None\), UInt32\)\\n\\tfirst\(Timestamp\(Microsecond, None\), UInt32\)\\n\\tfirst\(Timestamp\(Nanosecond, None\), UInt32\)\\n\\tfirst\(Timestamp\(Second, None\), UInt64\)\\n\\tfirst\(Timestamp\(Millisecond, None\), UInt64\)\\n\\tfirst\(Timestamp\(Microsecond, None\), UInt64\)\\n\\tfirst\(Timestamp\(Nanosecond, None\), UInt64\)\\n\\tfirst\(Timestamp\(Second, None\), Float32\)\\n\\tfirst\(Timestamp\(Millisecond, None\), Float32\)\\n\\tfirst\(Timestamp\(Microsecond, None\), Float32\)\\n\\tfirst\(Timestamp\(Nanosecond, None\), Float32\)\\n\\tfirst\(Timestamp\(Second, None\), Float64\)\\n\\tfirst\(Timestamp\(Millisecond, None\), Float64\)\\n\\tfirst\(Timestamp\(Microsecond, None\), Float64\)\\n\\tfirst\(Timestamp\(Nanosecond, None\), Float64\)\\n\\tfirst\(Timestamp\(Second, None\), Timestamp\(Second, None\)\)\\n\\tfirst\(Timestamp\(Millisecond, None\), Timestamp\(Second, None\)\)\\n\\tfirst\(Timestamp\(Microsecond, None\), Timestamp\(Second, None\)\)\\n\\tfirst\(Timestamp\(Nanosecond, None\), Timestamp\(Second, None\)\)\\n\\tfirst\(Timestamp\(Second, None\), Timestamp\(Millisecond, None\)\)\\n\\tfirst\(Timestamp\(Millisecond, None\), Timestamp\(Millisecond, None\)\)\\n\\tfirst\(Timestamp\(Microsecond, None\), Timestamp\(Millisecond, None\)\)\\n\\tfirst\(Timestamp\(Nanosecond, None\), Timestamp\(Millisecond, None\)\)\\n\\tfirst\(Timestamp\(Second, None\), Timestamp\(Microsecond, None\)\)\\n\\tfirst\(Timestamp\(Millisecond, None\), Timestamp\(Microsecond, None\)\)\\n\\tfirst\(Timestamp\(Microsecond, None\), Timestamp\(Microsecond, None\)\)\\n\\tfirst\(Timestamp\(Nanosecond, None\), Timestamp\(Microsecond, None\)\)\\n\\tfirst\(Timestamp\(Second, None\), Timestamp\(Nanosecond, None\)\)\\n\\tfirst\(Timestamp\(Millisecond, None\), Timestamp\(Nanosecond, None\)\)\\n\\tfirst\(Timestamp\(Microsecond, None\), Timestamp\(Nanosecond, None\)\)\\n\\tfirst\(Timestamp\(Nanosecond, None\), Timestamp\(Nanosecond, None\)\)\\n\\tfirst\(Timestamp\(Second, None\), Date32\)\\n\\tfirst\(Timestamp\(Millisecond, None\), Date32\)\\n\\tfirst\(Timestamp\(Microsecond, None\), Date32\)\\n\\tfirst\(Timestamp\(Nanosecond, None\), Date32\)\\n\\tfirst\(Timestamp\(Second, None\), Date64\)\\n\\tfirst\(Timestamp\(Millisecond, None\), Date64\)\\n\\tfirst\(Timestamp\(Microsecond, None\), Date64\)\\n\\tfirst\(Timestamp\(Nanosecond, None\), Date64\)\\n\\tfirst\(Timestamp\(Second, None\), Binary\)\\n\\tfirst\(Timestamp\(Millisecond, None\), Binary\)\\n\\tfirst\(Timestamp\(Microsecond, None\), Binary\)\\n\\tfirst\(Timestamp\(Nanosecond, None\), Binary\)\\n\\tfirst\(Timestamp\(Second, None\), LargeBinary\)\\n\\tfirst\(Timestamp\(Millisecond, None\), LargeBinary\)\\n\\tfirst\(Timestamp\(Microsecond, None\), LargeBinary\)\\n\\tfirst\(Timestamp\(Nanosecond, None\), LargeBinary\)\\n\\tfirst\(Timestamp\(Second, None\), FixedSizeBinary\(2147483647\)\)\\n\\tfirst\(Timestamp\(Millisecond, None\), FixedSizeBinary\(2147483647\)\)\\n\\tfirst\(Timestamp\(Microsecond, None\), FixedSizeBinary\(2147483647\)\)\\n\\tfirst\(Timestamp\(Nanosecond, None\), FixedSizeBinary\(2147483647\)\)\\n\\tfirst\(Timestamp\(Second, None\), Time32\(Second\)\)\\n\\tfirst\(Timestamp\(Millisecond, None\), Time32\(Second\)\)\\n\\tfirst\(Timestamp\(Microsecond, None\), Time32\(Second\)\)\\n\\tfirst\(Timestamp\(Nanosecond, None\), Time32\(Second\)\)\\n\\tfirst\(Timestamp\(Second, None\), Time32\(Millisecond\)\)\\n\\tfirst\(Timestamp\(Millisecond, None\), Time32\(Millisecond\)\)\\n\\tfirst\(Timestamp\(Microsecond, None\), Time32\(Millisecond\)\)\\n\\tfirst\(Timestamp\(Nanosecond, None\), Time32\(Millisecond\)\)\\n\\tfirst\(Timestamp\(Second, None\), Time64\(Microsecond\)\)\\n\\tfirst\(Timestamp\(Millisecond, None\), Time64\(Microsecond\)\)\\n\\tfirst\(Timestamp\(Microsecond, None\), Time64\(Microsecond\)\)\\n\\tfirst\(Timestamp\(Nanosecond, None\), Time64\(Microsecond\)\)\\n\\tfirst\(Timestamp\(Second, None\), Time64\(Nanosecond\)\)\\n\\tfirst\(Timestamp\(Millisecond, None\), Time64\(Nanosecond\)\)\\n\\tfirst\(Timestamp\(Microsecond, None\), Time64\(Nanosecond\)\)\\n\\tfirst\(Timestamp\(Nanosecond, None\), Time64\(Nanosecond\)\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": *
+select first(f0, f1) from func_tb2;
+
+query 
+select first(time, f2) from func_tb2;
+----
+"1"
+
+query 
+select first(time, f3) from func_tb2;
+----
+"f3001"
+
+query 
+select first(time, f4) from func_tb2;
+----
+-40001
+
+query 
+select first(time, 3) from func_tb2;
+----
+3
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function \\"first\\" does not accept 1 function arguments\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select first(null) from func_tb2;
 
 query 
 select first(time, f1) from func_tbl;

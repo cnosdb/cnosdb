@@ -1,0 +1,79 @@
+include ./../setup.slt
+
+##########
+## Query
+##########
+
+# error
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function Count expects at least one argument", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select count() from func_tbl;
+
+query 
+select count(*) from func_tbl;
+----
+8
+
+query 
+select count(time) from func_tbl;
+----
+8
+
+query 
+select count(t1) from func_tbl;
+----
+4
+
+query 
+select count(t0, t1) from func_tbl;
+----
+7
+
+query 
+select count(f0) from func_tbl;
+----
+8
+
+query 
+select count(0) from func_tbl;
+----
+8
+
+query 
+select count(10) from func_tbl;
+----
+8
+
+query 
+select count(NULL) from func_tbl;
+----
+0
+
+query 
+select count(t1) from func_tbl;
+----
+4
+
+query 
+select count(t2) from func_tbl;
+----
+0
+
+query 
+select count(f2) from func_tb2;
+----
+8
+
+query 
+select count(f0) from func_tb2;
+----
+8
+
+query 
+select count(f1) from func_tb2;
+----
+8
+
+query 
+select count(f3) from func_tb2;
+----
+8

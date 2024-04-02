@@ -1,4 +1,4 @@
-include ./setup.slt
+include ./../setup.slt
 
 statement ok
 create database if not exists test_increase;
