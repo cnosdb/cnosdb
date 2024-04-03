@@ -13,6 +13,18 @@ pub struct ClusterConfig {
     pub raft_logs_to_keep: u64,
 
     #[serde(
+        with = "duration",
+        default = "ClusterConfig::default_snapshot_holding_time"
+    )]
+    pub snapshot_holding_time: Duration,
+
+    #[serde(
+        with = "duration",
+        default = "ClusterConfig::default_trigger_snapshot_interval"
+    )]
+    pub trigger_snapshot_interval: Duration,
+
+    #[serde(
         with = "bytes_num",
         default = "ClusterConfig::default_lmdb_max_map_size"
     )]
@@ -42,12 +54,20 @@ impl ClusterConfig {
         5000
     }
 
+    fn default_snapshot_holding_time() -> Duration {
+        Duration::from_secs(3600)
+    }
+
+    fn default_trigger_snapshot_interval() -> Duration {
+        Duration::from_secs(600)
+    }
+
     fn default_lmdb_max_map_size() -> u64 {
         1024 * 1024 * 1024
     }
 
     fn default_heartbeat_interval() -> Duration {
-        Duration::from_millis(10_000)
+        Duration::from_millis(3_1000)
     }
 
     fn default_send_append_entries_timeout() -> Duration {
@@ -64,6 +84,16 @@ impl OverrideByEnv for ClusterConfig {
         entry_override(
             &mut self.raft_logs_to_keep,
             "CNOSDB_CLUSTER_RAFT_LOGS_TO_KEEP",
+        );
+
+        entry_override_to_duration(
+            &mut self.snapshot_holding_time,
+            "CNOSDB_CLUSTER_SNAPSHOT_HOLDING_TIME",
+        );
+
+        entry_override_to_duration(
+            &mut self.trigger_snapshot_interval,
+            "CNOSDB_CLUSTER_TRIGGER_SNAPSHOT_INTERVAL",
         );
 
         entry_override(
@@ -92,8 +122,10 @@ impl Default for ClusterConfig {
     fn default() -> Self {
         Self {
             raft_logs_to_keep: ClusterConfig::default_raft_logs_to_keep(),
+            snapshot_holding_time: ClusterConfig::default_snapshot_holding_time(),
             lmdb_max_map_size: ClusterConfig::default_lmdb_max_map_size(),
             heartbeat_interval: ClusterConfig::default_heartbeat_interval(),
+            trigger_snapshot_interval: ClusterConfig::default_trigger_snapshot_interval(),
             send_append_entries_timeout: ClusterConfig::default_send_append_entries_timeout(),
             install_snapshot_timeout: ClusterConfig::default_install_snapshot_timeout(),
         }

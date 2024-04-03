@@ -5,7 +5,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 
-use replication::ApplyStorage;
+use replication::{ApplyStorage, SnapshotMode};
 use tokio::sync::RwLock;
 use tracing::{debug, info};
 use warp::{hyper, Filter};
@@ -147,10 +147,10 @@ impl SingleServer {
     fn dump(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
         warp::path!("dump").and(self.with_storage()).and_then(
             |storage: Arc<RwLock<StateMachine>>| async move {
-                let data = storage
+                let (data, _) = storage
                     .write()
                     .await
-                    .snapshot()
+                    .snapshot(SnapshotMode::GetSnapshot)
                     .await
                     .map_err(MetaError::from)
                     .map_err(warp::reject::custom)?;

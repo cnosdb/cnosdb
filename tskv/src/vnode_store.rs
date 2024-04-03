@@ -1,20 +1,20 @@
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::Arc;
 
 use models::meta_data::VnodeId;
 use models::predicate::domain::{ResolvedPredicate, TimeRange, TimeRanges};
 use models::schema::Precision;
+use models::utils::now_timestamp_secs;
 use models::{ColumnId, SeriesId, SeriesKey};
 use protos::kv_service::{raft_write_command, WritePointsResponse, *};
+use replication::SnapshotMode;
 use snafu::ResultExt;
 use tokio::sync::RwLock;
 use trace::{debug, error, info, SpanContext, SpanExt, SpanRecorder};
 
-use crate::compaction::run_flush_memtable_job;
 use crate::database::Database;
 use crate::error::TskvResult;
-use crate::file_system::file_info;
 use crate::index::ts_index::TSIndex;
 use crate::schema::error::SchemaError;
 use crate::tseries_family::TseriesFamily;
@@ -27,6 +27,8 @@ pub struct VnodeStorage {
     pub db: Arc<RwLock<Database>>,
     pub ts_index: Arc<TSIndex>,
     pub ts_family: Arc<RwLock<TseriesFamily>>,
+
+    pub snapshot: VnodeSnapshot,
 }
 
 impl VnodeStorage {
@@ -327,72 +329,60 @@ impl VnodeStorage {
         self.delete(&cmd.table, &series_ids, &time_ranges).await
     }
 
-    /// Flush caches into TSM file, create a new Version of the Vnode, then:
-    /// 1. Make hard links point to all TSM files in the Version in snapshot directory,
-    /// 2. Copy series index in Vnode into snapshot directory,
-    /// 3. Save current Version as a summary file in snapshot directory.
-    /// Then return VnodeSnapshot.
-    ///
-    /// For one Vnode, multi snapshot may exist at a time.
-    pub async fn create_snapshot(&self) -> TskvResult<VnodeSnapshot> {
-        debug!("Snapshot: create snapshot on vnode: {}", self.id);
-        let vnode_id = self.id;
-
-        // Get snapshot directory.
-        let opt = self.ctx.options.storage.clone();
-        let owner = self.ts_family.read().await.tenant_database();
-
-        let time_str = chrono::Local::now().format("%Y%m%d_%H%M%S_%3f").to_string();
-        let snapshot_id = format!("snap_{}_{}", vnode_id, time_str);
-        let snapshot_dir = opt.snapshot_sub_dir(owner.as_str(), vnode_id, &snapshot_id);
-        let _ = std::fs::remove_dir_all(&snapshot_dir);
-
-        // Run force flush
+    async fn flush(&self) -> TskvResult<()> {
         let flush_req = {
-            let mut vnode_wlock = self.ts_family.write().await;
-            vnode_wlock.switch_to_immutable();
-
-            vnode_wlock.build_flush_req(true)
+            let mut tsfamily = self.ts_family.write().await;
+            tsfamily.switch_to_immutable();
+            tsfamily.build_flush_req(true)
         };
 
-        let mut last_seq_no = 0;
-        if let Some(flush_req) = flush_req {
-            last_seq_no = flush_req.high_seq_no;
-            run_flush_memtable_job(flush_req, self.ctx.clone(), false).await?;
-        };
+        if let Some(request) = flush_req {
+            crate::compaction::run_flush_memtable_job(request, self.ctx.clone(), false).await?;
+        }
+        self.ts_index.flush().await?;
 
-        let mut _file_metas = HashMap::new();
-        let ve_snapshot = self
-            .ts_family
-            .write()
-            .await
-            .build_version_edit(&mut _file_metas);
+        Ok(())
+    }
 
-        // Do snapshot, tsm file system operations.
-        self.ts_family
-            .read()
-            .await
-            .backup(&ve_snapshot, &snapshot_id)
-            .await?;
+    pub async fn create_snapshot(&mut self, mode: SnapshotMode) -> TskvResult<VnodeSnapshot> {
+        debug!("Snapshot: create snapshot on vnode: {}", self.id);
 
-        let mut files_info = file_info::get_files_info(&snapshot_dir).await?;
-        for info in files_info.iter_mut() {
-            if let Ok(value) = PathBuf::from(&info.name).strip_prefix(&snapshot_dir) {
-                info.name = value.to_string_lossy().to_string();
-            } else {
-                error!("strip snapshot file failed: {}", info.name);
+        let interval = self.ctx.options.storage.snapshot_holding_time;
+        if self.snapshot.version.is_some()
+            && now_timestamp_secs() - self.snapshot.active_time < interval
+        {
+            if let SnapshotMode::GetSnapshot = mode {
+                self.snapshot.active_time = now_timestamp_secs();
             }
+
+            info!("Snapshot: Exist snapshot {}", self.snapshot);
+            return Ok(self.snapshot.clone());
         }
 
-        let snapshot = VnodeSnapshot {
-            snapshot_id,
-            vnode_id,
-            last_seq_no,
-            files_info,
-            node_id: opt.node_id,
-            version_edit: ve_snapshot,
+        self.flush().await?;
+
+        let (snapshot_version, snapshot_ve) = {
+            let mut _file_metas = HashMap::new();
+            let ts_family_w = self.ts_family.write().await;
+
+            let version = ts_family_w.version();
+            let ve = ts_family_w.build_version_edit(&mut _file_metas);
+            (version, ve)
         };
-        info!("Snapshot: created snapshot: {snapshot:?}");
+
+        let last_seq_no = snapshot_version.last_seq();
+        let snapshot = VnodeSnapshot {
+            last_seq_no,
+            vnode_id: self.id,
+            node_id: self.ctx.options.storage.node_id,
+            version_edit: snapshot_ve,
+            version: Some(snapshot_version),
+            create_time: chrono::Local::now().format("%Y%m%d_%H%M%S_%3f").to_string(),
+            active_time: now_timestamp_secs(),
+        };
+
+        self.snapshot = snapshot.clone();
+        info!("Snapshot: created snapshot: {}", snapshot);
 
         Ok(snapshot)
     }
@@ -402,62 +392,38 @@ impl VnodeStorage {
     pub async fn apply_snapshot(
         &mut self,
         snapshot: VnodeSnapshot,
-        shapshot_dir: &PathBuf,
+        shapshot_dir: &Path,
     ) -> TskvResult<()> {
-        info!("Snapshot: apply snapshot {snapshot:?}");
+        info!("Snapshot: apply snapshot {}", snapshot);
 
         let vnode_id = self.id;
         let owner = self.ts_family.read().await.tenant_database();
         let storage_opt = self.ctx.options.storage.clone();
 
-        let ts_family = {
-            // delete already exist data
-            let mut db_wlock = self.db.write().await;
-            let summary_sender = self.ctx.summary_task_sender.clone();
-            db_wlock.del_tsfamily(vnode_id, summary_sender).await;
-            db_wlock.del_ts_index(vnode_id);
-            let vnode_dir = storage_opt.ts_family_dir(&owner, vnode_id);
-            let _ = std::fs::remove_dir_all(&vnode_dir);
+        // clear snapshot
+        self.snapshot.version = None;
+        self.snapshot.active_time = 0;
 
-            // move snapshot data to vnode move dir
-            let move_dir = storage_opt.move_dir(&owner, vnode_id);
-            info!("apply snapshot rename {:?} -> {:?}", shapshot_dir, move_dir);
-            tokio::fs::create_dir_all(&move_dir).await?;
-            tokio::fs::rename(&shapshot_dir, &move_dir).await?;
-
-            // apply data and reopen
-            let mut version_edit = snapshot.version_edit.clone();
-            version_edit.update_vnode_id(vnode_id);
-            db_wlock
-                .add_tsfamily(vnode_id, version_edit, self.ctx.clone())
-                .await?
-        };
-
+        // delete already exist data
         let mut db_wlock = self.db.write().await;
+        let summary_sender = self.ctx.summary_task_sender.clone();
+        db_wlock.del_tsfamily(vnode_id, summary_sender).await;
+        db_wlock.del_ts_index(vnode_id);
+        let vnode_dir = storage_opt.ts_family_dir(&owner, vnode_id);
+        let _ = std::fs::remove_dir_all(&vnode_dir);
+
+        // apply data and reopen
+        let mut version_edit = snapshot.version_edit.clone();
+        version_edit.update_vnode_id(vnode_id);
+        let ts_family = db_wlock
+            .add_tsfamily(version_edit, shapshot_dir, self.ctx.clone())
+            .await?;
+
         let ts_index = db_wlock.rebuild_tsfamily_index(ts_family.clone()).await?;
 
         self.ts_index = ts_index;
         self.ts_family = ts_family;
 
-        Ok(())
-    }
-
-    /// Delete the snapshot directory of a Vnode, all snapshots will be deleted.
-    pub async fn delete_snapshot(&self) -> TskvResult<()> {
-        debug!("Snapshot: delete snapshot on vnode: {}", self.id);
-
-        let owner = self.ts_family.read().await.tenant_database();
-        let storage_opt = self.ctx.options.storage.clone();
-
-        let snapshot_dir = storage_opt.snapshot_dir(owner.as_str(), self.id);
-        debug!("Snapshot: removing snapshot directory {:?}", snapshot_dir);
-        std::fs::remove_dir_all(&snapshot_dir).with_context(|_| {
-            error!(
-                "Snapshot: failed to remove snapshot directory {:?}",
-                snapshot_dir
-            );
-            crate::error::DeleteFileSnafu { path: snapshot_dir }
-        })?;
         Ok(())
     }
 

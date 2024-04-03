@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use models::meta_data::ReplicationSetId;
-use parking_lot::RwLock;
+use tokio::sync::RwLock;
+use trace::info;
 
 use crate::raft_node::RaftNode;
 use crate::state_store::StateStorage;
@@ -38,5 +40,26 @@ impl MultiRaft {
 
     pub fn exist(&self, id: ReplicationSetId) -> bool {
         self.raft_nodes.contains_key(&id)
+    }
+
+    pub async fn trigger_snapshot_purge_logs(nodes: Arc<RwLock<MultiRaft>>, dur: Duration) {
+        loop {
+            tokio::time::sleep(dur).await;
+
+            info!("------------ Begin nodes trigger snapshot ------------");
+            let nodes = nodes.read().await;
+            for (_, node) in nodes.raft_nodes.iter() {
+                let raft = node.raw_raft();
+                let trigger = raft.trigger();
+
+                trigger.snapshot().await;
+                info!(
+                    "# Trigger group id: {} raft id: {}",
+                    node.group_id(),
+                    node.raft_id()
+                );
+            }
+            info!("------------- End nodes trigger snapshot -------------");
+        }
     }
 }

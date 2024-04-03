@@ -42,6 +42,7 @@ use protocol_parser::lines_convert::{
 use protocol_parser::Line;
 use protos::kv_service::admin_command::Command::*;
 use protos::kv_service::*;
+use replication::multi_raft::MultiRaft;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Receiver;
 use tokio::task::JoinHandle;
@@ -155,6 +156,11 @@ impl CoordService {
             kv_inst.clone(),
         ));
         raft_manager.start_all_raft_node().await.unwrap();
+
+        tokio::spawn(MultiRaft::trigger_snapshot_purge_logs(
+            raft_manager.multi_raft(),
+            config.cluster.trigger_snapshot_interval,
+        ));
 
         let coord = Arc::new(Self {
             runtime,
