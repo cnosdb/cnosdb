@@ -28,6 +28,16 @@ cargo run --package sqllogicaltests --complete
 cargo run --package sqllogicaltests -- tpch --complete
 ```
 
+## platform specified slt file
+By using specific file naming rules, `slt` file can be run only on specific platforms.
+### unix
+
+`<test_case_name>__UNIX.slt`
+
+### windows
+
+`<test_case_name>__WINDOWS.slt`
+
 ## slt format
 
 ### valid result set

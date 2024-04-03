@@ -497,7 +497,7 @@ dependencies = [
  "arrow-cast",
  "arrow-data",
  "arrow-schema",
- "flatbuffers",
+ "flatbuffers 23.5.26",
 ]
 
 [[package]]
@@ -1286,7 +1286,7 @@ dependencies = [
  "config",
  "datafusion",
  "datafusion-proto",
- "flatbuffers",
+ "flatbuffers 24.3.25",
  "futures",
  "md-5",
  "memory_pool",
@@ -1922,7 +1922,7 @@ dependencies = [
  "config",
  "datafusion",
  "diff",
- "flatbuffers",
+ "flatbuffers 24.3.25",
  "fly-accept-encoding",
  "futures",
  "http_protocol",
@@ -2125,6 +2125,16 @@ name = "flatbuffers"
 version = "23.5.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4dac53e22462d78c16d64a1cd22371b54cc3fe94aa15e7886a2fa6e5d1ab8640"
+dependencies = [
+ "bitflags 1.3.2",
+ "rustc_version",
+]
+
+[[package]]
+name = "flatbuffers"
+version = "24.3.25"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8add37afff2d4ffa83bc748a70b4b1370984f6980768554182424ef71447c35f"
 dependencies = [
  "bitflags 1.3.2",
  "rustc_version",
@@ -3169,7 +3179,7 @@ dependencies = [
  "datafusion-proto",
  "dateparser",
  "dirs",
- "flatbuffers",
+ "flatbuffers 24.3.25",
  "fly-accept-encoding",
  "futures",
  "http_protocol",
@@ -3405,7 +3415,7 @@ dependencies = [
  "datafusion-proto",
  "derive_builder",
  "error_code",
- "flatbuffers",
+ "flatbuffers 24.3.25",
  "futures",
  "libc",
  "minivec",
@@ -4396,7 +4406,7 @@ dependencies = [
  "chrono",
  "datafusion",
  "fast-float",
- "flatbuffers",
+ "flatbuffers 24.3.25",
  "itertools 0.12.1",
  "lazy_static",
  "models",
@@ -4414,7 +4424,7 @@ version = "2.4.0"
 dependencies = [
  "async-backtrace",
  "chrono",
- "flatbuffers",
+ "flatbuffers 24.3.25",
  "prost 0.11.9",
  "prost-build",
  "protobuf 3.2.0",
@@ -4494,7 +4504,7 @@ dependencies = [
  "datafusion-proto",
  "derive_builder",
  "dirs",
- "flatbuffers",
+ "flatbuffers 24.3.25",
  "futures",
  "geo",
  "geozero",
@@ -4732,7 +4742,7 @@ dependencies = [
  "clap",
  "config",
  "datafusion",
- "flatbuffers",
+ "flatbuffers 24.3.25",
  "futures",
  "heed",
  "heed-traits",
@@ -5335,7 +5345,7 @@ dependencies = [
  "derive_builder",
  "duration-str",
  "error_code",
- "flatbuffers",
+ "flatbuffers 24.3.25",
  "futures",
  "lazy_static",
  "meta",
@@ -6220,7 +6230,7 @@ dependencies = [
  "datafusion-proto",
  "dircpy",
  "error_code",
- "flatbuffers",
+ "flatbuffers 24.3.25",
  "flate2",
  "futures",
  "hex",
