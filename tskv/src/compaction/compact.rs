@@ -108,6 +108,7 @@ impl CompactingBlockMeta {
             .await
             .context(error::ReadTsmSnafu)?
         {
+            // TODO(zipper): block intersection with a time range could be done when merging blocks.
             Some(blk) => Ok(blk.intersection(time_range)),
             None => Ok(None),
         }
@@ -1203,12 +1204,10 @@ pub mod test {
         }
     }
 
-    pub fn create_options(base_dir: String, always_compact: bool) -> Arc<Options> {
+    pub fn create_options(base_dir: String, compact_trigger_file_num: u32) -> Arc<Options> {
         let mut config = config::get_config_for_test();
         config.storage.path = base_dir.clone();
-        if always_compact {
-            config.storage.compact_trigger_file_num = 1;
-        }
+        config.storage.compact_trigger_file_num = compact_trigger_file_num;
         config.log.path = base_dir;
         Arc::new(Options::from(&config))
     }
@@ -1216,7 +1215,7 @@ pub mod test {
     #[test]
     fn test_create_options() {
         let dir = "/tmp/test/compaction/test_create_options";
-        let opt = create_options(dir.to_string(), false);
+        let opt = create_options(dir.to_string(), 4);
         assert_eq!(opt.storage.path.to_string_lossy(), dir);
     }
 
@@ -1293,7 +1292,7 @@ pub mod test {
         let dir = "/tmp/test/compaction/0";
         let _ = std::fs::remove_dir_all(dir);
         let tenant_database = Arc::new("cnosdb.dba".to_string());
-        let opt = create_options(dir.to_string(), true);
+        let opt = create_options(dir.to_string(), 1);
         let dir = opt.storage.tsm_dir(&tenant_database, 1);
         let max_level_ts = 9;
 
@@ -1341,7 +1340,7 @@ pub mod test {
         let dir = "/tmp/test/compaction/1";
         let _ = std::fs::remove_dir_all(dir);
         let tenant_database = Arc::new("cnosdb.dba".to_string());
-        let opt = create_options(dir.to_string(), true);
+        let opt = create_options(dir.to_string(), 1);
         let dir = opt.storage.tsm_dir(&tenant_database, 1);
         let max_level_ts = 9;
 
@@ -1388,7 +1387,7 @@ pub mod test {
         let dir = "/tmp/test/compaction/2";
         let _ = std::fs::remove_dir_all(dir);
         let tenant_database = Arc::new("cnosdb.dba".to_string());
-        let opt = create_options(dir.to_string(), true);
+        let opt = create_options(dir.to_string(), 1);
         let dir = opt.storage.tsm_dir(&tenant_database, 1);
         let max_level_ts = 9;
 
@@ -1429,7 +1428,7 @@ pub mod test {
         let dir = "/tmp/test/compaction/3";
         let _ = std::fs::remove_dir_all(dir);
         let tenant_database = Arc::new("cnosdb.dba".to_string());
-        let opt = create_options(dir.to_string(), true);
+        let opt = create_options(dir.to_string(), 1);
         let dir = opt.storage.tsm_dir(&tenant_database, 1);
         let max_level_ts = 9;
 
@@ -1681,7 +1680,7 @@ pub mod test {
         let dir = "/tmp/test/compaction/big_1";
         let _ = std::fs::remove_dir_all(dir);
         let tenant_database = Arc::new("cnosdb.dba".to_string());
-        let opt = create_options(dir.to_string(), true);
+        let opt = create_options(dir.to_string(), 1);
         let dir = opt.storage.tsm_dir(&tenant_database, 1);
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
@@ -1749,7 +1748,7 @@ pub mod test {
         let dir = "/tmp/test/compaction/big_2";
         let _ = std::fs::remove_dir_all(dir);
         let tenant_database = Arc::new("cnosdb.dba".to_string());
-        let opt = create_options(dir.to_string(), true);
+        let opt = create_options(dir.to_string(), 1);
         let dir = opt.storage.tsm_dir(&tenant_database, 1);
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
@@ -1862,7 +1861,7 @@ pub mod test {
         let dir = "/tmp/test/compaction/big_3";
         let _ = std::fs::remove_dir_all(dir);
         let tenant_database = Arc::new("cnosdb.dba".to_string());
-        let opt = create_options(dir.to_string(), true);
+        let opt = create_options(dir.to_string(), 1);
         let dir = opt.storage.tsm_dir(&tenant_database, 1);
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();

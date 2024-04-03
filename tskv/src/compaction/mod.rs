@@ -358,7 +358,7 @@ pub mod test {
     #[tokio::test]
     async fn test_generate_version() {
         let dir = "/tmp/test/compaction/test_generate_version";
-        let storage_opt = create_options(dir.to_string(), true).storage.clone();
+        let storage_opt = create_options(dir.to_string(), 1).storage.clone();
         let vnode_sketch = VersionSketch::new(dir, Arc::new("dba".to_string()), 1)
             .add(0, FileSketch(6, (1, 10), 50, false))
             .add(0, FileSketch(7, (790, 800), 50, false))
@@ -430,7 +430,7 @@ pub mod test {
     async fn test_compact_req_methods_delta_compaction() {
         // This case doesn't need directory to exist.
         let dir = "/tmp/test/compaction/test_compact_req_methods_delta_compaction";
-        let opt = create_options(dir.to_string(), true);
+        let opt = create_options(dir.to_string(), 1);
 
         {
             // Merge delta files to level-1.
@@ -659,7 +659,7 @@ pub mod test {
     async fn test_compact_req_methods_normal_compaction() {
         // This case doesn't need directory to exist.
         let dir = "/tmp/test/compaction/test_compact_req_methods_normal_compaction";
-        let opt = create_options(dir.to_string(), true);
+        let opt = create_options(dir.to_string(), 1);
 
         {
             // Merge level files to next level.

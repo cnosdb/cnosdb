@@ -604,7 +604,7 @@ impl DataBlock {
     /// Merges one or many `DataBlock`s into some `DataBlock` with fixed length,
     /// sorted by timestamp, if many (timestamp, value) conflict with the same
     /// timestamp, use the last value.
-    pub fn merge_blocks(mut blocks: Vec<Self>, max_block_size: u32) -> Vec<Self> {
+    pub fn merge_blocks_and_split(mut blocks: Vec<Self>, max_block_size: u32) -> Vec<Self> {
         if blocks.is_empty() {
             return vec![];
         }
@@ -649,6 +649,47 @@ impl DataBlock {
                         res.push(blk);
                     }
                     return res;
+                }
+            }
+        }
+    }
+
+    pub fn merge_blocks(mut blocks: Vec<Self>) -> Option<Self> {
+        if blocks.is_empty() {
+            return None;
+        }
+        if blocks.len() == 1 {
+            return Some(blocks.remove(0));
+        }
+        let data_blocks = match blocks.first() {
+            None => {
+                return None;
+            }
+            Some(v) => v,
+        };
+        let capacity = data_blocks.len();
+        let field_type = data_blocks.field_type();
+
+        let mut blk = Self::new(capacity, field_type);
+        let mut buf = vec![None; blocks.len()];
+        let mut offsets = vec![0_usize; blocks.len()];
+        loop {
+            match Self::next_min(&mut blocks, &mut buf, &mut offsets) {
+                Some(min) => {
+                    let mut data = None;
+                    for item in &mut buf {
+                        if let Some(it) = item {
+                            if it.timestamp() == min {
+                                data = item.take();
+                            }
+                        }
+                    }
+                    if let Some(it) = data {
+                        blk.insert(it);
+                    }
+                }
+                None => {
+                    return Some(blk);
                 }
             }
         }
@@ -1236,18 +1277,44 @@ pub mod test {
     #[test]
     fn test_merge_multiple_blocks() {
         #[rustfmt::skip]
-        let res = DataBlock::merge_blocks(
+        let res = DataBlock::merge_blocks_and_split(
             vec![
                 DataBlock::U64 { ts: vec![1, 2, 3, 4, 5], val: vec![10, 20, 30, 40, 50], enc: DataBlockEncoding::default() },
                 DataBlock::U64 { ts: vec![2, 3, 4], val: vec![12, 13, 15], enc: DataBlockEncoding::default() },
             ],
             0,
         );
-
         #[rustfmt::skip]
         assert_eq!(res, vec![
             DataBlock::U64 { ts: vec![1, 2, 3, 4, 5], val: vec![10, 12, 13, 15, 50], enc: DataBlockEncoding::default() },
         ]);
+
+        #[rustfmt::skip]
+        let res = DataBlock::merge_blocks_and_split(
+            vec![
+                DataBlock::U64 { ts: vec![1, 2, 3, 4, 5], val: vec![10, 20, 30, 40, 50], enc: DataBlockEncoding::default() },
+                DataBlock::U64 { ts: vec![2, 3, 4], val: vec![12, 13, 15], enc: DataBlockEncoding::default() },
+            ],
+            3,
+        );
+        #[rustfmt::skip]
+        assert_eq!(res, vec![
+            DataBlock::U64 { ts: vec![1, 2, 3], val: vec![10, 12, 13], enc: DataBlockEncoding::default() },
+            DataBlock::U64 { ts: vec![4, 5], val: vec![15, 50], enc: DataBlockEncoding::default() },
+        ]);
+
+        #[rustfmt::skip]
+        let blk = DataBlock::merge_blocks(
+            vec![
+                DataBlock::U64 { ts: vec![1, 2, 3, 4, 5], val: vec![10, 20, 30, 40, 50], enc: DataBlockEncoding::default() },
+                DataBlock::U64 { ts: vec![2, 3, 4], val: vec![12, 13, 15], enc: DataBlockEncoding::default() },
+            ],
+        );
+        #[rustfmt::skip]
+        assert_eq!(
+            blk.unwrap(),
+            DataBlock::U64 { ts: vec![1, 2, 3, 4, 5], val: vec![10, 12, 13, 15, 50], enc: DataBlockEncoding::default() },
+        );
     }
 
     #[test]
