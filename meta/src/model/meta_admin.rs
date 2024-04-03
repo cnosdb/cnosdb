@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use config::Config;
-use models::auth::user::{admin_user, User, UserDesc, UserOptions};
+use models::auth::user::{admin_user, super_user, User, UserDesc, UserOptions};
 use models::meta_data::*;
 use models::node_info::NodeStatus;
 use models::oid::{Identifier, Oid, UuidGenerator};
@@ -604,7 +604,9 @@ impl AdminMeta {
 
         let role = client.member_role(user_desc.id(), true).await?;
 
-        let user = if user_desc.is_admin() {
+        let user = if user_desc.is_root_admin() {
+            super_user(user_desc, role)
+        } else if user_desc.is_granted_admin() {
             admin_user(user_desc, role)
         } else {
             let privileges = client.user_privileges(&user_desc).await?;

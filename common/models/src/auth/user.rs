@@ -287,3 +287,9 @@ pub fn admin_user(desc: UserDesc, role: Option<TenantRoleIdentifier>) -> User {
     let privileges = UserRole::Dba.to_privileges();
     User::new(desc, privileges, role)
 }
+
+pub fn super_user(desc: UserDesc, role: Option<TenantRoleIdentifier>) -> User {
+    let mut privileges = UserRole::Dba.to_privileges();
+    privileges.insert(Privilege::Global(GlobalPrivilege::SuperUser));
+    User::new(desc, privileges, role)
+}

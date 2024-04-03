@@ -54,6 +54,8 @@ impl<T: Id> PrivilegeChecker for Privilege<T> {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum GlobalPrivilege<T> {
     System,
+    // the superuser is for changing root password
+    SuperUser,
     // Some(T): Administrative rights for the specify user, `T` represents the unique identifier of the user
     // None: Administrative rights for all user
     User(Option<T>),
@@ -70,6 +72,9 @@ where
         match self {
             Self::System => {
                 write!(f, "maintainer for system")
+            }
+            Self::SuperUser => {
+                write!(f, "maintainer for root")
             }
             Self::User(u) => match u {
                 Some(u) => {
@@ -97,6 +102,7 @@ where
 {
     fn check_privilege(&self, other: &Self) -> bool {
         match (self, other) {
+            (Self::SuperUser, _) => true,
             (Self::User(None), Self::User(_)) => true,
             (Self::User(Some(lo)), Self::User(Some(ro))) => lo == ro,
             (Self::Tenant(None), Self::Tenant(_)) => true,

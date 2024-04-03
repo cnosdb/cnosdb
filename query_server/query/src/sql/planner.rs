@@ -1820,6 +1820,10 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
                     // 修改admin参数需要系统管理权限
                     privileges = vec![Privilege::Global(GlobalPrivilege::System)];
                 }
+                // only root can change root password
+                if user_options.hash_password().is_some() && user_desc.is_root_admin() {
+                    privileges = vec![Privilege::Global(GlobalPrivilege::SuperUser)];
+                }
                 AlterUserAction::Set(user_options)
             }
         };
