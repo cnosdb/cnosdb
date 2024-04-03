@@ -232,7 +232,7 @@ pub struct BinlogWriter {
 
 impl BinlogWriter {
     pub async fn open(id: u64, path: impl AsRef<Path>) -> IndexResult<Self> {
-        let file_system = LocalFileSystem::new(LocalFileType::Mmap);
+        let file_system = LocalFileSystem::new(LocalFileType::ThreadPool);
         let mut file = file_system
             .open_file_writer(path.as_ref().to_path_buf())
             .await
@@ -252,8 +252,10 @@ impl BinlogWriter {
         header_buf[..4].copy_from_slice(SEGMENT_FILE_MAGIC.as_slice());
         header_buf[4..].copy_from_slice(&offset.to_be_bytes());
 
+        file.seek(SeekFrom::Start(0)).await?;
         file.write(&header_buf).await?;
         file.flush().await?;
+        file.seek(SeekFrom::Start(file.len() as u64)).await?;
 
         Ok(())
     }
@@ -325,8 +327,8 @@ impl BinlogReader {
         Ok(header_buf)
     }
 
-    pub fn read_over(&mut self) -> bool {
-        self.cursor.pos() >= self.cursor.len()
+    pub fn read_over(&mut self) -> std::io::Result<bool> {
+        Ok(self.cursor.pos() >= self.cursor.len()?)
     }
 
     pub fn pos(&self) -> usize {
@@ -343,7 +345,7 @@ impl BinlogReader {
             offset = self.cursor.pos() as u32;
         }
 
-        let file_system = LocalFileSystem::new(LocalFileType::Mmap);
+        let file_system = LocalFileSystem::new(LocalFileType::ThreadPool);
         let mut file = file_system
             .open_file_writer(self.cursor.path())
             .await
@@ -356,12 +358,14 @@ impl BinlogReader {
         self.cursor.pos()
     }
 
-    pub fn file_len(&self) -> usize {
+    pub fn file_len(&self) -> std::io::Result<usize> {
         self.cursor.len()
     }
 
     pub async fn next_block(&mut self) -> IndexResult<Option<IndexBinlogBlock>> {
-        if self.read_over() {
+        if self.read_over().map_err(|err| IndexError::FileErrors {
+            msg: err.to_string(),
+        })? {
             return Ok(None);
         }
 
@@ -378,11 +382,13 @@ impl BinlogReader {
 
         debug!("Read Binlog Reader: data_len={}", data_len);
 
-        if data_len > (self.file_len() - self.read_pos()) as u32 {
+        if data_len > (self.file_len()? - self.read_pos()) as u32 {
             error!(
                 "binlog read block error {}, {} {} ",
                 data_len,
-                self.file_len(),
+                self.file_len().map_err(|err| IndexError::FileErrors {
+                    msg: err.to_string()
+                })?,
                 self.read_pos()
             );
 
@@ -390,7 +396,9 @@ impl BinlogReader {
                 msg: format!(
                     "block data length {} > {}-{}",
                     data_len,
-                    self.file_len(),
+                    self.file_len().map_err(|err| IndexError::FileErrors {
+                        msg: err.to_string()
+                    })?,
                     self.read_pos()
                 ),
             });
@@ -431,7 +439,11 @@ pub async fn repair_index_file(file_name: &str) -> IndexResult<()> {
 
     println!(
         "file length: {}, persistence offset: {},  can repair offset: {}",
-        reader_file.file_len(),
+        reader_file
+            .file_len()
+            .map_err(|err| IndexError::FileErrors {
+                msg: err.to_string()
+            })?,
         file_read_offset,
         max_can_repair
     );

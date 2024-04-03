@@ -1128,6 +1128,7 @@ impl Tsm2Writer {
         self.write_chunk_group().await?;
         self.write_chunk_group_specs(series_meta).await?;
         self.write_footer().await?;
+        self.writer.flush().await?;
         self.state = State::Finished;
         Ok(())
     }

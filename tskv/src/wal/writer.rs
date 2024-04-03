@@ -114,14 +114,14 @@ impl WalWriter {
         Ok(size)
     }
 
-    pub async fn new_reader(&self) -> WalReader {
-        let record_reader = self.inner.new_reader().await;
-        WalReader::new(
+    pub async fn new_reader(&self) -> Result<WalReader> {
+        let record_reader = self.inner.new_reader().await?;
+        Ok(WalReader::new(
             record_reader,
             self.min_sequence,
             self.max_sequence,
             self.has_footer,
-        )
+        ))
     }
 
     pub async fn truncate(&mut self, size: u64, seq_no: u64) {

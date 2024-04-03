@@ -52,7 +52,10 @@ impl EntryStorage for RaftEntryStorage {
                 .await
                 .map_err(|e| ReplicationError::RaftInternalErr { msg: e.to_string() })?;
 
-            self.inner.mark_write_wal(ent.clone(), wal_id, pos).await;
+            self.inner
+                .mark_write_wal(ent.clone(), wal_id, pos)
+                .await
+                .map_err(|e| ReplicationError::StorageErr { msg: e.to_string() })?;
         }
         Ok(())
     }
@@ -204,7 +207,7 @@ struct RaftEntryStorageInner {
 }
 
 impl RaftEntryStorageInner {
-    async fn mark_write_wal(&mut self, entry: RaftEntry, wal_id: u64, pos: u64) {
+    async fn mark_write_wal(&mut self, entry: RaftEntry, wal_id: u64, pos: u64) -> Result<()> {
         let index = entry.log_id.index;
         if let Some(item) = self
             .files_meta
@@ -214,12 +217,13 @@ impl RaftEntryStorageInner {
         {
             item.mark_entry(index, pos);
         } else {
+            self.wal.sync().await?;
             let mut item = WalFileMeta {
                 file_id: wal_id,
                 min_seq: u64::MAX,
                 max_seq: u64::MAX,
                 entry_index: vec![],
-                reader: self.wal.current_wal.new_reader().await,
+                reader: self.wal.current_wal.new_reader().await?,
             };
 
             item.entry_index.reserve(8 * 1024);
@@ -228,6 +232,7 @@ impl RaftEntryStorageInner {
         }
 
         self.entry_cache.put(index, entry);
+        Ok(())
     }
 
     async fn mark_delete_before(&mut self, seq_no: u64) {
@@ -406,7 +411,7 @@ impl RaftEntryStorageInner {
                                 }
                             }
 
-                            self.mark_write_wal(entry, wal_id, r.pos).await;
+                            self.mark_write_wal(entry, wal_id, r.pos).await.unwrap();
                         }
                     }
                     Err(Error::Eof) => {
@@ -453,7 +458,7 @@ mod test {
             wal_req_channel_cap: 1024,
             max_file_size: 1024 * 1024,
             flush_trigger_total_file_size: 128,
-            sync: false,
+            sync: true,
             sync_interval: std::time::Duration::from_secs(3600),
         };
 

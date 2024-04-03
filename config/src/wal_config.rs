@@ -57,7 +57,7 @@ impl WalConfig {
     }
 
     fn default_sync() -> bool {
-        false
+        true
     }
 
     fn default_sync_interval() -> Duration {

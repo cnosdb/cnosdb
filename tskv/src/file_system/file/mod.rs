@@ -14,7 +14,7 @@ use tokio::task::spawn_blocking;
 #[async_trait]
 pub trait ReadableFile: Send + Sync {
     async fn read_at(&self, pos: usize, data: &mut [u8]) -> Result<usize>;
-    fn file_size(&self) -> usize;
+    fn file_size(&self) -> Result<usize>;
 }
 
 #[async_trait]
@@ -67,7 +67,8 @@ mod test {
 
         let path = Path::new(dir).join("test.txt");
         let file_system = LocalFileSystem::new(LocalFileType::Mmap);
-        let mut write_file = file_system.open_file_writer(&path).await.unwrap();
+        let file_system_2 = LocalFileSystem::new(LocalFileType::ThreadPool);
+        let mut write_file = file_system_2.open_file_writer(&path).await.unwrap();
         let read_file = file_system.open_file_reader(&path).await.unwrap();
         let mut data = b"hello world".to_vec();
 
@@ -91,9 +92,10 @@ mod test {
         let _ = std::fs::remove_dir_all(dir);
         std::fs::create_dir_all(dir).unwrap();
         let file_system = LocalFileSystem::new(LocalFileType::Mmap);
+        let file_system_2 = LocalFileSystem::new(LocalFileType::ThreadPool);
 
         let path = Path::new(dir).join("test.txt");
-        let mut write_file = file_system.open_file_writer(&path).await.unwrap();
+        let mut write_file = file_system_2.open_file_writer(&path).await.unwrap();
         let read_file = file_system.open_file_reader(&path).await.unwrap();
         let mut data = b"hello world".to_vec();
 

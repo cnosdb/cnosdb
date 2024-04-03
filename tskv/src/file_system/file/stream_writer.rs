@@ -132,7 +132,7 @@ impl FileStreamWriter {
     }
 
     pub fn len(&self) -> usize {
-        self.file.file_size()
+        self.file.file_size() + self.buf.data.len()
     }
 
     pub fn is_empty(&self) -> bool {

@@ -325,7 +325,7 @@ impl Debug for TSM2Reader {
 }
 
 pub async fn read_footer(reader: &FileStreamReader) -> Result<Footer> {
-    let pos = reader.len() - FOOTER_SIZE;
+    let pos = reader.len()? - FOOTER_SIZE;
     let mut buffer = vec![0u8; FOOTER_SIZE];
     reader.read_at(pos, &mut buffer).await?;
     Footer::deserialize(&buffer)

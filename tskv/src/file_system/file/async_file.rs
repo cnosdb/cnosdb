@@ -48,8 +48,8 @@ impl file::ReadableFile for AsyncFile {
         self.inner.pread(pos, data).await
     }
 
-    fn file_size(&self) -> usize {
-        self.size
+    fn file_size(&self) -> Result<usize> {
+        Ok(self.size)
     }
 }
 

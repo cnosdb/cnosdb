@@ -31,12 +31,12 @@ pub async fn read_footer_from(
     file: &FileStreamReader,
     file_path: impl AsRef<Path>,
 ) -> Result<(usize, [u8; FILE_FOOTER_LEN])> {
-    if file.len() < (FILE_MAGIC_NUMBER_LEN + FILE_FOOTER_LEN) {
+    if file.len()? < (FILE_MAGIC_NUMBER_LEN + FILE_FOOTER_LEN) {
         return Err(Error::NoFooter);
     }
 
     // Get file crc
-    let mut buf = vec![0_u8; file_crc_source_len(file.len(), FILE_FOOTER_LEN)];
+    let mut buf = vec![0_u8; file_crc_source_len(file.len()?, FILE_FOOTER_LEN)];
     if let Err(e) = file.read_at(FILE_MAGIC_NUMBER_LEN, &mut buf).await {
         return Err(Error::ReadFile {
             path: file_path.as_ref().to_path_buf(),
@@ -46,7 +46,7 @@ pub async fn read_footer_from(
     let crc = crc32fast::hash(&buf);
 
     // Read footer
-    let footer_pos = file.len() - FILE_FOOTER_LEN;
+    let footer_pos = file.len()? - FILE_FOOTER_LEN;
     let mut footer = [0_u8; FILE_FOOTER_LEN];
     if let Err(e) = file.read_at(footer_pos, &mut footer[..]).await {
         return Err(Error::ReadFile {
@@ -91,7 +91,7 @@ impl Reader {
             .map_err(|e| Error::FileSystemError { source: e })?;
         let (footer_pos, footer) = match read_footer_from(&file, path).await {
             Ok((p, f)) => (p, Some(f)),
-            Err(Error::NoFooter) => (file.len(), None),
+            Err(Error::NoFooter) => (file.len()?, None),
             Err(e) => {
                 trace::error!(
                     "Record file: Failed to read footer in '{}': {e}",
@@ -100,7 +100,7 @@ impl Reader {
                 return Err(e);
             }
         };
-        let file_len = file.len();
+        let file_len = file.len()?;
         let records_len = if footer_pos == file_len {
             // If there is no footer
             file_len - FILE_MAGIC_NUMBER_LEN
@@ -174,11 +174,11 @@ impl Reader {
                 let size = pos - self.pos;
                 self.pos = pos;
                 match (self.buf_len - self.buf_use).cmp(&size) {
-                    Ordering::Greater => {
+                    Ordering::Less => self.load_buf().await,
+                    _ => {
                         self.buf_use += size;
                         Ok(())
                     }
-                    _ => self.load_buf().await,
                 }
             }
             Ordering::Equal => Ok(()),
@@ -311,9 +311,15 @@ impl Reader {
             .file
             .read_at(self.pos, &mut self.buf)
             .await
-            .map_err(|e| Error::ReadFile {
-                path: self.path.clone(),
-                source: e,
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::UnexpectedEof {
+                    Error::Eof
+                } else {
+                    Error::ReadFile {
+                        path: self.path.clone(),
+                        source: e,
+                    }
+                }
             })?;
         self.buf_use = 0;
         Ok(())
@@ -350,7 +356,7 @@ impl Reader {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.file.len() == 0
+        self.file_len == 0
     }
 
     pub fn pos(&self) -> usize {
@@ -535,6 +541,7 @@ pub(crate) mod test {
                     .unwrap();
                 assert_eq!(data_size, record_length(11));
                 writer.write_footer(&mut footer).await.unwrap();
+                writer.sync().await.unwrap();
                 assert_record_file_data_eq(&path, [[data]], true).await;
             }
             // Test open file.

@@ -277,9 +277,10 @@ impl VnodeWal {
     }
 
     pub async fn wal_reader(&mut self, wal_id: u64) -> Result<WalReader> {
+        self.current_wal.sync().await?;
         if wal_id == self.current_wal_id() {
             // Use the same wal as the writer.
-            let reader = self.current_wal.new_reader().await;
+            let reader = self.current_wal.new_reader().await?;
             Ok(reader)
         } else {
             let wal_dir = self.config.wal_dir(&self.tenant_database, self.vnode_id);

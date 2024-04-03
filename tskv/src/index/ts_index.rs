@@ -937,7 +937,7 @@ pub fn run_index_job(
 ) {
     tokio::spawn(async move {
         let mut handle_file = HashMap::new();
-        let file_system = LocalFileSystem::new(LocalFileType::Mmap);
+        let file_system = LocalFileSystem::new(LocalFileType::ThreadPool);
         while (binlog_change_reciver.recv().await).is_some() {
             let ts_index = match ts_index.upgrade() {
                 Some(ts_index) => ts_index,
@@ -1141,6 +1141,7 @@ mod test {
                     .add_series_if_not_exists(vec![series_key.clone()])
                     .await
                     .unwrap();
+                ts_index.binlog.write().await.close().await.unwrap();
                 tokio::time::sleep(Duration::from_millis(100)).await;
                 let last_key = ts_index.get_series_key(sid[0].0).await.unwrap().unwrap();
                 assert_eq!(series_key.to_string(), last_key.to_string());
@@ -1190,6 +1191,7 @@ mod test {
             assert_eq!(ts_index.get_series_id(&series_keys[1]).await.unwrap(), None);
             let list = ts_index.get_series_id_list(query_t, &[]).await.unwrap();
             assert_eq!(list.len(), 5);
+            ts_index.binlog.write().await.close().await.unwrap();
         }
 
         {
@@ -1219,6 +1221,7 @@ mod test {
                     .add_series_if_not_exists(vec![series_key.clone()])
                     .await
                     .unwrap();
+                ts_index.binlog.write().await.close().await.unwrap();
                 tokio::time::sleep(Duration::from_millis(100)).await;
                 let last_key = ts_index.get_series_key(sid[0].0).await.unwrap().unwrap();
                 assert_eq!(series_key.to_string(), last_key.to_string());
@@ -1247,6 +1250,7 @@ mod test {
                 .add_series_if_not_exists(vec![series_key.clone()])
                 .await
                 .unwrap();
+            ts_index.binlog.write().await.close().await.unwrap();
             tokio::time::sleep(Duration::from_millis(100)).await;
             let last_key = ts_index.get_series_key(sid[0].0).await.unwrap().unwrap();
             assert_eq!(series_key.to_string(), last_key.to_string());
@@ -1331,6 +1335,8 @@ mod test {
             assert_eq!(expected_series, &series)
         }
 
+        ts_index.binlog.write().await.close().await.unwrap();
+
         // Wait for binlog to be consumed
         tokio::time::sleep(Duration::from_secs(1)).await;
 
@@ -1352,6 +1358,8 @@ mod test {
             )
             .await
             .unwrap();
+
+        ts_index.binlog.write().await.close().await.unwrap();
 
         // Wait for binlog to be consumed
         tokio::time::sleep(Duration::from_secs(1)).await;
@@ -1441,6 +1449,8 @@ mod test {
             .update_series_key(old_series_keys, new_series_keys, matched_sids, false)
             .await
             .unwrap();
+
+        ts_index.binlog.write().await.close().await.unwrap();
 
         // Wait for binlog to be consumed
         tokio::time::sleep(Duration::from_secs(1)).await;

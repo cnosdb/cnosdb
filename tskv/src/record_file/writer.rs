@@ -22,7 +22,7 @@ pub struct Writer {
 impl Writer {
     pub async fn open(path: impl AsRef<Path>, _data_type: RecordDataType) -> Result<Self> {
         let path = path.as_ref();
-        let file_system = LocalFileSystem::new(LocalFileType::Mmap);
+        let file_system = LocalFileSystem::new(LocalFileType::ThreadPool);
         let mut file = file_system
             .open_file_writer(path)
             .await
@@ -132,7 +132,7 @@ impl Writer {
 
         // Get file crc
         let mut buf = vec![0_u8; file_crc_source_len(self.file.len(), 0_usize)];
-        let file_system = LocalFileSystem::new(LocalFileType::Mmap);
+        let file_system = LocalFileSystem::new(LocalFileType::ThreadPool);
         let file = file_system
             .open_file_reader(&self.path)
             .await
@@ -175,11 +175,16 @@ impl Writer {
         self.sync().await
     }
 
-    pub async fn new_reader(&self) -> reader::Reader {
+    pub async fn new_reader(&self) -> Result<reader::Reader> {
         let file_system = LocalFileSystem::new(LocalFileType::Mmap);
         let file = file_system.open_file_reader(&self.path).await.unwrap();
-        let len = file.len();
-        reader::Reader::new(file, self.path.clone(), len, self.footer)
+        let len = file.len()?;
+        Ok(reader::Reader::new(
+            file,
+            self.path.clone(),
+            len,
+            self.footer,
+        ))
     }
 
     pub fn path(&self) -> PathBuf {

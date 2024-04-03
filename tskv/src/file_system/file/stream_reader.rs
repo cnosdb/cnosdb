@@ -35,9 +35,9 @@ impl FileStreamReader {
             SeekFrom::Start(pos) => Some(pos as usize),
             SeekFrom::End(delta) => {
                 if delta >= 0 {
-                    self.len().checked_add(delta as usize)
+                    self.len()?.checked_add(delta as usize)
                 } else {
-                    self.len().checked_sub(-delta as usize)
+                    self.len()?.checked_sub(-delta as usize)
                 }
             }
             SeekFrom::Current(delta) => {
@@ -52,7 +52,7 @@ impl FileStreamReader {
         Ok(self.pos)
     }
 
-    pub fn len(&self) -> usize {
+    pub fn len(&self) -> Result<usize> {
         self.file.file_size()
     }
 

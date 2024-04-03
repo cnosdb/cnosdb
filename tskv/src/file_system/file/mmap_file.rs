@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::{mem, ptr};
 
 use crate::file_system::file::raw_file::RawFile;
-use crate::file_system::file::{asyncify, ReadableFile, WritableFile};
+use crate::file_system::file::{asyncify, ReadableFile};
 
 pub struct MmapFile {
     file: RawFile,
@@ -28,47 +28,6 @@ impl MmapFile {
 }
 
 #[async_trait::async_trait]
-impl WritableFile for MmapFile {
-    async fn write_at(&mut self, pos: usize, data: &[u8]) -> Result<usize> {
-        let mmap = self.mmap.clone();
-        let size = self.size;
-        let len = data.len();
-        let src = data.as_ptr() as usize;
-        let size = asyncify(move || {
-            unsafe {
-                let memory = std::slice::from_raw_parts_mut(mmap.as_mut_ptr(), size);
-                let dst = memory.as_mut_ptr().add(pos);
-                ptr::copy_nonoverlapping(mem::transmute(src), dst, len);
-            }
-            Ok(len)
-        })
-        .await?;
-        self.size = self.size.max(pos + size);
-        Ok(size)
-    }
-
-    async fn sync_data(&self) -> Result<()> {
-        self.file.sync_data().await
-    }
-
-    async fn sync_all(&self) -> Result<()> {
-        self.file.sync_all().await
-    }
-
-    async fn truncate(&self, size: u64) -> Result<()> {
-        self.file.truncate(size).await
-    }
-
-    fn file_size(&self) -> usize {
-        self.size
-    }
-
-    fn is_empty(&self) -> bool {
-        self.size == 0
-    }
-}
-
-#[async_trait::async_trait]
 impl ReadableFile for MmapFile {
     async fn read_at(&self, pos: usize, data: &mut [u8]) -> Result<usize> {
         let mmap = self.mmap.clone();
@@ -79,7 +38,7 @@ impl ReadableFile for MmapFile {
             unsafe {
                 let memory = std::slice::from_raw_parts(mmap.as_ptr(), size);
                 let src = memory.as_ptr().add(pos);
-                ptr::copy_nonoverlapping(src, mem::transmute(dst), len);
+                ptr::copy_nonoverlapping(src, dst as *mut u8, len);
             }
             Ok(len)
         })
@@ -87,7 +46,44 @@ impl ReadableFile for MmapFile {
         Ok(size)
     }
 
-    fn file_size(&self) -> usize {
-        self.size
+    fn file_size(&self) -> Result<usize> {
+        self.file.file_size()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::fs::OpenOptions;
+    use std::io::Write;
+    use std::path::PathBuf;
+
+    use memmap2::MmapRaw;
+
+    use crate::file_system::file::asyncify;
+
+    #[tokio::test]
+    async fn test_mmap_raw() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let path: PathBuf = tempdir.path().join("flush");
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(&path)
+            .unwrap();
+        file.set_len(128).unwrap();
+
+        let mmap = MmapRaw::map_raw(&file).unwrap();
+
+        asyncify(move || {
+            unsafe {
+                let mut memory = std::slice::from_raw_parts_mut(mmap.as_mut_ptr(), 128);
+                memory.write_all(b"Hello, world!").unwrap();
+                mmap.flush().unwrap();
+            }
+            Ok(())
+        })
+        .await
+        .unwrap();
     }
 }

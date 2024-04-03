@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use snafu::Snafu;
 
 pub type FileSystemResult<T> = Result<T, FileSystemError>;
@@ -7,4 +9,25 @@ pub type FileSystemResult<T> = Result<T, FileSystemError>;
 pub enum FileSystemError {
     #[snafu(display("File error: {:?}", source))]
     StdIOError { source: std::io::Error },
+
+    #[snafu(display("Unable to open file '{}': {}", path.display(), source))]
+    UnableToOpenFile {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+
+    #[snafu(display("Unable to write file '{}': {}", path.display(), source))]
+    UnableToWriteBytes {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+
+    #[snafu(display("Unable to sync file '{}': {}", path.display(), source))]
+    UnableToSyncFile {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+
+    #[snafu(display("async file system stopped"))]
+    Cancel,
 }
