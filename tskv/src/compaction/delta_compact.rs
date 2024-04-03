@@ -8,23 +8,28 @@ use models::FieldId;
 use snafu::ResultExt;
 use utils::BloomFilter;
 
+use super::CompactTask;
 use crate::compaction::compact::{CompactingBlock, CompactingBlockMeta, CompactingFile};
 use crate::compaction::{CompactReq, CompactingBlocks};
 use crate::context::GlobalContext;
-use crate::error::{self, ChannelSendError, Result};
+use crate::error::{self, Result};
 use crate::summary::{CompactMeta, VersionEdit};
 use crate::tseries_family::TseriesFamily;
 use crate::tsm::{
     self, BlockMetaIterator, DataBlock, EncodedDataBlock, TsmReader, TsmWriter, WriteTsmError,
     WriteTsmResult,
 };
-use crate::{ColumnFileId, Error, LevelId, TseriesFamilyId};
+use crate::{ColumnFileId, Error, LevelId};
 
 pub async fn run_compaction_job(
     request: CompactReq,
     ctx: Arc<GlobalContext>,
 ) -> Result<Option<(VersionEdit, HashMap<ColumnFileId, Arc<BloomFilter>>)>> {
-    trace::info!("Compaction(delta): Running compaction job on {request}");
+    trace::info!(
+        "Compaction({}): Running compaction job on {request}",
+        request.compact_task
+    );
+    let compact_task = request.compact_task;
 
     let (delta_files, level_file) = request.split_delta_and_level_files();
     if delta_files.is_empty() {
@@ -138,7 +143,7 @@ pub async fn run_compaction_job(
     version_edit.partly_del_files = l0_file_metas_will_partly_delete;
 
     trace::info!(
-        "Compaction(delta): Compact finished, version edits: {:?}",
+        "Compaction({compact_task}): Compact finished, version edits: {:?}",
         version_edit
     );
     Ok(Some((version_edit, file_metas)))
@@ -453,38 +458,31 @@ impl CompactingBlockMetaGroup {
                         head_blk = data_block;
                     }
                 }
-                let (tx, mut rx) = tokio::sync::mpsc::channel::<DataBlock>(4);
-                let jh = tokio::spawn(async move {
-                    trace::trace!("Compaction(delta): Start task to merge data blocks");
-                    while let Some(blk) = rx.recv().await {
-                        head_blk = head_blk.merge(blk);
-                    }
-                    trace::trace!("Compaction(delta): Finished task to merge data blocks");
-                    head_blk
-                });
+
                 trace::trace!("=== Resolving {} blocks", self.blk_metas.len() - head_i - 1);
+                const BLOCK_BATCH_SIZE: usize = 64;
+                let mut batch_blk = Vec::with_capacity(BLOCK_BATCH_SIZE);
                 for blk_meta in self.blk_metas.iter_mut().skip(head_i + 1) {
                     // Merge decoded data block.
                     if let Some(blk) = blk_meta.get_data_block_intersection(time_range).await? {
-                        if let Err(e) = tx.send(blk).await {
-                            trace::error!(
-                                "Compaction(delta): Failed to send data block to merge: {}",
-                                e.0
+                        batch_blk.push(blk);
+                        if batch_blk.len() >= BLOCK_BATCH_SIZE {
+                            let batch_blk = std::mem::replace(
+                                &mut batch_blk,
+                                Vec::with_capacity(BLOCK_BATCH_SIZE),
                             );
-                            return Err(Error::ChannelSend {
-                                source: ChannelSendError::CompactDataBlock,
-                            });
+                            if let Some(blk) = DataBlock::merge_blocks(batch_blk) {
+                                head_blk = head_blk.merge(blk);
+                            }
                         }
                     }
                 }
-                drop(tx);
-                let head_blk = match jh.await {
-                    Ok(blk) => blk,
-                    Err(e) => {
-                        trace::error!("Compaction(delta): Failed to merge data blocks: {:?}", e);
-                        return Err(Error::IO { source: e.into() });
+                if !batch_blk.is_empty() {
+                    if let Some(blk) = DataBlock::merge_blocks(batch_blk) {
+                        head_blk = head_blk.merge(blk);
                     }
-                };
+                }
+                trace::trace!("Compaction(delta): Finished task to merge data blocks");
                 head_block = Some(head_blk);
             } else if let Some(prev_compacting_block) = previous_block {
                 // Use the previous compacting block.
@@ -588,7 +586,7 @@ fn chunk_data_block_into_compacting_blocks(
 struct WriterWrapper {
     // Init values.
     context: Arc<GlobalContext>,
-    ts_family_id: TseriesFamilyId,
+    compact_task: CompactTask,
     out_level: LevelId,
     tsm_dir: PathBuf,
 
@@ -608,7 +606,7 @@ impl WriterWrapper {
         let tsm_dir = storage_opt.tsm_dir(request.version.borrowed_database(), ts_family_id);
         Ok(Self {
             context,
-            ts_family_id,
+            compact_task: request.compact_task,
             out_level: request.out_level,
             tsm_dir,
 
@@ -629,7 +627,8 @@ impl WriterWrapper {
             tsm_writer.finish().await.context(error::WriteTsmSnafu)?;
 
             trace::info!(
-                "Compaction(delta): File: {} write finished (level: {}, {} B).",
+                "Compaction({}): File: {} write finished (level: {}, {} B).",
+                self.compact_task,
                 tsm_writer.sequence(),
                 self.out_level,
                 tsm_writer.size()
@@ -639,7 +638,7 @@ impl WriterWrapper {
             let cm = CompactMeta {
                 file_id,
                 file_size: tsm_writer.size(),
-                tsf_id: self.ts_family_id,
+                tsf_id: self.compact_task.ts_family_id(),
                 level: self.out_level,
                 min_ts: tsm_writer.min_ts(),
                 max_ts: tsm_writer.max_ts(),
@@ -660,7 +659,8 @@ impl WriterWrapper {
             let file_id = self.context.file_id_next();
             let tsm_writer = tsm::new_tsm_writer(&self.tsm_dir, file_id, false, 0).await?;
             trace::info!(
-                "Compaction(delta): File: {file_id} been created (level: {}).",
+                "Compaction({}): File: {file_id} been created (level: {}).",
+                self.compact_task,
                 self.out_level,
             );
             self.tsm_writer = Some(tsm_writer);
@@ -705,20 +705,26 @@ impl WriterWrapper {
             Ok(size) => Ok(size),
             Err(WriteTsmError::WriteIO { source }) => {
                 // TODO try re-run compaction on other time.
-                trace::error!("Compaction(delta): IO error when write tsm: {:?}", source);
+                trace::error!(
+                    "Compaction({}): IO error when write tsm: {:?}",
+                    self.compact_task,
+                    source
+                );
                 Err(Error::IO { source })
             }
             Err(WriteTsmError::Encode { source }) => {
                 // TODO try re-run compaction on other time.
                 trace::error!(
-                    "Compaction(delta): Encoding error when write tsm: {:?}",
+                    "Compaction({}): Encoding error when write tsm: {:?}",
+                    self.compact_task,
                     source
                 );
                 Err(Error::Encode { source })
             }
             Err(WriteTsmError::Finished { path }) => {
                 trace::error!(
-                    "Compaction(delta): Trying write already finished tsm file: '{}'",
+                    "Compaction({}): Trying write already finished tsm file: '{}'",
+                    self.compact_task,
                     path.display()
                 );
                 Err(Error::WriteTsm {
@@ -889,6 +895,37 @@ mod test {
         DataBlockEncoding::new(Encoding::Delta, Encoding::Delta);
 
     #[tokio::test]
+    #[ignore = "Manually test"]
+    async fn test_big_delta_compaction() {
+        let dir = "/tmp/test/big_delta_compaction/1";
+        let tenant_database = Arc::new("cnosdb.benchmark".to_string());
+        let opt = create_options(dir.to_string(), 1);
+
+        let delta_dir = opt.storage.delta_dir(&tenant_database, 1);
+        #[rustfmt::skip]
+        let (compact_req, kernel) = prepare_delta_compaction(
+            tenant_database,
+            opt,
+            5,
+            vec![
+                Arc::new(ColumnFile::new(1187, 0, (1626052320072000000, 1626057359280000000).into(), 0, delta_dir.join("_001187.delta"))),
+                Arc::new(ColumnFile::new(1199, 0, (1626057360072000000, 1626074639280000000).into(), 0, delta_dir.join("_001199.delta"))),
+                Arc::new(ColumnFile::new(1210, 0, (1626069600072000000, 1626073919280000000).into(), 0, delta_dir.join("_001210.delta"))),
+                Arc::new(ColumnFile::new(1225, 0, (1626074640072000000, 1626086159280000000).into(), 0, delta_dir.join("_001225.delta"))),
+            ],
+            vec![],
+            (1626053759280000001, 1626086159280000000).into(),
+            1,
+            0,
+        );
+        let (version_edit, _) = run_compaction_job(compact_req, kernel)
+            .await
+            .unwrap()
+            .unwrap();
+        println!("{version_edit}");
+    }
+
+    #[tokio::test]
     async fn test_delta_compaction_1() {
         #[rustfmt::skip]
         let data = vec![
@@ -918,7 +955,7 @@ mod test {
         let dir = "/tmp/test/delta_compaction/1";
         let _ = std::fs::remove_dir_all(dir);
         let tenant_database = Arc::new("cnosdb.dba".to_string());
-        let opt = create_options(dir.to_string(), true);
+        let opt = create_options(dir.to_string(), 1);
         let dir = opt.storage.tsm_dir(&tenant_database, 1);
         let max_level_ts = 9;
 
@@ -973,7 +1010,7 @@ mod test {
         let dir = "/tmp/test/delta_compaction/2";
         let _ = std::fs::remove_dir_all(dir);
         let tenant_database = Arc::new("cnosdb.dba".to_string());
-        let opt = create_options(dir.to_string(), true);
+        let opt = create_options(dir.to_string(), 1);
         let dir = opt.storage.tsm_dir(&tenant_database, 1);
         let max_level_ts = 9;
 
@@ -1022,7 +1059,7 @@ mod test {
         let dir = "/tmp/test/delta_compaction/3";
         let _ = std::fs::remove_dir_all(dir);
         let tenant_database = Arc::new("cnosdb.dba".to_string());
-        let opt = create_options(dir.to_string(), true);
+        let opt = create_options(dir.to_string(), 1);
         let dir = opt.storage.tsm_dir(&tenant_database, 1);
         let max_level_ts = 9;
 
@@ -1064,7 +1101,7 @@ mod test {
     ) {
         let _ = std::fs::remove_dir_all(dir);
         let tenant_database = Arc::new("cnosdb.dba".to_string());
-        let opt = create_options(dir.to_string(), true);
+        let opt = create_options(dir.to_string(), 1);
         let tsm_dir = opt.storage.tsm_dir(&tenant_database, 1);
         if !file_manager::try_exists(&tsm_dir) {
             std::fs::create_dir_all(&tsm_dir).unwrap();

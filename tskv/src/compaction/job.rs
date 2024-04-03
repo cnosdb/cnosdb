@@ -138,18 +138,18 @@ pub fn run(
                 let ctx = ctx.clone();
                 let seq_ctx = seq_ctx.clone();
                 let version_set = version_set.clone();
-                let compact_task_sender = compact_task_sender.clone();
+                let _compact_task_sender = compact_task_sender.clone();
                 let summary_task_sender = summary_task_sender.clone();
                 let vnode_compacting_map = vnode_compacting_map.clone();
                 runtime_inner.spawn(async move {
                     for compact_task in compact_tasks {
-                        info!("Starting compaction: {compact_task}");
+                        info!("Compaction({compact_task}: started");
                         let start = Instant::now();
 
                         let version = {
                             let vnode_rlock = vnode.read().await;
                             if !vnode_rlock.can_compaction() {
-                                info!("forbidden compaction on moving vnode {vnode_id}",);
+                                info!("Compaction({compact_task}: forbidden on moving vnode {vnode_id}",);
                                 return;
                             }
                             vnode_rlock.version()
@@ -159,7 +159,7 @@ pub fn run(
                                 req
                             },
                             None => {
-                                info!("Finished compaction, did nothing");
+                                info!("Compaction({compact_task}: finished and did nothing");
                                 continue;
                             }
                         };
@@ -183,15 +183,15 @@ pub fn run(
                                 )
                                 .await
                                 {
-                                    error!("Failed to flush vnode {vnode_id}: {e:?}",);
+                                    error!("Compaction({compact_task}: failed to flush vnode {vnode_id}: {e:?}",);
                                 }
                             }
                         }
 
-                        info!("Running compaction job: {compact_task}, sending to summary write.");
+                        info!("Compaction({compact_task}): running compaction job.");
                         match super::run_compaction_job(compact_req, ctx.clone()).await {
                             Ok(Some((version_edit, file_metas))) => {
-                                info!("Finished compaction1: {compact_task}, sending to summary write.");
+                                info!("Compaction({compact_task}: finished, sending to summary write.");
                                 metrics::incr_compaction_success();
                                 let (summary_tx, summary_rx) = oneshot::channel();
                                 let _ = summary_task_sender
@@ -210,34 +210,32 @@ pub fn run(
                                     out_level.to_string().as_str(),
                                     start.elapsed().as_secs_f64(),
                                 );
-                                info!("Finished compaction2: {compact_task}, waiting for summary write.");
                                 match summary_rx.await {
                                     Ok(Ok(())) => {
-                                        info!("Compaction: summary write success: {version_edit:?}");
+                                        info!("Compaction({compact_task}: finished, summary write success: {version_edit:?}");
                                     }
                                     Ok(Err(e)) => {
-                                        error!("Compaction: Failed to write summary: {}", e);
+                                        error!("Compaction({compact_task}: finished, summary wirte failed: {e}");
                                     }
                                     Err(e) => {
                                         error!(
-                                        "Compaction: Failed to receive summary write task: {}",
-                                        e
+                                        "Compaction({compact_task}: failed to receive summary write task: {e}",
                                     );
                                     }
                                 }
-                                // Send a normal compact request if it's a delta compaction.
-                                if let CompactTask::Delta(vnode_id) = &compact_task {
-                                    let _ = compact_task_sender
-                                        .send(CompactTask::Normal(*vnode_id))
-                                        .await;
-                                }
+                                // // Send a normal compact request if it's a delta compaction.
+                                // if let CompactTask::Delta(vnode_id) = &compact_task {
+                                //     let _ = _compact_task_sender
+                                //         .send(CompactTask::Normal(*vnode_id))
+                                //         .await;
+                                // }
                             }
                             Ok(None) => {
-                                info!("Compaction There is nothing to compact.");
+                                info!("Compaction({compact_task}: nothing to compact.");
                             }
                             Err(e) => {
                                 metrics::incr_compaction_failed();
-                                error!("Compaction: job failed: {}", e);
+                                error!("Compaction({compact_task}: compaction job failed: {e}");
                             }
                         }
                     }
