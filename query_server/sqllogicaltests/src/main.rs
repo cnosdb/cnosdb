@@ -53,6 +53,15 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
         if !relative_path.to_string_lossy().ends_with("slt") {
             continue;
         }
+        if let Some(file_stem) = path.file_stem() {
+            let file_stem = file_stem.to_string_lossy();
+            if file_stem.ends_with("__WINDOWS") && !cfg!(target_family = "windows") {
+                continue;
+            }
+            if file_stem.ends_with("__UNIX") && !cfg!(target_family = "unix") {
+                continue;
+            }
+        }
         if options.complete_mode {
             os::run_complete_file(&path, relative_path, db_options.clone()).await?;
         } else {
