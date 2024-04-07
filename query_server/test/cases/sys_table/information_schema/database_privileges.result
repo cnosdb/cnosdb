@@ -77,6 +77,10 @@
 -- EXECUTE SQL: create database if not exists test_dps_db with ttl '100000d'; --
 200 OK
 
+-- EXECUTE SQL: grant read on database test_not_exist to test_dps_role1; --
+422 Unprocessable Entity
+{"error_code":"030017","error_message":"Database not found: \"test_not_exist\""}
+-- ERROR:  --
 
 -- EXECUTE SQL: grant read on database test_dps_db to test_dps_role1; --
 200 OK

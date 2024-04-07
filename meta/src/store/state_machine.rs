@@ -1248,6 +1248,12 @@ impl StateMachine {
         let key = KeyPath::role(cluster, tenant_name, role_name);
         if let Some(mut role) = self.get_struct::<CustomTenantRole<Oid>>(&key)? {
             for (privilege, database_name) in privileges {
+                let key = KeyPath::tenant_db_name(cluster, tenant_name, database_name);
+                if !self.contains_key(&key)? {
+                    return Err(MetaError::DatabaseNotFound {
+                        database: database_name.to_string(),
+                    });
+                }
                 let _ = role.grant_privilege(database_name.clone(), privilege.clone());
             }
 

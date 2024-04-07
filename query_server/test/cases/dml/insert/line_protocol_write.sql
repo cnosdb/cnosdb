@@ -8,7 +8,7 @@ create user writer;
 drop role if exists lp_writer;
 create role lp_writer inherit member;
 
-grant read on database lp_writer to role lp_writer;
+grant read on database test_lp_writer to role lp_writer;
 alter tenant cnosdb add user writer as lp_writer;
 
 --#USER_NAME=writer
