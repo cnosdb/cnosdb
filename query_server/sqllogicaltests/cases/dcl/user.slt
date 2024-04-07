@@ -32,6 +32,9 @@ statement ok
 drop user if exists u11;
 
 statement ok
+drop user if exists u12;
+
+statement ok
 create user u1;
 
 statement ok
@@ -89,6 +92,29 @@ SELECT * FROM cluster_schema.users where user_name='u1';
 "u1" false "{\"hash_password\":\"*****\",\"must_change_password\":true,\"comment\":\"abc\"}"
 
 statement ok
+create user u12;
+
+sleep 1s
+
+statement ok
+ALTER TENANT cnosdb ADD USER u12 AS owner;
+
+statement ok
+alter user u12 set granted_admin = true;
+
+statement ok
+--#USER_NAME = u12
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Insufficient privileges, expected \[root user\]", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
+alter user root set comment='test';
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Insufficient privileges, expected \[root user\]", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
+alter user root set password='asd';
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Insufficient privileges, expected \[root user\]", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
+alter user root set granted_admin=false;
+
+statement ok
 drop user u1;
 
 statement ok
@@ -120,3 +146,6 @@ drop user u10;
 
 statement ok
 drop user u11;
+
+statement ok
+drop user u12;
