@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 
 use models::meta_data::ReplicationSetId;
 use tokio::sync::RwLock;
+use tokio::time::interval_at;
 use trace::info;
 
 use crate::errors::{AlreadyShutdownSnafu, ReplicationError, ReplicationResult};
@@ -41,21 +42,19 @@ impl MultiRaft {
     }
 
     pub async fn shutdown(&mut self, id: ReplicationSetId) -> ReplicationResult<()> {
-        if let Some((mut node, status)) = self.raft_nodes.get(&id).cloned() {
-            if let Status::Running = status {
-                node.shutdown().await?;
-                let status = Status::Shutdown(Instant::now());
-                self.raft_nodes.insert(id, (node, status));
-            }
+        if let Some((mut node, Status::Running)) = self.raft_nodes.get(&id).cloned() {
+            node.shutdown().await?;
+            let status = Status::Shutdown(Instant::now());
+            self.raft_nodes.insert(id, (node, status));
         }
 
         Ok(())
     }
 
     pub fn get_node(&self, id: ReplicationSetId) -> ReplicationResult<Option<Arc<RaftNode>>> {
-        if let Some(node) = self.raft_nodes.get(&id).cloned() {
-            match node.1 {
-                Status::Running => Ok(Some(node.0)),
+        if let Some((node, status)) = self.raft_nodes.get(&id).cloned() {
+            match status {
+                Status::Running => Ok(Some(node)),
                 Status::Shutdown(_) => Err(ReplicationError::AlreadyShutdown { id }),
             }
         } else {
@@ -63,29 +62,49 @@ impl MultiRaft {
         }
     }
 
-    pub async fn trigger_snapshot_purge_logs(nodes: Arc<RwLock<MultiRaft>>, dur: Duration) {
+    pub async fn raft_nodes_manager(
+        nodes: Arc<RwLock<MultiRaft>>,
+        trigger_snapshot_interval: Duration,
+    ) {
+        let start = Instant::now() + trigger_snapshot_interval;
+        let mut trigger_snapshot_ticker = interval_at(start.into(), trigger_snapshot_interval);
+
+        let clear_shutdown_interval = Duration::from_secs(2 * 60);
+        let start = Instant::now() + clear_shutdown_interval;
+        let mut clear_shutdown_ticker = interval_at(start.into(), clear_shutdown_interval);
+
         loop {
-            tokio::time::sleep(dur).await;
-
-            info!("------------ Begin nodes trigger snapshot ------------");
-            let nodes = nodes.read().await;
-            for (_, (node, status)) in nodes.raft_nodes.iter() {
-                if let Status::Shutdown(_) = status {
-                    continue;
-                }
-
-                let raft = node.raw_raft();
-                let trigger = raft.trigger();
-
-                trigger.snapshot().await;
-                info!(
-                    "# Trigger group id: {} raft id: {}",
-                    node.group_id(),
-                    node.raft_id()
-                );
+            tokio::select! {
+                _= clear_shutdown_ticker.tick() => {MultiRaft::clear_shutdown_nodes(nodes.clone()).await;}
+                _= trigger_snapshot_ticker.tick() => {MultiRaft::trigger_snapshot_purge_logs(nodes.clone()).await;}
             }
-            info!("------------- End nodes trigger snapshot -------------");
         }
+    }
+
+    async fn trigger_snapshot_purge_logs(nodes: Arc<RwLock<MultiRaft>>) {
+        let nodes = nodes.read().await;
+        for (_, (node, status)) in nodes.raft_nodes.iter() {
+            if let Status::Shutdown(_) = status {
+                continue;
+            }
+
+            let raft = node.raw_raft();
+            let trigger = raft.trigger();
+
+            trigger.snapshot().await;
+            info!(
+                "# Trigger group id: {} raft id: {}",
+                node.group_id(),
+                node.raft_id()
+            );
+        }
+    }
+
+    async fn clear_shutdown_nodes(nodes: Arc<RwLock<MultiRaft>>) {
+        let mut nodes = nodes.write().await;
+        nodes
+            .raft_nodes
+            .retain(|id, (node, status)| MultiRaft::can_retain(node.clone(), status.clone()));
     }
 
     fn can_retain(node: Arc<RaftNode>, status: Status) -> bool {
@@ -102,18 +121,26 @@ impl MultiRaft {
         }
         true
     }
+}
 
-    pub async fn clear_shutdown_nodes(nodes: Arc<RwLock<MultiRaft>>) {
+#[cfg(test)]
+pub mod test {
+    use std::{fmt::Debug, time::Duration};
+
+    use actix_web::rt::time;
+
+    #[tokio::test]
+    async fn test_select() {
+        let mut ticker1 = tokio::time::interval(Duration::from_secs(3));
+        let mut ticker2 = tokio::time::interval(Duration::from_secs(5));
+
         loop {
-            tokio::time::sleep(Duration::from_secs(60)).await;
+            tokio::select! {
+                _= ticker1.tick() => {println!("------tick1");}
+                _= ticker2.tick() => {println!("------tick2");}
+            }
 
-            info!("------------ Begin clear shutdown nodes ------------");
-            let mut nodes = nodes.write().await;
-            nodes
-                .raft_nodes
-                .retain(|id, (node, status)| MultiRaft::can_retain(node.clone(), status.clone()));
-
-            info!("------------- End clear shutdown nodes -------------");
+            println!("---- {:?}", time::Instant::now())
         }
     }
 }
