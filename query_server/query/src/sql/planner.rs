@@ -1790,7 +1790,11 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         })
     }
 
-    async fn alter_user_to_plan(&self, stmt: ast::AlterUser, user: &User) -> Result<PlanWithPrivileges> {
+    async fn alter_user_to_plan(
+        &self,
+        stmt: ast::AlterUser,
+        user: &User,
+    ) -> Result<PlanWithPrivileges> {
         let ast::AlterUser { name, operation } = stmt;
 
         let user_name = normalize_ident(name);
