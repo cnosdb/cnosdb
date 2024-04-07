@@ -66,7 +66,7 @@ create database if not exists "test_lp_writer" with ttl '10000D';
 create database if not exists "topk_func" with ttl '100000D';
 create database if not exists "usage_schema";
 create role "lp_writer" inherit member;
-grant Read on database "lp_writer" to "lp_writer";
+grant Read on database "test_lp_writer" to "lp_writer";
 create role "role_a" inherit member;
 alter tenant "cnosdb" add user "test_au_u1" as "member";
 alter tenant "cnosdb" add user "test_au_u2" as "member";

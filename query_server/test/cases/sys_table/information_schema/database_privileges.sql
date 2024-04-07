@@ -27,6 +27,9 @@ create role if not exists test_dps_role3 inherit member;
 drop database if exists test_dps_db;
 create database if not exists test_dps_db with ttl '100000d';
 
+-- test not exist database
+grant read on database test_not_exist to test_dps_role1;
+
 -- role1 read
 grant read on database test_dps_db to test_dps_role1;
 
