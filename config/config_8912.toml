@@ -27,10 +27,12 @@ max_summary_size = "128M" # 134217728
 base_file_size = "16M" # 16777216
 flush_req_channel_cap = 16
 max_cached_readers = 32
+enable_compaction = true
 compact_trigger_file_num = 4
 compact_trigger_cold_duration = "1h"
 max_compact_size = "2G" # 2147483648
 max_concurrent_compaction = 4
+collect_compaction_metrics = false
 strict_write = false
 reserve_space = "0"
 copyinto_trigger_flush_size = "128M" # 134217728
@@ -47,7 +49,7 @@ sync_interval = "0"
 [cache]
 max_buffer_size = "128M" # 134217728
 max_immutable_number = 4
-partition = 16          # default memcache partition number
+partition = 16           # default memcache partition number
 
 [log]
 level = 'info'
@@ -69,7 +71,7 @@ tcp_listen_port = 8915
 vector_listen_port = 8916
 
 [node_basic]
-node_id = 2001 
+node_id = 2001
 store_metrics = true
 
 [heartbeat]

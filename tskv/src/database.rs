@@ -87,13 +87,18 @@ impl Database {
             ver.clone(),
             self.opt.cache.clone(),
             self.opt.storage.clone(),
-            flush_task_sender,
+            flush_task_sender.clone(),
             compact_task_sender.clone(),
             self.memory_pool.clone(),
             &self.metrics_register,
         );
         let tf_ref = Arc::new(RwLock::new(tf));
-        schedule_vnode_compaction(self.runtime.clone(), tf_ref.clone(), compact_task_sender);
+        schedule_vnode_compaction(
+            self.runtime.clone(),
+            tf_ref.clone(),
+            flush_task_sender,
+            compact_task_sender,
+        );
 
         self.ts_families.insert(ver.tf_id(), tf_ref);
     }
@@ -179,7 +184,7 @@ impl Database {
             ver,
             self.opt.cache.clone(),
             self.opt.storage.clone(),
-            flush_task_sender,
+            flush_task_sender.clone(),
             compact_task_sender.clone(),
             self.memory_pool.clone(),
             &self.metrics_register,
@@ -189,7 +194,12 @@ impl Database {
         if let Some(tsf) = self.ts_families.get(&tsf_id) {
             return Ok(tsf.clone());
         }
-        schedule_vnode_compaction(self.runtime.clone(), tf.clone(), compact_task_sender);
+        schedule_vnode_compaction(
+            self.runtime.clone(),
+            tf.clone(),
+            flush_task_sender,
+            compact_task_sender,
+        );
         self.ts_families.insert(tsf_id, tf.clone());
 
         let (task_state_sender, _task_state_receiver) = oneshot::channel();

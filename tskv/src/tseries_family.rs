@@ -1088,6 +1088,10 @@ impl TseriesFamily {
         self.status = status;
     }
 
+    pub fn status(&self) -> VnodeStatus {
+        self.status
+    }
+
     pub fn delete_columns(&self, field_ids: &[FieldId]) {
         self.mut_cache.read().delete_columns(field_ids);
         for memcache in self.immut_cache.iter() {
@@ -1219,6 +1223,7 @@ impl Drop for TseriesFamily {
 pub fn schedule_vnode_compaction(
     runtime: Arc<Runtime>,
     vnode: Arc<AsyncRwLock<TseriesFamily>>,
+    flush_task_sender: Sender<FlushReq>,
     compact_task_sender: Sender<CompactTask>,
 ) {
     let _jh = runtime.spawn(async move {
@@ -1251,8 +1256,16 @@ pub fn schedule_vnode_compaction(
                                     drop(ts_rlock);
                                     let mut ts_wlock = last_modified.write().await;
                                     *ts_wlock = Some(Instant::now());
-                                    if let Err(e) = compact_task_sender.send(CompactTask::Cold(tsf_id)).await {
-                                        warn!("Scheduler(vnode: {}): Failed to send compact task: Cold({}), {}", tsf_id, tsf_id, e);
+
+                                    let flush_req = {
+                                        let mut vnode = vnode.write().await;
+                                        vnode.switch_to_immutable();
+                                        vnode.build_flush_req(true)
+                                    };
+                                    if let Some(req) = flush_req {
+                                        if let Err(e) = flush_task_sender.send(req).await {
+                                            warn!("Scheduler(vnode: {tsf_id}): Failed to send flush task: {e}");
+                                        }
                                     }
                                 }
                             }
@@ -1260,18 +1273,40 @@ pub fn schedule_vnode_compaction(
 
                         // Check if level-0 files is more than 0 .
                         let version = vnode.read().await.super_version().version.clone();
-                        let mut level_0_files = 0_u32;
-                        for file in version.levels_info()[0].files.iter() {
-                            if file.is_deleted() || file.is_compacting().await {
-                                continue;
-                            }
-                            level_0_files += 1;
-                            if level_0_files >= compact_trigger_file_num {
-                                // If there is any l0-file, send a compact task.
-                                if let Err(e) = compact_task_sender.send(CompactTask::Delta(tsf_id)).await {
-                                    warn!("Scheduler(vnode: {}): Failed to send compact task: Delta({}), {}", tsf_id, tsf_id, e);
+                        let mut triggered_delta_compaction = false;
+                        if version.levels_info()[0].files.len() as u32 >= compact_trigger_file_num {
+                            let mut level_0_files = 0_u32;
+                            for file in version.levels_info()[0].files.iter() {
+                                if file.is_deleted() || file.is_compacting().await {
+                                    continue;
                                 }
-                                break;
+                                level_0_files += 1;
+                                if level_0_files >= compact_trigger_file_num {
+                                    triggered_delta_compaction = true;
+                                    let task = CompactTask::Delta(tsf_id);
+                                    if let Err(e) = compact_task_sender.send(task).await {
+                                        warn!("Scheduler(vnode: {tsf_id}): Failed to send compact task: {task}: {e}");
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                        if !triggered_delta_compaction {
+                            let mut level_14_files = 0_u32;
+                            for level in &version.levels_info()[1..] {
+                                for file in level.files.iter() {
+                                    if file.is_deleted() || file.is_compacting().await {
+                                        continue;
+                                    }
+                                    level_14_files += 1;
+                                    if level_14_files >= compact_trigger_file_num {
+                                        let task = CompactTask::Normal(tsf_id);
+                                        if let Err(e) = compact_task_sender.send(task).await {
+                                            warn!("Scheduler(vnode: {tsf_id}): Failed to send compact task: {task}: {e}");
+                                        }
+                                        break;
+                                    }
+                                }
                             }
                         }
                     }

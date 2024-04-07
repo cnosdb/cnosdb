@@ -108,6 +108,16 @@ pub enum VnodeStatus {
     Broken,
 }
 
+impl std::fmt::Display for VnodeStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            VnodeStatus::Running => write!(f, "running"),
+            VnodeStatus::Copying => write!(f, "copying"),
+            VnodeStatus::Broken => write!(f, "broken"),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct VnodeAllInfo {
     pub vnode_id: VnodeId,
