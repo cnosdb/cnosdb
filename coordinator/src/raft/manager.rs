@@ -110,8 +110,14 @@ impl RaftNodesManager {
     ) -> CoordinatorResult<()> {
         info!("exec open raft node: {}.{}", group_id, id);
         let mut nodes = self.raft_nodes.write().await;
-        if nodes.get_node(group_id).is_ok_and(|node| node.is_some()) {
-            return Ok(());
+        if let Ok(Some(node)) = nodes.get_node(group_id) {
+            if node.raft_id() == id as u64 {
+                return Ok(());
+            } else {
+                return Err(CoordinatorError::RaftGroupError {
+                    msg: "raft node already exit".to_string(),
+                });
+            }
         }
 
         let node = self.open_raft_node(tenant, db_name, id, group_id).await?;
@@ -428,8 +434,12 @@ impl RaftNodesManager {
         let mut raft_logs = wal::wal_store::RaftEntryStorage::new(wal);
 
         // 3. recover data...
-        let _apply_id = self.raft_state.get_last_applied_log(group_id)?;
-        raft_logs.recover(&mut vnode_store).await?;
+        let apply_id = self.raft_state.get_last_applied_log(group_id)?;
+        info!(
+            "open vnode({}-{}) last applied id: {:?}",
+            group_id, vnode_id, apply_id
+        );
+        raft_logs.recover(apply_id, &mut vnode_store).await?;
 
         // 4. open raft apply storage
         let engine = TskvEngineStorage::open(

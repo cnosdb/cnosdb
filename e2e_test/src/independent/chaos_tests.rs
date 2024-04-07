@@ -1,86 +1,97 @@
 #[cfg(test)]
 pub mod test {
-    use std::process::Command;
     use std::sync::{Arc, Mutex};
     use std::thread;
 
     use http_protocol::status_code;
-    use rand::seq::SliceRandom;
+    use meta::model::meta_admin::AdminMeta;
+    use meta::model::meta_tenant::TenantMeta;
     use rand::Rng;
 
-    use crate::utils::{clean_env, start_cluster, Client};
+    use crate::cluster_def;
+    use crate::utils::{
+        data_config_file_path, kill_process, run_cluster, Client, CnosdbDataTestHelper,
+    };
+    const SERVER_URL: &str = "http://127.0.0.1:8902/api/v1/sql?db=chaos_test_db";
 
-    fn move_vnode() {
-        let mut rng = rand::thread_rng();
-        let mut target_node = [1001, 2001][rng.gen_range(0..2)];
-        let res = String::from_utf8_lossy(
-            &Command::new("ls")
-                .arg(format!("/tmp/cnosdb/{target_node}/db/data/cnosdb.public"))
-                .output()
-                .unwrap()
-                .stdout,
-        )
-        .to_string();
-        let vnodes = res
-            .split_whitespace()
-            .filter(|s| !s.is_empty())
-            .collect::<Vec<_>>();
-        if vnodes.is_empty() {
+    fn time_str() -> String {
+        let current_time = chrono::Local::now();
+
+        current_time.format("%Y-%m-%dT%H:%M:%S").to_string()
+    }
+
+    fn restart_datanode(data_server: Arc<Mutex<CnosdbDataTestHelper>>) {
+        println!("---------------------------------- Restart node...");
+        let mut data_server = data_server.lock().unwrap();
+        let node_def = data_server.data_node_definitions[1].clone();
+        data_server.restart_one_node(&node_def);
+
+        std::thread::sleep(std::time::Duration::from_secs(3));
+    }
+
+    fn move_vnode(meta: Arc<TenantMeta>) {
+        let db_info = meta.get_db_info("chaos_test_db").unwrap().unwrap();
+        let random = rand::thread_rng().gen_range(0..100);
+        if db_info.buckets.is_empty() {
             return;
         }
-        target_node = if target_node == 1001 { 2001 } else { 1001 };
-        let target_vnode = vnodes[rng.gen_range(0..vnodes.len())];
-        if target_vnode.parse::<i32>().is_err() {
-            return;
-        }
-        let client = Client::new("root".to_string(), Some(String::new()));
-        client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                &format!("move vnode {target_vnode} to node {target_node}"),
-            )
-            .unwrap();
+        let bucket = &db_info.buckets[random % db_info.buckets.len()];
+        let group = &bucket.shard_group[random % bucket.shard_group.len()];
+        let vnode = &group.vnodes[random % group.vnodes.len()];
+
+        let move_vnode_id = vnode.id;
+        let target_node = if vnode.node_id == 1 { 2 } else { 1 };
+        let command = format!("move vnode {move_vnode_id} to node {target_node}");
+        println!("{} ------- Move Vnode Command: {}", time_str(), command);
+        println!("{} ------- Move Vnode Group: {:?}", time_str(), group);
+        let client = Client::with_auth("root".to_string(), Some(String::new()));
+        client.post(SERVER_URL, &command).unwrap();
     }
 
     fn alter_replica() {
         let mut rng = rand::thread_rng();
         let target_replica = rng.gen_range(1..=2);
-        let client = Client::new("root".to_string(), Some(String::new()));
-        client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                &format!("alter database public set replica {target_replica}"),
-            )
-            .unwrap();
+        let command = format!("alter database chaos_test_db set replica {target_replica}");
+        println!("------- Alter Replica Command: {}", command);
+        let client = Client::with_auth("root".to_string(), Some(String::new()));
+        client.post(SERVER_URL, &command).unwrap();
     }
 
     fn alter_shard() {
         let mut rng = rand::thread_rng();
         let target_shard = rng.gen_range(1..=10);
-        let client = Client::new("root".to_string(), Some(String::new()));
-        client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                &format!("alter database public set shard {target_shard}"),
-            )
-            .unwrap();
+        let command = format!("alter database chaos_test_db set shard {target_shard}");
+        println!("------- Alter Shard Command: {}", command);
+        let client = Client::with_auth("root".to_string(), Some(String::new()));
+        client.post(SERVER_URL, &command).unwrap();
     }
 
     fn alter_vnode_duration() {
         let mut rng = rand::thread_rng();
-        let target_vnode_duration = rng.gen_range(1..=365);
-        let client = Client::new("root".to_string(), Some(String::new()));
-        client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                &format!("alter database public set vnode_duration '{target_vnode_duration}d'"),
-            )
-            .unwrap();
+        let duration = rng.gen_range(1..=365);
+        let command = format!("alter database chaos_test_db set vnode_duration '{duration}d'");
+        println!("------- Alter Vnode Duration Command: {}", command);
+        let client = Client::with_auth("root".to_string(), Some(String::new()));
+        client.post(SERVER_URL, &command).unwrap();
+    }
+
+    /// Clean test environment.
+    /// 1. Kill all 'cnosdb' and 'cnosdb-meta' process,
+    /// 2. Remove directory '/tmp/cnosdb'.
+    fn clean_env() {
+        println!("-------- Cleaning environment...");
+        kill_process("cnosdb");
+        kill_process("cnosdb-meta");
+        println!(" - Removing directory 'chaos_test'");
+        let _ = std::fs::remove_dir_all("chaos_test");
+        println!("Clean environment completed.");
     }
 
     #[test]
-    fn case1() {
+    fn chaos_test_case_1() {
         println!("Test begin 'chaos_test_case_1'");
+        clean_env();
+
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .worker_threads(4)
@@ -88,100 +99,101 @@ pub mod test {
             .unwrap();
         let runtime = Arc::new(runtime);
 
-        clean_env();
+        let (_meta_server, data_server) = run_cluster(
+            "chaos_test",
+            runtime.clone(),
+            &cluster_def::one_meta_two_data_bundled(),
+            true,
+            true,
+        );
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        let data_server = Arc::new(Mutex::new(data_server.unwrap()));
+        let file_name = data_server.lock().unwrap().data_node_definitions[0]
+            .config_file_name
+            .clone();
+        let config_file = data_config_file_path("chaos_test", &file_name);
 
-        let (_meta, data) = start_cluster(runtime);
+        let config = config::get_config(config_file).unwrap();
+        let meta = runtime.block_on(AdminMeta::new(config));
+        let meta_client = runtime.block_on(meta.tenant_meta("cnosdb")).unwrap();
 
-        let data = Arc::new(Mutex::new(data));
-        let data_c = Arc::clone(&data);
-
-        let count = Arc::new(Mutex::new(0));
-        let count_c = Arc::clone(&count);
-
-        let finished = Arc::new(Mutex::new(false));
-        let finished_c1 = Arc::clone(&finished);
-        let finished_c2 = Arc::clone(&finished);
-        let finished_c3 = Arc::clone(&finished);
-
-        let write_data = move || {
-            let client = Client::new("root".to_string(), Some(String::new()));
-            let mut count_g = count_c.lock().unwrap();
-            while !*finished_c1.lock().unwrap() {
-                let timestamp = 43200 * 1e9 as u64 * *count_g;
-                client
-                    .post(
-                        "http://127.0.0.1:8902/api/v1/write?db=public",
-                        &format!("ma,ta=a fa={} {}", count_g, timestamp),
-                    )
-                    .unwrap();
-                *count_g += 1;
-                std::thread::sleep(std::time::Duration::from_millis(10));
-            }
-        };
-
-        let perform_actions = move || {
-            let ops: Vec<(fn(), &'static str)> = vec![
-                (move_vnode, "move_vnode"),
-                (alter_replica, "alter_replica"),
-                (alter_shard, "alter_shard"),
-                (alter_vnode_duration, "alter_vnode_duration"),
-            ];
-            let mut rng = rand::thread_rng();
-            let mut handles = vec![];
-            let mut turn = 1;
-            while !*finished_c2.lock().unwrap() {
-                let mut ops_now = ops.clone();
-                ops_now.shuffle(&mut rng);
-                let ops_now = &ops_now[0..rng.gen_range(1..=ops.len())];
-                let ops_str = ops_now
-                    .iter()
-                    .map(|f| f.1)
-                    .fold(format!("turn{turn} actions: "), |acc, x| acc + x + ", ");
-                println!("{}", &ops_str[..ops_str.len() - 2]);
-                for op in ops_now {
-                    let op = op.0.clone();
-                    let t = thread::spawn(op);
-                    handles.push(t);
-                }
-                turn += 1;
-                std::thread::sleep(std::time::Duration::from_secs(1));
-            }
-            for handle in handles {
-                handle.join().unwrap();
-            }
-        };
-
-        let t_restart = thread::spawn(move || {
-            while !*finished_c3.lock().unwrap() {
-                data_c.lock().unwrap().restart("config_8912.toml");
-                std::thread::sleep(std::time::Duration::from_secs(5));
-            }
-        });
-        let t_write_data = thread::spawn(write_data);
-        let t_perform_action = thread::spawn(perform_actions);
-        std::thread::sleep(std::time::Duration::from_secs(120));
-        *finished.lock().unwrap() = true;
-        t_restart.join().unwrap();
-        t_write_data.join().unwrap();
-        t_perform_action.join().unwrap();
-
-        let resp = data
-            .lock()
-            .unwrap()
-            .client
+        let client = Client::with_auth("root".to_string(), Some(String::new()));
+        let _ = client
             .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "select count(*) from ma",
+                "http://127.0.0.1:8902/api/v1/sql",
+                "CREATE DATABASE chaos_test_db WITH TTl '3560d' SHARD 1 VNOdE_DURATiON '1d' REPLICA 1 pRECISIOn 'ns';",
             )
             .unwrap();
+        std::thread::sleep(std::time::Duration::from_secs(2));
+
+        let write_count = Arc::new(Mutex::new(0));
+        let finish_flag = Arc::new(Mutex::new(false));
+
+        let write_count_c = write_count.clone();
+        let finish_flag_c = finish_flag.clone();
+        let write_data_action = move || {
+            let client = Client::with_auth("root".to_string(), Some(String::new()));
+            while !*finish_flag_c.lock().unwrap() {
+                let mut count = write_count_c.lock().unwrap();
+                let tstamp = (1711333406_u64 + *count) * 1000000000;
+                let random = rand::thread_rng().gen_range(0..32);
+                let body = format!("ma,ta=a_{} fa={} {}", random, count, tstamp);
+
+                loop {
+                    let url = "http://127.0.0.1:8902/api/v1/write?db=chaos_test_db";
+                    let resp = client.post(url, &body).unwrap();
+                    if resp.status() == status_code::OK {
+                        *count += 1;
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(3));
+                }
+                std::thread::sleep(std::time::Duration::from_millis(3));
+            }
+        };
+
+        let finish_flag_c = finish_flag.clone();
+        let data_server_c = data_server.clone();
+        let perform_actions = move || {
+            while !*finish_flag_c.lock().unwrap() {
+                let operation_count = 5;
+                let random = rand::thread_rng().gen_range(0..100);
+                if random % operation_count == 0 {
+                    restart_datanode(data_server_c.clone());
+                } else if random % operation_count == 1 {
+                    move_vnode(meta_client.clone());
+                } else if random % operation_count == 2 {
+                    alter_replica();
+                } else if random % operation_count == 3 {
+                    alter_shard();
+                } else if random % operation_count == 4 {
+                    alter_vnode_duration();
+                }
+
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            }
+        };
+
+        let t_write_data = thread::spawn(write_data_action);
+        std::thread::sleep(std::time::Duration::from_secs(3));
+
+        let t_perform_action = thread::spawn(perform_actions);
+        std::thread::sleep(std::time::Duration::from_secs(60));
+
+        *finish_flag.lock().unwrap() = true;
+        t_write_data.join().unwrap();
+        t_perform_action.join().unwrap();
+        std::thread::sleep(std::time::Duration::from_secs(3));
+
+        let resp = client.post(SERVER_URL, "select count(*) from ma").unwrap();
         assert_eq!(resp.status(), status_code::OK);
         let actual = resp.text().unwrap();
-        let expected = format!("{}", *count.lock().unwrap());
-        println!("actual: {}", actual);
+        let expected = format!("{}", *write_count.lock().unwrap());
+        println!("\nselect count(*): {}", actual);
         println!("expected: {}", expected);
         assert!(actual.contains(&expected));
 
         clean_env();
-        println!("Test complete chaos_test_case_1");
+        println!("#### Test complete chaos_test_case_1 ####");
     }
 }
