@@ -439,7 +439,7 @@ mod test {
     use models::{SeriesKey, ValueType};
 
     use crate::tsm::data_block::MutableColumn;
-    use crate::tsm::reader::TsmReader;
+    use crate::tsm::reader::{decode_pages, TsmReader};
     use crate::tsm::writer::{DataBlock, TsmWriter};
 
     fn i64_column(data: Vec<i64>) -> MutableColumn {
@@ -518,16 +518,158 @@ mod test {
         let mut tsm_writer = TsmWriter::open(&PathBuf::from(path), 1, 0, false)
             .await
             .unwrap();
+        let time_range = data1.time_range().unwrap();
+        let schema = data1.schema();
+        let pages1 = data1.block_to_page().unwrap();
+        tsm_writer
+            .write_pages(schema, 1, SeriesKey::default(), pages1, time_range)
+            .await
+            .unwrap();
+        tsm_writer.finish().await.unwrap();
+        let tsm_reader = TsmReader::open(tsm_writer.path).await.unwrap();
+        let pages2 = tsm_reader.read_series_pages(1, 0).await.unwrap();
+        let data2 = decode_pages(pages2, data1.schema()).unwrap();
+        assert_eq!(data1, data2);
+        let time_range = data2.time_range().unwrap();
+        assert_eq!(time_range, TimeRange::new(1, 3));
+    }
+
+    #[tokio::test]
+    async fn test_write_and_read_2() {
+        let schema = TskvTableSchema::new(
+            "cnosdb".to_string(),
+            "public".to_string(),
+            "test0".to_string(),
+            vec![
+                TableColumn::new(
+                    0,
+                    "time".to_string(),
+                    ColumnType::Time(TimeUnit::Nanosecond),
+                    Encoding::default(),
+                ),
+                TableColumn::new(
+                    1,
+                    "f1".to_string(),
+                    ColumnType::Field(ValueType::Integer),
+                    Encoding::default(),
+                ),
+                TableColumn::new(
+                    2,
+                    "f2".to_string(),
+                    ColumnType::Field(ValueType::Integer),
+                    Encoding::default(),
+                ),
+                TableColumn::new(
+                    3,
+                    "f3".to_string(),
+                    ColumnType::Field(ValueType::Integer),
+                    Encoding::default(),
+                ),
+            ],
+        );
+        let schema = Arc::new(schema);
+        let data1 = DataBlock::new(
+            schema.clone(),
+            ts_column(vec![1, 2, 3]),
+            vec![
+                i64_column(vec![1, 2, 3]),
+                i64_column(vec![1, 2, 3]),
+                i64_column(vec![1, 2, 3]),
+            ],
+        );
+
+        let path = "/tmp/test/tsm2";
+        let mut tsm_writer = TsmWriter::open(&PathBuf::from(path), 1, 0, false)
+            .await
+            .unwrap();
+        let time_range = data1.time_range().unwrap();
+        let schema = data1.schema();
+        let pages1 = data1.block_to_page().unwrap();
+        tsm_writer
+            .write_pages(schema, 1, SeriesKey::default(), pages1, time_range)
+            .await
+            .unwrap();
+        tsm_writer.finish().await.unwrap();
+        let tsm_reader = TsmReader::open(tsm_writer.path).await.unwrap();
+        let pages2 = tsm_reader.read_series_pages(1, 0).await.unwrap();
+        let data2 = decode_pages(pages2, data1.schema()).unwrap();
+        assert_eq!(data1, data2);
+        let time_range = data2.time_range().unwrap();
+        assert_eq!(time_range, TimeRange::new(1, 3));
+    }
+
+    #[tokio::test]
+    async fn test_write_and_read_3() {
+        let schema = TskvTableSchema::new(
+            "cnosdb".to_string(),
+            "public".to_string(),
+            "test0".to_string(),
+            vec![
+                TableColumn::new(
+                    0,
+                    "time".to_string(),
+                    ColumnType::Time(TimeUnit::Nanosecond),
+                    Encoding::default(),
+                ),
+                TableColumn::new(
+                    1,
+                    "f1".to_string(),
+                    ColumnType::Field(ValueType::Integer),
+                    Encoding::default(),
+                ),
+                TableColumn::new(
+                    2,
+                    "f2".to_string(),
+                    ColumnType::Field(ValueType::Integer),
+                    Encoding::default(),
+                ),
+                TableColumn::new(
+                    3,
+                    "f3".to_string(),
+                    ColumnType::Field(ValueType::Integer),
+                    Encoding::default(),
+                ),
+            ],
+        );
+        let schema = Arc::new(schema);
+        let data1 = DataBlock::new(
+            schema.clone(),
+            ts_column(vec![1, 2, 3]),
+            vec![
+                i64_column(vec![1, 2, 3]),
+                i64_column(vec![1, 2, 3]),
+                i64_column(vec![1, 2, 3]),
+            ],
+        );
+
+        let path = "/tmp/test/tsm3";
+        let mut tsm_writer = TsmWriter::open(&PathBuf::from(path), 1, 0, false)
+            .await
+            .unwrap();
         tsm_writer
             .write_datablock(1, SeriesKey::default(), data1.clone())
             .await
             .unwrap();
         tsm_writer.finish().await.unwrap();
         let tsm_reader = TsmReader::open(tsm_writer.path).await.unwrap();
-        let data2 = tsm_reader.read_datablock(1, 0).await.unwrap();
-        assert_eq!(data1, data2);
-        let time_range = data2.time_range().unwrap();
-        assert_eq!(time_range, TimeRange::new(1, 3));
-        println!("time range: {:?}", time_range);
+        let raw2 = tsm_reader.read_datablock_raw(1, 0).await.unwrap();
+        let chunk = tsm_reader.chunk();
+        //println!("{:?}", chunk);
+        if let Some(meta) = chunk.get(&(1_u32)) {
+            let path2 = "/tmp/test/tsm4";
+            let mut tsm_writer2 = TsmWriter::open(&PathBuf::from(path2), 1, 0, false)
+                .await
+                .unwrap();
+            tsm_writer2
+                .write_raw(schema, meta.clone(), 0, raw2.clone())
+                .await
+                .unwrap();
+            tsm_writer2.finish().await.unwrap();
+            let tsm_reader2 = TsmReader::open(tsm_writer2.path).await.unwrap();
+            let raw3 = tsm_reader2.read_datablock_raw(1, 0).await.unwrap();
+            assert_eq!(raw2, raw3);
+        } else {
+            panic!("meta not found");
+        }
     }
 }

@@ -339,3 +339,297 @@ impl MutableColumn {
             .map_err(|e| TskvError::ColumnDataError { source: e })
     }
 }
+
+#[cfg(test)]
+mod tests {
+
+    use std::path::PathBuf;
+    use std::sync::Arc;
+
+    use arrow::datatypes::TimeUnit;
+    use models::codec::Encoding;
+    use models::field_value::FieldVal;
+    use models::predicate::domain::TimeRange;
+    use models::schema::{ColumnType, TableColumn, TskvTableSchema};
+    use models::ValueType;
+
+    use crate::file_system::file_manager;
+    use crate::tsm::data_block::{DataBlock, MutableColumn};
+    use crate::tsm::TsmTombstone;
+
+    fn i64_column(data: Vec<i64>) -> MutableColumn {
+        let mut col = MutableColumn::empty(TableColumn::new(
+            1,
+            "f1".to_string(),
+            ColumnType::Field(ValueType::Integer),
+            Encoding::default(),
+        ))
+        .unwrap();
+        for datum in data {
+            col.push(Some(FieldVal::Integer(datum))).unwrap()
+        }
+        col
+    }
+
+    fn ts_column(data: Vec<i64>) -> MutableColumn {
+        let mut col = MutableColumn::empty(TableColumn::new(
+            0,
+            "time".to_string(),
+            ColumnType::Time(TimeUnit::Nanosecond),
+            Encoding::default(),
+        ))
+        .unwrap();
+        for datum in data {
+            col.push(Some(FieldVal::Integer(datum))).unwrap()
+        }
+        col
+    }
+    #[tokio::test]
+    async fn test_datablock_to_pages() {
+        let schema = TskvTableSchema::new(
+            "cnosdb".to_string(),
+            "public".to_string(),
+            "test0".to_string(),
+            vec![
+                TableColumn::new(
+                    0,
+                    "time".to_string(),
+                    ColumnType::Time(TimeUnit::Nanosecond),
+                    Encoding::default(),
+                ),
+                TableColumn::new(
+                    1,
+                    "f1".to_string(),
+                    ColumnType::Field(ValueType::Integer),
+                    Encoding::default(),
+                ),
+                TableColumn::new(
+                    2,
+                    "f2".to_string(),
+                    ColumnType::Field(ValueType::Integer),
+                    Encoding::default(),
+                ),
+                TableColumn::new(
+                    3,
+                    "f3".to_string(),
+                    ColumnType::Field(ValueType::Integer),
+                    Encoding::default(),
+                ),
+            ],
+        );
+        let schema = Arc::new(schema);
+        let data1 = DataBlock::new(
+            schema.clone(),
+            ts_column(vec![1, 2, 3]),
+            vec![
+                i64_column(vec![1, 2, 3]),
+                i64_column(vec![1, 2, 3]),
+                i64_column(vec![1, 2, 3]),
+            ],
+        );
+        let pages = data1.block_to_page().unwrap();
+        assert_eq!(4, pages.len());
+        for page in pages.iter() {
+            let result = page.crc_validation();
+            assert!(result.is_ok());
+        }
+    }
+
+    #[tokio::test]
+    async fn test_datablock_merge() {
+        let schema = TskvTableSchema::new(
+            "cnosdb".to_string(),
+            "public".to_string(),
+            "test0".to_string(),
+            vec![
+                TableColumn::new(
+                    0,
+                    "time".to_string(),
+                    ColumnType::Time(TimeUnit::Nanosecond),
+                    Encoding::default(),
+                ),
+                TableColumn::new(
+                    1,
+                    "f1".to_string(),
+                    ColumnType::Field(ValueType::Integer),
+                    Encoding::default(),
+                ),
+            ],
+        );
+        let schema = Arc::new(schema);
+        let mut data1 = DataBlock::new(
+            schema.clone(),
+            ts_column(vec![1, 2, 3]),
+            vec![i64_column(vec![1, 2, 3])],
+        );
+        let data2 = DataBlock::new(
+            schema.clone(),
+            ts_column(vec![4, 5, 6]),
+            vec![i64_column(vec![4, 5, 6])],
+        );
+        let data3 = data1.merge(data2).unwrap();
+        let data4 = DataBlock::new(
+            schema.clone(),
+            ts_column(vec![1, 2, 3, 4, 5, 6]),
+            vec![i64_column(vec![1, 2, 3, 4, 5, 6])],
+        );
+        assert_eq!(data4, data3);
+    }
+
+    #[tokio::test]
+    async fn test_datablock_sort() {
+        let schema = TskvTableSchema::new(
+            "cnosdb".to_string(),
+            "public".to_string(),
+            "test0".to_string(),
+            vec![
+                TableColumn::new(
+                    0,
+                    "time".to_string(),
+                    ColumnType::Time(TimeUnit::Nanosecond),
+                    Encoding::default(),
+                ),
+                TableColumn::new(
+                    1,
+                    "f1".to_string(),
+                    ColumnType::Field(ValueType::Integer),
+                    Encoding::default(),
+                ),
+                TableColumn::new(
+                    2,
+                    "f2".to_string(),
+                    ColumnType::Field(ValueType::Integer),
+                    Encoding::default(),
+                ),
+                TableColumn::new(
+                    3,
+                    "f3".to_string(),
+                    ColumnType::Field(ValueType::Integer),
+                    Encoding::default(),
+                ),
+            ],
+        );
+        let schema = Arc::new(schema);
+        let data1 = DataBlock::new(
+            schema.clone(),
+            ts_column(vec![1, 3, 5, 7]),
+            vec![
+                i64_column(vec![1, 3, 5]),
+                i64_column(vec![1, 3, 5]),
+                i64_column(vec![1, 3, 5]),
+            ],
+        );
+        let data2 = DataBlock::new(
+            schema.clone(),
+            ts_column(vec![2, 4, 6, 7]),
+            vec![
+                i64_column(vec![2, 4, 6]),
+                i64_column(vec![2, 4, 6]),
+                i64_column(vec![2, 4, 6]),
+            ],
+        );
+        let (_, time_array) = data1.sort_index_and_time_col(&data2).unwrap();
+        let expected_time_array = vec![1, 2, 3, 4, 5, 6, 7];
+        assert_eq!(expected_time_array, time_array);
+    }
+
+    #[tokio::test]
+    async fn test_datablock_chunk() {
+        let schema = TskvTableSchema::new(
+            "cnosdb".to_string(),
+            "public".to_string(),
+            "test0".to_string(),
+            vec![
+                TableColumn::new(
+                    0,
+                    "time".to_string(),
+                    ColumnType::Time(TimeUnit::Nanosecond),
+                    Encoding::default(),
+                ),
+                TableColumn::new(
+                    1,
+                    "f1".to_string(),
+                    ColumnType::Field(ValueType::Integer),
+                    Encoding::default(),
+                ),
+                TableColumn::new(
+                    2,
+                    "f2".to_string(),
+                    ColumnType::Field(ValueType::Integer),
+                    Encoding::default(),
+                ),
+                TableColumn::new(
+                    3,
+                    "f3".to_string(),
+                    ColumnType::Field(ValueType::Integer),
+                    Encoding::default(),
+                ),
+            ],
+        );
+        let schema = Arc::new(schema);
+        let data1 = DataBlock::new(
+            schema.clone(),
+            ts_column(vec![1, 2, 3, 4, 5, 6]),
+            vec![
+                i64_column(vec![1, 2, 3, 4, 5, 6]),
+                i64_column(vec![1, 2, 3, 4, 5, 6]),
+                i64_column(vec![1, 2, 3, 4, 5, 6]),
+            ],
+        );
+        let data2 = data1.chunk(1, 5).unwrap();
+        let data3 = DataBlock::new(
+            schema.clone(),
+            ts_column(vec![2, 3, 4, 5]),
+            vec![
+                i64_column(vec![2, 3, 4, 5]),
+                i64_column(vec![2, 3, 4, 5]),
+                i64_column(vec![2, 3, 4, 5]),
+            ],
+        );
+
+        assert_eq!(data3, data2);
+    }
+
+    #[tokio::test]
+    async fn test_datablock_fliter_by_tomb() {
+        let schema = TskvTableSchema::new(
+            "cnosdb".to_string(),
+            "public".to_string(),
+            "test0".to_string(),
+            vec![
+                TableColumn::new(
+                    0,
+                    "time".to_string(),
+                    ColumnType::Time(TimeUnit::Nanosecond),
+                    Encoding::default(),
+                ),
+                TableColumn::new(
+                    1,
+                    "f1".to_string(),
+                    ColumnType::Field(ValueType::Integer),
+                    Encoding::default(),
+                ),
+            ],
+        );
+        let schema = Arc::new(schema);
+        let mut data1 = DataBlock::new(
+            schema.clone(),
+            ts_column(vec![1, 2, 3, 4, 5, 6]),
+            vec![i64_column(vec![1, 2, 3, 4, 5, 6])],
+        );
+        let dir = PathBuf::from("/tmp/test/writter/1".to_string());
+        let _ = std::fs::remove_dir_all(&dir);
+        if !file_manager::try_exists(&dir) {
+            std::fs::create_dir_all(&dir).unwrap();
+        }
+        let mut tombstone = TsmTombstone::open(&dir, 1).await.unwrap();
+        tombstone
+            .add_range(&[(0, 1)], &TimeRange::new(1, 4))
+            .await
+            .unwrap();
+        let arctombstone = Arc::new(tombstone);
+        data1.filter_by_tomb(arctombstone, 0).unwrap();
+        let expect_bitset = vec![false, false, false, false, true, true, false, false];
+        assert_eq!(expect_bitset, data1.column(1).unwrap().valid().to_vec());
+    }
+}

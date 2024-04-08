@@ -219,11 +219,71 @@ pub async fn run_flush_memtable_job(
 
 #[cfg(test)]
 pub mod flush_tests {
+    use std::path::PathBuf;
+    use std::sync::Arc;
+
+    use arrow_schema::TimeUnit;
+    use cache::ShardedAsyncCache;
+    use memory_pool::{GreedyMemoryPool, MemoryPool};
     use minivec::MiniVec;
     use models::codec::Encoding;
+    use models::field_value::FieldVal;
+    use models::predicate::domain::TimeRange;
     use models::schema::{ColumnType, TableColumn, TskvTableSchema};
-    use models::{ColumnId, ValueType};
+    use models::{ColumnId, SeriesKey, ValueType};
+    use parking_lot::lock_api::RwLock;
     use utils::dedup_front_by_key;
+
+    use crate::compaction::FlushTask;
+    use crate::context::GlobalContext;
+    use crate::memcache::{MemCache, OrderedRowsData, RowData, RowGroup};
+    use crate::tseries_family::{LevelInfo, Version};
+    use crate::tsm::data_block::{DataBlock, MutableColumn};
+    use crate::tsm::reader::TsmReader;
+    use crate::tsm::writer::TsmWriter;
+    use crate::{Options, VersionEdit};
+
+    fn i64_column(data: Vec<i64>) -> MutableColumn {
+        let mut col = MutableColumn::empty(TableColumn::new(
+            1,
+            "f1".to_string(),
+            ColumnType::Field(ValueType::Integer),
+            Encoding::default(),
+        ))
+        .unwrap();
+        for datum in data {
+            col.push(Some(FieldVal::Integer(datum))).unwrap()
+        }
+        col
+    }
+
+    fn f64_column(data: Vec<f64>) -> MutableColumn {
+        let mut col = MutableColumn::empty(TableColumn::new(
+            4,
+            "f_col_1".to_string(),
+            ColumnType::Field(ValueType::Float),
+            Encoding::default(),
+        ))
+        .unwrap();
+        for datum in data {
+            col.push(Some(FieldVal::Float(datum))).unwrap()
+        }
+        col
+    }
+
+    fn ts_column(data: Vec<i64>) -> MutableColumn {
+        let mut col = MutableColumn::empty(TableColumn::new(
+            1,
+            "time".to_string(),
+            ColumnType::Time(TimeUnit::Nanosecond),
+            Encoding::default(),
+        ))
+        .unwrap();
+        for datum in data {
+            col.push(Some(FieldVal::Integer(datum))).unwrap()
+        }
+        col
+    }
 
     pub fn default_table_schema(ids: Vec<ColumnId>) -> TskvTableSchema {
         let fields = ids
@@ -313,7 +373,159 @@ pub mod flush_tests {
     }
 
     #[tokio::test]
-    async fn test_flush() {
-        // todo!("test_flush");
+    async fn test_flush_run() {
+        let dir = "/tmp/test/flush/1";
+        let _ = std::fs::remove_dir_all(dir);
+        std::fs::create_dir_all(dir).unwrap();
+        let mut global_config = config::get_config_for_test();
+        global_config.storage.path = dir.to_string();
+        let opt = Arc::new(Options::from(&global_config));
+
+        let database = Arc::new("cnosdb.test".to_string());
+
+        #[rustfmt::skip]
+            let levels = [
+            LevelInfo::init(database.clone(), 0, 0, opt.storage.clone()),
+            LevelInfo::init(database.clone(), 1, 0, opt.storage.clone()),
+            LevelInfo::init(database.clone(), 2, 0, opt.storage.clone()),
+            LevelInfo::init(database.clone(), 3, 0, opt.storage.clone()),
+            LevelInfo::init(database.clone(), 4, 0, opt.storage.clone()),
+        ];
+        let tsm_reader_cache = Arc::new(ShardedAsyncCache::create_lru_sharded_cache(16));
+
+        let version = Version::new(
+            1,
+            database.clone(),
+            opt.storage.clone(),
+            1,
+            levels,
+            5,
+            tsm_reader_cache,
+        );
+        let sid = 1;
+        let memory_pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
+        let mem_cache = MemCache::new(1, 1000, 2, 1, &memory_pool);
+        #[rustfmt::skip]
+            let mut schema_1 = TskvTableSchema::new(
+            "test_tenant".to_string(), "test_db".to_string(), "test_table".to_string(),
+            vec![
+                TableColumn::new_time_column(1, TimeUnit::Nanosecond),
+                TableColumn::new_tag_column(2, "tag_col_1".to_string()),
+                TableColumn::new_tag_column(3, "tag_col_2".to_string()),
+                TableColumn::new(4, "f_col_1".to_string(), ColumnType::Field(ValueType::Float), Default::default()),
+            ],
+        );
+        schema_1.schema_version = 1;
+        let mut rows = OrderedRowsData::new();
+        rows.insert(RowData {
+            ts: 1,
+            fields: vec![Some(FieldVal::Float(1.0))],
+        });
+        rows.insert(RowData {
+            ts: 3,
+            fields: vec![Some(FieldVal::Float(3.0))],
+        });
+        rows.insert(RowData {
+            ts: 6,
+            fields: vec![Some(FieldVal::Float(6.0))],
+        });
+        rows.insert(RowData {
+            ts: 9,
+            fields: vec![Some(FieldVal::Float(9.0))],
+        });
+        #[rustfmt::skip]
+            let row_group_1 = RowGroup {
+            schema: Arc::new(schema_1),
+            range: TimeRange::new(1, 3),
+            rows,
+            size: 10,
+        };
+
+        mem_cache
+            .write_group(sid, SeriesKey::default(), 1, row_group_1.clone())
+            .unwrap();
+
+        let mem_caches = vec![Arc::new(RwLock::new(mem_cache))];
+        let path_tsm = PathBuf::from("/tmp/test/flush/tsm1");
+        let path_delta = PathBuf::from("/tmp/test/flush/tsm2");
+        let flush_task = FlushTask::new(
+            1,
+            mem_caches,
+            0,
+            1,
+            Arc::new(GlobalContext::new()),
+            path_tsm.clone(),
+            path_delta.clone(),
+        );
+
+        let mut edit = VersionEdit::default();
+        let _ = flush_task.run(Arc::new(version), &mut edit).await.unwrap();
+
+        let tsm_info = edit.add_files.first().unwrap();
+        let delta_info = edit.add_files.get(1).unwrap();
+
+        let mut schema = TskvTableSchema::new(
+            "test_tenant".to_string(),
+            "test_db".to_string(),
+            "test_table".to_string(),
+            vec![
+                TableColumn::new(
+                    1,
+                    "time".to_string(),
+                    ColumnType::Time(TimeUnit::Nanosecond),
+                    Encoding::default(),
+                ),
+                TableColumn::new(
+                    2,
+                    "tag_col_1".to_string(),
+                    ColumnType::Tag,
+                    Encoding::default(),
+                ),
+                TableColumn::new(
+                    3,
+                    "tag_col_2".to_string(),
+                    ColumnType::Tag,
+                    Encoding::default(),
+                ),
+                TableColumn::new(
+                    4,
+                    "f_col_1".to_string(),
+                    ColumnType::Field(ValueType::Float),
+                    Encoding::default(),
+                ),
+            ],
+        );
+
+        schema.schema_version = 1;
+        let schema = Arc::new(schema);
+        let data1 = DataBlock::new(
+            schema.clone(),
+            ts_column(vec![6, 9]),
+            vec![f64_column(vec![6.0, 9.0])],
+        );
+
+        let data2 = DataBlock::new(
+            schema.clone(),
+            ts_column(vec![1, 3]),
+            vec![f64_column(vec![1.0, 3.0])],
+        );
+
+        {
+            let tsm_writer = TsmWriter::open(&path_tsm, tsm_info.file_id, 100, false)
+                .await
+                .unwrap();
+            let tsm_reader = TsmReader::open(tsm_writer.path()).await.unwrap();
+            let tsm_data = tsm_reader.read_datablock(1, 0).await.unwrap();
+            assert_eq!(tsm_data, data1);
+        }
+
+        {
+            let delta_writer = TsmWriter::open(&path_delta, delta_info.file_id, 100, true)
+                .await
+                .unwrap();
+            let delta_reader = TsmReader::open(delta_writer.path()).await.unwrap();
+            let delta_data = delta_reader.read_datablock(1, 0).await.unwrap();
+            assert_eq!(delta_data, data2);
+        }
     }
 }
