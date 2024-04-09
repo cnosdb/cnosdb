@@ -70,7 +70,7 @@ impl LevelCompactionPicker {
             in_level = start_lvl;
             out_level = out_lvl;
         } else {
-            info!("Picker(level): picked no level");
+            debug!("Picker(level): picked no level");
             return None;
         }
 
@@ -83,7 +83,7 @@ impl LevelCompactionPicker {
         files.sort_by(Self::compare_column_file);
         let picking_files: Vec<Arc<ColumnFile>> =
             Self::pick_files(files, storage_opt.max_compact_size).await;
-        info!(
+        debug!(
             "Picker(level): Picked files: [ {} ]",
             ColumnFiles(&picking_files)
         );
