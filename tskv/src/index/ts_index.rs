@@ -174,7 +174,7 @@ impl TSIndex {
         let key_buf = encode_series_key(series_key.table(), series_key.tags());
         let encode = series_key.encode();
 
-        let (id, block) = {
+        let id = {
             let mut storage_w = self.storage.write().await;
             if let Some(val) = storage_w.get(&key_buf)? {
                 // is already exist and store forward index
@@ -190,10 +190,9 @@ impl TSIndex {
                 data: encode,
             };
             storage_w.set(&encode_series_id_key(id), &block.data)?;
-            (id, block)
+            self.binlog.write().await.write(&block.encode()).await?;
+            id
         };
-
-        self.binlog.write().await.write(&block.encode()).await?;
 
         // then inverted index
         for tag in series_key.tags() {
