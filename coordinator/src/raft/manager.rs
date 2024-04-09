@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use meta::model::MetaRef;
 use models::meta_data::*;
+use openraft::SnapshotPolicy;
 use protos::kv_service::*;
 use replication::multi_raft::MultiRaft;
 use replication::node_store::NodeStorage;
@@ -469,6 +470,7 @@ impl RaftNodesManager {
                 as u64,
             install_snapshot_timeout: self.config.cluster.install_snapshot_timeout.as_millis()
                 as u64,
+            snapshot_policy: SnapshotPolicy::Never,
         }
     }
 

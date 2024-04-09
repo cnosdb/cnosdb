@@ -10,7 +10,7 @@ use errors::ReplicationResult;
 use network_client::NetworkConn;
 use node_store::NodeStorage;
 use openraft::storage::Adaptor;
-use openraft::{Entry, TokioRuntime};
+use openraft::{Entry, SnapshotPolicy, TokioRuntime};
 use tokio::sync::RwLock;
 
 pub mod apply_store;
@@ -33,7 +33,7 @@ pub struct RaftNodeInfo {
     pub address: String, // server address
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct ReplicationConfig {
     pub cluster_name: String,
     pub lmdb_max_map_size: usize,
@@ -42,6 +42,7 @@ pub struct ReplicationConfig {
     pub raft_logs_to_keep: u64,
     pub send_append_entries_timeout: u64, //ms
     pub install_snapshot_timeout: u64,    //ms
+    pub snapshot_policy: SnapshotPolicy,
 }
 
 // #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Ord, PartialOrd)]
