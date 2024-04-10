@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 pub struct MetaInit {
     pub cluster_name: String,
     pub admin_user: String,
+    pub admin_pwd: String,
     pub system_tenant: String,
     pub default_database: Vec<String>,
 }
@@ -18,6 +19,7 @@ impl Default for MetaInit {
         Self {
             cluster_name: String::from("cluster_xxx"),
             admin_user: String::from("root"),
+            admin_pwd: String::from("root"),
             system_tenant: String::from("cnosdb"),
             default_database: vec![String::from("public"), String::from("usage_schema")],
         }
@@ -147,6 +149,7 @@ path = "/tmp/cnosdb/logs"
 [meta_init]
 cluster_name = "cluster_xxx"
 admin_user = "root"
+admin_pwd = "root"
 system_tenant = "cnosdb"
 default_database = ["public", "usage_schema"]
 

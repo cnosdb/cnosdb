@@ -16,6 +16,7 @@ path = "/tmp/cnosdb/logs"
 [meta_init]
 cluster_name = "cluster_xxx"
 admin_user = "root"
+admin_pwd = "root"
 system_tenant = "cnosdb"
 default_database = ["public", "usage_schema"]
 

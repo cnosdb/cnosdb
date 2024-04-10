@@ -32,6 +32,8 @@ pub async fn init_meta(storage: &mut StateMachine, init_data: MetaInit) {
     // init user
     let user_opt = UserOptionsBuilder::default()
         .must_change_password(true)
+        .password(init_data.admin_pwd)
+        .expect("failed to init user option.")
         .comment("system admin")
         .build()
         .expect("failed to init user option.");
