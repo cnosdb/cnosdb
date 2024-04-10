@@ -68,10 +68,7 @@ openraft::declare_raft_types!(
         AsyncRuntime = TokioRuntime
 );
 
-type LocalLogStore = Adaptor<TypeConfig, Arc<NodeStorage>>;
-type LocalStateMachineStore = Adaptor<TypeConfig, Arc<NodeStorage>>;
-pub type OpenRaftNode =
-    openraft::Raft<TypeConfig, NetworkConn, LocalLogStore, LocalStateMachineStore>;
+pub type OpenRaftNode = openraft::Raft<TypeConfig>;
 
 pub type Request = Vec<u8>;
 pub type Response = Vec<u8>;

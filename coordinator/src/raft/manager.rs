@@ -209,7 +209,7 @@ impl RaftNodesManager {
     }
 
     async fn assert_leader_node(&self, raft_node: Arc<RaftNode>) -> CoordinatorResult<()> {
-        let result = raft_node.raw_raft().is_leader().await;
+        let result = raft_node.raw_raft().ensure_linearizable().await;
         if let Err(err) = result {
             if let Some(openraft::error::ForwardToLeader {
                 leader_id: Some(id),

@@ -92,7 +92,7 @@ async fn detect_node_heartbeat(
     loop {
         interval.tick().await;
 
-        if let Ok(_leader) = node.raw_raft().is_leader().await {
+        if let Ok(_leader) = node.raw_raft().ensure_linearizable().await {
             let opt_list = storage
                 .read()
                 .await

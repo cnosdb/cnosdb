@@ -4,7 +4,6 @@ use std::io::Cursor;
 use std::ops::RangeBounds;
 use std::sync::Arc;
 
-use openraft::async_trait::async_trait;
 use openraft::storage::{LogState, Snapshot};
 use openraft::{
     Entry, EntryPayload, LogId, LogIdOptionExt, MessageSummary, RaftLogReader, RaftSnapshotBuilder,
@@ -188,9 +187,8 @@ impl NodeStorage {
 
 type StorageResult<T> = Result<T, StorageError<RaftNodeId>>;
 
-#[async_trait]
 impl RaftLogReader<TypeConfig> for Arc<NodeStorage> {
-    async fn try_get_log_entries<RB: RangeBounds<u64> + Clone + Debug + Send + Sync>(
+    async fn try_get_log_entries<RB: RangeBounds<u64> + Clone + Debug + Send>(
         &mut self,
         range: RB,
     ) -> StorageResult<Vec<Entry<TypeConfig>>> {
@@ -222,7 +220,6 @@ impl RaftLogReader<TypeConfig> for Arc<NodeStorage> {
     }
 }
 
-#[async_trait]
 impl RaftSnapshotBuilder<TypeConfig> for Arc<NodeStorage> {
     #[tracing::instrument(level = "trace", skip(self))]
     async fn build_snapshot(&mut self) -> Result<Snapshot<TypeConfig>, StorageError<RaftNodeId>> {
@@ -240,7 +237,6 @@ impl RaftSnapshotBuilder<TypeConfig> for Arc<NodeStorage> {
     }
 }
 
-#[async_trait]
 impl RaftStorage<TypeConfig> for Arc<NodeStorage> {
     type LogReader = Self;
     type SnapshotBuilder = Self;
