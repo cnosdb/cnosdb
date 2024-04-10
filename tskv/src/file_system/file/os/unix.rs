@@ -7,13 +7,13 @@ pub fn fd(file: &File) -> usize {
     file.as_raw_fd() as usize
 }
 
-pub fn pread(raw_fd: usize, pos: u64, len: usize, ptr: u64) -> Result<usize> {
+pub fn pread(raw_fd: usize, pos: usize, len: usize, ptr: u64) -> Result<usize> {
     check_err_size(unsafe {
         libc::pread(raw_fd as RawFd, ptr as *mut _, len as _, pos as libc::off_t)
     })
 }
 
-pub fn pwrite(raw_fd: usize, pos: u64, len: usize, ptr: u64) -> Result<usize> {
+pub fn pwrite(raw_fd: usize, pos: usize, len: usize, ptr: u64) -> Result<usize> {
     check_err_size(unsafe {
         libc::pwrite(
             raw_fd as RawFd,
@@ -24,11 +24,11 @@ pub fn pwrite(raw_fd: usize, pos: u64, len: usize, ptr: u64) -> Result<usize> {
     })
 }
 
-pub fn file_size(raw_fd: usize) -> Result<u64> {
+pub fn file_size(raw_fd: usize) -> Result<usize> {
     let mut stat = MaybeUninit::<libc::stat>::zeroed();
     check_err(unsafe { libc::fstat(raw_fd as RawFd, stat.as_mut_ptr()) })?;
     let stat = unsafe { stat.assume_init() };
-    Ok(stat.st_size as u64)
+    Ok(stat.st_size as usize)
 }
 
 fn check_err(r: libc::c_int) -> Result<libc::c_int> {

@@ -97,7 +97,7 @@ impl FlushTask {
             );
             let tsm_meta = compact_meta_builder.build(
                 tsm_writer.file_id(),
-                tsm_writer.size(),
+                tsm_writer.size() as u64,
                 1,
                 tsm_writer.min_ts(),
                 tsm_writer.max_ts(),
@@ -115,7 +115,7 @@ impl FlushTask {
 
             let delta_meta = compact_meta_builder.build(
                 delta_writer.file_id(),
-                delta_writer.size(),
+                delta_writer.size() as u64,
                 0,
                 delta_writer.min_ts(),
                 delta_writer.max_ts(),

@@ -9,9 +9,9 @@ use models::schema::{TskvTableSchemaRef, TIME_FIELD};
 use models::SeriesId;
 
 use crate::error::TskvResult;
-use crate::file_system::file::async_file::AsyncFile;
-use crate::file_system::file::IFile;
-use crate::file_system::file_manager;
+use crate::file_system::async_filesystem::{LocalFileSystem, LocalFileType};
+use crate::file_system::file::stream_reader::FileStreamReader;
+use crate::file_system::FileSystem;
 use crate::tsm::chunk::Chunk;
 use crate::tsm::chunk_group::{ChunkGroup, ChunkGroupMeta};
 use crate::tsm::data_block::{DataBlock, MutableColumn};
@@ -77,11 +77,10 @@ impl TsmMetaData {
     }
 }
 
-#[derive(Clone)]
 pub struct TsmReader {
     file_location: PathBuf,
     file_id: u64,
-    reader: Arc<AsyncFile>,
+    reader: Box<FileStreamReader>,
     tsm_meta: Arc<TsmMetaData>,
     tombstone: Arc<TsmTombstone>,
 }
@@ -89,14 +88,18 @@ pub struct TsmReader {
 impl TsmReader {
     pub async fn open(tsm_path: impl AsRef<Path>) -> TskvResult<Self> {
         let path = tsm_path.as_ref().to_path_buf();
-        let reader = Arc::new(file_manager::open_file(&path).await?);
+        let file_system = LocalFileSystem::new(LocalFileType::ThreadPool);
+        let reader = file_system
+            .open_file_reader(&path)
+            .await
+            .map_err(|e| TskvError::FileSystemError { source: e })?;
 
         let file_id = file_utils::get_tsm_file_id_by_path(&path)?;
 
-        let footer = Arc::new(read_footer(reader.clone()).await?);
-        let chunk_group_meta = Arc::new(read_chunk_group_meta(reader.clone(), &footer).await?);
-        let chunk_group = read_chunk_groups(reader.clone(), &chunk_group_meta).await?;
-        let chunk = read_chunk(reader.clone(), &chunk_group).await?;
+        let footer = Arc::new(read_footer(&reader).await?);
+        let chunk_group_meta = Arc::new(read_chunk_group_meta(&reader, &footer).await?);
+        let chunk_group = read_chunk_groups(&reader, &chunk_group_meta).await?;
+        let chunk = read_chunk(&reader, &chunk_group).await?;
 
         let tombstone_path = path.parent().unwrap_or_else(|| Path::new("/"));
         let tombstone = Arc::new(TsmTombstone::open(tombstone_path, file_id).await?);
@@ -115,10 +118,6 @@ impl TsmReader {
             tsm_meta,
             tombstone,
         })
-    }
-
-    pub fn reader(&self) -> Arc<AsyncFile> {
-        self.reader.clone()
     }
 
     pub fn file_id(&self) -> u64 {
@@ -184,7 +183,7 @@ impl TsmReader {
     }
 
     pub async fn read_page(&self, page_spec: &PageWriteSpec) -> TskvResult<Page> {
-        read_page(self.reader.clone(), page_spec).await
+        read_page(&self.reader, page_spec).await
     }
 
     pub async fn read_series_pages(
@@ -193,7 +192,7 @@ impl TsmReader {
         column_group_id: ColumnGroupID,
     ) -> TskvResult<Vec<Page>> {
         let chunk = self.chunk();
-        let reader = self.reader.clone();
+        let reader = &self.reader;
         if let Some(chunk) = chunk.get(&series_id) {
             for (id, column_group) in chunk.column_group() {
                 if *id != column_group_id {
@@ -201,7 +200,7 @@ impl TsmReader {
                 }
                 let mut res_page = Vec::with_capacity(column_group.pages().len());
                 for page in column_group.pages() {
-                    let page = read_page(reader.clone(), page).await?;
+                    let page = read_page(reader, page).await?;
                     res_page.push(page);
                 }
                 return Ok(res_page);
@@ -223,7 +222,7 @@ impl TsmReader {
                 }
                 let mut res_column_group = vec![0u8; column_group.size() as usize];
                 self.reader
-                    .read_at(column_group.pages_offset(), &mut res_column_group)
+                    .read_at(column_group.pages_offset() as usize, &mut res_column_group)
                     .await?;
                 return Ok(res_column_group);
             }
@@ -302,18 +301,18 @@ impl Debug for TsmReader {
     }
 }
 
-pub async fn read_footer(reader: Arc<AsyncFile>) -> TskvResult<Footer> {
-    let pos = reader.len() - (FOOTER_SIZE as u64);
+pub async fn read_footer(reader: &FileStreamReader) -> TskvResult<Footer> {
+    let pos = reader.len()? - FOOTER_SIZE;
     let mut buffer = vec![0u8; FOOTER_SIZE];
     reader.read_at(pos, &mut buffer).await?;
     Footer::deserialize(&buffer)
 }
 
 pub async fn read_chunk_group_meta(
-    reader: Arc<AsyncFile>,
+    reader: &FileStreamReader,
     footer: &Footer,
 ) -> TskvResult<ChunkGroupMeta> {
-    let pos = footer.table.chunk_group_offset();
+    let pos = footer.table.chunk_group_offset() as usize;
     let mut buffer = vec![0u8; footer.table.chunk_group_size() as usize];
     reader.read_at(pos, &mut buffer).await?; // read chunk group meta
     let specs = ChunkGroupMeta::deserialize(&buffer)?;
@@ -321,12 +320,12 @@ pub async fn read_chunk_group_meta(
 }
 
 pub async fn read_chunk_groups(
-    reader: Arc<AsyncFile>,
+    reader: &FileStreamReader,
     chunk_group_meta: &ChunkGroupMeta,
 ) -> TskvResult<BTreeMap<String, Arc<ChunkGroup>>> {
     let mut specs = BTreeMap::new();
     for chunk in chunk_group_meta.tables().values() {
-        let pos = chunk.chunk_group_offset();
+        let pos = chunk.chunk_group_offset() as usize;
         let mut buffer = vec![0u8; chunk.chunk_group_size() as usize];
         reader.read_at(pos, &mut buffer).await?; // read chunk group meta
         let group = Arc::new(ChunkGroup::deserialize(&buffer)?);
@@ -336,13 +335,13 @@ pub async fn read_chunk_groups(
 }
 
 pub async fn read_chunk(
-    reader: Arc<AsyncFile>,
+    reader: &FileStreamReader,
     chunk_group: &BTreeMap<String, Arc<ChunkGroup>>,
 ) -> TskvResult<BTreeMap<SeriesId, Arc<Chunk>>> {
     let mut chunks = BTreeMap::new();
     for group in chunk_group.values() {
         for chunk_spec in group.chunks() {
-            let pos = chunk_spec.chunk_offset();
+            let pos = chunk_spec.chunk_offset() as usize;
             let mut buffer = vec![0u8; chunk_spec.chunk_size() as usize];
             reader.read_at(pos, &mut buffer).await?;
             let chunk = Arc::new(Chunk::deserialize(&buffer)?);
@@ -352,8 +351,8 @@ pub async fn read_chunk(
     Ok(chunks)
 }
 
-async fn read_page(reader: Arc<AsyncFile>, page_spec: &PageWriteSpec) -> TskvResult<Page> {
-    let pos = page_spec.offset();
+async fn read_page(reader: &FileStreamReader, page_spec: &PageWriteSpec) -> TskvResult<Page> {
+    let pos = page_spec.offset() as usize;
     let mut buffer = vec![0u8; page_spec.size() as usize];
     reader.read_at(pos, &mut buffer).await?;
     let page = Page {

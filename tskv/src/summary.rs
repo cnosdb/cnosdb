@@ -19,6 +19,7 @@ use utils::BloomFilter;
 
 use crate::context::GlobalContext;
 use crate::error::{TskvError, TskvResult};
+use crate::file_system::async_filesystem::LocalFileSystem;
 use crate::kv_option::{Options, StorageOptions, DELTA_PATH, TSM_PATH};
 use crate::memcache::MemCache;
 use crate::record_file::{Reader, RecordDataType, RecordDataVersion, Writer};
@@ -558,7 +559,8 @@ impl Summary {
         }
 
         let new_path = file_utils::make_summary_file_tmp(self.opt.storage.summary_dir());
-        crate::file_system::file_manager::remove_if_exists(&new_path)?;
+        LocalFileSystem::remove_if_exists(&new_path)
+            .map_err(|e| TskvError::FileSystemError { source: e })?;
 
         let requests = self.version_set.read().await.snapshot_version_edit().await;
         self.writer = Writer::open(&new_path, RecordDataType::Summary).await?;

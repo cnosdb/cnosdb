@@ -13,9 +13,9 @@ use utils::BloomFilter;
 
 use crate::compaction::CompactingBlock;
 use crate::error::IOSnafu;
-use crate::file_system::file::cursor::FileCursor;
-use crate::file_system::file::IFile;
-use crate::file_system::file_manager;
+use crate::file_system::async_filesystem::{LocalFileSystem, LocalFileType};
+use crate::file_system::file::stream_writer::FileStreamWriter;
+use crate::file_system::FileSystem;
 use crate::file_utils::{make_delta_file, make_tsm_file};
 use crate::tsm::chunk::{Chunk, ChunkStatics, ChunkWriteSpec};
 use crate::tsm::chunk_group::{ChunkGroup, ChunkGroupMeta, ChunkGroupWriteSpec};
@@ -23,7 +23,7 @@ use crate::tsm::column_group::ColumnGroup;
 use crate::tsm::data_block::DataBlock;
 use crate::tsm::footer::{Footer, SeriesMeta, TableMeta};
 use crate::tsm::page::{Page, PageWriteSpec};
-use crate::tsm::{TsmWriteData, BLOOM_FILTER_BITS};
+use crate::tsm::{ColumnGroupID, TsmWriteData, BLOOM_FILTER_BITS};
 use crate::{TskvError, TskvResult};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -61,14 +61,14 @@ pub struct TsmWriter {
     file_id: u64,
     min_ts: i64,
     max_ts: i64,
-    size: u64,
+    size: usize,
     max_size: u64,
     path: PathBuf,
 
     series_bloom_filter: BloomFilter,
     // todo: table object id bloom filter
     // table_bloom_filter: BloomFilter,
-    writer: FileCursor,
+    writer: Box<FileStreamWriter>,
     options: WriteOptions,
     table_schemas: HashMap<String, TskvTableSchemaRef>,
 
@@ -95,11 +95,15 @@ impl TsmWriter {
         } else {
             make_tsm_file(path_buf, file_id)
         };
-        let file_cursor = file_manager::create_file(&file_path).await?;
-        let writer = Self::new(file_path, file_cursor.into(), file_id, max_size);
+        let file_system = LocalFileSystem::new(LocalFileType::ThreadPool);
+        let file = file_system
+            .open_file_writer(&file_path)
+            .await
+            .map_err(|e| TskvError::FileSystemError { source: e })?;
+        let writer = Self::new(file_path, file, file_id, max_size);
         Ok(writer)
     }
-    fn new(path: PathBuf, writer: FileCursor, file_id: u64, max_size: u64) -> Self {
+    fn new(path: PathBuf, writer: Box<FileStreamWriter>, file_id: u64, max_size: u64) -> Self {
         Self {
             file_id,
             max_ts: i64::MIN,
@@ -131,7 +135,7 @@ impl TsmWriter {
         self.max_ts
     }
 
-    pub fn size(&self) -> u64 {
+    pub fn size(&self) -> usize {
         self.size
     }
 
@@ -160,7 +164,7 @@ impl TsmWriter {
             .await
             .context(IOSnafu)?;
         self.state = State::Started;
-        self.size += size as u64;
+        self.size += size;
         Ok(size)
     }
 
@@ -168,20 +172,20 @@ impl TsmWriter {
     pub async fn write_footer(&mut self) -> TskvResult<usize> {
         let buf = self.footer.serialize()?;
         let size = self.writer.write(&buf).await.context(IOSnafu)?;
-        self.size += size as u64;
+        self.size += size;
         Ok(size)
     }
 
     pub async fn write_chunk_group(&mut self) -> TskvResult<()> {
         for (table, group) in &self.chunk_specs {
-            let chunk_group_offset = self.writer.pos();
+            let chunk_group_offset = self.writer.len() as u64;
             let buf = group.serialize()?;
-            let chunk_group_size = self.writer.write(&buf).await? as u64;
+            let chunk_group_size = self.writer.write(&buf).await?;
             self.size += chunk_group_size;
             let chunk_group_spec = ChunkGroupWriteSpec {
                 table_schema: self.table_schemas.get(table).unwrap().clone(),
                 chunk_group_offset,
-                chunk_group_size,
+                chunk_group_size: chunk_group_size as u64,
                 time_range: group.time_range(),
                 // The number of chunks in the group.
                 count: 0,
@@ -192,15 +196,15 @@ impl TsmWriter {
     }
 
     pub async fn write_chunk_group_specs(&mut self, series: SeriesMeta) -> TskvResult<()> {
-        let chunk_group_specs_offset = self.writer.pos();
+        let chunk_group_specs_offset = self.writer.len() as u64;
         let buf = self.chunk_group_specs.serialize()?;
-        let chunk_group_specs_size = self.writer.write(&buf).await? as u64;
+        let chunk_group_specs_size = self.writer.write(&buf).await?;
         self.size += chunk_group_specs_size;
         let time_range = self.chunk_group_specs.time_range();
         let footer = Footer {
             version: 2_u8,
             time_range,
-            table: TableMeta::new(chunk_group_specs_offset, chunk_group_specs_size),
+            table: TableMeta::new(chunk_group_specs_offset, chunk_group_specs_size as u64),
             series,
         };
         self.footer = footer;
@@ -208,12 +212,12 @@ impl TsmWriter {
     }
 
     pub async fn write_chunk(&mut self) -> TskvResult<SeriesMeta> {
-        let chunk_offset = self.writer.pos();
+        let chunk_offset = self.writer.len() as u64;
         for (table, group) in &self.page_specs {
             for (series, chunk) in group {
-                let chunk_offset = self.writer.pos();
+                let chunk_offset = self.writer.len() as u64;
                 let buf = chunk.serialize()?;
-                let chunk_size = self.writer.write(&buf).await? as u64;
+                let chunk_size = self.writer.write(&buf).await?;
                 self.size += chunk_size;
                 let time_range = chunk.time_range();
                 self.min_ts = min(self.min_ts, time_range.min_ts);
@@ -221,7 +225,7 @@ impl TsmWriter {
                 let chunk_spec = ChunkWriteSpec {
                     series_id: *series,
                     chunk_offset,
-                    chunk_size,
+                    chunk_size: chunk_size as u64,
                     statics: ChunkStatics {
                         time_range: *time_range,
                     },
@@ -233,7 +237,7 @@ impl TsmWriter {
                 self.series_bloom_filter.insert(&series.to_be_bytes());
             }
         }
-        let chunk_size = self.writer.pos() - chunk_offset;
+        let chunk_size = self.writer.len() as u64 - chunk_offset;
         let series = SeriesMeta::new(
             self.series_bloom_filter.bytes().to_vec(),
             chunk_offset,
@@ -275,12 +279,12 @@ impl TsmWriter {
     ) -> TskvResult<()> {
         if self.state == State::Finished {
             return Err(TskvError::CommonError {
-                reason: "TsmWriter has been finished".to_string(),
+                reason: "Tsm2Writer has been finished".to_string(),
             });
         }
 
         let time_range = datablock.time_range()?;
-        let schema = datablock.schema();
+        let schema = datablock.schema().clone();
         let pages = datablock.block_to_page()?;
 
         self.write_pages(schema, series_id, series_key, pages, time_range)
@@ -304,17 +308,17 @@ impl TsmWriter {
 
         let table = schema.name.clone();
         for page in pages {
-            let offset = self.writer.pos();
-            let size = self.writer.write(&page.bytes).await? as u64;
+            let offset = self.writer.len() as u64;
+            let size = self.writer.write(&page.bytes).await?;
             self.size += size;
             let spec = PageWriteSpec {
                 offset,
-                size,
+                size: size as u64,
                 meta: page.meta,
             };
             column_group.push(spec);
+            self.table_schemas.insert(table.clone(), schema.clone());
         }
-        self.table_schemas.insert(table.clone(), schema.clone());
         column_group.time_range_merge(&time_range);
         self.page_specs
             .entry(table.clone())
@@ -329,7 +333,7 @@ impl TsmWriter {
         &mut self,
         schema: TskvTableSchemaRef,
         meta: Arc<Chunk>,
-        column_group_id: u64,
+        column_group_id: ColumnGroupID,
         raw: Vec<u8>,
     ) -> TskvResult<()> {
         if self.state == State::Initialised {
@@ -339,8 +343,8 @@ impl TsmWriter {
         let mut new_column_group =
             self.create_column_group(schema.clone(), meta.series_id(), meta.series_key());
 
-        let mut offset = self.writer.pos();
-        let size = self.writer.write(&raw).await? as u64;
+        let mut offset = self.writer.len() as u64;
+        let size = self.writer.write(&raw).await?;
         self.size += size;
 
         let table = schema.name.to_string();
@@ -410,7 +414,7 @@ impl TsmWriter {
             }
         }
 
-        if self.max_size != 0 && self.size > self.max_size {
+        if self.max_size != 0 && self.size > self.max_size as usize {
             self.finish().await?;
         }
 
@@ -422,7 +426,7 @@ impl TsmWriter {
         self.write_chunk_group().await?;
         self.write_chunk_group_specs(series_meta).await?;
         self.write_footer().await?;
-        self.writer.file_ref().sync_data().await?;
+        self.writer.flush().await?;
         self.state = State::Finished;
         Ok(())
     }

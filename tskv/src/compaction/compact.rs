@@ -940,7 +940,7 @@ fn new_compact_meta(
 ) -> CompactMeta {
     CompactMeta {
         file_id: tsm_writer.file_id(),
-        file_size: tsm_writer.size(),
+        file_size: tsm_writer.size() as u64,
         tsf_id,
         level,
         min_ts: tsm_writer.min_ts(),
@@ -966,7 +966,8 @@ pub mod test {
 
     use crate::compaction::{run_compaction_job, CompactReq};
     use crate::context::GlobalContext;
-    use crate::file_system::file_manager;
+    use crate::file_system::async_filesystem::LocalFileSystem;
+    use crate::file_system::FileSystem;
     use crate::file_utils;
     use crate::kv_option::Options;
     use crate::summary::VersionEdit;
@@ -980,7 +981,7 @@ pub mod test {
         dir: impl AsRef<Path>,
         data: Vec<HashMap<SeriesId, DataBlock>>,
     ) -> (u64, Vec<Arc<ColumnFile>>) {
-        if !file_manager::try_exists(&dir) {
+        if !LocalFileSystem::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
         }
         let mut cfs = Vec::new();
@@ -999,7 +1000,7 @@ pub mod test {
                 file_seq,
                 2,
                 TimeRange::new(writer.min_ts(), writer.max_ts()),
-                writer.size(),
+                writer.size() as u64,
                 false,
                 writer.path(),
             );
@@ -2114,7 +2115,7 @@ pub mod test {
         let database = Arc::new("dba".to_string());
         let opt = create_options(dir.to_string());
         let dir = opt.storage.tsm_dir(&database, 1);
-        if !file_manager::try_exists(&dir) {
+        if !LocalFileSystem::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
         }
 
@@ -2692,7 +2693,7 @@ pub mod test {
         let database = Arc::new("dba".to_string());
         let opt = create_options(dir.to_string());
         let dir = opt.storage.tsm_dir(&database, 1);
-        if !file_manager::try_exists(&dir) {
+        if !LocalFileSystem::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
         }
 

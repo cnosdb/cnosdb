@@ -4,6 +4,8 @@ use std::io;
 use sled;
 use snafu::Snafu;
 
+use crate::file_system::error::FileSystemError;
+
 #[derive(Snafu, Debug)]
 pub enum IndexError {
     #[snafu(display("This feature is not implemented: {}", err))]
@@ -56,6 +58,9 @@ pub enum IndexError {
 
     #[snafu(display("Decode index binlog block failed for '{}'", msg))]
     DecodeIndexBinlog { msg: String },
+
+    #[snafu(display("file system error: {}", source))]
+    FileSystemError { source: FileSystemError },
 }
 
 impl From<sled::Error> for IndexError {

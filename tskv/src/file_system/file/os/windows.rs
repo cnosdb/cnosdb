@@ -14,9 +14,9 @@ pub fn fd(file: &File) -> usize {
     file.as_raw_handle() as usize
 }
 
-pub fn pread(raw_handle: usize, pos: u64, len: usize, buf_ptr: u64) -> Result<usize> {
+pub fn pread(raw_handle: usize, pos: usize, len: usize, buf_ptr: u64) -> Result<usize> {
     let mut bytes: DWORD = 0;
-    let mut ov = overlapped(pos);
+    let mut ov = overlapped(pos as u64);
     check_err(unsafe {
         ReadFile(
             raw_handle as RawHandle,
@@ -29,9 +29,9 @@ pub fn pread(raw_handle: usize, pos: u64, len: usize, buf_ptr: u64) -> Result<us
     Ok(usize::try_from(bytes).unwrap())
 }
 
-pub fn pwrite(raw_handle: usize, pos: u64, len: usize, buf_ptr: u64) -> Result<usize> {
+pub fn pwrite(raw_handle: usize, pos: usize, len: usize, buf_ptr: u64) -> Result<usize> {
     let mut bytes: DWORD = 0;
-    let mut ov = overlapped(pos);
+    let mut ov = overlapped(pos as u64);
     check_err(unsafe {
         WriteFile(
             raw_handle as RawHandle,
@@ -44,12 +44,12 @@ pub fn pwrite(raw_handle: usize, pos: u64, len: usize, buf_ptr: u64) -> Result<u
     Ok(bytes as usize)
 }
 
-pub fn file_size(raw_handle: usize) -> Result<u64> {
+pub fn file_size(raw_handle: usize) -> Result<usize> {
     let mut info = MaybeUninit::<BY_HANDLE_FILE_INFORMATION>::zeroed();
     check_err(unsafe { GetFileInformationByHandle(raw_handle as RawHandle, info.as_mut_ptr()) })?;
     let info = unsafe { info.assume_init() };
     let len = u64::from(info.nFileSizeHigh) << 32 | u64::from(info.nFileSizeLow);
-    Ok(len)
+    Ok(len as usize)
 }
 
 fn overlapped(pos: u64) -> OVERLAPPED {

@@ -1,6 +1,5 @@
 use std::io::IoSlice;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use num_traits::ToPrimitive;
 use snafu::ResultExt;
@@ -10,35 +9,33 @@ use super::{
     FILE_MAGIC_NUMBER_LEN, RECORD_MAGIC_NUMBER,
 };
 use crate::error::{self, TskvError, TskvResult};
-use crate::file_system::file::async_file::AsyncFile;
-use crate::file_system::file::IFile;
-use crate::file_system::file_manager;
+use crate::file_system::async_filesystem::{LocalFileSystem, LocalFileType};
+use crate::file_system::file::stream_writer::FileStreamWriter;
+use crate::file_system::FileSystem;
 
 pub struct Writer {
     path: PathBuf,
-    file: Arc<AsyncFile>,
-
+    file: Box<FileStreamWriter>,
     footer: Option<[u8; FILE_FOOTER_LEN]>,
-    pos: u64,
-    file_size: u64,
 }
 
 impl Writer {
     pub async fn open(path: impl AsRef<Path>, _data_type: RecordDataType) -> TskvResult<Self> {
         let path = path.as_ref();
-        let file = file_manager::open_create_file(path).await?;
+        let file_system = LocalFileSystem::new(LocalFileType::ThreadPool);
+        let mut file = file_system
+            .open_file_writer(path)
+            .await
+            .map_err(|e| TskvError::FileSystemError { source: e })?;
         if file.is_empty() {
             // For new file, write file magic number, next write is at 4.
-            let file_size = file
-                .write_at(0, &FILE_MAGIC_NUMBER.to_be_bytes())
+            file.write(&FILE_MAGIC_NUMBER.to_be_bytes())
                 .await
-                .context(error::IOSnafu)? as u64;
+                .context(error::IOSnafu)?;
             Ok(Writer {
                 path: path.to_path_buf(),
-                file: Arc::new(file),
+                file,
                 footer: None,
-                pos: file_size,
-                file_size,
             })
         } else {
             let footer = match reader::read_footer(&path).await {
@@ -59,16 +56,14 @@ impl Writer {
             // Truncate this file to overwrite footer data.
             let file_size = file
                 .len()
-                .checked_sub(footer_len as u64)
-                .unwrap_or(FILE_MAGIC_NUMBER_LEN as u64);
+                .checked_sub(footer_len)
+                .unwrap_or(FILE_MAGIC_NUMBER_LEN);
             file.truncate(file_size).await?;
 
             Ok(Writer {
                 path: path.to_path_buf(),
-                file: Arc::new(file),
+                file,
                 footer,
-                pos: file_size,
-                file_size,
             })
         }
     }
@@ -121,16 +116,14 @@ impl Writer {
         }
 
         // Write record header and record data.
-        let written_size = self
-            .file
-            .write_vec(self.pos, &mut write_buf)
-            .await
-            .map_err(|e| TskvError::WriteFile {
-                path: self.path.clone(),
-                source: e,
-            })?;
-        self.pos += written_size as u64;
-        self.file_size += written_size as u64;
+        let written_size =
+            self.file
+                .write_vec(&write_buf)
+                .await
+                .map_err(|e| TskvError::WriteFile {
+                    path: self.path.clone(),
+                    source: e,
+                })?;
         Ok(written_size)
     }
 
@@ -138,9 +131,13 @@ impl Writer {
         self.sync().await?;
 
         // Get file crc
-        let mut buf = vec![0_u8; file_crc_source_len(self.file_size(), 0_usize)];
-        self.file
-            .read_at(FILE_MAGIC_NUMBER_LEN as u64, &mut buf)
+        let mut buf = vec![0_u8; file_crc_source_len(self.file.len(), 0_usize)];
+        let file_system = LocalFileSystem::new(LocalFileType::ThreadPool);
+        let file = file_system
+            .open_file_reader(&self.path)
+            .await
+            .map_err(|e| TskvError::FileSystemError { source: e })?;
+        file.read_at(FILE_MAGIC_NUMBER_LEN, &mut buf)
             .await
             .map_err(|e| TskvError::ReadFile {
                 path: self.path.clone(),
@@ -152,42 +149,42 @@ impl Writer {
         footer[4..8].copy_from_slice(&crc.to_be_bytes());
         self.footer = Some(*footer);
 
-        let written_size =
-            self.file
-                .write_at(self.pos, footer)
-                .await
-                .map_err(|e| TskvError::WriteFile {
-                    path: self.path.clone(),
-                    source: e,
-                })?;
+        let written_size = self
+            .file
+            .write(footer)
+            .await
+            .map_err(|e| TskvError::WriteFile {
+                path: self.path.clone(),
+                source: e,
+            })?;
         // Only add file_size, does not add pos
-        self.file_size += written_size as u64;
         Ok(written_size)
     }
 
     pub async fn truncate(&mut self, size: u64) -> TskvResult<()> {
-        self.file.truncate(size).await?;
-        self.pos = size;
-        self.file_size = size;
+        self.file.truncate(size as usize).await?;
 
         Ok(())
     }
 
-    pub async fn sync(&self) -> TskvResult<()> {
-        self.file.sync_data().await.context(error::SyncFileSnafu)
+    pub async fn sync(&mut self) -> TskvResult<()> {
+        self.file.flush().await.context(error::SyncFileSnafu)
     }
 
     pub async fn close(&mut self) -> TskvResult<()> {
         self.sync().await
     }
 
-    pub fn new_reader(&self) -> reader::Reader {
-        reader::Reader::new(
-            self.file.clone(),
+    pub async fn new_reader(&self) -> TskvResult<reader::Reader> {
+        let file_system = LocalFileSystem::new(LocalFileType::Mmap);
+        let file = file_system.open_file_reader(&self.path).await.unwrap();
+        let len = file.len()?;
+        Ok(reader::Reader::new(
+            file,
             self.path.clone(),
-            self.file_size,
+            len,
             self.footer,
-        )
+        ))
     }
 
     pub fn path(&self) -> PathBuf {
@@ -198,12 +195,8 @@ impl Writer {
         self.footer
     }
 
-    pub fn pos(&self) -> u64 {
-        self.pos
-    }
-
     pub fn file_size(&self) -> u64 {
-        self.file_size
+        self.file.len() as u64
     }
 }
 

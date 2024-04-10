@@ -6,7 +6,8 @@ use replication::{EntryStorage, RaftNodeId, RaftNodeInfo, TypeConfig};
 use trace::info;
 
 use super::reader::WalRecordData;
-use crate::file_system::file_manager;
+use crate::file_system::async_filesystem::LocalFileSystem;
+use crate::file_system::FileSystem;
 use crate::vnode_store::VnodeStorage;
 use crate::wal::reader::{Block, WalReader};
 use crate::wal::VnodeWal;
@@ -51,7 +52,10 @@ impl EntryStorage for RaftEntryStorage {
                 .await
                 .map_err(|e| ReplicationError::RaftInternalErr { msg: e.to_string() })?;
 
-            self.inner.mark_write_wal(ent.clone(), wal_id, pos);
+            self.inner
+                .mark_write_wal(ent.clone(), wal_id, pos)
+                .await
+                .map_err(|e| ReplicationError::StorageErr { msg: e.to_string() })?;
         }
         Ok(())
     }
@@ -203,7 +207,7 @@ struct RaftEntryStorageInner {
 }
 
 impl RaftEntryStorageInner {
-    fn mark_write_wal(&mut self, entry: RaftEntry, wal_id: u64, pos: u64) {
+    async fn mark_write_wal(&mut self, entry: RaftEntry, wal_id: u64, pos: u64) -> TskvResult<()> {
         let index = entry.log_id.index;
         if let Some(item) = self
             .files_meta
@@ -213,12 +217,13 @@ impl RaftEntryStorageInner {
         {
             item.mark_entry(index, pos);
         } else {
+            self.wal.sync().await?;
             let mut item = WalFileMeta {
                 file_id: wal_id,
                 min_seq: u64::MAX,
                 max_seq: u64::MAX,
                 entry_index: vec![],
-                reader: self.wal.current_wal.new_reader(),
+                reader: self.wal.current_wal.new_reader().await?,
             };
 
             item.entry_index.reserve(8 * 1024);
@@ -227,6 +232,7 @@ impl RaftEntryStorageInner {
         }
 
         self.entry_cache.put(index, entry);
+        Ok(())
     }
 
     async fn mark_delete_before(&mut self, seq_no: u64) {
@@ -369,7 +375,7 @@ impl RaftEntryStorageInner {
 
     /// Read WAL files to recover: engine, index, cache.
     pub async fn recover(&mut self, vode_store: &mut VnodeStorage) -> TskvResult<()> {
-        let wal_files = file_manager::list_file_names(self.wal.wal_dir());
+        let wal_files = LocalFileSystem::list_file_names(self.wal.wal_dir());
         for file_name in wal_files {
             // If file name cannot be parsed to wal id, skip that file.
             let wal_id = match file_utils::get_wal_file_id(&file_name) {
@@ -377,7 +383,7 @@ impl RaftEntryStorageInner {
                 Err(_) => continue,
             };
             let path = self.wal.wal_dir().join(&file_name);
-            if !file_manager::try_exists(&path) {
+            if !LocalFileSystem::try_exists(&path) {
                 continue;
             }
             let reader = self.wal.wal_reader(wal_id).await?;
@@ -405,7 +411,7 @@ impl RaftEntryStorageInner {
                                 }
                             }
 
-                            self.mark_write_wal(entry, wal_id, r.pos);
+                            self.mark_write_wal(entry, wal_id, r.pos).await.unwrap();
                         }
                     }
                     Err(TskvError::Eof) => {
@@ -452,7 +458,7 @@ mod test {
             wal_req_channel_cap: 1024,
             max_file_size: 1024 * 1024,
             flush_trigger_total_file_size: 128,
-            sync: false,
+            sync: true,
             sync_interval: std::time::Duration::from_secs(3600),
         };
 

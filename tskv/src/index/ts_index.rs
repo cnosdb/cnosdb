@@ -18,9 +18,9 @@ use trace::{debug, error, info};
 use super::binlog::{AddSeries, DeleteSeries, IndexBinlog, IndexBinlogBlock, UpdateSeriesKey};
 use super::cache::ForwardIndexCache;
 use super::{IndexEngine, IndexError, IndexResult};
-use crate::file_system::file::IFile;
-use crate::file_system::file_manager;
-use crate::index::binlog::{BinlogReader, BinlogWriter};
+use crate::file_system::async_filesystem::{LocalFileSystem, LocalFileType};
+use crate::file_system::FileSystem;
+use crate::index::binlog::BinlogReader;
 use crate::index::ts_index::fmt::Debug;
 use crate::{byte_utils, file_utils, TskvError, UpdateSetValue};
 
@@ -138,13 +138,12 @@ impl TSIndex {
 
     async fn recover(&mut self) -> IndexResult<()> {
         let path = self.path.clone();
-        let files = file_manager::list_file_names(&path);
+        let files = LocalFileSystem::list_file_names(&path);
         for filename in files.iter() {
             if let Ok(file_id) = file_utils::get_index_binlog_file_id(filename) {
                 let file_path = path.join(filename);
                 info!("Recovering index binlog: '{}'", file_path.display());
-                let tmp_file = BinlogWriter::open(file_id, &file_path).await?;
-                let mut reader_file = BinlogReader::new(file_id, tmp_file.file.into()).await?;
+                let mut reader_file = BinlogReader::open(file_id, &file_path).await?;
                 self.recover_from_file(&mut reader_file).await?;
             }
         }
@@ -357,7 +356,7 @@ impl TSIndex {
         }
 
         let log_dir = self.path.clone();
-        let files = file_manager::list_file_names(&log_dir);
+        let files = LocalFileSystem::list_file_names(&log_dir);
         for filename in files.iter() {
             if let Ok(file_id) = file_utils::get_index_binlog_file_id(filename) {
                 if current_id != file_id {
@@ -619,7 +618,7 @@ impl TSIndex {
         // write binlog
         let blocks = old_series_keys
             .into_iter()
-            .zip(new_series_keys.into_iter().zip(sids.into_iter()))
+            .zip(new_series_keys.into_iter().zip(sids))
             .map(|(old_series, (new_series, sid))| {
                 IndexBinlogBlock::Update(UpdateSeriesKey::new(
                     old_series, new_series, sid, recovering,
@@ -751,7 +750,7 @@ impl TSIndex {
 
         // write binlog
         let mut blocks = vec![];
-        for (sid, key) in ids.into_iter().zip(new_keys.into_iter()) {
+        for (sid, key) in ids.into_iter().zip(new_keys) {
             if let Some(old_key) = self.get_series_key(sid).await? {
                 let block =
                     IndexBinlogBlock::Update(UpdateSeriesKey::new(old_key, key, sid, false));
@@ -938,17 +937,18 @@ pub fn run_index_job(
 ) {
     tokio::spawn(async move {
         let mut handle_file = HashMap::new();
+        let file_system = LocalFileSystem::new(LocalFileType::ThreadPool);
         while (binlog_change_reciver.recv().await).is_some() {
             let ts_index = match ts_index.upgrade() {
                 Some(ts_index) => ts_index,
                 None => break,
             };
 
-            let files = file_manager::list_file_names(&path);
+            let files = LocalFileSystem::list_file_names(&path);
             for filename in files.iter() {
                 if let Ok(file_id) = file_utils::get_index_binlog_file_id(filename) {
                     let file_path = path.join(filename);
-                    let file = match file_manager::open_file(&file_path).await {
+                    let file = match file_system.open_file_writer(&file_path).await {
                         Ok(f) => f,
                         Err(e) => {
                             error!(
@@ -964,7 +964,7 @@ pub fn run_index_job(
                         continue;
                     }
 
-                    let mut reader_file = match BinlogReader::new(file_id, file.into()).await {
+                    let mut reader_file = match BinlogReader::open(file_id, &file_path).await {
                         Ok(r) => r,
                         Err(e) => {
                             error!(
@@ -976,7 +976,7 @@ pub fn run_index_job(
                         }
                     };
                     if let Some(pos) = handle_file.get(&file_id) {
-                        let res = reader_file.seek(*pos);
+                        let res = reader_file.seek(*pos as u64);
                         if let Err(e) = res {
                             error!(
                                 "Seek index binlog file '{}' failed, err: {}",
@@ -1141,6 +1141,7 @@ mod test {
                     .add_series_if_not_exists(vec![series_key.clone()])
                     .await
                     .unwrap();
+                ts_index.binlog.write().await.close().await.unwrap();
                 tokio::time::sleep(Duration::from_millis(100)).await;
                 let last_key = ts_index.get_series_key(sid[0].0).await.unwrap().unwrap();
                 assert_eq!(series_key.to_string(), last_key.to_string());
@@ -1190,6 +1191,7 @@ mod test {
             assert_eq!(ts_index.get_series_id(&series_keys[1]).await.unwrap(), None);
             let list = ts_index.get_series_id_list(query_t, &[]).await.unwrap();
             assert_eq!(list.len(), 5);
+            ts_index.binlog.write().await.close().await.unwrap();
         }
 
         {
@@ -1219,6 +1221,7 @@ mod test {
                     .add_series_if_not_exists(vec![series_key.clone()])
                     .await
                     .unwrap();
+                ts_index.binlog.write().await.close().await.unwrap();
                 tokio::time::sleep(Duration::from_millis(100)).await;
                 let last_key = ts_index.get_series_key(sid[0].0).await.unwrap().unwrap();
                 assert_eq!(series_key.to_string(), last_key.to_string());
@@ -1247,6 +1250,7 @@ mod test {
                 .add_series_if_not_exists(vec![series_key.clone()])
                 .await
                 .unwrap();
+            ts_index.binlog.write().await.close().await.unwrap();
             tokio::time::sleep(Duration::from_millis(100)).await;
             let last_key = ts_index.get_series_key(sid[0].0).await.unwrap().unwrap();
             assert_eq!(series_key.to_string(), last_key.to_string());
@@ -1331,6 +1335,8 @@ mod test {
             assert_eq!(expected_series, &series)
         }
 
+        ts_index.binlog.write().await.close().await.unwrap();
+
         // Wait for binlog to be consumed
         tokio::time::sleep(Duration::from_secs(1)).await;
 
@@ -1352,6 +1358,8 @@ mod test {
             )
             .await
             .unwrap();
+
+        ts_index.binlog.write().await.close().await.unwrap();
 
         // Wait for binlog to be consumed
         tokio::time::sleep(Duration::from_secs(1)).await;
@@ -1441,6 +1449,8 @@ mod test {
             .update_series_key(old_series_keys, new_series_keys, matched_sids, false)
             .await
             .unwrap();
+
+        ts_index.binlog.write().await.close().await.unwrap();
 
         // Wait for binlog to be consumed
         tokio::time::sleep(Duration::from_secs(1)).await;
