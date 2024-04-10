@@ -13,7 +13,7 @@ use crate::auth::{bcrypt_hash, bcrypt_verify};
 use crate::oid::{Identifier, Oid};
 
 pub const ROOT: &str = "root";
-pub const ROOT_PWD: &str = "";
+pub const ROOT_PWD: &str = "root";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct User {

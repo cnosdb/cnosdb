@@ -27,6 +27,7 @@ pub async fn start_singe_meta_server(
     let init_data = crate::store::config::MetaInit {
         cluster_name,
         admin_user: models::auth::user::ROOT.to_string(),
+        admin_pwd: models::auth::user::ROOT_PWD.to_string(),
         system_tenant: models::schema::DEFAULT_CATALOG.to_string(),
         default_database: vec![
             models::schema::USAGE_SCHEMA.to_string(),
