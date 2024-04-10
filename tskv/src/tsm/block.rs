@@ -5,7 +5,6 @@ use std::fmt::{Debug, Display, Formatter};
 use minivec::MiniVec;
 use models::predicate::domain::{TimeRange, TimeRanges};
 use models::{Timestamp, ValueType};
-use trace::error;
 
 use crate::memcache::DataType;
 use crate::tsm::codec::{
@@ -389,6 +388,8 @@ impl DataBlock {
 
     /// Extend self with a range of timestamps and vlaues in the other.
     fn extend_slice(&mut self, other: &Self, range: std::ops::Range<usize>) {
+        let old_len = self.len();
+        let new_len = old_len + (range.end - range.start);
         match (self, other) {
             (
                 DataBlock::U64 {
@@ -398,8 +399,10 @@ impl DataBlock {
                     ts: tb, val: vb, ..
                 },
             ) => {
-                ta.extend_from_slice(&tb[range.start..range.end]);
-                va.extend_from_slice(&vb[range.start..range.end]);
+                ta.resize(new_len, 0);
+                va.resize(new_len, 0);
+                ta[old_len..].copy_from_slice(&tb[range.start..range.end]);
+                va[old_len..].copy_from_slice(&vb[range.start..range.end]);
             }
             (
                 DataBlock::I64 {
@@ -409,8 +412,10 @@ impl DataBlock {
                     ts: tb, val: vb, ..
                 },
             ) => {
-                ta.extend_from_slice(&tb[range.start..range.end]);
-                va.extend_from_slice(&vb[range.start..range.end]);
+                ta.resize(new_len, 0);
+                va.resize(new_len, 0);
+                ta[old_len..].copy_from_slice(&tb[range.start..range.end]);
+                va[old_len..].copy_from_slice(&vb[range.start..range.end]);
             }
             (
                 DataBlock::Str {
@@ -420,7 +425,9 @@ impl DataBlock {
                     ts: tb, val: vb, ..
                 },
             ) => {
-                ta.extend_from_slice(&tb[range.start..range.end]);
+                ta.resize(new_len, 0);
+                va.reserve(new_len);
+                ta[old_len..].copy_from_slice(&tb[range.start..range.end]);
                 va.extend_from_slice(&vb[range.start..range.end]);
             }
             (
@@ -431,8 +438,10 @@ impl DataBlock {
                     ts: tb, val: vb, ..
                 },
             ) => {
-                ta.extend_from_slice(&tb[range.start..range.end]);
-                va.extend_from_slice(&vb[range.start..range.end]);
+                ta.resize(new_len, 0);
+                va.resize(new_len, 0.0);
+                ta[old_len..].copy_from_slice(&tb[range.start..range.end]);
+                va[old_len..].copy_from_slice(&vb[range.start..range.end]);
             }
             (
                 DataBlock::Bool {
@@ -442,8 +451,10 @@ impl DataBlock {
                     ts: tb, val: vb, ..
                 },
             ) => {
-                ta.extend_from_slice(&tb[range.start..range.end]);
-                va.extend_from_slice(&vb[range.start..range.end]);
+                ta.resize(new_len, 0);
+                va.resize(new_len, false);
+                ta[old_len..].copy_from_slice(&tb[range.start..range.end]);
+                va[old_len..].copy_from_slice(&vb[range.start..range.end]);
             }
             _ => {}
         }
@@ -601,121 +612,122 @@ impl DataBlock {
         }
     }
 
-    /// Merges one or many `DataBlock`s into some `DataBlock` with fixed length,
-    /// sorted by timestamp, if many (timestamp, value) conflict with the same
-    /// timestamp, use the last value.
-    pub fn merge_blocks_and_split(mut blocks: Vec<Self>, max_block_size: u32) -> Vec<Self> {
-        if blocks.is_empty() {
-            return vec![];
-        }
-        if blocks.len() == 1 {
-            return vec![blocks.remove(0)];
-        }
-        let data_blocks = match blocks.first() {
-            None => {
-                error!("failed to get data block");
-                return vec![];
-            }
-            Some(v) => v,
-        };
-        let capacity = data_blocks.len();
-        let field_type = data_blocks.field_type();
+    // /// Merges one or many `DataBlock`s into some `DataBlock` with fixed length,
+    // /// sorted by timestamp, if many (timestamp, value) conflict with the same
+    // /// timestamp, use the last value.
+    // pub fn merge_blocks_and_split(mut blocks: Vec<Self>, max_block_size: u32) -> Vec<Self> {
+    //     if blocks.len() == 1 {
+    //         return vec![blocks.remove(0)];
+    //     }
+    //     let (capacity, field_type) = match blocks.first() {
+    //         None => {
+    //             // blocks.len() == 0
+    //             return vec![];
+    //         }
+    //         Some(v) => (v.len(), v.field_type()),
+    //     };
+    //     // (data_block, data_index, data_block_len)
+    //     let mut buf: Vec<(DataBlock, DataType, usize, usize)> = Vec::with_capacity(blocks.len());
+    //     for blk in blocks {
+    //         if let Some(dt) = blk.get(0) {
+    //             let blk_len = blk.len();
+    //             buf.push((blk, dt, 0, blk_len));
+    //         }
+    //     }
 
-        let mut res = vec![];
-        let mut blk = Self::new(capacity, field_type);
-        let mut buf = vec![None; blocks.len()];
-        let mut offsets = vec![0_usize; blocks.len()];
-        loop {
-            match Self::next_min(&mut blocks, &mut buf, &mut offsets) {
-                Some(min) => {
-                    let mut data = None;
-                    for item in &mut buf {
-                        if let Some(it) = item {
-                            if it.timestamp() == min {
-                                data = item.take();
-                            }
-                        }
-                    }
-                    if let Some(it) = data {
-                        blk.insert(it);
-                        if max_block_size != 0 && blk.len() >= max_block_size as usize {
-                            res.push(blk);
-                            blk = Self::new(capacity, field_type);
-                        }
-                    }
-                }
-                None => {
-                    if !blk.is_empty() {
-                        res.push(blk);
-                    }
-                    return res;
-                }
-            }
-        }
-    }
+    //     let mut blk = Self::new(capacity, field_type);
+    //     let mut res = vec![];
+    //     loop {
+    //         match Self::next_min(&mut buf) {
+    //             Some(it) => {
+    //                 blk.insert(it);
+    //                 if max_block_size != 0 && blk.len() >= max_block_size as usize {
+    //                     res.push(blk);
+    //                     blk = Self::new(capacity, field_type);
+    //                 }
+    //             }
+    //             None => {
+    //                 if !blk.is_empty() {
+    //                     res.push(blk);
+    //                 }
+    //                 return res;
+    //             }
+    //         }
+    //     }
+    // }
 
-    pub fn merge_blocks(mut blocks: Vec<Self>) -> Option<Self> {
-        if blocks.is_empty() {
-            return None;
-        }
-        if blocks.len() == 1 {
-            return Some(blocks.remove(0));
-        }
-        let data_blocks = match blocks.first() {
-            None => {
-                return None;
-            }
-            Some(v) => v,
-        };
-        let capacity = data_blocks.len();
-        let field_type = data_blocks.field_type();
-
-        let mut blk = Self::new(capacity, field_type);
-        let mut buf = vec![None; blocks.len()];
-        let mut offsets = vec![0_usize; blocks.len()];
-        loop {
-            match Self::next_min(&mut blocks, &mut buf, &mut offsets) {
-                Some(min) => {
-                    let mut data = None;
-                    for item in &mut buf {
-                        if let Some(it) = item {
-                            if it.timestamp() == min {
-                                data = item.take();
-                            }
-                        }
-                    }
-                    if let Some(it) = data {
-                        blk.insert(it);
-                    }
-                }
-                None => {
-                    return Some(blk);
-                }
-            }
-        }
-    }
+    // pub fn merge_blocks(mut blocks: Vec<Self>) -> Option<Self> {
+    //     if blocks.len() == 1 {
+    //         return Some(blocks.remove(0));
+    //     }
+    //     let mut blk = match blocks.first() {
+    //         None => {
+    //             // blocks.len() == 0
+    //             return None;
+    //         }
+    //         Some(v) => {
+    //             let capacity = v.len();
+    //             let field_type = v.field_type();
+    //             Self::new(capacity, field_type)
+    //         }
+    //     };
+    //     // (data_block, data_index, data_block_len)
+    //     let mut buf: Vec<(DataBlock, DataType, usize, usize)> = Vec::with_capacity(blocks.len());
+    //     for blk in blocks {
+    //         if let Some(dt) = blk.get(0) {
+    //             let blk_len = blk.len();
+    //             buf.push((blk, dt, 0, blk_len));
+    //         }
+    //     }
+    //     loop {
+    //         match Self::next_min(&mut buf) {
+    //             Some(data) => {
+    //                 blk.insert(data);
+    //             }
+    //             None => {
+    //                 return Some(blk);
+    //             }
+    //         }
+    //     }
+    // }
 
     /// Extract `DataBlock`s to `DataType`s,
     /// returns the minimum timestamp in a series of `DataBlock`s
-    fn next_min(
-        blocks: &mut [Self],
-        dst: &mut [Option<DataType>],
-        offsets: &mut [usize],
-    ) -> Option<Timestamp> {
-        let mut min_ts = None;
-        for (i, (block, dst)) in blocks.iter_mut().zip(dst).enumerate() {
-            if dst.is_none() {
-                *dst = block.get(offsets[i]);
-                offsets[i] += 1;
+    fn next_min(buffers: &mut [(DataBlock, DataType, usize, usize)]) -> Option<DataType> {
+        let (mut exists_min_ts, mut min_buf_idx, mut min_ts) = (false, 0_usize, i64::MAX);
+        for (i, (_, blk_data, blk_idx, blk_len)) in buffers.iter_mut().enumerate() {
+            if blk_idx >= blk_len {
+                continue;
             }
-
-            if let Some(pair) = dst {
-                min_ts = min_ts
-                    .map(|ts| min(pair.timestamp(), ts))
-                    .or_else(|| Some(pair.timestamp()));
-            };
+            let ts = blk_data.timestamp();
+            if min_ts >= ts {
+                exists_min_ts = true;
+                min_buf_idx = i;
+                min_ts = ts;
+            }
         }
-        min_ts
+        if exists_min_ts {
+            if min_buf_idx > 0 {
+                for (blk, blk_data, blk_idx, _) in &mut buffers[..min_buf_idx] {
+                    if blk_data.timestamp() == min_ts {
+                        *blk_idx += 1;
+                        if let Some(d) = blk.get(*blk_idx) {
+                            *blk_data = d;
+                        }
+                    }
+                }
+            }
+            let (blk, blk_data, blk_idx, _) = &mut buffers[min_buf_idx];
+            *blk_idx += 1;
+            let mut other_data_type = blk
+                .get(*blk_idx)
+                .unwrap_or_else(|| DataType::Bool(0, false));
+            std::mem::swap(blk_data, &mut other_data_type);
+
+            Some(other_data_type)
+        } else {
+            None
+        }
     }
 
     /// Remove (ts, val) in this `DatBlock` where index is greater equal than `min`
@@ -1274,48 +1286,54 @@ pub mod test {
         }
     }
 
-    #[test]
-    fn test_merge_multiple_blocks() {
-        #[rustfmt::skip]
-        let res = DataBlock::merge_blocks_and_split(
-            vec![
-                DataBlock::U64 { ts: vec![1, 2, 3, 4, 5], val: vec![10, 20, 30, 40, 50], enc: DataBlockEncoding::default() },
-                DataBlock::U64 { ts: vec![2, 3, 4], val: vec![12, 13, 15], enc: DataBlockEncoding::default() },
-            ],
-            0,
-        );
-        #[rustfmt::skip]
-        assert_eq!(res, vec![
-            DataBlock::U64 { ts: vec![1, 2, 3, 4, 5], val: vec![10, 12, 13, 15, 50], enc: DataBlockEncoding::default() },
-        ]);
+    // #[test]
+    // #[rustfmt::skip]
+    // fn test_merge_multiple_blocks() {
+    //     let res = DataBlock::merge_blocks_and_split(
+    //         vec![
+    //             DataBlock::U64 { ts: vec![1, 2, 3, 4, 5], val: vec![11, 12, 13, 14, 15], enc: DataBlockEncoding::default() },
+    //             DataBlock::U64 { ts: vec![2, 3, 4], val: vec![22, 23, 24], enc: DataBlockEncoding::default() },
+    //         ],
+    //         0,
+    //     );
+    //     assert_eq!(res, vec![
+    //         DataBlock::U64 { ts: vec![1, 2, 3, 4, 5], val: vec![11, 22, 23, 24, 15], enc: DataBlockEncoding::default() },
+    //     ]);
 
-        #[rustfmt::skip]
-        let res = DataBlock::merge_blocks_and_split(
-            vec![
-                DataBlock::U64 { ts: vec![1, 2, 3, 4, 5], val: vec![10, 20, 30, 40, 50], enc: DataBlockEncoding::default() },
-                DataBlock::U64 { ts: vec![2, 3, 4], val: vec![12, 13, 15], enc: DataBlockEncoding::default() },
-            ],
-            3,
-        );
-        #[rustfmt::skip]
-        assert_eq!(res, vec![
-            DataBlock::U64 { ts: vec![1, 2, 3], val: vec![10, 12, 13], enc: DataBlockEncoding::default() },
-            DataBlock::U64 { ts: vec![4, 5], val: vec![15, 50], enc: DataBlockEncoding::default() },
-        ]);
+    //     let res = DataBlock::merge_blocks_and_split(
+    //         vec![
+    //             DataBlock::U64 { ts: vec![1, 2, 3, 4, 5], val: vec![11, 12, 13, 14, 15], enc: DataBlockEncoding::default() },
+    //             DataBlock::U64 { ts: vec![2, 3, 4], val: vec![22, 23, 24], enc: DataBlockEncoding::default() },
+    //         ],
+    //         3,
+    //     );
+    //     assert_eq!(res, vec![
+    //         DataBlock::U64 { ts: vec![1, 2, 3], val: vec![11, 22, 23], enc: DataBlockEncoding::default() },
+    //         DataBlock::U64 { ts: vec![4, 5], val: vec![24, 15], enc: DataBlockEncoding::default() },
+    //     ]);
 
-        #[rustfmt::skip]
-        let blk = DataBlock::merge_blocks(
-            vec![
-                DataBlock::U64 { ts: vec![1, 2, 3, 4, 5], val: vec![10, 20, 30, 40, 50], enc: DataBlockEncoding::default() },
-                DataBlock::U64 { ts: vec![2, 3, 4], val: vec![12, 13, 15], enc: DataBlockEncoding::default() },
-            ],
-        );
-        #[rustfmt::skip]
-        assert_eq!(
-            blk.unwrap(),
-            DataBlock::U64 { ts: vec![1, 2, 3, 4, 5], val: vec![10, 12, 13, 15, 50], enc: DataBlockEncoding::default() },
-        );
-    }
+    //     let blk = DataBlock::merge_blocks(
+    //         vec![
+    //             DataBlock::U64 { ts: vec![1, 2, 3, 4, 5], val: vec![11, 12, 13, 14, 15], enc: DataBlockEncoding::default() },
+    //             DataBlock::U64 { ts: vec![2, 3, 4], val: vec![22, 23, 24], enc: DataBlockEncoding::default() },
+    //         ],
+    //     );
+    //     assert_eq!(
+    //         blk.unwrap(),
+    //         DataBlock::U64 { ts: vec![1, 2, 3, 4, 5], val: vec![11, 22, 23, 24, 15], enc: DataBlockEncoding::default() },
+    //     );
+
+    //     let blk = DataBlock::merge_blocks(
+    //         vec![
+    //             DataBlock::U64 { ts: vec![1, 3, 5, 7], val: vec![11, 13, 15, 17], enc: DataBlockEncoding::default() },
+    //             DataBlock::U64 { ts: vec![2, 4, 6], val: vec![22, 24, 26], enc: DataBlockEncoding::default() },
+    //         ],
+    //     );
+    //     assert_eq!(
+    //         blk.unwrap(),
+    //         DataBlock::U64 { ts: vec![1, 2, 3, 4, 5, 6, 7], val: vec![11, 22, 13, 24, 15, 26, 17], enc: DataBlockEncoding::default() },
+    //     );
+    // }
 
     #[test]
     fn test_merge_blocks() {

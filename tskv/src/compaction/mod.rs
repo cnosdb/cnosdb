@@ -27,8 +27,6 @@ pub enum CompactTask {
     Normal(TseriesFamilyId),
     /// Compact the files in level-0 to larger files.
     Delta(TseriesFamilyId),
-    /// Flush memcaches and then compact the files in the in_level into the out_level.
-    Cold(TseriesFamilyId),
     /// Triggers compaction manually.
     Manual(TseriesFamilyId),
 }
@@ -37,7 +35,6 @@ impl CompactTask {
     pub fn ts_family_id(&self) -> TseriesFamilyId {
         match self {
             CompactTask::Normal(ts_family_id) => *ts_family_id,
-            CompactTask::Cold(ts_family_id) => *ts_family_id,
             CompactTask::Delta(ts_family_id) => *ts_family_id,
             CompactTask::Manual(ts_family_id) => *ts_family_id,
         }
@@ -48,7 +45,6 @@ impl CompactTask {
             CompactTask::Manual(_) => 0,
             CompactTask::Delta(_) => 1,
             CompactTask::Normal(_) => 2,
-            CompactTask::Cold(_) => 3,
         }
     }
 }
@@ -69,7 +65,6 @@ impl std::fmt::Display for CompactTask {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             CompactTask::Normal(ts_family_id) => write!(f, "Normal({})", ts_family_id),
-            CompactTask::Cold(ts_family_id) => write!(f, "Cold({})", ts_family_id),
             CompactTask::Delta(ts_family_id) => write!(f, "Delta({})", ts_family_id),
             CompactTask::Manual(ts_family_id) => write!(f, "Manual({})", ts_family_id),
         }
@@ -152,6 +147,233 @@ pub async fn run_compaction_job(
         delta_compact::run_compaction_job(request, ctx).await
     } else {
         compact::run_compaction_job(request, ctx).await
+    }
+}
+
+mod metric {
+    use std::collections::HashMap;
+
+    use models::utils as model_utils;
+
+    use super::CompactTask;
+
+    pub const NEXT_FIELD: &str = "next_field";
+    pub const MERGE_FIELD: &str = "merge_field";
+    pub const MERGE_BLOCK: &str = "merge_block";
+    pub const READ_BLOCK: &str = "read_block";
+    pub const MERGE_BLOCK_BATCH: &str = "merge_block_batch";
+    pub const WRITE_BLOCK: &str = "write_block";
+
+    pub trait MetricStore: Send {
+        fn add_metric(
+            &mut self,
+            metric: String,
+            time_unit: models::arrow::TimeUnit,
+            buf_size: usize,
+        );
+        fn begin_all(&mut self);
+        fn finish_all(&mut self);
+        fn begin(&mut self, metric: &str);
+        fn finish(&mut self, metric: &str);
+    }
+
+    pub struct TimeUnit(models::arrow::TimeUnit);
+
+    impl TimeUnit {
+        fn parse_duration(&self, duration: std::time::Duration) -> f64 {
+            match self.0 {
+                models::arrow::TimeUnit::Second => duration.as_secs() as f64,
+                models::arrow::TimeUnit::Millisecond => duration.as_millis() as f64,
+                models::arrow::TimeUnit::Microsecond => duration.as_micros() as f64,
+                models::arrow::TimeUnit::Nanosecond => duration.as_nanos() as f64,
+            }
+        }
+
+        fn seconds_f64(&self, duration: f64) -> f64 {
+            match self.0 {
+                models::arrow::TimeUnit::Second => duration,
+                models::arrow::TimeUnit::Millisecond => duration / 1000_f64,
+                models::arrow::TimeUnit::Microsecond => duration / 1_000_000_f64,
+                models::arrow::TimeUnit::Nanosecond => duration / 1_000_000_000_f64,
+            }
+        }
+    }
+
+    impl std::fmt::Display for TimeUnit {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self.0 {
+                models::arrow::TimeUnit::Second => write!(f, "s"),
+                models::arrow::TimeUnit::Millisecond => write!(f, "ms"),
+                models::arrow::TimeUnit::Microsecond => write!(f, "us"),
+                models::arrow::TimeUnit::Nanosecond => write!(f, "ns"),
+            }
+        }
+    }
+
+    pub struct CompactMetrics {
+        compact_task: CompactTask,
+        total_instant: std::time::Instant,
+
+        metric_name_map: HashMap<String, usize>,
+        metric_time_unit_list: Vec<TimeUnit>,
+        instant_list: Vec<std::time::Instant>,
+        cost_buf_list: Vec<(Vec<f64>, usize)>,
+        cost_avg_list: Vec<(bool, f64)>,
+        cost_total_min_max_list: Vec<(f64, f64)>,
+        cost_min_max_list: Vec<(f64, f64)>,
+    }
+
+    impl CompactMetrics {
+        const DEFAULT_MIN_MAX: (f64, f64) = (31415926.53_f64, 0_f64);
+
+        #[rustfmt::skip]
+        pub fn default(compact_task: CompactTask) -> Self {
+            CompactMetrics::new(
+                compact_task,
+                vec![
+                    (NEXT_FIELD.to_string(), models::arrow::TimeUnit::Microsecond, 5000),
+                    (MERGE_FIELD.to_string(), models::arrow::TimeUnit::Microsecond, 5000),
+                    (MERGE_BLOCK.to_string(), models::arrow::TimeUnit::Microsecond, 5000),
+                    (READ_BLOCK.to_string(), models::arrow::TimeUnit::Microsecond, 10000),
+                    (MERGE_BLOCK_BATCH.to_string(), models::arrow::TimeUnit::Nanosecond, 10000),
+                    (WRITE_BLOCK.to_string(), models::arrow::TimeUnit::Microsecond, 10000),
+                ],
+            )
+        }
+
+        pub fn new(
+            compact_task: CompactTask,
+            metrics: Vec<(String, models::arrow::TimeUnit, usize)>,
+        ) -> Self {
+            let mut m = Self {
+                compact_task,
+                total_instant: std::time::Instant::now(),
+                metric_name_map: HashMap::with_capacity(16),
+                metric_time_unit_list: Vec::with_capacity(16),
+                instant_list: Vec::with_capacity(16),
+                cost_buf_list: Vec::with_capacity(16),
+                cost_avg_list: Vec::with_capacity(16),
+                cost_total_min_max_list: Vec::with_capacity(16),
+                cost_min_max_list: Vec::with_capacity(16),
+            };
+            for (metric, time_unit, buf_size) in metrics {
+                m.add_metric(metric, time_unit, buf_size);
+            }
+            m
+        }
+
+        fn flush_metric(&mut self, metric: &str, force_flush: bool) {
+            let idx = self.metric_name_map.get(metric).unwrap();
+            let instant = self.instant_list.get_mut(*idx).unwrap();
+            let unit = self.metric_time_unit_list.get(*idx).unwrap();
+            let (cost_buf, max_buf_size) = self.cost_buf_list.get_mut(*idx).unwrap();
+            let (first_avg, cost_avg) = self.cost_avg_list.get_mut(*idx).unwrap();
+            let (total_cost_min, total_cost_max) =
+                self.cost_total_min_max_list.get_mut(*idx).unwrap();
+            let (cost_min, cost_max) = self.cost_min_max_list.get_mut(*idx).unwrap();
+
+            let cost_t = unit.parse_duration(instant.elapsed());
+            *total_cost_min = total_cost_min.min(cost_t);
+            *total_cost_max = total_cost_max.max(cost_t);
+            *cost_min = cost_min.min(cost_t);
+            *cost_max = cost_max.max(cost_t);
+            cost_buf.push(cost_t);
+            if force_flush || cost_buf.len() == *max_buf_size {
+                let (sum, avg) = if !cost_buf.is_empty() {
+                    let sum = cost_buf.iter().sum::<f64>();
+                    let avg = sum / cost_buf.len() as f64;
+                    cost_buf.clear();
+                    (sum, avg)
+                } else {
+                    (0.0, 0.0)
+                };
+
+                if *first_avg {
+                    *first_avg = false;
+                    *cost_avg = avg;
+                } else {
+                    *cost_avg = (*cost_avg + avg) / 2_f64;
+                }
+                let sum_sec = unit.seconds_f64(sum);
+                trace::info!(
+                    "{metric},compaction={},unit={unit} batch={max_buf_size},sum={sum_sec:.2},avg={avg:.2},total_avg={cost_avg:.2},min={cost_min},max={cost_max},total_min={total_cost_min},total_max={total_cost_max} {}",
+                    self.compact_task, model_utils::now_timestamp_nanos()
+                );
+                (*cost_min, *cost_max) = Self::DEFAULT_MIN_MAX;
+            }
+        }
+    }
+
+    impl MetricStore for CompactMetrics {
+        fn add_metric(
+            &mut self,
+            metric: String,
+            time_unit: models::arrow::TimeUnit,
+            buf_size: usize,
+        ) {
+            let idx = self.metric_name_map.len();
+            self.metric_name_map.insert(metric, idx);
+            self.metric_time_unit_list.push(TimeUnit(time_unit));
+            self.instant_list.push(std::time::Instant::now());
+            self.cost_buf_list
+                .push((Vec::with_capacity(buf_size), buf_size));
+            self.cost_avg_list.push((true, 0_f64));
+            self.cost_total_min_max_list.push(Self::DEFAULT_MIN_MAX);
+            self.cost_min_max_list.push(Self::DEFAULT_MIN_MAX);
+        }
+
+        fn begin_all(&mut self) {
+            self.total_instant = std::time::Instant::now();
+        }
+
+        fn finish_all(&mut self) {
+            let total_cost_sec = self.total_instant.elapsed().as_secs() as f64;
+            let timestamp = model_utils::now_timestamp_nanos();
+            trace::info!(
+                "total_cost,compaction={},unit=s total={total_cost_sec} {timestamp}",
+                self.compact_task,
+            );
+            for (metric, idx) in self.metric_name_map.clone() {
+                self.flush_metric(&metric, true);
+
+                let unit = self.metric_time_unit_list.get(idx).unwrap();
+                let (_, cost_avg) = self.cost_avg_list.get_mut(idx).unwrap();
+                let (cost_min, cost_max) = self.cost_total_min_max_list.get_mut(idx).unwrap();
+                trace::info!(
+                    "final_{metric},compaction={},unit={unit} avg={cost_avg:.2},min={cost_min},max={cost_max} {timestamp}",
+                    self.compact_task
+                );
+            }
+        }
+
+        fn begin(&mut self, metric: &str) {
+            let idx = self.metric_name_map.get(metric).unwrap();
+            self.instant_list[*idx] = std::time::Instant::now();
+        }
+
+        fn finish(&mut self, metric: &str) {
+            self.flush_metric(metric, false);
+        }
+    }
+
+    pub struct FakeMetricStore;
+
+    impl MetricStore for FakeMetricStore {
+        fn add_metric(
+            &mut self,
+            _metric: String,
+            _time_unit: models::arrow::TimeUnit,
+            _buf_size: usize,
+        ) {
+        }
+
+        fn begin_all(&mut self) {}
+
+        fn finish_all(&mut self) {}
+
+        fn begin(&mut self, _metric: &str) {}
+
+        fn finish(&mut self, _metric: &str) {}
     }
 }
 

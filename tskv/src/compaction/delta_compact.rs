@@ -10,6 +10,7 @@ use utils::BloomFilter;
 
 use super::CompactTask;
 use crate::compaction::compact::{CompactingBlock, CompactingBlockMeta, CompactingFile};
+use crate::compaction::metric::{self, CompactMetrics, FakeMetricStore, MetricStore};
 use crate::compaction::{CompactReq, CompactingBlocks};
 use crate::context::GlobalContext;
 use crate::error::{self, Result};
@@ -79,7 +80,28 @@ pub async fn run_compaction_job(
     let mut merged_blks = Vec::with_capacity(32);
 
     let mut curr_fid: Option<FieldId> = None;
-    while let Some(fid) = state.next(&mut merging_blk_meta_groups).await {
+
+    let mut compact_metrics: Box<dyn MetricStore> = if request
+        .version
+        .borrowed_storage_opt()
+        .collect_compaction_metrics
+    {
+        Box::new(CompactMetrics::default(compact_task))
+    } else {
+        Box::new(FakeMetricStore)
+    };
+
+    compact_metrics.begin_all();
+    loop {
+        compact_metrics.begin(metric::NEXT_FIELD);
+        let fid = match state.next(&mut merging_blk_meta_groups).await {
+            Some(fid) => fid,
+            None => break,
+        };
+        compact_metrics.finish(metric::NEXT_FIELD);
+
+        compact_metrics.begin(metric::MERGE_FIELD);
+
         for blk_meta_group in merging_blk_meta_groups.drain(..) {
             trace::trace!("merging meta group: {blk_meta_group}");
             if let Some(c_fid) = curr_fid {
@@ -90,20 +112,25 @@ pub async fn run_compaction_job(
                         trace::trace!(
                             "write the previous compacting block (fid={curr_fid:?}): {blk}"
                         );
+                        compact_metrics.begin(metric::WRITE_BLOCK);
                         writer_wrapper.write(blk).await?;
+                        compact_metrics.finish(metric::WRITE_BLOCK);
                     }
                 }
             }
             curr_fid = Some(fid);
 
+            compact_metrics.begin(metric::MERGE_BLOCK);
             blk_meta_group
                 .merge_with_previous_block(
                     previous_merged_block.take(),
                     max_block_size,
                     &out_time_range,
                     &mut merged_blks,
+                    &mut compact_metrics,
                 )
                 .await?;
+            compact_metrics.finish(metric::MERGE_BLOCK);
             if merged_blks.is_empty() {
                 continue;
             }
@@ -112,7 +139,6 @@ pub async fn run_compaction_job(
                 previous_merged_block = Some(merged_blks.remove(0));
                 continue;
             }
-
             let last_blk_idx = merged_blks.len() - 1;
             for (i, blk) in merged_blks.drain(..).enumerate() {
                 if i == last_blk_idx && blk.len() < max_block_size {
@@ -123,16 +149,25 @@ pub async fn run_compaction_job(
                     break;
                 }
                 trace::trace!("write compacting block(fid={fid}): {blk}");
+                compact_metrics.begin(metric::WRITE_BLOCK);
                 writer_wrapper.write(blk).await?;
+                compact_metrics.finish(metric::WRITE_BLOCK);
             }
         }
+
+        compact_metrics.finish(metric::MERGE_FIELD);
     }
     if let Some(blk) = previous_merged_block {
         trace::trace!("write the final compacting block(fid={curr_fid:?}): {blk}");
+        compact_metrics.begin(metric::WRITE_BLOCK);
         writer_wrapper.write(blk).await?;
+        compact_metrics.finish(metric::WRITE_BLOCK);
     }
 
     let (mut version_edit, file_metas) = writer_wrapper.close().await?;
+
+    compact_metrics.finish_all();
+
     // Level 0 files that can be deleted after compaction.
     version_edit.del_files = l0_file_metas_will_delete;
     if let Some(f) = level_file {
@@ -383,6 +418,7 @@ impl CompactingBlockMetaGroup {
         max_block_size: usize,
         time_range: &TimeRange,
         compacting_blocks: &mut Vec<CompactingBlock>,
+        metrics: &mut Box<dyn MetricStore>,
     ) -> Result<()> {
         compacting_blocks.clear();
         if self.blk_metas.is_empty() {
@@ -399,7 +435,9 @@ impl CompactingBlockMetaGroup {
             // Only one compacting block and has no tombstone, write as raw block.
             trace::trace!("only one compacting block without tombstone and time_range is entirely included by target level, handled as raw block");
             let head_meta = &self.blk_metas[0].meta;
+            metrics.begin(metric::READ_BLOCK);
             let buf = self.blk_metas[0].get_raw_data().await?;
+            metrics.finish(metric::READ_BLOCK);
 
             if head_meta.size() >= max_block_size as u64 {
                 // Raw data block is full, so do not merge with the previous, directly return.
@@ -444,7 +482,9 @@ impl CompactingBlockMetaGroup {
 
             let (mut head_block, mut head_i) = (Option::<DataBlock>::None, 0_usize);
             for (i, meta) in self.blk_metas.iter().enumerate() {
+                metrics.begin(metric::READ_BLOCK);
                 if let Some(blk) = meta.get_data_block_intersection(time_range).await? {
+                    metrics.finish(metric::READ_BLOCK);
                     head_block = Some(blk);
                     head_i = i;
                     break;
@@ -460,26 +500,14 @@ impl CompactingBlockMetaGroup {
                 }
 
                 trace::trace!("=== Resolving {} blocks", self.blk_metas.len() - head_i - 1);
-                const BLOCK_BATCH_SIZE: usize = 64;
-                let mut batch_blk = Vec::with_capacity(BLOCK_BATCH_SIZE);
                 for blk_meta in self.blk_metas.iter_mut().skip(head_i + 1) {
                     // Merge decoded data block.
+                    metrics.begin(metric::READ_BLOCK);
                     if let Some(blk) = blk_meta.get_data_block_intersection(time_range).await? {
-                        batch_blk.push(blk);
-                        if batch_blk.len() >= BLOCK_BATCH_SIZE {
-                            let batch_blk = std::mem::replace(
-                                &mut batch_blk,
-                                Vec::with_capacity(BLOCK_BATCH_SIZE),
-                            );
-                            if let Some(blk) = DataBlock::merge_blocks(batch_blk) {
-                                head_blk = head_blk.merge(blk);
-                            }
-                        }
-                    }
-                }
-                if !batch_blk.is_empty() {
-                    if let Some(blk) = DataBlock::merge_blocks(batch_blk) {
+                        metrics.finish(metric::READ_BLOCK);
+                        metrics.begin(metric::MERGE_BLOCK_BATCH);
                         head_blk = head_blk.merge(blk);
+                        metrics.finish(metric::MERGE_BLOCK_BATCH);
                     }
                 }
                 trace::trace!("Compaction(delta): Finished task to merge data blocks");

@@ -26,11 +26,6 @@ pub async fn pick_compaction(
                 .pick_compaction(compact_task, version)
                 .await
         }
-        CompactTask::Cold(_) => {
-            LevelCompactionPicker
-                .pick_compaction(compact_task, version)
-                .await
-        }
         CompactTask::Manual(_) => {
             DeltaCompactionPicker::new()
                 .pick_compaction(compact_task, version)
@@ -75,7 +70,7 @@ impl LevelCompactionPicker {
             in_level = start_lvl;
             out_level = out_lvl;
         } else {
-            info!("Picker(level): picked no level");
+            debug!("Picker(level): picked no level");
             return None;
         }
 
@@ -88,7 +83,7 @@ impl LevelCompactionPicker {
         files.sort_by(Self::compare_column_file);
         let picking_files: Vec<Arc<ColumnFile>> =
             Self::pick_files(files, storage_opt.max_compact_size).await;
-        info!(
+        debug!(
             "Picker(level): Picked files: [ {} ]",
             ColumnFiles(&picking_files)
         );
@@ -346,7 +341,7 @@ impl DeltaCompactionPicker {
         let mut not_picked_l0_file: Option<(
             Arc<ColumnFile>,        // l0_file
             LevelId,                // adviced_out_level
-            TimeRange,              // l0_file_remained_tr_last
+            TimeRange,              // l0_file_remained_tr
             RwLockWriteGuard<bool>, // l0_file_compacting
         )> = Option::None;
         for l0_file in lv0.files.iter() {
@@ -361,7 +356,7 @@ impl DeltaCompactionPicker {
                 continue;
             }
 
-            let l0_file_remained_tr_last =
+            let l0_file_remained_tr_first =
                 match self.delta_file_first_remained_time_range(l0_file).await {
                     Ok(trs) => trs,
                     Err(_) => {
@@ -370,17 +365,17 @@ impl DeltaCompactionPicker {
                 };
 
             let advised_out_level =
-                advise_out_level(&l0_file_remained_tr_last, version.levels_info());
+                advise_out_level(&l0_file_remained_tr_first, version.levels_info());
             if picked_time_range.is_none() {
                 // First cycle to pick l0_file
-                picked_time_range = l0_file_remained_tr_last;
+                picked_time_range = l0_file_remained_tr_first;
             }
             // For well ordered lv0-files, merged to level 1
             if 0 == advised_out_level {
                 *l0_file_compacting = true;
                 picked_l0_compacting_wlocks.push(l0_file_compacting);
                 picked_l0_files.push(l0_file.clone());
-                picked_time_range.merge(&l0_file_remained_tr_last);
+                picked_time_range.merge(&l0_file_remained_tr_first);
                 if picked_l0_files.len() >= version.storage_opt.compact_trigger_file_num as usize {
                     info!(
                         "Picker(delta) [{}]: picked level_0 files({}) to level: 1",
@@ -410,7 +405,7 @@ impl DeltaCompactionPicker {
                     not_picked_l0_file = Some((
                         l0_file.clone(),
                         advised_out_level,
-                        l0_file_remained_tr_last,
+                        l0_file_remained_tr_first,
                         l0_file_compacting,
                     ));
                 } else {

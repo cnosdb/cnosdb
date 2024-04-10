@@ -50,6 +50,9 @@ pub struct StorageConfig {
     #[serde(default = "StorageConfig::default_max_concurrent_compaction")]
     pub max_concurrent_compaction: u16,
 
+    #[serde(default = "StorageConfig::default_collect_compaction_metrics")]
+    pub collect_compaction_metrics: bool,
+
     #[serde(default = "StorageConfig::default_strict_write")]
     pub strict_write: bool,
 
@@ -108,6 +111,10 @@ impl StorageConfig {
         4
     }
 
+    fn default_collect_compaction_metrics() -> bool {
+        false
+    }
+
     fn default_reserve_space() -> u64 {
         0
     }
@@ -133,6 +140,12 @@ impl StorageConfig {
         if let Ok(size) = std::env::var("CNOSDB_FLUSH_REQ_CHANNEL_CAP") {
             self.flush_req_channel_cap = size.parse::<usize>().unwrap();
         }
+        if let Ok(size) = std::env::var("CNOSDB_STORAGE_MAX_CACHED_READERS") {
+            self.max_cached_readers = size.parse::<usize>().unwrap();
+        }
+        if let Ok(flag) = std::env::var("CNOSDB_STORAGE_ENABLE_COMPACTION") {
+            self.enable_compaction = flag.parse::<bool>().unwrap();
+        }
         if let Ok(size) = std::env::var("CNOSDB_STORAGE_MAX_LEVEL") {
             self.max_level = size.parse::<u16>().unwrap();
         }
@@ -147,6 +160,9 @@ impl StorageConfig {
         }
         if let Ok(size) = std::env::var("CNOSDB_STORAGE_MAX_CONCURRENT_COMPACTION") {
             self.max_concurrent_compaction = size.parse::<u16>().unwrap();
+        }
+        if let Ok(flag) = std::env::var("CNOSDB_STORAGE_COLLECT_COMPACTION_METRICS") {
+            self.collect_compaction_metrics = flag.parse::<bool>().unwrap();
         }
         if let Ok(size) = std::env::var("CNOSDB_STORAGE_STRICT_WRITE") {
             self.strict_write = size.parse::<bool>().unwrap();
@@ -179,6 +195,7 @@ impl Default for StorageConfig {
             compact_trigger_cold_duration: Self::default_compact_trigger_cold_duration(),
             max_compact_size: Self::default_max_compact_size(),
             max_concurrent_compaction: Self::default_max_concurrent_compaction(),
+            collect_compaction_metrics: Self::default_collect_compaction_metrics(),
             strict_write: Self::default_strict_write(),
             reserve_space: Self::default_reserve_space(),
             copyinto_trigger_flush_size: Self::default_copyinto_trigger_flush_size(),
