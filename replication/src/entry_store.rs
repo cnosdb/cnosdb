@@ -1,6 +1,5 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use async_trait::async_trait;
 use heed::byteorder::BigEndian;
@@ -32,14 +31,6 @@ impl HeedEntryStorage {
         let storage = Self { env, db, path };
 
         Ok(storage)
-    }
-
-    fn clear(&self) -> ReplicationResult<()> {
-        let mut writer = self.env.write_txn()?;
-        self.db.clear(&mut writer)?;
-        writer.commit()?;
-
-        Ok(())
     }
 }
 
@@ -115,21 +106,17 @@ impl EntryStorage for HeedEntryStorage {
     }
 
     async fn destory(&mut self) -> ReplicationResult<()> {
-        fs::remove_dir_all(&self.path);
+        let _ = fs::remove_dir_all(&self.path);
 
         Ok(())
     }
 }
 
 mod test {
-    use heed::byteorder::BigEndian;
-    use heed::types::*;
-    use heed::Database;
-
     #[test]
     #[ignore]
     fn test_heed_range() {
-        type BEU64 = U64<BigEndian>;
+        type BEU64 = heed::types::U64<heed::byteorder::BigEndian>;
 
         let path = "/tmp/cnosdb/8201-entry";
         let env = heed::EnvOpenOptions::new()
@@ -138,7 +125,7 @@ mod test {
             .open(path)
             .unwrap();
 
-        let db: Database<OwnedType<BEU64>, OwnedSlice<u8>> =
+        let db: heed::Database<heed::types::OwnedType<BEU64>, heed::types::OwnedSlice<u8>> =
             env.create_database(Some("entries")).unwrap();
 
         let mut wtxn = env.write_txn().unwrap();

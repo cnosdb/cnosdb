@@ -5,7 +5,6 @@ use models::error_code::{ErrorCode, ErrorCoder};
 use protos::PointsError;
 use serde::{Deserialize, Serialize};
 use snafu::Snafu;
-use tonic::Status;
 
 #[derive(Snafu, Serialize, Deserialize, Debug, ErrorCoder)]
 #[snafu(visibility(pub))]

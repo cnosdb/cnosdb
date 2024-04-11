@@ -1,4 +1,3 @@
-use std::default;
 use std::fmt::Debug;
 use std::io::Cursor;
 use std::ops::RangeBounds;
@@ -14,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use trace::info;
 use tracing::debug;
 
-use crate::errors::{ReplicationError, ReplicationResult};
+use crate::errors::ReplicationResult;
 use crate::state_store::StateStorage;
 use crate::{
     ApplyContext, ApplyStorageRef, EntryStorageRef, RaftNodeId, RaftNodeInfo, Response,
@@ -511,13 +510,14 @@ mod test {
     #[test]
     pub fn test_node_store() {
         let path = "/tmp/cnosdb/test_raft_store".to_string();
-        std::fs::remove_dir_all(path.clone());
+        let _ = std::fs::remove_dir_all(path.clone());
         std::fs::create_dir_all(path.clone()).unwrap();
 
         openraft::testing::Suite::test_all(get_node_store).unwrap();
-        std::fs::remove_dir_all(path);
+        let _ = std::fs::remove_dir_all(path);
     }
 
+    #[allow(dead_code)]
     pub async fn get_node_store() -> Arc<NodeStorage> {
         let path = tempfile::tempdir_in("/tmp/cnosdb/test_raft_store").unwrap();
 

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
+use std::fs;
 use std::path::Path;
-use std::{default, fs};
 
 use heed::flags::Flags;
 use heed::types::*;
@@ -188,10 +188,6 @@ impl StateStorage {
         group_id: u32,
     ) -> ReplicationResult<HashMap<String, StoredMembership<RaftNodeId, RaftNodeInfo>>> {
         let reader = self.reader_txn()?;
-        let mem_ship: StoredMembership<RaftNodeId, RaftNodeInfo> = self
-            .get(&reader, &Key::membership(group_id))?
-            .unwrap_or_default();
-
         let mut memberships = HashMap::new();
         let mut iter = self
             .db

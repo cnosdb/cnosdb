@@ -1,16 +1,14 @@
-use std::any::Any;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use std::sync::Arc;
 
 use async_trait::async_trait;
 use heed::types::*;
 use heed::{Database, Env};
 use serde::{Deserialize, Serialize};
 
-use crate::errors::{ReplicationError, ReplicationResult};
-use crate::{ApplyContext, ApplyStorage, RaftNodeId, Request, Response, SnapshotMode};
+use crate::errors::ReplicationResult;
+use crate::{ApplyContext, ApplyStorage, Request, Response, SnapshotMode};
 
 // --------------------------------------------------------------------------- //
 #[derive(Serialize, Deserialize)]
@@ -49,7 +47,7 @@ impl HeedApplyStorage {
 
 #[async_trait]
 impl ApplyStorage for HeedApplyStorage {
-    async fn apply(&mut self, ctx: &ApplyContext, req: &Request) -> ReplicationResult<Response> {
+    async fn apply(&mut self, _ctx: &ApplyContext, req: &Request) -> ReplicationResult<Response> {
         #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
         struct RequestCommand {
             key: String,
@@ -64,7 +62,7 @@ impl ApplyStorage for HeedApplyStorage {
         Ok(req.value.into())
     }
 
-    async fn snapshot(&mut self, mode: SnapshotMode) -> ReplicationResult<(Vec<u8>, Option<u64>)> {
+    async fn snapshot(&mut self, _mode: SnapshotMode) -> ReplicationResult<(Vec<u8>, Option<u64>)> {
         let mut hash_map = HashMap::new();
         let reader = self.env.read_txn()?;
         let iter = self.db.iter(&reader)?;

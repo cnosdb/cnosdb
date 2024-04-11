@@ -2,18 +2,17 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use openraft::error::{InstallSnapshotError, NetworkError, RemoteError};
 use openraft::network::RPCOption;
 use openraft::network::{RaftNetwork, RaftNetworkFactory};
 use openraft::raft::*;
 use openraft::MessageSummary;
 use parking_lot::RwLock;
-use protos::raft_service::raft_service_client::RaftServiceClient;
+
 use protos::raft_service::*;
 use protos::{raft_service_time_out_client, DEFAULT_GRPC_SERVER_MESSAGE_LEN};
 use tonic::transport::{Channel, Endpoint};
-use tower::timeout::Timeout;
+
 use trace::debug;
 
 use crate::errors::{ReplicationError, ReplicationResult};

@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-#![allow(unused)]
 use std::any::Any;
 use std::fmt::Debug;
 use std::io::Cursor;
@@ -7,9 +5,6 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use errors::ReplicationResult;
-use network_client::NetworkConn;
-use node_store::NodeStorage;
-use openraft::storage::Adaptor;
 use openraft::{Entry, TokioRuntime};
 use tokio::sync::RwLock;
 
@@ -80,6 +75,13 @@ pub const APPLY_TYPE_WRITE: u32 = 2;
 pub enum SnapshotMode {
     GetSnapshot,
     BuildSnapshot,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+pub struct StorageMetrics {
+    pub last_applied_id: u64,
+    pub flushed_apply_id: u64,
+    pub snapshot_apply_id: u64,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq, Default)]

@@ -9,7 +9,7 @@ use tracing::info;
 use crate::errors::{ReplicationError, ReplicationResult};
 use crate::network_client::NetworkConn;
 use crate::node_store::NodeStorage;
-use crate::{ApplyStorageRef, OpenRaftNode, RaftNodeId, RaftNodeInfo, ReplicationConfig};
+use crate::{OpenRaftNode, RaftNodeId, RaftNodeInfo, ReplicationConfig};
 
 #[derive(Clone)]
 pub struct RaftNode {
@@ -18,7 +18,6 @@ pub struct RaftNode {
     storage: Arc<NodeStorage>,
 
     raft: OpenRaftNode,
-    config: ReplicationConfig,
 }
 
 impl RaftNode {
@@ -61,7 +60,6 @@ impl RaftNode {
             info,
             storage,
             raft,
-            config,
         })
     }
 

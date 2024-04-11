@@ -7,7 +7,6 @@ use tokio::sync::RwLock;
 use trace::info;
 
 use crate::raft_node::RaftNode;
-use crate::state_store::StateStorage;
 
 pub struct MultiRaft {
     raft_nodes: HashMap<ReplicationSetId, Arc<RaftNode>>,
@@ -52,7 +51,7 @@ impl MultiRaft {
                 let raft = node.raw_raft();
                 let trigger = raft.trigger();
 
-                trigger.snapshot().await;
+                let _ = trigger.snapshot().await;
                 info!(
                     "# Trigger group id: {} raft id: {}",
                     node.group_id(),

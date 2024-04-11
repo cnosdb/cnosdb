@@ -1,6 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::Infallible;
-use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -27,13 +26,6 @@ impl RaftHttpAdmin {
             .or(self.add_learner())
             .or(self.change_membership())
             .or(self.metrics())
-    }
-
-    async fn start(&self, addr: String) {
-        tracing::info!("http server start addr: {}", addr);
-
-        let addr: SocketAddr = addr.parse().unwrap();
-        warp::serve(self.routes()).run(addr).await;
     }
 
     fn with_raft_node(
