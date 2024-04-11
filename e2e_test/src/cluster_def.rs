@@ -1,9 +1,7 @@
 #![allow(dead_code)]
 
-use std::{
-    path::{Path, PathBuf},
-    time::Duration,
-};
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use config::Config as CnosdbConfig;
 use meta::store::config::Opt as MetaStoreConfig;

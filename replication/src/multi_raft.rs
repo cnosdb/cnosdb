@@ -125,7 +125,8 @@ impl MultiRaft {
 
 #[cfg(test)]
 pub mod test {
-    use std::{fmt::Debug, time::Duration};
+    use std::fmt::Debug;
+    use std::time::Duration;
 
     use actix_web::rt::time;
 
@@ -134,7 +135,7 @@ pub mod test {
         let mut ticker1 = tokio::time::interval(Duration::from_secs(3));
         let mut ticker2 = tokio::time::interval(Duration::from_secs(5));
 
-        loop {
+        for _ in 0..5 {
             tokio::select! {
                 _= ticker1.tick() => {println!("------tick1");}
                 _= ticker2.tick() => {println!("------tick2");}
