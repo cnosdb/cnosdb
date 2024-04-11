@@ -1,10 +1,8 @@
 use std::fmt::Debug;
 
 use flatbuffers::InvalidFlatbuffer;
-use models::{
-    error_code::{ErrorCode, ErrorCoder},
-    meta_data::ReplicationSetId,
-};
+use models::error_code::{ErrorCode, ErrorCoder};
+use models::meta_data::ReplicationSetId;
 use protos::PointsError;
 use serde::{Deserialize, Serialize};
 use snafu::Snafu;
