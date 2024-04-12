@@ -180,6 +180,11 @@ impl UserOptions {
     pub fn hidden_password(&mut self) {
         self.hash_password.replace("*****".to_string());
     }
+
+    // when user change password, turn must_change_password to false
+    pub fn change_password(&mut self) {
+        self.must_change_password = Some(false);
+    }
 }
 
 impl UserOptionsBuilder {

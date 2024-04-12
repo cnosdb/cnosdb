@@ -462,14 +462,16 @@ pub struct CreateUser {
 
 pub fn sql_options_to_user_options(
     with_options: Vec<SqlOption>,
-) -> std::result::Result<UserOptions, ParserError> {
+) -> std::result::Result<(UserOptions, String), ParserError> {
+    let mut ret_str = String::new();
     let mut builder = UserOptionsBuilder::default();
 
     for SqlOption { ref name, value } in with_options {
         match normalize_ident(name).as_str() {
             "password" => {
+                ret_str = parse_string_value(value)?;
                 builder
-                    .password(parse_string_value(value)?)
+                    .password(ret_str.clone())
                     .map_err(|e| ParserError::ParserError(e.to_string()))?;
             }
             "must_change_password" => {
@@ -496,9 +498,11 @@ pub fn sql_options_to_user_options(
         }
     }
 
-    builder
+    let option = builder
         .build()
-        .map_err(|e| ParserError::ParserError(e.to_string()))
+        .map_err(|e| ParserError::ParserError(e.to_string()))?;
+
+    Ok((option, ret_str))
 }
 
 #[derive(Debug, Clone)]
@@ -592,6 +596,7 @@ pub trait LogicalPlanner {
         &self,
         statement: ExtStatement,
         session: &SessionCtx,
+        auth_enable: bool,
     ) -> Result<Plan>;
 }
 
