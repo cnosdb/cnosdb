@@ -16,8 +16,8 @@ use tracing::debug;
 use crate::errors::ReplicationResult;
 use crate::state_store::StateStorage;
 use crate::{
-    ApplyContext, ApplyStorageRef, EntryStorageRef, RaftNodeId, RaftNodeInfo, Response,
-    SnapshotMode, TypeConfig,
+    ApplyContext, ApplyStorageRef, EngineMetrics, EntriesMetrics, EntryStorageRef, RaftNodeId,
+    RaftNodeInfo, Response, SnapshotMode, TypeConfig,
 };
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -62,6 +62,14 @@ impl NodeStorage {
         self.raft_logs.write().await.destory().await?;
 
         Ok(())
+    }
+
+    pub async fn engine_metrics(&self) -> ReplicationResult<EngineMetrics> {
+        self.engine.read().await.metrics().await
+    }
+
+    pub async fn entries_metrics(&self) -> ReplicationResult<EntriesMetrics> {
+        self.raft_logs.write().await.metrics().await
     }
 
     fn get_snapshot_id(&self, log_id: &Option<LogId<u64>>) -> ReplicationResult<String> {

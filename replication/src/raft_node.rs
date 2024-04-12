@@ -9,7 +9,16 @@ use tracing::info;
 use crate::errors::{ReplicationError, ReplicationResult};
 use crate::network_client::NetworkConn;
 use crate::node_store::NodeStorage;
-use crate::{OpenRaftNode, RaftNodeId, RaftNodeInfo, ReplicationConfig};
+use crate::{
+    EngineMetrics, EntriesMetrics, OpenRaftNode, RaftNodeId, RaftNodeInfo, ReplicationConfig,
+};
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct RaftNodeMetrics {
+    pub raft: RaftMetrics<RaftNodeId, RaftNodeInfo>,
+    pub engine: EngineMetrics,
+    pub entries: EntriesMetrics,
+}
 
 #[derive(Clone)]
 pub struct RaftNode {
@@ -165,8 +174,22 @@ impl RaftNode {
             })
     }
 
+    pub async fn metrics(&self) -> ReplicationResult<RaftNodeMetrics> {
+        let engine_metrics = self.storage.engine_metrics().await?;
+        let entries_metrics = self.storage.entries_metrics().await?;
+        Ok(RaftNodeMetrics {
+            raft: self.raft.metrics().borrow().clone(),
+            engine: engine_metrics,
+            entries: entries_metrics,
+        })
+    }
+
     /// Get the latest metrics of the cluster
     pub fn raft_metrics(&self) -> RaftMetrics<RaftNodeId, RaftNodeInfo> {
         self.raft.metrics().borrow().clone()
+    }
+
+    pub async fn engine_metrics(&self) -> ReplicationResult<EngineMetrics> {
+        self.storage.engine_metrics().await
     }
 }

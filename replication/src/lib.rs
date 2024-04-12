@@ -78,10 +78,16 @@ pub enum SnapshotMode {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
-pub struct StorageMetrics {
+pub struct EngineMetrics {
     pub last_applied_id: u64,
     pub flushed_apply_id: u64,
     pub snapshot_apply_id: u64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+pub struct EntriesMetrics {
+    pub min_seq: u64,
+    pub max_seq: u64,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq, Default)]
@@ -97,6 +103,7 @@ pub trait ApplyStorage: Send + Sync + Any {
     async fn snapshot(&mut self, mode: SnapshotMode) -> ReplicationResult<(Vec<u8>, Option<u64>)>;
     async fn restore(&mut self, snapshot: &[u8]) -> ReplicationResult<()>;
     async fn destory(&mut self) -> ReplicationResult<()>;
+    async fn metrics(&self) -> ReplicationResult<EngineMetrics>;
 }
 pub type ApplyStorageRef = Arc<RwLock<dyn ApplyStorage + Send + Sync>>;
 
@@ -121,5 +128,7 @@ pub trait EntryStorage: Send + Sync {
     async fn entries(&mut self, begin: u64, end: u64) -> ReplicationResult<Vec<Entry<TypeConfig>>>; // [begin, end)
 
     async fn destory(&mut self) -> ReplicationResult<()>;
+
+    async fn metrics(&mut self) -> ReplicationResult<EntriesMetrics>;
 }
 pub type EntryStorageRef = Arc<RwLock<dyn EntryStorage>>;

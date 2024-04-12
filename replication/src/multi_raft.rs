@@ -48,15 +48,27 @@ impl MultiRaft {
             info!("------------ Begin nodes trigger snapshot ------------");
             let nodes = nodes.read().await;
             for (_, node) in nodes.raft_nodes.iter() {
+                let engine_metrics = match node.engine_metrics().await {
+                    Ok(metrics) => metrics,
+                    Err(err) => {
+                        info!("get engine metrics failed: {:?}", err);
+                        continue;
+                    }
+                };
+
+                info!(
+                    "# Engine Metrics group id: {} raft id: {}; {:?}",
+                    node.group_id(),
+                    node.raft_id(),
+                    engine_metrics
+                );
+                if engine_metrics.flushed_apply_id <= engine_metrics.snapshot_apply_id {
+                    continue;
+                }
+
                 let raft = node.raw_raft();
                 let trigger = raft.trigger();
-
                 let _ = trigger.snapshot().await;
-                info!(
-                    "# Trigger group id: {} raft id: {}",
-                    node.group_id(),
-                    node.raft_id()
-                );
             }
             info!("------------- End nodes trigger snapshot -------------");
         }

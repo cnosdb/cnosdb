@@ -53,8 +53,8 @@ impl RaftNodesManager {
 
     pub async fn metrics(&self, group_id: u32) -> String {
         if let Some(node) = self.raft_nodes.read().await.get_node(group_id) {
-            serde_json::to_string(&node.raft_metrics())
-                .unwrap_or("encode raft metrics to json failed".to_string())
+            serde_json::to_string(&node.metrics().await)
+                .unwrap_or("encode  metrics to json failed".to_string())
         } else {
             format!("Not found raft group: {}", group_id)
         }

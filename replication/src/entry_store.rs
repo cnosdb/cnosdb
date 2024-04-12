@@ -8,7 +8,7 @@ use heed::{Database, Env};
 use openraft::Entry;
 
 use crate::errors::ReplicationResult;
-use crate::{EntryStorage, TypeConfig};
+use crate::{EntriesMetrics, EntryStorage, TypeConfig};
 
 // --------------------------------------------------------------------------- //
 type BEU64 = U64<BigEndian>;
@@ -31,6 +31,16 @@ impl HeedEntryStorage {
         let storage = Self { env, db, path };
 
         Ok(storage)
+    }
+
+    async fn first_entry(&mut self) -> ReplicationResult<Option<Entry<TypeConfig>>> {
+        let reader = self.env.read_txn()?;
+        if let Some((_, data)) = self.db.first(&reader)? {
+            let entry = bincode::deserialize::<Entry<TypeConfig>>(&data)?;
+            Ok(Some(entry))
+        } else {
+            Ok(None)
+        }
     }
 }
 
@@ -109,6 +119,15 @@ impl EntryStorage for HeedEntryStorage {
         let _ = fs::remove_dir_all(&self.path);
 
         Ok(())
+    }
+    async fn metrics(&mut self) -> ReplicationResult<EntriesMetrics> {
+        let first = self.first_entry().await?.unwrap_or_default();
+        let last = self.last_entry().await?.unwrap_or_default();
+
+        Ok(EntriesMetrics {
+            min_seq: first.log_id.index,
+            max_seq: last.log_id.index,
+        })
     }
 }
 
