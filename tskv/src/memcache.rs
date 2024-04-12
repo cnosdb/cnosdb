@@ -963,8 +963,8 @@ pub fn dedup_and_sort_row_data(data: &OrderedRowsData) -> Vec<RowData> {
         if let Some(existing_row) = result.last_mut() {
             if existing_row.ts == row_data.ts {
                 for (index, field) in row_data.fields.iter().enumerate() {
-                    if let Some(field) = field {
-                        existing_row.fields[index] = Some(field.clone());
+                    if existing_row.fields[index].is_none() {
+                        existing_row.fields[index] = field.clone();
                     }
                 }
             } else {
@@ -989,11 +989,74 @@ mod test_memcache {
     use models::schema::{ColumnType, TableColumn, TskvTableSchema};
     use models::{SeriesId, SeriesKey, ValueType};
 
-    use super::{MemCache, OrderedRowsData, RowData, RowGroup};
+    use super::{dedup_and_sort_row_data, MemCache, OrderedRowsData, RowData, RowGroup};
     use crate::file_utils::make_tsm_file;
     use crate::memcache::SeriesData;
     use crate::tseries_family::{ColumnFile, LevelInfo, Version};
     use crate::Options;
+
+    #[test]
+    fn test_dedup_and_sort_row_data() {
+        let mut rows1 = OrderedRowsData::new();
+
+        rows1.insert(RowData {
+            ts: 3,
+            fields: vec![Some(FieldVal::Float(3.0))],
+        });
+        rows1.insert(RowData {
+            ts: 1,
+            fields: vec![Some(FieldVal::Float(1.0))],
+        });
+        rows1.insert(RowData {
+            ts: 7,
+            fields: vec![Some(FieldVal::Float(7.0))],
+        });
+        rows1.insert(RowData {
+            ts: 5,
+            fields: vec![Some(FieldVal::Float(5.0))],
+        });
+        rows1.insert(RowData {
+            ts: 9,
+            fields: vec![Some(FieldVal::Float(9.0))],
+        });
+        rows1.insert(RowData {
+            ts: 7,
+            fields: vec![Some(FieldVal::Float(10.0))],
+        });
+        rows1.insert(RowData {
+            ts: 1,
+            fields: vec![Some(FieldVal::Float(11.0))],
+        });
+        rows1.insert(RowData {
+            ts: 5,
+            fields: vec![None],
+        });
+
+        let row_datas = dedup_and_sort_row_data(&rows1);
+        let expect_row_datas = vec![
+            RowData {
+                ts: 1,
+                fields: vec![Some(FieldVal::Float(11.0))],
+            },
+            RowData {
+                ts: 3,
+                fields: vec![Some(FieldVal::Float(3.0))],
+            },
+            RowData {
+                ts: 5,
+                fields: vec![Some(FieldVal::Float(5.0))],
+            },
+            RowData {
+                ts: 7,
+                fields: vec![Some(FieldVal::Float(10.0))],
+            },
+            RowData {
+                ts: 9,
+                fields: vec![Some(FieldVal::Float(9.0))],
+            },
+        ];
+        assert_eq!(row_datas, expect_row_datas);
+    }
 
     #[test]
     fn test_series_data_write_group() {
@@ -1269,36 +1332,11 @@ mod test_memcache {
         let opt = Arc::new(Options::from(&global_config));
 
         let database = Arc::new("cnosdb.test".to_string());
-        let ts_family_id = 1;
-        let tsm_dir = opt.storage.tsm_dir(&database, ts_family_id);
         #[rustfmt::skip]
             let levels = [
             LevelInfo::init(database.clone(), 0, 0, opt.storage.clone()),
-            LevelInfo {
-                files: vec![
-                    Arc::new(ColumnFile::new(3, 1, TimeRange::new(3001, 3100), 100, false, make_tsm_file(&tsm_dir, 3))),
-                ],
-                database: database.clone(),
-                tsf_id: 1,
-                storage_opt: opt.storage.clone(),
-                level: 1,
-                cur_size: 100,
-                max_size: 1000,
-                time_range: TimeRange::new(3001, 3100),
-            },
-            LevelInfo {
-                files: vec![
-                    Arc::new(ColumnFile::new(1, 2, TimeRange::new(1, 1000), 1000, false, make_tsm_file(&tsm_dir, 1))),
-                    Arc::new(ColumnFile::new(2, 2, TimeRange::new(1001, 2000), 1000, false, make_tsm_file(&tsm_dir, 2))),
-                ],
-                database: database.clone(),
-                tsf_id: 1,
-                storage_opt: opt.storage.clone(),
-                level: 2,
-                cur_size: 2000,
-                max_size: 10000,
-                time_range: TimeRange::new(1, 2000),
-            },
+            LevelInfo::init(database.clone(), 1, 0, opt.storage.clone()),
+            LevelInfo::init(database.clone(), 2, 0, opt.storage.clone()),
             LevelInfo::init(database.clone(), 3, 0, opt.storage.clone()),
             LevelInfo::init(database.clone(), 4, 0, opt.storage.clone()),
         ];
@@ -1325,6 +1363,16 @@ mod test_memcache {
         );
         schema_1.schema_version = 1;
         let mut rows1 = OrderedRowsData::new();
+
+        rows1.insert(RowData {
+            ts: 7,
+            fields: vec![Some(FieldVal::Float(10.0))],
+        });
+        rows1.insert(RowData {
+            ts: 1,
+            fields: vec![Some(FieldVal::Float(10.0))],
+        });
+
         rows1.insert(RowData {
             ts: 1,
             fields: vec![Some(FieldVal::Float(1.0))],
@@ -1349,7 +1397,7 @@ mod test_memcache {
         #[rustfmt::skip]
             let row_group_1 = RowGroup {
             schema: Arc::new(schema_1),
-            range: TimeRange::new(1, 9),
+            range: TimeRange::new(1, 10),
             rows:rows1,
             size: 10,
         };
