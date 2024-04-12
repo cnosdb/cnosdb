@@ -972,7 +972,7 @@ pub mod test {
     use crate::summary::VersionEdit;
     use crate::tseries_family::{ColumnFile, LevelInfo, Version};
     use crate::tsm::data_block::{DataBlock, MutableColumn};
-    use crate::tsm::reader::TsmReader;
+    use crate::tsm::reader::{decode_pages, TsmReader};
     use crate::tsm::writer::TsmWriter;
     use crate::tsm::TsmTombstone;
 
@@ -2738,6 +2738,257 @@ pub mod test {
             .unwrap()
             .unwrap();
 
+        check_column_file(dir, version_edit, expected_data).await;
+    }
+
+    #[tokio::test]
+    async fn test_compaction_5() {
+        let schema = TskvTableSchema::new(
+            "cnosdb".to_string(),
+            "public".to_string(),
+            "test0".to_string(),
+            vec![
+                TableColumn::new(
+                    0,
+                    "time".to_string(),
+                    ColumnType::Time(TimeUnit::Nanosecond),
+                    Encoding::default(),
+                ),
+                TableColumn::new(
+                    1,
+                    "f1".to_string(),
+                    ColumnType::Field(ValueType::Integer),
+                    Encoding::default(),
+                ),
+                TableColumn::new(
+                    2,
+                    "f2".to_string(),
+                    ColumnType::Field(ValueType::Integer),
+                    Encoding::default(),
+                ),
+                TableColumn::new(
+                    3,
+                    "f3".to_string(),
+                    ColumnType::Field(ValueType::Integer),
+                    Encoding::default(),
+                ),
+                TableColumn::new(
+                    4,
+                    "f4".to_string(),
+                    ColumnType::Field(ValueType::Integer),
+                    Encoding::default(),
+                ),
+            ],
+        );
+        let schema = Arc::new(schema);
+        let data1 = DataBlock::new(
+            schema.clone(),
+            i64_column(vec![1, 2, 3, 4], schema.time_column()),
+            vec![
+                i64_some_column(
+                    vec![Some(1), Some(2), Some(3), Some(5)],
+                    schema.column("f1").cloned().unwrap(),
+                ),
+                i64_some_column(
+                    vec![Some(1), Some(2), Some(3), Some(5)],
+                    schema.column("f2").cloned().unwrap(),
+                ),
+                i64_some_column(
+                    vec![Some(1), Some(2), Some(3), Some(5)],
+                    schema.column("f3").cloned().unwrap(),
+                ),
+                i64_some_column(
+                    vec![Some(1), Some(2), Some(3), Some(5)],
+                    schema.column("f4").cloned().unwrap(),
+                ),
+            ],
+        );
+
+        let data2 = DataBlock::new(
+            schema.clone(),
+            i64_column(vec![4, 5, 6, 7], schema.time_column()),
+            vec![
+                i64_some_column(
+                    vec![Some(4), Some(5), Some(6), None],
+                    schema.column("f1").cloned().unwrap(),
+                ),
+                i64_some_column(
+                    vec![Some(4), Some(5), Some(6), None],
+                    schema.column("f2").cloned().unwrap(),
+                ),
+                i64_some_column(
+                    vec![Some(4), Some(5), Some(6), Some(8)],
+                    schema.column("f3").cloned().unwrap(),
+                ),
+            ],
+        );
+
+        let expected_data1 = DataBlock::new(
+            schema.clone(),
+            i64_column(vec![1, 2, 3, 4], schema.time_column()),
+            vec![
+                i64_some_column(
+                    vec![Some(1), Some(2), Some(3), Some(5)],
+                    schema.column("f1").cloned().unwrap(),
+                ),
+                i64_some_column(
+                    vec![Some(1), Some(2), Some(3), Some(5)],
+                    schema.column("f2").cloned().unwrap(),
+                ),
+                i64_some_column(
+                    vec![Some(1), Some(2), Some(3), Some(5)],
+                    schema.column("f3").cloned().unwrap(),
+                ),
+                i64_some_column(
+                    vec![Some(1), Some(2), Some(3), Some(5)],
+                    schema.column("f4").cloned().unwrap(),
+                ),
+            ],
+        );
+
+        let expected_data2 = DataBlock::new(
+            schema.clone(),
+            i64_column(vec![4, 5, 6, 7], schema.time_column()),
+            vec![
+                i64_some_column(
+                    vec![Some(4), Some(5), Some(6), None],
+                    schema.column("f1").cloned().unwrap(),
+                ),
+                i64_some_column(
+                    vec![Some(4), Some(5), Some(6), None],
+                    schema.column("f2").cloned().unwrap(),
+                ),
+                i64_some_column(
+                    vec![Some(4), Some(5), Some(6), Some(8)],
+                    schema.column("f3").cloned().unwrap(),
+                ),
+            ],
+        );
+
+        let data = vec![
+            HashMap::from([(1, data1)]),
+            HashMap::from([(2, data2.clone())]),
+        ];
+
+        let expected_data = HashMap::from([
+            (1 as SeriesId, vec![expected_data1]),
+            (2 as SeriesId, vec![expected_data2]),
+        ]);
+
+        let dir = "/tmp/test/compaction/5";
+        let database = Arc::new("dba".to_string());
+        let opt = create_options(dir.to_string());
+        let dir = opt.storage.tsm_dir(&database, 1);
+
+        let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data).await;
+        println!("files:{:?}", files);
+        let (compact_req, kernel) =
+            prepare_compact_req_and_kernel(database.clone(), opt.clone(), next_file_id, files);
+        let max_file_size = compact_req
+            .storage_opt
+            .level_max_file_size(compact_req.out_level);
+        let (version_edit, _) = run_compaction_job(compact_req, kernel.clone())
+            .await
+            .unwrap()
+            .unwrap();
+        check_column_file(dir.clone(), version_edit.clone(), expected_data.clone()).await;
+
+        let file_id = version_edit.add_files.first().unwrap().file_id;
+        println!("version_edit: {:?}", version_edit);
+
+        let data3 = DataBlock::new(
+            schema.clone(),
+            i64_column(vec![1, 2, 3, 4], schema.time_column()),
+            vec![
+                i64_some_column(
+                    vec![Some(1), None, None, Some(0)],
+                    schema.column("f1").cloned().unwrap(),
+                ),
+                i64_some_column(
+                    vec![Some(1), None, None, Some(6)],
+                    schema.column("f2").cloned().unwrap(),
+                ),
+                i64_some_column(
+                    vec![Some(1), None, None, Some(6)],
+                    schema.column("f3").cloned().unwrap(),
+                ),
+                i64_some_column(
+                    vec![Some(1), None, None, Some(6)],
+                    schema.column("f4").cloned().unwrap(),
+                ),
+            ],
+        );
+        let mut tsm_writer = TsmWriter::open(&dir, file_id + 1, max_file_size, false)
+            .await
+            .unwrap();
+        tsm_writer
+            .write_datablock(1, SeriesKey::default(), data3.clone())
+            .await
+            .unwrap();
+        println!("tsm_writter: {:?}", tsm_writer.file_id());
+        tsm_writer.finish().await.unwrap();
+        let data3_bol = tsm_writer.series_bloom_filter().clone();
+        println!("3:{:?}", tsm_writer.series_bloom_filter().clone());
+        let tsm_reader = TsmReader::open(tsm_writer.path()).await.unwrap();
+        let pages = tsm_reader.read_series_pages(1, 0).await.unwrap();
+        let real_data = decode_pages(pages, data3.schema()).unwrap();
+        assert_eq!(data3, real_data);
+
+        let mut cfs = Vec::new();
+        let writer = TsmWriter::open(&dir, 3, 1000, false).await.unwrap();
+        let mut cf = ColumnFile::new(
+            3,
+            2,
+            TimeRange::new(writer.min_ts(), writer.max_ts()),
+            writer.size() as u64,
+            false,
+            writer.path(),
+        );
+
+        cf.set_field_id_filter(Arc::new(writer.series_bloom_filter().clone()));
+        cfs.push(Arc::new(cf));
+        let writer = TsmWriter::open(&dir, 4, 1000, false).await.unwrap();
+        let mut cf = ColumnFile::new(
+            4,
+            2,
+            TimeRange::new(writer.min_ts(), writer.max_ts()),
+            writer.size() as u64,
+            false,
+            writer.path(),
+        );
+        cf.set_field_id_filter(Arc::new(data3_bol));
+        cfs.push(Arc::new(cf));
+        let (compact_req, kernel) = prepare_compact_req_and_kernel(database, opt, 5, cfs.clone());
+        println!("cfs:{:?}", cfs.clone());
+        let (version_edit, _) = run_compaction_job(compact_req, kernel.clone())
+            .await
+            .unwrap()
+            .unwrap();
+        println!("{:?}", version_edit);
+        let data4 = DataBlock::new(
+            schema.clone(),
+            i64_column(vec![1, 2, 3, 4], schema.time_column()),
+            vec![
+                i64_some_column(
+                    vec![Some(1), Some(2), Some(3), Some(0)],
+                    schema.column("f1").cloned().unwrap(),
+                ),
+                i64_some_column(
+                    vec![Some(1), Some(2), Some(3), Some(6)],
+                    schema.column("f2").cloned().unwrap(),
+                ),
+                i64_some_column(
+                    vec![Some(1), Some(2), Some(3), Some(6)],
+                    schema.column("f3").cloned().unwrap(),
+                ),
+                i64_some_column(
+                    vec![Some(1), Some(2), Some(3), Some(6)],
+                    schema.column("f4").cloned().unwrap(),
+                ),
+            ],
+        );
+        let expected_data =
+            HashMap::from([(1 as SeriesId, vec![data4]), (2 as SeriesId, vec![data2])]);
         check_column_file(dir, version_edit, expected_data).await;
     }
 }
