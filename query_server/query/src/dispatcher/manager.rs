@@ -217,7 +217,11 @@ impl SimpleQueryDispatcher {
         // begin analyze
         query_state_machine.begin_analyze();
         let logical_plan = logical_planner
-            .create_logical_plan(stmt, &query_state_machine.session)
+            .create_logical_plan(
+                stmt,
+                &query_state_machine.session,
+                self.coord.get_config().query.auth_enabled,
+            )
             .await?;
         query_state_machine.end_analyze();
 

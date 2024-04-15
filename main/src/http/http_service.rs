@@ -282,6 +282,7 @@ impl HttpService {
             .and(warp::query::<SqlParam>())
             .and(self.with_dbms())
             .and(self.with_meta())
+            .and(self.with_coord())
             .and(self.with_http_metrics())
             .and(self.with_hostaddr())
             .and(self.handle_span_header())
@@ -292,6 +293,7 @@ impl HttpService {
                  param: SqlParam,
                  dbms: DBMSRef,
                  meta: MetaRef,
+                 coord: CoordinatorRef,
                  metrics: Arc<HttpMetrics>,
                  addr: String,
                  parent_span_ctx: Option<SpanContext>| async move {
@@ -316,7 +318,7 @@ impl HttpService {
                             SpanRecorder::new(span_context.child_span("authenticate"));
 
                         // Parse req、header and param to construct query request
-                        let query = construct_query(req, &header, param, dbms.clone())
+                        let query = construct_query(req, &header, param, dbms.clone(), coord)
                             .await
                             .map_err(reject::custom)?;
 
@@ -807,6 +809,7 @@ impl HttpService {
             .and(warp::query::<SqlParam>())
             .and(self.with_dbms())
             .and(self.with_meta())
+            .and(self.with_coord())
             .and(self.with_http_metrics())
             .and(self.with_prom_remote_server())
             .and(self.with_hostaddr())
@@ -817,6 +820,7 @@ impl HttpService {
                  param: SqlParam,
                  dbms: DBMSRef,
                  meta: MetaRef,
+                 coord: CoordinatorRef,
                  metrics: Arc<HttpMetrics>,
                  prs: PromRemoteServerRef,
                  addr: String,
@@ -835,7 +839,7 @@ impl HttpService {
                         let mut span_recorder =
                             SpanRecorder::new(span_context.child_span("construct context"));
                         span_recorder.set_metadata("bytes", req.len());
-                        let ctx = construct_read_context(&header, param, dbms)
+                        let ctx = construct_read_context(&header, param, dbms, coord, false)
                             .await
                             .map_err(reject::custom)?;
                         span_recorder.record(ctx)
@@ -1213,8 +1217,9 @@ async fn construct_query(
     header: &Header,
     param: SqlParam,
     dbms: DBMSRef,
+    coord: CoordinatorRef,
 ) -> Result<Query, HttpError> {
-    let context = construct_read_context(header, param, dbms).await?;
+    let context = construct_read_context(header, param, dbms, coord, true).await?;
 
     Ok(Query::new(
         context,
@@ -1226,6 +1231,8 @@ async fn construct_read_context(
     header: &Header,
     param: SqlParam,
     dbms: DBMSRef,
+    coord: CoordinatorRef,
+    is_sql: bool,
 ) -> Result<Context, HttpError> {
     let user_info = header.try_get_basic_auth()?;
 
@@ -1234,6 +1241,21 @@ async fn construct_read_context(
         .authenticate(&user_info, tenant.as_deref().unwrap_or(DEFAULT_CATALOG))
         .await
         .context(QuerySnafu)?;
+
+    if !is_sql
+        && coord.get_config().query.auth_enabled
+        && user
+            .desc()
+            .options()
+            .must_change_password()
+            .is_some_and(|x| x)
+    {
+        return Err(HttpError::Query {
+            source: QueryError::InsufficientPrivileges {
+                privilege: "change password".to_string(),
+            },
+        });
+    }
 
     let context = ContextBuilder::new(user)
         .with_tenant(tenant)
@@ -1302,6 +1324,20 @@ async fn construct_write_context_and_check_privilege(
         .tenant()
         .id();
 
+    if coord.get_config().query.auth_enabled
+        && context
+            .user()
+            .desc()
+            .options()
+            .must_change_password()
+            .is_some_and(|x| x)
+    {
+        return Err(HttpError::Query {
+            source: QueryError::InsufficientPrivileges {
+                privilege: "change password".to_string(),
+            },
+        });
+    }
     let privilege = Privilege::TenantObject(
         TenantObjectPrivilege::Database(
             DatabasePrivilege::Write,
