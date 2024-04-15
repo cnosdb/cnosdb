@@ -24,7 +24,9 @@ use crate::kv_option::{Options, INDEX_PATH};
 use crate::memcache::{MemCache, RowData, RowGroup};
 use crate::schema::schemas::DBschemas;
 use crate::summary::{SummaryTask, VersionEdit};
-use crate::tseries_family::{schedule_vnode_compaction, LevelInfo, TseriesFamily, Version};
+use crate::tseries_family::{
+    schedule_vnode_compaction, LevelInfo, TseriesFamily, TsfMetrics, Version,
+};
 use crate::Error::{self, InvalidPoint};
 use crate::{file_utils, ColumnFileId, TseriesFamilyId};
 
@@ -214,6 +216,7 @@ impl Database {
     pub async fn del_tsfamily(&mut self, tf_id: u32, summary_task_sender: Sender<SummaryTask>) {
         if let Some(tf) = self.ts_families.remove(&tf_id) {
             tf.read().await.close();
+            TsfMetrics::drop(&self.metrics_register, &self.owner(), tf_id as u64);
         }
 
         // TODO(zipper): If no ts_family recovered from summary, do not write summary.

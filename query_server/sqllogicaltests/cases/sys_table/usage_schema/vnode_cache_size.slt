@@ -4,3 +4,31 @@ query
 select count(*) >= 1 from usage_schema.vnode_cache_size where value > 0;
 ----
 true
+
+statement ok
+create database test_vnode_cache_metric;
+
+
+statement ok
+create table test_vnode_cache_metric.air(d1 double);
+
+statement ok
+insert into test_vnode_cache_metric.air(time, d1) values(now(), 1)
+
+sleep 10s
+
+
+statement ok
+drop database test_vnode_cache_metric;
+
+query I
+select count(value) from usage_schema.vnode_cache_size where database = 'test_vnode_cache_metric';
+----
+1
+
+sleep 10s
+
+query I
+select count(value) from usage_schema.vnode_cache_size where database = 'test_vnode_cache_metric';
+----
+1

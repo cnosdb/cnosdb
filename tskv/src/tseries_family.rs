@@ -874,6 +874,23 @@ impl TsfMetrics {
     pub fn record_cache_size(&self, size: u64) {
         self.vnode_cache_size.set(size)
     }
+
+    pub fn drop(register: &MetricsRegister, owner: &str, vnode_id: u64) {
+        let (tenant, db) = split_owner(owner);
+        let metric = register.metric::<U64Gauge>("vnode_disk_storage", "disk storage of vnode");
+        metric.remove([
+            ("tenant", tenant),
+            ("database", db),
+            ("vnode_id", vnode_id.to_string().as_str()),
+        ]);
+
+        let metric = register.metric::<U64Gauge>("vnode_cache_size", "cache size of vnode");
+        metric.remove([
+            ("tenant", tenant),
+            ("database", db),
+            ("vnode_id", vnode_id.to_string().as_str()),
+        ]);
+    }
 }
 
 #[derive(Debug)]
