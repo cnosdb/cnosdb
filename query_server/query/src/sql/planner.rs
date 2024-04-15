@@ -173,7 +173,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             ExtStatement::ShowTagValues(stmt) => self.show_tag_values(*stmt, session),
             ExtStatement::AlterTable(stmt) => self.table_to_alter(stmt, session),
             ExtStatement::AlterTenant(stmt) => self.alter_tenant_to_plan(stmt).await,
-            ExtStatement::AlterUser(stmt) => self.alter_user_to_plan(stmt).await,
+            ExtStatement::AlterUser(stmt) => self.alter_user_to_plan(stmt, session.user()).await,
             ExtStatement::GrantRevoke(stmt) => self.grant_revoke_to_plan(stmt, session),
             // system statement
             ExtStatement::ShowQueries => {
@@ -1477,7 +1477,11 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         })
     }
 
-    async fn alter_user_to_plan(&self, stmt: ast::AlterUser) -> Result<PlanWithPrivileges> {
+    async fn alter_user_to_plan(
+        &self,
+        stmt: ast::AlterUser,
+        user: &User,
+    ) -> Result<PlanWithPrivileges> {
         let ast::AlterUser { name, operation } = stmt;
 
         let user_name = normalize_ident(name);
@@ -1497,6 +1501,11 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             }
             AlterUserOperation::Set(sql_option) => {
                 let user_options = sql_options_to_user_options(vec![sql_option])?;
+                if user_desc.is_root_admin() && !user.desc().is_root_admin() {
+                    return Err(QueryError::InsufficientPrivileges {
+                        privilege: "root user".to_string(),
+                    });
+                }
                 if user_options.granted_admin().is_some() {
                     if user_desc.is_root_admin() {
                         return Err(QueryError::InvalidParam {
