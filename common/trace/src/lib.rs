@@ -150,13 +150,6 @@ pub fn init_global_tracing(
         registry_builder.init()
     }
 
-    match color_eyre::install() {
-        Ok(_) => (),
-        Err(_) => {
-            debug!("already init color eyre");
-        }
-    }
-
     debug!("log trace init successful");
 
     guards
