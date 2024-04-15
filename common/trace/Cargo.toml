@@ -19,7 +19,6 @@ tracing-subscriber = { workspace = true, features = [
 ] }
 tracing-appender = { workspace = true }
 tracing-error = { workspace = true }
-color-eyre = { workspace = true }
 once_cell = { workspace = true }
 console-subscriber = { workspace = true }
 async-backtrace = { workspace = true, optional = true }
