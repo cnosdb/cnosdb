@@ -108,8 +108,6 @@ impl<T: FieldValues> Cursor for ColumnCursor<T> {
     }
 }
 
-type CursorStream<C> = Box<dyn PartitionedStream<Output = TskvResult<(C, RecordBatch)>>>;
-
 /// Stores metrics about the table writer execution.
 #[derive(Debug, Clone)]
 pub struct SortMergeMetrics {

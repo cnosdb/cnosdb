@@ -22,8 +22,6 @@ use crate::{ColumnFileId, TsKvContext, TseriesFamilyId, TskvError};
 pub struct FlushTask {
     ts_family_id: TseriesFamilyId,
     mem_caches: Vec<Arc<RwLock<MemCache>>>,
-    low_seq_no: u64,
-    high_seq_no: u64,
     global_context: Arc<GlobalContext>,
     path_tsm: PathBuf,
     path_delta: PathBuf,
@@ -33,8 +31,6 @@ impl FlushTask {
     pub fn new(
         ts_family_id: TseriesFamilyId,
         mem_caches: Vec<Arc<RwLock<MemCache>>>,
-        low_seq_no: u64,
-        high_seq_no: u64,
         global_context: Arc<GlobalContext>,
         path_tsm: impl AsRef<Path>,
         path_delta: impl AsRef<Path>,
@@ -42,8 +38,6 @@ impl FlushTask {
         Self {
             ts_family_id,
             mem_caches,
-            low_seq_no,
-            high_seq_no,
             global_context,
             path_tsm: path_tsm.as_ref().into(),
             path_delta: path_delta.as_ref().into(),
@@ -166,8 +160,6 @@ pub async fn run_flush_memtable_job(
     let flush_task = FlushTask::new(
         req.ts_family_id,
         req.mems.clone(),
-        req.low_seq_no,
-        req.high_seq_no,
         ctx.global_ctx.clone(),
         path_tsm,
         path_delta,
@@ -231,7 +223,7 @@ pub mod flush_tests {
     use models::field_value::FieldVal;
     use models::predicate::domain::TimeRange;
     use models::schema::{ColumnType, TableColumn, TskvTableSchema};
-    use models::{ColumnId, SeriesKey, ValueType};
+    use models::{SeriesKey, ValueType};
     use parking_lot::lock_api::RwLock;
     use utils::dedup_front_by_key;
 
@@ -243,20 +235,6 @@ pub mod flush_tests {
     use crate::tsm::reader::TsmReader;
     use crate::tsm::writer::TsmWriter;
     use crate::{Options, VersionEdit};
-
-    fn i64_column(data: Vec<i64>) -> MutableColumn {
-        let mut col = MutableColumn::empty(TableColumn::new(
-            1,
-            "f1".to_string(),
-            ColumnType::Field(ValueType::Integer),
-            Encoding::default(),
-        ))
-        .unwrap();
-        for datum in data {
-            col.push(Some(FieldVal::Integer(datum))).unwrap()
-        }
-        col
-    }
 
     fn f64_column(data: Vec<f64>) -> MutableColumn {
         let mut col = MutableColumn::empty(TableColumn::new(
@@ -284,25 +262,6 @@ pub mod flush_tests {
             col.push(Some(FieldVal::Integer(datum))).unwrap()
         }
         col
-    }
-
-    pub fn default_table_schema(ids: Vec<ColumnId>) -> TskvTableSchema {
-        let fields = ids
-            .iter()
-            .map(|i| TableColumn {
-                id: *i,
-                name: i.to_string(),
-                column_type: ColumnType::Field(ValueType::Unknown),
-                encoding: Encoding::Default,
-            })
-            .collect();
-
-        TskvTableSchema::new(
-            "cnosdb".to_string(),
-            "public".to_string(),
-            "".to_string(),
-            fields,
-        )
     }
 
     #[test]
@@ -452,8 +411,6 @@ pub mod flush_tests {
         let flush_task = FlushTask::new(
             1,
             mem_caches,
-            0,
-            1,
             Arc::new(GlobalContext::new()),
             path_tsm.clone(),
             path_delta.clone(),

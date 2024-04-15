@@ -300,7 +300,6 @@ impl BinlogWriter {
 }
 
 pub struct BinlogReader {
-    id: u64,
     cursor: FileCursor,
 
     body_buf: Vec<u8>,
@@ -308,7 +307,7 @@ pub struct BinlogReader {
 }
 
 impl BinlogReader {
-    pub async fn new(id: u64, mut cursor: FileCursor) -> IndexResult<Self> {
+    pub async fn new(mut cursor: FileCursor) -> IndexResult<Self> {
         let header_buf = BinlogReader::reade_header(&mut cursor).await?;
         let offset = byte_utils::decode_be_u32(&header_buf[4..8]);
 
@@ -317,7 +316,6 @@ impl BinlogReader {
         cursor.set_pos(offset as u64);
 
         Ok(Self {
-            id,
             cursor,
             header_buf: [0_u8; BLOCK_HEADER_SIZE],
             body_buf: vec![],
@@ -418,7 +416,7 @@ impl BinlogReader {
 
 pub async fn repair_index_file(file_name: &str) -> IndexResult<()> {
     let tmp_file = BinlogWriter::open(0, PathBuf::from(file_name)).await?;
-    let mut reader_file = BinlogReader::new(0, tmp_file.file.into()).await?;
+    let mut reader_file = BinlogReader::new(tmp_file.file.into()).await?;
 
     let file_read_offset = reader_file.read_pos();
     let mut max_can_repair = 0;
@@ -520,9 +518,7 @@ mod test {
 
         let name = make_index_binlog_file(dir, binlog_id);
         let binlog_writer = BinlogWriter::open(binlog_id, name).await.unwrap();
-        let mut reader_file = BinlogReader::new(binlog_id, binlog_writer.file.into())
-            .await
-            .unwrap();
+        let mut reader_file = BinlogReader::new(binlog_writer.file.into()).await.unwrap();
         for series_key_block in series_key_blocks_1.iter().chain(series_key_blocks_2.iter()) {
             assert_eq!(
                 Some(series_key_block),

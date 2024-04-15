@@ -30,7 +30,6 @@ pub trait PageReader {
 
 #[derive(Clone)]
 pub struct PrimitiveArrayReader {
-    date_type: PhysicalDType,
     reader: Arc<TsmReader>,
     page_meta: PageWriteSpec,
 
@@ -44,7 +43,6 @@ pub struct PrimitiveArrayReader {
 
 impl PrimitiveArrayReader {
     pub fn new(
-        date_type: PhysicalDType,
         reader: Arc<TsmReader>,
         page_meta: &PageWriteSpec,
         series_id: SeriesId,
@@ -53,7 +51,6 @@ impl PrimitiveArrayReader {
         metrics: Arc<ExecutionPlanMetricsSet>,
     ) -> Self {
         Self {
-            date_type,
             reader,
             // TODO
             page_meta: page_meta.clone(),

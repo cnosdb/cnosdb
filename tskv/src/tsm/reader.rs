@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use bytes::Bytes;
@@ -79,7 +79,6 @@ impl TsmMetaData {
 
 #[derive(Clone)]
 pub struct TsmReader {
-    file_location: PathBuf,
     file_id: u64,
     reader: Arc<AsyncFile>,
     tsm_meta: Arc<TsmMetaData>,
@@ -109,7 +108,6 @@ impl TsmReader {
         ));
 
         Ok(Self {
-            file_location: path,
             file_id,
             reader,
             tsm_meta,
@@ -246,10 +244,6 @@ impl TsmReader {
         let data_block = decode_pages(column_group, schema)?;
 
         Ok(data_block)
-    }
-
-    fn get_table_name(&self, series_id: SeriesId) -> Option<&str> {
-        self.tsm_meta.table_name(series_id)
     }
 
     pub fn table_schema(&self, table_name: &str) -> Option<TskvTableSchemaRef> {

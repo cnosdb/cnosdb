@@ -1,12 +1,10 @@
 use std::fmt::Debug;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use models::predicate::domain::TimeRange;
 use trace::{debug, info};
 
 use crate::compaction::CompactReq;
-use crate::kv_option::StorageOptions;
 use crate::tseries_family::{ColumnFile, LevelInfo, Version};
 use crate::LevelId;
 
@@ -16,10 +14,7 @@ pub trait Picker: Send + Sync + Debug {
 
 /// Compaction picker for picking files in level
 #[derive(Debug)]
-pub struct LevelCompactionPicker {
-    picking: AtomicBool,
-    storage: Arc<StorageOptions>,
-}
+pub struct LevelCompactionPicker {}
 
 impl Picker for LevelCompactionPicker {
     fn pick_compaction(&self, version: Arc<Version>) -> Option<CompactReq> {
@@ -156,13 +151,6 @@ impl Picker for LevelCompactionPicker {
 }
 
 impl LevelCompactionPicker {
-    pub fn new(storage_opt: Arc<StorageOptions>) -> LevelCompactionPicker {
-        Self {
-            picking: AtomicBool::new(false),
-            storage: storage_opt,
-        }
-    }
-
     /// Weight of file number of a level to be picked.
     fn level_weight_file_num(level: LevelId) -> f64 {
         match level {
@@ -171,18 +159,6 @@ impl LevelCompactionPicker {
             2 => 0.4,
             3 => 0.2,
             4 => 0.1,
-            _ => 0.0,
-        }
-    }
-
-    /// Weight of the ramaining size of a level to be picked.
-    fn level_weight_remaining_size(level: LevelId) -> f64 {
-        match level {
-            0 => 1.0,
-            1 => 1.0,
-            2 => 1.0,
-            3 => 1.0,
-            4 => 1.0,
             _ => 0.0,
         }
     }
@@ -422,9 +398,8 @@ mod test {
             ]), // 0.00001
         ];
 
-        let storage_opt = opt.storage.clone();
         let tsf = create_tseries_family(Arc::new("dba".to_string()), opt, levels_sketch);
-        let picker = LevelCompactionPicker::new(storage_opt);
+        let picker = LevelCompactionPicker {};
         let compact_req = picker.pick_compaction(tsf.version()).unwrap();
         assert_eq!(compact_req.out_level, 2);
         assert_eq!(compact_req.files.len(), 2);

@@ -1,8 +1,7 @@
 use std::borrow::Cow;
-use std::sync::Arc;
 
 use async_recursion::async_recursion;
-use meta::error::{MetaError, MetaResult};
+use meta::error::MetaError;
 use meta::model::{MetaClientRef, MetaRef};
 use models::codec::Encoding;
 use models::schema::{
@@ -11,8 +10,6 @@ use models::schema::{
 
 use crate::database::FbSchema;
 use crate::schema::error::{Result, SchemaError};
-
-const TIME_STAMP_NAME: &str = "time";
 
 #[derive(Debug)]
 pub struct DBschemas {
@@ -190,99 +187,6 @@ impl DBschemas {
         //load schema first from cache
         self.check_field_type_or_else_add_impl(fb_schema, false)
             .await
-    }
-
-    pub async fn check_create_table_res(
-        &self,
-        res: MetaResult<()>,
-        schema: TskvTableSchemaRef,
-    ) -> Result<()> {
-        let client = self.tenant_meta().await?;
-        match res {
-            Ok(_) => Ok(()),
-            Err(e) => {
-                if let MetaError::TableAlreadyExists { .. } = e {
-                    let schema_get = client
-                        .get_tskv_table_schema(&schema.db, &schema.name)
-                        .map_err(|e| MetaError::Retry { msg: e.to_string() })?;
-                    let schema_get = match schema_get {
-                        None => client
-                            .get_tskv_table_schema_by_meta(&schema.db, &schema.name)
-                            .await
-                            .map_err(|e| MetaError::Retry { msg: e.to_string() })?
-                            .ok_or(MetaError::Retry {
-                                msg: "Table not found after TableAlreadyExists".to_string(),
-                            })?,
-                        Some(schema) => schema,
-                    };
-
-                    if schema.tenant == schema_get.tenant
-                        && schema.db == schema_get.db
-                        && schema.columns() == schema_get.columns()
-                    {
-                        Ok(())
-                    } else {
-                        for _ in 0..3 {
-                            let schema_get = client
-                                .get_tskv_table_schema(&schema.db, &schema.name)
-                                .map_err(|e| MetaError::Retry { msg: e.to_string() })?;
-                            let schema_get = match schema_get {
-                                None => client
-                                    .get_tskv_table_schema_by_meta(&schema.db, &schema.name)
-                                    .await
-                                    .map_err(|e| MetaError::Retry { msg: e.to_string() })?
-                                    .ok_or(MetaError::Retry {
-                                        msg: "Table not found when retry update table schema"
-                                            .to_string(),
-                                    })?,
-                                Some(schema) => schema,
-                            };
-                            let mut schema = schema.as_ref().clone();
-                            schema.schema_version = schema_get.schema_version + 1;
-                            let schema = Arc::new(schema);
-                            if client
-                                .update_table(&TableSchema::TsKvTableSchema(schema))
-                                .await
-                                .is_ok()
-                            {
-                                return Ok(());
-                            }
-                        }
-                        Err(e.into())
-                    }
-                } else {
-                    Err(e.into())
-                }
-            }
-        }
-    }
-
-    async fn check_update_table_res(
-        &self,
-        res: MetaResult<()>,
-        schema: TskvTableSchemaRef,
-    ) -> Result<()> {
-        let client = self.tenant_meta().await?;
-        let mut schema_id = schema.schema_version;
-        if let Err(ref e) = res {
-            if matches!(e, MetaError::UpdateTableConflict { .. }) {
-                for _ in 0..3 {
-                    let mut schema = schema.as_ref().clone();
-                    schema_id += 1;
-                    schema.schema_version = schema_id;
-                    if client
-                        .update_table(&TableSchema::TsKvTableSchema(Arc::new(schema)))
-                        .await
-                        .is_ok()
-                    {
-                        return Ok(());
-                    }
-                }
-            } else {
-                return res.map_err(|e| e.into());
-            }
-        }
-        Ok(())
     }
 
     pub async fn get_table_schema(&self, tab: &str) -> Result<Option<TskvTableSchemaRef>> {

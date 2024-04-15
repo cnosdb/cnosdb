@@ -341,21 +341,6 @@ impl VnodeStorage {
         self.delete(&cmd.table, &series_ids, &time_ranges).await
     }
 
-    async fn flush(&self) -> TskvResult<()> {
-        let flush_req = {
-            let mut tsfamily = self.ts_family.write().await;
-            tsfamily.switch_to_immutable();
-            tsfamily.build_flush_req(true)
-        };
-
-        if let Some(request) = flush_req {
-            crate::compaction::run_flush_memtable_job(request, self.ctx.clone(), false).await?;
-        }
-        self.ts_index.flush().await?;
-
-        Ok(())
-    }
-
     pub async fn get_or_create_snapshot(
         &mut self,
         mode: SnapshotMode,

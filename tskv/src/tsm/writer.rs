@@ -38,22 +38,22 @@ pub enum Version {
 }
 
 pub struct WriteOptions {
-    version: Version,
-    write_statistics: bool,
-    encode: Encoding,
+    _version: Version,
+    _write_statistics: bool,
+    _encode: Encoding,
 }
 
 impl Default for WriteOptions {
     fn default() -> Self {
         Self {
-            version: Version::V1,
-            write_statistics: true,
-            encode: Encoding::Null,
+            _version: Version::V1,
+            _write_statistics: true,
+            _encode: Encoding::Null,
         }
     }
 }
 
-const HEADER_LEN: u64 = 5;
+const _HEADER_LEN: u64 = 5;
 const TSM_MAGIC: [u8; 4] = 0x12CDA16_u32.to_be_bytes();
 const VERSION: [u8; 1] = [1];
 
@@ -69,7 +69,7 @@ pub struct TsmWriter {
     // todo: table object id bloom filter
     // table_bloom_filter: BloomFilter,
     writer: FileCursor,
-    options: WriteOptions,
+    _options: WriteOptions,
     table_schemas: HashMap<String, TskvTableSchemaRef>,
 
     /// <table < series, Chunk>>
@@ -109,7 +109,7 @@ impl TsmWriter {
             path,
             series_bloom_filter: BloomFilter::new(BLOOM_FILTER_BITS),
             writer,
-            options: Default::default(),
+            _options: Default::default(),
             table_schemas: Default::default(),
             page_specs: Default::default(),
             chunk_specs: Default::default(),

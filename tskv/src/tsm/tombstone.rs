@@ -25,8 +25,6 @@ use crate::record_file::{self, RecordDataType, RecordDataVersion};
 use crate::{byte_utils, file_utils, TskvError, TskvResult};
 
 pub const TOMBSTONE_FILE_SUFFIX: &str = "tombstone";
-const FOOTER_MAGIC_NUMBER: u32 = u32::from_be_bytes([b'r', b'o', b'm', b'b']);
-const FOOTER_MAGIC_NUMBER_LEN: usize = 4;
 const ENTRY_LEN: usize = 24; // 4 + 4 + 8 + 8
 
 #[derive(Debug, Clone, Copy)]
