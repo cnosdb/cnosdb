@@ -4,6 +4,7 @@ create tenant if not exists "test_cols_tenant1";
 create tenant if not exists "test_coord_data_in";
 create tenant if not exists "test_dbs_tenant1";
 create tenant if not exists "test_dps_tenant";
+create tenant if not exists "test_dump_info" with drop_after='1m';
 create tenant if not exists "test_ers_tenant1";
 create tenant if not exists "test_ms_tenant1";
 create tenant if not exists "test_rs_tenant1";
@@ -173,6 +174,10 @@ alter tenant "test_dps_tenant" add user "test_dps_u1" as "test_dps_role1";
 alter tenant "test_dps_tenant" add user "test_dps_u2" as "test_dps_role2";
 alter tenant "test_dps_tenant" add user "test_dps_u3" as "test_dps_role3";
 create table "test_dps_db"."test_dps_table1" ("a" BIGINT, tags ("b"));
+-- Dump Tenant test_dump_info Object
+\change_tenant test_dump_info
+create database if not exists "test_db";
+create table "test_db"."test" ("visibility" DOUBLE CODEC(GORILLA), "temperature" DOUBLE, "pressure" DOUBLE, tags ("station"));
 -- Dump Tenant test_ers_tenant1 Object
 \change_tenant test_ers_tenant1
 create role "test_ers_role1" inherit member;
