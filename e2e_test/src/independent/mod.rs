@@ -7,3 +7,5 @@ mod restart_tests;
 
 #[cfg(feature = "not_passed")]
 mod chaos_tests;
+
+mod client_tests;

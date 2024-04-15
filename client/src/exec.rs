@@ -183,7 +183,36 @@ async fn exec_and_print(
     print_options: &PrintOptions,
     sql: String,
 ) -> Result<()> {
-    let strs: Vec<&str> = sql.split(';').collect();
+    let (mut single_quote, mut double_quote) = (false, false);
+    let (mut last_idx, mut sql_idx) = (0, 0);
+
+    let mut strs: Vec<&str> = Vec::new();
+    for ch in sql.chars() {
+        match ch {
+            '\'' => {
+                if !double_quote {
+                    single_quote = !single_quote;
+                }
+            }
+            '\"' => {
+                if !single_quote {
+                    double_quote = !double_quote;
+                }
+            }
+            ';' => {
+                if !double_quote && !single_quote {
+                    strs.push(&sql[last_idx..sql_idx]);
+                    last_idx = sql_idx + 1;
+                }
+            }
+            _ => (),
+        };
+        sql_idx += ch.len_utf8();
+    }
+    if strs.is_empty() {
+        strs.push(&sql);
+    }
+
     for tmp in strs.iter() {
         if tmp.trim().is_empty() {
             continue;
