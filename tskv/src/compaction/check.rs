@@ -1,11 +1,9 @@
 use std::sync::Arc;
 
-use blake3::Hasher;
 use datafusion::arrow::datatypes::{
     DataType as ArrowDataType, Field as ArrowField, Schema, SchemaRef,
 };
 use datafusion::arrow::record_batch::RecordBatch;
-use models::predicate::domain::TimeRange;
 use models::{utils as model_utils, ColumnId, FieldId, SeriesId, Timestamp};
 use tokio::sync::RwLock;
 
@@ -13,74 +11,12 @@ use crate::error::{TskvError, TskvResult};
 use crate::tseries_family::TseriesFamily;
 use crate::TseriesFamilyId;
 
-/// Duration of each TimeRangeHashTreeNode, 24 hour.
-const DEFAULT_DURATION: i64 = 24 * 60 * 60 * 1_000_000_000;
-
 pub type Hash = [u8; 32];
-
-pub fn hash_to_string(hash: Hash) -> String {
-    let mut s = String::with_capacity(32);
-    for v in hash {
-        s.push_str(format!("{:x}", v).as_str());
-    }
-    s
-}
 
 #[derive(Default, Debug)]
 pub struct VnodeHashTreeNode {
     pub vnode_id: TseriesFamilyId,
     pub fields: Vec<FieldHashTreeNode>,
-    min_ts: Timestamp,
-    max_ts: Timestamp,
-}
-
-impl VnodeHashTreeNode {
-    pub fn with_capacity(vnode_id: TseriesFamilyId, capacity: usize) -> Self {
-        Self {
-            vnode_id,
-            fields: Vec::with_capacity(capacity),
-            min_ts: Timestamp::MAX,
-            max_ts: Timestamp::MIN,
-        }
-    }
-
-    pub fn push(&mut self, value: FieldHashTreeNode) {
-        self.min_ts = self.min_ts.min(value.min_ts);
-        self.max_ts = self.max_ts.max(value.max_ts);
-        self.fields.push(value);
-    }
-
-    /// Calculate checksum with checksums of all field hash trees.
-    pub fn checksum(&self) -> Hash {
-        let mut hasher = Hasher::new();
-        for f in self.fields.iter() {
-            hasher.update(&f.checksum());
-        }
-        hasher.finalize().into()
-    }
-
-    /// Calculate checksum with calculated hash values of all time range hash trees.
-    ///
-    /// TODO(zipper): This method has double memory cost.
-    pub fn into_checksum(self) -> Hash {
-        let mut hashes = Vec::with_capacity(self.len());
-        for f in self.fields {
-            for t in f.time_ranges {
-                hashes.push(t.hash);
-            }
-        }
-        hashes.sort();
-
-        let mut hasher = Hasher::new();
-        for h in hashes {
-            hasher.update(&h);
-        }
-        hasher.finalize().into()
-    }
-
-    pub fn len(&self) -> usize {
-        self.fields.iter().map(|f| f.len()).sum()
-    }
 }
 
 impl std::fmt::Display for VnodeHashTreeNode {
@@ -101,40 +37,11 @@ impl std::fmt::Display for VnodeHashTreeNode {
 pub struct FieldHashTreeNode {
     pub field_id: FieldId,
     pub time_ranges: Vec<TimeRangeHashTreeNode>,
-    min_ts: Timestamp,
-    max_ts: Timestamp,
 }
 
 impl FieldHashTreeNode {
-    pub fn with_capacity(field_id: FieldId, capacity: usize) -> Self {
-        Self {
-            field_id,
-            time_ranges: Vec::with_capacity(capacity),
-            min_ts: Timestamp::MAX,
-            max_ts: Timestamp::MIN,
-        }
-    }
-
-    pub fn push(&mut self, value: TimeRangeHashTreeNode) {
-        self.min_ts = self.min_ts.min(value.min_ts);
-        self.max_ts = self.max_ts.max(value.max_ts);
-        self.time_ranges.push(value);
-    }
-
-    pub fn checksum(&self) -> Hash {
-        let mut hasher = Hasher::new();
-        for v in self.time_ranges.iter() {
-            hasher.update(&v.hash);
-        }
-        hasher.finalize().into()
-    }
-
     pub fn column_series(&self) -> (ColumnId, SeriesId) {
         model_utils::split_id(self.field_id)
-    }
-
-    pub fn len(&self) -> usize {
-        self.time_ranges.len()
     }
 }
 
@@ -163,20 +70,6 @@ pub struct TimeRangeHashTreeNode {
     pub hash: Hash,
 }
 
-impl TimeRangeHashTreeNode {
-    pub fn new(time_range: TimeRange, hash: Hash) -> Self {
-        Self {
-            min_ts: time_range.min_ts,
-            max_ts: time_range.max_ts,
-            hash,
-        }
-    }
-
-    pub fn checksum(&self) -> Hash {
-        self.hash
-    }
-}
-
 impl std::fmt::Display for TimeRangeHashTreeNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -194,16 +87,6 @@ impl std::fmt::Display for TimeRangeHashTreeNode {
 pub fn vnode_table_checksum_schema() -> SchemaRef {
     Arc::new(Schema::new(vec![
         ArrowField::new("vnode_id", ArrowDataType::UInt32, false),
-        ArrowField::new("checksum", ArrowDataType::Utf8, false),
-    ]))
-}
-
-pub fn vnode_field_time_range_table_checksum_schema() -> SchemaRef {
-    Arc::new(Schema::new(vec![
-        ArrowField::new("vnode_id", ArrowDataType::UInt32, false),
-        ArrowField::new("field_Id", ArrowDataType::UInt32, false),
-        ArrowField::new("min_ts", ArrowDataType::UInt32, false),
-        ArrowField::new("max_ts", ArrowDataType::UInt32, false),
         ArrowField::new("checksum", ArrowDataType::Utf8, false),
     ]))
 }

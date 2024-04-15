@@ -144,7 +144,7 @@ impl TSIndex {
                 let file_path = path.join(filename);
                 info!("Recovering index binlog: '{}'", file_path.display());
                 let tmp_file = BinlogWriter::open(file_id, &file_path).await?;
-                let mut reader_file = BinlogReader::new(file_id, tmp_file.file.into()).await?;
+                let mut reader_file = BinlogReader::new(tmp_file.file.into()).await?;
                 self.recover_from_file(&mut reader_file).await?;
             }
         }
@@ -964,7 +964,7 @@ pub fn run_index_job(
                         continue;
                     }
 
-                    let mut reader_file = match BinlogReader::new(file_id, file.into()).await {
+                    let mut reader_file = match BinlogReader::new(file.into()).await {
                         Ok(r) => r,
                         Err(e) => {
                             error!(

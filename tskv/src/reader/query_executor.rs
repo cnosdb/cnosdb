@@ -15,7 +15,7 @@ use crate::EngineRef;
 
 pub struct QueryExecutor {
     option: QueryOption,
-    meta: MetaRef,
+    _meta: MetaRef,
     runtime: Arc<Runtime>,
     kv_inst: EngineRef,
 }
@@ -30,7 +30,7 @@ impl QueryExecutor {
         Self {
             option,
             runtime,
-            meta,
+            _meta: meta,
             kv_inst,
         }
     }

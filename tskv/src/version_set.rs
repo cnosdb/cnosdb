@@ -20,7 +20,7 @@ use crate::{Options, TseriesFamilyId};
 pub struct VersionSet {
     /// Maps DBName -> DB
     dbs: HashMap<String, Arc<RwLock<Database>>>,
-    runtime: Arc<Runtime>,
+    _runtime: Arc<Runtime>,
     db_factory: DatabaseFactory,
 }
 
@@ -36,7 +36,7 @@ impl VersionSet {
 
         Self {
             dbs: HashMap::new(),
-            runtime,
+            _runtime: runtime,
             db_factory,
         }
     }
@@ -51,7 +51,7 @@ impl VersionSet {
         let db_factory = DatabaseFactory::new(meta, memory_pool, register, opt);
         Self {
             dbs: HashMap::new(),
-            runtime,
+            _runtime: runtime,
             db_factory,
         }
     }
@@ -91,7 +91,7 @@ impl VersionSet {
 
         Ok(Self {
             dbs,
-            runtime,
+            _runtime: runtime,
             db_factory,
         })
     }

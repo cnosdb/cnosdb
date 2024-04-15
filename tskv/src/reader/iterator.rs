@@ -4,18 +4,15 @@ use std::sync::Arc;
 
 use arrow::datatypes::{Schema, SchemaRef};
 use datafusion::arrow::array::{
-    ArrayBuilder, ArrayRef, BooleanArray, BooleanBuilder, Float64Builder, Int64Builder,
-    PrimitiveArray, PrimitiveBuilder, StringArray, StringBuilder, TimestampMicrosecondBuilder,
-    TimestampMillisecondBuilder, TimestampNanosecondBuilder, TimestampSecondBuilder, UInt64Builder,
+    ArrayBuilder, BooleanBuilder, Float64Builder, Int64Builder, PrimitiveBuilder, StringBuilder,
+    TimestampMicrosecondBuilder, TimestampMillisecondBuilder, TimestampNanosecondBuilder,
+    TimestampSecondBuilder, UInt64Builder,
 };
 use datafusion::arrow::datatypes::{
     ArrowPrimitiveType, Float64Type, Int64Type, TimeUnit, TimestampMicrosecondType,
     TimestampMillisecondType, TimestampNanosecondType, TimestampSecondType, UInt64Type,
 };
-use datafusion::arrow::record_batch::RecordBatch;
-use datafusion::physical_plan::metrics::{
-    self, ExecutionPlanMetricsSet, MetricBuilder, MetricsSet,
-};
+use datafusion::physical_plan::metrics::{self, ExecutionPlanMetricsSet, MetricBuilder};
 use datafusion_proto::physical_plan::from_proto::parse_physical_expr;
 use models::field_value::DataType;
 use models::meta_data::VnodeId;
@@ -25,7 +22,6 @@ use models::schema::{PhysicalCType, TableColumn, TskvTableSchemaRef};
 use models::{ColumnId, PhysicalDType, SeriesId, SeriesKey, Timestamp};
 use protos::kv_service::QueryRecordBatchRequest;
 use tokio::runtime::Runtime;
-use tokio::sync::mpsc::Receiver;
 use tokio_util::sync::CancellationToken;
 use trace::{debug, error, SpanRecorder};
 
@@ -47,12 +43,11 @@ use crate::reader::paralle_merge::ParallelMergeAdapter;
 use crate::reader::schema_alignmenter::SchemaAlignmenter;
 use crate::reader::trace::TraceCollectorBatcherReaderProxy;
 use crate::reader::utils::group_overlapping_segments;
-use crate::reader::{BatchReaderRef, CombinedBatchReader, Cursor};
+use crate::reader::{BatchReaderRef, CombinedBatchReader};
 use crate::schema::error::SchemaError;
 use crate::tseries_family::{CacheGroup, ColumnFile, SuperVersion};
 use crate::tsm::reader::TsmReader;
 use crate::{EngineRef, TskvError};
-pub type CursorPtr = Box<dyn Cursor>;
 
 pub struct ArrayBuilderPtr {
     pub ptr: Box<dyn ArrayBuilder>,
@@ -196,80 +191,6 @@ impl ArrayBuilderPtr {
             );
         }
     }
-
-    fn extend_primitive_array<T: ArrowPrimitiveType>(&mut self, array: ArrayRef) {
-        let builder = self.builder::<T>();
-        let array = array.as_any().downcast_ref::<PrimitiveArray<T>>();
-        if let (Some(b), Some(a)) = (builder, array) {
-            b.extend(a.iter())
-        } else {
-            error!(
-                "Failed to get primitive-type array and array builder to insert {:?} array",
-                self.column_type
-            );
-        }
-    }
-
-    fn extend_bool_array(&mut self, array: ArrayRef) {
-        let builder = self.ptr.as_any_mut().downcast_mut::<BooleanBuilder>();
-        let array = array.as_any().downcast_ref::<BooleanArray>();
-        if let (Some(b), Some(a)) = (builder, array) {
-            b.extend(a.iter())
-        } else {
-            error!(
-                "Failed to get boolean array and array builder to insert {:?} array",
-                self.column_type
-            );
-        }
-    }
-
-    fn extend_string_array(&mut self, array: ArrayRef) {
-        let builder = self.ptr.as_any_mut().downcast_mut::<StringBuilder>();
-        let array = array.as_any().downcast_ref::<StringArray>();
-        if let (Some(b), Some(a)) = (builder, array) {
-            b.extend(a)
-        } else {
-            error!(
-                "Failed to get string array and array builder to insert {:?} array",
-                self.column_type
-            );
-        }
-    }
-
-    pub fn append_column_data(&mut self, column: ArrayRef) {
-        match self.column_type {
-            PhysicalCType::Tag | PhysicalCType::Field(PhysicalDType::String) => {
-                self.extend_string_array(column);
-            }
-            PhysicalCType::Time(ref unit) => match unit {
-                TimeUnit::Second => self.extend_primitive_array::<TimestampSecondType>(column),
-                TimeUnit::Millisecond => {
-                    self.extend_primitive_array::<TimestampMillisecondType>(column)
-                }
-                TimeUnit::Microsecond => {
-                    self.extend_primitive_array::<TimestampMicrosecondType>(column)
-                }
-                TimeUnit::Nanosecond => {
-                    self.extend_primitive_array::<TimestampNanosecondType>(column)
-                }
-            },
-            PhysicalCType::Field(PhysicalDType::Float) => {
-                self.extend_primitive_array::<Float64Type>(column);
-            }
-            PhysicalCType::Field(PhysicalDType::Integer) => {
-                self.extend_primitive_array::<Int64Type>(column);
-            }
-            PhysicalCType::Field(PhysicalDType::Unsigned) => {
-                self.extend_primitive_array::<UInt64Type>(column);
-            }
-            PhysicalCType::Field(PhysicalDType::Boolean) => {
-                self.extend_bool_array(column);
-            }
-            _ => {
-                error!("Trying to get unknown-type array builder");
-            }
-        }
-    }
 }
 
 pub struct SeriesGroupBatchReaderFactory {
@@ -310,10 +231,6 @@ impl SeriesGroupBatchReaderFactory {
 
     pub fn schema(&self) -> SchemaRef {
         self.query_option.df_schema.clone()
-    }
-
-    fn metrics(&self) -> Option<MetricsSet> {
-        Some(self.metrics_set.clone_inner())
     }
 
     /// ParallelMergeAdapter: schema=[{}]                               -------- 并行执行多个 stream
@@ -952,53 +869,20 @@ impl QueryOption {
 }
 
 pub struct RowIterator {
-    runtime: Arc<Runtime>,
-    engine: EngineRef,
-    query_option: Arc<QueryOption>,
     vnode_id: VnodeId,
 
     /// Super version of vnode_id, maybe None.
     super_version: Option<Arc<SuperVersion>>,
     /// List of series id filtered from engine.
     series_ids: Arc<Vec<SeriesId>>,
-    series_iter_receiver: Receiver<Option<TskvResult<RecordBatch>>>,
     series_iter_closer: CancellationToken,
     /// Whether this iterator was finsihed.
-    is_finished: bool,
     #[allow(unused)]
     span_recorder: SpanRecorder,
     metrics_set: ExecutionPlanMetricsSet,
 }
 
 impl RowIterator {
-    fn build_record_builders(query_option: &QueryOption) -> TskvResult<Vec<ArrayBuilderPtr>> {
-        // Get builders for aggregating.
-        if let Some(aggregates) = query_option.aggregates.as_ref() {
-            let mut builders: Vec<ArrayBuilderPtr> = Vec::with_capacity(aggregates.len());
-            for _ in 0..aggregates.len() {
-                builders.push(ArrayBuilderPtr::new(
-                    Box::new(Int64Builder::with_capacity(query_option.batch_size)),
-                    PhysicalCType::Field(PhysicalDType::Integer),
-                ));
-            }
-            return Ok(builders);
-        }
-
-        // Get builders for table scan.
-        let mut builders: Vec<ArrayBuilderPtr> =
-            Vec::with_capacity(query_option.table_schema.columns().len());
-        for item in query_option.table_schema.columns().iter() {
-            debug!(
-                "Building record builder: schema info {:02X} {}",
-                item.id, item.name
-            );
-            let kv_dt = item.column_type.to_physical_type();
-            let builder_item = Self::new_column_builder(&kv_dt, query_option.batch_size)?;
-            builders.push(ArrayBuilderPtr::new(builder_item, kv_dt))
-        }
-        Ok(builders)
-    }
-
     pub fn new_column_builder(
         column_type: &PhysicalCType,
         batch_size: usize,
@@ -1034,52 +918,6 @@ impl RowIterator {
                 }
             },
         })
-    }
-    pub async fn next(&mut self) -> Option<TskvResult<RecordBatch>> {
-        if self.is_finished {
-            return None;
-        }
-        if self.series_ids.is_empty() {
-            self.is_finished = true;
-            // Build an empty result.
-            // TODO record elapsed_point_to_record_batch
-            // let timer = self.metrics.elapsed_point_to_record_batch().timer();
-            let mut empty_builders = match Self::build_record_builders(self.query_option.as_ref()) {
-                Ok(builders) => builders,
-                Err(e) => return Some(Err(e)),
-            };
-            let mut empty_cols = vec![];
-            for item in empty_builders.iter_mut() {
-                empty_cols.push(item.ptr.finish())
-            }
-            let empty_result =
-                RecordBatch::try_new(self.query_option.df_schema.clone(), empty_cols).map_err(
-                    |err| TskvError::CommonError {
-                        reason: format!("iterator fail, {}", err),
-                    },
-                );
-            // timer.done();
-
-            return Some(empty_result);
-        }
-
-        while let Some(ret) = self.series_iter_receiver.recv().await {
-            match ret {
-                Some(Ok(r)) => {
-                    return Some(Ok(r));
-                }
-                Some(Err(e)) => {
-                    self.series_iter_closer.cancel();
-                    return Some(Err(e));
-                }
-                None => {
-                    // Do nothing
-                    debug!("One of series group iterator finished.");
-                }
-            }
-        }
-
-        None
     }
 }
 

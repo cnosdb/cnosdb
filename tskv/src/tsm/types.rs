@@ -39,31 +39,3 @@ macro_rules! native {
 native!(i64, PhysicalDType::Integer);
 native!(u64, PhysicalDType::Unsigned);
 native!(f64, PhysicalDType::Float);
-
-/// Returns the ordering of two binary values.
-pub fn ord_binary<'a>(a: &'a [u8], b: &'a [u8]) -> std::cmp::Ordering {
-    use std::cmp::Ordering::*;
-    match (a.is_empty(), b.is_empty()) {
-        (true, true) => return Equal,
-        (true, false) => return Less,
-        (false, true) => return Greater,
-        (false, false) => {}
-    }
-
-    for (v1, v2) in a.iter().zip(b.iter()) {
-        match v1.cmp(v2) {
-            Equal => continue,
-            other => return other,
-        }
-    }
-    Equal
-}
-
-#[inline]
-pub fn decode<T: NativeType>(chunk: &[u8]) -> T {
-    let chunk: <T as NativeType>::Bytes = match chunk.try_into() {
-        Ok(v) => v,
-        Err(_) => panic!(),
-    };
-    T::from_le_bytes(chunk)
-}

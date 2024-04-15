@@ -1260,10 +1260,9 @@ pub mod test_tseries_family {
 
     use super::{ColumnFile, LevelInfo};
     use crate::file_utils::make_tsm_file;
-    use crate::kv_option::{Options, StorageOptions};
+    use crate::kv_option::Options;
     use crate::summary::{CompactMeta, VersionEdit};
     use crate::tseries_family::{TimeRange, Version};
-    use crate::TseriesFamilyId;
 
     #[tokio::test]
     async fn test_version_apply_version_edits_1() {
@@ -1483,34 +1482,5 @@ pub mod test_tseries_family {
         assert_eq!(lvl.files.len(), 1);
         let col_file = lvl.files.last().unwrap();
         assert_eq!(col_file.time_range, TimeRange::new(1, 2000));
-    }
-
-    pub(crate) fn build_version_by_column_files(
-        storage_opt: Arc<StorageOptions>,
-        database: Arc<String>,
-        ts_family_id: TseriesFamilyId,
-        mut files: Vec<Arc<ColumnFile>>,
-    ) -> Version {
-        files.sort_by_key(|f| f.file_id);
-        let mut levels =
-            LevelInfo::init_levels(database.clone(), ts_family_id, storage_opt.clone());
-        let max_level_ts = i64::MIN;
-        for file in files {
-            let lv = &mut levels[file.level as usize];
-            lv.cur_size += file.size;
-            lv.time_range.merge(file.time_range());
-            lv.files.push(file);
-        }
-
-        let tsm_reader_cache = Arc::new(ShardedAsyncCache::create_lru_sharded_cache(16));
-        Version::new(
-            ts_family_id,
-            database,
-            storage_opt,
-            0,
-            levels,
-            max_level_ts,
-            tsm_reader_cache,
-        )
     }
 }

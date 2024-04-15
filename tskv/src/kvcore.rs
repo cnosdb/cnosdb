@@ -34,12 +34,12 @@ pub const SUMMARY_REQ_CHANNEL_CAP: usize = 1024;
 #[derive(Debug)]
 pub struct TsKv {
     ctx: Arc<TsKvContext>,
-    meta_manager: MetaRef,
+    _meta_manager: MetaRef,
     flush_job: FlushJob,
     compact_job: CompactJob,
     runtime: Arc<Runtime>,
-    metrics: Arc<MetricsRegister>,
-    memory_pool: Arc<dyn MemoryPool>,
+    _metrics: Arc<MetricsRegister>,
+    _memory_pool: Arc<dyn MemoryPool>,
     close_sender: BroadcastSender<Sender<()>>,
 }
 
@@ -80,12 +80,12 @@ impl TsKv {
         let flush_job = FlushJob::new(runtime.clone(), ctx.clone());
         let core = Self {
             ctx,
-            meta_manager,
-            memory_pool,
+            _meta_manager: meta_manager,
+            _memory_pool: memory_pool,
             compact_job,
             flush_job,
             close_sender,
-            metrics,
+            _metrics: metrics,
             runtime,
         };
 
@@ -403,7 +403,7 @@ impl Engine for TsKv {
                     error!("Failed to flush vnode {}: {:?}", vnode_id, e);
                 }
 
-                let picker = LevelCompactionPicker::new(self.ctx.options.storage.clone());
+                let picker = LevelCompactionPicker {};
                 let version = ts_family.read().await.version();
                 if let Some(req) = picker.pick_compaction(version) {
                     match compaction::run_compaction_job(req, self.ctx.global_ctx.clone()).await {
@@ -462,28 +462,5 @@ impl Engine for TsKv {
             continue;
         }
         info!("TsKv closed");
-    }
-}
-
-#[cfg(test)]
-impl TsKv {
-    pub(crate) fn global_ctx(&self) -> Arc<crate::context::GlobalContext> {
-        self.ctx.global_ctx.clone()
-    }
-
-    pub(crate) fn version_set(&self) -> Arc<RwLock<VersionSet>> {
-        self.ctx.version_set.clone()
-    }
-
-    pub(crate) fn summary_task_sender(&self) -> Sender<SummaryTask> {
-        self.ctx.summary_task_sender.clone()
-    }
-
-    pub(crate) fn flush_task_sender(&self) -> Sender<compaction::FlushReq> {
-        self.ctx.flush_task_sender.clone()
-    }
-
-    pub(crate) fn compact_task_sender(&self) -> Sender<compaction::CompactTask> {
-        self.ctx.compact_task_sender.clone()
     }
 }

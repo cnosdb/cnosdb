@@ -47,7 +47,6 @@ use minivec::MiniVec;
 use models::codec::Encoding;
 use models::meta_data::VnodeId;
 use snafu::ResultExt;
-use tokio::sync::oneshot;
 
 use self::reader::WalReader;
 use self::writer::WalWriter;
@@ -57,27 +56,10 @@ use crate::tsm::codec::{get_str_codec, StringCodec};
 pub use crate::wal::reader::{print_wal_statistics, Block};
 use crate::{error, file_utils, TskvResult};
 
-const WAL_TYPE_LEN: usize = 1;
-const WAL_SEQUENCE_LEN: usize = 8;
 /// 9 = type(1) + sequence(8)
 const WAL_HEADER_LEN: usize = 9;
 
-const SERIES_KEYS_LEN: usize = 4;
-
-const WAL_VNODE_ID_LEN: usize = 4;
-const WAL_PRECISION_LEN: usize = 1;
-const WAL_TENANT_SIZE_LEN: usize = 8;
-const WAL_DATABASE_SIZE_LEN: usize = 4;
-const WAL_TABLE_SIZE_LEN: usize = 4;
-
 const WAL_FOOTER_MAGIC_NUMBER: u32 = u32::from_be_bytes([b'w', b'a', b'l', b'o']);
-const WAL_FOOTER_MAGIC_NUMBER_LEN: usize = 4;
-
-const SEGMENT_MAGIC: [u8; 4] = [0x57, 0x47, 0x4c, 0x00];
-
-/// A channel sender that send write WAL result: `(seq_no: u64, written_size: usize)`
-type WriteResultSender = oneshot::Sender<crate::TskvResult<(u64, usize)>>;
-type WriteResultReceiver = oneshot::Receiver<crate::TskvResult<(u64, usize)>>;
 
 #[repr(u8)]
 #[derive(Eq, PartialEq, Clone, Copy, Debug)]
@@ -385,50 +367,6 @@ fn encode_wal_raft_entry(entry: &wal_store::RaftEntry) -> TskvResult<Vec<u8>> {
 
 #[cfg(test)]
 mod test {
-    use std::collections::HashMap;
-
-    use minivec::MiniVec;
-    use models::field_value::FieldVal;
-    use models::Timestamp;
-    use protos::models::FieldType;
-    use protos::models_helper;
-
-    fn random_write_data() -> Vec<u8> {
-        let mut fbb = flatbuffers::FlatBufferBuilder::new();
-        let ptr = models_helper::create_random_points_with_delta(&mut fbb, 5);
-        fbb.finish(ptr, None);
-        fbb.finished_data().to_vec()
-    }
-
-    /// Generate flatbuffers data and memcache data
-    #[allow(clippy::type_complexity)]
-    pub fn const_write_data(
-        start_timestamp: i64,
-        num: usize,
-    ) -> (Vec<u8>, HashMap<String, Vec<(Timestamp, FieldVal)>>) {
-        let mut fa_data: Vec<(Timestamp, FieldVal)> = Vec::with_capacity(num);
-        let mut fb_data: Vec<(Timestamp, FieldVal)> = Vec::with_capacity(num);
-        for i in start_timestamp..start_timestamp + num as i64 {
-            fa_data.push((i, FieldVal::Integer(100)));
-            fb_data.push((i, FieldVal::Bytes(MiniVec::from("b"))));
-        }
-        let map = HashMap::from([("fa".to_string(), fa_data), ("fb".to_string(), fb_data)]);
-
-        let mut fbb = flatbuffers::FlatBufferBuilder::new();
-        let ptr = models_helper::create_const_points(
-            &mut fbb,
-            "dba",
-            "tba",
-            vec![("ta", "a"), ("tb", "b")],
-            vec![("fa", &100_u64.to_be_bytes()), ("fb", b"b")],
-            HashMap::from([("fa", FieldType::Unsigned), ("fb", FieldType::String)]),
-            start_timestamp,
-            num,
-        );
-        fbb.finish(ptr, None);
-        (fbb.finished_data().to_vec(), map)
-    }
-
     #[test]
     fn test_get_test_config() {
         let _ = config::get_config_for_test();

@@ -68,7 +68,6 @@ pub const RECORD_DATA_TYPE_LEN: usize = 1;
 pub const RECORD_DATA_SIZE_LEN: usize = 4;
 pub const RECORD_CRC32_NUMBER_LEN: usize = 4;
 pub const RECORD_HEADER_LEN: usize = 14; // 4 + 1 + 1 + 4 + 4
-pub const BLOCK_SIZE: usize = 4096;
 
 pub const READER_BUF_SIZE: usize = 1024 * 1024 * 64; //64MB
 

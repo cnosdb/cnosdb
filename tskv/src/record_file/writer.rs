@@ -198,10 +198,6 @@ impl Writer {
         self.footer
     }
 
-    pub fn pos(&self) -> u64 {
-        self.pos
-    }
-
     pub fn file_size(&self) -> u64 {
         self.file_size
     }

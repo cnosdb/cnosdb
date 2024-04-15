@@ -25,8 +25,6 @@ enum Merge {
 }
 
 impl DataBlock {
-    const BLOCK_SIZE: usize = 1000;
-
     pub fn new(schema: TskvTableSchemaRef, ts: MutableColumn, cols: Vec<MutableColumn>) -> Self {
         DataBlock { schema, ts, cols }
     }
