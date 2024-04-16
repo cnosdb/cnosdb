@@ -999,7 +999,6 @@ pub mod test {
     use models::codec::Encoding;
     use models::predicate::domain::TimeRange;
     use models::{FieldId, Timestamp, ValueType};
-    use tokio::sync::RwLock as AsyncRwLock;
 
     use super::{chunk_merged_block, run_compaction_job, CompactReq, CompactingBlock};
     use crate::compaction::CompactTask;
@@ -1128,7 +1127,9 @@ pub mod test {
                 writer.size(),
                 writer.path(),
             );
-            cf.set_field_id_filter(AsyncRwLock::new(Some(Arc::new(writer.into_bloom_filter()))));
+            cf.set_field_id_filter(tokio::sync::RwLock::new(Some(Arc::new(
+                writer.into_bloom_filter(),
+            ))));
             cfs.push(Arc::new(cf));
         }
         (file_seq + 1, cfs)
