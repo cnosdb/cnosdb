@@ -102,21 +102,22 @@ impl ColumnFile {
     }
 
     pub async fn contains_field_id(&self, field_id: FieldId) -> Result<bool> {
-        if let Some(filter) = self.field_id_filter.read().await.as_ref() {
-            Ok(filter.contains(&field_id.to_be_bytes()))
-        } else {
-            let bloom_fillter = self.load_bloom_fillter().await?;
-            let res = bloom_fillter.contains(&field_id.to_be_bytes());
-            *self.field_id_filter.write().await = Some(bloom_fillter);
-            Ok(res)
-        }
+        let bloom_filter = self.load_bloom_filter().await?;
+        let res = bloom_filter.contains(&field_id.to_be_bytes());
+        Ok(res)
     }
 
-    async fn load_bloom_fillter(&self) -> Result<Arc<BloomFilter>> {
-        if let Some(filter) = self.field_id_filter.read().await.as_ref() {
+    async fn load_bloom_filter(&self) -> Result<Arc<BloomFilter>> {
+        {
+            if let Some(filter) = self.field_id_filter.read().await.as_ref() {
+                return Ok(filter.clone());
+            }
+        }
+        let mut filter_w = self.field_id_filter.write().await;
+        if let Some(filter) = filter_w.as_ref() {
             return Ok(filter.clone());
         }
-        let bloom_fillter = if let Some(tsm_reader_cache) = self.tsm_reader_cache.upgrade() {
+        let bloom_filter = if let Some(tsm_reader_cache) = self.tsm_reader_cache.upgrade() {
             let reader = match tsm_reader_cache
                 .get(&format!("{}", self.path.display()))
                 .await
@@ -135,8 +136,8 @@ impl ColumnFile {
         } else {
             TsmReader::open(&self.path).await?.bloom_filter()
         };
-        *self.field_id_filter.write().await = Some(bloom_fillter.clone());
-        Ok(bloom_fillter)
+        filter_w.replace(bloom_filter.clone());
+        Ok(bloom_filter)
     }
 
     pub async fn contains_any_field_id(&self, field_ids: &[FieldId]) -> Result<bool> {
@@ -152,7 +153,7 @@ impl ColumnFile {
         let dir = self.path.parent().expect("file has parent");
         // TODO flock tombstone file.
         let tombstone = TsmTombstone::open(dir, self.file_id).await?;
-        let bloom_filter = self.load_bloom_fillter().await?;
+        let bloom_filter = self.load_bloom_filter().await?;
         tombstone
             .add_range(field_ids, time_range, Some(bloom_filter))
             .await?;
@@ -1161,7 +1162,7 @@ impl TseriesFamily {
                 meta.tsf_id = files.tsf_id;
                 meta.high_seq = self.seq_no;
                 version_edit.add_file(meta);
-                let bloom_filter = file.load_bloom_fillter().await?;
+                let bloom_filter = file.load_bloom_filter().await?;
                 file_metas.insert(file.file_id, bloom_filter);
             }
         }
