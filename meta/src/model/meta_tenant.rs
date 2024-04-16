@@ -696,19 +696,31 @@ impl TenantMeta {
         Ok(bucket.vnode_for(hash_id))
     }
 
-    pub fn get_replication_set(&self, repl_id: u32) -> Option<ReplicationSet> {
-        let data = self.data.read();
-        for (_db_name, db_info) in data.dbs.iter() {
-            for bucket in db_info.buckets.iter() {
-                for repl_set in bucket.shard_group.iter() {
-                    if repl_set.id == repl_id {
-                        return Some(repl_set.clone());
+    pub async fn get_replication_set(
+        &self,
+        db_name: &str,
+        repl_id: u32,
+    ) -> MetaResult<Option<ReplicationSet>> {
+        {
+            let data = self.data.read();
+            if let Some(db_info) = data.dbs.get(db_name) {
+                for bucket in db_info.buckets.iter() {
+                    for repl_set in bucket.shard_group.iter() {
+                        if repl_set.id == repl_id {
+                            return Ok(Some(repl_set.clone()));
+                        }
                     }
                 }
             }
         }
 
-        None
+        let req = ReadCommand::ReplicationSet(
+            self.cluster.clone(),
+            self.tenant.name().to_string(),
+            db_name.to_string(),
+            repl_id,
+        );
+        self.client.read::<Option<ReplicationSet>>(&req).await
     }
 
     pub async fn update_vnode(&self, info: &VnodeAllInfo) -> MetaResult<()> {

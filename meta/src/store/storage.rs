@@ -416,7 +416,30 @@ impl StateMachine {
             ReadCommand::ResourceInfosMark(cluster) => {
                 response_encode(self.process_read_resourceinfos_mark(cluster))
             }
+            ReadCommand::ReplicationSet(cluster, tenant, db_name, repl_id) => response_encode(
+                self.process_read_replication_set(cluster, tenant, db_name, *repl_id),
+            ),
         }
+    }
+
+    pub fn process_read_replication_set(
+        &self,
+        cluster: &str,
+        tenant: &str,
+        db_name: &str,
+        repl_id: u32,
+    ) -> MetaResult<Option<ReplicationSet>> {
+        let key = KeyPath::tenant_db_buckets(cluster, tenant, db_name);
+        let buckets = self.children_data::<BucketInfo>(&key)?;
+        for (_, bucket) in buckets {
+            for group in bucket.shard_group {
+                if group.id == repl_id {
+                    return Ok(Some(group));
+                }
+            }
+        }
+
+        Ok(None)
     }
 
     pub fn process_read_data_nodes(&self, cluster: &str) -> MetaResult<(Vec<NodeInfo>, u64)> {
