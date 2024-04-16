@@ -191,18 +191,18 @@ impl TSIndex {
             };
             storage_w.set(&encode_series_id_key(id), &block.data)?;
             self.binlog.write().await.write(&block.encode()).await?;
+
+            // then inverted index
+            for tag in series_key.tags() {
+                let key = encode_inverted_index_key(series_key.table(), &tag.key, &tag.value);
+                storage_w.modify(&key, id, true)?;
+            }
+            if series_key.tags().is_empty() {
+                let key = encode_inverted_index_key(series_key.table(), &[], &[]);
+                storage_w.modify(&key, id, true)?;
+            }
             id
         };
-
-        // then inverted index
-        for tag in series_key.tags() {
-            let key = encode_inverted_index_key(series_key.table(), &tag.key, &tag.value);
-            self.storage.write().await.modify(&key, id, true)?;
-        }
-        if series_key.tags().is_empty() {
-            let key = encode_inverted_index_key(series_key.table(), &[], &[]);
-            self.storage.write().await.modify(&key, id, true)?;
-        }
 
         let _ = self.check_to_flush(false).await;
 
