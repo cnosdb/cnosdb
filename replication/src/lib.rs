@@ -28,7 +28,7 @@ pub struct RaftNodeInfo {
     pub address: String, // server address
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct ReplicationConfig {
     pub cluster_name: String,
     pub lmdb_max_map_size: usize,
@@ -37,6 +37,7 @@ pub struct ReplicationConfig {
     pub raft_logs_to_keep: u64,
     pub send_append_entries_timeout: u64, //ms
     pub install_snapshot_timeout: u64,    //ms
+    pub snapshot_policy: openraft::SnapshotPolicy,
 }
 
 // #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Ord, PartialOrd)]

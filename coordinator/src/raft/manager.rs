@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use meta::model::MetaRef;
 use models::meta_data::*;
+use openraft::SnapshotPolicy;
 use protos::kv_service::*;
 use replication::multi_raft::MultiRaft;
 use replication::node_store::NodeStorage;
@@ -52,7 +53,7 @@ impl RaftNodesManager {
     }
 
     pub async fn metrics(&self, group_id: u32) -> String {
-        if let Some(node) = self.raft_nodes.read().await.get_node(group_id) {
+        if let Ok(Some(node)) = self.raft_nodes.read().await.get_node(group_id) {
             serde_json::to_string(&node.metrics().await)
                 .unwrap_or("encode  metrics to json failed".to_string())
         } else {
@@ -87,7 +88,7 @@ impl RaftNodesManager {
         db_name: &str,
         replica: &ReplicationSet,
     ) -> CoordinatorResult<Arc<RaftNode>> {
-        if let Some(node) = self.raft_nodes.read().await.get_node(replica.id) {
+        if let Some(node) = self.raft_nodes.read().await.get_node(replica.id)? {
             return Ok(node);
         }
 
@@ -110,8 +111,14 @@ impl RaftNodesManager {
     ) -> CoordinatorResult<()> {
         info!("exec open raft node: {}.{}", group_id, id);
         let mut nodes = self.raft_nodes.write().await;
-        if nodes.get_node(group_id).is_some() {
-            return Ok(());
+        if let Ok(Some(node)) = nodes.get_node(group_id) {
+            if node.raft_id() == id as u64 {
+                return Ok(());
+            } else {
+                return Err(CoordinatorError::RaftGroupError {
+                    msg: "raft node already exit".to_string(),
+                });
+            }
         }
 
         let node = self.open_raft_node(tenant, db_name, id, group_id).await?;
@@ -128,13 +135,7 @@ impl RaftNodesManager {
         group_id: ReplicationSetId,
     ) -> CoordinatorResult<()> {
         info!("exec drop raft node: {}.{}", group_id, id);
-        let mut nodes = self.raft_nodes.write().await;
-        if let Some(raft_node) = nodes.get_node(group_id) {
-            raft_node.shutdown().await?;
-            nodes.rm_node(group_id);
-        } else {
-            info!("can't found raft node({}) from group({})", id, group_id)
-        }
+        self.raft_nodes.write().await.shutdown(group_id).await?;
 
         Ok(())
     }
@@ -152,7 +153,7 @@ impl RaftNodesManager {
         }
 
         let mut nodes = self.raft_nodes.write().await;
-        if let Some(node) = nodes.get_node(replica.id) {
+        if let Some(node) = nodes.get_node(replica.id)? {
             return Ok(node);
         }
 
@@ -257,7 +258,7 @@ impl RaftNodesManager {
             info!("destory replica group drop vnode: {:?},{:?}", vnode, result);
         }
 
-        raft_node.shutdown().await?;
+        self.raft_nodes.write().await.shutdown(replica_id).await?;
 
         update_replication_set(
             self.meta.clone(),
@@ -269,8 +270,6 @@ impl RaftNodesManager {
             &[],
         )
         .await?;
-
-        self.raft_nodes.write().await.rm_node(replica_id);
 
         Ok(())
     }
@@ -436,8 +435,12 @@ impl RaftNodesManager {
         let mut raft_logs = wal::wal_store::RaftEntryStorage::new(wal);
 
         // 3. recover data...
-        let _apply_id = self.raft_state.get_last_applied_log(group_id)?;
-        raft_logs.recover(&mut vnode_store).await?;
+        let apply_id = self.raft_state.get_last_applied_log(group_id)?;
+        info!(
+            "open vnode({}-{}) last applied id: {:?}",
+            group_id, vnode_id, apply_id
+        );
+        raft_logs.recover(apply_id, &mut vnode_store).await?;
 
         // 4. open raft apply storage
         let engine = TskvEngineStorage::open(
@@ -467,6 +470,7 @@ impl RaftNodesManager {
                 as u64,
             install_snapshot_timeout: self.config.cluster.install_snapshot_timeout.as_millis()
                 as u64,
+            snapshot_policy: SnapshotPolicy::Never,
         }
     }
 

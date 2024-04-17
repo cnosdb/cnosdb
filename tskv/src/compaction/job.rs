@@ -221,6 +221,8 @@ impl CompactJobInner {
                                 }
                                 drop(permit);
                             });
+                        } else {
+                            info!("There is no need to compact.");
                         }
                     }
                 }

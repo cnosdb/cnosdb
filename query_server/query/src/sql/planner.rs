@@ -49,6 +49,7 @@ use datafusion::sql::sqlparser::parser::ParserError;
 use datafusion::sql::TableReference;
 use lazy_static::__Deref;
 use meta::error::MetaError;
+use models::auth::bcrypt_verify;
 use models::auth::privilege::{
     DatabasePrivilege, GlobalPrivilege, Privilege, TenantObjectPrivilege,
 };
@@ -119,10 +120,11 @@ impl<'a, S: ContextProviderExtension + Send + Sync> LogicalPlanner for SqlPlanne
         &self,
         statement: ExtStatement,
         session: &SessionCtx,
+        auth_enable: bool,
     ) -> Result<Plan> {
         let PlanWithPrivileges { plan, privileges } = {
             let mut span_recorder = session.get_child_span_recorder("statement to logical plan");
-            self.statement_to_plan(statement, session)
+            self.statement_to_plan(statement, session, auth_enable)
                 .await
                 .map_err(|err| {
                     span_recorder.error(err.to_string());
@@ -151,7 +153,21 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         &self,
         statement: ExtStatement,
         session: &SessionCtx,
+        auth_enable: bool,
     ) -> Result<PlanWithPrivileges> {
+        let user_option = session.user().desc().options();
+        if auth_enable && user_option.must_change_password().is_some_and(|x| x) {
+            match statement {
+                ExtStatement::AlterUser(stmt) => {
+                    return self.alter_user_to_plan(stmt, session.user(), true).await
+                }
+                _ => {
+                    return Err(QueryError::InsufficientPrivileges {
+                        privilege: "change password".to_string(),
+                    })
+                }
+            }
+        }
         match statement {
             ExtStatement::SqlStatement(stmt) => self.df_sql_to_plan(*stmt, session).await,
             ExtStatement::CreateExternalTable(stmt) => self.external_table_to_plan(stmt, session),
@@ -175,13 +191,16 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
                     stmt.verbose,
                     *stmt.ext_statement,
                     session,
+                    false,
                 )
                 .await
             }
             ExtStatement::ShowTagValues(stmt) => self.show_tag_values(*stmt, session),
             ExtStatement::AlterTable(stmt) => self.alter_table_to_plan(stmt, session),
             ExtStatement::AlterTenant(stmt) => self.alter_tenant_to_plan(stmt).await,
-            ExtStatement::AlterUser(stmt) => self.alter_user_to_plan(stmt, session.user()).await,
+            ExtStatement::AlterUser(stmt) => {
+                self.alter_user_to_plan(stmt, session.user(), false).await
+            }
             ExtStatement::GrantRevoke(stmt) => self.grant_revoke_to_plan(stmt, session),
             // system statement
             ExtStatement::ShowQueries => self.show_queries_to_plan(session),
@@ -379,9 +398,11 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         verbose: bool,
         statement: ExtStatement,
         session: &SessionCtx,
+        auth_enable: bool,
     ) -> Result<PlanWithPrivileges> {
-        let PlanWithPrivileges { plan, privileges } =
-            self.statement_to_plan(statement, session).await?;
+        let PlanWithPrivileges { plan, privileges } = self
+            .statement_to_plan(statement, session, auth_enable)
+            .await?;
 
         let input_df_plan = match plan {
             Plan::Query(query) => Arc::new(query.df_plan),
@@ -1607,7 +1628,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         } = stmt;
 
         let name = normalize_ident(name);
-        let options = sql_options_to_user_options(with_options)?;
+        let (options, _) = sql_options_to_user_options(with_options)?;
 
         let privileges = vec![Privilege::Global(GlobalPrivilege::User(None))];
 
@@ -1794,33 +1815,57 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         &self,
         stmt: ast::AlterUser,
         user: &User,
+        must_change: bool,
     ) -> Result<PlanWithPrivileges> {
         let ast::AlterUser { name, operation } = stmt;
 
-        let user_name = normalize_ident(name);
+        let sql_user_name = normalize_ident(name);
         // 查询用户信息，不存在直接报错咯
         // fn user(
         //     &self,
         //     name: &str
         // ) -> Result<Option<UserDesc>>;
-        let user_desc = self.schema_provider.get_user(&user_name).await?;
-        let user_id = *user_desc.id();
+        let sql_user_desc = self.schema_provider.get_user(&sql_user_name).await?;
+        let sql_user_id = *sql_user_desc.id();
 
-        let mut privileges = vec![Privilege::Global(GlobalPrivilege::User(Some(user_id)))];
+        let mut privileges = vec![Privilege::Global(GlobalPrivilege::User(Some(sql_user_id)))];
 
         let alter_user_action = match operation {
             AlterUserOperation::RenameTo(new_name) => {
                 AlterUserAction::RenameTo(normalize_ident(new_name))
             }
             AlterUserOperation::Set(sql_option) => {
-                let user_options = sql_options_to_user_options(vec![sql_option])?;
-                if user_desc.is_root_admin() && !user.desc().is_root_admin() {
+                let (mut sql_user_option, password) =
+                    sql_options_to_user_options(vec![sql_option])?;
+                let user_desc = user.desc();
+                if sql_user_option.must_change_password().is_some() {
+                    privileges = vec![Privilege::Global(GlobalPrivilege::System)];
+                }
+
+                if must_change {
+                    if *user_desc.id() == sql_user_id && sql_user_option.hash_password().is_some() {
+                        sql_user_option.change_password();
+                    } else {
+                        return Err(QueryError::InsufficientPrivileges {
+                            privilege: "change password".to_string(),
+                        });
+                    }
+                }
+                if let Some(hash) = sql_user_desc.options().hash_password() {
+                    // If an error is reported, we treat the password as inconsistent
+                    if bcrypt_verify(&password, hash).is_ok_and(|x| x) {
+                        return Err(QueryError::InsufficientPrivileges {
+                            privilege: "input different password".to_string(),
+                        });
+                    }
+                }
+                if sql_user_desc.is_root_admin() && !user_desc.is_root_admin() {
                     return Err(QueryError::InsufficientPrivileges {
                         privilege: "root user".to_string(),
                     });
                 }
-                if user_options.granted_admin().is_some() {
-                    if user_desc.is_root_admin() {
+                if sql_user_option.granted_admin().is_some() {
+                    if sql_user_desc.is_root_admin() {
                         return Err(QueryError::InvalidParam {
                             reason: "The root user does not support changing granted_admin"
                                 .to_string(),
@@ -1829,12 +1874,12 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
                     // 修改admin参数需要系统管理权限
                     privileges = vec![Privilege::Global(GlobalPrivilege::System)];
                 }
-                AlterUserAction::Set(user_options)
+                AlterUserAction::Set(sql_user_option)
             }
         };
 
         let plan = Plan::DDL(DDLPlan::AlterUser(AlterUser {
-            user_name,
+            user_name: sql_user_name,
             alter_user_action,
         }));
 
@@ -2990,7 +3035,7 @@ mod tests {
         let test = MockContext {};
         let planner = SqlPlanner::new(&test);
         let plan = planner
-            .statement_to_plan(statements.pop_back().unwrap(), &session())
+            .statement_to_plan(statements.pop_back().unwrap(), &session(), false)
             .await
             .unwrap();
         if let Plan::DDL(DDLPlan::DropDatabaseObject(drop)) = plan.plan {
@@ -3014,7 +3059,7 @@ mod tests {
         let test = MockContext {};
         let planner = SqlPlanner::new(&test);
         let plan = planner
-            .statement_to_plan(statements.pop_back().unwrap(), &session())
+            .statement_to_plan(statements.pop_back().unwrap(), &session(), false)
             .await
             .unwrap();
         if let Plan::DDL(DDLPlan::CreateTable(create)) = plan.plan {
@@ -3090,7 +3135,7 @@ mod tests {
         let test = MockContext {};
         let planner = SqlPlanner::new(&test);
         let plan = planner
-            .statement_to_plan(statements.pop_back().unwrap(), &session())
+            .statement_to_plan(statements.pop_back().unwrap(), &session(), false)
             .await
             .unwrap();
         if let Plan::DDL(DDLPlan::CreateDatabase(create)) = plan.plan {
@@ -3111,7 +3156,7 @@ mod tests {
         let test = MockContext {};
         let planner = SqlPlanner::new(&test);
         let error = planner
-            .statement_to_plan(statements.pop_back().unwrap(), &session())
+            .statement_to_plan(statements.pop_back().unwrap(), &session(), false)
             .await
             .err()
             .unwrap();
@@ -3126,7 +3171,7 @@ mod tests {
         let test = MockContext {};
         let planner = SqlPlanner::new(&test);
         let error = planner
-            .statement_to_plan(statements.pop_back().unwrap(), &session())
+            .statement_to_plan(statements.pop_back().unwrap(), &session(), false)
             .await
             .err()
             .unwrap();
@@ -3141,7 +3186,7 @@ mod tests {
         let test = MockContext {};
         let planner = SqlPlanner::new(&test);
         let error = planner
-            .statement_to_plan(statements.pop_back().unwrap(), &session())
+            .statement_to_plan(statements.pop_back().unwrap(), &session(), false)
             .await
             .err()
             .unwrap();
@@ -3156,7 +3201,7 @@ mod tests {
         let test = MockContext {};
         let planner = SqlPlanner::new(&test);
         let plan = planner
-            .statement_to_plan(statements.pop_back().unwrap(), &session())
+            .statement_to_plan(statements.pop_back().unwrap(), &session(), false)
             .await
             .unwrap()
             .plan;
@@ -3205,7 +3250,7 @@ mod tests {
         let test = MockContext {};
         let planner = SqlPlanner::new(&test);
         let plan = planner
-            .statement_to_plan(statements.pop_back().unwrap(), &session())
+            .statement_to_plan(statements.pop_back().unwrap(), &session(), false)
             .await
             .unwrap();
 
