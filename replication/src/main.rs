@@ -78,7 +78,7 @@ async fn start_raft_node(
     let entry = Arc::new(RwLock::new(entry));
     let engine = Arc::new(RwLock::new(engine));
 
-    let storage = NodeStorage::open(id, info.clone(), state, engine.clone(), entry)?;
+    let storage = NodeStorage::open(id, info.clone(), state, engine.clone(), entry).await?;
     let storage = Arc::new(storage);
 
     let config = ReplicationConfig {

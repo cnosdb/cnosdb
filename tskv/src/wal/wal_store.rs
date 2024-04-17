@@ -584,7 +584,9 @@ mod test {
             address: "127.0.0.1:12345".to_string(),
         };
 
-        let storage = NodeStorage::open(1000, info, state, engine, entry).unwrap();
+        let storage = NodeStorage::open(1000, info, state, engine, entry)
+            .await
+            .unwrap();
 
         Arc::new(storage)
     }

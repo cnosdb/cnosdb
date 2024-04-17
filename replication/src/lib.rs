@@ -73,11 +73,6 @@ pub type Response = Vec<u8>;
 pub const APPLY_TYPE_WAL: u32 = 1;
 pub const APPLY_TYPE_WRITE: u32 = 2;
 
-pub enum SnapshotMode {
-    GetSnapshot,
-    BuildSnapshot,
-}
-
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 pub struct EngineMetrics {
     pub last_applied_id: u64,
@@ -101,7 +96,8 @@ pub struct ApplyContext {
 #[async_trait]
 pub trait ApplyStorage: Send + Sync + Any {
     async fn apply(&mut self, ctx: &ApplyContext, req: &Request) -> ReplicationResult<Response>;
-    async fn snapshot(&mut self, mode: SnapshotMode) -> ReplicationResult<(Vec<u8>, Option<u64>)>;
+    async fn get_snapshot(&mut self) -> ReplicationResult<Option<(Vec<u8>, u64)>>;
+    async fn create_snapshot(&mut self, applied_id: u64) -> ReplicationResult<(Vec<u8>, u64)>;
     async fn restore(&mut self, snapshot: &[u8]) -> ReplicationResult<()>;
     async fn destory(&mut self) -> ReplicationResult<()>;
     async fn metrics(&self) -> ReplicationResult<EngineMetrics>;

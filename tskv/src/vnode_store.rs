@@ -8,7 +8,7 @@ use models::schema::Precision;
 use models::utils::now_timestamp_secs;
 use models::{ColumnId, SeriesId, SeriesKey};
 use protos::kv_service::{raft_write_command, WritePointsResponse, *};
-use replication::{EngineMetrics, SnapshotMode};
+use replication::EngineMetrics;
 use snafu::ResultExt;
 use tokio::sync::RwLock;
 use trace::{debug, error, info, SpanContext, SpanExt, SpanRecorder};
@@ -22,16 +22,37 @@ use crate::{TsKvContext, TskvError, VnodeSnapshot};
 
 #[derive(Clone)]
 pub struct VnodeStorage {
-    pub id: VnodeId,
-    pub ctx: Arc<TsKvContext>,
-    pub db: Arc<RwLock<Database>>,
-    pub ts_index: Arc<TSIndex>,
-    pub ts_family: Arc<RwLock<TseriesFamily>>,
+    id: VnodeId,
+    ctx: Arc<TsKvContext>,
+    db: Arc<RwLock<Database>>,
+    ts_index: Arc<TSIndex>,
+    ts_family: Arc<RwLock<TseriesFamily>>,
 
-    pub snapshot: VnodeSnapshot,
+    snapshots: Vec<VnodeSnapshot>,
 }
 
 impl VnodeStorage {
+    pub fn new(
+        id: VnodeId,
+        db: Arc<RwLock<Database>>,
+        ts_index: Arc<TSIndex>,
+        ts_family: Arc<RwLock<TseriesFamily>>,
+        ctx: Arc<TsKvContext>,
+    ) -> Self {
+        Self {
+            id,
+            ctx,
+            db,
+            ts_index,
+            ts_family,
+            snapshots: vec![],
+        }
+    }
+
+    pub fn ts_family(&self) -> Arc<RwLock<TseriesFamily>> {
+        self.ts_family.clone()
+    }
+
     pub async fn apply(
         &self,
         ctx: &replication::ApplyContext,
@@ -82,7 +103,10 @@ impl VnodeStorage {
     pub async fn metrics(&self) -> EngineMetrics {
         let last_applied_id = self.ts_family.read().await.last_seq();
         let flushed_apply_id = self.ts_family.read().await.version().last_seq();
-        let snapshot_apply_id = self.snapshot.last_seq_no;
+        let mut snapshot_apply_id = 0;
+        if let Some(snapshot) = self.snapshots.last() {
+            snapshot_apply_id = snapshot.last_seq_no;
+        }
 
         EngineMetrics {
             last_applied_id,
@@ -356,32 +380,20 @@ impl VnodeStorage {
         Ok(())
     }
 
-    pub async fn get_or_create_snapshot(
-        &mut self,
-        mode: SnapshotMode,
-    ) -> TskvResult<VnodeSnapshot> {
-        debug!("Snapshot: create snapshot on vnode: {}", self.id);
+    pub async fn get_snapshot(&mut self) -> TskvResult<Option<VnodeSnapshot>> {
+        if let Some(snapshot) = self.snapshots.last_mut() {
+            snapshot.active_time = now_timestamp_secs();
 
-        let interval = self.ctx.options.storage.snapshot_holding_time;
-        if self.snapshot.version.is_some()
-            && (self.snapshot.last_seq_no == self.ts_family.read().await.last_seq()
-                || now_timestamp_secs() - self.snapshot.active_time < interval)
-        {
-            if let SnapshotMode::GetSnapshot = mode {
-                self.snapshot.active_time = now_timestamp_secs();
-            }
-
-            info!("Snapshot: Exist snapshot {}", self.snapshot);
-            return Ok(self.snapshot.clone());
+            info!("Snapshot: Get snapshot {}", snapshot);
+            return Ok(Some(snapshot.clone()));
         }
 
-        let snapshot = self.create_snapshot().await;
-        self.snapshot = snapshot.clone();
-
-        Ok(snapshot)
+        Ok(None)
     }
 
-    async fn create_snapshot(&self) -> VnodeSnapshot {
+    pub async fn create_snapshot(&mut self) -> TskvResult<VnodeSnapshot> {
+        debug!("Snapshot: create snapshot on vnode: {}", self.id);
+
         let (snapshot_version, snapshot_ve) = {
             let mut _file_metas = HashMap::new();
             let ts_family_w = self.ts_family.write().await;
@@ -399,12 +411,17 @@ impl VnodeStorage {
             version_edit: snapshot_ve,
             version: Some(snapshot_version),
             create_time: chrono::Local::now().format("%Y%m%d_%H%M%S_%3f").to_string(),
-            active_time: now_timestamp_secs(),
+            active_time: 0,
         };
+        info!("Snapshot: build snapshot: {}", snapshot);
 
-        info!("Snapshot: created snapshot: {}", snapshot);
+        self.snapshots.retain(|x| {
+            now_timestamp_secs() - x.active_time < self.ctx.options.storage.snapshot_holding_time
+        });
 
-        snapshot
+        self.snapshots.push(snapshot.clone());
+
+        Ok(snapshot)
     }
 
     /// Build a new Vnode from the VersionSnapshot, existing Vnode with the same VnodeId
@@ -420,9 +437,8 @@ impl VnodeStorage {
         let owner = self.ts_family.read().await.tenant_database();
         let storage_opt = self.ctx.options.storage.clone();
 
-        // clear snapshot
-        self.snapshot.version = None;
-        self.snapshot.active_time = 0;
+        // clear all snapshot
+        self.snapshots = vec![];
 
         // delete already exist data
         let mut db_wlock = self.db.write().await;
@@ -443,10 +459,6 @@ impl VnodeStorage {
 
         self.ts_index = ts_index;
         self.ts_family = ts_family;
-
-        // re-create snapshot and save
-        let snapshot = self.create_snapshot().await;
-        self.snapshot = snapshot.clone();
 
         Ok(())
     }

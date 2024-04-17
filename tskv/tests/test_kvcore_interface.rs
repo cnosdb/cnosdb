@@ -12,7 +12,6 @@ mod tests {
     use models::schema::{make_owner, Precision, TenantOptions};
     use protos::kv_service::{raft_write_command, WriteDataRequest};
     use protos::models_helper;
-    use replication::SnapshotMode;
     use serial_test::serial;
     use tokio::runtime;
     use tokio::runtime::Runtime;
@@ -129,7 +128,7 @@ mod tests {
                 .open_tsfamily("cnosdb", "public", 0)
                 .await
                 .unwrap()
-                .ts_family;
+                .ts_family();
 
             let last_seq = ts_family.read().await.version().last_seq();
             assert_eq!(last_seq, 1)
@@ -172,7 +171,7 @@ mod tests {
                 .open_tsfamily("cnosdb", "db", 0)
                 .await
                 .unwrap()
-                .ts_family;
+                .ts_family();
 
             let last_seq = ts_family.read().await.version().last_seq();
             assert_eq!(last_seq, 4)
@@ -246,7 +245,7 @@ mod tests {
                 .open_tsfamily("cnosdb", db_cloned, 0)
                 .await
                 .unwrap()
-                .ts_family;
+                .ts_family();
 
             let last_seq = ts_family.read().await.version().last_seq();
             assert_eq!(last_seq, 4)
@@ -356,9 +355,7 @@ mod tests {
             // Test create snapshot.
             sleep_in_runtime(runtime.clone(), Duration::from_secs(3));
 
-            let vnode_snap = runtime
-                .block_on(vnode.get_or_create_snapshot(SnapshotMode::GetSnapshot))
-                .unwrap();
+            let vnode_snap = runtime.block_on(vnode.create_snapshot()).unwrap();
             for f in vnode_snap.version_edit.add_files.iter() {
                 let path = if f.is_delta {
                     file_utils::make_delta_file(&vnode_delta_dir, f.file_id)
@@ -397,7 +394,7 @@ mod tests {
             let version_edit = runtime.block_on(async move {
                 let mut file_metas = HashMap::new();
                 vnode
-                    .ts_family
+                    .ts_family()
                     .read()
                     .await
                     .build_version_edit(&mut file_metas)

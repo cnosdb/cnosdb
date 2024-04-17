@@ -10,8 +10,8 @@ use models::auth::user::{UserDesc, UserOptions};
 use models::meta_data::*;
 use models::oid::{Identifier, Oid, UuidGenerator};
 use models::schema::{DatabaseSchema, ResourceInfo, TableSchema, Tenant, TenantOptions};
-use replication::errors::ReplicationResult;
-use replication::{ApplyContext, ApplyStorage, EngineMetrics, Request, Response, SnapshotMode};
+use replication::errors::{ReplicationError, ReplicationResult};
+use replication::{ApplyContext, ApplyStorage, EngineMetrics, Request, Response};
 use serde::{Deserialize, Serialize};
 use trace::{debug, error, info};
 
@@ -48,6 +48,7 @@ pub struct BtreeMapSnapshotData {
 pub struct StateMachine {
     env: heed::Env,
     db: heed::Database<heed::types::Str, heed::types::Str>,
+    snapshot: Option<(Vec<u8>, u64)>,
     pub watch: Arc<Watch>,
 }
 
@@ -59,25 +60,23 @@ impl ApplyStorage for StateMachine {
         Ok(self.process_write_command(&req).into())
     }
 
-    async fn snapshot(&mut self, _mode: SnapshotMode) -> ReplicationResult<(Vec<u8>, Option<u64>)> {
-        let mut hash_map = BTreeMap::new();
+    async fn get_snapshot(&mut self) -> ReplicationResult<Option<(Vec<u8>, u64)>> {
+        Ok(self.snapshot.clone())
+    }
 
-        let reader = self.env.read_txn()?;
-        let iter = self.db.iter(&reader)?;
-        for pair in iter {
-            let (key, val) = pair?;
-            hash_map.insert(key.to_string(), val.to_string());
-        }
+    async fn create_snapshot(&mut self, applied_id: u64) -> ReplicationResult<(Vec<u8>, u64)> {
+        let data = self.backup().map_err(|err| ReplicationError::SnapshotErr {
+            msg: err.to_string(),
+        })?;
 
-        let data = BtreeMapSnapshotData { map: hash_map };
-        let json_str = serde_json::to_string(&data).unwrap();
+        let bytes = serde_json::to_vec(&data)?;
+        self.snapshot = Some((bytes.clone(), applied_id));
 
-        Ok((json_str.as_bytes().to_vec(), None))
+        Ok((bytes, applied_id))
     }
 
     async fn restore(&mut self, snapshot: &[u8]) -> ReplicationResult<()> {
-        let data: BtreeMapSnapshotData = serde_json::from_slice(snapshot).unwrap();
-
+        let data: BtreeMapSnapshotData = serde_json::from_slice(snapshot)?;
         let mut writer = self.env.write_txn()?;
         self.db.clear(&mut writer)?;
         for (key, val) in data.map.iter() {
@@ -93,11 +92,19 @@ impl ApplyStorage for StateMachine {
     }
 
     async fn metrics(&self) -> ReplicationResult<EngineMetrics> {
-        Ok(EngineMetrics {
-            last_applied_id: 0,
-            flushed_apply_id: 0,
-            snapshot_apply_id: 0,
-        })
+        if let Some((_, index)) = &self.snapshot {
+            Ok(EngineMetrics {
+                last_applied_id: 0,
+                flushed_apply_id: 0,
+                snapshot_apply_id: *index,
+            })
+        } else {
+            Ok(EngineMetrics {
+                last_applied_id: 0,
+                flushed_apply_id: 0,
+                snapshot_apply_id: 0,
+            })
+        }
     }
 }
 
@@ -115,6 +122,7 @@ impl StateMachine {
         let storage = Self {
             env,
             db,
+            snapshot: None,
             watch: Arc::new(Watch::new()),
         };
 
@@ -133,14 +141,21 @@ impl StateMachine {
         Ok(())
     }
 
-    pub async fn dump(&mut self) -> MetaResult<String> {
-        let (data, _) = self
-            .snapshot(SnapshotMode::GetSnapshot)
-            .await
-            .map_err(MetaError::from)?;
+    pub fn backup(&self) -> MetaResult<BtreeMapSnapshotData> {
+        let mut hash_map = BTreeMap::new();
 
-        let data: BtreeMapSnapshotData = serde_json::from_slice(&data).map_err(MetaError::from)?;
+        let reader = self.env.read_txn()?;
+        let iter = self.db.iter(&reader)?;
+        for pair in iter {
+            let (key, val) = pair?;
+            hash_map.insert(key.to_string(), val.to_string());
+        }
 
+        Ok(BtreeMapSnapshotData { map: hash_map })
+    }
+
+    pub fn debug_data(&mut self) -> MetaResult<String> {
+        let data = self.backup()?;
         let mut rsp = "****** ------------------------------------- ******\n".to_string();
         for (key, val) in data.map.iter() {
             rsp = rsp + &format!("* {}: {}\n", key, val);

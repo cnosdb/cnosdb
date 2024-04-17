@@ -4712,6 +4712,7 @@ dependencies = [
  "rand",
  "serde",
  "serde_json",
+ "serial_test",
  "snafu",
  "tempfile",
  "tokio",

@@ -47,9 +47,9 @@ pub enum ReplicationError {
     #[error_code(code = 11)]
     ApplyEngineErr { msg: String },
 
-    #[snafu(display("Create snapshot failed: {}", msg))]
+    #[snafu(display("Get/Create snapshot failed: {}", msg))]
     #[error_code(code = 12)]
-    CreateSnapshotErr { msg: String },
+    SnapshotErr { msg: String },
 
     #[snafu(display("Restore snapshot failed: {}", msg))]
     #[error_code(code = 13)]
