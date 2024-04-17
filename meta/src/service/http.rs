@@ -134,7 +134,7 @@ impl HttpServer {
         warp::path!("watch_meta_membership")
             .and(self.with_raft_node())
             .and_then(|node: Arc<RaftNode>| async move {
-                match node.raw_raft().is_leader().await {
+                match node.raw_raft().ensure_linearizable().await {
                     Ok(_) => {
                         let data = Self::process_watch_meta_membership(node)
                             .await

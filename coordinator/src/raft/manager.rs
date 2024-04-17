@@ -54,8 +54,8 @@ impl RaftNodesManager {
 
     pub async fn metrics(&self, group_id: u32) -> String {
         if let Ok(Some(node)) = self.raft_nodes.read().await.get_node(group_id) {
-            serde_json::to_string(&node.raft_metrics())
-                .unwrap_or("encode raft metrics to json failed".to_string())
+            serde_json::to_string(&node.metrics().await)
+                .unwrap_or("encode  metrics to json failed".to_string())
         } else {
             format!("Not found raft group: {}", group_id)
         }
@@ -210,7 +210,7 @@ impl RaftNodesManager {
     }
 
     async fn assert_leader_node(&self, raft_node: Arc<RaftNode>) -> CoordinatorResult<()> {
-        let result = raft_node.raw_raft().is_leader().await;
+        let result = raft_node.raw_raft().ensure_linearizable().await;
         if let Err(err) = result {
             if let Some(openraft::error::ForwardToLeader {
                 leader_id: Some(id),

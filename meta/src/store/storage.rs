@@ -11,7 +11,7 @@ use models::meta_data::*;
 use models::oid::{Identifier, Oid, UuidGenerator};
 use models::schema::{DatabaseSchema, ResourceInfo, TableSchema, Tenant, TenantOptions};
 use replication::errors::ReplicationResult;
-use replication::{ApplyContext, ApplyStorage, Request, Response, SnapshotMode};
+use replication::{ApplyContext, ApplyStorage, EngineMetrics, Request, Response, SnapshotMode};
 use serde::{Deserialize, Serialize};
 use trace::{debug, error, info};
 
@@ -90,6 +90,14 @@ impl ApplyStorage for StateMachine {
 
     async fn destory(&mut self) -> ReplicationResult<()> {
         Ok(())
+    }
+
+    async fn metrics(&self) -> ReplicationResult<EngineMetrics> {
+        Ok(EngineMetrics {
+            last_applied_id: 0,
+            flushed_apply_id: 0,
+            snapshot_apply_id: 0,
+        })
     }
 }
 

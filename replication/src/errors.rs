@@ -6,7 +6,6 @@ use models::meta_data::ReplicationSetId;
 use protos::PointsError;
 use serde::{Deserialize, Serialize};
 use snafu::Snafu;
-use tonic::Status;
 
 #[derive(Snafu, Serialize, Deserialize, Debug, ErrorCoder)]
 #[snafu(visibility(pub))]

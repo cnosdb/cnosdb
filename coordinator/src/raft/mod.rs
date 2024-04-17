@@ -8,7 +8,7 @@ use protos::kv_service::{DownloadFileRequest, RaftWriteCommand};
 use protos::models_helper::parse_prost_bytes;
 use protos::{tskv_service_time_out_client, DEFAULT_GRPC_SERVER_MESSAGE_LEN};
 use replication::errors::{ReplicationError, ReplicationResult};
-use replication::{ApplyContext, ApplyStorage, SnapshotMode};
+use replication::{ApplyContext, ApplyStorage, EngineMetrics, SnapshotMode};
 use tokio::io::AsyncWriteExt;
 use tokio_stream::StreamExt;
 use tonic::transport::Channel;
@@ -187,11 +187,13 @@ impl ApplyStorage for TskvEngineStorage {
     }
 
     async fn snapshot(&mut self, mode: SnapshotMode) -> ReplicationResult<(Vec<u8>, Option<u64>)> {
-        let snapshot = self.vnode.create_snapshot(mode).await.map_err(|err| {
-            ReplicationError::CreateSnapshotErr {
+        let snapshot = self
+            .vnode
+            .get_or_create_snapshot(mode)
+            .await
+            .map_err(|err| ReplicationError::CreateSnapshotErr {
                 msg: err.to_string(),
-            }
-        })?;
+            })?;
 
         let index = snapshot.last_seq_no;
         let data = bincode::serialize(&snapshot)?;
@@ -235,5 +237,9 @@ impl ApplyStorage for TskvEngineStorage {
             })?;
 
         Ok(())
+    }
+
+    async fn metrics(&self) -> ReplicationResult<EngineMetrics> {
+        Ok(self.vnode.metrics().await)
     }
 }

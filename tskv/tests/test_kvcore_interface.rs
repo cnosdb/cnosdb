@@ -357,7 +357,7 @@ mod tests {
             sleep_in_runtime(runtime.clone(), Duration::from_secs(3));
 
             let vnode_snap = runtime
-                .block_on(vnode.create_snapshot(SnapshotMode::GetSnapshot))
+                .block_on(vnode.get_or_create_snapshot(SnapshotMode::GetSnapshot))
                 .unwrap();
             for f in vnode_snap.version_edit.add_files.iter() {
                 let path = if f.is_delta {

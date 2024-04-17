@@ -7,9 +7,8 @@ use tokio::sync::RwLock;
 use tokio::time::interval_at;
 use trace::info;
 
-use crate::errors::{AlreadyShutdownSnafu, ReplicationError, ReplicationResult};
+use crate::errors::{ReplicationError, ReplicationResult};
 use crate::raft_node::RaftNode;
-use crate::state_store::StateStorage;
 
 #[derive(Clone)]
 enum Status {
@@ -42,7 +41,7 @@ impl MultiRaft {
     }
 
     pub async fn shutdown(&mut self, id: ReplicationSetId) -> ReplicationResult<()> {
-        if let Some((mut node, Status::Running)) = self.raft_nodes.get(&id).cloned() {
+        if let Some((node, Status::Running)) = self.raft_nodes.get(&id).cloned() {
             node.shutdown().await?;
             let status = Status::Shutdown(Instant::now());
             self.raft_nodes.insert(id, (node, status));
@@ -88,15 +87,28 @@ impl MultiRaft {
                 continue;
             }
 
+            let engine_metrics = match node.engine_metrics().await {
+                Ok(metrics) => metrics,
+                Err(err) => {
+                    info!("get engine metrics failed: {:?}", err);
+                    continue;
+                }
+            };
+
+            info!(
+                "# Engine Metrics group id: {} raft id: {}; {:?}",
+                node.group_id(),
+                node.raft_id(),
+                engine_metrics
+            );
+
+            if engine_metrics.flushed_apply_id <= engine_metrics.snapshot_apply_id {
+                continue;
+            }
+
             let raft = node.raw_raft();
             let trigger = raft.trigger();
-
-            trigger.snapshot().await;
-            info!(
-                "# Trigger group id: {} raft id: {}",
-                node.group_id(),
-                node.raft_id()
-            );
+            let _ = trigger.snapshot().await;
         }
     }
 
@@ -104,14 +116,14 @@ impl MultiRaft {
         let mut nodes = nodes.write().await;
         nodes
             .raft_nodes
-            .retain(|id, (node, status)| MultiRaft::can_retain(node.clone(), status.clone()));
+            .retain(|_id, (node, status)| MultiRaft::can_retain(node.clone(), status.clone()));
     }
 
     fn can_retain(node: Arc<RaftNode>, status: Status) -> bool {
         if let Status::Shutdown(inst) = status {
             if inst.elapsed() > Duration::from_secs(60) {
                 info!(
-                    "# Clear node: group id: {} raft id: {}",
+                    "# Clear shutdown node group id: {} raft id: {}",
                     node.group_id(),
                     node.raft_id()
                 );
@@ -125,10 +137,7 @@ impl MultiRaft {
 
 #[cfg(test)]
 pub mod test {
-    use std::fmt::Debug;
     use std::time::Duration;
-
-    use actix_web::rt::time;
 
     #[tokio::test]
     async fn test_select() {
@@ -141,7 +150,7 @@ pub mod test {
                 _= ticker2.tick() => {println!("------tick2");}
             }
 
-            println!("---- {:?}", time::Instant::now())
+            println!("---- {:?}", std::time::Instant::now())
         }
     }
 }

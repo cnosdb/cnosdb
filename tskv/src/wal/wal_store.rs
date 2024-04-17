@@ -2,7 +2,7 @@ use openraft::{EntryPayload, LogId};
 use protos::kv_service::RaftWriteCommand;
 use protos::models_helper::parse_prost_bytes;
 use replication::errors::{ReplicationError, ReplicationResult};
-use replication::{EntryStorage, RaftNodeId, RaftNodeInfo, TypeConfig};
+use replication::{EntriesMetrics, EntryStorage, RaftNodeId, RaftNodeInfo, TypeConfig};
 use trace::info;
 
 use super::reader::WalRecordData;
@@ -108,6 +108,13 @@ impl EntryStorage for RaftEntryStorage {
         let _ = std::fs::remove_dir_all(path);
 
         Ok(())
+    }
+
+    async fn metrics(&mut self) -> ReplicationResult<EntriesMetrics> {
+        Ok(EntriesMetrics {
+            min_seq: self.inner.min_sequence(),
+            max_seq: self.inner.max_sequence(),
+        })
     }
 }
 

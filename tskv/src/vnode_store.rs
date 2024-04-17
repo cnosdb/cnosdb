@@ -8,7 +8,7 @@ use models::schema::Precision;
 use models::utils::now_timestamp_secs;
 use models::{ColumnId, SeriesId, SeriesKey};
 use protos::kv_service::{raft_write_command, WritePointsResponse, *};
-use replication::SnapshotMode;
+use replication::{EngineMetrics, SnapshotMode};
 use snafu::ResultExt;
 use tokio::sync::RwLock;
 use trace::{debug, error, info, SpanContext, SpanExt, SpanRecorder};
@@ -76,6 +76,18 @@ impl VnodeStorage {
                 self.delete_from_table(&cmd).await?;
                 Ok(vec![])
             }
+        }
+    }
+
+    pub async fn metrics(&self) -> EngineMetrics {
+        let last_applied_id = self.ts_family.read().await.last_seq();
+        let flushed_apply_id = self.ts_family.read().await.version().last_seq();
+        let snapshot_apply_id = self.snapshot.last_seq_no;
+
+        EngineMetrics {
+            last_applied_id,
+            flushed_apply_id,
+            snapshot_apply_id,
         }
     }
 
@@ -344,12 +356,16 @@ impl VnodeStorage {
         Ok(())
     }
 
-    pub async fn create_snapshot(&mut self, mode: SnapshotMode) -> TskvResult<VnodeSnapshot> {
+    pub async fn get_or_create_snapshot(
+        &mut self,
+        mode: SnapshotMode,
+    ) -> TskvResult<VnodeSnapshot> {
         debug!("Snapshot: create snapshot on vnode: {}", self.id);
 
         let interval = self.ctx.options.storage.snapshot_holding_time;
         if self.snapshot.version.is_some()
-            && now_timestamp_secs() - self.snapshot.active_time < interval
+            && (self.snapshot.last_seq_no == self.ts_family.read().await.last_seq()
+                || now_timestamp_secs() - self.snapshot.active_time < interval)
         {
             if let SnapshotMode::GetSnapshot = mode {
                 self.snapshot.active_time = now_timestamp_secs();
@@ -359,8 +375,13 @@ impl VnodeStorage {
             return Ok(self.snapshot.clone());
         }
 
-        self.flush().await?;
+        let snapshot = self.create_snapshot().await;
+        self.snapshot = snapshot.clone();
 
+        Ok(snapshot)
+    }
+
+    async fn create_snapshot(&self) -> VnodeSnapshot {
         let (snapshot_version, snapshot_ve) = {
             let mut _file_metas = HashMap::new();
             let ts_family_w = self.ts_family.write().await;
@@ -381,10 +402,9 @@ impl VnodeStorage {
             active_time: now_timestamp_secs(),
         };
 
-        self.snapshot = snapshot.clone();
         info!("Snapshot: created snapshot: {}", snapshot);
 
-        Ok(snapshot)
+        snapshot
     }
 
     /// Build a new Vnode from the VersionSnapshot, existing Vnode with the same VnodeId
@@ -423,6 +443,10 @@ impl VnodeStorage {
 
         self.ts_index = ts_index;
         self.ts_family = ts_family;
+
+        // re-create snapshot and save
+        let snapshot = self.create_snapshot().await;
+        self.snapshot = snapshot.clone();
 
         Ok(())
     }

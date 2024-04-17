@@ -1,8 +1,6 @@
-use std::any::Any;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use std::sync::Arc;
 
 use async_trait::async_trait;
 use heed::types::*;
@@ -10,8 +8,9 @@ use heed::{Database, Env};
 use serde::{Deserialize, Serialize};
 
 use crate::errors::{ReplicationError, ReplicationResult};
-use crate::{ApplyContext, ApplyStorage, RaftNodeId, Request, Response, SnapshotMode};
+use crate::{ApplyContext, ApplyStorage, EngineMetrics, Request, Response, SnapshotMode};
 
+const LAST_APPLIED_ID_KEY: &str = "last_applied_id";
 // --------------------------------------------------------------------------- //
 #[derive(Serialize, Deserialize)]
 pub struct HashMapSnapshotData {
@@ -45,6 +44,21 @@ impl HeedApplyStorage {
             Ok(None)
         }
     }
+
+    fn get_last_applied_id(&self) -> ReplicationResult<Option<u64>> {
+        let reader = self.env.read_txn()?;
+        if let Some(data) = self.db.get(&reader, LAST_APPLIED_ID_KEY)? {
+            let id = data
+                .parse::<u64>()
+                .map_err(|err| ReplicationError::MsgInvalid {
+                    msg: err.to_string(),
+                })?;
+
+            Ok(Some(id))
+        } else {
+            Ok(None)
+        }
+    }
 }
 
 #[async_trait]
@@ -59,12 +73,14 @@ impl ApplyStorage for HeedApplyStorage {
         let req: RequestCommand = serde_json::from_slice(req)?;
         let mut writer = self.env.write_txn()?;
         self.db.put(&mut writer, &req.key, &req.value)?;
+        self.db
+            .put(&mut writer, LAST_APPLIED_ID_KEY, &ctx.index.to_string())?;
         writer.commit()?;
 
         Ok(req.value.into())
     }
 
-    async fn snapshot(&mut self, mode: SnapshotMode) -> ReplicationResult<(Vec<u8>, Option<u64>)> {
+    async fn snapshot(&mut self, _mode: SnapshotMode) -> ReplicationResult<(Vec<u8>, Option<u64>)> {
         let mut hash_map = HashMap::new();
         let reader = self.env.read_txn()?;
         let iter = self.db.iter(&reader)?;
@@ -94,5 +110,14 @@ impl ApplyStorage for HeedApplyStorage {
 
     async fn destory(&mut self) -> ReplicationResult<()> {
         Ok(())
+    }
+
+    async fn metrics(&self) -> ReplicationResult<EngineMetrics> {
+        let id = self.get_last_applied_id()?.unwrap_or_default();
+        Ok(EngineMetrics {
+            last_applied_id: id,
+            flushed_apply_id: id,
+            snapshot_apply_id: id,
+        })
     }
 }
