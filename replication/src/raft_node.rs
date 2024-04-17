@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use openraft::storage::Adaptor;
-use openraft::{OptionalSend, RaftMetrics, SnapshotPolicy};
+use openraft::{OptionalSend, RaftMetrics};
 use tracing::info;
 
 use crate::errors::{ReplicationError, ReplicationResult};
