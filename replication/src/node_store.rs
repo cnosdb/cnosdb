@@ -1,10 +1,8 @@
-use std::default;
 use std::fmt::Debug;
 use std::io::Cursor;
 use std::ops::RangeBounds;
 use std::sync::Arc;
 
-use openraft::async_trait::async_trait;
 use openraft::storage::{LogState, Snapshot};
 use openraft::{
     Entry, EntryPayload, LogId, LogIdOptionExt, MessageSummary, RaftLogReader, RaftSnapshotBuilder,
@@ -15,11 +13,11 @@ use serde::{Deserialize, Serialize};
 use trace::info;
 use tracing::debug;
 
-use crate::errors::{ReplicationError, ReplicationResult};
+use crate::errors::ReplicationResult;
 use crate::state_store::StateStorage;
 use crate::{
-    ApplyContext, ApplyStorageRef, EntryStorageRef, RaftNodeId, RaftNodeInfo, Response,
-    SnapshotMode, TypeConfig,
+    ApplyContext, ApplyStorageRef, EngineMetrics, EntriesMetrics, EntryStorageRef, RaftNodeId,
+    RaftNodeInfo, Response, SnapshotMode, TypeConfig,
 };
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -64,6 +62,14 @@ impl NodeStorage {
         self.raft_logs.write().await.destory().await?;
 
         Ok(())
+    }
+
+    pub async fn engine_metrics(&self) -> ReplicationResult<EngineMetrics> {
+        self.engine.read().await.metrics().await
+    }
+
+    pub async fn entries_metrics(&self) -> ReplicationResult<EntriesMetrics> {
+        self.raft_logs.write().await.metrics().await
     }
 
     fn get_snapshot_id(&self, log_id: &Option<LogId<u64>>) -> ReplicationResult<String> {
@@ -188,9 +194,8 @@ impl NodeStorage {
 
 type StorageResult<T> = Result<T, StorageError<RaftNodeId>>;
 
-#[async_trait]
 impl RaftLogReader<TypeConfig> for Arc<NodeStorage> {
-    async fn try_get_log_entries<RB: RangeBounds<u64> + Clone + Debug + Send + Sync>(
+    async fn try_get_log_entries<RB: RangeBounds<u64> + Clone + Debug + Send>(
         &mut self,
         range: RB,
     ) -> StorageResult<Vec<Entry<TypeConfig>>> {
@@ -222,7 +227,6 @@ impl RaftLogReader<TypeConfig> for Arc<NodeStorage> {
     }
 }
 
-#[async_trait]
 impl RaftSnapshotBuilder<TypeConfig> for Arc<NodeStorage> {
     #[tracing::instrument(level = "trace", skip(self))]
     async fn build_snapshot(&mut self) -> Result<Snapshot<TypeConfig>, StorageError<RaftNodeId>> {
@@ -240,7 +244,6 @@ impl RaftSnapshotBuilder<TypeConfig> for Arc<NodeStorage> {
     }
 }
 
-#[async_trait]
 impl RaftStorage<TypeConfig> for Arc<NodeStorage> {
     type LogReader = Self;
     type SnapshotBuilder = Self;
@@ -515,13 +518,14 @@ mod test {
     #[test]
     pub fn test_node_store() {
         let path = "/tmp/cnosdb/test_raft_store".to_string();
-        std::fs::remove_dir_all(path.clone());
+        let _ = std::fs::remove_dir_all(path.clone());
         std::fs::create_dir_all(path.clone()).unwrap();
 
         openraft::testing::Suite::test_all(get_node_store).unwrap();
-        std::fs::remove_dir_all(path);
+        let _ = std::fs::remove_dir_all(path);
     }
 
+    #[allow(dead_code)]
     pub async fn get_node_store() -> Arc<NodeStorage> {
         let path = tempfile::tempdir_in("/tmp/cnosdb/test_raft_store").unwrap();
 

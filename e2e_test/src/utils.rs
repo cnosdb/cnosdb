@@ -1002,12 +1002,11 @@ pub fn write_data_node_config_files(
     test_dir: impl AsRef<Path>,
     data_node_definitions: &[DataNodeDefinition],
 ) {
-    let cnosdb_config_dir = test_dir.as_ref().join("data").join("config");
-    std::fs::create_dir_all(&cnosdb_config_dir).unwrap();
     for data_node_def in data_node_definitions {
         let mut cnosdb_config = build_data_node_config(&test_dir, &data_node_def.config_file_name);
         data_node_def.update_config(&mut cnosdb_config);
-        let config_path = cnosdb_config_dir.join(&data_node_def.config_file_name);
+        let config_path = data_config_file_path(&test_dir, &data_node_def.config_file_name);
+        std::fs::create_dir_all(config_path.parent().unwrap()).unwrap();
         std::fs::write(&config_path, cnosdb_config.to_string_pretty()).unwrap();
 
         // If we do not make directory $storage.path, the data node seems to be sick by the meta node.
@@ -1016,6 +1015,11 @@ pub fn write_data_node_config_files(
             println!("Failed to pre-create $storage.path for data node: {e}");
         }
     }
+}
+
+pub fn data_config_file_path(test_dir: impl AsRef<Path>, config_file_name: &str) -> PathBuf {
+    let cnosdb_config_dir = test_dir.as_ref().join("data").join("config");
+    cnosdb_config_dir.join(config_file_name)
 }
 
 /// Copy TLS certificates:

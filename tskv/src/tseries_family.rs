@@ -1205,6 +1205,10 @@ impl TseriesFamily {
         &self.immut_cache
     }
 
+    pub fn last_seq(&self) -> u64 {
+        self.mut_cache.read().seq_no()
+    }
+
     pub fn super_version(&self) -> Arc<SuperVersion> {
         self.super_version.clone()
     }

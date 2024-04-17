@@ -2,17 +2,14 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use openraft::error::{InstallSnapshotError, NetworkError, RemoteError};
-use openraft::network::{RaftNetwork, RaftNetworkFactory};
+use openraft::network::{RPCOption, RaftNetwork, RaftNetworkFactory};
 use openraft::raft::*;
 use openraft::MessageSummary;
 use parking_lot::RwLock;
-use protos::raft_service::raft_service_client::RaftServiceClient;
 use protos::raft_service::*;
 use protos::{raft_service_time_out_client, DEFAULT_GRPC_SERVER_MESSAGE_LEN};
 use tonic::transport::{Channel, Endpoint};
-use tower::timeout::Timeout;
 use trace::debug;
 
 use crate::errors::{ReplicationError, ReplicationResult};
@@ -58,7 +55,6 @@ impl NetworkConn {
     }
 }
 
-#[async_trait]
 impl RaftNetworkFactory<TypeConfig> for NetworkConn {
     type Network = TargetClient;
 
@@ -85,11 +81,11 @@ pub struct TargetClient {
     config: ReplicationConfig,
 }
 
-#[async_trait]
 impl RaftNetwork<TypeConfig> for TargetClient {
-    async fn send_vote(
+    async fn vote(
         &mut self,
         req: VoteRequest<RaftNodeId>,
+        _option: RPCOption,
     ) -> Result<VoteResponse<RaftNodeId>, RPCError> {
         debug!(
             "Network callback send_vote target:{}, req: {:?}",
@@ -128,9 +124,10 @@ impl RaftNetwork<TypeConfig> for TargetClient {
         res.map_err(|e| openraft::error::RPCError::RemoteError(RemoteError::new(self.target, e)))
     }
 
-    async fn send_append_entries(
+    async fn append_entries(
         &mut self,
         req: AppendEntriesRequest<TypeConfig>,
+        _option: RPCOption,
     ) -> Result<AppendEntriesResponse<RaftNodeId>, RPCError> {
         // let begin = req.entries.first().map_or(0, |ent| ent.log_id.index);
         // let end = req.entries.last().map_or(0, |ent| ent.log_id.index);
@@ -171,9 +168,10 @@ impl RaftNetwork<TypeConfig> for TargetClient {
         res.map_err(|e| openraft::error::RPCError::RemoteError(RemoteError::new(self.target, e)))
     }
 
-    async fn send_install_snapshot(
+    async fn install_snapshot(
         &mut self,
         req: InstallSnapshotRequest<TypeConfig>,
+        _option: RPCOption,
     ) -> Result<InstallSnapshotResponse<RaftNodeId>, RPCError<InstallSnapshotError>> {
         debug!(
             "Network callback send_install_snapshot target:{}, req: {:?}",

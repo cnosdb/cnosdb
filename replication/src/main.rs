@@ -89,6 +89,7 @@ async fn start_raft_node(
         raft_logs_to_keep: 1000,
         send_append_entries_timeout: 3 * 1000,
         install_snapshot_timeout: 300 * 1000,
+        snapshot_policy: SnapshotPolicy::LogsSinceLast(1000),
     };
     let node = RaftNode::new(id, info, storage, config).await.unwrap();
     start_warp_grpc_server(http_addr, node, engine).await?;

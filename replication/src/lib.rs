@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-#![allow(unused)]
 use std::any::Any;
 use std::fmt::Debug;
 use std::io::Cursor;
@@ -7,9 +5,6 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use errors::ReplicationResult;
-use network_client::NetworkConn;
-use node_store::NodeStorage;
-use openraft::storage::Adaptor;
 use openraft::{Entry, TokioRuntime};
 use tokio::sync::RwLock;
 
@@ -33,7 +28,7 @@ pub struct RaftNodeInfo {
     pub address: String, // server address
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct ReplicationConfig {
     pub cluster_name: String,
     pub lmdb_max_map_size: usize,
@@ -42,6 +37,7 @@ pub struct ReplicationConfig {
     pub raft_logs_to_keep: u64,
     pub send_append_entries_timeout: u64, //ms
     pub install_snapshot_timeout: u64,    //ms
+    pub snapshot_policy: openraft::SnapshotPolicy,
 }
 
 // #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Ord, PartialOrd)]
@@ -68,10 +64,7 @@ openraft::declare_raft_types!(
         AsyncRuntime = TokioRuntime
 );
 
-type LocalLogStore = Adaptor<TypeConfig, Arc<NodeStorage>>;
-type LocalStateMachineStore = Adaptor<TypeConfig, Arc<NodeStorage>>;
-pub type OpenRaftNode =
-    openraft::Raft<TypeConfig, NetworkConn, LocalLogStore, LocalStateMachineStore>;
+pub type OpenRaftNode = openraft::Raft<TypeConfig>;
 
 pub type Request = Vec<u8>;
 pub type Response = Vec<u8>;
@@ -83,6 +76,19 @@ pub const APPLY_TYPE_WRITE: u32 = 2;
 pub enum SnapshotMode {
     GetSnapshot,
     BuildSnapshot,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+pub struct EngineMetrics {
+    pub last_applied_id: u64,
+    pub flushed_apply_id: u64,
+    pub snapshot_apply_id: u64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+pub struct EntriesMetrics {
+    pub min_seq: u64,
+    pub max_seq: u64,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq, Default)]
@@ -98,6 +104,7 @@ pub trait ApplyStorage: Send + Sync + Any {
     async fn snapshot(&mut self, mode: SnapshotMode) -> ReplicationResult<(Vec<u8>, Option<u64>)>;
     async fn restore(&mut self, snapshot: &[u8]) -> ReplicationResult<()>;
     async fn destory(&mut self) -> ReplicationResult<()>;
+    async fn metrics(&self) -> ReplicationResult<EngineMetrics>;
 }
 pub type ApplyStorageRef = Arc<RwLock<dyn ApplyStorage + Send + Sync>>;
 
@@ -122,5 +129,7 @@ pub trait EntryStorage: Send + Sync {
     async fn entries(&mut self, begin: u64, end: u64) -> ReplicationResult<Vec<Entry<TypeConfig>>>; // [begin, end)
 
     async fn destory(&mut self) -> ReplicationResult<()>;
+
+    async fn metrics(&mut self) -> ReplicationResult<EntriesMetrics>;
 }
 pub type EntryStorageRef = Arc<RwLock<dyn EntryStorage>>;

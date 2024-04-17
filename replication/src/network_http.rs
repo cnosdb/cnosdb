@@ -1,6 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::Infallible;
-use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -27,13 +26,6 @@ impl RaftHttpAdmin {
             .or(self.add_learner())
             .or(self.change_membership())
             .or(self.metrics())
-    }
-
-    async fn start(&self, addr: String) {
-        tracing::info!("http server start addr: {}", addr);
-
-        let addr: SocketAddr = addr.parse().unwrap();
-        warp::serve(self.routes()).run(addr).await;
     }
 
     fn with_raft_node(
@@ -110,13 +102,15 @@ impl RaftHttpAdmin {
     fn metrics(
         &self,
     ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-        warp::path!("metrics")
-            .and(self.with_raft_node())
-            .map(|node: Arc<RaftNode>| {
+        warp::path!("metrics").and(self.with_raft_node()).and_then(
+            |node: Arc<RaftNode>| async move {
                 let status = node.raft_metrics();
+                let data = serde_json::to_string(&status).unwrap_or_default();
+                let res: Result<String, warp::Rejection> = Ok(data);
 
-                warp::reply::json(&status)
-            })
+                res
+            },
+        )
     }
 }
 

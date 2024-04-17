@@ -5,6 +5,7 @@ use std::time::Duration;
 use futures::TryFutureExt;
 use models::meta_data::NodeMetrics;
 use models::node_info::NodeStatus;
+use openraft::SnapshotPolicy;
 use protos::raft_service::raft_service_server::RaftServiceServer;
 use replication::entry_store::HeedEntryStorage;
 use replication::multi_raft::MultiRaft;
@@ -55,6 +56,7 @@ pub async fn start_raft_node(opt: store::config::Opt) -> MetaResult<()> {
         raft_logs_to_keep: opt.raft_logs_to_keep,
         send_append_entries_timeout: opt.send_append_entries_timeout,
         install_snapshot_timeout: opt.install_snapshot_timeout,
+        snapshot_policy: SnapshotPolicy::LogsSinceLast(opt.raft_logs_to_keep),
     };
 
     let node = RaftNode::new(id, info, Arc::new(storage), config)
@@ -92,7 +94,7 @@ async fn detect_node_heartbeat(
     loop {
         interval.tick().await;
 
-        if let Ok(_leader) = node.raw_raft().is_leader().await {
+        if let Ok(_leader) = node.raw_raft().ensure_linearizable().await {
             let opt_list = storage
                 .read()
                 .await

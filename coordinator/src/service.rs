@@ -157,7 +157,7 @@ impl CoordService {
         ));
         raft_manager.start_all_raft_node().await.unwrap();
 
-        tokio::spawn(MultiRaft::trigger_snapshot_purge_logs(
+        tokio::spawn(MultiRaft::raft_nodes_manager(
             raft_manager.multi_raft(),
             config.cluster.trigger_snapshot_interval,
         ));

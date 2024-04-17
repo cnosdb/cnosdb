@@ -1,12 +1,13 @@
-use openraft::EntryPayload;
+use openraft::{EntryPayload, LogId};
 use protos::kv_service::RaftWriteCommand;
 use protos::models_helper::parse_prost_bytes;
 use replication::errors::{ReplicationError, ReplicationResult};
-use replication::{EntryStorage, RaftNodeId, RaftNodeInfo, TypeConfig};
+use replication::{EntriesMetrics, EntryStorage, RaftNodeId, RaftNodeInfo, TypeConfig};
 use trace::info;
 
 use super::reader::WalRecordData;
 use crate::file_system::file_manager;
+use crate::record_file::Record;
 use crate::vnode_store::VnodeStorage;
 use crate::wal::reader::{Block, WalReader};
 use crate::wal::VnodeWal;
@@ -31,8 +32,27 @@ impl RaftEntryStorage {
     }
 
     /// Read WAL files to recover
-    pub async fn recover(&mut self, vode_store: &mut VnodeStorage) -> TskvResult<()> {
-        self.inner.recover(vode_store).await
+    pub async fn recover(
+        &mut self,
+        apply_id: Option<LogId<u64>>,
+        vode_store: &mut VnodeStorage,
+    ) -> TskvResult<()> {
+        self.inner.recover(apply_id, vode_store).await?;
+
+        info!(
+            "recover vnode entries: [{:?}-{:?}], applied id: {:?}",
+            self.inner.min_sequence(),
+            self.inner.max_sequence(),
+            apply_id
+        );
+
+        if let Some(apply_id) = apply_id {
+            self.del_after(apply_id.index + 1)
+                .await
+                .map_err(|_err| TskvError::WalTruncated)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -88,6 +108,13 @@ impl EntryStorage for RaftEntryStorage {
         let _ = std::fs::remove_dir_all(path);
 
         Ok(())
+    }
+
+    async fn metrics(&mut self) -> ReplicationResult<EntriesMetrics> {
+        Ok(EntriesMetrics {
+            min_seq: self.inner.min_sequence(),
+            max_seq: self.inner.max_sequence(),
+        })
     }
 }
 
@@ -368,7 +395,11 @@ impl RaftEntryStorageInner {
     }
 
     /// Read WAL files to recover: engine, index, cache.
-    pub async fn recover(&mut self, vode_store: &mut VnodeStorage) -> TskvResult<()> {
+    pub async fn recover(
+        &mut self,
+        apply_id: Option<LogId<u64>>,
+        vode_store: &mut VnodeStorage,
+    ) -> TskvResult<()> {
         let wal_files = file_manager::list_file_names(self.wal.wal_dir());
         for file_name in wal_files {
             // If file name cannot be parsed to wal id, skip that file.
@@ -385,28 +416,9 @@ impl RaftEntryStorageInner {
             loop {
                 let record = record_reader.read_record().await;
                 match record {
-                    Ok(r) => {
-                        if r.data.len() < 9 {
-                            continue;
-                        }
-
-                        let wal_entry = WalRecordData::new(r.data);
-                        if let Block::RaftLog(entry) = wal_entry.block {
-                            if let EntryPayload::Normal(ref req) = entry.payload {
-                                let ctx = replication::ApplyContext {
-                                    index: entry.log_id.index,
-                                    raft_id: self.wal.vnode_id as u64,
-                                    apply_type: replication::APPLY_TYPE_WAL,
-                                };
-
-                                let request = parse_prost_bytes::<RaftWriteCommand>(req).unwrap();
-                                if let Some(command) = request.command {
-                                    vode_store.apply(&ctx, command).await.unwrap();
-                                }
-                            }
-
-                            self.mark_write_wal(entry, wal_id, r.pos);
-                        }
+                    Ok(rec) => {
+                        self.recover_record(wal_id, rec, apply_id, vode_store)
+                            .await?;
                     }
                     Err(TskvError::Eof) => {
                         break;
@@ -418,6 +430,47 @@ impl RaftEntryStorageInner {
                     }
                 }
             }
+        }
+
+        Ok(())
+    }
+
+    pub async fn recover_record(
+        &mut self,
+        wal_id: u64,
+        record: Record,
+        apply_id: Option<LogId<u64>>,
+        vode_store: &mut VnodeStorage,
+    ) -> TskvResult<()> {
+        if record.data.len() < 9 {
+            return Ok(());
+        }
+
+        let wal_entry = WalRecordData::new(record.data);
+        if let Block::RaftLog(entry) = wal_entry.block {
+            if let Some(apply_id) = apply_id {
+                if entry.log_id.index <= apply_id.index {
+                    if let EntryPayload::Normal(ref req) = entry.payload {
+                        let ctx = replication::ApplyContext {
+                            index: entry.log_id.index,
+                            raft_id: self.wal.vnode_id as u64,
+                            apply_type: replication::APPLY_TYPE_WAL,
+                        };
+
+                        let request =
+                            parse_prost_bytes::<RaftWriteCommand>(req).map_err(|err| {
+                                TskvError::Decode {
+                                    source: Box::new(err),
+                                }
+                            })?;
+                        if let Some(command) = request.command {
+                            vode_store.apply(&ctx, command).await?;
+                        }
+                    }
+                }
+            }
+
+            self.mark_write_wal(entry, wal_id, record.pos);
         }
 
         Ok(())

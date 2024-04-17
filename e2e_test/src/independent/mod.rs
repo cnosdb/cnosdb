@@ -6,7 +6,7 @@ mod restart_tests;
 #[cfg(feature = "coordinator_e2e_test")]
 mod coordinator_tests;
 
-#[cfg(feature = "not_passed")]
+//#[cfg(feature = "not_passed")]
 mod chaos_tests;
 
 mod auth_tests;

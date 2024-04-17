@@ -2,10 +2,10 @@ use std::fmt::Debug;
 
 use flatbuffers::InvalidFlatbuffer;
 use models::error_code::{ErrorCode, ErrorCoder};
+use models::meta_data::ReplicationSetId;
 use protos::PointsError;
 use serde::{Deserialize, Serialize};
 use snafu::Snafu;
-use tonic::Status;
 
 #[derive(Snafu, Serialize, Deserialize, Debug, ErrorCoder)]
 #[snafu(visibility(pub))]
@@ -62,6 +62,10 @@ pub enum ReplicationError {
     #[snafu(display("Can't found entry by index: {}", index))]
     #[error_code(code = 15)]
     EntryNotFound { index: u64 },
+
+    #[snafu(display("Raft node already shutdown: {}", id))]
+    #[error_code(code = 16)]
+    AlreadyShutdown { id: ReplicationSetId },
 }
 
 impl From<std::io::Error> for ReplicationError {

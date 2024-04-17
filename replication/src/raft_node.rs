@@ -3,13 +3,22 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use openraft::storage::Adaptor;
-use openraft::{OptionalSend, RaftMetrics, SnapshotPolicy};
+use openraft::{OptionalSend, RaftMetrics};
 use tracing::info;
 
 use crate::errors::{ReplicationError, ReplicationResult};
 use crate::network_client::NetworkConn;
 use crate::node_store::NodeStorage;
-use crate::{ApplyStorageRef, OpenRaftNode, RaftNodeId, RaftNodeInfo, ReplicationConfig};
+use crate::{
+    EngineMetrics, EntriesMetrics, OpenRaftNode, RaftNodeId, RaftNodeInfo, ReplicationConfig,
+};
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct RaftNodeMetrics {
+    pub raft: RaftMetrics<RaftNodeId, RaftNodeInfo>,
+    pub engine: EngineMetrics,
+    pub entries: EntriesMetrics,
+}
 
 #[derive(Clone)]
 pub struct RaftNode {
@@ -18,7 +27,6 @@ pub struct RaftNode {
     storage: Arc<NodeStorage>,
 
     raft: OpenRaftNode,
-    config: ReplicationConfig,
 }
 
 impl RaftNode {
@@ -39,8 +47,7 @@ impl RaftNode {
             election_timeout_max: 5 * hb,
             install_snapshot_timeout: config.install_snapshot_timeout,
             replication_lag_threshold: keep_logs,
-            snapshot_policy: SnapshotPolicy::Never,
-            //snapshot_policy: SnapshotPolicy::LogsSinceLast(keep_logs),
+            snapshot_policy: config.snapshot_policy.clone(),
             max_in_snapshot_log_to_keep: keep_logs,
             cluster_name: config.cluster_name.clone(),
             ..Default::default()
@@ -61,7 +68,6 @@ impl RaftNode {
             info,
             storage,
             raft,
-            config,
         })
     }
 
@@ -167,8 +173,22 @@ impl RaftNode {
             })
     }
 
+    pub async fn metrics(&self) -> ReplicationResult<RaftNodeMetrics> {
+        let engine_metrics = self.storage.engine_metrics().await?;
+        let entries_metrics = self.storage.entries_metrics().await?;
+        Ok(RaftNodeMetrics {
+            raft: self.raft.metrics().borrow().clone(),
+            engine: engine_metrics,
+            entries: entries_metrics,
+        })
+    }
+
     /// Get the latest metrics of the cluster
     pub fn raft_metrics(&self) -> RaftMetrics<RaftNodeId, RaftNodeInfo> {
         self.raft.metrics().borrow().clone()
+    }
+
+    pub async fn engine_metrics(&self) -> ReplicationResult<EngineMetrics> {
+        self.storage.engine_metrics().await
     }
 }

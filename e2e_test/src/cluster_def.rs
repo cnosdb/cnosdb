@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use config::Config as CnosdbConfig;
 use meta::store::config::Opt as MetaStoreConfig;
@@ -156,6 +157,7 @@ pub struct DataNodeDefinition {
     pub config_file_name: String,
     pub mode: DeploymentMode,
     pub http_host_port: String,
+    pub heartbeat_interval: Duration,
     pub meta_host_ports: Vec<String>,
     pub coord_service_port: Option<u16>,
     pub flight_service_port: Option<u16>,
@@ -193,6 +195,7 @@ impl DataNodeDefinition {
             flight_service_port: Some(data_id_to_flight_service_port(id)),
             opentsdb_service_port: Some(data_id_to_opentsdb_service_port(id)),
             vector_service_port: Some(data_id_to_vector_service_port(id)),
+            heartbeat_interval: Duration::from_millis(100),
         }
     }
 
@@ -214,6 +217,7 @@ impl DataNodeDefinition {
     }
 
     pub fn update_config(&self, config: &mut CnosdbConfig) {
+        config.global.store_metrics = false;
         config.global.node_id = self.id as u64;
         config.deployment.mode = self.mode.to_string();
         config.service.http_listen_port = Some(self.to_host_port().1);
@@ -222,6 +226,7 @@ impl DataNodeDefinition {
         config.service.flight_rpc_listen_port = self.flight_service_port;
         config.service.tcp_listen_port = self.opentsdb_service_port;
         config.service.vector_listen_port = self.vector_service_port;
+        config.cluster.heartbeat_interval = self.heartbeat_interval;
     }
 }
 
@@ -237,6 +242,7 @@ impl Default for DataNodeDefinition {
             flight_service_port: Some(8904),
             opentsdb_service_port: Some(8905),
             vector_service_port: Some(8906),
+            heartbeat_interval: Duration::from_millis(100),
         }
     }
 }
@@ -316,6 +322,7 @@ fn test_cnosdb_cluster_definition_factory() {
                 flight_service_port: Some(8904 + (data_id - 1) as u16 * 10),
                 opentsdb_service_port: Some(8905 + (data_id - 1) as u16 * 10),
                 vector_service_port: Some(8906 + (data_id - 1) as u16 * 10),
+                heartbeat_interval: Duration::from_millis(100),
             }],
         };
         assert_eq!(one_meta_one_data(meta_id, data_id), cluster_def);
@@ -340,6 +347,7 @@ fn test_cnosdb_cluster_definition_factory() {
                     flight_service_port: Some(8914),
                     opentsdb_service_port: Some(8915),
                     vector_service_port: Some(8916),
+                    heartbeat_interval: Duration::from_millis(100),
                 },
             ],
         };

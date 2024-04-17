@@ -19,6 +19,23 @@ pub struct TskvAdminRequest {
 
 impl TskvAdminRequest {
     pub async fn do_request(&self, node_id: u64) -> CoordinatorResult<Vec<u8>> {
+        let result = self.warp_do_request(node_id).await;
+        if let Err(err) = &result {
+            info!(
+                "Call node {}, admin request failed: {:?} {}",
+                node_id, self.request, err
+            );
+        } else {
+            info!(
+                "Call node {}, admin request success: {:?} ",
+                node_id, self.request
+            );
+        }
+
+        result
+    }
+
+    async fn warp_do_request(&self, node_id: u64) -> CoordinatorResult<Vec<u8>> {
         let channel = self.meta.get_node_conn(node_id).await.map_err(|error| {
             CoordinatorError::PreExecution {
                 error: error.to_string(),
