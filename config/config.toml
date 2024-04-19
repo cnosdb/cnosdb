@@ -67,6 +67,9 @@ strict_write = false
 ## copyinto trigger flush size
 #copyinto_trigger_flush_size = "128M" # 134217728
 
+## The maximum size of a datablock in compaction. 
+max_datablock_size = 102400
+
 [wal]
 
 ## If true, write requets on disk before writing to memory.

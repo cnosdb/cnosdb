@@ -12,7 +12,6 @@ use crate::compaction::CompactReq;
 use crate::context::GlobalContext;
 use crate::error::TskvResult;
 use crate::summary::{CompactMeta, VersionEdit};
-use crate::tseries_family::TseriesFamily;
 use crate::tsm::chunk::Chunk;
 use crate::tsm::column_group::ColumnGroup;
 use crate::tsm::data_block::DataBlock;
@@ -770,7 +769,7 @@ pub async fn run_compaction_job(
         tsm_readers.push(tsm_reader);
     }
 
-    let max_block_size = TseriesFamily::MAX_DATA_BLOCK_SIZE as usize;
+    let max_block_size = request.storage_opt.max_datablock_size as usize;
     let mut iter = CompactIterator::new(tsm_readers);
     let tsm_dir = request.storage_opt.tsm_dir(&request.database, tsf_id);
     let max_file_size = request.storage_opt.level_max_file_size(request.out_level);
@@ -1058,6 +1057,7 @@ pub mod test {
     pub(crate) fn create_options(base_dir: String) -> Arc<Options> {
         let mut config = config::get_config_for_test();
         config.storage.path = base_dir;
+        config.storage.max_datablock_size = 1000;
         let opt = Options::from(&config);
         Arc::new(opt)
     }
