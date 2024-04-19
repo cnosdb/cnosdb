@@ -360,19 +360,19 @@ impl VnodeStorage {
             return Ok(self.snapshot.clone());
         }
 
-        let snapshot = self.create_snapshot().await;
+        let snapshot = self.create_snapshot().await?;
         self.snapshot = snapshot.clone();
 
         Ok(snapshot)
     }
 
-    async fn create_snapshot(&self) -> VnodeSnapshot {
+    async fn create_snapshot(&self) -> TskvResult<VnodeSnapshot> {
         let (snapshot_version, snapshot_ve) = {
             let mut _file_metas = HashMap::new();
             let ts_family_w = self.ts_family.write().await;
 
             let version = ts_family_w.version();
-            let ve = ts_family_w.build_version_edit(&mut _file_metas);
+            let ve = ts_family_w.build_version_edit(&mut _file_metas).await?;
             (version, ve)
         };
 
@@ -389,7 +389,7 @@ impl VnodeStorage {
 
         info!("Snapshot: created snapshot: {}", snapshot);
 
-        snapshot
+        Ok(snapshot)
     }
 
     /// Build a new Vnode from the VersionSnapshot, existing Vnode with the same VnodeId
@@ -430,7 +430,7 @@ impl VnodeStorage {
         self.ts_family = ts_family;
 
         // re-create snapshot and save
-        let snapshot = self.create_snapshot().await;
+        let snapshot = self.create_snapshot().await?;
         self.snapshot = snapshot.clone();
 
         Ok(())

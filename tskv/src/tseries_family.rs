@@ -40,7 +40,7 @@ pub struct ColumnFile {
     is_delta: bool,
     time_range: TimeRange,
     size: u64,
-    series_id_filter: Arc<BloomFilter>,
+    series_id_filter: TokioRwLock<Option<Arc<BloomFilter>>>,
     deleted: AtomicBool,
     compacting: AtomicBool,
 
@@ -52,7 +52,7 @@ impl ColumnFile {
     pub fn with_compact_data(
         meta: &CompactMeta,
         path: impl AsRef<Path>,
-        series_id_filter: Arc<BloomFilter>,
+        series_id_filter: TokioRwLock<Option<Arc<BloomFilter>>>,
         tsm_reader_cache: Weak<ShardedAsyncCache<String, Arc<TsmReader>>>,
     ) -> Self {
         Self {
@@ -103,21 +103,58 @@ impl ColumnFile {
         self.time_range.overlaps(time_range)
     }
 
-    pub fn maybe_contains_series_id(&self, series_id: SeriesId) -> bool {
-        self.series_id_filter
-            .maybe_contains(&series_id.to_be_bytes())
+    pub async fn maybe_contains_series_id(&self, series_id: SeriesId) -> TskvResult<bool> {
+        let bloom_filter = self.load_bloom_filter().await?;
+        let res = bloom_filter.maybe_contains(&series_id.to_be_bytes());
+        Ok(res)
     }
 
-    pub fn contains_any_series_id(&self, series_ids: &[SeriesId]) -> bool {
-        for series_id in series_ids {
-            if self
-                .series_id_filter
-                .maybe_contains(&series_id.to_be_bytes())
-            {
-                return true;
+    async fn load_bloom_filter(&self) -> TskvResult<Arc<BloomFilter>> {
+        {
+            if let Some(filter) = self.series_id_filter.read().await.as_ref() {
+                return Ok(filter.clone());
             }
         }
-        false
+        let mut filter_w = self.series_id_filter.write().await;
+        if let Some(filter) = filter_w.as_ref() {
+            return Ok(filter.clone());
+        }
+        let bloom_filter = if let Some(tsm_reader_cache) = self.tsm_reader_cache.upgrade() {
+            let reader = match tsm_reader_cache
+                .get(&format!("{}", self.path.display()))
+                .await
+            {
+                Some(r) => r,
+                None => {
+                    let reader = TsmReader::open(&self.path).await?;
+                    let reader = Arc::new(reader);
+                    tsm_reader_cache
+                        .insert(self.path.display().to_string(), reader.clone())
+                        .await;
+                    reader
+                }
+            };
+            reader.footer().series().bloom_filter().clone()
+        } else {
+            TsmReader::open(&self.path)
+                .await?
+                .footer()
+                .series()
+                .bloom_filter()
+                .clone()
+        };
+        let bloom_filter = Arc::new(bloom_filter);
+        filter_w.replace(bloom_filter.clone());
+        Ok(bloom_filter)
+    }
+
+    pub async fn contains_any_series_id(&self, series_ids: &[SeriesId]) -> TskvResult<bool> {
+        for series_id in series_ids {
+            if self.maybe_contains_series_id(*series_id).await? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     pub fn contains_any_field_id(&self, _series_ids: &[FieldId]) -> bool {
@@ -138,10 +175,6 @@ impl ColumnFile {
             .await?;
         tombstone.flush().await?;
         Ok(())
-    }
-
-    pub fn series_id_filter(&self) -> &BloomFilter {
-        &self.series_id_filter
     }
 }
 
@@ -225,7 +258,7 @@ impl ColumnFile {
             is_delta,
             time_range,
             size,
-            series_id_filter: Arc::new(BloomFilter::default()),
+            series_id_filter: TokioRwLock::new(Some(Arc::new(BloomFilter::default()))),
             deleted: AtomicBool::new(false),
             compacting: AtomicBool::new(false),
             path: path.as_ref().into(),
@@ -233,8 +266,11 @@ impl ColumnFile {
         }
     }
 
-    pub fn set_field_id_filter(&mut self, field_id_filter: Arc<BloomFilter>) {
-        self.series_id_filter = field_id_filter;
+    pub fn set_series_id_filter(
+        &mut self,
+        series_id_filter: TokioRwLock<Option<Arc<BloomFilter>>>,
+    ) {
+        self.series_id_filter = series_id_filter;
     }
 }
 
@@ -292,7 +328,7 @@ impl LevelInfo {
     pub fn push_compact_meta(
         &mut self,
         compact_meta: &CompactMeta,
-        series_filter: Arc<BloomFilter>,
+        series_filter: TokioRwLock<Option<Arc<BloomFilter>>>,
         tsm_reader_cache: Weak<ShardedAsyncCache<String, Arc<TsmReader>>>,
     ) {
         let file_path = if compact_meta.is_delta {
@@ -350,22 +386,21 @@ impl LevelInfo {
         self.level
     }
 
-    pub fn overlaps_column_files(
+    pub async fn overlaps_column_files(
         &self,
         time_ranges: &TimeRanges,
-        field_id: FieldId,
-    ) -> Vec<Arc<ColumnFile>> {
-        let mut res = self
-            .files
-            .iter()
-            .filter(|f| {
-                time_ranges.overlaps(f.time_range())
-                    && f.maybe_contains_series_id(field_id as SeriesId)
-            })
-            .cloned()
-            .collect::<Vec<Arc<ColumnFile>>>();
+        series_id: SeriesId,
+    ) -> TskvResult<Vec<Arc<ColumnFile>>> {
+        let mut res = Vec::new();
+        for file in self.files.iter() {
+            if time_ranges.overlaps(file.time_range())
+                && file.maybe_contains_series_id(series_id).await?
+            {
+                res.push(file.clone());
+            }
+        }
         res.sort_by_key(|f| *f.time_range());
-        res
+        Ok(res)
     }
 }
 
@@ -438,10 +473,13 @@ impl Version {
                 new_levels[level.level as usize].push_column_file(file.clone());
             }
             for file in added_files[level.level as usize].iter() {
-                let series_filter = file_metas.remove(&file.file_id).unwrap_or_default();
+                let series_filter = file_metas.remove(&file.file_id).unwrap_or_else(|| {
+                    error!("missing bloom filter for file_id: {}", file.file_id);
+                    Arc::new(BloomFilter::default())
+                });
                 new_levels[level.level as usize].push_compact_meta(
                     file,
-                    series_filter,
+                    TokioRwLock::new(Some(series_filter)),
                     weak_tsm_reader_cache.clone(),
                 );
             }
@@ -513,22 +551,6 @@ impl Version {
             },
         };
         Ok(tsm_reader)
-    }
-
-    // return: l0 , l1-l4 files
-    pub fn get_level_files(
-        &self,
-        time_ranges: &TimeRanges,
-        field_id: FieldId,
-    ) -> [Option<Vec<Arc<ColumnFile>>>; 5] {
-        let mut res: [Option<Vec<Arc<ColumnFile>>>; 5] = [None, None, None, None, None];
-        for (res, level_info) in res.iter_mut().zip(self.levels_info.iter()) {
-            let files = level_info.overlaps_column_files(time_ranges, field_id);
-            if !files.is_empty() {
-                *res = Some(files)
-            }
-        }
-        res
     }
 
     pub fn max_level_ts(&self) -> i64 {
@@ -672,11 +694,11 @@ impl SuperVersion {
         files
     }
 
-    pub fn column_files_by_sid_and_time(
+    pub async fn column_files_by_sid_and_time(
         &self,
         sids: &[SeriesId],
         time_ranges: &TimeRanges,
-    ) -> Vec<Arc<ColumnFile>> {
+    ) -> TskvResult<Vec<Arc<ColumnFile>>> {
         let mut files = Vec::new();
 
         for lv in self.version.levels_info.iter() {
@@ -684,12 +706,12 @@ impl SuperVersion {
                 continue;
             }
             for cf in lv.files.iter() {
-                if time_ranges.overlaps(&cf.time_range) && cf.contains_any_series_id(sids) {
+                if time_ranges.overlaps(&cf.time_range) && cf.contains_any_series_id(sids).await? {
                     files.push(cf.clone());
                 }
             }
         }
-        files
+        Ok(files)
     }
 
     pub fn cache_group(&self) -> &CacheGroup {
@@ -715,14 +737,12 @@ impl SuperVersion {
         column_ids: &[ColumnId],
         time_range: &TimeRange,
     ) -> TskvResult<()> {
-        let column_files =
-            self.column_files_by_sid_and_time(series_ids, &TimeRanges::new(vec![*time_range]));
+        let column_files = self
+            .column_files_by_sid_and_time(series_ids, &TimeRanges::new(vec![*time_range]))
+            .await?;
         for sid in series_ids {
             for column_file in column_files.iter() {
-                if column_file
-                    .series_id_filter()
-                    .maybe_contains(sid.to_be_bytes().as_slice())
-                {
+                if column_file.maybe_contains_series_id(*sid).await? {
                     for column_id in column_ids {
                         column_file
                             .add_tombstone(*sid, *column_id, time_range)
@@ -1060,7 +1080,7 @@ impl TseriesFamily {
         *self.last_modified.write().await = Some(Instant::now());
     }
 
-    pub async fn get_last_modified(&self) -> Option<tokio::time::Instant> {
+    pub async fn get_last_modified(&self) -> Option<Instant> {
         *self.last_modified.read().await
     }
 
@@ -1112,10 +1132,10 @@ impl TseriesFamily {
     /// Snapshots last version before `last_seq` of this vnode.
     ///
     /// Db-files' index data (field-id filter) will be inserted into `file_metas`.
-    pub fn build_version_edit(
+    pub async fn build_version_edit(
         &self,
         file_metas: &mut HashMap<ColumnFileId, Arc<BloomFilter>>,
-    ) -> VersionEdit {
+    ) -> TskvResult<VersionEdit> {
         let version = self.version();
         let owner = (*self.tenant_database).clone();
         let seq_no = version.last_seq();
@@ -1127,11 +1147,12 @@ impl TseriesFamily {
                 let mut meta = CompactMeta::from(file.as_ref());
                 meta.tsf_id = files.tsf_id;
                 version_edit.add_file(meta, max_level_ts);
-                file_metas.insert(file.file_id, file.series_id_filter.clone());
+                let bloom_filter = file.load_bloom_filter().await?;
+                file_metas.insert(file.file_id, bloom_filter);
             }
         }
 
-        version_edit
+        Ok(version_edit)
     }
 
     pub async fn rebuild_index(&self) -> TskvResult<Arc<TSIndex>> {

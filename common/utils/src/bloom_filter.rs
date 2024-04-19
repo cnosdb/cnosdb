@@ -1,7 +1,7 @@
-use serde::{Deserialize, Serialize};
 use std::hash::Hasher;
 
 use fnv::FnvHasher;
+use serde::{Deserialize, Serialize};
 use siphasher::sip::SipHasher13;
 use twox_hash::XxHash64;
 
@@ -140,10 +140,10 @@ mod test {
         bloom_filter.insert(b"banana");
         bloom_filter.insert(b"cherry");
 
-        assert!(bloom_filter.contains(b"apple"));
-        assert!(bloom_filter.contains(b"banana"));
-        assert!(bloom_filter.contains(b"cherry"));
-        assert!(!bloom_filter.contains(b"orange"));
+        assert!(bloom_filter.maybe_contains(b"apple"));
+        assert!(bloom_filter.maybe_contains(b"banana"));
+        assert!(bloom_filter.maybe_contains(b"cherry"));
+        assert!(!bloom_filter.maybe_contains(b"orange"));
     }
 
     #[test]
@@ -155,9 +155,9 @@ mod test {
         bloom_filter.insert(b"cherry");
         bloom_filter.insert(b"apple"); // Inserting duplicate element
 
-        assert!(bloom_filter.contains(b"apple")); // The element should still be considered present
-        assert!(bloom_filter.contains(b"banana"));
-        assert!(bloom_filter.contains(b"cherry"));
+        assert!(bloom_filter.maybe_contains(b"apple")); // The element should still be considered present
+        assert!(bloom_filter.maybe_contains(b"banana"));
+        assert!(bloom_filter.maybe_contains(b"cherry"));
     }
 
     #[test]
@@ -169,11 +169,11 @@ mod test {
         }
 
         for i in 0..10_000 {
-            assert!(bloom_filter.contains(i.to_string().as_bytes()));
+            assert!(bloom_filter.maybe_contains(i.to_string().as_bytes()));
         }
 
-        assert!(!bloom_filter.contains(b"not_present"));
-        assert!(bloom_filter.contains(b"999"));
-        assert!(!bloom_filter.contains(b"10001"));
+        assert!(!bloom_filter.maybe_contains(b"not_present"));
+        assert!(bloom_filter.maybe_contains(b"999"));
+        assert!(!bloom_filter.maybe_contains(b"10001"));
     }
 }

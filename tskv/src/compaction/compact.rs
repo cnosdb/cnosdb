@@ -934,6 +934,7 @@ pub mod test {
     use models::predicate::domain::TimeRange;
     use models::schema::{ColumnType, TableColumn, TskvTableSchema};
     use models::{SeriesId, SeriesKey, ValueType};
+    use tokio::sync::RwLock;
 
     use crate::compaction::{run_compaction_job, CompactReq};
     use crate::context::GlobalContext;
@@ -974,7 +975,9 @@ pub mod test {
                 false,
                 writer.path(),
             );
-            cf.set_field_id_filter(Arc::new(writer.series_bloom_filter().clone()));
+            cf.set_series_id_filter(RwLock::new(Some(Arc::new(
+                writer.series_bloom_filter().clone(),
+            ))));
             cfs.push(Arc::new(cf));
         }
         (file_seq + 1, cfs)
@@ -2893,7 +2896,9 @@ pub mod test {
             writer.path(),
         );
 
-        cf.set_field_id_filter(Arc::new(writer.series_bloom_filter().clone()));
+        cf.set_series_id_filter(RwLock::new(Some(Arc::new(
+            writer.series_bloom_filter().clone(),
+        ))));
         cfs.push(Arc::new(cf));
         let writer = TsmWriter::open(&dir, 4, 1000, false).await.unwrap();
         let mut cf = ColumnFile::new(
@@ -2904,7 +2909,7 @@ pub mod test {
             false,
             writer.path(),
         );
-        cf.set_field_id_filter(Arc::new(data3_bol));
+        cf.set_series_id_filter(RwLock::new(Some(Arc::new(data3_bol))));
         cfs.push(Arc::new(cf));
         let (compact_req, kernel) = prepare_compact_req_and_kernel(database, opt, 5, cfs.clone());
         println!("cfs:{:?}", cfs.clone());
