@@ -59,15 +59,6 @@ impl CompactJob {
     pub async fn start_vnode_compaction_job(&self) {
         self.inner.read().await.start_vnode_compaction_job();
     }
-
-    pub async fn prepare_stop_vnode_compaction_job(&self) -> StartVnodeCompactionGuard {
-        info!("StopCompactionGuard(create):prepare stop vnode compaction job");
-        let inner = self.inner.write().await;
-        inner
-            .enable_compaction
-            .store(false, atomic::Ordering::SeqCst);
-        StartVnodeCompactionGuard { inner }
-    }
 }
 
 impl std::fmt::Debug for CompactJob {
@@ -163,7 +154,7 @@ impl CompactJobInner {
                             info!("forbidden compaction on moving vnode {}", vnode_id);
                             return;
                         }
-                        let picker = LevelCompactionPicker::new(ctx.options.storage.clone());
+                        let picker = LevelCompactionPicker {};
                         let version = tsf.read().await.version();
                         let compact_req = picker.pick_compaction(version);
                         if let Some(req) = compact_req {
@@ -234,32 +225,10 @@ impl CompactJobInner {
             }
         });
     }
-
-    pub async fn prepare_stop_vnode_compaction_job(&self) {
-        self.enable_compaction
-            .store(false, atomic::Ordering::SeqCst);
-    }
-
-    async fn wait_stop_vnode_compaction_job(&self) {
-        let mut check_interval = tokio::time::interval(Duration::from_millis(100));
-        loop {
-            check_interval.tick().await;
-            if self.running_compactions.load(atomic::Ordering::SeqCst) == 0 {
-                return;
-            }
-        }
-    }
 }
 
 pub struct StartVnodeCompactionGuard<'a> {
     inner: RwLockWriteGuard<'a, CompactJobInner>,
-}
-
-impl<'a> StartVnodeCompactionGuard<'a> {
-    pub async fn wait(&self) {
-        info!("StopCompactionGuard(wait): wait vnode compaction job to stop");
-        self.inner.wait_stop_vnode_compaction_job().await
-    }
 }
 
 impl<'a> Drop for StartVnodeCompactionGuard<'a> {

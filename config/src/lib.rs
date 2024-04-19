@@ -326,6 +326,9 @@ strict_write = false
 # The size of reserve space of the system.
 reserve_space = "10G"
 
+## The maximum size of a datablock in compaction.
+max_datablock_size = 102400
+
 [wal]
 
 ## If true, write requets on disk before writing to memory.

@@ -1,6 +1,6 @@
 use std::fs;
 use std::ops::RangeBounds;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use radixdb;
 use radixdb::store;
@@ -11,8 +11,6 @@ use super::{IndexError, IndexResult};
 
 #[derive(Debug)]
 pub struct IndexEngine {
-    dir: PathBuf,
-
     db: radixdb::RadixTree<store::PagedFileStore>,
     store: store::PagedFileStore,
 }
@@ -36,11 +34,7 @@ impl IndexEngine {
         let db = radixdb::RadixTree::try_load(store.clone(), store.last_id())
             .map_err(|e| IndexError::IndexStroage { msg: e.to_string() })?;
 
-        Ok(Self {
-            db,
-            store,
-            dir: path.into(),
-        })
+        Ok(Self { db, store })
     }
 
     pub fn set(&mut self, key: &[u8], value: &[u8]) -> IndexResult<()> {
@@ -322,12 +316,8 @@ impl Iterator for RangeKeyValIter {
     }
 }
 
+#[cfg(test)]
 mod test {
-    use std::sync::atomic::AtomicU64;
-    use std::sync::{self, Arc};
-
-    use models::utils::now_timestamp_nanos;
-    use tokio::time::{self, Duration};
 
     use super::IndexEngine;
 
@@ -349,69 +339,5 @@ mod test {
         println!("=== {:?}", engine.get(b"key3"));
         println!("=== {:?}", engine.delete(b"key3"));
         println!("=== {:?}", engine.get(b"key3"));
-    }
-
-    async fn test_engine_write_perf() {
-        let mut engine = IndexEngine::new("/tmp/test/2").unwrap();
-
-        let mut begin = now_timestamp_nanos() / 1000000;
-        for i in 1..10001 {
-            let key = format!("key012345678901234567890123456789_{}", i);
-            let val = format!("val012345678901234567890123456789_{}", i);
-            engine.set(key.as_bytes(), val.as_bytes()).unwrap();
-            if i % 100000 == 0 {
-                engine.flush().unwrap();
-
-                let end = now_timestamp_nanos() / 1000000;
-                println!("{}  : time {}", i, end - begin);
-                begin = end;
-            }
-        }
-    }
-
-    async fn test_engine_read_perf() {
-        let engine = IndexEngine::new("/tmp/test/3").unwrap();
-        let engine = Arc::new(engine);
-
-        let atomic = Arc::new(AtomicU64::new(0));
-
-        for _ in 0..8 {
-            //tokio::spawn(random_read(engine.clone(), atomic.clone()));
-            let parm = (engine.clone(), atomic.clone());
-            std::thread::spawn(|| random_read(parm.0, parm.1));
-        }
-
-        time::sleep(Duration::from_secs(3)).await;
-    }
-
-    fn engine_iter(engine: Arc<IndexEngine>) {
-        let it = engine.prefix("key".as_bytes()).unwrap();
-        for item in it {
-            let item = item.unwrap();
-            let key = std::str::from_utf8(item.0.as_ref()).unwrap();
-            let val = engine.load(&item.1).unwrap();
-            let val = std::str::from_utf8(&val).unwrap();
-
-            println!("{}: {}", key, val)
-        }
-    }
-
-    fn random_read(engine: Arc<IndexEngine>, count: Arc<AtomicU64>) {
-        for _i in 1..10000000 {
-            let random: i32 = rand::Rng::gen_range(&mut rand::thread_rng(), 1..=10000000);
-
-            let key = format!("key012345678901234567890123456789_{}", random);
-
-            engine.get(key.as_bytes()).unwrap();
-
-            let total = count.fetch_add(1, sync::atomic::Ordering::SeqCst);
-            if total % 100000 == 0 {
-                println!(
-                    "read total: {}; time: {}",
-                    total,
-                    now_timestamp_nanos() / 1000000
-                );
-            }
-        }
     }
 }

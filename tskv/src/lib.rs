@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-#![allow(unreachable_patterns)]
 #![recursion_limit = "256"]
 
 use std::fmt::{Debug, Display, Formatter};

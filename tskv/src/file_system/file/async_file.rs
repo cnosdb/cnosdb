@@ -118,7 +118,7 @@ impl FsRuntime {
 
 pub struct AsyncFile {
     inner: RawFile,
-    ctx: Arc<FsRuntime>,
+    _ctx: Arc<FsRuntime>,
     size: u64,
 }
 
@@ -176,7 +176,11 @@ impl AsyncFile {
             let file = asyncify(move || options.open(path)).await?;
             let inner = RawFile(Arc::new(file));
             let size = inner.file_size()?;
-            Ok(AsyncFile { inner, ctx, size })
+            Ok(AsyncFile {
+                inner,
+                _ctx: ctx,
+                size,
+            })
         }
     }
 

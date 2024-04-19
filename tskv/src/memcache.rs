@@ -582,10 +582,10 @@ impl SeriesData {
 }
 
 pub struct MemCacheStatistics {
-    tf_id: TseriesFamilyId,
+    _tf_id: TseriesFamilyId,
     /// greater seq mean the last write
     seq_no: u64,
-    statistics: HashMap<SeriesId, TimeRange>,
+    _statistics: HashMap<SeriesId, TimeRange>,
 }
 
 impl MemCacheStatistics {
@@ -753,9 +753,9 @@ impl MemCache {
             statistics.insert(*sid, time_predicate);
         }
         MemCacheStatistics {
-            tf_id: self.tf_id,
+            _tf_id: self.tf_id,
             seq_no: self.min_seq_no,
-            statistics,
+            _statistics: statistics,
         }
     }
 

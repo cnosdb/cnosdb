@@ -12,7 +12,6 @@ use crate::compaction::CompactReq;
 use crate::context::GlobalContext;
 use crate::error::TskvResult;
 use crate::summary::{CompactMeta, VersionEdit};
-use crate::tseries_family::TseriesFamily;
 use crate::tsm::chunk::Chunk;
 use crate::tsm::column_group::ColumnGroup;
 use crate::tsm::data_block::DataBlock;
@@ -333,10 +332,6 @@ impl CompactingBlockMetaGroup {
     pub fn is_empty(&self) -> bool {
         self.blk_metas.is_empty()
     }
-
-    pub fn len(&self) -> usize {
-        self.blk_metas.len()
-    }
 }
 
 /// Temporary compacting data block.
@@ -497,11 +492,6 @@ impl CompactingFile {
     fn series_id(&self) -> Option<SeriesId> {
         self.series_ids.get(self.series_idx).copied()
     }
-
-    fn chunk(&self) -> Option<Arc<Chunk>> {
-        let sid = self.series_id()?;
-        self.tsm_reader.chunk().get(&sid).cloned()
-    }
 }
 
 impl Eq for CompactingFile {}
@@ -534,15 +524,9 @@ impl PartialOrd for CompactingFile {
 pub(crate) struct CompactIterator {
     tsm_readers: Vec<Arc<TsmReader>>,
     compacting_files: BinaryHeap<Pin<Box<CompactingFile>>>,
-    /// Maximum values in generated CompactingBlock
-    max_data_block_size: usize,
     // /// The time range of data to be merged of level-0 data blocks.
     // /// The level-0 data that out of the thime range will write back to level-0.
     // level_time_range: TimeRange,
-    /// Decode a data block even though it doesn't need to merge with others,
-    /// return CompactingBlock::DataBlock rather than CompactingBlock::Raw .
-    decode_non_overlap_blocks: bool,
-
     tmp_tsm_blk_meta_iters: Vec<(Arc<Chunk>, ColumnGroupID, usize)>,
     /// Index to mark `Peekable<BlockMetaIterator>` in witch `TsmReader`,
     /// tmp_tsm_blks[i] is in self.tsm_readers[ tmp_tsm_blk_tsm_reader_idx[i] ]
@@ -562,8 +546,6 @@ impl Default for CompactIterator {
         Self {
             tsm_readers: Default::default(),
             compacting_files: Default::default(),
-            max_data_block_size: 0,
-            decode_non_overlap_blocks: false,
             tmp_tsm_blk_meta_iters: Default::default(),
             tmp_tsm_blk_tsm_reader_idx: Default::default(),
             finished_readers: Default::default(),
@@ -575,11 +557,7 @@ impl Default for CompactIterator {
 }
 
 impl CompactIterator {
-    pub(crate) fn new(
-        tsm_readers: Vec<Arc<TsmReader>>,
-        max_data_block_size: usize,
-        decode_non_overlap_blocks: bool,
-    ) -> Self {
+    pub(crate) fn new(tsm_readers: Vec<Arc<TsmReader>>) -> Self {
         let compacting_files: BinaryHeap<Pin<Box<CompactingFile>>> = tsm_readers
             .iter()
             .enumerate()
@@ -590,8 +568,6 @@ impl CompactIterator {
         Self {
             tsm_readers,
             compacting_files,
-            max_data_block_size,
-            decode_non_overlap_blocks,
             finished_readers: vec![false; compacting_files_cnt],
             ..Default::default()
         }
@@ -757,11 +733,6 @@ impl CompactIterator {
     }
 }
 
-/// Returns if r1 (min_ts, max_ts) overlaps r2 (min_ts, max_ts)
-fn overlaps_tuples(r1: (i64, i64), r2: (i64, i64)) -> bool {
-    r1.0 <= r2.1 && r1.1 >= r2.0
-}
-
 pub async fn run_compaction_job(
     request: CompactReq,
     kernel: Arc<GlobalContext>,
@@ -798,8 +769,8 @@ pub async fn run_compaction_job(
         tsm_readers.push(tsm_reader);
     }
 
-    let max_block_size = TseriesFamily::MAX_DATA_BLOCK_SIZE as usize;
-    let mut iter = CompactIterator::new(tsm_readers, max_block_size, false);
+    let max_block_size = request.storage_opt.max_datablock_size as usize;
+    let mut iter = CompactIterator::new(tsm_readers);
     let tsm_dir = request.storage_opt.tsm_dir(&request.database, tsf_id);
     let max_file_size = request.storage_opt.level_max_file_size(request.out_level);
     let mut tsm_writer =
@@ -1044,30 +1015,6 @@ pub mod test {
         col
     }
 
-    fn u64_some_column(data: Vec<Option<u64>>, col: TableColumn) -> MutableColumn {
-        let mut col = MutableColumn::empty_with_cap(col, data.len()).unwrap();
-        for datum in data {
-            col.push(datum.map(FieldVal::Unsigned)).unwrap()
-        }
-        col
-    }
-
-    fn f64_some_column(data: Vec<Option<f64>>, col: TableColumn) -> MutableColumn {
-        let mut col = MutableColumn::empty_with_cap(col, data.len()).unwrap();
-        for datum in data {
-            col.push(datum.map(FieldVal::Float)).unwrap()
-        }
-        col
-    }
-
-    fn bool_some_column(data: Vec<Option<bool>>, col: TableColumn) -> MutableColumn {
-        let mut col = MutableColumn::empty_with_cap(col, data.len()).unwrap();
-        for datum in data {
-            col.push(datum.map(FieldVal::Boolean)).unwrap()
-        }
-        col
-    }
-
     fn get_result_file_path(dir: impl AsRef<Path>, version_edit: VersionEdit) -> PathBuf {
         if !version_edit.add_files.is_empty() {
             let file_id = version_edit.add_files.first().unwrap().file_id;
@@ -1110,6 +1057,7 @@ pub mod test {
     pub(crate) fn create_options(base_dir: String) -> Arc<Options> {
         let mut config = config::get_config_for_test();
         config.storage.path = base_dir;
+        config.storage.max_datablock_size = 1000;
         let opt = Options::from(&config);
         Arc::new(opt)
     }

@@ -1,7 +1,6 @@
 pub mod check;
 mod compact;
 mod flush;
-mod iterator;
 pub mod job;
 mod picker;
 

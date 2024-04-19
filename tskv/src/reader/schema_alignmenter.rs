@@ -233,22 +233,6 @@ struct SchemaMapping {
     assignments: Vec<Assignment>,
 }
 
-impl SchemaMapping {
-    fn schema(&self, input_schema: &SchemaRef) -> SchemaRef {
-        let input_fields = input_schema.fields();
-        let fields = self
-            .assignments
-            .iter()
-            .map(|assign| match assign {
-                Assignment::Location(idx) => input_fields[*idx].clone(),
-                Assignment::Fill(f) => f.clone(),
-            })
-            .collect::<Vec<_>>();
-
-        Arc::new(Schema::new(fields))
-    }
-}
-
 /// 枚举 `Assignment` 表示 `SchemaMapping` 中的每个字段的赋值方式。
 ///
 /// `Assignment` 可以是两种类型之一：

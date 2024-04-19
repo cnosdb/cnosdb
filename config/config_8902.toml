@@ -40,6 +40,7 @@ max_concurrent_compaction = 4
 strict_write = false
 reserve_space = "0"
 copyinto_trigger_flush_size = "128M" # 134217728
+max_datablock_size = 102400
 
 [wal]
 enabled = true

@@ -100,6 +100,104 @@ impl VnodeStorage {
         }
     }
 
+    pub async fn get_snapshot(&mut self) -> TskvResult<Option<VnodeSnapshot>> {
+        if let Some(snapshot) = self.snapshots.last_mut() {
+            snapshot.active_time = now_timestamp_secs();
+
+            info!("Snapshot: Get snapshot {}", snapshot);
+            return Ok(Some(snapshot.clone()));
+        }
+
+        Ok(None)
+    }
+
+    pub async fn create_snapshot(&mut self) -> TskvResult<VnodeSnapshot> {
+        debug!("Snapshot: create snapshot on vnode: {}", self.id);
+
+        let (snapshot_version, snapshot_ve) = {
+            let mut _file_metas = HashMap::new();
+            let ts_family_w = self.ts_family.write().await;
+
+            let version = ts_family_w.version();
+            let ve = ts_family_w.build_version_edit(&mut _file_metas);
+            (version, ve)
+        };
+
+        let last_seq_no = snapshot_version.last_seq();
+        let snapshot = VnodeSnapshot {
+            last_seq_no,
+            vnode_id: self.id,
+            node_id: self.ctx.options.storage.node_id,
+            version_edit: snapshot_ve,
+            version: Some(snapshot_version),
+            create_time: chrono::Local::now().format("%Y%m%d_%H%M%S_%3f").to_string(),
+            active_time: 0,
+        };
+        info!("Snapshot: build snapshot: {}", snapshot);
+
+        self.snapshots.retain(|x| {
+            now_timestamp_secs() - x.active_time < self.ctx.options.storage.snapshot_holding_time
+        });
+
+        self.snapshots.push(snapshot.clone());
+
+        Ok(snapshot)
+    }
+
+    /// Build a new Vnode from the VersionSnapshot, existing Vnode with the same VnodeId
+    /// will be deleted.
+    pub async fn apply_snapshot(
+        &mut self,
+        snapshot: VnodeSnapshot,
+        shapshot_dir: &Path,
+    ) -> TskvResult<()> {
+        info!("Snapshot: apply snapshot {}", snapshot);
+
+        let vnode_id = self.id;
+        let owner = self.ts_family.read().await.tenant_database();
+        let storage_opt = self.ctx.options.storage.clone();
+
+        // clear all snapshot
+        self.snapshots = vec![];
+
+        // delete already exist data
+        let mut db_wlock = self.db.write().await;
+        let summary_sender = self.ctx.summary_task_sender.clone();
+        db_wlock.del_tsfamily(vnode_id, summary_sender).await;
+        db_wlock.del_ts_index(vnode_id);
+        let vnode_dir = storage_opt.ts_family_dir(&owner, vnode_id);
+        let _ = std::fs::remove_dir_all(&vnode_dir);
+
+        // apply data and reopen
+        let mut version_edit = snapshot.version_edit.clone();
+        version_edit.update_vnode_id(vnode_id);
+        let ts_family = db_wlock
+            .add_tsfamily(version_edit, shapshot_dir, self.ctx.clone())
+            .await?;
+
+        let ts_index = db_wlock.rebuild_tsfamily_index(ts_family.clone()).await?;
+
+        self.ts_index = ts_index;
+        self.ts_family = ts_family;
+
+        Ok(())
+    }
+
+    async fn _flush(&self) -> TskvResult<()> {
+        let flush_req = {
+            let mut tsfamily = self.ts_family.write().await;
+            tsfamily.switch_to_immutable();
+            tsfamily.build_flush_req(true)
+        };
+
+        if let Some(request) = flush_req {
+            crate::compaction::run_flush_memtable_job(request, self.ctx.clone(), false).await?;
+        }
+        self.ts_index.flush().await?;
+
+        Ok(())
+    }
+
     pub async fn metrics(&self) -> EngineMetrics {
         let last_applied_id = self.ts_family.read().await.last_seq();
         let flushed_apply_id = self.ts_family.read().await.version().last_seq();
@@ -363,104 +461,6 @@ impl VnodeStorage {
         // 执行delete，删除缓存 & 写墓碑文件
         let time_ranges = predicate.time_ranges();
         self.delete(&cmd.table, &series_ids, &time_ranges).await
-    }
-
-    async fn flush(&self) -> TskvResult<()> {
-        let flush_req = {
-            let mut tsfamily = self.ts_family.write().await;
-            tsfamily.switch_to_immutable();
-            tsfamily.build_flush_req(true)
-        };
-
-        if let Some(request) = flush_req {
-            crate::compaction::run_flush_memtable_job(request, self.ctx.clone(), false).await?;
-        }
-        self.ts_index.flush().await?;
-
-        Ok(())
-    }
-
-    pub async fn get_snapshot(&mut self) -> TskvResult<Option<VnodeSnapshot>> {
-        if let Some(snapshot) = self.snapshots.last_mut() {
-            snapshot.active_time = now_timestamp_secs();
-
-            info!("Snapshot: Get snapshot {}", snapshot);
-            return Ok(Some(snapshot.clone()));
-        }
-
-        Ok(None)
-    }
-
-    pub async fn create_snapshot(&mut self) -> TskvResult<VnodeSnapshot> {
-        debug!("Snapshot: create snapshot on vnode: {}", self.id);
-
-        let (snapshot_version, snapshot_ve) = {
-            let mut _file_metas = HashMap::new();
-            let ts_family_w = self.ts_family.write().await;
-
-            let version = ts_family_w.version();
-            let ve = ts_family_w.build_version_edit(&mut _file_metas);
-            (version, ve)
-        };
-
-        let last_seq_no = snapshot_version.last_seq();
-        let snapshot = VnodeSnapshot {
-            last_seq_no,
-            vnode_id: self.id,
-            node_id: self.ctx.options.storage.node_id,
-            version_edit: snapshot_ve,
-            version: Some(snapshot_version),
-            create_time: chrono::Local::now().format("%Y%m%d_%H%M%S_%3f").to_string(),
-            active_time: 0,
-        };
-        info!("Snapshot: build snapshot: {}", snapshot);
-
-        self.snapshots.retain(|x| {
-            now_timestamp_secs() - x.active_time < self.ctx.options.storage.snapshot_holding_time
-        });
-
-        self.snapshots.push(snapshot.clone());
-
-        Ok(snapshot)
-    }
-
-    /// Build a new Vnode from the VersionSnapshot, existing Vnode with the same VnodeId
-    /// will be deleted.
-    pub async fn apply_snapshot(
-        &mut self,
-        snapshot: VnodeSnapshot,
-        shapshot_dir: &Path,
-    ) -> TskvResult<()> {
-        info!("Snapshot: apply snapshot {}", snapshot);
-
-        let vnode_id = self.id;
-        let owner = self.ts_family.read().await.tenant_database();
-        let storage_opt = self.ctx.options.storage.clone();
-
-        // clear all snapshot
-        self.snapshots = vec![];
-
-        // delete already exist data
-        let mut db_wlock = self.db.write().await;
-        let summary_sender = self.ctx.summary_task_sender.clone();
-        db_wlock.del_tsfamily(vnode_id, summary_sender).await;
-        db_wlock.del_ts_index(vnode_id);
-        let vnode_dir = storage_opt.ts_family_dir(&owner, vnode_id);
-        let _ = std::fs::remove_dir_all(&vnode_dir);
-
-        // apply data and reopen
-        let mut version_edit = snapshot.version_edit.clone();
-        version_edit.update_vnode_id(vnode_id);
-        let ts_family = db_wlock
-            .add_tsfamily(version_edit, shapshot_dir, self.ctx.clone())
-            .await?;
-
-        let ts_index = db_wlock.rebuild_tsfamily_index(ts_family.clone()).await?;
-
-        self.ts_index = ts_index;
-        self.ts_family = ts_family;
-
-        Ok(())
     }
 
     async fn drop_table_columns(&self, table: &str, column_ids: &[ColumnId]) -> TskvResult<()> {

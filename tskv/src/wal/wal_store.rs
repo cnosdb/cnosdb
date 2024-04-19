@@ -321,14 +321,6 @@ impl RaftEntryStorageInner {
         Some(entries)
     }
 
-    fn is_empty(&self) -> bool {
-        if self.min_sequence() == u64::MAX || self.max_sequence() == u64::MAX {
-            return true;
-        }
-
-        false
-    }
-
     fn min_sequence(&self) -> u64 {
         if let Some(item) = self.files_meta.first() {
             return item.min_seq;

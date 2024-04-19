@@ -5,8 +5,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use arrow::datatypes::SchemaRef;
-use arrow_array::{ArrayRef, RecordBatch};
-use arrow_schema::{ArrowError, Field, Schema};
+use arrow_array::RecordBatch;
 use datafusion::common::tree_node::{TreeNode, TreeNodeRewriter, TreeNodeVisitor, VisitRecursion};
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::Operator;
@@ -16,7 +15,6 @@ use datafusion::physical_plan::PhysicalExpr;
 use datafusion::scalar::ScalarValue;
 use futures::{Stream, StreamExt};
 use models::predicate::domain::TimeRange;
-use models::schema::TIME_FIELD;
 
 use super::metrics::BaselineMetrics;
 use super::{Predicate, SchemableTskvRecordBatchStream, SendableSchemableTskvRecordBatchStream};
@@ -27,14 +25,6 @@ pub struct OverlappingSegments<T: TimeRangeProvider> {
 }
 
 impl<T: TimeRangeProvider> OverlappingSegments<T> {
-    pub fn new(segments: Vec<T>) -> Self {
-        Self { segments }
-    }
-
-    pub fn segments_ref(&self) -> &[T] {
-        &self.segments
-    }
-
     pub fn segments(self) -> Vec<T> {
         self.segments
     }
@@ -300,20 +290,6 @@ impl TreeNodeRewriter for PredicateColumnsReassigner {
 
         Ok(expr)
     }
-}
-
-pub fn time_field_from_schema(schema: &Schema) -> std::result::Result<(usize, &Field), ArrowError> {
-    schema.column_with_name(TIME_FIELD).ok_or_else(|| {
-        ArrowError::SchemaError(format!("Unable to get field named \"{TIME_FIELD}\"."))
-    })
-}
-
-pub fn time_column_from_record_batch(
-    record_batch: &RecordBatch,
-) -> TskvResult<&ArrayRef, ArrowError> {
-    record_batch.column_by_name(TIME_FIELD).ok_or_else(|| {
-        ArrowError::SchemaError(format!("Unable to get field named \"{TIME_FIELD}\"."))
-    })
 }
 
 #[cfg(test)]

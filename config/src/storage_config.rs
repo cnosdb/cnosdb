@@ -59,6 +59,9 @@ pub struct StorageConfig {
         default = "StorageConfig::default_copyinto_trigger_flush_size"
     )]
     pub copyinto_trigger_flush_size: u64,
+
+    #[serde(default = "StorageConfig::default_max_datablock_size")]
+    pub max_datablock_size: u64,
 }
 
 impl StorageConfig {
@@ -115,6 +118,10 @@ impl StorageConfig {
         128 * 1024 * 1024 // 128M
     }
 
+    fn default_max_datablock_size() -> u64 {
+        100 * 1024
+    }
+
     pub fn introspect(&mut self) {
         // Unit of storage.compact_trigger_cold_duration is seconds
         self.compact_trigger_cold_duration =
@@ -160,6 +167,11 @@ impl OverrideByEnv for StorageConfig {
             &mut self.copyinto_trigger_flush_size,
             "CNOSDB_COPYINTO_TRIGGER_FLUSH_SIZE",
         );
+        entry_override(&mut self.reserve_space, "CNOSDB_STORAGE_RESERVE_SPACE");
+        entry_override(
+            &mut self.max_datablock_size,
+            "CNOSDB_STORAGE_MAX_DATABLOCK_SIZE",
+        );
     }
 }
 
@@ -179,6 +191,7 @@ impl Default for StorageConfig {
             strict_write: Self::default_strict_write(),
             reserve_space: Self::default_reserve_space(),
             copyinto_trigger_flush_size: Self::default_copyinto_trigger_flush_size(),
+            max_datablock_size: Self::default_max_datablock_size(),
         }
     }
 }

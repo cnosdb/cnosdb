@@ -12,7 +12,6 @@ use models::Timestamp;
 use parking_lot::RwLock as SyncRwLock;
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Runtime;
-use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot::Sender as OneShotSender;
 use tokio::sync::RwLock;
 use utils::BloomFilter;
@@ -26,8 +25,6 @@ use crate::tseries_family::{ColumnFile, LevelInfo, TseriesFamily, Version};
 use crate::tsm::reader::TsmReader;
 use crate::version_set::VersionSet;
 use crate::{byte_utils, file_utils, ColumnFileId, LevelId, TseriesFamilyId};
-
-const MAX_BATCH_SIZE: usize = 64;
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct CompactMeta {
@@ -310,14 +307,14 @@ impl Display for VnodeAction {
 }
 
 pub struct Summary {
-    meta: MetaRef,
-    file_no: u64,
+    _meta: MetaRef,
+    _file_no: u64,
     version_set: Arc<RwLock<VersionSet>>,
     ctx: Arc<GlobalContext>,
     writer: Writer,
     opt: Arc<Options>,
-    runtime: Arc<Runtime>,
-    metrics_register: Arc<MetricsRegister>,
+    _runtime: Arc<Runtime>,
+    _metrics_register: Arc<MetricsRegister>,
 }
 
 impl Summary {
@@ -343,8 +340,8 @@ impl Summary {
         w.sync().await?;
 
         Ok(Self {
-            meta: meta.clone(),
-            file_no: 0,
+            _meta: meta.clone(),
+            _file_no: 0,
             version_set: Arc::new(RwLock::new(VersionSet::empty(
                 meta.clone(),
                 opt.clone(),
@@ -355,8 +352,8 @@ impl Summary {
             ctx: Arc::new(GlobalContext::default()),
             writer: w,
             opt,
-            runtime,
-            metrics_register,
+            _runtime: runtime,
+            _metrics_register: metrics_register,
         })
     }
 
@@ -395,14 +392,14 @@ impl Summary {
         .await?;
 
         Ok(Self {
-            meta: meta.clone(),
-            file_no: 0,
+            _meta: meta.clone(),
+            _file_no: 0,
             version_set: Arc::new(RwLock::new(vs)),
             ctx,
             writer,
             opt,
-            runtime,
-            metrics_register,
+            _runtime: runtime,
+            _metrics_register: metrics_register,
         })
     }
 
@@ -677,18 +674,6 @@ impl SummaryTask {
         }
     }
 }
-
-#[derive(Clone)]
-pub struct SummaryScheduler {
-    sender: Sender<SummaryTask>,
-}
-
-impl SummaryScheduler {
-    pub fn new(sender: Sender<SummaryTask>) -> Self {
-        Self { sender }
-    }
-}
-
 #[cfg(test)]
 mod test {
     use std::sync::Arc;
@@ -736,7 +721,7 @@ mod test {
         config: Config,
         runtime: Arc<Runtime>,
         meta_manager: Arc<AdminMeta>,
-        test_case_name: String,
+        _test_case_name: String,
         memory_pool: Arc<GreedyMemoryPool>,
     }
 
@@ -776,7 +761,7 @@ mod test {
                     runtime,
                     meta_manager,
                     memory_pool,
-                    test_case_name,
+                    _test_case_name: test_case_name,
                 }
             })
         }

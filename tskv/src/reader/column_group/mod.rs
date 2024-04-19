@@ -74,19 +74,6 @@ impl ColumnGroupReader {
             metrics,
         })
     }
-
-    pub fn new_with_unchecked(
-        column_group: Arc<ColumnGroup>,
-        page_readers: Vec<PageReaderRef>,
-        schema: SchemaRef,
-    ) -> Self {
-        Self {
-            column_group,
-            page_readers,
-            schema,
-            metrics: Arc::new(ExecutionPlanMetricsSet::new()),
-        }
-    }
 }
 
 impl BatchReader for ColumnGroupReader {
@@ -236,10 +223,6 @@ impl ColumnGroupReaderMetrics {
         &self.page_read_bytes
     }
 
-    pub fn elapsed_compute(&self) -> &Time {
-        self.inner.elapsed_compute()
-    }
-
     pub fn record_poll(
         &self,
         poll: Poll<Option<TskvResult<RecordBatch>>>,
@@ -285,9 +268,7 @@ impl ReaderBuilder {
     }
 
     pub fn build(&self, page_meta: &PageWriteSpec) -> TskvResult<PageReaderRef> {
-        let data_type = page_meta.meta().column.column_type.to_physical_data_type();
         Ok(Arc::new(PrimitiveArrayReader::new(
-            data_type,
             self.reader.clone(),
             page_meta,
             self.series_id,
@@ -304,6 +285,7 @@ mod tests {
 
     use arrow::datatypes::{DataType, Field, Schema};
     use datafusion::assert_batches_eq;
+    use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
     use futures::TryStreamExt;
 
     use crate::reader::column_group::ColumnGroupReader;
@@ -330,11 +312,12 @@ mod tests {
             Field::new("c4", DataType::Boolean, true),
         ]));
 
-        let column_group_reader = ColumnGroupReader::new_with_unchecked(
-            Arc::new(ColumnGroup::new(0)),
+        let column_group_reader = ColumnGroupReader {
+            column_group: Arc::new(ColumnGroup::new(0)),
             page_readers,
             schema,
-        );
+            metrics: Arc::new(ExecutionPlanMetricsSet::new()),
+        };
 
         let stream = column_group_reader.process().expect("chunk_reader");
 
