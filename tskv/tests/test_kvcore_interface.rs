@@ -401,6 +401,8 @@ mod tests {
                     .read()
                     .await
                     .build_version_edit(&mut file_metas)
+                    .await
+                    .unwrap()
             });
 
             assert_eq!(version_edit.tsf_id, new_vnode_id);
