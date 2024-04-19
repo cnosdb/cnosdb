@@ -873,7 +873,6 @@ pub struct TseriesFamily {
 }
 
 impl TseriesFamily {
-    pub const MAX_DATA_BLOCK_SIZE: u32 = 1000;
     #[allow(clippy::too_many_arguments)]
     #[cfg(test)]
     pub fn new(

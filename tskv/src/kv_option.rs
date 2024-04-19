@@ -49,6 +49,7 @@ pub struct StorageOptions {
     pub max_concurrent_compaction: u16,
     pub strict_write: bool,
     pub snapshot_holding_time: i64,
+    pub max_datablock_size: u64,
 }
 
 // database/data/ts_family_id/tsm
@@ -105,6 +106,7 @@ impl From<&Config> for StorageOptions {
             max_concurrent_compaction: config.storage.max_concurrent_compaction,
             strict_write: config.storage.strict_write,
             snapshot_holding_time: config.cluster.snapshot_holding_time.as_secs() as i64,
+            max_datablock_size: config.storage.max_datablock_size,
         }
     }
 }
