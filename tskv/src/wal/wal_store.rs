@@ -444,7 +444,8 @@ impl RaftEntryStorageInner {
         let wal_entry = WalRecordData::new(record.data);
         if let Block::RaftLog(entry) = wal_entry.block {
             if let Some(apply_id) = apply_id {
-                if entry.log_id.index <= apply_id.index {
+                let last_seq = vode_store.ts_family.read().await.version().last_seq();
+                if entry.log_id.index > last_seq && entry.log_id.index <= apply_id.index {
                     if let EntryPayload::Normal(ref req) = entry.payload {
                         let ctx = replication::ApplyContext {
                             index: entry.log_id.index,
