@@ -27,8 +27,7 @@ use models::error_code::UnknownCodeWithMessage;
 use models::oid::{Identifier, Oid};
 use models::schema::{Precision, DEFAULT_CATALOG, DEFAULT_DATABASE};
 use models::utils::now_timestamp_nanos;
-use protocol_parser::es_log::es_log_to_lines;
-use protocol_parser::es_log::parser::{es_parse_to_line, Command, ESLog, Fields};
+use protocol_parser::es_log::parser::{es_parse_to_line, flatten_json, Command, ESLog};
 use protocol_parser::line_protocol::line_protocol_to_lines;
 use protocol_parser::open_tsdb::open_tsdb_to_lines;
 use protocol_parser::{DataPoint, Line};
@@ -1107,8 +1106,8 @@ impl HttpService {
                         ctx.database(),
                         &param.table.unwrap(),
                         eslog,
-                        param.time_field,
-                        param.msg_field,
+                        param.time_column,
+                        param.tag_columns,
                         span_context,
                     )
                     .await;
@@ -1394,30 +1393,13 @@ fn construct_write_tsdb_points_json_request(req: &Bytes) -> Result<Vec<Line>, Ht
     Ok(tsdb_datapoints)
 }
 
-// todo if all the command are index, you can call this func to transfer str to line directly
-fn _try_parse_req_to_log_lines(
-    req: &Bytes,
-    table: String,
-    time_alias: Option<String>,
-    msg_alias: Option<String>,
-) -> Result<Vec<Line>, HttpError> {
-    let lines = simdutf8::basic::from_utf8(req.as_ref())
-        .map_err(|e| HttpError::InvalidUTF8 { source: e })?;
-
-    let es_log_lines = es_log_to_lines(lines, table, time_alias, msg_alias)
-        .map_err(|e| HttpError::ParseESLog { source: e })?;
-    Ok(es_log_lines)
-}
-
 fn try_parse_es_req(req: &Bytes) -> Result<Vec<ESLog>, HttpError> {
-    let mut eslogs = vec![];
-
     let lines = simdutf8::basic::from_utf8(req.as_ref())
         .map_err(|e| HttpError::InvalidUTF8 { source: e })?;
 
     let json_chunk: Vec<&str> = lines.trim().split('\n').collect();
-    let mut i = 0;
     let n = json_chunk.len();
+
     /*
     because the es log is a pair of command and fields like:
     { "index" : { "_index" : "test", "_id" : "1" } }
@@ -1431,13 +1413,17 @@ fn try_parse_es_req(req: &Bytes) -> Result<Vec<ESLog>, HttpError> {
         });
     }
 
+    let mut i = 0;
+    let mut eslogs = vec![];
     while i < n {
         let command: Command = serde_json::from_str(json_chunk[i])
             .map_err(|e| HttpError::ParseESLogJson { source: e })?;
-        let fields: Fields = serde_json::from_str(json_chunk[i + 1])
-            .map_err(|e| HttpError::ParseESLogJson { source: e })?;
+        let fields = flatten_json(
+            serde_json::from_str(json_chunk[i + 1])
+                .map_err(|e| HttpError::ParseESLogJson { source: e })?,
+        );
 
-        eslogs.push(ESLog { fields, command });
+        eslogs.push(ESLog { command, fields });
 
         i += 2;
     }
@@ -1451,12 +1437,11 @@ async fn coord_write_eslog(
     db: &str,
     table: &str,
     es_log: Vec<ESLog>,
-    time_alias: Option<String>,
-    msg_alias: Option<String>,
+    time_column: Option<String>,
+    tag_columns: Option<String>,
     span_context: Option<&SpanContext>,
 ) -> Result<Response, HttpError> {
     let mut span_recorder = SpanRecorder::new(span_context.child_span("write points"));
-    let mut res: String = String::new();
 
     let mut table_exist = {
         if let Some(meta) = coord.meta_manager().tenant_meta(tenant).await {
@@ -1469,19 +1454,20 @@ async fn coord_write_eslog(
     };
     let mut lines = Vec::new();
 
-    let time_key = time_alias.unwrap_or_default();
-    let msg_key = msg_alias.unwrap_or_default();
+    let time_column = time_column.unwrap_or("time".to_string());
+    let tag_columns = tag_columns.unwrap_or_default();
 
+    let mut res: String = String::new();
     for (i, es) in es_log.iter().enumerate() {
-        let line = es_parse_to_line(es, table, &time_key, &msg_key)
+        let line = es_parse_to_line(es, table, &time_column, &tag_columns)
             .map_err(|e| HttpError::ParseESLog { source: e })?;
         if let Command::Create(_) = es.command {
             if table_exist {
                 res = format!("The {}th command fails because the table '{}' already exists and cannot be created repeatedly\n", i + 1, table).to_string();
                 break;
             }
-            table_exist = true;
         }
+        table_exist = true;
         lines.push(line);
     }
 

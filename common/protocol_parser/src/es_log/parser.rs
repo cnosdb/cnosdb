@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::collections::BTreeMap;
 
 use models::utils::now_timestamp_nanos;
 use protos::FieldValue;
@@ -7,8 +8,6 @@ use serde_json;
 use snafu::Snafu;
 
 use crate::Line;
-
-const ES_LOG_MSG_FIELD: &str = "_msg";
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Fields {
@@ -36,12 +35,7 @@ pub struct CommandInfo {
 
 pub struct ESLog {
     pub command: Command,
-    pub fields: Fields,
-}
-
-pub struct Parser {
-    table: String,
-    // TODO Some statistics here
+    pub fields: BTreeMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Snafu, PartialEq, Eq)]
@@ -58,122 +52,94 @@ pub enum Error {
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
-impl Parser {
-    pub fn new(table: String) -> Self {
-        Self { table }
-    }
-
-    pub fn parse<'a>(
-        &self,
-        req: &'a str,
-        time_alias: Option<String>,
-        msg_alias: Option<String>,
-    ) -> Result<Vec<Line<'a>>> {
-        let mut ret: Vec<Line> = Vec::new();
-
-        let json_chunk: Vec<&str> = req.trim().split('\n').collect();
-        let lines_len = json_chunk.len();
-
-        //the es log is a pair of command
-        if lines_len % 2 != 0 {
-            return Err(Error::InvaildSyntax);
-        }
-
-        let time_key = time_alias.unwrap_or_default();
-        let msg_key = msg_alias.unwrap_or_default();
-
-        let mut pos = 0;
-        loop {
-            let mut line =
-                self.next_line(json_chunk[pos], json_chunk[pos + 1], &time_key, &msg_key)?;
-            line.sort_dedup_and_hash();
-            ret.push(line);
-            pos += 2;
-            if pos == lines_len {
-                break;
-            }
-        }
-        Ok(ret)
-    }
-
-    fn next_line<'a>(
-        &self,
-        command_buf: &'a str,
-        field_buf: &'a str,
-        time_alias: &str,
-        msg_alias: &str,
-    ) -> Result<Line<'a>> {
-        let command: Command = serde_json::from_str(command_buf).map_err(|e| Error::Common {
-            content: e.to_string(),
-        })?;
-        let req_fields: Fields = serde_json::from_str(field_buf).map_err(|e| Error::Common {
-            content: e.to_string(),
-        })?;
-
-        let es_log = ESLog {
-            command,
-            fields: req_fields,
-        };
-
-        let timestamp = parse_time(&es_log, time_alias)?;
-
-        let fields = {
-            let msg = parse_msg(&es_log, msg_alias)?;
-
-            let fields = vec![(Cow::Borrowed(ES_LOG_MSG_FIELD), FieldValue::Str(msg))];
-
-            fields
-        };
-
-        let tags = {
-            let mut tags = vec![];
-            for (key, value) in es_log.fields.ohters {
-                if key.eq(time_alias) || key.eq(msg_alias) {
-                    continue;
+pub fn flatten_json(input: serde_json::Value) -> BTreeMap<String, serde_json::Value> {
+    let mut output = BTreeMap::new();
+    match input {
+        serde_json::Value::Object(map) => {
+            for (k, v) in map {
+                match v {
+                    serde_json::Value::Object(sub_map) => {
+                        let res = flatten_json(serde_json::Value::Object(sub_map));
+                        for (k2, v2) in res {
+                            output.insert(format!("{}.{}", k, k2), v2);
+                        }
+                    }
+                    serde_json::Value::Array(arr) => {
+                        for (i, item) in arr.iter().enumerate() {
+                            let res = flatten_json(item.clone());
+                            for (k2, v2) in res {
+                                output.insert(format!("{}.{}.{}", k, i, k2), v2);
+                            }
+                        }
+                    }
+                    _ => {
+                        output.insert(k, v);
+                    }
                 }
-                let value = value.to_string().trim_end_matches('"').to_owned();
-
-                tags.push((Cow::Owned(key), Cow::Owned(value)));
             }
-            tags
-        };
-
-        Ok(Line {
-            hash_id: 0,
-            table: Cow::Owned(self.table.clone()),
-            timestamp,
-            tags,
-            fields,
-        })
+        }
+        _ => {
+            output.insert("root".to_string(), input);
+        }
     }
+    output
 }
 
 pub fn es_parse_to_line<'a>(
     value: &'a ESLog,
     table: &'a str,
-    time_alias: &'a str,
-    msg_alias: &'a str,
+    time_column: &'a str,
+    tag_columns: &'a str,
 ) -> Result<Line<'a>> {
-    let timestamp = parse_time(value, time_alias)?;
-    let fields = {
-        let msg = parse_msg(value, msg_alias)?;
-        let fields = vec![(Cow::Borrowed(ES_LOG_MSG_FIELD), FieldValue::Str(msg))];
-
-        fields
-    };
-
-    let tags = {
-        let mut tags = vec![];
-        for (key, value) in value.fields.ohters.iter() {
-            if key.eq(time_alias) || key.eq(msg_alias) {
-                continue;
-            }
+    let tag_columns: Vec<&str> = tag_columns.split(',').map(|s| s.trim()).collect();
+    let mut timestamp = now_timestamp_nanos();
+    let mut tags = vec![];
+    let mut fields = vec![];
+    for (key, value) in &value.fields {
+        if tag_columns.contains(&key.as_str()) {
             let value = value.to_string().trim_matches('"').to_owned();
-
             tags.push((Cow::Borrowed(key.as_str()), Cow::Owned(value)));
+        } else if time_column.eq(key) {
+            match value {
+                serde_json::Value::String(timestamp_str) => {
+                    match chrono::DateTime::parse_from_rfc3339(timestamp_str)
+                        .map_err(|_| Error::ParseTime)?
+                        .timestamp_nanos_opt()
+                    {
+                        Some(time) => {
+                            timestamp = time;
+                        }
+                        None => {
+                            return Err(Error::Common {
+                                content: "Out of the time frame that can be saved".to_string(),
+                            })
+                        }
+                    }
+                }
+                _ => return Err(Error::ParseTime),
+            }
+        } else {
+            let field = match value {
+                serde_json::Value::Bool(field) => FieldValue::Bool(*field),
+                serde_json::Value::Number(field) => {
+                    if field.is_i64() {
+                        FieldValue::I64(field.as_i64().unwrap())
+                    } else if field.is_u64() {
+                        FieldValue::U64(field.as_u64().unwrap())
+                    } else {
+                        FieldValue::F64(field.as_f64().unwrap())
+                    }
+                }
+                serde_json::Value::String(field) => FieldValue::Str(field.as_bytes().to_owned()),
+                _ => {
+                    return Err(Error::Common {
+                        content: format!("unsupported field type: {}", value),
+                    });
+                }
+            };
+            fields.push((Cow::Borrowed(key.as_str()), field));
         }
-        tags
-    };
+    }
 
     Ok(Line {
         hash_id: 0,
@@ -181,50 +147,5 @@ pub fn es_parse_to_line<'a>(
         tags,
         fields,
         timestamp,
-    })
-}
-
-fn parse_time(value: &ESLog, time_alias: &str) -> Result<i64> {
-    if !time_alias.is_empty() {
-        match value.fields.ohters.get(time_alias) {
-            Some(serde_json::Value::String(timestamp)) => {
-                let parse_time_to_int = chrono::DateTime::parse_from_rfc3339(timestamp)
-                    .map_err(|_| Error::ParseTime)?
-                    .timestamp_nanos_opt()
-                    .unwrap_or_default();
-                return Ok(parse_time_to_int);
-            }
-            _ => return Err(Error::ParseTime),
-        }
-    }
-
-    if value.fields.time.is_some() {
-        let timestamp = value.fields.time.clone().unwrap();
-        let parse_time_to_int = chrono::DateTime::parse_from_rfc3339(&timestamp)
-            .map_err(|_| Error::ParseTime)?
-            .timestamp_nanos_opt()
-            .unwrap_or_default();
-
-        return Ok(parse_time_to_int);
-    }
-
-    Ok(now_timestamp_nanos())
-}
-
-fn parse_msg(value: &ESLog, msg_alias: &str) -> Result<Vec<u8>> {
-    if !msg_alias.is_empty() {
-        if let Some(serde_json::Value::String(msg)) = value.fields.ohters.get(msg_alias) {
-            return Ok(msg.clone().into_bytes());
-        }
-    }
-
-    if value.fields.msg.is_some() {
-        if let Some(msg) = value.fields.msg.clone() {
-            return Ok(msg.into_bytes());
-        }
-    }
-
-    Err(Error::Common {
-        content: "msg field is unset".to_string(),
     })
 }
