@@ -37,6 +37,6 @@ pub struct ESLogParam {
     pub tenant: Option<String>,
     pub db: Option<String>,
     pub table: Option<String>,
-    pub msg_field: Option<String>,
-    pub time_field: Option<String>,
+    pub tag_columns: Option<String>,
+    pub time_column: Option<String>,
 }

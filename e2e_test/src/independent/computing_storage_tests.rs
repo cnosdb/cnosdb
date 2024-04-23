@@ -33,7 +33,7 @@ fn separated_start_test() {
             req: CnosdbRequest::Write {
                 url: "http://127.0.0.1:8912/api/v1/write?db=public",
                 req: "start_test fa=1 1",
-                resp: Ok(()),
+                resp: Ok("".to_string()),
             },
             auth: None,
         },
@@ -83,7 +83,7 @@ fn meta_primary_crash_test() {
             req: CnosdbRequest::Write {
                 url: "http://127.0.0.1:8912/api/v1/write?db=public",
                 req: "start_test fa=1 1",
-                resp: Ok(()),
+                resp: Ok("".to_string()),
             },
             auth: None,
         },

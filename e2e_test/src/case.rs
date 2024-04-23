@@ -326,7 +326,7 @@ pub enum CnosdbRequest {
     Write {
         url: &'static str,
         req: &'static str,
-        resp: E2eResult<()>,
+        resp: E2eResult<String>,
     },
     Ddl {
         url: &'static str,

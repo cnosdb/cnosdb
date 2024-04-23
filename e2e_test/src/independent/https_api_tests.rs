@@ -9,11 +9,12 @@ use http_protocol::header::{HeaderValue, ACCEPT, CONTENT_TYPE};
 use reqwest::{Method, StatusCode};
 use serial_test::serial;
 
+use crate::case::{CnosdbRequest, E2eExecutor, Step};
 use crate::utils::{
     build_data_node_config, copy_cnosdb_server_certificate, get_workspace_dir, kill_all,
     run_singleton, Client,
 };
-use crate::{assert_response_is_ok, cluster_def, headers};
+use crate::{assert_response_is_ok, cluster_def, headers, E2eError};
 
 fn run_case_with_tls(
     test_dir: &str,
@@ -325,4 +326,135 @@ fn test_cli_connection() {
         child_stdout.read_to_string(&mut buf_string).unwrap();
         assert!(buf_string.contains("10086"));
     }
+}
+
+#[test]
+#[serial]
+fn es_api_test() {
+    let executor =
+        E2eExecutor::new_singleton("api_router_tests", "es_api_test", cluster_def::one_data(1));
+
+    executor.execute_steps(&[
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Write {
+                url: "http://127.0.0.1:8902/api/v1/es/write", 
+                req: r#"{"create":{}}
+                {"msg":"test"}"#,
+                resp: Err(E2eError::Api {
+                    status: StatusCode::UNPROCESSABLE_ENTITY,
+                    url: None,
+                    req: None,
+                    resp: Some(r#"{"error_code":"040016","error_message":"Error parsing message: table param is None"}"#.to_string())
+                })
+            },
+            auth: None,
+        },
+        Step::CnosdbRequest { // no time_column, no tag_columns
+            req: CnosdbRequest::Write {
+                url: "http://127.0.0.1:8902/api/v1/es/write?table=test1", 
+                req: r#"{"create":{}}
+                {"time":"2024-03-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}"#,
+                resp: Ok("".to_string()),
+            },
+            auth: None,
+        },
+        Step::CnosdbRequest { // no time_column, one tag_columns
+            req: CnosdbRequest::Write {
+                url: "http://127.0.0.1:8902/api/v1/es/write?table=test2&tag_columns=name", 
+                req: r#"{"create":{}}
+                {"time":"2024-03-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}"#,
+                resp: Ok("".to_string()),
+            },
+            auth: None,
+        },
+        Step::CnosdbRequest { // no time_column, multi tag_columns
+            req: CnosdbRequest::Write {
+                url: "http://127.0.0.1:8902/api/v1/es/write?table=test3&tag_columns=name,sex", 
+                req: r#"{"create":{}}
+                {"time":"2024-03-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}"#,
+                resp: Ok("".to_string()),
+            },
+            auth: None,
+        },
+        Step::CnosdbRequest { // time_column, multi tag_columns
+            req: CnosdbRequest::Write {
+                url: "http://127.0.0.1:8902/api/v1/es/write?table=test4&time_column=date&tag_columns=name,sex", 
+                req: r#"{"create":{}}
+                {"date":"2024-03-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}"#,
+                resp: Ok("".to_string()),
+            },
+            auth: None,
+        },
+        Step::CnosdbRequest { // no time, no tag_columns
+            req: CnosdbRequest::Write {
+                url: "http://127.0.0.1:8902/api/v1/es/write?table=test5", 
+                req: r#"{"create":{}}
+                {"name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}"#,
+                resp: Ok("".to_string()),
+            },
+            auth: None,
+        },
+        Step::CnosdbRequest { // no time, multi tag_columns
+            req: CnosdbRequest::Write {
+                url: "http://127.0.0.1:8902/api/v1/es/write?table=test6&tag_columns=name,sex", 
+                req: r#"{"create":{}}
+                {"name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}"#,
+                resp: Ok("".to_string()),
+            },
+            auth: None,
+        },
+        Step::CnosdbRequest { // nest json, multi tag_columns
+            req: CnosdbRequest::Write {
+                url: "http://127.0.0.1:8902/api/v1/es/write?table=test7&tag_columns=name,age,is_student", 
+                req: r#"{"create":{}}
+                {"time": "2021-01-01T00:00:00Z","name": "John Doe","age": 43,"is_student": false,"address": {"street": "123 Main Street","city": "Springfield","state": "IL","zip": {"code": 62701}},"children": [{"name": "Jane Doe","age": 7,"is_student": {"grade": 2},"shoes": [{"brand": "Nike","size": 7},{"brand": "Adidas","size": 8}]},{"name": "Dave Doe","age": 12}]}"#,
+                resp: Ok("".to_string()),
+            },
+            auth: None,
+        },
+        Step::CnosdbRequest { // create and index
+            req: CnosdbRequest::Write {
+                url: "http://127.0.0.1:8902/api/v1/es/write?table=test8", 
+                req: r#"{"create":{}}
+                {"time":"2024-03-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}
+                {"index":{}}
+                {"time":"2024-04-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}"#,
+                resp: Ok("".to_string()),
+            },
+            auth: None,
+        },
+        Step::CnosdbRequest { // index and create
+            req: CnosdbRequest::Write {
+                url: "http://127.0.0.1:8902/api/v1/es/write?table=test9", 
+                req: r#"{"index":{}}
+                {"time":"2024-03-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}
+                {"create":{}}
+                {"time":"2024-04-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}"#,
+                resp: Ok("The 2th command fails because the table 'test9' already exists and cannot be created repeatedly".to_string()),
+            },
+            auth: None,
+        },
+        Step::CnosdbRequest { // create and create
+            req: CnosdbRequest::Write {
+                url: "http://127.0.0.1:8902/api/v1/es/write?table=test10", 
+                req: r#"{"create":{}}
+                {"time":"2024-03-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}
+                {"create":{}}
+                {"time":"2024-04-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}"#,
+                resp: Ok("The 2th command fails because the table 'test10' already exists and cannot be created repeatedly".to_string()),
+            },
+            auth: None,
+        },
+        Step::CnosdbRequest { // index and index
+            req: CnosdbRequest::Write {
+                url: "http://127.0.0.1:8902/api/v1/es/write?table=test11", 
+                req: r#"{"index":{}}
+                {"time":"2024-03-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}
+                {"index":{}}
+                {"time":"2024-04-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}"#,
+                resp: Ok("".to_string()),
+            },
+            auth: None,
+        },
+    ])
 }
