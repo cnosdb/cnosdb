@@ -4711,6 +4711,7 @@ dependencies = [
  "heed-traits",
  "http",
  "http-body",
+ "maplit",
  "md-5",
  "models",
  "once_cell",
