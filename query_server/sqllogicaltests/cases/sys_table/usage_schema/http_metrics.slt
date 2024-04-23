@@ -1,7 +1,24 @@
 statement ok
+--#DATABASE=http_metrics_pre
+
+statement ok
+--#CHUNKED=true
+
+statement ok
+DROP DATABASE IF EXISTS http_metrics_pre;
+
+statement ok
+CREATE DATABASE http_metrics_pre WITH TTL '100000d';
+
+statement ok
+--#LP_BEGIN
+m0,t0=t0 f0=false,f1=0.0 0
+--#LP_END
+
+statement ok
 --#DATABASE = usage_schema
 
-sleep 100ms
+sleep 8000ms
 query 
 DESCRIBE DATABASE usage_schema;
 ----

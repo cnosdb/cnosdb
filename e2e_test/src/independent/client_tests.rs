@@ -500,14 +500,19 @@ fn split_test() {
             .client
             .post(url, "create table test(str_col string, tags(ta));")
             .unwrap();
-
-        let resp = server
-            .client
-            .post(url, "insert into test(str_col,ta)values('a1','str;str');")
-            .unwrap();
-
-        assert_response_is_ok!(resp);
-
+    }
+    {
+        let args = vec![];
+        let client_execute = ClientDef::new(args);
+        {
+            let mut client = client_execute.run();
+            client
+                .write(&["insert into test(str_col,ta)values('a1','str;str');\n"])
+                .unwrap();
+        }
+    }
+    {
+        let url = "http://127.0.0.1:8902/api/v1/sql?db=public";
         let resp = server
             .client
             .post(url, "insert into test(str_col,ta)values('a2',';str');")
@@ -521,5 +526,60 @@ fn split_test() {
             .unwrap();
 
         assert_eq!(resp.text().unwrap(), "str_col,ta\na1,str;str\na2,;str\n");
+    }
+}
+
+#[serial]
+#[test]
+fn cmd_trim_test() {
+    let test_dir = "/tmp/e2e_test/client_tests/cmd_trim_test";
+    let _server = new_server(test_dir);
+
+    let args = vec![];
+    let client_execute = ClientDef::new(args);
+    {
+        let mut client = client_execute.run();
+        let resp = client.write(&["       \\?\n"]);
+
+        if let Ok(resp) = resp {
+            assert!(resp.contains("Query took"));
+        }
+    }
+}
+
+#[serial]
+#[test]
+fn client_help_test() {
+    let test_dir = "/tmp/e2e_test/client_tests/cmd_trim_test";
+    let _server = new_server(test_dir);
+
+    {
+        let args = vec!["--help"];
+        let client_execute = ClientDef::new(args);
+
+        let mut client = client_execute.run();
+        let resp = client.write(&[]);
+
+        assert_eq!(resp.unwrap(), "Usage: cnosdb-cli [OPTIONS] [COMMAND]Commands:  dump-ddl          Dump ddl to files, Support multi tenants  restore-dump-ddl  Restore database from files  help              Print this message or the help of the given subcommand(s)Options:  -H, --host <HOST>          Host of CnosDB server [default: localhost]  -P, --port <PORT>          Port of CnosDB server HTTP API [default: 8902]  -u, --user <USER>          Username to connect to CnosDB server [default: root]  -p, --password          Use password to connect to CnosDB server      --private-key-path <PRIVATE_KEY_PATH>          Rsa private key path for key pair authentication used to connect to the CnosDB  -d, --database <DATABASE>          Default database to connect to the CnosDB [default: public]  -t, --tenant <TENANT>          Default tenant to connect to the CnosDB [default: cnosdb]      --precision <PRECISION>          The precision of the unix timestamps, will be used as the url param 'precision' [possible values: ns, us, ms]      --target-partitions <TARGET_PARTITIONS>          Number of partitions for query execution. Increasing partitions can increase concurrency  -s, --stream-trigger-interval <STREAM_TRIGGER_INTERVAL>          Optionally, specify the micro batch stream trigger interval. e.g. once, 1m, 10s       --data-path <DATA_PATH>          Path to your data, default to current directory      --receive-data-encoding <RECEIVE_DATA_ENCODING>          HTTP response encoding. Support deflate, gzip, br, zstd      --send-data-encoding <SEND_DATA_ENCODING>          HTTP request encoding. Support deflate, gzip, br, zstd  -f, --file [<FILE>...]          Execute commands from file(s), then exit      --rc [<RC>...]          Run the provided files on startup instead of ~/.cnosdbrc       --format <FORMAT>          [default: table] [possible values: csv, tsv, table, json, nd-json]  -q, --quiet          Reduce printing other than the results and work quietly  -W, --write-line-protocol <FILE>          Write line protocol from file      --ssl          Use HTTPS connection      --unsafe-ssl          Allow unsafe HTTPS connections      --cacert <FILE>          Use the specified certificate file to verify the connection peer. The certificate(s) must be in PEM format      --chunked          Enable chunk mode, and CnosDB server uses http streaming output      --error-stop          Stop when an error is encounter      --process-cli-command          Enable client command  -h, --help          Print help  -V, --version          Print version");
+    }
+
+    {
+        let args = vec!["dump-ddl", "--help"];
+        let client_execute = ClientDef::new(args);
+
+        let mut client = client_execute.run();
+        let resp = client.write(&[]);
+
+        assert_eq!(resp.unwrap(), "Usage: cnosdb-cli dump-ddl [OPTIONS]Options:  -t, --tenant <TENANT>  Dump tenants  -h, --help             Print help");
+    }
+
+    {
+        let args = vec!["restore-dump-ddl", "--help"];
+        let client_execute = ClientDef::new(args);
+
+        let mut client = client_execute.run();
+        let resp = client.write(&[]);
+
+        assert_eq!(resp.unwrap(), "Usage: cnosdb-cli restore-dump-ddl [OPTIONS] [FILES]...Arguments:  [FILES]...  Restore filesOptions:  -t, --tenant <TENANT>  Tenant wanna restore  -h, --help             Print help");
     }
 }
