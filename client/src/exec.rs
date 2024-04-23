@@ -211,6 +211,10 @@ async fn exec_and_print(
         sql_idx += ch.len_utf8();
     }
 
+    if strs.is_empty() {
+        strs.push(&sql);
+    }
+
     for tmp in strs.iter() {
         if tmp.trim().is_empty() {
             continue;

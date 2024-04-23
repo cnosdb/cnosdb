@@ -22,7 +22,6 @@ use crate::kv_option::{Options, StorageOptions, DELTA_PATH, TSM_PATH};
 use crate::memcache::MemCache;
 use crate::record_file::{Reader, RecordDataType, RecordDataVersion, Writer};
 use crate::tseries_family::{ColumnFile, LevelInfo, TseriesFamily, Version};
-use crate::tsm::reader::TsmReader;
 use crate::version_set::VersionSet;
 use crate::{byte_utils, file_utils, ColumnFileId, LevelId, TseriesFamilyId};
 
@@ -367,7 +366,6 @@ impl Summary {
         opt: Arc<Options>,
         runtime: Arc<Runtime>,
         memory_pool: MemoryPoolRef,
-        load_field_filter: bool,
         metrics_register: Arc<MetricsRegister>,
     ) -> TskvResult<Self> {
         let summary_path = opt.storage.summary_dir();
@@ -386,7 +384,6 @@ impl Summary {
             opt.clone(),
             runtime.clone(),
             memory_pool,
-            load_field_filter,
             metrics_register.clone(),
         )
         .await?;
@@ -415,7 +412,6 @@ impl Summary {
         opt: Arc<Options>,
         runtime: Arc<Runtime>,
         memory_pool: MemoryPoolRef,
-        load_field_filter: bool,
         metrics_register: Arc<MetricsRegister>,
     ) -> TskvResult<VersionSet> {
         let mut tsf_edits_map: HashMap<TseriesFamilyId, Vec<VersionEdit>> = HashMap::new();
@@ -475,17 +471,9 @@ impl Summary {
             let weak_tsm_reader_cache = Arc::downgrade(&tsm_reader_cache);
             let mut levels = LevelInfo::init_levels(database.clone(), tsf_id, opt.storage.clone());
             for meta in files.into_values() {
-                let field_filter = if load_field_filter {
-                    let tsm_path = meta.file_path(opt.storage.as_ref(), &database, tsf_id);
-                    let tsm_reader = TsmReader::open(tsm_path).await?;
-                    let bloom_filter = tsm_reader.footer().series.bloom_filter();
-                    Arc::new(bloom_filter.clone())
-                } else {
-                    Arc::new(BloomFilter::default())
-                };
                 levels[meta.level as usize].push_compact_meta(
                     &meta,
-                    field_filter,
+                    RwLock::new(None),
                     weak_tsm_reader_cache.clone(),
                 );
             }
@@ -557,7 +545,12 @@ impl Summary {
         let new_path = file_utils::make_summary_file_tmp(self.opt.storage.summary_dir());
         crate::file_system::file_manager::remove_if_exists(&new_path)?;
 
-        let requests = self.version_set.read().await.snapshot_version_edit().await;
+        let requests = self
+            .version_set
+            .read()
+            .await
+            .snapshot_version_edit()
+            .await?;
         self.writer = Writer::open(&new_path, RecordDataType::Summary).await?;
 
         for request in requests.iter() {
@@ -684,6 +677,7 @@ mod test {
     use metrics::metric_register::MetricsRegister;
     use models::schema::{make_owner, TenantOptions};
     use tokio::runtime::Runtime;
+    use tokio::sync::RwLock;
     use utils::BloomFilter;
 
     use crate::kv_option::{self, Options};
@@ -798,7 +792,6 @@ mod test {
                 Arc::new(options),
                 runtime,
                 test_helper.memory_pool.clone(),
-                false,
                 Arc::new(MetricsRegister::default()),
             )
             .await
@@ -839,7 +832,6 @@ mod test {
                 options.clone(),
                 test_helper.runtime.clone(),
                 test_helper.memory_pool.clone(),
-                false,
                 Arc::new(MetricsRegister::default()),
             )
             .await
@@ -858,7 +850,6 @@ mod test {
                 options.clone(),
                 test_helper.runtime.clone(),
                 test_helper.memory_pool.clone(),
-                false,
                 Arc::new(MetricsRegister::default()),
             )
             .await
@@ -906,7 +897,6 @@ mod test {
                 options,
                 test_helper.runtime.clone(),
                 test_helper.memory_pool.clone(),
-                false,
                 Arc::new(MetricsRegister::default()),
             )
             .await
@@ -958,7 +948,7 @@ mod test {
             let mut version = version.inner();
             version.levels_info_mut()[1].push_compact_meta(
                 &meta,
-                Arc::new(BloomFilter::default()),
+                RwLock::new(Some(Arc::new(BloomFilter::default()))),
                 tsm_reader_cache,
             );
 
@@ -977,7 +967,6 @@ mod test {
                 options.clone(),
                 test_helper.runtime.clone(),
                 test_helper.memory_pool.clone(),
-                false,
                 Arc::new(MetricsRegister::default()),
             )
             .await

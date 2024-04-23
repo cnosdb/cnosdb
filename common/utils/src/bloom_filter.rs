@@ -1,4 +1,9 @@
+use std::hash::Hasher;
+
+use fnv::FnvHasher;
 use serde::{Deserialize, Serialize};
+use siphasher::sip::SipHasher13;
+use twox_hash::XxHash64;
 
 use crate::bkdr_hash::BkdrHasher;
 
@@ -18,6 +23,15 @@ impl BloomFilter {
         Self { b, mask: m - 1 }
     }
 
+    fn hashers() -> Vec<Box<dyn Hasher>> {
+        vec![
+            Box::<FnvHasher>::default(),
+            Box::<XxHash64>::default(),
+            Box::<SipHasher13>::default(),
+            Box::<BkdrHasher>::default(),
+        ]
+    }
+
     /// Similar to `new()`
     pub fn with_data(data: &[u8]) -> Self {
         let mut b = data.to_vec();
@@ -31,15 +45,24 @@ impl BloomFilter {
     }
 
     pub fn insert(&mut self, data: &[u8]) {
-        let hash = Self::hash(data);
-        let loc = self.location(hash);
-        self.b[loc >> 3] |= 1 << (loc & 7);
+        for hasher in Self::hashers().iter_mut() {
+            hasher.write(data);
+            let hash = hasher.finish();
+            let loc = self.location(hash);
+            self.b[loc >> 3] |= 1 << (loc & 7);
+        }
     }
 
     pub fn maybe_contains(&self, data: &[u8]) -> bool {
-        let hash = Self::hash(data);
-        let loc = self.location(hash);
-        self.b[loc >> 3] & (1 << (loc & 7)) != 0
+        for hasher in Self::hashers().iter_mut() {
+            hasher.write(data);
+            let hash = hasher.finish();
+            let loc = self.location(hash);
+            if self.b[loc >> 3] & (1 << (loc & 7)) == 0 {
+                return false;
+            }
+        }
+        true
     }
 
     pub fn len(&self) -> usize {
@@ -56,10 +79,6 @@ impl BloomFilter {
 
     fn location(&self, hash: u64) -> usize {
         (hash & self.mask) as usize
-    }
-
-    fn hash(data: &[u8]) -> u64 {
-        BkdrHasher::new().hash_with(data).number()
     }
 
     /// Returns the number that is the next highest power of 2.
@@ -111,5 +130,50 @@ mod test {
         bloom_filter.insert(1165_u32.to_be_bytes().as_slice());
 
         assert!(bloom_filter.maybe_contains(1161_u32.to_be_bytes().as_slice()))
+    }
+
+    #[test]
+    fn test_insert_contains() {
+        let mut bloom_filter = BloomFilter::new(100);
+
+        bloom_filter.insert(b"apple");
+        bloom_filter.insert(b"banana");
+        bloom_filter.insert(b"cherry");
+
+        assert!(bloom_filter.maybe_contains(b"apple"));
+        assert!(bloom_filter.maybe_contains(b"banana"));
+        assert!(bloom_filter.maybe_contains(b"cherry"));
+        assert!(!bloom_filter.maybe_contains(b"orange"));
+    }
+
+    #[test]
+    fn test_contains_duplicates() {
+        let mut bloom_filter = BloomFilter::new(100);
+
+        bloom_filter.insert(b"apple");
+        bloom_filter.insert(b"banana");
+        bloom_filter.insert(b"cherry");
+        bloom_filter.insert(b"apple"); // Inserting duplicate element
+
+        assert!(bloom_filter.maybe_contains(b"apple")); // The element should still be considered present
+        assert!(bloom_filter.maybe_contains(b"banana"));
+        assert!(bloom_filter.maybe_contains(b"cherry"));
+    }
+
+    #[test]
+    fn test_contains_large_data_set() {
+        let mut bloom_filter = BloomFilter::new(100000);
+
+        for i in 0..10_000 {
+            bloom_filter.insert(i.to_string().as_bytes());
+        }
+
+        for i in 0..10_000 {
+            assert!(bloom_filter.maybe_contains(i.to_string().as_bytes()));
+        }
+
+        assert!(!bloom_filter.maybe_contains(b"not_present"));
+        assert!(bloom_filter.maybe_contains(b"999"));
+        assert!(!bloom_filter.maybe_contains(b"10001"));
     }
 }

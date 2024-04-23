@@ -180,14 +180,14 @@ impl VersionSet {
     /// Generated data is `VersionEdit`s for all vnodes and db-files,
     /// and `HashMap<ColumnFileId, Arc<BloomFilter>>` for index data
     /// (field-id filter) of db-files.
-    pub async fn snapshot_version_edit(&self) -> Vec<SummaryRequest> {
+    pub async fn snapshot_version_edit(&self) -> TskvResult<Vec<SummaryRequest>> {
         let mut requests = vec![];
         for db in self.dbs.values() {
             let db_reader = db.read().await;
             let ts_families = db_reader.ts_families();
             for (_, tsf) in ts_families.iter() {
                 let mut file_metas = HashMap::new();
-                let ve = tsf.read().await.build_version_edit(&mut file_metas);
+                let ve = tsf.read().await.build_version_edit(&mut file_metas).await?;
 
                 let request = SummaryRequest {
                     version_edit: ve,
@@ -200,7 +200,7 @@ impl VersionSet {
             }
         }
 
-        requests
+        Ok(requests)
     }
 
     pub async fn get_tsfamily_seq_no_map(&self) -> HashMap<TseriesFamilyId, u64> {

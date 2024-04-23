@@ -12,11 +12,15 @@ use serial_test::serial;
 use crate::utils::{build_data_node_config, get_workspace_dir, kill_all, run_singleton};
 use crate::{cluster_def, defer};
 
-fn exec_dump_cmd(tenant: Option<&str>, out: impl Into<PathBuf>) -> Child {
+fn exec_dump_cmd(tenant: Option<Vec<&str>>, out: impl Into<PathBuf>) -> Child {
     let mut dump_cmd = Command::new("cargo");
     dump_cmd.args(["run", "--package", "client", "--", "dump-ddl"]);
-    if let Some(t) = tenant {
-        dump_cmd.args(["--tenant", t]);
+    if let Some(ts) = tenant {
+        let mut arg: Vec<&str> = Vec::new();
+        for t in ts {
+            arg.extend(["-t", t].iter());
+        }
+        dump_cmd.args(arg);
     }
     let out = out.into();
     let file = File::create(out).unwrap();
@@ -37,9 +41,9 @@ fn exec_restore_cmd(file: impl AsRef<OsStr>) -> Child {
     restore_cmd.stdout(Stdio::null()).spawn().unwrap()
 }
 
-fn test_dump_impl(test_dir: &str, tenant: Option<&str>, dump_file: &str) {
-    let case_name = match tenant {
-        Some(t) => "dump ".to_string() + t,
+fn test_dump_impl(test_dir: &str, tenants: Option<Vec<&str>>, dump_file: &str) {
+    let case_name = match tenants.clone() {
+        Some(t) => "dump ".to_string() + t.join(" ").as_str(),
         None => "dump".to_string(),
     };
     println!("[{case_name}]: begin ...");
@@ -93,7 +97,7 @@ fn test_dump_impl(test_dir: &str, tenant: Option<&str>, dump_file: &str) {
     exec_restore_cmd(&dump_sql_path).wait().unwrap();
 
     println!("[{case_name}]: dump");
-    exec_dump_cmd(tenant, &dump_out_path).wait().unwrap();
+    exec_dump_cmd(tenants, &dump_out_path).wait().unwrap();
 
     println!("[{case_name}]: diff");
     let dump1_str = std::io::read_to_string(File::open(&dump_sql_path).unwrap()).unwrap();
@@ -112,7 +116,17 @@ fn test_dump() {
 fn test_dump_tenant() {
     test_dump_impl(
         "/tmp/e2e_test/dump/test_dump_tenant",
-        Some("cnosdb"),
+        Some(vec!["cnosdb"]),
         "dump_tenant",
+    )
+}
+
+#[test]
+#[serial]
+fn test_multi_dump_tenant() {
+    test_dump_impl(
+        "/tmp/e2e_test/dump/test_multi_dump_tenant",
+        Some(vec!["test1", "test2"]),
+        "dump_multi",
     )
 }

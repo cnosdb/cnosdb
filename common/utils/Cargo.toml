@@ -7,6 +7,9 @@ edition.workspace = true
 
 [dependencies]
 trace = { path = "../trace" }
+fnv = { workspace = true }
+twox-hash = { workspace = true }
+siphasher = { workspace = true }
 
 async-backtrace = { workspace = true, optional = true }
 libc = { workspace = true }

@@ -119,7 +119,7 @@ impl VnodeStorage {
             let ts_family_w = self.ts_family.write().await;
 
             let version = ts_family_w.version();
-            let ve = ts_family_w.build_version_edit(&mut _file_metas);
+            let ve = ts_family_w.build_version_edit(&mut _file_metas).await?;
             (version, ve)
         };
 

@@ -71,7 +71,10 @@ impl EntryStorage for RaftEntryStorage {
                 .await
                 .map_err(|e| ReplicationError::RaftInternalErr { msg: e.to_string() })?;
 
-            self.inner.mark_write_wal(ent.clone(), wal_id, pos);
+            self.inner
+                .mark_write_wal(ent.clone(), wal_id, pos)
+                .await
+                .map_err(|e| ReplicationError::RaftInternalErr { msg: e.to_string() })?;
         }
         Ok(())
     }
@@ -230,7 +233,7 @@ struct RaftEntryStorageInner {
 }
 
 impl RaftEntryStorageInner {
-    fn mark_write_wal(&mut self, entry: RaftEntry, wal_id: u64, pos: u64) {
+    async fn mark_write_wal(&mut self, entry: RaftEntry, wal_id: u64, pos: u64) -> TskvResult<()> {
         let index = entry.log_id.index;
         if let Some(item) = self
             .files_meta
@@ -244,16 +247,16 @@ impl RaftEntryStorageInner {
                 file_id: wal_id,
                 min_seq: u64::MAX,
                 max_seq: u64::MAX,
-                entry_index: vec![],
-                reader: self.wal.current_wal.new_reader(),
+                entry_index: Vec::with_capacity(8 * 1024),
+                reader: self.wal.wal_reader(wal_id).await?,
             };
-
-            item.entry_index.reserve(8 * 1024);
             item.mark_entry(index, pos);
             self.files_meta.push(item);
         }
 
         self.entry_cache.put(index, entry);
+
+        Ok(())
     }
 
     async fn mark_delete_before(&mut self, seq_no: u64) {
@@ -427,7 +430,7 @@ impl RaftEntryStorageInner {
         Ok(())
     }
 
-    pub async fn recover_record(
+    async fn recover_record(
         &mut self,
         wal_id: u64,
         record: Record,
@@ -441,7 +444,8 @@ impl RaftEntryStorageInner {
         let wal_entry = WalRecordData::new(record.data);
         if let Block::RaftLog(entry) = wal_entry.block {
             if let Some(apply_id) = apply_id {
-                if entry.log_id.index <= apply_id.index {
+                let last_seq = vode_store.ts_family().read().await.version().last_seq();
+                if entry.log_id.index > last_seq && entry.log_id.index <= apply_id.index {
                     if let EntryPayload::Normal(ref req) = entry.payload {
                         let ctx = replication::ApplyContext {
                             index: entry.log_id.index,
@@ -462,7 +466,7 @@ impl RaftEntryStorageInner {
                 }
             }
 
-            self.mark_write_wal(entry, wal_id, record.pos);
+            self.mark_write_wal(entry, wal_id, record.pos).await?;
         }
 
         Ok(())
@@ -483,9 +487,11 @@ mod test {
     use replication::{ApplyStorageRef, EntryStorage, EntryStorageRef, RaftNodeInfo};
     use tokio::sync::RwLock;
 
+    use crate::file_system::file_manager;
+    use crate::wal::reader::WalRecordData;
     use crate::wal::wal_store::{RaftEntry, RaftEntryStorage};
     use crate::wal::VnodeWal;
-    use crate::TskvResult;
+    use crate::{file_utils, TskvResult};
 
     pub async fn get_vnode_wal(dir: impl AsRef<Path>) -> TskvResult<VnodeWal> {
         let dir = dir.as_ref();
@@ -495,13 +501,88 @@ mod test {
             enabled: true,
             path: dir.to_path_buf(),
             wal_req_channel_cap: 1024,
-            max_file_size: 1024 * 1024,
+            max_file_size: 10 * 1024,
             flush_trigger_total_file_size: 128,
             sync: false,
             sync_interval: std::time::Duration::from_secs(3600),
         };
 
         VnodeWal::new(Arc::new(wal_option), owner, 1234).await
+    }
+
+    #[tokio::test]
+    async fn test_wal_entry_storage_restart() {
+        trace::debug!("----------------------------------------");
+        let dir = PathBuf::from("/tmp/test/wal/raft_entry_restart");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        // append entry
+        let wal = get_vnode_wal(&dir).await.unwrap();
+        let mut storage = RaftEntryStorage::new(wal);
+        let str_1k: String = "abcd12345678".repeat(100);
+        for i in 0..1024 * 4 {
+            let mut entry = RaftEntry::default();
+            entry.log_id.index = i;
+            entry.payload = EntryPayload::Normal(format!("{}_{}", str_1k, i).as_bytes().to_vec());
+            storage.append(&[entry]).await.unwrap();
+        }
+
+        // check entries
+        for i in 0..1024 * 4 {
+            let entry = storage.entry(i).await.unwrap();
+            assert_eq!(i, entry.unwrap().log_id.index)
+        }
+
+        // delete entries
+        storage.del_after(4000).await.unwrap();
+        storage.del_before(500).await.unwrap();
+        for i in 0..1024 * 4 {
+            let entry = storage.entry(i).await.unwrap();
+            if (500..4000).contains(&i) {
+                assert_eq!(i, entry.unwrap().log_id.index)
+            } else {
+                assert_eq!(None, entry)
+            }
+        }
+
+        // restart wal
+        println!("----------------- begin restart ............");
+        let wal = get_vnode_wal(&dir).await.unwrap();
+        let wal_dir = wal.wal_dir.clone();
+        let mut storage = RaftEntryStorage::new(wal);
+
+        let wal_files = file_manager::list_file_names(&wal_dir);
+        println!("----------------- files: {:?}", wal_files);
+        for file_name in wal_files {
+            let wal_id = file_utils::get_wal_file_id(&file_name).unwrap();
+            let reader = storage.inner.wal.wal_reader(wal_id).await.unwrap();
+            let mut record_reader = reader.take_record_reader();
+            while let Ok(record) = record_reader.read_record().await {
+                if record.data.len() < 9 {
+                    continue;
+                }
+
+                let wal_entry = WalRecordData::new(record.data);
+                if let crate::wal::Block::RaftLog(entry) = wal_entry.block {
+                    storage
+                        .inner
+                        .mark_write_wal(entry, wal_id, record.pos)
+                        .await
+                        .unwrap();
+                }
+            }
+        }
+
+        println!("----------------- ############");
+        for i in 0..1024 * 4 {
+            let entry = storage.entry(i).await.unwrap();
+            if (500..4000).contains(&i) {
+                assert_eq!(i, entry.unwrap().log_id.index)
+            } else if (4000..).contains(&i) {
+                assert_eq!(None, entry)
+            }
+        }
     }
 
     #[tokio::test]

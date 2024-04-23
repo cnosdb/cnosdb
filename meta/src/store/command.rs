@@ -174,6 +174,9 @@ pub enum ReadCommand {
     ResourceInfo(String, String),
     // cluster
     ResourceInfosMark(String),
+
+    // cluster, tenant, db, replication set id
+    ReplicationSet(String, String, String, u32),
 }
 
 pub const ENTRY_LOG_TYPE_SET: i32 = 1;

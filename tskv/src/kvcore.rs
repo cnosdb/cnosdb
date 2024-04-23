@@ -115,7 +115,7 @@ impl TsKv {
 
         let summary_file = file_utils::make_summary_file(&summary_dir, 0);
         let summary = if file_manager::try_exists(&summary_file) {
-            Summary::recover(meta, opt, runtime, memory_pool, true, metrics.clone())
+            Summary::recover(meta, opt, runtime, memory_pool, metrics.clone())
                 .await
                 .unwrap()
         } else {

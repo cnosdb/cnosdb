@@ -292,8 +292,9 @@ impl SeriesGroupBatchReaderFactory {
         // TODO time column id 需要从上面传下来，当前schema中一定包含time列，所以这里写死为0
         let projection = Projection::from_schema(kv_schema.as_ref(), 0);
         let time_ranges = self.query_option.split.time_ranges();
-        let column_files =
-            super_version.column_files_by_sid_and_time(series_ids, time_ranges.as_ref());
+        let column_files = super_version
+            .column_files_by_sid_and_time(series_ids, time_ranges.as_ref())
+            .await?;
 
         // 采集过滤后的文件数量
         metrics
@@ -425,10 +426,12 @@ impl SeriesGroupBatchReaderFactory {
         sid: SeriesId,
     ) -> TskvResult<Vec<DataReference>> {
         // 选择含有series的所有文件
-        let files = column_files
-            .iter()
-            .filter(|(cf, _)| cf.maybe_contains_series_id(sid))
-            .collect::<Vec<_>>();
+        let mut files = Vec::new();
+        for (cf, reader) in column_files {
+            if cf.maybe_contains_series_id(sid).await? {
+                files.push((cf.clone(), reader.clone()));
+            }
+        }
         // 选择含有series的所有chunk
         let mut chunks = Vec::with_capacity(files.len());
         for (_, reader) in files {

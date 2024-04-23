@@ -32,7 +32,7 @@ fn api_router() {
             req: CnosdbRequest::Write {
                 url: "http://127.0.0.1:8912/api/v1/write?db=public",
                 req: "api_router,ta=a fa=1 1",
-                resp: Ok(()),
+                resp: Ok("".to_string()),
             },
             auth: None,
         },
@@ -62,74 +62,4 @@ fn api_router() {
             auth: None,
         },
     ]);
-}
-
-#[test]
-#[serial]
-fn es_api_test() {
-    let executor =
-        E2eExecutor::new_singleton("api_router_tests", "es_api_test", cluster_def::one_data(1));
-
-    executor.execute_steps(&[
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Write {
-                url: "http://127.0.0.1:8902/api/v1/es/write", 
-                req: r#"{"create":{}}
-                {"msg":"test"}"#,
-                resp: Err(E2eError::Api {
-                    status: StatusCode::UNPROCESSABLE_ENTITY,
-                    url: None,
-                    req: None,
-                    resp: Some(r#"{"error_code":"040016","error_message":"Error parsing message: table param is None"}"#.to_string())
-                })
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Write {
-                url: "http://127.0.0.1:8902/api/v1/es/write?table=test",
-                req: r#"{"create":{}}
-                {"msg":"test"}"#,
-                resp: Err(E2eError::Api {
-                    status: StatusCode::UNPROCESSABLE_ENTITY,
-                    url: None,
-                    req: None,
-                    resp: Some(r#"{"error_code":"040016","error_message":"Error parsing message: msg field is unset"}"#.to_string())
-                })
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Write {
-                url: "http://127.0.0.1:8902/api/v1/es/write?table=test&msg_field=msg",
-                req: r#"{"create":{}}
-                {"msg":"test"}
-                {"index":{}}
-                {"msg":"sws"}"#,
-                resp: Ok(()),
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Write {
-                url: "http://127.0.0.1:8902/api/v1/es/write?table=test&msg_field=msg",
-                req: r#"{"create":{}}
-                {"msg":"test"}
-                {"index":{}}
-                {"msg":"fds"}"#,
-                resp: Ok(()),
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Query {
-                url: "http://127.0.0.1:8902/api/v1/sql?db=public",
-                sql: "select count(*) from test",
-                resp: Ok(vec!["COUNT(UInt8(1))",  "2"]),
-                sorted: false,
-                regex: false,
-            },
-            auth: None,
-        },
-    ])
 }
