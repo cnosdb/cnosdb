@@ -64,7 +64,7 @@ datafusion = { git = "https://github.com/cnosdb/arrow-datafusion.git", branch = 
 diff = "0.1.13"
 dirs = "5.0.1"
 env_logger = "0.10.0"
-flatbuffers = "22.9"
+flatbuffers = "24.3.25"
 flate2 = "1.0.24"
 fnv = "1.0.7"
 futures = { version = "0.3", default-features = false }
