@@ -14,6 +14,7 @@ pub mod table_writer;
 pub mod table_writer_merge;
 pub mod tag_scan;
 pub mod traced_proxy;
+pub mod ts_gen_func;
 pub mod tskv_exec;
 pub mod update_tag;
 pub mod watermark;

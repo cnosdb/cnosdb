@@ -337,9 +337,8 @@ impl ContextProvider for MetadataProvider {
         &self.config_options
     }
 
-    fn get_window_meta(&self, _name: &str) -> Option<Arc<WindowUDF>> {
-        // TODO udwf
-        None
+    fn get_window_meta(&self, name: &str) -> Option<Arc<WindowUDF>> {
+        self.func_manager.udwf(name).ok()
     }
 }
 

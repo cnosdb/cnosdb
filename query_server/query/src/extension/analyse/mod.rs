@@ -7,6 +7,7 @@ pub mod transform_bottom_func_to_topk_node;
 pub mod transform_gapfill;
 pub mod transform_time_window;
 pub mod transform_topk_func_to_topk_node;
+pub mod transform_ts_gen_func;
 pub mod transform_update;
 
 pub trait AnalyzerRule {
