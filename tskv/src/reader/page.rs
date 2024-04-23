@@ -148,7 +148,7 @@ fn data_buf_to_arrow_array(
 
     let array: ArrayRef = match data_type {
         PhysicalCType::Tag | PhysicalCType::Field(PhysicalDType::String) => {
-            let encoding = get_encoding(&data_buffer[0..1]);
+            let encoding = get_encoding(data_buffer);
             let ts_codec = get_str_codec(encoding);
             let mut target = Vec::new();
             ts_codec
@@ -180,7 +180,7 @@ fn data_buf_to_arrow_array(
             Arc::new(builder.finish())
         }
         PhysicalCType::Time(_) => {
-            let encoding = get_encoding(&data_buffer[0..1]);
+            let encoding = get_encoding(data_buffer);
             let ts_codec = get_ts_codec(encoding);
             let mut target = Vec::new();
             ts_codec
@@ -211,7 +211,7 @@ fn data_buf_to_arrow_array(
             Arc::new(PrimitiveArray::<Int64Type>::from(array_data))
         }
         PhysicalCType::Field(PhysicalDType::Float) => {
-            let encoding = get_encoding(&data_buffer[0..1]);
+            let encoding = get_encoding(data_buffer);
             let ts_codec = get_f64_codec(encoding);
             let mut target = Vec::new();
             ts_codec
@@ -242,7 +242,7 @@ fn data_buf_to_arrow_array(
             Arc::new(PrimitiveArray::<Float64Type>::from(array_data))
         }
         PhysicalCType::Field(PhysicalDType::Integer) => {
-            let encoding = get_encoding(&data_buffer[0..1]);
+            let encoding = get_encoding(data_buffer);
             let ts_codec = get_i64_codec(encoding);
             let mut target = Vec::new();
             ts_codec
@@ -273,7 +273,7 @@ fn data_buf_to_arrow_array(
             Arc::new(PrimitiveArray::<Int64Type>::from(array_data))
         }
         PhysicalCType::Field(PhysicalDType::Unsigned) => {
-            let encoding = get_encoding(&data_buffer[0..1]);
+            let encoding = get_encoding(data_buffer);
             let ts_codec = get_u64_codec(encoding);
             let mut target = Vec::new();
             ts_codec
@@ -304,7 +304,7 @@ fn data_buf_to_arrow_array(
             Arc::new(PrimitiveArray::<UInt64Type>::from(array_data))
         }
         PhysicalCType::Field(PhysicalDType::Boolean) => {
-            let encoding = get_encoding(&data_buffer[0..1]);
+            let encoding = get_encoding(data_buffer);
             let ts_codec = get_bool_codec(encoding);
             let mut target = Vec::new();
             ts_codec
@@ -354,10 +354,12 @@ pub(crate) mod tests {
     use models::gis::data_type::{Geometry, GeometryType};
     use models::schema::{ColumnType, TableColumn};
     use models::{PhysicalDType, ValueType};
+    use utils::bitset::BitSet;
 
     use super::{NullBitset, PageReader};
     use crate::tsm::data_block::MutableColumn;
-    use crate::tsm::page::Page;
+    use crate::tsm::page::{Page, PageMeta, PageStatistics};
+    use crate::tsm::statistics::ValueStatistics;
     use crate::TskvResult;
 
     pub struct TestPageReader<T> {
@@ -581,5 +583,23 @@ pub(crate) mod tests {
             super::data_buf_to_arrow_array(data_buffer, meta, NullBitset::Ref(page_null_bits))
                 .unwrap();
         assert_eq!(format!("{array:?}"), "StringArray\n[\n  null,\n  \"str_1\",\n  null,\n  \"str_3\",\n  null,\n  \"str_5\",\n  null,\n  \"str_7\",\n  null,\n  \"str_9\",\n  null,\n]");
+    }
+
+    #[test]
+    fn test_empty_databuf() {
+        let data_buffer = vec![];
+        let meta = PageMeta {
+            column: TableColumn::new_with_default(
+                "col".to_string(),
+                ColumnType::Field(ValueType::Integer),
+            ),
+            num_values: 10,
+            statistics: PageStatistics::I64(ValueStatistics::new(None, None, None, 10)),
+        };
+        let page_null_bits = BitSet::with_size(10);
+        let array =
+            super::data_buf_to_arrow_array(&data_buffer, &meta, NullBitset::Own(page_null_bits))
+                .unwrap();
+        assert_eq!(format!("{array:?}"), "PrimitiveArray<Int64>\n[\n  null,\n  null,\n  null,\n  null,\n  null,\n  null,\n  null,\n  null,\n  null,\n  null,\n]");
     }
 }
