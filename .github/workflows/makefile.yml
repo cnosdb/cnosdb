@@ -110,6 +110,7 @@ jobs:
       - name: Test
         shell: bash
         run: |
+          cargo build --package client --bin cnosdb-cli
           cargo test --package e2e_test --lib -- independent:: --test-threads=1 --nocapture
 
   windows-compatibility:
