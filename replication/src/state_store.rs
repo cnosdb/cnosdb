@@ -183,7 +183,7 @@ impl StateStorage {
         Ok(())
     }
 
-    pub fn get_memberships(
+    pub fn get_membership_list(
         &self,
         group_id: u32,
     ) -> ReplicationResult<HashMap<String, StoredMembership<RaftNodeId, RaftNodeInfo>>> {
@@ -201,33 +201,16 @@ impl StateStorage {
     }
 
     pub fn clear_memberships(&self, group_id: u32, index: u64) -> ReplicationResult<()> {
-        let mut min_distance = u64::MAX;
-        let mut min_distance_key = String::default();
+        let memberships = self.get_membership_list(group_id)?;
+        let mut list: Vec<(String, StoredMembership<u64, RaftNodeInfo>)> =
+            memberships.into_iter().collect();
 
-        let mut clear_keys = vec![];
-        let memberships = self.get_memberships(group_id)?;
-        for (key, value) in memberships.iter() {
-            if let Some(logid) = value.log_id() {
-                if logid.index > index {
-                    continue;
-                }
+        list.sort_by_key(|x| x.1.log_id().unwrap_or_default().index);
+        list.retain(|x| x.1.log_id().unwrap_or_default().index <= index);
+        list.pop();
 
-                if index - logid.index < min_distance {
-                    if !min_distance_key.is_empty() {
-                        clear_keys.push(min_distance_key);
-                    }
-
-                    min_distance = index - logid.index;
-                    min_distance_key = key.to_string();
-                } else {
-                    clear_keys.push(key.to_string())
-                }
-            } else {
-                clear_keys.push(key.to_string())
-            }
-        }
-
-        self.del_keys(&clear_keys)?;
+        let keys: Vec<String> = list.iter().map(|(first, _)| first.clone()).collect();
+        self.del_keys(&keys)?;
 
         Ok(())
     }
@@ -396,7 +379,7 @@ impl StateStorage {
     }
 
     pub fn del_group(&self, group_id: u32) -> ReplicationResult<()> {
-        let memberships = self.get_memberships(group_id)?;
+        let memberships = self.get_membership_list(group_id)?;
         let mut writer = self.writer_txn()?;
         self.del(&mut writer, &Key::applied_log(group_id))?;
         self.del(&mut writer, &Key::membership(group_id))?;

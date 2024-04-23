@@ -5,7 +5,6 @@ use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 
-use replication::{ApplyStorage, SnapshotMode};
 use tokio::sync::RwLock;
 use tracing::{debug, info};
 use warp::{hyper, Filter};
@@ -13,7 +12,7 @@ use warp::{hyper, Filter};
 use crate::error::{MetaError, MetaResult};
 use crate::store::command::*;
 use crate::store::dump::dump_impl;
-use crate::store::storage::{BtreeMapSnapshotData, StateMachine};
+use crate::store::storage::StateMachine;
 
 pub async fn start_singe_meta_server(
     path: String,
@@ -148,15 +147,10 @@ impl SingleServer {
     fn dump(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
         warp::path!("dump").and(self.with_storage()).and_then(
             |storage: Arc<RwLock<StateMachine>>| async move {
-                let (data, _) = storage
+                let data = storage
                     .write()
                     .await
-                    .snapshot(SnapshotMode::GetSnapshot)
-                    .await
-                    .map_err(MetaError::from)
-                    .map_err(warp::reject::custom)?;
-
-                let data: BtreeMapSnapshotData = serde_json::from_slice(&data)
+                    .backup()
                     .map_err(MetaError::from)
                     .map_err(warp::reject::custom)?;
 
@@ -237,8 +231,7 @@ impl SingleServer {
                 let data = storage
                     .write()
                     .await
-                    .dump()
-                    .await
+                    .debug_data()
                     .map_err(warp::reject::custom)?;
 
                 let res: Result<String, warp::Rejection> = Ok(data);

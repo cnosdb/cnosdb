@@ -25,7 +25,7 @@ use crate::summary::{Summary, SummaryTask};
 use crate::tseries_family::{SuperVersion, TseriesFamily};
 use crate::version_set::VersionSet;
 use crate::vnode_store::VnodeStorage;
-use crate::{file_utils, Engine, TsKvContext, TseriesFamilyId, VnodeSnapshot};
+use crate::{file_utils, Engine, TsKvContext, TseriesFamilyId};
 
 // TODO: A small summay channel capacity can cause a block
 pub const COMPACT_REQ_CHANNEL_CAP: usize = 1024;
@@ -235,21 +235,20 @@ impl Engine for TsKv {
         db_name: &str,
         vnode_id: VnodeId,
     ) -> TskvResult<VnodeStorage> {
-        let db = self.get_db_or_else_create(tenant, db_name).await?;
+        let database = self.get_db_or_else_create(tenant, db_name).await?;
 
-        let ts_index = db.write().await.get_ts_index_or_add(vnode_id).await?;
+        let ts_index = database.write().await.get_ts_index_or_add(vnode_id).await?;
         let ts_family = self
-            .get_tsfamily_or_else_create(vnode_id, db.clone())
+            .get_tsfamily_or_else_create(vnode_id, database.clone())
             .await?;
 
-        Ok(VnodeStorage {
-            db,
+        Ok(VnodeStorage::new(
+            vnode_id,
+            database,
             ts_index,
             ts_family,
-            id: vnode_id,
-            ctx: self.ctx.clone(),
-            snapshot: VnodeSnapshot::default(),
-        })
+            self.ctx.clone(),
+        ))
     }
 
     async fn remove_tsfamily(

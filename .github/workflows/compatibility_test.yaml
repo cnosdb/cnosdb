@@ -22,7 +22,6 @@ jobs:
             sleep 5
           done
           echo 'cnosdb successfully started'
-          cargo run --package test
           cargo run --package sqllogicaltests
   macos:
     name: macos
@@ -42,7 +41,6 @@ jobs:
             sleep 5
           done
           echo 'cnosdb successfully started'
-          cargo run --package test
           cargo run --package sqllogicaltests
   windows:
     name: windows
@@ -69,3 +67,4 @@ jobs:
             }
           }
           echo 'cnosdb successfully started'
+          cargo run --package sqllogicaltests

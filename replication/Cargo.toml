@@ -46,6 +46,7 @@ heed-traits = { workspace = true }
 warp = { workspace = true }
 http = { workspace = true }
 http-body = { workspace = true }
+serial_test = { workspace = true }
 
 [features]
 

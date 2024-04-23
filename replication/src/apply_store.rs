@@ -8,7 +8,7 @@ use heed::{Database, Env};
 use serde::{Deserialize, Serialize};
 
 use crate::errors::{ReplicationError, ReplicationResult};
-use crate::{ApplyContext, ApplyStorage, EngineMetrics, Request, Response, SnapshotMode};
+use crate::{ApplyContext, ApplyStorage, EngineMetrics, Request, Response};
 
 const LAST_APPLIED_ID_KEY: &str = "last_applied_id";
 // --------------------------------------------------------------------------- //
@@ -20,6 +20,7 @@ pub struct HashMapSnapshotData {
 pub struct HeedApplyStorage {
     env: Env,
     db: Database<Str, Str>,
+    snapshot: Option<(Vec<u8>, u64)>,
 }
 
 impl HeedApplyStorage {
@@ -31,7 +32,11 @@ impl HeedApplyStorage {
             .max_dbs(1)
             .open(path)?;
         let db: Database<Str, Str> = env.create_database(Some("data"))?;
-        let storage = Self { env, db };
+        let storage = Self {
+            env,
+            db,
+            snapshot: None,
+        };
 
         Ok(storage)
     }
@@ -63,7 +68,7 @@ impl HeedApplyStorage {
 
 #[async_trait]
 impl ApplyStorage for HeedApplyStorage {
-    async fn apply(&mut self, ctx: &ApplyContext, req: &Request) -> ReplicationResult<Response> {
+    async fn apply(&mut self, _ctx: &ApplyContext, req: &Request) -> ReplicationResult<Response> {
         #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
         struct RequestCommand {
             key: String,
@@ -73,14 +78,16 @@ impl ApplyStorage for HeedApplyStorage {
         let req: RequestCommand = serde_json::from_slice(req)?;
         let mut writer = self.env.write_txn()?;
         self.db.put(&mut writer, &req.key, &req.value)?;
-        self.db
-            .put(&mut writer, LAST_APPLIED_ID_KEY, &ctx.index.to_string())?;
         writer.commit()?;
 
         Ok(req.value.into())
     }
 
-    async fn snapshot(&mut self, _mode: SnapshotMode) -> ReplicationResult<(Vec<u8>, Option<u64>)> {
+    async fn get_snapshot(&mut self) -> ReplicationResult<Option<(Vec<u8>, u64)>> {
+        Ok(self.snapshot.clone())
+    }
+
+    async fn create_snapshot(&mut self, applied_id: u64) -> ReplicationResult<(Vec<u8>, u64)> {
         let mut hash_map = HashMap::new();
         let reader = self.env.read_txn()?;
         let iter = self.db.iter(&reader)?;
@@ -90,14 +97,15 @@ impl ApplyStorage for HeedApplyStorage {
         }
 
         let data = HashMapSnapshotData { map: hash_map };
-        let json_str = serde_json::to_string(&data).unwrap();
+        let bytes = serde_json::to_vec(&data)?;
 
-        Ok((json_str.as_bytes().to_vec(), None))
+        self.snapshot = Some((bytes.clone(), applied_id));
+
+        Ok((bytes.clone(), applied_id))
     }
 
     async fn restore(&mut self, snapshot: &[u8]) -> ReplicationResult<()> {
-        let data: HashMapSnapshotData = serde_json::from_slice(snapshot).unwrap();
-
+        let data: HashMapSnapshotData = serde_json::from_slice(snapshot)?;
         let mut writer = self.env.write_txn()?;
         self.db.clear(&mut writer)?;
         for (key, val) in data.map.iter() {
@@ -113,11 +121,19 @@ impl ApplyStorage for HeedApplyStorage {
     }
 
     async fn metrics(&self) -> ReplicationResult<EngineMetrics> {
-        let id = self.get_last_applied_id()?.unwrap_or_default();
-        Ok(EngineMetrics {
-            last_applied_id: id,
-            flushed_apply_id: id,
-            snapshot_apply_id: id,
-        })
+        let _id = self.get_last_applied_id()?.unwrap_or_default();
+        if let Some(snapshot) = &self.snapshot {
+            Ok(EngineMetrics {
+                last_applied_id: 0,
+                flushed_apply_id: 0,
+                snapshot_apply_id: snapshot.1,
+            })
+        } else {
+            Ok(EngineMetrics {
+                last_applied_id: 0,
+                flushed_apply_id: 0,
+                snapshot_apply_id: 0,
+            })
+        }
     }
 }
