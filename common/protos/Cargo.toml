@@ -12,6 +12,8 @@ flatbuffers = { workspace = true }
 prost = { workspace = true }
 rand = { workspace = true }
 snafu = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 tonic = { workspace = true, features = ["transport", "tls"] }
 tower = { workspace = true }
 protobuf = { workspace = true }

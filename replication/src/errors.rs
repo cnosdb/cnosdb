@@ -68,6 +68,12 @@ pub enum ReplicationError {
     AlreadyShutdown { id: ReplicationSetId },
 }
 
+impl ReplicationError {
+    pub fn error_code(&self) -> &dyn ErrorCode {
+        self
+    }
+}
+
 impl From<std::io::Error> for ReplicationError {
     fn from(err: std::io::Error) -> Self {
         ReplicationError::StorageErr {

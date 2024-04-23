@@ -29,7 +29,7 @@ impl Stream for TonicRecordBatchDecoder {
                 Err(err) => Poll::Ready(Some(Err(err.into()))),
             },
             Some(Err(err)) => Poll::Ready(Some(Err(CoordinatorError::TskvError {
-                source: err.into(),
+                msg: err.to_string(),
             }))),
             None => Poll::Ready(None),
         }

@@ -513,7 +513,7 @@ impl CoordService {
         let data = self.admin_command_on_node(node_id, request).await?;
         match record_batch_decode(&data) {
             Ok(r) => Ok(r),
-            Err(e) => Err(CoordinatorError::ArrowError { source: e }),
+            Err(e) => Err(CoordinatorError::ArrowError { msg: e.to_string() }),
         }
     }
 
@@ -839,7 +839,7 @@ impl Coordinator for CoordService {
 
             if !has_fileds {
                 return Err(CoordinatorError::TskvError {
-                    source: TskvError::FieldsIsEmpty,
+                    msg: "Fields can't be empty".to_string(),
                 });
             }
 

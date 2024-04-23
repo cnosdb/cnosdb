@@ -34,11 +34,11 @@ impl TskvRaftWriter {
                 raft_write_command::Command::WriteData(request) => {
                     let fb_points = flatbuffers::root::<protos::models::Points>(&request.data)
                         .map_err(|err| CoordinatorError::TskvError {
-                            source: tskv::TskvError::InvalidFlatbuffer { source: err },
+                            msg: err.to_string(),
                         })?;
 
                     let _ = fb_points.tables().ok_or(CoordinatorError::TskvError {
-                        source: tskv::TskvError::InvalidPointTable,
+                        msg: "Table name can't be empty".to_string(),
                     })?;
 
                     if request.data.len()
@@ -47,7 +47,7 @@ impl TskvRaftWriter {
                             .saturating_sub(self.memory_pool.reserved())
                     {
                         return Err(CoordinatorError::TskvError {
-                            source: tskv::TskvError::MemoryExhausted,
+                            msg: "Memory Exhausted Retry Later".to_string(),
                         });
                     }
                 }

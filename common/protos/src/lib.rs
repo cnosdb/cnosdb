@@ -1,5 +1,6 @@
 mod generated;
 pub use generated::*;
+use serde::{Deserialize, Serialize};
 use tonic::codec::CompressionEncoding;
 pub mod models_helper;
 pub mod prompb;
@@ -21,7 +22,7 @@ pub const DEFAULT_GRPC_SERVER_MESSAGE_LEN: usize = 100 * 1024 * 1024;
 
 type PointsResult<T> = Result<T, PointsError>;
 
-#[derive(Debug, Snafu)]
+#[derive(Debug, Snafu, Serialize, Deserialize)]
 #[snafu(visibility(pub))]
 pub enum PointsError {
     #[snafu(display("{}", msg))]

@@ -10,26 +10,33 @@ use models::meta_data::{ReplicationSet, ReplicationSetId};
 use models::schema::Precision;
 use models::Timestamp;
 use protos::PointsError;
+use serde::{Deserialize, Serialize};
 use snafu::Snafu;
 
-#[derive(Snafu, Debug, ErrorCoder)]
+#[derive(Snafu, Debug, Serialize, Deserialize, ErrorCoder)]
 #[snafu(visibility(pub))]
 #[error_code(mod_code = "05")]
 pub enum CoordinatorError {
+    #[snafu(display("TskvError: {}", msg))]
+    #[error_code(code = 8)]
     TskvError {
-        source: tskv::TskvError,
+        msg: String,
     },
 
     Meta {
         source: MetaError,
     },
 
+    #[snafu(display("ArrowError: {}", msg))]
+    #[error_code(code = 32)]
     ArrowError {
-        source: ArrowError,
+        msg: String,
     },
 
+    #[snafu(display("DataFusionError: {}", msg))]
+    #[error_code(code = 33)]
     DataFusionError {
-        source: DataFusionError,
+        msg: String,
     },
 
     ReplicatError {
@@ -54,9 +61,10 @@ pub enum CoordinatorError {
         err: String,
     },
 
-    #[snafu(display("Fails to serialize or deserialize: {source}"))]
+    #[snafu(display("Fails to serialize or deserialize: {}", msg))]
+    #[error_code(code = 17)]
     BincodeSerde {
-        source: bincode::Error,
+        msg: String,
     },
 
     #[snafu(display("Fails to send to channel: {}", msg))]
@@ -77,10 +85,10 @@ pub enum CoordinatorError {
         msg: String,
     },
 
-    #[snafu(display("Error from models: {}", source))]
+    #[snafu(display("Error from models: {}", msg))]
     #[error_code(code = 7)]
     ModelsError {
-        source: models::Error,
+        msg: String,
     },
 
     #[snafu(display("Not found tenant: {}", name))]
@@ -89,10 +97,10 @@ pub enum CoordinatorError {
         name: String,
     },
 
-    #[snafu(display("Invalid flatbuffers: {}", source))]
+    #[snafu(display("Invalid flatbuffers: {}", msg))]
     #[error_code(code = 10)]
     InvalidFlatbuffer {
-        source: flatbuffers::InvalidFlatbuffer,
+        msg: String,
     },
 
     #[snafu(display("Unknow coordinator command: {}", cmd))]
@@ -246,7 +254,9 @@ impl From<tskv::TskvError> for CoordinatorError {
         match err {
             tskv::TskvError::Meta { source } => CoordinatorError::Meta { source },
 
-            other => CoordinatorError::TskvError { source: other },
+            other => CoordinatorError::TskvError {
+                msg: other.to_string(),
+            },
         }
     }
 }
@@ -269,16 +279,16 @@ impl From<ArrowError> for CoordinatorError {
                 }
             }
             ArrowError::ExternalError(e) if e.downcast_ref::<tskv::TskvError>().is_some() => {
-                CoordinatorError::TskvError {
-                    source: *e.downcast::<tskv::TskvError>().unwrap(),
-                }
+                CoordinatorError::TskvError { msg: e.to_string() }
             }
             ArrowError::ExternalError(e) if e.downcast_ref::<ArrowError>().is_some() => {
                 let arrow_error = *e.downcast::<ArrowError>().unwrap();
                 arrow_error.into()
             }
 
-            other => CoordinatorError::ArrowError { source: other },
+            other => CoordinatorError::ArrowError {
+                msg: other.to_string(),
+            },
         }
     }
 }
@@ -287,14 +297,18 @@ impl From<DataFusionError> for CoordinatorError {
     fn from(err: DataFusionError) -> Self {
         match err {
             DataFusionError::ArrowError(e) => e.into(),
-            other => CoordinatorError::DataFusionError { source: other },
+            other => CoordinatorError::DataFusionError {
+                msg: other.to_string(),
+            },
         }
     }
 }
 
 impl From<bincode::Error> for CoordinatorError {
     fn from(err: bincode::Error) -> Self {
-        Self::BincodeSerde { source: err }
+        Self::BincodeSerde {
+            msg: err.to_string(),
+        }
     }
 }
 
@@ -330,7 +344,9 @@ impl From<tonic::Status> for CoordinatorError {
 
 impl From<models::Error> for CoordinatorError {
     fn from(err: models::Error) -> Self {
-        CoordinatorError::ModelsError { source: err }
+        CoordinatorError::ModelsError {
+            msg: err.to_string(),
+        }
     }
 }
 
@@ -338,7 +354,7 @@ impl CoordinatorError {
     pub fn error_code(&self) -> &dyn ErrorCode {
         match self {
             CoordinatorError::Meta { source } => source.error_code(),
-            CoordinatorError::TskvError { source } => source.error_code(),
+            CoordinatorError::ReplicatError { source } => source.error_code(),
             _ => self,
         }
     }
@@ -346,7 +362,9 @@ impl CoordinatorError {
 
 impl From<flatbuffers::InvalidFlatbuffer> for CoordinatorError {
     fn from(value: InvalidFlatbuffer) -> Self {
-        Self::InvalidFlatbuffer { source: value }
+        Self::InvalidFlatbuffer {
+            msg: value.to_string(),
+        }
     }
 }
 
@@ -362,24 +380,10 @@ pub fn encode_grpc_response(
             data,
             code: SUCCESS_RESPONSE_CODE,
         }),
-
-        Err(err) => {
-            if let CoordinatorError::RaftForwardToLeader {
-                replica_id,
-                leader_vnode_id: new_leader,
-            } = err
-            {
-                tonic::Response::new(protos::kv_service::BatchBytesResponse {
-                    data: format!("{}-{}", replica_id, new_leader).into(),
-                    code: FORWARD_TO_LEADER_CODE,
-                })
-            } else {
-                tonic::Response::new(protos::kv_service::BatchBytesResponse {
-                    data: err.to_string().into_bytes(),
-                    code: FAILED_RESPONSE_CODE,
-                })
-            }
-        }
+        Err(err) => tonic::Response::new(protos::kv_service::BatchBytesResponse {
+            data: serde_json::to_vec(&err).unwrap(),
+            code: err.error_code().code().parse::<i32>().unwrap(),
+        }),
     }
 }
 
@@ -388,29 +392,142 @@ pub fn decode_grpc_response(
 ) -> CoordinatorResult<Vec<u8>> {
     if status.code == SUCCESS_RESPONSE_CODE {
         Ok(status.data)
-    } else if status.code == FORWARD_TO_LEADER_CODE {
-        let data = String::from_utf8_lossy(&status.data).to_string();
-        let strs: Vec<&str> = data.split('-').collect();
-        let replica_id = strs[0].parse::<u32>().unwrap_or_default();
-        let leader_vnode_id = strs[1].parse::<u32>().unwrap_or_default();
-        Err(CoordinatorError::RaftForwardToLeader {
-            replica_id,
-            leader_vnode_id,
-        })
     } else {
-        let mut len = 256;
-        if status.data.len() < len {
-            len = status.data.len();
-        }
-        let tmp = String::from_utf8_lossy(&status.data[..len]).to_string();
-        Err(CoordinatorError::GRPCRequest { msg: tmp })
+        let deserialized_error: CoordinatorError = serde_json::from_slice(&status.data).unwrap();
+        Err(deserialized_error)
     }
 }
 
 pub type CoordinatorResult<T> = Result<T, CoordinatorError>;
 
-#[test]
-fn test_mod_code() {
-    let e = CoordinatorError::UnExpectResponse;
-    assert!(e.code().starts_with("05"));
+#[cfg(test)]
+mod test {
+    use models::error_code::ErrorCode;
+    use models::meta_data::ReplicationSet;
+    use models::schema::Precision;
+
+    use super::{decode_grpc_response, encode_grpc_response};
+    use crate::errors::CoordinatorError;
+
+    #[test]
+    fn test_mod_code() {
+        let e = CoordinatorError::UnExpectResponse;
+        assert!(e.code().starts_with("05"));
+    }
+
+    #[test]
+    fn test_encode_decode() {
+        //Error:{source: MetaError}
+        {
+            let err = CoordinatorError::Meta {
+                source: meta::error::MetaError::ChangeLeader {
+                    new_leader: "123".to_string(),
+                },
+            };
+            let expect_err = CoordinatorError::Meta {
+                source: meta::error::MetaError::ChangeLeader {
+                    new_leader: "123".to_string(),
+                },
+            };
+            println!("error: {}", err);
+            println!("error_code: {}", err.error_code().code());
+            let e1 = encode_grpc_response(Err(err));
+            let err2 = decode_grpc_response(e1.into_inner()).unwrap_err();
+            assert!(err2.error_code().code().starts_with("03"));
+            assert_eq!(expect_err.error_code().code(), err2.error_code().code());
+            assert_eq!(expect_err.message(), err2.message());
+        }
+        //Error:{source: ReplicatError}
+        {
+            let err = CoordinatorError::ReplicatError {
+                source: replication::errors::ReplicationError::AlreadyShutdown { id: 123 },
+            };
+            let expect_err = CoordinatorError::ReplicatError {
+                source: replication::errors::ReplicationError::AlreadyShutdown { id: 123 },
+            };
+            println!("error: {}", err);
+            println!("error_code: {}", err.error_code().code());
+            let e1 = encode_grpc_response(Err(err));
+            let err2 = decode_grpc_response(e1.into_inner()).unwrap_err();
+            assert!(err2.error_code().code().starts_with("06"));
+            assert_eq!(expect_err.error_code().code(), err2.error_code().code());
+            assert_eq!(expect_err.message(), err2.message());
+        }
+        //Error:{source: PointsError}
+        {
+            let err = CoordinatorError::FBPoints {
+                source: protos::PointsError::ColumnMissingNames,
+            };
+            let expect_err = CoordinatorError::FBPoints {
+                source: protos::PointsError::ColumnMissingNames,
+            };
+            println!("error: {}", err);
+            println!("error_code: {}", err.error_code().code());
+            let e1 = encode_grpc_response(Err(err));
+            let err2 = decode_grpc_response(e1.into_inner()).unwrap_err();
+            assert!(err2.error_code().code().starts_with("05"));
+            assert_eq!(expect_err.error_code().code(), err2.error_code().code());
+            assert_eq!(expect_err.message(), err2.message());
+        }
+        //Error:{msg: String}
+        {
+            let err = CoordinatorError::IOErrors { msg: "123".into() };
+            let expect_err = CoordinatorError::IOErrors { msg: "123".into() };
+            println!("error: {}", err);
+            println!("error_code: {}", err.error_code().code());
+            let e1 = encode_grpc_response(Err(err));
+            let err2 = decode_grpc_response(e1.into_inner()).unwrap_err();
+            assert!(err2.error_code().code().starts_with("05"));
+            assert_eq!(expect_err.error_code().code(), err2.error_code().code());
+            assert_eq!(expect_err.message(), err2.message());
+        }
+        //Error:{null}
+        {
+            let err = CoordinatorError::CoordCommandParseErr;
+            let expect_err = CoordinatorError::CoordCommandParseErr;
+            println!("error: {}", err);
+            println!("error_code: {}", err.error_code().code());
+            let e1 = encode_grpc_response(Err(err));
+            let err2 = decode_grpc_response(e1.into_inner()).unwrap_err();
+            assert!(err2.error_code().code().starts_with("05"));
+            assert_eq!(expect_err.error_code().code(), err2.error_code().code());
+            assert_eq!(expect_err.message(), err2.message());
+        }
+        //Error:{replica：ReplicationSet}
+        {
+            let err = CoordinatorError::LeaderIsWrong {
+                replica: ReplicationSet::default(),
+            };
+            let expect_err = CoordinatorError::LeaderIsWrong {
+                replica: ReplicationSet::default(),
+            };
+            println!("error: {}", err);
+            println!("error_code: {}", err.error_code().code());
+            let e1 = encode_grpc_response(Err(err));
+            let err2 = decode_grpc_response(e1.into_inner()).unwrap_err();
+            assert!(err2.error_code().code().starts_with("05"));
+            assert_eq!(expect_err.error_code().code(), err2.error_code().code());
+            assert_eq!(expect_err.message(), err2.message());
+        }
+        //Error:{more than one}
+        {
+            let err = CoordinatorError::NormalizeTimestamp {
+                from: Precision::MS,
+                to: Precision::NS,
+                ts: 12345678,
+            };
+            let expect_err = CoordinatorError::NormalizeTimestamp {
+                from: Precision::MS,
+                to: Precision::NS,
+                ts: 12345678,
+            };
+            println!("error: {}", err);
+            println!("error_code: {}", err.error_code().code());
+            let e1 = encode_grpc_response(Err(err));
+            let err2 = decode_grpc_response(e1.into_inner()).unwrap_err();
+            assert!(err2.error_code().code().starts_with("05"));
+            assert_eq!(expect_err.error_code().code(), err2.error_code().code());
+            assert_eq!(expect_err.message(), err2.message());
+        }
+    }
 }
