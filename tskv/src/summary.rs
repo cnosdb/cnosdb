@@ -549,7 +549,7 @@ impl Summary {
             .version_set
             .read()
             .await
-            .snapshot_version_edit()
+            .ts_families_version_edit()
             .await?;
         self.writer = Writer::open(&new_path, RecordDataType::Summary).await?;
 
