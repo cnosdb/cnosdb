@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -115,11 +115,10 @@ impl VnodeStorage {
         debug!("Snapshot: create snapshot on vnode: {}", self.id);
 
         let (snapshot_version, snapshot_ve) = {
-            let mut _file_metas = HashMap::new();
             let ts_family_w = self.ts_family.write().await;
 
             let version = ts_family_w.version();
-            let ve = ts_family_w.build_version_edit(&mut _file_metas).await?;
+            let ve = ts_family_w.build_version_edit();
             (version, ve)
         };
 

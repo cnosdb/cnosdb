@@ -1,6 +1,5 @@
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
     use std::path::{Path, PathBuf};
     use std::sync::Arc;
     use std::time::{Duration, Instant};
@@ -391,16 +390,8 @@ mod tests {
                 .unwrap();
             sleep_in_runtime(runtime.clone(), Duration::from_secs(3));
 
-            let version_edit = runtime.block_on(async move {
-                let mut file_metas = HashMap::new();
-                vnode
-                    .ts_family()
-                    .read()
-                    .await
-                    .build_version_edit(&mut file_metas)
-                    .await
-                    .unwrap()
-            });
+            let version_edit = runtime
+                .block_on(async move { vnode.ts_family().read().await.build_version_edit() });
 
             assert_eq!(version_edit.tsf_id, new_vnode_id);
             assert_eq!(version_edit.add_files.len(), 2);

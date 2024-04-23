@@ -955,11 +955,7 @@ impl TseriesFamily {
         version: Arc<Version>,
         flushed_mem_caches: Option<&Vec<Arc<RwLock<MemCache>>>>,
     ) {
-        debug!(
-            "New version(level_info) for ts_family({}): {:?}",
-            self.tf_id,
-            &version.levels_info()
-        );
+        debug!("New version for ts_family ({})", self.tf_id,);
         if let Some(flushed_mem_caches) = flushed_mem_caches {
             let mut new_caches = Vec::with_capacity(self.immut_cache.len());
             for c in self.immut_cache.iter() {
@@ -1132,10 +1128,7 @@ impl TseriesFamily {
     /// Snapshots last version before `last_seq` of this vnode.
     ///
     /// Db-files' index data (field-id filter) will be inserted into `file_metas`.
-    pub async fn build_version_edit(
-        &self,
-        file_metas: &mut HashMap<ColumnFileId, Arc<BloomFilter>>,
-    ) -> TskvResult<VersionEdit> {
+    pub fn build_version_edit(&self) -> VersionEdit {
         let version = self.version();
         let owner = (*self.tenant_database).clone();
         let seq_no = version.last_seq();
@@ -1147,12 +1140,25 @@ impl TseriesFamily {
                 let mut meta = CompactMeta::from(file.as_ref());
                 meta.tsf_id = files.tsf_id;
                 version_edit.add_file(meta, max_level_ts);
+            }
+        }
+
+        version_edit
+    }
+
+    pub async fn column_files_bloom_filter(
+        &self,
+    ) -> TskvResult<HashMap<ColumnFileId, Arc<BloomFilter>>> {
+        let version = self.version();
+        let mut file_metas = HashMap::new();
+        for files in version.levels_info.iter() {
+            for file in files.files.iter() {
                 let bloom_filter = file.load_bloom_filter().await?;
                 file_metas.insert(file.file_id, bloom_filter);
             }
         }
 
-        Ok(version_edit)
+        Ok(file_metas)
     }
 
     pub async fn rebuild_index(&self) -> TskvResult<Arc<TSIndex>> {
