@@ -209,7 +209,9 @@ impl TskvService for TskvServiceImpl {
             .ok_or(self.internal_status(format!("Not Found tenant({}) meta", inner.tenant)))?;
 
         let replica = client
-            .get_replication_set(inner.replica_id)
+            .get_replication_set(&inner.db_name, inner.replica_id)
+            .await
+            .map_err(|err| self.internal_status(format!("Meta for replication set: {:?}", err)))?
             .ok_or(self.internal_status(format!("Not Found Replica Set({})", inner.replica_id)))?;
 
         let writer = self.coord.tskv_raft_writer(inner);
