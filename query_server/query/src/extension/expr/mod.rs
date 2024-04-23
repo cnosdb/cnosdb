@@ -7,6 +7,7 @@ pub mod expr_utils;
 mod scalar_function;
 mod selector_function;
 mod session_function;
+mod ts_gen_func;
 mod window;
 
 use datafusion::arrow::datatypes::{DataType, IntervalUnit};
@@ -15,6 +16,7 @@ pub use selector_function::{BOTTOM, TOPK};
 pub use session_function::register_session_udfs;
 use spi::query::function::FunctionMetadataManager;
 use spi::Result;
+pub use ts_gen_func::TSGenFunc;
 pub use window::{
     ceil_sliding_window, floor_sliding_window, time_window_signature, DEFAULT_TIME_WINDOW_START,
     TIME_WINDOW, TIME_WINDOW_UDF, WINDOW_COL_NAME, WINDOW_END, WINDOW_START,

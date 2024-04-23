@@ -37,6 +37,15 @@ impl<'a> FunctionMetadataManager for DFSessionContextFuncAdapter<'a> {
         Err(QueryError::FunctionExists { name: udaf.name })
     }
 
+    fn register_udwf(&mut self, udwf: datafusion::logical_expr::WindowUDF) -> Result<()> {
+        if self.ctx.udwf(udwf.name.as_str()).is_err() {
+            self.ctx.register_udwf(udwf);
+            return Ok(());
+        }
+
+        Err(QueryError::FunctionExists { name: udwf.name })
+    }
+
     fn udf(&self, name: &str) -> Result<Arc<ScalarUDF>> {
         self.ctx
             .udf(name)
@@ -46,6 +55,12 @@ impl<'a> FunctionMetadataManager for DFSessionContextFuncAdapter<'a> {
     fn udaf(&self, name: &str) -> Result<Arc<AggregateUDF>> {
         self.ctx
             .udaf(name)
+            .map_err(|e| QueryError::Datafusion { source: e })
+    }
+
+    fn udwf(&self, name: &str) -> Result<Arc<datafusion::logical_expr::WindowUDF>> {
+        self.ctx
+            .udwf(name)
             .map_err(|e| QueryError::Datafusion { source: e })
     }
 

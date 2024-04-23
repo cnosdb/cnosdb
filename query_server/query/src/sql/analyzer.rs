@@ -11,6 +11,7 @@ use crate::extension::analyse::transform_bottom_func_to_topk_node::TransformBott
 use crate::extension::analyse::transform_gapfill::TransformGapFill;
 use crate::extension::analyse::transform_time_window::TransformTimeWindowRule;
 use crate::extension::analyse::transform_topk_func_to_topk_node::TransformTopkFuncToTopkNodeRule;
+use crate::extension::analyse::transform_ts_gen_func::TransformTSGenFunc;
 use crate::extension::analyse::transform_update::TransformUpdateRule;
 
 pub struct DefaultAnalyzer {
@@ -28,6 +29,7 @@ impl DefaultAnalyzer {
         rules.push(Arc::new(TransformTopkFuncToTopkNodeRule {}));
         rules.push(Arc::new(TransformGapFill::new()));
         rules.push(Arc::new(TransformTimeWindowRule {}));
+        rules.push(Arc::new(TransformTSGenFunc));
 
         Self { inner: analyzer }
     }
