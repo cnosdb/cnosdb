@@ -47,7 +47,7 @@ pub async fn start_raft_node(opt: store::config::Opt) -> MetaResult<()> {
         address: http_addr.clone(),
     };
 
-    let storage = NodeStorage::open(id, info.clone(), state, engine.clone(), entry)?;
+    let storage = NodeStorage::open(id, info.clone(), state, engine.clone(), entry).await?;
     let config = ReplicationConfig {
         cluster_name: "cnosdb_meta".to_string(),
         lmdb_max_map_size: opt.lmdb_max_map_size,

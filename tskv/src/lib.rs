@@ -148,7 +148,7 @@ pub struct TsKvContext {
     pub summary_task_sender: Sender<SummaryTask>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct VnodeSnapshot {
     pub node_id: NodeId,
     pub vnode_id: VnodeId,
@@ -156,6 +156,7 @@ pub struct VnodeSnapshot {
     pub create_time: String,
     pub version_edit: VersionEdit,
 
+    //filed version using Option just for compat Serialize, Deserialize
     #[serde(skip_serializing, skip_deserializing)]
     pub version: Option<Arc<Version>>,
     #[serde(skip_serializing, skip_deserializing)]

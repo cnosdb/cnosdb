@@ -444,7 +444,7 @@ impl RaftEntryStorageInner {
         let wal_entry = WalRecordData::new(record.data);
         if let Block::RaftLog(entry) = wal_entry.block {
             if let Some(apply_id) = apply_id {
-                let last_seq = vode_store.ts_family.read().await.version().last_seq();
+                let last_seq = vode_store.ts_family().read().await.version().last_seq();
                 if entry.log_id.index > last_seq && entry.log_id.index <= apply_id.index {
                     if let EntryPayload::Normal(ref req) = entry.payload {
                         let ctx = replication::ApplyContext {
@@ -657,7 +657,9 @@ mod test {
             address: "127.0.0.1:12345".to_string(),
         };
 
-        let storage = NodeStorage::open(1000, info, state, engine, entry).unwrap();
+        let storage = NodeStorage::open(1000, info, state, engine, entry)
+            .await
+            .unwrap();
 
         Arc::new(storage)
     }

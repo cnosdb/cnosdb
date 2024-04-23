@@ -930,7 +930,7 @@ mod test {
                 .expect("add tsfamily successfully");
 
             // Go to the next version.
-            let version = vnode.ts_family.read().await.version();
+            let version = vnode.ts_family().read().await.version();
             let tsm_reader_cache = Arc::downgrade(version.tsm_reader_cache());
 
             let owner = make_owner(tenant, database);
@@ -953,11 +953,11 @@ mod test {
             );
 
             let version = Arc::new(version);
-            vnode.ts_family.write().await.new_version(version, None);
+            vnode.ts_family().write().await.new_version(version, None);
             edit.add_file(meta, 1);
 
             let (sender, receiver) = tokio::sync::oneshot::channel();
-            let task = SummaryTask::new(vnode.ts_family.clone(), edit, None, None, sender);
+            let task = SummaryTask::new(vnode.ts_family(), edit, None, None, sender);
             summary_task_sender.send(task).await.unwrap();
             let _ = receiver.await;
 

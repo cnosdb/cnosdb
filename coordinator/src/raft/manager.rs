@@ -391,13 +391,15 @@ impl RaftNodesManager {
         };
 
         let raft_id = vnode_id as u64;
-        let storage = Arc::new(NodeStorage::open(
+        let storage = NodeStorage::open(
             raft_id,
             info.clone(),
             self.raft_state.clone(),
             engine.clone(),
             raft_logs,
-        )?);
+        )
+        .await?;
+        let storage = Arc::new(storage);
 
         let repl_config = self.replication_config();
         let node = RaftNode::new(raft_id, info, storage, repl_config).await?;
@@ -461,16 +463,18 @@ impl RaftNodesManager {
 
     fn replication_config(&self) -> ReplicationConfig {
         ReplicationConfig {
+            // raft_logs_to_keep: 100,
+            // snapshot_policy: SnapshotPolicy::LogsSinceLast(100),
+            snapshot_policy: SnapshotPolicy::Never,
+            raft_logs_to_keep: self.config.cluster.raft_logs_to_keep,
             cluster_name: self.config.global.cluster_name.clone(),
             lmdb_max_map_size: self.config.cluster.lmdb_max_map_size.try_into().unwrap(),
             grpc_enable_gzip: self.config.service.grpc_enable_gzip,
             heartbeat_interval: self.config.cluster.heartbeat_interval.as_millis() as u64,
-            raft_logs_to_keep: self.config.cluster.raft_logs_to_keep,
             send_append_entries_timeout: self.config.cluster.send_append_entries_timeout.as_millis()
                 as u64,
             install_snapshot_timeout: self.config.cluster.install_snapshot_timeout.as_millis()
                 as u64,
-            snapshot_policy: SnapshotPolicy::Never,
         }
     }
 
