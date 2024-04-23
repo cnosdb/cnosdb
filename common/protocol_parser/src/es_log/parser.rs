@@ -10,16 +10,6 @@ use snafu::Snafu;
 use crate::Line;
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct Fields {
-    #[serde(rename = "_msg")]
-    msg: Option<String>,
-    #[serde(rename = "_time")]
-    pub time: Option<String>,
-    #[serde(flatten)]
-    ohters: serde_json::Map<String, serde_json::Value>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
 pub enum Command {
     #[serde(rename = "create")]
     Create(CommandInfo),
