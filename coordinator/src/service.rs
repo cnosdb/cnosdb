@@ -155,7 +155,9 @@ impl CoordService {
             meta.clone(),
             kv_inst.clone(),
         ));
-        raft_manager.start_all_raft_node().await.unwrap();
+        RaftNodesManager::start_all_raft_node(runtime.clone(), raft_manager.clone())
+            .await
+            .unwrap();
 
         tokio::spawn(MultiRaft::raft_nodes_manager(
             raft_manager.multi_raft(),
