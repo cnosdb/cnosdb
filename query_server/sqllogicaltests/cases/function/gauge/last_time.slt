@@ -1,0 +1,68 @@
+include ./../setup.slt
+
+##########
+## Query
+##########
+
+query 
+select time,t0,t1,t2,f0,f1 from func_tbl order by time;
+----
+1999-12-31T00:00:00 "tag11" "tag21" "NULL" 111 444
+1999-12-31T00:00:00.005 "tag12" "tag22" "NULL" 222 444
+1999-12-31T00:00:00.010 "tag12" "tag23" "NULL" 333 222
+1999-12-31T00:00:10.015 "tag14" "tag24" "NULL" 444 111
+1999-12-31T00:00:10.020 "tag14" "tag21" "NULL" 222 555
+1999-12-31T00:10:00.025 "tag11" "tag22" "NULL" 333 555
+1999-12-31T00:10:00.030 "tag11" "tag23" "NULL" 444 333
+1999-12-31T01:00:00.035 "tag14" "tag24" "NULL" 555 222
+
+query 
+select last_time(gauge_agg(time, f1)), max(time) from func_tbl;
+----
+1999-12-31T01:00:00.035 1999-12-31T01:00:00.035
+
+query 
+select last_time(gauge_agg(time, f0)), max(time) from func_tbl;
+----
+1999-12-31T01:00:00.035 1999-12-31T01:00:00.035
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: Expected GaugeData, got TimestampNanosecond\(NULL, None\)", .*
+select last_time(time) from func_tbl;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function \\"last_time\\" expects 1 arguments, but 0 were provided", *
+select last_time(), max(time) from func_tbl;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Invalid function 'last_times'\.\\nDid you mean *
+select last_times(gauge_agg(time, f1)), max(time) from func_tbl;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function \\"last_time\\" expects 1 arguments, but 2 were provided", *
+select last_time(gauge_agg(time, f1), gauge_agg(time, f1)), max(time) from func_tbl;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: Expected GaugeData, got TimestampNanosecond\(NULL, None\)", *
+select last_time(time), max(time) from func_tbl;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: Expected GaugeData, got Int64\(NULL\)", *
+select last_time(f1), max(time) from func_tbl;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: Expected GaugeData, got Utf8\(NULL\)", *
+select last_time(t0), max(time) from func_tbl;
+
+query 
+select last_time(gauge_agg(time, f1)), last_time(gauge_agg(time, f0)), max(time) from func_tbl;
+----
+1999-12-31T01:00:00.035 1999-12-31T01:00:00.035 1999-12-31T01:00:00.035
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: Expected GaugeData, got Int64\(NULL\)",*
+select last_time(f0_bigint) from func_tb3;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: Expected GaugeData, got UInt64\(NULL\)",*
+select last_time(f1_bigint_unsign) from func_tb3;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: Expected GaugeData, got Boolean\(NULL\)", *
+select last_time(f2_boolean) from func_tb3;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: Expected GaugeData, got Utf8\(NULL\)", *
+select last_time(f3_string) from func_tb3;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: Expected GaugeData, got Float64\(NULL\)", *
+select last_time(f4_double) from func_tb3;

@@ -1,0 +1,93 @@
+include ./../setup.slt
+
+##########
+## DDL
+##########
+
+statement ok
+alter database public set ttl '1000000d';
+
+statement ok
+drop table if exists func_idelta_left_1_tbl;
+
+statement ok
+drop table if exists func_idelta_left_2_tbl;
+
+statement ok
+CREATE TABLE IF NOT EXISTS func_idelta_left_1_tbl(f0 BIGINT , f1 bigint , TAGS(t0, t1, t2) );
+
+statement ok
+CREATE TABLE IF NOT EXISTS func_idelta_left_2_tbl(f0 BIGINT , f1 bigint , TAGS(t0, t1, t2) );
+
+##########
+## Query
+##########
+
+# prepare data
+statement ok
+INSERT func_idelta_left_1_tbl(TIME, f0, f1, t0, t1)
+VALUES
+    ('1999-12-31 00:00:00.000', 111, 444, 'tag11', 'tag21'),
+    ('1999-12-31 00:00:00.005', -222, null, 'tag12', 'tag22'),
+    ('1999-12-31 00:00:00.010', 333, 222, 'tag12', 'tag23');
+
+# prepare data
+statement ok
+INSERT func_idelta_left_2_tbl(TIME, f0, f1, t0, t1)
+VALUES
+    ('1999-12-31 00:00:00.000', null, 444, 'tag11', 'tag21'),
+    ('1999-12-31 00:00:00.005', 222, 444, 'tag12', 'tag22'),
+    ('1999-12-31 00:00:00.010', 333, 222, 'tag12', 'tag23');
+
+query 
+select idelta_left(gauge_agg(time, f1)), gauge_agg(time, f1) from func_idelta_left_1_tbl;
+----
+-222.0 {first: {ts: 1999-12-31T00:00:00, val: 444.0}, second: {ts: 1999-12-31T00:00:00.010, val: 222.0}, penultimate: {ts: 1999-12-31T00:00:00, val: 444.0}, last: {ts: 1999-12-31T00:00:00.010, val: 222.0}, num_elements: 2}
+
+query 
+select idelta_left(gauge_agg(time, f1)), gauge_agg(time, f1) from func_idelta_left_2_tbl;
+----
+0.0 {first: {ts: 1999-12-31T00:00:00, val: 444.0}, second: {ts: 1999-12-31T00:00:00.005, val: 444.0}, penultimate: {ts: 1999-12-31T00:00:00.005, val: 444.0}, last: {ts: 1999-12-31T00:00:00.010, val: 222.0}, num_elements: 3}
+
+query 
+select idelta_left(gauge_agg(time, f0)), gauge_agg(time, f1) from func_idelta_left_1_tbl;
+----
+-333.0 {first: {ts: 1999-12-31T00:00:00, val: 444.0}, second: {ts: 1999-12-31T00:00:00.010, val: 222.0}, penultimate: {ts: 1999-12-31T00:00:00, val: 444.0}, last: {ts: 1999-12-31T00:00:00.010, val: 222.0}, num_elements: 2}
+
+query 
+select idelta_left(gauge_agg(time, f0)), gauge_agg(time, f1) from func_idelta_left_2_tbl;
+----
+111.0 {first: {ts: 1999-12-31T00:00:00, val: 444.0}, second: {ts: 1999-12-31T00:00:00.005, val: 444.0}, penultimate: {ts: 1999-12-31T00:00:00.005, val: 444.0}, last: {ts: 1999-12-31T00:00:00.010, val: 222.0}, num_elements: 3}
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: Expected GaugeData, got TimestampNanosecond\(NULL, None\)", .*
+select idelta_left(time) from func_tbl;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function \\"idelta_left\\" expects 1 arguments, but 0 were provided", *
+select idelta_left()from func_idelta_left_1_tbl;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function \\"idelta_left\\" expects 1 arguments, but 2 were provided", *
+select idelta_left(gauge_agg(time, f0), gauge_agg(time, f0))from func_idelta_left_1_tbl;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: Expected GaugeData, got Int64\(NULL\)", *
+select idelta_left(f0)from func_idelta_left_1_tbl;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: Expected GaugeData, got Utf8\(NULL\)", *
+select idelta_left(t0)from func_idelta_left_1_tbl;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Invalid function 'idelta_lefts'\.\\nDid you mean *
+select idelta_lefts()from func_idelta_left_1_tbl;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: Expected GaugeData, got Int64\(NULL\)", *
+select idelta_left(f0_bigint) from func_tb3;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: Expected GaugeData, got UInt64\(NULL\)", *
+select idelta_left(f1_bigint_unsign) from func_tb3;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: Expected GaugeData, got Boolean\(NULL\)", *
+select idelta_left(f2_boolean) from func_tb3;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: Expected GaugeData, got Utf8\(NULL\)", *
+select idelta_left(f3_string) from func_tb3;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: Expected GaugeData, got Float64\(NULL\)", *
+select idelta_left(f4_double) from func_tb3;
