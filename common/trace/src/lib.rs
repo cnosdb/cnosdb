@@ -125,8 +125,7 @@ pub fn init_global_tracing(
     let formatting_layer = fmt::layer()
         .with_ansi(false)
         .with_timer(local_time.clone())
-        .with_writer(std::io::stderr)
-        .with_target(true);
+        .with_writer(std::io::stderr);
 
     let file_appender = rolling::daily(log_path, log_file_prefix_name);
     let (non_blocking_appender, guard) = non_blocking(file_appender);
