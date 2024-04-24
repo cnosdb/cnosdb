@@ -1036,6 +1036,21 @@ impl Coordinator for CoordService {
                     replica.replica_set,
                 )
             }
+
+            ReplicationCmdType::PromoteLeader(replica_id, new_leader) => {
+                let replica = get_replica_all_info(self.meta.clone(), tenant, replica_id).await?;
+                (
+                    AdminCommand {
+                        tenant: tenant.to_string(),
+                        command: Some(PromoteLeader(PromoteLeaderRequest {
+                            replica_id,
+                            new_leader_id: new_leader,
+                            db_name: replica.db_name.clone(),
+                        })),
+                    },
+                    replica.replica_set,
+                )
+            }
         };
 
         self.admin_command_on_leader(replica, request).await
