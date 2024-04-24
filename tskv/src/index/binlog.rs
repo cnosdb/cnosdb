@@ -201,8 +201,8 @@ impl IndexBinlog {
         let res = self.writer_file.write(&buffer).await;
 
         info!(
-            "-----------write_blocks before file len: {}, data len: {}, result: {:?}, after len: {}",
-            len, buffer.len(), res, self.writer_file.size
+            "----------- {}, write_blocks before file len: {}, data len: {}, result: {:?}, after len: {}",
+            std::process::id(), len, buffer.len(), res, self.writer_file.size
         );
 
         res?;
@@ -370,7 +370,8 @@ impl BinlogReader {
 
     pub async fn next_block(&mut self) -> IndexResult<Option<IndexBinlogBlock>> {
         info!(
-            "------------next_block len: {}, pos: {}",
+            "------------{} next_block len: {}, pos: {}",
+            std::process::id(),
             self.cursor.len(),
             self.cursor.pos()
         );
