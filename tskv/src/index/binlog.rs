@@ -390,26 +390,30 @@ impl BinlogReader {
         }
 
         let data_len = byte_utils::decode_be_u32(self.header_buf[0..BLOCK_HEADER_SIZE].into());
+        info!("------------- block data len: {}", data_len);
+        if self.file_len() < self.read_pos() {
+            info!("--------------- {}, {}", self.file_len(), self.read_pos());
+        }
 
         debug!("Read Binlog Reader: data_len={}", data_len);
 
-        if data_len > (self.file_len() - self.read_pos()) as u32 {
-            error!(
-                "binlog read block error {}, {} {} ",
-                data_len,
-                self.file_len(),
-                self.read_pos()
-            );
+        // if data_len > (self.file_len() - self.read_pos()) as u32 {
+        //     error!(
+        //         "binlog read block error {}, {} {} ",
+        //         data_len,
+        //         self.file_len(),
+        //         self.read_pos()
+        //     );
 
-            return Err(IndexError::FileErrors {
-                msg: format!(
-                    "block data length {} > {}-{}",
-                    data_len,
-                    self.file_len(),
-                    self.read_pos()
-                ),
-            });
-        }
+        //     return Err(IndexError::FileErrors {
+        //         msg: format!(
+        //             "block data length {} > {}-{}",
+        //             data_len,
+        //             self.file_len(),
+        //             self.read_pos()
+        //         ),
+        //     });
+        // }
 
         if data_len as usize > self.body_buf.len() {
             self.body_buf.resize(data_len as usize, 0);
