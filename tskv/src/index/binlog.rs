@@ -197,7 +197,15 @@ impl IndexBinlog {
             block.encode(&mut buffer)?;
         }
 
-        self.writer_file.write(&buffer).await?;
+        let len = self.writer_file.size;
+        let res = self.writer_file.write(&buffer).await;
+
+        info!(
+            "-----------write_blocks before file len: {}, data len: {}, result: {:?}, after len: {}",
+            len, buffer.len(), res, self.writer_file.size
+        );
+
+        res?;
 
         Ok(())
     }
