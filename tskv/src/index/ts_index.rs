@@ -985,7 +985,22 @@ pub fn run_index_job(
                             );
                         }
                     }
-                    while let Ok(Some(block)) = reader_file.next_block().await {
+
+                    loop {
+                        let block = match reader_file.next_block().await {
+                            Ok(block) => match block {
+                                Some(block) => block,
+                                None => {
+                                    error!("-------reader_file.next_block() none");
+                                    break;
+                                }
+                            },
+                            Err(err) => {
+                                error!("-------reader_file.next_block() error: {:?}", err);
+                                break;
+                            }
+                        };
+
                         if reader_file.pos() <= *handle_file.get(&file_id).unwrap_or(&0) {
                             continue;
                         }
