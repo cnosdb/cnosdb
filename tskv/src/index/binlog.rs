@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use models::{SeriesId, SeriesKey};
 use serde::{Deserialize, Serialize};
-use trace::{debug, error};
+use trace::{debug, error, info};
 
 use super::{IndexError, IndexResult};
 use crate::file_system::file::async_file::AsyncFile;
@@ -361,6 +361,12 @@ impl BinlogReader {
     }
 
     pub async fn next_block(&mut self) -> IndexResult<Option<IndexBinlogBlock>> {
+        info!(
+            "------------next_block len: {}, pos: {}",
+            self.cursor.len(),
+            self.cursor.pos()
+        );
+
         if self.read_over() {
             return Ok(None);
         }

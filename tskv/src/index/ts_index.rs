@@ -991,7 +991,6 @@ pub fn run_index_job(
                             Ok(block) => match block {
                                 Some(block) => block,
                                 None => {
-                                    error!("-------reader_file.next_block() none");
                                     break;
                                 }
                             },
