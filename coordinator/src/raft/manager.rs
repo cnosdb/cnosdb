@@ -12,6 +12,7 @@ use replication::node_store::NodeStorage;
 use replication::raft_node::RaftNode;
 use replication::state_store::{RaftNodeSummary, StateStorage};
 use replication::{ApplyStorageRef, EntryStorageRef, RaftNodeId, RaftNodeInfo, ReplicationConfig};
+use tokio::runtime::Runtime;
 use tokio::sync::RwLock;
 use tracing::info;
 use tskv::{wal, EngineRef};
@@ -61,24 +62,38 @@ impl RaftNodesManager {
         }
     }
 
-    pub async fn start_all_raft_node(&self) -> CoordinatorResult<()> {
-        let nodes_summary = self.raft_state.all_nodes_summary()?;
-        let mut nodes = self.raft_nodes.write().await;
+    pub async fn start_all_raft_node(
+        runtime: Arc<Runtime>,
+        raft: Arc<RaftNodesManager>,
+    ) -> CoordinatorResult<()> {
+        let nodes_summary = raft.raft_state.all_nodes_summary()?;
+        let mut nodes = raft.raft_nodes.write().await;
+        let mut futures = Vec::with_capacity(nodes_summary.len());
         for summary in nodes_summary {
-            let node = self
-                .open_raft_node(
-                    &summary.tenant,
-                    &summary.db_name,
-                    summary.raft_id as VnodeId,
-                    summary.group_id,
-                )
-                .await?;
-
-            info!("start raft node: {:?} Success", summary);
-
-            nodes.add_node(node);
+            let raft = raft.clone();
+            let future = runtime.spawn(async move {
+                let res = raft
+                    .open_raft_node(
+                        &summary.tenant,
+                        &summary.db_name,
+                        summary.raft_id as VnodeId,
+                        summary.group_id,
+                    )
+                    .await;
+                if res.is_ok() {
+                    info!("start raft node: {:?} Success", summary);
+                }
+                res
+            });
+            futures.push(future);
         }
 
+        for future in futures {
+            let node = future.await.map_err(|e| CoordinatorError::CommonError {
+                msg: format!("start all raft node failed: {:?}", e),
+            })??;
+            nodes.add_node(node);
+        }
         Ok(())
     }
 
