@@ -392,7 +392,11 @@ impl BinlogReader {
         let data_len = byte_utils::decode_be_u32(self.header_buf[0..BLOCK_HEADER_SIZE].into());
         info!("------------- block data len: {}", data_len);
         if self.file_len() < self.read_pos() {
-            info!("--------------- {}, {}", self.file_len(), self.read_pos());
+            info!(
+                "--------------- panic next_block {}, {}",
+                self.file_len(),
+                self.read_pos()
+            );
         }
 
         debug!("Read Binlog Reader: data_len={}", data_len);
