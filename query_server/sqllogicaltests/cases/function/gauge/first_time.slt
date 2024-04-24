@@ -1,0 +1,56 @@
+include ./../setup.slt
+
+##########
+## Query
+##########
+
+query 
+select first_time(gauge_agg(time, f1)), min(time) from func_tbl;
+----
+1999-12-31T00:00:00 1999-12-31T00:00:00
+
+query 
+select first_time(gauge_agg(time, f0)), min(time) from func_tbl;
+----
+1999-12-31T00:00:00 1999-12-31T00:00:00
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: Expected GaugeData, got TimestampNanosecond\(NULL, None\)", .*
+select first_time(time) from func_tbl;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function \\"first_time\\" expects 1 arguments, but 0 were provided", *
+select first_time(), min(time) from func_tbl;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function \\"first_time\\" expects 1 arguments, but 2 were provided", *
+select first_time(gauge_agg(time, f1), gauge_agg(time, f1)), min(time) from func_tbl;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: Expected GaugeData, got TimestampNanosecond\(NULL, None\)", *
+select first_time(time), min(time) from func_tbl;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: Expected GaugeData, got Int64\(NULL\)", *
+select first_time(f0), min(time) from func_tbl;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: Expected GaugeData, got Utf8\(NULL\)", *
+select first_time(t0), min(time) from func_tbl;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Invalid function 'first_times'\.\\nDid you mean *
+select first_times(gauge_agg(time, f1)), min(time) from func_tbl;
+
+query 
+select first_time(gauge_agg(time, f1)), first_time(gauge_agg(time, f0)), min(time) from func_tbl;
+----
+1999-12-31T00:00:00 1999-12-31T00:00:00 1999-12-31T00:00:00
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: Expected GaugeData, got Int64\(NULL\)", *
+select first_time(f0_bigint) from func_tb3;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: Expected GaugeData, got UInt64\(NULL\)", *
+select first_time(f1_bigint_unsign) from func_tb3;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: Expected GaugeData, got Boolean\(NULL\)", *
+select first_time(f2_boolean) from func_tb3;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: Expected GaugeData, got Utf8\(NULL\)", *
+select first_time(f3_string) from func_tb3;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Failed to do analyze\. err: Expected GaugeData, got Float64\(NULL\)", *
+select first_time(f4_double) from func_tb3;

@@ -63,6 +63,42 @@ impl GaugeData {
         }
     }
 
+    pub fn first_time(&self) -> DFResult<ScalarValue> {
+        Ok(self.first.ts.clone())
+    }
+
+    pub fn first_val(&self) -> DFResult<ScalarValue> {
+        Ok(self.first.val.clone())
+    }
+
+    pub fn last_time(&self) -> DFResult<ScalarValue> {
+        Ok(self.last.ts.clone())
+    }
+
+    pub fn last_val(&self) -> DFResult<ScalarValue> {
+        Ok(self.last.val.clone())
+    }
+
+    pub fn idelta_left(&self) -> DFResult<ScalarValue> {
+        match self.second.val().sub_checked(self.first.val()) {
+            Ok(value) => Ok(value),
+            Err(_) => {
+                // null if overflow
+                ScalarValue::try_from(self.last.val().get_datatype())
+            }
+        }
+    }
+
+    pub fn idelta_right(&self) -> DFResult<ScalarValue> {
+        match self.last.val().sub_checked(self.penultimate.val()) {
+            Ok(value) => Ok(value),
+            Err(_) => {
+                // null if overflow
+                ScalarValue::try_from(self.last.val().get_datatype())
+            }
+        }
+    }
+
     pub fn rate(&self) -> DFResult<ScalarValue> {
         if self.is_null() {
             return ScalarValue::try_from(self.last.val().get_datatype());
