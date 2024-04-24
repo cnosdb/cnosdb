@@ -107,6 +107,25 @@ impl TskvServiceImpl {
                     .await?;
                 Ok(vec![])
             }
+            admin_command::Command::PromoteLeader(command) => {
+                self.coord
+                    .raft_manager()
+                    .promote_follower_to_leader(
+                        tenant,
+                        &command.db_name,
+                        command.new_leader_id,
+                        command.replica_id,
+                    )
+                    .await?;
+                Ok(vec![])
+            }
+            admin_command::Command::LearnerToFollower(command) => {
+                self.coord
+                    .raft_manager()
+                    .learner_to_follower(tenant, &command.db_name, command.replica_id)
+                    .await?;
+                Ok(vec![])
+            }
         }
     }
 

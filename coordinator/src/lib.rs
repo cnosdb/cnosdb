@@ -46,6 +46,8 @@ pub enum ReplicationCmdType {
     RemoveRaftNode(u32),
     /// replica set id
     DestoryRaftGroup(u32),
+    /// replica set id, new leader vnode id
+    PromoteLeader(u32, u32),
 }
 
 #[async_trait::async_trait]
