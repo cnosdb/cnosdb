@@ -6237,6 +6237,7 @@ dependencies = [
  "snap",
  "stable-vec",
  "static_assertions",
+ "sysinfo",
  "tempfile",
  "tokio",
  "tokio-uring",

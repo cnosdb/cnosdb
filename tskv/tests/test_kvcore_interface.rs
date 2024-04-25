@@ -12,6 +12,7 @@ mod tests {
     use protos::kv_service::{raft_write_command, WriteDataRequest};
     use protos::models_helper;
     use serial_test::serial;
+    use sysinfo::{ProcessRefreshKind, RefreshKind, System};
     use tokio::runtime;
     use tokio::runtime::Runtime;
     use trace::{debug, error, info, init_default_global_tracing, warn};
@@ -85,9 +86,48 @@ mod tests {
         let command = raft_write_command::Command::WriteData(request);
         rt.block_on(vnode_store.apply(&apply_ctx, command)).unwrap();
     }
-
-    #[test]
+    pub fn kill_process(process_name: &str) {
+        println!("- Killing processes {process_name}...");
+        let system = System::new_with_specifics(
+            RefreshKind::new().with_processes(ProcessRefreshKind::new()),
+        );
+        for (pid, process) in system.processes() {
+            if process.name() == process_name {
+                match process.kill_with(sysinfo::Signal::Kill) {
+                    Some(true) => println!("- Killed process {pid} ('{}')", process.name()),
+                    Some(false) => {
+                        println!("- Failed killing process {pid} ('{}')", process.name())
+                    }
+                    None => println!("- Kill with signal 'Kill' isn't supported on this platform"),
+                }
+            }
+        }
+    }
+    #[tokio::test]
     #[serial]
+    async fn test_kvcore_single_meta_all() {
+        let temp_dir = tempfile::Builder::new().prefix("meta").tempdir().unwrap();
+        let path = temp_dir.path().to_string_lossy().to_string();
+        let cluster_name = "cluster_001".to_string();
+        let addr = "127.0.0.1:8901".to_string();
+        let size = 1024 * 1024 * 1024;
+        meta::service::single::start_singe_meta_server(path, cluster_name, addr, size).await;
+        let join_handle = tokio::spawn(async {
+            let _ = tokio::task::spawn_blocking(|| {
+                test_kvcore_init();
+                test_kvcore_write();
+                test_kvcore_flush();
+                test_kvcore_flush_delta();
+                test_kvcore_build_row_data();
+                test_kvcore_snapshot_create_apply_delete();
+            })
+            .await;
+        });
+        join_handle.await.unwrap();
+        kill_process("cnosdb-meta");
+        temp_dir.close().unwrap();
+    }
+
     fn test_kvcore_init() {
         println!("Enter serial test: test_kvcore_init");
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
@@ -100,8 +140,6 @@ mod tests {
         println!("Leave serial test: test_kvcore_init");
     }
 
-    #[test]
-    #[serial]
     fn test_kvcore_write() {
         println!("Enter serial test: test_kvcore_write");
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
@@ -137,8 +175,6 @@ mod tests {
     }
 
     // tips : to test all read method, we can use a small MAX_MEMCACHE_SIZE
-    #[test]
-    #[serial]
     fn test_kvcore_flush() {
         println!("Enter serial test: test_kvcore_flush");
         init_default_global_tracing("tskv_log", "tskv.log", "info");
@@ -208,8 +244,6 @@ mod tests {
         println!("Leave serial test: test_kvcore_big_write");
     }
 
-    #[test]
-    #[serial]
     fn test_kvcore_flush_delta() {
         println!("Enter serial test: test_kvcore_flush_delta");
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
@@ -271,8 +305,6 @@ mod tests {
         println!("Leave serial test: nc fn test_kvcore_log");
     }
 
-    #[test]
-    #[serial]
     fn test_kvcore_build_row_data() {
         println!("Enter serial test: test_kvcore_build_row_data");
         init_default_global_tracing("tskv_log", "tskv.log", "debug");
@@ -301,8 +333,6 @@ mod tests {
         println!("Leave serial test: test_kvcore_build_row_data");
     }
 
-    #[test]
-    #[serial]
     fn test_kvcore_snapshot_create_apply_delete() {
         println!("Enter serial test: test_kvcore_snapshot_create_apply_delete");
         let dir = PathBuf::from("/tmp/test/kvcore/kvcore_snapshot_create_apply_delete");
