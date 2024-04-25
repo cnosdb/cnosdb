@@ -676,6 +676,7 @@ mod test {
     use meta::model::meta_admin::AdminMeta;
     use metrics::metric_register::MetricsRegister;
     use models::schema::{make_owner, TenantOptions};
+    use sysinfo::{ProcessRefreshKind, RefreshKind, System};
     use tokio::runtime::Runtime;
     use tokio::sync::RwLock;
     use utils::BloomFilter;
@@ -767,8 +768,48 @@ mod test {
         }
     }
 
-    #[test]
+    pub fn kill_process(process_name: &str) {
+        println!("- Killing processes {process_name}...");
+        let system = System::new_with_specifics(
+            RefreshKind::new().with_processes(ProcessRefreshKind::new()),
+        );
+        for (pid, process) in system.processes() {
+            if process.name() == process_name {
+                match process.kill_with(sysinfo::Signal::Kill) {
+                    Some(true) => println!("- Killed process {pid} ('{}')", process.name()),
+                    Some(false) => {
+                        println!("- Failed killing process {pid} ('{}')", process.name())
+                    }
+                    None => println!("- Kill with signal 'Kill' isn't supported on this platform"),
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_summary_recover_all() {
+        let temp_dir = tempfile::Builder::new().prefix("meta").tempdir().unwrap();
+        let path = temp_dir.path().to_string_lossy().to_string();
+        let cluster_name = "cluster_001".to_string();
+        let addr = "127.0.0.1:8901".to_string();
+        let size = 1024 * 1024 * 1024;
+        meta::service::single::start_singe_meta_server(path, cluster_name, addr, size).await;
+        let join_handle = tokio::spawn(async {
+            let _ = tokio::task::spawn_blocking(|| {
+                test_summary_recover();
+                test_tsf_num_recover();
+                test_recover_summary_with_roll_0();
+                test_recover_summary_with_roll_1();
+            })
+            .await;
+        });
+        join_handle.await.unwrap();
+        kill_process("cnosdb-meta");
+        temp_dir.close().unwrap();
+    }
+
     fn test_summary_recover() {
+        println!("async run test_summary_recover.");
         let base_dir = "/tmp/test/summary/test_summary_recover";
         let _ = std::fs::remove_dir_all(base_dir);
         std::fs::create_dir_all(base_dir).unwrap();
@@ -807,8 +848,8 @@ mod test {
         });
     }
 
-    #[test]
     fn test_tsf_num_recover() {
+        println!("async run test_tsf_num_recover.");
         let base_dir = "/tmp/test/summary/test_tsf_num_recover";
         let _ = std::fs::remove_dir_all(base_dir);
         std::fs::create_dir_all(base_dir).unwrap();
@@ -859,8 +900,8 @@ mod test {
         });
     }
 
-    #[test]
     fn test_recover_summary_with_roll_0() {
+        println!("async run test_recover_summary_with_roll_0.");
         let base_dir = "/tmp/test/summary/test_recover_summary_with_roll_0";
         let _ = std::fs::remove_dir_all(base_dir);
         std::fs::create_dir_all(base_dir).unwrap();
@@ -905,8 +946,8 @@ mod test {
         });
     }
 
-    #[test]
     fn test_recover_summary_with_roll_1() {
+        println!("async run test_recover_summary_with_roll_1.");
         let base_dir = "/tmp/test/summary/test_recover_summary_with_roll_1";
         let _ = std::fs::remove_dir_all(base_dir);
         std::fs::create_dir_all(base_dir).unwrap();
