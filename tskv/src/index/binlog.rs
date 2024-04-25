@@ -361,7 +361,7 @@ impl BinlogReader {
     }
 
     pub async fn next_block(&mut self) -> IndexResult<Option<IndexBinlogBlock>> {
-        if self.read_over() {
+        if self.read_over() || self.file_len() < (self.read_pos() + BLOCK_HEADER_SIZE as u64) {
             return Ok(None);
         }
 
