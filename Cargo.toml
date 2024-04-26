@@ -170,7 +170,7 @@ zstd = "0.13"
 
 [workspace.package]
 edition = "2021"
-version = "2.4.0"
+version = "2.4.1"
 
 # When you want to debug a third-party library,
 # you can use patch,
