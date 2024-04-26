@@ -27,7 +27,9 @@ use models::error_code::UnknownCodeWithMessage;
 use models::oid::{Identifier, Oid};
 use models::schema::{Precision, DEFAULT_CATALOG, DEFAULT_DATABASE};
 use models::utils::now_timestamp_nanos;
-use protocol_parser::es_log::parser::{es_parse_to_line, flatten_json, Command, ESLog};
+use protocol_parser::es_log::parser::{
+    es_parse_to_line, flatten_json, Command, CommandInfo, ESLog,
+};
 use protocol_parser::line_protocol::line_protocol_to_lines;
 use protocol_parser::open_tsdb::open_tsdb_to_lines;
 use protocol_parser::{DataPoint, Line};
@@ -1097,7 +1099,8 @@ impl HttpService {
                         let mut span_recorder =
                             SpanRecorder::new(span_context.child_span("try parse req to es log"));
                         span_recorder.set_metadata("bytes", req.len());
-                        try_parse_es_req(&req).map_err(reject::custom)?
+                        try_parse_es_req(&req, param.have_es_command.unwrap_or(true))
+                            .map_err(reject::custom)?
                     };
 
                     let resp = coord_write_eslog(
@@ -1393,39 +1396,54 @@ fn construct_write_tsdb_points_json_request(req: &Bytes) -> Result<Vec<Line>, Ht
     Ok(tsdb_datapoints)
 }
 
-fn try_parse_es_req(req: &Bytes) -> Result<Vec<ESLog>, HttpError> {
+fn try_parse_es_req(req: &Bytes, have_es_command: bool) -> Result<Vec<ESLog>, HttpError> {
     let lines = simdutf8::basic::from_utf8(req.as_ref())
         .map_err(|e| HttpError::InvalidUTF8 { source: e })?;
 
     let json_chunk: Vec<&str> = lines.trim().split('\n').collect();
     let n = json_chunk.len();
-
-    /*
-    because the es log is a pair of command and fields like:
-    { "index" : { "_index" : "test", "_id" : "1" } }
-    { "field1" : "value1" }
-    { "create" : { "_index" : "test", "_id" : "3" } }
-    { "field1" : "value3" }
-    */
-    if n % 2 != 0 {
-        return Err(HttpError::ParseESLog {
-            source: protocol_parser::ESLogError::InvaildSyntax,
-        });
-    }
-
-    let mut i = 0;
     let mut eslogs = vec![];
-    while i < n {
-        let command: Command = serde_json::from_str(json_chunk[i])
-            .map_err(|e| HttpError::ParseESLogJson { source: e })?;
-        let fields = flatten_json(
-            serde_json::from_str(json_chunk[i + 1])
-                .map_err(|e| HttpError::ParseESLogJson { source: e })?,
-        );
 
-        eslogs.push(ESLog { command, fields });
+    if have_es_command {
+        /*
+        because the es log is a pair of command and fields like:
+        { "index" : { "_index" : "test", "_id" : "1" } }
+        { "field1" : "value1" }
+        { "create" : { "_index" : "test", "_id" : "3" } }
+        { "field1" : "value3" }
+        */
+        if n % 2 != 0 {
+            return Err(HttpError::ParseESLog {
+                source: protocol_parser::ESLogError::InvaildSyntax,
+            });
+        }
 
-        i += 2;
+        let mut i = 0;
+        while i < n {
+            let command: Command = serde_json::from_str(json_chunk[i])
+                .map_err(|e| HttpError::ParseESLogJson { source: e })?;
+            let fields = flatten_json(
+                serde_json::from_str(json_chunk[i + 1])
+                    .map_err(|e| HttpError::ParseESLogJson { source: e })?,
+            );
+
+            eslogs.push(ESLog { command, fields });
+
+            i += 2;
+        }
+    } else {
+        for line in json_chunk {
+            let fields = flatten_json(
+                serde_json::from_str(line).map_err(|e| HttpError::ParseESLogJson { source: e })?,
+            );
+            eslogs.push(ESLog {
+                command: Command::Index(CommandInfo {
+                    _id: None,
+                    _index: None,
+                }),
+                fields,
+            });
+        }
     }
 
     Ok(eslogs)

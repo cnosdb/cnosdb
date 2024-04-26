@@ -111,15 +111,7 @@ pub fn es_parse_to_line<'a>(
         } else {
             let field = match value {
                 serde_json::Value::Bool(field) => FieldValue::Bool(*field),
-                serde_json::Value::Number(field) => {
-                    if field.is_i64() {
-                        FieldValue::I64(field.as_i64().unwrap())
-                    } else if field.is_u64() {
-                        FieldValue::U64(field.as_u64().unwrap())
-                    } else {
-                        FieldValue::F64(field.as_f64().unwrap())
-                    }
-                }
+                serde_json::Value::Number(field) => FieldValue::F64(field.as_f64().unwrap()),
                 serde_json::Value::String(field) => FieldValue::Str(field.as_bytes().to_owned()),
                 _ => {
                     return Err(Error::Common {
