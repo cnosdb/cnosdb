@@ -350,7 +350,6 @@ async fn count_non_null_values_in_files(
 
 #[cfg(test)]
 mod test {
-    use std::collections::HashMap;
     use std::sync::Arc;
 
     use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
@@ -401,18 +400,18 @@ mod test {
 
         #[rustfmt::skip]
         let data = vec![
-            HashMap::from([
+            vec![
                 (model_utils::unite_id(1, 1), vec![DataBlock::I64 { ts: vec![1, 2, 3, 4], val: vec![1, 1, 1, 1], enc: DataBlockEncoding::default() }]),
                 (model_utils::unite_id(1, 2), vec![DataBlock::I64 { ts: vec![10, 20, 30, 40], val: vec![1, 1, 1, 1], enc: DataBlockEncoding::default() }]),
-            ]),
-            HashMap::from([
+            ],
+            vec![
                 (model_utils::unite_id(1, 1), vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![1, 1, 1], enc: DataBlockEncoding::default() }]),
                 (model_utils::unite_id(1, 2), vec![DataBlock::I64 { ts: vec![40, 50, 60], val: vec![1, 1, 1], enc: DataBlockEncoding::default() }]),
-            ]),
-            HashMap::from([
+            ],
+            vec![
                 (model_utils::unite_id(1, 1), vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![1, 1, 1], enc: DataBlockEncoding::default() }]),
                 (model_utils::unite_id(1, 2), vec![DataBlock::I64 { ts: vec![70, 80, 90], val: vec![1, 1, 1], enc: DataBlockEncoding::default() }]),
-            ]),
+            ],
         ];
 
         let opt = Arc::new(Options::from(&global_config));
@@ -548,18 +547,18 @@ mod test {
         global_config.storage.path = dir.to_string();
         #[rustfmt::skip]
         let data = vec![
-            HashMap::from([
+            vec![
                 (model_utils::unite_id(1, 1), vec![DataBlock::I64 { ts: vec![1, 2, 3, 4], val: vec![1, 1, 1, 1], enc: DataBlockEncoding::default() }]),
                 (model_utils::unite_id(1, 2), vec![DataBlock::I64 { ts: vec![2, 3, 101, 104], val: vec![1, 1, 1, 1], enc: DataBlockEncoding::default() }]),
-            ]),
-            HashMap::from([
+            ],
+            vec![
                 (model_utils::unite_id(1, 1), vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![1, 1, 1], enc: DataBlockEncoding::default() }]),
                 (model_utils::unite_id(1, 2), vec![DataBlock::I64 { ts: vec![5, 104, 106], val: vec![1, 1, 1], enc: DataBlockEncoding::default() }]),
-            ]),
-            HashMap::from([
+            ],
+            vec![
                 (model_utils::unite_id(1, 1), vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![1, 1, 1], enc: DataBlockEncoding::default() }]),
                 (model_utils::unite_id(1, 2), vec![DataBlock::I64 { ts: vec![8, 107, 109], val: vec![1, 1, 1], enc: DataBlockEncoding::default() }]),
-            ]),
+            ],
         ];
 
         let pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));

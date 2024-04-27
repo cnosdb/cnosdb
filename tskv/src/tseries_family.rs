@@ -1250,6 +1250,7 @@ pub fn schedule_vnode_compaction(
             return;
         }
         let tsf_id = vnode_rlock.tf_id;
+        let enable_compaction = vnode_rlock.storage_opt.enable_compaction;
         let compact_trigger_cold_duration = vnode_rlock.storage_opt.compact_trigger_cold_duration;
         let compact_trigger_file_num = vnode_rlock.storage_opt.compact_trigger_file_num;
         let last_modified = vnode_rlock.last_modified.clone();
@@ -1289,16 +1290,18 @@ pub fn schedule_vnode_compaction(
                             }
                         }
 
-                        // Check if level-0 files is more than 0 .
-                        let version = vnode.read().await.super_version().version.clone();
-                        let levels = version.levels_info();
-                        let task = if levels[0].files.len() as u32 >= compact_trigger_file_num {
-                            CompactTask::Delta(tsf_id)
-                        } else {
-                            CompactTask::Normal(tsf_id)
-                        };
-                        if let Err(e) = compact_task_sender.send(task).await {
-                            warn!("Scheduler(vnode: {tsf_id}): Failed to send compact task: {task}: {e}");
+                        if enable_compaction {
+                            // Check if level-0 files is more than 0 .
+                            let version = vnode.read().await.super_version().version.clone();
+                            let levels = version.levels_info();
+                            let task = if levels[0].files.len() as u32 >= compact_trigger_file_num {
+                                CompactTask::Delta(tsf_id)
+                            } else {
+                                CompactTask::Normal(tsf_id)
+                            };
+                            if let Err(e) = compact_task_sender.send(task).await {
+                                warn!("Scheduler(vnode: {tsf_id}): Failed to send compact task: {task}: {e}");
+                            }
                         }
                     }
                     _ = cancellation_token.cancelled() => {
