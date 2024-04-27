@@ -358,8 +358,28 @@ impl IndexReader {
             IndexIterator::new(self.index_ref.clone(), 0, 0)
         }
     }
+
+    pub fn all(&self, time_ranges: Arc<TimeRanges>) -> Vec<(IndexMeta, Vec<BlockMeta>)> {
+        let mut tsm_idx: Vec<(IndexMeta, Vec<BlockMeta>)> =
+            Vec::with_capacity(self.index_ref.field_id_offs().len());
+        for (_, offset) in self.index_ref.field_id_offs() {
+            let idx_meta = get_index_meta_unchecked(self.index_ref.clone(), *offset);
+            let blk_metas = if time_ranges.is_boundless() {
+                idx_meta.block_iterator().collect()
+            } else if time_ranges.is_empty() {
+                vec![]
+            } else {
+                idx_meta.block_iterator_opt(time_ranges.clone()).collect()
+            };
+            if !blk_metas.is_empty() {
+                tsm_idx.push((idx_meta, blk_metas));
+            }
+        }
+        tsm_idx
+    }
 }
 
+#[derive(Clone)]
 pub struct IndexIterator {
     index_ref: Arc<Index>,
     /// Array index in `Index::offsets`.
@@ -569,6 +589,12 @@ impl TsmReader {
         self.index_reader.iter_opt(field_id)
     }
 
+    /// Get all IndexMetas and their BlockMetas, sorted by the first BlockMeta::offset.
+    /// You may want to call this method before a fully and **sequential** read of a TSM file.
+    pub fn index(&self, time_ranges: Arc<TimeRanges>) -> Vec<(IndexMeta, Vec<BlockMeta>)> {
+        self.index_reader.all(time_ranges)
+    }
+
     /// Returns a DataBlock without tombstone
     pub async fn get_data_block(&self, block_meta: &BlockMeta) -> ReadTsmResult<Option<DataBlock>> {
         let _blk_range = (block_meta.min_ts(), block_meta.max_ts());
@@ -591,15 +617,20 @@ impl TsmReader {
         Ok(Some(blk))
     }
 
-    // Reads raw data from file and returns the read data size.
-    pub async fn get_raw_data(&self, block_meta: &BlockMeta) -> ReadTsmResult<Vec<u8>> {
-        let data_len = block_meta.size() as usize;
+    // pub async fn get_raw_data(&self, block_meta: &BlockMeta) -> ReadTsmResult<Vec<u8>> {
+    //     let data_len = block_meta.size() as usize;
 
-        let buf = self
-            .reader
-            .read_at(block_meta.offset(), data_len)
-            .await
-            .context(ReadIOSnafu)?;
+    //     let buf = self
+    //         .reader
+    //         .read_at(block_meta.offset(), data_len)
+    //         .await
+    //         .context(ReadIOSnafu)?;
+    //     Ok(buf)
+    // }
+
+    /// Reads raw data from file.
+    pub async fn get_raw_data(&self, pos: u64, len: usize) -> ReadTsmResult<Vec<u8>> {
+        let buf = self.reader.read_at(pos, len).await.context(ReadIOSnafu)?;
         Ok(buf)
     }
 
@@ -650,12 +681,6 @@ impl Debug for TsmReader {
             .field("fd", &self.reader.fd())
             .finish()
     }
-}
-
-pub struct ColumnReader {
-    reader: Arc<AsyncFile>,
-    inner: BlockMetaIterator,
-    buf: Vec<u8>,
 }
 
 async fn read_data_block(

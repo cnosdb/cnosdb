@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -63,8 +63,10 @@ impl FlushTask {
         for mem in self.mem_caches.iter() {
             flushing_mems.push(mem.read());
         }
-        let mut flushing_mems_data: HashMap<SeriesId, Vec<Arc<RwLock<SeriesData>>>> =
-            HashMap::new();
+        // TODO(zipper, delta_compaction): this changed the order of fields in a tsm file.
+        // For old tsm file , field_ids are not ordered, so cannot use delta-compaction cache.
+        let mut flushing_mems_data: BTreeMap<SeriesId, Vec<Arc<RwLock<SeriesData>>>> =
+            BTreeMap::new();
         let flushing_mems_len = flushing_mems.len();
         for mem in flushing_mems.into_iter() {
             let seq_no = mem.seq_no();
@@ -106,14 +108,14 @@ impl FlushTask {
     /// (Sometimes one of the two file type.), returns `CompactMeta`s of the wrote files.
     async fn flush_mem_caches(
         &self,
-        mut caches_data: HashMap<SeriesId, Vec<Arc<RwLock<SeriesData>>>>,
+        mut caches_data: BTreeMap<SeriesId, Vec<Arc<RwLock<SeriesData>>>>,
         max_data_block_size: usize,
     ) -> Result<Option<(CompactMeta, Arc<BloomFilter>)>> {
         let mut writer = WriterWrapper::new(self.ts_family_id, max_data_block_size);
 
         let mut column_encoding_map: HashMap<ColumnId, Encoding> = HashMap::new();
-        let mut column_values_map: HashMap<ColumnId, (ValueType, Vec<(Timestamp, FieldVal)>)> =
-            HashMap::new();
+        let mut column_values_map: BTreeMap<ColumnId, (ValueType, Vec<(Timestamp, FieldVal)>)> =
+            BTreeMap::new();
         for (sid, series_datas) in caches_data.iter_mut() {
             column_encoding_map.clear();
             column_values_map.clear();

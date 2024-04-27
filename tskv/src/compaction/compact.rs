@@ -117,7 +117,7 @@ impl CompactingBlockMeta {
     /// Read raw data of block meta from reader.
     pub async fn get_raw_data(&self) -> Result<Vec<u8>> {
         self.reader
-            .get_raw_data(&self.meta)
+            .get_raw_data(self.meta.offset(), self.meta.size() as usize)
             .await
             .context(error::ReadTsmSnafu)
     }
@@ -1102,7 +1102,7 @@ pub mod test {
 
     pub async fn write_data_blocks_to_column_file(
         dir: impl AsRef<Path>,
-        data: Vec<HashMap<FieldId, Vec<DataBlock>>>,
+        data: Vec<Vec<(FieldId, Vec<DataBlock>)>>,
         level: LevelId,
     ) -> (u64, Vec<Arc<ColumnFile>>) {
         if !file_manager::try_exists(&dir) {
@@ -1185,7 +1185,10 @@ pub mod test {
         data_field_ids.sort();
         let mut expected_data_field_ids = expected_data.keys().copied().collect::<Vec<_>>();
         expected_data_field_ids.sort();
-        assert_eq!(data_field_ids, expected_data_field_ids);
+        assert_eq!(
+            data_field_ids, expected_data_field_ids,
+            "All Field IDs in the file are not as expected"
+        );
 
         for (exp_field_id, exp_blks) in expected_data.iter() {
             let data_blks = data.get(exp_field_id).unwrap();
@@ -1267,21 +1270,21 @@ pub mod test {
     async fn test_compaction_fast() {
         #[rustfmt::skip]
         let data = vec![
-            HashMap::from([
+            vec![
                 (1, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3], enc: DataBlockEncoding::default() }]),
                 (2, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3], enc: DataBlockEncoding::default() }]),
                 (3, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3], enc: DataBlockEncoding::default() }]),
-            ]),
-            HashMap::from([
+            ],
+            vec![
                 (1, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6], enc: DataBlockEncoding::default() }]),
                 (2, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6], enc: DataBlockEncoding::default() }]),
                 (3, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6], enc: DataBlockEncoding::default() }]),
-            ]),
-            HashMap::from([
+            ],
+            vec![
                 (1, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], enc: DataBlockEncoding::default() }]),
                 (2, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], enc: DataBlockEncoding::default() }]),
                 (3, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], enc: DataBlockEncoding::default() }]),
-            ]),
+            ],
         ];
         #[rustfmt::skip]
         let expected_data = HashMap::from([
@@ -1315,21 +1318,21 @@ pub mod test {
     async fn test_compaction_1() {
         #[rustfmt::skip]
         let data = vec![
-            HashMap::from([
+            vec![
                 (1, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![114, 115, 116], enc: INT_BLOCK_ENCODING }]),
                 (2, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![124, 125, 126], enc: INT_BLOCK_ENCODING }]),
                 (3, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![134, 135, 136], enc: INT_BLOCK_ENCODING }]),
-            ]),
-            HashMap::from([
+            ],
+            vec![
                 (1, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![211, 212, 213], enc: INT_BLOCK_ENCODING }]),
                 (2, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![221, 222, 223], enc: INT_BLOCK_ENCODING }]),
                 (3, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![231, 232, 233], enc: INT_BLOCK_ENCODING }]),
-            ]),
-            HashMap::from([
+            ],
+            vec![
                 (1, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![317, 318, 319], enc: INT_BLOCK_ENCODING }]),
                 (2, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![327, 328, 329], enc: INT_BLOCK_ENCODING }]),
                 (3, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![337, 338, 339], enc: INT_BLOCK_ENCODING }]),
-            ]),
+            ],
         ];
         #[rustfmt::skip]
         let expected_data = HashMap::from([
@@ -1361,21 +1364,21 @@ pub mod test {
     async fn test_compaction_2() {
         #[rustfmt::skip]
         let data = vec![
-            HashMap::from([
+            vec![
                 (1, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4], val: vec![111, 112, 113, 114], enc: INT_BLOCK_ENCODING }]),
                 (3, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4], val: vec![131, 132, 133, 134], enc: INT_BLOCK_ENCODING }]),
                 (4, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![141, 142, 143], enc: INT_BLOCK_ENCODING }]),
-            ]),
-            HashMap::from([
+            ],
+            vec![
                 (1, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![214, 215, 216], enc: INT_BLOCK_ENCODING }]),
                 (2, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![224, 225, 226], enc: INT_BLOCK_ENCODING }]),
                 (3, vec![DataBlock::I64 { ts: vec![4, 5, 6, 7], val: vec![234, 235, 236, 237], enc: INT_BLOCK_ENCODING }]),
-            ]),
-            HashMap::from([
+            ],
+            vec![
                 (1, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![317, 318, 319], enc: INT_BLOCK_ENCODING }]),
                 (2, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![327, 328, 329], enc: INT_BLOCK_ENCODING }]),
                 (3, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![337, 338, 339], enc: INT_BLOCK_ENCODING }]),
-            ]),
+            ],
         ];
         #[rustfmt::skip]
         let expected_data = HashMap::from([
@@ -1408,18 +1411,18 @@ pub mod test {
     async fn test_compaction_3() {
         #[rustfmt::skip]
         let data = vec![
-            HashMap::from([
+            vec![
                 (1, vec![DataBlock::I64 { ts: vec![1], val: vec![111], enc: INT_BLOCK_ENCODING }]),
-            ]),
-            HashMap::from([
+            ],
+            vec![
                 (1, vec![DataBlock::I64 { ts: vec![2, 3, 4], val: vec![212, 213, 214], enc: INT_BLOCK_ENCODING }]),
-            ]),
-            HashMap::from([
+            ],
+            vec![
                 (1, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![314, 315, 316], enc: INT_BLOCK_ENCODING }]),
-            ]),
-            HashMap::from([
+            ],
+            vec![
                 (1, vec![DataBlock::I64 { ts: vec![8, 9], val: vec![418, 419], enc: INT_BLOCK_ENCODING }]),
-            ]),
+            ],
         ];
         #[rustfmt::skip]
         let expected_data = HashMap::from([
