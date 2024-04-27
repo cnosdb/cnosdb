@@ -32,3 +32,9 @@ impl<I: Iterator> BufferedIterator<I> {
         self.peeked.insert(iter.next()).as_mut()
     }
 }
+
+impl<I: Iterator + Clone> BufferedIterator<I> {
+    pub fn cloned_inner(&self) -> I {
+        self.iter.clone()
+    }
+}

@@ -55,11 +55,13 @@ impl Index {
         self.data.as_slice()
     }
 
+    /// Get field_ids and the offset of their IndexMeta in index-block.
     pub fn field_id_offs(&self) -> &[(FieldId, usize)] {
         self.field_id_offs.as_slice()
     }
 }
 
+#[derive(Clone)]
 pub struct IndexMeta {
     index_ref: Arc<Index>,
     /// Array index in `Index::offsets`

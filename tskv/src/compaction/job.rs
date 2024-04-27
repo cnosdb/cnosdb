@@ -86,7 +86,7 @@ pub fn run(
         compact_task_receiver,
     };
 
-    compact_job.run_background_job();
+    compact_job.run_background_job(storage_opt.enable_compaction);
 }
 
 struct CompactionJob {
@@ -105,7 +105,7 @@ struct CompactionContext {
 }
 
 impl CompactionJob {
-    fn run_background_job(self) {
+    fn run_background_job(self, enable_compaction: bool) {
         let compact_task_group_producer = Arc::new(RwLock::new(CompactTaskGroup::default()));
         let compact_task_group_consumer = compact_task_group_producer.clone();
         let CompactionJob {
@@ -166,12 +166,16 @@ impl CompactionJob {
                         continue;
                     }
                 };
-                runtime_inner.spawn(Self::run_compact_task(
-                    compact_task,
-                    compaction_context.clone(),
-                    permit,
-                    after_compact,
-                ));
+                if enable_compaction {
+                    runtime_inner.spawn(Self::run_compact_task(
+                        compact_task,
+                        compaction_context.clone(),
+                        permit,
+                        after_compact,
+                    ));
+                } else {
+                    debug!("Compaction is disabled, skip compaction task: {compact_task}");
+                }
             }
         });
     }
