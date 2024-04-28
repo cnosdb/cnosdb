@@ -1,0 +1,37 @@
+statement ok
+drop user if exists u001;
+
+statement ok
+create tenant if not exists t001;
+
+statement ok
+create user u001;
+
+statement ok
+alter tenant t001 add user u001 as member; 
+
+statement ok
+--#TENANT=t001
+
+statement ok
+create database db001;
+
+
+statement ok
+drop database db001;
+
+query T
+select name, action from information_schema.resource_status where name = 't001-db001';
+----
+"t001-db001" "DropDatabase"
+
+ 
+statement ok
+--#USER_NAME=u001
+
+
+query T
+select name, action from information_schema.resource_status where name = 't001-db001';
+----
+"t001-db001" "DropDatabase"
+
