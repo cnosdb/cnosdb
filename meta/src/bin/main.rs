@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use actix_web::middleware::Logger;
-use actix_web::web::Data;
+use actix_web::web::{self, Data};
 use actix_web::{middleware, App, HttpServer};
 use clap::Parser;
 use meta::service::connection::Connections;
@@ -98,6 +98,7 @@ pub async fn start_service(opt: Opt) -> std::io::Result<()> {
             .wrap(Logger::new("%a %{User-Agent}i"))
             .wrap(middleware::Compress::default())
             .app_data(app.clone())
+            .app_data(web::PayloadConfig::new(100 * 1024 * 1024))
             .service(raft_api::append)
             .service(raft_api::snapshot)
             .service(raft_api::vote)
