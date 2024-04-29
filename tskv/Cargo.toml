@@ -47,7 +47,7 @@ num_enum = { workspace = true }
 once_cell = { workspace = true }
 openraft = { workspace = true, features = ["serde"] }
 parking_lot = { workspace = true, features = ["nightly", "send_guard"] }
-q_compress = { workspace = true }
+pco = {workspace = true}
 radixdb = { workspace = true, features = ["custom-store"] }
 rand = { workspace = true }
 regex = { workspace = true }

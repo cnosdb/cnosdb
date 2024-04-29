@@ -8,12 +8,12 @@ use crate::tsm::codec::boolean::{
     bool_without_compress_encode,
 };
 use crate::tsm::codec::float::{
-    f64_gorilla_decode, f64_gorilla_encode, f64_q_compress_decode, f64_q_compress_encode,
+    f64_gorilla_decode, f64_gorilla_encode, f64_pco_decode, f64_pco_encode,
     f64_without_compress_decode, f64_without_compress_encode,
 };
 use crate::tsm::codec::integer::{
-    i64_q_compress_decode, i64_q_compress_encode, i64_without_compress_decode,
-    i64_without_compress_encode, i64_zigzag_simple8b_decode, i64_zigzag_simple8b_encode,
+    i64_pco_decode, i64_pco_encode, i64_without_compress_decode, i64_without_compress_encode,
+    i64_zigzag_simple8b_decode, i64_zigzag_simple8b_encode,
 };
 use crate::tsm::codec::string::{
     str_bzip_decode, str_bzip_encode, str_gzip_decode, str_gzip_encode, str_snappy_decode,
@@ -21,12 +21,12 @@ use crate::tsm::codec::string::{
     str_zlib_encode, str_zstd_decode, str_zstd_encode,
 };
 use crate::tsm::codec::timestamp::{
-    ts_q_compress_decode, ts_q_compress_encode, ts_without_compress_decode,
-    ts_without_compress_encode, ts_zigzag_simple8b_decode, ts_zigzag_simple8b_encode,
+    ts_pco_decode, ts_pco_encode, ts_without_compress_decode, ts_without_compress_encode,
+    ts_zigzag_simple8b_decode, ts_zigzag_simple8b_encode,
 };
 use crate::tsm::codec::unsigned::{
-    u64_q_compress_decode, u64_q_compress_encode, u64_without_compress_decode,
-    u64_without_compress_encode, u64_zigzag_simple8b_decode, u64_zigzag_simple8b_encode,
+    u64_pco_decode, u64_pco_encode, u64_without_compress_decode, u64_without_compress_encode,
+    u64_zigzag_simple8b_decode, u64_zigzag_simple8b_encode,
 };
 
 pub trait TimestampCodec {
@@ -74,11 +74,11 @@ struct QuantileTimestampCodec();
 
 impl TimestampCodec for QuantileTimestampCodec {
     fn encode(&self, src: &[i64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
-        ts_q_compress_encode(src, dst)
+        ts_pco_encode(src, dst)
     }
 
     fn decode(&self, src: &[u8], dst: &mut Vec<i64>) -> Result<(), Box<dyn Error + Send + Sync>> {
-        ts_q_compress_decode(src, dst)
+        ts_pco_decode(src, dst)
     }
 }
 
@@ -127,11 +127,11 @@ struct QuantileIntegerCodec();
 
 impl IntegerCodec for QuantileIntegerCodec {
     fn encode(&self, src: &[i64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
-        i64_q_compress_encode(src, dst)
+        i64_pco_encode(src, dst)
     }
 
     fn decode(&self, src: &[u8], dst: &mut Vec<i64>) -> Result<(), Box<dyn Error + Send + Sync>> {
-        i64_q_compress_decode(src, dst)
+        i64_pco_decode(src, dst)
     }
 }
 
@@ -168,11 +168,11 @@ struct QuantileFloatCodec();
 
 impl FloatCodec for QuantileFloatCodec {
     fn encode(&self, src: &[f64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
-        f64_q_compress_encode(src, dst)
+        f64_pco_encode(src, dst)
     }
 
     fn decode(&self, src: &[u8], dst: &mut Vec<f64>) -> Result<(), Box<dyn Error + Send + Sync>> {
-        f64_q_compress_decode(src, dst)
+        f64_pco_decode(src, dst)
     }
 }
 
@@ -209,11 +209,11 @@ struct QuantileUnsignedCodec();
 
 impl UnsignedCodec for QuantileUnsignedCodec {
     fn encode(&self, src: &[u64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
-        u64_q_compress_encode(src, dst)
+        u64_pco_encode(src, dst)
     }
 
     fn decode(&self, src: &[u8], dst: &mut Vec<u64>) -> Result<(), Box<dyn Error + Send + Sync>> {
-        u64_q_compress_decode(src, dst)
+        u64_pco_decode(src, dst)
     }
 }
 

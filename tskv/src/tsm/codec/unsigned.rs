@@ -16,12 +16,9 @@ pub fn u64_zigzag_simple8b_encode(
     super::integer::i64_zigzag_simple8b_encode(&signed, dst)
 }
 
-pub fn u64_q_compress_encode(
-    src: &[u64],
-    dst: &mut Vec<u8>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn u64_pco_encode(src: &[u64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
     let signed = u64_to_i64_vector(src);
-    super::integer::i64_q_compress_encode(&signed, dst)
+    super::integer::i64_pco_encode(&signed, dst)
 }
 
 pub fn u64_without_compress_encode(
@@ -49,15 +46,12 @@ pub fn u64_zigzag_simple8b_decode(
     Ok(())
 }
 
-pub fn u64_q_compress_decode(
-    src: &[u8],
-    dst: &mut Vec<u64>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn u64_pco_decode(src: &[u8], dst: &mut Vec<u64>) -> Result<(), Box<dyn Error + Send + Sync>> {
     if src.is_empty() {
         return Ok(());
     }
     let mut signed_results = vec![];
-    super::integer::i64_q_compress_decode(src, &mut signed_results)?;
+    super::integer::i64_pco_decode(src, &mut signed_results)?;
     dst.reserve_exact(signed_results.len() - dst.capacity());
     for s in signed_results {
         dst.push(s as u64);
@@ -126,18 +120,18 @@ mod tests {
     }
 
     #[test]
-    fn encode_q_compress_and_uncompress() {
+    fn encode_pco_and_uncompress() {
         let src: Vec<u64> = vec![1000, 0, simple8b::MAX_VALUE, 213123421];
         let mut dst = vec![];
         let mut got = vec![];
         let exp = src.clone();
 
-        u64_q_compress_encode(&src, &mut dst).unwrap();
+        u64_pco_encode(&src, &mut dst).unwrap();
         let exp_code_type = Encoding::Quantile;
         let got_code_type = get_encoding(&dst);
         assert_eq!(exp_code_type, got_code_type);
 
-        u64_q_compress_decode(&dst, &mut got).unwrap();
+        u64_pco_decode(&dst, &mut got).unwrap();
         assert_eq!(exp, got);
 
         dst.clear();

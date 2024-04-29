@@ -1,7 +1,8 @@
 use std::error::Error;
 
 use integer_encoding::*;
-use q_compress::{auto_compress, auto_decompress, DEFAULT_COMPRESSION_LEVEL};
+use pco::standalone::{simple_decompress, simpler_compress};
+use pco::DEFAULT_COMPRESSION_LEVEL;
 
 use super::simple8b;
 use crate::byte_utils::decode_be_i64;
@@ -32,17 +33,14 @@ pub fn ts_without_compress_encode(
     Ok(())
 }
 
-pub fn ts_q_compress_encode(
-    src: &[i64],
-    dst: &mut Vec<u8>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn ts_pco_encode(src: &[i64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
     if src.is_empty() {
         return Ok(());
     }
 
     dst.push(Encoding::Quantile as u8);
 
-    dst.append(&mut auto_compress(src, DEFAULT_COMPRESSION_LEVEL));
+    dst.append(&mut simpler_compress(src, DEFAULT_COMPRESSION_LEVEL)?);
     Ok(())
 }
 
@@ -307,16 +305,13 @@ pub fn ts_without_compress_decode(
     Ok(())
 }
 
-pub fn ts_q_compress_decode(
-    src: &[u8],
-    dst: &mut Vec<i64>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn ts_pco_decode(src: &[u8], dst: &mut Vec<i64>) -> Result<(), Box<dyn Error + Send + Sync>> {
     if src.is_empty() {
         return Ok(());
     }
 
     let src = &src[1..];
-    let mut decode: Vec<i64> = auto_decompress(src)?;
+    let mut decode: Vec<i64> = simple_decompress(src)?;
     dst.append(&mut decode);
     Ok(())
 }
@@ -335,7 +330,7 @@ mod tests {
         // check for error
         ts_zigzag_simple8b_encode(&src, &mut dst).expect("failed to encode src");
         assert_eq!(dst.len(), 0);
-        ts_q_compress_encode(&src, &mut dst).unwrap();
+        ts_pco_encode(&src, &mut dst).unwrap();
         assert_eq!(dst.len(), 0);
         ts_without_compress_encode(&src, &mut dst).unwrap();
         assert_eq!(dst.len(), 0);
@@ -360,18 +355,18 @@ mod tests {
     }
 
     #[test]
-    fn encode_q_compress_and_uncompress() {
+    fn encode_pco_and_uncompress() {
         let src: Vec<i64> = vec![-1000, 0, simple8b::MAX_VALUE as i64, 213123421];
         let mut dst = vec![];
         let mut got = vec![];
         let exp = src.clone();
 
-        ts_q_compress_encode(&src, &mut dst).unwrap();
+        ts_pco_encode(&src, &mut dst).unwrap();
         let exp_code_type = Encoding::Quantile;
         let got_code_type = get_encoding(&dst);
         assert_eq!(exp_code_type, got_code_type);
 
-        ts_q_compress_decode(&dst, &mut got).unwrap();
+        ts_pco_decode(&dst, &mut got).unwrap();
         assert_eq!(exp, got);
 
         dst.clear();

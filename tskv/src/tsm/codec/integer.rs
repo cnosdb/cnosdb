@@ -4,8 +4,7 @@ use integer_encoding::*;
 
 use super::simple8b;
 use crate::tsm::codec::timestamp::{
-    ts_q_compress_decode, ts_q_compress_encode, ts_without_compress_decode,
-    ts_without_compress_encode,
+    ts_pco_decode, ts_pco_encode, ts_without_compress_decode, ts_without_compress_encode,
 };
 use crate::tsm::codec::Encoding;
 
@@ -20,11 +19,8 @@ pub enum DeltaEncoding {
     Rle = 2,
 }
 
-pub fn i64_q_compress_encode(
-    src: &[i64],
-    dst: &mut Vec<u8>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
-    ts_q_compress_encode(src, dst)
+pub fn i64_pco_encode(src: &[i64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
+    ts_pco_encode(src, dst)
 }
 
 pub fn i64_without_compress_encode(
@@ -248,11 +244,8 @@ pub fn i64_without_compress_decode(
     ts_without_compress_decode(src, dst)
 }
 
-pub fn i64_q_compress_decode(
-    src: &[u8],
-    dst: &mut Vec<i64>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
-    ts_q_compress_decode(src, dst)
+pub fn i64_pco_decode(src: &[u8], dst: &mut Vec<i64>) -> Result<(), Box<dyn Error + Send + Sync>> {
+    ts_pco_decode(src, dst)
 }
 
 #[cfg(test)]
@@ -281,7 +274,7 @@ mod tests {
 
         // check for error
         i64_zigzag_simple8b_encode(&src, &mut dst).expect("failed to encode src");
-        i64_q_compress_encode(&src, &mut dst).unwrap();
+        i64_pco_encode(&src, &mut dst).unwrap();
         i64_without_compress_encode(&src, &mut dst).unwrap();
 
         // verify encoded no values.
@@ -306,18 +299,18 @@ mod tests {
     }
 
     #[test]
-    fn encode_q_compress_and_uncompress() {
+    fn encode_pco_and_uncompress() {
         let src: Vec<i64> = vec![-1000, 0, simple8b::MAX_VALUE as i64, 213123421];
         let mut dst = vec![];
         let mut got = vec![];
         let exp = src.clone();
 
-        i64_q_compress_encode(&src, &mut dst).unwrap();
+        i64_pco_encode(&src, &mut dst).unwrap();
         let exp_code_type = Encoding::Quantile;
         let got_code_type = get_encoding(&dst);
         assert_eq!(exp_code_type, got_code_type);
 
-        i64_q_compress_decode(&dst, &mut got).unwrap();
+        i64_pco_decode(&dst, &mut got).unwrap();
         assert_eq!(exp, got);
 
         dst.clear();
