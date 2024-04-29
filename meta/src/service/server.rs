@@ -150,6 +150,7 @@ async fn start_warp_grpc_server(
 
     let addr = addr.parse().unwrap();
     hyper::Server::bind(&addr)
+        .http1_max_buf_size(100 * 1024 * 1024)
         .serve(hyper::service::make_service_fn(move |_| {
             let mut http_service = warp::service(http_server.routes());
             let raft_service = RaftServiceServer::new(RaftCBServer::new(nodes.clone()));
