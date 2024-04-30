@@ -1,0 +1,38 @@
+statement ok
+create database if not exists bool_test;
+
+statement ok
+drop table if exists bool_test.boolean_test;
+
+statement ok
+create table bool_test.boolean_test(v1 boolean);
+
+statement ok
+insert into table bool_test.boolean_test(time, v1) values
+(0, 1),
+(1, 0);
+
+
+statement ok
+insert into table bool_test.boolean_test(time, v1) values
+(2, 'T'),
+(3, 'F');
+
+
+statement ok
+insert into table bool_test.boolean_test(time, v1) values
+(4, 'yes'),
+(5, 'no');
+
+
+
+
+query T
+select v1 from bool_test.boolean_test order by time;
+----
+true
+false
+true
+false
+true
+false
