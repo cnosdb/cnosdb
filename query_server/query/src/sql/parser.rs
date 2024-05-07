@@ -114,6 +114,16 @@ enum CnosKeyWord {
     AFTER,
     #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
     RECOVER,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    REPLICA_ID,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    NODE_ID,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    PROMOTE,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    DESTORY,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    REPLICAS,
 }
 
 impl FromStr for CnosKeyWord {
@@ -157,6 +167,11 @@ impl FromStr for CnosKeyWord {
             "UNSET" => Ok(CnosKeyWord::UNSET),
             "AFTER" => Ok(CnosKeyWord::AFTER),
             "RECOVER" => Ok(CnosKeyWord::RECOVER),
+            "REPLICA_ID" => Ok(CnosKeyWord::REPLICA_ID),
+            "NODE_ID" => Ok(CnosKeyWord::NODE_ID),
+            "PROMOTE" => Ok(CnosKeyWord::PROMOTE),
+            "DESTORY" => Ok(CnosKeyWord::DESTORY),
+            "REPLICAS" => Ok(CnosKeyWord::REPLICAS),
             _ => Err(ParserError::ParserError(format!(
                 "fail parse {} to CnosKeyWord",
                 s
@@ -304,6 +319,10 @@ impl<'a> ExtParser<'a> {
                                 self.parser.next_token();
                                 self.parse_recover()
                             }
+                            CnosKeyWord::REPLICA => {
+                                self.parser.next_token();
+                                self.parse_replica()
+                            }
                             _ => Ok(ExtStatement::SqlStatement(Box::new(
                                 self.parser.parse_statement()?,
                             ))),
@@ -351,6 +370,8 @@ impl<'a> ExtParser<'a> {
                 .then_some(true)
                 .unwrap_or_default();
             Ok(ExtStatement::ShowStreams(ast::ShowStreams { verbose }))
+        } else if self.parse_cnos_keyword(CnosKeyWord::REPLICAS) {
+            self.parse_show_replicas()
         } else {
             parser_err!(format!("nonsupport: {}", self.parser.peek_token()))
         }
@@ -503,6 +524,10 @@ impl<'a> ExtParser<'a> {
 
     fn parse_show_tables(&mut self) -> Result<ExtStatement> {
         Ok(ExtStatement::ShowTables(self.parse_on_database()?))
+    }
+
+    fn parse_show_replicas(&mut self) -> Result<ExtStatement> {
+        Ok(ExtStatement::ShowReplicas)
     }
 
     /// Parse a SQL DESCRIBE DATABASE statement
@@ -1545,6 +1570,59 @@ impl<'a> ExtParser<'a> {
         }
     }
 
+    fn parse_replica(&mut self) -> Result<ExtStatement> {
+        if self.parser.parse_keyword(Keyword::ADD) {
+            if !self.parse_cnos_keyword(CnosKeyWord::REPLICA_ID) {
+                return parser_err!("expected REPLICA_ID, after ADD");
+            }
+            let replica_id = self.parse_number::<ReplicationSetId>()?;
+            if !self.parse_cnos_keyword(CnosKeyWord::NODE_ID) {
+                return parser_err!("expected NODE_ID, after REPLICA_ID");
+            }
+            let node_id = self.parse_number::<NodeId>()?;
+            Ok(ExtStatement::ReplicaAdd(ast::ReplicaAdd {
+                replica_id,
+                node_id,
+            }))
+        } else if self.parse_cnos_keyword(CnosKeyWord::REMOVE) {
+            if !self.parse_cnos_keyword(CnosKeyWord::REPLICA_ID) {
+                return parser_err!("expected REPLICA_ID, after ADD");
+            }
+            let replica_id = self.parse_number::<ReplicationSetId>()?;
+            if !self.parse_cnos_keyword(CnosKeyWord::NODE_ID) {
+                return parser_err!("expected NODE_ID, after REPLICA_ID");
+            }
+            let node_id = self.parse_number::<NodeId>()?;
+            Ok(ExtStatement::ReplicaRemove(ast::ReplicaRemove {
+                replica_id,
+                node_id,
+            }))
+        } else if self.parse_cnos_keyword(CnosKeyWord::PROMOTE) {
+            if !self.parse_cnos_keyword(CnosKeyWord::REPLICA_ID) {
+                return parser_err!("expected REPLICA_ID, after ADD");
+            }
+            let replica_id = self.parse_number::<ReplicationSetId>()?;
+            if !self.parse_cnos_keyword(CnosKeyWord::NODE_ID) {
+                return parser_err!("expected NODE_ID, after REPLICA_ID");
+            }
+            let node_id = self.parse_number::<NodeId>()?;
+            Ok(ExtStatement::ReplicaPromote(ast::ReplicaPromote {
+                replica_id,
+                node_id,
+            }))
+        } else if self.parse_cnos_keyword(CnosKeyWord::DESTORY) {
+            if !self.parse_cnos_keyword(CnosKeyWord::REPLICA_ID) {
+                return parser_err!("expected REPLICA_ID, after ADD");
+            }
+            let replica_id = self.parse_number::<ReplicationSetId>()?;
+            Ok(ExtStatement::ReplicaDestory(ast::ReplicaDestory {
+                replica_id,
+            }))
+        } else {
+            parser_err!("expected VNODE, after MOVE")
+        }
+    }
+
     /// Parse a comma-separated list of 1+ items accepted by `F`
     pub fn parse_comma_separated<T, F>(&mut self, mut f: F) -> Result<Vec<T>, ParserError>
     where
@@ -2250,6 +2328,50 @@ mod tests {
         });
 
         assert_eq!(expected, statement)
+    }
+
+    #[test]
+    fn test_replica_sql() {
+        let sql1 = "replica add replica_id 111 node_id 2001;";
+        let statement = ExtParser::parse_sql(sql1).unwrap();
+        assert_eq!(
+            statement[0],
+            ExtStatement::ReplicaAdd(ast::ReplicaAdd {
+                replica_id: 111,
+                node_id: 2001,
+            })
+        );
+
+        let sql1 = "replica remove replica_id 111 node_id 2001;";
+        let statement = ExtParser::parse_sql(sql1).unwrap();
+        assert_eq!(
+            statement[0],
+            ExtStatement::ReplicaRemove(ast::ReplicaRemove {
+                replica_id: 111,
+                node_id: 2001,
+            })
+        );
+
+        let sql1 = "replica promote replica_id 111 node_id 2001;";
+        let statement = ExtParser::parse_sql(sql1).unwrap();
+        assert_eq!(
+            statement[0],
+            ExtStatement::ReplicaPromote(ast::ReplicaPromote {
+                replica_id: 111,
+                node_id: 2001,
+            })
+        );
+
+        let sql1 = "replica destory replica_id 111;";
+        let statement = ExtParser::parse_sql(sql1).unwrap();
+        assert_eq!(
+            statement[0],
+            ExtStatement::ReplicaDestory(ast::ReplicaDestory { replica_id: 111 })
+        );
+
+        let sql1 = "show replicas;";
+        let statement = ExtParser::parse_sql(sql1).unwrap();
+        assert_eq!(statement[0], ExtStatement::ShowReplicas);
     }
 
     #[test]
