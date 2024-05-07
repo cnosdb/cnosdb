@@ -19,6 +19,11 @@ use self::drop_tenant_object::DropTenantObjectTask;
 use self::grant_revoke::GrantRevokeTask;
 use self::recover_database::RecoverDatabaseTask;
 use self::recover_tenant::RecoverTenantTask;
+use self::replica_add::ReplicaAddTask;
+use self::replica_destory::ReplicaDestoryTask;
+use self::replica_promote::ReplicaPromoteTask;
+use self::replica_remove::ReplicaRemoveTask;
+use self::show_replica::ShowReplicasTask;
 use crate::execution::ddl::alter_database::AlterDatabaseTask;
 use crate::execution::ddl::alter_table::AlterTableTask;
 use crate::execution::ddl::checksum_group::ChecksumGroupTask;
@@ -50,6 +55,11 @@ mod grant_revoke;
 mod move_node;
 mod recover_database;
 mod recover_tenant;
+mod replica_add;
+mod replica_destory;
+mod replica_promote;
+mod replica_remove;
+mod show_replica;
 
 /// Traits that DDL tasks should implement
 #[async_trait]
@@ -178,6 +188,15 @@ impl DDLDefinitionTaskFactory {
                 Box::new(RecoverDatabaseTask::new(sub_plan.clone()))
             }
             DDLPlan::RecoverTenant(sub_plan) => Box::new(RecoverTenantTask::new(sub_plan.clone())),
+            DDLPlan::ShowReplicas => Box::new(ShowReplicasTask::new()),
+            DDLPlan::ReplicaDestory(sub_plan) => {
+                Box::new(ReplicaDestoryTask::new(sub_plan.clone()))
+            }
+            DDLPlan::ReplicaAdd(sub_plan) => Box::new(ReplicaAddTask::new(sub_plan.clone())),
+            DDLPlan::ReplicaRemove(sub_plan) => Box::new(ReplicaRemoveTask::new(sub_plan.clone())),
+            DDLPlan::ReplicaPromote(sub_plan) => {
+                Box::new(ReplicaPromoteTask::new(sub_plan.clone()))
+            }
         }
     }
 }

@@ -11,6 +11,7 @@ use models::auth::AuthError;
 use models::codec::Encoding;
 use models::define_result;
 use models::error_code::ErrorCode;
+use models::meta_data::{NodeId, ReplicationSetId};
 use models::schema::{TenantOptionsBuilderError, TIME_FIELD_NAME};
 use snafu::Snafu;
 
@@ -531,6 +532,13 @@ pub enum QueryError {
     #[error_code(code = 77)]
     ForbiddenCreateSystemRole {
         role: String,
+    },
+
+    #[snafu(display("Replica Set({}) not found replica in node {}", replica_id, node_id))]
+    #[error_code(code = 78)]
+    ReplicaNotFound {
+        replica_id: ReplicationSetId,
+        node_id: NodeId,
     },
 }
 

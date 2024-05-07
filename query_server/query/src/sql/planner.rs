@@ -74,6 +74,8 @@ use spi::query::ast::{
     CreateTable as ASTCreateTable, DatabaseOptions as ASTDatabaseOptions,
     DescribeDatabase as DescribeDatabaseOptions, DescribeTable as DescribeTableOptions,
     DropVnode as ASTDropVnode, ExtStatement, MoveVnode as ASTMoveVnode,
+    ReplicaAdd as ASTReplicaAdd, ReplicaDestory as ASTReplicaDestory,
+    ReplicaPromote as ASTReplicaPromote, ReplicaRemove as ASTReplicaRemove,
     ShowSeries as ASTShowSeries, ShowTagBody, ShowTagValues as ASTShowTagValues, UriLocation, With,
 };
 use spi::query::datasource::{self, UriSchema};
@@ -87,7 +89,8 @@ use spi::query::logical_planner::{
     CreateUser, DDLPlan, DMLPlan, DatabaseObjectType, DeleteFromTable, DropDatabaseObject,
     DropGlobalObject, DropTenantObject, DropVnode, FileFormatOptions, FileFormatOptionsBuilder,
     GlobalObjectType, GrantRevoke, LogicalPlanner, MoveVnode, Plan, PlanWithPrivileges, QueryPlan,
-    RecoverDatabase, RecoverTenant, SYSPlan, TenantObjectType, TENANT_OPTION_LIMITER,
+    RecoverDatabase, RecoverTenant, ReplicaAdd, ReplicaDestory, ReplicaPromote, ReplicaRemove,
+    SYSPlan, TenantObjectType, TENANT_OPTION_LIMITER,
 };
 use spi::query::session::SessionCtx;
 use spi::{QueryError, Result};
@@ -202,10 +205,8 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
                 self.alter_user_to_plan(stmt, session.user(), false).await
             }
             ExtStatement::GrantRevoke(stmt) => self.grant_revoke_to_plan(stmt, session),
-            // system statement
             ExtStatement::ShowQueries => self.show_queries_to_plan(session),
             ExtStatement::Copy(stmt) => self.copy_to_plan(stmt, session).await,
-            // vnode statement
             ExtStatement::DropVnode(stmt) => self.drop_vnode_to_plan(stmt),
             ExtStatement::CopyVnode(stmt) => self.copy_vnode_to_plan(stmt),
             ExtStatement::MoveVnode(stmt) => self.move_vnode_to_plan(stmt),
@@ -225,6 +226,11 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             }
             ExtStatement::RecoverTenant(stmt) => self.recovertenant_to_plan(stmt),
             ExtStatement::RecoverDatabase(stmt) => self.recoverdatabase_to_plan(stmt, session),
+            ExtStatement::ShowReplicas => self.show_replicas_to_plan(),
+            ExtStatement::ReplicaDestory(stmt) => self.replica_destory_to_plan(stmt),
+            ExtStatement::ReplicaAdd(stmt) => self.replica_add_to_plan(stmt),
+            ExtStatement::ReplicaRemove(stmt) => self.replica_remove_to_plan(stmt),
+            ExtStatement::ReplicaPromote(stmt) => self.replica_promote_to_plan(stmt),
         }
     }
 
@@ -2009,6 +2015,72 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         let ASTChecksumGroup { replication_set_id } = stmt;
 
         let plan = Plan::DDL(DDLPlan::ChecksumGroup(ChecksumGroup { replication_set_id }));
+        Ok(PlanWithPrivileges {
+            plan,
+            privileges: vec![Privilege::Global(GlobalPrivilege::System)],
+        })
+    }
+
+    fn show_replicas_to_plan(&self) -> Result<PlanWithPrivileges> {
+        let plan = Plan::DDL(DDLPlan::ShowReplicas);
+        Ok(PlanWithPrivileges {
+            plan,
+            privileges: vec![Privilege::Global(GlobalPrivilege::System)],
+        })
+    }
+
+    fn replica_destory_to_plan(&self, stmt: ASTReplicaDestory) -> Result<PlanWithPrivileges> {
+        let ASTReplicaDestory { replica_id } = stmt;
+
+        let plan = Plan::DDL(DDLPlan::ReplicaDestory(ReplicaDestory { replica_id }));
+        Ok(PlanWithPrivileges {
+            plan,
+            privileges: vec![Privilege::Global(GlobalPrivilege::System)],
+        })
+    }
+
+    fn replica_add_to_plan(&self, stmt: ASTReplicaAdd) -> Result<PlanWithPrivileges> {
+        let ASTReplicaAdd {
+            replica_id,
+            node_id,
+        } = stmt;
+
+        let plan = Plan::DDL(DDLPlan::ReplicaAdd(ReplicaAdd {
+            replica_id,
+            node_id,
+        }));
+        Ok(PlanWithPrivileges {
+            plan,
+            privileges: vec![Privilege::Global(GlobalPrivilege::System)],
+        })
+    }
+
+    fn replica_remove_to_plan(&self, stmt: ASTReplicaRemove) -> Result<PlanWithPrivileges> {
+        let ASTReplicaRemove {
+            replica_id,
+            node_id,
+        } = stmt;
+
+        let plan = Plan::DDL(DDLPlan::ReplicaRemove(ReplicaRemove {
+            replica_id,
+            node_id,
+        }));
+        Ok(PlanWithPrivileges {
+            plan,
+            privileges: vec![Privilege::Global(GlobalPrivilege::System)],
+        })
+    }
+
+    fn replica_promote_to_plan(&self, stmt: ASTReplicaPromote) -> Result<PlanWithPrivileges> {
+        let ASTReplicaPromote {
+            replica_id,
+            node_id,
+        } = stmt;
+
+        let plan = Plan::DDL(DDLPlan::ReplicaPromote(ReplicaPromote {
+            replica_id,
+            node_id,
+        }));
         Ok(PlanWithPrivileges {
             plan,
             privileges: vec![Privilege::Global(GlobalPrivilege::System)],

@@ -63,6 +63,36 @@ pub enum ExtStatement {
     // recover cmd
     RecoverTenant(RecoverTenant),
     RecoverDatabase(RecoverDatabase),
+
+    // replica cmd
+    ShowReplicas,
+    ReplicaDestory(ReplicaDestory),
+    ReplicaAdd(ReplicaAdd),
+    ReplicaRemove(ReplicaRemove),
+    ReplicaPromote(ReplicaPromote),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReplicaDestory {
+    pub replica_id: ReplicationSetId,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReplicaAdd {
+    pub replica_id: ReplicationSetId,
+    pub node_id: NodeId,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReplicaRemove {
+    pub replica_id: ReplicationSetId,
+    pub node_id: NodeId,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReplicaPromote {
+    pub replica_id: ReplicationSetId,
+    pub node_id: NodeId,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
