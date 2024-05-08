@@ -42,7 +42,7 @@ use crate::utils::{
     MINUTES_MICROS, MINUTES_MILLS, MINUTES_NANOS,
 };
 use crate::value_type::ValueType;
-use crate::{ColumnId, Error, PhysicalDType, SchemaVersion, Timestamp};
+use crate::{ColumnId, PhysicalDType, SchemaVersion, Timestamp};
 
 pub type TskvTableSchemaRef = Arc<TskvTableSchema>;
 
@@ -655,15 +655,13 @@ impl TableColumn {
     }
 
     pub fn encode(&self) -> crate::errors::Result<Vec<u8>> {
-        let buf = bincode::serialize(&self)
-            .map_err(|e| Error::InvalidSerdeMessage { err: e.to_string() })?;
+        let buf = bincode::serialize(&self)?;
 
         Ok(buf)
     }
 
     pub fn decode(buf: &[u8]) -> crate::errors::Result<Self> {
-        let column = bincode::deserialize::<TableColumn>(buf)
-            .map_err(|e| Error::InvalidSerdeMessage { err: e.to_string() })?;
+        let column = bincode::deserialize::<TableColumn>(buf)?;
 
         Ok(column)
     }

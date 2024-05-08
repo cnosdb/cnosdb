@@ -1766,18 +1766,13 @@ pub struct QueryArgs {
 
 impl QueryArgs {
     pub fn encode(args: &QueryArgs) -> Result<Vec<u8>> {
-        let d = bincode::serialize(args).map_err(|err| Error::InvalidSerdeMessage {
-            err: err.to_string(),
-        })?;
+        let d = bincode::serialize(args)?;
 
         Ok(d)
     }
 
     pub fn decode(buf: &[u8]) -> Result<QueryArgs> {
-        let args =
-            bincode::deserialize::<QueryArgs>(buf).map_err(|err| Error::InvalidSerdeMessage {
-                err: err.to_string(),
-            })?;
+        let args = bincode::deserialize::<QueryArgs>(buf)?;
 
         Ok(args)
     }
@@ -1807,19 +1802,13 @@ impl QueryExpr {
 }
 
 pub fn encode_agg(agg: &Option<Vec<TableColumn>>) -> Result<Vec<u8>> {
-    let d = bincode::serialize(agg).map_err(|err| Error::InvalidSerdeMessage {
-        err: err.to_string(),
-    })?;
+    let d = bincode::serialize(agg)?;
 
     Ok(d)
 }
 
 pub fn decode_agg(buf: &[u8]) -> Result<Option<Vec<TableColumn>>> {
-    let args = bincode::deserialize::<Option<Vec<TableColumn>>>(buf).map_err(|err| {
-        Error::InvalidSerdeMessage {
-            err: err.to_string(),
-        }
-    })?;
+    let args = bincode::deserialize::<Option<Vec<TableColumn>>>(buf)?;
 
     Ok(args)
 }

@@ -78,11 +78,11 @@ impl Chunk {
     }
 
     pub fn serialize(&self) -> crate::TskvResult<Vec<u8>> {
-        bincode::serialize(&self).map_err(|e| TskvError::Serialize { source: e.into() })
+        bincode::serialize(&self).map_err(|e| TskvError::Encode { source: e })
     }
 
     pub fn deserialize(bytes: &[u8]) -> crate::TskvResult<Self> {
-        bincode::deserialize(bytes).map_err(|e| TskvError::Deserialize { source: e.into() })
+        bincode::deserialize(bytes).map_err(|e| TskvError::Decode { source: e })
     }
 
     pub fn push(&mut self, column_group: Arc<ColumnGroup>) -> crate::TskvResult<()> {
