@@ -67,12 +67,14 @@ fn new() -> AggregateUDF {
         .map(|t| TypeSignature::Exact(vec![t.clone(), DataType::Float64]))
         .collect();
 
-    AggregateUDF::new(
+    AggregateUDF::new_with_preference(
         GAUGE_AGG_UDAF_NAME,
         &Signature::one_of(type_signatures, Volatility::Immutable),
         &return_type_func,
         &accumulator,
         &state_type_func,
+        true,
+        false,
     )
 }
 
