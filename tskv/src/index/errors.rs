@@ -8,35 +8,17 @@ use crate::file_system::error::FileSystemError;
 
 #[derive(Snafu, Debug)]
 pub enum IndexError {
-    #[snafu(display("This feature is not implemented: {}", err))]
-    NotImplemented { err: String },
-
-    #[snafu(display("Unrecognized action"))]
-    Action,
-
-    #[snafu(display("Unrecognized version"))]
-    Version,
-
-    #[snafu(display("Unrecognized FieldType: {}", msg))]
-    FieldType { msg: String },
-
-    #[snafu(display("Not Found Field"))]
-    NotFoundField,
-
     #[snafu(display("Series not exists"))]
     SeriesNotExists,
 
     #[snafu(display("Decode Series ID List failed"))]
     DecodeSeriesIDList,
 
-    #[snafu(display("Decode TableSchema failed for '{}'", table))]
-    DecodeTableSchema { table: String },
-
     #[snafu(display("Decode Series Key failed for '{}'", msg))]
     DecodeSeriesKey { msg: String },
 
     #[snafu(display("index storage error: {}", msg))]
-    IndexStroage { msg: String },
+    IndexStorage { msg: String },
 
     #[snafu(display("roaring encode/decode error: {}", source))]
     RoaringBitmap { source: io::Error },
@@ -65,7 +47,7 @@ pub enum IndexError {
 
 impl From<sled::Error> for IndexError {
     fn from(err: sled::Error) -> Self {
-        IndexError::IndexStroage {
+        IndexError::IndexStorage {
             msg: err.to_string(),
         }
     }

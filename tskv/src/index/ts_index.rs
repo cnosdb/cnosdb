@@ -157,7 +157,7 @@ impl TSIndex {
         self.binlog.write().await.write_blocks(blocks).await?;
         self.binlog_change_sender
             .send(())
-            .map_err(|e| IndexError::IndexStroage {
+            .map_err(|e| IndexError::IndexStorage {
                 msg: format!("Send binlog change failed, err: {}", e),
             })?;
 
@@ -484,7 +484,7 @@ impl TSIndex {
             let prefix = format!("{}.", tab);
             let it = storage_r.prefix(prefix.as_bytes())?;
             for val in it {
-                let val = val.map_err(|e| IndexError::IndexStroage { msg: e.to_string() })?;
+                let val = val.map_err(|e| IndexError::IndexStorage { msg: e.to_string() })?;
                 let rb = storage_r.load_rb(&val.1)?;
 
                 bitmap = bitmap.bitor(rb);

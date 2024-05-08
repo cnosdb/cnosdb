@@ -53,7 +53,7 @@ use warp::reply::Response;
 use warp::{header, reject, Filter, Rejection, Reply};
 
 use super::header::Header;
-use super::Error as HttpError;
+use super::{DecodeRequestSnafu, Error as HttpError};
 use crate::http::api_type::{metrics_record_db, HttpApiType};
 use crate::http::encoding::{get_accept_encoding_from_header, get_content_encoding_from_header};
 use crate::http::metrics::HttpMetrics;
@@ -635,10 +635,16 @@ impl HttpService {
                     let req_len = req.len();
                     let content_encoding = get_content_encoding_from_header(&header)?;
                     if let Some(encoding) = content_encoding {
-                        req = encoding.decode(req).map_err(|e| {
-                            trace::error!("Failed to decode request, err: {}", e);
-                            reject::custom(HttpError::DecodeRequest { source: e })
-                        })?;
+                        req = encoding
+                            .decode(req)
+                            .context(DecodeRequestSnafu)
+                            .map_err(|e| {
+                                trace::error!("Failed to decode request, err: {}", e);
+                                let r = snafu::Report::from_error(e);
+                                reject::custom(HttpError::InvalidHeader {
+                                    reason: r.to_string(),
+                                })
+                            })?;
                     }
 
                     let ctx = {

@@ -19,11 +19,11 @@ impl ChunkGroup {
         Self { chunks: Vec::new() }
     }
     pub fn serialize(&self) -> crate::TskvResult<Vec<u8>> {
-        bincode::serialize(&self).map_err(|e| TskvError::Serialize { source: e.into() })
+        bincode::serialize(&self).map_err(|e| TskvError::Encode { source: e.into() })
     }
 
     pub fn deserialize(bytes: &[u8]) -> crate::TskvResult<Self> {
-        bincode::deserialize(bytes).map_err(|e| TskvError::Deserialize { source: e.into() })
+        bincode::deserialize(bytes).map_err(|e| TskvError::Decode { source: e.into() })
     }
 
     pub fn push(&mut self, chunk: ChunkWriteSpec) {
@@ -121,11 +121,11 @@ impl ChunkGroupMeta {
     }
 
     pub fn serialize(&self) -> crate::TskvResult<Vec<u8>> {
-        bincode::serialize(&self).map_err(|e| TskvError::Serialize { source: e.into() })
+        bincode::serialize(&self).map_err(|e| TskvError::Encode { source: e.into() })
     }
 
     pub fn deserialize(bytes: &[u8]) -> crate::TskvResult<Self> {
-        bincode::deserialize(bytes).map_err(|e| TskvError::Deserialize { source: e.into() })
+        bincode::deserialize(bytes).map_err(|e| TskvError::Decode { source: e.into() })
     }
 
     pub fn push(&mut self, table: ChunkGroupWriteSpec) {

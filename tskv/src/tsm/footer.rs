@@ -73,11 +73,11 @@ impl Footer {
     }
 
     pub fn serialize(&self) -> crate::TskvResult<Vec<u8>> {
-        bincode::serialize(&self).map_err(|e| TskvError::Serialize { source: e.into() })
+        bincode::serialize(&self).map_err(|e| TskvError::Encode { source: e.into() })
     }
 
     pub fn deserialize(bytes: &[u8]) -> crate::TskvResult<Self> {
-        bincode::deserialize(bytes).map_err(|e| TskvError::Deserialize { source: e.into() })
+        bincode::deserialize(bytes).map_err(|e| TskvError::Decode { source: e.into() })
     }
 
     pub fn maybe_series_exist(&self, series_id: &SeriesId) -> bool {
@@ -133,11 +133,11 @@ impl SeriesMeta {
     }
 
     pub fn serialize(&self) -> crate::TskvResult<Vec<u8>> {
-        bincode::serialize(&self).map_err(|e| TskvError::Serialize { source: e.into() })
+        bincode::serialize(&self).map_err(|e| TskvError::Encode { source: e.into() })
     }
 
     pub fn deserialize(bytes: &[u8]) -> crate::TskvResult<Self> {
-        bincode::deserialize(bytes).map_err(|e| TskvError::Deserialize { source: e.into() })
+        bincode::deserialize(bytes).map_err(|e| TskvError::Decode { source: e.into() })
     }
 
     pub fn bloom_filter(&self) -> &BloomFilter {

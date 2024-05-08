@@ -48,12 +48,6 @@ pub enum CoordinatorError {
         msg: String,
     },
 
-    #[snafu(display("Invalid serde message: {}", err))]
-    #[error_code(code = 3)]
-    InvalidSerdeMsg {
-        err: String,
-    },
-
     #[snafu(display("Fails to serialize or deserialize: {source}"))]
     BincodeSerde {
         source: bincode::Error,
