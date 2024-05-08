@@ -55,9 +55,16 @@ pub struct StateMachine {
 #[async_trait::async_trait]
 impl ApplyStorage for StateMachine {
     async fn apply(&mut self, _ctx: &ApplyContext, req: &Request) -> ReplicationResult<Response> {
-        let req: WriteCommand = serde_json::from_slice(req)?;
+        match serde_json::from_slice(req) {
+            Ok(command) => Ok(self.process_write_command(&command).into()),
 
-        Ok(self.process_write_command(&req).into())
+            Err(err) => {
+                let err: MetaResult<()> = Err(MetaError::SerdeMsgInvalid {
+                    err: err.to_string(),
+                });
+                Ok(response_encode(err).into())
+            }
+        }
     }
 
     async fn get_snapshot(&mut self) -> ReplicationResult<Option<(Vec<u8>, u64)>> {
