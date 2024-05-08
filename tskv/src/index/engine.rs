@@ -27,12 +27,12 @@ impl IndexEngine {
             .read(true)
             .write(true)
             .open(db_path)
-            .map_err(|e| IndexError::IndexStroage { msg: e.to_string() })?;
+            .map_err(|e| IndexError::IndexStorage { msg: e.to_string() })?;
 
         let store = store::PagedFileStore::new(file, 1024 * 1024)
-            .map_err(|e| IndexError::IndexStroage { msg: e.to_string() })?;
+            .map_err(|e| IndexError::IndexStorage { msg: e.to_string() })?;
         let db = radixdb::RadixTree::try_load(store.clone(), store.last_id())
-            .map_err(|e| IndexError::IndexStroage { msg: e.to_string() })?;
+            .map_err(|e| IndexError::IndexStorage { msg: e.to_string() })?;
 
         Ok(Self { db, store })
     }
@@ -40,7 +40,7 @@ impl IndexEngine {
     pub fn set(&mut self, key: &[u8], value: &[u8]) -> IndexResult<()> {
         self.db
             .try_insert(key, value)
-            .map_err(|e| IndexError::IndexStroage { msg: e.to_string() })?;
+            .map_err(|e| IndexError::IndexStorage { msg: e.to_string() })?;
 
         Ok(())
     }
@@ -49,7 +49,7 @@ impl IndexEngine {
         let val = self
             .db
             .try_get(key)
-            .map_err(|e| IndexError::IndexStroage { msg: e.to_string() })?;
+            .map_err(|e| IndexError::IndexStorage { msg: e.to_string() })?;
 
         match val {
             Some(v) => {
@@ -64,7 +64,7 @@ impl IndexEngine {
     pub fn load(&self, val: &radixdb::node::Value<store::PagedFileStore>) -> IndexResult<Vec<u8>> {
         let blob = val
             .load(&self.store)
-            .map_err(|e| IndexError::IndexStroage { msg: e.to_string() })?;
+            .map_err(|e| IndexError::IndexStorage { msg: e.to_string() })?;
 
         Ok(blob.to_vec())
     }
@@ -95,7 +95,7 @@ impl IndexEngine {
     pub fn build_revert_index(&self, key: &[u8], id: u32, add: bool) -> IndexResult<Vec<u8>> {
         let mut rb = match self.get(key)? {
             Some(val) => roaring::RoaringBitmap::deserialize_from(&*val)
-                .map_err(|e| IndexError::IndexStroage { msg: e.to_string() })?,
+                .map_err(|e| IndexError::IndexStorage { msg: e.to_string() })?,
 
             None => roaring::RoaringBitmap::new(),
         };
@@ -108,7 +108,7 @@ impl IndexEngine {
 
         let mut bytes = vec![];
         rb.serialize_into(&mut bytes)
-            .map_err(|e| IndexError::IndexStroage { msg: e.to_string() })?;
+            .map_err(|e| IndexError::IndexStorage { msg: e.to_string() })?;
 
         Ok(bytes)
     }
@@ -116,7 +116,7 @@ impl IndexEngine {
     pub fn modify(&mut self, key: &[u8], id: u32, add: bool) -> IndexResult<()> {
         let mut rb = match self.get(key)? {
             Some(val) => roaring::RoaringBitmap::deserialize_from(&*val)
-                .map_err(|e| IndexError::IndexStroage { msg: e.to_string() })?,
+                .map_err(|e| IndexError::IndexStorage { msg: e.to_string() })?,
 
             None => roaring::RoaringBitmap::new(),
         };
@@ -129,7 +129,7 @@ impl IndexEngine {
 
         let mut bytes = vec![];
         rb.serialize_into(&mut bytes)
-            .map_err(|e| IndexError::IndexStroage { msg: e.to_string() })?;
+            .map_err(|e| IndexError::IndexStorage { msg: e.to_string() })?;
 
         self.set(key, &bytes)?;
 
@@ -139,7 +139,7 @@ impl IndexEngine {
     pub fn delete(&mut self, key: &[u8]) -> IndexResult<()> {
         self.db
             .try_remove(key)
-            .map_err(|e| IndexError::IndexStroage { msg: e.to_string() })?;
+            .map_err(|e| IndexError::IndexStorage { msg: e.to_string() })?;
 
         Ok(())
     }
@@ -150,7 +150,7 @@ impl IndexEngine {
                 a.set(Some(b.downcast()));
                 Ok(())
             })
-            .map_err(|e| IndexError::IndexStroage { msg: e.to_string() })?;
+            .map_err(|e| IndexError::IndexStorage { msg: e.to_string() })?;
 
         Ok(())
     }
@@ -159,7 +159,7 @@ impl IndexEngine {
         let result = self
             .db
             .try_contains_key(key)
-            .map_err(|e| IndexError::IndexStroage { msg: e.to_string() })?;
+            .map_err(|e| IndexError::IndexStorage { msg: e.to_string() })?;
 
         Ok(result)
     }
@@ -178,18 +178,18 @@ impl IndexEngine {
     ) -> IndexResult<radixdb::node::KeyValueIter<store::PagedFileStore>> {
         self.db
             .try_scan_prefix(key)
-            .map_err(|e| IndexError::IndexStroage { msg: e.to_string() })
+            .map_err(|e| IndexError::IndexStorage { msg: e.to_string() })
     }
 
     pub fn flush(&mut self) -> IndexResult<()> {
         let _id = self
             .db
             .try_reattach()
-            .map_err(|e| IndexError::IndexStroage { msg: e.to_string() })?;
+            .map_err(|e| IndexError::IndexStorage { msg: e.to_string() })?;
 
         self.store
             .sync()
-            .map_err(|e| IndexError::IndexStroage { msg: e.to_string() })?;
+            .map_err(|e| IndexError::IndexStorage { msg: e.to_string() })?;
 
         Ok(())
     }
@@ -234,7 +234,7 @@ impl Iterator for RangeKeyValIter {
 
                 Some(item) => match item {
                     Err(e) => {
-                        return Some(Err(IndexError::IndexStroage { msg: e.to_string() }));
+                        return Some(Err(IndexError::IndexStorage { msg: e.to_string() }));
                     }
 
                     Ok(item) => match &self.start {

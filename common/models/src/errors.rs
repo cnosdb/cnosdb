@@ -46,9 +46,9 @@ pub enum Error {
         err: String,
     },
 
-    #[snafu(display("Invalid serde message: {}", err))]
+    #[snafu(display("Invalid serde message: {}", source))]
     InvalidSerdeMessage {
-        err: String,
+        source: bincode::Error,
     },
 
     #[snafu(display("Invalid query expr message: {}", err))]
@@ -101,6 +101,11 @@ impl From<FromUtf8Error> for Error {
     }
 }
 
+impl From<bincode::Error> for Error {
+    fn from(err: bincode::Error) -> Self {
+        Error::InvalidSerdeMessage { source: err }
+    }
+}
 impl From<DataFusionError> for Error {
     fn from(value: DataFusionError) -> Self {
         match value {

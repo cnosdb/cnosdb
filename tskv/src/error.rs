@@ -36,10 +36,6 @@ pub enum TskvError {
         source: MetaError,
     },
 
-    OutOfSpec {
-        reason: String, // When the tsm file is known to be out of spec.
-    },
-
     #[error_code(code = 9999)]
     Unimplemented {
         msg: String,
@@ -80,14 +76,6 @@ pub enum TskvError {
     #[error_code(code = 7)]
     ReadTsm {
         reason: String,
-        // source: ReadTsmError,
-    },
-
-    #[snafu(display("write tsm block file error: {}", reason))]
-    #[error_code(code = 9)]
-    WriteTsm {
-        reason: String,
-        // source: WriteTsmError,
     },
 
     #[snafu(display("Unsupported datatype {}", dt))]
@@ -149,12 +137,6 @@ pub enum TskvError {
         source: std::io::Error,
     },
 
-    #[snafu(display("Unable to create file '{}': {}", path.display(), source))]
-    CreateFile {
-        path: PathBuf,
-        source: std::io::Error,
-    },
-
     #[snafu(display("Error with read file '{}': {}", path.display(), source))]
     ReadFile {
         path: PathBuf,
@@ -184,35 +166,12 @@ pub enum TskvError {
         message: String,
     },
 
-    #[snafu(display("File '{}' has wrong format: {}", path.display(), message))]
-    InvalidFileFormat {
-        path: PathBuf,
-        message: String,
-    },
-
-    /// Failed to send someting to a channel
-    #[snafu(display("{source}"))]
-    ChannelSend {
-        source: ChannelSendError,
-    },
-
-    /// Failed to receive something from a channel
-    #[snafu(display("{source}"))]
-    ChannelReceive {
-        source: ChannelReceiveError,
-    },
-
     /// WAL file is truncated, it's because CnosDB didn't shutdown properly.
     ///
     /// This error is handled by WAL module:
     /// just stop the current WAL file reading, go to the next WAL file.
     #[snafu(display("Internal handled: WAL truncated"))]
     WalTruncated,
-
-    #[snafu(display("read/write record file block: {}", reason))]
-    RecordFileIo {
-        reason: String,
-    },
 
     #[snafu(display("Unexpected eof"))]
     Eof,
@@ -266,14 +225,8 @@ pub enum TskvError {
 
     #[snafu(display("Index: {}", source))]
     IndexErr {
-        source: crate::index::IndexError,
+        source: IndexError,
     },
-
-    #[snafu(display("error apply edits to summary"))]
-    ErrApplyEdit,
-
-    #[snafu(display("character set error"))]
-    ErrCharacterSet,
 
     #[snafu(display("Invalid parameter : {}", reason))]
     InvalidParam {
@@ -282,11 +235,6 @@ pub enum TskvError {
 
     #[snafu(display("file has no footer"))]
     NoFooter,
-
-    #[snafu(display("unable to transform: {}", reason))]
-    Transform {
-        reason: String,
-    },
 
     #[snafu(display("invalid points : '{}'", source))]
     Points {
@@ -304,22 +252,12 @@ pub enum TskvError {
         vnode_id: VnodeId,
     },
 
-    #[snafu(display("Tenant {tenant} not found"))]
-    #[error_code(code = 50)]
-    TenantNotFound {
-        tenant: String,
-    },
-
     #[snafu(display("Table {table} not found"))]
     #[error_code(code = 51)]
     TableNotFound {
         table: String,
     },
 
-    #[snafu(display("Create TskvDatabase Failed, {msg}"))]
-    CreateDatabase {
-        msg: String,
-    },
     #[error_code(code = 52)]
     #[snafu(display("Column {} not found", column))]
     ColumnNotFound {

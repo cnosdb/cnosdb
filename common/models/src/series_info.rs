@@ -55,13 +55,9 @@ impl SeriesKey {
     }
 
     pub fn decode(data: &[u8]) -> Result<SeriesKey> {
-        let key = bincode::deserialize(data);
-        match key {
-            Ok(key) => Ok(key),
-            Err(err) => Err(Error::InvalidSerdeMessage {
-                err: format!("Invalid serde message: {}", err),
-            }),
-        }
+        let key = bincode::deserialize(data)?;
+
+        Ok(key)
     }
 
     /// Returns a string with format `{table}[,{tag.key}={tag.value}]`.
