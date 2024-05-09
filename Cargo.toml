@@ -112,7 +112,7 @@ prost-build = "0.11.9"
 prost-types =  "0.11.9"
 protobuf = "3.2"
 psutil = "3.3"
-q_compress = "0.11"
+pco = "0.2.3"
 radixdb = "0.2"
 rand = "0.8"
 ranges = "0.3.3"
@@ -167,6 +167,7 @@ warp = "0.3.6"
 winapi = "0.3.9"
 windows = { version = "0.52" }
 zstd = "0.13"
+maplit = "1.0.2"
 
 [workspace.package]
 edition = "2021"

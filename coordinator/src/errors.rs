@@ -6,7 +6,7 @@ use datafusion::error::DataFusionError;
 use flatbuffers::InvalidFlatbuffer;
 use meta::error::MetaError;
 use models::error_code::{ErrorCode, ErrorCoder};
-use models::meta_data::{ReplicationSet, ReplicationSetId};
+use models::meta_data::{ReplicationSet, ReplicationSetId, VnodeId};
 use models::schema::Precision;
 use models::Timestamp;
 use protos::PointsError;
@@ -206,10 +206,11 @@ pub enum CoordinatorError {
         leader_vnode_id: u32,
     },
 
-    #[snafu(display("Raft Node not Found has ({})", id))]
+    #[snafu(display("Raft Node({}) not Found in Replica ({})", vnode_id, replica_id))]
     #[error_code(code = 30)]
     RaftNodeNotFound {
-        id: ReplicationSetId,
+        vnode_id: VnodeId,
+        replica_id: ReplicationSetId,
     },
 
     #[error_code(code = 31)]

@@ -118,6 +118,17 @@ message DestoryRaftGroupRequest {
     uint32 replica_id = 2;
 }
 
+message PromoteLeaderRequest {
+    string db_name = 1;
+    uint32 new_leader_id = 2;
+    uint32 replica_id = 3;
+}
+
+message LearnerToFollowerRequest {
+    string db_name = 1;
+    uint32 replica_id = 2;
+}
+
 message AdminCommand {
   string tenant = 1;
   oneof command {
@@ -129,6 +140,8 @@ message AdminCommand {
     AddRaftFollowerRequest add_raft_follower = 6;
     RemoveRaftNodeRequest remove_raft_node = 7;
     DestoryRaftGroupRequest destory_raft_group = 8;
+    PromoteLeaderRequest promote_leader = 9;
+    LearnerToFollowerRequest learner_to_follower = 10;
   }
 }
 

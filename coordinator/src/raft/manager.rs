@@ -19,7 +19,7 @@ use tskv::{wal, EngineRef};
 
 use super::TskvEngineStorage;
 use crate::errors::*;
-use crate::tskv_executor::TskvAdminRequest;
+use crate::tskv_executor::{TskvAdminRequest, TskvLeaderExecutor};
 use crate::{get_replica_all_info, update_replication_set};
 
 pub struct RaftNodesManager {
@@ -244,6 +244,77 @@ impl RaftNodesManager {
         } else {
             Ok(())
         }
+    }
+
+    pub async fn promote_follower_to_leader(
+        &self,
+        tenant: &str,
+        db_name: &str,
+        new_leader_id: VnodeId,
+        replica_id: ReplicationSetId,
+    ) -> CoordinatorResult<()> {
+        let all_info = get_replica_all_info(self.meta.clone(), tenant, replica_id).await?;
+        let replica = &all_info.replica_set;
+        if replica.leader_vnode_id == new_leader_id {
+            return Ok(());
+        }
+
+        if replica.vnode(new_leader_id).is_none() {
+            return Err(CoordinatorError::RaftNodeNotFound {
+                vnode_id: new_leader_id,
+                replica_id: replica.id,
+            });
+        }
+
+        let raft_node = self.get_node_or_build(tenant, db_name, replica).await?;
+        self.assert_leader_node(raft_node.clone()).await?;
+
+        let mut members = BTreeSet::new();
+        members.insert(new_leader_id as RaftNodeId);
+        raft_node.raft_change_membership(members, true).await?;
+
+        let request = AdminCommand {
+            tenant: tenant.to_string(),
+            command: Some(admin_command::Command::LearnerToFollower(
+                LearnerToFollowerRequest {
+                    replica_id: replica.id,
+                    db_name: db_name.to_string(),
+                },
+            )),
+        };
+
+        let caller = TskvAdminRequest {
+            request,
+            meta: self.meta.clone(),
+            timeout: Duration::from_secs(3600),
+            enable_gzip: self.config.service.grpc_enable_gzip,
+        };
+        let executor = TskvLeaderExecutor {
+            meta: self.meta.clone(),
+        };
+        executor.do_request(tenant, replica, &caller).await?;
+        Ok(())
+    }
+
+    pub async fn learner_to_follower(
+        &self,
+        tenant: &str,
+        db_name: &str,
+        replica_id: ReplicationSetId,
+    ) -> CoordinatorResult<()> {
+        let all_info = get_replica_all_info(self.meta.clone(), tenant, replica_id).await?;
+        let replica = &all_info.replica_set;
+
+        let raft_node = self.get_node_or_build(tenant, db_name, replica).await?;
+        self.assert_leader_node(raft_node.clone()).await?;
+
+        let mut members = BTreeSet::new();
+        for vnode in replica.vnodes.iter() {
+            members.insert(vnode.id as RaftNodeId);
+        }
+        raft_node.raft_change_membership(members, true).await?;
+
+        Ok(())
     }
 
     pub async fn destory_replica_group(

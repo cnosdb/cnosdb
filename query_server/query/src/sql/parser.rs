@@ -918,13 +918,21 @@ impl<'a> ExtParser<'a> {
             options.ttl = Some(self.parse_string_value()?);
         } else if self.parse_cnos_keyword(CnosKeyWord::SHARD) {
             let _ = self.parser.expect_token(&Token::Eq);
-            options.shard_num = Some(self.parse_number::<u64>()?);
+            let shard_num = self.parse_number::<u64>()?;
+            if shard_num == 0 {
+                return parser_err!("shard number should be greater than 0");
+            }
+            options.shard_num = Some(shard_num);
         } else if self.parse_cnos_keyword(CnosKeyWord::VNODE_DURATION) {
             let _ = self.parser.expect_token(&Token::Eq);
             options.vnode_duration = Some(self.parse_string_value()?);
         } else if self.parse_cnos_keyword(CnosKeyWord::REPLICA) {
             let _ = self.parser.expect_token(&Token::Eq);
-            options.replica = Some(self.parse_number::<u64>()?);
+            let replica = self.parse_number::<u64>()?;
+            if replica == 0 {
+                return parser_err!("replica number should be greater than 0");
+            }
+            options.replica = Some(replica);
         } else if self.parse_cnos_keyword(CnosKeyWord::PRECISION) {
             let _ = self.parser.expect_token(&Token::Eq);
             options.precision = Some(self.parse_string_value()?);

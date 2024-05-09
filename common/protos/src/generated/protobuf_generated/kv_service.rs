@@ -196,10 +196,28 @@ pub struct DestoryRaftGroupRequest {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PromoteLeaderRequest {
+    #[prost(string, tag = "1")]
+    pub db_name: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "2")]
+    pub new_leader_id: u32,
+    #[prost(uint32, tag = "3")]
+    pub replica_id: u32,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct LearnerToFollowerRequest {
+    #[prost(string, tag = "1")]
+    pub db_name: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "2")]
+    pub replica_id: u32,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AdminCommand {
     #[prost(string, tag = "1")]
     pub tenant: ::prost::alloc::string::String,
-    #[prost(oneof = "admin_command::Command", tags = "2, 3, 4, 5, 6, 7, 8")]
+    #[prost(oneof = "admin_command::Command", tags = "2, 3, 4, 5, 6, 7, 8, 9, 10")]
     pub command: ::core::option::Option<admin_command::Command>,
 }
 /// Nested message and enum types in `AdminCommand`.
@@ -221,6 +239,10 @@ pub mod admin_command {
         RemoveRaftNode(super::RemoveRaftNodeRequest),
         #[prost(message, tag = "8")]
         DestoryRaftGroup(super::DestoryRaftGroupRequest),
+        #[prost(message, tag = "9")]
+        PromoteLeader(super::PromoteLeaderRequest),
+        #[prost(message, tag = "10")]
+        LearnerToFollower(super::LearnerToFollowerRequest),
     }
 }
 /// --------------------------------------------------------------------

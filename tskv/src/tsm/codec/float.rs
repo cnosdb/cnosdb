@@ -1,6 +1,7 @@
 use std::error::Error;
 
-use q_compress::{auto_compress, auto_decompress, DEFAULT_COMPRESSION_LEVEL};
+use pco::standalone::{simple_decompress, simpler_compress};
+use pco::DEFAULT_COMPRESSION_LEVEL;
 
 use crate::byte_utils::decode_be_f64;
 use crate::tsm::codec::Encoding;
@@ -243,17 +244,14 @@ pub fn f64_gorilla_encode(
     Ok(())
 }
 
-pub fn f64_q_compress_encode(
-    src: &[f64],
-    dst: &mut Vec<u8>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn f64_pco_encode(src: &[f64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
     if src.is_empty() {
         return Ok(());
     }
 
     dst.push(Encoding::Quantile as u8);
 
-    dst.append(&mut auto_compress(src, DEFAULT_COMPRESSION_LEVEL));
+    dst.append(&mut simpler_compress(src, DEFAULT_COMPRESSION_LEVEL)?);
     Ok(())
 }
 
@@ -366,10 +364,7 @@ pub fn f64_gorilla_decode(
     decode_with_sentinel(src, dst, SENTINEL)
 }
 
-pub fn f64_q_compress_decode(
-    src: &[u8],
-    dst: &mut Vec<f64>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn f64_pco_decode(src: &[u8], dst: &mut Vec<f64>) -> Result<(), Box<dyn Error + Send + Sync>> {
     if src.is_empty() {
         return Ok(());
     }
@@ -379,7 +374,7 @@ pub fn f64_q_compress_decode(
         return Ok(());
     }
 
-    let mut decode: Vec<f64> = auto_decompress(src)?;
+    let mut decode: Vec<f64> = simple_decompress(src)?;
     dst.append(&mut decode);
     Ok(())
 }
@@ -584,7 +579,7 @@ mod tests {
     // use test_helpers::approximately_equal;
 
     use crate::tsm::codec::float::{
-        f64_gorilla_decode, f64_gorilla_encode, f64_q_compress_decode, f64_q_compress_encode,
+        f64_gorilla_decode, f64_gorilla_encode, f64_pco_decode, f64_pco_encode,
     };
 
     #[test]
@@ -639,7 +634,7 @@ mod tests {
     }
 
     #[test]
-    fn encode_special_value_q_compress() {
+    fn encode_special_value_pco() {
         let src: Vec<f64> = vec![
             100.0,
             222.12,
@@ -658,9 +653,9 @@ mod tests {
         ];
         let mut dst = vec![];
 
-        f64_q_compress_encode(&src, &mut dst).expect("failed to encode src");
+        f64_pco_encode(&src, &mut dst).expect("failed to encode src");
         let mut got = vec![];
-        f64_q_compress_decode(&dst, &mut got).expect("failed to decode");
+        f64_pco_decode(&dst, &mut got).expect("failed to decode");
 
         assert_eq!(got.len(), src.len());
 
@@ -1791,10 +1786,10 @@ mod tests {
             let mut dst = vec![];
             let src = test.input.clone();
 
-            f64_q_compress_encode(&src, &mut dst).expect("failed to encode");
+            f64_pco_encode(&src, &mut dst).expect("failed to encode");
 
             let mut got = vec![];
-            f64_q_compress_decode(&dst, &mut got).expect("failed to decode");
+            f64_pco_decode(&dst, &mut got).expect("failed to decode");
             // verify got same values back
             assert_eq!(got, src, "{}", test.name);
         }
