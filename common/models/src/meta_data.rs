@@ -386,18 +386,47 @@ pub fn get_disk_info(path: &str) -> std::io::Result<u64> {
         use std::ffi::OsStr;
 
         use windows::core::HSTRING;
-        use windows::Win32::Storage::FileSystem::{
-            GetDiskSpaceInformationW, DISK_SPACE_INFORMATION,
-        };
+        use windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
 
-        let hdir = HSTRING::from(OsStr::new(path));
-        let mut disk_space_info = MaybeUninit::<DISK_SPACE_INFORMATION>::zeroed();
-        let disk_space_info = unsafe {
-            GetDiskSpaceInformationW(&hdir, disk_space_info.as_mut_ptr())
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
-            disk_space_info.assume_init()
+        // See https://learn.microsoft.com/zh-cn/windows/win32/api/fileapi/nf-fileapi-getdiskfreespaceexw
+        // Minimum supported client: Windows XP [desktop apps | UWP apps]
+        // Minimum supported server: Windows Server 2003 [desktop apps | UWP apps]
+        // Target Platform:          Windows
+        // Header:                   fileapi.h (include Windows.h)
+        // Library:                  Kernel32.lib
+        // DLL:                      Kernel32.dll
+
+        let lp_directory_name = HSTRING::from(OsStr::new(path));
+        let mut lp_free_bytes_available_to_caller = MaybeUninit::<u64>::zeroed();
+        let free_bytes_available_to_caller = unsafe {
+            GetDiskFreeSpaceExW(
+                &lp_directory_name,
+                Some(lp_free_bytes_available_to_caller.as_mut_ptr()),
+                None, // lp_total_number_of_bytes
+                None, // lp_total_number_of_free_bytes
+            )
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+            lp_free_bytes_available_to_caller.assume_init()
         };
-        Ok(disk_space_info.ActualAvailableAllocationUnits
-            * (disk_space_info.SectorsPerAllocationUnit * disk_space_info.BytesPerSector) as u64)
+        Ok(free_bytes_available_to_caller)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::get_disk_info;
+
+    #[test]
+    fn test_get_disk_info() {
+        let p = get_disk_info(".").unwrap();
+        println!("disk info: {}", p);
+
+        let p = get_disk_info("/").unwrap();
+        println!("disk info: {}", p);
+
+        let p = get_disk_info("/not_existed");
+        assert!(p.is_err());
+        let pe = std::io::Error::last_os_error();
+        println!("disk info error: {}", pe);
     }
 }
