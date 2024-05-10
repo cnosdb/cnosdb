@@ -543,7 +543,7 @@ pub struct CreateRole {
     pub tenant_name: String,
     pub name: String,
     pub if_not_exists: bool,
-    pub inherit_tenant_role: SystemTenantRole,
+    pub inherit_tenant_role: Option<SystemTenantRole>,
 }
 
 #[derive(Debug, Clone)]

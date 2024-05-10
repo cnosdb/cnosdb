@@ -92,8 +92,12 @@ impl TableProvider for InformationRolesTable {
             for role in self.metadata.custom_roles().await.map_err(|e| {
                 DataFusionError::Internal(format!("Failed to list databases: {}", e))
             })? {
-                let inherit_role = role.inherit_role();
-                builder.append_row(role.name(), "custom", Some(inherit_role.name()))
+                match role.inherit_role() {
+                    Some(inherit_role) => {
+                        builder.append_row(role.name(), "custom", Some(inherit_role.name()))
+                    }
+                    None => builder.append_row(role.name(), "custom", Some("NULL")),
+                }
             }
         }
         let rb: RecordBatch = builder.try_into()?;

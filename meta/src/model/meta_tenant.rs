@@ -278,7 +278,7 @@ impl TenantMeta {
     pub async fn create_custom_role(
         &self,
         role_name: String,
-        system_role: SystemTenantRole,
+        system_role: Option<SystemTenantRole>,
         additiona_privileges: HashMap<String, DatabasePrivilege>,
     ) -> MetaResult<()> {
         let req = command::WriteCommand::CreateRole(

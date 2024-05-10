@@ -157,7 +157,7 @@ pub type CustomTenantRoleRef<T> = Arc<RwLock<CustomTenantRole<T>>>;
 pub struct CustomTenantRole<T> {
     id: T,
     name: String,
-    system_role: SystemTenantRole,
+    system_role: Option<SystemTenantRole>,
     // database_name -> privileges
     // only add database privilege
     additional_privileges: HashMap<String, DatabasePrivilege>,
@@ -167,7 +167,7 @@ impl<T> CustomTenantRole<T> {
     pub fn new(
         id: T,
         name: String,
-        system_role: SystemTenantRole,
+        system_role: Option<SystemTenantRole>,
         // database_name -> privileges
         // only add database privilege
         additional_privileges: HashMap<String, DatabasePrivilege>,
@@ -180,7 +180,7 @@ impl<T> CustomTenantRole<T> {
         }
     }
 
-    pub fn inherit_role(&self) -> &SystemTenantRole {
+    pub fn inherit_role(&self) -> &Option<SystemTenantRole> {
         &self.system_role
     }
 
@@ -191,7 +191,10 @@ impl<T> CustomTenantRole<T> {
 
 impl<T: Id> CustomTenantRole<T> {
     pub fn to_privileges(&self, tenant_id: &T) -> HashSet<Privilege<T>> {
-        let privileges = self.system_role.to_privileges(tenant_id);
+        let privileges = match &self.system_role {
+            Some(p) => p.to_privileges(tenant_id),
+            None => HashSet::new(),
+        };
 
         let additiona_privileges = self
             .additional_privileges

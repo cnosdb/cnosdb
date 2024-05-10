@@ -987,7 +987,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         let table_source = self.get_table_source(table_ref.clone())?;
 
         let df_plan = LogicalPlanBuilder::scan(table_ref, table_source, None)?
-            .filter(col(DATABASES_DATABASE_NAME).eq(lit(database_name)))?
+            .filter(col(DATABASES_DATABASE_NAME).eq(lit(database_name.clone())))?
             .project(projections)?
             .build()?;
 
@@ -996,7 +996,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         // privileges
         let tenant_id = *session.tenant_id();
         let privilege = Privilege::TenantObject(
-            TenantObjectPrivilege::Database(DatabasePrivilege::Read, None),
+            TenantObjectPrivilege::Database(DatabasePrivilege::Read, Some(database_name)),
             Some(tenant_id),
         );
         Ok(PlanWithPrivileges {
@@ -1228,7 +1228,10 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         session: &SessionCtx,
     ) -> Result<PlanWithPrivileges> {
         let database_name = session.default_database();
-        let db_name = database.map(normalize_ident);
+        let db_name = match database.map(normalize_ident) {
+            Some(db) => Some(db),
+            None => Some(database_name.to_string()),
+        };
 
         let projections = vec![col(TABLES_TABLE_NAME)];
         let sorts = vec![col(TABLES_TABLE_NAME).sort(true, true)];
@@ -1665,12 +1668,15 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         let tenant_name = session.tenant();
         let tenant_id = *session.tenant_id();
 
-        let inherit_tenant_role = inherit
-            .map(|e| {
-                SystemTenantRole::try_from(normalize_ident(e).as_str())
-                    .map_err(|err| QueryError::Semantic { err })
-            })
-            .unwrap_or(Ok(SystemTenantRole::Member))?;
+        let inherit_tenant_role = inherit.map(|e| {
+            SystemTenantRole::try_from(normalize_ident(e).as_str())
+                .map_err(|err| QueryError::Semantic { err })
+        });
+
+        let inherit_role = match inherit_tenant_role {
+            Some(role) => Some(role?),
+            None => None,
+        };
 
         let privilege = Privilege::TenantObject(TenantObjectPrivilege::RoleFull, Some(tenant_id));
 
@@ -1678,7 +1684,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             tenant_name: tenant_name.to_string(),
             name: role_name,
             if_not_exists,
-            inherit_tenant_role,
+            inherit_tenant_role: inherit_role,
         }));
 
         Ok(PlanWithPrivileges {
