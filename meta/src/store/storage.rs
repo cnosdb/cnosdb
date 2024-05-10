@@ -1393,7 +1393,7 @@ impl StateMachine {
         &self,
         cluster: &str,
         role_name: &str,
-        sys_role: &SystemTenantRole,
+        sys_role: &Option<SystemTenantRole>,
         privileges: &HashMap<String, DatabasePrivilege>,
         tenant_name: &str,
     ) -> MetaResult<()> {
@@ -1471,7 +1471,14 @@ impl StateMachine {
         let key = KeyPath::role(cluster, tenant_name, role_name);
         if let Some(mut role) = self.get_struct::<CustomTenantRole<Oid>>(&key)? {
             for (privilege, database_name) in privileges {
-                let _ = role.revoke_privilege(database_name, privilege);
+                if role.revoke_privilege(database_name, privilege).is_err() {
+                    return Err(MetaError::PrivilegeCannotRevoke {
+                        privilege: models::auth::privilege::TenantObjectPrivilege::Database(
+                            privilege.clone(),
+                            Some(database_name.to_string()),
+                        ),
+                    });
+                }
             }
 
             Ok(self.insert(&key, &value_encode(&role)?)?)

@@ -191,17 +191,19 @@ impl ToDDLSql for DatabaseSchema {
 impl ToDDLSql for CustomTenantRole<Oid> {
     fn to_ddl_sql(&self, if_not_exists: bool) -> Result<String> {
         let sql = if if_not_exists {
-            format!(
-                "create role if not exists \"{}\" inherit {};",
-                self.name(),
-                self.inherit_role()
-            )
+            match self.inherit_role() {
+                Some(role) => format!(
+                    "create role if not exists \"{}\" inherit {};",
+                    self.name(),
+                    role
+                ),
+                None => format!("create role if not exists \"{}\";", self.name()),
+            }
         } else {
-            format!(
-                "create role \"{}\" inherit {};",
-                self.name(),
-                self.inherit_role()
-            )
+            match self.inherit_role() {
+                Some(role) => format!("create role \"{}\" inherit {};", self.name(), role),
+                None => format!("create role \"{}\";", self.name()),
+            }
         };
         Ok(sql)
     }

@@ -1,4 +1,5 @@
 use error_code::{ErrorCode, ErrorCoder};
+use models::auth::privilege::TenantObjectPrivilege;
 use models::Error;
 use serde::{Deserialize, Serialize};
 use snafu::Snafu;
@@ -177,6 +178,10 @@ pub enum MetaError {
     #[error_code(code = 55)]
     #[snafu(display("resourceinfo mark is lock by: {node_id}"))]
     ResourceInfosMarkIsLock { node_id: u64 },
+
+    #[snafu(display("cannot revoke the privilege {privilege} of role"))]
+    #[error_code(code = 56)]
+    PrivilegeCannotRevoke { privilege: TenantObjectPrivilege },
 }
 
 impl MetaError {
