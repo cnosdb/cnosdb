@@ -54,7 +54,7 @@ impl PhysicalOptimizerRule for AddSortExec {
                         agg_exec.input().clone(),
                     ));
                     let plan = Arc::new(AggregateExec::try_new(
-                        agg_exec.mode().clone(),
+                        *agg_exec.mode(),
                         agg_exec.group_expr().clone(),
                         agg_exec.aggr_expr().to_vec(),
                         agg_exec.filter_expr().to_vec(),
