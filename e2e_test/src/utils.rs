@@ -9,9 +9,9 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use config::Config as CnosdbConfig;
+use config::{get_config as read_cnosdb_config, Config as CnosdbConfig};
 use meta::client::MetaHttpClient;
-use meta::store::config::Opt as MetaStoreConfig;
+use meta::store::config::{get_opt as read_meta_store_config, Opt as MetaStoreConfig};
 use reqwest::blocking::{ClientBuilder, Request, RequestBuilder, Response};
 use reqwest::{Certificate, IntoUrl, Method, StatusCode};
 use sysinfo::{ProcessExt, ProcessRefreshKind, RefreshKind, System, SystemExt};
@@ -400,6 +400,7 @@ pub struct CnosdbMetaTestHelper {
     /// The meta test dir, usually /e2e_test/$mod/$test/meta
     pub test_dir: PathBuf,
     pub meta_node_definitions: Vec<MetaNodeDefinition>,
+    pub meta_node_configs: Vec<MetaStoreConfig>,
     pub exe_path: PathBuf,
 
     pub client: Arc<Client>,
@@ -413,6 +414,7 @@ impl CnosdbMetaTestHelper {
         workspace_dir: impl AsRef<Path>,
         test_base_dir: impl AsRef<Path>,
         meta_node_definitions: Vec<MetaNodeDefinition>,
+        meta_node_configs: Vec<MetaStoreConfig>,
     ) -> Self {
         let workspace_dir = workspace_dir.as_ref().to_path_buf();
         Self {
@@ -420,6 +422,7 @@ impl CnosdbMetaTestHelper {
             workspace_dir: workspace_dir.clone(),
             test_dir: test_base_dir.as_ref().to_path_buf(),
             meta_node_definitions,
+            meta_node_configs,
             exe_path: workspace_dir
                 .join("target")
                 .join("debug")
@@ -579,6 +582,7 @@ pub struct CnosdbDataTestHelper {
     /// The data test dir, usually /e2e_test/$mod/$test/data
     pub test_dir: PathBuf,
     pub data_node_definitions: Vec<DataNodeDefinition>,
+    pub data_node_configs: Vec<CnosdbConfig>,
     pub exe_path: PathBuf,
     pub enable_tls: bool,
 
@@ -591,6 +595,7 @@ impl CnosdbDataTestHelper {
         workspace_dir: impl AsRef<Path>,
         test_dir: impl AsRef<Path>,
         data_node_definitions: Vec<DataNodeDefinition>,
+        data_node_configs: Vec<CnosdbConfig>,
         enable_tls: bool,
     ) -> Self {
         let workspace_dir = workspace_dir.as_ref().to_path_buf();
@@ -609,6 +614,7 @@ impl CnosdbDataTestHelper {
             workspace_dir: workspace_dir.clone(),
             test_dir: test_dir.as_ref().to_path_buf(),
             data_node_definitions,
+            data_node_configs,
             exe_path: workspace_dir.join("target").join("debug").join("cnosdb"),
             enable_tls,
             client,
@@ -770,14 +776,17 @@ pub fn run_cluster(
     if !cluster_def.meta_cluster_def.is_empty() {
         // If need to run `cnosdb-meta`
         let meta_test_dir = test_dir.join("meta");
-        if generate_meta_config {
-            write_meta_node_config_files(&test_dir, &cluster_def.meta_cluster_def);
-        }
+        let configs = write_meta_node_config_files(
+            &test_dir,
+            &cluster_def.meta_cluster_def,
+            generate_meta_config,
+        );
         let mut meta = CnosdbMetaTestHelper::new(
             runtime,
             &workspace_dir,
             meta_test_dir,
             cluster_def.meta_cluster_def.clone(),
+            configs,
         );
         if cluster_def.meta_cluster_def.len() == 1 {
             meta.run_single_meta();
@@ -792,13 +801,16 @@ pub fn run_cluster(
     if !cluster_def.data_cluster_def.is_empty() {
         // If need to run `cnosdb run`
         let data_test_dir = test_dir.join("data");
-        if generate_data_config {
-            write_data_node_config_files(&test_dir, &cluster_def.data_cluster_def);
-        }
+        let configs = write_data_node_config_files(
+            &test_dir,
+            &cluster_def.data_cluster_def,
+            generate_data_config,
+        );
         let mut data = CnosdbDataTestHelper::new(
             workspace_dir,
             data_test_dir,
             cluster_def.data_cluster_def.clone(),
+            configs,
             false,
         );
         data.run();
@@ -826,13 +838,13 @@ pub fn run_singleton(
     let mut data_node_definition = data_node_definition.clone();
     data_node_definition.mode = DeploymentMode::Singleton;
     let data_node_definitions = vec![data_node_definition];
-    if generate_data_config {
-        write_data_node_config_files(&test_dir, &data_node_definitions);
-    }
+    let configs =
+        write_data_node_config_files(&test_dir, &data_node_definitions, generate_data_config);
     let mut data = CnosdbDataTestHelper::new(
         workspace_dir,
         data_test_dir,
         data_node_definitions,
+        configs,
         enable_tls,
     );
     data.run();
@@ -1017,15 +1029,24 @@ pub fn build_meta_node_config(test_dir: impl AsRef<Path>, meta_dir_name: &str) -
 pub fn write_meta_node_config_files(
     test_dir: impl AsRef<Path>,
     meta_node_definitions: &[MetaNodeDefinition],
-) {
+    regenerate: bool,
+) -> Vec<MetaStoreConfig> {
     let meta_config_dir = test_dir.as_ref().join("meta").join("config");
     std::fs::create_dir_all(&meta_config_dir).unwrap();
+    let mut meta_configs = Vec::with_capacity(meta_node_definitions.len());
     for meta_node_def in meta_node_definitions {
-        let mut meta_config = build_meta_node_config(&test_dir, &meta_node_def.config_file_name);
-        meta_node_def.update_config(&mut meta_config);
         let config_path = meta_config_dir.join(&meta_node_def.config_file_name);
-        std::fs::write(&config_path, meta_config.to_string_pretty()).unwrap();
+        let mut meta_config;
+        if regenerate {
+            meta_config = build_meta_node_config(&test_dir, &meta_node_def.config_file_name);
+            meta_node_def.update_config(&mut meta_config);
+            std::fs::write(&config_path, meta_config.to_string_pretty()).unwrap();
+        } else {
+            meta_config = read_meta_store_config(Some(config_path));
+        }
+        meta_configs.push(meta_config);
     }
+    meta_configs
 }
 
 /// Build cnosdb config with paths:
@@ -1060,21 +1081,30 @@ pub fn build_data_node_config(test_dir: impl AsRef<Path>, data_dir_name: &str) -
 pub fn write_data_node_config_files(
     test_dir: impl AsRef<Path>,
     data_node_definitions: &[DataNodeDefinition],
-) {
+    regenerate: bool,
+) -> Vec<CnosdbConfig> {
     let cnosdb_config_dir = test_dir.as_ref().join("data").join("config");
     std::fs::create_dir_all(&cnosdb_config_dir).unwrap();
+    let mut data_configs = Vec::with_capacity(data_node_definitions.len());
     for data_node_def in data_node_definitions {
-        let mut cnosdb_config = build_data_node_config(&test_dir, &data_node_def.config_file_name);
-        data_node_def.update_config(&mut cnosdb_config);
         let config_path = cnosdb_config_dir.join(&data_node_def.config_file_name);
-        std::fs::write(&config_path, cnosdb_config.to_string_pretty()).unwrap();
+        let mut cnosdb_config;
+        if regenerate {
+            cnosdb_config = build_data_node_config(&test_dir, &data_node_def.config_file_name);
+            data_node_def.update_config(&mut cnosdb_config);
+            std::fs::write(&config_path, cnosdb_config.to_string_pretty()).unwrap();
+        } else {
+            cnosdb_config = read_cnosdb_config(&config_path).unwrap()
+        }
 
         // If we do not make directory $storage.path, the data node seems to be sick by the meta node.
         // TODO(zipper): I think it's the data node who should do this job.
         if let Err(e) = std::fs::create_dir_all(&cnosdb_config.storage.path) {
             println!("Failed to pre-create $storage.path for data node: {e}");
         }
+        data_configs.push(cnosdb_config);
     }
+    data_configs
 }
 
 /// Copy TLS certificates:
