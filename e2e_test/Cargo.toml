@@ -18,7 +18,6 @@ chrono = { workspace = true }
 datafusion = { workspace = true }
 diff = { workspace = true }
 flatbuffers = { workspace = true }
-fly-accept-encoding = { workspace = true }
 futures = { workspace = true, default-features = false, features = ["alloc"] }
 prost = { workspace = true }
 rand = { workspace = true }

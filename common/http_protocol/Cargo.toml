@@ -12,10 +12,15 @@ async-backtrace = { workspace = true, optional = true }
 brotli = { workspace = true }
 bytes = { workspace = true }
 flate2 = { workspace = true }
-fly-accept-encoding = { workspace = true }
-reqwest = { workspace = true, default-features = false, features = ["rustls-tls"] }
+lz4_flex = { workspace = true }
+reqwest = { workspace = true, default-features = false, features = [
+    "rustls-tls",
+] }
 serde = { workspace = true }
 snafu = { workspace = true }
+snap = { workspace = true }
+strum = { workspace = true }
+strum_macros = { workspace = true }
 zstd = { workspace = true }
 
 [features]

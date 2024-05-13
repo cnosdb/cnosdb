@@ -5,10 +5,9 @@ use std::task::Poll;
 
 use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::record_batch::RecordBatch;
-use fly_accept_encoding::Encoding;
 use futures::future::BoxFuture;
 use futures::{ready, FutureExt, Stream, StreamExt};
-use http_protocol::encoding::EncodingExt;
+use http_protocol::encoding::Encoding;
 use http_protocol::header::{APPLICATION_JSON, CONTENT_TYPE};
 use http_protocol::response::ErrorResponse;
 use http_protocol::status_code::{
