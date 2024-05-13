@@ -693,7 +693,7 @@ fn case6() {
             "select table air",
             SqlQuery::with_str(
                 url_cnosdb_public,
-                "SELECT time, station, visibility, temperature, pressure FROM air ORDER BY time",
+                "SELECT * FROM air ORDER BY time",
                 Ok(vec![
                     "time,station,visibility,temperature,pressure",
                     "2023-01-01T01:10:00.000000000,XiaoMaiDao,79.0,80.0,63.0",
@@ -737,7 +737,7 @@ fn case6() {
             "select table air",
             SqlQuery::with_str(
                 url_cnosdb_public,
-                "SELECT time, station, visibility, temperature, pressure FROM air ORDER BY time",
+                "SELECT * FROM air ORDER BY time",
                 Ok(vec![
                     "time,station,visibility,temperature,pressure",
                     "2023-01-01T01:10:00.000000000,XiaoMaiDao,79.0,80.0,63.0",
