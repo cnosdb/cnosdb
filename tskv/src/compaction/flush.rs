@@ -1,6 +1,6 @@
 use std::cmp::max;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -17,193 +17,202 @@ use crate::memcache::MemCache;
 use crate::summary::{CompactMetaBuilder, SummaryTask, VersionEdit};
 use crate::tseries_family::Version;
 use crate::tsm::writer::TsmWriter;
-use crate::{ColumnFileId, TsKvContext, TseriesFamilyId, TskvError};
+use crate::{TsKvContext, TseriesFamilyId};
 
 pub struct FlushTask {
     ts_family_id: TseriesFamilyId,
     mem_caches: Vec<Arc<RwLock<MemCache>>>,
-    global_context: Arc<GlobalContext>,
-    path_tsm: PathBuf,
-    path_delta: PathBuf,
+
+    tsm_writer: TsmWriter,
+    delta_writer: TsmWriter,
+    files_meta: HashMap<u64, Arc<BloomFilter>>,
 }
 
 impl FlushTask {
-    pub fn new(
+    pub async fn new(
         ts_family_id: TseriesFamilyId,
         mem_caches: Vec<Arc<RwLock<MemCache>>>,
         global_context: Arc<GlobalContext>,
         path_tsm: impl AsRef<Path>,
         path_delta: impl AsRef<Path>,
-    ) -> Self {
-        Self {
+    ) -> TskvResult<Self> {
+        let file_id = global_context.file_id_next();
+        let tsm_writer = TsmWriter::open(&path_tsm, file_id, 0, false).await?;
+        let file_id = global_context.file_id_next();
+        let delta_writer = TsmWriter::open(&path_delta, file_id, 0, true).await?;
+
+        Ok(Self {
             ts_family_id,
             mem_caches,
-            global_context,
-            path_tsm: path_tsm.as_ref().into(),
-            path_delta: path_delta.as_ref().into(),
+            tsm_writer,
+            delta_writer,
+            files_meta: HashMap::new(),
+        })
+    }
+
+    pub fn clear_files(&mut self) {
+        if let Err(err) = std::fs::remove_file(self.tsm_writer.path()) {
+            info!(
+                "delete flush tsm file: {:?} failed: {}",
+                self.tsm_writer.path(),
+                err
+            );
+        }
+
+        if let Err(err) = std::fs::remove_file(self.delta_writer.path()) {
+            info!(
+                "delete flush tsm file: {:?} failed: {}",
+                self.delta_writer.path(),
+                err
+            );
         }
     }
 
-    pub async fn run(
-        self,
-        version: Arc<Version>,
-        edit: &mut VersionEdit,
-    ) -> TskvResult<HashMap<u64, Arc<BloomFilter>>> {
-        let mut tsm_writer = None;
-        let mut delta_writer = None;
-        let mut file_metas = HashMap::new();
-
-        for memcache in self.mem_caches {
+    pub async fn run(&mut self, version: Arc<Version>, edit: &mut VersionEdit) -> TskvResult<()> {
+        let mut tsm_writer_is_used = false;
+        let mut delta_writer_is_used = false;
+        for memcache in self.mem_caches.iter() {
             let (group, delta_group) = memcache.read().to_chunk_group(version.clone())?;
-            if tsm_writer.is_none() && !group.is_empty() {
-                tsm_writer = Some(
-                    TsmWriter::open(&self.path_tsm, self.global_context.file_id_next(), 0, false)
-                        .await?,
-                );
+            if !group.is_empty() {
+                tsm_writer_is_used = true;
+                self.tsm_writer.write_data(group).await?;
             }
-            if delta_writer.is_none() && !delta_group.is_empty() {
-                delta_writer = Some(
-                    TsmWriter::open(
-                        &self.path_delta,
-                        self.global_context.file_id_next(),
-                        0,
-                        true,
-                    )
-                    .await?,
-                );
-            }
-            if let Some(tsm_writer) = tsm_writer.as_mut() {
-                tsm_writer.write_data(group).await?;
-            }
-            if let Some(delta_writer) = delta_writer.as_mut() {
-                delta_writer.write_data(delta_group).await?;
+
+            if !delta_group.is_empty() {
+                delta_writer_is_used = true;
+                self.delta_writer.write_data(delta_group).await?;
             }
         }
 
         let compact_meta_builder = CompactMetaBuilder::new(self.ts_family_id);
         let mut max_level_ts = version.max_level_ts();
 
-        if let Some(mut tsm_writer) = tsm_writer {
-            tsm_writer.finish().await?;
-            file_metas.insert(
-                tsm_writer.file_id(),
-                Arc::new(tsm_writer.series_bloom_filter().clone()),
+        if tsm_writer_is_used {
+            self.tsm_writer.finish().await?;
+            self.files_meta.insert(
+                self.tsm_writer.file_id(),
+                Arc::new(self.tsm_writer.series_bloom_filter().clone()),
             );
             let tsm_meta = compact_meta_builder.build(
-                tsm_writer.file_id(),
-                tsm_writer.size(),
+                self.tsm_writer.file_id(),
+                self.tsm_writer.size(),
                 1,
-                tsm_writer.min_ts(),
-                tsm_writer.max_ts(),
+                self.tsm_writer.min_ts(),
+                self.tsm_writer.max_ts(),
             );
             max_level_ts = max(max_level_ts, tsm_meta.max_ts);
             edit.add_file(tsm_meta, max_level_ts);
+        } else {
+            let path = self.tsm_writer.path();
+            let result = std::fs::remove_file(path);
+            info!("Flush: remove unsed file: {:?}, {:?}", path, result);
         }
 
-        if let Some(mut delta_writer) = delta_writer {
-            delta_writer.finish().await?;
-            file_metas.insert(
-                delta_writer.file_id(),
-                Arc::new(delta_writer.series_bloom_filter().clone()),
+        if delta_writer_is_used {
+            self.delta_writer.finish().await?;
+            self.files_meta.insert(
+                self.delta_writer.file_id(),
+                Arc::new(self.delta_writer.series_bloom_filter().clone()),
             );
 
             let delta_meta = compact_meta_builder.build(
-                delta_writer.file_id(),
-                delta_writer.size(),
+                self.delta_writer.file_id(),
+                self.delta_writer.size(),
                 0,
-                delta_writer.min_ts(),
-                delta_writer.max_ts(),
+                self.delta_writer.min_ts(),
+                self.delta_writer.max_ts(),
             );
 
             max_level_ts = max(max_level_ts, delta_meta.max_ts);
             edit.add_file(delta_meta, max_level_ts);
+        } else {
+            let path = self.delta_writer.path();
+            let result = std::fs::remove_file(path);
+            info!("Flush: remove unsed file: {:?}, {:?}", path, result);
         }
 
-        Ok(file_metas)
+        Ok(())
     }
 }
 
-pub async fn run_flush_memtable_job(
-    req: FlushReq,
+pub async fn flush_memtable(
+    req: &FlushReq,
     ctx: Arc<TsKvContext>,
-    trigger_compact: bool,
+    mems: Vec<Arc<RwLock<MemCache>>>,
 ) -> TskvResult<()> {
-    let req_str = format!("{req}");
-    info!("Flush: running: {req_str}");
+    let (mut high_seq_no, mut low_seq_no) = (0, u64::MAX);
+    for mem in mems.iter() {
+        high_seq_no = high_seq_no.max(mem.read().seq_no());
+        low_seq_no = low_seq_no.min(mem.read().min_seq_no());
+    }
 
-    let mut file_metas: HashMap<ColumnFileId, Arc<BloomFilter>> = HashMap::new();
-
-    let tsf = ctx
-        .version_set
-        .read()
-        .await
-        .get_tsfamily_by_tf_id(req.ts_family_id)
-        .await
-        .ok_or(TskvError::VnodeNotFound {
-            vnode_id: req.ts_family_id,
-        })?;
+    info!(
+        "Flush: running  {} seq: [{}-{}], memcache count: {}",
+        req,
+        low_seq_no,
+        high_seq_no,
+        mems.len()
+    );
 
     // todo: build path by vnode data
-    let (storage_opt, version, database) = {
-        let tsf_rlock = tsf.read().await;
+    let (storage_opt, version) = {
+        let tsf_rlock = req.ts_family.read().await;
         tsf_rlock.update_last_modified().await;
-        (
-            tsf_rlock.storage_opt(),
-            tsf_rlock.version(),
-            tsf_rlock.tenant_database(),
-        )
+        (tsf_rlock.storage_opt(), tsf_rlock.version())
     };
 
-    let path_tsm = storage_opt.tsm_dir(&database, req.ts_family_id);
-    let path_delta = storage_opt.delta_dir(&database, req.ts_family_id);
-
-    let flush_task = FlushTask::new(
-        req.ts_family_id,
-        req.mems.clone(),
+    let path_tsm = storage_opt.tsm_dir(&req.owner, req.tf_id);
+    let path_delta = storage_opt.delta_dir(&req.owner, req.tf_id);
+    let mut flush_task = FlushTask::new(
+        req.tf_id,
+        mems.clone(),
         ctx.global_ctx.clone(),
         path_tsm,
         path_delta,
-    );
+    )
+    .await?;
 
-    let mut version_edit =
-        VersionEdit::new_update_vnode(req.ts_family_id, req.owner, req.high_seq_no);
-    if let Ok(fm) = flush_task.run(version.clone(), &mut version_edit).await {
-        file_metas = fm;
+    let mut version_edit = VersionEdit::new_update_vnode(req.tf_id, req.owner.clone(), high_seq_no);
+    if let Err(err) = flush_task.run(version.clone(), &mut version_edit).await {
+        flush_task.clear_files();
+        return Err(err);
     }
 
-    tsf.read().await.update_last_modified().await;
-
     info!(
-        "Flush: completed: {req_str}, version edit: {:?}",
-        version_edit
+        "Flush: completed: owner: {} tsf_id: {}, version edit: {:?}",
+        req.owner, req.tf_id, version_edit
     );
 
     let (task_state_sender, task_state_receiver) = oneshot::channel();
     let task = SummaryTask::new(
-        tsf.clone(),
+        req.ts_family.clone(),
         version_edit,
-        Some(file_metas),
-        Some(req.mems),
+        Some(flush_task.files_meta),
+        Some(mems),
         task_state_sender,
     );
 
     if let Err(e) = ctx.summary_task_sender.send(task).await {
-        warn!("Flush: failed to send summary task for {req_str}: {e}",);
+        warn!(
+            "Flush: failed to send summary task for tsf_id: {}: {e}",
+            req.tf_id
+        );
     }
 
     if timeout(Duration::from_secs(10), task_state_receiver)
         .await
         .is_err()
     {
-        error!("Flush: failed to receive summary task result in 10 seconds for {req_str}",);
+        error!(
+            "Flush: failed to receive summary task result for tsf_id: {}",
+            req.tf_id
+        );
     }
 
-    if trigger_compact {
+    if req.trigger_compact {
         let _ = ctx
             .compact_task_sender
-            .send(CompactTask {
-                tsf_id: req.ts_family_id,
-            })
+            .send(CompactTask { tsf_id: req.tf_id })
             .await;
     }
 
@@ -227,7 +236,7 @@ pub mod flush_tests {
     use parking_lot::lock_api::RwLock;
     use utils::dedup_front_by_key;
 
-    use crate::compaction::FlushTask;
+    use crate::compaction::flush::FlushTask;
     use crate::context::GlobalContext;
     use crate::memcache::{MemCache, OrderedRowsData, RowData, RowGroup};
     use crate::tseries_family::{LevelInfo, Version};
@@ -408,16 +417,18 @@ pub mod flush_tests {
         let mem_caches = vec![Arc::new(RwLock::new(mem_cache))];
         let path_tsm = PathBuf::from("/tmp/test/flush/tsm1");
         let path_delta = PathBuf::from("/tmp/test/flush/tsm2");
-        let flush_task = FlushTask::new(
+        let mut flush_task = FlushTask::new(
             1,
             mem_caches,
             Arc::new(GlobalContext::new()),
             path_tsm.clone(),
             path_delta.clone(),
-        );
+        )
+        .await
+        .unwrap();
 
         let mut edit = VersionEdit::default();
-        let _ = flush_task.run(Arc::new(version), &mut edit).await.unwrap();
+        flush_task.run(Arc::new(version), &mut edit).await.unwrap();
 
         let tsm_info = edit.add_files.first().unwrap();
         let delta_info = edit.add_files.get(1).unwrap();

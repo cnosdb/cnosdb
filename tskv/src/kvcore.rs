@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -7,7 +8,7 @@ use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::meta_data::VnodeId;
 use models::predicate::domain::ColumnDomains;
-use models::schema::{make_owner, DatabaseSchema};
+use models::schema::{make_owner, split_owner, DatabaseSchema};
 use models::{SeriesId, SeriesKey};
 use tokio::runtime::Runtime;
 use tokio::sync::broadcast::{self, Sender as BroadcastSender};
@@ -15,7 +16,7 @@ use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::sync::{oneshot, RwLock};
 use trace::{debug, error, info, warn};
 
-use crate::compaction::job::{CompactJob, FlushJob};
+use crate::compaction::job::CompactJob;
 use crate::compaction::{self, check, LevelCompactionPicker, Picker};
 use crate::database::Database;
 use crate::error::TskvResult;
@@ -31,13 +32,12 @@ use crate::{file_utils, Engine, TsKvContext, TseriesFamilyId};
 pub const COMPACT_REQ_CHANNEL_CAP: usize = 1024;
 pub const SUMMARY_REQ_CHANNEL_CAP: usize = 1024;
 
-#[derive(Debug)]
 pub struct TsKv {
     ctx: Arc<TsKvContext>,
     _meta_manager: MetaRef,
-    flush_job: FlushJob,
     compact_job: CompactJob,
     runtime: Arc<Runtime>,
+    vnodes: Arc<RwLock<HashMap<VnodeId, VnodeStorage>>>,
     _metrics: Arc<MetricsRegister>,
     _memory_pool: Arc<dyn MemoryPool>,
     close_sender: BroadcastSender<Sender<()>>,
@@ -51,8 +51,6 @@ impl TsKv {
         memory_pool: MemoryPoolRef,
         metrics: Arc<MetricsRegister>,
     ) -> TskvResult<TsKv> {
-        let flush_channel_cap = options.storage.flush_req_channel_cap;
-        let (flush_task_sender, flush_task_receiver) = mpsc::channel(flush_channel_cap);
         let (compact_task_sender, compact_task_receiver) = mpsc::channel(COMPACT_REQ_CHANNEL_CAP);
         let (summary_task_sender, summary_task_receiver) = mpsc::channel(SUMMARY_REQ_CHANNEL_CAP);
 
@@ -68,33 +66,32 @@ impl TsKv {
 
         let ctx = Arc::new(TsKvContext {
             version_set,
-            flush_task_sender,
             compact_task_sender,
             summary_task_sender,
+            runtime: runtime.clone(),
             options: shared_options.clone(),
             global_ctx: summary.global_context(),
         });
 
         let (close_sender, _close_receiver) = broadcast::channel(1);
         let compact_job = CompactJob::new(runtime.clone(), ctx.clone());
-        let flush_job = FlushJob::new(runtime.clone(), ctx.clone());
         let core = Self {
             ctx,
             _meta_manager: meta_manager,
             _memory_pool: memory_pool,
             compact_job,
-            flush_job,
             close_sender,
             _metrics: metrics,
             runtime,
+            vnodes: Default::default(),
         };
 
         core.run_summary_job(summary, summary_task_receiver);
+        core.run_flush_code_vnode_job();
         core.compact_job
             .start_merge_compact_task_job(compact_task_receiver)
             .await;
         core.compact_job.start_vnode_compaction_job().await;
-        core.flush_job.start_vnode_flush_job(flush_task_receiver);
         Ok(core)
     }
 
@@ -157,13 +154,14 @@ impl TsKv {
         info!("Summary task handler started");
     }
 
-    pub fn run_flush_code_vnode_job(&self) {
+    fn run_flush_code_vnode_job(&self) {
         let tskv_ctx = self.ctx.clone();
         let compact_trigger_cold_duration = tskv_ctx.options.storage.compact_trigger_cold_duration;
         if compact_trigger_cold_duration == Duration::ZERO {
             return;
         }
 
+        let vnodes = self.vnodes.clone();
         self.runtime.spawn(async move {
             let mut cold_check_interval = tokio::time::interval(Duration::from_secs(60));
             loop {
@@ -179,9 +177,11 @@ impl TsKv {
                                 continue;
                             }
 
-                            let ctx = tskv_ctx.clone();
-                            if let Err(e) = TseriesFamily::flush(ctx, ts_family, true).await {
-                                trace::error!("flush code vnode {} faild: {:?}", tf_id, e)
+                            let vnode_opt = vnodes.read().await.get(&tf_id).cloned();
+                            if let Some(vnode) = vnode_opt {
+                                if let Err(e) = vnode.flush(true, true, true).await {
+                                    trace::error!("flush code vnode {} faild: {:?}", tf_id, e)
+                                }
                             }
                         }
                     }
@@ -242,13 +242,10 @@ impl Engine for TsKv {
             .get_tsfamily_or_else_create(vnode_id, database.clone())
             .await?;
 
-        Ok(VnodeStorage::new(
-            vnode_id,
-            database,
-            ts_index,
-            ts_family,
-            self.ctx.clone(),
-        ))
+        let vnode = VnodeStorage::new(vnode_id, database, ts_index, ts_family, self.ctx.clone());
+        self.vnodes.write().await.insert(vnode_id, vnode.clone());
+
+        Ok(vnode)
     }
 
     async fn remove_tsfamily(
@@ -257,6 +254,8 @@ impl Engine for TsKv {
         database: &str,
         vnode_id: VnodeId,
     ) -> TskvResult<()> {
+        self.vnodes.write().await.remove(&vnode_id);
+
         if let Some(db) = self.ctx.version_set.read().await.get_db(tenant, database) {
             let mut db_wlock = db.write().await;
             db_wlock.del_ts_index(vnode_id);
@@ -288,18 +287,14 @@ impl Engine for TsKv {
 
     async fn flush_tsfamily(
         &self,
-        tenant: &str,
-        database: &str,
+        _tenant: &str,
+        _database: &str,
         vnode_id: VnodeId,
+        trigger_compact: bool,
     ) -> TskvResult<()> {
-        if let Some(db) = self.ctx.version_set.read().await.get_db(tenant, database) {
-            if let Some(tsfamily) = db.read().await.get_tsfamily(vnode_id) {
-                TseriesFamily::flush(self.ctx.clone(), tsfamily, true).await?;
-            }
-
-            if let Some(ts_index) = db.read().await.get_ts_index(vnode_id) {
-                let _ = ts_index.flush().await;
-            }
+        let vnode_opt = self.vnodes.read().await.get(&vnode_id).cloned();
+        if let Some(vnode) = vnode_opt {
+            vnode.flush(true, true, trigger_compact).await?;
         }
 
         Ok(())
@@ -397,8 +392,10 @@ impl Engine for TsKv {
                     return Ok(());
                 }
 
-                let ctx = self.ctx.clone();
-                if let Err(e) = TseriesFamily::flush(ctx, ts_family.clone(), true).await {
+                let owner = ts_family.read().await.tenant_database();
+                let (tenant, db_name) = split_owner(&owner);
+
+                if let Err(e) = self.flush_tsfamily(tenant, db_name, vnode_id, true).await {
                     error!("Failed to flush vnode {}: {:?}", vnode_id, e);
                 }
 
@@ -442,8 +439,10 @@ impl Engine for TsKv {
             if let Some(ts_family) = db.ts_families().get(&vnode_id).cloned() {
                 drop(db);
 
-                let ctx = self.ctx.clone();
-                TseriesFamily::flush(ctx, ts_family.clone(), false).await?;
+                let owner = ts_family.read().await.tenant_database();
+                let (tenant, db_name) = split_owner(&owner);
+                self.flush_tsfamily(tenant, db_name, vnode_id, false)
+                    .await?;
 
                 return check::vnode_checksum(ts_family).await;
             }
@@ -461,5 +460,11 @@ impl Engine for TsKv {
             continue;
         }
         info!("TsKv closed");
+    }
+}
+
+impl std::fmt::Debug for TsKv {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "tskv engine type")
     }
 }

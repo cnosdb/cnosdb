@@ -7,13 +7,12 @@ mod picker;
 use std::sync::Arc;
 
 pub use compact::*;
-pub use flush::*;
-use parking_lot::RwLock;
 pub use picker::*;
+use tokio::sync::RwLock;
 
+use crate::index::ts_index::TSIndex;
 use crate::kv_option::StorageOptions;
-use crate::memcache::MemCache;
-use crate::tseries_family::{ColumnFile, Version};
+use crate::tseries_family::{ColumnFile, TseriesFamily, Version};
 use crate::{LevelId, TseriesFamilyId};
 
 pub struct CompactTask {
@@ -30,24 +29,21 @@ pub struct CompactReq {
     pub out_level: LevelId,
 }
 
+#[derive(Clone)]
 pub struct FlushReq {
+    pub tf_id: TseriesFamilyId,
     pub owner: String,
-    pub ts_family_id: TseriesFamilyId,
-    pub mems: Vec<Arc<RwLock<MemCache>>>,
-    pub low_seq_no: u64,
-    pub high_seq_no: u64,
+    pub ts_index: Arc<TSIndex>,
+    pub ts_family: Arc<RwLock<TseriesFamily>>,
+    pub trigger_compact: bool,
 }
 
 impl std::fmt::Display for FlushReq {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "FlushReq owner: {}, on vnode: {}, low_seq_no: {}, high_seq_no: {} caches_num: {}",
-            self.owner,
-            self.ts_family_id,
-            self.low_seq_no,
-            self.high_seq_no,
-            self.mems.len(),
+            "FlushReq owner: {}, on vnode: {}",
+            self.owner, self.tf_id,
         )
     }
 }

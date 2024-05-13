@@ -2,7 +2,7 @@ use std::cmp;
 use std::collections::{BTreeMap, HashMap, HashSet, LinkedList};
 use std::mem::size_of_val;
 use std::ops::Bound::Included;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use flatbuffers::{ForwardsUOffset, Vector};
@@ -598,8 +598,6 @@ impl MemCacheStatistics {
 pub struct MemCache {
     tf_id: TseriesFamilyId,
 
-    flushing: AtomicBool,
-
     max_size: u64,
     min_seq_no: u64,
 
@@ -677,7 +675,6 @@ impl MemCache {
             RwLock::new(MemoryConsumer::new(format!("memcache-{}-{}", tf_id, seq)).register(pool));
         Self {
             tf_id,
-            flushing: AtomicBool::new(false),
 
             max_size,
             min_seq_no: seq,
@@ -830,16 +827,6 @@ impl MemCache {
             }
         });
         ret
-    }
-
-    pub fn mark_flushing(&self) -> bool {
-        self.flushing
-            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-            .is_ok()
-    }
-
-    pub fn is_flushing(&self) -> bool {
-        self.flushing.load(Ordering::Relaxed)
     }
 
     pub fn is_full(&self) -> bool {

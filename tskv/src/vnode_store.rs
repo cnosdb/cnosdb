@@ -13,6 +13,8 @@ use snafu::ResultExt;
 use tokio::sync::RwLock;
 use trace::{debug, error, info, SpanContext, SpanExt, SpanRecorder};
 
+use crate::compaction::job::FlushJob;
+use crate::compaction::FlushReq;
 use crate::database::Database;
 use crate::error::TskvResult;
 use crate::index::ts_index::TSIndex;
@@ -25,6 +27,7 @@ pub struct VnodeStorage {
     id: VnodeId,
     ctx: Arc<TsKvContext>,
     db: Arc<RwLock<Database>>,
+    flush_job: FlushJob,
     ts_index: Arc<TSIndex>,
     ts_family: Arc<RwLock<TseriesFamily>>,
 
@@ -39,10 +42,13 @@ impl VnodeStorage {
         ts_family: Arc<RwLock<TseriesFamily>>,
         ctx: Arc<TsKvContext>,
     ) -> Self {
+        let flush_job = FlushJob::new(ctx.clone());
+
         Self {
             id,
             ctx,
             db,
+            flush_job,
             ts_index,
             ts_family,
             snapshots: vec![],
@@ -182,19 +188,31 @@ impl VnodeStorage {
         Ok(())
     }
 
-    async fn _flush(&self) -> TskvResult<()> {
-        let flush_req = {
-            let mut tsfamily = self.ts_family.write().await;
-            tsfamily.switch_to_immutable();
-            tsfamily.build_flush_req(true)
+    pub async fn flush(&self, block: bool, force: bool, compact: bool) -> TskvResult<()> {
+        if force {
+            let mut ts_family = self.ts_family.write().await;
+            ts_family.switch_to_immutable();
+        } else {
+            let mut ts_family = self.ts_family.write().await;
+            if !ts_family.check_to_flush().await {
+                return Ok(());
+            }
+        }
+
+        let owner = self.ts_family.read().await.tenant_database();
+        let request = FlushReq {
+            tf_id: self.id,
+            owner: owner.to_string(),
+            ts_index: self.ts_index.clone(),
+            ts_family: self.ts_family.clone(),
+            trigger_compact: compact,
         };
 
-        if let Some(request) = flush_req {
-            crate::compaction::run_flush_memtable_job(request, self.ctx.clone(), false).await?;
+        if block {
+            self.flush_job.run_block(request).await
+        } else {
+            self.flush_job.run_spawn(request)
         }
-        self.ts_index.flush().await?;
-
-        Ok(())
     }
 
     pub async fn metrics(&self) -> EngineMetrics {
@@ -264,8 +282,8 @@ impl VnodeStorage {
             }
         };
 
-        let sender = self.ctx.flush_task_sender.clone();
-        self.ts_family.write().await.check_to_flush(sender).await;
+        // check to flush memecache to tsm files
+        let _ = self.flush(false, false, true).await;
 
         res
     }

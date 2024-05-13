@@ -33,7 +33,13 @@ impl Engine for MockEngine {
         Ok(())
     }
 
-    async fn flush_tsfamily(&self, tenant: &str, database: &str, id: u32) -> TskvResult<()> {
+    async fn flush_tsfamily(
+        &self,
+        tenant: &str,
+        database: &str,
+        id: u32,
+        trigger_compact: bool,
+    ) -> TskvResult<()> {
         Ok(())
     }
 
