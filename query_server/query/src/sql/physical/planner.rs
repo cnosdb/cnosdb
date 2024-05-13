@@ -23,6 +23,7 @@ use spi::query::session::SessionCtx;
 use spi::Result;
 
 use super::optimizer::PhysicalOptimizer;
+use crate::extension::physical::optimizer_rule::add_sort::AddSortExec;
 use crate::extension::physical::transform_rule::expand::ExpandPlanner;
 use crate::extension::physical::transform_rule::gapfill::GapFillPlanner;
 use crate::extension::physical::transform_rule::table_writer::TableWriterPlanner;
@@ -110,6 +111,8 @@ impl Default for DefaultPhysicalPlanner {
             // diagnostic error message when this happens. It makes no changes to the
             // given query plan; i.e. it only acts as a final gatekeeping rule.
             Arc::new(PipelineChecker::new()),
+            // CnosDB
+            Arc::new(AddSortExec::new()),
         ];
 
         Self {
