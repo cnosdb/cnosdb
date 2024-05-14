@@ -24,6 +24,7 @@ use spi::Result;
 
 use super::optimizer::PhysicalOptimizer;
 use crate::extension::physical::optimizer_rule::add_assert::AddAssertExec;
+use crate::extension::physical::optimizer_rule::add_sort::AddSortExec;
 use crate::extension::physical::transform_rule::expand::ExpandPlanner;
 use crate::extension::physical::transform_rule::gapfill::GapFillPlanner;
 use crate::extension::physical::transform_rule::table_writer::TableWriterPlanner;
@@ -117,6 +118,7 @@ impl Default for DefaultPhysicalPlanner {
             Arc::new(PipelineChecker::new()),
             // CnosDB
             Arc::new(AddAssertExec::new()),
+            Arc::new(AddSortExec::new()),
         ];
 
         Self {

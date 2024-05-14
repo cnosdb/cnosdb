@@ -273,6 +273,15 @@ impl RaftNodesManager {
         members.insert(new_leader_id as RaftNodeId);
         raft_node.raft_change_membership(members, true).await?;
 
+        for _ in 0..100 {
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            if let Some(id) = raft_node.raw_raft().current_leader().await {
+                if id == new_leader_id as RaftNodeId {
+                    break;
+                }
+            }
+        }
+
         let request = AdminCommand {
             tenant: tenant.to_string(),
             command: Some(admin_command::Command::LearnerToFollower(

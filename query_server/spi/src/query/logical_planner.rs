@@ -154,6 +154,16 @@ pub enum DDLPlan {
     RecoverDatabase(RecoverDatabase),
 
     RecoverTenant(RecoverTenant),
+
+    ShowReplicas,
+
+    ReplicaDestory(ReplicaDestory),
+
+    ReplicaAdd(ReplicaAdd),
+
+    ReplicaRemove(ReplicaRemove),
+
+    ReplicaPromote(ReplicaPromote),
 }
 
 impl DDLPlan {
@@ -332,6 +342,29 @@ pub struct CreateTenant {
     pub name: String,
     pub if_not_exists: bool,
     pub options: TenantOptions,
+}
+
+#[derive(Debug, Clone)]
+pub struct ReplicaDestory {
+    pub replica_id: ReplicationSetId,
+}
+
+#[derive(Debug, Clone)]
+pub struct ReplicaAdd {
+    pub replica_id: ReplicationSetId,
+    pub node_id: NodeId,
+}
+
+#[derive(Debug, Clone)]
+pub struct ReplicaRemove {
+    pub replica_id: ReplicationSetId,
+    pub node_id: NodeId,
+}
+
+#[derive(Debug, Clone)]
+pub struct ReplicaPromote {
+    pub replica_id: ReplicationSetId,
+    pub node_id: NodeId,
 }
 
 pub fn unset_option_to_alter_tenant_action(
