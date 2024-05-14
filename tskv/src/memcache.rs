@@ -22,7 +22,6 @@ use utils::bitset::ImmutBitSet;
 
 use crate::database::FbSchema;
 use crate::error::TskvResult;
-use crate::tseries_family::Version;
 use crate::tsm::data_block::{DataBlock, MutableColumn};
 use crate::tsm::TsmWriteData;
 use crate::{TseriesFamilyId, TskvError};
@@ -514,7 +513,7 @@ impl SeriesData {
     }
     pub fn build_data_block(
         &self,
-        version: Arc<Version>,
+        max_level_ts: i64,
     ) -> TskvResult<Option<(String, DataBlock, DataBlock)>> {
         if let Some(schema) = self.get_schema() {
             let field_ids = schema.fields_id();
@@ -532,7 +531,7 @@ impl SeriesData {
             for (schema, rows) in self.flat_groups() {
                 let values = dedup_and_sort_row_data(rows);
                 for row in values {
-                    match row.ts.cmp(&version.max_level_ts()) {
+                    match row.ts.cmp(&max_level_ts) {
                         cmp::Ordering::Greater => {
                             time_array.push(Some(FieldVal::Integer(row.ts)))?;
                         }
@@ -543,7 +542,7 @@ impl SeriesData {
                     for col in schema.fields().iter() {
                         if let Some(index) = field_ids.get(&col.id) {
                             let field = row.fields.get(*index).and_then(|v| v.clone());
-                            match row.ts.cmp(&version.max_level_ts()) {
+                            match row.ts.cmp(&max_level_ts) {
                                 cmp::Ordering::Greater => {
                                     cols[*index].push(field)?;
                                 }
@@ -610,10 +609,7 @@ pub struct MemCache {
 }
 
 impl MemCache {
-    pub fn to_chunk_group(
-        &self,
-        version: Arc<Version>,
-    ) -> TskvResult<(TsmWriteData, TsmWriteData)> {
+    pub fn to_chunk_group(&self, max_level_ts: i64) -> TskvResult<(TsmWriteData, TsmWriteData)> {
         let partions: HashMap<SeriesId, Arc<RwLock<SeriesData>>> = self
             .partions
             .iter()
@@ -634,7 +630,7 @@ impl MemCache {
             .try_for_each(|(series_id, v)| -> TskvResult<()> {
                 let data = v.read();
                 if let Some((table, datablock, delta_datablock)) =
-                    data.build_data_block(version.clone())?
+                    data.build_data_block(max_level_ts)?
                 {
                     if !datablock.is_empty() {
                         if let Some(chunk) = chunk_group.get_mut(&table) {
@@ -1389,7 +1385,7 @@ mod test_memcache {
             size: 10,
         };
         series_data1.write(row_group_1.clone());
-        let result = series_data1.build_data_block(Arc::new(version));
+        let result = series_data1.build_data_block(version.max_level_ts());
         match result {
             Ok(opt_blocks) => {
                 if let Some((name, main_block, delta_block)) = opt_blocks {
@@ -1598,7 +1594,8 @@ mod test_memcache {
         mem_cache
             .write_group(sid, SeriesKey::default(), 1, row_group_1.clone())
             .unwrap();
-        let (chunk_group, delta_chunk_group) = mem_cache.to_chunk_group(Arc::new(version)).unwrap();
+        let (chunk_group, delta_chunk_group) =
+            mem_cache.to_chunk_group(version.max_level_ts()).unwrap();
 
         assert_eq!(
             1,

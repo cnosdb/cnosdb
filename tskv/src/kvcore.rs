@@ -87,7 +87,7 @@ impl TsKv {
         };
 
         core.run_summary_job(summary, summary_task_receiver);
-        core.run_flush_code_vnode_job();
+        core.run_flush_cold_vnode_job();
         core.compact_job
             .start_merge_compact_task_job(compact_task_receiver)
             .await;
@@ -154,7 +154,7 @@ impl TsKv {
         info!("Summary task handler started");
     }
 
-    fn run_flush_code_vnode_job(&self) {
+    fn run_flush_cold_vnode_job(&self) {
         let tskv_ctx = self.ctx.clone();
         let compact_trigger_cold_duration = tskv_ctx.options.storage.compact_trigger_cold_duration;
         if compact_trigger_cold_duration == Duration::ZERO {
