@@ -50,7 +50,7 @@ statement error Arrow error: Io error: Status \{ code: Internal, message: "Build
 select gauge_agg(time, time) as gauge from func_tb2;
 ---
 
-statement error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: add_sort_exec\\ncaused by\\nSchema error: No field named time. Valid fields are t0, f0.", *
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Arrow: Parser error: Error parsing timestamp from .*?: timestamp must contain at least 10 characters", *
 select gauge_agg(t0, f0) as gauge from func_tb2;
 ---
 
