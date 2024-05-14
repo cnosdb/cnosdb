@@ -163,15 +163,19 @@ impl RowData {
             if !has_fields {
                 return Err(TskvError::FieldsIsEmpty);
             }
+            let ts = if fb_schema.time_index == usize::MAX {
+                0
+            } else {
+                let ts_column = columns.get(fb_schema.time_index);
+                let ts = ts_column.int_values()?.get(row_count);
+                let to_precision = schema.time_column_precision();
+                timestamp_convert(from_precision, to_precision, ts).ok_or(
+                    TskvError::CommonError {
+                        reason: "timestamp overflow".to_string(),
+                    },
+                )?
+            };
 
-            let ts_column = columns.get(fb_schema.time_index);
-            let ts = ts_column.int_values()?.get(row_count);
-            let to_precision = schema.time_column_precision();
-            let ts = timestamp_convert(from_precision, to_precision, ts).ok_or(
-                TskvError::CommonError {
-                    reason: "timestamp overflow".to_string(),
-                },
-            )?;
             res.push(RowData { ts, fields });
         }
         Ok(res)

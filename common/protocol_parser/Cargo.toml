@@ -23,6 +23,9 @@ async-backtrace = { workspace = true, optional = true }
 lazy_static = { workspace = true }
 parking_lot = { workspace = true }
 datafusion = { workspace = true }
+ply-rs = {workspace = true}
+off-rs = {workspace = true}
+stl_io = {workspace = true}
 
 [features]
 default = []

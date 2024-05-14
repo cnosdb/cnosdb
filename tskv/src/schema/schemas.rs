@@ -81,12 +81,14 @@ impl DBschemas {
                     fb_schema.table.to_string(),
                     vec![],
                 );
-                let db_schema = self.db_schema().await?;
-                let precision = db_schema.config.precision_or_default();
-                schema.add_column(TableColumn::new_time_column(
-                    schema.next_column_id(),
-                    (*precision).into(),
-                ));
+                if !fb_schema.table.ends_with("_vertex") && !fb_schema.table.ends_with("_face") {
+                    let db_schema = self.db_schema().await?;
+                    let precision = db_schema.config.precision_or_default();
+                    schema.add_column(TableColumn::new_time_column(
+                        schema.next_column_id(),
+                        (*precision).into(),
+                    ));
+                }
                 new_schema = true;
                 Cow::Owned(schema)
             }

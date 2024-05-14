@@ -12,6 +12,7 @@ use utils::BkdrHasher;
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 pub use es_log::parser::Error as ESLogError;
 pub use line_protocol::parser::Error as LineProtocolError;
+pub use pointcloud::parser::Error as PointCloudError;
 
 type NextTagRes<'a> = Result<Option<(Vec<(Cow<'a, str>, Cow<'a, str>)>, usize)>>;
 
@@ -19,6 +20,7 @@ pub mod es_log;
 pub mod line_protocol;
 pub mod lines_convert;
 pub mod open_tsdb;
+pub mod pointcloud;
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub))]

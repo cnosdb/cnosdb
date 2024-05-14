@@ -535,11 +535,11 @@ impl<'a> FbSchema<'a> {
             }
         }
 
-        if time_index == usize::MAX {
-            return Err(TskvError::CommonError {
-                reason: "Time column not found in flatbuffer columns".to_string(),
-            });
-        }
+        // if time_index == usize::MAX {
+        //     return Err(TskvError::CommonError {
+        //         reason: "Time column not found in flatbuffer columns".to_string(),
+        //     });
+        // }
 
         if field_indexes.is_empty() {
             return Err(TskvError::CommonError {

@@ -41,3 +41,11 @@ pub struct ESLogParam {
     pub tag_columns: Option<String>,
     pub time_column: Option<String>,
 }
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub struct PointCloudParam {
+    pub tenant: Option<String>,
+    pub db: Option<String>,
+    pub file: Option<String>,
+}

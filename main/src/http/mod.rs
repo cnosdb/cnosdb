@@ -121,6 +121,12 @@ pub enum Error {
     ParseESLogJson {
         source: serde_json::Error,
     },
+
+    #[snafu(display("Error parsing message: {}", source))]
+    #[error_code(code = 18)]
+    ParsePointCloud {
+        source: protocol_parser::PointCloudError,
+    },
 }
 
 impl From<tskv::TskvError> for Error {
@@ -188,6 +194,7 @@ impl From<&Error> for Response {
             | Error::ParseLineProtocol { .. }
             | Error::ParseESLog { .. }
             | Error::ParseESLogJson { .. }
+            | Error::ParsePointCloud { .. }
             | Error::InvalidUTF8 { .. } => {
                 ResponseBuilder::new(UNPROCESSABLE_ENTITY).json(&error_resp)
             }

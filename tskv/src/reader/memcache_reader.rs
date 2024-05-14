@@ -87,21 +87,32 @@ impl MemCacheReader {
             let builder_item = RowIterator::new_column_builder(&kv_dt, self.batch_size)?;
             builders.push(ArrayBuilderPtr::new(builder_item, kv_dt))
         }
-
         match self.read_mode {
             MemcacheReadMode::FieldScan => {
                 // 1.read all columns data to Vec<RowData>
                 let mut row_data_vec: OrderedSkipList<RowData> = OrderedSkipList::new();
                 let column_ids: Vec<u32> = self.columns.iter().map(|c| c.id).collect();
+
+                let table = self.series_data.read().series_key.table().clone();
+                let idx = if table.ends_with("_vertex") || table.ends_with("_face") {
+                    0
+                } else {
+                    1
+                };
+
                 self.series_data
                     .read()
-                    .read_data_v2(&column_ids[1..], &self.time_ranges, |d| {
+                    .read_data_v2(&column_ids[idx..], &self.time_ranges, |d| {
                         row_data_vec.insert(d)
                     });
 
-                // 2.merge RowData by ts
+                // 2.merge RowData by ts (should not merge now)
                 let mut merge_row_data_vec: Vec<RowData> = Vec::with_capacity(row_data_vec.len());
                 for row_data in row_data_vec {
+                    if idx == 0 {
+                        merge_row_data_vec.push(row_data.clone());
+                        continue;
+                    }
                     if let Some(existing_row) = merge_row_data_vec.last_mut() {
                         if existing_row.ts == row_data.ts {
                             for (index, field) in row_data.fields.iter().enumerate() {

@@ -13,7 +13,9 @@ use coordinator::service::CoordinatorRef;
 use fly_accept_encoding::Encoding;
 use http_protocol::encoding::EncodingExt;
 use http_protocol::header::{ACCEPT, APPLICATION_JSON, AUTHORIZATION, PRIVATE_KEY};
-use http_protocol::parameter::{DebugParam, DumpParam, ESLogParam, SqlParam, WriteParam};
+use http_protocol::parameter::{
+    DebugParam, DumpParam, ESLogParam, PointCloudParam, SqlParam, WriteParam,
+};
 use http_protocol::response::ErrorResponse;
 use meta::error::{MetaError, MetaResult};
 use meta::limiter::RequestLimiter;
@@ -32,6 +34,8 @@ use protocol_parser::es_log::parser::{
 };
 use protocol_parser::line_protocol::line_protocol_to_lines;
 use protocol_parser::open_tsdb::open_tsdb_to_lines;
+use protocol_parser::pointcloud::parser::PointCloud;
+use protocol_parser::pointcloud::{req_to_pointcloud, trans_pc_to_rc};
 use protocol_parser::{DataPoint, Line};
 use query::prom::remote_server::PromRemoteSqlServer;
 use reqwest::header::{ACCEPT_ENCODING, CONTENT_ENCODING};
@@ -234,6 +238,7 @@ impl HttpService {
             .or(self.put_open_tsdb())
             .or(self.write_line_protocol())
             .or(self.write_es_log())
+            .or(self.write_pointcloud())
     }
 
     fn routes_store(
@@ -1127,6 +1132,83 @@ impl HttpService {
                 },
             )
     }
+
+    fn write_pointcloud(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        warp::path!("api" / "v1" / "upload")
+            .and(warp::post())
+            .and(warp::body::content_length_limit(self.write_body_limit))
+            .and(warp::body::bytes())
+            .and(self.handle_header())
+            .and(warp::query::<PointCloudParam>())
+            .and(self.with_dbms())
+            .and(self.with_coord())
+            .and(self.handle_span_header())
+            .and_then(
+                |req: Bytes,
+                 header: Header,
+                 param: PointCloudParam,
+                 dbms: DBMSRef,
+                 coord: CoordinatorRef,
+                 parent_span_ctx: Option<SpanContext>| async move {
+                    let span_recorder =
+                        SpanRecorder::new(parent_span_ctx.child_span("rest es log write"));
+                    let span_context = span_recorder.span_ctx();
+
+                    let write_param = WriteParam {
+                        precision: None,
+                        tenant: param.tenant,
+                        db: param.db,
+                    };
+
+                    let ctx = {
+                        let mut span_recorder =
+                            SpanRecorder::new(span_context.child_span("construct write context"));
+                        let ctx = construct_write_context_and_check_privilege(
+                            header,
+                            write_param,
+                            dbms,
+                            coord.clone(),
+                        )
+                        .await
+                        .map_err(reject::custom)?;
+                        span_recorder.record(ctx)
+                    };
+
+                    if param.file.is_none() {
+                        return Err(reject::custom(HttpError::ParsePointCloud {
+                            source: protocol_parser::PointCloudError::Common {
+                                content: "file param is None".to_string(),
+                            },
+                        }));
+                    }
+
+                    let file_name = param.file.unwrap();
+                    let file: Vec<&str> = file_name.split('.').collect();
+                    if file.len() != 2 {
+                        return Err(reject::custom(HttpError::ParsePointCloud {
+                            source: protocol_parser::PointCloudError::Common {
+                                content: "file param is invalid".to_string(),
+                            },
+                        }));
+                    }
+                    let (name, format) = (file[0], file[1]);
+
+                    let pc = try_parse_pointcloud(&req, format).map_err(reject::custom)?;
+                    let resp = coord_write_point_clound(
+                        &coord,
+                        pc,
+                        ctx.tenant(),
+                        ctx.database(),
+                        name,
+                        span_context,
+                    )
+                    .await;
+                    resp.map_err(reject::custom)
+                },
+            )
+    }
 }
 
 #[async_trait::async_trait]
@@ -1447,6 +1529,37 @@ fn try_parse_es_req(req: &Bytes, have_es_command: bool) -> Result<Vec<ESLog>, Ht
     }
 
     Ok(eslogs)
+}
+
+fn try_parse_pointcloud(req: &Bytes, format: &str) -> Result<PointCloud, HttpError> {
+    let file = simdutf8::basic::from_utf8(req.as_ref())
+        .map_err(|e| HttpError::InvalidUTF8 { source: e })?;
+
+    let pointcloud = req_to_pointcloud(file, format.into())
+        .map_err(|e| HttpError::ParsePointCloud { source: e })?;
+
+    Ok(pointcloud)
+}
+
+async fn coord_write_point_clound(
+    coord: &CoordinatorRef,
+    data: PointCloud,
+    tenant: &str,
+    db: &str,
+    name: &str,
+    span_context: Option<&SpanContext>,
+) -> Result<Response, HttpError> {
+    let (vertex_schema, vertex, face_schema, face) = trans_pc_to_rc(data, tenant, db, name)
+        .map_err(|e| HttpError::ParsePointCloud { source: e })?;
+
+    coord
+        .write_record_batch(Arc::new(vertex_schema), vertex, Precision::NS, span_context)
+        .await?;
+    coord
+        .write_record_batch(Arc::new(face_schema), face, Precision::NS, span_context)
+        .await?;
+
+    Ok(ResponseBuilder::ok())
 }
 
 async fn coord_write_eslog(

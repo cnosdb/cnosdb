@@ -462,11 +462,11 @@ pub fn valid_project(
         });
     }
 
-    if !contains_time_column {
-        return Err(MetaError::CommonError {
-            msg: "The projection must contains the time column".to_string(),
-        });
-    }
+    // if !contains_time_column {
+    //     return Err(MetaError::CommonError {
+    //         msg: "The projection must contains the time column".to_string(),
+    //     });
+    // }
 
     Ok(())
 }

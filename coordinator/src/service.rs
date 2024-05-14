@@ -793,7 +793,10 @@ impl Coordinator for CoordService {
             let mut hasher = BkdrHasher::new();
             hasher.hash_with(table_name.as_bytes());
             let mut ts = i64::MAX;
-            let mut has_ts = false;
+            // make sure the vertex and face has a valid timestamp
+            if table_name.ends_with("_vertex") || table_name.ends_with("_face") {
+                ts = 0;
+            }
             let mut has_fileds = false;
             for (column, schema) in columns.iter().zip(schema.iter()) {
                 let name = schema.name().as_str();
@@ -812,7 +815,6 @@ impl Coordinator for CoordService {
                             msg: "timestamp overflow".to_string(),
                         },
                     )?;
-                    has_ts = true;
                 }
                 if matches!(tskv_schema_column.column_type, ColumnType::Tag) {
                     let value = column
@@ -833,18 +835,14 @@ impl Coordinator for CoordService {
                 }
             }
 
-            if !has_ts {
-                return Err(CoordinatorError::CommonError {
-                    msg: format!("column {} not found in table {}", TIME_FIELD, table_name),
-                });
-            }
-
             if !has_fileds {
                 return Err(CoordinatorError::TskvError {
                     source: TskvError::FieldsIsEmpty,
                 });
             }
 
+            let randowm = &[rand::random::<u8>(); 8];
+            hasher.hash_with(randowm);
             let hash = hasher.number();
             let info = meta_client
                 .locate_replication_set_for_write(db, hash, ts)
