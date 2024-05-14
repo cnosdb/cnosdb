@@ -66,7 +66,8 @@ use spi::query::ast::{
     CreateTable as ASTCreateTable, DatabaseOptions as ASTDatabaseOptions,
     DescribeDatabase as DescribeDatabaseOptions, DescribeTable as DescribeTableOptions,
     DropVnode as ASTDropVnode, ExtStatement, MoveVnode as ASTMoveVnode,
-    ShowSeries as ASTShowSeries, ShowTagBody, ShowTagValues as ASTShowTagValues, UriLocation, With,
+    ShowCompaction as AstShowCompaction, ShowSeries as ASTShowSeries, ShowTagBody,
+    ShowTagValues as ASTShowTagValues, UriLocation, With,
 };
 use spi::query::datasource::{self, UriSchema};
 use spi::query::logical_planner::{
@@ -78,7 +79,7 @@ use spi::query::logical_planner::{
     CreateRole, CreateStreamTable, CreateTable, CreateTenant, CreateUser, DDLPlan,
     DatabaseObjectType, DropDatabaseObject, DropGlobalObject, DropTenantObject, DropVnode,
     FileFormatOptions, FileFormatOptionsBuilder, GlobalObjectType, GrantRevoke, LogicalPlanner,
-    MoveVnode, Plan, PlanWithPrivileges, QueryPlan, SYSPlan, TenantObjectType,
+    MoveVnode, Plan, PlanWithPrivileges, QueryPlan, SYSPlan, ShowCompaction, TenantObjectType,
     TENANT_OPTION_LIMITER,
 };
 use spi::query::session::SessionCtx;
@@ -190,6 +191,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             ExtStatement::CopyVnode(stmt) => self.copy_vnode_to_plan(stmt),
             ExtStatement::MoveVnode(stmt) => self.move_vnode_to_plan(stmt),
             ExtStatement::CompactVnode(stmt) => self.compact_vnode_to_plan(stmt),
+            ExtStatement::ShowCompaction(stmt) => self.show_compaction_to_plan(stmt),
             ExtStatement::ChecksumGroup(stmt) => self.checksum_group_to_plan(stmt),
             ExtStatement::CreateStream(_) => Err(QueryError::NotImplemented {
                 err: "CreateStream Planner.".to_string(),
@@ -1626,6 +1628,15 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         let ASTChecksumGroup { replication_set_id } = stmt;
 
         let plan = Plan::DDL(DDLPlan::ChecksumGroup(ChecksumGroup { replication_set_id }));
+        Ok(PlanWithPrivileges {
+            plan,
+            privileges: vec![Privilege::Global(GlobalPrivilege::System)],
+        })
+    }
+
+    fn show_compaction_to_plan(&self, stmt: AstShowCompaction) -> Result<PlanWithPrivileges> {
+        let AstShowCompaction { node_id } = stmt;
+        let plan = Plan::DDL(DDLPlan::ShowCompaction(ShowCompaction { node_id }));
         Ok(PlanWithPrivileges {
             plan,
             privileges: vec![Privilege::Global(GlobalPrivilege::System)],

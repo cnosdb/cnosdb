@@ -89,6 +89,8 @@ enum CnosKeyWord {
     #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
     COMPACT,
     #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    COMPACTION,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
     CHECKSUM,
     #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
     STREAM,
@@ -139,6 +141,7 @@ impl FromStr for CnosKeyWord {
             "NODE" => Ok(CnosKeyWord::NODE),
             "MOVE" => Ok(CnosKeyWord::MOVE),
             "COMPACT" => Ok(CnosKeyWord::COMPACT),
+            "COMPACTION" => Ok(CnosKeyWord::COMPACTION),
             "CHECKSUM" => Ok(CnosKeyWord::CHECKSUM),
             "STREAM" => Ok(CnosKeyWord::STREAM),
             "STREAMS" => Ok(CnosKeyWord::STREAMS),
@@ -334,9 +337,19 @@ impl<'a> ExtParser<'a> {
                 .then_some(true)
                 .unwrap_or_default();
             Ok(ExtStatement::ShowStreams(ast::ShowStreams { verbose }))
+        } else if self.parse_cnos_keyword(CnosKeyWord::COMPACTION) {
+            self.parser.expect_keyword(Keyword::ON)?;
+            if self.parse_cnos_keyword(CnosKeyWord::NODE) {
+                let node_id = self.parse_number::<NodeId>()?;
+                Ok(ExtStatement::ShowCompaction(ast::ShowCompaction {
+                    node_id,
+                }))
+            } else {
+                self.expected("NODE", self.parser.peek_token())
+            }
         } else {
             self.expected(
-                "TABLES or DATABASES or SERIES or TAG or QUERIES or STREAMS",
+                "TABLES or DATABASES or SERIES or TAG or QUERIES or STREAMS or COMPACTION",
                 self.parser.peek_token(),
             )
         }

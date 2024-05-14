@@ -209,10 +209,16 @@ pub struct FetchVnodeChecksumRequest {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ShowCompactionRequest {
+    #[prost(uint64, tag = "1")]
+    pub node_id: u64,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AdminFetchCommandRequest {
     #[prost(string, tag = "1")]
     pub tenant: ::prost::alloc::string::String,
-    #[prost(oneof = "admin_fetch_command_request::Command", tags = "8")]
+    #[prost(oneof = "admin_fetch_command_request::Command", tags = "8, 9")]
     pub command: ::core::option::Option<admin_fetch_command_request::Command>,
 }
 /// Nested message and enum types in `AdminFetchCommandRequest`.
@@ -222,6 +228,8 @@ pub mod admin_fetch_command_request {
     pub enum Command {
         #[prost(message, tag = "8")]
         FetchVnodeChecksum(super::FetchVnodeChecksumRequest),
+        #[prost(message, tag = "9")]
+        ShowCompaction(super::ShowCompactionRequest),
     }
 }
 #[allow(clippy::derive_partial_eq_without_eq)]

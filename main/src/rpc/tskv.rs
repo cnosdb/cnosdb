@@ -213,6 +213,20 @@ impl TskvServiceImpl {
         }
     }
 
+    async fn admin_show_compaction(
+        &self,
+        _tenant: &str,
+        _request: &ShowCompactionRequest,
+    ) -> Result<tonic::Response<BatchBytesResponse>, tonic::Status> {
+        match self.kv_inst.show_compaction().await {
+            Ok(record) => match record_batch_encode(&record) {
+                Ok(bytes) => self.bytes_response(SUCCESS_RESPONSE_CODE, bytes),
+                Err(_) => self.bytes_response(FAILED_RESPONSE_CODE, vec![]),
+            },
+            Err(_) => self.bytes_response(FAILED_RESPONSE_CODE, vec![]),
+        }
+    }
+
     fn query_record_batch_exec(
         self,
         args: QueryArgs,
@@ -419,6 +433,9 @@ impl TskvService for TskvServiceImpl {
                 admin_fetch_command_request::Command::FetchVnodeChecksum(command) => {
                     self.admin_fetch_vnode_checksum(&inner.tenant, command)
                         .await
+                }
+                admin_fetch_command_request::Command::ShowCompaction(command) => {
+                    self.admin_show_compaction(&inner.tenant, command).await
                 }
             }
         } else {

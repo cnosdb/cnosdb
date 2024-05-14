@@ -5,7 +5,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use config::TenantLimiterConfig;
 use datafusion::arrow::array::ArrayRef;
-use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
+use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef, TimeUnit};
 use datafusion::datasource::file_format::file_type::{FileCompressionType, FileType};
 use datafusion::logical_expr::type_coercion::aggregates::{
     DATES, NUMERICS, STRINGS, TIMES, TIMESTAMPS,
@@ -146,14 +146,21 @@ pub enum DDLPlan {
     CompactVnode(CompactVnode),
 
     ChecksumGroup(ChecksumGroup),
+
+    ShowCompaction(ShowCompaction),
 }
 
 impl DDLPlan {
     pub fn schema(&self) -> SchemaRef {
         match self {
             DDLPlan::ChecksumGroup(_) => Arc::new(Schema::new(vec![
-                Field::new("VNODE_ID", DataType::UInt32, false),
-                Field::new("CHECK_SUM", DataType::Utf8, false),
+                Field::new("vnode_id", DataType::UInt32, false),
+                Field::new("check_sum", DataType::Utf8, false),
+            ])),
+            DDLPlan::ShowCompaction(_) => Arc::new(Schema::new(vec![
+                Field::new("vnode_id", DataType::UInt32, false),
+                Field::new("elapsed", DataType::Time32(TimeUnit::Second), false),
+                Field::new("state", DataType::Utf8, false),
             ])),
             _ => Arc::new(Schema::empty()),
         }
@@ -168,6 +175,11 @@ pub struct ChecksumGroup {
 #[derive(Debug, Clone)]
 pub struct CompactVnode {
     pub vnode_ids: Vec<VnodeId>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ShowCompaction {
+    pub node_id: NodeId,
 }
 
 #[derive(Debug, Clone)]

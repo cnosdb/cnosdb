@@ -617,17 +617,6 @@ impl TsmReader {
         Ok(Some(blk))
     }
 
-    // pub async fn get_raw_data(&self, block_meta: &BlockMeta) -> ReadTsmResult<Vec<u8>> {
-    //     let data_len = block_meta.size() as usize;
-
-    //     let buf = self
-    //         .reader
-    //         .read_at(block_meta.offset(), data_len)
-    //         .await
-    //         .context(ReadIOSnafu)?;
-    //     Ok(buf)
-    // }
-
     /// Reads raw data from file.
     pub async fn get_raw_data(&self, pos: u64, len: usize) -> ReadTsmResult<Vec<u8>> {
         let buf = self.reader.read_at(pos, len).await.context(ReadIOSnafu)?;
