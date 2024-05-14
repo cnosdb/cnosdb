@@ -10,7 +10,7 @@ use datafusion::physical_expr::PhysicalExpr;
 use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
 use datafusion::physical_plan::{ExecutionPlan, SendableRecordBatchStream};
 use futures::StreamExt;
-use spi::{QueryError, Result};
+use spi::{QueryError, QueryResult};
 
 use self::table_source::TableSourceAdapter;
 use crate::extension::physical::plan_node::table_writer::TableWriterExec;
@@ -44,9 +44,9 @@ pub trait UpdateExecExt: Send + Sync {
 
 #[async_trait]
 pub trait RecordBatchSink: Send + Sync {
-    async fn append(&self, record_batch: RecordBatch) -> Result<SinkMetadata>;
+    async fn append(&self, record_batch: RecordBatch) -> QueryResult<SinkMetadata>;
 
-    async fn stream_write(&self, stream: SendableRecordBatchStream) -> Result<SinkMetadata> {
+    async fn stream_write(&self, stream: SendableRecordBatchStream) -> QueryResult<SinkMetadata> {
         let mut meta = SinkMetadata::default();
         let mut stream = DropEmptyRecordBatchStream::new(stream);
 
@@ -109,7 +109,7 @@ impl SinkMetadata {
 /// TableProvider. \
 /// Then attempt to downcast a TableProvider to TableProviderAdapter and access the
 /// TableProviderAdapter.
-pub fn source_downcast_adapter(source: &Arc<dyn TableSource>) -> Result<&TableSourceAdapter> {
+pub fn source_downcast_adapter(source: &Arc<dyn TableSource>) -> QueryResult<&TableSourceAdapter> {
     match source.as_any().downcast_ref::<TableSourceAdapter>() {
         Some(adapter) => Ok(adapter),
         _ => Err(QueryError::Internal {

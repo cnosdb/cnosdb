@@ -1,6 +1,6 @@
 use error_code::{ErrorCode, ErrorCoder};
 use models::auth::privilege::TenantObjectPrivilege;
-use models::Error;
+use models::ModelError;
 use serde::{Deserialize, Serialize};
 use snafu::Snafu;
 
@@ -220,8 +220,8 @@ impl From<replication::errors::ReplicationError> for MetaError {
     }
 }
 
-impl From<models::Error> for MetaError {
-    fn from(value: Error) -> Self {
+impl From<models::ModelError> for MetaError {
+    fn from(value: ModelError) -> Self {
         Self::CommonError {
             msg: value.to_string(),
         }

@@ -17,7 +17,7 @@ use meta::error::MetaError;
 use models::schema::{ExternalTableSchema, TableSchema};
 use snafu::ResultExt;
 use spi::query::execution::{Output, QueryStateMachineRef};
-use spi::{DatafusionSnafu, QueryError, Result};
+use spi::{DatafusionSnafu, MetaSnafu, QueryError, QueryResult};
 
 use super::DDLDefinitionTask;
 
@@ -34,28 +34,31 @@ impl CreateExternalTableTask {
 
 #[async_trait]
 impl DDLDefinitionTask for CreateExternalTableTask {
-    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output> {
+    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> QueryResult<Output> {
         let CreateExternalTable {
             ref name,
             ref if_not_exists,
             ..
         } = self.stmt;
         let table = name.table();
-        let database = name.schema().ok_or(QueryError::Internal {
+        let database = name.schema().ok_or_else(|| QueryError::Internal {
             reason: "couldn't resolve database".to_string(),
         })?;
-        let tenant = name.catalog().ok_or(QueryError::Internal {
+        let tenant = name.catalog().ok_or_else(|| QueryError::Internal {
             reason: "couldn't resolve tenant".to_string(),
         })?;
-        let client = query_state_machine.meta.tenant_meta(tenant).await.ok_or(
-            MetaError::TenantNotFound {
+        let client = query_state_machine
+            .meta
+            .tenant_meta(tenant)
+            .await
+            .ok_or_else(|| MetaError::TenantNotFound {
                 tenant: tenant.to_string(),
-            },
-        )?;
-        // .context(spi::MetaSnafu)?;
+            })
+            .context(MetaSnafu)?;
 
-        let table = client.get_external_table_schema(database, table)?;
-        // .context(spi::MetaSnafu)?;
+        let table = client
+            .get_external_table_schema(database, table)
+            .context(MetaSnafu)?;
 
         match (if_not_exists, table) {
             // do not create if exists
@@ -63,8 +66,8 @@ impl DDLDefinitionTask for CreateExternalTableTask {
             // Report an error if it exists
             (false, Some(_)) => Err(MetaError::TableAlreadyExists {
                 table_name: name.to_string(),
-            })?,
-            // .context(spi::MetaSnafu),
+            })
+            .context(MetaSnafu)?,
             // does not exist, create
             (_, None) => {
                 create_external_table(&self.stmt, query_state_machine).await?;
@@ -78,32 +81,32 @@ impl DDLDefinitionTask for CreateExternalTableTask {
 async fn create_external_table(
     stmt: &CreateExternalTable,
     query_state_machine: QueryStateMachineRef,
-) -> Result<()> {
+) -> QueryResult<()> {
     let schema = build_table_schema(stmt, query_state_machine.session.inner()).await?;
 
     let client = query_state_machine
         .meta
         .tenant_meta(schema.tenant.as_str())
         .await
-        .ok_or(MetaError::TenantNotFound {
+        .ok_or_else(|| MetaError::TenantNotFound {
             tenant: schema.tenant.clone(),
-        })?;
-    // .context(MetaSnafu)?;
+        })
+        .context(MetaSnafu)?;
 
-    Ok(client
+    client
         .create_table(&TableSchema::ExternalTableSchema(Arc::new(schema)))
-        .await?)
-    // .context(MetaSnafu)
+        .await
+        .context(MetaSnafu)
 }
 
 async fn build_table_schema(
     stmt: &CreateExternalTable,
     state: &SessionState,
-) -> Result<ExternalTableSchema> {
-    let db = stmt.name.schema().ok_or(QueryError::Internal {
+) -> QueryResult<ExternalTableSchema> {
+    let db = stmt.name.schema().ok_or_else(|| QueryError::Internal {
         reason: "couldn't resolve database".to_string(),
     })?;
-    let tenant = stmt.name.catalog().ok_or(QueryError::Internal {
+    let tenant = stmt.name.catalog().ok_or_else(|| QueryError::Internal {
         reason: "couldn't resolve tenant".to_string(),
     })?;
 
@@ -131,7 +134,7 @@ async fn construct_listing_table_schema(
     stmt: &CreateExternalTable,
     state: &SessionState,
     options: &ListingOptions,
-) -> Result<SchemaRef> {
+) -> QueryResult<SchemaRef> {
     let CreateExternalTable {
         ref schema,
         ref location,
@@ -158,7 +161,7 @@ async fn construct_listing_table_schema(
 fn build_external_table_config(
     stmt: &CreateExternalTable,
     target_partitions: usize,
-) -> Result<ListingOptions> {
+) -> QueryResult<ListingOptions> {
     let file_compression_type = FileCompressionType::from(stmt.file_compression_type);
     let file_type = FileType::from_str(stmt.file_type.as_str())?;
     let file_extension = file_type.get_ext_with_compression(file_compression_type.to_owned())?;

@@ -1,59 +1,65 @@
 use std::fmt::Debug;
 use std::io;
-use std::string::FromUtf8Error;
 
 use arrow_schema::ArrowError;
 use datafusion::error::DataFusionError;
-use snafu::Snafu;
+use protos::PointsError;
+use snafu::{Backtrace, IntoError, Location, Snafu};
 
-#[macro_export]
-macro_rules! define_result {
-    ($t:ty) => {
-        pub type Result<T, E = $t> = std::result::Result<T, E>;
-    };
-}
-
-pub type Result<T, E = Error> = std::result::Result<T, E>;
+pub type ModelResult<T, E = ModelError> = std::result::Result<T, E>;
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub))]
-pub enum Error {
+pub enum ModelError {
     Datafusion {
         source: DataFusionError,
+        location: Location,
+        backtrace: Backtrace,
     },
 
+    #[snafu(display("Arrow error: {}", source))]
     Arrow {
         source: ArrowError,
+        location: Location,
+        backtrace: Backtrace,
     },
 
-    #[snafu(display("Invalid point: {}", err))]
-    InvalidPoint {
-        err: String,
-    },
+    #[snafu(display("Invalid point: {}", source))]
+    InvalidPoint { source: PointsError },
 
     #[snafu(display("Invalid tag: {}", err))]
     InvalidTag {
         err: String,
+        location: Location,
+        backtrace: Backtrace,
     },
 
     #[snafu(display("Invalid field: {}", err))]
     InvalidField {
         err: String,
+        location: Location,
+        backtrace: Backtrace,
     },
 
     #[snafu(display("Invalid flatbuffer message: {}", err))]
     InvalidFlatbufferMessage {
         err: String,
+        location: Location,
+        backtrace: Backtrace,
     },
 
     #[snafu(display("Invalid serde message: {}", source))]
     InvalidSerdeMessage {
         source: bincode::Error,
+        location: Location,
+        backtrace: Backtrace,
     },
 
-    #[snafu(display("Invalid query expr message: {}", err))]
+    #[snafu(display("Invalid query expr message: {}", source))]
     InvalidQueryExprMsg {
-        err: String,
+        source: bincode::Error,
+        location: Location,
+        backtrace: Backtrace,
     },
 
     #[snafu(display(
@@ -63,55 +69,51 @@ pub enum Error {
     ))]
     Internal {
         err: String,
+        location: Location,
+        backtrace: Backtrace,
     },
 
-    #[snafu(display("IO operator: {}", err))]
+    #[snafu(display("IO operator: {}", source))]
     IOErrors {
-        err: String,
+        source: io::Error,
+        location: Location,
+        backtrace: Backtrace,
     },
 
-    #[snafu(display("Failed to convert vec to string"))]
-    EncodingError,
+    #[snafu(display("Failed to convert vec to string, because: {}", msg))]
+    EncodingError {
+        msg: String,
+        location: Location,
+        backtrace: Backtrace,
+    },
 
     #[snafu(display("RecordBatch is None"))]
-    NoneRecordBatch,
+    NoneRecordBatch {
+        location: Location,
+        backtrace: Backtrace,
+    },
 
     #[snafu(display("Dump Error: {}", msg))]
     DumpError {
         msg: String,
+        location: Location,
+        backtrace: Backtrace,
     },
 
     #[snafu(display("{msg}"))]
     Common {
         msg: String,
+        location: Location,
+        backtrace: Backtrace,
     },
 }
 
-impl From<io::Error> for Error {
-    fn from(err: io::Error) -> Self {
-        Error::IOErrors {
-            err: err.to_string(),
-        }
-    }
-}
-
-impl From<FromUtf8Error> for Error {
-    fn from(_: FromUtf8Error) -> Self {
-        Error::EncodingError
-    }
-}
-
-impl From<bincode::Error> for Error {
-    fn from(err: bincode::Error) -> Self {
-        Error::InvalidSerdeMessage { source: err }
-    }
-}
-impl From<DataFusionError> for Error {
+impl From<DataFusionError> for ModelError {
     fn from(value: DataFusionError) -> Self {
         match value {
             DataFusionError::External(e) if e.downcast_ref::<ArrowError>().is_some() => {
                 let arrow_error = *e.downcast::<ArrowError>().unwrap();
-                Self::from(arrow_error)
+                ArrowSnafu.into_error(arrow_error)
             }
 
             DataFusionError::External(e) if e.downcast_ref::<DataFusionError>().is_some() => {
@@ -121,25 +123,18 @@ impl From<DataFusionError> for Error {
 
             DataFusionError::External(e) if e.downcast_ref::<Self>().is_some() => {
                 match *e.downcast::<Self>().unwrap() {
-                    Self::Arrow { source } => Self::from(source),
-                    Self::Datafusion { source } => Self::from(source),
+                    Self::Datafusion { source, .. } => Self::from(source),
                     e => e,
                 }
             }
 
-            DataFusionError::ArrowError(e) => Self::from(e),
-            v => Self::Datafusion { source: v },
+            DataFusionError::ArrowError(e) => ArrowSnafu.into_error(e),
+            v => DatafusionSnafu.into_error(v),
         }
     }
 }
 
-impl From<ArrowError> for Error {
-    fn from(value: ArrowError) -> Self {
-        Self::Arrow { source: value }
-    }
-}
-
-pub fn tuple_err<T, R, E>(value: (Result<T, E>, Result<R, E>)) -> Result<(T, R), E> {
+pub fn tuple_err<T, R, E>(value: (ModelResult<T, E>, ModelResult<R, E>)) -> ModelResult<(T, R), E> {
     match value {
         (Ok(e), Ok(e1)) => Ok((e, e1)),
         (Err(e), Ok(_)) => Err(e),

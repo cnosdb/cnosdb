@@ -17,6 +17,7 @@ use meta::limiter::RequestLimiter;
 use metrics::count::U64Counter;
 use reqwest::header::CONTENT_ENCODING;
 use serde::Serialize;
+use snafu::ResultExt;
 use spi::query::execution::Output;
 use spi::QueryError;
 use warp::http::header::HeaderMap;
@@ -26,7 +27,7 @@ use warp::{hyper, Reply};
 
 use super::header::IntoHeaderPair;
 use super::result_format::ResultFormat;
-use super::Error as HttpError;
+use super::{Error as HttpError, MetaSnafu, QuerySnafu};
 
 #[derive(Default)]
 pub struct ResponseBuilder {
@@ -153,7 +154,7 @@ impl HttpResponse {
     }
 
     pub async fn wrap_batches_to_response(self) -> Result<Response, HttpError> {
-        let actual = self.result.chunk_result().await?;
+        let actual = self.result.chunk_result().await.context(QuerySnafu)?;
         self.format.wrap_batches_to_response(
             &actual,
             true,
@@ -199,7 +200,7 @@ impl HttpResponse {
                         limiter
                             .check_http_data_out(buffer_len)
                             .await
-                            .map_err(HttpError::from)
+                            .context(MetaSnafu)
                     };
                     Ok(HttpResponseStreamState::CheckLimiter(
                         Box::pin(future),
@@ -232,7 +233,7 @@ impl HttpResponse {
                         limiter
                             .check_http_data_out(buffer_len)
                             .await
-                            .map_err(HttpError::from)
+                            .context(MetaSnafu)
                     };
                     Ok(HttpResponseStreamState::CheckLimiter(
                         Box::pin(future),

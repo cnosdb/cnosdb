@@ -8,11 +8,11 @@ use geo::{
     Point, Polygon, Triangle,
 };
 use spi::query::function::FunctionMetadataManager;
-use spi::Result;
+use spi::QueryResult;
 
 use crate::geometry_binary_op;
 
-pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> Result<ScalarUDF> {
+pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<ScalarUDF> {
     let udf = geometry_binary_op!("ST_Distance", distance, DataType::Float64, Float64Builder);
     func_manager.register_udf(udf.clone())?;
     Ok(udf)

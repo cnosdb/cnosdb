@@ -4,6 +4,7 @@ use openraft::EntryPayload;
 
 use super::{wal_store, WalType, WAL_FOOTER_MAGIC_NUMBER, WAL_HEADER_LEN};
 use crate::byte_utils::{decode_be_u32, decode_be_u64};
+use crate::error::WalTruncatedSnafu;
 use crate::file_system::async_filesystem::LocalFileSystem;
 use crate::file_system::FileSystem;
 use crate::{record_file, TskvError, TskvResult};
@@ -90,7 +91,7 @@ impl WalReader {
                 Err(TskvError::RecordFileHashCheckFailed { .. }) => continue,
                 Err(e) => {
                     trace::error!("Error reading wal: {:?}", e);
-                    return Err(TskvError::WalTruncated);
+                    return Err(WalTruncatedSnafu.build());
                 }
             };
             return Ok(Some(WalRecordData::new(data)));
@@ -105,7 +106,7 @@ impl WalReader {
             Err(e @ TskvError::RecordFileHashCheckFailed { .. }) => Err(e),
             Err(e) => {
                 trace::error!("Error reading wal: {:?}", e);
-                Err(TskvError::WalTruncated)
+                Err(WalTruncatedSnafu.build())
             }
         }
     }
@@ -219,9 +220,14 @@ pub async fn print_wal_statistics(path: impl AsRef<Path>) {
                 println!("============================================================");
                 break;
             }
-            Err(TskvError::WalTruncated) => {
+            Err(TskvError::WalTruncated {
+                location,
+                backtrace,
+            }) => {
                 println!("============================================================");
                 println!("WAL file truncated");
+                println!("location: {:?}", location);
+                println!("backtrace: {:?}", backtrace);
                 break;
             }
             Err(e) => {

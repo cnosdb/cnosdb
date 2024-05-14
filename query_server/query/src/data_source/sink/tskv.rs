@@ -7,7 +7,8 @@ use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::execution::context::TaskContext;
 use datafusion::physical_plan::metrics::{self, Count, ExecutionPlanMetricsSet, MetricBuilder};
 use models::schema::TskvTableSchemaRef;
-use spi::Result;
+use snafu::ResultExt;
+use spi::{CoordinatorSnafu, MetaSnafu, QueryResult};
 use trace::span_ext::SpanExt;
 use trace::{Span, SpanContext};
 
@@ -24,7 +25,7 @@ pub struct TskvRecordBatchSink {
 
 #[async_trait]
 impl RecordBatchSink for TskvRecordBatchSink {
-    async fn append(&self, record_batch: RecordBatch) -> Result<SinkMetadata> {
+    async fn append(&self, record_batch: RecordBatch) -> QueryResult<SinkMetadata> {
         trace::trace!(
             "Partition: {}, \nTskvTableSchema: {:?}, \nTskvRecordBatchSink::append: {:?}",
             self.partition,
@@ -44,16 +45,21 @@ impl RecordBatchSink for TskvRecordBatchSink {
 
         let tenant = self.schema.tenant.as_str();
         let db_name = self.schema.db.as_str();
-        let meta_client = self.coord.tenant_meta(tenant).await.ok_or(
-            coordinator::errors::CoordinatorError::TenantNotFound {
+        let meta_client = self
+            .coord
+            .tenant_meta(tenant)
+            .await
+            .ok_or_else(|| coordinator::errors::CoordinatorError::TenantNotFound {
                 name: tenant.to_string(),
-            },
-        )?;
-        let db_schema = meta_client.get_db_schema(db_name)?.ok_or_else(|| {
-            meta::error::MetaError::DatabaseNotFound {
+            })
+            .context(CoordinatorSnafu)?;
+        let db_schema = meta_client
+            .get_db_schema(db_name)
+            .context(MetaSnafu)?
+            .ok_or_else(|| meta::error::MetaError::DatabaseNotFound {
                 database: db_name.to_string(),
-            }
-        })?;
+            })
+            .context(MetaSnafu)?;
         if db_schema.options().get_db_is_hidden() {
             return Err(spi::QueryError::Meta {
                 source: meta::error::MetaError::DatabaseNotFound {
@@ -79,7 +85,8 @@ impl RecordBatchSink for TskvRecordBatchSink {
             .map_err(|err| {
                 span.error(err.to_string());
                 err
-            })?;
+            })
+            .context(CoordinatorSnafu)?;
         self.coord
             .metrics()
             .sql_data_in(self.schema.tenant.as_str(), self.schema.db.as_str())

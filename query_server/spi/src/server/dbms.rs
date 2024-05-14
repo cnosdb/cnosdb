@@ -13,33 +13,33 @@ use crate::query::execution::{Output, QueryStateMachine, QueryStateMachineRef};
 use crate::query::logical_planner::Plan;
 use crate::query::recordbatch::RecordBatchStreamWrapper;
 use crate::service::protocol::{Query, QueryHandle, QueryId};
-use crate::Result;
+use crate::QueryResult;
 
 pub type DBMSRef = Arc<dyn DatabaseManagerSystem + Send + Sync>;
 
 #[async_trait]
 pub trait DatabaseManagerSystem {
-    async fn start(&self) -> Result<()>;
-    async fn authenticate(&self, user_info: &UserInfo, tenant_name: &str) -> Result<User>;
+    async fn start(&self) -> QueryResult<()>;
+    async fn authenticate(&self, user_info: &UserInfo, tenant_name: &str) -> QueryResult<User>;
     async fn execute(
         &self,
         query: &Query,
         span_context: Option<&SpanContext>,
-    ) -> Result<QueryHandle>;
+    ) -> QueryResult<QueryHandle>;
     async fn build_query_state_machine(
         &self,
         query: Query,
         span_context: Option<&SpanContext>,
-    ) -> Result<QueryStateMachineRef>;
+    ) -> QueryResult<QueryStateMachineRef>;
     async fn build_logical_plan(
         &self,
         query_state_machine: QueryStateMachineRef,
-    ) -> Result<Option<Plan>>;
+    ) -> QueryResult<Option<Plan>>;
     async fn execute_logical_plan(
         &self,
         logical_plan: Plan,
         query_state_machine: QueryStateMachineRef,
-    ) -> Result<QueryHandle>;
+    ) -> QueryResult<QueryHandle>;
     fn metrics(&self) -> String;
     fn cancel(&self, query_id: &QueryId);
 }
@@ -48,10 +48,10 @@ pub struct DatabaseManagerSystemMock {}
 
 #[async_trait]
 impl DatabaseManagerSystem for DatabaseManagerSystemMock {
-    async fn start(&self) -> Result<()> {
+    async fn start(&self) -> QueryResult<()> {
         Ok(())
     }
-    async fn authenticate(&self, user_info: &UserInfo, _tenant_name: &str) -> Result<User> {
+    async fn authenticate(&self, user_info: &UserInfo, _tenant_name: &str) -> QueryResult<User> {
         let options = unsafe {
             UserOptionsBuilder::default()
                 .password(user_info.password.clone())
@@ -68,7 +68,7 @@ impl DatabaseManagerSystem for DatabaseManagerSystemMock {
         &self,
         query: &Query,
         _span_context: Option<&SpanContext>,
-    ) -> Result<QueryHandle> {
+    ) -> QueryResult<QueryHandle> {
         println!("DatabaseManagerSystemMock::execute({:?})", query.content());
 
         // define a schema.
@@ -103,7 +103,7 @@ impl DatabaseManagerSystem for DatabaseManagerSystemMock {
         &self,
         query: Query,
         span_context: Option<&SpanContext>,
-    ) -> Result<QueryStateMachineRef> {
+    ) -> QueryResult<QueryStateMachineRef> {
         Ok(Arc::new(QueryStateMachine::test(
             query,
             span_context.cloned(),
@@ -113,7 +113,7 @@ impl DatabaseManagerSystem for DatabaseManagerSystemMock {
     async fn build_logical_plan(
         &self,
         _query_state_machine: QueryStateMachineRef,
-    ) -> Result<Option<Plan>> {
+    ) -> QueryResult<Option<Plan>> {
         Ok(None)
     }
 
@@ -121,7 +121,7 @@ impl DatabaseManagerSystem for DatabaseManagerSystemMock {
         &self,
         _logical_plan: Plan,
         query_state_machine: QueryStateMachineRef,
-    ) -> Result<QueryHandle> {
+    ) -> QueryResult<QueryHandle> {
         self.execute(
             &query_state_machine.query,
             query_state_machine

@@ -2,9 +2,10 @@ use async_trait::async_trait;
 use meta::error::MetaError;
 use models::oid::Identifier;
 use models::schema::{ResourceInfo, ResourceOperator, ResourceStatus};
+use snafu::ResultExt;
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::RecoverTenant;
-use spi::{QueryError, Result};
+use spi::{MetaSnafu, QueryError, QueryResult};
 use trace::debug;
 
 use super::DDLDefinitionTask;
@@ -21,7 +22,7 @@ impl RecoverTenantTask {
 
 #[async_trait]
 impl DDLDefinitionTask for RecoverTenantTask {
-    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output> {
+    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> QueryResult<Output> {
         let RecoverTenant {
             ref tenant_name,
             ref if_exist,
@@ -52,7 +53,8 @@ impl DDLDefinitionTask for RecoverTenantTask {
         query_state_machine
             .meta
             .write_resourceinfo(resourceinfo.get_name(), resourceinfo.clone())
-            .await?;
+            .await
+            .context(MetaSnafu)?;
 
         // second, set hidden to FALSE
         if (meta.set_tenant_is_hidden(tenant_name, false).await).is_err() && !if_exist {

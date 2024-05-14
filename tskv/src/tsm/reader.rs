@@ -7,7 +7,9 @@ use bytes::Bytes;
 use models::predicate::domain::TimeRange;
 use models::schema::{TskvTableSchemaRef, TIME_FIELD};
 use models::SeriesId;
+use snafu::OptionExt;
 
+use crate::error::{CommonSnafu, ReadTsmSnafu, TskvResult};
 use crate::file_system::async_filesystem::{LocalFileSystem, LocalFileType};
 use crate::file_system::file::stream_reader::FileStreamReader;
 use crate::file_system::FileSystem;
@@ -17,7 +19,7 @@ use crate::tsm::data_block::{DataBlock, MutableColumn};
 use crate::tsm::footer::Footer;
 use crate::tsm::page::{Page, PageMeta, PageWriteSpec};
 use crate::tsm::{ColumnGroupID, TsmTombstone, FOOTER_SIZE};
-use crate::{file_utils, TskvError, TskvResult};
+use crate::{file_utils, TskvError};
 
 pub struct TsmMetaData {
     footer: Arc<Footer>,
@@ -225,7 +227,13 @@ impl TsmReader {
                 let mut res_column_group = vec![0u8; column_group.size() as usize];
                 self.reader
                     .read_at(column_group.pages_offset() as usize, &mut res_column_group)
-                    .await?;
+                    .await
+                    .map_err(|e| {
+                        ReadTsmSnafu {
+                            reason: e.to_string(),
+                        }
+                        .build()
+                    })?;
                 return Ok(res_column_group);
             }
         }
@@ -238,12 +246,12 @@ impl TsmReader {
         column_group_id: ColumnGroupID,
     ) -> TskvResult<DataBlock> {
         let column_group = self.read_series_pages(series_id, column_group_id).await?;
-        let schema =
-            self.tsm_meta
-                .table_schema_by_sid(series_id)
-                .ok_or(TskvError::CommonError {
-                    reason: format!("table schema for series id : {} not found", series_id),
-                })?;
+        let schema = self
+            .tsm_meta
+            .table_schema_by_sid(series_id)
+            .context(CommonSnafu {
+                reason: format!("table schema for series id : {} not found", series_id),
+            })?;
         let data_block = decode_pages(column_group, schema)?;
 
         Ok(data_block)
@@ -259,22 +267,21 @@ pub fn decode_buf_to_pages(
     column_group_id: ColumnGroupID,
     pages_buf: &[u8],
 ) -> TskvResult<Vec<Page>> {
-    let column_group =
-        chunk
-            .column_group()
-            .get(&column_group_id)
-            .ok_or(TskvError::CommonError {
-                reason: format!(
-                    "column group for column group id : {} not found",
-                    column_group_id
-                ),
-            })?;
+    let column_group = chunk
+        .column_group()
+        .get(&column_group_id)
+        .context(CommonSnafu {
+            reason: format!(
+                "column group for column group id : {} not found",
+                column_group_id
+            ),
+        })?;
     let mut pages = Vec::with_capacity(column_group.pages().len());
 
     for page in column_group.pages() {
         let offset = (page.offset() - column_group.pages_offset()) as usize;
         let end = offset + page.size as usize;
-        let page_buf = pages_buf.get(offset..end).ok_or(TskvError::CommonError {
+        let page_buf = pages_buf.get(offset..end).context(CommonSnafu {
             reason: "page_buf get error".to_string(),
         })?;
         let page = Page {
@@ -300,9 +307,20 @@ impl Debug for TsmReader {
 }
 
 pub async fn read_footer(reader: &FileStreamReader) -> TskvResult<Footer> {
+    if reader.len() < FOOTER_SIZE {
+        return Err(ReadTsmSnafu {
+            reason: "file is too small".to_string(),
+        }
+        .build());
+    };
     let pos = reader.len() - FOOTER_SIZE;
     let mut buffer = vec![0u8; FOOTER_SIZE];
-    reader.read_at(pos, &mut buffer).await?;
+    reader.read_at(pos, &mut buffer).await.map_err(|e| {
+        ReadTsmSnafu {
+            reason: e.to_string(),
+        }
+        .build()
+    })?;
     Footer::deserialize(&buffer)
 }
 
@@ -312,7 +330,15 @@ pub async fn read_chunk_group_meta(
 ) -> TskvResult<ChunkGroupMeta> {
     let pos = footer.table().chunk_group_offset();
     let mut buffer = vec![0u8; footer.table().chunk_group_size() as usize];
-    reader.read_at(pos as usize, &mut buffer).await?; // read chunk group meta
+    reader
+        .read_at(pos as usize, &mut buffer)
+        .await
+        .map_err(|e| {
+            ReadTsmSnafu {
+                reason: e.to_string(),
+            }
+            .build()
+        })?; // read chunk group meta
     let specs = ChunkGroupMeta::deserialize(&buffer)?;
     Ok(specs)
 }
@@ -325,7 +351,15 @@ pub async fn read_chunk_groups(
     for chunk in chunk_group_meta.tables().values() {
         let pos = chunk.chunk_group_offset();
         let mut buffer = vec![0u8; chunk.chunk_group_size() as usize];
-        reader.read_at(pos as usize, &mut buffer).await?; // read chunk group meta
+        reader
+            .read_at(pos as usize, &mut buffer)
+            .await
+            .map_err(|e| {
+                ReadTsmSnafu {
+                    reason: e.to_string(),
+                }
+                .build()
+            })?; // read chunk group meta
         let group = Arc::new(ChunkGroup::deserialize(&buffer)?);
         specs.insert(chunk.name().to_string(), group);
     }
@@ -341,7 +375,15 @@ pub async fn read_chunk(
         for chunk_spec in group.chunks() {
             let pos = chunk_spec.chunk_offset();
             let mut buffer = vec![0u8; chunk_spec.chunk_size() as usize];
-            reader.read_at(pos as usize, &mut buffer).await?;
+            reader
+                .read_at(pos as usize, &mut buffer)
+                .await
+                .map_err(|e| {
+                    ReadTsmSnafu {
+                        reason: e.to_string(),
+                    }
+                    .build()
+                })?;
             let chunk = Arc::new(Chunk::deserialize(&buffer)?);
             chunks.insert(chunk_spec.series_id(), chunk);
         }
@@ -352,7 +394,15 @@ pub async fn read_chunk(
 async fn read_page(reader: &FileStreamReader, page_spec: &PageWriteSpec) -> TskvResult<Page> {
     let pos = page_spec.offset();
     let mut buffer = vec![0u8; page_spec.size() as usize];
-    reader.read_at(pos as usize, &mut buffer).await?;
+    reader
+        .read_at(pos as usize, &mut buffer)
+        .await
+        .map_err(|e| {
+            ReadTsmSnafu {
+                reason: e.to_string(),
+            }
+            .build()
+        })?;
     let page = Page {
         meta: page_spec.meta().clone(),
         bytes: Bytes::from(buffer),

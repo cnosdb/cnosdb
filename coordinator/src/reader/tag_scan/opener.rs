@@ -3,6 +3,7 @@ use futures::TryStreamExt;
 use meta::model::MetaRef;
 use models::meta_data::VnodeInfo;
 use protos::{tskv_service_time_out_client, DEFAULT_GRPC_SERVER_MESSAGE_LEN};
+use snafu::{IntoError, ResultExt};
 use trace::http::http_ctx::grpc_append_trace_context;
 use trace::span_ext::SpanExt;
 use trace::{Span, SpanContext};
@@ -10,7 +11,7 @@ use tskv::reader::tag_scan::LocalTskvTagScanStream;
 use tskv::reader::QueryOption;
 use tskv::EngineRef;
 
-use crate::errors::{CoordinatorError, CoordinatorResult};
+use crate::errors::{CommonSnafu, CoordinatorError, CoordinatorResult, ModelsSnafu, TskvSnafu};
 use crate::reader::deserialize::TonicRecordBatchDecoder;
 use crate::reader::{VnodeOpenFuture, VnodeOpener};
 use crate::SendableCoordinatorRecordBatchStream;
@@ -68,7 +69,7 @@ impl VnodeOpener for TemporaryTagScanOpener {
                         span_ctx.as_ref(),
                     ),
                 )
-                .map_err(CoordinatorError::from);
+                .map_err(|e| TskvSnafu.into_error(e));
                 Ok(Box::pin(stream) as SendableCoordinatorRecordBatchStream)
             } else {
                 // 路由到远程的引擎
@@ -76,13 +77,16 @@ impl VnodeOpener for TemporaryTagScanOpener {
                     let vnode_ids = vec![vnode_id];
                     let req = option
                         .to_query_record_batch_request(vnode_ids)
-                        .map_err(CoordinatorError::from)?;
+                        .context(ModelsSnafu)?;
                     tonic::Request::new(req)
                 };
 
                 grpc_append_trace_context(span_ctx.as_ref(), request.metadata_mut()).map_err(
-                    |_| CoordinatorError::CommonError {
-                        msg: "Parse trace_id, this maybe a bug".to_string(),
+                    |_| {
+                        CommonSnafu {
+                            msg: "Parse trace_id, this maybe a bug".to_string(),
+                        }
+                        .build()
                     },
                 )?;
 

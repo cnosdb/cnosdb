@@ -4,9 +4,10 @@ use async_trait::async_trait;
 use models::predicate::domain::{ColumnDomains, ResolvedPredicate, TimeRanges};
 use models::predicate::transformation::DeleteSelectionExpressionToDomainsVisitor;
 use models::predicate::utils::filter_to_time_ranges;
+use snafu::ResultExt;
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::DeleteFromTable;
-use spi::Result;
+use spi::{CoordinatorSnafu, ModelsSnafu, QueryResult};
 
 use super::DMLDefinitionTask;
 
@@ -22,7 +23,7 @@ impl DeleteFromTableTask {
 
 #[async_trait]
 impl DMLDefinitionTask for DeleteFromTableTask {
-    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output> {
+    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> QueryResult<Output> {
         let DeleteFromTable {
             table_name,
             selection,
@@ -37,14 +38,16 @@ impl DMLDefinitionTask for DeleteFromTableTask {
             (ColumnDomains::all(), TimeRanges::all())
         };
 
-        let predicate = ResolvedPredicate::new(Arc::new(time_ranges), tags_filter, None)?;
+        let predicate = ResolvedPredicate::new(Arc::new(time_ranges), tags_filter, None)
+            .context(ModelsSnafu)?;
 
         trace::info!("Delete from table: {table_name}, filter: {predicate:?}");
 
         query_state_machine
             .coord
             .delete_from_table(table_name, &predicate)
-            .await?;
+            .await
+            .context(CoordinatorSnafu)?;
 
         Ok(Output::Nil(()))
     }

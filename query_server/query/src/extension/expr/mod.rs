@@ -15,7 +15,7 @@ pub use scalar_function::{INTERPOLATE, LOCF, TIME_WINDOW_GAPFILL};
 pub use selector_function::{BOTTOM, TOPK};
 pub use session_function::register_session_udfs;
 use spi::query::function::FunctionMetadataManager;
-use spi::Result;
+use spi::QueryResult;
 pub use ts_gen_func::TSGenFunc;
 pub use window::{
     ceil_sliding_window, floor_sliding_window, time_window_signature, DEFAULT_TIME_WINDOW_START,
@@ -46,7 +46,7 @@ pub static INTEGERS: &[DataType] = &[
 ];
 
 /// load all cnosdb's built-in function
-pub fn load_all_functions(func_manager: &mut dyn FunctionMetadataManager) -> Result<()> {
+pub fn load_all_functions(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<()> {
     scalar_function::register_udfs(func_manager)?;
     aggregate_function::register_udafs(func_manager)?;
     selector_function::register_selector_udfs(func_manager)?;

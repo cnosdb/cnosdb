@@ -5,9 +5,10 @@ use std::path::Path;
 use radixdb;
 use radixdb::store;
 use radixdb::store::BlobStore;
+use snafu::ResultExt;
 use trace::debug;
 
-use super::{IndexError, IndexResult};
+use super::{IndexResult, IndexStorageSnafu, RoaringBitmapSnafu};
 
 #[derive(Debug)]
 pub struct IndexEngine {
@@ -27,12 +28,12 @@ impl IndexEngine {
             .read(true)
             .write(true)
             .open(db_path)
-            .map_err(|e| IndexError::IndexStorage { msg: e.to_string() })?;
+            .map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?;
 
         let store = store::PagedFileStore::new(file, 1024 * 1024)
-            .map_err(|e| IndexError::IndexStorage { msg: e.to_string() })?;
+            .map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?;
         let db = radixdb::RadixTree::try_load(store.clone(), store.last_id())
-            .map_err(|e| IndexError::IndexStorage { msg: e.to_string() })?;
+            .map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?;
 
         Ok(Self { db, store })
     }
@@ -40,7 +41,7 @@ impl IndexEngine {
     pub fn set(&mut self, key: &[u8], value: &[u8]) -> IndexResult<()> {
         self.db
             .try_insert(key, value)
-            .map_err(|e| IndexError::IndexStorage { msg: e.to_string() })?;
+            .map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?;
 
         Ok(())
     }
@@ -49,7 +50,7 @@ impl IndexEngine {
         let val = self
             .db
             .try_get(key)
-            .map_err(|e| IndexError::IndexStorage { msg: e.to_string() })?;
+            .map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?;
 
         match val {
             Some(v) => {
@@ -64,15 +65,15 @@ impl IndexEngine {
     pub fn load(&self, val: &radixdb::node::Value<store::PagedFileStore>) -> IndexResult<Vec<u8>> {
         let blob = val
             .load(&self.store)
-            .map_err(|e| IndexError::IndexStorage { msg: e.to_string() })?;
+            .map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?;
 
         Ok(blob.to_vec())
     }
 
     pub fn get_rb(&self, key: &[u8]) -> IndexResult<Option<roaring::RoaringBitmap>> {
         if let Some(data) = self.get(key)? {
-            let rb = roaring::RoaringBitmap::deserialize_from(&*data)
-                .map_err(|e| IndexError::RoaringBitmap { source: e })?;
+            let rb =
+                roaring::RoaringBitmap::deserialize_from(&*data).context(RoaringBitmapSnafu)?;
 
             Ok(Some(rb))
         } else {
@@ -86,8 +87,7 @@ impl IndexEngine {
     ) -> IndexResult<roaring::RoaringBitmap> {
         let data = self.load(val)?;
 
-        let rb = roaring::RoaringBitmap::deserialize_from(&*data)
-            .map_err(|e| IndexError::RoaringBitmap { source: e })?;
+        let rb = roaring::RoaringBitmap::deserialize_from(&*data).context(RoaringBitmapSnafu)?;
 
         Ok(rb)
     }
@@ -95,7 +95,7 @@ impl IndexEngine {
     pub fn build_revert_index(&self, key: &[u8], id: u32, add: bool) -> IndexResult<Vec<u8>> {
         let mut rb = match self.get(key)? {
             Some(val) => roaring::RoaringBitmap::deserialize_from(&*val)
-                .map_err(|e| IndexError::IndexStorage { msg: e.to_string() })?,
+                .map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?,
 
             None => roaring::RoaringBitmap::new(),
         };
@@ -108,7 +108,7 @@ impl IndexEngine {
 
         let mut bytes = vec![];
         rb.serialize_into(&mut bytes)
-            .map_err(|e| IndexError::IndexStorage { msg: e.to_string() })?;
+            .map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?;
 
         Ok(bytes)
     }
@@ -116,7 +116,7 @@ impl IndexEngine {
     pub fn modify(&mut self, key: &[u8], id: u32, add: bool) -> IndexResult<()> {
         let mut rb = match self.get(key)? {
             Some(val) => roaring::RoaringBitmap::deserialize_from(&*val)
-                .map_err(|e| IndexError::IndexStorage { msg: e.to_string() })?,
+                .map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?,
 
             None => roaring::RoaringBitmap::new(),
         };
@@ -129,7 +129,7 @@ impl IndexEngine {
 
         let mut bytes = vec![];
         rb.serialize_into(&mut bytes)
-            .map_err(|e| IndexError::IndexStorage { msg: e.to_string() })?;
+            .map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?;
 
         self.set(key, &bytes)?;
 
@@ -139,7 +139,7 @@ impl IndexEngine {
     pub fn delete(&mut self, key: &[u8]) -> IndexResult<()> {
         self.db
             .try_remove(key)
-            .map_err(|e| IndexError::IndexStorage { msg: e.to_string() })?;
+            .map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?;
 
         Ok(())
     }
@@ -150,7 +150,7 @@ impl IndexEngine {
                 a.set(Some(b.downcast()));
                 Ok(())
             })
-            .map_err(|e| IndexError::IndexStorage { msg: e.to_string() })?;
+            .map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?;
 
         Ok(())
     }
@@ -159,7 +159,7 @@ impl IndexEngine {
         let result = self
             .db
             .try_contains_key(key)
-            .map_err(|e| IndexError::IndexStorage { msg: e.to_string() })?;
+            .map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?;
 
         Ok(result)
     }
@@ -178,18 +178,18 @@ impl IndexEngine {
     ) -> IndexResult<radixdb::node::KeyValueIter<store::PagedFileStore>> {
         self.db
             .try_scan_prefix(key)
-            .map_err(|e| IndexError::IndexStorage { msg: e.to_string() })
+            .map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())
     }
 
     pub fn flush(&mut self) -> IndexResult<()> {
         let _id = self
             .db
             .try_reattach()
-            .map_err(|e| IndexError::IndexStorage { msg: e.to_string() })?;
+            .map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?;
 
         self.store
             .sync()
-            .map_err(|e| IndexError::IndexStorage { msg: e.to_string() })?;
+            .map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?;
 
         Ok(())
     }
@@ -234,7 +234,7 @@ impl Iterator for RangeKeyValIter {
 
                 Some(item) => match item {
                     Err(e) => {
-                        return Some(Err(IndexError::IndexStorage { msg: e.to_string() }));
+                        return Some(Err(IndexStorageSnafu { msg: e.to_string() }.build()));
                     }
 
                     Ok(item) => match &self.start {

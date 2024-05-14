@@ -60,10 +60,9 @@ impl StartMode {
 
 fn get_interval_mode_and_start_mode_from_arg(arg: &Arg) -> DFResult<(IntervalMode, StartMode)> {
     let start_mode = if let Some(s) = &arg.start_mode {
-        StartMode::from_str(s).ok_or(datafusion::error::DataFusionError::Execution(format!(
-            "Invalid start_mode: {}",
-            s
-        )))?
+        StartMode::from_str(s).ok_or_else(|| {
+            datafusion::error::DataFusionError::Execution(format!("Invalid start_mode: {}", s))
+        })?
     } else {
         StartMode::Mode
     };
@@ -76,10 +75,9 @@ fn get_interval_mode_and_start_mode_from_arg(arg: &Arg) -> DFResult<(IntervalMod
         }
         IntervalMode::Interval(i)
     } else if let Some(m) = &arg.method {
-        IntervalMode::from_str(m).ok_or(datafusion::error::DataFusionError::Execution(format!(
-            "Invalid method: {}",
-            m
-        )))?
+        IntervalMode::from_str(m).ok_or_else(|| {
+            datafusion::error::DataFusionError::Execution(format!("Invalid method: {}", m))
+        })?
     } else {
         IntervalMode::Median
     };

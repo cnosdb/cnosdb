@@ -20,12 +20,14 @@ use protos::models_helper::to_prost_bytes;
 use serde::de::Visitor;
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use snafu::ResultExt;
 
 use super::transformation::RowExpressionToDomainsVisitor;
 use super::utils::filter_to_time_ranges;
 use super::PlacedSplit;
+use crate::errors::{InternalSnafu, InvalidQueryExprMsgSnafu, InvalidSerdeMessageSnafu};
 use crate::schema::{ColumnType, TableColumn, TskvTableSchemaRef};
-use crate::{Error, Result, Timestamp};
+use crate::{ModelResult, Timestamp};
 
 pub type PredicateRef = Arc<Predicate>;
 pub type ResolvedPredicateRef = Arc<ResolvedPredicate>;
@@ -748,15 +750,16 @@ impl Range {
     /// Returns an exception if the data types do not match.
     ///
     /// Returns the data type of self if the data types match.
-    fn check_type_compatibility(&self, other: &Range) -> Result<DataType> {
+    fn check_type_compatibility(&self, other: &Range) -> ModelResult<DataType> {
         if !self.low.check_type_compatibility(&other.low) {
-            return Err(Error::Internal {
+            return Err(InternalSnafu {
                 err: format!(
                     "mismatched types: excepted {}, found {}",
                     self.get_type(),
                     other.get_type()
                 ),
-            });
+            }
+            .build());
         }
 
         Ok(self.low.data_type.clone())
@@ -860,7 +863,7 @@ impl Range {
     /// If there no overlap, return Ok(false).
     ///
     /// Returns an exception if the data types are incompatible.
-    fn overlaps(&self, other: &Self) -> Result<bool> {
+    fn overlaps(&self, other: &Self) -> ModelResult<bool> {
         self.check_type_compatibility(other)?;
         if self.low <= other.high && other.low <= self.high {
             // like (-∞, 2) and (2, +∞) is not overlap
@@ -877,7 +880,7 @@ impl Range {
     /// Calculates the intersection of two ranges.
     ///
     /// return an exception, if there is no intersection.
-    fn intersect(&self, other: &Self) -> Result<Self> {
+    fn intersect(&self, other: &Self) -> ModelResult<Self> {
         // Type mismatch directly returns an exception
         if self.overlaps(other)? {
             // There is overlap, calculate the intersection
@@ -891,16 +894,17 @@ impl Range {
         }
         // If the type matches and there is no intersection, an exception is returned.
         // If it is executed here, it means that there is a bug in the upper-level system logic.
-        Err(Error::Internal {
+        Err(InternalSnafu {
             err: "cannot intersect non-overlapping ranges".to_string(),
-        })
+        }
+        .build())
     }
     /// Calculates the span of two ranges
     ///
     /// return new Range
     ///
     /// Returns an exception if the data types are incompatible.
-    fn span(&self, other: &Self) -> Result<Self> {
+    fn span(&self, other: &Self) -> ModelResult<Self> {
         //Type mismatch directly returns an exception
         if self.overlaps(other)? {
             // There is overlap, calculate the intersection
@@ -914,9 +918,10 @@ impl Range {
         }
         // If the type matches and there is no intersection, an exception is returned.
         // If it is executed here, it means that there is a bug in the upper-level system logic.
-        Err(Error::Internal {
+        Err(InternalSnafu {
             err: "cannot span non-overlapping ranges".to_string(),
-        })
+        }
+        .build())
     }
     /// whether to match all lines
     pub fn is_all(&self) -> bool {
@@ -1111,7 +1116,7 @@ impl Domain {
     /// Return new ValueSet(RangeValueSet)
     ///
     /// Returns an exception if the data types are incompatible.
-    pub fn of_ranges(res: &[Range]) -> Result<Domain> {
+    pub fn of_ranges(res: &[Range]) -> ModelResult<Domain> {
         if res.is_empty() {
             return Ok(Domain::None);
         }
@@ -1171,7 +1176,7 @@ impl Domain {
     /// Calculates the intersection of two ranges, and returns None if the intersection does not exist
     ///
     /// This method returns the new value without changing the old value
-    fn intersect(&self, other: &Domain) -> Result<Domain> {
+    fn intersect(&self, other: &Domain) -> ModelResult<Domain> {
         match (self, other) {
             (Self::Range(ref self_val_set), Self::Range(ref other_val_set)) => {
                 Domain::range_intersect(self_val_set, other_val_set)
@@ -1182,9 +1187,10 @@ impl Domain {
             (Self::None, _) | (_, Self::None) => Ok(Self::None),
             (Self::All, _) => Ok(other.clone()),
             (_, Self::All) => Ok(self.clone()),
-            _ => Err(Error::Internal {
+            _ => Err(InternalSnafu {
                 err: "mismatched ValueSet type".to_string(),
-            }),
+            }
+            .build()),
         }
     }
     /// Calculates the union of two ranges
@@ -1194,7 +1200,7 @@ impl Domain {
     /// Returns an exception if the ValueSet types are incompatible.
     ///
     /// This method returns the new ValueSet without changing the old value
-    fn union(&self, other: &Domain) -> Result<Domain> {
+    fn union(&self, other: &Domain) -> ModelResult<Domain> {
         match (self, other) {
             (Self::Range(ref self_val_set), Self::Range(ref other_val_set)) => {
                 Domain::range_union(self_val_set, other_val_set)
@@ -1205,15 +1211,16 @@ impl Domain {
             (Self::None, _) => Ok(other.clone()),
             (_, Self::None) => Ok(self.clone()),
             (Self::All, _) | (_, Self::All) => Ok(Self::All),
-            _ => Err(Error::Internal {
+            _ => Err(InternalSnafu {
                 err: "mismatched ValueSet type".to_string(),
-            }),
+            }
+            .build()),
         }
     }
     /// Merge and intersect two ordered range sets
     ///
     /// This method returns the new ValueSet without changing the old value
-    fn range_intersect(first: &RangeValueSet, other: &RangeValueSet) -> Result<Domain> {
+    fn range_intersect(first: &RangeValueSet, other: &RangeValueSet) -> ModelResult<Domain> {
         let mut result: Vec<Range> = Vec::default();
 
         let mut first_values = first.low_indexed_ranges.values();
@@ -1251,9 +1258,10 @@ impl Domain {
                 }
             }
             (_, _) => {
-                return Err(Error::Internal {
+                return Err(InternalSnafu {
                     err: "RangeValueSet not contains value".to_string(),
-                });
+                }
+                .build());
             }
         }
 
@@ -1262,7 +1270,7 @@ impl Domain {
     /// Merge and intersect two equable value sets
     ///
     /// This method returns the new ValueSet without changing the old value
-    fn value_intersect(first: &EqutableValueSet, other: &EqutableValueSet) -> Result<Domain> {
+    fn value_intersect(first: &EqutableValueSet, other: &EqutableValueSet) -> ModelResult<Domain> {
         let result_data_type = &first.data_type;
         let result_white_list: bool;
         let result_entries: Vec<&ScalarValue>;
@@ -1340,7 +1348,7 @@ impl Domain {
     /// Merge and intersect two equable value sets
     ///
     /// This method returns the new ValueSet without changing the old value
-    fn range_union(first: &RangeValueSet, other: &RangeValueSet) -> Result<Domain> {
+    fn range_union(first: &RangeValueSet, other: &RangeValueSet) -> ModelResult<Domain> {
         let mut result: Vec<_> = first.low_indexed_ranges.values().cloned().collect();
         let mut other_ranges: Vec<_> = other.low_indexed_ranges.values().cloned().collect();
 
@@ -1349,7 +1357,7 @@ impl Domain {
         Domain::of_ranges(&result)
     }
 
-    fn value_union(first: &EqutableValueSet, other: &EqutableValueSet) -> Result<Domain> {
+    fn value_union(first: &EqutableValueSet, other: &EqutableValueSet) -> ModelResult<Domain> {
         let result_data_type = &first.data_type;
         let result_white_list: bool;
         let result_entries: Vec<&ScalarValue>;
@@ -1647,7 +1655,7 @@ impl ResolvedPredicate {
         time_ranges: Arc<TimeRanges>,
         tags_filter: ColumnDomains<String>,
         physical_expr: Option<Arc<dyn PhysicalExpr>>,
-    ) -> Result<Self> {
+    ) -> ModelResult<Self> {
         let node = match physical_expr {
             None => PhysicalExprNode { expr_type: None },
             Some(e) => PhysicalExprNode::try_from(e)?,
@@ -1705,7 +1713,7 @@ impl Predicate {
         df_schema: &DFSchema,
         arrow_schema: &Schema,
         limit: Option<usize>,
-    ) -> crate::Result<Predicate> {
+    ) -> crate::ModelResult<Predicate> {
         match filter {
             None => Ok(Predicate {
                 pushed_down_domains: ColumnDomains::all(),
@@ -1730,7 +1738,7 @@ impl Predicate {
         }
     }
 
-    pub fn resolve(&self, table: &TskvTableSchemaRef) -> Result<ResolvedPredicateRef> {
+    pub fn resolve(&self, table: &TskvTableSchemaRef) -> ModelResult<ResolvedPredicateRef> {
         let domains_filter = self
             .filter()
             .translate_column(|c| table.column(&c.name).cloned());
@@ -1765,14 +1773,14 @@ pub struct QueryArgs {
 }
 
 impl QueryArgs {
-    pub fn encode(args: &QueryArgs) -> Result<Vec<u8>> {
-        let d = bincode::serialize(args)?;
+    pub fn encode(args: &QueryArgs) -> ModelResult<Vec<u8>> {
+        let d = bincode::serialize(args).context(InvalidSerdeMessageSnafu)?;
 
         Ok(d)
     }
 
-    pub fn decode(buf: &[u8]) -> Result<QueryArgs> {
-        let args = bincode::deserialize::<QueryArgs>(buf)?;
+    pub fn decode(buf: &[u8]) -> ModelResult<QueryArgs> {
+        let args = bincode::deserialize::<QueryArgs>(buf).context(InvalidSerdeMessageSnafu)?;
 
         Ok(args)
     }
@@ -1786,29 +1794,24 @@ pub struct QueryExpr {
 }
 
 impl QueryExpr {
-    pub fn encode(&self) -> Result<Vec<u8>> {
-        let bytes = bincode::serialize(self).map_err(|e| Error::InvalidQueryExprMsg {
-            err: format!("encode error {}", e),
-        })?;
-
-        Ok(bytes)
+    pub fn encode(&self) -> ModelResult<Vec<u8>> {
+        bincode::serialize(self).context(InvalidQueryExprMsgSnafu)
     }
 
-    pub fn decode(buf: &[u8]) -> Result<QueryExpr> {
-        bincode::deserialize::<QueryExpr>(buf).map_err(|e| Error::InvalidQueryExprMsg {
-            err: format!("decode error {}", e),
-        })
+    pub fn decode(buf: &[u8]) -> ModelResult<QueryExpr> {
+        bincode::deserialize::<QueryExpr>(buf).context(InvalidQueryExprMsgSnafu)
     }
 }
 
-pub fn encode_agg(agg: &Option<Vec<TableColumn>>) -> Result<Vec<u8>> {
-    let d = bincode::serialize(agg)?;
+pub fn encode_agg(agg: &Option<Vec<TableColumn>>) -> ModelResult<Vec<u8>> {
+    let d = bincode::serialize(agg).context(InvalidSerdeMessageSnafu)?;
 
     Ok(d)
 }
 
-pub fn decode_agg(buf: &[u8]) -> Result<Option<Vec<TableColumn>>> {
-    let args = bincode::deserialize::<Option<Vec<TableColumn>>>(buf)?;
+pub fn decode_agg(buf: &[u8]) -> ModelResult<Option<Vec<TableColumn>>> {
+    let args =
+        bincode::deserialize::<Option<Vec<TableColumn>>>(buf).context(InvalidSerdeMessageSnafu)?;
 
     Ok(args)
 }

@@ -150,8 +150,8 @@ INSERT INTO air (TIME, station, visibility, temperature, presssure) VALUES ('202
 statement ok
 INSERT INTO air (TIME, station, visibility, temperature, presssure) VALUES ('2022-10-19 06:41:00', NULL, 56, 69, 77);
 
-statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: TskvError: Fields can't be empty", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: Fields can't be empty", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
 INSERT INTO air (TIME, station, visibility, temperature, presssure) VALUES ('2022-10-19 06:42:00', 'XiaoMaiDao', NULL, NULL, NULL);
 
-statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: TskvError: Fields can't be empty", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: Fields can't be empty", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
 INSERT INTO air (TIME, station, visibility, temperature, presssure) VALUES ('2022-10-19 06:43:00', NULL, NULL, NULL, NULL);

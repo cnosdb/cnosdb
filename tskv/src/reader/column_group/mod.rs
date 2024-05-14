@@ -12,6 +12,7 @@ use futures::{ready, Stream, StreamExt};
 use models::arrow::stream::BoxStream;
 use models::predicate::domain::TimeRange;
 use models::{ColumnId, SeriesId};
+use snafu::ResultExt;
 
 use super::metrics::BaselineMetrics;
 use super::page::{PageReaderRef, PrimitiveArrayReader};
@@ -19,6 +20,7 @@ use super::{
     BatchReader, BatchReaderRef, SchemableTskvRecordBatchStream,
     SendableSchemableTskvRecordBatchStream,
 };
+use crate::error::ArrowSnafu;
 use crate::tsm::column_group::ColumnGroup;
 use crate::tsm::page::PageWriteSpec;
 use crate::tsm::reader::TsmReader;
@@ -152,7 +154,7 @@ impl ColumnGroupRecordBatchStream {
                         // 可以构造 RecordBatch
                         let arrays = std::mem::take(arrays);
                         return Poll::Ready(Some(
-                            RecordBatch::try_new(schema, arrays).map_err(Into::into),
+                            RecordBatch::try_new(schema, arrays).context(ArrowSnafu),
                         ));
                     }
                     continue;
@@ -233,10 +235,7 @@ impl ColumnGroupReaderMetrics {
 
 fn convert_data_type_if_necessary(array: ArrayRef, target_type: &DataType) -> TskvResult<ArrayRef> {
     if array.data_type() != target_type {
-        match cast::cast(&array, target_type) {
-            Ok(array) => Ok(array),
-            Err(e) => Err(e.into()),
-        }
+        cast::cast(&array, target_type).context(ArrowSnafu)
     } else {
         Ok(array)
     }

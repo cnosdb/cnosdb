@@ -5,12 +5,13 @@ use std::sync::Arc;
 use models::predicate::domain::TimeRange;
 use models::schema::TskvTableSchemaRef;
 use models::{SeriesId, SeriesKey};
+use snafu::OptionExt;
 use trace::{info, trace};
 use utils::BloomFilter;
 
 use crate::compaction::CompactReq;
 use crate::context::GlobalContext;
-use crate::error::TskvResult;
+use crate::error::{CommonSnafu, TskvResult};
 use crate::summary::{CompactMeta, VersionEdit};
 use crate::tsm::chunk::Chunk;
 use crate::tsm::column_group::ColumnGroup;
@@ -19,7 +20,7 @@ use crate::tsm::page::Page;
 use crate::tsm::reader::{decode_pages, decode_pages_buf, TsmMetaData, TsmReader};
 use crate::tsm::writer::TsmWriter;
 use crate::tsm::ColumnGroupID;
-use crate::{ColumnFileId, LevelId, TseriesFamilyId, TskvError};
+use crate::{ColumnFileId, LevelId, TseriesFamilyId};
 
 /// Temporary compacting data block meta
 #[derive(Clone)]
@@ -81,16 +82,16 @@ impl CompactingBlockMeta {
     }
 
     pub fn time_range(&self) -> TskvResult<TimeRange> {
-        let column_group =
-            self.meta
-                .column_group()
-                .get(&self.column_group_id)
-                .ok_or(TskvError::CommonError {
-                    reason: format!(
-                        "column group {} not found in chunk {:?}",
-                        self.column_group_id, self.meta
-                    ),
-                })?;
+        let column_group = self
+            .meta
+            .column_group()
+            .get(&self.column_group_id)
+            .context(CommonSnafu {
+                reason: format!(
+                    "column group {} not found in chunk {:?}",
+                    self.column_group_id, self.meta
+                ),
+            })?;
         Ok(*column_group.time_range())
     }
 
@@ -122,7 +123,7 @@ impl CompactingBlockMeta {
             .column_group()
             .get(&self.column_group_id)
             .cloned()
-            .ok_or(TskvError::CommonError {
+            .context(CommonSnafu {
                 reason: format!(
                     "column group {} not found in chunk {:?}",
                     self.column_group_id, self.meta
@@ -192,15 +193,9 @@ impl CompactingBlockMetaGroup {
                 if let Some(blk) = previous_block {
                     merged_blks.push(blk);
                 }
-                let table_schema =
-                    self.blk_metas[0]
-                        .table_schema()
-                        .ok_or(TskvError::CommonError {
-                            reason: format!(
-                                "table schema not found for table {}",
-                                meta_0.table_name()
-                            ),
-                        })?;
+                let table_schema = self.blk_metas[0].table_schema().context(CommonSnafu {
+                    reason: format!("table schema not found for table {}", meta_0.table_name()),
+                })?;
                 merged_blks.push(CompactingBlock::raw(
                     self.blk_metas[0].reader_idx,
                     meta_0.clone(),
@@ -215,14 +210,9 @@ impl CompactingBlockMetaGroup {
                 let meta = self.blk_metas[0].tsm_meta();
                 let chunk = self.blk_metas[0].meta.clone();
                 let column_group_id = self.blk_metas[0].column_group_id;
-                let schema =
-                    meta.table_schema(chunk.table_name())
-                        .ok_or(TskvError::CommonError {
-                            reason: format!(
-                                "table schema not found for table {}",
-                                chunk.table_name()
-                            ),
-                        })?;
+                let schema = meta.table_schema(chunk.table_name()).context(CommonSnafu {
+                    reason: format!("table schema not found for table {}", chunk.table_name()),
+                })?;
                 let decoded_raw_block = decode_pages_buf(&buf_0, chunk, column_group_id, schema)?;
                 let mut data_block = compacting_block.decode()?;
                 let data_block = data_block.merge(decoded_raw_block)?;
@@ -230,15 +220,9 @@ impl CompactingBlockMetaGroup {
                 merged_block = data_block;
             } else {
                 // Raw block is not full, but nothing to merge with, directly return.
-                let table_schema =
-                    self.blk_metas[0]
-                        .table_schema()
-                        .ok_or(TskvError::CommonError {
-                            reason: format!(
-                                "table schema not found for table {}",
-                                meta_0.table_name()
-                            ),
-                        })?;
+                let table_schema = self.blk_metas[0].table_schema().context(CommonSnafu {
+                    reason: format!("table schema not found for table {}", meta_0.table_name()),
+                })?;
                 return Ok(vec![CompactingBlock::raw(
                     self.blk_metas[0].reader_idx,
                     meta_0.clone(),
@@ -605,17 +589,14 @@ impl CompactIterator {
             if self.curr_sid == loop_series_id {
                 if let Some(sid) = loop_series_id {
                     self.tmp_tsm_blk_tsm_reader_idx.push(loop_file_i);
-                    let meta =
-                        f.tsm_reader
-                            .chunk()
-                            .get(&sid)
-                            .cloned()
-                            .ok_or(TskvError::CommonError {
-                                reason: format!(
-                                    "series id {} not found in file {}",
-                                    sid, loop_file_i
-                                ),
-                            })?;
+                    let meta = f
+                        .tsm_reader
+                        .chunk()
+                        .get(&sid)
+                        .cloned()
+                        .context(CommonSnafu {
+                            reason: format!("series id {} not found in file {}", sid, loop_file_i),
+                        })?;
                     let column_groups_id = meta.column_group().keys().cloned().collect::<Vec<_>>();
                     column_groups_id.iter().for_each(|&column_group_id| {
                         self.tmp_tsm_blk_meta_iters.push((

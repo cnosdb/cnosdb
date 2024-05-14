@@ -26,7 +26,7 @@ INSERT m0(TIME, f0, f1) VALUES(4283635885038645395, TRUE, 0.4131558313302025), (
 statement ok
 INSERT m0(TIME, f1, t0) VALUES(1041670293467254361, 0.507623643211476, '916053861'), (3174128646074400477, 0.47166914414715877, NULL); -- 0ms;
 
-statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: TskvError: Fields can't be empty", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: Fields can't be empty", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
 INSERT m0(TIME, f0) VALUES(2079939785551584142, NULL), (1243152233754651379, FALSE); -- 0ms;
 
 statement ok
@@ -38,7 +38,7 @@ INSERT m0(TIME, f0) VALUES(5867172425191822176, TRUE), (3986678807649375642, TRU
 statement ok
 INSERT m1(TIME, f1) VALUES(7488251815539246350, FALSE); -- 0ms;
 
-statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: TskvError: Fields can't be empty", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: Fields can't be empty", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
 INSERT m3(TIME, t0) VALUES(5414775681413349294, ''); -- 1ms;
 
 # SELECT ALL BIT_AND(+ (+ (+ (CAST(m4.t2 AS BIGINT))))) FROM m3, m1 FULL OUTER JOIN m4 ON CAST(+ (((((m3.f0)/(m3.f0)))*(CAST(0.3686312873976273 AS BIGINT)))) AS BOOLEAN);

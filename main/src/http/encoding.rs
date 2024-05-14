@@ -1,4 +1,5 @@
 use http_protocol::encoding::Encoding;
+use trace::error;
 use warp::reject::{self, Rejection};
 
 use super::header::Header;
@@ -40,9 +41,13 @@ pub fn get_content_encoding_from_header(header: &Header) -> Result<Option<Encodi
     match header.get_content_encoding() {
         Some(s) => match Encoding::from_str_opt(s) {
             Some(encoding) => Ok(Some(encoding)),
-            None => Err(reject::custom(HttpError::InvalidHeader {
-                reason: format!("content encoding not support: {}", s),
-            })),
+            None => {
+                let e = HttpError::InvalidHeader {
+                    reason: format!("content encoding not support: {}", s),
+                };
+                error!("get_content_encoding_from_header: {:?}", e);
+                Err(reject::custom(e))
+            }
         },
         None => Ok(None),
     }

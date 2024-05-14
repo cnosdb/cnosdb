@@ -21,7 +21,8 @@ use futures::{Stream, StreamExt};
 use models::predicate::domain::PredicateRef;
 use models::predicate::PlacedSplit;
 use models::schema::{TskvTableSchema, TskvTableSchemaRef};
-use spi::QueryError;
+use snafu::ResultExt;
+use spi::{CommonSnafu, CoordinatorSnafu, QueryError};
 use trace::span_ext::SpanExt;
 use trace::{debug, Span, SpanContext};
 use tskv::reader::QueryOption;
@@ -241,12 +242,13 @@ impl TagScanStream {
             if let Some(v) = table_schema.column(field_name) {
                 proj_fileds.push(v.clone());
             } else {
-                return Err(QueryError::CommonError {
+                return Err(CommonSnafu {
                     msg: format!(
                         "tag scan stream build fail, because can't found field: {}",
                         field_name
                     ),
-                });
+                }
+                .build());
             }
         }
         let proj_table_schema = TskvTableSchema::new(
@@ -265,7 +267,9 @@ impl TagScanStream {
         );
 
         let span_ctx = span.context();
-        let stream = coord.tag_scan(option, span_ctx.as_ref())?;
+        let stream = coord
+            .tag_scan(option, span_ctx.as_ref())
+            .context(CoordinatorSnafu)?;
 
         Ok(Self {
             proj_schema,

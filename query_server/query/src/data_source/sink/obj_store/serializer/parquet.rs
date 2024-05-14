@@ -11,7 +11,9 @@ use datafusion::physical_plan::SendableRecordBatchStream;
 use futures::{pin_mut, TryStreamExt};
 use snafu::ResultExt;
 use spi::query::datasource::WriteContext;
-use spi::{BuildParquetArrowWriterSnafu, CloseParquetWriterSnafu, Result, SerializeParquetSnafu};
+use spi::{
+    BuildParquetArrowWriterSnafu, CloseParquetWriterSnafu, QueryResult, SerializeParquetSnafu,
+};
 
 use crate::data_source::sink::RecordBatchSerializer;
 
@@ -23,7 +25,7 @@ impl RecordBatchSerializer for ParquetRecordBatchSerializer {
         &self,
         ctx: &WriteContext,
         stream: SendableRecordBatchStream,
-    ) -> Result<(usize, Bytes)> {
+    ) -> QueryResult<(usize, Bytes)> {
         let (data, parquet_file_meta) = to_parquet_bytes(ctx, stream).await?;
         let num_rows = parquet_file_meta.num_rows as usize;
         Ok((num_rows, Bytes::from(data)))
@@ -34,7 +36,7 @@ impl RecordBatchSerializer for ParquetRecordBatchSerializer {
         _ctx: &WriteContext,
         schema: SchemaRef,
         batches: &[RecordBatch],
-    ) -> Result<(usize, Bytes)> {
+    ) -> QueryResult<(usize, Bytes)> {
         let mut bytes = vec![];
         let file_meta_data = {
             let mut writer = ArrowWriter::try_new(&mut bytes, schema, None)
@@ -56,7 +58,7 @@ impl RecordBatchSerializer for ParquetRecordBatchSerializer {
 pub async fn to_parquet_bytes(
     ctx: &WriteContext,
     batches: SendableRecordBatchStream,
-) -> Result<(Vec<u8>, parquet::format::FileMetaData)> {
+) -> QueryResult<(Vec<u8>, parquet::format::FileMetaData)> {
     let mut bytes = vec![];
     let meta = to_parquet(ctx, batches, &mut bytes).await?;
     bytes.shrink_to_fit();
@@ -68,7 +70,7 @@ pub async fn to_parquet<W>(
     _ctx: &WriteContext,
     batches: SendableRecordBatchStream,
     output: W,
-) -> Result<parquet::format::FileMetaData>
+) -> QueryResult<parquet::format::FileMetaData>
 where
     W: Write + Send,
 {

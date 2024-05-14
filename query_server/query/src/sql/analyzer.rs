@@ -4,7 +4,7 @@ use datafusion::logical_expr::LogicalPlan;
 use datafusion::optimizer::analyzer::Analyzer as DFAnalyzer;
 use spi::query::analyzer::Analyzer;
 use spi::query::session::SessionCtx;
-use spi::Result;
+use spi::QueryResult;
 
 use crate::extension::analyse::initial_plan_checker::InitialPlanChecker;
 use crate::extension::analyse::transform_bottom_func_to_topk_node::TransformBottomFuncToTopkNodeRule;
@@ -42,7 +42,7 @@ impl Default for DefaultAnalyzer {
 }
 
 impl Analyzer for DefaultAnalyzer {
-    fn analyze(&self, plan: &LogicalPlan, session: &SessionCtx) -> Result<LogicalPlan> {
+    fn analyze(&self, plan: &LogicalPlan, session: &SessionCtx) -> QueryResult<LogicalPlan> {
         let plan =
             self.inner
                 .execute_and_check(plan, session.inner().config_options(), |_, _| {})?;

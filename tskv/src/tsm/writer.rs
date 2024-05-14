@@ -7,11 +7,11 @@ use std::sync::Arc;
 use models::predicate::domain::TimeRange;
 use models::schema::TskvTableSchemaRef;
 use models::{SeriesId, SeriesKey};
-use snafu::ResultExt;
+use snafu::{OptionExt, ResultExt};
 use utils::BloomFilter;
 
 use crate::compaction::CompactingBlock;
-use crate::error::IOSnafu;
+use crate::error::{CommonSnafu, IOSnafu};
 use crate::file_system::async_filesystem::{LocalFileSystem, LocalFileType};
 use crate::file_system::file::stream_writer::FileStreamWriter;
 use crate::file_system::FileSystem;
@@ -149,12 +149,12 @@ impl TsmWriter {
         for (table, group) in &self.chunk_specs {
             let chunk_group_offset = self.writer.len() as u64;
             let buf = group.serialize()?;
-            let chunk_group_size = self.writer.write(&buf).await?;
-            self.size += chunk_group_size as u64;
+            let chunk_group_size = self.writer.write(&buf).await.context(IOSnafu)? as u64;
+            self.size += chunk_group_size;
             let chunk_group_spec = ChunkGroupWriteSpec {
                 table_schema: self.table_schemas.get(table).unwrap().clone(),
                 chunk_group_offset,
-                chunk_group_size: chunk_group_size as u64,
+                chunk_group_size,
                 time_range: group.time_range(),
                 // The number of chunks in the group.
                 count: 0,
@@ -167,7 +167,7 @@ impl TsmWriter {
     pub async fn write_chunk_group_specs(&mut self, series: SeriesMeta) -> TskvResult<()> {
         let chunk_group_specs_offset = self.writer.len() as u64;
         let buf = self.chunk_group_specs.serialize()?;
-        let chunk_group_specs_size = self.writer.write(&buf).await?;
+        let chunk_group_specs_size = self.writer.write(&buf).await.context(IOSnafu)?;
         self.size += chunk_group_specs_size as u64;
         let time_range = self.chunk_group_specs.time_range();
         self.footer.set_time_range(time_range);
@@ -185,7 +185,7 @@ impl TsmWriter {
             for (series, chunk) in group {
                 let chunk_offset = self.writer.len() as u64;
                 let buf = chunk.serialize()?;
-                let chunk_size = self.writer.write(&buf).await? as u64;
+                let chunk_size = self.writer.write(&buf).await.context(IOSnafu)? as u64;
                 self.size += chunk_size;
                 let time_range = chunk.time_range();
                 self.min_ts = min(self.min_ts, time_range.min_ts);
@@ -244,9 +244,10 @@ impl TsmWriter {
         datablock: DataBlock,
     ) -> TskvResult<()> {
         if self.state == State::Finished {
-            return Err(TskvError::CommonError {
-                reason: "Tsm2Writer has been finished".to_string(),
-            });
+            return Err(CommonSnafu {
+                reason: "TsmWriter has been finished".to_string(),
+            }
+            .build());
         }
 
         let time_range = datablock.time_range()?;
@@ -275,7 +276,7 @@ impl TsmWriter {
         let table = schema.name.clone();
         for page in pages {
             let offset = self.writer.len() as u64;
-            let size = self.writer.write(&page.bytes).await?;
+            let size = self.writer.write(&page.bytes).await.context(IOSnafu)?;
             self.size += size as u64;
             let spec = PageWriteSpec {
                 offset,
@@ -310,16 +311,16 @@ impl TsmWriter {
             self.create_column_group(schema.clone(), meta.series_id(), meta.series_key());
 
         let mut offset = self.writer.len() as u64;
-        let size = self.writer.write(&raw).await?;
+        let size = self.writer.write(&raw).await.context(IOSnafu)?;
         self.size += size as u64;
 
         let table = schema.name.to_string();
-        let column_group =
-            meta.column_group()
-                .get(&column_group_id)
-                .ok_or(TskvError::CommonError {
-                    reason: format!("column group not found: {}", column_group_id),
-                })?;
+        let column_group = meta
+            .column_group()
+            .get(&column_group_id)
+            .context(CommonSnafu {
+                reason: format!("column group not found: {}", column_group_id),
+            })?;
         for spec in column_group.pages() {
             let spec = PageWriteSpec {
                 offset,
@@ -392,7 +393,7 @@ impl TsmWriter {
         self.write_chunk_group().await?;
         self.write_chunk_group_specs(series_meta).await?;
         self.write_footer().await?;
-        self.writer.flush().await?;
+        self.writer.flush().await.context(IOSnafu)?;
         self.state = State::Finished;
         Ok(())
     }

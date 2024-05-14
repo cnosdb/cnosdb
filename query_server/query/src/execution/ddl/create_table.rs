@@ -6,7 +6,7 @@ use models::schema::{TableSchema, TskvTableSchema};
 use snafu::ResultExt;
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::CreateTable;
-use spi::{QueryError, Result};
+use spi::{MetaSnafu, QueryError, QueryResult};
 
 use crate::execution::ddl::DDLDefinitionTask;
 
@@ -22,7 +22,7 @@ impl CreateTableTask {
 
 #[async_trait]
 impl DDLDefinitionTask for CreateTableTask {
-    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output> {
+    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> QueryResult<Output> {
         let res = create_table(&self.stmt, query_state_machine).await;
         if self.stmt.if_not_exists
             && matches!(
@@ -38,23 +38,23 @@ impl DDLDefinitionTask for CreateTableTask {
     }
 }
 
-async fn create_table(stmt: &CreateTable, machine: QueryStateMachineRef) -> Result<()> {
+async fn create_table(stmt: &CreateTable, machine: QueryStateMachineRef) -> QueryResult<()> {
     let CreateTable { name, .. } = stmt;
 
-    let client =
-        machine
-            .meta
-            .tenant_meta(name.tenant())
-            .await
-            .ok_or(MetaError::TenantNotFound {
-                tenant: name.tenant().to_string(),
-            })?;
+    let client = machine
+        .meta
+        .tenant_meta(name.tenant())
+        .await
+        .ok_or_else(|| MetaError::TenantNotFound {
+            tenant: name.tenant().to_string(),
+        })
+        .context(MetaSnafu)?;
 
     let table_schema = build_schema(stmt);
     client
         .create_table(&TableSchema::TsKvTableSchema(Arc::new(table_schema)))
         .await
-        .context(spi::MetaSnafu)
+        .context(MetaSnafu)
 }
 
 fn build_schema(stmt: &CreateTable) -> TskvTableSchema {

@@ -14,7 +14,7 @@ use parking_lot::RwLock;
 use spi::query::dispatcher::{QueryInfo, QueryStatus};
 use spi::query::execution::{Output, QueryExecution, QueryExecutionRef, QueryType};
 use spi::service::protocol::QueryId;
-use spi::{QueryError, Result};
+use spi::{QueryError, QueryResult};
 use trace::{debug, warn};
 
 use super::persister::QueryPersisterRef;
@@ -46,7 +46,7 @@ impl QueryTracker {
         self: &Arc<Self>,
         query_id: QueryId,
         query: Arc<dyn QueryExecution>,
-    ) -> Result<TrackedQuery> {
+    ) -> QueryResult<TrackedQuery> {
         debug!(
             "total query count: {}, status {:?}",
             self.queries.read().len(),
@@ -92,7 +92,7 @@ impl QueryTracker {
     }
 
     /// all persistent queries
-    pub async fn persistent_queries(&self) -> Result<Vec<QueryInfo>> {
+    pub async fn persistent_queries(&self) -> QueryResult<Vec<QueryInfo>> {
         self.query_persister.queries().await
     }
 
@@ -114,7 +114,11 @@ impl QueryTracker {
         })
     }
 
-    async fn save_query(&self, query_id: QueryId, query: Arc<dyn QueryExecution>) -> Result<()> {
+    async fn save_query(
+        &self,
+        query_id: QueryId,
+        query: Arc<dyn QueryExecution>,
+    ) -> QueryResult<()> {
         if self.queries.read().len() >= self.query_limit {
             warn!("simultaneous request limit exceeded - dropping request");
             return Err(QueryError::RequestLimit);
@@ -166,7 +170,7 @@ impl QueryExecution for QueryExecutionTrackedProxy {
         self.inner.query_type()
     }
 
-    async fn start(&self) -> Result<Output> {
+    async fn start(&self) -> QueryResult<Output> {
         match self.inner.start().await {
             Ok(Output::StreamData(stream)) => {
                 debug!("Track RecordBatchStream: {:?}", self.query_id);
@@ -193,7 +197,7 @@ impl QueryExecution for QueryExecutionTrackedProxy {
         }
     }
 
-    fn cancel(&self) -> Result<()> {
+    fn cancel(&self) -> QueryResult<()> {
         self.inner.cancel()
     }
 

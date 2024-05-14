@@ -18,7 +18,8 @@ use models::predicate::domain::TimeRange;
 
 use super::metrics::BaselineMetrics;
 use super::{Predicate, SchemableTskvRecordBatchStream, SendableSchemableTskvRecordBatchStream};
-use crate::{TskvError, TskvResult};
+use crate::error::MismatchedSchemaSnafu;
+use crate::TskvResult;
 
 pub struct OverlappingSegments<T: TimeRangeProvider> {
     segments: Vec<T>,
@@ -121,13 +122,14 @@ impl CombinedRecordBatchStream {
     ) -> TskvResult<Self> {
         for s in &entries {
             if s.schema().fields() != schema.fields() {
-                return Err(TskvError::MismatchedSchema {
+                return Err(MismatchedSchemaSnafu {
                     msg: format!(
                         "in combined stream. Expected: {:?}, got {:?}",
                         schema,
                         s.schema()
                     ),
-                });
+                }
+                .build());
             }
         }
 

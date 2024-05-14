@@ -9,7 +9,7 @@ use datafusion::optimizer::analyzer::AnalyzerRule;
 use datafusion::prelude::{col, Expr};
 use models::schema::TskvTableSchema;
 use spi::query::logical_planner::{affected_row_expr, merge_affected_row_expr};
-use spi::QueryError;
+use spi::{AnalyzerSnafu, QueryError};
 
 use crate::data_source::table_source::{TableHandle, TableSourceAdapter};
 use crate::extension::logical::logical_plan_builder::LogicalPlanBuilderExt;
@@ -86,14 +86,17 @@ fn analyze_internal(plan: LogicalPlan) -> DFResult<Transformed<LogicalPlan>> {
                         return update_field(update_node).map(Transformed::Yes);
                     }
 
-                    return Err(DataFusionError::External(Box::new(QueryError::Analyzer {
+                    return Err(DataFusionError::External(Box::new(AnalyzerSnafu {
                         err: "Update the time/tag/field columns at the same statement is not supported".to_string(),
-                    })));
+                    }.build())));
                 }
                 _ => {
-                    return Err(DataFusionError::External(Box::new(QueryError::Analyzer {
-                        err: "Only support update tskv table".to_string(),
-                    })))
+                    return Err(DataFusionError::External(Box::new(
+                        AnalyzerSnafu {
+                            err: "Only support update tskv table".to_string(),
+                        }
+                        .build(),
+                    )))
                 }
             }
         }
@@ -127,12 +130,15 @@ fn update_tag(update_node: &UpdateNode, schema: Arc<TskvTableSchema>) -> DFResul
         match schema.column(&col.name) {
             Some(col) => {
                 if !col.column_type.is_tag() {
-                    return Err(DataFusionError::External(Box::new(QueryError::Analyzer {
-                        err: format!(
-                            "Where clause cannot contain field/time column, but found: {}",
-                            col.name
-                        ),
-                    })));
+                    return Err(DataFusionError::External(Box::new(
+                        AnalyzerSnafu {
+                            err: format!(
+                                "Where clause cannot contain field/time column, but found: {}",
+                                col.name
+                            ),
+                        }
+                        .build(),
+                    )));
                 }
             }
             None => {

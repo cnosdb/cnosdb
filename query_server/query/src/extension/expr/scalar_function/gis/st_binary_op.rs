@@ -3,11 +3,11 @@ use datafusion::arrow::datatypes::DataType;
 use datafusion::common::DataFusionError;
 use geo::{Contains, Geometry, Intersects, Relate};
 use spi::query::function::FunctionMetadataManager;
-use spi::{DFResult, Result};
+use spi::{DFResult, QueryResult};
 
 use crate::geometry_binary_op;
 
-pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> Result<()> {
+pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<()> {
     let udf = geometry_binary_op!("ST_Equals", equals, DataType::Boolean, BooleanBuilder);
     func_manager.register_udf(udf)?;
     let udf = geometry_binary_op!("ST_Contains", contains, DataType::Boolean, BooleanBuilder);

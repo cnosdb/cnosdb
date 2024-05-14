@@ -8,7 +8,7 @@ use super::privilege::{
     DatabasePrivilege, GlobalPrivilege, Privilege, PrivilegeChecker, TenantObjectPrivilege,
 };
 use super::role::{TenantRoleIdentifier, UserRole};
-use super::{rsa_utils, AuthError, Result};
+use super::{rsa_utils, AuthError, AuthResult};
 use crate::auth::{bcrypt_hash, bcrypt_verify};
 use crate::oid::{Identifier, Oid};
 
@@ -233,7 +233,7 @@ impl<'a> From<&'a UserOptions> for AuthType<'a> {
 }
 
 impl<'a> AuthType<'a> {
-    pub fn access_check(&self, user_info: &UserInfo) -> Result<()> {
+    pub fn access_check(&self, user_info: &UserInfo) -> AuthResult<()> {
         let user_name = user_info.user.as_str();
         let password = user_info.password.as_str();
 

@@ -5,7 +5,7 @@ use datafusion::logical_expr::LogicalPlan;
 use datafusion::physical_plan::ExecutionPlan;
 
 use super::session::SessionCtx;
-use crate::Result;
+use crate::QueryResult;
 
 pub type OptimizerRef = Arc<dyn Optimizer + Send + Sync>;
 
@@ -15,5 +15,5 @@ pub trait Optimizer {
         &self,
         plan: &LogicalPlan,
         session: &SessionCtx,
-    ) -> Result<Arc<dyn ExecutionPlan>>;
+    ) -> QueryResult<Arc<dyn ExecutionPlan>>;
 }

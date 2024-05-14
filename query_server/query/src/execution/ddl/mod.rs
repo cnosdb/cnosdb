@@ -3,7 +3,7 @@ use spi::query::datasource::stream::checker::StreamCheckerManagerRef;
 use spi::query::dispatcher::{QueryInfo, QueryStatus};
 use spi::query::execution::{Output, QueryExecution, QueryStateMachineRef};
 use spi::query::logical_planner::DDLPlan;
-use spi::Result;
+use spi::QueryResult;
 
 use self::alter_tenant::AlterTenantTask;
 use self::alter_user::AlterUserTask;
@@ -64,7 +64,7 @@ mod show_replica;
 /// Traits that DDL tasks should implement
 #[async_trait]
 trait DDLDefinitionTask: Send + Sync {
-    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output>;
+    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> QueryResult<Output>;
 }
 
 pub struct DDLExecution {
@@ -92,7 +92,7 @@ impl DDLExecution {
 impl QueryExecution for DDLExecution {
     // execute ddl task
     // This logic usually does not change
-    async fn start(&self) -> Result<Output> {
+    async fn start(&self) -> QueryResult<Output> {
         let query_state_machine = &self.query_state_machine;
 
         query_state_machine.begin_schedule();
@@ -113,7 +113,7 @@ impl QueryExecution for DDLExecution {
         result
     }
 
-    fn cancel(&self) -> Result<()> {
+    fn cancel(&self) -> QueryResult<()> {
         // ddl ignore
         Ok(())
     }

@@ -6,6 +6,7 @@ use memory_pool::MemoryPoolRef;
 use meta::error::MetaError;
 use meta::model::MetaClientRef;
 use models::oid::Oid;
+use snafu::ResultExt;
 use spi::query::ast::ExtStatement;
 use spi::query::datasource::stream::StreamProviderManagerRef;
 use spi::query::dispatcher::{QueryDispatcher, QueryInfo, QueryStatus};
@@ -15,7 +16,7 @@ use spi::query::logical_planner::{LogicalPlanner, Plan};
 use spi::query::parser::Parser;
 use spi::query::session::{SessionCtx, SessionCtxFactory};
 use spi::service::protocol::{ContextBuilder, Query, QueryId};
-use spi::{QueryError, Result};
+use spi::{MetaSnafu, QueryError, QueryResult};
 use trace::span_ext::SpanExt;
 use trace::{info, Span, SpanContext};
 
@@ -49,7 +50,7 @@ pub struct SimpleQueryDispatcher {
 
 #[async_trait]
 impl QueryDispatcher for SimpleQueryDispatcher {
-    async fn start(&self) -> Result<()> {
+    async fn start(&self) -> QueryResult<()> {
         // 执行被持久化的任务
         let queries = self.query_tracker.persistent_queries().await?;
 
@@ -99,7 +100,7 @@ impl QueryDispatcher for SimpleQueryDispatcher {
         query_id: QueryId,
         query: &Query,
         span_ctx: Option<&SpanContext>,
-    ) -> Result<Output> {
+    ) -> QueryResult<Output> {
         let query_state_machine = {
             let _span = Span::from_context("init session ctx", span_ctx);
             self.build_query_state_machine(tenant_id, query_id, query.clone(), span_ctx)
@@ -120,7 +121,7 @@ impl QueryDispatcher for SimpleQueryDispatcher {
     async fn build_logical_plan(
         &self,
         query_state_machine: Arc<QueryStateMachine>,
-    ) -> Result<Option<Plan>> {
+    ) -> QueryResult<Option<Plan>> {
         let session = &query_state_machine.session;
         let query = &query_state_machine.query;
 
@@ -156,7 +157,7 @@ impl QueryDispatcher for SimpleQueryDispatcher {
         &self,
         logical_plan: Plan,
         query_state_machine: Arc<QueryStateMachine>,
-    ) -> Result<Output> {
+    ) -> QueryResult<Output> {
         self.execute_logical_plan(logical_plan, query_state_machine)
             .await
     }
@@ -167,7 +168,7 @@ impl QueryDispatcher for SimpleQueryDispatcher {
         query_id: QueryId,
         query: Query,
         span_ctx: Option<&SpanContext>,
-    ) -> Result<Arc<QueryStateMachine>> {
+    ) -> QueryResult<Arc<QueryStateMachine>> {
         let session = self.session_factory.create_session_ctx(
             query_id.to_string(),
             query.context(),
@@ -213,7 +214,7 @@ impl SimpleQueryDispatcher {
         stmt: ExtStatement,
         logical_planner: &DefaultLogicalPlanner<'_, S>,
         query_state_machine: Arc<QueryStateMachine>,
-    ) -> Result<Plan> {
+    ) -> QueryResult<Plan> {
         // begin analyze
         query_state_machine.begin_analyze();
         let logical_plan = logical_planner
@@ -232,7 +233,7 @@ impl SimpleQueryDispatcher {
         &self,
         logical_plan: Plan,
         query_state_machine: Arc<QueryStateMachine>,
-    ) -> Result<Output> {
+    ) -> QueryResult<Output> {
         let execution = self
             .query_execution_factory
             .create_query_execution(logical_plan, query_state_machine.clone())?;
@@ -245,7 +246,7 @@ impl SimpleQueryDispatcher {
             .await
     }
 
-    async fn build_scheme_provider(&self, session: &SessionCtx) -> Result<MetadataProvider> {
+    async fn build_scheme_provider(&self, session: &SessionCtx) -> QueryResult<MetadataProvider> {
         let meta_client = self.build_current_session_meta_client(session).await?;
         let current_session_table_provider =
             self.build_table_handle_provider(meta_client.clone())?;
@@ -265,14 +266,15 @@ impl SimpleQueryDispatcher {
     async fn build_current_session_meta_client(
         &self,
         session: &SessionCtx,
-    ) -> Result<MetaClientRef> {
+    ) -> QueryResult<MetaClientRef> {
         let meta_client = self
             .coord
             .tenant_meta(session.tenant())
             .await
             .ok_or_else(|| MetaError::TenantNotFound {
                 tenant: session.tenant().to_string(),
-            })?;
+            })
+            .context(MetaSnafu)?;
 
         Ok(meta_client)
     }
@@ -280,7 +282,7 @@ impl SimpleQueryDispatcher {
     fn build_table_handle_provider(
         &self,
         meta_client: MetaClientRef,
-    ) -> Result<TableHandleProviderRef> {
+    ) -> QueryResult<TableHandleProviderRef> {
         let current_session_table_provider: Arc<BaseTableProvider> =
             Arc::new(BaseTableProvider::new(
                 self.coord.clone(),
@@ -375,7 +377,7 @@ impl SimpleQueryDispatcherBuilder {
         self
     }
 
-    pub fn build(self) -> Result<SimpleQueryDispatcher> {
+    pub fn build(self) -> QueryResult<SimpleQueryDispatcher> {
         let coord = self.coord.ok_or_else(|| QueryError::BuildQueryDispatcher {
             err: "lost of coord".to_string(),
         })?;

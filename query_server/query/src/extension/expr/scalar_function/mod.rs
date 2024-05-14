@@ -14,7 +14,7 @@ use std::sync::Arc;
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::ScalarFunctionImplementation;
 use spi::query::function::FunctionMetadataManager;
-use spi::Result;
+use spi::QueryResult;
 
 use super::ts_gen_func::TSGenFunc;
 
@@ -24,7 +24,7 @@ pub const INTERPOLATE: &str = "interpolate";
 pub const DURATION_IN: &str = "duration_in";
 pub const STATE_AT: &str = "state_at";
 
-pub fn register_udfs(func_manager: &mut dyn FunctionMetadataManager) -> Result<()> {
+pub fn register_udfs(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<()> {
     // extend function...
     // eg.
     //   example::register_udf(func_manager)?;

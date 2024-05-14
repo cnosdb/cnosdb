@@ -17,14 +17,15 @@ use models::{ColumnId, RwLockRef, SeriesId, SeriesKey, Timestamp};
 use parking_lot::RwLock;
 use protos::models::{Column, FieldType};
 use skiplist::OrderedSkipList;
+use snafu::OptionExt;
 use trace::error;
 use utils::bitset::ImmutBitSet;
 
 use crate::database::FbSchema;
-use crate::error::TskvResult;
+use crate::error::{CommonSnafu, FieldsIsEmptySnafu, MemoryExhaustedSnafu, TskvResult};
 use crate::tsm::data_block::{DataBlock, MutableColumn};
 use crate::tsm::TsmWriteData;
-use crate::{TseriesFamilyId, TskvError};
+use crate::TseriesFamilyId;
 
 // use skiplist::ordered_skiplist::OrderedSkipList;
 
@@ -160,17 +161,15 @@ impl RowData {
             }
 
             if !has_fields {
-                return Err(TskvError::FieldsIsEmpty);
+                return Err(FieldsIsEmptySnafu.build());
             }
 
             let ts_column = columns.get(fb_schema.time_index);
             let ts = ts_column.int_values()?.get(row_count);
             let to_precision = schema.time_column_precision();
-            let ts = timestamp_convert(from_precision, to_precision, ts).ok_or(
-                TskvError::CommonError {
-                    reason: "timestamp overflow".to_string(),
-                },
-            )?;
+            let ts = timestamp_convert(from_precision, to_precision, ts).context(CommonSnafu {
+                reason: "timestamp overflow".to_string(),
+            })?;
             res.push(RowData { ts, fields });
         }
         Ok(res)
@@ -560,15 +559,17 @@ impl SeriesData {
 
             let cols_desc = cols_desc.into_iter().flatten().collect::<Vec<_>>();
             if cols_desc.len() != cols.len() {
-                return Err(TskvError::CommonError {
+                return Err(CommonSnafu {
                     reason: "Invalid cols_desc".to_string(),
-                });
+                }
+                .build());
             }
 
             if !time_array.valid().is_all_set() || !delta_time_array.valid().is_all_set() {
-                return Err(TskvError::CommonError {
+                return Err(CommonSnafu {
                     reason: "Invalid time array in DataBlock".to_string(),
-                });
+                }
+                .build());
             }
             return Ok(Some((
                 schema.name.clone(),
@@ -694,7 +695,7 @@ impl MemCache {
         self.memory
             .write()
             .try_grow(group.size)
-            .map_err(|_| TskvError::MemoryExhausted)?;
+            .map_err(|_| MemoryExhaustedSnafu.build())?;
         let index = (sid as usize) % self.part_count;
         let mut series_map = self.partions[index].write();
         if let Some(series_data) = series_map.get(&sid) {

@@ -1,15 +1,16 @@
 use std::borrow::Cow;
 
 use async_recursion::async_recursion;
-use meta::error::MetaError;
+use meta::error::{MetaError, TenantNotFoundSnafu};
 use meta::model::{MetaClientRef, MetaRef};
 use models::codec::Encoding;
 use models::schema::{
     ColumnType, DatabaseSchema, TableColumn, TableSchema, TskvTableSchema, TskvTableSchemaRef,
 };
+use snafu::OptionExt;
 
 use crate::database::FbSchema;
-use crate::schema::error::{Result, SchemaError};
+use crate::schema::error::{ColumnTypeSnafu, SchemaResult};
 
 #[derive(Debug)]
 pub struct DBschemas {
@@ -19,11 +20,11 @@ pub struct DBschemas {
 }
 
 impl DBschemas {
-    pub async fn new(db_schema: DatabaseSchema, meta: MetaRef) -> Result<Self> {
+    pub async fn new(db_schema: DatabaseSchema, meta: MetaRef) -> SchemaResult<Self> {
         let client =
             meta.tenant_meta(db_schema.tenant_name())
                 .await
-                .ok_or(SchemaError::TenantNotFound {
+                .context(TenantNotFoundSnafu {
                     tenant: db_schema.tenant_name().to_string(),
                 })?;
 
@@ -46,12 +47,12 @@ impl DBschemas {
         &self.tenant_name
     }
 
-    async fn tenant_meta(&self) -> Result<MetaClientRef> {
+    async fn tenant_meta(&self) -> SchemaResult<MetaClientRef> {
         let client =
             self.meta
                 .tenant_meta(self.tenant_name())
                 .await
-                .ok_or(SchemaError::TenantNotFound {
+                .context(TenantNotFoundSnafu {
                     tenant: self.tenant_name().to_string(),
                 })?;
 
@@ -63,7 +64,7 @@ impl DBschemas {
         &self,
         fb_schema: &'a FbSchema<'a>,
         get_schema_from_meta: bool,
-    ) -> Result<TskvTableSchemaRef> {
+    ) -> SchemaResult<TskvTableSchemaRef> {
         let mut schema_changed = false;
         let mut new_schema = false;
         if get_schema_from_meta {
@@ -96,11 +97,12 @@ impl DBschemas {
             match schema.column(tag_name) {
                 Some(column) => {
                     if !column.column_type.is_tag() {
-                        return Err(SchemaError::ColumnTypeError {
+                        return Err(ColumnTypeSnafu {
                             column: tag_name.to_string(),
                             found: ColumnType::Tag,
                             expected: column.column_type.clone(),
-                        });
+                        }
+                        .build());
                     }
                 }
                 None => {
@@ -121,14 +123,14 @@ impl DBschemas {
         {
             match schema.column(field_name) {
                 Some(column) => {
-                    let column_type =
-                        models::schema::ColumnType::from_proto_field_type(*field_type);
+                    let column_type = ColumnType::from_proto_field_type(*field_type);
                     if !column.column_type.matches_type(&column_type) {
-                        return Err(SchemaError::ColumnTypeError {
+                        return Err(ColumnTypeSnafu {
                             column: field_name.to_string(),
                             found: column_type,
                             expected: column.column_type.clone(),
-                        });
+                        }
+                        .build());
                     }
                 }
                 None => {
@@ -183,13 +185,13 @@ impl DBschemas {
     pub async fn check_field_type_or_else_add(
         &self,
         fb_schema: &FbSchema<'_>,
-    ) -> Result<TskvTableSchemaRef> {
+    ) -> SchemaResult<TskvTableSchemaRef> {
         //load schema first from cache
         self.check_field_type_or_else_add_impl(fb_schema, false)
             .await
     }
 
-    pub async fn get_table_schema(&self, tab: &str) -> Result<Option<TskvTableSchemaRef>> {
+    pub async fn get_table_schema(&self, tab: &str) -> SchemaResult<Option<TskvTableSchemaRef>> {
         let schema = self
             .tenant_meta()
             .await?
@@ -198,7 +200,10 @@ impl DBschemas {
         Ok(schema)
     }
 
-    pub async fn get_table_schema_by_meta(&self, tab: &str) -> Result<Option<TskvTableSchemaRef>> {
+    pub async fn get_table_schema_by_meta(
+        &self,
+        tab: &str,
+    ) -> SchemaResult<Option<TskvTableSchemaRef>> {
         let schema = self
             .tenant_meta()
             .await?
@@ -208,13 +213,13 @@ impl DBschemas {
         Ok(schema)
     }
 
-    pub async fn list_tables(&self) -> Result<Vec<String>> {
+    pub async fn list_tables(&self) -> SchemaResult<Vec<String>> {
         let tables = self.tenant_meta().await?.list_tables(&self.database_name)?;
 
         Ok(tables)
     }
 
-    pub async fn del_table_schema(&self, tab: &str) -> Result<()> {
+    pub async fn del_table_schema(&self, tab: &str) -> SchemaResult<()> {
         self.tenant_meta()
             .await?
             .drop_table(&self.database_name, tab)
@@ -222,12 +227,12 @@ impl DBschemas {
         Ok(())
     }
 
-    pub async fn db_schema(&self) -> Result<DatabaseSchema> {
+    pub async fn db_schema(&self) -> SchemaResult<DatabaseSchema> {
         let db_schema = self
             .tenant_meta()
             .await?
             .get_db_schema(&self.database_name)?
-            .ok_or(MetaError::DatabaseNotFound {
+            .ok_or_else(|| MetaError::DatabaseNotFound {
                 database: self.database_name.clone(),
             })?;
         Ok(db_schema)

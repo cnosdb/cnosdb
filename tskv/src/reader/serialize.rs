@@ -4,9 +4,10 @@ use std::task::{Context, Poll};
 use futures::{ready, Stream, StreamExt};
 use models::record_batch_encode;
 use protos::kv_service::BatchBytesResponse;
+use snafu::IntoError;
 use trace::Span;
 
-use crate::error::{TskvError, TskvResult};
+use crate::error::{ArrowSnafu, TskvResult};
 use crate::reader::SendableTskvRecordBatchStream;
 
 pub struct TonicRecordBatchEncoder {
@@ -34,10 +35,7 @@ impl Stream for TonicRecordBatchEncoder {
                     };
                     Poll::Ready(Some(Ok(resp)))
                 }
-                Err(err) => {
-                    let err = TskvError::Arrow { source: err };
-                    Poll::Ready(Some(Err(err)))
-                }
+                Err(err) => Poll::Ready(Some(Err(ArrowSnafu.into_error(err)))),
             },
             Some(Err(err)) => Poll::Ready(Some(Err(err))),
             None => Poll::Ready(None),

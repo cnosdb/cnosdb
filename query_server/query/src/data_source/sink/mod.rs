@@ -4,7 +4,7 @@ use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::physical_plan::SendableRecordBatchStream;
 use spi::query::datasource::WriteContext;
-use spi::Result;
+use spi::QueryResult;
 
 pub mod obj_store;
 pub mod tskv;
@@ -20,7 +20,7 @@ pub trait RecordBatchSerializer {
         &self,
         ctx: &WriteContext,
         stream: SendableRecordBatchStream,
-    ) -> Result<(usize, Bytes)>;
+    ) -> QueryResult<(usize, Bytes)>;
     /// Serialize multi [`RecordBatch`] into a bytes array.
     ///
     /// Return the number of data rows and bytes array.
@@ -29,5 +29,5 @@ pub trait RecordBatchSerializer {
         ctx: &WriteContext,
         schema: SchemaRef,
         batches: &[RecordBatch],
-    ) -> Result<(usize, Bytes)>;
+    ) -> QueryResult<(usize, Bytes)>;
 }

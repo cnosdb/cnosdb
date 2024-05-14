@@ -5,6 +5,7 @@ use futures::TryStreamExt;
 use meta::model::MetaRef;
 use models::meta_data::VnodeInfo;
 use protos::{tskv_service_time_out_client, DEFAULT_GRPC_SERVER_MESSAGE_LEN};
+use snafu::{IntoError, ResultExt};
 use tokio::runtime::Runtime;
 use trace::http::http_ctx::grpc_append_trace_context;
 use trace::span_ext::SpanExt;
@@ -13,7 +14,7 @@ use tskv::reader::table_scan::LocalTskvTableScanStream;
 use tskv::reader::QueryOption;
 use tskv::EngineRef;
 
-use crate::errors::{CoordinatorError, CoordinatorResult};
+use crate::errors::{CommonSnafu, CoordinatorError, CoordinatorResult, ModelsSnafu, TskvSnafu};
 use crate::reader::deserialize::TonicRecordBatchDecoder;
 use crate::reader::{VnodeOpenFuture, VnodeOpener};
 use crate::SendableCoordinatorRecordBatchStream;
@@ -76,7 +77,7 @@ impl VnodeOpener for TemporaryTableScanOpener {
                         span_ctx.as_ref(),
                     ),
                 )
-                .map_err(Into::into);
+                .map_err(|e| TskvSnafu.into_error(e));
 
                 Ok(Box::pin(stream) as SendableCoordinatorRecordBatchStream)
             } else {
@@ -85,13 +86,16 @@ impl VnodeOpener for TemporaryTableScanOpener {
                     let vnode_ids = vec![vnode_id];
                     let req = option
                         .to_query_record_batch_request(vnode_ids)
-                        .map_err(CoordinatorError::from)?;
+                        .context(ModelsSnafu)?;
                     tonic::Request::new(req)
                 };
 
                 grpc_append_trace_context(span_ctx.as_ref(), request.metadata_mut()).map_err(
-                    |_| CoordinatorError::CommonError {
-                        msg: "Parse trace_id, this maybe a bug".to_string(),
+                    |_| {
+                        CommonSnafu {
+                            msg: "Parse trace_id, this maybe a bug".to_string(),
+                        }
+                        .build()
                     },
                 )?;
 

@@ -3,7 +3,7 @@ use meta::error::MetaError;
 use snafu::ResultExt;
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::CreateUser;
-use spi::{MetaSnafu, Result};
+use spi::{MetaSnafu, QueryResult};
 use trace::debug;
 
 use crate::execution::ddl::DDLDefinitionTask;
@@ -20,7 +20,7 @@ impl CreateUserTask {
 
 #[async_trait]
 impl DDLDefinitionTask for CreateUserTask {
-    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output> {
+    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> QueryResult<Output> {
         let CreateUser {
             ref name,
             ref if_not_exists,
@@ -32,7 +32,11 @@ impl DDLDefinitionTask for CreateUserTask {
         //     &self,
         //     name: &str
         // ) -> Result<Option<UserDesc>>;
-        let user = query_state_machine.meta.user(name).await?;
+        let user = query_state_machine
+            .meta
+            .user(name)
+            .await
+            .context(MetaSnafu)?;
 
         match (if_not_exists, user) {
             // do not create if exists
@@ -56,7 +60,8 @@ impl DDLDefinitionTask for CreateUserTask {
                 query_state_machine
                     .meta
                     .create_user(name.clone(), options.clone(), false)
-                    .await?;
+                    .await
+                    .context(MetaSnafu)?;
 
                 Ok(Output::Nil(()))
             }

@@ -203,12 +203,12 @@ impl GapFillStream {
             .time_expr
             .evaluate(&input_batch)?
             .into_array(input_batch.num_rows());
-        let input_time_array: &TimestampNanosecondArray = input_time_array
-            .as_any()
-            .downcast_ref()
-            .ok_or(DataFusionError::Internal(
-                "time array must be a TimestampNanosecondArray".to_string(),
-            ))?;
+        let input_time_array: &TimestampNanosecondArray =
+            input_time_array.as_any().downcast_ref().ok_or_else(|| {
+                DataFusionError::Internal(
+                    "time array must be a TimestampNanosecondArray".to_string(),
+                )
+            })?;
         let input_time_array = (expr_to_index(&self.time_expr), input_time_array);
 
         let group_arrays = self.group_arrays(&input_batch)?;

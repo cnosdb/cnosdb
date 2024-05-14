@@ -27,7 +27,7 @@ use datafusion::optimizer::unwrap_cast_in_comparison::UnwrapCastInComparison;
 use datafusion::optimizer::OptimizerRule;
 use spi::query::analyzer::AnalyzerRef;
 use spi::query::session::SessionCtx;
-use spi::Result;
+use spi::QueryResult;
 use trace::debug;
 use trace::span_ext::SpanExt;
 
@@ -35,7 +35,7 @@ use crate::extension::logical::optimizer_rule::rewrite_tag_scan::RewriteTagScan;
 use crate::sql::analyzer::DefaultAnalyzer;
 
 pub trait LogicalOptimizer: Send + Sync {
-    fn optimize(&self, plan: &LogicalPlan, session: &SessionCtx) -> Result<LogicalPlan>;
+    fn optimize(&self, plan: &LogicalPlan, session: &SessionCtx) -> QueryResult<LogicalPlan>;
 
     fn inject_optimizer_rule(&mut self, optimizer_rule: Arc<dyn OptimizerRule + Send + Sync>);
 }
@@ -107,7 +107,7 @@ impl Default for DefaultLogicalOptimizer {
 }
 
 impl LogicalOptimizer for DefaultLogicalOptimizer {
-    fn optimize(&self, plan: &LogicalPlan, session: &SessionCtx) -> Result<LogicalPlan> {
+    fn optimize(&self, plan: &LogicalPlan, session: &SessionCtx) -> QueryResult<LogicalPlan> {
         let analyzed_plan = {
             let mut span = session.get_child_span("analyze plan");
 

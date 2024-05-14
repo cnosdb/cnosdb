@@ -46,10 +46,11 @@ use std::sync::Arc;
 use minivec::MiniVec;
 use models::codec::Encoding;
 use models::meta_data::VnodeId;
-use snafu::ResultExt;
+use snafu::{IntoError, OptionExt, ResultExt};
 
 use self::reader::WalReader;
 use self::writer::WalWriter;
+use crate::error::{CommonSnafu, DecodeSnafu, EncodeSnafu};
 use crate::file_system::async_filesystem::LocalFileSystem;
 use crate::file_system::FileSystem;
 use crate::kv_option::WalOptions;
@@ -354,15 +355,15 @@ impl WalEntryCodec {
 
 fn decode_wal_raft_entry(buf: &[u8]) -> TskvResult<wal_store::RaftEntry> {
     let mut decoder = WalEntryCodec::new();
-    let dec_data = decoder.decode(buf)?.ok_or(crate::TskvError::CommonError {
+    let dec_data = decoder.decode(buf)?.context(CommonSnafu {
         reason: format!("raft entry decode is none, len: {}", buf.len()),
     })?;
 
-    bincode::deserialize(&dec_data).map_err(|e| crate::TskvError::Decode { source: e })
+    bincode::deserialize(&dec_data).map_err(|e| DecodeSnafu.into_error(e))
 }
 
 fn encode_wal_raft_entry(entry: &wal_store::RaftEntry) -> TskvResult<Vec<u8>> {
-    let bytes = bincode::serialize(entry).map_err(|e| crate::TskvError::Encode { source: e })?;
+    let bytes = bincode::serialize(entry).map_err(|e| EncodeSnafu.into_error(e))?;
 
     let encoder = WalEntryCodec::new();
     encoder.encode(&bytes)
