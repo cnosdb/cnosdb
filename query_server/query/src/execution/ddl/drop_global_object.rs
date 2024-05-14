@@ -4,9 +4,10 @@ use meta::error::MetaError;
 use models::auth::user::ROOT;
 use models::oid::Identifier;
 use models::schema::{ResourceInfo, ResourceOperator};
+use snafu::ResultExt;
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::{DropGlobalObject, GlobalObjectType};
-use spi::{QueryError, Result};
+use spi::{CoordinatorSnafu, MetaSnafu, QueryError, QueryResult};
 use trace::debug;
 
 use super::DDLDefinitionTask;
@@ -25,7 +26,7 @@ impl DropGlobalObjectTask {
 
 #[async_trait]
 impl DDLDefinitionTask for DropGlobalObjectTask {
-    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output> {
+    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> QueryResult<Output> {
         let DropGlobalObject {
             ref name,
             ref if_exist,
@@ -50,7 +51,7 @@ impl DDLDefinitionTask for DropGlobalObjectTask {
                     });
                 }
 
-                let success = meta.drop_user(name).await?;
+                let success = meta.drop_user(name).await.context(MetaSnafu)?;
 
                 if let (false, false) = (if_exist, success) {
                     return Err(QueryError::Meta {
@@ -73,7 +74,9 @@ impl DDLDefinitionTask for DropGlobalObjectTask {
                 match meta.tenant(name).await {
                     Ok(Some(tenant_schema)) => {
                         // first, set hidden to TRUE
-                        meta.set_tenant_is_hidden(name, true).await?;
+                        meta.set_tenant_is_hidden(name, true)
+                            .await
+                            .context(MetaSnafu)?;
 
                         if after.is_none() {
                             after = tenant_schema.options().get_drop_after();
@@ -91,7 +94,8 @@ impl DDLDefinitionTask for DropGlobalObjectTask {
                             query_state_machine.coord.clone(),
                             resourceinfo,
                         )
-                        .await?;
+                        .await
+                        .context(CoordinatorSnafu)?;
                         Ok(Output::Nil(()))
                     }
                     Ok(None) => {

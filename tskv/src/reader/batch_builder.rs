@@ -6,8 +6,10 @@ use arrow::datatypes::SchemaRef;
 use arrow_array::{Array, RecordBatch};
 use datafusion::common::DataFusionError;
 use datafusion::physical_plan::sorts::cursor::{FieldArray, FieldValues};
+use snafu::ResultExt;
 
-use crate::{TskvError, TskvResult};
+use crate::error::{ArrowSnafu, CommonSnafu};
+use crate::TskvResult;
 
 #[derive(Debug, Copy, Clone, Default)]
 struct BatchCursor {
@@ -116,9 +118,10 @@ impl<T: FieldArray> BatchMergeBuilder<T> {
                         self.last_same_rows.push((now_batch_idx, now_row_idx));
                     }
                     Ordering::Greater => {
-                        return Err(TskvError::CommonError {
+                        return Err(CommonSnafu {
                             reason: "data in stream is not sorted".to_string(),
-                        });
+                        }
+                        .build());
                     }
                 }
             }
@@ -189,6 +192,8 @@ impl<T: FieldArray> BatchMergeBuilder<T> {
             .collect::<std::result::Result<Vec<_>, DataFusionError>>()?;
         self.indices.iter_mut().for_each(|v| v.clear());
 
-        Ok(Some(RecordBatch::try_new(self.schema.clone(), columns)?))
+        Ok(Some(
+            RecordBatch::try_new(self.schema.clone(), columns).context(ArrowSnafu)?,
+        ))
     }
 }

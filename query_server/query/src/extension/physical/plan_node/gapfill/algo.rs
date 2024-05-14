@@ -334,12 +334,9 @@ impl Cursor {
             aggr_col_states: HashMap::default(),
         };
         if let Some(idx) = idx {
-            let state = self
-                .aggr_col_states
-                .get(&idx)
-                .ok_or(DataFusionError::Internal(format!(
-                    "could not find aggr col with offset {idx}"
-                )))?;
+            let state = self.aggr_col_states.get(&idx).ok_or_else(|| {
+                DataFusionError::Internal(format!("could not find aggr col with offset {idx}"))
+            })?;
             cur.aggr_col_states.insert(idx, state.clone());
         }
         Ok(cur)
@@ -727,9 +724,9 @@ impl Cursor {
             self.append_series_items(params, input_time_array, *series, vec_builder)?;
         }
 
-        let last_series_end = series_ends.last().ok_or(DataFusionError::Internal(
-            "expected at least one item in series batch".to_string(),
-        ))?;
+        let last_series_end = series_ends.last().ok_or_else(|| {
+            DataFusionError::Internal("expected at least one item in series batch".to_string())
+        })?;
 
         self.trailing_gaps = self.next_input_offset == *last_series_end
             && self

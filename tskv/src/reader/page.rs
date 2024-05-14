@@ -12,9 +12,11 @@ use models::arrow::stream::BoxStream;
 use models::predicate::domain::TimeRange;
 use models::schema::PhysicalCType;
 use models::{PhysicalDType, SeriesId};
+use snafu::{OptionExt, ResultExt};
 use utils::bitset::NullBitset;
 
 use super::column_group::ColumnGroupReaderMetrics;
+use crate::error::{CommonSnafu, DecodeSnafu, UnsupportedDataTypeSnafu};
 use crate::tsm::codec::{
     get_bool_codec, get_encoding, get_f64_codec, get_i64_codec, get_str_codec, get_ts_codec,
     get_u64_codec,
@@ -153,12 +155,12 @@ fn data_buf_to_arrow_array(
             let mut target = Vec::new();
             ts_codec
                 .decode(data_buffer, &mut target)
-                .map_err(|e| TskvError::Decode { source: e })?;
+                .context(DecodeSnafu)?;
             let mut iter_target = target.into_iter();
             let mut target = Vec::with_capacity(null_bitset.len());
             for i in 0..null_bitset.len() {
                 if null_bitset.get(i) {
-                    target.push(iter_target.next().ok_or(TskvError::CommonError {
+                    target.push(iter_target.next().context(CommonSnafu {
                         reason: "target is not enough".to_string(),
                     })?);
                 } else {
@@ -185,13 +187,13 @@ fn data_buf_to_arrow_array(
             let mut target = Vec::new();
             ts_codec
                 .decode(data_buffer, &mut target)
-                .map_err(|e| TskvError::Decode { source: e })?;
+                .context(DecodeSnafu)?;
 
             let mut iter_target = target.into_iter();
             let mut target = Vec::with_capacity(null_bitset.len());
             for i in 0..null_bitset.len() {
                 if null_bitset.get(i) {
-                    target.push(iter_target.next().ok_or(TskvError::CommonError {
+                    target.push(iter_target.next().context(CommonSnafu {
                         reason: "target is not enough".to_string(),
                     })?);
                 } else {
@@ -216,13 +218,13 @@ fn data_buf_to_arrow_array(
             let mut target = Vec::new();
             ts_codec
                 .decode(data_buffer, &mut target)
-                .map_err(|e| TskvError::Decode { source: e })?;
+                .context(DecodeSnafu)?;
 
             let mut iter_target = target.into_iter();
             let mut target = Vec::with_capacity(null_bitset.len());
             for i in 0..null_bitset.len() {
                 if null_bitset.get(i) {
-                    target.push(iter_target.next().ok_or(TskvError::CommonError {
+                    target.push(iter_target.next().context(CommonSnafu {
                         reason: "target is not enough".to_string(),
                     })?);
                 } else {
@@ -247,13 +249,13 @@ fn data_buf_to_arrow_array(
             let mut target = Vec::new();
             ts_codec
                 .decode(data_buffer, &mut target)
-                .map_err(|e| TskvError::Decode { source: e })?;
+                .context(DecodeSnafu)?;
 
             let mut iter_target = target.into_iter();
             let mut target = Vec::with_capacity(null_bitset.len());
             for i in 0..null_bitset.len() {
                 if null_bitset.get(i) {
-                    target.push(iter_target.next().ok_or(TskvError::CommonError {
+                    target.push(iter_target.next().context(CommonSnafu {
                         reason: "target is not enough".to_string(),
                     })?);
                 } else {
@@ -278,13 +280,13 @@ fn data_buf_to_arrow_array(
             let mut target = Vec::new();
             ts_codec
                 .decode(data_buffer, &mut target)
-                .map_err(|e| TskvError::Decode { source: e })?;
+                .context(DecodeSnafu)?;
 
             let mut iter_target = target.into_iter();
             let mut target = Vec::with_capacity(null_bitset.len());
             for i in 0..null_bitset.len() {
                 if null_bitset.get(i) {
-                    target.push(iter_target.next().ok_or(TskvError::CommonError {
+                    target.push(iter_target.next().context(CommonSnafu {
                         reason: "target is not enough".to_string(),
                     })?);
                 } else {
@@ -309,13 +311,13 @@ fn data_buf_to_arrow_array(
             let mut target = Vec::new();
             ts_codec
                 .decode(data_buffer, &mut target)
-                .map_err(|e| TskvError::Decode { source: e })?;
+                .context(DecodeSnafu)?;
 
             let mut iter_target = target.into_iter();
             let mut target = Vec::with_capacity(null_bitset.len());
             for i in 0..null_bitset.len() {
                 if null_bitset.get(i) {
-                    target.push(iter_target.next().ok_or(TskvError::CommonError {
+                    target.push(iter_target.next().context(CommonSnafu {
                         reason: "target is not enough".to_string(),
                     })?);
                 } else {
@@ -330,9 +332,10 @@ fn data_buf_to_arrow_array(
             Arc::new(array)
         }
         PhysicalCType::Field(PhysicalDType::Unknown) => {
-            return Err(TskvError::UnsupportedDataType {
+            return Err(UnsupportedDataTypeSnafu {
                 dt: "Unknown".to_string(),
-            })
+            }
+            .build())
         }
     };
 

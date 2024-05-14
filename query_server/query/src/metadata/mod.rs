@@ -214,7 +214,7 @@ impl ContextProviderExtension for MetadataProvider {
         let db_schema =
             self.meta_client
                 .get_db_schema(name)?
-                .ok_or(MetaError::DatabaseNotFound {
+                .ok_or_else(|| MetaError::DatabaseNotFound {
                     database: name.to_string(),
                 })?;
 
@@ -270,7 +270,7 @@ impl ContextProviderExtension for MetadataProvider {
         let data_info =
             self.meta_client
                 .get_db_info(database)?
-                .ok_or(MetaError::DatabaseNotFound {
+                .ok_or_else(|| MetaError::DatabaseNotFound {
                     database: database.to_string(),
                 })?;
 
@@ -284,7 +284,7 @@ impl ContextProviderExtension for MetadataProvider {
             data_info
                 .tables
                 .get(table.table())
-                .ok_or(MetaError::TableNotFound {
+                .ok_or_else(|| MetaError::TableNotFound {
                     table: table.to_string(),
                 })?;
         }

@@ -2,9 +2,11 @@ use std::path::PathBuf;
 
 use md5::{Digest, Md5};
 use serde::{Deserialize, Serialize};
+use snafu::ResultExt;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 
+use crate::error::IOSnafu;
 use crate::TskvResult;
 
 #[derive(Serialize, Deserialize, Default, Debug, Clone)]
@@ -25,13 +27,13 @@ pub async fn get_files_info(dir: &PathBuf) -> TskvResult<Vec<FileInfo>> {
 }
 
 pub async fn get_file_info(name: &str) -> TskvResult<FileInfo> {
-    let mut file = File::open(name).await?;
-    let file_meta = file.metadata().await?;
+    let mut file = File::open(name).await.context(IOSnafu)?;
+    let file_meta = file.metadata().await.context(IOSnafu)?;
 
     let mut md5 = Md5::new();
     let mut buffer = Vec::with_capacity(8 * 1024);
     loop {
-        let len = file.read_buf(&mut buffer).await?;
+        let len = file.read_buf(&mut buffer).await.context(IOSnafu)?;
         if len == 0 {
             break;
         }

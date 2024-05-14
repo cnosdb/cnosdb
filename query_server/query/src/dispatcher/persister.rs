@@ -2,9 +2,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use snafu::{IntoError, ResultExt};
 use spi::query::dispatcher::QueryInfo;
 use spi::service::protocol::QueryId;
-use spi::QueryError;
+use spi::{BincodeSerializeSnafu, PersistQuerySnafu, QueryError, StdIoSnafu};
 use tokio::fs::{self, File};
 use tokio::io::AsyncWriteExt;
 use trace::{debug, warn};
@@ -22,7 +23,7 @@ pub struct LocalQueryPersister {
 impl LocalQueryPersister {
     pub fn try_new(path: impl Into<PathBuf>) -> Result<Self, QueryError> {
         let path: PathBuf = path.into();
-        std::fs::create_dir_all(path.as_path())?;
+        std::fs::create_dir_all(path.as_path()).context(StdIoSnafu)?;
 
         Ok(Self { path })
     }
@@ -70,32 +71,30 @@ impl QueryPersister for LocalQueryPersister {
         debug!("Save query: {}, {:?}", query_id, query);
 
         let path = self.file_path(&query_id);
-        let mut file = File::create(path)
-            .await
-            .map_err(|err| QueryError::PersistQuery {
+        let mut file = File::create(path).await.map_err(|err| {
+            PersistQuerySnafu {
                 reason: format!(
                     "Failed to create query info file at {}: {}",
                     self.path.display(),
                     err
                 ),
-            })?;
-
-        let body = serde_json::to_vec(&query).map_err(|err| {
-            trace::error!("Failed to serialize query info: {}", err);
-            QueryError::BincodeSerialize {
-                source: Box::new(err),
             }
+            .build()
         })?;
 
-        file.write_all(&body)
-            .await
-            .map_err(|err| QueryError::PersistQuery {
+        let body = serde_json::to_vec(&query)
+            .map_err(|e| BincodeSerializeSnafu.into_error(Box::new(e)))?;
+
+        file.write_all(&body).await.map_err(|err| {
+            PersistQuerySnafu {
                 reason: format!(
                     "Failed to save query info into file at {}: {:?}",
                     self.path.display(),
                     err
                 ),
-            })?;
+            }
+            .build()
+        })?;
 
         Ok(())
     }
@@ -103,9 +102,11 @@ impl QueryPersister for LocalQueryPersister {
     async fn queries(&self) -> Result<Vec<QueryInfo>, QueryError> {
         let mut result = vec![];
 
-        let mut entries = fs::read_dir(self.root_dir()).await?;
-        while let Some(entry) = entries.next_entry().await? {
-            let bytes = fs::read(entry.path().join(QUERY_INFO_FILE_NAME)).await?;
+        let mut entries = fs::read_dir(self.root_dir()).await.context(StdIoSnafu)?;
+        while let Some(entry) = entries.next_entry().await.context(StdIoSnafu)? {
+            let bytes = fs::read(entry.path().join(QUERY_INFO_FILE_NAME))
+                .await
+                .context(StdIoSnafu)?;
             match serde_json::from_slice::<QueryInfo>(&bytes) {
                 Ok(query_info) => {
                     result.push(query_info);

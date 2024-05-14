@@ -9,9 +9,9 @@ use geo::Geometry;
 use geozero::wkt::WktStr;
 use geozero::ToGeo;
 use spi::query::function::FunctionMetadataManager;
-use spi::Result;
+use spi::QueryResult;
 
-pub fn register_udfs(func_manager: &mut dyn FunctionMetadataManager) -> Result<()> {
+pub fn register_udfs(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<()> {
     st_distance::register_udf(func_manager)?;
     st_geomfromwkb::register_udf(func_manager)?;
     st_asbinary::register_udf(func_manager)?;

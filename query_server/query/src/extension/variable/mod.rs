@@ -5,12 +5,12 @@ mod server_version;
 
 use coordinator::service::CoordinatorRef;
 use spi::query::variable::SystemVariableManager;
-use spi::Result;
+use spi::QueryResult;
 
 pub fn load_all_system_vars(
     var_manager: &mut dyn SystemVariableManager,
     coord: CoordinatorRef,
-) -> Result<()> {
+) -> QueryResult<()> {
     // load all system variables
     server_version::register_variable(var_manager)?;
     deployment_mode::register_variable(var_manager, coord.clone())?;

@@ -8,7 +8,7 @@ use self::domain::{ColumnDomains, PredicateRef, TimeRange, TimeRanges};
 use crate::meta_data::{ReplicationSet, ReplicationSetId, VnodeInfo};
 use crate::predicate::domain::{ResolvedPredicate, ResolvedPredicateRef};
 use crate::schema::{ColumnType, TskvTableSchemaRef};
-use crate::Result;
+use crate::ModelResult;
 
 pub mod domain;
 pub mod transformation;
@@ -29,7 +29,7 @@ impl Split {
         time_ranges: Vec<TimeRange>,
         predicate: PredicateRef,
         filter: Option<Arc<dyn PhysicalExpr>>,
-    ) -> Result<Self> {
+    ) -> ModelResult<Self> {
         let domains_filter = predicate
             .filter()
             .translate_column(|c| table.column(&c.name).cloned());

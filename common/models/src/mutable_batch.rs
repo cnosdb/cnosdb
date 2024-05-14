@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 
 use crate::column_data::{ColumnData, PrimaryColumnData};
+use crate::errors::CommonSnafu;
 use crate::field_value::FieldVal;
 use crate::schema::PhysicalCType;
-use crate::{Error, Result};
+use crate::ModelResult;
 
 #[derive(Debug, Default, Clone)]
 pub struct MutableBatch {
@@ -26,7 +27,7 @@ impl MutableBatch {
         }
     }
 
-    pub fn column_mut(&mut self, name: &str, col_type: PhysicalCType) -> Result<&mut Column> {
+    pub fn column_mut(&mut self, name: &str, col_type: PhysicalCType) -> ModelResult<&mut Column> {
         let column_idx = match self.column_names.get(name) {
             Some(column_idx) => *column_idx,
             None => {
@@ -86,17 +87,17 @@ pub struct Column {
 }
 
 impl Column {
-    pub fn new(row_count: usize, column_type: PhysicalCType) -> Result<Column> {
+    pub fn new(row_count: usize, column_type: PhysicalCType) -> ModelResult<Column> {
         let data = ColumnData::with_empty_value(column_type.to_physical_data_type(), row_count)
-            .map_err(|e| Error::Common { msg: e.to_string() })?;
+            .map_err(|e| CommonSnafu { msg: e.to_string() }.build())?;
         Ok(Self {
             column_type,
             column_data: data,
         })
     }
-    pub fn push(&mut self, value: Option<FieldVal>) -> Result<()> {
+    pub fn push(&mut self, value: Option<FieldVal>) -> ModelResult<()> {
         self.column_data
             .push(value)
-            .map_err(|e| Error::Common { msg: e.to_string() })
+            .map_err(|e| CommonSnafu { msg: e.to_string() }.build())
     }
 }

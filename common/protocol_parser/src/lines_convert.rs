@@ -343,7 +343,7 @@ pub fn build_string_column<'a>(
     let array = column
         .as_any()
         .downcast_ref::<StringArray>()
-        .ok_or(Error::Common {
+        .ok_or_else(|| Error::Common {
             content: format!("column {} is not string", col_name),
         })?;
 
@@ -389,7 +389,7 @@ pub fn build_timestamp_column<'a>(
             let values = column
                 .as_any()
                 .downcast_ref::<TimestampMillisecondArray>()
-                .ok_or(Error::Common {
+                .ok_or_else(|| Error::Common {
                     content: format!("column {} is not int64", col_name),
                 })?;
             let mut nullbits = BitSet::with_size(values.len());
@@ -408,7 +408,7 @@ pub fn build_timestamp_column<'a>(
             let values = column
                 .as_any()
                 .downcast_ref::<TimestampMicrosecondArray>()
-                .ok_or(Error::Common {
+                .ok_or_else(|| Error::Common {
                     content: format!("column {} is not int64", col_name),
                 })?;
             let mut nullbits = BitSet::with_size(values.len());
@@ -427,7 +427,7 @@ pub fn build_timestamp_column<'a>(
             let values = column
                 .as_any()
                 .downcast_ref::<TimestampNanosecondArray>()
-                .ok_or(Error::Common {
+                .ok_or_else(|| Error::Common {
                     content: format!("column {} is not int64", col_name),
                 })?;
             let mut nullbits = BitSet::with_size(values.len());
@@ -466,7 +466,7 @@ pub fn build_i64_column<'a>(
     let values = column
         .as_any()
         .downcast_ref::<Int64Array>()
-        .ok_or(Error::Common {
+        .ok_or_else(|| Error::Common {
             content: format!("column {} is not int64", col_name),
         })?;
     let mut nullbits = BitSet::with_size(values.len());
@@ -502,7 +502,7 @@ pub fn build_f64_column<'a>(
     let values = column
         .as_any()
         .downcast_ref::<Float64Array>()
-        .ok_or(Error::Common {
+        .ok_or_else(|| Error::Common {
             content: format!("column {} is not float64", col_name),
         })?;
     let mut nullbits = BitSet::with_size(values.len());
@@ -538,7 +538,7 @@ pub fn build_u64_column<'a>(
     let values = column
         .as_any()
         .downcast_ref::<UInt64Array>()
-        .ok_or(Error::Common {
+        .ok_or_else(|| Error::Common {
             content: format!("column {} is not uint64", col_name),
         })?;
     let mut nullbits = BitSet::with_size(values.len());
@@ -574,7 +574,7 @@ pub fn build_bool_column<'a>(
     let values = column
         .as_any()
         .downcast_ref::<BooleanArray>()
-        .ok_or(Error::Common {
+        .ok_or_else(|| Error::Common {
             content: format!("column {} is not bool", col_name),
         })?;
     let mut nullbits = BitSet::with_size(values.len());

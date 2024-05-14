@@ -7,7 +7,9 @@ use arrow_array::RecordBatch;
 use datafusion::physical_plan::metrics::{ExecutionPlanMetricsSet, MetricBuilder, Time};
 use datafusion::physical_plan::sorts::cursor::{Cursor, FieldArray, FieldValues};
 use futures::{ready, Stream};
+use snafu::ResultExt;
 
+use crate::error::ArrowSnafu;
 use crate::reader::batch_builder::BatchMergeBuilder;
 use crate::reader::metrics::BaselineMetrics;
 use crate::reader::partitioned_stream::{ColumnCursorStream, PartitionedStream};
@@ -42,7 +44,10 @@ pub fn sort_merge(
     use arrow_array::*;
 
     // Special case single column comparisons with optimized cursor implementations
-    let data_type = schema.field_with_name(column_name)?.data_type();
+    let data_type = schema
+        .field_with_name(column_name)
+        .context(ArrowSnafu)?
+        .data_type();
     downcast_primitive! {
         data_type => (primitive_merge_helper, streams, schema, batch_size, column_name, metrics),
         _ => {}

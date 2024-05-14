@@ -5,8 +5,9 @@ use meta::error::MetaError;
 use models::error_code::{ErrorCode, ErrorCoder};
 use snafu::Snafu;
 use spi::QueryError;
+use trace::http::http_ctx::ContextError;
+use warp::reject;
 use warp::reply::Response;
-use warp::{reject, Rejection};
 
 use self::response::ResponseBuilder;
 
@@ -27,11 +28,11 @@ pub enum Error {
     },
 
     Coordinator {
-        source: coordinator::errors::CoordinatorError,
+        source: CoordinatorError,
     },
 
     Meta {
-        source: meta::error::MetaError,
+        source: MetaError,
     },
 
     Query {
@@ -121,52 +122,22 @@ pub enum Error {
     ParseESLogJson {
         source: serde_json::Error,
     },
-}
 
-impl From<tskv::TskvError> for Error {
-    fn from(value: tskv::TskvError) -> Self {
-        Error::Tskv { source: value }
-    }
-}
-
-impl From<CoordinatorError> for Error {
-    fn from(value: CoordinatorError) -> Self {
-        Error::Coordinator { source: value }
-    }
-}
-
-impl From<MetaError> for Error {
-    fn from(value: MetaError) -> Self {
-        Error::Meta { source: value }
-    }
-}
-
-impl From<QueryError> for Error {
-    fn from(value: QueryError) -> Self {
-        Error::Query { source: value }
-    }
-}
-
-impl From<trace::http::http_ctx::ContextError> for Error {
-    fn from(source: trace::http::http_ctx::ContextError) -> Self {
-        Error::TraceHttp { source }
-    }
+    #[snafu(display("Error context: {}", source))]
+    #[error_code(code = 18)]
+    Context {
+        source: ContextError,
+    },
 }
 
 impl reject::Reject for Error {}
-
-fn meta_err_to_reject(err: MetaError) -> Rejection {
-    reject::custom(Error::from(err))
-}
 
 impl Error {
     pub fn error_code(&self) -> &dyn ErrorCode {
         match self {
             Error::Query { source } => source.error_code(),
             Error::Meta { source } => source.error_code(),
-
             Error::Tskv { source } => source.error_code(),
-
             Error::Coordinator { source } => source.error_code(),
 
             _ => self,
@@ -213,6 +184,7 @@ mod tests {
     use http_protocol::header::APPLICATION_JSON;
     use http_protocol::status_code::BAD_REQUEST;
     use spi::QueryError;
+    use tskv::error::CommonSnafu;
     use warp::http::header::{HeaderValue, CONTENT_TYPE};
 
     use super::*;
@@ -248,9 +220,10 @@ mod tests {
     #[test]
     fn test_tskv_error() {
         let resp: Response = Error::Tskv {
-            source: tskv::TskvError::CommonError {
+            source: CommonSnafu {
                 reason: "".to_string(),
-            },
+            }
+            .build(),
         }
         .into();
 

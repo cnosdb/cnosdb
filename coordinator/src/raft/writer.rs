@@ -7,8 +7,8 @@ use models::meta_data::*;
 use protos::kv_service::{raft_write_command, RaftWriteCommand};
 use protos::models_helper::to_prost_bytes;
 use protos::{tskv_service_time_out_client, DEFAULT_GRPC_SERVER_MESSAGE_LEN};
-use replication::errors::ReplicationResult;
 use replication::raft_node::RaftNode;
+use snafu::{OptionExt, ResultExt};
 use trace::debug;
 
 use super::manager::RaftNodesManager;
@@ -33,22 +33,16 @@ impl TskvRaftWriter {
             match command {
                 raft_write_command::Command::WriteData(request) => {
                     let fb_points = flatbuffers::root::<protos::models::Points>(&request.data)
-                        .map_err(|err| CoordinatorError::TskvError {
-                            source: tskv::TskvError::InvalidFlatbuffer { source: err },
-                        })?;
+                        .context(InvalidFlatbufferSnafu)?;
 
-                    let _ = fb_points.tables().ok_or(CoordinatorError::TskvError {
-                        source: tskv::TskvError::InvalidPointTable,
-                    })?;
+                    let _ = fb_points.tables().context(InvalidPointTableSnafu)?;
 
                     if request.data.len()
                         > self
                             .total_memory
                             .saturating_sub(self.memory_pool.reserved())
                     {
-                        return Err(CoordinatorError::TskvError {
-                            source: tskv::TskvError::MemoryExhausted,
-                        });
+                        return Err(MemoryExhaustedSnafu.build());
                     }
                 }
 
@@ -104,17 +98,19 @@ impl TskvRaftWriter {
                         replica_id: leader_node.group_id,
                     })
                 } else {
-                    Err(CoordinatorError::RaftWriteError {
+                    Err(RaftWriteSnafu {
                         msg: err.to_string(),
-                    })
+                    }
+                    .build())
                 }
             }
 
             Ok(resp) => {
                 let apply_result =
-                    bincode::deserialize::<ReplicationResult<replication::Response>>(&resp.data)?;
+                    bincode::deserialize::<Result<replication::Response, String>>(&resp.data)
+                        .context(BincodeSerdeSnafu)?;
 
-                let _data = apply_result?;
+                let _data = apply_result.map_err(|e| CommonSnafu { msg: e }.build())?;
 
                 Ok(())
             }

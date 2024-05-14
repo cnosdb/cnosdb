@@ -34,14 +34,14 @@ use protocol_parser::open_tsdb::open_tsdb_to_lines;
 use protocol_parser::{DataPoint, Line};
 use query::prom::remote_server::PromRemoteSqlServer;
 use reqwest::header::{ACCEPT_ENCODING, CONTENT_ENCODING};
-use snafu::ResultExt;
+use snafu::{IntoError, ResultExt};
 use spi::query::config::StreamTriggerInterval;
 use spi::server::dbms::DBMSRef;
 use spi::server::prom::PromRemoteServerRef;
 use spi::service::protocol::{Context, ContextBuilder, Query};
 use spi::QueryError;
 use tokio::sync::oneshot;
-use trace::http::http_ctx::{ContextError, DEFAULT_TRACE_HEADER_NAME};
+use trace::http::http_ctx::{HeaderDecodeSnafu, DEFAULT_TRACE_HEADER_NAME};
 use trace::span_ctx_ext::SpanContextExt;
 use trace::span_ext::SpanExt;
 use trace::{debug, error, info, Span, SpanContext};
@@ -53,13 +53,13 @@ use warp::reply::Response;
 use warp::{header, reject, Filter, Rejection, Reply};
 
 use super::header::Header;
-use super::{DecodeRequestSnafu, Error as HttpError};
+use super::{ContextSnafu, CoordinatorSnafu, DecodeRequestSnafu, Error as HttpError, MetaSnafu};
 use crate::http::api_type::{metrics_record_db, HttpApiType};
 use crate::http::encoding::{get_accept_encoding_from_header, get_content_encoding_from_header};
 use crate::http::metrics::HttpMetrics;
 use crate::http::response::{HttpResponse, ResponseBuilder};
 use crate::http::result_format::{get_result_format_from_header, ResultFormat};
-use crate::http::{meta_err_to_reject, QuerySnafu};
+use crate::http::QuerySnafu;
 use crate::server::ServiceHandle;
 use crate::spi::service::Service;
 use crate::{server, VERSION};
@@ -167,9 +167,14 @@ impl HttpService {
                 let result = match trace {
                     Some(s) => SpanContext::from_str(&s)
                         .map(Some)
-                        .map_err(ContextError::from)
-                        .map_err(HttpError::from)
-                        .map_err(reject::custom),
+                        .context(HeaderDecodeSnafu {
+                            header: DEFAULT_TRACE_HEADER_NAME,
+                        })
+                        .context(ContextSnafu)
+                        .map_err(|e| {
+                            error!("Failed to decode trace header, err: {:?}", e);
+                            reject::custom(e)
+                        }),
                     None if auto_generate_span => Ok(Some(SpanContext::random())),
                     None => Ok(None),
                 };
@@ -313,7 +318,7 @@ impl HttpService {
                     let content_encoding = get_content_encoding_from_header(&header)?;
                     if let Some(encoding) = content_encoding {
                         req = encoding.decode(req).map_err(|e| {
-                            trace::error!("Failed to decode request, err: {}", e);
+                            error!("Failed to decode request, err: {:?}", e);
                             reject::custom(HttpError::DecodeRequest { source: e })
                         })?;
                     }
@@ -323,7 +328,10 @@ impl HttpService {
                         // Parse req、header and param to construct query request
                         let query = construct_query(req, &header, param, dbms.clone(), coord)
                             .await
-                            .map_err(reject::custom)?;
+                            .map_err(|e| {
+                                error!("Failed to construct query, err: {:?}", e);
+                                reject::custom(e)
+                            })?;
                         record_context_in_span(&mut span, query.context());
                         query
                     };
@@ -332,7 +340,10 @@ impl HttpService {
                     let result_encoding = get_accept_encoding_from_header(&header)?;
                     http_limiter_check_query(&meta, query.context().tenant(), req_len)
                         .await
-                        .map_err(reject::custom)?;
+                        .map_err(|e| {
+                            error!("Failed to check query limiter, err: {:?}", e);
+                            reject::custom(e)
+                        })?;
 
                     let tenant = query.context().tenant();
                     let user = query.context().user().desc().name();
@@ -343,7 +354,7 @@ impl HttpService {
                         let limiter = meta
                             .limiter(query.context().tenant())
                             .await
-                            .map_err(meta_err_to_reject)?;
+                            .context(MetaSnafu)?;
                         let http_data_out = metrics.http_data_out(
                             tenant,
                             user,
@@ -363,7 +374,7 @@ impl HttpService {
                         .await
                         .map_err(|e| {
                             span.error(e.to_string());
-                            trace::error!("Failed to handle http sql request, err: {}", e);
+                            error!("Failed to handle http sql request, err: {:?}", e);
                             reject::custom(e)
                         })
                     };
@@ -414,7 +425,7 @@ impl HttpService {
                     let content_encoding = get_content_encoding_from_header(&header)?;
                     if let Some(encoding) = content_encoding {
                         req = encoding.decode(req).map_err(|e| {
-                            trace::error!("Failed to decode request, err: {}", e);
+                            error!("Failed to decode request, err: {:?}", e);
                             reject::custom(HttpError::DecodeRequest { source: e })
                         })?;
                     }
@@ -428,7 +439,10 @@ impl HttpService {
                             coord.clone(),
                         )
                         .await
-                        .map_err(reject::custom)?;
+                        .map_err(|e| {
+                            error!("Failed to construct write context, err: {:?}", e);
+                            reject::custom(e)
+                        })?;
                         record_context_in_span(&mut span, &ctx);
                         ctx
                     };
@@ -440,7 +454,10 @@ impl HttpService {
                     let write_points_lines = {
                         let mut span = Span::enter_with_parent("try parse req to lines", &span);
                         span.add_property(|| ("bytes", req.len().to_string()));
-                        try_parse_req_to_lines(&req).map_err(reject::custom)?
+                        try_parse_req_to_lines(&req).map_err(|e| {
+                            error!("Failed to parse request to lines, err: {:?}", e);
+                            reject::custom(e)
+                        })?
                     };
 
                     let resp = coord_write_points_with_span_recorder(
@@ -461,7 +478,10 @@ impl HttpService {
                         start,
                         HttpApiType::ApiV1Write,
                     );
-                    resp.map(|_| ResponseBuilder::ok()).map_err(reject::custom)
+                    resp.map(|_| ResponseBuilder::ok()).map_err(|e| {
+                        error!("Failed to handle http write request, err: {:?}", e);
+                        reject::custom(e)
+                    })
                 },
             )
     }
@@ -501,9 +521,15 @@ impl HttpService {
                         coord.clone(),
                     )
                     .await
-                    .map_err(reject::custom)?;
+                    .map_err(|e| {
+                        error!("Failed to construct write context, err: {:?}", e);
+                        reject::custom(e)
+                    })?;
 
-                    let lines = try_parse_req_to_lines(&req).map_err(reject::custom)?;
+                    let lines = try_parse_req_to_lines(&req).map_err(|e| {
+                        error!("Failed to parse request to lines, err: {:?}", e);
+                        reject::custom(e)
+                    })?;
 
                     let resp = coord_write_points_with_span_recorder(
                         &coord,
@@ -515,7 +541,10 @@ impl HttpService {
                     )
                     .await;
 
-                    resp.map(|_| ResponseBuilder::ok()).map_err(reject::custom)
+                    resp.map(|_| ResponseBuilder::ok()).map_err(|e| {
+                        error!("Failed to handle http write request, err: {:?}", e);
+                        reject::custom(e)
+                    })
                 },
             )
     }
@@ -551,7 +580,7 @@ impl HttpService {
                     let content_encoding = get_content_encoding_from_header(&header)?;
                     if let Some(encoding) = content_encoding {
                         req = encoding.decode(req).map_err(|e| {
-                            trace::error!("Failed to decode request, err: {}", e);
+                            error!("Failed to decode request, err: {:?}", e);
                             reject::custom(HttpError::DecodeRequest { source: e })
                         })?;
                     }
@@ -565,7 +594,10 @@ impl HttpService {
                             coord.clone(),
                         )
                         .await
-                        .map_err(reject::custom)?;
+                        .map_err(|e| {
+                            error!("Failed to construct write context, err: {:?}", e);
+                            reject::custom(e)
+                        })?;
                         record_context_in_span(&mut span, &ctx);
                         ctx
                     };
@@ -574,13 +606,22 @@ impl HttpService {
 
                     http_limiter_check_write(&coord.meta_manager(), ctx.tenant(), req_len)
                         .await
-                        .map_err(reject::custom)?;
+                        .map_err(|e| {
+                            error!("Failed to check write limiter, err: {:?}", e);
+                            reject::custom(e)
+                        })?;
 
                     let write_points_req = {
                         let mut span =
                             Span::enter_with_parent("construct write tsdb points request", &span);
                         span.add_property(|| ("bytes", req.len().to_string()));
-                        construct_write_tsdb_points_request(&req).map_err(reject::custom)?
+                        construct_write_tsdb_points_request(&req).map_err(|e| {
+                            error!(
+                                "Failed to construct write tsdb points request, err: {:?}",
+                                e
+                            );
+                            reject::custom(e)
+                        })?
                     };
                     let resp = coord_write_points_with_span_recorder(
                         &coord,
@@ -600,7 +641,10 @@ impl HttpService {
                         start,
                         HttpApiType::ApiV1OpenTsDBWrite,
                     );
-                    resp.map(|_| ResponseBuilder::ok()).map_err(reject::custom)
+                    resp.map(|_| ResponseBuilder::ok()).map_err(|e| {
+                        error!("Failed to handle http write request, err: {:?}", e);
+                        reject::custom(e)
+                    })
                 },
             )
     }
@@ -639,7 +683,7 @@ impl HttpService {
                             .decode(req)
                             .context(DecodeRequestSnafu)
                             .map_err(|e| {
-                                trace::error!("Failed to decode request, err: {}", e);
+                                error!("Failed to decode request, err: {:?}", e);
                                 let r = snafu::Report::from_error(e);
                                 reject::custom(HttpError::InvalidHeader {
                                     reason: r.to_string(),
@@ -656,7 +700,10 @@ impl HttpService {
                             coord.clone(),
                         )
                         .await
-                        .map_err(reject::custom)?;
+                        .map_err(|e| {
+                            error!("Failed to construct write context, err: {:?}", e);
+                            reject::custom(e)
+                        })?;
                         record_context_in_span(&mut span, &ctx);
                         ctx
                     };
@@ -665,7 +712,10 @@ impl HttpService {
 
                     http_limiter_check_write(&coord.meta_manager(), ctx.tenant(), req_len)
                         .await
-                        .map_err(reject::custom)?;
+                        .map_err(|e| {
+                            error!("Failed to check write limiter, err: {:?}", e);
+                            reject::custom(e)
+                        })?;
 
                     let write_points_req = {
                         let mut span = Span::enter_with_parent(
@@ -673,7 +723,13 @@ impl HttpService {
                             &span,
                         );
                         span.add_property(|| ("bytes", req.len().to_string()));
-                        construct_write_tsdb_points_json_request(&req).map_err(reject::custom)?
+                        construct_write_tsdb_points_json_request(&req).map_err(|e| {
+                            error!(
+                                "Failed to construct write tsdb points json request, err: {:?}",
+                                e
+                            );
+                            reject::custom(e)
+                        })?
                     };
                     let resp = coord_write_points_with_span_recorder(
                         &coord,
@@ -693,7 +749,10 @@ impl HttpService {
                         start,
                         HttpApiType::ApiV1OpenTsDBPut,
                     );
-                    resp.map(|_| ResponseBuilder::ok()).map_err(reject::custom)
+                    resp.map(|_| ResponseBuilder::ok()).map_err(|e| {
+                        error!("Failed to handle http write request, err: {:?}", e);
+                        reject::custom(e)
+                    })
                 },
             )
     }
@@ -707,7 +766,10 @@ impl HttpService {
             .and_then(|_header: Header, coord: CoordinatorRef| async move {
                 match coord.meta_manager().meta_leader().await {
                     Ok(data) => Ok(data),
-                    Err(err) => Err(reject::custom(HttpError::Meta { source: err })),
+                    Err(err) => {
+                        error!("Failed to get meta leader addr, err: {:?}", err);
+                        Err(reject::custom(MetaSnafu.into_error(err)))
+                    }
                 }
             })
     }
@@ -724,9 +786,11 @@ impl HttpService {
                 let meta_client = match coord.tenant_meta(&tenant).await {
                     Some(client) => client,
                     None => {
-                        return Err(reject::custom(HttpError::Meta {
-                            source: meta::error::MetaError::TenantNotFound { tenant },
-                        }));
+                        let e = HttpError::Meta {
+                            source: MetaError::TenantNotFound { tenant },
+                        };
+                        error!("Failed to get meta client, err: {:?}", e);
+                        return Err(reject::custom(e));
                     }
                 };
                 let data = meta_client.print_data();
@@ -844,7 +908,10 @@ impl HttpService {
                         span.add_property(|| ("bytes", req.len().to_string()));
                         let ctx = construct_read_context(&header, param, dbms, coord, false)
                             .await
-                            .map_err(reject::custom)?;
+                            .map_err(|e| {
+                                error!("Failed to construct read context, err: {:?}", e);
+                                reject::custom(e)
+                            })?;
                         record_context_in_span(&mut span, &ctx);
                         ctx
                     };
@@ -852,7 +919,10 @@ impl HttpService {
 
                     http_limiter_check_query(&meta, context.tenant(), req_len)
                         .await
-                        .map_err(reject::custom)?;
+                        .map_err(|e| {
+                            error!("Failed to check query limiter, err: {:?}", e);
+                            reject::custom(e)
+                        })?;
 
                     let tenant_name = context.tenant();
                     let username = context.user().desc().name();
@@ -872,11 +942,8 @@ impl HttpService {
                             .await
                             .map_err(|e| {
                                 span.error(e.to_string());
-                                trace::error!(
-                                    "Failed to handle prom remote read request, err: {}",
-                                    e
-                                );
-                                reject::custom(HttpError::from(e))
+                                error!("Failed to handle prom remote read request, err: {:?}", e);
+                                reject::custom(QuerySnafu.into_error(e))
                             })
                             .map(|b| {
                                 http_query_data_out.inc(b.len() as u64);
@@ -942,7 +1009,10 @@ impl HttpService {
                             coord.clone(),
                         )
                         .await
-                        .map_err(reject::custom)?;
+                        .map_err(|e| {
+                            error!("Failed to construct write context, err: {:?}", e);
+                            reject::custom(e)
+                        })?;
                         record_context_in_span(&mut span, &ctx);
                         ctx
                     };
@@ -950,20 +1020,23 @@ impl HttpService {
                     let req_len = req.len();
                     http_limiter_check_write(&coord.meta_manager(), ctx.tenant(), req_len)
                         .await
-                        .map_err(reject::custom)?;
+                        .map_err(|e| {
+                            error!("Failed to check write limiter, err: {:?}", e);
+                            reject::custom(e)
+                        })?;
 
                     let span = Span::enter_with_parent("remote write", &span);
                     let prom_write_request = prs.remote_write(req).map_err(|e| {
                         span.error(e.to_string());
-                        error!("Failed to handle prom remote write request, err: {}", e);
-                        reject::custom(HttpError::from(e))
+                        error!("Failed to handle prom remote write request, err: {:?}", e);
+                        reject::custom(QuerySnafu.into_error(e))
                     })?;
                     let write_request = prs
                         .prom_write_request_to_lines(&prom_write_request)
                         .map_err(|e| {
                             span.error(e.to_string());
-                            error!("Failed to handle prom remote write request, err: {}", e);
-                            reject::custom(HttpError::from(e))
+                            error!("Failed to handle prom remote write request, err: {:?}", e);
+                            reject::custom(QuerySnafu.into_error(e))
                         })?;
 
                     let resp = coord_write_points_with_span_recorder(
@@ -984,7 +1057,10 @@ impl HttpService {
                         HttpApiType::ApiV1PromWrite,
                     );
 
-                    resp.map(|_| ResponseBuilder::ok()).map_err(reject::custom)
+                    resp.map(|_| ResponseBuilder::ok()).map_err(|e| {
+                        error!("Failed to handle http write request, err: {:?}", e);
+                        reject::custom(e)
+                    })
                 },
             )
     }
@@ -1026,7 +1102,10 @@ impl HttpService {
                 dump_sql_ddl_impl(meta, param.tenant)
                     .await
                     .map(|r| r.into_bytes())
-                    .map_err(reject::custom)
+                    .map_err(|e| {
+                        error!("Failed to dump ddl sql, err: {:?}", e);
+                        reject::custom(e)
+                    })
             })
     }
 
@@ -1061,7 +1140,7 @@ impl HttpService {
                     let content_encoding = get_content_encoding_from_header(&header)?;
                     if let Some(encoding) = content_encoding {
                         req = encoding.decode(req).map_err(|e| {
-                            trace::error!("Failed to decode request, err: {}", e);
+                            error!("Failed to decode request, err: {:?}", e);
                             reject::custom(HttpError::DecodeRequest { source: e })
                         })?;
                     }
@@ -1073,11 +1152,13 @@ impl HttpService {
                     };
 
                     if param.table.is_none() {
-                        return Err(reject::custom(HttpError::ParseESLog {
+                        let e = HttpError::ParseESLog {
                             source: protocol_parser::ESLogError::Common {
                                 content: "table param is None".to_string(),
                             },
-                        }));
+                        };
+                        error!("Failed to parse request to es log, err: {:?}", e);
+                        return Err(reject::custom(e));
                     }
                     let ctx = {
                         let mut span =
@@ -1089,7 +1170,10 @@ impl HttpService {
                             coord.clone(),
                         )
                         .await
-                        .map_err(reject::custom)?;
+                        .map_err(|e| {
+                            error!("Failed to construct write context, err: {:?}", e);
+                            reject::custom(e)
+                        })?;
                         record_context_in_span(&mut span, &ctx);
                         ctx
                     };
@@ -1100,8 +1184,12 @@ impl HttpService {
                         let mut span =
                             Span::from_context("try parse req to es log", span_context.as_ref());
                         span.add_property(|| ("bytes", req.len().to_string()));
-                        try_parse_es_req(&req, param.have_es_command.unwrap_or(true))
-                            .map_err(reject::custom)?
+                        try_parse_es_req(&req, param.have_es_command.unwrap_or(true)).map_err(
+                            |e| {
+                                error!("Failed to parse request to es log, err: {:?}", e);
+                                reject::custom(e)
+                            },
+                        )?
                     };
 
                     let resp = coord_write_eslog(
@@ -1124,7 +1212,10 @@ impl HttpService {
                         start,
                         HttpApiType::ApiV1ESLogWrite,
                     );
-                    resp.map_err(reject::custom)
+                    resp.map_err(|e| {
+                        error!("Failed to handle http write request, err: {:?}", e);
+                        reject::custom(e)
+                    })
                 },
             )
     }
@@ -1291,7 +1382,8 @@ async fn construct_write_context(
 
     let user = dbms
         .authenticate(&user_info, tenant.as_deref().unwrap_or(DEFAULT_CATALOG))
-        .await?;
+        .await
+        .context(QuerySnafu)?;
 
     let context = ContextBuilder::new(user)
         .with_tenant(tenant)
@@ -1323,7 +1415,8 @@ async fn construct_write_context_and_check_privilege(
         .await
         .ok_or_else(|| MetaError::TenantNotFound {
             tenant: context.tenant().to_string(),
-        })?
+        })
+        .context(MetaSnafu)?
         .tenant()
         .id();
 
@@ -1496,7 +1589,8 @@ async fn coord_write_eslog(
         .map_err(|e| {
             span.error(e.to_string());
             e
-        })?;
+        })
+        .context(CoordinatorSnafu)?;
 
     if res.is_empty() {
         Ok(ResponseBuilder::ok())
@@ -1525,7 +1619,7 @@ async fn coord_write_points_with_span_recorder(
         .await
         .map_err(|e| {
             span.error(e.to_string());
-            e.into()
+            CoordinatorSnafu.into_error(e)
         })
 }
 
@@ -1546,7 +1640,8 @@ async fn sql_handle(
             .map_err(|err| {
                 span.error(err.to_string());
                 err
-            })?
+            })
+            .context(QuerySnafu)?
     };
 
     let out = handle.result();
@@ -1572,7 +1667,8 @@ async fn sql_handle(
                         .map_err(|err| {
                             span.error(err.to_string());
                             err
-                        })?
+                        })
+                        .context(QuerySnafu)?
                 };
                 let out = handle.result();
                 let resp = HttpResponse::new(
@@ -1597,9 +1693,12 @@ async fn http_limiter_check_query(
     tenant: &str,
     req_len: usize,
 ) -> Result<(), HttpError> {
-    let limiter = meta.limiter(tenant).await?;
-    limiter.check_http_queries().await?;
-    limiter.check_http_data_in(req_len).await?;
+    let limiter = meta.limiter(tenant).await.context(MetaSnafu)?;
+    limiter.check_http_queries().await.context(MetaSnafu)?;
+    limiter
+        .check_http_data_in(req_len)
+        .await
+        .context(MetaSnafu)?;
     Ok(())
 }
 
@@ -1608,9 +1707,12 @@ async fn http_limiter_check_write(
     tenant: &str,
     req_len: usize,
 ) -> Result<(), HttpError> {
-    let limiter = meta.limiter(tenant).await?;
-    limiter.check_http_writes().await?;
-    limiter.check_http_data_in(req_len).await?;
+    let limiter = meta.limiter(tenant).await.context(MetaSnafu)?;
+    limiter.check_http_writes().await.context(MetaSnafu)?;
+    limiter
+        .check_http_data_in(req_len)
+        .await
+        .context(MetaSnafu)?;
     Ok(())
 }
 

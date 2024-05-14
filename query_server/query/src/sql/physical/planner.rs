@@ -20,7 +20,7 @@ use datafusion::physical_planner::{
 };
 use spi::query::physical_planner::PhysicalPlanner;
 use spi::query::session::SessionCtx;
-use spi::Result;
+use spi::QueryResult;
 
 use super::optimizer::PhysicalOptimizer;
 use crate::extension::physical::optimizer_rule::add_assert::AddAssertExec;
@@ -134,7 +134,7 @@ impl PhysicalPlanner for DefaultPhysicalPlanner {
         &self,
         logical_plan: &LogicalPlan,
         session: &SessionCtx,
-    ) -> Result<Arc<dyn ExecutionPlan>> {
+    ) -> QueryResult<Arc<dyn ExecutionPlan>> {
         // 将扩展的物理计划优化规则注入df 的 session state
         let new_state = session
             .inner()
@@ -163,7 +163,7 @@ impl PhysicalOptimizer for DefaultPhysicalPlanner {
         &self,
         plan: Arc<dyn ExecutionPlan>,
         _session: &SessionCtx,
-    ) -> Result<Arc<dyn ExecutionPlan>> {
+    ) -> QueryResult<Arc<dyn ExecutionPlan>> {
         let partition_count = plan.output_partitioning().partition_count();
 
         let merged_plan = if partition_count > 1 {

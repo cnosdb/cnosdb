@@ -10,7 +10,8 @@ use models::meta_data::{ReplicationSet, ReplicationSetId, VnodeId};
 use models::schema::Precision;
 use models::Timestamp;
 use protos::PointsError;
-use snafu::Snafu;
+use replication::errors::ReplicationError;
+use snafu::{Backtrace, IntoError, Location, Snafu};
 
 #[derive(Snafu, Debug, ErrorCoder)]
 #[snafu(visibility(pub))]
@@ -24,57 +25,63 @@ pub enum CoordinatorError {
         source: MetaError,
     },
 
-    ArrowError {
-        source: ArrowError,
-    },
-
-    DataFusionError {
-        source: DataFusionError,
-    },
-
     ReplicatError {
-        source: replication::errors::ReplicationError,
+        source: ReplicationError,
     },
 
     #[snafu(display("Meta request error: {}", msg))]
     #[error_code(code = 1)]
     MetaRequest {
         msg: String,
+        location: Location,
+        backtrace: Backtrace,
     },
 
-    #[snafu(display("Io error: {}", msg))]
+    #[snafu(display("Io error: {}", source))]
     #[error_code(code = 2)]
     IOErrors {
-        msg: String,
+        source: io::Error,
+        location: Location,
+        backtrace: Backtrace,
     },
 
     #[snafu(display("Fails to serialize or deserialize: {source}"))]
     BincodeSerde {
         source: bincode::Error,
+        location: Location,
+        backtrace: Backtrace,
     },
 
     #[snafu(display("Fails to send to channel: {}", msg))]
     #[error_code(code = 4)]
     ChannelSend {
         msg: String,
+        location: Location,
+        backtrace: Backtrace,
     },
 
     #[snafu(display("Fails to recv from channel: {}", msg))]
     #[error_code(code = 5)]
     ChannelRecv {
         msg: String,
+        location: Location,
+        backtrace: Backtrace,
     },
 
     #[snafu(display("Write vnode error: {}", msg))]
     #[error_code(code = 6)]
     WriteVnode {
         msg: String,
+        location: Location,
+        backtrace: Backtrace,
     },
 
     #[snafu(display("Error from models: {}", source))]
     #[error_code(code = 7)]
     ModelsError {
-        source: models::Error,
+        source: models::ModelError,
+        location: Location,
+        backtrace: Backtrace,
     },
 
     #[snafu(display("Not found tenant: {}", name))]
@@ -86,27 +93,39 @@ pub enum CoordinatorError {
     #[snafu(display("Invalid flatbuffers: {}", source))]
     #[error_code(code = 10)]
     InvalidFlatbuffer {
-        source: flatbuffers::InvalidFlatbuffer,
+        source: InvalidFlatbuffer,
+        location: Location,
+        backtrace: Backtrace,
     },
 
     #[snafu(display("Unknow coordinator command: {}", cmd))]
     #[error_code(code = 11)]
     UnKnownCoordCmd {
         cmd: u32,
+        location: Location,
+        backtrace: Backtrace,
     },
 
     #[snafu(display("Coordinator command parse failed"))]
     #[error_code(code = 12)]
-    CoordCommandParseErr,
+    CoordCommandParseErr {
+        location: Location,
+        backtrace: Backtrace,
+    },
 
     #[snafu(display("Unexpect response message"))]
     #[error_code(code = 13)]
-    UnExpectResponse,
+    UnExpectResponse {
+        location: Location,
+        backtrace: Backtrace,
+    },
 
     #[snafu(display("{}", msg))]
     #[error_code(code = 14)]
     CommonError {
         msg: String,
+        location: Location,
+        backtrace: Backtrace,
     },
 
     #[snafu(display("Vnode not found: {}", id))]
@@ -121,6 +140,12 @@ pub enum CoordinatorError {
         error: String,
     },
 
+    #[snafu(display("Not found column: {}", name))]
+    #[error_code(code = 17)]
+    ColumnNotFound {
+        name: String,
+    },
+
     #[snafu(display("kv instance not found: node_id:{}", node_id))]
     #[error_code(code = 18)]
     KvInstanceNotFound {
@@ -131,12 +156,16 @@ pub enum CoordinatorError {
     #[error_code(code = 19)]
     GRPCRequest {
         msg: String,
+        location: Location,
+        backtrace: Backtrace,
     },
 
     #[snafu(display("flatbuffer point miss field : {}", msg))]
     #[error_code(code = 20)]
     Points {
         msg: String,
+        location: Location,
+        backtrace: Backtrace,
     },
 
     #[snafu(display("{}", source))]
@@ -163,6 +192,8 @@ pub enum CoordinatorError {
         from: Precision,
         to: Precision,
         ts: Timestamp,
+        location: Location,
+        backtrace: Backtrace,
     },
 
     #[snafu(display("Writing expired timestamp {point_ts} which is less than {database_min_ts} to database '{database}'"))]
@@ -171,24 +202,32 @@ pub enum CoordinatorError {
         database: String,
         database_min_ts: Timestamp,
         point_ts: Timestamp,
+        location: Location,
+        backtrace: Backtrace,
     },
 
     #[snafu(display("The Operation Can only Exec in Leader {:?}", replica))]
     #[error_code(code = 26)]
     LeaderIsWrong {
         replica: ReplicationSet,
+        location: Location,
+        backtrace: Backtrace,
     },
 
     #[snafu(display("Write to Raft Node Wrong ({})", msg))]
     #[error_code(code = 27)]
     RaftWriteError {
         msg: String,
+        location: Location,
+        backtrace: Backtrace,
     },
 
     #[snafu(display("Raft Group has Error ({})", msg))]
     #[error_code(code = 28)]
     RaftGroupError {
         msg: String,
+        location: Location,
+        backtrace: Backtrace,
     },
 
     #[snafu(display(
@@ -205,51 +244,53 @@ pub enum CoordinatorError {
     RaftNodeNotFound {
         vnode_id: VnodeId,
         replica_id: ReplicationSetId,
+        location: Location,
+        backtrace: Backtrace,
     },
 
     #[error_code(code = 31)]
     #[snafu(display("Invalid configuration: {msg}"))]
     InvalidInitialConfig {
         msg: String,
+        location: Location,
+        backtrace: Backtrace,
     },
-}
 
-impl From<PointsError> for CoordinatorError {
-    fn from(value: PointsError) -> Self {
-        CoordinatorError::FBPoints { source: value }
-    }
-}
+    #[snafu(display("Table name can't be empty"))]
+    #[error_code(code = 32)]
+    InvalidPointTable {
+        location: Location,
+        backtrace: Backtrace,
+    },
 
-impl From<MetaError> for CoordinatorError {
-    fn from(err: MetaError) -> Self {
-        CoordinatorError::MetaRequest {
-            msg: err.to_string(),
-        }
-    }
-}
+    #[snafu(display("Memory Exhausted Retry Later"))]
+    #[error_code(code = 33)]
+    MemoryExhausted {
+        location: Location,
+        backtrace: Backtrace,
+    },
 
-impl From<io::Error> for CoordinatorError {
-    fn from(err: io::Error) -> Self {
-        CoordinatorError::IOErrors {
-            msg: err.to_string(),
-        }
-    }
-}
+    #[snafu(display("Fields can't be empty"))]
+    #[error_code(code = 34)]
+    FieldsIsEmpty {
+        location: Location,
+        backtrace: Backtrace,
+    },
 
-impl From<tskv::TskvError> for CoordinatorError {
-    fn from(err: tskv::TskvError) -> Self {
-        match err {
-            tskv::TskvError::Meta { source } => CoordinatorError::Meta { source },
+    #[snafu(display("Arrow error: {}", source))]
+    #[error_code(code = 35)]
+    ArrowError {
+        source: ArrowError,
+        location: Location,
+        backtrace: Backtrace,
+    },
 
-            other => CoordinatorError::TskvError { source: other },
-        }
-    }
-}
-
-impl From<replication::errors::ReplicationError> for CoordinatorError {
-    fn from(err: replication::errors::ReplicationError) -> Self {
-        CoordinatorError::ReplicatError { source: err }
-    }
+    #[error_code(code = 36)]
+    DataFusionError {
+        source: DataFusionError,
+        location: Location,
+        backtrace: Backtrace,
+    },
 }
 
 impl From<ArrowError> for CoordinatorError {
@@ -270,41 +311,10 @@ impl From<ArrowError> for CoordinatorError {
             }
             ArrowError::ExternalError(e) if e.downcast_ref::<ArrowError>().is_some() => {
                 let arrow_error = *e.downcast::<ArrowError>().unwrap();
-                arrow_error.into()
+                ArrowSnafu.into_error(arrow_error)
             }
 
-            other => CoordinatorError::ArrowError { source: other },
-        }
-    }
-}
-
-impl From<DataFusionError> for CoordinatorError {
-    fn from(err: DataFusionError) -> Self {
-        match err {
-            DataFusionError::ArrowError(e) => e.into(),
-            other => CoordinatorError::DataFusionError { source: other },
-        }
-    }
-}
-
-impl From<bincode::Error> for CoordinatorError {
-    fn from(err: bincode::Error) -> Self {
-        Self::BincodeSerde { source: err }
-    }
-}
-
-impl<T> From<tokio::sync::mpsc::error::SendError<T>> for CoordinatorError {
-    fn from(err: tokio::sync::mpsc::error::SendError<T>) -> Self {
-        CoordinatorError::ChannelSend {
-            msg: err.to_string(),
-        }
-    }
-}
-
-impl From<tokio::sync::oneshot::error::RecvError> for CoordinatorError {
-    fn from(err: tokio::sync::oneshot::error::RecvError) -> Self {
-        CoordinatorError::ChannelRecv {
-            msg: err.to_string(),
+            other => ArrowSnafu.into_error(other),
         }
     }
 }
@@ -312,20 +322,16 @@ impl From<tokio::sync::oneshot::error::RecvError> for CoordinatorError {
 impl From<tonic::Status> for CoordinatorError {
     fn from(status: tonic::Status) -> Self {
         match status.code() {
-            tonic::Code::Internal => CoordinatorError::GRPCRequest {
+            tonic::Code::Internal => GRPCRequestSnafu {
                 msg: format!("status code: {}, message; {}", status.code(), status),
-            },
+            }
+            .build(),
 
-            _ => CoordinatorError::PreExecution {
+            _ => PreExecutionSnafu {
                 error: format!("{}", status),
-            },
+            }
+            .build(),
         }
-    }
-}
-
-impl From<models::Error> for CoordinatorError {
-    fn from(err: models::Error) -> Self {
-        CoordinatorError::ModelsError { source: err }
     }
 }
 
@@ -334,14 +340,9 @@ impl CoordinatorError {
         match self {
             CoordinatorError::Meta { source } => source.error_code(),
             CoordinatorError::TskvError { source } => source.error_code(),
+            CoordinatorError::ReplicatError { source } => source.error_code(),
             _ => self,
         }
-    }
-}
-
-impl From<flatbuffers::InvalidFlatbuffer> for CoordinatorError {
-    fn from(value: InvalidFlatbuffer) -> Self {
-        Self::InvalidFlatbuffer { source: value }
     }
 }
 
@@ -398,7 +399,7 @@ pub fn decode_grpc_response(
             len = status.data.len();
         }
         let tmp = String::from_utf8_lossy(&status.data[..len]).to_string();
-        Err(CoordinatorError::GRPCRequest { msg: tmp })
+        Err(GRPCRequestSnafu { msg: tmp }.build())
     }
 }
 
@@ -406,6 +407,6 @@ pub type CoordinatorResult<T> = Result<T, CoordinatorError>;
 
 #[test]
 fn test_mod_code() {
-    let e = CoordinatorError::UnExpectResponse;
+    let e = UnExpectResponseSnafu.build();
     assert!(e.code().starts_with("05"));
 }

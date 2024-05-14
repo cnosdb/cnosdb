@@ -6,7 +6,7 @@ use datafusion::physical_plan::ExecutionPlan;
 use datafusion::physical_planner::ExtensionPlanner;
 
 use super::session::SessionCtx;
-use crate::Result;
+use crate::QueryResult;
 
 #[async_trait]
 pub trait PhysicalPlanner {
@@ -15,7 +15,7 @@ pub trait PhysicalPlanner {
         &self,
         logical_plan: &LogicalPlan,
         session_state: &SessionCtx,
-    ) -> Result<Arc<dyn ExecutionPlan>>;
+    ) -> QueryResult<Arc<dyn ExecutionPlan>>;
 
     fn inject_physical_transform_rule(&mut self, rule: Arc<dyn ExtensionPlanner + Send + Sync>);
 }

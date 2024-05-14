@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::service::protocol::QueryId;
-use spi::{QueryError, Result};
+use spi::{QueryError, QueryResult};
 
 use super::SystemTask;
 use crate::dispatcher::query_tracker::QueryTracker;
@@ -25,7 +25,7 @@ impl KillQueryTask {
 
 #[async_trait]
 impl SystemTask for KillQueryTask {
-    async fn execute(&self, _query_state_machine: QueryStateMachineRef) -> Result<Output> {
+    async fn execute(&self, _query_state_machine: QueryStateMachineRef) -> QueryResult<Output> {
         if let Some(q) = self.query_tracker.expire_query(&self.query_id) {
             let _ = q.cancel();
         } else {

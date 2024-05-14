@@ -15,7 +15,7 @@ use datafusion::physical_plan::ColumnarValue;
 use datafusion::scalar::ScalarValue;
 use once_cell::sync::Lazy;
 use spi::query::function::FunctionMetadataManager;
-use spi::Result;
+use spi::QueryResult;
 
 use super::{TIME_WINDOW, WINDOW_END, WINDOW_START};
 use crate::extension::expr::INTERVALS;
@@ -24,7 +24,7 @@ pub static TIME_WINDOW_UDF: Lazy<Arc<ScalarUDF>> = Lazy::new(|| Arc::new(new()))
 pub static DEFAULT_TIME_WINDOW_START: Lazy<ScalarValue> =
     Lazy::new(|| ScalarValue::TimestampNanosecond(Some(0), Some("+00:00".into())));
 
-pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> Result<ScalarUDF> {
+pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<ScalarUDF> {
     let udf = new();
     func_manager.register_udf(udf.clone())?;
     Ok(udf)

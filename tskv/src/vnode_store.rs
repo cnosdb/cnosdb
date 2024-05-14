@@ -9,7 +9,7 @@ use models::utils::now_timestamp_secs;
 use models::{ColumnId, SeriesId, SeriesKey};
 use protos::kv_service::{raft_write_command, WritePointsResponse, *};
 use replication::EngineMetrics;
-use snafu::ResultExt;
+use snafu::{OptionExt, ResultExt};
 use tokio::sync::RwLock;
 use trace::span_ext::SpanExt;
 use trace::{debug, error, info, Span, SpanContext};
@@ -17,11 +17,11 @@ use trace::{debug, error, info, Span, SpanContext};
 use crate::compaction::job::FlushJob;
 use crate::compaction::FlushReq;
 use crate::database::Database;
-use crate::error::TskvResult;
+use crate::error::{IndexErrSnafu, InvalidParamSnafu, InvalidPointTableSnafu, TskvResult};
 use crate::index::ts_index::TSIndex;
-use crate::schema::error::SchemaError;
+use crate::schema::error::{FieldNotFoundSnafu, TableNotFoundSnafu};
 use crate::tseries_family::TseriesFamily;
-use crate::{TsKvContext, TskvError, VnodeSnapshot};
+use crate::{TsKvContext, VnodeSnapshot};
 
 #[derive(Clone)]
 pub struct VnodeStorage {
@@ -241,7 +241,7 @@ impl VnodeStorage {
         let span = Span::from_context("tskv engine write cache", span_context);
         let fb_points = flatbuffers::root::<protos::models::Points>(&points)
             .context(crate::error::InvalidFlatbufferSnafu)?;
-        let tables = fb_points.tables().ok_or(TskvError::InvalidPointTable)?;
+        let tables = fb_points.tables().context(InvalidPointTableSnafu)?;
 
         let (mut recover_from_wal, mut strict_write) = (false, None);
         if ctx.apply_type == replication::APPLY_TYPE_WAL {
@@ -300,7 +300,11 @@ impl VnodeStorage {
                 column_ids.len()
             );
 
-            let series_ids = self.ts_index.get_series_id_list(table, &[]).await?;
+            let series_ids = self
+                .ts_index
+                .get_series_id_list(table, &[])
+                .await
+                .context(IndexErrSnafu)?;
             self.ts_family
                 .write()
                 .await
@@ -324,7 +328,10 @@ impl VnodeStorage {
             );
 
             for sid in series_ids {
-                self.ts_index.del_series_info(sid).await?;
+                self.ts_index
+                    .del_series_info(sid)
+                    .await
+                    .context(IndexErrSnafu)?;
             }
         }
 
@@ -339,17 +346,15 @@ impl VnodeStorage {
             .await
             .get_table_schema(table)
             .await?
-            .ok_or_else(|| SchemaError::TableNotFound {
+            .context(TableNotFoundSnafu {
                 database: db_name.to_string(),
                 table: table.to_string(),
             })?;
 
         let column_id = schema
             .column(column_name)
-            .ok_or_else(|| SchemaError::FieldNotFound {
-                database: db_name.to_string(),
-                table: table.to_string(),
-                field: column_name.to_string(),
+            .context(FieldNotFoundSnafu {
+                msg: format!("'{}'.'{}'.{}", db_name, table, column_name),
             })?
             .id;
 
@@ -413,13 +418,9 @@ impl VnodeStorage {
 
         let mut series = Vec::with_capacity(cmd.matched_series.len());
         for key in cmd.matched_series.iter() {
-            let ss = SeriesKey::decode(key).map_err(|_| {
-                TskvError::InvalidParam {
-            reason:
-                "Deserialize 'matched_series' of 'UpdateTagsRequest' failed, expected: SeriesKey"
-                    .to_string(),
-        }
-            })?;
+            let ss = SeriesKey::decode(key).map_err(|e| InvalidParamSnafu {
+            reason: format!("Deserialize 'matched_series' of 'UpdateTagsRequest' failed, expected: SeriesKey, error msg: {e}"),
+        }.build())?;
             series.push(ss);
         }
 
@@ -432,7 +433,8 @@ impl VnodeStorage {
         let (old_series_keys, new_series_keys, sids) = self
             .ts_index
             .prepare_update_tags_value(&new_tags, &series, check_conflict)
-            .await?;
+            .await
+            .context(IndexErrSnafu)?;
 
         if cmd.dry_run {
             return Ok(());
@@ -459,9 +461,10 @@ impl VnodeStorage {
     async fn delete_from_table(&self, cmd: &DeleteFromTableRequest) -> TskvResult<()> {
         let predicate =
             bincode::deserialize::<ResolvedPredicate>(&cmd.predicate).map_err(|err| {
-                TskvError::InvalidParam {
+                InvalidParamSnafu {
                     reason: format!("Predicate of delete_from_table is invalid, error: {err}"),
                 }
+                .build()
             })?;
 
         let tag_domains = predicate.tags_filter();
@@ -497,7 +500,11 @@ impl VnodeStorage {
             }
 
             let time_range = TimeRange::all();
-            let series_ids = self.ts_index.get_series_id_list(table, &[]).await?;
+            let series_ids = self
+                .ts_index
+                .get_series_id_list(table, &[])
+                .await
+                .context(IndexErrSnafu)?;
             info!(
                 "drop table column: vnode: {} deleting {} fields in table: {db_owner}.{table}",
                 self.id,
@@ -533,7 +540,7 @@ impl VnodeStorage {
             .await
             .get_table_schema(table)
             .await?
-            .ok_or_else(|| SchemaError::TableNotFound {
+            .context(TableNotFoundSnafu {
                 database: db_name.to_string(),
                 table: table.to_string(),
             })?

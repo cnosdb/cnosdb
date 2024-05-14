@@ -6,9 +6,10 @@ use datafusion::logical_expr::type_coercion::is_timestamp;
 use meta::error::MetaError;
 use meta::model::MetaClientRef;
 use models::schema::StreamTable;
+use snafu::ResultExt;
 use spi::query::datasource::stream::checker::SchemaChecker;
 use spi::query::datasource::stream::{StreamProviderFactory, StreamProviderRef};
-use spi::QueryError;
+use spi::{MetaSnafu, QueryError};
 
 use super::provider::TskvStreamProvider;
 use super::{get_target_db_name, get_target_table_name, STREAM_DB_KEY, STREAM_TABLE_KEY};
@@ -58,7 +59,8 @@ impl SchemaChecker<StreamTable> for TskvStreamProviderFactory {
                 })?;
 
         let target_table = client
-            .get_tskv_table_schema(target_db, target_table)?
+            .get_tskv_table_schema(target_db, target_table)
+            .context(MetaSnafu)?
             .ok_or_else(|| QueryError::InvalidTableOption {
                 option_name: format!("{STREAM_DB_KEY} | {STREAM_TABLE_KEY}"),
                 table_name: format!("{target_db}.{target_table}"),
@@ -108,10 +110,12 @@ impl StreamProviderFactory for TskvStreamProviderFactory {
         let target_table = get_target_table_name(table.name(), options)?;
 
         let table_schema = meta
-            .get_tskv_table_schema(target_db, target_table)?
+            .get_tskv_table_schema(target_db, target_table)
+            .context(MetaSnafu)?
             .ok_or_else(|| MetaError::TableNotFound {
                 table: target_table.into(),
-            })?;
+            })
+            .context(MetaSnafu)?;
 
         let used_schema = if table.schema().fields().is_empty() {
             table_schema.to_arrow_schema()

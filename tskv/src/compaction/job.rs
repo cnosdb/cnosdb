@@ -2,12 +2,14 @@ use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::{atomic, Arc};
 use std::time::{Duration, Instant};
 
+use snafu::ResultExt;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::{oneshot, RwLock, RwLockWriteGuard, Semaphore};
 use trace::{error, info};
 
 use crate::compaction::{flush, CompactTask, FlushReq, LevelCompactionPicker, Picker};
+use crate::error::IndexErrSnafu;
 use crate::summary::SummaryTask;
 use crate::{TsKvContext, TseriesFamilyId, TskvResult};
 
@@ -292,7 +294,7 @@ impl FlushJob {
         info!("begin flush data {}", request);
 
         // flush index
-        request.ts_index.flush().await?;
+        request.ts_index.flush().await.context(IndexErrSnafu)?;
 
         // check memecaches is empty
         let mut is_empty = true;

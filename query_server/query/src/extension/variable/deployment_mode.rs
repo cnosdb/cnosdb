@@ -1,12 +1,12 @@
 use coordinator::service::CoordinatorRef;
 use datafusion::scalar::ScalarValue;
 use spi::query::variable::SystemVariableManager;
-use spi::Result;
+use spi::QueryResult;
 
 pub fn register_variable(
     var_manager: &mut dyn SystemVariableManager,
     coord: CoordinatorRef,
-) -> Result<()> {
+) -> QueryResult<()> {
     let deployment_mode = coord.meta_manager().deployment_mode();
 
     let value = ScalarValue::Utf8(Some(deployment_mode));

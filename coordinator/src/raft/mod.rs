@@ -7,8 +7,11 @@ use protos::kv_service::tskv_service_client::TskvServiceClient;
 use protos::kv_service::{DownloadFileRequest, RaftWriteCommand};
 use protos::models_helper::parse_prost_bytes;
 use protos::{tskv_service_time_out_client, DEFAULT_GRPC_SERVER_MESSAGE_LEN};
-use replication::errors::{ReplicationError, ReplicationResult};
+use replication::errors::{
+    IOErrSnafu, MsgInvalidSnafu, ReplicationError, ReplicationResult, SnapshotErrSnafu,
+};
 use replication::{ApplyContext, ApplyStorage, EngineMetrics};
+use snafu::ResultExt;
 use tokio::io::AsyncWriteExt;
 use tokio_stream::StreamExt;
 use tonic::transport::Channel;
@@ -20,7 +23,7 @@ use tskv::kv_option::DATA_PATH;
 use tskv::vnode_store::VnodeStorage;
 use tskv::VnodeSnapshot;
 
-use crate::errors::{CoordinatorError, CoordinatorResult};
+use crate::errors::{CommonSnafu, CoordinatorResult, IOErrorsSnafu, MetaSnafu};
 
 pub mod manager;
 pub mod writer;
@@ -61,7 +64,11 @@ impl TskvEngineStorage {
         dir: &PathBuf,
         snapshot: &VnodeSnapshot,
     ) -> CoordinatorResult<()> {
-        let channel = self.meta.get_node_conn(snapshot.node_id).await?;
+        let channel = self
+            .meta
+            .get_node_conn(snapshot.node_id)
+            .await
+            .context(MetaSnafu)?;
         let mut client = tskv_service_time_out_client(
             channel,
             Duration::from_secs(60 * 60),
@@ -74,7 +81,9 @@ impl TskvEngineStorage {
             .download_snapshot_files(dir, snapshot, &mut client)
             .await
         {
-            tokio::fs::remove_dir_all(&dir).await?;
+            tokio::fs::remove_dir_all(&dir)
+                .await
+                .context(IOErrorsSnafu)?;
             return Err(err);
         }
 
@@ -109,12 +118,13 @@ impl TskvEngineStorage {
             let filename = filename.to_string_lossy().to_string();
             let length = LocalFileSystem::get_file_length(filename);
             if info.file_size != length {
-                return Err(CoordinatorError::CommonError {
+                return Err(CommonSnafu {
                     msg: format!(
                         "download file length not match {} -> {}",
                         info.file_size, length
                     ),
-                });
+                }
+                .build());
             }
         }
 
@@ -127,7 +137,9 @@ impl TskvEngineStorage {
         client: &mut TskvServiceClient<Timeout<Channel>>,
     ) -> CoordinatorResult<()> {
         if let Some(dir) = filename.parent() {
-            tokio::fs::create_dir_all(dir).await?;
+            tokio::fs::create_dir_all(dir)
+                .await
+                .context(IOErrorsSnafu)?;
         }
 
         let mut file = tokio::fs::OpenOptions::new()
@@ -136,7 +148,8 @@ impl TskvEngineStorage {
             .read(true)
             .write(true)
             .open(filename)
-            .await?;
+            .await
+            .context(IOErrorsSnafu)?;
 
         let request = tonic::Request::new(DownloadFileRequest {
             filename: download.to_string(),
@@ -145,7 +158,7 @@ impl TskvEngineStorage {
         while let Some(received) = resp_stream.next().await {
             let received = received?;
             let data = crate::errors::decode_grpc_response(received)?;
-            file.write_all(&data).await?;
+            file.write_all(&data).await.context(IOErrorsSnafu)?;
         }
 
         Ok(())
@@ -156,7 +169,8 @@ impl TskvEngineStorage {
         ctx: &ApplyContext,
         req: &replication::Request,
     ) -> ReplicationResult<replication::Response> {
-        let request = parse_prost_bytes::<RaftWriteCommand>(req)?;
+        let request = parse_prost_bytes::<RaftWriteCommand>(req)
+            .map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())?;
         if let Some(command) = request.command {
             self.vnode.apply(ctx, command).await.map_err(|err| {
                 ReplicationError::ApplyEngineErr {
@@ -180,6 +194,7 @@ impl ApplyStorage for TskvEngineStorage {
         if let Err(err) = &apply_result {
             error!("replication apply failed: {:?}; {:?}", ctx, err);
         }
+        let apply_result = apply_result.map_err(|e| e.error_code().message());
 
         match bincode::serialize(&apply_result) {
             Ok(data) => Ok(data),
@@ -188,17 +203,17 @@ impl ApplyStorage for TskvEngineStorage {
     }
 
     async fn get_snapshot(&mut self) -> ReplicationResult<Option<(Vec<u8>, u64)>> {
-        let snapshot =
-            self.vnode
-                .get_snapshot()
-                .await
-                .map_err(|err| ReplicationError::SnapshotErr {
-                    msg: err.to_string(),
-                })?;
+        let snapshot = self.vnode.get_snapshot().await.map_err(|err| {
+            SnapshotErrSnafu {
+                msg: err.to_string(),
+            }
+            .build()
+        })?;
 
         if let Some(snapshot) = snapshot {
             let index = snapshot.last_seq_no;
-            let data = bincode::serialize(&snapshot)?;
+            let data = bincode::serialize(&snapshot)
+                .map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())?;
             Ok(Some((data, index)))
         } else {
             Ok(None)
@@ -206,21 +221,22 @@ impl ApplyStorage for TskvEngineStorage {
     }
 
     async fn create_snapshot(&mut self, _applied_id: u64) -> ReplicationResult<(Vec<u8>, u64)> {
-        let snapshot =
-            self.vnode
-                .create_snapshot()
-                .await
-                .map_err(|err| ReplicationError::SnapshotErr {
-                    msg: err.to_string(),
-                })?;
+        let snapshot = self.vnode.create_snapshot().await.map_err(|err| {
+            SnapshotErrSnafu {
+                msg: err.to_string(),
+            }
+            .build()
+        })?;
 
         let index = snapshot.last_seq_no;
-        let data = bincode::serialize(&snapshot)?;
+        let data = bincode::serialize(&snapshot)
+            .map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())?;
         Ok((data, index))
     }
 
     async fn restore(&mut self, data: &[u8]) -> ReplicationResult<()> {
-        let snapshot = bincode::deserialize::<VnodeSnapshot>(data)?;
+        let snapshot = bincode::deserialize::<VnodeSnapshot>(data)
+            .map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())?;
         let opt = self.storage.get_storage_options();
         let snapshot_name = format!(
             "snap_{}_{}_{}_{}",
@@ -241,7 +257,9 @@ impl ApplyStorage for TskvEngineStorage {
                 msg: err.to_string(),
             })?;
 
-        tokio::fs::remove_dir_all(download_dir).await?;
+        tokio::fs::remove_dir_all(download_dir)
+            .await
+            .context(IOErrSnafu)?;
 
         Ok(())
     }

@@ -3,9 +3,13 @@ use std::path::{Path, PathBuf};
 
 use models::{SeriesId, SeriesKey};
 use serde::{Deserialize, Serialize};
+use snafu::ResultExt;
 use trace::{debug, error};
 
-use super::{IndexError, IndexResult};
+use super::{
+    DecodeIndexBinlogSnafu, EncodeIndexBinlogSnafu, FileErrorsSnafu, IOErrorsSnafu, IndexError,
+    IndexResult,
+};
 use crate::file_system::async_filesystem::{LocalFileSystem, LocalFileType};
 use crate::file_system::file::stream_reader::FileStreamReader;
 use crate::file_system::file::stream_writer::FileStreamWriter;
@@ -116,8 +120,11 @@ impl UpdateSeriesKey {
 
 impl IndexBinlogBlock {
     pub fn size_bytes(&self) -> Result<u32, IndexError> {
-        let size = bincode::serialized_size(self).map_err(|err| IndexError::EncodeIndexBinlog {
-            msg: err.to_string(),
+        let size = bincode::serialized_size(self).map_err(|err| {
+            EncodeIndexBinlogSnafu {
+                msg: err.to_string(),
+            }
+            .build()
         })? as u32;
         Ok(size)
     }
@@ -126,14 +133,20 @@ impl IndexBinlogBlock {
     where
         W: std::io::Write,
     {
-        bincode::serialize_into(writer, self).map_err(|err| IndexError::EncodeIndexBinlog {
-            msg: err.to_string(),
+        bincode::serialize_into(writer, self).map_err(|err| {
+            EncodeIndexBinlogSnafu {
+                msg: err.to_string(),
+            }
+            .build()
         })
     }
 
     pub fn decode(buf: &[u8]) -> Result<Self, IndexError> {
-        bincode::deserialize(buf).map_err(|err| IndexError::DecodeIndexBinlog {
-            msg: err.to_string(),
+        bincode::deserialize(buf).map_err(|err| {
+            DecodeIndexBinlogSnafu {
+                msg: err.to_string(),
+            }
+            .build()
         })
     }
 }
@@ -159,7 +172,7 @@ impl IndexBinlog {
         };
 
         if !LocalFileSystem::try_exists(data_dir) {
-            std::fs::create_dir_all(data_dir)?;
+            std::fs::create_dir_all(data_dir).context(IOErrorsSnafu)?;
         }
 
         let writer_file = BinlogWriter::open(seq, last).await?;
@@ -257,10 +270,12 @@ impl BinlogWriter {
         header_buf[..4].copy_from_slice(SEGMENT_FILE_MAGIC.as_slice());
         header_buf[4..].copy_from_slice(&offset.to_be_bytes());
 
-        file.seek(SeekFrom::Start(0)).await?;
-        file.write(&header_buf).await?;
-        file.flush().await?;
-        file.seek(SeekFrom::Start(file.len() as u64)).await?;
+        file.seek(SeekFrom::Start(0)).await.context(IOErrorsSnafu)?;
+        file.write(&header_buf).await.context(IOErrorsSnafu)?;
+        file.flush().await.context(IOErrorsSnafu)?;
+        file.seek(SeekFrom::Start(file.len() as u64))
+            .await
+            .context(IOErrorsSnafu)?;
 
         Ok(())
     }
@@ -274,14 +289,14 @@ impl BinlogWriter {
     }
 
     pub async fn write(&mut self, data: &[u8]) -> IndexResult<usize> {
-        let written_size = self.file.write(data).await?;
+        let written_size = self.file.write(data).await.context(IOErrorsSnafu)?;
 
         Ok(written_size)
     }
 
     pub async fn flush(&mut self) -> IndexResult<()> {
         // Do fsync
-        self.file.flush().await?;
+        self.file.flush().await.context(IOErrorsSnafu)?;
 
         Ok(())
     }
@@ -311,7 +326,9 @@ impl BinlogReader {
 
         debug!("Read index binlog begin read offset: {}", offset);
 
-        cursor.seek(SeekFrom::Start(offset as u64))?;
+        cursor
+            .seek(SeekFrom::Start(offset as u64))
+            .context(IOErrorsSnafu)?;
 
         Ok(Self {
             cursor,
@@ -325,8 +342,11 @@ impl BinlogReader {
     ) -> IndexResult<[u8; SEGMENT_FILE_HEADER_SIZE]> {
         let mut header_buf = [0_u8; SEGMENT_FILE_HEADER_SIZE];
 
-        cursor.seek(SeekFrom::Start(0))?;
-        let _read = cursor.read(&mut header_buf[..]).await?;
+        cursor.seek(SeekFrom::Start(0)).context(IOErrorsSnafu)?;
+        let _read = cursor
+            .read(&mut header_buf[..])
+            .await
+            .context(IOErrorsSnafu)?;
 
         Ok(header_buf)
     }
@@ -340,7 +360,9 @@ impl BinlogReader {
     }
 
     pub fn seek(&mut self, pos: u64) -> IndexResult<()> {
-        self.cursor.seek(SeekFrom::Start(pos))?;
+        self.cursor
+            .seek(SeekFrom::Start(pos))
+            .context(IOErrorsSnafu)?;
         Ok(())
     }
 
@@ -373,11 +395,16 @@ impl BinlogReader {
 
         debug!("Read index binlog: cursor.pos={}", self.cursor.pos());
 
-        let read_bytes = self.cursor.read(&mut self.header_buf[..]).await?;
+        let read_bytes = self
+            .cursor
+            .read(&mut self.header_buf[..])
+            .await
+            .context(IOErrorsSnafu)?;
         if read_bytes < BLOCK_HEADER_SIZE {
-            return Err(IndexError::FileErrors {
+            return Err(FileErrorsSnafu {
                 msg: format!("read header length {} < {}", read_bytes, BLOCK_HEADER_SIZE),
-            });
+            }
+            .build());
         }
 
         let data_len = byte_utils::decode_be_u32(self.header_buf[0..BLOCK_HEADER_SIZE].into());
@@ -392,14 +419,15 @@ impl BinlogReader {
                 self.read_pos()
             );
 
-            return Err(IndexError::FileErrors {
+            return Err(FileErrorsSnafu {
                 msg: format!(
                     "block data length {} > {}-{}",
                     data_len,
                     self.file_len(),
                     self.read_pos()
                 ),
-            });
+            }
+            .build());
         }
 
         if data_len as usize > self.body_buf.len() {
@@ -407,11 +435,12 @@ impl BinlogReader {
         }
 
         let buf = &mut self.body_buf.as_mut_slice()[0..data_len as usize];
-        let read_bytes = self.cursor.read(buf).await?;
+        let read_bytes = self.cursor.read(buf).await.context(IOErrorsSnafu)?;
         if read_bytes != data_len as usize {
-            return Err(IndexError::FileErrors {
+            return Err(FileErrorsSnafu {
                 msg: format!("read block data error {} != {}", read_bytes, data_len),
-            });
+            }
+            .build());
         }
 
         let block = IndexBinlogBlock::decode(buf)?;
@@ -448,12 +477,15 @@ pub async fn repair_index_file(file_name: &str) -> IndexResult<()> {
     }
 
     let mut buffer = Vec::new();
-    std::fs::File::open(file_name)?.read_to_end(&mut buffer)?;
+    std::fs::File::open(file_name)
+        .context(IOErrorsSnafu)?
+        .read_to_end(&mut buffer)
+        .context(IOErrorsSnafu)?;
 
-    let mut file = std::fs::File::create(format!("{}.repair", file_name))?;
+    let mut file = std::fs::File::create(format!("{}.repair", file_name)).context(IOErrorsSnafu)?;
 
-    file.write_all(&buffer)?;
-    file.set_len(max_can_repair as u64)?;
+    file.write_all(&buffer).context(IOErrorsSnafu)?;
+    file.set_len(max_can_repair as u64).context(IOErrorsSnafu)?;
 
     Ok(())
 }

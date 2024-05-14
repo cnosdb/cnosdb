@@ -1,9 +1,10 @@
 use async_trait::async_trait;
 use meta::error::MetaError;
 use models::schema::DatabaseSchema;
+use snafu::ResultExt;
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::CreateDatabase;
-use spi::{QueryError, Result};
+use spi::{MetaSnafu, QueryError, QueryResult};
 
 use crate::execution::ddl::DDLDefinitionTask;
 
@@ -19,7 +20,7 @@ impl CreateDatabaseTask {
 
 #[async_trait]
 impl DDLDefinitionTask for CreateDatabaseTask {
-    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output> {
+    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> QueryResult<Output> {
         let res = create_database(&self.stmt, query_state_machine).await;
         if self.stmt.if_not_exists
             && matches!(
@@ -35,15 +36,16 @@ impl DDLDefinitionTask for CreateDatabaseTask {
     }
 }
 
-async fn create_database(stmt: &CreateDatabase, machine: QueryStateMachineRef) -> Result<()> {
+async fn create_database(stmt: &CreateDatabase, machine: QueryStateMachineRef) -> QueryResult<()> {
     let tenant = machine.session.tenant();
     let client = machine
         .meta
         .tenant_meta(tenant)
         .await
-        .ok_or(MetaError::TenantNotFound {
+        .ok_or_else(|| MetaError::TenantNotFound {
             tenant: tenant.to_string(),
-        })?;
+        })
+        .context(MetaSnafu)?;
 
     let CreateDatabase {
         ref name,
@@ -53,6 +55,6 @@ async fn create_database(stmt: &CreateDatabase, machine: QueryStateMachineRef) -
 
     let mut database_schema = DatabaseSchema::new(machine.session.tenant(), name);
     database_schema.config = options.clone();
-    client.create_db(database_schema).await?;
+    client.create_db(database_schema).await.context(MetaSnafu)?;
     Ok(())
 }

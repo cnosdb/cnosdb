@@ -704,6 +704,7 @@ fn case6() {
             },
             auth: None,
         },
+        Step::Sleep(1),
         Step::CnosdbRequest {
             req: CnosdbRequest::Ddl {
                 url: url_cnosdb_db1,
@@ -712,6 +713,7 @@ fn case6() {
             },
             auth: None,
         },
+        Step::Sleep(1),
         Step::CnosdbRequest {
             req: CnosdbRequest::Insert {
                 url: url_cnosdb_db1,
@@ -720,6 +722,7 @@ fn case6() {
             },
             auth: None,
         },
+        Step::Sleep(1),
         Step::StopDataNode(1),
         Step::Sleep(60),
         Step::CnosdbRequest {
@@ -730,6 +733,7 @@ fn case6() {
             },
             auth: None,
         },
+        Step::Sleep(1),
         Step::CnosdbRequest {
             req: CnosdbRequest::Query {
                 url: url_cnosdb_public,

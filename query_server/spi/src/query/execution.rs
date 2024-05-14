@@ -18,7 +18,7 @@ use super::dispatcher::{QueryInfo, QueryStatus};
 use super::logical_planner::Plan;
 use super::session::SessionCtx;
 use crate::service::protocol::{Query, QueryId};
-use crate::{QueryError, Result};
+use crate::{QueryError, QueryResult};
 
 pub type QueryExecutionRef = Arc<dyn QueryExecution>;
 
@@ -43,9 +43,9 @@ pub trait QueryExecution: Send + Sync {
         QueryType::Batch
     }
     // 开始
-    async fn start(&self) -> Result<Output>;
+    async fn start(&self) -> QueryResult<Output>;
     // 停止
-    fn cancel(&self) -> Result<()>;
+    fn cancel(&self) -> QueryResult<()>;
     // query状态
     // 查询计划
     // 静态信息
@@ -73,7 +73,7 @@ impl Output {
         }
     }
 
-    pub async fn chunk_result(self) -> Result<Vec<RecordBatch>> {
+    pub async fn chunk_result(self) -> QueryResult<Vec<RecordBatch>> {
         match self {
             Self::Nil(_) => Ok(vec![]),
             Self::StreamData(stream) => {
@@ -178,7 +178,7 @@ pub trait QueryExecutionFactory {
         &self,
         plan: Plan,
         query_state_machine: QueryStateMachineRef,
-    ) -> Result<QueryExecutionRef>;
+    ) -> QueryResult<QueryExecutionRef>;
 }
 
 pub type QueryStateMachineRef = Arc<QueryStateMachine>;

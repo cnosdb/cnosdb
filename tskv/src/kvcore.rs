@@ -10,6 +10,7 @@ use models::meta_data::VnodeId;
 use models::predicate::domain::ColumnDomains;
 use models::schema::{make_owner, split_owner, DatabaseSchema};
 use models::{SeriesId, SeriesKey};
+use snafu::ResultExt;
 use tokio::runtime::Runtime;
 use tokio::sync::broadcast::{self, Sender as BroadcastSender};
 use tokio::sync::mpsc::{self, Receiver, Sender};
@@ -19,7 +20,7 @@ use trace::{debug, error, info, warn};
 use crate::compaction::job::CompactJob;
 use crate::compaction::{self, check, LevelCompactionPicker, Picker};
 use crate::database::Database;
-use crate::error::TskvResult;
+use crate::error::{IndexErrSnafu, TskvResult};
 use crate::file_system::async_filesystem::LocalFileSystem;
 use crate::file_system::FileSystem;
 use crate::kv_option::{Options, StorageOptions};
@@ -339,7 +340,12 @@ impl Engine for TsKv {
         series_id: &[SeriesId],
     ) -> TskvResult<Vec<SeriesKey>> {
         if let Some(db) = self.ctx.version_set.read().await.get_db(tenant, database) {
-            Ok(db.read().await.get_series_key(vnode_id, series_id).await?)
+            Ok(db
+                .read()
+                .await
+                .get_series_key(vnode_id, series_id)
+                .await
+                .context(IndexErrSnafu)?)
         } else {
             Ok(vec![])
         }

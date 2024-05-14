@@ -14,9 +14,10 @@ use models::arrow_array::build_arrow_array_builders;
 use models::meta_data::VnodeId;
 use models::schema::TskvTableSchemaRef;
 use models::SeriesKey;
+use snafu::{OptionExt, ResultExt};
 use trace::Span;
 
-use crate::error::TskvResult;
+use crate::error::{ArrowSnafu, ColumnNotFoundSnafu, TskvResult};
 use crate::reader::{QueryOption, SendableTskvRecordBatchStream};
 use crate::{EngineRef, TskvError};
 
@@ -112,19 +113,20 @@ fn series_keys_to_record_batch(
 ) -> TskvResult<RecordBatch, TskvError> {
     let tag_key_array = schema.fields.iter().map(|f| f.name()).collect::<Vec<_>>();
     let new_schema = dictionary_filed_to_string(schema.clone());
-    let mut array_builders = build_arrow_array_builders(&new_schema, series_keys.len())?;
+    let mut array_builders =
+        build_arrow_array_builders(&new_schema, series_keys.len()).context(ArrowSnafu)?;
     for key in series_keys {
         for (k, array_builder) in tag_key_array.iter().zip(&mut array_builders) {
-            let c =
-                tskv_table_schema
-                    .column(k.as_str())
-                    .ok_or_else(|| TskvError::ColumnNotFound {
-                        column: k.to_string(),
-                    })?;
+            let c = tskv_table_schema
+                .column(k.as_str())
+                .context(ColumnNotFoundSnafu {
+                    column: k.to_string(),
+                })?;
 
             let tag_value = key
                 .tag_string_val(c.id.to_string().as_str())
-                .map_err(|e| ArrowError::ExternalError(Box::new(e)))?;
+                .map_err(|e| ArrowError::ExternalError(Box::new(e)))
+                .context(ArrowSnafu)?;
 
             let builder = array_builder
                 .as_any_mut()
@@ -138,8 +140,9 @@ fn series_keys_to_record_batch(
         .map(|mut b| b.finish())
         .zip(schema.fields().iter().map(|f| f.data_type()))
         .map(|(a, d)| arrow::compute::cast(&a, d))
-        .collect::<TskvResult<Vec<_>, ArrowError>>()?;
+        .collect::<TskvResult<Vec<_>, ArrowError>>()
+        .context(ArrowSnafu)?;
 
-    let record_batch = RecordBatch::try_new(schema.clone(), columns)?;
+    let record_batch = RecordBatch::try_new(schema.clone(), columns).context(ArrowSnafu)?;
     Ok(record_batch)
 }

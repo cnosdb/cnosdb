@@ -8,7 +8,6 @@ use datafusion::logical_expr::{ReturnTypeFunction, ScalarUDF, Signature, Volatil
 use datafusion::physical_plan::functions::make_scalar_function;
 use datafusion::scalar::ScalarValue;
 use spi::service::protocol::Context;
-use spi::Result;
 
 pub fn register_session_udf(df_session_ctx: &SessionContext, context: &Context) {
     let username = context.user().desc().name().to_owned();

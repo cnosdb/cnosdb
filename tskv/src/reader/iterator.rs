@@ -21,6 +21,7 @@ use models::predicate::PlacedSplit;
 use models::schema::{PhysicalCType, TableColumn, TskvTableSchemaRef};
 use models::{ColumnId, PhysicalDType, SeriesId, SeriesKey, Timestamp};
 use protos::kv_service::QueryRecordBatchRequest;
+use snafu::ResultExt;
 use tokio::runtime::Runtime;
 use tokio_util::sync::CancellationToken;
 use trace::span_ext::SpanExt;
@@ -35,7 +36,7 @@ use super::{
     DataReference, EmptySchemableTskvRecordBatchStream, Predicate, PredicateRef, Projection,
     SendableTskvRecordBatchStream,
 };
-use crate::error::TskvResult;
+use crate::error::{CommonSnafu, SchemaSnafu, TskvResult};
 use crate::reader::chunk::filter_column_groups;
 use crate::reader::column_group::ColumnGroupReader;
 use crate::reader::filter::DataFilter;
@@ -45,10 +46,10 @@ use crate::reader::schema_alignmenter::SchemaAlignmenter;
 use crate::reader::trace::TraceCollectorBatcherReaderProxy;
 use crate::reader::utils::group_overlapping_segments;
 use crate::reader::{BatchReaderRef, CombinedBatchReader};
-use crate::schema::error::SchemaError;
+use crate::schema::error::{ColumnNotFoundSnafu, SchemaResult};
 use crate::tseries_family::{CacheGroup, ColumnFile, SuperVersion};
 use crate::tsm::reader::TsmReader;
-use crate::{EngineRef, TskvError};
+use crate::EngineRef;
 
 pub struct ArrayBuilderPtr {
     pub ptr: Box<dyn ArrayBuilder>,
@@ -93,9 +94,10 @@ impl ArrayBuilderPtr {
     ) -> TskvResult<()> {
         match value_type {
             PhysicalDType::Unknown => {
-                return Err(TskvError::CommonError {
+                return Err(CommonSnafu {
                     reason: format!("unknown type of column '{}'", column_name),
-                });
+                }
+                .build());
             }
             PhysicalDType::String => match value {
                 Some(DataType::Str(_, val)) => {
@@ -286,7 +288,7 @@ impl SeriesGroupBatchReaderFactory {
         let kv_schema = &self.query_option.table_schema;
         let schema = &self.query_option.df_schema;
         // TODO 投影中一定包含 time 列，后续优化掉
-        let time_fields_schema = project_time_fields(kv_schema, schema)?;
+        let time_fields_schema = project_time_fields(kv_schema, schema).context(SchemaSnafu)?;
 
         let super_version = &self.super_version;
         let vnode_id = super_version.ts_family_id;
@@ -682,7 +684,7 @@ impl Drop for SeriesGroupBatchReaderFactory {
 fn project_time_fields(
     table_schema: &TskvTableSchemaRef,
     schema: &SchemaRef,
-) -> TskvResult<SchemaRef> {
+) -> SchemaResult<SchemaRef> {
     let mut fields = vec![];
     for field in schema.fields() {
         if let Some(col) = table_schema.column(field.name()) {
@@ -690,11 +692,10 @@ fn project_time_fields(
                 fields.push(field.clone());
             }
         } else {
-            return Err(TskvError::Schema {
-                source: SchemaError::ColumnNotFound {
-                    column: field.name().to_string(),
-                },
-            });
+            return Err(ColumnNotFoundSnafu {
+                column: field.name().to_string(),
+            }
+            .build());
         }
     }
 
@@ -848,7 +849,7 @@ impl QueryOption {
     pub fn to_query_record_batch_request(
         &self,
         vnode_ids: Vec<VnodeId>,
-    ) -> TskvResult<QueryRecordBatchRequest, models::Error> {
+    ) -> TskvResult<QueryRecordBatchRequest, models::ModelError> {
         let args = QueryArgs {
             vnode_ids,
             limit: self.split.limit(),
@@ -916,9 +917,10 @@ impl RowIterator {
                     Box::new(StringBuilder::with_capacity(batch_size, batch_size * 32))
                 }
                 PhysicalDType::Unknown => {
-                    return Err(TskvError::CommonError {
+                    return Err(CommonSnafu {
                         reason: "failed to create column builder: unkown column type".to_string(),
-                    })
+                    }
+                    .build())
                 }
             },
         })
@@ -1044,9 +1046,10 @@ async fn build_stream(
 
     if query_option.aggregates.is_some() {
         // TODO: 重新实现聚合下推
-        return Err(TskvError::CommonError {
+        return Err(CommonSnafu {
             reason: "aggregates push down is not supported yet".to_string(),
-        });
+        }
+        .build());
     }
 
     let factory = SeriesGroupBatchReaderFactory::new(

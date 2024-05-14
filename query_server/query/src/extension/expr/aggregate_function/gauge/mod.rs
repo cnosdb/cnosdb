@@ -7,7 +7,7 @@ use datafusion::common::Result as DFResult;
 use datafusion::error::DataFusionError;
 use datafusion::scalar::ScalarValue;
 use spi::query::function::FunctionMetadataManager;
-use spi::QueryError;
+use spi::{AnalyzerSnafu, QueryError};
 
 use super::{AggResult, TSPoint};
 
@@ -160,9 +160,12 @@ impl GaugeData {
             let field_names = ["first", "second", "penultimate", "last", "num_elements"];
             let input_fields = fields.iter().map(|f| f.name().as_str()).collect::<Vec<_>>();
             if !input_fields.eq(&field_names) {
-                return Err(DataFusionError::External(Box::new(QueryError::Analyzer {
-                    err: format!("Expected GaugeData, got {:?}", fields),
-                })));
+                return Err(DataFusionError::External(Box::new(
+                    AnalyzerSnafu {
+                        err: format!("Expected GaugeData, got {:?}", fields),
+                    }
+                    .build(),
+                )));
             }
 
             Ok(())
@@ -206,9 +209,12 @@ impl GaugeData {
                     num_elements,
                 })
             }
-            _ => Err(DataFusionError::External(Box::new(QueryError::Analyzer {
-                err: format!("Expected GaugeData, got {:?}", scalar),
-            }))),
+            _ => Err(DataFusionError::External(Box::new(
+                AnalyzerSnafu {
+                    err: format!("Expected GaugeData, got {:?}", scalar),
+                }
+                .build(),
+            ))),
         }
     }
 }

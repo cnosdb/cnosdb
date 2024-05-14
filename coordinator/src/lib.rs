@@ -19,11 +19,12 @@ use protocol_parser::Line;
 use protos::kv_service::{RaftWriteCommand, UpdateSetValue};
 use raft::manager::RaftNodesManager;
 use raft::writer::TskvRaftWriter;
+use snafu::ResultExt;
 use trace::SpanContext;
 use tskv::reader::QueryOption;
 use tskv::EngineRef;
 
-use crate::errors::CoordinatorResult;
+use crate::errors::{CoordinatorResult, MetaSnafu};
 use crate::service::CoordServiceMetrics;
 
 pub mod errors;
@@ -167,7 +168,7 @@ pub async fn get_replica_all_info(
     let replica = meta
         .tenant_meta(tenant)
         .await
-        .ok_or(CoordinatorError::TenantNotFound {
+        .ok_or_else(|| CoordinatorError::TenantNotFound {
             name: tenant.to_owned(),
         })?
         .get_replica_all_info(replica_id)
@@ -187,11 +188,12 @@ pub async fn update_replication_set(
 ) -> CoordinatorResult<()> {
     meta.tenant_meta(tenant)
         .await
-        .ok_or(CoordinatorError::TenantNotFound {
+        .ok_or_else(|| CoordinatorError::TenantNotFound {
             name: tenant.to_owned(),
         })?
         .update_replication_set(db_name, bucket_id, replica_id, del_info, add_info)
-        .await?;
+        .await
+        .context(MetaSnafu)?;
 
     Ok(())
 }

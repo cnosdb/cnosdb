@@ -5,20 +5,23 @@ use datafusion::logical_expr::utils::find_exprs_in_expr;
 use datafusion::logical_expr::{expr, BinaryExpr, Operator};
 use datafusion::prelude::Expr;
 use models::schema::TIME_FIELD_NAME;
-use spi::QueryError;
+use spi::AnalyzerSnafu;
 
 use super::selector_function::{BOTTOM, TOPK};
 
 pub fn check_args(func_name: &str, expects: usize, input: &[DataType]) -> DFResult<()> {
     if input.len() != expects {
-        return Err(DataFusionError::External(Box::new(QueryError::Analyzer {
-            err: format!(
-                "The function {:?} expects {} arguments, but {} were provided",
-                func_name,
-                expects,
-                input.len()
-            ),
-        })));
+        return Err(DataFusionError::External(Box::new(
+            AnalyzerSnafu {
+                err: format!(
+                    "The function {:?} expects {} arguments, but {} were provided",
+                    func_name,
+                    expects,
+                    input.len()
+                ),
+            }
+            .build(),
+        )));
     }
 
     Ok(())
@@ -27,14 +30,17 @@ pub fn check_args(func_name: &str, expects: usize, input: &[DataType]) -> DFResu
 pub fn check_args_eq_any(func_name: &str, expects: &[usize], input: &[DataType]) -> DFResult<()> {
     let len = input.len();
     if !expects.iter().any(|e| e.eq(&len)) {
-        return Err(DataFusionError::External(Box::new(QueryError::Analyzer {
-            err: format!(
-                "The function {:?} expects {:?} arguments, but {} were provided",
-                func_name,
-                expects,
-                input.len()
-            ),
-        })));
+        return Err(DataFusionError::External(Box::new(
+            AnalyzerSnafu {
+                err: format!(
+                    "The function {:?} expects {:?} arguments, but {} were provided",
+                    func_name,
+                    expects,
+                    input.len()
+                ),
+            }
+            .build(),
+        )));
     }
     Ok(())
 }

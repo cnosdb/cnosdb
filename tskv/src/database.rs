@@ -12,12 +12,14 @@ use models::predicate::domain::TimeRange;
 use models::schema::{DatabaseSchema, Precision, TskvTableSchema, TskvTableSchemaRef};
 use models::{SeriesId, SeriesKey};
 use protos::models::{Column, ColumnType, FieldType, Table};
-use snafu::ResultExt;
+use snafu::{OptionExt, ResultExt};
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{oneshot, RwLock};
 use trace::error;
 
-use crate::error::{SchemaSnafu, TskvResult};
+use crate::error::{
+    CommonSnafu, IndexErrSnafu, ModelSnafu, SchemaSnafu, TableNotFoundSnafu, TskvResult,
+};
 use crate::index::{self, IndexResult};
 use crate::kv_option::Options;
 use crate::memcache::{OrderedRowsData, RowData, RowGroup};
@@ -25,7 +27,6 @@ use crate::schema::schemas::DBschemas;
 use crate::summary::{SummaryTask, VersionEdit};
 use crate::tseries_family::{LevelInfo, TseriesFamily, TsfFactory, Version};
 use crate::tsm::reader::TsmReader;
-use crate::TskvError::{self};
 use crate::{TsKvContext, TseriesFamilyId};
 
 pub type FlatBufferTable<'a> = flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Table<'a>>>;
@@ -238,22 +239,25 @@ impl Database {
         let mut map = HashMap::new();
         for table in tables {
             let table_name = table.tab_ext()?;
-            let columns = table.columns().ok_or(TskvError::CommonError {
+            let columns = table.columns().context(CommonSnafu {
                 reason: "table missing columns".to_string(),
             })?;
             let num_rows = table.num_rows() as usize;
 
             let fb_schema = FbSchema::from_fb_column(table_name, columns)?;
             let schema = if strict_write {
-                let schema = self.schemas.get_table_schema(fb_schema.table).await?;
-
-                schema.ok_or_else(|| TskvError::TableNotFound {
-                    table: fb_schema.table.to_string(),
-                })?
+                self.schemas
+                    .get_table_schema(fb_schema.table)
+                    .await
+                    .context(SchemaSnafu)?
+                    .context(TableNotFoundSnafu {
+                        table: fb_schema.table.to_string(),
+                    })?
             } else {
                 self.schemas
                     .check_field_type_or_else_add(&fb_schema)
-                    .await?
+                    .await
+                    .context(SchemaSnafu)?
             };
 
             let sids = Self::build_index(
@@ -340,16 +344,22 @@ impl Database {
                 &fb_schema.tag_indexes,
                 row_count,
             )
-            .map_err(|e| TskvError::CommonError {
-                reason: e.to_string(),
-            })?;
-            if let Some(id) = ts_index.get_series_id(&series_key).await? {
+            .context(ModelSnafu)?;
+            if let Some(id) = ts_index
+                .get_series_id(&series_key)
+                .await
+                .context(IndexErrSnafu)?
+            {
                 res_sids.push(Some((id, series_key)));
                 continue;
             }
 
             if recover_from_wal {
-                if let Some(id) = ts_index.get_deleted_series_id(&series_key).await? {
+                if let Some(id) = ts_index
+                    .get_deleted_series_id(&series_key)
+                    .await
+                    .context(IndexErrSnafu)?
+                {
                     // 仅在 recover wal的时候有用
                     res_sids.push(Some((id, series_key)));
                     continue;
@@ -362,11 +372,12 @@ impl Database {
 
         let mut ids = ts_index
             .add_series_if_not_exists(series_keys)
-            .await?
+            .await
+            .context(IndexErrSnafu)?
             .into_iter();
         for item in res_sids.iter_mut() {
             if item.is_none() {
-                *item = Some(ids.next().ok_or(TskvError::CommonError {
+                *item = Some(ids.next().context(CommonSnafu {
                     reason: "add series failed, new series id is missing".to_string(),
                 })?);
             }
@@ -457,7 +468,9 @@ impl Database {
 
         let path = self.opt.storage.index_dir(&self.owner, id);
 
-        let idx = index::ts_index::TSIndex::new(path).await?;
+        let idx = index::ts_index::TSIndex::new(path)
+            .await
+            .context(IndexErrSnafu)?;
 
         self.ts_indexes.insert(id, idx.clone());
 
@@ -518,7 +531,7 @@ impl<'a> FbSchema<'a> {
                 }
                 ColumnType::Tag => {
                     tag_indexes.push(index);
-                    let column_name = column.name().ok_or(TskvError::CommonError {
+                    let column_name = column.name().context(CommonSnafu {
                         reason: "Tag column name not found in flatbuffer columns".to_string(),
                     })?;
 
@@ -526,7 +539,7 @@ impl<'a> FbSchema<'a> {
                 }
                 ColumnType::Field => {
                     field_indexes.push(index);
-                    field_names.push(column.name().ok_or(TskvError::CommonError {
+                    field_names.push(column.name().context(CommonSnafu {
                         reason: "Field column name not found in flatbuffer columns".to_string(),
                     })?);
                     field_types.push(column.field_type());
@@ -536,15 +549,17 @@ impl<'a> FbSchema<'a> {
         }
 
         if time_index == usize::MAX {
-            return Err(TskvError::CommonError {
+            return Err(CommonSnafu {
                 reason: "Time column not found in flatbuffer columns".to_string(),
-            });
+            }
+            .build());
         }
 
         if field_indexes.is_empty() {
-            return Err(TskvError::CommonError {
+            return Err(CommonSnafu {
                 reason: "Field column not found in flatbuffer columns".to_string(),
-            });
+            }
+            .build());
         }
 
         Ok(Self {

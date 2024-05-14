@@ -19,7 +19,7 @@ use spi::query::logical_planner::Plan;
 use spi::query::session::SessionCtxFactory;
 use spi::server::dbms::DatabaseManagerSystem;
 use spi::service::protocol::{Query, QueryHandle, QueryId};
-use spi::{AuthSnafu, Result};
+use spi::{AuthSnafu, MetaSnafu, QueryResult};
 use trace::{debug, SpanContext};
 use tskv::kv_option::Options;
 
@@ -55,11 +55,11 @@ impl<D> DatabaseManagerSystem for Cnosdbms<D>
 where
     D: QueryDispatcher,
 {
-    async fn start(&self) -> Result<()> {
+    async fn start(&self) -> QueryResult<()> {
         self.query_dispatcher.start().await
     }
 
-    async fn authenticate(&self, user_info: &UserInfo, tenant_name: &str) -> Result<User> {
+    async fn authenticate(&self, user_info: &UserInfo, tenant_name: &str) -> QueryResult<User> {
         self.access_control
             .access_check(user_info, tenant_name)
             .await
@@ -70,8 +70,11 @@ where
         &self,
         query: &Query,
         span_context: Option<&SpanContext>,
-    ) -> Result<QueryHandle> {
-        let tenant_id = self.get_tenant_id(query.context().tenant()).await?;
+    ) -> QueryResult<QueryHandle> {
+        let tenant_id = self
+            .get_tenant_id(query.context().tenant())
+            .await
+            .context(AuthSnafu)?;
         let query_id = self.query_dispatcher.create_query_id();
 
         let result = self
@@ -86,9 +89,12 @@ where
         &self,
         query: Query,
         span_context: Option<&SpanContext>,
-    ) -> Result<QueryStateMachineRef> {
+    ) -> QueryResult<QueryStateMachineRef> {
         let query_id = self.query_dispatcher.create_query_id();
-        let tenant_id = self.get_tenant_id(query.context().tenant()).await?;
+        let tenant_id = self
+            .get_tenant_id(query.context().tenant())
+            .await
+            .context(AuthSnafu)?;
 
         let query_state_machine = self
             .query_dispatcher
@@ -101,7 +107,7 @@ where
     async fn build_logical_plan(
         &self,
         query_state_machine: QueryStateMachineRef,
-    ) -> Result<Option<Plan>> {
+    ) -> QueryResult<Option<Plan>> {
         let logical_plan = self
             .query_dispatcher
             .build_logical_plan(query_state_machine)
@@ -114,7 +120,7 @@ where
         &self,
         logical_plan: Plan,
         query_state_machine: QueryStateMachineRef,
-    ) -> Result<QueryHandle> {
+    ) -> QueryResult<QueryHandle> {
         let query_id = query_state_machine.query_id;
         let query = query_state_machine.query.clone();
         let result = self
@@ -161,7 +167,7 @@ pub async fn make_cnosdbms(
     coord: CoordinatorRef,
     options: Options,
     memory_pool: MemoryPoolRef,
-) -> Result<impl DatabaseManagerSystem> {
+) -> QueryResult<impl DatabaseManagerSystem> {
     let query_dedicated_hidden_dir = dirs::home_dir()
         .expect("Could not find user's home directory")
         .join(DEFAULT_CNOSDB_PATH)
@@ -222,13 +228,13 @@ pub async fn make_cnosdbms(
 
     let meta_manager = coord.meta_manager();
 
-    let default_meta_client =
-        coord
-            .tenant_meta(DEFAULT_CATALOG)
-            .await
-            .ok_or_else(|| MetaError::TenantNotFound {
-                tenant: DEFAULT_CATALOG.to_string(),
-            })?;
+    let default_meta_client = coord
+        .tenant_meta(DEFAULT_CATALOG)
+        .await
+        .ok_or_else(|| MetaError::TenantNotFound {
+            tenant: DEFAULT_CATALOG.to_string(),
+        })
+        .context(MetaSnafu)?;
 
     let stream_provider_manager: Arc<StreamProviderManager> = Arc::new(stream_provider_manager);
 

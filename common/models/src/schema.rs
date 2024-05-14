@@ -32,8 +32,10 @@ use datafusion::error::{DataFusionError, Result as DataFusionResult};
 use datafusion::prelude::Column;
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
+use snafu::ResultExt;
 
 use crate::codec::Encoding;
+use crate::errors::InvalidSerdeMessageSnafu;
 use crate::gis::data_type::Geometry;
 use crate::meta_data::{NodeId, ReplicationSet};
 use crate::oid::{Identifier, Oid};
@@ -42,7 +44,7 @@ use crate::utils::{
     MINUTES_MICROS, MINUTES_MILLS, MINUTES_NANOS,
 };
 use crate::value_type::ValueType;
-use crate::{ColumnId, PhysicalDType, SchemaVersion, Timestamp};
+use crate::{ColumnId, ModelResult, PhysicalDType, SchemaVersion, Timestamp};
 
 pub type TskvTableSchemaRef = Arc<TskvTableSchema>;
 
@@ -654,14 +656,14 @@ impl TableColumn {
         !matches!(self.column_type, ColumnType::Time(_))
     }
 
-    pub fn encode(&self) -> crate::errors::Result<Vec<u8>> {
-        let buf = bincode::serialize(&self)?;
+    pub fn encode(&self) -> ModelResult<Vec<u8>> {
+        let buf = bincode::serialize(&self).context(InvalidSerdeMessageSnafu)?;
 
         Ok(buf)
     }
 
-    pub fn decode(buf: &[u8]) -> crate::errors::Result<Self> {
-        let column = bincode::deserialize::<TableColumn>(buf)?;
+    pub fn decode(buf: &[u8]) -> ModelResult<Self> {
+        let column = bincode::deserialize::<TableColumn>(buf).context(InvalidSerdeMessageSnafu)?;
 
         Ok(column)
     }

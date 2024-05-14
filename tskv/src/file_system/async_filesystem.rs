@@ -2,7 +2,9 @@ use std::fs;
 use std::fs::OpenOptions;
 use std::path::Path;
 
-use crate::file_system::error::{FileSystemError, FileSystemResult};
+use snafu::ResultExt;
+
+use crate::file_system::error::{FileSystemResult, StdIOSnafu};
 use crate::file_system::file::async_file::AsyncFile;
 use crate::file_system::file::mmap_file::MmapFile;
 use crate::file_system::file::stream_reader::FileStreamReader;
@@ -45,22 +47,21 @@ impl FileSystem for LocalFileSystem {
         }
     }
     fn remove(path: impl AsRef<Path>) -> FileSystemResult<()> {
-        fs::remove_file(path).map_err(|e| FileSystemError::StdIOError { source: e })?;
+        fs::remove_file(path).context(StdIOSnafu)?;
         Ok(())
     }
     fn rename(
         old_filename: impl AsRef<Path>,
         new_filename: impl AsRef<Path>,
     ) -> FileSystemResult<()> {
-        fs::rename(old_filename, new_filename)
-            .map_err(|e| FileSystemError::StdIOError { source: e })?;
+        fs::rename(old_filename, new_filename).context(StdIOSnafu)?;
         Ok(())
     }
 
     fn create_dir_if_not_exists(parent: Option<&Path>) -> FileSystemResult<()> {
         if let Some(p) = parent {
             if !Self::try_exists(p) {
-                fs::create_dir_all(p).map_err(|e| FileSystemError::StdIOError { source: e })?;
+                fs::create_dir_all(p).context(StdIOSnafu)?;
             }
         }
         Ok(())
@@ -142,9 +143,7 @@ impl LocalFileSystem {
     pub async fn read_mmap_file(path: impl AsRef<Path>) -> FileSystemResult<Box<FileStreamReader>> {
         let mut opt = OpenOptions::new();
         opt.read(true).write(true);
-        let file = MmapFile::open(&path, opt)
-            .await
-            .map_err(|e| FileSystemError::StdIOError { source: e })?;
+        let file = MmapFile::open(&path, opt).await.context(StdIOSnafu)?;
         Ok(Box::new(FileStreamReader::new(
             Box::new(file),
             path.as_ref().to_path_buf(),
@@ -156,9 +155,7 @@ impl LocalFileSystem {
     ) -> FileSystemResult<Box<FileStreamReader>> {
         let mut opt = OpenOptions::new();
         opt.read(true);
-        let file = AsyncFile::open(&path, opt)
-            .await
-            .map_err(|e| FileSystemError::StdIOError { source: e })?;
+        let file = AsyncFile::open(&path, opt).await.context(StdIOSnafu)?;
         Ok(Box::new(FileStreamReader::new(
             Box::new(file),
             path.as_ref().to_path_buf(),
@@ -173,9 +170,7 @@ impl LocalFileSystem {
         Self::create_dir_if_not_exists(p.parent())?;
         let mut opt = OpenOptions::new();
         opt.write(true).create(true).read(true);
-        let file = AsyncFile::open(&path, opt)
-            .await
-            .map_err(|e| FileSystemError::StdIOError { source: e })?;
+        let file = AsyncFile::open(&path, opt).await.context(StdIOSnafu)?;
         Ok(Box::new(FileStreamWriter::new(
             Box::new(file),
             p.to_path_buf(),
@@ -185,7 +180,7 @@ impl LocalFileSystem {
 
     pub fn remove_if_exists(path: impl AsRef<Path>) -> FileSystemResult<()> {
         if Self::try_exists(&path) {
-            fs::remove_file(path).map_err(|e| FileSystemError::StdIOError { source: e })?;
+            fs::remove_file(path).context(StdIOSnafu)?;
         }
         Ok(())
     }

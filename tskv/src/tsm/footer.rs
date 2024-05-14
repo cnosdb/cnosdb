@@ -2,9 +2,11 @@ use datafusion::parquet::data_type::AsBytes;
 use models::predicate::domain::TimeRange;
 use models::SeriesId;
 use serde::{Deserialize, Serialize};
+use snafu::IntoError;
 use utils::BloomFilter;
 
-use crate::TskvError;
+use crate::error::{DecodeSnafu, EncodeSnafu};
+use crate::TskvResult;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Eq, PartialEq)]
 #[repr(u8)]
@@ -72,12 +74,12 @@ impl Footer {
         self.version
     }
 
-    pub fn serialize(&self) -> crate::TskvResult<Vec<u8>> {
-        bincode::serialize(&self).map_err(|e| TskvError::Encode { source: e.into() })
+    pub fn serialize(&self) -> TskvResult<Vec<u8>> {
+        bincode::serialize(&self).map_err(|e| EncodeSnafu.into_error(e))
     }
 
-    pub fn deserialize(bytes: &[u8]) -> crate::TskvResult<Self> {
-        bincode::deserialize(bytes).map_err(|e| TskvError::Decode { source: e.into() })
+    pub fn deserialize(bytes: &[u8]) -> TskvResult<Self> {
+        bincode::deserialize(bytes).map_err(|e| DecodeSnafu.into_error(e))
     }
 
     pub fn maybe_series_exist(&self, series_id: &SeriesId) -> bool {
@@ -132,12 +134,12 @@ impl SeriesMeta {
         }
     }
 
-    pub fn serialize(&self) -> crate::TskvResult<Vec<u8>> {
-        bincode::serialize(&self).map_err(|e| TskvError::Encode { source: e.into() })
+    pub fn serialize(&self) -> TskvResult<Vec<u8>> {
+        bincode::serialize(&self).map_err(|e| EncodeSnafu.into_error(e))
     }
 
-    pub fn deserialize(bytes: &[u8]) -> crate::TskvResult<Self> {
-        bincode::deserialize(bytes).map_err(|e| TskvError::Decode { source: e.into() })
+    pub fn deserialize(bytes: &[u8]) -> TskvResult<Self> {
+        bincode::deserialize(bytes).map_err(|e| DecodeSnafu.into_error(e))
     }
 
     pub fn bloom_filter(&self) -> &BloomFilter {

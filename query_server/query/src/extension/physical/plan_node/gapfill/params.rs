@@ -94,9 +94,11 @@ impl GapFillParams {
                 let idx = e
                     .as_any()
                     .downcast_ref::<Column>()
-                    .ok_or(DataFusionError::Internal(format!(
-                        "fill strategy aggr expr was not a column: {e:?}",
-                    )))?
+                    .ok_or_else(|| {
+                        DataFusionError::Internal(format!(
+                            "fill strategy aggr expr was not a column: {e:?}",
+                        ))
+                    })?
                     .index();
                 Ok((idx, fs.clone()))
             })

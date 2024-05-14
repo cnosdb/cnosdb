@@ -27,10 +27,12 @@ impl RaftCBServer {
             .await
             .get_node(group_id)
             .map_err(|e| tonic::Status::new(tonic::Code::Internal, e.to_string()))?
-            .ok_or(tonic::Status::new(
-                tonic::Code::Internal,
-                format!("Not Found Raft Node for Group: {}", group_id),
-            ))?;
+            .ok_or_else(|| {
+                tonic::Status::new(
+                    tonic::Code::Internal,
+                    format!("Not Found Raft Node for Group: {}", group_id),
+                )
+            })?;
 
         Ok(node)
     }

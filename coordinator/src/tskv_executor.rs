@@ -5,6 +5,7 @@ use meta::model::MetaRef;
 use models::meta_data::*;
 use protos::kv_service::AdminCommand;
 use protos::{tskv_service_time_out_client, DEFAULT_GRPC_SERVER_MESSAGE_LEN};
+use snafu::ResultExt;
 use trace::info;
 
 use crate::errors::*;
@@ -137,11 +138,12 @@ impl TskvLeaderExecutor {
             .meta
             .tenant_meta(tenant)
             .await
-            .ok_or(CoordinatorError::TenantNotFound {
+            .ok_or_else(|| CoordinatorError::TenantNotFound {
                 name: tenant.to_string(),
             })?
             .replica_new_leader(new_leader)
-            .await?;
+            .await
+            .context(MetaSnafu)?;
 
         Ok(new_leader_node_id)
     }

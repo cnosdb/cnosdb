@@ -4,9 +4,10 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
+use tracing::error;
 use warp::{hyper, Filter};
 
-use crate::errors::ReplicationError;
+use crate::errors::MsgInvalidSnafu;
 use crate::raft_node::RaftNode;
 use crate::{RaftNodeId, RaftNodeInfo};
 
@@ -62,8 +63,11 @@ impl RaftHttpAdmin {
             .and(self.with_raft_node())
             .and_then(|req: hyper::body::Bytes, node: Arc<RaftNode>| async move {
                 let req: (RaftNodeId, String) = serde_json::from_slice(&req)
-                    .map_err(ReplicationError::from)
-                    .map_err(warp::reject::custom)?;
+                    .map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())
+                    .map_err(|e| {
+                        error!("Add learner failed: {:?}", e);
+                        warp::reject::custom(e)
+                    })?;
 
                 let id = req.0;
                 let addr = req.1;
@@ -88,8 +92,11 @@ impl RaftHttpAdmin {
             .and(self.with_raft_node())
             .and_then(|req: hyper::body::Bytes, node: Arc<RaftNode>| async move {
                 let req: BTreeSet<RaftNodeId> = serde_json::from_slice(&req)
-                    .map_err(ReplicationError::from)
-                    .map_err(warp::reject::custom)?;
+                    .map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())
+                    .map_err(|e| {
+                        error!("Change membership failed: {:?}", e);
+                        warp::reject::custom(e)
+                    })?;
 
                 let rsp = node.raw_raft().change_membership(req, false).await;
                 let data = serde_json::to_string(&rsp).unwrap_or_default();

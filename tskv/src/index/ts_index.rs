@@ -11,6 +11,7 @@ use datafusion::scalar::ScalarValue;
 use models::predicate::domain::{utf8_from, ColumnDomains, Domain, Range};
 use models::schema::TskvTableSchema;
 use models::{tag, utils, SeriesId, SeriesKey, Tag, TagKey, TagValue};
+use snafu::{OptionExt, ResultExt};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::sync::RwLock;
 use trace::{debug, error, info};
@@ -19,10 +20,12 @@ use super::binlog::{
     AddSeries, DeleteSeries, IndexBinlog, IndexBinlogBlock, UpdateSeriesKey, INDEX_BUFFER_SIZE,
 };
 use super::cache::ForwardIndexCache;
-use super::{IndexEngine, IndexError, IndexResult};
+use super::{DecodeSeriesIDListSnafu, IndexEngine, IndexResult, SeriesNotExistsSnafu};
+use crate::error::{ColumnNotFoundSnafu, IndexErrSnafu};
 use crate::file_system::async_filesystem::{LocalFileSystem, LocalFileType};
 use crate::file_system::FileSystem;
 use crate::index::binlog::BinlogReader;
+use crate::index::errors::{DecodeSeriesKeySnafu, IndexStorageSnafu, SeriesAlreadyExistsSnafu};
 use crate::index::ts_index::fmt::Debug;
 use crate::{byte_utils, file_utils, TskvError, UpdateSetValue};
 
@@ -155,11 +158,12 @@ impl TSIndex {
 
     async fn write_binlog(&self, blocks: &[IndexBinlogBlock]) -> IndexResult<()> {
         self.binlog.write().await.write_blocks(blocks).await?;
-        self.binlog_change_sender
-            .send(())
-            .map_err(|e| IndexError::IndexStorage {
+        self.binlog_change_sender.send(()).map_err(|e| {
+            IndexStorageSnafu {
                 msg: format!("Send binlog change failed, err: {}", e),
-            })?;
+            }
+            .build()
+        })?;
 
         Ok(())
     }
@@ -298,7 +302,7 @@ impl TSIndex {
         let series_key = self.storage.read().await.get(&encode_series_id_key(sid))?;
         if let Some(res) = series_key {
             let key = SeriesKey::decode(&res)
-                .map_err(|e| IndexError::DecodeSeriesKey { msg: e.to_string() })?;
+                .map_err(|e| DecodeSeriesKeySnafu { msg: e.to_string() }.build())?;
 
             self.forward_cache.add(sid, key.clone());
 
@@ -393,7 +397,7 @@ impl TSIndex {
             None => match storage_w.get(&encode_series_id_key(sid))? {
                 Some(res) => {
                     let key = SeriesKey::decode(&res)
-                        .map_err(|e| IndexError::DecodeSeriesKey { msg: e.to_string() })?;
+                        .map_err(|e| DecodeSeriesKeySnafu { msg: e.to_string() }.build())?;
                     Some(key)
                 }
                 None => None,
@@ -426,7 +430,10 @@ impl TSIndex {
         if tag_domains.is_all() {
             // Match all records
             debug!("pushed tags filter is All.");
-            return Ok(self.get_series_id_list(tab, &[]).await?);
+            return self
+                .get_series_id_list(tab, &[])
+                .await
+                .context(IndexErrSnafu);
         }
 
         let domains = match tag_domains.domains() {
@@ -443,12 +450,15 @@ impl TSIndex {
         for (k, v) in domains.iter() {
             let id = table_schema
                 .column(k)
-                .ok_or_else(|| TskvError::ColumnNotFound {
+                .context(ColumnNotFoundSnafu {
                     column: k.to_string(),
                 })?
                 .id;
             let k = format!("{}", id);
-            let rb = self.get_series_ids_by_domain(tab, &k, v).await?;
+            let rb = self
+                .get_series_ids_by_domain(tab, &k, v)
+                .await
+                .context(IndexErrSnafu)?;
             series_ids.push(rb);
         }
 
@@ -484,7 +494,7 @@ impl TSIndex {
             let prefix = format!("{}.", tab);
             let it = storage_r.prefix(prefix.as_bytes())?;
             for val in it {
-                let val = val.map_err(|e| IndexError::IndexStorage { msg: e.to_string() })?;
+                let val = val.map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?;
                 let rb = storage_r.load_rb(&val.1)?;
 
                 bitmap = bitmap.bitor(rb);
@@ -685,9 +695,10 @@ impl TSIndex {
 
             if check_conflict && self.get_series_id(&new_key).await?.is_some() {
                 trace::warn!("Series already exists: {:?}", new_key);
-                return Err(IndexError::SeriesAlreadyExists {
+                return Err(SeriesAlreadyExistsSnafu {
                     key: key.to_string(),
-                });
+                }
+                .build());
             }
 
             // TODO 去重
@@ -698,9 +709,10 @@ impl TSIndex {
 
         // 检查新生成的series key是否有重复key
         if new_keys_set.len() != new_keys.len() {
-            return Err(IndexError::SeriesAlreadyExists {
+            return Err(SeriesAlreadyExistsSnafu {
                 key: "new series keys".to_string(),
-            });
+            }
+            .build());
         }
 
         Ok((old_keys, new_keys, ids))
@@ -736,9 +748,10 @@ impl TSIndex {
 
                 // check conflict
                 if self.get_series_id(&key).await?.is_some() {
-                    return Err(IndexError::SeriesAlreadyExists {
+                    return Err(SeriesAlreadyExistsSnafu {
                         key: key.to_string(),
-                    });
+                    }
+                    .build());
                 }
 
                 new_keys.push(key);
@@ -758,7 +771,7 @@ impl TSIndex {
                     IndexBinlogBlock::Update(UpdateSeriesKey::new(old_key, key, sid, false));
                 blocks.push(block);
             } else {
-                return Err(IndexError::SeriesNotExists);
+                return Err(SeriesNotExistsSnafu.build());
             }
         }
         self.write_binlog(&blocks).await?;
@@ -910,7 +923,7 @@ fn encode_series_key_with_prefix(prefix: &str, tab: &str, tags: &[Tag]) -> Vec<u
 
 pub fn decode_series_id_list(data: &[u8]) -> IndexResult<Vec<u32>> {
     if data.len() % 4 != 0 {
-        return Err(IndexError::DecodeSeriesIDList);
+        return Err(DecodeSeriesIDListSnafu.build());
     }
 
     let count = data.len() / 4;
