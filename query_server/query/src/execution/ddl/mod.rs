@@ -17,6 +17,7 @@ use self::drop_database_object::DropDatabaseObjectTask;
 use self::drop_global_object::DropGlobalObjectTask;
 use self::drop_tenant_object::DropTenantObjectTask;
 use self::grant_revoke::GrantRevokeTask;
+use self::show_compaction::ShowCompactionTask;
 use crate::execution::ddl::alter_database::AlterDatabaseTask;
 use crate::execution::ddl::alter_table::AlterTableTask;
 use crate::execution::ddl::checksum_group::ChecksumGroupTask;
@@ -46,6 +47,7 @@ mod drop_tenant_object;
 mod drop_vnode;
 mod grant_revoke;
 mod move_node;
+mod show_compaction;
 
 /// Traits that DDL tasks should implement
 #[async_trait]
@@ -165,6 +167,10 @@ impl DDLDefinitionTaskFactory {
             DDLPlan::ChecksumGroup(sub_plan) => {
                 Box::new(ChecksumGroupTask::new(sub_plan.clone(), self.plan.schema()))
             }
+            DDLPlan::ShowCompaction(sub_plan) => Box::new(ShowCompactionTask::new(
+                sub_plan.clone(),
+                self.plan.schema(),
+            )),
             DDLPlan::CreateStreamTable(sub_plan) => {
                 let checker = self.stream_checker_manager.checker(&sub_plan.stream_type);
 

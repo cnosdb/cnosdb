@@ -58,6 +58,7 @@ pub enum ExtStatement {
     CopyVnode(CopyVnode),
     MoveVnode(MoveVnode),
     CompactVnode(CompactVnode),
+    ShowCompaction(ShowCompaction),
     ChecksumGroup(ChecksumGroup),
 }
 
@@ -69,6 +70,11 @@ pub struct ChecksumGroup {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompactVnode {
     pub vnode_ids: Vec<VnodeId>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShowCompaction {
+    pub node_id: NodeId,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

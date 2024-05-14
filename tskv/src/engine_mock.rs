@@ -193,6 +193,10 @@ impl Engine for MockEngine {
         todo!()
     }
 
+    async fn show_compaction(&self) -> Result<RecordBatch> {
+        todo!()
+    }
+
     async fn close(&self) {}
 
     async fn prepare_copy_vnode(&self, tenant: &str, database: &str, vnode_id: u32) -> Result<()> {

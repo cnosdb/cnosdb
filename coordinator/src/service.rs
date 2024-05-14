@@ -628,6 +628,17 @@ impl Coordinator for CoordService {
 
                 return Ok(record_batches);
             }
+            VnodeSummarizerCmdType::ShowCompaction(node_id) => {
+                let cmd = AdminFetchCommandRequest {
+                    tenant: tenant.to_string(),
+                    command: Some(admin_fetch_command_request::Command::ShowCompaction(
+                        ShowCompactionRequest { node_id },
+                    )),
+                };
+
+                let record_batch = self.exec_admin_fetch_command_on_node(node_id, cmd).await?;
+                Ok(vec![record_batch])
+            }
         }
     }
 

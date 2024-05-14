@@ -62,6 +62,9 @@ pub enum VnodeManagerCmdType {
 pub enum VnodeSummarizerCmdType {
     /// replication set id
     Checksum(u32),
+
+    /// node id
+    ShowCompaction(u64),
 }
 
 pub fn status_response_to_result(

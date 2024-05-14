@@ -177,10 +177,7 @@ pub async fn run_compaction_job(
     // Level 0 files that partly deleted after compaction.
     version_edit.partly_del_files = l0_file_metas_will_partly_delete;
 
-    trace::info!(
-        "Compaction({compact_task}): Compact finished, version edits: {:?}",
-        version_edit
-    );
+    trace::info!("Compaction({compact_task}): Compact finished, version edits: {version_edit:?}");
     Ok(Some((version_edit, file_metas)))
 }
 
@@ -425,9 +422,8 @@ pub struct CompactingFile {
     pub finished: bool,
 
     cache_index_iter: BufferedIterator<IndexIterator>,
-    cache_data: Vec<u8>,
-    cache_len: usize,
     max_cache_len: usize,
+    cache_data: Vec<u8>,
     cached_tsm_off: u64,
 }
 
@@ -453,9 +449,8 @@ impl CompactingFile {
                 finished: false,
 
                 cache_index_iter,
-                cache_data: Vec::with_capacity(1024 * 1024 * 64),
-                cache_len: 0,
                 max_cache_len: 1024 * 1024 * 64,
+                cache_data: Vec::with_capacity(1024 * 1024 * 64),
                 cached_tsm_off: 0,
             })
     }
@@ -490,11 +485,11 @@ impl CompactingFile {
             block_meta.offset(),
             block_meta.size(),
             self.cached_tsm_off,
-            self.cache_len
+            self.cache_data.len(),
         );
         let mut cached_data = self.read_cache(block_meta);
         if cached_data.is_none() {
-            if !self.fill_cache(block_meta).await {
+            if !self.fill_cache(block_meta).await? {
                 return self.tsm_reader.get_data_block(block_meta).await;
             }
             cached_data = self.read_cache(block_meta);
@@ -526,7 +521,7 @@ impl CompactingFile {
                 block_meta.offset(),
                 block_meta.size(),
                 self.cached_tsm_off,
-                self.cache_len,
+                self.cache_data.len(),
             );
         }
     }
@@ -538,12 +533,12 @@ impl CompactingFile {
             block_meta.offset(),
             block_meta.size(),
             self.cached_tsm_off,
-            self.cache_len
+            self.cache_data.len(),
         );
         if let Some(data) = self.read_cache(block_meta) {
             return Ok(data.to_vec());
         }
-        if self.fill_cache(block_meta).await {
+        if self.fill_cache(block_meta).await? {
             if let Some(data) = self.read_cache(block_meta) {
                 Ok(data.to_vec())
             } else {
@@ -552,7 +547,7 @@ impl CompactingFile {
                     block_meta.offset(),
                     block_meta.size(),
                     self.cached_tsm_off,
-                    self.cache_len,
+                    self.cache_data.len(),
                 );
             }
         } else {
@@ -566,7 +561,7 @@ impl CompactingFile {
         self.tsm_reader.has_tombstone()
     }
 
-    async fn fill_cache(&mut self, block_meta: &BlockMeta) -> bool {
+    async fn fill_cache(&mut self, block_meta: &BlockMeta) -> ReadTsmResult<bool> {
         trace::trace!(
             "Filling cache from file:{} for block_neta: fid:{},off:{},len:{}",
             self.tsm_reader.file_id(),
@@ -574,7 +569,6 @@ impl CompactingFile {
             block_meta.offset(),
             block_meta.size(),
         );
-        self.cache_len = 0;
         let mut load_off_start = 0_u64;
         let mut load_len = 0_usize;
 
@@ -613,29 +607,26 @@ impl CompactingFile {
         }
 
         if load_len == 0 {
-            return false;
+            return Ok(false);
         }
         self.cached_tsm_off = load_off_start;
         trace::trace!("Reading file: off:{},len:{}", load_off_start, load_len);
-        let raw_data = self
+        self.cache_data = self
             .tsm_reader
             .get_raw_data(load_off_start, load_len)
-            .await
-            .unwrap();
-        let new_len = self.cache_len + raw_data.len();
-        self.cache_data.resize(new_len, 0_u8);
-        self.cache_data[self.cache_len..new_len].copy_from_slice(&raw_data);
-        self.cache_len = raw_data.len();
-        true
+            .await?;
+        Ok(true)
     }
 
     fn read_cache(&self, block_meta: &BlockMeta) -> Option<&[u8]> {
         let blk_off = block_meta.offset();
-        if blk_off < self.cached_tsm_off || blk_off > (self.cached_tsm_off + self.cache_len as u64)
+        let blk_len = block_meta.size() as usize;
+        if blk_off < self.cached_tsm_off
+            || blk_off > (self.cached_tsm_off + self.cache_data.len() as u64)
+            || blk_len > self.cache_data.len()
         {
             return None;
         }
-        let blk_len = block_meta.size() as usize;
         let cache_off = (blk_off - self.cached_tsm_off) as usize;
         Some(&self.cache_data[cache_off..cache_off + blk_len])
     }
@@ -705,36 +696,6 @@ impl CompactingBlockMeta {
     pub fn included_in_time_range(&self, time_range: &TimeRange) -> bool {
         self.block_meta.min_ts() >= time_range.min_ts
             && self.block_meta.max_ts() <= time_range.max_ts
-    }
-
-    /// Read data block of block meta from reader, and get the intersection with a time_range.
-    pub async fn get_data_block(
-        &self,
-        compacting_file: &mut CompactingFile,
-    ) -> Result<Option<DataBlock>> {
-        // It's impossible that the reader got None by meta,
-        // or blk.intersection(time_range) returned None.
-        match compacting_file
-            .get_data_block(&self.block_meta)
-            .await
-            .context(error::ReadTsmSnafu)?
-        {
-            // TODO(zipper): block intersection with a time range could be done when merging blocks.
-            Some(blk) => Ok(Some(blk)),
-            None => Ok(None),
-        }
-    }
-
-    /// Read raw data of block meta from reader.
-    pub async fn get_raw_data(&self, compacting_file: &mut CompactingFile) -> Result<Vec<u8>> {
-        compacting_file
-            .get_raw_data(&self.block_meta)
-            .await
-            .context(error::ReadTsmSnafu)
-    }
-
-    pub fn has_tombstone(&self, compacting_file: &CompactingFile) -> bool {
-        compacting_file.has_tombstone()
     }
 }
 

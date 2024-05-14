@@ -202,6 +202,9 @@ pub trait Engine: Send + Sync + Debug {
     /// Get a compressed hash_tree(ID and checksum of each vnode) of engine.
     async fn get_vnode_hash_tree(&self, vnode_id: VnodeId) -> Result<RecordBatch>;
 
+    /// Get compaction information(vnode_id, up_time and status) in this engine.
+    async fn show_compaction(&self) -> Result<RecordBatch>;
+
     /// Close all background jobs of engine.
     async fn close(&self);
 }

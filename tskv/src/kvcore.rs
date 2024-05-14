@@ -22,6 +22,7 @@ use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::sync::{oneshot, RwLock};
 use trace::{debug, error, info, warn, SpanContext, SpanExt, SpanRecorder};
 
+use crate::compaction::job::CompactionInfoManager;
 use crate::compaction::{self, check, run_flush_memtable_job, CompactTask, FlushReq};
 use crate::context::{self, GlobalContext, GlobalSequenceContext, GlobalSequenceTask};
 use crate::database::Database;
@@ -59,6 +60,7 @@ pub struct TsKv {
     global_seq_task_sender: Sender<GlobalSequenceTask>,
     close_sender: BroadcastSender<Sender<()>>,
     metrics: Arc<MetricsRegister>,
+    compaction_info_manager: CompactionInfoManager,
 }
 
 impl TsKv {
@@ -95,7 +97,7 @@ impl TsKv {
         let global_seq_ctx = version_set.read().await.get_global_sequence_context().await;
         let global_seq_ctx = Arc::new(global_seq_ctx);
 
-        let core = Self {
+        let mut core = Self {
             options: shared_options.clone(),
             global_ctx: summary.global_context(),
             global_seq_ctx: global_seq_ctx.clone(),
@@ -110,6 +112,7 @@ impl TsKv {
             global_seq_task_sender: global_seq_task_sender.clone(),
             close_sender,
             metrics,
+            compaction_info_manager: CompactionInfoManager::default(),
         };
 
         let wal_manager = core.recover_wal().await;
@@ -122,7 +125,7 @@ impl TsKv {
             summary_task_sender.clone(),
             compact_task_sender.clone(),
         );
-        compaction::job::run(
+        core.compaction_info_manager = compaction::job::run(
             shared_options.storage.clone(),
             runtime,
             compact_task_sender,
@@ -1327,6 +1330,13 @@ impl Engine for TsKv {
         }
 
         Ok(RecordBatch::new_empty(check::vnode_table_checksum_schema()))
+    }
+
+    async fn show_compaction(&self) -> Result<RecordBatch> {
+        self.compaction_info_manager
+            .to_record_batch()
+            .await
+            .map_err(|err| Error::Arrow { source: err })
     }
 
     async fn close(&self) {
