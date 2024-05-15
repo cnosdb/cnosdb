@@ -324,7 +324,11 @@ impl Engine for TsKv {
             None => return Ok(vec![]),
         };
 
-        let res = ts_index.get_series_ids_by_domains(&schema, filter).await?;
+        let res = ts_index
+            .read()
+            .await
+            .get_series_ids_by_domains(&schema, filter)
+            .await?;
 
         Ok(res)
     }

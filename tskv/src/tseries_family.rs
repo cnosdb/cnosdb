@@ -1108,13 +1108,15 @@ impl TseriesFamily {
         Ok(file_metas)
     }
 
-    pub async fn rebuild_index(&self) -> TskvResult<Arc<TSIndex>> {
+    pub async fn rebuild_index(&self) -> TskvResult<Arc<tokio::sync::RwLock<TSIndex>>> {
         let path = self
             .storage_opt
             .index_dir(self.tenant_database.as_str(), self.tf_id);
         let _ = std::fs::remove_dir_all(path.clone());
 
         let index = TSIndex::new(path).await?;
+        let index_clone = index.clone();
+        let mut index_w = index_clone.write().await;
 
         // cache index
         let mut series_data = self.mut_cache.read().read_series_data();
@@ -1123,7 +1125,7 @@ impl TseriesFamily {
         }
         for (sid, data) in series_data {
             let series_key = data.read().series_key.clone();
-            index.add_series_for_rebuild(sid, &series_key).await?;
+            index_w.add_series_for_rebuild(sid, &series_key).await?;
         }
 
         // tsm index
@@ -1131,14 +1133,14 @@ impl TseriesFamily {
             for file in level.files.iter() {
                 let reader = self.version().get_tsm_reader(file.file_path()).await?;
                 for chunk in reader.chunk().values() {
-                    index
+                    index_w
                         .add_series_for_rebuild(chunk.series_id(), chunk.series_key())
                         .await?;
                 }
             }
         }
 
-        index.flush().await?;
+        index_w.flush().await?;
 
         Ok(index)
     }

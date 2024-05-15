@@ -69,6 +69,7 @@ stable-vec = { workspace = true }
 arrow-schema = { workspace = true }
 md-5 = { workspace = true }
 hex = { workspace = true }
+maplit = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 rio = { version = "0.9.4", optional = true }

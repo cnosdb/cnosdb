@@ -28,7 +28,7 @@ pub struct VnodeStorage {
     ctx: Arc<TsKvContext>,
     db: Arc<RwLock<Database>>,
     flush_job: FlushJob,
-    ts_index: Arc<TSIndex>,
+    pub ts_index: Arc<RwLock<TSIndex>>,
     ts_family: Arc<RwLock<TseriesFamily>>,
 
     snapshots: Vec<VnodeSnapshot>,
@@ -38,7 +38,7 @@ impl VnodeStorage {
     pub fn new(
         id: VnodeId,
         db: Arc<RwLock<Database>>,
-        ts_index: Arc<TSIndex>,
+        ts_index: Arc<RwLock<TSIndex>>,
         ts_family: Arc<RwLock<TseriesFamily>>,
         ctx: Arc<TsKvContext>,
     ) -> Self {
@@ -299,7 +299,12 @@ impl VnodeStorage {
                 column_ids.len()
             );
 
-            let series_ids = self.ts_index.get_series_id_list(table, &[]).await?;
+            let series_ids = self
+                .ts_index
+                .read()
+                .await
+                .get_series_id_list(table, &[])
+                .await?;
             self.ts_family
                 .write()
                 .await
@@ -322,8 +327,9 @@ impl VnodeStorage {
                 series_ids.len()
             );
 
+            let mut index_w = self.ts_index.write().await;
             for sid in series_ids {
-                self.ts_index.del_series_info(sid).await?;
+                index_w.del_series_info(sid).await?;
             }
         }
 
@@ -430,6 +436,8 @@ impl VnodeStorage {
         }
         let (old_series_keys, new_series_keys, sids) = self
             .ts_index
+            .read()
+            .await
             .prepare_update_tags_value(&new_tags, &series, check_conflict)
             .await?;
 
@@ -440,14 +448,12 @@ impl VnodeStorage {
         // 更新索引
         if let Err(err) = self
             .ts_index
+            .write()
+            .await
             .update_series_key(old_series_keys, new_series_keys, sids, false)
             .await
         {
-            error!(
-                "Update tags value tag of TSIndex({}): {}",
-                self.ts_index.path().display(),
-                err
-            );
+            error!("Update tags value tag of TSIndex({}): {}", self.id, err);
 
             return Err(crate::error::TskvError::IndexErr { source: err });
         }
@@ -471,6 +477,8 @@ impl VnodeStorage {
             };
 
             self.ts_index
+                .read()
+                .await
                 .get_series_ids_by_domains(table_schema.as_ref(), tag_domains)
                 .await?
         };
@@ -496,7 +504,12 @@ impl VnodeStorage {
             }
 
             let time_range = TimeRange::all();
-            let series_ids = self.ts_index.get_series_id_list(table, &[]).await?;
+            let series_ids = self
+                .ts_index
+                .read()
+                .await
+                .get_series_id_list(table, &[])
+                .await?;
             info!(
                 "drop table column: vnode: {} deleting {} fields in table: {db_owner}.{table}",
                 self.id,

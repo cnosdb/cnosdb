@@ -18,7 +18,8 @@ use tokio::sync::{oneshot, RwLock};
 use trace::error;
 
 use crate::error::{SchemaSnafu, TskvResult};
-use crate::index::{self, IndexResult};
+use crate::index::ts_index::TSIndex;
+use crate::index::IndexResult;
 use crate::kv_option::Options;
 use crate::memcache::{OrderedRowsData, RowData, RowGroup};
 use crate::schema::schemas::DBschemas;
@@ -38,7 +39,7 @@ pub struct Database {
     db_name: Arc<String>,
 
     schemas: Arc<DBschemas>,
-    ts_indexes: HashMap<TseriesFamilyId, Arc<index::ts_index::TSIndex>>,
+    ts_indexes: HashMap<TseriesFamilyId, Arc<RwLock<TSIndex>>>,
     ts_families: HashMap<TseriesFamilyId, Arc<RwLock<TseriesFamily>>>,
     tsf_factory: TsfFactory,
 }
@@ -228,7 +229,7 @@ impl Database {
         &self,
         precision: Precision,
         tables: FlatBufferTable<'_>,
-        ts_index: Arc<index::ts_index::TSIndex>,
+        ts_index: Arc<RwLock<TSIndex>>,
         recover_from_wal: bool,
         strict_write: Option<bool>,
     ) -> TskvResult<HashMap<SeriesId, (SeriesKey, RowGroup)>> {
@@ -327,11 +328,12 @@ impl Database {
         columns: &Vector<'a, ForwardsUOffset<Column<'a>>>,
         table_column: &TskvTableSchema,
         row_num: usize,
-        ts_index: Arc<index::ts_index::TSIndex>,
+        ts_index: Arc<RwLock<TSIndex>>,
         recover_from_wal: bool,
     ) -> TskvResult<Vec<(u32, SeriesKey)>> {
         let mut res_sids = Vec::with_capacity(row_num);
         let mut series_keys = Vec::with_capacity(row_num);
+        let ts_index_r = ts_index.read().await;
         for row_count in 0..row_num {
             let series_key = SeriesKey::build_series_key(
                 fb_schema.table,
@@ -343,13 +345,13 @@ impl Database {
             .map_err(|e| TskvError::CommonError {
                 reason: e.to_string(),
             })?;
-            if let Some(id) = ts_index.get_series_id(&series_key).await? {
+            if let Some(id) = ts_index_r.get_series_id(&series_key).await? {
                 res_sids.push(Some((id, series_key)));
                 continue;
             }
 
             if recover_from_wal {
-                if let Some(id) = ts_index.get_deleted_series_id(&series_key).await? {
+                if let Some(id) = ts_index_r.get_tombstone_series_id(&series_key).await? {
                     // 仅在 recover wal的时候有用
                     res_sids.push(Some((id, series_key)));
                     continue;
@@ -359,8 +361,11 @@ impl Database {
             res_sids.push(None);
             series_keys.push(series_key);
         }
+        drop(ts_index_r);
 
         let mut ids = ts_index
+            .write()
+            .await
             .add_series_if_not_exists(series_keys)
             .await?
             .into_iter();
@@ -383,6 +388,7 @@ impl Database {
     ) -> IndexResult<Vec<SeriesKey>> {
         let mut res = vec![];
         if let Some(idx) = self.get_ts_index(vnode_id) {
+            let idx = idx.read().await;
             for sid in sids {
                 if let Some(key) = idx.get_series_key(*sid).await? {
                     res.push(key)
@@ -396,7 +402,7 @@ impl Database {
     pub async fn rebuild_tsfamily_index(
         &mut self,
         ts_family: Arc<RwLock<TseriesFamily>>,
-    ) -> TskvResult<Arc<index::ts_index::TSIndex>> {
+    ) -> TskvResult<Arc<RwLock<TSIndex>>> {
         let id = ts_family.read().await.tf_id();
         let ts_index = ts_family.read().await.rebuild_index().await?;
 
@@ -435,7 +441,7 @@ impl Database {
         self.ts_indexes.remove(&id);
     }
 
-    pub fn get_ts_index(&self, id: TseriesFamilyId) -> Option<Arc<index::ts_index::TSIndex>> {
+    pub fn get_ts_index(&self, id: TseriesFamilyId) -> Option<Arc<RwLock<TSIndex>>> {
         if let Some(v) = self.ts_indexes.get(&id) {
             return Some(v.clone());
         }
@@ -443,21 +449,18 @@ impl Database {
         None
     }
 
-    pub fn ts_indexes(&self) -> HashMap<TseriesFamilyId, Arc<index::ts_index::TSIndex>> {
+    pub fn ts_indexes(&self) -> HashMap<TseriesFamilyId, Arc<RwLock<TSIndex>>> {
         self.ts_indexes.clone()
     }
 
-    pub async fn get_ts_index_or_add(
-        &mut self,
-        id: u32,
-    ) -> TskvResult<Arc<index::ts_index::TSIndex>> {
+    pub async fn get_ts_index_or_add(&mut self, id: u32) -> TskvResult<Arc<RwLock<TSIndex>>> {
         if let Some(v) = self.ts_indexes.get(&id) {
             return Ok(v.clone());
         }
 
         let path = self.opt.storage.index_dir(&self.owner, id);
 
-        let idx = index::ts_index::TSIndex::new(path).await?;
+        let idx = TSIndex::new(path).await?;
 
         self.ts_indexes.insert(id, idx.clone());
 

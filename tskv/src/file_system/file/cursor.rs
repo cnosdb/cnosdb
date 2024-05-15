@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use std::io::{Error, ErrorKind, IoSlice, Result, SeekFrom};
 use std::ops::Deref;
 

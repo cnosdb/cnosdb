@@ -150,7 +150,7 @@ impl NodeStorage {
             let meta = self.get_snapshot_meta(index).await?;
 
             info!(
-                "---- node-{} last applied:{}, create snapshot index: {:?}, data len {}, meta {:?}",
+                "node-{} last applied:{}, create snapshot index: {:?}, data len {}, meta {:?}",
                 self.id,
                 last_log_id,
                 index,
@@ -160,7 +160,7 @@ impl NodeStorage {
 
             Ok(StoredSnapshot { data, meta })
         } else {
-            info!("---- node-{}  create snapshot None", self.id,);
+            info!("node-{}  create snapshot None", self.id,);
             Ok(StoredSnapshot {
                 data: vec![],
                 meta: SnapshotMeta::default(),
@@ -169,7 +169,7 @@ impl NodeStorage {
     }
 
     async fn apply_snapshot(&self, snap: StoredSnapshot) -> ReplicationResult<()> {
-        info!("---- node-{} apply snapshot  meta {:?}", self.id, snap.meta);
+        info!("node-{} apply snapshot  meta {:?}", self.id, snap.meta);
 
         let group_id = self.group_id();
         let log_id = snap.meta.last_log_id.unwrap_or_default();
@@ -270,7 +270,7 @@ impl RaftStorage<TypeConfig> for Arc<NodeStorage> {
                 .map_err(|e| StorageIOError::read_state_machine(&e))?;
 
             info!(
-                "---- node-{}  get snapshot index: {:?}, data len {}, meta {:?}",
+                "node-{}  get snapshot index: {:?}, data len {}, meta {:?}",
                 self.id,
                 index,
                 data.len(),
@@ -282,7 +282,7 @@ impl RaftStorage<TypeConfig> for Arc<NodeStorage> {
                 snapshot: Box::new(Cursor::new(data)),
             }))
         } else {
-            info!("---- node-{}  get snapshot None", self.id);
+            info!("node-{}  get snapshot None", self.id);
             Ok(None)
         }
     }

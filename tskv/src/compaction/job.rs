@@ -292,7 +292,7 @@ impl FlushJob {
         info!("begin flush data {}", request);
 
         // flush index
-        request.ts_index.flush().await?;
+        request.ts_index.write().await.flush().await?;
 
         // check memecaches is empty
         let mut is_empty = true;
@@ -309,6 +309,13 @@ impl FlushJob {
         } else {
             info!("memcaches is empty exit flush {}", request);
         }
+
+        let _ = request
+            .ts_index
+            .write()
+            .await
+            .clear_tombstone_series()
+            .await;
 
         Ok(())
     }
