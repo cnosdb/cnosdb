@@ -40,13 +40,13 @@ path = '/var/lib/cnosdb/data'
 ## $base_file_size * level * $compact_trigger_file_num
 # base_file_size = "16M" # 16,777,216 bytes
 
-## The maxmimum amount of flush requests in memory
+## The maximum amount of flush requests in memory
 # flush_req_channel_cap = 16
 
 ## The maximum count of opened file handles (for query) in each vnode.
 # max_cached_readers = 32
 
-## The maxmimum level of a data file (from 0 to 4).
+## The maximum level of a data file (from 0 to 4).
 # max_level = 4
 
 # Trigger of compaction using the number of level 0 files.
@@ -72,13 +72,13 @@ max_datablock_size = 102400
 
 [wal]
 
-## If true, write requets on disk before writing to memory.
+## If true, write request on disk before writing to memory.
 enabled = true
 
 ## The directory where write ahead logs stored.
 path = '/var/lib/cnosdb/wal'
 
-## The maxmimum amount of write request in memory.
+## The maximum amount of write request in memory.
 # wal_req_channel_cap = 64
 
 ## The maximum size of a WAL.
@@ -98,7 +98,7 @@ path = '/var/lib/cnosdb/wal'
 ## The maximum size of a mutable cache.
 # max_buffer_size = '128M' # 134,217,728 bytes
 
-## The partion number of memcache cache,default equal to cpu number
+## The partition number of memcache cache,default equal to cpu number
 # partition = 8
 
 [log]
