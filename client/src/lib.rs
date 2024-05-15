@@ -9,6 +9,7 @@ pub mod functions;
 pub mod helper;
 pub mod print_format;
 pub mod print_options;
+pub mod progress_bar;
 
 pub type Result<T> = std::result::Result<T, anyhow::Error>;
 
