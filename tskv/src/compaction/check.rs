@@ -14,7 +14,7 @@ use models::predicate::domain::TimeRange;
 use models::{utils as model_utils, ColumnId, FieldId, SeriesId, Timestamp};
 use tokio::sync::RwLock;
 
-use crate::compaction::CompactIterator;
+use crate::compaction::CompactState;
 use crate::error::{Error, Result};
 use crate::tseries_family::TseriesFamily;
 use crate::tsm::{DataBlock, TsmReader};
@@ -239,7 +239,12 @@ pub(crate) async fn vnode_hash_tree(
     }
 
     // Build a compact iterator, read data, split by time range and then calculate hash.
-    let iter = CompactIterator::new(readers, MAX_DATA_BLOCK_SIZE as usize, true);
+    let iter = CompactState::new(
+        readers,
+        TimeRange::all(),
+        MAX_DATA_BLOCK_SIZE as usize,
+        true,
+    );
     let mut fid_tr_hash_val_map: HashMap<FieldId, Vec<(TimeRange, Hash)>> =
         read_from_compact_iterator(iter, vnode_id, DEFAULT_DURATION).await?;
 
@@ -357,7 +362,7 @@ fn hash_partial_datablock(
 }
 
 async fn read_from_compact_iterator(
-    mut _iter: CompactIterator,
+    mut _iter: CompactState,
     _vnode_id: TseriesFamilyId,
     _time_range_nanosec: i64,
 ) -> Result<HashMap<FieldId, Vec<(TimeRange, Hash)>>> {
