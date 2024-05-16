@@ -159,7 +159,9 @@ mod tests {
 
         tskv_write(rt.clone(), &tskv, "cnosdb", "public", 0, 1, request);
         rt.block_on(async move {
-            tskv.flush_tsfamily("cnosdb", "public", 0).await.unwrap();
+            tskv.flush_tsfamily("cnosdb", "public", 0, true)
+                .await
+                .unwrap();
             tokio::time::sleep(Duration::from_secs(1)).await;
             let ts_family = tskv
                 .open_tsfamily("cnosdb", "public", 0)
@@ -200,7 +202,7 @@ mod tests {
         rt.block_on(async move {
             tokio::time::sleep(Duration::from_secs(1)).await;
 
-            tskv.flush_tsfamily("cnosdb", "db", 0).await.unwrap();
+            tskv.flush_tsfamily("cnosdb", "db", 0, true).await.unwrap();
             tokio::time::sleep(Duration::from_secs(1)).await;
             let ts_family = tskv
                 .open_tsfamily("cnosdb", "db", 0)
@@ -272,7 +274,9 @@ mod tests {
         rt.block_on(async {
             tokio::time::sleep(Duration::from_secs(2)).await;
 
-            tskv.flush_tsfamily("cnosdb", db_cloned, 0).await.unwrap();
+            tskv.flush_tsfamily("cnosdb", db_cloned, 0, true)
+                .await
+                .unwrap();
             tokio::time::sleep(Duration::from_secs(1)).await;
             let ts_family = tskv
                 .open_tsfamily("cnosdb", db_cloned, 0)
@@ -378,7 +382,7 @@ mod tests {
             .block_on(tskv.open_tsfamily(tenant, database, vnode_id))
             .unwrap();
         runtime
-            .block_on(tskv.flush_tsfamily(tenant, database, vnode_id))
+            .block_on(tskv.flush_tsfamily(tenant, database, vnode_id, true))
             .unwrap();
         let vnode_snapshot = {
             // Test create snapshot.

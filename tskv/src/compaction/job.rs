@@ -2,7 +2,6 @@ use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::{atomic, Arc};
 use std::time::{Duration, Instant};
 
-use flush::run_flush_memtable_job;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::{oneshot, RwLock, RwLockWriteGuard, Semaphore};
@@ -10,7 +9,7 @@ use trace::{error, info};
 
 use crate::compaction::{flush, CompactTask, FlushReq, LevelCompactionPicker, Picker};
 use crate::summary::SummaryTask;
-use crate::{TsKvContext, TseriesFamilyId};
+use crate::{TsKvContext, TseriesFamilyId, TskvResult};
 
 const COMPACT_BATCH_CHECKING_SECONDS: u64 = 1;
 
@@ -248,33 +247,70 @@ impl<F: FnOnce()> Drop for DeferGuard<F> {
     }
 }
 
+#[derive(Clone)]
 pub struct FlushJob {
     ctx: Arc<TsKvContext>,
-    runtime: Arc<Runtime>,
+    lock: Arc<RwLock<()>>,
 }
 
 impl FlushJob {
-    pub fn new(runtime: Arc<Runtime>, ctx: Arc<TsKvContext>) -> Self {
-        Self { ctx, runtime }
+    pub fn new(ctx: Arc<TsKvContext>) -> Self {
+        Self {
+            ctx,
+            lock: Arc::new(RwLock::new(())),
+        }
     }
 
-    pub fn start_vnode_flush_job(&self, mut flush_req_receiver: Receiver<FlushReq>) {
-        let runtime_inner = self.runtime.clone();
+    pub async fn run_block(&self, request: FlushReq) -> TskvResult<()> {
         let ctx = self.ctx.clone();
-        self.runtime.spawn(async move {
-            while let Some(x) = flush_req_receiver.recv().await {
-                // TODO(zipper): this make config `flush_req_channel_cap` wasted
-                // Run flush job and trigger compaction.
-                runtime_inner.spawn(run_flush_memtable_job(x, ctx.clone(), true));
-            }
-        });
-        info!("Flush task handler started");
-    }
-}
+        let lock = self.lock.clone();
 
-impl std::fmt::Debug for FlushJob {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("FlushJob").finish()
+        let result = Self::run(&request, ctx, lock).await;
+        info!("block flush memcaches {} result: {:?}", request, result);
+
+        result
+    }
+
+    pub fn run_spawn(&self, request: FlushReq) -> TskvResult<()> {
+        let ctx = self.ctx.clone();
+        let lock = self.lock.clone();
+
+        self.ctx.runtime.spawn(async move {
+            let result = Self::run(&request, ctx, lock).await;
+            info!("spawn flush memcaches {} result: {:?}", request, result);
+        });
+
+        Ok(())
+    }
+
+    async fn run(
+        request: &FlushReq,
+        ctx: Arc<TsKvContext>,
+        lock: Arc<RwLock<()>>,
+    ) -> TskvResult<()> {
+        let _ = lock.write().await;
+        info!("begin flush data {}", request);
+
+        // flush index
+        request.ts_index.flush().await?;
+
+        // check memecaches is empty
+        let mut is_empty = true;
+        let mems = request.ts_family.read().await.im_cache().clone();
+        for mem in mems.iter() {
+            if !mem.read().is_empty() {
+                is_empty = false;
+            }
+        }
+
+        // flush memecache
+        if !is_empty {
+            flush::flush_memtable(request, ctx, mems).await?;
+        } else {
+            info!("memcaches is empty exit flush {}", request);
+        }
+
+        Ok(())
     }
 }
 

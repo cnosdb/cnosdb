@@ -13,13 +13,11 @@ use models::predicate::domain::{TimeRange, TimeRanges};
 use models::schema::{split_owner, TableColumn};
 use models::{ColumnId, FieldId, SeriesId, SeriesKey, Timestamp};
 use parking_lot::RwLock;
-use tokio::sync::mpsc::Sender;
 use tokio::sync::RwLock as TokioRwLock;
 use tokio::time::Instant;
 use trace::{debug, error, info};
 use utils::BloomFilter;
 
-use crate::compaction::{run_flush_memtable_job, FlushReq};
 use crate::error::TskvResult;
 use crate::file_system::file_manager;
 use crate::file_utils::{make_delta_file, make_tsm_file};
@@ -31,7 +29,7 @@ use crate::tsm::page::PageMeta;
 use crate::tsm::reader::TsmReader;
 use crate::tsm::{ColumnGroupID, TsmTombstone};
 use crate::TskvError::CommonError;
-use crate::{tsm, ColumnFileId, LevelId, Options, TsKvContext, TseriesFamilyId};
+use crate::{tsm, ColumnFileId, LevelId, Options, TseriesFamilyId};
 
 #[derive(Debug)]
 pub struct ColumnFile {
@@ -990,56 +988,6 @@ impl TseriesFamily {
         self.new_super_version(self.version());
     }
 
-    /// Check if there are immutable caches to flush and build a `FlushReq`,
-    /// or else return None.
-    ///
-    /// If argument `force` is false, total count of immutable caches that
-    /// are not flushing or flushed should be greater than configuration `max_immutable_number`.
-    /// If argument `force` is set to true, then do not check the total count.
-    pub(crate) fn build_flush_req(&mut self, force: bool) -> Option<FlushReq> {
-        let mut filtered_caches: Vec<Arc<RwLock<MemCache>>> = self
-            .immut_cache
-            .iter()
-            .filter(|c| !c.read().is_flushing())
-            .cloned()
-            .collect();
-
-        if !force && filtered_caches.is_empty() {
-            return None;
-        }
-
-        // Mark these caches marked as `flushing` in current thread and collect them.
-        filtered_caches.retain(|c| c.read().mark_flushing());
-        if filtered_caches.is_empty() {
-            return None;
-        }
-
-        let (mut high_seq_no, mut low_seq_no) = (0, u64::MAX);
-        for mem in filtered_caches.iter() {
-            high_seq_no = high_seq_no.max(mem.read().seq_no());
-            low_seq_no = low_seq_no.min(mem.read().min_seq_no());
-        }
-
-        Some(FlushReq {
-            owner: self.tenant_database().to_string(),
-            ts_family_id: self.tf_id,
-            mems: filtered_caches,
-            low_seq_no,
-            high_seq_no,
-        })
-    }
-
-    /// Try to build a `FlushReq` by immutable caches,
-    /// if succeed, send it to flush job.
-    pub(crate) async fn send_flush_req(&mut self, sender: Sender<FlushReq>, force: bool) {
-        if let Some(req) = self.build_flush_req(force) {
-            sender
-                .send(req)
-                .await
-                .expect("error send flush req to kvcore");
-        }
-    }
-
     pub fn put_points(
         &self,
         seq: u64,
@@ -1059,7 +1007,7 @@ impl TseriesFamily {
         Ok(res as u64)
     }
 
-    pub async fn check_to_flush(&mut self, sender: Sender<FlushReq>) {
+    pub async fn check_to_flush(&mut self) -> bool {
         if self.mut_cache.read().is_full() {
             info!(
                 "mut_cache is full, switch to immutable. current pool_size : {}",
@@ -1067,9 +1015,8 @@ impl TseriesFamily {
             );
             self.switch_to_immutable();
         }
-        if !self.immut_cache.is_empty() {
-            self.send_flush_req(sender, false).await;
-        }
+
+        !self.immut_cache.is_empty()
     }
 
     pub async fn update_last_modified(&self) {
@@ -1194,25 +1141,6 @@ impl TseriesFamily {
         index.flush().await?;
 
         Ok(index)
-    }
-
-    pub async fn flush(
-        ctx: Arc<TsKvContext>,
-        tsfamily: Arc<TokioRwLock<TseriesFamily>>,
-        trigger_compact: bool,
-    ) -> TskvResult<()> {
-        let request = {
-            let mut tsfamily = tsfamily.write().await;
-            tsfamily.switch_to_immutable();
-            tsfamily.build_flush_req(true)
-        };
-
-        // Run flush job and trigger compaction.
-        if let Some(req) = request {
-            run_flush_memtable_job(req, ctx, trigger_compact).await?;
-        }
-
-        Ok(())
     }
 
     pub fn tf_id(&self) -> TseriesFamilyId {

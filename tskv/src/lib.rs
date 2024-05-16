@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 pub use compaction::check::vnode_table_checksum_schema;
-use compaction::{CompactTask, FlushReq};
+use compaction::CompactTask;
 use context::GlobalContext;
 use datafusion::arrow::record_batch::RecordBatch;
 use models::meta_data::{NodeId, VnodeId};
@@ -13,6 +13,7 @@ use models::predicate::domain::ColumnDomains;
 use models::{SeriesId, SeriesKey};
 use serde::{Deserialize, Serialize};
 use summary::SummaryTask;
+use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::RwLock;
 use tseries_family::Version;
@@ -92,6 +93,7 @@ pub trait Engine: Send + Sync + Debug {
         tenant: &str,
         database: &str,
         vnode_id: VnodeId,
+        trigger_compact: bool,
     ) -> TskvResult<()>;
 
     /// Read index of a storage unit, find series ids that matches the filter.
@@ -139,11 +141,11 @@ pub trait Engine: Send + Sync + Debug {
 
 #[derive(Debug, Clone)]
 pub struct TsKvContext {
+    pub runtime: Arc<Runtime>,
     pub options: Arc<Options>,
     pub global_ctx: Arc<GlobalContext>,
     pub version_set: Arc<RwLock<VersionSet>>,
 
-    pub flush_task_sender: Sender<FlushReq>,
     pub compact_task_sender: Sender<CompactTask>,
     pub summary_task_sender: Sender<SummaryTask>,
 }
