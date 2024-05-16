@@ -1,6 +1,5 @@
 pub mod check;
 mod compact;
-mod delta_compact;
 mod flush;
 mod iterator;
 pub mod job;
@@ -9,13 +8,13 @@ mod picker;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-pub use compact::*;
-pub use flush::*;
 use models::predicate::domain::TimeRange;
 use parking_lot::RwLock;
-pub use picker::*;
 use utils::BloomFilter;
 
+pub use crate::compaction::compact::CompactState;
+pub use crate::compaction::flush::run_flush_memtable_job;
+pub use crate::compaction::picker::pick_compaction;
 use crate::context::GlobalContext;
 use crate::memcache::MemCache;
 use crate::tseries_family::{ColumnFile, Version};
@@ -144,7 +143,7 @@ pub async fn run_compaction_job(
     ctx: Arc<GlobalContext>,
 ) -> crate::Result<Option<(VersionEdit, HashMap<ColumnFileId, Arc<BloomFilter>>)>> {
     if request.in_level == 0 {
-        delta_compact::run_compaction_job(request, ctx).await
+        compact::run_delta_compaction_job(request, ctx).await
     } else {
         compact::run_compaction_job(request, ctx).await
     }
@@ -387,9 +386,8 @@ pub mod test {
     use models::predicate::domain::TimeRange;
 
     pub use super::compact::test::{
-        check_column_file, create_options, generate_data_block, prepare_compaction,
-        read_data_blocks_from_column_file, write_data_block_desc, write_data_blocks_to_column_file,
-        TsmSchema,
+        check_column_file, create_options, generate_data_block, read_data_blocks_from_column_file,
+        write_data_block_desc, write_data_blocks_to_column_file, TsmSchema,
     };
     pub use super::flush::flush_tests::default_table_schema;
     use crate::compaction::{CompactReq, CompactTask};
