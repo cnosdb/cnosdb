@@ -7,8 +7,7 @@ use client::ctx::{SessionConfig, SessionContext};
 use client::print_format::PrintFormat;
 use client::print_options::PrintOptions;
 use client::{exec, CNOSDB_CLI_VERSION};
-use fly_accept_encoding::Encoding;
-use http_protocol::encoding::EncodingExt;
+use http_protocol::encoding::Encoding;
 
 #[derive(Debug, Clone, Parser, PartialEq)]
 #[command(author, version, about, long_about= None)]
@@ -297,7 +296,7 @@ fn try_parse_target_partitions(size: &str) -> std::result::Result<usize, String>
 }
 
 fn try_parse_encoding(encoding: &str) -> std::result::Result<Encoding, String> {
-    match Encoding::from_str(encoding) {
+    match Encoding::from_str_opt(encoding) {
         Some(encoding) => Ok(encoding),
         _ => Err(format!("encoding not support: {}", encoding)),
     }

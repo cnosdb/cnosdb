@@ -10,8 +10,7 @@ use std::time::Instant;
 
 use config::TLSConfig;
 use coordinator::service::CoordinatorRef;
-use fly_accept_encoding::Encoding;
-use http_protocol::encoding::EncodingExt;
+use http_protocol::encoding::Encoding;
 use http_protocol::header::{ACCEPT, APPLICATION_JSON, AUTHORIZATION, PRIVATE_KEY};
 use http_protocol::parameter::{DebugParam, DumpParam, ESLogParam, SqlParam, WriteParam};
 use http_protocol::response::ErrorResponse;

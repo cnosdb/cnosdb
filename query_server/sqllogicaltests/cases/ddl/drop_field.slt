@@ -42,3 +42,18 @@ describe table air;
 "visibility" "DOUBLE" "FIELD" "DEFAULT"
 "temperature" "DOUBLE" "FIELD" "DEFAULT"
 "pressure" "DOUBLE" "FIELD" "DEFAULT"
+
+statement ok
+DROP TABLE IF EXISTS t1;
+
+statement ok
+CREATE TABLE t1(a BIGINT, b BIGINT);
+
+statement ok
+ALTER TABLE t1 drop b;
+
+query T
+DESCRIBE TABLE t1;
+----
+"time" "TIMESTAMP(NANOSECOND)" "TIME" "DEFAULT"
+"a" "BIGINT" "FIELD" "DEFAULT"

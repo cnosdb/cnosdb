@@ -1,7 +1,6 @@
 #![cfg(test)]
 
-use fly_accept_encoding::Encoding;
-use http_protocol::encoding::EncodingExt;
+use http_protocol::encoding::Encoding;
 use http_protocol::header::{HeaderValue, ACCEPT, CONTENT_TYPE};
 use reqwest::header::{ACCEPT_ENCODING, CONTENT_ENCODING};
 use reqwest::{Method, StatusCode};
@@ -234,18 +233,27 @@ fn test_compression() {
     {
         let url = "http://127.0.0.1:8902/api/v1/sql?db=e2e_test_compression";
         let body = b"select 1;".to_vec();
-        for &req_encoding in Encoding::iterator() {
-            for &resp_encoding in Encoding::iterator() {
+        for req_encoding in Encoding::iterator() {
+            for resp_encoding in Encoding::iterator() {
                 let req_bytes_enc = req_encoding.encode(body.clone()).unwrap();
                 let req_bytes_dec = req_encoding.decode(req_bytes_enc.clone().into()).unwrap();
                 assert_eq!(body, req_bytes_dec.to_vec());
                 let resp =
                     send_encoded_request(&client, url, req_bytes_enc, req_encoding, resp_encoding);
-                assert_response_is_ok!(resp);
+                if !resp.status().is_success() {
+                    panic!(
+                        "req_encoding: {:?}, resp_encoding: {:?}, resp: {:?}",
+                        req_encoding, resp_encoding, resp
+                    );
+                }
                 let resp_bytes_enc = resp.bytes().unwrap();
                 let resp_bytes_dec = resp_encoding.decode(resp_bytes_enc).unwrap();
                 let resp_text = String::from_utf8(resp_bytes_dec.to_vec()).unwrap();
-                assert_eq!(resp_text, "Int64(1)\n1\n");
+                assert_eq!(
+                    resp_text, "Int64(1)\n1\n",
+                    "req_encoding: {:?}, resp_encoding: {:?}",
+                    req_encoding, resp_encoding
+                );
             }
         }
     }
@@ -253,7 +261,7 @@ fn test_compression() {
     {
         let url = "http://127.0.0.1:8902/api/v1/write?db=e2e_test_compression";
         let body = b"test_v1_write_path_compression,ta=a1,tb=b1 fa=1,fb=2".to_vec();
-        for &encoding in Encoding::iterator() {
+        for encoding in Encoding::iterator() {
             let req_bytes_enc = encoding.encode(body.clone()).unwrap();
             let req_bytes_dec = encoding.decode(req_bytes_enc.clone().into()).unwrap();
             assert_eq!(body, req_bytes_dec.to_vec());
@@ -266,7 +274,7 @@ fn test_compression() {
     {
         let url = "http://127.0.0.1:8902/api/v1/opentsdb/write?db=e2e_test_compression";
         let body = b"test_v1_opentsdb_write_path_compression 1 1 ta=a1 tb=b1 fa=1 fb=2".to_vec();
-        for &encoding in Encoding::iterator() {
+        for encoding in Encoding::iterator() {
             let req_bytes_enc = encoding.encode(body.clone()).unwrap();
             let req_bytes_dec = encoding.decode(req_bytes_enc.clone().into()).unwrap();
             assert_eq!(body, req_bytes_dec.to_vec());

@@ -5,8 +5,7 @@ use datafusion::arrow::error::Result as ArrowResult;
 use datafusion::arrow::json::{ArrayWriter, LineDelimitedWriter};
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::arrow::util::pretty::pretty_format_batches;
-use fly_accept_encoding::Encoding;
-use http_protocol::encoding::EncodingExt;
+use http_protocol::encoding::Encoding;
 use http_protocol::header::{
     APPLICATION_CSV, APPLICATION_JSON, APPLICATION_NDJSON, APPLICATION_PREFIX, APPLICATION_STAR,
     APPLICATION_TABLE, APPLICATION_TSV, CONTENT_TYPE, STAR_STAR,

@@ -4,8 +4,7 @@ use std::path::Path;
 use anyhow::anyhow;
 use base64::prelude::{Engine, BASE64_STANDARD};
 use datafusion::arrow::record_batch::RecordBatch;
-use fly_accept_encoding::Encoding;
-use http_protocol::encoding::EncodingExt;
+use http_protocol::encoding::Encoding;
 use http_protocol::header::{ACCEPT, PRIVATE_KEY};
 use http_protocol::http_client::HttpClient;
 use http_protocol::parameter::{DumpParam, SqlParam, WriteParam};
@@ -303,7 +302,7 @@ impl SessionContext {
             OK => {
                 let body = if let Some(content_encoding) = resp.headers().get(CONTENT_ENCODING) {
                     let encoding_str = content_encoding.to_str()?;
-                    let encoding = match Encoding::from_str(encoding_str) {
+                    let encoding = match Encoding::from_str_opt(encoding_str) {
                         Some(encoding) => Ok(encoding),
                         None => Err(anyhow!("encoding not support: {}", encoding_str)),
                     }?;
