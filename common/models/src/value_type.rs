@@ -65,32 +65,6 @@ impl Display for PhysicalDType {
     }
 }
 
-impl From<u8> for PhysicalDType {
-    fn from(value: u8) -> Self {
-        match value {
-            0 => Self::Float,
-            1 => Self::Integer,
-            2 => Self::Boolean,
-            3 => Self::String,
-            4 => Self::Unsigned,
-            _ => Self::Unknown,
-        }
-    }
-}
-
-impl From<PhysicalDType> for u8 {
-    fn from(value: PhysicalDType) -> Self {
-        match value {
-            PhysicalDType::Float => 0,
-            PhysicalDType::Integer => 1,
-            PhysicalDType::Boolean => 2,
-            PhysicalDType::String => 3,
-            PhysicalDType::Unsigned => 4,
-            PhysicalDType::Unknown => 5,
-        }
-    }
-}
-
 impl From<protos::models::FieldType> for PhysicalDType {
     fn from(t: protos::models::FieldType) -> Self {
         match t {
