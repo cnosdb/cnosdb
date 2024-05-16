@@ -115,7 +115,7 @@ pub enum WriteCommand {
     CreateRole(
         String,
         String,
-        SystemTenantRole,
+        Option<SystemTenantRole>,
         HashMap<String, DatabasePrivilege>,
         String,
     ),

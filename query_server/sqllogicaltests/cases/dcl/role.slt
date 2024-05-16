@@ -139,3 +139,86 @@ statement ok
 
 query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Insufficient privileges, expected \[Read on all databases of tenant 78322384368497284380257291774744000001\]", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
 show databases;
+
+statement ok
+--#USER_NAME = root
+
+statement ok
+drop user if exists u5;
+
+statement ok
+create user u5;
+
+statement ok
+drop user if exists u6;
+
+statement ok
+create user u6;
+
+
+
+statement ok
+drop tenant if exists tt2;
+
+statement ok
+create tenant tt2;
+
+statement ok
+--#TENANT = tt2
+
+statement ok
+drop role if exists r5;
+
+statement ok
+CREATE ROLE r5;
+
+statement ok
+drop role if exists r6;
+
+statement ok
+CREATE ROLE r6 INHERIT member;
+
+statement ok
+alter tenant tt2 add user u5 as r5;
+
+statement ok
+alter tenant tt2 add user u6 as r6;
+
+statement ok
+create database db1;
+
+
+statement ok
+create database db2;
+
+statement ok
+create table db1.t1 (a double, b double);
+
+statement ok
+create table db2.t2 (a double, b double);
+
+statement ok
+grant read on database db1 to r5;
+
+
+statement error cannot revoke the privilege Read on database db1 of role
+revoke read on database db1 from r6;
+
+statement ok
+--#USER_NAME = u5
+--#DATABASE = db1
+
+statement ok
+show tables;
+
+statement ok
+describe database db1;
+
+statement ok
+--#DATABASE = db2
+
+statement error Read on database db2 of tenant
+show tables;
+
+statement error Read on database db2 of tenant
+describe database db2;
