@@ -539,9 +539,7 @@ pub mod flush_tests {
             assert_eq!(cm.max_ts, test_case.expected_max_ts[i]);
             let file_path = file_utils::make_delta_file_name(&delta_dir, cm.file_id);
             let tsm_reader = TsmReader::open(file_path).await.unwrap();
-            read_and_check(&tsm_reader, &test_case.expected_delta_data[i])
-                .await
-                .unwrap();
+            read_and_check(&tsm_reader, &test_case.expected_delta_data[i]).await;
         }
     }
 
@@ -550,7 +548,7 @@ pub mod flush_tests {
         max_level_ts_before: Timestamp,
         max_level_ts_after: Timestamp,
         /// Expected delta file data of each compact metas.
-        expected_delta_data: Vec<HashMap<FieldId, Vec<DataBlock>>>,
+        expected_delta_data: Vec<Vec<(FieldId, Vec<DataBlock>)>>,
         expected_file_size: Vec<u64>,
         expected_min_ts: Vec<Timestamp>,
         expected_max_ts: Vec<Timestamp>,
@@ -612,7 +610,7 @@ pub mod flush_tests {
         // Col_2: None, None, 15,   16,   None, 17, 18
         // Col_3: 13,   14,   None, None, None, 17, 18
         #[rustfmt::skip]
-        let expected_delta_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from([
+        let mut expected_delta_data: Vec<(FieldId, Vec<DataBlock>)> = vec![
             (model_utils::unite_id(0, 1), vec![DataBlock::F64 { ts: vec![1, 2, 3, 4, 5, 6], val: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], enc: DataBlockEncoding::default() }]),
             (model_utils::unite_id(1, 1), vec![DataBlock::F64 { ts: vec![1, 2, 3, 4, 5, 6], val: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], enc: DataBlockEncoding::default() }]),
             (model_utils::unite_id(2, 1), vec![DataBlock::F64 { ts: vec![3, 4, 5, 6], val: vec![3.0, 4.0, 5.0, 6.0], enc: DataBlockEncoding::default() }]),
@@ -625,7 +623,8 @@ pub mod flush_tests {
             (model_utils::unite_id(1, 3), vec![DataBlock::F64 { ts: vec![13, 14, 15, 16, 17, 18], val: vec![13.0, 14.0, 15.0, 16.0, 17.0, 18.0], enc: DataBlockEncoding::default() }]),
             (model_utils::unite_id(2, 3), vec![DataBlock::F64 { ts: vec![15, 16, 17, 18], val: vec![15.0, 16.0, 17.0, 18.0], enc: DataBlockEncoding::default() }]),
             (model_utils::unite_id(3, 3), vec![DataBlock::F64 { ts: vec![13, 14, 17, 18], val: vec![13.0, 14.0, 17.0, 18.0], enc: DataBlockEncoding::default() }]),
-        ]);
+        ];
+        expected_delta_data.sort_by_key(|a| a.0);
 
         FlushTestCase {
             caches,
@@ -659,7 +658,7 @@ pub mod flush_tests {
         ]);
 
         let mut writer = WriterWrapper::new(ts_family_id, 1000);
-        let mut expected_delta_data = HashMap::new();
+        let mut expected_delta_data = Vec::new();
         for sid in [1, 2, 3] {
             #[rustfmt::skip]
             write_one_field(&mut writer, &flush_task, &col_enc, max_level_ts,
@@ -677,6 +676,7 @@ pub mod flush_tests {
             write_one_field(&mut writer, &flush_task, &col_enc, max_level_ts,
                 model_utils::unite_id(5, sid), FieldVal::Bytes(mini_vec![1, 1]), &mut expected_delta_data).await;
         }
+        expected_delta_data.sort_by_key(|a| a.0);
 
         let compact_meta = writer.finish().await.unwrap();
         assert!(compact_meta.is_some());
@@ -685,9 +685,7 @@ pub mod flush_tests {
 
         let delta_file_name = file_utils::make_delta_file_name(&delta_dir, compact_meta.file_id);
         let delta_reader = TsmReader::open(delta_file_name).await.unwrap();
-        read_and_check(&delta_reader, &expected_delta_data)
-            .await
-            .unwrap();
+        read_and_check(&delta_reader, &expected_delta_data).await;
     }
 
     /// Write one field_value as delta value, then write as tsm value,
@@ -699,7 +697,7 @@ pub mod flush_tests {
         max_level_ts: Timestamp,
         field_id: FieldId,
         field_val: FieldVal,
-        expected_delta_data: &mut HashMap<FieldId, Vec<DataBlock>>,
+        expected_delta_data: &mut Vec<(FieldId, Vec<DataBlock>)>,
     ) {
         let value_type = field_val.value_type();
         let (col_id, _) = model_utils::split_id(field_id);
@@ -723,7 +721,7 @@ pub mod flush_tests {
         delta_data_block.insert(field_val.data_value(max_level_ts + 1));
         delta_data_block.insert(field_val.data_value(max_level_ts + 2));
         delta_data_block.insert(field_val.data_value(max_level_ts + 3));
-        expected_delta_data.insert(field_id, vec![delta_data_block]);
+        expected_delta_data.push((field_id, vec![delta_data_block]));
 
         writer
             .write_field(field_id, &values, &value_type, encoding, flush_task)

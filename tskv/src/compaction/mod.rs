@@ -510,7 +510,7 @@ pub mod test {
             let _ = std::fs::remove_dir_all(&tsm_dir);
             let _ = std::fs::remove_dir_all(&delta_dir);
 
-            let tsm_data = &HashMap::new();
+            let tsm_data = &Vec::new();
             for level_sketch in self.levels.iter() {
                 for file_sketch in level_sketch.2.iter() {
                     let tsm_path = if level_sketch.0 == 0 {
