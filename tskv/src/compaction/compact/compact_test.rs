@@ -19,6 +19,32 @@ use crate::tsm::test::write_to_tsm_tombstone_v2;
 use crate::tsm::{DataBlock, TsmTombstoneCache};
 use crate::ColumnFileId;
 
+#[tokio::test]
+#[ignore = "Manually test"]
+async fn test_big_compaction() {
+    let dir = "/tmp/test/big_compaction/1";
+    let tenant_database = Arc::new("cnosdb.public".to_string());
+    let opt = create_options(dir.to_string(), 1);
+
+    let tsm_dir = opt.storage.tsm_dir(&tenant_database, 1);
+    #[rustfmt::skip]
+    let (compact_req, kernel) = prepare_compaction(
+        tenant_database,
+        opt,
+        5,
+        vec![
+            Arc::new(ColumnFile::new(393, 0, (1704067260000000000, 1705263600000000000).into(), 0, tsm_dir.join("_000393.tsm"))),
+            Arc::new(ColumnFile::new(394, 0, (1705263660000000000, 1705466820000000000).into(), 0, tsm_dir.join("_000394.tsm"))),
+        ],
+        1,
+    );
+    let (version_edit, _) = run_compaction_job(compact_req, kernel)
+        .await
+        .unwrap()
+        .unwrap();
+    println!("{version_edit}");
+}
+
 pub fn prepare_compaction(
     tenant_database: Arc<String>,
     opt: Arc<Options>,

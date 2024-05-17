@@ -538,7 +538,6 @@ async fn write_footer_to(
 
 #[cfg(test)]
 pub mod test {
-    use std::collections::HashMap;
     use std::path::Path;
 
     use models::FieldId;
@@ -556,7 +555,7 @@ pub mod test {
 
     pub async fn write_to_tsm(
         path: impl AsRef<Path>,
-        data: &HashMap<FieldId, Vec<DataBlock>>,
+        data: &[(FieldId, Vec<DataBlock>)],
         encode_data_block: bool,
     ) -> Result<()> {
         let tsm_seq = file_utils::get_tsm_file_id_by_path(&path)?;
@@ -597,10 +596,10 @@ pub mod test {
     #[tokio::test]
     async fn test_tsm_write_fast() {
         #[rustfmt::skip]
-        let data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from([
+        let data = vec![
             (1, vec![DataBlock::U64 { ts: vec![2, 3, 4], val: vec![12, 13, 15], enc: DataBlockEncoding::default() }]),
             (2, vec![DataBlock::U64 { ts: vec![2, 3, 4], val: vec![101, 102, 103], enc: DataBlockEncoding::default() }]),
-        ]);
+        ];
 
         let dir = "/tmp/test/tsm_writer/test_tsm_write_fast";
         let _ = std::fs::remove_dir_all(dir);
@@ -610,7 +609,7 @@ pub mod test {
             write_to_tsm(&tsm_file, &data, false).await.unwrap();
 
             let reader = TsmReader::open(tsm_file).await.unwrap();
-            read_and_check(&reader, &data).await.unwrap();
+            read_and_check(&reader, &data).await;
         }
         {
             // Test write encoded data block.
@@ -618,7 +617,7 @@ pub mod test {
             write_to_tsm(&tsm_file, &data, true).await.unwrap();
 
             let reader = TsmReader::open(tsm_file).await.unwrap();
-            read_and_check(&reader, &data).await.unwrap();
+            read_and_check(&reader, &data).await;
         }
     }
 
@@ -638,12 +637,12 @@ pub mod test {
         }
 
         #[rustfmt::skip]
-        let data = HashMap::from([
+        let data = vec![
             (1, vec![
                 DataBlock::I64 { ts: ts_1, val: val_1, enc: DataBlockEncoding::default() },
                 DataBlock::I64 { ts: ts_2, val: val_2, enc: DataBlockEncoding::default() },
             ]),
-        ]);
+        ];
 
         let dir = "/tmp/test/tsm_writer/test_tsm_write_1";
         let _ = std::fs::remove_dir_all(dir);
@@ -653,7 +652,7 @@ pub mod test {
             write_to_tsm(&tsm_file, &data, false).await.unwrap();
 
             let reader = TsmReader::open(tsm_file).await.unwrap();
-            read_and_check(&reader, &data).await.unwrap();
+            read_and_check(&reader, &data).await;
         }
         {
             // Test write encoded data block.
@@ -661,7 +660,7 @@ pub mod test {
             write_to_tsm(&tsm_file, &data, true).await.unwrap();
 
             let reader = TsmReader::open(tsm_file).await.unwrap();
-            read_and_check(&reader, &data).await.unwrap();
+            read_and_check(&reader, &data).await;
         }
     }
 }

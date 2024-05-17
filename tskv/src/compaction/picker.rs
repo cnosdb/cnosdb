@@ -675,7 +675,7 @@ mod test {
     #[tokio::test]
     async fn test_advise_out_level() {
         {
-            let dir = "/tmp/tesspick/test_adviced_out_level/1";
+            let dir = "/tmp/test/pick/test_adviced_out_level/1";
             let _ = std::fs::remove_dir_all(dir);
             let opt = create_options(dir.to_string(), 1);
 

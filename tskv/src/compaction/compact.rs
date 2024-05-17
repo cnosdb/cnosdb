@@ -10,7 +10,6 @@ use std::sync::Arc;
 use models::predicate::domain::{TimeRange, TimeRanges};
 use models::FieldId;
 use snafu::ResultExt;
-use trace::{error, info};
 use utils::BloomFilter;
 
 use super::iterator::BufferedIterator;
@@ -26,13 +25,13 @@ use crate::tsm::{
     self, BlockMeta, BlockMetaIterator, DataBlock, EncodedDataBlock, IndexIterator, IndexMeta,
     ReadTsmResult, TsmReader, TsmWriter, WriteTsmError, WriteTsmResult,
 };
-use crate::{ColumnFileId, Error, LevelId, TseriesFamilyId};
+use crate::{ColumnFileId, Error, LevelId};
 
 pub async fn run_compaction_job(
     request: CompactReq,
     ctx: Arc<GlobalContext>,
 ) -> Result<Option<(VersionEdit, HashMap<ColumnFileId, Arc<BloomFilter>>)>> {
-    info!(
+    trace::info!(
         "Compaction: Running compaction job on {}",
         request.compact_task
     );
@@ -936,6 +935,117 @@ impl<'a> std::fmt::Display for CompactingBlocks<'a> {
     }
 }
 
+pub struct TsmCache {
+    index_iter: BufferedIterator<IndexIterator>,
+    capacity: usize,
+    data: Vec<u8>,
+    tsm_off: u64,
+}
+
+impl TsmCache {
+    pub fn new(index_iter: BufferedIterator<IndexIterator>) -> Self {
+        Self {
+            index_iter,
+            capacity: 1024 * 1024 * 64,
+            data: Vec::with_capacity(1024 * 1024 * 64),
+            tsm_off: 0,
+        }
+    }
+
+    /// Read data from tsm_reader and fill the cache until the cache is full..
+    /// 1. Advance the index_iter, until find the BlockMeta with the same offset of block_meta,
+    ///    bind the offset value as load_off_start.
+    /// 2. Advance the index_iter, set the load_len as the sum of the size of BlockMeta from load_off_start,
+    ///    until the load_len + BlockMeta::size > capacity
+    /// 3. Read data from tsm_reader from load_off_start to load_off_start + load_len, and save data to self.data.
+    async fn fill(
+        &mut self,
+        tsm_reader: &TsmReader,
+        block_meta: &BlockMeta,
+        out_time_ranges: &Option<Arc<TimeRanges>>,
+    ) -> ReadTsmResult<bool> {
+        trace::trace!(
+            "Filling cache from file:{} for block_neta: field:{},off:{},len:{}, begin to find scale of cached data.",
+            tsm_reader.file_id(),
+            block_meta.field_id(),
+            block_meta.offset(),
+            block_meta.size(),
+        );
+        let mut load_off_start = 0_u64;
+        let mut load_len = 0_usize;
+
+        let mut found_curr_field = false;
+        'idx_iter: while let Some(idx) = self.index_iter.peek() {
+            let blk_meta_iter = match out_time_ranges {
+                Some(time_ranges) => idx.block_iterator_opt(time_ranges.clone()),
+                None => idx.block_iterator(),
+            };
+            for blk in blk_meta_iter {
+                if !found_curr_field {
+                    if blk.field_id() == block_meta.field_id() {
+                        found_curr_field = true;
+                    } else {
+                        // All of this IndexMeta has been already consumed.
+                        self.index_iter.next();
+                        continue 'idx_iter;
+                    }
+                }
+
+                if blk.offset() < block_meta.offset() {
+                    continue;
+                }
+
+                let blk_off = blk.offset();
+                let blk_size = blk.size();
+                if blk_size > (self.capacity - load_len) as u64 {
+                    // Cache is full, stop loading next BlockMeta, nether next IndeMeta.
+                    break 'idx_iter;
+                }
+
+                if load_off_start == 0 {
+                    load_off_start = blk_off;
+                }
+                load_len = (blk_off + blk_size - load_off_start) as usize;
+            }
+
+            self.index_iter.next();
+        }
+
+        if load_len == 0 {
+            return Ok(false);
+        }
+        self.tsm_off = load_off_start;
+        trace::trace!(
+            "Filling cache from file:{} for block_meta: field:{},off:{},len:{}, cache_scale: off:{},len:{}",
+            tsm_reader.file_id(),
+            block_meta.field_id(),
+            block_meta.offset(),
+            block_meta.size(),
+            load_off_start,
+            load_len
+        );
+        self.data = tsm_reader.get_raw_data(load_off_start, load_len).await?;
+        Ok(true)
+    }
+
+    /// Read cached data of block_meta, if data of block_meta is not loaded, return None.
+    fn read(&self, block_meta: &BlockMeta) -> Option<&[u8]> {
+        let blk_off = block_meta.offset();
+        let blk_len = block_meta.size() as usize;
+        let cache_off = (blk_off - self.tsm_off) as usize;
+        // The block_meta is not in the cache.
+        if blk_off < self.tsm_off
+            // Cached data is exceed, need to fill the cache from the block_meta.
+            || cache_off >= self.data.len()
+            // This means the block_meta is not for the file.
+            || cache_off + blk_len >= self.data.len()
+        {
+            return None;
+        }
+        Some(&self.data[cache_off..cache_off + blk_len])
+    }
+}
+
 pub struct CompactingFile {
     pub tsm_reader_index: usize,
     pub tsm_reader: Arc<TsmReader>,
@@ -944,11 +1054,7 @@ pub struct CompactingFile {
     pub index_iter: BufferedIterator<IndexIterator>,
     pub field_id: FieldId,
     pub finished: bool,
-
-    cache_index_iter: BufferedIterator<IndexIterator>,
-    max_cache_len: usize,
-    cache_data: Vec<u8>,
-    cached_tsm_off: u64,
+    cache: Option<TsmCache>,
 }
 
 impl CompactingFile {
@@ -959,7 +1065,15 @@ impl CompactingFile {
         out_time_ranges: Option<Arc<TimeRanges>>,
     ) -> Option<Self> {
         let mut index_iter = BufferedIterator::new(tsm_reader.index_iterator());
-        let cache_index_iter = index_iter.clone();
+        let cache = if tsm_reader.is_field_id_of_blocks_ascending_ordered() {
+            trace::debug!(
+                "Creating cache for compacting file: {}",
+                tsm_reader.file_id()
+            );
+            Some(TsmCache::new(index_iter.clone()))
+        } else {
+            None
+        };
         index_iter
             .peek()
             .map(|idx_meta| idx_meta.field_id())
@@ -971,11 +1085,7 @@ impl CompactingFile {
                 index_iter,
                 field_id,
                 finished: false,
-
-                cache_index_iter,
-                max_cache_len: 1024 * 1024 * 64,
-                cache_data: Vec::with_capacity(1024 * 1024 * 64),
-                cached_tsm_off: 0,
+                cache,
             })
     }
 
@@ -1003,162 +1113,98 @@ impl CompactingFile {
         &mut self,
         block_meta: &BlockMeta,
     ) -> ReadTsmResult<Option<DataBlock>> {
-        trace::trace!(
-            "Getting data block from file:{}: off:{},len:{}, cache: off:{},len:{}",
-            self.tsm_reader.file_id(),
-            block_meta.offset(),
-            block_meta.size(),
-            self.cached_tsm_off,
-            self.cache_data.len(),
-        );
-        let mut cached_data = self.read_cache(block_meta);
-        if cached_data.is_none() {
-            if !self.fill_cache(block_meta).await? {
-                return self.tsm_reader.get_data_block(block_meta).await;
-            }
-            cached_data = self.read_cache(block_meta);
-        }
-        if let Some(data) = cached_data {
-            return match tsm::decode_data_block(
-                data,
-                block_meta.field_type(),
-                block_meta.val_off() - block_meta.offset(),
-            ) {
-                Ok(mut blk) => {
-                    if self
-                        .tsm_reader
-                        .tombstone()
-                        .is_data_block_all_excluded_by_tombstones(block_meta.field_id(), &blk)
-                    {
-                        return Ok(None);
-                    }
-                    self.tsm_reader
-                        .tombstone()
-                        .data_block_exclude_tombstones(block_meta.field_id(), &mut blk);
-                    Ok(match &self.out_time_range {
-                        Some(time_range) => blk.intersection(time_range),
-                        None => Some(blk),
-                    })
-                }
-                Err(e) => Err(e),
-            };
-        } else {
-            panic!(
-                "Unexpected block_meta to read data_block: off:{},len:{} from cache: off:{},len:{}",
+        if let Some(cache) = &mut self.cache {
+            trace::trace!(
+                "Getting data block from file:{} for block_meta: field:{},off:{},len:{}, cache: off:{},len:{}",
+                self.tsm_reader.file_id(),
+                block_meta.field_id(),
                 block_meta.offset(),
                 block_meta.size(),
-                self.cached_tsm_off,
-                self.cache_data.len(),
+                cache.tsm_off,
+                cache.data.len(),
+            );
+            let mut cached_data = cache.read(block_meta);
+            if cached_data.is_none() {
+                if !cache
+                    .fill(&self.tsm_reader, block_meta, &self.out_time_ranges)
+                    .await?
+                {
+                    return self.tsm_reader.get_data_block(block_meta).await;
+                }
+                cached_data = cache.read(block_meta);
+            }
+            if let Some(data) = cached_data {
+                let mut blk = tsm::decode_data_block(
+                    data,
+                    block_meta.field_type(),
+                    block_meta.val_off() - block_meta.offset(),
+                )?;
+                if self
+                    .tsm_reader
+                    .tombstone()
+                    .is_data_block_all_excluded_by_tombstones(block_meta.field_id(), &blk)
+                {
+                    return Ok(None);
+                }
+                self.tsm_reader
+                    .tombstone()
+                    .data_block_exclude_tombstones(block_meta.field_id(), &mut blk);
+                return Ok(match &self.out_time_range {
+                    Some(time_range) => blk.intersection(time_range),
+                    None => Some(blk),
+                });
+            }
+            trace::error!(
+                "Unexpected block_meta to read data_block from file:{}: off:{},len:{} from cache: off:{},len:{}",
+                block_meta.file_id(),
+                block_meta.offset(),
+                block_meta.size(),
+                cache.tsm_off,
+                cache.data.len(),
             );
         }
+        self.tsm_reader.get_data_block(block_meta).await
     }
 
     pub async fn get_raw_data(&mut self, block_meta: &BlockMeta) -> ReadTsmResult<Vec<u8>> {
-        trace::trace!(
-            "Getting raw block from file:{}: off:{},len:{}, cache: off:{},len:{}",
-            self.tsm_reader.file_id(),
-            block_meta.offset(),
-            block_meta.size(),
-            self.cached_tsm_off,
-            self.cache_data.len(),
-        );
-        if let Some(data) = self.read_cache(block_meta) {
-            return Ok(data.to_vec());
-        }
-        if self.fill_cache(block_meta).await? {
-            if let Some(data) = self.read_cache(block_meta) {
-                Ok(data.to_vec())
-            } else {
-                panic!(
-                    "Unexpected block_meta to read data_block: off:{},len:{} from cache: off:{},len:{}",
-                    block_meta.offset(),
-                    block_meta.size(),
-                    self.cached_tsm_off,
-                    self.cache_data.len(),
+        if let Some(cache) = &mut self.cache {
+            trace::trace!(
+                "Getting raw block from file:{} for block_meta: field:{},off:{},len:{}, cache: off:{},len:{}",
+                self.tsm_reader.file_id(),
+                block_meta.field_id(),
+                block_meta.offset(),
+                block_meta.size(),
+                cache.tsm_off,
+                cache.data.len(),
+            );
+
+            if let Some(data) = cache.read(block_meta) {
+                return Ok(data.to_vec());
+            }
+            if cache
+                .fill(&self.tsm_reader, block_meta, &self.out_time_ranges)
+                .await?
+            {
+                if let Some(data) = cache.read(block_meta) {
+                    return Ok(data.to_vec());
+                }
+                trace::error!(
+                        "Unexpected block_meta to read data_block from file:{}: off:{},len:{} from cache: off:{},len:{}",
+                        block_meta.file_id(),
+                        block_meta.offset(),
+                        block_meta.size(),
+                        cache.tsm_off,
+                        cache.data.len(),
                 );
             }
-        } else {
-            self.tsm_reader
-                .get_raw_data(block_meta.offset(), block_meta.size() as usize)
-                .await
         }
+        self.tsm_reader
+            .get_raw_data(block_meta.offset(), block_meta.size() as usize)
+            .await
     }
 
     pub fn has_tombstone(&self) -> bool {
         self.tsm_reader.has_tombstone()
-    }
-
-    async fn fill_cache(&mut self, block_meta: &BlockMeta) -> ReadTsmResult<bool> {
-        trace::trace!(
-            "Filling cache from file:{} for block_neta: fid:{},off:{},len:{}",
-            self.tsm_reader.file_id(),
-            block_meta.field_id(),
-            block_meta.offset(),
-            block_meta.size(),
-        );
-        let mut load_off_start = 0_u64;
-        let mut load_len = 0_usize;
-
-        let mut found_curr_field = false;
-        'idx_iter: while let Some(idx) = self.cache_index_iter.peek() {
-            let blk_meta_iter = match &self.out_time_ranges {
-                Some(time_ranges) => idx.block_iterator_opt(time_ranges.clone()),
-                None => idx.block_iterator(),
-            };
-            for blk in blk_meta_iter {
-                if !found_curr_field {
-                    if blk.field_id() == block_meta.field_id() {
-                        found_curr_field = true;
-                    } else {
-                        // All of this IndexMeta has been already consumed.
-                        self.cache_index_iter.next();
-                        continue 'idx_iter;
-                    }
-                }
-
-                if blk.offset() < block_meta.offset() {
-                    continue;
-                }
-
-                let blk_off = blk.offset();
-                let blk_size = blk.size();
-                if blk_size > (self.max_cache_len - load_len) as u64 {
-                    // Cache is full
-                    break 'idx_iter;
-                }
-
-                if load_off_start == 0 {
-                    load_off_start = blk_off;
-                }
-                load_len = (blk_off + blk_size - load_off_start) as usize;
-            }
-
-            self.cache_index_iter.next();
-        }
-
-        if load_len == 0 {
-            return Ok(false);
-        }
-        self.cached_tsm_off = load_off_start;
-        trace::trace!("Reading file: off:{},len:{}", load_off_start, load_len);
-        self.cache_data = self
-            .tsm_reader
-            .get_raw_data(load_off_start, load_len)
-            .await?;
-        Ok(true)
-    }
-
-    fn read_cache(&self, block_meta: &BlockMeta) -> Option<&[u8]> {
-        let blk_off = block_meta.offset();
-        let blk_len = block_meta.size() as usize;
-        if blk_off < self.cached_tsm_off
-            || blk_off > (self.cached_tsm_off + self.cache_data.len() as u64)
-            || blk_len > self.cache_data.len()
-        {
-            return None;
-        }
-        let cache_off = (blk_off - self.cached_tsm_off) as usize;
-        Some(&self.cache_data[cache_off..cache_off + blk_len])
     }
 }
 
@@ -1184,112 +1230,6 @@ impl Ord for CompactingFile {
 impl PartialOrd for CompactingFile {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
-    }
-}
-
-/// Returns if r1 (min_ts, max_ts) overlaps r2 (min_ts, max_ts)
-fn overlaps_tuples(r1: (i64, i64), r2: (i64, i64)) -> bool {
-    r1.0 <= r2.1 && r1.1 >= r2.0
-}
-
-async fn write_tsm(
-    tsm_writer: &mut TsmWriter,
-    blk: CompactingBlock,
-    file_metas: &mut HashMap<ColumnFileId, Arc<BloomFilter>>,
-    version_edit: &mut VersionEdit,
-    request: &CompactReq,
-) -> Result<bool> {
-    let write_ret = match blk {
-        CompactingBlock::Decoded {
-            field_id: fid,
-            data_block: b,
-            ..
-        } => tsm_writer.write_block(fid, &b).await,
-        CompactingBlock::Encoded {
-            field_id,
-            data_block,
-            ..
-        } => tsm_writer.write_encoded_block(field_id, &data_block).await,
-        CompactingBlock::Raw { meta, raw, .. } => tsm_writer.write_raw(&meta, &raw).await,
-    };
-    if let Err(e) = write_ret {
-        match e {
-            tsm::WriteTsmError::WriteIO { source } => {
-                // TODO try re-run compaction on other time.
-                error!("Failed compaction: IO error when write tsm: {:?}", source);
-                return Err(Error::IO { source });
-            }
-            tsm::WriteTsmError::Encode { source } => {
-                // TODO try re-run compaction on other time.
-                error!(
-                    "Failed compaction: encoding error when write tsm: {:?}",
-                    source
-                );
-                return Err(Error::Encode { source });
-            }
-            tsm::WriteTsmError::MaxFileSizeExceed { .. } => {
-                finish_write_tsm(tsm_writer, file_metas, version_edit, request).await?;
-                return Ok(true);
-            }
-            tsm::WriteTsmError::Finished { path } => {
-                error!(
-                    "Trying to write by a finished tsm writer: {}",
-                    path.display()
-                );
-            }
-        }
-    }
-
-    Ok(false)
-}
-
-async fn finish_write_tsm(
-    tsm_writer: &mut TsmWriter,
-    file_metas: &mut HashMap<ColumnFileId, Arc<BloomFilter>>,
-    version_edit: &mut VersionEdit,
-    request: &CompactReq,
-) -> Result<()> {
-    tsm_writer
-        .write_index()
-        .await
-        .context(error::WriteTsmSnafu)?;
-    tsm_writer.finish().await.context(error::WriteTsmSnafu)?;
-    file_metas.insert(
-        tsm_writer.sequence(),
-        Arc::new(tsm_writer.bloom_filter_cloned()),
-    );
-    info!(
-        "Compaction: File: {} write finished (level: {}, {} B).",
-        tsm_writer.sequence(),
-        request.out_level,
-        tsm_writer.size()
-    );
-
-    let cm = new_compact_meta(
-        tsm_writer,
-        request.compact_task.ts_family_id(),
-        request.out_level,
-    );
-    version_edit.add_file(cm);
-
-    Ok(())
-}
-
-fn new_compact_meta(
-    tsm_writer: &TsmWriter,
-    tsf_id: TseriesFamilyId,
-    level: LevelId,
-) -> CompactMeta {
-    CompactMeta {
-        file_id: tsm_writer.sequence(),
-        file_size: tsm_writer.size(),
-        tsf_id,
-        level,
-        min_ts: tsm_writer.min_ts(),
-        max_ts: tsm_writer.max_ts(),
-        high_seq: 0,
-        low_seq: 0,
-        is_delta: false,
     }
 }
 

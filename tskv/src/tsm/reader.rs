@@ -248,22 +248,46 @@ pub async fn load_index_v1(tsm_id: u64, reader: Arc<AsyncFile>) -> ReadTsmResult
 
     // Decode index data
     let assumed_field_count = (data_len / (INDEX_META_SIZE + BLOCK_META_SIZE)) + 1;
-    let mut field_id_offs: Vec<(FieldId, usize)> = Vec::with_capacity(assumed_field_count);
+    let mut field_id_idx_offs: Vec<(FieldId, usize)> = Vec::with_capacity(assumed_field_count);
     let mut pos = 0_usize;
+    let mut field_id_of_blocks_is_ordered = true;
+    let mut previous_field_id = 0_u64;
+    let mut previous_field_block_off = 0_u64;
     while pos < data_len {
-        field_id_offs.push((decode_be_u64(&data[pos..pos + 8]), pos));
+        let field_id = decode_be_u64(&data[pos..pos + 8]);
+        // Push (FieldId, offset_of_index_block)
+        field_id_idx_offs.push((field_id, pos));
+        if field_id_of_blocks_is_ordered {
+            // Check field_ids is ascending ordered.
+            if field_id < previous_field_id {
+                field_id_of_blocks_is_ordered = false;
+            }
+            previous_field_id = field_id;
+            // Check blocks offsets of fields is ascending ordered.
+            let field_block_off = decode_be_u64(
+                &data[pos + (INDEX_META_SIZE + 8 + 8 + 4)..pos + (INDEX_META_SIZE + 8 + 8 + 4 + 8)],
+            );
+            if field_block_off < previous_field_block_off {
+                field_id_of_blocks_is_ordered = false;
+            }
+            previous_field_block_off = field_block_off
+        }
         pos += INDEX_META_SIZE + BLOCK_META_SIZE * decode_be_u16(&data[pos + 9..pos + 11]) as usize;
     }
-    field_id_offs.sort_unstable_by_key(|e| e.0);
+    // Sort by field id
+    // NOTICE that there must be no two equal field_ids.
+    field_id_idx_offs.sort_by_key(|e| e.0);
+
     let mut bloom_filter = BloomFilter::new(BLOOM_FILTER_BITS);
-    for (field_id, _) in &field_id_offs {
+    for (field_id, _) in &field_id_idx_offs {
         bloom_filter.insert(&field_id.to_be_bytes());
     }
     Ok(Index::new(
         tsm_id,
         Arc::new(bloom_filter),
         data,
-        field_id_offs,
+        field_id_idx_offs,
+        field_id_of_blocks_is_ordered,
     ))
 }
 
@@ -303,22 +327,42 @@ pub async fn load_index_v2(tsm_id: u64, reader: Arc<AsyncFile>) -> ReadTsmResult
 
     // Decode index data
     let assumed_field_count = (data_len / (INDEX_META_SIZE + BLOCK_META_SIZE)) + 1;
-    let mut field_id_offs: Vec<(FieldId, usize)> = Vec::with_capacity(assumed_field_count);
+    let mut field_id_idx_offs: Vec<(FieldId, usize)> = Vec::with_capacity(assumed_field_count);
     let mut pos = 0_usize;
+    let mut field_id_of_blocks_is_ordered = true;
+    let mut previous_field_id = 0_u64;
+    let mut previous_field_block_off = 0_u64;
     while pos < data_len {
-        field_id_offs.push((decode_be_u64(&data[pos..pos + 8]), pos));
+        let field_id = decode_be_u64(&data[pos..pos + 8]);
+        // Push (FieldId, offset_of_index_block)
+        field_id_idx_offs.push((field_id, pos));
+        if field_id_of_blocks_is_ordered {
+            // Check field_ids is ascending ordered.
+            if field_id < previous_field_id {
+                field_id_of_blocks_is_ordered = false;
+            }
+            previous_field_id = field_id;
+            // Check blocks offsets of fields is ascending ordered.
+            let field_block_off = decode_be_u64(
+                &data[pos + (INDEX_META_SIZE + 8 + 8 + 4)..pos + (INDEX_META_SIZE + 8 + 8 + 4 + 8)],
+            );
+            if field_block_off < previous_field_block_off {
+                field_id_of_blocks_is_ordered = false;
+            }
+            previous_field_block_off = field_block_off
+        }
         pos += INDEX_META_SIZE + BLOCK_META_SIZE * decode_be_u16(&data[pos + 9..pos + 11]) as usize;
     }
-
     // Sort by field id
     // NOTICE that there must be no two equal field_ids.
-    field_id_offs.sort_unstable_by_key(|e| e.0);
+    field_id_idx_offs.sort_by_key(|e| e.0);
 
     Ok(Index::new(
         tsm_id,
         Arc::new(bloom_filter),
         data,
-        field_id_offs,
+        field_id_idx_offs,
+        field_id_of_blocks_is_ordered,
     ))
 }
 
@@ -376,6 +420,10 @@ impl IndexReader {
             }
         }
         tsm_idx
+    }
+
+    pub fn is_field_id_of_blocks_ascending_ordered(&self) -> bool {
+        self.index_ref.is_field_id_of_blocks_ascending_ordered()
     }
 }
 
@@ -661,6 +709,11 @@ impl TsmReader {
     pub(crate) fn bloom_filter(&self) -> Arc<BloomFilter> {
         self.index_reader.index_ref.bloom_filter()
     }
+
+    /// Whether the field_ids and blocks in TMS-Blocks is ascending_ordered.
+    pub fn is_field_id_of_blocks_ascending_ordered(&self) -> bool {
+        self.index_reader.is_field_id_of_blocks_ascending_ordered()
+    }
 }
 
 impl Debug for TsmReader {
@@ -792,14 +845,20 @@ pub mod test {
     use models::{FieldId, Timestamp};
     use snafu::ResultExt;
 
-    use crate::error::{self, Error, Result};
+    use crate::error::{self, Result};
     use crate::file_system::file_manager::{self};
     use crate::file_utils;
     use crate::tsm::codec::DataBlockEncoding;
+    use crate::tsm::reader::IndexReader;
     use crate::tsm::test::write_to_tsm;
     use crate::tsm::{BlockEntry, DataBlock, IndexEntry, IndexFile, TsmReader, TsmTombstone};
 
-    async fn prepare(dir: impl AsRef<Path>) -> Result<(PathBuf, PathBuf)> {
+    /// Write tsm data and tombstone data to dir/_000001.tsm, return expected data(tsm data - tombstoen data).
+    async fn prepare(
+        dir: impl AsRef<Path>,
+        data: Option<Vec<(FieldId, Vec<DataBlock>)>>,
+        tombstone: Option<HashMap<FieldId, Vec<TimeRange>>>,
+    ) -> Result<(PathBuf, PathBuf, Vec<(FieldId, Vec<DataBlock>)>)> {
         if file_manager::try_exists(&dir) {
             let _ = std::fs::remove_dir_all(&dir);
         }
@@ -814,90 +873,117 @@ pub mod test {
         );
 
         #[rustfmt::skip]
-        let ori_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from([
-            (1, vec![DataBlock::U64 { ts: vec![1, 2, 3, 4], val: vec![11, 12, 13, 15], enc: DataBlockEncoding::default() }]
-            ),
-            (2, vec![
-                DataBlock::U64 { ts: vec![1, 2, 3, 4], val: vec![101, 102, 103, 104], enc: DataBlockEncoding::default() },
-                DataBlock::U64 { ts: vec![5, 6, 7, 8], val: vec![105, 106, 107, 108], enc: DataBlockEncoding::default() },
-                DataBlock::U64 { ts: vec![9, 10, 11, 12], val: vec![109, 110, 111, 112], enc: DataBlockEncoding::default() },
-            ]),
-            (3, vec![
-                DataBlock::U64 { ts: vec![5], val: vec![105], enc: DataBlockEncoding::default() },
-                DataBlock::U64 { ts: vec![9], val: vec![109], enc: DataBlockEncoding::default() },
-            ]),
-        ]);
-
+        let mut ori_data: Vec<(FieldId, Vec<DataBlock>)> = match data {
+            Some(d) => d,
+            None => vec![
+                (1, vec![DataBlock::U64 { ts: vec![1, 2, 3, 4], val: vec![11, 12, 13, 15], enc: DataBlockEncoding::default() }]),
+                (2, vec![
+                    DataBlock::U64 { ts: vec![1, 2, 3, 4], val: vec![101, 102, 103, 104], enc: DataBlockEncoding::default() },
+                    DataBlock::U64 { ts: vec![5, 6, 7, 8], val: vec![105, 106, 107, 108], enc: DataBlockEncoding::default() },
+                    DataBlock::U64 { ts: vec![9, 10, 11, 12], val: vec![109, 110, 111, 112], enc: DataBlockEncoding::default() },
+                ]),
+                (3, vec![
+                    DataBlock::U64 { ts: vec![5], val: vec![105], enc: DataBlockEncoding::default() },
+                    DataBlock::U64 { ts: vec![9], val: vec![109], enc: DataBlockEncoding::default() },
+                ]),
+            ],
+        };
         write_to_tsm(&tsm_file, &ori_data, false).await?;
+
+        ori_data.sort_by_key(|a| a.0);
+
+        let tomb_data = match tombstone {
+            Some(d) => d,
+            None => HashMap::from([(1, vec![TimeRange::from((2, 4))])]),
+        };
         let tombstone = TsmTombstone::with_path(&tombstone_file).await?;
-        tombstone
-            .add_range(&[1], TimeRange::new(2, 4), None)
-            .await?;
-        tombstone.flush().await?;
-
-        Ok((tsm_file, tombstone_file))
-    }
-
-    pub async fn read_and_check(
-        reader: &TsmReader,
-        expected_data: &HashMap<FieldId, Vec<DataBlock>>,
-    ) -> Result<()> {
-        let mut read_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::new();
-        for idx in reader.index_iterator() {
-            for blk in idx.block_iterator() {
-                let data_blk = reader
-                    .get_data_block(&blk)
-                    .await
-                    .context(error::ReadTsmSnafu)?
-                    .unwrap();
-                read_data.entry(idx.field_id()).or_default().push(data_blk);
+        for (field_id, tomb_trs) in tomb_data {
+            let ori_data_blocks_idx = ori_data.binary_search_by_key(&field_id, |(fid, _)| *fid);
+            for tr in tomb_trs {
+                tombstone.add_range(&[1], tr, None).await?;
+                if let Ok(i) = ori_data_blocks_idx {
+                    let (_, blocks) = &mut ori_data[i];
+                    for blk in blocks.iter_mut() {
+                        blk.exclude(&tr);
+                    }
+                }
             }
         }
-        match std::panic::catch_unwind(|| {
-            assert_eq!(expected_data.len(), read_data.len());
-            for (field_id, data_blks) in read_data.iter() {
-                let expected_data_blks = expected_data.get(field_id);
-                if expected_data_blks.is_none() {
-                    panic!("Expected DataBlocks for field_id: '{}' is None", field_id);
+        tombstone.flush().await?;
+
+        println!(
+            "Generated tsm file: '{}', and tombstone: '{}'",
+            tsm_file.display(),
+            tombstone_file.display(),
+        );
+
+        let mut expected_data = Vec::with_capacity(ori_data.len());
+        for (field_id, blocks) in ori_data {
+            let mut new_blocks = Vec::with_capacity(blocks.len());
+            for blk in blocks {
+                if !blk.is_empty() {
+                    new_blocks.push(blk);
                 }
-                assert_eq!(data_blks, expected_data_blks.unwrap());
             }
-        }) {
-            Ok(_) => Ok(()),
-            Err(e) => Err(Error::CommonError {
-                reason: format!("{:?}", e),
-            }),
+            if !new_blocks.is_empty() {
+                expected_data.push((field_id, new_blocks));
+            }
+        }
+        Ok((tsm_file, tombstone_file, expected_data))
+    }
+
+    /// Read data blocks from reader and check with expected data.
+    pub async fn read_and_check(reader: &TsmReader, expected_data: &[(FieldId, Vec<DataBlock>)]) {
+        let mut last_idx_i = 0_usize;
+        for (idx_i, idx) in reader.index_iterator().enumerate() {
+            last_idx_i = idx_i;
+            if idx_i > expected_data.len() {
+                panic!("IndexMeta count is more than expected");
+            }
+            let (exp_field_id, exp_data_blocks) = &expected_data[idx_i];
+            assert_eq!(
+                idx.field_id(),
+                *exp_field_id,
+                "IndexMeta[{idx_i}].field_id is {} but expected {exp_field_id}",
+                idx.field_id(),
+            );
+
+            let mut last_blk_i = 0_usize;
+            for (blk_i, blk) in idx.block_iterator().enumerate() {
+                last_blk_i = blk_i;
+                if blk_i > exp_data_blocks.len() {
+                    panic!("BlockMeta count is more than expected");
+                }
+                let exp_blk = &exp_data_blocks[blk_i];
+                let blk_field_id = blk.field_id();
+                assert_eq!(blk_field_id, *exp_field_id, "DataBlock[{exp_field_id}][{blk_i}].field_id is {blk_field_id} but expected {exp_field_id}");
+                // Because of tombstones, although the BlockMeta.count > 0, the expected block may be empty.
+                let data_block = reader.get_data_block(&blk).await.unwrap().unwrap();
+                assert_eq!(
+                    data_block, *exp_blk,
+                    "DataBlock[{exp_field_id}][{blk_i}] is:\n{data_block}\nbut expected\n{exp_blk}",
+                );
+            }
+            if last_blk_i + 1 < exp_data_blocks.len() {
+                panic!("BlockMeta count is less than expected");
+            }
+        }
+        if last_idx_i + 1 < expected_data.len() {
+            panic!("IndexMeta count is less than expected");
         }
     }
 
     #[tokio::test]
-    async fn test_tsm_reader_1() {
-        let (tsm_file, tombstone_file) = prepare("/tmp/test/tsm_reader/1").await.unwrap();
-        println!(
-            "Reading file: {}, {}",
-            tsm_file.to_str().unwrap(),
-            tombstone_file.to_str().unwrap()
-        );
+    async fn test_tsm_reader() {
+        let (tsm_file, _, expected_data) =
+            prepare("/tmp/test/tsm_reader/test_tsm_reader", None, None)
+                .await
+                .unwrap();
         let reader = TsmReader::open(&tsm_file).await.unwrap();
-
-        #[rustfmt::skip]
-        let expected_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from([
-            (1, vec![DataBlock::U64 { ts: vec![1], val: vec![11], enc: DataBlockEncoding::default() }]
-            ),
-            (2, vec![
-                DataBlock::U64 { ts: vec![1, 2, 3, 4], val: vec![101, 102, 103, 104], enc: DataBlockEncoding::default() },
-                DataBlock::U64 { ts: vec![5, 6, 7, 8], val: vec![105, 106, 107, 108], enc: DataBlockEncoding::default() },
-                DataBlock::U64 { ts: vec![9, 10, 11, 12], val: vec![109, 110, 111, 112], enc: DataBlockEncoding::default() },
-            ]),
-            (3, vec![
-                DataBlock::U64 { ts: vec![5], val: vec![105], enc: DataBlockEncoding::default() },
-                DataBlock::U64 { ts: vec![9], val: vec![109], enc: DataBlockEncoding::default() },
-            ]),
-        ]);
-        read_and_check(&reader, &expected_data).await.unwrap();
+        read_and_check(&reader, &expected_data).await;
     }
 
-    pub(crate) async fn read_opt_and_check(
+    async fn read_opt_and_check(
         reader: &TsmReader,
         field_id: FieldId,
         time_range: (Timestamp, Timestamp),
@@ -922,13 +1008,10 @@ pub mod test {
     }
 
     #[tokio::test]
-    async fn test_tsm_reader_2() {
-        let (tsm_file, tombstone_file) = prepare("/tmp/test/tsm_reader/2").await.unwrap();
-        println!(
-            "Reading file: {}, {}",
-            tsm_file.to_str().unwrap(),
-            tombstone_file.to_str().unwrap()
-        );
+    async fn test_tsm_reader_read_with_options() {
+        let (tsm_file, _, _) = prepare("/tmp/test/tsm_reader/read_with_options", None, None)
+            .await
+            .unwrap();
         let reader = TsmReader::open(&tsm_file).await.unwrap();
 
         {
@@ -1014,12 +1097,9 @@ pub mod test {
 
     #[tokio::test]
     async fn test_index_file() {
-        let (tsm_file, tombstone_file) = prepare("/tmp/test/tsm_reader/3").await.unwrap();
-        println!(
-            "Reading file: {}, {}",
-            tsm_file.to_str().unwrap(),
-            tombstone_file.to_str().unwrap()
-        );
+        let (tsm_file, _, _) = prepare("/tmp/test/tsm_reader/index_file", None, None)
+            .await
+            .unwrap();
 
         let file = Arc::new(file_manager::open_file(&tsm_file).await.unwrap());
         let mut idx_file = IndexFile::open(file).await.unwrap();
@@ -1060,5 +1140,88 @@ pub mod test {
         assert_eq!(blk_metas[3].min_ts, 9);
         assert_eq!(blk_metas[3].max_ts, 12);
         assert_eq!(blk_metas[3].count, 4);
+    }
+
+    #[tokio::test]
+    async fn test_index_reader_well_ordered() {
+        let (tsm_file, _, _) = prepare("/tmp/test/tsm_reader/index_reader_1", None, None)
+            .await
+            .unwrap();
+
+        let file = Arc::new(file_manager::open_file(&tsm_file).await.unwrap());
+        let idx_reader = IndexReader::open(1, file).await.unwrap();
+        assert!(
+            idx_reader.is_field_id_of_blocks_ascending_ordered(),
+            "this tsm file does not need to sort index field_id_offs"
+        );
+
+        let mut index_meta_field_ids: Vec<FieldId> = Vec::new();
+        let mut blk_metas: Vec<(TimeRange, u32)> = Vec::new();
+        for idx_meta in idx_reader.iter() {
+            index_meta_field_ids.push(idx_meta.field_id());
+            for blk_meta in idx_meta.block_iterator() {
+                blk_metas.push((blk_meta.time_range(), blk_meta.count()));
+            }
+        }
+        assert_eq!(index_meta_field_ids, vec![1, 2, 3]);
+        assert_eq!(
+            blk_metas,
+            vec![
+                ((1, 4).into(), 4),
+                ((1, 4).into(), 4),
+                ((5, 8).into(), 4),
+                ((9, 12).into(), 4),
+                ((5, 5).into(), 1),
+                ((9, 9).into(), 1),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_index_reader_disordered() {
+        #[rustfmt::skip]
+        let ori_data = vec![
+            (2, vec![
+                DataBlock::U64 { ts: vec![1, 2, 3, 4], val: vec![101, 102, 103, 104], enc: DataBlockEncoding::default() },
+                DataBlock::U64 { ts: vec![5, 6, 7, 8], val: vec![105, 106, 107, 108], enc: DataBlockEncoding::default() },
+                DataBlock::U64 { ts: vec![9, 10, 11, 12], val: vec![109, 110, 111, 112], enc: DataBlockEncoding::default() },
+            ]),
+            (3, vec![
+                DataBlock::U64 { ts: vec![5], val: vec![105], enc: DataBlockEncoding::default() },
+                DataBlock::U64 { ts: vec![9], val: vec![109], enc: DataBlockEncoding::default() },
+            ]),
+            (1, vec![DataBlock::U64 { ts: vec![1, 2, 3, 4], val: vec![11, 12, 13, 15], enc: DataBlockEncoding::default() }]),
+        ];
+        let (tsm_file, _, _) = prepare("/tmp/test/tsm_reader/index_reader_2", Some(ori_data), None)
+            .await
+            .unwrap();
+
+        let file = Arc::new(file_manager::open_file(&tsm_file).await.unwrap());
+        let idx_reader = IndexReader::open(1, file).await.unwrap();
+        assert!(
+            !idx_reader.is_field_id_of_blocks_ascending_ordered(),
+            "this tsm file does need to sort index field_id_offs"
+        );
+
+        let mut index_meta_field_ids: Vec<FieldId> = Vec::new();
+        let mut blk_metas: Vec<(TimeRange, u32)> = Vec::new();
+        for idx_meta in idx_reader.iter() {
+            index_meta_field_ids.push(idx_meta.field_id());
+            for blk_meta in idx_meta.block_iterator() {
+                blk_metas.push((blk_meta.time_range(), blk_meta.count()));
+            }
+        }
+        assert_eq!(index_meta_field_ids, vec![1, 2, 3]);
+        assert_eq!(
+            blk_metas,
+            vec![
+                ((1, 4).into(), 4),
+                ((1, 4).into(), 4),
+                ((5, 8).into(), 4),
+                ((9, 12).into(), 4),
+                ((5, 5).into(), 1),
+                ((9, 9).into(), 1),
+            ]
+        );
     }
 }
