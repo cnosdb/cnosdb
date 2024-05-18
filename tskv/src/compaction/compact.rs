@@ -133,8 +133,15 @@ async fn compact_files(
     tsm_readers: Vec<Arc<TsmReader>>,
     out_time_range: TimeRange,
 ) -> Result<(VersionEdit, HashMap<ColumnFileId, Arc<BloomFilter>>)> {
+    let storage_opt = request.version.borrowed_storage_opt();
     let max_block_size = TseriesFamily::MAX_DATA_BLOCK_SIZE as usize;
-    let mut state = CompactState::new(tsm_readers, out_time_range, max_block_size, false);
+    let mut state = CompactState::new(
+        tsm_readers,
+        out_time_range,
+        storage_opt.compact_file_cache_size as usize,
+        max_block_size,
+        false,
+    );
     let mut writer_wrapper = WriterWrapper::new(&request, ctx.clone()).await?;
 
     let mut previous_merged_block = Option::<CompactingBlock>::None;
@@ -143,11 +150,7 @@ async fn compact_files(
 
     let mut curr_fid: Option<FieldId> = None;
 
-    let mut compact_metrics: Box<dyn MetricStore> = if request
-        .version
-        .borrowed_storage_opt()
-        .collect_compaction_metrics
-    {
+    let mut compact_metrics: Box<dyn MetricStore> = if storage_opt.collect_compaction_metrics {
         Box::new(CompactMetrics::default(request.compact_task))
     } else {
         Box::new(FakeMetricStore)
@@ -257,6 +260,7 @@ impl CompactState {
     pub fn new(
         tsm_readers: Vec<Arc<TsmReader>>,
         out_time_range: TimeRange,
+        file_cache_size: usize,
         max_data_block_size: usize,
         decode_non_overlap_blocks: bool,
     ) -> Self {
@@ -278,6 +282,7 @@ impl CompactState {
             if let Some(f) = CompactingFile::new(
                 compacting_tsm_file_idx,
                 tsm_reader.clone(),
+                file_cache_size,
                 out_time_range,
                 out_time_ranges.clone(),
             ) {
@@ -943,11 +948,11 @@ pub struct TsmCache {
 }
 
 impl TsmCache {
-    pub fn new(index_iter: BufferedIterator<IndexIterator>) -> Self {
+    pub fn new(index_iter: BufferedIterator<IndexIterator>, file_cache_size: usize) -> Self {
         Self {
             index_iter,
-            capacity: 1024 * 1024 * 64,
-            data: Vec::with_capacity(1024 * 1024 * 64),
+            capacity: file_cache_size,
+            data: Vec::with_capacity(file_cache_size),
             tsm_off: 0,
         }
     }
@@ -1061,6 +1066,7 @@ impl CompactingFile {
     pub fn new(
         tsm_reader_index: usize,
         tsm_reader: Arc<TsmReader>,
+        file_cache_size: usize,
         out_time_range: Option<TimeRange>,
         out_time_ranges: Option<Arc<TimeRanges>>,
     ) -> Option<Self> {
@@ -1070,7 +1076,7 @@ impl CompactingFile {
                 "Creating cache for compacting file: {}",
                 tsm_reader.file_id()
             );
-            Some(TsmCache::new(index_iter.clone()))
+            Some(TsmCache::new(index_iter.clone(), file_cache_size))
         } else {
             None
         };

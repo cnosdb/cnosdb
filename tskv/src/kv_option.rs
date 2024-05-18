@@ -45,6 +45,7 @@ pub struct StorageOptions {
     pub enable_compaction: bool,
     pub compact_trigger_file_num: u32,
     pub compact_trigger_cold_duration: Duration,
+    pub compact_file_cache_size: u64,
     pub collect_compaction_metrics: bool,
     pub max_compact_size: u64,
     pub max_concurrent_compaction: u16,
@@ -127,6 +128,7 @@ impl From<&Config> for StorageOptions {
             compact_trigger_cold_duration: config.storage.compact_trigger_cold_duration,
             max_compact_size: config.storage.max_compact_size,
             max_concurrent_compaction: config.storage.max_concurrent_compaction,
+            compact_file_cache_size: config.storage.compact_file_cache_size,
             collect_compaction_metrics: config.storage.collect_compaction_metrics,
             strict_write: config.storage.strict_write,
         }

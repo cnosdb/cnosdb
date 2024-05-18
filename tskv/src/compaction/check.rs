@@ -242,6 +242,7 @@ pub(crate) async fn vnode_hash_tree(
     let iter = CompactState::new(
         readers,
         TimeRange::all(),
+        version.storage_opt.compact_file_cache_size as usize,
         MAX_DATA_BLOCK_SIZE as usize,
         true,
     );
