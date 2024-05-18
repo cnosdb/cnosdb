@@ -54,6 +54,9 @@ path = '/var/lib/cnosdb/data'
 ## The maximum concurrent compactions.
 #max_concurrent_compaction = 4
 
+## The size of cache for each compacting files
+#compact_file_cache_size = "16M"
+
 ## If true, write request will not be checked in detail.
 strict_write = false
 
