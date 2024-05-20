@@ -1,0 +1,59 @@
+include ./../../setup.slt
+
+##########
+## Query
+##########
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function Covariance expects 2 arguments, but 0 were provided", *
+select covar() from func_tb2;
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function Covariance expects 2 arguments, but 1 were provided", *
+select covar(f1) from func_tb2;
+
+
+query 
+select abs(covar(f0, f1) + 2.250000000000022 ) < 0.000001 from func_tb2;
+----
+true
+
+
+query 
+select covar(1, 2) from func_tb2;
+----
+0.0
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function Covariance expects 2 arguments, but 3 were provided", *
+select covar(1, 2, 3) from func_tb2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function Covariance does not support inputs of type Timestamp\(Nanosecond, None\)\.", *
+select covar(time, f0) from func_tb2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function Covariance does not support inputs of type Utf8\.", *
+select covar(t0, f0) from func_tb2;
+
+query 
+select abs(covar(f0, f0) - 2.125000000000054) < 0.000001 from func_tb2;
+----
+true
+
+query 
+select abs(covar(f1, f1) - 13.357142857142817) < 0.000001 from func_tb2;
+----
+true
+
+query 
+select abs(covar(f1, -f1) + 13.357142857142858) < 0.000001 from func_tb2;
+----
+true
+
+
+query 
+select covar(f1, f3) from func_tb2;
+----
+NULL
+
+query 
+select abs(covar(f1, f4) + 51429.71428571373 ) < 0.000001 from func_tb2;
+----
+true

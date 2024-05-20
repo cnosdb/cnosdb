@@ -1,0 +1,59 @@
+include ./../../setup.slt
+
+##########
+## Query
+##########
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function CovariancePop expects 2 arguments, but 0 were provided", *
+select covar_pop() from func_tb2;
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function CovariancePop expects 2 arguments, but 1 were provided", *
+select covar_pop(f1) from func_tb2;
+
+
+query 
+select abs(covar_pop(f0, f1) + 1.9687500000000349 ) < 0.000001 from func_tb2;
+----
+true
+
+
+query 
+select covar_pop(1, 2) from func_tb2;
+----
+0.0
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function CovariancePop expects 2 arguments, but 3 were provided", *
+select covar_pop(1, 2, 3) from func_tb2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function CovariancePop does not support inputs of type Timestamp\(Nanosecond, None\)\.", *
+select covar_pop(time, f0) from func_tb2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function CovariancePop does not support inputs of type Utf8\.", *
+select covar_pop(t0, f0) from func_tb2;
+
+query 
+select abs(covar_pop(f0, f0) - 1.8593750000000047) < 0.000001 from func_tb2;
+----
+true
+
+query 
+select abs(covar_pop(f1, f1) - 11.687499999999964) < 0.000001 from func_tb2;
+----
+true
+
+query 
+select abs(covar_pop(f1, -f1) + 11.687500000000188 ) < 0.000001 from func_tb2;
+----
+true
+
+
+query 
+select covar_pop(f1, f3) from func_tb2;
+----
+NULL
+
+query 
+select abs(covar_pop(f1, f4) + 45001.0 ) < 0.000001 from func_tb2;
+----
+true

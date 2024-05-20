@@ -1,0 +1,59 @@
+include ./../../setup.slt
+
+##########
+## Query
+##########
+
+query 
+select abs(var_samp(f1) - 27282.21428571429) < 0.00000001 from func_tbl;
+----
+true
+
+
+
+query 
+select abs(var_samp(f0) - 2.1250000000000053) < 0.00000001 from func_tb2;
+----
+true
+
+
+query 
+select var_samp(1) from func_tb2;
+----
+0.0
+
+
+query 
+select abs(var_samp(f1) - 13.357142857142817) < 0.00000001  from func_tb2;
+----
+true
+
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function Variance does not support inputs of type Boolean\.", metadata: MetadataMap *
+select var_samp(f2) from func_tb2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function Variance does not support inputs of type Utf8\.", metadata: MetadataMap *
+select var_samp(f3) from func_tb2;
+
+query 
+select abs(var_samp(f4) - 1371542859.7142856) < 0.0001 from func_tb2;
+----
+true
+
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function Variance expects 1 arguments, but 0 were provided", metadata: MetadataMap *
+select var_samp() from func_tbl;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function Variance expects 1 arguments, but 2 were provided", *
+select var_samp(f0, f1) from func_tb2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Schema error: No field named f5\. Valid fields are func_tb2\.time, func_tb2\.t0, func_tb2\.t1, func_tb2\.t2, func_tb2\.f0, func_tb2\.f1, func_tb2\.f2, func_tb2\.f3, func_tb2\.f4\.", metadata: MetadataMap *
+select var_samp(f5) from func_tb2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function Variance does not support inputs of type Timestamp\(Nanosecond, None\)\.", *
+select var_samp(time) from func_tb2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function Variance does not support inputs of type Utf8\.", *
+select var_samp(t0) from func_tb2;

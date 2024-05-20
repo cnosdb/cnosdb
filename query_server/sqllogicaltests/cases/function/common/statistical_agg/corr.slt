@@ -1,0 +1,58 @@
+include ./../../setup.slt
+
+##########
+## Query
+##########
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function Correlation expects 2 arguments, but 0 were provided", metadata: *
+select corr() from func_tb2;
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function Correlation expects 2 arguments, but 1 were provided", metadata: *
+select corr(f1) from func_tb2;
+
+
+query 
+select abs(corr(f0, f1) + 0.4223244892327823 ) < 0.000001 from func_tb2;
+----
+true
+
+query 
+select corr(1, 2) from func_tb2;
+----
+0.0
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function Correlation expects 2 arguments, but 3 were provided", metadata: *
+select corr(1, 2, 3) from func_tb2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function Correlation does not support inputs of type Timestamp\(Nanosecond, None\)\.", metadata: *
+select corr(time, f0) from func_tb2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function Correlation does not support inputs of type Utf8\.", metadata: *
+select corr(t0, f0) from func_tb2;
+
+query 
+select abs(corr(f0, f0) - 1.0000000000000002) < 0.000001 from func_tb2;
+----
+true
+
+query 
+select abs(corr(f1, f1) - 1) < 0.000001 from func_tb2;
+----
+true
+
+query 
+select abs(corr(f1, -f1) + 1) < 0.000001 from func_tb2;
+----
+true
+
+query 
+select corr(f1, f3) from func_tb2;
+----
+NULL
+
+
+query 
+select abs(corr(f1, f4) + 0.37997290960433616) < 0.000001 from func_tb2;
+----
+true

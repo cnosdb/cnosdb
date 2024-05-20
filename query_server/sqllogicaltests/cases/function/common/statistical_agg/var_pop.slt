@@ -1,0 +1,61 @@
+include ./../../setup.slt
+
+##########
+## Query
+##########
+
+query 
+select abs(var_pop(f1) - 23871.937499999996) < 0.00000001 from func_tbl;
+----
+true
+
+
+
+
+query 
+select abs(var_pop(f0) - 1.859375000000001) < 0.00000001 from func_tb2;
+----
+true
+
+
+query 
+select var_pop(1) from func_tb2;
+----
+0.0
+
+
+query 
+select abs(var_pop(f1) - 11.6875) < 0.001  from func_tb2;
+----
+true
+
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function VariancePop does not support inputs of type Boolean\.", *
+select var_pop(f2) from func_tb2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function VariancePop does not support inputs of type Utf8\.", *
+select var_pop(f3) from func_tb2;
+
+query 
+select abs(var_pop(f4) - 1200100002.25) < 0.1 from func_tb2;
+----
+true
+
+
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function VariancePop expects 1 arguments, but 0 were provided", *
+select var_pop() from func_tbl;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function VariancePop expects 1 arguments, but 2 were provided", *
+select var_pop(f0, f1) from func_tb2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Schema error: No field named f5\. Valid fields are func_tb2\.time, func_tb2\.t0, func_tb2\.t1, func_tb2\.t2, func_tb2\.f0, func_tb2\.f1, func_tb2\.f2, func_tb2\.f3, func_tb2\.f4\.", metadata: MetadataMap *
+select var_pop(f5) from func_tb2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function VariancePop does not support inputs of type Timestamp\(Nanosecond, None\)\.", *
+select var_pop(time) from func_tb2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function VariancePop does not support inputs of type Utf8\.", *
+select var_pop(t0) from func_tb2;
