@@ -1014,9 +1014,11 @@ impl TseriesFamily {
                 self.memory_pool.reserved()
             );
             self.switch_to_immutable();
-        }
 
-        !self.immut_cache.is_empty()
+            true
+        } else {
+            false
+        }
     }
 
     pub async fn update_last_modified(&self) {
