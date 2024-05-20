@@ -1,0 +1,61 @@
+include ./../../setup.slt
+
+##########
+## Query
+##########
+
+query 
+select abs(stddev_samp(f1) - 165.17328562971161) < 0.00000001 from func_tbl;
+----
+true
+
+
+query 
+select abs(stddev_samp(f0) - 1.457737973711327) < 0.00000001 from func_tb2;
+----
+true
+
+
+query 
+select stddev_samp(1) from func_tb2;
+----
+0.0
+
+
+
+query 
+select abs(stddev_samp(f1) - 3.6547425158474387) < 0.00000001  from func_tb2;
+----
+true
+
+
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function Stddev does not support inputs of type Boolean\.", *
+select stddev_samp(f2) from func_tb2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function Stddev does not support inputs of type Utf8\.", *
+select stddev_samp(f3) from func_tb2;
+
+query 
+select abs(stddev_samp(f4) - 37034.3470269733) < 0.0001 from func_tb2;
+----
+true
+
+
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function Stddev expects 1 arguments, but 0 were provided", *
+select stddev_samp() from func_tbl;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function Stddev expects 1 arguments, but 2 were provided", *
+select stddev_samp(f0, f1) from func_tb2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Schema error: No field named f5\. Valid fields are func_tb2\.time, func_tb2\.t0, func_tb2\.t1, func_tb2\.t2, func_tb2\.f0, func_tb2\.f1, func_tb2\.f2, func_tb2\.f3, func_tb2\.f4\.", *
+select stddev_samp(f5) from func_tb2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function Stddev does not support inputs of type Timestamp\(Nanosecond, None\)\.", *
+select stddev_samp(time) from func_tb2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function Stddev does not support inputs of type Utf8\.", *
+select stddev_samp(t0) from func_tb2;

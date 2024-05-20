@@ -1,0 +1,56 @@
+include ./../../setup.slt
+
+##########
+## Query
+##########
+
+query 
+select abs(stddev_pop(f1) - 154.5054610685331) < 0.00000001 from func_tbl;
+----
+true
+
+
+query 
+select abs(stddev_pop(f0) - 1.363589014329466) < 0.00000001 from func_tb2;
+----
+true
+
+
+query 
+select stddev_pop(1) from func_tb2;
+----
+0.0
+
+
+
+query 
+select abs(stddev_pop(f1) - 3.4186985827943306) < 0.00000001  from func_tb2;
+----
+true
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function StddevPop does not support inputs of type Boolean\.", *
+select stddev_pop(f2) from func_tb2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function StddevPop does not support inputs of type Utf8\.", *
+select stddev_pop(f3) from func_tb2;
+
+query 
+select abs(stddev_pop(f4) - 34642.45952945604) < 0.0001 from func_tb2;
+----
+true
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function StddevPop expects 1 arguments, but 0 were provided", *
+select stddev_pop() from func_tbl;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function StddevPop expects 1 arguments, but 2 were provided", *
+select stddev_pop(f0, f1) from func_tb2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Schema error: No field named f5\. Valid fields are func_tb2\.time, func_tb2\.t0, func_tb2\.t1, func_tb2\.t2, func_tb2\.f0, func_tb2\.f1, func_tb2\.f2, func_tb2\.f3, func_tb2\.f4\.", *
+select stddev_pop(f5) from func_tb2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function StddevPop does not support inputs of type Timestamp\(Nanosecond, None\)\.", *
+select stddev_pop(time) from func_tb2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function StddevPop does not support inputs of type Utf8\.", *
+select stddev_pop(t0) from func_tb2;
