@@ -8,6 +8,9 @@ use datafusion::logical_expr::expr::Sort;
 use datafusion::logical_expr::{col, Expr};
 use datafusion::physical_optimizer::PhysicalOptimizerRule;
 use datafusion::physical_plan::aggregates::AggregateExec;
+use datafusion::physical_plan::expressions::{
+    Correlation, Covariance, CovariancePop, Stddev, StddevPop, Variance, VariancePop,
+};
 use datafusion::physical_plan::sorts::sort_preserving_merge::SortPreservingMergeExec;
 use datafusion::physical_plan::udaf::AggregateFunctionExpr;
 use datafusion::physical_plan::ExecutionPlan;
@@ -76,6 +79,15 @@ impl PhysicalOptimizerRule for AddSortExec {
                         {
                             is_need_sort = true;
                         }
+                    } else if expr.as_any().is::<Correlation>()
+                        || expr.as_any().is::<Covariance>()
+                        || expr.as_any().is::<CovariancePop>()
+                        || expr.as_any().is::<Stddev>()
+                        || expr.as_any().is::<StddevPop>()
+                        || expr.as_any().is::<Variance>()
+                        || expr.as_any().is::<VariancePop>()
+                    {
+                        is_need_sort = true;
                     }
                 });
 
