@@ -1,0 +1,176 @@
+statement ok
+drop table if exists unorder;
+
+statement ok
+alter database public set vnode_duration '1d';
+
+statement ok
+CREATE TABLE unorder(x DOUBLE,y DOUBLE);
+
+query T
+INSERT INTO unorder (TIME, x, y) VALUES
+                ('2024-01-01 00:00:00.000000001', 1, 1),
+                ('2024-01-02 00:00:00.000000002', 1, 2),
+                ('2024-01-03 00:00:00.000000003', 1, 3),
+                ('2024-01-04 00:00:00.000000004', 1, 4),
+                ('2024-01-05 00:00:00.000000005', 1, 5),
+                ('2024-01-06 00:00:00.000000006', 2, 1),
+                ('2024-01-07 00:00:00.000000007', 2, 2),
+                ('2024-01-08 00:00:00.000000008', 2, 3),
+                ('2024-01-09 00:00:00.000000009', 2, 4),
+                ('2024-01-10 00:00:00.000000010', 2, 5);
+----
+10
+
+query T
+SELECT corr(x, y) FROM unorder;
+----
+6.280369834735101e-17
+
+query T
+SELECT corr(x, y) FROM unorder;
+----
+6.280369834735101e-17
+
+query T
+SELECT corr(x, y) FROM unorder;
+----
+6.280369834735101e-17
+
+query T
+SELECT covar(x, y) FROM unorder;
+----
+4.9343245538895844e-17
+
+query T
+SELECT covar(x, y) FROM unorder;
+----
+4.9343245538895844e-17
+
+query T
+SELECT covar(x, y) FROM unorder;
+----
+4.9343245538895844e-17
+
+query T
+SELECT covar_pop(x, y) FROM unorder;
+----
+4.4408920985006264e-17
+
+query T
+SELECT covar_pop(x, y) FROM unorder;
+----
+4.4408920985006264e-17
+
+query T
+SELECT covar_pop(x, y) FROM unorder;
+----
+4.4408920985006264e-17
+
+query T
+SELECT covar_samp(x, y) FROM unorder;
+----
+4.9343245538895844e-17
+
+query T
+SELECT covar_samp(x, y) FROM unorder;
+----
+4.9343245538895844e-17
+
+query T
+SELECT covar_samp(x, y) FROM unorder;
+----
+4.9343245538895844e-17
+
+query T
+SELECT stddev(y) FROM unorder;
+----
+1.4907119849998598
+
+query T
+SELECT stddev(y) FROM unorder;
+----
+1.4907119849998598
+
+query T
+SELECT stddev(y) FROM unorder;
+----
+1.4907119849998598
+
+query T
+SELECT stddev_pop(y) FROM unorder;
+----
+1.4142135623730951
+
+query T
+SELECT stddev_pop(y) FROM unorder;
+----
+1.4142135623730951
+
+query T
+SELECT stddev_pop(y) FROM unorder;
+----
+1.4142135623730951
+
+query T
+SELECT stddev_samp(y) FROM unorder;
+----
+1.4907119849998598
+
+query T
+SELECT stddev_samp(y) FROM unorder;
+----
+1.4907119849998598
+
+query T
+SELECT stddev_samp(y) FROM unorder;
+----
+1.4907119849998598
+
+query T
+SELECT var(y) FROM unorder;
+----
+2.2222222222222223
+
+query T
+SELECT var(y) FROM unorder;
+----
+2.2222222222222223
+
+query T
+SELECT var(y) FROM unorder;
+----
+2.2222222222222223
+
+query T
+SELECT var_pop(y) FROM unorder;
+----
+2.0
+
+query T
+SELECT var_pop(y) FROM unorder;
+----
+2.0
+
+query T
+SELECT var_pop(y) FROM unorder;
+----
+2.0
+
+query T
+SELECT var_samp(y) FROM unorder;
+----
+2.2222222222222223
+
+query T
+SELECT var_samp(y) FROM unorder;
+----
+2.2222222222222223
+
+query T
+SELECT var_samp(y) FROM unorder;
+----
+2.2222222222222223
+
+statement ok
+drop table if exists unorder;
