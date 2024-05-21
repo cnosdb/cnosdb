@@ -13,7 +13,7 @@ use utils::BloomFilter;
 use crate::compaction::{CompactTask, FlushReq};
 use crate::context::GlobalContext;
 use crate::error::TskvResult;
-use crate::file_system::file_manager;
+use crate::file_system::async_filesystem::LocalFileSystem;
 use crate::memcache::MemCache;
 use crate::summary::{CompactMetaBuilder, SummaryTask, VersionEdit};
 use crate::tsm::writer::TsmWriter;
@@ -52,7 +52,7 @@ impl FlushTask {
     }
 
     pub fn clear_files(&mut self) {
-        if let Err(err) = file_manager::remove_if_exists(self.tsm_writer.path()) {
+        if let Err(err) = LocalFileSystem::remove_if_exists(self.tsm_writer.path()) {
             info!(
                 "delete flush tsm file: {:?} failed: {}",
                 self.tsm_writer.path(),
@@ -60,7 +60,7 @@ impl FlushTask {
             );
         }
 
-        if let Err(err) = file_manager::remove_if_exists(self.delta_writer.path()) {
+        if let Err(err) = LocalFileSystem::remove_if_exists(self.delta_writer.path()) {
             info!(
                 "delete flush tsm file: {:?} failed: {}",
                 self.delta_writer.path(),
@@ -111,7 +111,7 @@ impl FlushTask {
             version_edit.add_file(tsm_meta, max_level_ts);
         } else {
             let path = self.tsm_writer.path();
-            let result = file_manager::remove_if_exists(path);
+            let result = LocalFileSystem::remove_if_exists(path);
             info!("Flush: remove unsed file: {:?}, {:?}", path, result);
         }
 
@@ -134,7 +134,7 @@ impl FlushTask {
             version_edit.add_file(delta_meta, max_level_ts);
         } else {
             let path = self.delta_writer.path();
-            let result = file_manager::remove_if_exists(path);
+            let result = LocalFileSystem::remove_if_exists(path);
             info!("Flush: remove unsed file: {:?}, {:?}", path, result);
         }
 

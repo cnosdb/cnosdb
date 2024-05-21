@@ -4,7 +4,8 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use tokio::fs;
 
-use crate::file_system::file_manager;
+use crate::file_system::async_filesystem::LocalFileSystem;
+use crate::file_system::FileSystem;
 use crate::{TskvError, TskvResult};
 
 lazy_static! {
@@ -173,7 +174,7 @@ pub fn get_max_sequence_file_name<F>(
 where
     F: Fn(&str) -> TskvResult<u64>,
 {
-    let segments = file_manager::list_file_names(dir);
+    let segments = LocalFileSystem::list_file_names(dir);
     if segments.is_empty() {
         return None;
     }
@@ -213,7 +214,7 @@ pub fn make_file_path(dir: impl AsRef<Path>, id: u64, suffix: &str) -> PathBuf {
 }
 
 pub fn get_file_id_range(dir: impl AsRef<Path>, suffix: &str) -> Option<(u64, u64)> {
-    let file_names = file_manager::list_file_names(dir);
+    let file_names = LocalFileSystem::list_file_names(dir);
     if file_names.is_empty() {
         return None;
     }

@@ -14,7 +14,8 @@ use tokio_stream::StreamExt;
 use tonic::transport::Channel;
 use tower::timeout::Timeout;
 use tracing::{error, info};
-use tskv::file_system::file_manager;
+use tskv::file_system::async_filesystem::LocalFileSystem;
+use tskv::file_system::FileSystem;
 use tskv::kv_option::DATA_PATH;
 use tskv::vnode_store::VnodeStorage;
 use tskv::VnodeSnapshot;
@@ -106,7 +107,7 @@ impl TskvEngineStorage {
 
             Self::download_file(&src_filename, &filename, client).await?;
             let filename = filename.to_string_lossy().to_string();
-            let length = file_manager::get_file_length(&filename).await?;
+            let length = LocalFileSystem::get_file_length(filename);
             if info.file_size != length {
                 return Err(CoordinatorError::CommonError {
                     msg: format!(
