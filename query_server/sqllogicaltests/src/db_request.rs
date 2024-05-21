@@ -13,7 +13,8 @@ use nom::IResult;
 
 use crate::error::SqlError;
 use crate::instance::{
-    run_lp_write, run_open_tsdb_json_write, run_open_tsdb_write, run_query, SqlClientOptions,
+    run_lp_write, run_open_tsdb_json_write, run_open_tsdb_write, run_query, CreateOptions,
+    SqlClientOptions,
 };
 
 type Result<T, E = SqlError> = std::result::Result<T, E>;
@@ -118,12 +119,13 @@ impl DBRequest {
     pub async fn execute(
         &self,
         options: &SqlClientOptions,
+        create_option: &CreateOptions,
         path: &Path,
     ) -> Result<(Schema, Vec<RecordBatch>)> {
         match self {
             DBRequest::Sql(sql) => {
                 println!("[{}] Execute Sql: \"{}\"", path.display(), sql);
-                Ok(run_query(options, sql).await?)
+                Ok(run_query(options, create_option, sql).await?)
             }
             DBRequest::LineProtocol(lp) => {
                 println!("[{}] Execute LineProtocol: \"{}\"", path.display(), lp);

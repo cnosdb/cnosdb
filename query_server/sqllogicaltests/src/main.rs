@@ -1,7 +1,9 @@
 use std::error::Error;
 use std::path::{Path, PathBuf};
 
-use crate::instance::SqlClientOptions;
+use clap::Parser;
+
+use crate::instance::{CreateOptions, SqlClientOptions};
 
 mod db_request;
 mod error;
@@ -46,6 +48,11 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
         chunked: None,
     };
 
+    let create_options = CreateOptions {
+        shard_num: options.shard_count,
+        replication_num: options.replica_count,
+    };
+
     println!("{options:?}");
     println!("{db_options:?}");
 
@@ -63,9 +70,21 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
             }
         }
         if options.complete_mode {
-            os::run_complete_file(&path, relative_path, db_options.clone()).await?;
+            os::run_complete_file(
+                &path,
+                relative_path,
+                db_options.clone(),
+                create_options.clone(),
+            )
+            .await?;
         } else {
-            os::run_test_file(&path, relative_path, db_options.clone()).await?;
+            os::run_test_file(
+                &path,
+                relative_path,
+                db_options.clone(),
+                create_options.clone(),
+            )
+            .await?;
         }
     }
 
@@ -113,17 +132,37 @@ struct Options {
     /// Auto complete mode to fill out expected results
     complete_mode: bool,
 
+    /// Number of shards
+    shard_count: u32,
+
+    /// Number of replication sets
+    replica_count: u32,
+
     flight_host: String,
     flight_port: u16,
     http_host: String,
     http_port: u16,
 }
 
+#[derive(Debug, Parser)]
+struct CliOptions {
+    #[arg()]
+    filters: Vec<String>,
+
+    #[arg(long = "shard", default_value = "1")]
+    shard_count: u32,
+
+    #[arg(long = "replica", default_value = "1")]
+    replica_count: u32,
+
+    #[arg(long = "complete", default_value = "false")]
+    complete_mode: bool,
+}
+
 impl Options {
     fn new() -> Self {
-        let args: Vec<_> = std::env::args().collect();
+        let args = CliOptions::parse();
 
-        let complete_mode = args.iter().any(|a| a == "--complete");
         let flight_host =
             std::env::var(CNOSDB_FLIGHT_HOST_ENV).unwrap_or(CNOSDB_FLIGHT_HOST_DEFAULT.into());
         let flight_port = std::env::var(CNOSDB_FLIGHT_PORT_ENV)
@@ -138,19 +177,12 @@ impl Options {
         });
 
         // treat args after the first as filters to run (substring matching)
-        let filters = if !args.is_empty() {
-            args.into_iter()
-                .skip(1)
-                // ignore command line arguments like `--complete`
-                .filter(|arg| !arg.as_str().starts_with("--"))
-                .collect::<Vec<_>>()
-        } else {
-            vec![]
-        };
 
         Self {
-            filters,
-            complete_mode,
+            filters: args.filters,
+            complete_mode: args.complete_mode,
+            shard_count: args.shard_count,
+            replica_count: args.replica_count,
             flight_host,
             flight_port,
             http_host,
