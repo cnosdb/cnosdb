@@ -288,7 +288,7 @@ impl FlushJob {
         ctx: Arc<TsKvContext>,
         lock: Arc<RwLock<()>>,
     ) -> TskvResult<()> {
-        let _ = lock.write().await;
+        let _write_guard = lock.write().await;
         info!("begin flush data {}", request);
 
         // flush index
