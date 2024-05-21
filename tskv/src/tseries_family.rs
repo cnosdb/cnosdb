@@ -19,7 +19,8 @@ use trace::{debug, error, info};
 use utils::BloomFilter;
 
 use crate::error::TskvResult;
-use crate::file_system::file_manager;
+use crate::file_system::async_filesystem::LocalFileSystem;
+use crate::file_system::FileSystem;
 use crate::file_utils::{make_delta_file, make_tsm_file};
 use crate::index::ts_index::TSIndex;
 use crate::kv_option::{CacheOptions, StorageOptions};
@@ -225,7 +226,7 @@ impl Drop for ColumnFile {
             }
 
             let tombstone_path = self.tombstone_path();
-            if file_manager::try_exists(&tombstone_path) {
+            if LocalFileSystem::try_exists(&tombstone_path) {
                 if let Err(e) = std::fs::remove_file(&tombstone_path) {
                     error!(
                         "Failed to remove tsm tombstone '{}': {e}",
@@ -1242,7 +1243,7 @@ pub mod test_tseries_family {
         global_config.storage.path = dir.to_string();
         let opt = Arc::new(Options::from(&global_config));
 
-        let database = Arc::new("cnosdb.test".to_string());
+        let database = Arc::new("test".to_string());
         let ts_family_id = 1;
         let tsm_dir = opt.storage.tsm_dir(&database, ts_family_id);
         #[rustfmt::skip]

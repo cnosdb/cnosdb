@@ -4,12 +4,13 @@ use openraft::EntryPayload;
 
 use super::{wal_store, WalType, WAL_FOOTER_MAGIC_NUMBER, WAL_HEADER_LEN};
 use crate::byte_utils::{decode_be_u32, decode_be_u64};
-use crate::file_system::file_manager;
+use crate::file_system::async_filesystem::LocalFileSystem;
+use crate::file_system::FileSystem;
 use crate::{record_file, TskvError, TskvResult};
 
 /// Reads a wal file and parse footer, returns sequence range
 pub async fn read_footer(path: impl AsRef<Path>) -> TskvResult<Option<(u64, u64)>> {
-    if file_manager::try_exists(&path) {
+    if LocalFileSystem::try_exists(&path) {
         let reader = WalReader::open(path).await?;
         Ok(Some((reader.min_sequence, reader.max_sequence)))
     } else {
@@ -98,7 +99,7 @@ impl WalReader {
 
     pub async fn read_wal_record_data(&mut self, pos: u64) -> TskvResult<Option<WalRecordData>> {
         self.inner.reload_metadata().await?;
-        match self.inner.read_record_at(pos as usize).await {
+        match self.inner.read_record_at(pos).await {
             Ok(r) => Ok(Some(WalRecordData::new(r.data))),
             Err(TskvError::Eof) => Ok(None),
             Err(e @ TskvError::RecordFileHashCheckFailed { .. }) => Err(e),

@@ -6,7 +6,8 @@ use replication::{EntriesMetrics, EntryStorage, RaftNodeId, RaftNodeInfo, TypeCo
 use trace::info;
 
 use super::reader::WalRecordData;
-use crate::file_system::file_manager;
+use crate::file_system::async_filesystem::LocalFileSystem;
+use crate::file_system::FileSystem;
 use crate::record_file::Record;
 use crate::vnode_store::VnodeStorage;
 use crate::wal::reader::{Block, WalReader};
@@ -395,7 +396,7 @@ impl RaftEntryStorageInner {
         apply_id: Option<LogId<u64>>,
         vode_store: &mut VnodeStorage,
     ) -> TskvResult<()> {
-        let wal_files = file_manager::list_file_names(self.wal.wal_dir());
+        let wal_files = LocalFileSystem::list_file_names(self.wal.wal_dir());
         for file_name in wal_files {
             // If file name cannot be parsed to wal id, skip that file.
             let wal_id = match file_utils::get_wal_file_id(&file_name) {
@@ -403,7 +404,7 @@ impl RaftEntryStorageInner {
                 Err(_) => continue,
             };
             let path = self.wal.wal_dir().join(&file_name);
-            if !file_manager::try_exists(&path) {
+            if !LocalFileSystem::try_exists(&path) {
                 continue;
             }
             let reader = self.wal.wal_reader(wal_id).await?;
@@ -487,7 +488,8 @@ mod test {
     use replication::{ApplyStorageRef, EntryStorage, EntryStorageRef, RaftNodeInfo};
     use tokio::sync::RwLock;
 
-    use crate::file_system::file_manager;
+    use crate::file_system::async_filesystem::LocalFileSystem;
+    use crate::file_system::FileSystem;
     use crate::wal::reader::WalRecordData;
     use crate::wal::wal_store::{RaftEntry, RaftEntryStorage};
     use crate::wal::VnodeWal;
@@ -513,7 +515,7 @@ mod test {
     #[tokio::test]
     async fn test_wal_entry_storage_restart() {
         trace::debug!("----------------------------------------");
-        let dir = PathBuf::from("/tmp/test/wal/raft_entry_restart");
+        let dir = PathBuf::from("/tmp/test/wal/raft_entry_restart1");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
 
@@ -552,7 +554,7 @@ mod test {
         let wal_dir = wal.wal_dir.clone();
         let mut storage = RaftEntryStorage::new(wal);
 
-        let wal_files = file_manager::list_file_names(&wal_dir);
+        let wal_files = LocalFileSystem::list_file_names(&wal_dir);
         println!("----------------- files: {:?}", wal_files);
         for file_name in wal_files {
             let wal_id = file_utils::get_wal_file_id(&file_name).unwrap();

@@ -6,16 +6,18 @@ use serde::{Deserialize, Serialize};
 use trace::{debug, error};
 
 use super::{IndexError, IndexResult};
-use crate::file_system::file::async_file::AsyncFile;
-use crate::file_system::file::cursor::FileCursor;
-use crate::file_system::file::IFile;
-use crate::file_system::file_manager;
+use crate::file_system::async_filesystem::{LocalFileSystem, LocalFileType};
+use crate::file_system::file::stream_reader::FileStreamReader;
+use crate::file_system::file::stream_writer::FileStreamWriter;
+use crate::file_system::FileSystem;
 use crate::{byte_utils, file_utils};
 
 pub const SEGMENT_FILE_HEADER_SIZE: usize = 8;
 pub const SEGMENT_FILE_MAGIC: [u8; 4] = [0x48, 0x49, 0x4e, 0x02];
 pub const SEGMENT_FILE_MAX_SIZE: u64 = 64 * 1024 * 1024;
 pub const BLOCK_HEADER_SIZE: usize = 4;
+
+pub const INDEX_BUFFER_SIZE: usize = 0;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub enum IndexBinlogBlock {
@@ -156,7 +158,7 @@ impl IndexBinlog {
             }
         };
 
-        if !file_manager::try_exists(data_dir) {
+        if !LocalFileSystem::try_exists(data_dir) {
             std::fs::create_dir_all(data_dir)?;
         }
 
@@ -226,32 +228,39 @@ impl IndexBinlog {
 pub struct BinlogWriter {
     id: u64,
     size: u64,
-
-    pub file: AsyncFile,
+    pub file: Box<FileStreamWriter>,
 }
 
 impl BinlogWriter {
     pub async fn open(id: u64, path: impl AsRef<Path>) -> IndexResult<Self> {
-        let file = file_manager::create_file(path)
+        let file_system = LocalFileSystem::new(LocalFileType::ThreadPool);
+        let mut file = file_system
+            .open_file_writer(path.as_ref().to_path_buf(), INDEX_BUFFER_SIZE)
             .await
-            .map_err(|e| IndexError::FileErrors { msg: e.to_string() })?;
+            .map_err(|err| IndexError::FileSystemError { source: err })?;
 
         let mut size = file.len();
-        if size < SEGMENT_FILE_HEADER_SIZE as u64 {
-            size = SEGMENT_FILE_HEADER_SIZE as u64;
-            BinlogWriter::write_header(&file, SEGMENT_FILE_HEADER_SIZE as u32).await?;
+        if size < SEGMENT_FILE_HEADER_SIZE {
+            size = SEGMENT_FILE_HEADER_SIZE;
+            BinlogWriter::write_header(&mut file, SEGMENT_FILE_HEADER_SIZE as u32).await?;
         }
 
-        Ok(Self { id, file, size })
+        Ok(Self {
+            id,
+            file,
+            size: size as u64,
+        })
     }
 
-    pub async fn write_header(file: &AsyncFile, offset: u32) -> IndexResult<()> {
+    pub async fn write_header(file: &mut Box<FileStreamWriter>, offset: u32) -> IndexResult<()> {
         let mut header_buf = [0_u8; SEGMENT_FILE_HEADER_SIZE];
         header_buf[..4].copy_from_slice(SEGMENT_FILE_MAGIC.as_slice());
         header_buf[4..].copy_from_slice(&offset.to_be_bytes());
 
-        file.write_at(0, &header_buf).await?;
-        file.sync_data().await?;
+        file.seek(SeekFrom::Start(0)).await?;
+        file.write(&header_buf).await?;
+        file.flush().await?;
+        file.seek(SeekFrom::Start(file.len() as u64)).await?;
 
         Ok(())
     }
@@ -261,59 +270,48 @@ impl BinlogWriter {
             offset = self.size as u32;
         }
 
-        BinlogWriter::write_header(&self.file, offset).await
+        BinlogWriter::write_header(&mut self.file, offset).await
     }
 
     pub async fn write(&mut self, data: &[u8]) -> IndexResult<usize> {
-        let mut pos = self.size;
-        pos += self.file.write_at(pos, data).await? as u64;
-
-        // pos += self.file.write_at(pos, &block.ts.to_be_bytes()).await? as u64;
-        // pos += self
-        //     .file
-        //     .write_at(pos, &block.series_id.to_be_bytes())
-        //     .await? as u64;
-        // pos += self
-        //     .file
-        //     .write_at(pos, &block.data_len.to_be_bytes())
-        //     .await? as u64;
-        // pos += self.file.write_at(pos, &block.data).await? as u64;
-
-        debug!(
-            "Write binlog data pos: {}, len: {}",
-            self.size,
-            (pos - self.size)
-        );
-
-        let written_size = (pos - self.size) as usize;
-        self.size = pos;
+        let written_size = self.file.write(data).await?;
 
         Ok(written_size)
     }
 
     pub async fn flush(&mut self) -> IndexResult<()> {
         // Do fsync
-        self.file.sync_data().await?;
+        self.file.flush().await?;
 
         Ok(())
     }
 }
 
 pub struct BinlogReader {
-    cursor: FileCursor,
+    cursor: Box<FileStreamReader>,
 
     body_buf: Vec<u8>,
     header_buf: [u8; BLOCK_HEADER_SIZE],
 }
 
 impl BinlogReader {
-    pub async fn new(mut cursor: FileCursor) -> IndexResult<Self> {
+    pub async fn open(id: u64, path: impl AsRef<Path>) -> IndexResult<Self> {
+        let file_system = LocalFileSystem::new(LocalFileType::ThreadPool);
+        let file = file_system
+            .open_file_reader(path.as_ref().to_path_buf())
+            .await
+            .map_err(|err| IndexError::FileSystemError { source: err })?;
+
+        BinlogReader::new(id, file).await
+    }
+
+    pub async fn new(_id: u64, mut cursor: Box<FileStreamReader>) -> IndexResult<Self> {
         let header_buf = BinlogReader::reade_header(&mut cursor).await?;
         let offset = byte_utils::decode_be_u32(&header_buf[4..8]);
 
         debug!("Read index binlog begin read offset: {}", offset);
 
-        cursor.set_pos(offset as u64);
+        cursor.seek(SeekFrom::Start(offset as u64))?;
 
         Ok(Self {
             cursor,
@@ -322,7 +320,9 @@ impl BinlogReader {
         })
     }
 
-    async fn reade_header(cursor: &mut FileCursor) -> IndexResult<[u8; SEGMENT_FILE_HEADER_SIZE]> {
+    async fn reade_header(
+        cursor: &mut Box<FileStreamReader>,
+    ) -> IndexResult<[u8; SEGMENT_FILE_HEADER_SIZE]> {
         let mut header_buf = [0_u8; SEGMENT_FILE_HEADER_SIZE];
 
         cursor.seek(SeekFrom::Start(0))?;
@@ -336,7 +336,7 @@ impl BinlogReader {
     }
 
     pub fn pos(&self) -> u64 {
-        self.cursor.pos()
+        self.cursor.pos() as u64
     }
 
     pub fn seek(&mut self, pos: u64) -> IndexResult<()> {
@@ -349,19 +349,25 @@ impl BinlogReader {
             offset = self.cursor.pos() as u32;
         }
 
-        BinlogWriter::write_header(self.cursor.file_ref(), offset).await
+        let file_system = LocalFileSystem::new(LocalFileType::ThreadPool);
+        let mut file = file_system
+            .open_file_writer(self.cursor.path(), INDEX_BUFFER_SIZE)
+            .await
+            .map_err(|err| IndexError::FileSystemError { source: err })?;
+
+        BinlogWriter::write_header(&mut file, offset).await
     }
 
-    pub fn read_pos(&self) -> u64 {
+    pub fn read_pos(&self) -> usize {
         self.cursor.pos()
     }
 
-    pub fn file_len(&self) -> u64 {
+    pub fn file_len(&self) -> usize {
         self.cursor.len()
     }
 
     pub async fn next_block(&mut self) -> IndexResult<Option<IndexBinlogBlock>> {
-        if self.read_over() || self.file_len() < (self.read_pos() + BLOCK_HEADER_SIZE as u64) {
+        if self.read_over() || self.file_len() < self.read_pos() + BLOCK_HEADER_SIZE {
             return Ok(None);
         }
 
@@ -415,8 +421,12 @@ impl BinlogReader {
 }
 
 pub async fn repair_index_file(file_name: &str) -> IndexResult<()> {
-    let tmp_file = BinlogWriter::open(0, PathBuf::from(file_name)).await?;
-    let mut reader_file = BinlogReader::new(tmp_file.file.into()).await?;
+    let flie_system = LocalFileSystem::new(LocalFileType::ThreadPool);
+    let reader_file = flie_system
+        .open_file_reader(file_name)
+        .await
+        .map_err(|err| IndexError::FileSystemError { source: err })?;
+    let mut reader_file = BinlogReader::new(0, reader_file).await?;
 
     let file_read_offset = reader_file.read_pos();
     let mut max_can_repair = 0;
@@ -426,7 +436,7 @@ pub async fn repair_index_file(file_name: &str) -> IndexResult<()> {
     }
 
     println!(
-        "file length: {}, persistence offset: {},  can repair offset: {}",
+        "file length: {:?}, persistence offset: {},  can repair offset: {}",
         reader_file.file_len(),
         file_read_offset,
         max_can_repair
@@ -443,7 +453,7 @@ pub async fn repair_index_file(file_name: &str) -> IndexResult<()> {
     let mut file = std::fs::File::create(format!("{}.repair", file_name))?;
 
     file.write_all(&buffer)?;
-    file.set_len(max_can_repair)?;
+    file.set_len(max_can_repair as u64)?;
 
     Ok(())
 }
@@ -454,7 +464,7 @@ mod test {
 
     use super::{AddSeries, IndexBinlogBlock};
     use crate::file_utils::make_index_binlog_file;
-    use crate::index::binlog::{BinlogReader, BinlogWriter, IndexBinlog};
+    use crate::index::binlog::{BinlogReader, IndexBinlog};
 
     /// ( timestamp, series_id, data )
     type IndexBinlogBlockDesc<'a> = (i64, u32, &'a str);
@@ -517,8 +527,7 @@ mod test {
         let mut index = IndexBinlog::new(dir).await.unwrap();
 
         let name = make_index_binlog_file(dir, binlog_id);
-        let binlog_writer = BinlogWriter::open(binlog_id, name).await.unwrap();
-        let mut reader_file = BinlogReader::new(binlog_writer.file.into()).await.unwrap();
+        let mut reader_file = BinlogReader::open(binlog_id, name).await.unwrap();
         for series_key_block in series_key_blocks_1.iter().chain(series_key_blocks_2.iter()) {
             assert_eq!(
                 Some(series_key_block),

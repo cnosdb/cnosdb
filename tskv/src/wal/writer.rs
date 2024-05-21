@@ -1,11 +1,12 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::file_system::file_manager;
+use crate::file_system::async_filesystem::LocalFileSystem;
+use crate::file_system::FileSystem;
 use crate::kv_option::WalOptions;
 use crate::record_file::{RecordDataType, RecordDataVersion};
 use crate::wal::reader::WalReader;
-use crate::wal::{reader, wal_store, WalType, WAL_FOOTER_MAGIC_NUMBER};
+use crate::wal::{reader, wal_store, WalType, WAL_BUFFER_SIZE, WAL_FOOTER_MAGIC_NUMBER};
 use crate::{record_file, TskvResult};
 
 fn build_footer(min_sequence: u64, max_sequence: u64) -> [u8; record_file::FILE_FOOTER_LEN] {
@@ -40,8 +41,9 @@ impl WalWriter {
         let path = path.as_ref();
 
         // Use min_sequence existing in file, otherwise in parameter
-        let (writer, min_sequence, max_sequence) = if file_manager::try_exists(path) {
-            let writer = record_file::Writer::open(path, RecordDataType::Wal).await?;
+        let (writer, min_sequence, max_sequence) = if LocalFileSystem::try_exists(path) {
+            let writer =
+                record_file::Writer::open(path, RecordDataType::Wal, WAL_BUFFER_SIZE).await?;
             let (min_sequence, max_sequence) = match writer.footer() {
                 Some(footer) => reader::parse_footer(footer).unwrap_or((min_seq, min_seq)),
                 None => (min_seq, min_seq),
@@ -49,7 +51,7 @@ impl WalWriter {
             (writer, min_sequence, max_sequence)
         } else {
             (
-                record_file::Writer::open(path, RecordDataType::Wal).await?,
+                record_file::Writer::open(path, RecordDataType::Wal, WAL_BUFFER_SIZE).await?,
                 min_seq,
                 min_seq,
             )
@@ -99,7 +101,7 @@ impl WalWriter {
         Ok(written_size)
     }
 
-    pub async fn sync(&self) -> TskvResult<()> {
+    pub async fn sync(&mut self) -> TskvResult<()> {
         self.inner.sync().await
     }
 
@@ -117,14 +119,14 @@ impl WalWriter {
         Ok(size)
     }
 
-    pub fn new_reader(&self) -> WalReader {
-        let record_reader = self.inner.new_reader();
-        WalReader::new(
+    pub async fn new_reader(&mut self) -> TskvResult<WalReader> {
+        let record_reader = self.inner.new_reader().await?;
+        Ok(WalReader::new(
             record_reader,
             self.min_sequence,
             self.max_sequence,
             self.has_footer,
-        )
+        ))
     }
 
     pub async fn truncate(&mut self, size: u64, seq_no: u64) {
