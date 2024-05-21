@@ -18,6 +18,7 @@ use utils::BloomFilter;
 
 use crate::context::GlobalContext;
 use crate::error::{TskvError, TskvResult};
+use crate::file_system::async_filesystem::LocalFileSystem;
 use crate::kv_option::{Options, StorageOptions, DELTA_PATH, TSM_PATH};
 use crate::memcache::MemCache;
 use crate::record_file::{Reader, RecordDataType, RecordDataVersion, Writer};
@@ -184,7 +185,6 @@ impl VersionEdit {
             act_tsf: VnodeAction::Update,
             tsf_name: owner,
             tsf_id: vnode_id,
-
             ..Default::default()
         }
     }
@@ -305,6 +305,8 @@ impl Display for VnodeAction {
     }
 }
 
+const SUMMARY_BUFFER_SIZE: usize = 1024 * 1024;
+
 pub struct Summary {
     _meta: MetaRef,
     _file_no: u64,
@@ -327,7 +329,9 @@ impl Summary {
     ) -> TskvResult<Self> {
         let db = VersionEdit::default();
         let path = file_utils::make_summary_file(opt.storage.summary_dir(), 0);
-        let mut w = Writer::open(path, RecordDataType::Summary).await.unwrap();
+        let mut w = Writer::open(path, RecordDataType::Summary, SUMMARY_BUFFER_SIZE)
+            .await
+            .unwrap();
         let buf = db.encode()?;
         let _ = w
             .write_record(
@@ -370,7 +374,9 @@ impl Summary {
     ) -> TskvResult<Self> {
         let summary_path = opt.storage.summary_dir();
         let path = file_utils::make_summary_file(&summary_path, 0);
-        let writer = Writer::open(path, RecordDataType::Summary).await.unwrap();
+        let writer = Writer::open(path, RecordDataType::Summary, SUMMARY_BUFFER_SIZE)
+            .await
+            .unwrap();
         let ctx = Arc::new(GlobalContext::default());
         let rd = Box::new(
             Reader::open(&file_utils::make_summary_file(&summary_path, 0))
@@ -543,7 +549,8 @@ impl Summary {
         }
 
         let new_path = file_utils::make_summary_file_tmp(self.opt.storage.summary_dir());
-        crate::file_system::file_manager::remove_if_exists(&new_path)?;
+        LocalFileSystem::remove_if_exists(&new_path)
+            .map_err(|e| TskvError::FileSystemError { source: e })?;
 
         let requests = self
             .version_set
@@ -551,7 +558,7 @@ impl Summary {
             .await
             .ts_families_version_edit()
             .await?;
-        self.writer = Writer::open(&new_path, RecordDataType::Summary).await?;
+        self.writer = Writer::open(&new_path, RecordDataType::Summary, SUMMARY_BUFFER_SIZE).await?;
 
         for request in requests.iter() {
             self.apply_version_edit(request).await?;
@@ -561,7 +568,7 @@ impl Summary {
         trace::info!("Remove summary file {:?} -> {:?}", new_path, old_path,);
         std::fs::rename(new_path, old_path)?;
 
-        self.writer = Writer::open(old_path, RecordDataType::Summary)
+        self.writer = Writer::open(old_path, RecordDataType::Summary, SUMMARY_BUFFER_SIZE)
             .await
             .unwrap();
 

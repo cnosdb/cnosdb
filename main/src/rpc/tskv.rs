@@ -18,7 +18,8 @@ use tokio::runtime::Runtime;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Extensions, Request, Response, Status};
-use trace::{debug, error, info, SpanContext, SpanExt, SpanRecorder};
+use trace::span_ext::SpanExt;
+use trace::{debug, error, info, Span, SpanContext};
 use tskv::error::TskvResult;
 use tskv::reader::query_executor::QueryExecutor;
 use tskv::reader::serialize::TonicRecordBatchEncoder;
@@ -295,7 +296,7 @@ impl TskvService for TskvServiceImpl {
         &self,
         request: tonic::Request<QueryRecordBatchRequest>,
     ) -> Result<tonic::Response<Self::QueryRecordBatchStream>, tonic::Status> {
-        let span_recorder = get_span_recorder(request.extensions(), "grpc query_record_batch");
+        let span = get_span(request.extensions(), "grpc query_record_batch");
         let inner = request.into_inner();
 
         let args = match QueryArgs::decode(&inner.args) {
@@ -316,16 +317,16 @@ impl TskvService for TskvServiceImpl {
         let service = self.clone();
 
         let encoded_stream = {
-            let span_recorder = span_recorder.child("RecordBatch encorder stream");
+            let span = Span::enter_with_parent("RecordBatch encorder stream", &span);
 
             let stream = TskvServiceImpl::query_record_batch_exec(
                 service,
                 args,
                 expr,
                 aggs,
-                span_recorder.span_ctx(),
+                span.context().as_ref(),
             )?;
-            TonicRecordBatchEncoder::new(stream, span_recorder).map_err(Into::into)
+            TonicRecordBatchEncoder::new(stream, span).map_err(Into::into)
         };
 
         Ok(tonic::Response::new(Box::pin(encoded_stream)))
@@ -336,7 +337,7 @@ impl TskvService for TskvServiceImpl {
         &self,
         request: Request<QueryRecordBatchRequest>,
     ) -> Result<Response<Self::TagScanStream>, Status> {
-        let span_recorder = get_span_recorder(request.extensions(), "grpc tag_scan");
+        let span = get_span(request.extensions(), "grpc tag_scan");
         let inner = request.into_inner();
 
         let args = match QueryArgs::decode(&inner.args) {
@@ -350,24 +351,24 @@ impl TskvService for TskvServiceImpl {
         };
 
         let stream = {
-            let span_recorder = span_recorder.child("RecordBatch encorder stream");
+            let span = Span::enter_with_parent("RecordBatch encorder stream", &span);
             let stream = TskvServiceImpl::tag_scan_exec(
                 args,
                 expr,
                 self.coord.meta_manager(),
                 self.runtime.clone(),
                 self.kv_inst.clone(),
-                span_recorder.span_ctx(),
+                span.context().as_ref(),
             )?;
 
-            TonicRecordBatchEncoder::new(stream, span_recorder).map_err(Into::into)
+            TonicRecordBatchEncoder::new(stream, span).map_err(Into::into)
         };
 
         Ok(tonic::Response::new(Box::pin(stream)))
     }
 }
 
-fn get_span_recorder(extensions: &Extensions, child_span_name: &'static str) -> SpanRecorder {
-    let span_context = extensions.get::<SpanContext>();
-    SpanRecorder::new(span_context.child_span(child_span_name))
+fn get_span(extensions: &Extensions, child_span_name: &'static str) -> Span {
+    let context = extensions.get::<SpanContext>();
+    Span::from_context(child_span_name, context)
 }

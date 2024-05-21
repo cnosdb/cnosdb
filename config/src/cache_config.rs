@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
 use crate::codec::bytes_num;
-use crate::override_by_env::{entry_override, OverrideByEnv};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CacheConfig {
@@ -21,13 +20,6 @@ impl CacheConfig {
 
     fn default_partitions() -> usize {
         num_cpus::get()
-    }
-}
-
-impl OverrideByEnv for CacheConfig {
-    fn override_by_env(&mut self) {
-        entry_override(&mut self.max_buffer_size, "CNOSDB_CACHE_MAX_BUFFER_SIZE");
-        entry_override(&mut self.partition, "CNOSDB_CACHE_PARTITION");
     }
 }
 

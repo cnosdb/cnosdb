@@ -89,7 +89,7 @@ pub enum Error {
     #[snafu(display("Parse trace context, error: {}", source))]
     #[error_code(code = 12)]
     TraceHttp {
-        source: trace_http::ctx::ContextError,
+        source: trace::http::http_ctx::ContextError,
     },
 
     #[snafu(display("Error decode request: {}", source))]
@@ -147,8 +147,8 @@ impl From<QueryError> for Error {
     }
 }
 
-impl From<trace_http::ctx::ContextError> for Error {
-    fn from(source: trace_http::ctx::ContextError) -> Self {
+impl From<trace::http::http_ctx::ContextError> for Error {
+    fn from(source: trace::http::http_ctx::ContextError) -> Self {
         Error::TraceHttp { source }
     }
 }

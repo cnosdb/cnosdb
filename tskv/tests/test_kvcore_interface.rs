@@ -15,8 +15,10 @@ mod tests {
     use sysinfo::{ProcessRefreshKind, RefreshKind, System};
     use tokio::runtime;
     use tokio::runtime::Runtime;
-    use trace::{debug, error, info, init_default_global_tracing, warn};
-    use tskv::file_system::file_manager;
+    use trace::global_logging::init_default_global_tracing;
+    use trace::{debug, error, info, warn};
+    use tskv::file_system::async_filesystem::LocalFileSystem;
+    use tskv::file_system::FileSystem;
     use tskv::{file_utils, kv_option, Engine, TsKv};
 
     /// Initializes a TsKv instance in specified directory, with an optional runtime,
@@ -214,7 +216,7 @@ mod tests {
             assert_eq!(last_seq, 4)
         });
 
-        assert!(file_manager::try_exists(
+        assert!(LocalFileSystem::try_exists(
             "/tmp/test/kvcore/kvcore_flush/data/cnosdb.db/0/tsm"
         ));
         println!("Leave serial test: test_kvcore_flush");
@@ -288,10 +290,10 @@ mod tests {
             assert_eq!(last_seq, 4)
         });
 
-        assert!(file_manager::try_exists(format!(
+        assert!(LocalFileSystem::try_exists(format!(
             "/tmp/test/kvcore/kvcore_flush_delta/data/cnosdb.{database}/0/tsm"
         )));
-        assert!(file_manager::try_exists(format!(
+        assert!(LocalFileSystem::try_exists(format!(
             "/tmp/test/kvcore/kvcore_flush_delta/data/cnosdb.{database}/0/delta"
         )));
         println!("Leave serial test: test_kvcore_flush_delta");
@@ -397,7 +399,7 @@ mod tests {
                 };
 
                 assert!(
-                    file_manager::try_exists(&path),
+                    LocalFileSystem::try_exists(&path),
                     "{} not exists",
                     path.display(),
                 );
@@ -437,7 +439,7 @@ mod tests {
                 };
 
                 assert!(
-                    file_manager::try_exists(&path),
+                    LocalFileSystem::try_exists(&path),
                     "{} not exists",
                     path.display(),
                 );

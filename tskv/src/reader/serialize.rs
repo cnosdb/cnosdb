@@ -4,7 +4,7 @@ use std::task::{Context, Poll};
 use futures::{ready, Stream, StreamExt};
 use models::record_batch_encode;
 use protos::kv_service::BatchBytesResponse;
-use trace::SpanRecorder;
+use trace::Span;
 
 use crate::error::{TskvError, TskvResult};
 use crate::reader::SendableTskvRecordBatchStream;
@@ -12,15 +12,12 @@ use crate::reader::SendableTskvRecordBatchStream;
 pub struct TonicRecordBatchEncoder {
     input: SendableTskvRecordBatchStream,
     #[allow(unused)]
-    span_recorder: SpanRecorder,
+    span: Span,
 }
 
 impl TonicRecordBatchEncoder {
-    pub fn new(input: SendableTskvRecordBatchStream, span_recorder: SpanRecorder) -> Self {
-        Self {
-            input,
-            span_recorder,
-        }
+    pub fn new(input: SendableTskvRecordBatchStream, span: Span) -> Self {
+        Self { input, span }
     }
 }
 

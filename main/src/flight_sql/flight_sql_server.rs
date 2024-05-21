@@ -35,7 +35,8 @@ use spi::server::dbms::DBMSRef;
 use spi::service::protocol::{Context, ContextBuilder, Query, QueryHandle};
 use tonic::metadata::MetadataMap;
 use tonic::{Extensions, Request, Response, Status, Streaming};
-use trace::{debug, SpanContext, SpanExt, SpanRecorder};
+use trace::span_ext::SpanExt;
+use trace::{debug, Span, SpanContext};
 
 use super::auth_middleware::CallHeaderAuthenticator;
 use crate::flight_sql::auth_middleware::AuthResult;
@@ -80,22 +81,21 @@ where
     ) -> Result<(Option<Plan>, QueryStateMachineRef), Status> {
         // auth request
         let auth_result = {
-            let _span_recorder = SpanRecorder::new(span_ctx.child_span("authenticate"));
+            let _span = Span::from_context("authenticate", span_ctx);
             self.authenticator.authenticate(req_headers).await?
         };
         let user = auth_result.identity();
 
         // construct context by user_info and headers(parse tenant & default database)
         let ctx = {
-            let _span_recorder = SpanRecorder::new(span_ctx.child_span("construct context"));
+            let _span = Span::from_context("construct context", span_ctx);
             self.construct_context(user, req_headers)?
         };
 
         // build query state machine
         let query_state_machine = {
-            let _span_recorder =
-                SpanRecorder::new(span_ctx.child_span("build query_state_machine"));
-            self.build_query_state_machine(sql.into(), ctx, span_ctx)
+            let span = Span::from_context("build query_state_machine", span_ctx);
+            self.build_query_state_machine(sql.into(), ctx, span.context().as_ref())
                 .await?
         };
 
@@ -372,7 +372,7 @@ where
     > {
         debug!("do_handshake: {:?}", request);
 
-        let _span_recorder = get_span_recorder(request.extensions(), "flight sql do_handshake");
+        let _span_recorder = get_span(request.extensions(), "flight sql do_handshake");
 
         let meta_data = request.metadata();
         let auth_result = self.authenticator.authenticate(meta_data).await?;
@@ -401,13 +401,12 @@ where
             query, request
         );
 
-        let span_recorder =
-            get_span_recorder(request.extensions(), "flight sql get_flight_info_statement");
+        let span = get_span(request.extensions(), "flight sql get_flight_info_statement");
 
         // ignore transaction_id
         let CommandStatementQuery { query: sql, .. } = query;
 
-        self.precess_flight_info_req(sql, request, span_recorder.span_ctx())
+        self.precess_flight_info_req(sql, request, span.context().as_ref())
             .await
     }
 
@@ -424,14 +423,13 @@ where
             query, request
         );
 
-        let span_recorder = get_span_recorder(
+        let span = get_span(
             request.extensions(),
             "flight sql get_flight_info_prepared_statement",
         );
 
         let statement_handle = query.prepared_statement_handle.to_byte_slice();
-        let (plan, _) =
-            self.get_plan_and_qsm(statement_handle, span_recorder.span_ctx().cloned())?;
+        let (plan, _) = self.get_plan_and_qsm(statement_handle, span.context())?;
         let schema = plan
             .map(|e| e.schema())
             .unwrap_or(Arc::new(Schema::empty()));
@@ -457,8 +455,7 @@ where
             query, request
         );
 
-        let span_recorder =
-            get_span_recorder(request.extensions(), "flight sql get_flight_info_catalogs");
+        let span = get_span(request.extensions(), "flight sql get_flight_info_catalogs");
 
         self.precess_flight_info_req(
             "SELECT 
@@ -468,7 +465,7 @@ where
             ORDER BY 
                 CATALOG_NAME",
             request,
-            span_recorder.span_ctx(),
+            span.context().as_ref(),
         )
         .await
     }
@@ -483,8 +480,7 @@ where
             query, request
         );
 
-        let span_recorder =
-            get_span_recorder(request.extensions(), "flight sql get_flight_info_catalogs");
+        let span = get_span(request.extensions(), "flight sql get_flight_info_catalogs");
 
         let CommandGetDbSchemas {
             catalog,
@@ -514,7 +510,7 @@ where
                     CATALOG_NAME, DB_SCHEMA_NAME"
             ),
             request,
-            span_recorder.span_ctx(),
+            span.context().as_ref(),
         )
         .await
     }
@@ -529,8 +525,7 @@ where
             query, request
         );
 
-        let span_recorder =
-            get_span_recorder(request.extensions(), "flight sql get_flight_info_tables");
+        let span = get_span(request.extensions(), "flight sql get_flight_info_tables");
 
         let CommandGetTables {
             catalog,
@@ -573,7 +568,7 @@ where
                 TABLE_TYPE, CATALOG_NAME, DB_SCHEMA_NAME, TABLE_NAME"
         );
 
-        self.precess_flight_info_req(sql, request, span_recorder.span_ctx())
+        self.precess_flight_info_req(sql, request, span.context().as_ref())
             .await
     }
 
@@ -587,7 +582,7 @@ where
             query, request
         );
 
-        let span_recorder = get_span_recorder(
+        let span = get_span(
             request.extensions(),
             "flight sql get_flight_info_table_types",
         );
@@ -597,7 +592,7 @@ where
             FROM 
                 (VALUES('TABLE'),('VIEW'),('LOCAL TEMPORARY')) t(TABLE_TYPE)",
             request,
-            span_recorder.span_ctx(),
+            span.context().as_ref(),
         )
         .await
     }
@@ -695,12 +690,12 @@ where
             ticket, request
         );
 
-        let span_recorder = get_span_recorder(request.extensions(), "flight sql do_get_statement");
+        let span = get_span(request.extensions(), "flight sql do_get_statement");
 
         let TicketStatementQuery { statement_handle } = ticket;
 
         let output = self
-            .execute_and_fetch_result_set(&statement_handle, span_recorder.span_ctx())
+            .execute_and_fetch_result_set(&statement_handle, span.context().as_ref())
             .await?;
 
         // clear cache of this query
@@ -723,13 +718,12 @@ where
             query, request
         );
 
-        let span_recorder =
-            get_span_recorder(request.extensions(), "flight sql do_get_prepared_statement");
+        let span = get_span(request.extensions(), "flight sql do_get_prepared_statement");
 
         let prepared_statement_handle = query.prepared_statement_handle.to_byte_slice();
 
         let output = self
-            .execute_and_fetch_result_set(prepared_statement_handle, span_recorder.span_ctx())
+            .execute_and_fetch_result_set(prepared_statement_handle, span.context().as_ref())
             .await?;
 
         // clear cache of this query
@@ -870,15 +864,14 @@ where
             ticket, request
         );
 
-        let span_recorder =
-            get_span_recorder(request.extensions(), "flight sql do_put_statement_update");
-        let span_ctx = span_recorder.span_ctx();
+        let span = get_span(request.extensions(), "flight sql do_put_statement_update");
+        let span_ctx = span.context();
         // ignore transaction_id
         let CommandStatementUpdate { query, .. } = ticket;
         let req_headers = request.metadata();
 
         let (logical_plan, query_state_machine) = self
-            .pre_precess_statement_query_req(query, req_headers, span_ctx)
+            .pre_precess_statement_query_req(query, req_headers, span_ctx.as_ref())
             .await?;
 
         // execute plan
@@ -922,12 +915,12 @@ where
             "do_put_prepared_statement_update query: {:?}",
             prepared_statement_ident
         );
-        let span_recorder = get_span_recorder(
+        let span = get_span(
             request.extensions(),
             "flight sql do_put_prepared_statement_update",
         );
         let (plan, query_machine) =
-            self.get_plan_and_qsm(prepared_statement_ident, span_recorder.span_ctx().cloned())?;
+            self.get_plan_and_qsm(prepared_statement_ident, span.context())?;
         // execute plan
         let query_result = self.execute_logical_plan(plan, query_machine).await?;
         let output = query_result.result();
@@ -947,7 +940,7 @@ where
             query, request
         );
 
-        let span_recorder = get_span_recorder(
+        let span = get_span(
             request.extensions(),
             "flight sql do_action_create_prepared_statement",
         );
@@ -958,7 +951,7 @@ where
             .pre_precess_statement_query_req_and_save(
                 sql,
                 request.metadata(),
-                span_recorder.span_ctx(),
+                span.context().as_ref(),
             )
             .await?;
 
@@ -1090,9 +1083,9 @@ where
     }
 }
 
-fn get_span_recorder(extensions: &Extensions, child_span_name: &'static str) -> SpanRecorder {
+fn get_span(extensions: &Extensions, child_span_name: &'static str) -> Span {
     let span_context = extensions.get::<SpanContext>();
-    SpanRecorder::new(span_context.child_span(child_span_name))
+    Span::from_context(child_span_name, span_context)
 }
 
 #[cfg(test)]
@@ -1116,6 +1109,7 @@ mod test {
     use tonic::metadata::MetadataValue;
     use tonic::transport::{Channel, Endpoint, Server};
     use tonic::Request;
+    use trace::global_logging::init_default_global_tracing;
 
     use crate::flight_sql::auth_middleware::basic_call_header_authenticator::BasicCallHeaderAuthenticator;
     use crate::flight_sql::auth_middleware::generated_bearer_token_authenticator::GeneratedBearerTokenAuthenticator;
@@ -1141,7 +1135,7 @@ mod test {
 
     #[tokio::test]
     async fn test_client() {
-        trace::init_default_global_tracing("/tmp", "test_rust.log", "info");
+        init_default_global_tracing("/tmp", "test_rust.log", "info");
 
         run_test_server().await;
 
@@ -1239,8 +1233,8 @@ mod test {
         let channel = flight_channel("localhost", 8904).await;
 
         let mut client = FlightSqlServiceClient::new(channel);
-        // <trace_id>:<span_id>:<parent_span_id>:<sampled>
-        client.set_header("uber-trace-id", "114:1:2:1");
+        // <trace_id>:<span_id>
+        client.set_header("cnosdb-trace-ctx", "114:1");
 
         // 1. handshake, basic authentication
         let _ = client.handshake("root", "").await.unwrap();

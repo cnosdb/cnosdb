@@ -20,7 +20,8 @@ use crate::compaction::job::CompactJob;
 use crate::compaction::{self, check, LevelCompactionPicker, Picker};
 use crate::database::Database;
 use crate::error::TskvResult;
-use crate::file_system::file_manager;
+use crate::file_system::async_filesystem::LocalFileSystem;
+use crate::file_system::FileSystem;
 use crate::kv_option::{Options, StorageOptions};
 use crate::summary::{Summary, SummaryTask};
 use crate::tseries_family::{SuperVersion, TseriesFamily};
@@ -108,10 +109,10 @@ impl TsKv {
         metrics: Arc<MetricsRegister>,
     ) -> (Arc<RwLock<VersionSet>>, Summary) {
         let summary_dir = opt.storage.summary_dir();
-        file_manager::FileManager::create_dir_if_not_exists(Some(&summary_dir)).unwrap();
+        LocalFileSystem::create_dir_if_not_exists(Some(&summary_dir)).unwrap();
 
         let summary_file = file_utils::make_summary_file(&summary_dir, 0);
-        let summary = if file_manager::try_exists(&summary_file) {
+        let summary = if LocalFileSystem::try_exists(&summary_file) {
             Summary::recover(meta, opt, runtime, memory_pool, metrics.clone())
                 .await
                 .unwrap()

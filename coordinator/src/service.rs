@@ -49,7 +49,8 @@ use tokio::task::JoinHandle;
 use tokio::time::Instant;
 use tokio_retry::strategy::{jitter, ExponentialBackoff};
 use tokio_retry::Retry;
-use trace::{debug, error, info, SpanContext, SpanExt, SpanRecorder};
+use trace::span_ext::SpanExt;
+use trace::{debug, error, info, Span, SpanContext};
 use tskv::{EngineRef, TskvError};
 use utils::BkdrHasher;
 
@@ -529,7 +530,7 @@ impl CoordService {
         span_ctx: Option<&'a SpanContext>,
     ) -> CoordinatorResult<Vec<impl Future<Output = CoordinatorResult<()>> + Sized + 'a>> {
         {
-            let _span_recorder = SpanRecorder::new(span_ctx.child_span("limit check"));
+            let _span = Span::from_context("limit check", span_ctx);
 
             let limiter = self.meta.limiter(tenant).await?;
             let write_size = points.len();

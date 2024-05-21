@@ -11,6 +11,7 @@ use protos::PointsError;
 use snafu::Snafu;
 use tonic::{Code, Status};
 
+use crate::file_system::error::FileSystemError;
 use crate::index::IndexError;
 use crate::record_file;
 use crate::schema::error::SchemaError;
@@ -348,6 +349,11 @@ pub enum TskvError {
     #[snafu(display("{}", source))]
     Deserialize {
         source: Box<dyn std::error::Error + Send + Sync>,
+    },
+
+    #[snafu(display("file system error: {}", source))]
+    FileSystemError {
+        source: FileSystemError,
     },
 }
 

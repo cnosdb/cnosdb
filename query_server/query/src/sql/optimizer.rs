@@ -10,6 +10,7 @@ use spi::query::physical_planner::PhysicalPlanner;
 use spi::query::session::SessionCtx;
 use spi::Result;
 use trace::debug;
+use trace::span_ext::SpanExt;
 
 use super::logical::optimizer::{DefaultLogicalOptimizer, LogicalOptimizer};
 use super::physical::optimizer::PhysicalOptimizer;
@@ -39,22 +40,23 @@ impl Optimizer for CascadeOptimizer {
         );
 
         let physical_plan = {
-            let mut span_recorder =
-                session.get_child_span_recorder("logical plan to physical plan");
+            let mut span = session.get_child_span("logical plan to physical plan");
 
             self.physical_planner
                 .create_physical_plan(&optimized_logical_plan, session)
                 .await
                 .map(|p| {
-                    span_recorder.ok("complete physical plan creation");
-                    span_recorder.set_metadata(
-                        "original physical plan",
-                        displayable(p.as_ref()).indent(false).to_string(),
-                    );
+                    span.ok("complete physical plan creation");
+                    span.add_property(|| {
+                        (
+                            "original physical plan",
+                            displayable(p.as_ref()).indent(false).to_string(),
+                        )
+                    });
                     p
                 })
                 .map_err(|err| {
-                    span_recorder.error(err.to_string());
+                    span.error(err.to_string());
                     err
                 })?
         };
@@ -65,27 +67,29 @@ impl Optimizer for CascadeOptimizer {
         );
 
         let optimized_physical_plan = {
-            let mut span_recorder = session.get_child_span_recorder("optimize physical plan");
+            let mut span = session.get_child_span("optimize physical plan");
 
             self.physical_optimizer
                 .optimize(physical_plan, session)
                 .map(|p| {
-                    span_recorder.ok("complete physical plan optimization");
-                    span_recorder.set_metadata(
-                        "final physical plan",
-                        displayable(p.as_ref()).indent(false).to_string(),
-                    );
+                    span.ok("complete physical plan optimization");
+                    span.add_property(|| {
+                        (
+                            "final physical plan",
+                            displayable(p.as_ref()).indent(false).to_string(),
+                        )
+                    });
                     p
                 })
                 .map_err(|err| {
-                    span_recorder.error(err.to_string());
+                    span.error(err.to_string());
                     err
                 })?
         };
 
         let traced_plan = {
-            let span_recorder = session.get_child_span_recorder("add traced proxy");
-            AddTracedProxy::new(span_recorder.span_ctx().cloned())
+            let span = session.get_child_span("add traced proxy");
+            AddTracedProxy::new(span.context())
                 .optimize(optimized_physical_plan, &ConfigOptions::default())?
         };
 

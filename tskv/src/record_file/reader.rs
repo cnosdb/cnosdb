@@ -1,6 +1,5 @@
 use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use snafu::ResultExt;
 
@@ -12,29 +11,33 @@ use super::{
 };
 use crate::byte_utils::decode_be_u32;
 use crate::error::{self, TskvError, TskvResult};
-use crate::file_system::file::async_file::AsyncFile;
-use crate::file_system::file::IFile;
-use crate::file_system::file_manager;
+use crate::file_system::async_filesystem::{LocalFileSystem, LocalFileType};
+use crate::file_system::file::stream_reader::FileStreamReader;
+use crate::file_system::FileSystem;
 
 /// Returns footer position and footer data.
 pub async fn read_footer(path: impl AsRef<Path>) -> TskvResult<(u64, [u8; FILE_FOOTER_LEN])> {
     let path = path.as_ref();
-    let file = file_manager::open_file(&path).await?;
+    let file_system = LocalFileSystem::new(LocalFileType::ThreadPool);
+    let file = file_system
+        .open_file_reader(path)
+        .await
+        .map_err(|e| TskvError::FileSystemError { source: e })?;
     read_footer_from(&file, path).await
 }
 
 /// Returns footer position and footer data.
 pub async fn read_footer_from(
-    file: &AsyncFile,
+    file: &FileStreamReader,
     file_path: impl AsRef<Path>,
 ) -> TskvResult<(u64, [u8; FILE_FOOTER_LEN])> {
-    if file.len() < (FILE_MAGIC_NUMBER_LEN + FILE_FOOTER_LEN) as u64 {
+    if file.len() < FILE_MAGIC_NUMBER_LEN + FILE_FOOTER_LEN {
         return Err(TskvError::NoFooter);
     }
 
     // Get file crc
     let mut buf = vec![0_u8; file_crc_source_len(file.len(), FILE_FOOTER_LEN)];
-    if let Err(e) = file.read_at(FILE_MAGIC_NUMBER_LEN as u64, &mut buf).await {
+    if let Err(e) = file.read_at(FILE_MAGIC_NUMBER_LEN, &mut buf).await {
         return Err(TskvError::ReadFile {
             path: file_path.as_ref().to_path_buf(),
             source: e,
@@ -43,7 +46,7 @@ pub async fn read_footer_from(
     let crc = crc32fast::hash(&buf);
 
     // Read footer
-    let footer_pos = file.len() - FILE_FOOTER_LEN as u64;
+    let footer_pos = file.len() - FILE_FOOTER_LEN;
     let mut footer = [0_u8; FILE_FOOTER_LEN];
     if let Err(e) = file.read_at(footer_pos, &mut footer[..]).await {
         return Err(TskvError::ReadFile {
@@ -62,13 +65,13 @@ pub async fn read_footer_from(
     if crc != footer_crc {
         Err(TskvError::NoFooter)
     } else {
-        Ok((footer_pos, footer))
+        Ok((footer_pos as u64, footer))
     }
 }
 
 pub struct Reader {
     path: PathBuf,
-    file: Arc<AsyncFile>,
+    file: Box<FileStreamReader>,
     file_len: u64,
     pos: usize,
     buf: Vec<u8>,
@@ -81,10 +84,14 @@ pub struct Reader {
 impl Reader {
     pub async fn open(path: impl AsRef<Path>) -> TskvResult<Self> {
         let path = path.as_ref();
-        let file = file_manager::open_file(path).await?;
+        let file_system = LocalFileSystem::new(LocalFileType::ThreadPool);
+        let file = file_system
+            .open_file_reader(path)
+            .await
+            .map_err(|e| TskvError::FileSystemError { source: e })?;
         let (footer_pos, footer) = match read_footer_from(&file, path).await {
             Ok((p, f)) => (p, Some(f)),
-            Err(TskvError::NoFooter) => (file.len(), None),
+            Err(TskvError::NoFooter) => (file.len() as u64, None),
             Err(e) => {
                 trace::error!(
                     "Record file: Failed to read footer in '{}': {e}",
@@ -94,17 +101,17 @@ impl Reader {
             }
         };
         let file_len = file.len();
-        let records_len = if footer_pos == file_len {
+        let records_len = if footer_pos == file_len as u64 {
             // If there is no footer
-            file_len - FILE_MAGIC_NUMBER_LEN as u64
+            file_len - FILE_MAGIC_NUMBER_LEN
         } else {
-            file_len - FILE_FOOTER_LEN as u64 - FILE_MAGIC_NUMBER_LEN as u64
+            file_len - FILE_FOOTER_LEN - FILE_MAGIC_NUMBER_LEN
         };
-        let buf_size = records_len.min(READER_BUF_SIZE as u64) as usize;
+        let buf_size = records_len.min(READER_BUF_SIZE);
         Ok(Self {
             path: path.to_path_buf(),
-            file: Arc::new(file),
-            file_len,
+            file,
+            file_len: file_len as u64,
             pos: FILE_MAGIC_NUMBER_LEN,
             buf: vec![0_u8; buf_size],
             buf_len: 0,
@@ -115,7 +122,7 @@ impl Reader {
     }
 
     pub(super) fn new(
-        file: Arc<AsyncFile>,
+        file: Box<FileStreamReader>,
         path: PathBuf,
         len: u64,
         footer: Option<[u8; FILE_FOOTER_LEN]>,
@@ -126,13 +133,13 @@ impl Reader {
         } else {
             len - FILE_FOOTER_LEN as u64 - FILE_MAGIC_NUMBER_LEN as u64
         };
-        let buf_size = records_len.min(READER_BUF_SIZE as u64) as usize;
+        let buf_size = records_len.min(READER_BUF_SIZE as u64);
         Self {
             path,
             file,
             file_len: len,
             pos: FILE_MAGIC_NUMBER_LEN,
-            buf: vec![0_u8; buf_size],
+            buf: vec![0_u8; buf_size as usize],
             buf_len: 0,
             buf_use: 0,
             footer,
@@ -201,7 +208,7 @@ impl Reader {
     pub async fn read_record(&mut self) -> TskvResult<Record> {
         // The previous position, if the previous error is not the HashCheckFailed,
         // this value will be updated.
-        if (self.pos + RECORD_HEADER_LEN) as u64 >= self.footer_pos {
+        if (self.pos + RECORD_HEADER_LEN) >= self.footer_pos as usize {
             return Err(TskvError::Eof);
         }
 
@@ -283,8 +290,8 @@ impl Reader {
         })
     }
 
-    pub async fn read_record_at(&mut self, pos: usize) -> TskvResult<Record> {
-        self.set_pos(pos).await?;
+    pub async fn read_record_at(&mut self, pos: u64) -> TskvResult<Record> {
+        self.set_pos(pos as usize).await?;
         self.read_record().await
     }
 
@@ -302,7 +309,7 @@ impl Reader {
         );
         self.buf_len = self
             .file
-            .read_at(self.pos as u64, &mut self.buf)
+            .read_at(self.pos, &mut self.buf)
             .await
             .map_err(|e| TskvError::ReadFile {
                 path: self.path.clone(),
@@ -343,7 +350,7 @@ impl Reader {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.file.is_empty()
+        self.file.len() > 0
     }
 
     pub fn pos(&self) -> usize {
@@ -364,7 +371,7 @@ pub(crate) mod test {
         RECORD_CRC32_NUMBER_LEN, RECORD_DATA_SIZE_LEN, RECORD_DATA_TYPE_LEN,
         RECORD_DATA_VERSION_LEN, RECORD_HEADER_LEN, RECORD_MAGIC_NUMBER, RECORD_MAGIC_NUMBER_LEN,
     };
-
+    const TEST_SUMMARY_BUFFER_SIZE: usize = 1024 * 1024;
     /// Read a record_file and see if records in file are the same as given records.
     pub async fn assert_record_file_data_eq<L, R, D>(
         path: impl AsRef<Path>,
@@ -521,13 +528,17 @@ pub(crate) mod test {
             let data_type = 1_u8;
             let mut footer = [0_u8; FILE_FOOTER_LEN];
             {
-                let mut writer = Writer::open(&path, RecordDataType::Summary).await.unwrap();
+                let mut writer =
+                    Writer::open(&path, RecordDataType::Summary, TEST_SUMMARY_BUFFER_SIZE)
+                        .await
+                        .unwrap();
                 let data_size = writer
                     .write_record(data_version, data_type, &[data])
                     .await
                     .unwrap();
                 assert_eq!(data_size, record_length(11));
                 writer.write_footer(&mut footer).await.unwrap();
+                writer.sync().await.unwrap();
                 assert_record_file_data_eq(&path, [[data]], true).await;
             }
             // Test open file.
@@ -572,7 +583,9 @@ pub(crate) mod test {
             // - record(4-1804):
             //   14 bytes header: FlOg(4), version(1), type(1), size(4), crc(4)
             //   4 bytes data: 0000 - 0099
-            let mut writer = Writer::open(&path, RecordDataType::Summary).await.unwrap();
+            let mut writer = Writer::open(&path, RecordDataType::Summary, TEST_SUMMARY_BUFFER_SIZE)
+                .await
+                .unwrap();
             for i in 0..100 {
                 let data = format!("{i:04}");
                 writer.write_record(1, 1, &[data]).await.unwrap();

@@ -23,7 +23,8 @@ use models::{ColumnId, PhysicalDType, SeriesId, SeriesKey, Timestamp};
 use protos::kv_service::QueryRecordBatchRequest;
 use tokio::runtime::Runtime;
 use tokio_util::sync::CancellationToken;
-use trace::{debug, error, SpanRecorder};
+use trace::span_ext::SpanExt;
+use trace::{debug, error, Span, SpanContext};
 
 use super::display::DisplayableBatchReader;
 use super::memcache_reader::MemCacheReader;
@@ -198,7 +199,7 @@ pub struct SeriesGroupBatchReaderFactory {
     query_option: QueryOption,
     super_version: Arc<SuperVersion>,
 
-    span_recorder: SpanRecorder,
+    span: Span,
     metrics_set: ExecutionPlanMetricsSet,
     series_reader_metrics_set: Arc<ExecutionPlanMetricsSet>,
     column_group_reader_metrics_set: Arc<ExecutionPlanMetricsSet>,
@@ -212,14 +213,14 @@ impl SeriesGroupBatchReaderFactory {
         engine: EngineRef,
         query_option: QueryOption,
         super_version: Arc<SuperVersion>,
-        span_recorder: SpanRecorder,
+        span: Span,
         metrics_set: ExecutionPlanMetricsSet,
     ) -> Self {
         Self {
             engine,
             query_option,
             super_version,
-            span_recorder,
+            span,
             metrics_set,
             series_reader_metrics_set: Arc::new(ExecutionPlanMetricsSet::new()),
             column_group_reader_metrics_set: Arc::new(ExecutionPlanMetricsSet::new()),
@@ -264,7 +265,7 @@ impl SeriesGroupBatchReaderFactory {
     ///    ......
     pub async fn create(
         &self,
-        span_recorder: SpanRecorder,
+        span: Span,
         series_ids: &[u32],
         predicate: Option<PredicateRef>,
     ) -> TskvResult<Option<BatchReaderRef>> {
@@ -377,7 +378,7 @@ impl SeriesGroupBatchReaderFactory {
 
         // 添加收集trace信息的reader
         let reader = Arc::new(
-            TraceCollectorBatcherReaderProxy::new(reader, span_recorder)
+            TraceCollectorBatcherReaderProxy::new(reader, span)
                 .register_metrics_set("series_reader", self.series_reader_metrics_set.clone())
                 .register_metrics_set(
                     "column_group_reader",
@@ -658,10 +659,10 @@ impl SeriesGroupBatchReaderFactory {
 
 impl Drop for SeriesGroupBatchReaderFactory {
     fn drop(&mut self) {
-        if self.span_recorder.span_ctx().is_some() {
+        if self.span.context().is_some() {
             self.metrics_set
                 .clone_inner()
-                .record(&mut self.span_recorder, "metrics");
+                .record(&mut self.span, "metrics");
         }
     }
 }
@@ -881,7 +882,7 @@ pub struct RowIterator {
     series_iter_closer: CancellationToken,
     /// Whether this iterator was finsihed.
     #[allow(unused)]
-    span_recorder: SpanRecorder,
+    span: Span,
     metrics_set: ExecutionPlanMetricsSet,
 }
 
@@ -928,17 +929,18 @@ impl Drop for RowIterator {
     fn drop(&mut self) {
         self.series_iter_closer.cancel();
 
-        if self.span_recorder.span_ctx().is_some() {
+        if SpanContext::from_span(&self.span).is_some() {
             let version_number = self.super_version.as_ref().map(|v| v.version_number);
             let ts_family_id = self.super_version.as_ref().map(|v| v.ts_family_id);
 
-            self.span_recorder
-                .set_metadata("version_number", format!("{version_number:?}"));
-            self.span_recorder
-                .set_metadata("ts_family_id", format!("{ts_family_id:?}"));
-            self.span_recorder.set_metadata("vnode_id", self.vnode_id);
-            self.span_recorder
-                .set_metadata("series_ids_num", self.series_ids.len());
+            self.span.add_properties(|| {
+                [
+                    ("version_number", format!("{version_number:?}")),
+                    ("ts_family_id", format!("{ts_family_id:?}")),
+                    ("vnode_id", self.vnode_id.to_string()),
+                    ("series_ids_num", self.series_ids.len().to_string()),
+                ]
+            });
 
             let metrics = self
                 .metrics_set
@@ -948,8 +950,8 @@ impl Drop for RowIterator {
                 .timestamps_removed();
 
             metrics.iter().for_each(|e| {
-                self.span_recorder
-                    .set_metadata(e.value().name().to_string(), e.value().to_string());
+                self.span
+                    .add_property(|| (e.value().name().to_string(), e.value().to_string()));
             });
         }
     }
@@ -960,10 +962,10 @@ pub async fn execute(
     engine: EngineRef,
     query_option: QueryOption,
     vnode_id: VnodeId,
-    span_recorder: SpanRecorder,
+    span: Span,
 ) -> TskvResult<SendableTskvRecordBatchStream> {
     let super_version = {
-        let mut span_recorder = span_recorder.child("get super version");
+        let span = Span::enter_with_parent("get super version", &span);
         engine
             .get_db_version(
                 &query_option.table_schema.tenant,
@@ -972,7 +974,7 @@ pub async fn execute(
             )
             .await
             .map_err(|err| {
-                span_recorder.error(err.to_string());
+                span.error(err.to_string());
                 err
             })?
     };
@@ -986,7 +988,7 @@ pub async fn execute(
             engine,
             query_option,
             vnode_id,
-            span_recorder.child("build stream"),
+            Span::enter_with_parent("build stream", &span),
         )
         .await;
     }
@@ -1000,10 +1002,10 @@ async fn build_stream(
     engine: EngineRef,
     query_option: QueryOption,
     vnode_id: VnodeId,
-    span_recorder: SpanRecorder,
+    span: Span,
 ) -> TskvResult<SendableTskvRecordBatchStream> {
     let series_ids = {
-        let mut span_recorder = span_recorder.child("get series ids by filter");
+        let span = Span::enter_with_parent("get series ids by filter", &span);
         engine
             .get_series_id_by_filter(
                 &query_option.table_schema.tenant,
@@ -1014,7 +1016,7 @@ async fn build_stream(
             )
             .await
             .map_err(|err| {
-                span_recorder.error(err.to_string());
+                span.error(err.to_string());
                 err
             })?
     };
@@ -1051,13 +1053,13 @@ async fn build_stream(
         engine,
         query_option,
         super_version,
-        span_recorder.child("SeriesGroupBatchReaderFactory"),
+        Span::enter_with_parent("SeriesGroupBatchReaderFactory", &span),
         ExecutionPlanMetricsSet::new(),
     );
 
     if let Some(reader) = factory
         .create(
-            span_recorder.child("SeriesGroupBatchReader"),
+            Span::enter_with_parent("SeriesGroupBatchReader", &span),
             &series_ids,
             Some(predicate),
         )

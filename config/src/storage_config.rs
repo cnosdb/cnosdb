@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
 use crate::codec::{bytes_num, duration};
-use crate::override_by_env::{entry_override, entry_override_to_duration, OverrideByEnv};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct StorageConfig {
@@ -126,52 +125,6 @@ impl StorageConfig {
         // Unit of storage.compact_trigger_cold_duration is seconds
         self.compact_trigger_cold_duration =
             Duration::from_secs(self.compact_trigger_cold_duration.as_secs());
-    }
-}
-
-impl OverrideByEnv for StorageConfig {
-    fn override_by_env(&mut self) {
-        entry_override(&mut self.path, "CNOSDB_STORAGE_PATH");
-        entry_override(
-            &mut self.max_summary_size,
-            "CNOSDB_STORAGE_MAX_SUMMARY_SIZE",
-        );
-        entry_override(&mut self.base_file_size, "CNOSDB_STORAGE_BASE_FILE_SIZE");
-        entry_override(
-            &mut self.flush_req_channel_cap,
-            "CNOSDB_STORAGE_FLUSH_REQ_CHANNEL_CAP",
-        );
-        entry_override(
-            &mut self.max_cached_readers,
-            "CNOSDB_STORAGE_MAX_CACHED_READERS",
-        );
-        entry_override(&mut self.max_level, "CNOSDB_STORAGE_MAX_LEVEL");
-        entry_override(
-            &mut self.compact_trigger_file_num,
-            "CNOSDB_STORAGE_COMPACT_TRIGGER_FILE_NUM",
-        );
-        entry_override_to_duration(
-            &mut self.compact_trigger_cold_duration,
-            "CNOSDB_STORAGE_COMPACT_TRIGGER_COLD_DURATION",
-        );
-        entry_override(
-            &mut self.max_compact_size,
-            "CNOSDB_STORAGE_MAX_COMPACT_SIZE",
-        );
-        entry_override(
-            &mut self.max_concurrent_compaction,
-            "CNOSDB_STORAGE_MAX_CONCURRENT_COMPACTION",
-        );
-        entry_override(&mut self.strict_write, "CNOSDB_STORAGE_STRICT_WRITE");
-        entry_override(
-            &mut self.copyinto_trigger_flush_size,
-            "CNOSDB_COPYINTO_TRIGGER_FLUSH_SIZE",
-        );
-        entry_override(&mut self.reserve_space, "CNOSDB_STORAGE_RESERVE_SPACE");
-        entry_override(
-            &mut self.max_datablock_size,
-            "CNOSDB_STORAGE_MAX_DATABLOCK_SIZE",
-        );
     }
 }
 

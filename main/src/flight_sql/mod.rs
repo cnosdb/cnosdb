@@ -1,14 +1,12 @@
 use std::net::SocketAddr;
-use std::sync::Arc;
 
 use arrow_flight::flight_service_server::FlightServiceServer;
 use config::TLSConfig;
 use spi::server::dbms::DBMSRef;
 use tokio::sync::oneshot;
 use tonic::transport::{Identity, Server, ServerTlsConfig};
+use trace::http::tower_layer::TraceLayer;
 use trace::info;
-use trace_http::ctx::SpanContextExtractor;
-use trace_http::tower_layer::TraceLayer;
 
 use self::flight_sql_server::FlightSqlServiceImpl;
 use crate::flight_sql::auth_middleware::basic_call_header_authenticator::BasicCallHeaderAuthenticator;
@@ -25,7 +23,7 @@ pub struct FlightSqlServiceAdapter {
 
     addr: SocketAddr,
     tls_config: Option<TLSConfig>,
-    span_context_extractor: Arc<SpanContextExtractor>,
+    auto_generate_span: bool,
     handle: Option<ServiceHandle<Result<(), tonic::transport::Error>>>,
 }
 
@@ -34,13 +32,13 @@ impl FlightSqlServiceAdapter {
         dbms: DBMSRef,
         addr: SocketAddr,
         tls_config: Option<TLSConfig>,
-        span_context_extractor: Arc<SpanContextExtractor>,
+        auto_generate_span: bool,
     ) -> Self {
         Self {
             dbms,
             addr,
             tls_config,
-            span_context_extractor,
+            auto_generate_span,
             handle: None,
         }
     }
@@ -66,7 +64,7 @@ impl Service for FlightSqlServiceAdapter {
             server
         };
 
-        let trace_layer = TraceLayer::new(self.span_context_extractor.clone(), "flight sql");
+        let trace_layer = TraceLayer::new(self.auto_generate_span, "flight sql");
 
         let authenticator = GeneratedBearerTokenAuthenticator::new(
             BasicCallHeaderAuthenticator::new(self.dbms.clone()),

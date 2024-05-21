@@ -351,7 +351,8 @@ mod tests {
     use models::schema::{ColumnType, TableColumn, TskvTableSchema};
     use models::ValueType;
 
-    use crate::file_system::file_manager;
+    use crate::file_system::async_filesystem::LocalFileSystem;
+    use crate::file_system::FileSystem;
     use crate::tsm::data_block::{DataBlock, MutableColumn};
     use crate::tsm::TsmTombstone;
 
@@ -617,7 +618,7 @@ mod tests {
         );
         let dir = PathBuf::from("/tmp/test/writter/1".to_string());
         let _ = std::fs::remove_dir_all(&dir);
-        if !file_manager::try_exists(&dir) {
+        if !LocalFileSystem::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
         }
         let mut tombstone = TsmTombstone::open(&dir, 1).await.unwrap();

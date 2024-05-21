@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
 use crate::codec::{bytes_num, duration};
-use crate::override_by_env::{entry_override, entry_override_to_duration, OverrideByEnv};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct QueryConfig {
@@ -58,28 +57,6 @@ impl QueryConfig {
 
     fn default_stream_executor_cpu() -> usize {
         2
-    }
-}
-
-impl OverrideByEnv for QueryConfig {
-    fn override_by_env(&mut self) {
-        entry_override(
-            &mut self.max_server_connections,
-            "CNOSDB_QUERY_MAX_SERVER_CONNECTIONS",
-        );
-        entry_override(&mut self.query_sql_limit, "CNOSDB_QUERY_QUERY_SQL_LIMIT");
-        entry_override(&mut self.write_sql_limit, "CNOSDB_QUERY_WRITE_SQL_LIMIT");
-        entry_override(&mut self.auth_enabled, "CNOSDB_QUERY_AUTH_ENABLED");
-        entry_override_to_duration(&mut self.read_timeout, "CNOSDB_QUERY_READ_TIMEOUT");
-        entry_override_to_duration(&mut self.write_timeout, "CNOSDB_QUERY_WRITE_TIMEOUT");
-        entry_override(
-            &mut self.stream_trigger_cpu,
-            "CNOSDB_QUERY_STREAM_TRIGGER_CPU",
-        );
-        entry_override(
-            &mut self.stream_executor_cpu,
-            "CNOSDB_QUERY_STREAM_EXECUTOR_CPU",
-        );
     }
 }
 
