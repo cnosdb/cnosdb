@@ -472,7 +472,12 @@ impl CompactingFile {
             let chunks = tsm_reader.chunk_group();
             chunks
                 .iter()
-                .flat_map(|(_, chunk)| chunk.chunks.iter().map(|chunk_meta| chunk_meta.series_id))
+                .flat_map(|(_, chunk)| {
+                    chunk
+                        .chunks()
+                        .iter()
+                        .map(|chunk_meta| chunk_meta.series_id())
+                })
                 .collect::<Vec<_>>()
         };
         series_ids.sort();

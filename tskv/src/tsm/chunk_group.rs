@@ -11,7 +11,7 @@ use crate::TskvError;
 /// A group of chunks for a table
 #[derive(Clone, Default, Debug, Serialize, Deserialize)]
 pub struct ChunkGroup {
-    pub(crate) chunks: Vec<ChunkWriteSpec>,
+    chunks: Vec<ChunkWriteSpec>,
 }
 
 impl ChunkGroup {
@@ -41,7 +41,7 @@ impl ChunkGroup {
     pub fn time_range(&self) -> TimeRange {
         let mut time_range = TimeRange::none();
         for chunk in self.chunks.iter() {
-            time_range.merge(&chunk.statics.time_range);
+            time_range.merge(chunk.statics().time_range());
         }
         time_range
     }

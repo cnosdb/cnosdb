@@ -134,10 +134,10 @@ impl Chunk {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ChunkWriteSpec {
-    pub(crate) series_id: SeriesId,
-    pub(crate) chunk_offset: u64,
-    pub(crate) chunk_size: u64,
-    pub(crate) statics: ChunkStatics,
+    series_id: SeriesId,
+    chunk_offset: u64,
+    chunk_size: u64,
+    statics: ChunkStatics,
 }
 
 impl ChunkWriteSpec {
@@ -175,5 +175,15 @@ impl ChunkWriteSpec {
 /// ChunkStatics
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ChunkStatics {
-    pub(crate) time_range: TimeRange,
+    time_range: TimeRange,
+}
+
+impl ChunkStatics {
+    pub fn new(time_range: TimeRange) -> Self {
+        Self { time_range }
+    }
+
+    pub fn time_range(&self) -> &TimeRange {
+        &self.time_range
+    }
 }

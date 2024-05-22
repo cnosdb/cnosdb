@@ -6,21 +6,53 @@ use utils::BloomFilter;
 
 use crate::TskvError;
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Eq, PartialEq)]
+#[repr(u8)]
+pub enum TsmVersion {
+    V1 = 1,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct Footer {
-    pub(crate) version: u8,
-    pub(crate) time_range: TimeRange,
-    pub(crate) table: TableMeta,
-    pub(crate) series: SeriesMeta,
+    version: TsmVersion,
+    time_range: TimeRange,
+    table: TableMeta,
+    series: SeriesMeta,
 }
 
 impl Footer {
-    pub fn new(version: u8, time_range: TimeRange, table: TableMeta, series: SeriesMeta) -> Self {
+    pub fn new(
+        version: TsmVersion,
+        time_range: TimeRange,
+        table: TableMeta,
+        series: SeriesMeta,
+    ) -> Self {
         Self {
             version,
             time_range,
             table,
             series,
+        }
+    }
+
+    pub fn set_time_range(&mut self, time_range: TimeRange) {
+        self.time_range = time_range;
+    }
+
+    pub fn set_table_meta(&mut self, table: TableMeta) {
+        self.table = table;
+    }
+
+    pub fn set_series(&mut self, series: SeriesMeta) {
+        self.series = series;
+    }
+
+    pub fn empty(version: TsmVersion) -> Self {
+        Self {
+            version,
+            time_range: Default::default(),
+            table: Default::default(),
+            series: Default::default(),
         }
     }
 
@@ -36,7 +68,7 @@ impl Footer {
         &self.time_range
     }
 
-    pub fn version(&self) -> u8 {
+    pub fn version(&self) -> TsmVersion {
         self.version
     }
 
@@ -126,7 +158,7 @@ mod test {
     use models::predicate::domain::TimeRange;
     use utils::BloomFilter;
 
-    use crate::tsm::footer::{Footer, SeriesMeta, TableMeta};
+    use crate::tsm::footer::{Footer, SeriesMeta, TableMeta, TsmVersion};
     use crate::tsm::BLOOM_FILTER_BITS;
 
     #[test]
@@ -136,7 +168,7 @@ mod test {
             chunk_group_size: 100,
         };
         let expect_footer = Footer::new(
-            1,
+            TsmVersion::V1,
             TimeRange {
                 min_ts: 0,
                 max_ts: 100,
