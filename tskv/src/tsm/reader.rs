@@ -68,7 +68,11 @@ impl TsmMetaData {
 
     pub fn table_name(&self, series_id: SeriesId) -> Option<&str> {
         for (table_name, series_map) in self.chunk_group.iter() {
-            if series_map.chunks.iter().any(|c| c.series_id == series_id) {
+            if series_map
+                .chunks()
+                .iter()
+                .any(|c| c.series_id() == series_id)
+            {
                 return Some(table_name.as_ref());
             }
         }
@@ -77,7 +81,6 @@ impl TsmMetaData {
 }
 
 pub struct TsmReader {
-    // _file_location: PathBuf,
     file_id: u64,
     reader: Box<FileStreamReader>,
     tsm_meta: Arc<TsmMetaData>,
@@ -307,8 +310,8 @@ pub async fn read_chunk_group_meta(
     reader: &FileStreamReader,
     footer: &Footer,
 ) -> TskvResult<ChunkGroupMeta> {
-    let pos = footer.table.chunk_group_offset();
-    let mut buffer = vec![0u8; footer.table.chunk_group_size() as usize];
+    let pos = footer.table().chunk_group_offset();
+    let mut buffer = vec![0u8; footer.table().chunk_group_size() as usize];
     reader.read_at(pos as usize, &mut buffer).await?; // read chunk group meta
     let specs = ChunkGroupMeta::deserialize(&buffer)?;
     Ok(specs)
@@ -340,7 +343,7 @@ pub async fn read_chunk(
             let mut buffer = vec![0u8; chunk_spec.chunk_size() as usize];
             reader.read_at(pos as usize, &mut buffer).await?;
             let chunk = Arc::new(Chunk::deserialize(&buffer)?);
-            chunks.insert(chunk_spec.series_id, chunk);
+            chunks.insert(chunk_spec.series_id(), chunk);
         }
     }
     Ok(chunks)
