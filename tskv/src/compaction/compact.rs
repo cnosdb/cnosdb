@@ -23,7 +23,7 @@ use crate::summary::{CompactMeta, VersionEdit};
 use crate::tseries_family::TseriesFamily;
 use crate::tsm::{
     self, BlockMeta, BlockMetaIterator, DataBlock, EncodedDataBlock, IndexIterator, IndexMeta,
-    ReadTsmResult, TsmReader, TsmWriter, WriteTsmError, WriteTsmResult,
+    ReadTsmResult, TsmReader, TsmVersion, TsmWriter, WriteTsmError, WriteTsmResult,
 };
 use crate::{ColumnFileId, Error, LevelId};
 
@@ -957,18 +957,19 @@ impl TsmCache {
         }
     }
 
-    /// Read data from tsm_reader and fill the cache until the cache is full..
+    /// Read data from tsm_reader and fill the cache until the cache is full, then return a slice of cached data.
     /// 1. Advance the index_iter, until find the BlockMeta with the same offset of block_meta,
     ///    bind the offset value as load_off_start.
     /// 2. Advance the index_iter, set the load_len as the sum of the size of BlockMeta from load_off_start,
-    ///    until the load_len + BlockMeta::size > capacity
+    ///    until the load_len + BlockMeta::size > capacity.
     /// 3. Read data from tsm_reader from load_off_start to load_off_start + load_len, and save data to self.data.
-    async fn fill(
+    /// 4. Return a slice of data.
+    async fn fill_and_read(
         &mut self,
         tsm_reader: &TsmReader,
         block_meta: &BlockMeta,
         out_time_ranges: &Option<Arc<TimeRanges>>,
-    ) -> ReadTsmResult<bool> {
+    ) -> ReadTsmResult<Option<&[u8]>> {
         trace::trace!(
             "Filling cache from file:{} for block_neta: field:{},off:{},len:{}, begin to find scale of cached data.",
             tsm_reader.file_id(),
@@ -976,9 +977,12 @@ impl TsmCache {
             block_meta.offset(),
             block_meta.size(),
         );
+
+        let block_meta_off = block_meta.offset();
+        let block_meta_len = block_meta.size();
+
         let mut load_off_start = 0_u64;
         let mut load_len = 0_usize;
-
         let mut found_curr_field = false;
         'idx_iter: while let Some(idx) = self.index_iter.peek() {
             let blk_meta_iter = match out_time_ranges {
@@ -987,7 +991,7 @@ impl TsmCache {
             };
             for blk in blk_meta_iter {
                 if !found_curr_field {
-                    if blk.field_id() == block_meta.field_id() {
+                    if blk.field_id() == blk.field_id() {
                         found_curr_field = true;
                     } else {
                         // All of this IndexMeta has been already consumed.
@@ -995,14 +999,12 @@ impl TsmCache {
                         continue 'idx_iter;
                     }
                 }
-
-                if blk.offset() < block_meta.offset() {
+                let blk_off = blk.offset();
+                if blk_off < block_meta_off {
                     continue;
                 }
-
-                let blk_off = blk.offset();
-                let blk_size = blk.size();
-                if blk_size > (self.capacity - load_len) as u64 {
+                let blk_len = blk.size();
+                if blk_len > (self.capacity - load_len) as u64 {
                     // Cache is full, stop loading next BlockMeta, nether next IndeMeta.
                     break 'idx_iter;
                 }
@@ -1010,14 +1012,14 @@ impl TsmCache {
                 if load_off_start == 0 {
                     load_off_start = blk_off;
                 }
-                load_len = (blk_off + blk_size - load_off_start) as usize;
+                load_len = (blk_off + blk_len - load_off_start) as usize;
             }
 
             self.index_iter.next();
         }
 
         if load_len == 0 {
-            return Ok(false);
+            return Ok(None);
         }
         self.tsm_off = load_off_start;
         trace::trace!(
@@ -1030,7 +1032,11 @@ impl TsmCache {
             load_len
         );
         self.data = tsm_reader.get_raw_data(load_off_start, load_len).await?;
-        Ok(true)
+
+        let cache_off = (block_meta_off - self.tsm_off) as usize;
+        Ok(Some(
+            &self.data[cache_off..cache_off + block_meta_len as usize],
+        ))
     }
 
     /// Read cached data of block_meta, if data of block_meta is not loaded, return None.
@@ -1040,10 +1046,10 @@ impl TsmCache {
         let cache_off = (blk_off - self.tsm_off) as usize;
         // The block_meta is not in the cache.
         if blk_off < self.tsm_off
-            // Cached data is exceed, need to fill the cache from the block_meta.
+            // Cached data is exceeded, need to fill the cache from the block_meta.
             || cache_off >= self.data.len()
             // This means the block_meta is not for the file.
-            || cache_off + blk_len >= self.data.len()
+            || cache_off + blk_len > self.data.len()
         {
             return None;
         }
@@ -1071,7 +1077,7 @@ impl CompactingFile {
         out_time_ranges: Option<Arc<TimeRanges>>,
     ) -> Option<Self> {
         let mut index_iter = BufferedIterator::new(tsm_reader.index_iterator());
-        let cache = if tsm_reader.is_field_id_of_blocks_ascending_ordered() {
+        let cache = if tsm_reader.version().meet_minimum_version(TsmVersion::V2) {
             trace::debug!(
                 "Creating cache for compacting file: {}",
                 tsm_reader.file_id()
@@ -1131,13 +1137,9 @@ impl CompactingFile {
             );
             let mut cached_data = cache.read(block_meta);
             if cached_data.is_none() {
-                if !cache
-                    .fill(&self.tsm_reader, block_meta, &self.out_time_ranges)
-                    .await?
-                {
-                    return self.tsm_reader.get_data_block(block_meta).await;
-                }
-                cached_data = cache.read(block_meta);
+                cached_data = cache
+                    .fill_and_read(&self.tsm_reader, block_meta, &self.out_time_ranges)
+                    .await?;
             }
             if let Some(data) = cached_data {
                 let mut blk = tsm::decode_data_block(
@@ -1187,22 +1189,20 @@ impl CompactingFile {
             if let Some(data) = cache.read(block_meta) {
                 return Ok(data.to_vec());
             }
-            if cache
-                .fill(&self.tsm_reader, block_meta, &self.out_time_ranges)
+            if let Some(raw_data) = cache
+                .fill_and_read(&self.tsm_reader, block_meta, &self.out_time_ranges)
                 .await?
             {
-                if let Some(data) = cache.read(block_meta) {
-                    return Ok(data.to_vec());
-                }
-                trace::error!(
-                        "Unexpected block_meta to read data_block from file:{}: off:{},len:{} from cache: off:{},len:{}",
-                        block_meta.file_id(),
-                        block_meta.offset(),
-                        block_meta.size(),
-                        cache.tsm_off,
-                        cache.data.len(),
-                );
+                return Ok(raw_data.to_vec());
             }
+            trace::error!(
+                "Unexpected block_meta to read data_block from file:{}: off:{},len:{} from cache: off:{},len:{}",
+                block_meta.file_id(),
+                block_meta.offset(),
+                block_meta.size(),
+                cache.tsm_off,
+                cache.data.len(),
+            );
         }
         self.tsm_reader
             .get_raw_data(block_meta.offset(), block_meta.size() as usize)
@@ -1406,11 +1406,16 @@ pub mod test {
     use models::predicate::domain::TimeRange;
     use models::{FieldId, Timestamp, ValueType};
 
-    use crate::compaction::compact::{chunk_data_block_into_compacting_blocks, CompactingBlock};
+    use crate::compaction::compact::{
+        chunk_data_block_into_compacting_blocks, CompactingBlock, TsmCache,
+    };
+    use crate::compaction::iterator::BufferedIterator;
     use crate::file_system::file_manager;
     use crate::tseries_family::ColumnFile;
     use crate::tsm::codec::DataBlockEncoding;
-    use crate::tsm::{self, DataBlock, EncodedDataBlock, TsmReader, TsmTombstone};
+    use crate::tsm::{
+        self, DataBlock, EncodedDataBlock, TsmReader, TsmTombstone, TsmVersion, TsmWriter,
+    };
     use crate::{file_utils, ColumnFileId, LevelId, Options, VersionEdit};
 
     pub type TsmSchema = (
@@ -1520,6 +1525,7 @@ pub mod test {
         dir: impl AsRef<Path>,
         data: Vec<Vec<(FieldId, Vec<DataBlock>)>>,
         level: LevelId,
+        version: TsmVersion,
     ) -> (u64, Vec<Arc<ColumnFile>>) {
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
@@ -1528,7 +1534,11 @@ pub mod test {
         let mut file_seq = 0;
         for (i, d) in data.iter().enumerate() {
             file_seq = i as u64 + 1;
-            let mut writer = tsm::new_tsm_writer(&dir, file_seq, false, 0).await.unwrap();
+
+            let file_path = file_utils::make_tsm_file_name(&dir, file_seq);
+            let mut writer = TsmWriter::open_with_version(file_path, file_seq, false, 0, version)
+                .await
+                .unwrap();
             for (fid, data_blks) in d.iter() {
                 for blk in data_blks.iter() {
                     writer.write_block(*fid, blk).await.unwrap();
@@ -1784,5 +1794,81 @@ pub mod test {
         }
 
         column_files
+    }
+
+    #[tokio::test]
+    async fn test_tsm_cache() {
+        let dir = "/tmp/test/compaction/test_tsm_cache";
+        let file_id = 1;
+        let path: PathBuf = file_utils::make_tsm_file_name(dir, file_id);
+
+        {
+            let _ = std::fs::remove_dir_all(dir);
+            std::fs::create_dir_all(dir).unwrap();
+            // Generate 1.1M~1.5MB data
+            let mut tsm_writer = tsm::new_tsm_writer(dir, 1, false, 0).await.unwrap();
+            let ts_vec: Vec<Timestamp> = (1..=1000).collect();
+            let mut val_vec = Vec::with_capacity(1000);
+            for field_id in 0..100 {
+                let field_blocks_num = if field_id % 2 == 0 { 2 } else { 1 };
+                for _ in 0..field_blocks_num {
+                    val_vec.clear();
+                    for _ in 0..1000 {
+                        val_vec.push(rand::random::<u64>());
+                    }
+                    let block = DataBlock::U64 {
+                        ts: ts_vec.clone(),
+                        val: val_vec.clone(),
+                        enc: DataBlockEncoding::new(Encoding::Delta, Encoding::Delta),
+                    };
+                    tsm_writer.write_block(field_id, &block).await.unwrap();
+                }
+            }
+            tsm_writer.write_index().await.unwrap();
+            tsm_writer.finish().await.unwrap();
+        }
+
+        let tsm_reader = TsmReader::open(&path).await.unwrap();
+        let index_reader = tsm_reader.index_iterator();
+        let mut cache = TsmCache::new(BufferedIterator::new(index_reader.clone()), 1024 * 16);
+        for idx_meta in index_reader {
+            for blk_meta in idx_meta.block_iterator() {
+                let fd_1 = tsm_reader.get_data_block(&blk_meta).await.unwrap();
+                assert!(fd_1.is_some());
+                let fd_2 = tsm_reader
+                    .get_raw_data(blk_meta.offset(), blk_meta.size() as usize)
+                    .await
+                    .unwrap();
+                let fd_2_block = tsm::decode_data_block(
+                    &fd_2,
+                    ValueType::Unsigned,
+                    blk_meta.val_off() - blk_meta.offset(),
+                )
+                .unwrap();
+
+                let cd_1 = match cache.read(&blk_meta) {
+                    Some(cd) => cd.to_vec(),
+                    None => {
+                        let cd = cache
+                            .fill_and_read(&tsm_reader, &blk_meta, &None)
+                            .await
+                            .unwrap();
+                        assert!(cd.is_some());
+                        assert_eq!(cd.unwrap().len(), blk_meta.size() as usize);
+                        cd.unwrap().to_vec()
+                    }
+                };
+                let cd_2 = cache.read(&blk_meta).unwrap();
+                assert_eq!(&cd_1, cd_2);
+                assert_eq!(cd_2, &fd_2);
+                let cd_2_block = tsm::decode_data_block(
+                    cd_2,
+                    ValueType::Unsigned,
+                    blk_meta.val_off() - blk_meta.offset(),
+                )
+                .unwrap();
+                assert_eq!(cd_2_block, fd_2_block);
+            }
+        }
     }
 }

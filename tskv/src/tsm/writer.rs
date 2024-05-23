@@ -54,8 +54,49 @@ use crate::tsm::{
 // └───────────────┴─────────┘
 
 const HEADER_LEN: u64 = 5;
-const TSM_MAGIC: [u8; 4] = 0x01346613_u32.to_be_bytes();
-const VERSION: [u8; 1] = [1];
+pub const TSM_MAGIC: [u8; 4] = 0x01346613_u32.to_be_bytes();
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TsmVersion {
+    /// Fields of delta files are not sorted.
+    V1,
+
+    /// Fields are always ascending sorted by field_id.
+    V2,
+
+    Unknown(u8),
+}
+
+impl From<u8> for TsmVersion {
+    fn from(value: u8) -> Self {
+        match value {
+            1 => TsmVersion::V1,
+            2 => TsmVersion::V2,
+            other => TsmVersion::Unknown(other),
+        }
+    }
+}
+
+impl From<TsmVersion> for u8 {
+    fn from(v: TsmVersion) -> u8 {
+        v.into_u8()
+    }
+}
+
+impl TsmVersion {
+    pub fn into_u8(self) -> u8 {
+        match self {
+            TsmVersion::V1 => 1,
+            TsmVersion::V2 => 2,
+            TsmVersion::Unknown(v) => v,
+        }
+    }
+
+    /// Check if the version is greater or equal to the other.
+    pub fn meet_minimum_version(&self, other: Self) -> bool {
+        self.into_u8() >= other.into_u8()
+    }
+}
 
 pub type WriteTsmResult<T, E = WriteTsmError> = std::result::Result<T, E>;
 
@@ -178,6 +219,16 @@ impl TsmWriter {
         is_delta: bool,
         max_size: u64,
     ) -> Result<Self> {
+        Self::open_with_version(path, sequence, is_delta, max_size, TsmVersion::V2).await
+    }
+
+    pub(crate) async fn open_with_version(
+        path: impl AsRef<Path>,
+        sequence: u64,
+        is_delta: bool,
+        max_size: u64,
+        version: TsmVersion,
+    ) -> Result<Self> {
         let final_path: PathBuf = path.as_ref().into();
         let mut tmp_path_str = final_path.as_os_str().to_os_string();
         tmp_path_str.push(".tmp");
@@ -197,7 +248,7 @@ impl TsmWriter {
             max_size,
             index_buf: IndexBuf::new(),
         };
-        write_header_to(&mut w.writer)
+        write_header_to(&mut w.writer, version.into_u8())
             .await
             .context(error::WriteTsmSnafu)
             .map(|s| w.size = s as u64)?;
@@ -385,15 +436,9 @@ pub async fn new_tsm_writer(
     TsmWriter::open(tsm_path, tsm_sequence, is_delta, max_size).await
 }
 
-pub async fn write_header_to(writer: &mut FileCursor) -> WriteTsmResult<usize> {
+async fn write_header_to(writer: &mut FileCursor, version: u8) -> WriteTsmResult<usize> {
     let size = writer
-        .write_vec(
-            [
-                IoSlice::new(TSM_MAGIC.as_slice()),
-                IoSlice::new(VERSION.as_slice()),
-            ]
-            .as_mut_slice(),
-        )
+        .write_vec([IoSlice::new(TSM_MAGIC.as_slice()), IoSlice::new(&[version])].as_mut_slice())
         .await
         .context(WriteIOSnafu)?;
 
@@ -543,6 +588,7 @@ pub mod test {
     use models::FieldId;
     use snafu::ResultExt;
 
+    use super::TsmVersion;
     use crate::error::{self, Result};
     use crate::file_system::file_manager::{self};
     use crate::file_utils::{self, make_tsm_file_name};
@@ -591,6 +637,19 @@ pub mod test {
         }
         writer.write_index().await.context(error::WriteTsmSnafu)?;
         writer.finish().await.context(error::WriteTsmSnafu)
+    }
+
+    #[test]
+    fn test_tsm_version() {
+        let v1 = TsmVersion::V1;
+        let v2 = TsmVersion::V2;
+        let v3 = TsmVersion::Unknown(3);
+        assert_eq!(v1.into_u8(), 1);
+        assert_eq!(v2.into_u8(), 2);
+        assert_eq!(v3.into_u8(), 3);
+        assert!(v2.meet_minimum_version(v1));
+        assert!(v3.meet_minimum_version(v1));
+        assert!(v3.meet_minimum_version(v2));
     }
 
     #[tokio::test]

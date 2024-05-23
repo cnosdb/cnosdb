@@ -29,8 +29,6 @@ pub struct Index {
     data: Vec<u8>,
     /// Sorted FieldId and it's offset if index-block
     field_id_offs: Vec<(FieldId, usize)>,
-    /// Whether the field_ids and blocks in TMS-Blocks is ascending_ordered.
-    is_field_id_of_blocks_ascending_ordered: bool,
 }
 
 impl Index {
@@ -40,14 +38,12 @@ impl Index {
         bloom_filter: Arc<BloomFilter>,
         data: Vec<u8>,
         field_id_offs: Vec<(FieldId, usize)>,
-        field_id_of_blocks_is_ordered: bool,
     ) -> Self {
         Self {
             tsm_id,
             bloom_filter,
             data,
             field_id_offs,
-            is_field_id_of_blocks_ascending_ordered: field_id_of_blocks_is_ordered,
         }
     }
 
@@ -62,10 +58,6 @@ impl Index {
     /// Get field_ids and the offset of their IndexMeta in index-block.
     pub fn field_id_offs(&self) -> &[(FieldId, usize)] {
         self.field_id_offs.as_slice()
-    }
-
-    pub fn is_field_id_of_blocks_ascending_ordered(&self) -> bool {
-        self.is_field_id_of_blocks_ascending_ordered
     }
 }
 

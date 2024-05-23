@@ -16,7 +16,7 @@ use crate::kv_option::Options;
 use crate::tseries_family::{ColumnFile, LevelInfo, Version};
 use crate::tsm::codec::DataBlockEncoding;
 use crate::tsm::test::write_to_tsm_tombstone_v2;
-use crate::tsm::{DataBlock, TsmTombstoneCache};
+use crate::tsm::{DataBlock, TsmTombstoneCache, TsmVersion};
 use crate::ColumnFileId;
 
 #[tokio::test]
@@ -111,7 +111,8 @@ async fn test_compaction_fast() {
     let dir = opt.storage.tsm_dir(&tenant_database, 1);
     let max_level_ts = 9;
 
-    let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data, 2).await;
+    let (next_file_id, files) =
+        write_data_blocks_to_column_file(&dir, data, 2, TsmVersion::V2).await;
     let (compact_req, kernel) =
         prepare_compaction(tenant_database, opt, next_file_id, files, max_level_ts);
     let out_level = compact_req.out_level;
@@ -156,7 +157,8 @@ async fn test_compaction_1() {
     let dir = opt.storage.tsm_dir(&tenant_database, 1);
     let max_level_ts = 9;
 
-    let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data, 2).await;
+    let (next_file_id, files) =
+        write_data_blocks_to_column_file(&dir, data, 2, TsmVersion::V2).await;
     let (compact_req, kernel) =
         prepare_compaction(tenant_database, opt, next_file_id, files, max_level_ts);
     let out_level = compact_req.out_level;
@@ -174,18 +176,18 @@ async fn test_compaction_2() {
     let data = vec![
         vec![
             (1, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4], val: vec![111, 112, 113, 114], enc: INT_BLOCK_ENCODING }]),
-            (3, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4], val: vec![131, 132, 133, 134], enc: INT_BLOCK_ENCODING }]),
             (4, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![141, 142, 143], enc: INT_BLOCK_ENCODING }]),
+            (3, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4], val: vec![131, 132, 133, 134], enc: INT_BLOCK_ENCODING }]),
         ],
         vec![
-            (1, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![214, 215, 216], enc: INT_BLOCK_ENCODING }]),
             (2, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![224, 225, 226], enc: INT_BLOCK_ENCODING }]),
+            (1, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![214, 215, 216], enc: INT_BLOCK_ENCODING }]),
             (3, vec![DataBlock::I64 { ts: vec![4, 5, 6, 7], val: vec![234, 235, 236, 237], enc: INT_BLOCK_ENCODING }]),
         ],
         vec![
+            (3, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![337, 338, 339], enc: INT_BLOCK_ENCODING }]),
             (1, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![317, 318, 319], enc: INT_BLOCK_ENCODING }]),
             (2, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![327, 328, 329], enc: INT_BLOCK_ENCODING }]),
-            (3, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![337, 338, 339], enc: INT_BLOCK_ENCODING }]),
         ],
     ];
     #[rustfmt::skip]
@@ -203,7 +205,8 @@ async fn test_compaction_2() {
     let dir = opt.storage.tsm_dir(&tenant_database, 1);
     let max_level_ts = 9;
 
-    let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data, 2).await;
+    let (next_file_id, files) =
+        write_data_blocks_to_column_file(&dir, data, 2, TsmVersion::V1).await;
     let (compact_req, kernel) =
         prepare_compaction(tenant_database, opt, next_file_id, files, max_level_ts);
     let out_level = compact_req.out_level;
@@ -244,7 +247,8 @@ async fn test_compaction_3() {
     let dir = opt.storage.tsm_dir(&tenant_database, 1);
     let max_level_ts = 9;
 
-    let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data, 2).await;
+    let (next_file_id, files) =
+        write_data_blocks_to_column_file(&dir, data, 2, TsmVersion::V2).await;
     for f in files.iter().take(2 + 1).skip(1) {
         let mut path = f.file_path().clone();
         path.set_extension("tombstone");

@@ -365,7 +365,7 @@ mod test {
     use crate::tseries_family::test_tseries_family::build_version_by_column_files;
     use crate::tseries_family::{CacheGroup, SuperVersion};
     use crate::tsm::codec::DataBlockEncoding;
-    use crate::tsm::DataBlock;
+    use crate::tsm::{DataBlock, TsmVersion};
     use crate::{Options, Result};
 
     struct TestHelper {
@@ -424,7 +424,12 @@ mod test {
                 .unwrap(),
         );
 
-        let (_, files) = runtime.block_on(write_data_blocks_to_column_file(&dir, data, 2));
+        let (_, files) = runtime.block_on(write_data_blocks_to_column_file(
+            &dir,
+            data,
+            2,
+            TsmVersion::V2,
+        ));
         let version =
             build_version_by_column_files(opt.storage.clone(), database, ts_family_id, files);
         let pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
@@ -596,7 +601,12 @@ mod test {
                 .unwrap(),
         );
 
-        let (_, files) = runtime.block_on(write_data_blocks_to_column_file(&dir, data, 2));
+        let (_, files) = runtime.block_on(write_data_blocks_to_column_file(
+            &dir,
+            data,
+            2,
+            TsmVersion::V2,
+        ));
         let version =
             build_version_by_column_files(opt.storage.clone(), database, ts_family_id, files);
         let test_helper = TestHelper {
