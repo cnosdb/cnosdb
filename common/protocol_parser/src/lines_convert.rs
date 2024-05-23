@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 use flatbuffers::{FlatBufferBuilder, WIPOffset};
@@ -38,10 +39,10 @@ pub fn line_to_point<'a, 'fbb: 'mut_fbb, 'mut_fbb>(
 }
 
 // Construct table_name -> Schema based on all lines
-pub fn build_schema<'a>(lines: &'a [Line]) -> HashMap<&'a str, FbSchema<'a>> {
+pub fn build_schema<'a>(lines: &'a [Line]) -> HashMap<Cow<'a, str>, FbSchema<'a>> {
     let mut schemas = HashMap::new();
     for line in lines {
-        let table = line.table;
+        let table = line.table.clone();
         let schema: &mut FbSchema = schemas.entry(table).or_default();
         for (tag_key, _) in line.tags.iter() {
             schema.add_tag(tag_key);
@@ -60,10 +61,10 @@ pub fn build_schema<'a>(lines: &'a [Line]) -> HashMap<&'a str, FbSchema<'a>> {
 }
 
 // Walk through all the rows, divided by table name， table_name -> line index
-pub fn build_table_line_index<'a>(lines: &'a [Line]) -> HashMap<&'a str, Vec<usize>> {
+pub fn build_table_line_index<'a>(lines: &'a [Line]) -> HashMap<Cow<'a, str>, Vec<usize>> {
     let mut schemas = HashMap::new();
     for (idx, line) in lines.iter().enumerate() {
-        let idxs: &mut Vec<usize> = schemas.entry(line.table).or_default();
+        let idxs: &mut Vec<usize> = schemas.entry(line.table.clone()).or_default();
         idxs.push(idx);
     }
     schemas
@@ -78,7 +79,7 @@ pub fn parse_lines_to_points<'a>(db: &'a str, lines: &'a [Line]) -> Vec<u8> {
     for (table_name, idxs) in table_line_index {
         let num_rows = idxs.len();
         let mut points = Vec::with_capacity(idxs.len());
-        let schema = schemas.get(table_name).unwrap();
+        let schema = schemas.get(&table_name).unwrap();
         for idx in idxs {
             points.push(line_to_point(&lines[idx], schema, &mut fbb))
         }
@@ -112,6 +113,8 @@ pub fn parse_lines_to_points<'a>(db: &'a str, lines: &'a [Line]) -> Vec<u8> {
 
 #[cfg(test)]
 mod test {
+    use std::borrow::Cow;
+
     use protos::models::Points;
     use protos::FieldValue::{F64, I64};
 
@@ -122,25 +125,43 @@ mod test {
     fn test_parse_line() {
         let line1 = Line {
             hash_id: 0,
-            table: "test0",
-            tags: vec![("ta", "a1"), ("tb", "b1")],
-            fields: vec![("fa", F64(1.0)), ("fb", I64(1))],
+            table: Cow::Borrowed("test0"),
+            tags: vec![
+                (Cow::Borrowed("ta"), Cow::Borrowed("a1")),
+                (Cow::Borrowed("tb"), Cow::Borrowed("b1")),
+            ],
+            fields: vec![
+                (Cow::Borrowed("fa"), F64(1.0)),
+                (Cow::Borrowed("fb"), I64(1)),
+            ],
             timestamp: 1,
         };
 
         let line2 = Line {
             hash_id: 0,
-            table: "test0",
-            tags: vec![("ta", "a2"), ("tb", "b2")],
-            fields: vec![("fa", F64(2.0)), ("fb", I64(2))],
+            table: Cow::Borrowed("test0"),
+            tags: vec![
+                (Cow::Borrowed("ta"), Cow::Borrowed("a2")),
+                (Cow::Borrowed("tb"), Cow::Borrowed("b2")),
+            ],
+            fields: vec![
+                (Cow::Borrowed("fa"), F64(2.0)),
+                (Cow::Borrowed("fb"), I64(2)),
+            ],
             timestamp: 2,
         };
 
         let line3 = Line {
             hash_id: 0,
-            table: "test1",
-            tags: vec![("ta", "a2"), ("tb", "b2")],
-            fields: vec![("fa", F64(2.0)), ("fb", I64(2))],
+            table: Cow::Borrowed("test1"),
+            tags: vec![
+                (Cow::Borrowed("ta"), Cow::Borrowed("a2")),
+                (Cow::Borrowed("tb"), Cow::Borrowed("b2")),
+            ],
+            fields: vec![
+                (Cow::Borrowed("fa"), F64(2.0)),
+                (Cow::Borrowed("fb"), I64(2)),
+            ],
             timestamp: 3,
         };
 

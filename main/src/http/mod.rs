@@ -41,7 +41,7 @@ pub enum Error {
     #[snafu(display("Error parsing message: {}", source))]
     #[error_code(code = 4)]
     ParseLineProtocol {
-        source: protocol_parser::Error,
+        source: protocol_parser::LineProtocolError,
     },
 
     #[snafu(display("Invalid header: {}", reason))]
