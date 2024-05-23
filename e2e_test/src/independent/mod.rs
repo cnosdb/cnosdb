@@ -1,5 +1,6 @@
 mod api_router_tests;
 mod dump;
+mod grpc_gzip_test;
 mod https_api_tests;
 mod restart_tests;
 
