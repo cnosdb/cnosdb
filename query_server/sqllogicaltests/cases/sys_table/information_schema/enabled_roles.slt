@@ -48,6 +48,15 @@ alter tenant test_ers_tenant1 add user test_ers_u3 as test_ers_role1;
 
 
 statement ok
+--#TENANT=cnosdb
+--#USER_NAME=root
+
+query T rowsort
+select * from information_schema.ENABLED_ROLES;
+----
+
+
+statement ok
 --#TENANT=test_ers_tenant1
 --#USER_NAME=root
 
