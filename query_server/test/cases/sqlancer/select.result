@@ -10,8 +10,8 @@
 m0,t0=t0 f0=false,f1=0.0 0
 m1,t0=t0 f0="f0",f1=false 0
 m2,t0=t0 f0=false,f1="f1" 0
-m3,t0=t0,t1=t1 f0=0I,f1=false 0
-m4,t0=t0,t1=t1,t2=t2 f0=0I 0
+m3,t0=t0,t1=t1 f0=0i,f1=false 0
+m4,t0=t0,t1=t1,t2=t2 f0=0i 0
 -- LINE PROTOCOL END --
 200 OK
 

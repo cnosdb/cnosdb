@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 use async_trait::async_trait;
@@ -116,22 +117,30 @@ impl PromRemoteSqlServer {
         let mut lines = Vec::with_capacity(req.timeseries.len());
 
         for ts in req.timeseries.iter() {
-            let mut table_name = DEFAULT_PROM_TABLE_NAME;
+            let mut table_name = Cow::Borrowed(DEFAULT_PROM_TABLE_NAME);
             let tags = ts
                 .labels
                 .iter()
                 .map(|label| {
                     if label.name.eq(METRIC_NAME_LABEL) {
-                        table_name = label.value.as_ref()
+                        table_name = Cow::Borrowed(&*label.value);
                     }
-                    (label.name.as_ref(), label.value.as_ref())
+                    (Cow::Borrowed(&*label.name), Cow::Borrowed(&*label.value))
                 })
                 .collect::<Vec<(_, _)>>();
 
             for sample in ts.samples.iter() {
-                let fields = vec![(METRIC_SAMPLE_COLUMN_NAME, FieldValue::F64(sample.value))];
+                let fields = vec![(
+                    Cow::Borrowed(METRIC_SAMPLE_COLUMN_NAME),
+                    FieldValue::F64(sample.value),
+                )];
                 let timestamp = sample.timestamp * 1000000;
-                lines.push(Line::new(table_name, tags.clone(), fields, timestamp));
+                lines.push(Line::new(
+                    table_name.clone(),
+                    tags.clone(),
+                    fields,
+                    timestamp,
+                ));
             }
         }
 
