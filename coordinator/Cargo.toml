@@ -38,6 +38,7 @@ chrono = { workspace = true }
 async-backtrace = { workspace = true, optional = true }
 md-5 = { workspace = true }
 rand = { workspace = true }
+maplit = { workspace = true }
 
 [features]
 default = []
