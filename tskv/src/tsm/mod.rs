@@ -17,7 +17,7 @@ pub use reader::{
 pub use tombstone::{
     tombstone_compact_tmp_path, Tombstone, TsmTombstone, TsmTombstoneCache, TOMBSTONE_FILE_SUFFIX,
 };
-pub use writer::{new_tsm_writer, TsmWriter, WriteTsmError, WriteTsmResult};
+pub use writer::{new_tsm_writer, TsmVersion, TsmWriter, WriteTsmError, WriteTsmResult};
 
 #[cfg(test)]
 pub mod test {

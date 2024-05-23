@@ -20,9 +20,9 @@ use crate::tsm::codec::{
 use crate::tsm::tombstone::TsmTombstone;
 use crate::tsm::{
     get_data_block_meta_unchecked, get_index_meta_unchecked, BlockEntry, BlockMeta, DataBlock,
-    Index, IndexEntry, IndexMeta, BLOCK_META_SIZE, BLOOM_FILTER_BITS, BLOOM_FILTER_SIZE,
-    FOOTER_MAGIC_LEN, FOOTER_MAGIC_V1, FOOTER_SIZE, INDEX_META_SIZE, MAX_BLOCK_VALUES,
-    OLD_BLOOM_FILTER_SIZE, OLD_FOOTER_SIZE,
+    Index, IndexEntry, IndexMeta, TsmVersion, BLOCK_META_SIZE, BLOOM_FILTER_BITS,
+    BLOOM_FILTER_SIZE, FOOTER_MAGIC_LEN, FOOTER_MAGIC_V1, FOOTER_SIZE, INDEX_META_SIZE,
+    MAX_BLOCK_VALUES, OLD_BLOOM_FILTER_SIZE, OLD_FOOTER_SIZE,
 };
 
 pub type ReadTsmResult<T, E = ReadTsmError> = std::result::Result<T, E>;
@@ -38,8 +38,10 @@ pub enum ReadTsmError {
         source: Box<dyn std::error::Error + Send + Sync>,
     },
 
-    #[snafu(display("Datablock crc32 check failed"))]
-    CrcCheck,
+    #[snafu(display(
+        "Datablock crc32 check failed, expected: {crc}, calculated: {crc_calculated}"
+    ))]
+    CrcCheck { crc: u32, crc_calculated: u32 },
 
     #[snafu(display("TSM file is lost: {}", reason))]
     FileNotFound { reason: String },
@@ -51,7 +53,7 @@ pub enum ReadTsmError {
 impl From<ReadTsmError> for Error {
     fn from(rte: ReadTsmError) -> Self {
         match rte {
-            ReadTsmError::CrcCheck
+            ReadTsmError::CrcCheck { .. }
             | ReadTsmError::FileNotFound { reason: _ }
             | ReadTsmError::Invalid { reason: _ } => Error::TsmFileBroken { source: rte },
 
@@ -250,34 +252,14 @@ pub async fn load_index_v1(tsm_id: u64, reader: Arc<AsyncFile>) -> ReadTsmResult
     let assumed_field_count = (data_len / (INDEX_META_SIZE + BLOCK_META_SIZE)) + 1;
     let mut field_id_idx_offs: Vec<(FieldId, usize)> = Vec::with_capacity(assumed_field_count);
     let mut pos = 0_usize;
-    let mut field_id_of_blocks_is_ordered = true;
-    let mut previous_field_id = 0_u64;
-    let mut previous_field_block_off = 0_u64;
     while pos < data_len {
-        let field_id = decode_be_u64(&data[pos..pos + 8]);
         // Push (FieldId, offset_of_index_block)
-        field_id_idx_offs.push((field_id, pos));
-        if field_id_of_blocks_is_ordered {
-            // Check field_ids is ascending ordered.
-            if field_id < previous_field_id {
-                field_id_of_blocks_is_ordered = false;
-            }
-            previous_field_id = field_id;
-            // Check blocks offsets of fields is ascending ordered.
-            let field_block_off = decode_be_u64(
-                &data[pos + (INDEX_META_SIZE + 8 + 8 + 4)..pos + (INDEX_META_SIZE + 8 + 8 + 4 + 8)],
-            );
-            if field_block_off < previous_field_block_off {
-                field_id_of_blocks_is_ordered = false;
-            }
-            previous_field_block_off = field_block_off
-        }
+        field_id_idx_offs.push((decode_be_u64(&data[pos..pos + 8]), pos));
         pos += INDEX_META_SIZE + BLOCK_META_SIZE * decode_be_u16(&data[pos + 9..pos + 11]) as usize;
     }
     // Sort by field id
     // NOTICE that there must be no two equal field_ids.
-    field_id_idx_offs.sort_by_key(|e| e.0);
-
+    field_id_idx_offs.sort_unstable_by_key(|e| e.0);
     let mut bloom_filter = BloomFilter::new(BLOOM_FILTER_BITS);
     for (field_id, _) in &field_id_idx_offs {
         bloom_filter.insert(&field_id.to_be_bytes());
@@ -287,7 +269,6 @@ pub async fn load_index_v1(tsm_id: u64, reader: Arc<AsyncFile>) -> ReadTsmResult
         Arc::new(bloom_filter),
         data,
         field_id_idx_offs,
-        field_id_of_blocks_is_ordered,
     ))
 }
 
@@ -329,40 +310,20 @@ pub async fn load_index_v2(tsm_id: u64, reader: Arc<AsyncFile>) -> ReadTsmResult
     let assumed_field_count = (data_len / (INDEX_META_SIZE + BLOCK_META_SIZE)) + 1;
     let mut field_id_idx_offs: Vec<(FieldId, usize)> = Vec::with_capacity(assumed_field_count);
     let mut pos = 0_usize;
-    let mut field_id_of_blocks_is_ordered = true;
-    let mut previous_field_id = 0_u64;
-    let mut previous_field_block_off = 0_u64;
     while pos < data_len {
-        let field_id = decode_be_u64(&data[pos..pos + 8]);
         // Push (FieldId, offset_of_index_block)
-        field_id_idx_offs.push((field_id, pos));
-        if field_id_of_blocks_is_ordered {
-            // Check field_ids is ascending ordered.
-            if field_id < previous_field_id {
-                field_id_of_blocks_is_ordered = false;
-            }
-            previous_field_id = field_id;
-            // Check blocks offsets of fields is ascending ordered.
-            let field_block_off = decode_be_u64(
-                &data[pos + (INDEX_META_SIZE + 8 + 8 + 4)..pos + (INDEX_META_SIZE + 8 + 8 + 4 + 8)],
-            );
-            if field_block_off < previous_field_block_off {
-                field_id_of_blocks_is_ordered = false;
-            }
-            previous_field_block_off = field_block_off
-        }
+        field_id_idx_offs.push((decode_be_u64(&data[pos..pos + 8]), pos));
         pos += INDEX_META_SIZE + BLOCK_META_SIZE * decode_be_u16(&data[pos + 9..pos + 11]) as usize;
     }
     // Sort by field id
     // NOTICE that there must be no two equal field_ids.
-    field_id_idx_offs.sort_by_key(|e| e.0);
+    field_id_idx_offs.sort_unstable_by_key(|e| e.0);
 
     Ok(Index::new(
         tsm_id,
         Arc::new(bloom_filter),
         data,
         field_id_idx_offs,
-        field_id_of_blocks_is_ordered,
     ))
 }
 
@@ -401,29 +362,6 @@ impl IndexReader {
         } else {
             IndexIterator::new(self.index_ref.clone(), 0, 0)
         }
-    }
-
-    pub fn all(&self, time_ranges: Arc<TimeRanges>) -> Vec<(IndexMeta, Vec<BlockMeta>)> {
-        let mut tsm_idx: Vec<(IndexMeta, Vec<BlockMeta>)> =
-            Vec::with_capacity(self.index_ref.field_id_offs().len());
-        for (_, offset) in self.index_ref.field_id_offs() {
-            let idx_meta = get_index_meta_unchecked(self.index_ref.clone(), *offset);
-            let blk_metas = if time_ranges.is_boundless() {
-                idx_meta.block_iterator().collect()
-            } else if time_ranges.is_empty() {
-                vec![]
-            } else {
-                idx_meta.block_iterator_opt(time_ranges.clone()).collect()
-            };
-            if !blk_metas.is_empty() {
-                tsm_idx.push((idx_meta, blk_metas));
-            }
-        }
-        tsm_idx
-    }
-
-    pub fn is_field_id_of_blocks_ascending_ordered(&self) -> bool {
-        self.index_ref.is_field_id_of_blocks_ascending_ordered()
     }
 }
 
@@ -609,6 +547,7 @@ impl Iterator for BlockMetaIterator {
 pub struct TsmReader {
     file_id: u64,
     reader: Arc<AsyncFile>,
+    version: TsmVersion,
     index_reader: Arc<IndexReader>,
     tombstone: Arc<TsmTombstone>,
 }
@@ -618,15 +557,21 @@ impl TsmReader {
         let path = tsm_path.as_ref().to_path_buf();
         let file_id = file_utils::get_tsm_file_id_by_path(&path)?;
         let tsm = Arc::new(file_manager::open_file(tsm_path).await?);
+        let version = tsm.read_at(4, 1).await?;
         let tsm_idx = IndexReader::open(file_id, tsm.clone()).await?;
         let tombstone_path = path.parent().unwrap_or_else(|| Path::new("/"));
         let tombstone = TsmTombstone::open(tombstone_path, file_id).await?;
         Ok(Self {
             file_id,
             reader: tsm,
+            version: TsmVersion::from(version[0]),
             index_reader: Arc::new(tsm_idx),
             tombstone: Arc::new(tombstone),
         })
+    }
+
+    pub fn version(&self) -> TsmVersion {
+        self.version
     }
 
     pub fn index_iterator(&self) -> IndexIterator {
@@ -635,12 +580,6 @@ impl TsmReader {
 
     pub fn index_iterator_opt(&self, field_id: FieldId) -> IndexIterator {
         self.index_reader.iter_opt(field_id)
-    }
-
-    /// Get all IndexMetas and their BlockMetas, sorted by the first BlockMeta::offset.
-    /// You may want to call this method before a fully and **sequential** read of a TSM file.
-    pub fn index(&self, time_ranges: Arc<TimeRanges>) -> Vec<(IndexMeta, Vec<BlockMeta>)> {
-        self.index_reader.all(time_ranges)
     }
 
     /// Returns a DataBlock without tombstone
@@ -709,11 +648,6 @@ impl TsmReader {
     pub(crate) fn bloom_filter(&self) -> Arc<BloomFilter> {
         self.index_reader.index_ref.bloom_filter()
     }
-
-    /// Whether the field_ids and blocks in TMS-Blocks is ascending_ordered.
-    pub fn is_field_id_of_blocks_ascending_ordered(&self) -> bool {
-        self.index_reader.is_field_id_of_blocks_ascending_ordered()
-    }
 }
 
 impl Debug for TsmReader {
@@ -748,8 +682,13 @@ pub fn decode_data_block(
         });
     }
 
-    if byte_utils::decode_be_u32(&buf[..4]) != crc32fast::hash(&buf[4..val_off as usize]) {
-        return Err(ReadTsmError::CrcCheck);
+    let crc = byte_utils::decode_be_u32(&buf[..4]);
+    let crc_calculated = crc32fast::hash(&buf[4..val_off as usize]);
+    if crc != crc_calculated {
+        return Err(ReadTsmError::CrcCheck {
+            crc,
+            crc_calculated,
+        });
     }
     let mut ts = Vec::with_capacity(MAX_BLOCK_VALUES as usize);
     let ts_encoding = get_encoding(&buf[4..val_off as usize]);
@@ -758,10 +697,13 @@ pub fn decode_data_block(
         .decode(&buf[4..val_off as usize], &mut ts)
         .context(DecodeSnafu)?;
 
-    if byte_utils::decode_be_u32(&buf[val_off as usize..])
-        != crc32fast::hash(&buf[(val_off + 4) as usize..])
-    {
-        return Err(ReadTsmError::CrcCheck);
+    let crc: u32 = byte_utils::decode_be_u32(&buf[val_off as usize..]);
+    let crc_calculated = crc32fast::hash(&buf[(val_off + 4) as usize..]);
+    if crc != crc_calculated {
+        return Err(ReadTsmError::CrcCheck {
+            crc,
+            crc_calculated,
+        });
     }
     let data = &buf[(val_off + 4) as usize..];
     match field_type {
@@ -846,6 +788,7 @@ pub mod test {
     use snafu::ResultExt;
 
     use crate::error::{self, Result};
+    use crate::file_system::file::IFile;
     use crate::file_system::file_manager::{self};
     use crate::file_utils;
     use crate::tsm::codec::DataBlockEncoding;
@@ -873,29 +816,24 @@ pub mod test {
         );
 
         #[rustfmt::skip]
-        let mut ori_data: Vec<(FieldId, Vec<DataBlock>)> = match data {
-            Some(d) => d,
-            None => vec![
-                (1, vec![DataBlock::U64 { ts: vec![1, 2, 3, 4], val: vec![11, 12, 13, 15], enc: DataBlockEncoding::default() }]),
-                (2, vec![
-                    DataBlock::U64 { ts: vec![1, 2, 3, 4], val: vec![101, 102, 103, 104], enc: DataBlockEncoding::default() },
-                    DataBlock::U64 { ts: vec![5, 6, 7, 8], val: vec![105, 106, 107, 108], enc: DataBlockEncoding::default() },
-                    DataBlock::U64 { ts: vec![9, 10, 11, 12], val: vec![109, 110, 111, 112], enc: DataBlockEncoding::default() },
-                ]),
-                (3, vec![
-                    DataBlock::U64 { ts: vec![5], val: vec![105], enc: DataBlockEncoding::default() },
-                    DataBlock::U64 { ts: vec![9], val: vec![109], enc: DataBlockEncoding::default() },
-                ]),
-            ],
-        };
+        let mut ori_data: Vec<(FieldId, Vec<DataBlock>)> = data.unwrap_or_else(|| vec![
+            (1, vec![DataBlock::U64 { ts: vec![1, 2, 3, 4], val: vec![11, 12, 13, 15], enc: DataBlockEncoding::default() }]),
+            (2, vec![
+                DataBlock::U64 { ts: vec![1, 2, 3, 4], val: vec![101, 102, 103, 104], enc: DataBlockEncoding::default() },
+                DataBlock::U64 { ts: vec![5, 6, 7, 8], val: vec![105, 106, 107, 108], enc: DataBlockEncoding::default() },
+                DataBlock::U64 { ts: vec![9, 10, 11, 12], val: vec![109, 110, 111, 112], enc: DataBlockEncoding::default() },
+            ]),
+            (3, vec![
+                DataBlock::U64 { ts: vec![5], val: vec![105], enc: DataBlockEncoding::default() },
+                DataBlock::U64 { ts: vec![9], val: vec![109], enc: DataBlockEncoding::default() },
+            ]),
+        ]);
         write_to_tsm(&tsm_file, &ori_data, false).await?;
 
         ori_data.sort_by_key(|a| a.0);
 
-        let tomb_data = match tombstone {
-            Some(d) => d,
-            None => HashMap::from([(1, vec![TimeRange::from((2, 4))])]),
-        };
+        let tomb_data =
+            tombstone.unwrap_or_else(|| HashMap::from([(1, vec![TimeRange::from((2, 4))])]));
         let tombstone = TsmTombstone::with_path(&tombstone_file).await?;
         for (field_id, tomb_trs) in tomb_data {
             let ori_data_blocks_idx = ori_data.binary_search_by_key(&field_id, |(fid, _)| *fid);
@@ -1142,6 +1080,7 @@ pub mod test {
         assert_eq!(blk_metas[3].count, 4);
     }
 
+    /// Test index reader for tsm v2.
     #[tokio::test]
     async fn test_index_reader_well_ordered() {
         let (tsm_file, _, _) = prepare("/tmp/test/tsm_reader/index_reader_1", None, None)
@@ -1149,11 +1088,9 @@ pub mod test {
             .unwrap();
 
         let file = Arc::new(file_manager::open_file(&tsm_file).await.unwrap());
+        let file_version = file.read_at(4, 1).await.unwrap();
         let idx_reader = IndexReader::open(1, file).await.unwrap();
-        assert!(
-            idx_reader.is_field_id_of_blocks_ascending_ordered(),
-            "this tsm file does not need to sort index field_id_offs"
-        );
+        assert_eq!(file_version[0], 2);
 
         let mut index_meta_field_ids: Vec<FieldId> = Vec::new();
         let mut blk_metas: Vec<(TimeRange, u32)> = Vec::new();
@@ -1177,6 +1114,7 @@ pub mod test {
         );
     }
 
+    /// Test index reader for tsm v1.
     #[tokio::test]
     async fn test_index_reader_disordered() {
         #[rustfmt::skip]
@@ -1198,10 +1136,6 @@ pub mod test {
 
         let file = Arc::new(file_manager::open_file(&tsm_file).await.unwrap());
         let idx_reader = IndexReader::open(1, file).await.unwrap();
-        assert!(
-            !idx_reader.is_field_id_of_blocks_ascending_ordered(),
-            "this tsm file does need to sort index field_id_offs"
-        );
 
         let mut index_meta_field_ids: Vec<FieldId> = Vec::new();
         let mut blk_metas: Vec<(TimeRange, u32)> = Vec::new();

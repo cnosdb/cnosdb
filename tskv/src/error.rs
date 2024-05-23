@@ -264,7 +264,10 @@ impl Error {
 
     pub fn vnode_broken_code(code: &str) -> bool {
         let e = Self::ReadTsm {
-            source: ReadTsmError::CrcCheck,
+            source: ReadTsmError::CrcCheck {
+                crc: 0,
+                crc_calculated: 0,
+            },
         };
 
         e.code() == code

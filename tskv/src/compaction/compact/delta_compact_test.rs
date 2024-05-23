@@ -11,7 +11,7 @@ use super::*;
 use crate::file_system::file_manager;
 use crate::tseries_family::{ColumnFile, LevelInfo, Version};
 use crate::tsm::test::write_to_tsm_tombstone_v2;
-use crate::tsm::{DataBlock, TsmTombstoneCache};
+use crate::tsm::{DataBlock, TsmTombstoneCache, TsmVersion};
 use crate::{file_utils, record_file, Options};
 
 #[tokio::test]
@@ -116,7 +116,8 @@ async fn test_delta_compaction_1() {
     let dir = opt.storage.tsm_dir(&tenant_database, 1);
     let max_level_ts = 9;
 
-    let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data, 0).await;
+    let (next_file_id, files) =
+        write_data_blocks_to_column_file(&dir, data, 0, TsmVersion::V2).await;
     let (compact_req, kernel) = prepare_delta_compaction(
         tenant_database,
         opt,
@@ -171,7 +172,8 @@ async fn test_delta_compaction_2() {
     let dir = opt.storage.tsm_dir(&tenant_database, 1);
     let max_level_ts = 9;
 
-    let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data, 0).await;
+    let (next_file_id, files) =
+        write_data_blocks_to_column_file(&dir, data, 0, TsmVersion::V2).await;
     let (compact_req, kernel) = prepare_delta_compaction(
         tenant_database,
         opt,
@@ -220,7 +222,8 @@ async fn test_delta_compaction_3() {
     let dir = opt.storage.tsm_dir(&tenant_database, 1);
     let max_level_ts = 9;
 
-    let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data, 0).await;
+    let (next_file_id, files) =
+        write_data_blocks_to_column_file(&dir, data, 0, TsmVersion::V2).await;
     for f in files.iter().take(2 + 1).skip(1) {
         let mut path = f.file_path().clone();
         path.set_extension("tombstone");
