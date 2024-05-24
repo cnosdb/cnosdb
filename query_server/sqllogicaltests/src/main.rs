@@ -1,5 +1,6 @@
 use std::error::Error;
 use std::path::{Path, PathBuf};
+use std::process::exit;
 
 use clap::Parser;
 
@@ -32,6 +33,11 @@ const CNOSDB_TARGET_PARTITIONS_DEFAULT: usize = 8;
 #[tokio::main]
 pub async fn main() -> Result<(), Box<dyn Error>> {
     let options = Options::new();
+
+    if options.mode != "singleton" && options.mode != "cluster" {
+        eprintln!("Unsupported mode: {}", options.mode);
+        exit(1);
+    }
 
     let db_options = SqlClientOptions {
         flight_host: options.flight_host.clone(),
@@ -71,6 +77,7 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
         }
         if options.complete_mode {
             os::run_complete_file(
+                options.mode.clone(),
                 &path,
                 relative_path,
                 db_options.clone(),
@@ -79,6 +86,7 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
             .await?;
         } else {
             os::run_test_file(
+                options.mode.clone(),
                 &path,
                 relative_path,
                 db_options.clone(),
@@ -138,6 +146,8 @@ struct Options {
     /// Number of replication sets
     replica_count: u32,
 
+    mode: String,
+
     flight_host: String,
     flight_port: u16,
     http_host: String,
@@ -157,6 +167,9 @@ struct CliOptions {
 
     #[arg(long = "complete", default_value = "false")]
     complete_mode: bool,
+
+    #[arg(short = 'M', long = "mode", default_value = "singleton")]
+    mode: String,
 }
 
 impl Options {
@@ -183,6 +196,7 @@ impl Options {
             complete_mode: args.complete_mode,
             shard_count: args.shard_count,
             replica_count: args.replica_count,
+            mode: args.mode,
             flight_host,
             flight_port,
             http_host,

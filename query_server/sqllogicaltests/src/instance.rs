@@ -21,6 +21,7 @@ use crate::error::{Result, SqlError};
 use crate::utils::normalize;
 
 pub struct CnosDBClient {
+    engine_name: String,
     relative_path: PathBuf,
     options: SqlClientOptions,
     create_options: CreateOptions,
@@ -28,11 +29,13 @@ pub struct CnosDBClient {
 
 impl CnosDBClient {
     pub fn new(
+        engine_name: impl Into<String>,
         relative_path: impl Into<PathBuf>,
         options: SqlClientOptions,
         create_options: CreateOptions,
     ) -> Result<Self, SqlError> {
         Ok(Self {
+            engine_name: engine_name.into(),
             relative_path: relative_path.into(),
             options,
             create_options,
@@ -66,7 +69,7 @@ impl sqllogictest::AsyncDB for CnosDBClient {
     }
 
     fn engine_name(&self) -> &str {
-        "CnosDB"
+        &self.engine_name
     }
 
     async fn sleep(dur: Duration) {

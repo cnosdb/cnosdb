@@ -7,6 +7,7 @@ use trace::info;
 use crate::instance::{CnosDBClient, CreateOptions, SqlClientOptions};
 
 pub async fn run_test_file(
+    engine_name: String,
     path: &Path,
     relative_path: PathBuf,
     options: SqlClientOptions,
@@ -15,6 +16,7 @@ pub async fn run_test_file(
     info!("Running with DataFusion runner: {}", path.display());
     let mut runner = sqllogictest::Runner::new(|| async {
         CnosDBClient::new(
+            engine_name.clone(),
             relative_path.clone(),
             options.clone(),
             createoptions.clone(),
@@ -25,6 +27,7 @@ pub async fn run_test_file(
 }
 
 pub async fn run_complete_file(
+    engine_name: String,
     path: &Path,
     relative_path: PathBuf,
     options: SqlClientOptions,
@@ -35,6 +38,7 @@ pub async fn run_complete_file(
     // let mut data = 3;
     let mut runner = sqllogictest::Runner::new(|| async {
         CnosDBClient::new(
+            engine_name.clone(),
             relative_path.clone(),
             options.clone(),
             createoptions.clone(),
