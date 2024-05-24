@@ -8,7 +8,9 @@ use super::{
     file_crc_source_len, reader, RecordDataType, FILE_FOOTER_LEN, FILE_MAGIC_NUMBER,
     FILE_MAGIC_NUMBER_LEN, RECORD_MAGIC_NUMBER,
 };
-use crate::error::{self, TskvError, TskvResult};
+use crate::error::{
+    self, IOSnafu, InvalidParamSnafu, ReadFileSnafu, TskvError, TskvResult, WriteFileSnafu,
+};
 use crate::file_system::async_filesystem::{LocalFileSystem, LocalFileType};
 use crate::file_system::file::stream_writer::FileStreamWriter;
 use crate::file_system::FileSystem;
@@ -62,7 +64,7 @@ impl Writer {
                 .len()
                 .checked_sub(footer_len)
                 .unwrap_or(FILE_MAGIC_NUMBER_LEN);
-            file.truncate(file_size).await?;
+            file.truncate(file_size).await.context(IOSnafu)?;
 
             Ok(Writer {
                 path: path.to_path_buf(),
@@ -88,13 +90,14 @@ impl Writer {
         let data_len = match data_len.to_u32() {
             Some(v) => v,
             None => {
-                return Err(TskvError::InvalidParam {
+                return Err(InvalidParamSnafu {
                     reason: format!(
                         "record(type: {}) length ({}) is not a valid u32, ignore this record",
                         data_type,
                         data.len()
                     ),
-                });
+                }
+                .build());
             }
         };
 
@@ -120,14 +123,13 @@ impl Writer {
         }
 
         // Write record header and record data.
-        let written_size =
-            self.file
-                .write_vec(&write_buf)
-                .await
-                .map_err(|e| TskvError::WriteFile {
-                    path: self.path.clone(),
-                    source: e,
-                })?;
+        let written_size = self
+            .file
+            .write_vec(&write_buf)
+            .await
+            .context(WriteFileSnafu {
+                path: self.path.clone(),
+            })?;
         Ok(written_size)
     }
 
@@ -143,9 +145,8 @@ impl Writer {
             .map_err(|e| TskvError::FileSystemError { source: e })?;
         file.read_at(FILE_MAGIC_NUMBER_LEN, &mut buf)
             .await
-            .map_err(|e| TskvError::ReadFile {
+            .context(ReadFileSnafu {
                 path: self.path.clone(),
-                source: e,
             })?;
         let crc = crc32fast::hash(&buf);
 
@@ -153,20 +154,15 @@ impl Writer {
         footer[4..8].copy_from_slice(&crc.to_be_bytes());
         self.footer = Some(*footer);
 
-        let written_size = self
-            .file
-            .write(footer)
-            .await
-            .map_err(|e| TskvError::WriteFile {
-                path: self.path.clone(),
-                source: e,
-            })?;
+        let written_size = self.file.write(footer).await.context(WriteFileSnafu {
+            path: self.path.clone(),
+        })?;
         // Only add file_size, does not add pos
         Ok(written_size)
     }
 
     pub async fn truncate(&mut self, size: u64) -> TskvResult<()> {
-        self.file.truncate(size as usize).await?;
+        self.file.truncate(size as usize).await.context(IOSnafu)?;
 
         Ok(())
     }
@@ -190,9 +186,10 @@ impl Writer {
                 self.footer,
             ));
         }
-        Err(TskvError::InvalidParam {
+        Err(InvalidParamSnafu {
             reason: "file is not shared file reader".to_string(),
-        })
+        }
+        .build())
     }
 
     pub fn path(&self) -> PathBuf {

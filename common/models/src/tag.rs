@@ -49,32 +49,36 @@ impl Tag {
     }
 
     #[cfg(test)]
-    pub fn check(&self) -> crate::Result<()> {
+    pub fn check(&self) -> crate::ModelResult<()> {
         const TAG_KEY_MAX_LEN: usize = 512;
         const TAG_VALUE_MAX_LEN: usize = 4096;
-        use crate::Error;
+        use crate::errors::InvalidTagSnafu;
         if self.key.is_empty() {
-            return Err(Error::InvalidTag {
+            return Err(InvalidTagSnafu {
                 err: "Tag key cannot be empty".to_string(),
-            });
+            }
+            .build());
         }
         if self.value.is_empty() {
-            return Err(Error::InvalidTag {
+            return Err(InvalidTagSnafu {
                 err: "Tag value cannot be empty".to_string(),
-            });
+            }
+            .build());
         }
         if self.key.len() > TAG_KEY_MAX_LEN {
-            return Err(Error::InvalidTag {
+            return Err(InvalidTagSnafu {
                 err: format!("Tag key exceeds the TAG_KEY_MAX_LEN({})", TAG_KEY_MAX_LEN),
-            });
+            }
+            .build());
         }
         if self.value.len() > TAG_VALUE_MAX_LEN {
-            return Err(Error::InvalidTag {
+            return Err(InvalidTagSnafu {
                 err: format!(
                     "Tag value exceeds the TAG_VALUE_MAX_LEN({})",
                     TAG_VALUE_MAX_LEN
                 ),
-            });
+            }
+            .build());
         }
         Ok(())
     }

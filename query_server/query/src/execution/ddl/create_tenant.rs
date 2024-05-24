@@ -1,8 +1,9 @@
 use async_trait::async_trait;
 use meta::error::MetaError;
+use snafu::ResultExt;
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::CreateTenant;
-use spi::Result;
+use spi::{MetaSnafu, QueryResult};
 use trace::debug;
 
 use crate::execution::ddl::DDLDefinitionTask;
@@ -19,7 +20,7 @@ impl CreateTenantTask {
 
 #[async_trait]
 impl DDLDefinitionTask for CreateTenantTask {
-    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output> {
+    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> QueryResult<Output> {
         let CreateTenant {
             ref name,
             ref if_not_exists,
@@ -35,7 +36,8 @@ impl DDLDefinitionTask for CreateTenantTask {
             // Report an error if it exists
             (false, Some(_)) => Err(MetaError::TenantAlreadyExists {
                 tenant: name.clone(),
-            })?,
+            })
+            .context(MetaSnafu)?,
             // does not exist, create
             (_, None) => {
                 // 创建tenant
@@ -45,7 +47,8 @@ impl DDLDefinitionTask for CreateTenantTask {
                 query_state_machine
                     .meta
                     .create_tenant(name.to_string(), options.clone())
-                    .await?;
+                    .await
+                    .context(MetaSnafu)?;
                 Ok(Output::Nil(()))
             }
         }

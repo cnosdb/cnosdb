@@ -21,8 +21,9 @@ use datafusion::scalar::ScalarValue;
 use futures::{StreamExt, TryStreamExt};
 use models::schema::TskvTableSchemaRef;
 use protos::kv_service::UpdateSetValue;
+use snafu::IntoError;
 use spi::query::AFFECTED_ROWS;
-use spi::QueryError;
+use spi::CoordinatorSnafu;
 
 use crate::extension::DropEmptyRecordBatchStream;
 
@@ -238,7 +239,7 @@ async fn do_update(
     coord
         .update_tags_value(table_schema.clone(), new_tags.clone(), batches)
         .await
-        .map_err(|err| DataFusionError::External(Box::new(QueryError::from(err))))?;
+        .map_err(|err| DataFusionError::External(Box::new(CoordinatorSnafu.into_error(err))))?;
 
     aggregate_statistics(schema, rows_wrote)
 }

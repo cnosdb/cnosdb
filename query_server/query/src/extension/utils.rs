@@ -132,10 +132,11 @@ pub fn timestamp_arr_as_i64ns_iter(
                 })?
                 .iter()
                 .map(|x| {
-                    x.map(|i| i * 1_000_000)
-                        .ok_or(datafusion::error::DataFusionError::Execution(
+                    x.map(|i| i * 1_000_000).ok_or_else(|| {
+                        datafusion::error::DataFusionError::Execution(
                             "null value in timestamp array".to_string(),
-                        ))
+                        )
+                    })
                 }),
         ),
         DataType::Timestamp(models::arrow::TimeUnit::Microsecond, None) => Box::new(
@@ -150,10 +151,11 @@ pub fn timestamp_arr_as_i64ns_iter(
                 })?
                 .iter()
                 .map(|x| {
-                    x.map(|i| i * 1_000)
-                        .ok_or(datafusion::error::DataFusionError::Execution(
+                    x.map(|i| i * 1_000).ok_or_else(|| {
+                        datafusion::error::DataFusionError::Execution(
                             "null value in timestamp array".to_string(),
-                        ))
+                        )
+                    })
                 }),
         ),
         DataType::Timestamp(models::arrow::TimeUnit::Nanosecond, None) => Box::new(
@@ -168,9 +170,11 @@ pub fn timestamp_arr_as_i64ns_iter(
                 })?
                 .iter()
                 .map(|x| {
-                    x.ok_or(datafusion::error::DataFusionError::Execution(
-                        "null value in timestamp array".to_string(),
-                    ))
+                    x.ok_or_else(|| {
+                        datafusion::error::DataFusionError::Execution(
+                            "null value in timestamp array".to_string(),
+                        )
+                    })
                 }),
         ),
         _ => Err(datafusion::error::DataFusionError::Execution(format!(

@@ -1,5 +1,5 @@
 use minivec::MiniVec;
-use snafu::Snafu;
+use snafu::{Backtrace, Location, Snafu};
 use utils::bitset::BitSet;
 
 use crate::field_value::FieldVal;
@@ -11,7 +11,11 @@ pub type ColumnDataResult<T, E = ColumnDataError> = Result<T, E>;
 #[snafu(visibility(pub))]
 pub enum ColumnDataError {
     #[snafu(display("Unsupport data type: {}", dt))]
-    UnsupportedDataType { dt: String },
+    UnsupportedDataType {
+        dt: String,
+        location: Location,
+        backtrace: Backtrace,
+    },
 
     #[snafu(display(
         "Data type miss match: column type: {:?}, field_val: {:?}",
@@ -21,10 +25,16 @@ pub enum ColumnDataError {
     DataTypeMissMatch {
         column_type: PhysicalDType,
         field_val: Option<FieldVal>,
+        location: Location,
+        backtrace: Backtrace,
     },
 
     #[snafu(display("MutableColumnError: {}", msg))]
-    CommonError { msg: String },
+    CommonError {
+        msg: String,
+        location: Location,
+        backtrace: Backtrace,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -45,9 +55,10 @@ impl ColumnData {
                 PrimaryColumnData::String(vec![], String::new(), String::new())
             }
             PhysicalDType::Unknown => {
-                return Err(ColumnDataError::UnsupportedDataType {
+                return Err(UnsupportedDataTypeSnafu {
                     dt: "unknown".to_string(),
-                })
+                }
+                .build())
             }
         };
         let data = ColumnData {
@@ -74,9 +85,10 @@ impl ColumnData {
                 PrimaryColumnData::String(Vec::with_capacity(cap), String::new(), String::new())
             }
             PhysicalDType::Unknown => {
-                return Err(ColumnDataError::UnsupportedDataType {
+                return Err(UnsupportedDataTypeSnafu {
                     dt: "unknown".to_string(),
-                })
+                }
+                .build())
             }
         };
         let data = ColumnData {
@@ -100,9 +112,10 @@ impl ColumnData {
                 PrimaryColumnData::String(vec![String::new(); len], String::new(), String::new())
             }
             PhysicalDType::Unknown => {
-                return Err(ColumnDataError::UnsupportedDataType {
+                return Err(UnsupportedDataTypeSnafu {
                     dt: "unknown".to_string(),
-                })
+                }
+                .build())
             }
         };
         let data = ColumnData {
@@ -221,10 +234,11 @@ impl ColumnData {
                 }
             }
             _ => {
-                return Err(ColumnDataError::DataTypeMissMatch {
+                return Err(DataTypeMissMatchSnafu {
                     column_type: self.primary_data.physical_dtype(),
                     field_val: value.clone(),
-                })
+                }
+                .build())
             }
         }
         Ok(())
@@ -284,9 +298,10 @@ impl PrimaryColumnData {
     pub fn binary_search_for_i64_col(&self, value: i64) -> ColumnDataResult<Result<usize, usize>> {
         match self {
             PrimaryColumnData::I64(data, ..) => Ok(data.binary_search(&value)),
-            _ => Err(ColumnDataError::CommonError {
+            _ => Err(CommonSnafu {
                 msg: "only use for i64 column".to_string(),
-            }),
+            }
+            .build()),
         }
     }
 

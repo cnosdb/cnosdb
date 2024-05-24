@@ -28,6 +28,7 @@ fn api_router() {
             },
             auth: None,
         },
+        Step::Sleep(3),
         Step::CnosdbRequest {
             req: CnosdbRequest::Write {
                 url: "http://127.0.0.1:8912/api/v1/write?db=public",
@@ -36,6 +37,7 @@ fn api_router() {
             },
             auth: None,
         },
+        Step::Sleep(3),
         Step::CnosdbRequest {
             req: CnosdbRequest::Query {
                 url: "http://127.0.0.1:8902/api/v1/sql?db=public",
@@ -51,6 +53,7 @@ fn api_router() {
             },
             auth: None,
         },
+        Step::Sleep(3),
         Step::CnosdbRequest {
             req: CnosdbRequest::Query {
                 url: "http://127.0.0.1:8912/api/v1/sql?db=public",

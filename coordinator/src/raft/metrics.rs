@@ -1,9 +1,12 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
+use std::sync::Arc;
 
 use maplit::hashmap;
-use metrics::{gauge::U64Gauge, metric_register::MetricsRegister};
+use metrics::gauge::U64Gauge;
+use metrics::metric_register::MetricsRegister;
 use models::meta_data::ReplicationSetId;
-use replication::{raft_node::RaftNodeMetrics, RaftNodeId};
+use replication::raft_node::RaftNodeMetrics;
+use replication::RaftNodeId;
 
 #[derive(Debug)]
 pub struct RaftMetrics {
@@ -89,14 +92,12 @@ impl RaftMetrics {
                             "raft replication behind leader",
                         );
 
-                        let applied_id = metric.recorder([
+                        metric.recorder([
                             ("tenant", self.tenant.to_string()),
                             ("database", self.db_name.to_string()),
                             ("replica_id", self.replica_id.to_string()),
                             ("vnode_id", id.to_string()),
-                        ]);
-
-                        applied_id
+                        ])
                     });
 
                     let value = if last_log_index >= status.unwrap_or_default().index {

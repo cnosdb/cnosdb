@@ -8,7 +8,7 @@ use openraft::SnapshotPolicy;
 use protos::raft_service::raft_service_server::RaftServiceServer;
 use replication::apply_store::HeedApplyStorage;
 use replication::entry_store::HeedEntryStorage;
-use replication::errors::{ReplicationError, ReplicationResult};
+use replication::errors::{MsgInvalidSnafu, ReplicationResult};
 use replication::multi_raft::MultiRaft;
 use replication::network_grpc::RaftCBServer;
 use replication::network_http::{EitherBody, RaftHttpAdmin, SyncSendError};
@@ -19,6 +19,7 @@ use replication::{RaftNodeId, RaftNodeInfo, ReplicationConfig};
 use tokio::sync::RwLock;
 use tower::Service;
 use trace::{debug, info};
+use tracing::error;
 use warp::{hyper, Filter};
 
 const TEST_DATA_DIR: &str = "/tmp/cnosdb/raft_test";
@@ -201,8 +202,11 @@ impl RaftNodeServer {
             .and_then(
                 |req: hyper::body::Bytes, engine: Arc<RwLock<HeedApplyStorage>>| async move {
                     let req: String = serde_json::from_slice(&req)
-                        .map_err(ReplicationError::from)
-                        .map_err(warp::reject::custom)?;
+                        .map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())
+                        .map_err(|e| {
+                            error!("serde error: {:?}", e);
+                            warp::reject::custom(e)
+                        })?;
 
                     let rsp = engine
                         .read()
@@ -225,8 +229,11 @@ impl RaftNodeServer {
             .and_then(|req: hyper::body::Bytes, node: Arc<RaftNode>| async move {
                 let rsp = node.raw_raft().client_write(req.to_vec()).await;
                 let data = serde_json::to_string(&rsp)
-                    .map_err(ReplicationError::from)
-                    .map_err(warp::reject::custom)?;
+                    .map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())
+                    .map_err(|e| {
+                        error!("serde error: {:?}", e);
+                        warp::reject::custom(e)
+                    })?;
                 let res: Result<String, warp::Rejection> = Ok(data);
 
                 res
@@ -241,8 +248,11 @@ impl RaftNodeServer {
             .and(self.with_raft_node())
             .and_then(|req: hyper::body::Bytes, node: Arc<RaftNode>| async move {
                 let idx_id: u64 = serde_json::from_slice(&req)
-                    .map_err(ReplicationError::from)
-                    .map_err(warp::reject::custom)?;
+                    .map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())
+                    .map_err(|e| {
+                        error!("serde error: {:?}", e);
+                        warp::reject::custom(e)
+                    })?;
 
                 let rsp = node
                     .raw_raft()

@@ -17,7 +17,7 @@ use datafusion::common::Result as DFResult;
 use datafusion::error::DataFusionError;
 use datafusion::scalar::ScalarValue;
 use spi::query::function::FunctionMetadataManager;
-use spi::{QueryError, Result};
+use spi::{QueryError, QueryResult};
 
 pub const SAMPLE_UDAF_NAME: &str = "sample";
 pub const COMPACT_STATE_AGG_UDAF_NAME: &str = "compact_state_agg";
@@ -34,7 +34,7 @@ pub const VALIDITY_UDF_NAME: &str = "validity";
 pub use gauge::GaugeData;
 pub use state_agg::StateAggData;
 
-pub fn register_udafs(func_manager: &mut dyn FunctionMetadataManager) -> Result<()> {
+pub fn register_udafs(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<()> {
     // extend function...
     // eg.
     //   example::register_udaf(func_manager)?;

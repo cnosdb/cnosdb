@@ -12,11 +12,13 @@ use models::schema::{ColumnType, TableColumn};
 use models::{ColumnId, Timestamp};
 use parking_lot::RwLock;
 use skiplist::OrderedSkipList;
+use snafu::ResultExt;
 
 use super::{
     BatchReader, BatchReaderRef, SchemableTskvRecordBatchStream,
     SendableSchemableTskvRecordBatchStream,
 };
+use crate::error::ArrowSnafu;
 use crate::memcache::{RowData, SeriesData};
 use crate::reader::iterator::{ArrayBuilderPtr, RowIterator};
 use crate::reader::utils::TimeRangeProvider;
@@ -231,7 +233,7 @@ impl Stream for MemcacheRecordBatchStream {
         if arrays.len() == column_nums && column_nums > 0 {
             // 可以构造 RecordBatch
             return Poll::Ready(Some(
-                RecordBatch::try_new(schema, arrays).map_err(Into::into),
+                RecordBatch::try_new(schema, arrays).context(ArrowSnafu),
             ));
         }
         Poll::Ready(None)
@@ -243,10 +245,7 @@ fn convert_data_type_if_necessary(
     target_type: &arrow_schema::DataType,
 ) -> TskvResult<ArrayRef> {
     if array.data_type() != target_type {
-        match cast::cast(&array, target_type) {
-            Ok(array) => Ok(array),
-            Err(e) => Err(e.into()),
-        }
+        cast::cast(&array, target_type).context(ArrowSnafu)
     } else {
         Ok(array)
     }

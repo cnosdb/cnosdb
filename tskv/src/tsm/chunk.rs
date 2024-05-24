@@ -5,10 +5,11 @@ use arrow_schema::{Field, Schema, SchemaRef};
 use models::predicate::domain::TimeRange;
 use models::{SeriesId, SeriesKey};
 use serde::{Deserialize, Serialize};
+use snafu::IntoError;
 
+use crate::error::{DecodeSnafu, EncodeSnafu, TsmColumnGroupSnafu};
 use crate::tsm::column_group::ColumnGroup;
 use crate::tsm::ColumnGroupID;
-use crate::TskvError;
 
 /// A chunk of data for a series at least two columns
 #[derive(Clone, Default, Debug, Serialize, Deserialize)]
@@ -78,22 +79,23 @@ impl Chunk {
     }
 
     pub fn serialize(&self) -> crate::TskvResult<Vec<u8>> {
-        bincode::serialize(&self).map_err(|e| TskvError::Serialize { source: e.into() })
+        bincode::serialize(&self).map_err(|e| EncodeSnafu.into_error(e))
     }
 
     pub fn deserialize(bytes: &[u8]) -> crate::TskvResult<Self> {
-        bincode::deserialize(bytes).map_err(|e| TskvError::Deserialize { source: e.into() })
+        bincode::deserialize(bytes).map_err(|e| DecodeSnafu.into_error(e))
     }
 
     pub fn push(&mut self, column_group: Arc<ColumnGroup>) -> crate::TskvResult<()> {
         if self.time_range.max_ts > column_group.time_range().min_ts {
-            return Err(TskvError::TsmColumnGroupError {
+            return Err(TsmColumnGroupSnafu {
                 reason: format!(
                     "invalid column group time range, current max_ts: {}, new min_ts: {}",
                     self.time_range.max_ts,
                     column_group.time_range().min_ts
                 ),
-            });
+            }
+            .build());
         }
         self.time_range.merge(column_group.time_range());
         if self
@@ -101,12 +103,13 @@ impl Chunk {
             .get(&column_group.column_group_id())
             .is_some()
         {
-            return Err(TskvError::TsmColumnGroupError {
+            return Err(TsmColumnGroupSnafu {
                 reason: format!(
                     "duplicate column group id: {}, failed push pages meta to tsm_meta",
                     column_group.column_group_id()
                 ),
-            });
+            }
+            .build());
         }
         self.column_groups
             .insert(column_group.column_group_id(), column_group);
@@ -134,10 +137,10 @@ impl Chunk {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ChunkWriteSpec {
-    pub(crate) series_id: SeriesId,
-    pub(crate) chunk_offset: u64,
-    pub(crate) chunk_size: u64,
-    pub(crate) statics: ChunkStatics,
+    series_id: SeriesId,
+    chunk_offset: u64,
+    chunk_size: u64,
+    statics: ChunkStatics,
 }
 
 impl ChunkWriteSpec {
@@ -175,5 +178,15 @@ impl ChunkWriteSpec {
 /// ChunkStatics
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ChunkStatics {
-    pub(crate) time_range: TimeRange,
+    time_range: TimeRange,
+}
+
+impl ChunkStatics {
+    pub fn new(time_range: TimeRange) -> Self {
+        Self { time_range }
+    }
+
+    pub fn time_range(&self) -> &TimeRange {
+        &self.time_range
+    }
 }

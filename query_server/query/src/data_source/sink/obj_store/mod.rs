@@ -14,7 +14,7 @@ use object_store::path::Path;
 use object_store::DynObjectStore;
 use spi::query::datasource::WriteContext;
 use spi::query::session::SqlExecInfo;
-use spi::{QueryError, Result};
+use spi::{ObjectStoreSnafu, QueryError, QueryResult};
 use trace::debug;
 
 use super::DynRecordBatchSerializer;
@@ -28,13 +28,13 @@ pub struct ObjectStoreSink {
 
 #[async_trait]
 impl RecordBatchSink for ObjectStoreSink {
-    async fn append(&self, _: RecordBatch) -> Result<SinkMetadata> {
+    async fn append(&self, _: RecordBatch) -> QueryResult<SinkMetadata> {
         Err(QueryError::Unimplement {
             msg: "ObjectStoreRecordBatchSink::append".to_string(),
         })
     }
 
-    async fn stream_write(&self, stream: SendableRecordBatchStream) -> Result<SinkMetadata> {
+    async fn stream_write(&self, stream: SendableRecordBatchStream) -> QueryResult<SinkMetadata> {
         debug!("Process ObjectStoreRecordBatchSink::stream_write");
 
         pin_mut!(stream);
@@ -154,14 +154,14 @@ impl<'a> BufferedWriter<'a> {
         }
     }
 
-    pub async fn write(&mut self, batch: RecordBatch) -> Result<()> {
+    pub async fn write(&mut self, batch: RecordBatch) -> QueryResult<()> {
         self.buffered_size += batch.get_array_memory_size();
         self.buffer.push(batch);
         self.try_flush().await?;
         Ok(())
     }
 
-    pub async fn try_flush(&mut self) -> Result<()> {
+    pub async fn try_flush(&mut self) -> QueryResult<()> {
         if self.buffered_size >= self.max_file_size {
             self.flush().await?;
         }
@@ -169,7 +169,7 @@ impl<'a> BufferedWriter<'a> {
         Ok(())
     }
 
-    async fn flush(&mut self) -> Result<()> {
+    async fn flush(&mut self) -> QueryResult<()> {
         if self.buffered_size == 0 {
             return Ok(());
         }
@@ -200,7 +200,10 @@ impl<'a> BufferedWriter<'a> {
                 self.ctx.file_extension()
             ));
 
-            self.object_store.put(&path, data).await?;
+            self.object_store
+                .put(&path, data)
+                .await
+                .map_err(|e| ObjectStoreSnafu { msg: e.to_string() }.build())?;
 
             debug!("Generated file: {}, size: {} bytes.", path, bytes_writed);
 
@@ -211,7 +214,7 @@ impl<'a> BufferedWriter<'a> {
         Ok(())
     }
 
-    pub async fn close(mut self) -> Result<SinkMetadata> {
+    pub async fn close(mut self) -> QueryResult<SinkMetadata> {
         self.flush().await?;
 
         Ok(SinkMetadata::new(self.rows_writed, self.bytes_writed))

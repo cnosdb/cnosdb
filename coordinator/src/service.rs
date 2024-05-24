@@ -43,6 +43,7 @@ use protocol_parser::Line;
 use protos::kv_service::admin_command::Command::*;
 use protos::kv_service::*;
 use replication::multi_raft::MultiRaft;
+use snafu::{IntoError, OptionExt, ResultExt};
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Receiver;
 use tokio::task::JoinHandle;
@@ -51,10 +52,13 @@ use tokio_retry::strategy::{jitter, ExponentialBackoff};
 use tokio_retry::Retry;
 use trace::span_ext::SpanExt;
 use trace::{debug, error, info, Span, SpanContext};
-use tskv::{EngineRef, TskvError};
+use tskv::EngineRef;
 use utils::BkdrHasher;
 
-use crate::errors::*;
+use crate::errors::{
+    ArrowSnafu, BincodeSerdeSnafu, ColumnNotFoundSnafu, CommonSnafu, CoordinatorError,
+    CoordinatorResult, FieldsIsEmptySnafu, MetaSnafu,
+};
 use crate::metrics::LPReporter;
 use crate::raft::manager::RaftNodesManager;
 use crate::raft::writer::TskvRaftWriter;
@@ -344,7 +348,8 @@ impl CoordService {
                         coord
                             .meta_manager()
                             .write_resourceinfo(resourceinfo.get_name(), resourceinfo.clone())
-                            .await?;
+                            .await
+                            .context(MetaSnafu)?;
                         match *resourceinfo.get_status() {
                             ResourceStatus::Schedule => {
                                 if let Ok(mut joinhandle_map) = coord.async_task_joinhandle.lock() {
@@ -462,14 +467,15 @@ impl CoordService {
             }
         }
 
-        let meta =
-            self.tenant_meta(&info.tenant)
-                .await
-                .ok_or(CoordinatorError::TenantNotFound {
-                    name: info.tenant.clone(),
-                })?;
+        let meta = self.tenant_meta(&info.tenant).await.ok_or_else(|| {
+            CoordinatorError::TenantNotFound {
+                name: info.tenant.clone(),
+            }
+        })?;
 
-        meta.delete_bucket(&info.database, info.bucket.id).await?;
+        meta.delete_bucket(&info.database, info.bucket.id)
+            .await
+            .context(MetaSnafu)?;
 
         Ok(())
     }
@@ -480,12 +486,16 @@ impl CoordService {
         database: &str,
         time_ranges: &TimeRanges,
     ) -> Result<Vec<ReplicationSet>, CoordinatorError> {
-        let meta = self.meta_manager().tenant_meta(tenant).await.ok_or(
-            CoordinatorError::TenantNotFound {
+        let meta = self
+            .meta_manager()
+            .tenant_meta(tenant)
+            .await
+            .ok_or_else(|| CoordinatorError::TenantNotFound {
                 name: tenant.to_string(),
-            },
-        )?;
-        let buckets = meta.mapping_bucket(database, time_ranges.min_ts(), time_ranges.max_ts())?;
+            })?;
+        let buckets = meta
+            .mapping_bucket(database, time_ranges.min_ts(), time_ranges.max_ts())
+            .context(MetaSnafu)?;
         let shards = buckets.into_iter().flat_map(|b| b.shard_group).collect();
 
         Ok(shards)
@@ -497,10 +507,11 @@ impl CoordService {
 
         let checker = async move {
             meta.limiter(&tenant)
-                .await?
+                .await
+                .context(MetaSnafu)?
                 .check_coord_queries()
                 .await
-                .map_err(CoordinatorError::from)
+                .context(MetaSnafu)
         };
 
         Box::pin(checker)
@@ -522,7 +533,7 @@ impl CoordService {
         let data = self.admin_command_on_node(node_id, request).await?;
         match record_batch_decode(&data) {
             Ok(r) => Ok(r),
-            Err(e) => Err(CoordinatorError::ArrowError { source: e }),
+            Err(e) => Err(ArrowSnafu.into_error(e)),
         }
     }
 
@@ -538,11 +549,14 @@ impl CoordService {
         {
             let _span = Span::from_context("limit check", span_ctx);
 
-            let limiter = self.meta.limiter(tenant).await?;
+            let limiter = self.meta.limiter(tenant).await.context(MetaSnafu)?;
             let write_size = points.len();
 
-            limiter.check_coord_writes().await?;
-            limiter.check_coord_data_in(write_size).await?;
+            limiter.check_coord_writes().await.context(MetaSnafu)?;
+            limiter
+                .check_coord_data_in(write_size)
+                .await
+                .context(MetaSnafu)?;
 
             self.metrics.coord_writes(tenant, db).inc_one();
             self.metrics
@@ -550,9 +564,10 @@ impl CoordService {
                 .inc(write_size as u64);
         }
         if info.vnodes.is_empty() {
-            return Err(CoordinatorError::CommonError {
+            return Err(CommonSnafu {
                 msg: "no available vnode in replication set".to_string(),
-            });
+            }
+            .build());
         }
 
         let mut requests: Vec<Pin<Box<dyn Future<Output = Result<(), CoordinatorError>> + Send>>> =
@@ -711,20 +726,19 @@ impl Coordinator for CoordService {
         span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<usize> {
         let mut write_bytes: usize = 0;
-        let meta_client =
-            self.meta
-                .tenant_meta(tenant)
-                .await
-                .ok_or(CoordinatorError::TenantNotFound {
-                    name: tenant.to_string(),
-                })?;
+        let meta_client = self.meta.tenant_meta(tenant).await.ok_or_else(|| {
+            CoordinatorError::TenantNotFound {
+                name: tenant.to_string(),
+            }
+        })?;
         let mut map_lines: HashMap<ReplicationSetId, VnodeLines> = HashMap::new();
-        let db_schema =
-            meta_client
-                .get_db_schema(db)?
-                .ok_or_else(|| MetaError::DatabaseNotFound {
-                    database: db.to_string(),
-                })?;
+        let db_schema = meta_client
+            .get_db_schema(db)
+            .context(MetaSnafu)?
+            .ok_or_else(|| MetaError::DatabaseNotFound {
+                database: db.to_string(),
+            })
+            .context(MetaSnafu)?;
         if db_schema.options().get_db_is_hidden() {
             return Err(crate::errors::CoordinatorError::Meta {
                 source: MetaError::DatabaseNotFound {
@@ -735,24 +749,29 @@ impl Coordinator for CoordService {
 
         let db_precision = db_schema.config.precision_or_default();
         for line in lines {
-            let ts = timestamp_convert(precision, *db_precision, line.timestamp).ok_or(
-                CoordinatorError::CommonError {
-                    msg: "timestamp overflow".to_string(),
-                },
-            )?;
+            let ts =
+                timestamp_convert(precision, *db_precision, line.timestamp).ok_or_else(|| {
+                    CommonSnafu {
+                        msg: "timestamp overflow".to_string(),
+                    }
+                    .build()
+                })?;
             let info = meta_client
                 .locate_replication_set_for_write(db, line.hash_id, ts)
-                .await?;
+                .await
+                .context(MetaSnafu)?;
             let lines_entry = map_lines.entry(info.id).or_insert(VnodeLines::new(info));
             lines_entry.add_line(line)
         }
 
         let mut requests = Vec::new();
         for lines in map_lines.into_values() {
-            let batches =
-                line_to_batches(&lines.lines).map_err(|e| CoordinatorError::CommonError {
+            let batches = line_to_batches(&lines.lines).map_err(|e| {
+                CommonSnafu {
                     msg: format!("line to batch error: {}", e),
-                })?;
+                }
+                .build()
+            })?;
             let points = Arc::new(mutable_batches_to_point(db, batches));
             write_bytes += points.len();
             requests.extend(
@@ -784,13 +803,11 @@ impl Coordinator for CoordService {
         let mut precision = Precision::NS;
         let tenant = table_schema.tenant.as_str();
         let db = table_schema.db.as_str();
-        let meta_client =
-            self.meta
-                .tenant_meta(tenant)
-                .await
-                .ok_or(CoordinatorError::TenantNotFound {
-                    name: tenant.to_string(),
-                })?;
+        let meta_client = self.meta.tenant_meta(tenant).await.ok_or_else(|| {
+            CoordinatorError::TenantNotFound {
+                name: tenant.to_string(),
+            }
+        })?;
 
         let mut repl_idx: HashMap<ReplicationSet, Vec<u32>> = HashMap::new();
         let schema = record_batch.schema().fields.clone();
@@ -804,29 +821,34 @@ impl Coordinator for CoordService {
             let mut has_fileds = false;
             for (column, schema) in columns.iter().zip(schema.iter()) {
                 let name = schema.name().as_str();
-                let tskv_schema_column =
-                    table_schema
-                        .column(name)
-                        .ok_or(CoordinatorError::CommonError {
-                            msg: format!("column {} not found in table {}", name, table_name),
-                        })?;
+                let tskv_schema_column = table_schema.column(name).ok_or_else(|| {
+                    CommonSnafu {
+                        msg: format!("column {} not found in table {}", name, table_name),
+                    }
+                    .build()
+                })?;
                 if name == TIME_FIELD {
                     let precsion_and_value =
                         get_precision_and_value_from_arrow_column(column, idx)?;
                     precision = precsion_and_value.0;
-                    ts = timestamp_convert(precision, db_precision, precsion_and_value.1).ok_or(
-                        CoordinatorError::CommonError {
-                            msg: "timestamp overflow".to_string(),
-                        },
-                    )?;
+                    ts = timestamp_convert(precision, db_precision, precsion_and_value.1)
+                        .ok_or_else(|| {
+                            CommonSnafu {
+                                msg: "timestamp overflow".to_string(),
+                            }
+                            .build()
+                        })?;
                     has_ts = true;
                 }
                 if matches!(tskv_schema_column.column_type, ColumnType::Tag) {
                     let value = column
                         .as_any()
                         .downcast_ref::<StringArray>()
-                        .ok_or(CoordinatorError::CommonError {
-                            msg: format!("column {} is not StringArray", name),
+                        .ok_or_else(|| {
+                            CommonSnafu {
+                                msg: format!("column {} is not StringArray", name),
+                            }
+                            .build()
                         })?
                         .value(idx);
                     hasher.hash_with(name.as_bytes());
@@ -841,21 +863,21 @@ impl Coordinator for CoordService {
             }
 
             if !has_ts {
-                return Err(CoordinatorError::CommonError {
+                return Err(CommonSnafu {
                     msg: format!("column {} not found in table {}", TIME_FIELD, table_name),
-                });
+                }
+                .build());
             }
 
             if !has_fileds {
-                return Err(CoordinatorError::TskvError {
-                    source: TskvError::FieldsIsEmpty,
-                });
+                return Err(FieldsIsEmptySnafu.build());
             }
 
             let hash = hasher.number();
             let info = meta_client
                 .locate_replication_set_for_write(db, hash, ts)
-                .await?;
+                .await
+                .context(MetaSnafu)?;
             repl_idx.entry(info).or_default().push(idx as u32);
         }
 
@@ -866,16 +888,22 @@ impl Coordinator for CoordService {
                 .columns()
                 .iter()
                 .map(|column| {
-                    take(column, &indices, None).map_err(|e| CoordinatorError::CommonError {
-                        msg: format!("take column error: {}", e),
+                    take(column, &indices, None).map_err(|e| {
+                        CommonSnafu {
+                            msg: format!("take column error: {}", e),
+                        }
+                        .build()
                     })
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             let schema = record_batch.schema();
             let points = Arc::new(
                 arrow_array_to_points(columns, schema, table_schema.clone(), indices.len())
-                    .map_err(|e| CoordinatorError::CommonError {
-                        msg: format!("arrow array to points error: {}", e),
+                    .map_err(|e| {
+                        CommonSnafu {
+                            msg: format!("arrow array to points error: {}", e),
+                        }
+                        .build()
                     })?,
             );
             write_bytes += points.len();
@@ -961,7 +989,7 @@ impl Coordinator for CoordService {
 
         let now = tokio::time::Instant::now();
         let mut requests = vec![];
-        let predicate_bytes = bincode::serialize(predicate)?;
+        let predicate_bytes = bincode::serialize(predicate).context(BincodeSerdeSnafu)?;
         for replica in replicas.iter() {
             let request = DeleteFromTableRequest {
                 tenant: table.tenant().to_string(),
@@ -998,9 +1026,10 @@ impl Coordinator for CoordService {
             ReplicationCmdType::AddRaftFollower(replica_id, node_id) => {
                 let replica = get_replica_all_info(self.meta.clone(), tenant, replica_id).await?;
                 if replica.replica_set.by_node_id(node_id).is_some() {
-                    return Err(CoordinatorError::CommonError {
+                    return Err(CommonSnafu {
                         msg: format!("A Replication Already in {}", node_id),
-                    });
+                    }
+                    .build());
                 }
                 (
                     AdminCommand {
@@ -1144,13 +1173,11 @@ impl Coordinator for CoordService {
         let db = &table_schema.db;
         let table_name = &table_schema.name;
 
-        let tenant_meta =
-            self.meta
-                .tenant_meta(tenant)
-                .await
-                .ok_or(CoordinatorError::TenantNotFound {
-                    name: tenant.to_string(),
-                })?;
+        let tenant_meta = self.meta.tenant_meta(tenant).await.ok_or_else(|| {
+            CoordinatorError::TenantNotFound {
+                name: tenant.to_string(),
+            }
+        })?;
 
         let mut series_keys = vec![];
         for new_tag in new_tags.iter_mut() {
@@ -1159,7 +1186,7 @@ impl Coordinator for CoordService {
 
             let id = table_schema
                 .column(&tag_name)
-                .ok_or(TskvError::ColumnNotFound { column: tag_name })?
+                .context(ColumnNotFoundSnafu { name: tag_name })?
                 .id;
             new_tag.key = format!("{id}").into_bytes();
         }
@@ -1174,19 +1201,22 @@ impl Coordinator for CoordService {
                 let mut tags = vec![];
                 for (column, schema) in columns.iter().zip(schema.iter()) {
                     let name = schema.name().as_str();
-                    let tskv_schema_column =
-                        table_schema
-                            .column(name)
-                            .ok_or(CoordinatorError::CommonError {
-                                msg: format!("column {} not found in table {}", name, table_name),
-                            })?;
+                    let tskv_schema_column = table_schema.column(name).ok_or_else(|| {
+                        CommonSnafu {
+                            msg: format!("column {} not found in table {}", name, table_name),
+                        }
+                        .build()
+                    })?;
 
                     if matches!(tskv_schema_column.column_type, ColumnType::Tag) {
                         let value = column
                             .as_any()
                             .downcast_ref::<StringArray>()
-                            .ok_or(CoordinatorError::CommonError {
-                                msg: format!("column {} is not string", name),
+                            .ok_or_else(|| {
+                                CommonSnafu {
+                                    msg: format!("column {} is not string", name),
+                                }
+                                .build()
                             })?
                             .value(idx);
 
@@ -1298,15 +1328,19 @@ fn get_precision_and_value_from_arrow_column(
 ) -> CoordinatorResult<(Precision, i64)> {
     match column.data_type() {
         DataType::Timestamp(unit, _) => match unit {
-            TimeUnit::Second => Err(CoordinatorError::CommonError {
+            TimeUnit::Second => Err(CommonSnafu {
                 msg: "time field not support second".to_string(),
-            }),
+            }
+            .build()),
             TimeUnit::Millisecond => {
                 let value = column
                     .as_any()
                     .downcast_ref::<TimestampMillisecondArray>()
-                    .ok_or(CoordinatorError::CommonError {
-                        msg: "time field data type miss match: millisecond".to_string(),
+                    .ok_or_else(|| {
+                        CommonSnafu {
+                            msg: "time field data type miss match: millisecond".to_string(),
+                        }
+                        .build()
                     })?
                     .value(idx);
                 Ok((Precision::MS, value))
@@ -1315,8 +1349,11 @@ fn get_precision_and_value_from_arrow_column(
                 let value = column
                     .as_any()
                     .downcast_ref::<TimestampMicrosecondArray>()
-                    .ok_or(CoordinatorError::CommonError {
-                        msg: "time field data type miss match: microsecond".to_string(),
+                    .ok_or_else(|| {
+                        CommonSnafu {
+                            msg: "time field data type miss match: microsecond".to_string(),
+                        }
+                        .build()
                     })?
                     .value(idx);
                 Ok((Precision::US, value))
@@ -1325,8 +1362,11 @@ fn get_precision_and_value_from_arrow_column(
                 let value = column
                     .as_any()
                     .downcast_ref::<TimestampNanosecondArray>()
-                    .ok_or(CoordinatorError::CommonError {
-                        msg: "time field data type miss match: nanosecond".to_string(),
+                    .ok_or_else(|| {
+                        CommonSnafu {
+                            msg: "time field data type miss match: nanosecond".to_string(),
+                        }
+                        .build()
                     })?
                     .value(idx);
                 Ok((Precision::NS, value))
@@ -1336,14 +1376,18 @@ fn get_precision_and_value_from_arrow_column(
             let value = column
                 .as_any()
                 .downcast_ref::<Int64Array>()
-                .ok_or(CoordinatorError::CommonError {
-                    msg: "time field data type miss match: int64".to_string(),
+                .ok_or_else(|| {
+                    CommonSnafu {
+                        msg: "time field data type miss match: int64".to_string(),
+                    }
+                    .build()
                 })?
                 .value(idx);
             Ok((Precision::NS, value))
         }
-        _ => Err(CoordinatorError::CommonError {
+        _ => Err(CommonSnafu {
             msg: "time field data type miss match".to_string(),
-        }),
+        }
+        .build()),
     }
 }

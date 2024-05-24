@@ -3,9 +3,11 @@ use protos::kv_service::RaftWriteCommand;
 use protos::models_helper::parse_prost_bytes;
 use replication::errors::{ReplicationError, ReplicationResult};
 use replication::{EntriesMetrics, EntryStorage, RaftNodeId, RaftNodeInfo, TypeConfig};
+use snafu::IntoError;
 use trace::info;
 
 use super::reader::WalRecordData;
+use crate::error::{DecodeSnafu, WalTruncatedSnafu};
 use crate::file_system::async_filesystem::LocalFileSystem;
 use crate::file_system::FileSystem;
 use crate::record_file::Record;
@@ -50,7 +52,7 @@ impl RaftEntryStorage {
         if let Some(apply_id) = apply_id {
             self.del_after(apply_id.index + 1)
                 .await
-                .map_err(|_err| TskvError::WalTruncated)?;
+                .map_err(|_| WalTruncatedSnafu.build())?;
         }
 
         Ok(())
@@ -422,7 +424,7 @@ impl RaftEntryStorageInner {
                     Err(TskvError::RecordFileHashCheckFailed { .. }) => continue,
                     Err(e) => {
                         trace::error!("Error reading wal: {:?}", e);
-                        return Err(TskvError::WalTruncated);
+                        return Err(WalTruncatedSnafu.build());
                     }
                 }
             }
@@ -454,12 +456,8 @@ impl RaftEntryStorageInner {
                             apply_type: replication::APPLY_TYPE_WAL,
                         };
 
-                        let request =
-                            parse_prost_bytes::<RaftWriteCommand>(req).map_err(|err| {
-                                TskvError::Decode {
-                                    source: Box::new(err),
-                                }
-                            })?;
+                        let request = parse_prost_bytes::<RaftWriteCommand>(req)
+                            .map_err(|e| DecodeSnafu.into_error(Box::new(e)))?;
                         if let Some(command) = request.command {
                             vode_store.apply(&ctx, command).await?;
                         }

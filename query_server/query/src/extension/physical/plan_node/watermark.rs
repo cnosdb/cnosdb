@@ -20,7 +20,7 @@ use datafusion::physical_plan::{
 };
 use futures::{Stream, StreamExt};
 use models::schema::Watermark;
-use spi::{QueryError, Result};
+use spi::{QueryError, QueryResult};
 use trace::debug;
 
 use crate::extension::WATERMARK_DELAY_MS;
@@ -255,7 +255,7 @@ impl RecordBatchStream for WatermarkStream {
     }
 }
 
-pub fn max_timestamp(col: &str, array: &ArrayRef) -> Result<Option<i64>> {
+pub fn max_timestamp(col: &str, array: &ArrayRef) -> QueryResult<Option<i64>> {
     let value = match array.data_type() {
         DataType::Timestamp(TimeUnit::Second, _) => {
             let primitive_array = as_primitive_array::<TimestampSecondType>(array.as_ref());

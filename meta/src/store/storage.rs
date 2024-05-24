@@ -10,9 +10,10 @@ use models::auth::user::{UserDesc, UserOptions};
 use models::meta_data::*;
 use models::oid::{Identifier, Oid, UuidGenerator};
 use models::schema::{DatabaseSchema, ResourceInfo, TableSchema, Tenant, TenantOptions};
-use replication::errors::{ReplicationError, ReplicationResult};
+use replication::errors::{HeedSnafu, MsgInvalidSnafu, ReplicationResult, SnapshotErrSnafu};
 use replication::{ApplyContext, ApplyStorage, EngineMetrics, Request, Response};
 use serde::{Deserialize, Serialize};
+use snafu::ResultExt;
 use trace::{debug, error, info};
 
 use super::command::*;
@@ -72,24 +73,29 @@ impl ApplyStorage for StateMachine {
     }
 
     async fn create_snapshot(&mut self, applied_id: u64) -> ReplicationResult<(Vec<u8>, u64)> {
-        let data = self.backup().map_err(|err| ReplicationError::SnapshotErr {
-            msg: err.to_string(),
+        let data = self.backup().map_err(|err| {
+            SnapshotErrSnafu {
+                msg: err.to_string(),
+            }
+            .build()
         })?;
 
-        let bytes = serde_json::to_vec(&data)?;
+        let bytes = serde_json::to_vec(&data)
+            .map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())?;
         self.snapshot = Some((bytes.clone(), applied_id));
 
         Ok((bytes, applied_id))
     }
 
     async fn restore(&mut self, snapshot: &[u8]) -> ReplicationResult<()> {
-        let data: BtreeMapSnapshotData = serde_json::from_slice(snapshot)?;
-        let mut writer = self.env.write_txn()?;
-        self.db.clear(&mut writer)?;
+        let data: BtreeMapSnapshotData = serde_json::from_slice(snapshot)
+            .map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())?;
+        let mut writer = self.env.write_txn().context(HeedSnafu)?;
+        self.db.clear(&mut writer).context(HeedSnafu)?;
         for (key, val) in data.map.iter() {
-            self.db.put(&mut writer, key, val)?;
+            self.db.put(&mut writer, key, val).context(HeedSnafu)?;
         }
-        writer.commit()?;
+        writer.commit().context(HeedSnafu)?;
 
         Ok(())
     }
@@ -1076,11 +1082,11 @@ impl StateMachine {
                 return self.to_tenant_meta_data(cluster, tenant);
             }
         }
-        let db_schema =
-            self.get_struct::<DatabaseSchema>(&db_path)?
-                .ok_or(MetaError::DatabaseNotFound {
-                    database: db.to_string(),
-                })?;
+        let db_schema = self
+            .get_struct::<DatabaseSchema>(&db_path)?
+            .ok_or_else(|| MetaError::DatabaseNotFound {
+                database: db.to_string(),
+            })?;
 
         let node_list = self.get_valid_node_list(cluster)?;
         check_node_enough(db_schema.config.replica_or_default(), &node_list)?;

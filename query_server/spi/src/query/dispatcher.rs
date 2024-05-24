@@ -11,11 +11,11 @@ use super::execution::QueryState;
 use crate::query::execution::{Output, QueryStateMachine};
 use crate::query::logical_planner::Plan;
 use crate::service::protocol::{Query, QueryId};
-use crate::Result;
+use crate::QueryResult;
 
 #[async_trait]
 pub trait QueryDispatcher: Send + Sync {
-    async fn start(&self) -> Result<()>;
+    async fn start(&self) -> QueryResult<()>;
 
     fn stop(&self);
 
@@ -29,18 +29,18 @@ pub trait QueryDispatcher: Send + Sync {
         id: QueryId,
         query: &Query,
         span: Option<&SpanContext>,
-    ) -> Result<Output>;
+    ) -> QueryResult<Output>;
 
     async fn build_logical_plan(
         &self,
         query_state_machine: Arc<QueryStateMachine>,
-    ) -> Result<Option<Plan>>;
+    ) -> QueryResult<Option<Plan>>;
 
     async fn execute_logical_plan(
         &self,
         logical_plan: Plan,
         query_state_machine: Arc<QueryStateMachine>,
-    ) -> Result<Output>;
+    ) -> QueryResult<Output>;
 
     async fn build_query_state_machine(
         &self,
@@ -48,7 +48,7 @@ pub trait QueryDispatcher: Send + Sync {
         id: QueryId,
         query: Query,
         span: Option<&SpanContext>,
-    ) -> Result<Arc<QueryStateMachine>>;
+    ) -> QueryResult<Arc<QueryStateMachine>>;
 
     fn running_query_infos(&self) -> Vec<QueryInfo>;
 

@@ -84,7 +84,7 @@ impl AccessControl for AccessControlNoCheck {
             .meta_manager
             .tenant_meta(tenant_name)
             .await
-            .ok_or(AuthError::TenantNotFound)?;
+            .ok_or_else(|| AuthError::TenantNotFound)?;
 
         if tenant_client.tenant().options().get_tenant_is_hidden() {
             return Err(AuthError::TenantNotFound);

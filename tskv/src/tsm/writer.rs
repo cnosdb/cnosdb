@@ -4,15 +4,14 @@ use std::io::IoSlice;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use models::codec::Encoding;
 use models::predicate::domain::TimeRange;
 use models::schema::TskvTableSchemaRef;
 use models::{SeriesId, SeriesKey};
-use snafu::ResultExt;
+use snafu::{OptionExt, ResultExt};
 use utils::BloomFilter;
 
 use crate::compaction::CompactingBlock;
-use crate::error::IOSnafu;
+use crate::error::{CommonSnafu, IOSnafu};
 use crate::file_system::async_filesystem::{LocalFileSystem, LocalFileType};
 use crate::file_system::file::stream_writer::FileStreamWriter;
 use crate::file_system::FileSystem;
@@ -21,7 +20,7 @@ use crate::tsm::chunk::{Chunk, ChunkStatics, ChunkWriteSpec};
 use crate::tsm::chunk_group::{ChunkGroup, ChunkGroupMeta, ChunkGroupWriteSpec};
 use crate::tsm::column_group::ColumnGroup;
 use crate::tsm::data_block::DataBlock;
-use crate::tsm::footer::{Footer, SeriesMeta, TableMeta};
+use crate::tsm::footer::{Footer, SeriesMeta, TableMeta, TsmVersion};
 use crate::tsm::page::{Page, PageWriteSpec};
 use crate::tsm::{ColumnGroupID, TsmWriteData, BLOOM_FILTER_BITS};
 use crate::{TskvError, TskvResult};
@@ -33,30 +32,7 @@ pub enum State {
     Finished,
 }
 
-pub enum Version {
-    V1,
-}
-
-pub struct WriteOptions {
-    _version: Version,
-    _write_statistics: bool,
-    _encode: Encoding,
-}
-
-impl Default for WriteOptions {
-    fn default() -> Self {
-        Self {
-            _version: Version::V1,
-            _write_statistics: true,
-            _encode: Encoding::Null,
-        }
-    }
-}
-
-const _HEADER_LEN: u64 = 5;
 const TSM_MAGIC: [u8; 4] = 0x12CDA16_u32.to_be_bytes();
-const VERSION: [u8; 1] = [1];
-
 const TSM_BUFFER_SIZE: usize = 16 * 1024 * 1024;
 pub struct TsmWriter {
     file_id: u64,
@@ -70,7 +46,6 @@ pub struct TsmWriter {
     // todo: table object id bloom filter
     // table_bloom_filter: BloomFilter,
     writer: Box<FileStreamWriter>,
-    _options: WriteOptions,
     table_schemas: HashMap<String, TskvTableSchemaRef>,
 
     /// <table < series, Chunk>>
@@ -114,12 +89,11 @@ impl TsmWriter {
             path,
             series_bloom_filter: BloomFilter::new(BLOOM_FILTER_BITS),
             writer,
-            _options: Default::default(),
             table_schemas: Default::default(),
             page_specs: Default::default(),
             chunk_specs: Default::default(),
             chunk_group_specs: Default::default(),
-            footer: Default::default(),
+            footer: Footer::empty(TsmVersion::V1),
             state: State::Initialised,
         }
     }
@@ -155,13 +129,7 @@ impl TsmWriter {
     pub async fn write_header(&mut self) -> TskvResult<usize> {
         let size = self
             .writer
-            .write_vec(
-                [
-                    IoSlice::new(TSM_MAGIC.as_slice()),
-                    IoSlice::new(VERSION.as_slice()),
-                ]
-                .as_mut_slice(),
-            )
+            .write_vec([IoSlice::new(TSM_MAGIC.as_slice())].as_mut_slice())
             .await
             .context(IOSnafu)?;
         self.state = State::Started;
@@ -181,12 +149,12 @@ impl TsmWriter {
         for (table, group) in &self.chunk_specs {
             let chunk_group_offset = self.writer.len() as u64;
             let buf = group.serialize()?;
-            let chunk_group_size = self.writer.write(&buf).await?;
-            self.size += chunk_group_size as u64;
+            let chunk_group_size = self.writer.write(&buf).await.context(IOSnafu)? as u64;
+            self.size += chunk_group_size;
             let chunk_group_spec = ChunkGroupWriteSpec {
                 table_schema: self.table_schemas.get(table).unwrap().clone(),
                 chunk_group_offset,
-                chunk_group_size: chunk_group_size as u64,
+                chunk_group_size,
                 time_range: group.time_range(),
                 // The number of chunks in the group.
                 count: 0,
@@ -199,16 +167,15 @@ impl TsmWriter {
     pub async fn write_chunk_group_specs(&mut self, series: SeriesMeta) -> TskvResult<()> {
         let chunk_group_specs_offset = self.writer.len() as u64;
         let buf = self.chunk_group_specs.serialize()?;
-        let chunk_group_specs_size = self.writer.write(&buf).await?;
+        let chunk_group_specs_size = self.writer.write(&buf).await.context(IOSnafu)?;
         self.size += chunk_group_specs_size as u64;
         let time_range = self.chunk_group_specs.time_range();
-        let footer = Footer {
-            version: 2_u8,
-            time_range,
-            table: TableMeta::new(chunk_group_specs_offset, chunk_group_specs_size as u64),
-            series,
-        };
-        self.footer = footer;
+        self.footer.set_time_range(time_range);
+        self.footer.set_table_meta(TableMeta::new(
+            chunk_group_specs_offset,
+            chunk_group_specs_size as u64,
+        ));
+        self.footer.set_series(series);
         Ok(())
     }
 
@@ -218,19 +185,17 @@ impl TsmWriter {
             for (series, chunk) in group {
                 let chunk_offset = self.writer.len() as u64;
                 let buf = chunk.serialize()?;
-                let chunk_size = self.writer.write(&buf).await?;
-                self.size += chunk_size as u64;
+                let chunk_size = self.writer.write(&buf).await.context(IOSnafu)? as u64;
+                self.size += chunk_size;
                 let time_range = chunk.time_range();
                 self.min_ts = min(self.min_ts, time_range.min_ts);
                 self.max_ts = max(self.max_ts, time_range.max_ts);
-                let chunk_spec = ChunkWriteSpec {
-                    series_id: *series,
+                let chunk_spec = ChunkWriteSpec::new(
+                    *series,
                     chunk_offset,
-                    chunk_size: chunk_size as u64,
-                    statics: ChunkStatics {
-                        time_range: *time_range,
-                    },
-                };
+                    chunk_size,
+                    ChunkStatics::new(*time_range),
+                );
                 self.chunk_specs
                     .entry(table.clone())
                     .or_default()
@@ -279,9 +244,10 @@ impl TsmWriter {
         datablock: DataBlock,
     ) -> TskvResult<()> {
         if self.state == State::Finished {
-            return Err(TskvError::CommonError {
-                reason: "Tsm2Writer has been finished".to_string(),
-            });
+            return Err(CommonSnafu {
+                reason: "TsmWriter has been finished".to_string(),
+            }
+            .build());
         }
 
         let time_range = datablock.time_range()?;
@@ -310,7 +276,7 @@ impl TsmWriter {
         let table = schema.name.clone();
         for page in pages {
             let offset = self.writer.len() as u64;
-            let size = self.writer.write(&page.bytes).await?;
+            let size = self.writer.write(&page.bytes).await.context(IOSnafu)?;
             self.size += size as u64;
             let spec = PageWriteSpec {
                 offset,
@@ -345,16 +311,16 @@ impl TsmWriter {
             self.create_column_group(schema.clone(), meta.series_id(), meta.series_key());
 
         let mut offset = self.writer.len() as u64;
-        let size = self.writer.write(&raw).await?;
+        let size = self.writer.write(&raw).await.context(IOSnafu)?;
         self.size += size as u64;
 
         let table = schema.name.to_string();
-        let column_group =
-            meta.column_group()
-                .get(&column_group_id)
-                .ok_or(TskvError::CommonError {
-                    reason: format!("column group not found: {}", column_group_id),
-                })?;
+        let column_group = meta
+            .column_group()
+            .get(&column_group_id)
+            .context(CommonSnafu {
+                reason: format!("column group not found: {}", column_group_id),
+            })?;
         for spec in column_group.pages() {
             let spec = PageWriteSpec {
                 offset,
@@ -427,7 +393,7 @@ impl TsmWriter {
         self.write_chunk_group().await?;
         self.write_chunk_group_specs(series_meta).await?;
         self.write_footer().await?;
-        self.writer.flush().await?;
+        self.writer.flush().await.context(IOSnafu)?;
         self.state = State::Finished;
         Ok(())
     }

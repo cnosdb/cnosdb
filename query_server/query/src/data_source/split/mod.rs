@@ -5,7 +5,8 @@ use datafusion::execution::context::SessionState;
 use datafusion::sql::TableReference;
 use models::object_reference::Resolve;
 use models::predicate::PlacedSplit;
-use spi::{QueryError, Result};
+use snafu::ResultExt;
+use spi::{AnalyzePushedFilterSnafu, CoordinatorSnafu, QueryResult};
 use trace::debug;
 
 use self::tskv::TableLayoutHandle;
@@ -34,7 +35,7 @@ impl SplitManager {
         &self,
         _ctx: &SessionState,
         table_layout: TableLayoutHandle,
-    ) -> Result<Vec<PlacedSplit>> {
+    ) -> QueryResult<Vec<PlacedSplit>> {
         let TableLayoutHandle {
             table, predicate, ..
         } = table_layout;
@@ -48,17 +49,15 @@ impl SplitManager {
 
         let limit = predicate.limit();
 
-        let resolved_predicate =
-            predicate
-                .resolve(&table)
-                .map_err(|reason| QueryError::AnalyzePushedFilter {
-                    reason: reason.to_string(),
-                })?;
+        let resolved_predicate = predicate
+            .resolve(&table)
+            .context(AnalyzePushedFilterSnafu)?;
 
         let shards = self
             .coord
             .table_vnodes(&table_name, resolved_predicate.clone())
-            .await?;
+            .await
+            .context(CoordinatorSnafu)?;
 
         let splits = shards
             .into_iter()

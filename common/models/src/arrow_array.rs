@@ -7,7 +7,7 @@ use datafusion::arrow::array::{
 use datafusion::arrow::datatypes::{DataType, TimeUnit};
 use datafusion::arrow::error::ArrowError;
 
-use crate::Error;
+use crate::errors::EncodingSnafu;
 
 pub trait WriteArrow {
     fn write(self, builder: &mut Box<dyn ArrayBuilder>) -> Result<(), ArrowError>;
@@ -29,7 +29,7 @@ impl WriteArrow for Vec<Option<Vec<u8>>> {
             let val = if let Some(ref vec) = arrow {
                 Some(
                     std::str::from_utf8(vec)
-                        .map_err(|_| Error::EncodingError)
+                        .map_err(|e| EncodingSnafu { msg: e.to_string() }.build())
                         .map_err(|e| ArrowError::ExternalError(Box::new(e)))?,
                 )
             } else {

@@ -7,6 +7,7 @@ use protos::kv_service::{
     raft_write_command, DropColumnRequest, DropTableRequest, RaftWriteCommand, UpdateSetValue,
     UpdateTagsRequest,
 };
+use snafu::ResultExt;
 use tokio::time::sleep;
 use tracing::{debug, error, info};
 
@@ -78,11 +79,13 @@ impl ResourceManager {
         coord: Arc<dyn Coordinator>,
         tenant_name: &str,
     ) -> CoordinatorResult<bool> {
-        let tenant = coord.meta_manager().tenant_meta(tenant_name).await.ok_or(
-            CoordinatorError::TenantNotFound {
+        let tenant = coord
+            .meta_manager()
+            .tenant_meta(tenant_name)
+            .await
+            .ok_or_else(|| CoordinatorError::TenantNotFound {
                 name: tenant_name.to_string(),
-            },
-        )?;
+            })?;
 
         // drop database in the tenant
         let all_dbs = tenant
@@ -107,15 +110,16 @@ impl ResourceManager {
         tenant_name: &str,
         db_name: &str,
     ) -> CoordinatorResult<bool> {
-        let tenant =
-            coord
-                .tenant_meta(tenant_name)
-                .await
-                .ok_or(CoordinatorError::TenantNotFound {
-                    name: tenant_name.to_string(),
-                })?;
+        let tenant = coord.tenant_meta(tenant_name).await.ok_or_else(|| {
+            CoordinatorError::TenantNotFound {
+                name: tenant_name.to_string(),
+            }
+        })?;
 
-        let buckets = tenant.get_db_info(db_name)?.map_or(vec![], |v| v.buckets);
+        let buckets = tenant
+            .get_db_info(db_name)
+            .context(MetaSnafu)?
+            .map_or(vec![], |v| v.buckets);
         for bucket in buckets {
             for replica in bucket.shard_group {
                 let cmd_type = ReplicationCmdType::DestoryRaftGroup(replica.id);
@@ -139,19 +143,21 @@ impl ResourceManager {
         table_name: &str,
     ) -> CoordinatorResult<bool> {
         info!("Drop table {}/{}/{}", tenant_name, db_name, table_name);
-        let tenant =
-            coord
-                .tenant_meta(tenant_name)
-                .await
-                .ok_or(CoordinatorError::TenantNotFound {
-                    name: tenant_name.to_string(),
-                })?;
+        let tenant = coord.tenant_meta(tenant_name).await.ok_or_else(|| {
+            CoordinatorError::TenantNotFound {
+                name: tenant_name.to_string(),
+            }
+        })?;
 
         let mut requests = vec![];
         let db_info = tenant
-            .get_db_info(db_name)?
-            .ok_or(CoordinatorError::CommonError {
-                msg: format!("database not found: {}", db_name),
+            .get_db_info(db_name)
+            .context(MetaSnafu)?
+            .ok_or_else(|| {
+                CommonSnafu {
+                    msg: format!("database not found: {}", db_name),
+                }
+                .build()
             })?;
 
         for bucket in db_info.buckets {
@@ -189,13 +195,11 @@ impl ResourceManager {
         resourceinfo: &ResourceInfo,
         tenant_name: &str,
     ) -> CoordinatorResult<bool> {
-        let tenant =
-            coord
-                .tenant_meta(tenant_name)
-                .await
-                .ok_or(CoordinatorError::TenantNotFound {
-                    name: tenant_name.to_string(),
-                })?;
+        let tenant = coord.tenant_meta(tenant_name).await.ok_or_else(|| {
+            CoordinatorError::TenantNotFound {
+                name: tenant_name.to_string(),
+            }
+        })?;
 
         match resourceinfo.get_operator() {
             ResourceOperator::AddColumn(table_schema, _) => {
@@ -203,17 +207,21 @@ impl ResourceManager {
                     .update_table(&TableSchema::TsKvTableSchema(Arc::new(
                         table_schema.clone(),
                     )))
-                    .await?;
+                    .await
+                    .context(MetaSnafu)?;
             }
 
             ResourceOperator::DropColumn(drop_column_name, table_schema) => {
                 let mut requests = vec![];
-                let db_info =
-                    tenant
-                        .get_db_info(&table_schema.db)?
-                        .ok_or(CoordinatorError::CommonError {
+                let db_info = tenant
+                    .get_db_info(&table_schema.db)
+                    .context(MetaSnafu)?
+                    .ok_or_else(|| {
+                        CommonSnafu {
                             msg: format!("database not found: {}", table_schema.db),
-                        })?;
+                        }
+                        .build()
+                    })?;
 
                 for bucket in db_info.buckets {
                     for replica in bucket.shard_group {
@@ -242,14 +250,16 @@ impl ResourceManager {
                     .update_table(&TableSchema::TsKvTableSchema(Arc::new(
                         table_schema.clone(),
                     )))
-                    .await?;
+                    .await
+                    .context(MetaSnafu)?;
             }
             ResourceOperator::AlterColumn(_, table_schema, _) => {
                 tenant
                     .update_table(&TableSchema::TsKvTableSchema(Arc::new(
                         table_schema.clone(),
                     )))
-                    .await?;
+                    .await
+                    .context(MetaSnafu)?;
             }
 
             _ => {}
@@ -309,7 +319,8 @@ impl ResourceManager {
         let opt = coord
             .meta_manager()
             .read_resourceinfo_by_name(resourceinfo.get_name())
-            .await?;
+            .await
+            .context(MetaSnafu)?;
         if opt.is_none()
             || opt.is_some_and(|old_resourceinfo| {
                 *old_resourceinfo.get_status() == ResourceStatus::Schedule
@@ -332,7 +343,8 @@ impl ResourceManager {
             coord
                 .meta_manager()
                 .write_resourceinfo(resourceinfo.get_name(), resourceinfo.clone())
-                .await?;
+                .await
+                .context(MetaSnafu)?;
 
             if *resourceinfo.get_status() == ResourceStatus::Executing {
                 // execute right now, if failed, retry later

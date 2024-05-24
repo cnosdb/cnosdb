@@ -7,6 +7,7 @@ use models::schema::{TableColumn, TskvTableSchemaRef};
 use models::{ColumnId, SeriesId};
 use utils::bitset::BitSet;
 
+use crate::error::{CommonSnafu, DataBlockSnafu};
 use crate::tsm::page::Page;
 use crate::tsm::TsmTombstone;
 use crate::{TskvError, TskvResult};
@@ -138,10 +139,11 @@ impl DataBlock {
                     }
                 }
                 _ => {
-                    return Err(TskvError::DataBlockError {
+                    return Err(DataBlockSnafu {
                         reason: "Time column does not support except i64 physical data type"
                             .to_string(),
-                    })
+                    }
+                    .build())
                 }
             }
         }
@@ -160,10 +162,11 @@ impl DataBlock {
                 }
             }
             _ => {
-                return Err(TskvError::DataBlockError {
+                return Err(DataBlockSnafu {
                     reason: "Time column does not support except i64 physical data type"
                         .to_string(),
-                })
+                }
+                .build())
             }
         }
         Ok((sort_index, time_array))
@@ -182,7 +185,7 @@ impl DataBlock {
             || self.schema.db != other.schema.db
             || self.schema.tenant != other.schema.tenant
         {
-            return Err(TskvError::CommonError {
+            return Err(CommonSnafu {
                 reason: format!(
                     "schema name not match in datablock merge, self: {}.{}.{}, other: {}.{}.{}",
                     self.schema.tenant,
@@ -192,7 +195,8 @@ impl DataBlock {
                     other.schema.db,
                     other.schema.name
                 ),
-            });
+            }
+            .build());
         }
         Ok(())
     }
@@ -208,9 +212,10 @@ impl DataBlock {
 
     pub fn chunk(&self, start: usize, end: usize) -> TskvResult<DataBlock> {
         if start > end || end > self.len() {
-            return Err(TskvError::CommonError {
+            return Err(CommonSnafu {
                 reason: "start or end index out of range".to_string(),
-            });
+            }
+            .build());
         }
 
         let ts_column = self.ts.chunk(start, end)?;
@@ -268,9 +273,10 @@ impl DataBlock {
                 min_ts: min,
                 max_ts: max,
             }),
-            _ => Err(TskvError::DataBlockError {
+            _ => Err(DataBlockSnafu {
                 reason: "Time column does not support except i64 physical data type".to_string(),
-            }),
+            }
+            .build()),
         }
     }
 }

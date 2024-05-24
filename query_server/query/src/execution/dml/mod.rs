@@ -4,14 +4,14 @@ use async_trait::async_trait;
 use spi::query::dispatcher::{QueryInfo, QueryStatus};
 use spi::query::execution::{Output, QueryExecution, QueryStateMachineRef};
 use spi::query::logical_planner::DMLPlan;
-use spi::Result;
+use spi::QueryResult;
 
 use self::delete_from_table::DeleteFromTableTask;
 
 /// Traits that DML tasks should implement
 #[async_trait]
 trait DMLDefinitionTask: Send + Sync {
-    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output>;
+    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> QueryResult<Output>;
 }
 
 pub struct DMLExecution {
@@ -32,7 +32,7 @@ impl DMLExecution {
 impl QueryExecution for DMLExecution {
     // execute DML task
     // This logic usually does not change
-    async fn start(&self) -> Result<Output> {
+    async fn start(&self) -> QueryResult<Output> {
         let query_state_machine = &self.query_state_machine;
 
         query_state_machine.begin_schedule();
@@ -53,7 +53,7 @@ impl QueryExecution for DMLExecution {
         result
     }
 
-    fn cancel(&self) -> Result<()> {
+    fn cancel(&self) -> QueryResult<()> {
         // DML ignore
         Ok(())
     }

@@ -1,11 +1,12 @@
 use async_trait::async_trait;
+use snafu::ResultExt;
 use spi::query::execution::{
     // ExecutionError, MetaSnafu,
     Output,
     QueryStateMachineRef,
 };
 use spi::query::logical_planner::{AlterUser, AlterUserAction};
-use spi::Result;
+use spi::{MetaSnafu, QueryResult};
 use trace::debug;
 
 use crate::execution::ddl::DDLDefinitionTask;
@@ -22,7 +23,7 @@ impl AlterUserTask {
 
 #[async_trait]
 impl DDLDefinitionTask for AlterUserTask {
-    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output> {
+    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> QueryResult<Output> {
         let AlterUser {
             ref user_name,
             ref alter_user_action,
@@ -42,7 +43,8 @@ impl DDLDefinitionTask for AlterUserTask {
                 query_state_machine
                     .meta
                     .rename_user(user_name, new_name.to_string())
-                    .await?;
+                    .await
+                    .context(MetaSnafu)?;
             }
             AlterUserAction::Set(options) => {
                 // TODO 修改用户的信息
@@ -57,8 +59,8 @@ impl DDLDefinitionTask for AlterUserTask {
                 query_state_machine
                     .meta
                     .alter_user(user_name, options.clone())
-                    .await?;
-                // .context(MetaSnafu)?;
+                    .await
+                    .context(MetaSnafu)?;
             }
         }
 

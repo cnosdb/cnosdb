@@ -12,18 +12,19 @@ path = "src/main.rs"
 [dependencies]
 http_protocol = { path = "../common/http_protocol", features = ["http_client"] }
 
+anyhow = { workspace = true }
+async-backtrace = { workspace = true, optional = true }
+base64 = { workspace = true }
 clap = { workspace = true, features = ["derive", "cargo"] }
 datafusion = { workspace = true }
 dirs = { workspace = true }
 env_logger = { workspace = true }
-rustyline = { workspace = true }
-tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "sync", "parking_lot", "tracing"] }
-async-backtrace = { workspace = true, optional = true }
-walkdir = { workspace = true }
-anyhow = { workspace = true }
-base64 = { workspace = true }
+indicatif = { workspace = true }
 reqwest = { workspace = true }
 rpassword = { workspace = true }
+rustyline = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "sync", "parking_lot", "tracing"] }
+walkdir = { workspace = true }
 
 [features]
 default = []

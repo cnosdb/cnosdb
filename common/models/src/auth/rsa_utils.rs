@@ -1,9 +1,9 @@
 use openssl::rsa::{Padding, Rsa};
 use snafu::ResultExt;
 
-use super::{Result, RsaSnafu};
+use super::{AuthResult, RsaSnafu};
 
-pub fn verify(private_key_pem: &[u8], passphrase: &str, public_key_pem: &[u8]) -> Result<bool> {
+pub fn verify(private_key_pem: &[u8], passphrase: &str, public_key_pem: &[u8]) -> AuthResult<bool> {
     // 如果用户设置了公钥
     // 查看客户端有没有携带私钥，没有则报错
     let data = passphrase.as_bytes();

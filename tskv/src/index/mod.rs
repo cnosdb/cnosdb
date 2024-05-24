@@ -1,4 +1,3 @@
-pub mod binlog;
 mod engine;
 mod errors;
 

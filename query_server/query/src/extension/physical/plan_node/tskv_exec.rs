@@ -21,7 +21,8 @@ use models::datafusion::limit_record_batch::limit_record_batch;
 use models::predicate::domain::PredicateRef;
 use models::predicate::PlacedSplit;
 use models::schema::{ColumnType, TableColumn, TskvTableSchema, TskvTableSchemaRef, TIME_FIELD};
-use spi::{QueryError, Result};
+use snafu::ResultExt;
+use spi::{CommonSnafu, CoordinatorSnafu, QueryResult};
 use trace::span_ext::SpanExt;
 use trace::{debug, Span, SpanContext};
 use tskv::reader::QueryOption;
@@ -224,7 +225,7 @@ impl TableScanStream {
         batch_size: usize,
         metrics: TableScanMetrics,
         span: Span,
-    ) -> Result<Self> {
+    ) -> QueryResult<Self> {
         let mut proj_fileds = Vec::with_capacity(proj_schema.fields().len());
         for item in proj_schema.fields().iter() {
             let field_name = item.name();
@@ -245,12 +246,13 @@ impl TableScanStream {
             if let Some(v) = table_schema.column(field_name) {
                 proj_fileds.push(v.clone());
             } else {
-                return Err(QueryError::CommonError {
+                return Err(CommonSnafu {
                     msg: format!(
                         "table stream build fail, because can't found field: {}",
                         field_name
                     ),
-                });
+                }
+                .build());
             }
         }
 
@@ -272,7 +274,9 @@ impl TableScanStream {
         );
 
         let span_ctx = span.context();
-        let iterator = coord.table_scan(option, span_ctx.as_ref())?;
+        let iterator = coord
+            .table_scan(option, span_ctx.as_ref())
+            .context(CoordinatorSnafu)?;
 
         Ok(Self {
             proj_schema,

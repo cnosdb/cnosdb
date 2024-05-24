@@ -10,13 +10,13 @@ use datafusion::logical_expr::{
 };
 use datafusion::physical_expr::functions::make_scalar_function;
 use spi::query::function::FunctionMetadataManager;
-use spi::{QueryError, Result};
+use spi::{AnalyzerSnafu, QueryResult};
 
 use crate::extension::expr::aggregate_function::StateAggData;
 use crate::extension::expr::scalar_function::DURATION_IN;
 use crate::extension::expr::INTERVALS;
 
-pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> Result<ScalarUDF> {
+pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<ScalarUDF> {
     let udf = new();
     func_manager.register_udf(udf.clone())?;
     Ok(udf)
@@ -25,15 +25,21 @@ pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> Result<Sc
 fn new() -> ScalarUDF {
     let return_type_fn: ReturnTypeFunction = Arc::new(|input| {
         if input.len() >= 3 && !TIMESTAMPS.iter().any(|t| t.eq(&input[2])) {
-            return Err(DataFusionError::External(Box::new(QueryError::Analyzer {
-                err: format!("Expect Timestamp type, but found {} type.", &input[2]),
-            })));
+            return Err(DataFusionError::External(Box::new(
+                AnalyzerSnafu {
+                    err: format!("Expect Timestamp type, but found {} type.", &input[2]),
+                }
+                .build(),
+            )));
         }
 
         if input.len() == 4 && !INTERVALS.iter().any(|t| t.eq(&input[3])) {
-            return Err(DataFusionError::External(Box::new(QueryError::Analyzer {
-                err: format!("Expect Interval type, but found {} type.", &input[3]),
-            })));
+            return Err(DataFusionError::External(Box::new(
+                AnalyzerSnafu {
+                    err: format!("Expect Interval type, but found {} type.", &input[3]),
+                }
+                .build(),
+            )));
         }
 
         let error =
@@ -98,11 +104,11 @@ fn duration_in_implement(input: &[ArrayRef]) -> Result<ArrayRef, DataFusionError
                 let start = ScalarValue::try_from_array(input[2].as_ref(), i)?;
                 let state_agg = StateAggData::try_from(state_agg)?;
                 if state_agg.is_compact() {
-                    return Err(DataFusionError::External(Box::new(QueryError::Analyzer {
+                    return Err(DataFusionError::External(Box::new(AnalyzerSnafu {
                         err:
                             "duration_in(state_agg, state, start_time) doesn't support compact_agg"
-                                .into(),
-                    })));
+                                .to_string(),
+                    }.build())));
                 }
                 let value = state_agg.duration_in(state, start, ScalarValue::Null)?;
                 res.push(value)
@@ -117,8 +123,8 @@ fn duration_in_implement(input: &[ArrayRef]) -> Result<ArrayRef, DataFusionError
                 let interval = ScalarValue::try_from_array(input[3].as_ref(), i)?;
                 let state_agg = StateAggData::try_from(state_agg)?;
                 if state_agg.is_compact() {
-                    return Err(DataFusionError::External(Box::new(QueryError::Analyzer {err:
-                    "duration_in(state_agg, state, start_time, interval) doesn't support compact_agg".into()})));
+                    return Err(DataFusionError::External(Box::new(AnalyzerSnafu {err:
+                    "duration_in(state_agg, state, start_time, interval) doesn't support compact_agg".to_string()}.build())));
                 }
                 let value = state_agg.duration_in(state, start, interval)?;
                 res.push(value)

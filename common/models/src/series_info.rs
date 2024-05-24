@@ -1,10 +1,13 @@
 use flatbuffers::{ForwardsUOffset, Vector};
 use protos::models::Column;
 use serde::{Deserialize, Serialize};
+use snafu::{OptionExt, ResultExt};
 use utils::bitset::ImmutBitSet;
 use utils::BkdrHasher;
 
-use crate::errors::{Error, Result};
+use crate::errors::{
+    EncodingSnafu, InvalidPointSnafu, InvalidSerdeMessageSnafu, InvalidTagSnafu, ModelResult,
+};
 use crate::schema::TskvTableSchema;
 use crate::{tag, Tag, TagValue};
 
@@ -36,9 +39,13 @@ impl SeriesKey {
         None
     }
 
-    pub fn tag_string_val(&self, key: &str) -> Result<Option<String>> {
+    pub fn tag_string_val(&self, key: &str) -> ModelResult<Option<String>> {
         match self.tag_val(key) {
-            Some(v) => Ok(Some(String::from_utf8(v)?)),
+            Some(v) => {
+                Ok(Some(String::from_utf8(v).map_err(|e| {
+                    EncodingSnafu { msg: e.to_string() }.build()
+                })?))
+            }
             None => Ok(None),
         }
     }
@@ -54,14 +61,10 @@ impl SeriesKey {
         hasher.number()
     }
 
-    pub fn decode(data: &[u8]) -> Result<SeriesKey> {
-        let key = bincode::deserialize(data);
-        match key {
-            Ok(key) => Ok(key),
-            Err(err) => Err(Error::InvalidSerdeMessage {
-                err: format!("Invalid serde message: {}", err),
-            }),
-        }
+    pub fn decode(data: &[u8]) -> ModelResult<SeriesKey> {
+        let key = bincode::deserialize(data).context(InvalidSerdeMessageSnafu)?;
+
+        Ok(key)
     }
 
     /// Returns a string with format `{table}[,{tag.key}={tag.value}]`.
@@ -87,32 +90,28 @@ impl SeriesKey {
         table_schema: &TskvTableSchema,
         tag_idx: &[usize],
         row_count: usize,
-    ) -> Result<Self> {
+    ) -> ModelResult<Self> {
         let mut tags = Vec::new();
         for idx in tag_idx {
             let column = columns.get(*idx);
 
-            let tag_nullbit_buffer = column.nullbits().ok_or(Error::InvalidTag {
+            let tag_nullbit_buffer = column.nullbits().context(InvalidTagSnafu {
                 err: "missing column null bit".to_string(),
             })?;
-            let len = column
-                .string_values_len()
-                .map_err(|e| Error::InvalidPoint { err: e.to_string() })?;
+            let len = column.string_values_len().context(InvalidPointSnafu)?;
             let column_nullbit = ImmutBitSet::new_without_check(len, tag_nullbit_buffer.bytes());
             if !column_nullbit.get(row_count) {
                 continue;
             }
 
-            let tags_value = column
-                .string_values()
-                .map_err(|e| Error::InvalidPoint { err: e.to_string() })?;
+            let tags_value = column.string_values().context(InvalidPointSnafu)?;
             let tag_value = tags_value.get(row_count);
-            let tag_key = column.name().ok_or(Error::InvalidTag {
+            let tag_key = column.name().context(InvalidTagSnafu {
                 err: "missing column name".to_string(),
             })?;
             let id = table_schema
                 .column(tag_key)
-                .ok_or_else(|| Error::InvalidTag {
+                .context(InvalidTagSnafu {
                     err: format!("tag not found {}", tag_key),
                 })?
                 .id;

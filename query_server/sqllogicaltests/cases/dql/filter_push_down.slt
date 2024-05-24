@@ -22,7 +22,7 @@ CREATE TABLE m0(
 statement ok
 INSERT m0(TIME, f4, t0) VALUES(1041670293467254361, 0.507623643211476, '916053861');
 
-statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: TskvError: Fields can't be empty", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: Fields can't be empty", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
 INSERT m0(TIME, f0) VALUES(2079939785551584142, NULL), (1243152233754651379, 12321); -- 0ms;
 
 statement ok
@@ -37,10 +37,10 @@ INSERT m0(TIME, f3) VALUES(7488251815539246350, FALSE); -- 0ms;
 statement ok
 INSERT m0(TIME, f4) VALUES(5414775681413349294, 1.111); -- 1ms;
 
-statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: TskvError: Fields can't be empty", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: Fields can't be empty", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
 INSERT m0(TIME, t0) VALUES(5414775681413349294, 't000'); -- 1ms;
 
-statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: TskvError: Fields can't be empty", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: Fields can't be empty", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
 INSERT m0(TIME, t1) VALUES(5414775681413349294, 't111'); -- 1ms;
 
 

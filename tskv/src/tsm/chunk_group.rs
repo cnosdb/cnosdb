@@ -4,26 +4,28 @@ use std::sync::Arc;
 use models::predicate::domain::TimeRange;
 use models::schema::{TskvTableSchema, TskvTableSchemaRef};
 use serde::{Deserialize, Serialize};
+use snafu::IntoError;
 
+use crate::error::{DecodeSnafu, EncodeSnafu};
 use crate::tsm::chunk::ChunkWriteSpec;
-use crate::TskvError;
+use crate::TskvResult;
 
 /// A group of chunks for a table
 #[derive(Clone, Default, Debug, Serialize, Deserialize)]
 pub struct ChunkGroup {
-    pub(crate) chunks: Vec<ChunkWriteSpec>,
+    chunks: Vec<ChunkWriteSpec>,
 }
 
 impl ChunkGroup {
     pub fn new() -> Self {
         Self { chunks: Vec::new() }
     }
-    pub fn serialize(&self) -> crate::TskvResult<Vec<u8>> {
-        bincode::serialize(&self).map_err(|e| TskvError::Serialize { source: e.into() })
+    pub fn serialize(&self) -> TskvResult<Vec<u8>> {
+        bincode::serialize(&self).map_err(|e| EncodeSnafu.into_error(e))
     }
 
-    pub fn deserialize(bytes: &[u8]) -> crate::TskvResult<Self> {
-        bincode::deserialize(bytes).map_err(|e| TskvError::Deserialize { source: e.into() })
+    pub fn deserialize(bytes: &[u8]) -> TskvResult<Self> {
+        bincode::deserialize(bytes).map_err(|e| DecodeSnafu.into_error(e))
     }
 
     pub fn push(&mut self, chunk: ChunkWriteSpec) {
@@ -41,7 +43,7 @@ impl ChunkGroup {
     pub fn time_range(&self) -> TimeRange {
         let mut time_range = TimeRange::none();
         for chunk in self.chunks.iter() {
-            time_range.merge(&chunk.statics.time_range);
+            time_range.merge(chunk.statics().time_range());
         }
         time_range
     }
@@ -120,12 +122,12 @@ impl ChunkGroupMeta {
         }
     }
 
-    pub fn serialize(&self) -> crate::TskvResult<Vec<u8>> {
-        bincode::serialize(&self).map_err(|e| TskvError::Serialize { source: e.into() })
+    pub fn serialize(&self) -> TskvResult<Vec<u8>> {
+        bincode::serialize(&self).map_err(|e| EncodeSnafu.into_error(e))
     }
 
-    pub fn deserialize(bytes: &[u8]) -> crate::TskvResult<Self> {
-        bincode::deserialize(bytes).map_err(|e| TskvError::Deserialize { source: e.into() })
+    pub fn deserialize(bytes: &[u8]) -> TskvResult<Self> {
+        bincode::deserialize(bytes).map_err(|e| DecodeSnafu.into_error(e))
     }
 
     pub fn push(&mut self, table: ChunkGroupWriteSpec) {

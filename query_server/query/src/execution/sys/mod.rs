@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use spi::query::dispatcher::{QueryInfo, QueryStatus};
 use spi::query::execution::{Output, QueryExecution, QueryStateMachineRef};
 use spi::query::logical_planner::SYSPlan;
-use spi::Result;
+use spi::QueryResult;
 
 use self::kill_query::KillQueryTask;
 use crate::dispatcher::query_tracker::QueryTracker;
@@ -35,7 +35,7 @@ impl SystemExecution {
 #[async_trait]
 impl QueryExecution for SystemExecution {
     // start
-    async fn start(&self) -> Result<Output> {
+    async fn start(&self) -> QueryResult<Output> {
         let query_state_machine = self.state_machine.clone();
 
         query_state_machine.begin_schedule();
@@ -51,7 +51,7 @@ impl QueryExecution for SystemExecution {
         result
     }
     // 停止
-    fn cancel(&self) -> Result<()> {
+    fn cancel(&self) -> QueryResult<()> {
         Ok(())
     }
     // 静态信息
@@ -78,7 +78,7 @@ impl QueryExecution for SystemExecution {
 /// Traits that system tasks should implement
 #[async_trait]
 trait SystemTask: Send + Sync {
-    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output>;
+    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> QueryResult<Output>;
 }
 
 struct SystemTaskFactory {

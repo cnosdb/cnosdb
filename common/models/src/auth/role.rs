@@ -7,7 +7,7 @@ use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 
 use super::privilege::{DatabasePrivilege, GlobalPrivilege, Privilege, TenantObjectPrivilege};
-use super::Result;
+use super::AuthResult;
 use crate::auth::AuthError;
 use crate::oid::{Id, Identifier};
 
@@ -214,7 +214,7 @@ impl<T: Id> CustomTenantRole<T> {
         &mut self,
         database_name: String,
         privilege: DatabasePrivilege,
-    ) -> Result<()> {
+    ) -> AuthResult<()> {
         self.additional_privileges.insert(database_name, privilege);
 
         Ok(())
@@ -224,7 +224,7 @@ impl<T: Id> CustomTenantRole<T> {
         &mut self,
         database_name: &str,
         privilege: &DatabasePrivilege,
-    ) -> Result<bool> {
+    ) -> AuthResult<bool> {
         if let Some(p) = self.additional_privileges.get(database_name) {
             if p == privilege {
                 Ok(self.additional_privileges.remove(database_name).is_some())

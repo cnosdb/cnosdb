@@ -13,14 +13,16 @@ use protocol_parser::Line;
 use protos::models_helper::{parse_prost_bytes, to_prost_bytes};
 use protos::prompb::prometheus::label_matcher::Type;
 use protos::prompb::prometheus::{
-    Query as PromQuery, QueryResult, ReadRequest, ReadResponse, TimeSeries, WriteRequest,
+    Query as PromQuery, QueryResult as PromQueryResult, ReadRequest, ReadResponse, TimeSeries,
+    WriteRequest,
 };
 use protos::FieldValue;
 use regex::Regex;
+use snafu::ResultExt;
 use spi::server::dbms::DBMSRef;
 use spi::server::prom::PromRemoteServer;
 use spi::service::protocol::{Context, Query, QueryHandle};
-use spi::{QueryError, Result};
+use spi::{MetaSnafu, QueryError, QueryResult, SnappySnafu};
 use trace::span_ext::SpanExt;
 use trace::{debug, warn, Span, SpanContext};
 
@@ -41,7 +43,7 @@ impl PromRemoteServer for PromRemoteSqlServer {
         ctx: &Context,
         req: Bytes,
         span_ctx: Option<&SpanContext>,
-    ) -> Result<Vec<u8>> {
+    ) -> QueryResult<Vec<u8>> {
         let meta = self
             .coord
             .meta_manager()
@@ -49,7 +51,8 @@ impl PromRemoteServer for PromRemoteSqlServer {
             .await
             .ok_or_else(|| MetaError::TenantNotFound {
                 tenant: ctx.tenant().to_string(),
-            })?;
+            })
+            .context(MetaSnafu)?;
 
         let read_request = self.deserialize_read_request(req).await?;
 
@@ -65,12 +68,12 @@ impl PromRemoteServer for PromRemoteSqlServer {
         self.serialize_read_response(read_response).await
     }
 
-    fn remote_write(&self, req: Bytes) -> Result<WriteRequest> {
+    fn remote_write(&self, req: Bytes) -> QueryResult<WriteRequest> {
         let prom_write_request = self.deserialize_write_request(req)?;
         Ok(prom_write_request)
     }
 
-    fn prom_write_request_to_lines<'a>(&self, req: &'a WriteRequest) -> Result<Vec<Line<'a>>> {
+    fn prom_write_request_to_lines<'a>(&self, req: &'a WriteRequest) -> QueryResult<Vec<Line<'a>>> {
         let mut lines = Vec::with_capacity(req.timeseries.len());
 
         for ts in req.timeseries.iter() {
@@ -117,11 +120,13 @@ impl PromRemoteSqlServer {
         }
     }
 
-    async fn deserialize_read_request(&self, req: Bytes) -> Result<ReadRequest> {
+    async fn deserialize_read_request(&self, req: Bytes) -> QueryResult<ReadRequest> {
         let mut decompressed = Vec::new();
         let compressed = req.to_byte_slice();
 
-        self.codec.decompress(compressed, &mut decompressed, None)?;
+        self.codec
+            .decompress(compressed, &mut decompressed, None)
+            .context(SnappySnafu)?;
 
         parse_prost_bytes::<ReadRequest>(&decompressed).map_err(|source| {
             QueryError::InvalidRemoteReadReq {
@@ -130,10 +135,12 @@ impl PromRemoteSqlServer {
         })
     }
 
-    fn deserialize_write_request(&self, req: Bytes) -> Result<WriteRequest> {
+    fn deserialize_write_request(&self, req: Bytes) -> QueryResult<WriteRequest> {
         let mut decompressed = Vec::new();
         let compressed = req.to_byte_slice();
-        self.codec.decompress(compressed, &mut decompressed, None)?;
+        self.codec
+            .decompress(compressed, &mut decompressed, None)
+            .context(SnappySnafu)?;
         parse_prost_bytes::<WriteRequest>(&decompressed).map_err(|source| {
             QueryError::InvalidRemoteWriteReq {
                 source: Box::new(source),
@@ -147,7 +154,7 @@ impl PromRemoteSqlServer {
         meta: MetaClientRef,
         read_request: ReadRequest,
         span: Span,
-    ) -> Result<ReadResponse> {
+    ) -> QueryResult<ReadResponse> {
         let mut results = Vec::with_capacity(read_request.queries.len());
         for q in read_request.queries {
             let mut timeseries: Vec<TimeSeries> = Vec::new();
@@ -167,7 +174,7 @@ impl PromRemoteSqlServer {
                 );
             }
 
-            results.push(QueryResult { timeseries });
+            results.push(PromQueryResult { timeseries });
         }
 
         Ok(ReadResponse { results })
@@ -178,7 +185,7 @@ impl PromRemoteSqlServer {
         ctx: &Context,
         sql: SqlWithTable,
         span: Span,
-    ) -> Result<Vec<TimeSeries>> {
+    ) -> QueryResult<Vec<TimeSeries>> {
         let table_schema = sql.table;
         let tag_name_indices = table_schema.tag_indices();
         let sample_value_idx = table_schema
@@ -203,10 +210,12 @@ impl PromRemoteSqlServer {
         transform_time_series(result, tag_name_indices, sample_value_idx, sample_time_idx).await
     }
 
-    async fn serialize_read_response(&self, read_response: ReadResponse) -> Result<Vec<u8>> {
+    async fn serialize_read_response(&self, read_response: ReadResponse) -> QueryResult<Vec<u8>> {
         let mut compressed = Vec::new();
         let input_buf = to_prost_bytes(&read_response);
-        self.codec.compress(&input_buf, &mut compressed)?;
+        self.codec
+            .compress(&input_buf, &mut compressed)
+            .context(SnappySnafu)?;
 
         Ok(compressed)
     }
@@ -216,7 +225,7 @@ fn build_sql_with_table(
     ctx: &Context,
     meta: &MetaClientRef,
     query: PromQuery,
-) -> Result<Vec<SqlWithTable>> {
+) -> QueryResult<Vec<SqlWithTable>> {
     let PromQuery {
         start_timestamp_ms,
         end_timestamp_ms,
@@ -234,10 +243,12 @@ fn build_sql_with_table(
                     // Get schema of the specified table
                     let table_name = &m.value;
                     let table = meta
-                        .get_tskv_table_schema(ctx.database(), table_name)?
+                        .get_tskv_table_schema(ctx.database(), table_name)
+                        .context(MetaSnafu)?
                         .ok_or_else(|| MetaError::TableNotFound {
                             table: table_name.to_string(),
-                        })?;
+                        })
+                        .context(MetaSnafu)?;
                     tables = vec![table];
                 }
                 Type::Re => {
@@ -249,7 +260,8 @@ fn build_sql_with_table(
                         })?;
 
                     tables = meta
-                        .list_tables(ctx.database())?
+                        .list_tables(ctx.database())
+                        .context(MetaSnafu)?
                         .iter()
                         .filter(|e| pattern.is_match(e))
                         .flat_map(|table_name| {
@@ -313,7 +325,7 @@ async fn transform_time_series(
     tag_name_indices: Vec<usize>,
     sample_value_idx: usize,
     sample_time_idx: usize,
-) -> Result<Vec<TimeSeries>> {
+) -> QueryResult<Vec<TimeSeries>> {
     let result = query_handle.result();
     let schema = result.schema();
     let batches = result.chunk_result().await?;

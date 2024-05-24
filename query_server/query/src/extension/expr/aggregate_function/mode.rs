@@ -12,11 +12,11 @@ use datafusion::logical_expr::{
 use datafusion::physical_plan::Accumulator;
 use datafusion::scalar::ScalarValue;
 use spi::query::function::FunctionMetadataManager;
-use spi::Result;
+use spi::QueryResult;
 
 use crate::extension::expr::aggregate_function::MODE_UDAF_NAME;
 
-pub fn register_udaf(func_manager: &mut dyn FunctionMetadataManager) -> Result<AggregateUDF> {
+pub fn register_udaf(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<AggregateUDF> {
     let udf = new();
     func_manager.register_udaf(udf.clone())?;
     Ok(udf)

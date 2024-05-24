@@ -1,10 +1,11 @@
 use async_trait::async_trait;
 use meta::error::MetaError;
+use snafu::ResultExt;
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::{
     AlterTenant, AlterTenantAction, AlterTenantAddUser, AlterTenantSetUser,
 };
-use spi::QueryError;
+use spi::{MetaSnafu, QueryError};
 use trace::debug;
 
 use crate::execution::ddl::DDLDefinitionTask;
@@ -56,8 +57,9 @@ impl DDLDefinitionTask for AlterTenantTask {
                     "Add user {} to tenant {} with role {:?}",
                     user_id, tenant_name, role
                 );
-                meta.add_member_with_role(*user_id, role.clone()).await?;
-                // .context(MetaSnafu)?;
+                meta.add_member_with_role(*user_id, role.clone())
+                    .await
+                    .context(MetaSnafu)?;
             }
             AlterTenantAction::SetUser(AlterTenantSetUser { user_id, role }) => {
                 // 重设租户中指定成员的角色
@@ -74,8 +76,9 @@ impl DDLDefinitionTask for AlterTenantTask {
                     "Reassign role {:?} of user {} in tenant {}",
                     role, user_id, tenant_name
                 );
-                meta.reassign_member_role(*user_id, role.clone()).await?;
-                // .context(MetaSnafu)?;
+                meta.reassign_member_role(*user_id, role.clone())
+                    .await
+                    .context(MetaSnafu)?;
             }
             AlterTenantAction::RemoveUser(user_id) => {
                 // 从租户中移除指定成员
@@ -87,14 +90,14 @@ impl DDLDefinitionTask for AlterTenantTask {
                 //     tenant_id: Oid
                 // ) -> Result<()>;
                 debug!("Remove user {} from tenant {}", user_id, tenant_name);
-                meta.remove_member(*user_id).await?;
-                // .context(MetaSnafu)?;
+                meta.remove_member(*user_id).await.context(MetaSnafu)?;
             }
             AlterTenantAction::SetOption(tenant_option) => {
                 query_state_machine
                     .meta
                     .alter_tenant(tenant_name, *tenant_option.clone())
-                    .await?;
+                    .await
+                    .context(MetaSnafu)?;
             }
         }
 

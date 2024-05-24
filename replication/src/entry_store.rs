@@ -6,8 +6,9 @@ use heed::byteorder::BigEndian;
 use heed::types::*;
 use heed::{Database, Env};
 use openraft::Entry;
+use snafu::ResultExt;
 
-use crate::errors::ReplicationResult;
+use crate::errors::{HeedSnafu, IOErrSnafu, MsgInvalidSnafu, ReplicationResult};
 use crate::{EntriesMetrics, EntryStorage, TypeConfig};
 
 // --------------------------------------------------------------------------- //
@@ -20,23 +21,26 @@ pub struct HeedEntryStorage {
 
 impl HeedEntryStorage {
     pub fn open(path: impl AsRef<Path>, size: usize) -> ReplicationResult<Self> {
-        fs::create_dir_all(&path)?;
+        fs::create_dir_all(&path).context(IOErrSnafu)?;
 
         let path = path.as_ref().to_path_buf();
         let env = heed::EnvOpenOptions::new()
             .map_size(size)
             .max_dbs(1)
-            .open(path.clone())?;
-        let db: Database<OwnedType<BEU64>, OwnedSlice<u8>> = env.create_database(Some("data"))?;
+            .open(path.clone())
+            .context(HeedSnafu)?;
+        let db: Database<OwnedType<BEU64>, OwnedSlice<u8>> =
+            env.create_database(Some("data")).context(HeedSnafu)?;
         let storage = Self { env, db, path };
 
         Ok(storage)
     }
 
     async fn first_entry(&mut self) -> ReplicationResult<Option<Entry<TypeConfig>>> {
-        let reader = self.env.read_txn()?;
-        if let Some((_, data)) = self.db.first(&reader)? {
-            let entry = bincode::deserialize::<Entry<TypeConfig>>(&data)?;
+        let reader = self.env.read_txn().context(HeedSnafu)?;
+        if let Some((_, data)) = self.db.first(&reader).context(HeedSnafu)? {
+            let entry = bincode::deserialize::<Entry<TypeConfig>>(&data)
+                .map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())?;
             Ok(Some(entry))
         } else {
             Ok(None)
@@ -51,22 +55,26 @@ impl EntryStorage for HeedEntryStorage {
             return Ok(());
         }
 
-        let mut writer = self.env.write_txn()?;
+        let mut writer = self.env.write_txn().context(HeedSnafu)?;
         for entry in ents {
             let index = entry.log_id.index;
 
-            let data = bincode::serialize(entry)?;
-            self.db.put(&mut writer, &BEU64::new(index), &data)?;
+            let data = bincode::serialize(entry)
+                .map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())?;
+            self.db
+                .put(&mut writer, &BEU64::new(index), &data)
+                .context(HeedSnafu)?;
         }
-        writer.commit()?;
+        writer.commit().context(HeedSnafu)?;
 
         Ok(())
     }
 
     async fn last_entry(&mut self) -> ReplicationResult<Option<Entry<TypeConfig>>> {
-        let reader = self.env.read_txn()?;
-        if let Some((_, data)) = self.db.last(&reader)? {
-            let entry = bincode::deserialize::<Entry<TypeConfig>>(&data)?;
+        let reader = self.env.read_txn().context(HeedSnafu)?;
+        if let Some((_, data)) = self.db.last(&reader).context(HeedSnafu)? {
+            let entry = bincode::deserialize::<Entry<TypeConfig>>(&data)
+                .map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())?;
             Ok(Some(entry))
         } else {
             Ok(None)
@@ -74,9 +82,14 @@ impl EntryStorage for HeedEntryStorage {
     }
 
     async fn entry(&mut self, index: u64) -> ReplicationResult<Option<Entry<TypeConfig>>> {
-        let reader = self.env.read_txn()?;
-        if let Some(data) = self.db.get(&reader, &BEU64::new(index))? {
-            let entry = bincode::deserialize::<Entry<TypeConfig>>(&data)?;
+        let reader = self.env.read_txn().context(HeedSnafu)?;
+        if let Some(data) = self
+            .db
+            .get(&reader, &BEU64::new(index))
+            .context(HeedSnafu)?
+        {
+            let entry = bincode::deserialize::<Entry<TypeConfig>>(&data)
+                .map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())?;
             Ok(Some(entry))
         } else {
             Ok(None)
@@ -86,31 +99,38 @@ impl EntryStorage for HeedEntryStorage {
     async fn entries(&mut self, low: u64, high: u64) -> ReplicationResult<Vec<Entry<TypeConfig>>> {
         let mut ents = vec![];
 
-        let reader = self.env.read_txn()?;
+        let reader = self.env.read_txn().context(HeedSnafu)?;
         let range = BEU64::new(low)..BEU64::new(high);
-        let iter = self.db.range(&reader, &range)?;
+        let iter = self.db.range(&reader, &range).context(HeedSnafu)?;
         for pair in iter {
-            let (_, data) = pair?;
-            ents.push(bincode::deserialize::<Entry<TypeConfig>>(&data)?);
+            let (_, data) = pair.context(HeedSnafu)?;
+            ents.push(
+                bincode::deserialize::<Entry<TypeConfig>>(&data)
+                    .map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())?,
+            );
         }
 
         Ok(ents)
     }
 
     async fn del_after(&mut self, index: u64) -> ReplicationResult<()> {
-        let mut writer = self.env.write_txn()?;
+        let mut writer = self.env.write_txn().context(HeedSnafu)?;
         let range = BEU64::new(index)..;
-        self.db.delete_range(&mut writer, &range)?;
-        writer.commit()?;
+        self.db
+            .delete_range(&mut writer, &range)
+            .context(HeedSnafu)?;
+        writer.commit().context(HeedSnafu)?;
 
         Ok(())
     }
 
     async fn del_before(&mut self, index: u64) -> ReplicationResult<()> {
-        let mut writer = self.env.write_txn()?;
+        let mut writer = self.env.write_txn().context(HeedSnafu)?;
         let range = ..BEU64::new(index);
-        self.db.delete_range(&mut writer, &range)?;
-        writer.commit()?;
+        self.db
+            .delete_range(&mut writer, &range)
+            .context(HeedSnafu)?;
+        writer.commit().context(HeedSnafu)?;
 
         Ok(())
     }

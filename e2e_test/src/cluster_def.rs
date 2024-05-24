@@ -163,6 +163,7 @@ pub struct DataNodeDefinition {
     pub flight_service_port: Option<u16>,
     pub opentsdb_service_port: Option<u16>,
     pub vector_service_port: Option<u16>,
+    pub grpc_enable_gzip: bool,
 }
 
 impl DataNodeDefinition {
@@ -196,6 +197,7 @@ impl DataNodeDefinition {
             opentsdb_service_port: Some(data_id_to_opentsdb_service_port(id)),
             vector_service_port: Some(data_id_to_vector_service_port(id)),
             heartbeat_interval: Duration::from_millis(100),
+            grpc_enable_gzip: false,
         }
     }
 
@@ -227,6 +229,7 @@ impl DataNodeDefinition {
         config.service.tcp_listen_port = self.opentsdb_service_port;
         config.service.vector_listen_port = self.vector_service_port;
         config.cluster.heartbeat_interval = self.heartbeat_interval;
+        config.service.grpc_enable_gzip = self.grpc_enable_gzip;
     }
 }
 
@@ -243,6 +246,7 @@ impl Default for DataNodeDefinition {
             opentsdb_service_port: Some(8905),
             vector_service_port: Some(8906),
             heartbeat_interval: Duration::from_millis(100),
+            grpc_enable_gzip: false,
         }
     }
 }
@@ -323,6 +327,7 @@ fn test_cnosdb_cluster_definition_factory() {
                 opentsdb_service_port: Some(8905 + (data_id - 1) as u16 * 10),
                 vector_service_port: Some(8906 + (data_id - 1) as u16 * 10),
                 heartbeat_interval: Duration::from_millis(100),
+                grpc_enable_gzip: false,
             }],
         };
         assert_eq!(one_meta_one_data(meta_id, data_id), cluster_def);
@@ -348,6 +353,7 @@ fn test_cnosdb_cluster_definition_factory() {
                     opentsdb_service_port: Some(8915),
                     vector_service_port: Some(8916),
                     heartbeat_interval: Duration::from_millis(100),
+                    grpc_enable_gzip: false,
                 },
             ],
         };

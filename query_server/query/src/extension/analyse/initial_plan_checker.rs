@@ -5,7 +5,7 @@ use datafusion::datasource::source_as_provider;
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::{LogicalPlan, TableScan};
 use datafusion::optimizer::analyzer::AnalyzerRule;
-use spi::QueryError;
+use spi::AnalyzerSnafu;
 
 #[derive(Default)]
 pub struct InitialPlanChecker {}
@@ -32,14 +32,20 @@ impl TreeNodeVisitor for InitialPlanCheckerVisitor {
         if let LogicalPlan::TableScan(TableScan { source, .. }) = plan {
             match source_as_provider(source) {
                 Ok(table) if table.get_logical_plan().is_some() => {
-                    return Err(DataFusionError::External(Box::new(QueryError::Analyzer {
-                        err: format!("Still have unresolved table source {}", source.name()),
-                    })));
+                    return Err(DataFusionError::External(Box::new(
+                        AnalyzerSnafu {
+                            err: format!("Still have unresolved table source {}", source.name()),
+                        }
+                        .build(),
+                    )));
                 }
                 Err(_) => {
-                    return Err(DataFusionError::External(Box::new(QueryError::Analyzer {
-                        err: format!("Unresolved table source {}", source.name()),
-                    })));
+                    return Err(DataFusionError::External(Box::new(
+                        AnalyzerSnafu {
+                            err: format!("Unresolved table source {}", source.name()),
+                        }
+                        .build(),
+                    )));
                 }
                 _ => {}
             }

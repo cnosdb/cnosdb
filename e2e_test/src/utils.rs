@@ -9,13 +9,20 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
+use arrow_flight::sql::client::FlightSqlServiceClient;
+use arrow_flight::utils::flight_data_to_batches;
+use arrow_flight::FlightInfo;
+use arrow_schema::ArrowError;
 use config::Config as CnosdbConfig;
+use datafusion::arrow::record_batch::RecordBatch;
+use futures::TryStreamExt;
 use meta::client::MetaHttpClient;
 use meta::store::config::Opt as MetaStoreConfig;
 use reqwest::blocking::{ClientBuilder, Request, RequestBuilder, Response};
 use reqwest::{Certificate, IntoUrl, Method, StatusCode};
 use sysinfo::{ProcessRefreshKind, RefreshKind, System};
 use tokio::runtime::Runtime;
+use tonic::transport::{Channel, Endpoint};
 
 use crate::cluster_def::{
     CnosdbClusterDefinition, DataNodeDefinition, DeploymentMode, MetaNodeDefinition,
@@ -360,7 +367,14 @@ fn cargo_build_cnosdb_meta(workspace_dir: impl AsRef<Path>) {
     let mut cargo_build = Command::new("cargo");
     let output = cargo_build
         .current_dir(workspace_dir)
-        .args(["build", "--package", "meta", "--bin", "cnosdb-meta"])
+        .args([
+            "build",
+            "--release",
+            "--package",
+            "meta",
+            "--bin",
+            "cnosdb-meta",
+        ])
         .output()
         .expect("failed to execute cargo build");
     if !output.status.success() {
@@ -380,7 +394,7 @@ fn cargo_build_cnosdb_data(workspace_dir: impl AsRef<Path>) {
     let mut cargo_build = Command::new("cargo");
     let output = cargo_build
         .current_dir(workspace_dir)
-        .args(["build", "--package", "main", "--bin", "cnosdb"])
+        .args(["build", "--release", "--package", "main", "--bin", "cnosdb"])
         .output()
         .expect("failed to execute cargo build");
     if !output.status.success() {
@@ -422,7 +436,7 @@ impl CnosdbMetaTestHelper {
             meta_node_definitions,
             exe_path: workspace_dir
                 .join("target")
-                .join("debug")
+                .join("release")
                 .join("cnosdb-meta"),
             client: Arc::new(Client::new()),
             meta_client: Arc::new(MetaHttpClient::new("127.0.0.1:8901")),
@@ -620,7 +634,7 @@ impl CnosdbDataTestHelper {
             workspace_dir: workspace_dir.clone(),
             test_dir: test_dir.as_ref().to_path_buf(),
             data_node_definitions,
-            exe_path: workspace_dir.join("target").join("debug").join("cnosdb"),
+            exe_path: workspace_dir.join("target").join("release").join("cnosdb"),
             enable_tls,
             client,
             sub_processes: HashMap::with_capacity(2),
@@ -1157,4 +1171,49 @@ macro_rules! defer {
             $($code)*
         });
     };
+}
+
+pub async fn flight_channel(host: &str, port: u16) -> Result<Channel, ArrowError> {
+    let endpoint = Endpoint::new(format!("http://{}:{}", host, port))
+        .map_err(|_| ArrowError::IoError("Cannot create endpoint".to_string()))?
+        .connect_timeout(Duration::from_secs(20))
+        .timeout(Duration::from_secs(20))
+        .tcp_nodelay(true) // Disable Nagle's Algorithm since we don't want packets to wait
+        .tcp_keepalive(Option::Some(Duration::from_secs(3600)))
+        .http2_keep_alive_interval(Duration::from_secs(300))
+        .keep_alive_timeout(Duration::from_secs(20))
+        .keep_alive_while_idle(true);
+
+    let channel = endpoint
+        .connect()
+        .await
+        .map_err(|e| ArrowError::IoError(format!("Cannot connect to endpoint: {e}")))?;
+
+    Ok(channel)
+}
+
+pub async fn flight_authed_client() -> FlightSqlServiceClient<Channel> {
+    let channel = flight_channel("localhost", 8904).await.unwrap();
+    let mut client = FlightSqlServiceClient::new(channel);
+
+    // 1. handshake, basic authentication
+    let _ = client.handshake("root", "").await.unwrap();
+
+    client
+}
+
+pub async fn flight_fetch_result_and_print(
+    flight_info: FlightInfo,
+    client: &mut FlightSqlServiceClient<Channel>,
+) -> Vec<RecordBatch> {
+    let mut batches = vec![];
+    for ep in &flight_info.endpoint {
+        if let Some(tkt) = &ep.ticket {
+            let stream = client.do_get(tkt.clone()).await.unwrap();
+            let flight_data = stream.try_collect::<Vec<_>>().await.unwrap();
+            batches.extend(flight_data_to_batches(&flight_data).unwrap());
+        };
+    }
+
+    batches
 }

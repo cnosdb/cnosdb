@@ -55,5 +55,5 @@ CREATE TABLE test0(
                       TAGS(column6, column7));
 
 
-statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: Meta request error: Operation not support: create expired bucket", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: Meta: Operation not support: create expired bucket", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
 insert describe_database.test0(TIME, column1, column2, column3, column4, column5, column6, column7) values (100, -1234, 'hello', 1234, false, 1.2, 'beijing', 'shanghai');

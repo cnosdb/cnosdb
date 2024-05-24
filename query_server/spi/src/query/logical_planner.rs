@@ -28,7 +28,7 @@ use models::oid::{Identifier, Oid};
 use models::schema::{
     DatabaseOptions, Duration, TableColumn, Tenant, TenantOptions, TenantOptionsBuilder, Watermark,
 };
-use snafu::ResultExt;
+use snafu::{IntoError, ResultExt};
 use tempfile::NamedTempFile;
 
 use super::ast::{parse_bool_value, parse_char_value, parse_string_value, ExtStatement};
@@ -41,7 +41,9 @@ use super::datasource::UriSchema;
 use super::session::SessionCtx;
 use super::AFFECTED_ROWS;
 use crate::service::protocol::QueryId;
-use crate::{ParserSnafu, QueryError, Result};
+use crate::{
+    ParserSnafu, QueryError, QueryResult, SerdeJsonSnafu, StdIoSnafu, TenantOptionsBuildFailSnafu,
+};
 
 pub const TENANT_OPTION_LIMITER: &str = "_limiter";
 pub const TENANT_OPTION_COMMENT: &str = "comment";
@@ -370,7 +372,7 @@ pub struct ReplicaPromote {
 pub fn unset_option_to_alter_tenant_action(
     tenant: Tenant,
     ident: Ident,
-) -> Result<(AlterTenantAction, Privilege<Oid>)> {
+) -> QueryResult<(AlterTenantAction, Privilege<Oid>)> {
     let tenant_id = *tenant.id();
     let mut tenant_options_builder = TenantOptionsBuilder::from(tenant.to_own_options());
 
@@ -388,15 +390,16 @@ pub fn unset_option_to_alter_tenant_action(
             Privilege::Global(GlobalPrivilege::Tenant(Some(tenant_id)))
         }
         _ => {
-            return Err(QueryError::Parser {
-                source: ParserError::ParserError(format!(
+            let source = ParserError::ParserError(format!(
                 "Expected option [{TENANT_OPTION_COMMENT}], [{TENANT_OPTION_LIMITER}], [{TENANT_OPTION_DROP_AFTER}] found [{}]",
                 ident
-            )),
-            })
+            ));
+            return Err(ParserSnafu.into_error(source));
         }
     };
-    let tenant_options = tenant_options_builder.build()?;
+    let tenant_options = tenant_options_builder
+        .build()
+        .context(TenantOptionsBuildFailSnafu)?;
 
     Ok((
         AlterTenantAction::SetOption(Box::new(tenant_options)),
@@ -414,14 +417,14 @@ pub fn sql_option_to_alter_tenant_action(
 
     let privilege = match normalize_ident(&name).as_str() {
         TENANT_OPTION_COMMENT => {
-            let value = parse_string_value(value)?;
+            let value = parse_string_value(value).context(ParserSnafu)?;
             tenant_options_builder.comment(value);
             Privilege::Global(GlobalPrivilege::Tenant(Some(tenant_id)))
         }
         TENANT_OPTION_LIMITER => {
             let config =
-                serde_json::from_str::<TenantLimiterConfig>(parse_string_value(value)?.as_str())
-                    .map_err(|_| ParserError::ParserError("limiter format error".to_string()))?;
+                serde_json::from_str::<TenantLimiterConfig>(parse_string_value(value).context(ParserSnafu)?.as_str())
+                    .map_err(|_| ParserError::ParserError("limiter format error".to_string())).context(ParserSnafu)?;
             tenant_options_builder.limiter_config(config);
             Privilege::Global(GlobalPrivilege::System)
         }
@@ -442,14 +445,16 @@ pub fn sql_option_to_alter_tenant_action(
             })
         }
     };
-    let tenant_options = tenant_options_builder.build()?;
+    let tenant_options = tenant_options_builder
+        .build()
+        .context(TenantOptionsBuildFailSnafu)?;
     Ok((
         AlterTenantAction::SetOption(Box::new(tenant_options)),
         privilege,
     ))
 }
 
-pub fn sql_options_to_tenant_options(options: Vec<SqlOption>) -> Result<TenantOptions> {
+pub fn sql_options_to_tenant_options(options: Vec<SqlOption>) -> QueryResult<TenantOptions> {
     let mut builder = TenantOptionsBuilder::default();
 
     for SqlOption { ref name, value } in options {
@@ -460,7 +465,7 @@ pub fn sql_options_to_tenant_options(options: Vec<SqlOption>) -> Result<TenantOp
             TENANT_OPTION_LIMITER => {
                 let config = serde_json::from_str::<TenantLimiterConfig>(
                     parse_string_value(value).context(ParserSnafu)?.as_str(),
-                )?;
+                ).context(SerdeJsonSnafu)?;
                 builder.limiter_config(config);
             }
             TENANT_OPTION_DROP_AFTER => {
@@ -630,7 +635,7 @@ pub trait LogicalPlanner {
         statement: ExtStatement,
         session: &SessionCtx,
         auth_enable: bool,
-    ) -> Result<Plan>;
+    ) -> QueryResult<Plan>;
 }
 
 /// Additional output information
@@ -681,7 +686,7 @@ impl CopyOptionsBuilder {
         for SqlOption { ref name, value } in options {
             match normalize_ident(name).as_str() {
                 "auto_infer_schema" => {
-                    self.auto_infer_schema = Some(parse_bool_value(value)?);
+                    self.auto_infer_schema = Some(parse_bool_value(value).context(ParserSnafu)?);
                 }
                 option => {
                     return Err(QueryError::Semantic {
@@ -718,7 +723,7 @@ pub struct FileFormatOptionsBuilder {
 }
 
 impl FileFormatOptionsBuilder {
-    fn parse_file_type(s: &str) -> Result<FileType> {
+    fn parse_file_type(s: &str) -> QueryResult<FileType> {
         let s = s.to_uppercase();
         match s.as_str() {
             "AVRO" => Ok(FileType::AVRO),
@@ -734,7 +739,7 @@ impl FileFormatOptionsBuilder {
         }
     }
 
-    fn parse_file_compression_type(s: &str) -> Result<FileCompressionType> {
+    fn parse_file_compression_type(s: &str) -> QueryResult<FileCompressionType> {
         let s = s.to_uppercase();
         match s.as_str() {
             "GZIP" | "GZ" => Ok(FileCompressionType::GZIP),
@@ -751,11 +756,12 @@ impl FileFormatOptionsBuilder {
 
     // 将sql options转换为受支持的参数
     // 执行值校验
-    pub fn apply_options(mut self, options: Vec<SqlOption>) -> Result<Self> {
+    pub fn apply_options(mut self, options: Vec<SqlOption>) -> QueryResult<Self> {
         for SqlOption { ref name, value } in options {
             match normalize_ident(name).as_str() {
                 "type" => {
-                    let file_type = Self::parse_file_type(&parse_string_value(value)?)?;
+                    let file_type =
+                        Self::parse_file_type(&parse_string_value(value).context(ParserSnafu)?)?;
                     self.file_type = Some(file_type);
                 }
                 "delimiter" => {
@@ -768,7 +774,7 @@ impl FileFormatOptionsBuilder {
                             });
                         }
                     }
-                    self.delimiter = Some(parse_char_value(value)?);
+                    self.delimiter = Some(parse_char_value(value).context(ParserSnafu)?);
                 }
                 "with_header" => {
                     if let Some(file_type) = &self.file_type {
@@ -779,11 +785,12 @@ impl FileFormatOptionsBuilder {
                             });
                         }
                     }
-                    self.with_header = Some(parse_bool_value(value)?);
+                    self.with_header = Some(parse_bool_value(value).context(ParserSnafu)?);
                 }
                 "file_compression_type" => {
-                    let file_compression_type =
-                        Self::parse_file_compression_type(&parse_string_value(value)?)?;
+                    let file_compression_type = Self::parse_file_compression_type(
+                        &parse_string_value(value).context(ParserSnafu)?,
+                    )?;
                     self.file_compression_type = Some(file_compression_type);
                 }
                 option => {
@@ -824,7 +831,7 @@ pub fn parse_connection_options(
     url: &UriSchema,
     bucket: Option<&str>,
     options: Vec<SqlOption>,
-) -> Result<ConnectionOptions> {
+) -> QueryResult<ConnectionOptions> {
     let parsed_options = match (url, bucket) {
         (UriSchema::S3, Some(bucket)) => ConnectionOptions::S3(parse_s3_options(bucket, options)?),
         (UriSchema::Gcs, Some(bucket)) => {
@@ -850,7 +857,7 @@ pub fn parse_connection_options(
 }
 
 /// s3://<bucket>/<path>
-fn parse_s3_options(bucket: &str, options: Vec<SqlOption>) -> Result<S3StorageConfig> {
+fn parse_s3_options(bucket: &str, options: Vec<SqlOption>) -> QueryResult<S3StorageConfig> {
     let mut builder = S3StorageConfigBuilder::default();
 
     builder.bucket(bucket);
@@ -858,22 +865,22 @@ fn parse_s3_options(bucket: &str, options: Vec<SqlOption>) -> Result<S3StorageCo
     for SqlOption { ref name, value } in options {
         match normalize_ident(name).as_str() {
             "endpoint_url" => {
-                builder.endpoint_url(parse_string_value(value)?);
+                builder.endpoint_url(parse_string_value(value).context(ParserSnafu)?);
             }
             "region" => {
-                builder.region(parse_string_value(value)?);
+                builder.region(parse_string_value(value).context(ParserSnafu)?);
             }
             "access_key_id" => {
-                builder.access_key_id(parse_string_value(value)?);
+                builder.access_key_id(parse_string_value(value).context(ParserSnafu)?);
             }
             "secret_key" => {
-                builder.secret_access_key(parse_string_value(value)?);
+                builder.secret_access_key(parse_string_value(value).context(ParserSnafu)?);
             }
             "token" => {
-                builder.security_token(parse_string_value(value)?);
+                builder.security_token(parse_string_value(value).context(ParserSnafu)?);
             }
             "virtual_hosted_style" => {
-                builder.virtual_hosted_style_request(parse_bool_value(value)?);
+                builder.virtual_hosted_style_request(parse_bool_value(value).context(ParserSnafu)?);
             }
             _ => {
                 return Err(QueryError::Semantic {
@@ -889,22 +896,22 @@ fn parse_s3_options(bucket: &str, options: Vec<SqlOption>) -> Result<S3StorageCo
 }
 
 /// gcs://<bucket>/<path>
-fn parse_gcs_options(bucket: &str, options: Vec<SqlOption>) -> Result<GcsStorageConfig> {
+fn parse_gcs_options(bucket: &str, options: Vec<SqlOption>) -> QueryResult<GcsStorageConfig> {
     let mut sac_builder = ServiceAccountCredentialsBuilder::default();
 
     for SqlOption { ref name, value } in options {
         match normalize_ident(name).as_str() {
             "gcs_base_url" => {
-                sac_builder.gcs_base_url(parse_string_value(value)?);
+                sac_builder.gcs_base_url(parse_string_value(value).context(ParserSnafu)?);
             }
             "disable_oauth" => {
-                sac_builder.disable_oauth(parse_bool_value(value)?);
+                sac_builder.disable_oauth(parse_bool_value(value).context(ParserSnafu)?);
             }
             "client_email" => {
-                sac_builder.client_email(parse_string_value(value)?);
+                sac_builder.client_email(parse_string_value(value).context(ParserSnafu)?);
             }
             "private_key" => {
-                sac_builder.private_key(parse_string_value(value)?);
+                sac_builder.private_key(parse_string_value(value).context(ParserSnafu)?);
             }
             _ => {
                 return Err(QueryError::Semantic {
@@ -917,7 +924,7 @@ fn parse_gcs_options(bucket: &str, options: Vec<SqlOption>) -> Result<GcsStorage
     let sac = sac_builder.build().map_err(|err| QueryError::Semantic {
         err: err.to_string(),
     })?;
-    let mut temp = NamedTempFile::new()?;
+    let mut temp = NamedTempFile::new().context(StdIoSnafu)?;
     write_tmp_service_account_file(sac, &mut temp)?;
 
     Ok(GcsStorageConfig {
@@ -928,23 +935,23 @@ fn parse_gcs_options(bucket: &str, options: Vec<SqlOption>) -> Result<GcsStorage
 
 /// https://<account>.blob.core.windows.net/<container>[/<path>]
 /// azblob://<container>/<path>
-fn parse_azure_options(bucket: &str, options: Vec<SqlOption>) -> Result<AzblobStorageConfig> {
+fn parse_azure_options(bucket: &str, options: Vec<SqlOption>) -> QueryResult<AzblobStorageConfig> {
     let mut builder = AzblobStorageConfigBuilder::default();
     builder.container_name(bucket);
 
     for SqlOption { ref name, value } in options {
         match normalize_ident(name).as_str() {
             "account" => {
-                builder.account_name(parse_string_value(value)?);
+                builder.account_name(parse_string_value(value).context(ParserSnafu)?);
             }
             "access_key" => {
-                builder.access_key(parse_string_value(value)?);
+                builder.access_key(parse_string_value(value).context(ParserSnafu)?);
             }
             "bearer_token" => {
-                builder.bearer_token(parse_string_value(value)?);
+                builder.bearer_token(parse_string_value(value).context(ParserSnafu)?);
             }
             "use_emulator" => {
-                builder.use_emulator(parse_bool_value(value)?);
+                builder.use_emulator(parse_bool_value(value).context(ParserSnafu)?);
             }
             _ => {
                 return Err(QueryError::Semantic {
@@ -962,10 +969,10 @@ fn parse_azure_options(bucket: &str, options: Vec<SqlOption>) -> Result<AzblobSt
 fn write_tmp_service_account_file(
     sac: ServiceAccountCredentials,
     tmp: &mut NamedTempFile,
-) -> Result<()> {
-    let body = serde_json::to_vec(&sac)?;
-    let _ = tmp.write(&body)?;
-    tmp.flush()?;
+) -> QueryResult<()> {
+    let body = serde_json::to_vec(&sac).context(SerdeJsonSnafu)?;
+    let _ = tmp.write(&body).context(StdIoSnafu)?;
+    tmp.flush().context(StdIoSnafu)?;
 
     Ok(())
 }

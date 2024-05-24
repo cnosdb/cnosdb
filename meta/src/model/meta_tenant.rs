@@ -504,7 +504,7 @@ impl TenantMeta {
             let db = data_w
                 .dbs
                 .get_mut(&val.db)
-                .ok_or(MetaError::DatabaseNotFound {
+                .ok_or_else(|| MetaError::DatabaseNotFound {
                     database: val.db.clone(),
                 })?;
             db.tables

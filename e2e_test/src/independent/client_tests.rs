@@ -3,6 +3,8 @@
 use std::io::{self, BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::thread::sleep;
+use std::time::Duration;
 
 use serial_test::serial;
 
@@ -308,6 +310,7 @@ fn client_start_test() {
             )
             .unwrap();
 
+        sleep(Duration::from_secs(1));
         _server
             .client
             .post(
@@ -315,6 +318,7 @@ fn client_start_test() {
                 "drop tenant if exists tenant001",
             )
             .unwrap();
+        sleep(Duration::from_secs(1));
 
         _server
             .client
@@ -323,6 +327,7 @@ fn client_start_test() {
                 "create user user001",
             )
             .unwrap();
+        sleep(Duration::from_secs(1));
 
         _server
             .client
@@ -331,6 +336,7 @@ fn client_start_test() {
                 "create tenant tenant001",
             )
             .unwrap();
+        sleep(Duration::from_secs(1));
 
         let resp = _server
             .client
@@ -339,6 +345,7 @@ fn client_start_test() {
                 "alter tenant tenant001 add user user001 as owner",
             )
             .unwrap();
+        sleep(Duration::from_secs(1));
 
         assert_response_is_ok!(resp);
 
@@ -353,7 +360,7 @@ fn client_start_test() {
         if let Ok(resp) = resp {
             assert_eq!(
                 resp,
-                "422 Unprocessable Entity, body: {\"error_code\":\"050001\",\"error_message\":\"Meta request error: Database not found: \\\"public\\\"\"}"
+                "422 Unprocessable Entity, body: {\"error_code\":\"030017\",\"error_message\":\"Database not found: \\\"public\\\"\"}"
             )
         }
     }
@@ -404,6 +411,7 @@ fn client_join_generate_physical() {
         assert_eq!(&resp[0..10], "Query took")
     }
 
+    sleep(Duration::from_secs(1));
     let resp = _server
         .client
         .post("http://127.0.0.1:8902/api/v1/sql?db=public", "WITH l as (SELECT date_trunc('day', time) AS day, avg (temperature) AS day_temperature, station
@@ -500,6 +508,7 @@ fn split_test() {
             .client
             .post(url, "create table test(str_col string, tags(ta));")
             .unwrap();
+        sleep(Duration::from_secs(1));
     }
     {
         let args = vec![];
@@ -510,6 +519,7 @@ fn split_test() {
                 .write(&["insert into test(str_col,ta)values('a1','str;str');\n"])
                 .unwrap();
         }
+        sleep(Duration::from_secs(1));
     }
     {
         let url = "http://127.0.0.1:8902/api/v1/sql?db=public";
@@ -517,6 +527,7 @@ fn split_test() {
             .client
             .post(url, "insert into test(str_col,ta)values('a2',';str');")
             .unwrap();
+        sleep(Duration::from_secs(1));
 
         assert_response_is_ok!(resp);
 
@@ -524,6 +535,7 @@ fn split_test() {
             .client
             .post(url, "select str_col,ta from test order by str_col;")
             .unwrap();
+        sleep(Duration::from_secs(1));
 
         assert_eq!(resp.text().unwrap(), "str_col,ta\na1,str;str\na2,;str\n");
     }

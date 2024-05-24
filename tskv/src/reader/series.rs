@@ -11,13 +11,15 @@ use futures::{ready, Stream, StreamExt};
 use models::datafusion::limit_record_batch::limit_record_batch;
 use models::schema::{TskvTableSchemaRef, COLUMN_ID_META_KEY};
 use models::{ColumnId, SeriesKey, Tag};
+use snafu::{IntoError, ResultExt};
 
 use super::metrics::BaselineMetrics;
 use super::{
     BatchReader, BatchReaderRef, SchemableTskvRecordBatchStream,
     SendableSchemableTskvRecordBatchStream,
 };
-use crate::{TskvError, TskvResult};
+use crate::error::{ArrowSnafu, InvalidUtf8Snafu, TagSnafu};
+use crate::TskvResult;
 
 /// 添加 SeriesKey 对应的 tag 列到 RecordBatch
 pub struct SeriesReader {
@@ -56,13 +58,18 @@ impl BatchReader for SeriesReader {
         let mut append_column_values = Vec::with_capacity(self.skey.tags().len());
         for Tag { key, value } in self.skey.tags() {
             let column_id = std::str::from_utf8(key)
-                .map_err(|err| TskvError::InvalidUtf8 {
+                .context(InvalidUtf8Snafu {
                     message: format!("Convert tag {key:?}"),
-                    source: err,
                 })?
                 .parse::<ColumnId>()
-                .map_err(|err| TskvError::TagError {
-                    reason: format!("Convert tag {key:?} to column id failed, because: {}", err),
+                .map_err(|err| {
+                    TagSnafu {
+                        reason: format!(
+                            "Convert tag {key:?} to column id failed, because: {}",
+                            err
+                        ),
+                    }
+                    .build()
                 })?;
 
             let name = match self.query_schema.column_name(column_id) {
@@ -79,11 +86,12 @@ impl BatchReader for SeriesReader {
             )]));
 
             let field = Arc::new(field);
-            let array =
-                String::from_utf8(value.to_vec()).map_err(|err| TskvError::InvalidUtf8 {
+            let array = String::from_utf8(value.to_vec()).map_err(|e| {
+                InvalidUtf8Snafu {
                     message: format!("Convert tag {}'s value: {:?}", field.name(), value),
-                    source: err.utf8_error(),
-                })?;
+                }
+                .into_error(e.utf8_error())
+            })?;
             append_column.push(field);
             append_column_values.push(array);
         }
@@ -152,7 +160,7 @@ impl SeriesReaderStream {
 
                 let batch = match RecordBatch::try_new(self.schema.clone(), arrays) {
                     Ok(batch) => batch,
-                    Err(err) => return Poll::Ready(Some(Err(err.into()))),
+                    Err(err) => return Poll::Ready(Some(Err(ArrowSnafu.into_error(err)))),
                 };
                 Poll::Ready(limit_record_batch(self.remain.as_mut(), batch).map(Ok))
             }

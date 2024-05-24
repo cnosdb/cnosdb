@@ -10,10 +10,11 @@ use http_protocol::http_client::HttpClient;
 use http_protocol::parameter::{DumpParam, SqlParam, WriteParam};
 use http_protocol::status_code::OK;
 use reqwest::header::{ACCEPT_ENCODING, CONTENT_ENCODING};
+use tokio::sync::mpsc;
 
 use crate::config::ConfigOptions;
 use crate::print_format::PrintFormat;
-use crate::{ExitCode, Result};
+use crate::{progress_bar, ExitCode, Result};
 
 pub const DEFAULT_USER: &str = "cnosdb";
 pub const DEFAULT_PASSWORD: &str = "";
@@ -325,18 +326,44 @@ impl SessionContext {
 
     pub async fn write_line_protocol_file(&self, path: impl AsRef<Path>) -> Result<ResultSet> {
         let file = std::fs::File::open(path)?;
-        let reader = std::io::BufReader::new(file);
-        let mut batch = Vec::new();
-        for (i, line) in reader.lines().enumerate() {
-            if i % 10000 == 0 && !batch.is_empty() {
-                self.write_line_protocol(batch.join("\n").into()).await?;
-                batch.clear();
+        let size = file.metadata()?.len();
+        let mut reader = std::io::BufReader::new(file);
+        let pb = progress_bar::new_with_size(size);
+
+        let (tx, mut rx) = mpsc::channel::<String>(10);
+
+        let producer = tokio::spawn(async move {
+            let mut buffer = String::new();
+            let mut line_count = 0;
+            while let Ok(size) = reader.read_line(&mut buffer) {
+                if size == 0 {
+                    break;
+                }
+                line_count += 1;
+                if line_count % 10000 == 0 && !buffer.is_empty() {
+                    tx.send(buffer.clone()).await.unwrap();
+                    buffer.clear();
+                }
             }
-            batch.push(line.unwrap());
-        }
-        if !batch.is_empty() {
-            self.write_line_protocol(batch.join("\n").into()).await?;
-        }
+
+            if !buffer.is_empty() {
+                tx.send(buffer).await.unwrap();
+            }
+            anyhow::Ok(())
+        });
+
+        let consumer = async move {
+            while let Some(data) = rx.recv().await {
+                let data = data.into_bytes();
+                pb.inc(data.len() as u64);
+                self.write_line_protocol(data).await?;
+            }
+            anyhow::Ok(())
+        };
+
+        let (producer_results, consumer_results) = tokio::join!(producer, consumer);
+        let _ = producer_results?;
+        consumer_results?;
 
         Ok(ResultSet::Bytes(("".into(), 0)))
     }

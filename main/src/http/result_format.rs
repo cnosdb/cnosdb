@@ -13,6 +13,7 @@ use http_protocol::header::{
 use http_protocol::status_code::OK;
 use metrics::count::U64Counter;
 use reqwest::header::CONTENT_ENCODING;
+use trace::error;
 use warp::reply::Response;
 use warp::{reject, Rejection};
 
@@ -149,7 +150,13 @@ impl FromStr for ResultFormat {
 }
 
 pub fn get_result_format_from_header(header: &Header) -> Result<ResultFormat, Rejection> {
-    ResultFormat::try_from(header.get_accept()).map_err(reject::custom)
+    ResultFormat::try_from(header.get_accept()).map_err(|e| {
+        let e = HttpError::InvalidHeader {
+            reason: format!("{}", e),
+        };
+        error!("get_result_format_from_header: {:?}", e);
+        reject::custom(e)
+    })
 }
 
 #[cfg(test)]

@@ -3,9 +3,10 @@ use coordinator::resource_manager::ResourceManager;
 use meta::error::MetaError;
 use models::oid::Identifier;
 use models::schema::{ResourceInfo, ResourceOperator};
+use snafu::ResultExt;
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::{DropTenantObject, TenantObjectType};
-use spi::{QueryError, Result};
+use spi::{CoordinatorSnafu, MetaSnafu, QueryError, QueryResult};
 use trace::debug;
 
 use super::DDLDefinitionTask;
@@ -23,7 +24,7 @@ impl DropTenantObjectTask {
 
 #[async_trait]
 impl DDLDefinitionTask for DropTenantObjectTask {
-    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output> {
+    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> QueryResult<Output> {
         let DropTenantObject {
             ref tenant_name,
             ref name,
@@ -53,7 +54,7 @@ impl DDLDefinitionTask for DropTenantObjectTask {
                 //     tenant_id: &Oid
                 // ) -> Result<bool>;
                 debug!("Drop role {} of tenant {}", name, tenant_name);
-                let success = meta.drop_custom_role(name).await?;
+                let success = meta.drop_custom_role(name).await.context(MetaSnafu)?;
 
                 if let (false, false) = (if_exist, success) {
                     return Err(QueryError::Meta {
@@ -97,7 +98,8 @@ impl DDLDefinitionTask for DropTenantObjectTask {
                     query_state_machine.coord.node_id(),
                 );
                 ResourceManager::add_resource_task(query_state_machine.coord.clone(), resourceinfo)
-                    .await?;
+                    .await
+                    .context(CoordinatorSnafu)?;
 
                 Ok(Output::Nil(()))
             }

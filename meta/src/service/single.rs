@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::sync::RwLock;
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 use warp::{hyper, Filter};
 
 use crate::error::{MetaError, MetaResult};
@@ -102,7 +102,10 @@ impl SingleServer {
                 |req: hyper::body::Bytes, storage: Arc<RwLock<StateMachine>>| async move {
                     let req: ReadCommand = serde_json::from_slice(&req)
                         .map_err(MetaError::from)
-                        .map_err(warp::reject::custom)?;
+                        .map_err(|e| {
+                            error!("read error: {:?}", e);
+                            warp::reject::custom(e)
+                        })?;
 
                     let rsp = storage.read().await.process_read_command(&req);
                     let res: Result<String, warp::Rejection> = Ok(rsp);
@@ -119,7 +122,10 @@ impl SingleServer {
                 |req: hyper::body::Bytes, storage: Arc<RwLock<StateMachine>>| async move {
                     let req: WriteCommand = serde_json::from_slice(&req)
                         .map_err(MetaError::from)
-                        .map_err(warp::reject::custom)?;
+                        .map_err(|e| {
+                        error!("write error: {:?}", e);
+                        warp::reject::custom(e)
+                    })?;
 
                     let rsp = storage.write().await.process_write_command(&req);
                     let res: Result<String, warp::Rejection> = Ok(rsp);
@@ -134,9 +140,10 @@ impl SingleServer {
             .and(self.with_storage())
             .and_then(
                 |req: hyper::body::Bytes, storage: Arc<RwLock<StateMachine>>| async move {
-                    let data = Self::process_watch(req, storage)
-                        .await
-                        .map_err(warp::reject::custom)?;
+                    let data = Self::process_watch(req, storage).await.map_err(|e| {
+                        error!("watch error: {:?}", e);
+                        warp::reject::custom(e)
+                    })?;
 
                     let res: Result<String, warp::Rejection> = Ok(data);
                     res
@@ -152,7 +159,10 @@ impl SingleServer {
                     .await
                     .backup()
                     .map_err(MetaError::from)
-                    .map_err(warp::reject::custom)?;
+                    .map_err(|e| {
+                        error!("dump error: {:?}", e);
+                        warp::reject::custom(e)
+                    })?;
 
                 let mut rsp = "".to_string();
                 for (key, val) in data.map.iter() {
@@ -182,7 +192,10 @@ impl SingleServer {
                     let machine = storage.read().await;
                     let res = dump_impl(&cluster, tenant.as_deref(), machine.deref())
                         .await
-                        .map_err(warp::reject::custom)?;
+                        .map_err(|e| {
+                            error!("dump sql error: {:?}", e);
+                            warp::reject::custom(e)
+                        })?;
                     Ok::<String, warp::Rejection>(res)
                 },
             )
@@ -228,11 +241,10 @@ impl SingleServer {
     fn debug(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
         warp::path!("debug").and(self.with_storage()).and_then(
             |storage: Arc<RwLock<StateMachine>>| async move {
-                let data = storage
-                    .write()
-                    .await
-                    .debug_data()
-                    .map_err(warp::reject::custom)?;
+                let data = storage.write().await.debug_data().map_err(|e| {
+                    error!("debug error: {:?}", e);
+                    warp::reject::custom(e)
+                })?;
 
                 let res: Result<String, warp::Rejection> = Ok(data);
                 res
