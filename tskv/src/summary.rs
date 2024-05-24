@@ -320,6 +320,7 @@ impl Summary {
             .await?;
         w.sync().await?;
 
+        let node_id = opt.node_id;
         Ok(Self {
             file_no: 0,
             version_set: Arc::new(RwLock::new(VersionSet::empty(
@@ -328,7 +329,7 @@ impl Summary {
                 memory_pool,
                 metrics_register.clone(),
             ))),
-            ctx: Arc::new(GlobalContext::default()),
+            ctx: Arc::new(GlobalContext::new(node_id)),
             writer: w,
             opt,
             runtime,
@@ -355,7 +356,7 @@ impl Summary {
         let summary_path = opt.storage.summary_dir();
         let path = file_utils::make_summary_file(&summary_path, 0);
         let writer = Writer::open(path, RecordDataType::Summary).await.unwrap();
-        let ctx = Arc::new(GlobalContext::default());
+        let ctx = Arc::new(GlobalContext::new(opt.node_id));
         let rd = Box::new(
             Reader::open(&file_utils::make_summary_file(&summary_path, 0))
                 .await
@@ -1025,7 +1026,7 @@ mod test {
                 }
                 println!("Mock compact job finished ({test_case_name_clone}).");
             });
-
+            let node_id = config.node_basic.node_id;
             Self {
                 test_case_name,
                 base_dir,
@@ -1034,7 +1035,7 @@ mod test {
                 runtime,
                 admin_meta,
                 memory_pool,
-                global_context: Arc::new(GlobalContext::new()),
+                global_context: Arc::new(GlobalContext::new(node_id)),
                 summary_task_sender,
                 summary_job,
                 flush_task_sender,

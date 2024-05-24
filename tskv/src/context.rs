@@ -8,8 +8,9 @@ use tokio::sync::mpsc::Receiver;
 
 use crate::TseriesFamilyId;
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct GlobalContext {
+    node_id: u64,
     /// Database file id
     file_id: AtomicU64,
     /// Sequence-No of the latest write request.
@@ -17,8 +18,9 @@ pub struct GlobalContext {
 }
 
 impl GlobalContext {
-    pub fn new() -> Self {
+    pub fn new(node_id: u64) -> Self {
         Self {
+            node_id,
             file_id: AtomicU64::new(0),
             last_seq: AtomicU64::new(0),
         }
@@ -26,6 +28,10 @@ impl GlobalContext {
 }
 
 impl GlobalContext {
+    pub fn node_id(&self) -> u64 {
+        self.node_id
+    }
+
     /// Get the current file id.
     pub fn file_id(&self) -> u64 {
         self.file_id.load(Ordering::Acquire)

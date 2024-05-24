@@ -70,7 +70,7 @@ pub fn prepare_compaction(
         out_level: 2,
         out_time_range: TimeRange::all(),
     };
-    let context = Arc::new(GlobalContext::new());
+    let context = Arc::new(GlobalContext::new(opt.node_id));
     context.set_file_id(next_file_id);
 
     (compact_req, context)

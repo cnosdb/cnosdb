@@ -8,13 +8,14 @@ pub mod metric_register;
 pub mod metric_type;
 pub mod metric_value;
 pub mod prom_reporter;
+pub mod registered;
 pub mod reporter;
+mod time_unit;
 
 use std::any::Any;
 use std::fmt::Debug;
 use std::ops::Not;
 
-pub use duration::DURATION_MAX;
 use once_cell::sync::Lazy;
 use prometheus::{
     default_registry, gather, linear_buckets, register_histogram_vec, register_int_counter_vec,
@@ -22,6 +23,7 @@ use prometheus::{
 };
 use trace::error;
 
+pub use crate::duration::DURATION_MAX;
 // note: metrics references influxdb_iox
 // https://github.com/influxdata/influxdb_iox/tree/main/metrics
 use crate::metric::Metric;
@@ -221,6 +223,7 @@ pub fn init_tskv_metrics_recorder() {
     default_registry()
         .register(Box::new(COMPACTION_DURATION.clone()))
         .expect("tskv metrics collector cannot be registered");
+    registered::tskv_compaction::init();
 }
 
 pub fn incr_compaction_success() {

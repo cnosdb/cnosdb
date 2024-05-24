@@ -76,7 +76,7 @@ pub fn prepare_delta_compaction(
         out_level,
         out_time_range,
     };
-    let context = Arc::new(GlobalContext::new());
+    let context = Arc::new(GlobalContext::new(opt.node_id));
     context.set_file_id(next_file_id);
 
     (compact_req, context)

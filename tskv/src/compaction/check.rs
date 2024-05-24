@@ -917,7 +917,7 @@ mod test {
             engine.summary_task_sender(),
             engine.flush_task_sender(),
             engine.compact_task_sender(),
-            Arc::new(GlobalContext::new()),
+            Arc::new(GlobalContext::new(options.node_id)),
         )
         .await
         .unwrap();

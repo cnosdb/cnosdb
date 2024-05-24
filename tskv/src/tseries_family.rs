@@ -1841,7 +1841,7 @@ pub mod test_tseries_family {
 
         let tenant = "cnosdb".to_string();
         let database = "test_db".to_string();
-        let global_ctx = Arc::new(GlobalContext::new());
+        let global_ctx = Arc::new(GlobalContext::new(opt.node_id));
         let global_seq_ctx = GlobalSequenceContext::empty();
         let (summary_task_sender, summary_task_receiver) = mpsc::channel(SUMMARY_REQ_CHANNEL_CAP);
         let (compact_task_sender, _compact_task_receiver) = mpsc::channel(COMPACT_REQ_CHANNEL_CAP);

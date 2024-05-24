@@ -519,7 +519,7 @@ pub mod flush_tests {
         let memory_pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
         let test_case = flush_test_case_1(&memory_pool, 10);
 
-        let global_context = Arc::new(GlobalContext::new());
+        let global_context = Arc::new(GlobalContext::new(config.node_basic.node_id));
         let flush_task = FlushTask::new(test_case.caches(), 1, global_context, &delta_dir);
         let mut version_edits = vec![];
         let mut file_metas = HashMap::new();
@@ -658,7 +658,7 @@ pub mod flush_tests {
 
         let ts_family_id = 1;
         let max_level_ts = 10;
-        let global_context = Arc::new(GlobalContext::new());
+        let global_context = Arc::new(GlobalContext::new(1));
         let flush_task = FlushTask::new(vec![], ts_family_id, global_context.clone(), &delta_dir);
 
         let col_enc: HashMap<ColumnId, Encoding> = HashMap::from([

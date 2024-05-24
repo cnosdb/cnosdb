@@ -7,16 +7,15 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use metrics::registered::tskv_compaction::{MetricCompactionType, TskvVnodeCompactionReporter};
 use models::predicate::domain::{TimeRange, TimeRanges};
 use models::FieldId;
 use snafu::ResultExt;
 use utils::BloomFilter;
 
 use super::iterator::BufferedIterator;
-use super::metric::MetricStore;
 use super::CompactTask;
-use crate::compaction::metric::{CompactMetrics, FakeMetricStore};
-use crate::compaction::{metric, CompactReq};
+use crate::compaction::CompactReq;
 use crate::context::GlobalContext;
 use crate::error::{self, Result};
 use crate::summary::{CompactMeta, VersionEdit};
@@ -150,22 +149,25 @@ async fn compact_files(
 
     let mut curr_fid: Option<FieldId> = None;
 
-    let mut compact_metrics: Box<dyn MetricStore> = if storage_opt.collect_compaction_metrics {
-        Box::new(CompactMetrics::default(request.compact_task))
+    let mut compact_metrics = if storage_opt.collect_compaction_metrics {
+        let (vnode_id, compaction_type) = match request.compact_task {
+            CompactTask::Normal(id) => (id, MetricCompactionType::Normal),
+            CompactTask::Delta(id) => (id, MetricCompactionType::Delta),
+            CompactTask::Manual(id) => (id, MetricCompactionType::Manual),
+        };
+        TskvVnodeCompactionReporter::new(ctx.node_id(), vnode_id, compaction_type)
     } else {
-        Box::new(FakeMetricStore)
+        TskvVnodeCompactionReporter::fake()
     };
 
-    compact_metrics.begin_all();
+    compact_metrics.begin();
     loop {
-        compact_metrics.begin(metric::NEXT_FIELD);
         let fid = match state.next(&mut merging_blk_meta_groups).await {
             Some(fid) => fid,
             None => break,
         };
-        compact_metrics.finish(metric::NEXT_FIELD);
 
-        compact_metrics.begin(metric::MERGE_FIELD);
+        compact_metrics.merge_field_begin();
 
         for blk_meta_group in merging_blk_meta_groups.drain(..) {
             trace::trace!("merging meta group: {blk_meta_group}");
@@ -177,15 +179,14 @@ async fn compact_files(
                         trace::trace!(
                             "write the previous compacting block (fid={curr_fid:?}): {blk}"
                         );
-                        compact_metrics.begin(metric::WRITE_BLOCK);
+                        compact_metrics.write_data_begin();
                         writer_wrapper.write(blk).await?;
-                        compact_metrics.finish(metric::WRITE_BLOCK);
+                        compact_metrics.write_data_end();
                     }
                 }
             }
             curr_fid = Some(fid);
 
-            compact_metrics.begin(metric::MERGE_BLOCK);
             blk_meta_group
                 .merge_with_previous_block(
                     previous_merged_block.take(),
@@ -196,7 +197,6 @@ async fn compact_files(
                     &mut compact_metrics,
                 )
                 .await?;
-            compact_metrics.finish(metric::MERGE_BLOCK);
             if merged_blks.is_empty() {
                 continue;
             }
@@ -215,24 +215,24 @@ async fn compact_files(
                     break;
                 }
                 trace::trace!("write compacting block(fid={fid}): {blk}");
-                compact_metrics.begin(metric::WRITE_BLOCK);
+                compact_metrics.write_data_begin();
                 writer_wrapper.write(blk).await?;
-                compact_metrics.finish(metric::WRITE_BLOCK);
+                compact_metrics.write_data_end();
             }
         }
 
-        compact_metrics.finish(metric::MERGE_FIELD);
+        compact_metrics.merge_field_end();
     }
     if let Some(blk) = previous_merged_block {
         trace::trace!("write the final compacting block(fid={curr_fid:?}): {blk}");
-        compact_metrics.begin(metric::WRITE_BLOCK);
+        compact_metrics.write_data_begin();
         writer_wrapper.write(blk).await?;
-        compact_metrics.finish(metric::WRITE_BLOCK);
+        compact_metrics.write_data_end();
     }
 
     let (version_edit, file_metas) = writer_wrapper.close().await?;
 
-    compact_metrics.finish_all();
+    compact_metrics.end();
 
     Ok((version_edit, file_metas))
 }
@@ -590,14 +590,14 @@ impl CompactingBlockMetaGroup {
         self.time_range.merge(&other.time_range);
     }
 
-    pub async fn merge_with_previous_block(
+    pub async fn merge_with_previous_block<'a>(
         mut self,
         previous_block: Option<CompactingBlock>,
         max_block_size: usize,
         time_range: &TimeRange,
         compacting_blocks: &mut Vec<CompactingBlock>,
         compacting_files: &mut [CompactingFile],
-        metrics: &mut Box<dyn MetricStore>,
+        metrics: &mut TskvVnodeCompactionReporter<'a>,
     ) -> Result<()> {
         compacting_blocks.clear();
         if self.blk_metas.is_empty() {
@@ -614,11 +614,11 @@ impl CompactingBlockMetaGroup {
             // Only one compacting block and has no tombstone, write as raw block.
             trace::trace!("only one compacting block without tombstone and time_range is entirely included by target level, handled as raw block");
             let head_meta = &self.blk_metas[0].block_meta;
-            metrics.begin(metric::READ_BLOCK);
+            metrics.read_data_begin();
             let buf = compacting_files[self.blk_metas[0].compacting_file_index]
                 .get_raw_data(&self.blk_metas[0].block_meta)
                 .await?;
-            metrics.finish(metric::READ_BLOCK);
+            metrics.read_data_end();
 
             if head_meta.size() >= max_block_size as u64 {
                 // Raw data block is full, so do not merge with the previous, directly return.
@@ -664,9 +664,9 @@ impl CompactingBlockMetaGroup {
             let (mut head_block, mut head_i) = (Option::<DataBlock>::None, 0_usize);
             for (i, meta) in self.blk_metas.iter().enumerate() {
                 let cf = &mut compacting_files[meta.compacting_file_index];
-                metrics.begin(metric::READ_BLOCK);
+                metrics.read_data_begin();
                 if let Some(blk) = cf.get_data_block(&meta.block_meta).await? {
-                    metrics.finish(metric::READ_BLOCK);
+                    metrics.read_data_end();
                     head_block = Some(blk);
                     head_i = i;
                     break;
@@ -685,12 +685,10 @@ impl CompactingBlockMetaGroup {
                 for blk_meta in self.blk_metas.iter_mut().skip(head_i + 1) {
                     // Merge decoded data block.
                     let cf = &mut compacting_files[blk_meta.compacting_file_index];
-                    metrics.begin(metric::READ_BLOCK);
+                    metrics.read_data_begin();
                     if let Some(blk) = cf.get_data_block(&blk_meta.block_meta).await? {
-                        metrics.finish(metric::READ_BLOCK);
-                        metrics.begin(metric::MERGE_BLOCK_BATCH);
+                        metrics.read_data_end();
                         head_blk = head_blk.merge(blk);
-                        metrics.finish(metric::MERGE_BLOCK_BATCH);
                     }
                 }
                 trace::trace!("Compaction(delta): Finished task to merge data blocks");
