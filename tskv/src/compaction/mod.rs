@@ -33,7 +33,7 @@ pub struct CompactReq {
 pub struct FlushReq {
     pub tf_id: TseriesFamilyId,
     pub owner: String,
-    pub ts_index: Arc<TSIndex>,
+    pub ts_index: Arc<RwLock<TSIndex>>,
     pub ts_family: Arc<RwLock<TseriesFamily>>,
     pub trigger_compact: bool,
 }

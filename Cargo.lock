@@ -6361,6 +6361,7 @@ dependencies = [
  "integer-encoding 4.0.0",
  "lazy_static",
  "libc",
+ "maplit",
  "md-5",
  "memmap2",
  "memory_pool",

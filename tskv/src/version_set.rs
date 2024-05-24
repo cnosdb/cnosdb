@@ -144,7 +144,10 @@ impl VersionSet {
     pub async fn get_tsfamily_tsindex_by_tf_id(
         &self,
         tf_id: u32,
-    ) -> (Option<Arc<RwLock<TseriesFamily>>>, Option<Arc<TSIndex>>) {
+    ) -> (
+        Option<Arc<RwLock<TseriesFamily>>>,
+        Option<Arc<RwLock<TSIndex>>>,
+    ) {
         let mut vnode = None;
         let mut vnode_index = None;
         for db in self.dbs.values() {
