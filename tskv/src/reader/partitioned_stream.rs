@@ -6,10 +6,12 @@ use arrow_schema::ArrowError;
 use datafusion::physical_plan::sorts::cursor::FieldArray;
 use futures::stream::Fuse;
 use futures::StreamExt;
+use snafu::ResultExt;
 
+use crate::error::ArrowSnafu;
 use crate::reader::sort_merge::ColumnCursor;
 use crate::reader::SendableSchemableTskvRecordBatchStream;
-use crate::{TskvError, TskvResult};
+use crate::TskvResult;
 
 /// A [`Stream`](futures::Stream) that has multiple partitions that can
 /// be polled separately but not concurrently
@@ -76,11 +78,12 @@ impl<T: FieldArray> ColumnCursorStream<T> {
                 a.schema()
                     .column_with_name(column_name)
                     .map(|f| f.0)
-                    .ok_or_else(|| TskvError::Arrow {
-                        source: ArrowError::SchemaError(format!(
+                    .ok_or_else(|| {
+                        ArrowError::SchemaError(format!(
                             "Unable to get field named \"{column_name}\"."
-                        )),
+                        ))
                     })
+                    .context(ArrowSnafu)
             })
             .collect::<TskvResult<Vec<usize>>>()?;
 

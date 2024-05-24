@@ -1,9 +1,10 @@
 use models::predicate::domain::TimeRange;
 use serde::{Deserialize, Serialize};
+use snafu::OptionExt;
 
+use crate::error::TsmColumnGroupSnafu;
 use crate::tsm::page::PageWriteSpec;
 use crate::tsm::ColumnGroupID;
-use crate::TskvError;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ColumnGroup {
@@ -73,7 +74,7 @@ impl ColumnGroup {
             .iter()
             .find(|p| p.meta.column.column_type.is_time())
             .cloned()
-            .ok_or_else(|| TskvError::TsmColumnGroupError {
+            .context(TsmColumnGroupSnafu {
                 reason: format!("column group: {} not found time page", self.column_group_id),
             })
     }

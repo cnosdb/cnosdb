@@ -9,10 +9,13 @@ use datafusion::scalar::ScalarValue;
 use models::predicate::domain::{utf8_from, ColumnDomains, Domain, Range};
 use models::schema::TskvTableSchema;
 use models::{tag, SeriesId, SeriesKey, Tag, TagKey, TagValue};
+use snafu::{OptionExt, ResultExt};
 use tokio::sync::RwLock;
 
 use super::cache::IndexCache;
-use super::{IndexEngine, IndexError, IndexResult};
+use super::{DecodeSeriesKeySnafu, IndexEngine, IndexResult};
+use crate::error::{ColumnNotFoundSnafu, IndexErrSnafu};
+use crate::index::SeriesAlreadyExistsSnafu;
 use crate::{byte_utils, TskvError, UpdateSetValue};
 
 const SERIES_ID_PREFIX: &str = "_id_";
@@ -182,7 +185,7 @@ impl TSIndex {
         let series_key = self.storage.get(&encode_series_id_key(sid))?;
         if let Some(res) = series_key {
             let key = SeriesKey::decode(&res)
-                .map_err(|e| IndexError::DecodeSeriesKey { msg: e.to_string() })?;
+                .map_err(|e| DecodeSeriesKeySnafu { msg: e.to_string() }.build())?;
 
             self.cache.cache(sid, key.clone());
 
@@ -355,9 +358,10 @@ impl TSIndex {
 
             if check_conflict && self.get_series_id(&new_key).await?.is_some() {
                 trace::warn!("Series already exists: {:?}", new_key);
-                return Err(IndexError::SeriesAlreadyExists {
+                return Err(SeriesAlreadyExistsSnafu {
                     key: key.to_string(),
-                });
+                }
+                .build());
             }
 
             // TODO 去重
@@ -368,9 +372,10 @@ impl TSIndex {
 
         // 检查新生成的series key是否有重复key
         if new_keys_set.len() != new_keys.len() {
-            return Err(IndexError::SeriesAlreadyExists {
+            return Err(SeriesAlreadyExistsSnafu {
                 key: "new series keys".to_string(),
-            });
+            }
+            .build());
         }
 
         Ok((old_keys, new_keys, ids))
@@ -385,7 +390,10 @@ impl TSIndex {
         if tag_domains.is_all() {
             // Match all records
             trace::debug!("pushed tags filter is All.");
-            return Ok(self.get_series_id_list(tab, &[]).await?);
+            return self
+                .get_series_id_list(tab, &[])
+                .await
+                .context(IndexErrSnafu);
         }
 
         if let Some(domains) = tag_domains.domains() {
@@ -394,13 +402,16 @@ impl TSIndex {
             for (k, v) in domains.iter() {
                 let id = table_schema
                     .column(k)
-                    .ok_or_else(|| TskvError::ColumnNotFound {
+                    .context(ColumnNotFoundSnafu {
                         column: k.to_string(),
                     })?
                     .id
                     .to_string();
 
-                let rb = self.get_series_ids_by_domain(tab, &id, v).await?;
+                let rb = self
+                    .get_series_ids_by_domain(tab, &id, v)
+                    .await
+                    .context(IndexErrSnafu)?;
                 series_ids.push(rb);
             }
 

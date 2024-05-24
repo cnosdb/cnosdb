@@ -13,10 +13,11 @@ use futures::{ready, FutureExt, Stream, StreamExt, TryFutureExt};
 use meta::model::MetaRef;
 use metrics::count::U64Counter;
 use models::meta_data::{VnodeId, VnodeInfo, VnodeStatus};
+use snafu::ResultExt;
 use tracing::warn;
 use tskv::reader::QueryOption;
 
-use crate::errors::{CoordinatorError, CoordinatorResult};
+use crate::errors::{CommonSnafu, CoordinatorError, CoordinatorResult, MetaSnafu};
 use crate::service::CoordServiceMetrics;
 use crate::SendableCoordinatorRecordBatchStream;
 
@@ -74,11 +75,11 @@ impl<O: VnodeOpener> CheckedCoordinatorRecordBatchStream<O> {
                     // TODO record time used
                     match ready!(checker.try_poll_unpin(cx)) {
                         Ok(_) => {
-                            self.vnode = self.option.split.pop_front().ok_or(
+                            self.vnode = self.option.split.pop_front().ok_or_else(|| {
                                 CoordinatorError::NoValidReplica {
                                     id: self.option.split.replica_id(),
-                                },
-                            )?;
+                                }
+                            })?;
 
                             self.state = StreamState::Idle;
                         }
@@ -125,10 +126,11 @@ impl<O: VnodeOpener> CheckedCoordinatorRecordBatchStream<O> {
                                 let tenant_name = self.tenant.clone();
                                 let future = async move {
                                     meta.limiter(&tenant_name)
-                                        .await?
+                                        .await
+                                        .context(MetaSnafu)?
                                         .check_coord_data_out(batch_memory)
                                         .await
-                                        .map_err(CoordinatorError::from)
+                                        .context(MetaSnafu)
                                 };
                                 let _ = mem::replace(
                                     state,
@@ -171,9 +173,10 @@ impl<O: VnodeOpener> CheckedCoordinatorRecordBatchStream<O> {
                     let _ = ready!(c.try_poll_unpin(cx));
                     return Poll::Ready(Some(Err(mem::replace(
                         err,
-                        CoordinatorError::CommonError {
+                        CommonSnafu {
                             msg: "default err to mem::replace".to_string(),
-                        },
+                        }
+                        .build(),
                     ))));
                 }
             }
@@ -204,7 +207,10 @@ pub async fn change_vnode_to_broken(
     if let Some(meta_client) = meta_client {
         if let Some(mut all_info) = meta_client.get_vnode_all_info(vnode_id) {
             all_info.set_status(VnodeStatus::Broken);
-            meta_client.update_vnode(&all_info).await?;
+            meta_client
+                .update_vnode(&all_info)
+                .await
+                .context(MetaSnafu)?;
 
             return Ok(());
         }

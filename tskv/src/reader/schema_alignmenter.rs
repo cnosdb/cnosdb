@@ -8,6 +8,7 @@ use arrow_array::{new_null_array, RecordBatch};
 use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
 use futures::{Stream, StreamExt};
 use models::schema::COLUMN_ID_META_KEY;
+use snafu::IntoError;
 use trace::error;
 
 use super::metrics::BaselineMetrics;
@@ -15,6 +16,7 @@ use super::{
     BatchReader, BatchReaderRef, SchemableTskvRecordBatchStream,
     SendableSchemableTskvRecordBatchStream,
 };
+use crate::error::ArrowSnafu;
 use crate::TskvResult;
 
 /// 对数据模式进行调整和对齐，使其与预期完整和一致
@@ -160,7 +162,7 @@ impl Stream for SchemaAlignmenterStream {
 
                 match reorder_and_align_schema(&self.schema_mapping, batch) {
                     Ok(batch) => Poll::Ready(Some(Ok(batch))),
-                    Err(err) => Poll::Ready(Some(Err(Into::into(err)))),
+                    Err(err) => Poll::Ready(Some(Err(ArrowSnafu.into_error(err)))),
                 }
             }
             other => other,

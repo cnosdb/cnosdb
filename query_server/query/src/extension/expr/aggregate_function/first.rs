@@ -16,13 +16,13 @@ use datafusion::logical_expr::{
 use datafusion::physical_plan::Accumulator;
 use datafusion::scalar::ScalarValue;
 use spi::query::function::FunctionMetadataManager;
-use spi::{QueryError, Result};
+use spi::{QueryError, QueryResult};
 
 use super::TSPoint;
 use crate::extension::expr::aggregate_function::FIRST_UDAF_NAME;
 use crate::extension::expr::BINARYS;
 
-pub fn register_udaf(func_manager: &mut dyn FunctionMetadataManager) -> Result<AggregateUDF> {
+pub fn register_udaf(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<AggregateUDF> {
     let udf = new();
     func_manager.register_udaf(udf.clone())?;
     Ok(udf)

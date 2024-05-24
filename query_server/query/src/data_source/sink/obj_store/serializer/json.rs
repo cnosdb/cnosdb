@@ -7,7 +7,7 @@ use datafusion::physical_plan::SendableRecordBatchStream;
 use futures::{pin_mut, TryStreamExt};
 use snafu::ResultExt;
 use spi::query::datasource::WriteContext;
-use spi::{Result, SerializeJsonSnafu};
+use spi::{QueryResult, SerializeJsonSnafu};
 
 use crate::data_source::sink::RecordBatchSerializer;
 
@@ -19,7 +19,7 @@ impl RecordBatchSerializer for NdJsonRecordBatchSerializer {
         &self,
         _ctx: &WriteContext,
         stream: SendableRecordBatchStream,
-    ) -> Result<(usize, Bytes)> {
+    ) -> QueryResult<(usize, Bytes)> {
         pin_mut!(stream);
 
         let mut num_rows = 0;
@@ -41,7 +41,7 @@ impl RecordBatchSerializer for NdJsonRecordBatchSerializer {
         _ctx: &WriteContext,
         _schema: SchemaRef,
         batches: &[RecordBatch],
-    ) -> Result<(usize, Bytes)> {
+    ) -> QueryResult<(usize, Bytes)> {
         let mut num_rows = 0;
         let mut bytes = vec![];
         {

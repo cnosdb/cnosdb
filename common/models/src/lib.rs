@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 pub use error_code;
-pub use errors::{Error, Result};
+pub use errors::{ModelError, ModelResult};
 use parking_lot::RwLock;
 pub use record_batch::*;
 pub use series_info::SeriesKey;

@@ -12,7 +12,7 @@ use protos::{raft_service_time_out_client, DEFAULT_GRPC_SERVER_MESSAGE_LEN};
 use tonic::transport::{Channel, Endpoint};
 use trace::debug;
 
-use crate::errors::{ReplicationError, ReplicationResult};
+use crate::errors::{GRPCRequestSnafu, ReplicationResult};
 use crate::{RaftNodeId, RaftNodeInfo, ReplicationConfig, TypeConfig};
 
 // ------------------------------------------------------------------------- //
@@ -35,17 +35,18 @@ impl NetworkConn {
         }
 
         let connector = Endpoint::from_shared(format!("http://{}", addr)).map_err(|err| {
-            ReplicationError::GRPCRequest {
+            GRPCRequestSnafu {
                 msg: format!("Connect to({}) error: {}", addr, err),
             }
+            .build()
         })?;
 
-        let channel = connector
-            .connect()
-            .await
-            .map_err(|err| ReplicationError::GRPCRequest {
+        let channel = connector.connect().await.map_err(|err| {
+            GRPCRequestSnafu {
                 msg: format!("Connect to({}) error: {}", addr, err),
-            })?;
+            }
+            .build()
+        })?;
 
         self.conn_map
             .write()

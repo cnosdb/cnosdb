@@ -7,14 +7,15 @@ use crate::auth::role::CustomTenantRole;
 use crate::auth::user::UserDesc;
 use crate::codec::Encoding;
 use crate::datafusion::SqlParserValue;
+use crate::errors::DumpSnafu;
 use crate::oid::{Identifier, Oid};
 use crate::schema::{
     ColumnType, DatabaseSchema, DurationUnit, ExternalTableSchema, StreamTable, TableSchema,
     Tenant, TskvTableSchema,
 };
-use crate::Error;
+use crate::ModelError;
 
-type Result<T, E = Error> = std::result::Result<T, E>;
+type Result<T, E = ModelError> = std::result::Result<T, E>;
 
 pub fn sql_option_to_sql_str(opts: Vec<Option<(&str, SqlParserValue)>>) -> String {
     opts.into_iter()
@@ -56,8 +57,11 @@ impl ToDDLSql for Tenant {
             .map(|a| {
                 // Safety
                 serde_json::to_string(&a)
-                    .map_err(|e| Error::DumpError {
-                        msg: format!("dump tenant limiter faile: {}", e),
+                    .map_err(|e| {
+                        DumpSnafu {
+                            msg: format!("dump tenant limiter faile: {}", e),
+                        }
+                        .build()
                     })
                     .map(|config| ("_limiter", SqlParserValue::SingleQuotedString(config)))
             })
@@ -329,7 +333,7 @@ impl ToDDLSql for ExternalTableSchema {
         }
         res.push_str(format!("\"{}\".\"{}\" ", self.db, self.name).as_str());
         let file_type = FileType::from_str(&self.file_type)
-            .map_err(|e| Error::DumpError { msg: e.to_string() })?;
+            .map_err(|e| DumpSnafu { msg: e.to_string() }.build())?;
         if file_type.ne(&FileType::PARQUET) {
             let columns = self
                 .schema
@@ -340,7 +344,7 @@ impl ToDDLSql for ExternalTableSchema {
                     let res = format!("\"{}\" {}", f.name(), data_type,);
                     Ok(res)
                 })
-                .collect::<Result<Vec<_>, crate::Error>>()?
+                .collect::<Result<Vec<_>, crate::ModelError>>()?
                 .join(", ");
             res.push('(');
             res.push_str(columns.as_str());
@@ -363,7 +367,7 @@ impl ToDDLSql for ExternalTableSchema {
 
         if matches!(file_type, FileType::CSV | FileType::JSON) {
             let compression_type = FileCompressionType::from_str(&self.file_compression_type)
-                .map_err(|e| Error::DumpError { msg: e.to_string() })?;
+                .map_err(|e| DumpSnafu { msg: e.to_string() }.build())?;
 
             if compression_type.eq(&FileCompressionType::GZIP) {
                 res.push_str("compression type gzip")
@@ -431,7 +435,7 @@ impl ToDDLSql for StreamTable {
                     let res = format!("\"{}\" {}", f.name(), datatype,);
                     Ok(res)
                 })
-                .collect::<Result<Vec<_>, crate::Error>>()?
+                .collect::<Result<Vec<_>, crate::ModelError>>()?
                 .join(", ");
             res.push('(');
             res.push_str(columns.as_str());
@@ -442,18 +446,24 @@ impl ToDDLSql for StreamTable {
         let options = self.extra_options();
         let db = options
             .get("db")
-            .ok_or_else(|| Error::DumpError {
-                msg: format!("couldn't found option 'db' of stream table {}", self.name()),
+            .ok_or_else(|| {
+                DumpSnafu {
+                    msg: format!("couldn't found option 'db' of stream table {}", self.name()),
+                }
+                .build()
             })?
             .as_str();
 
         let table = options
             .get("table")
-            .ok_or_else(|| Error::DumpError {
-                msg: format!(
-                    "couldn't found option 'table' of stream table {}",
-                    self.name()
-                ),
+            .ok_or_else(|| {
+                DumpSnafu {
+                    msg: format!(
+                        "couldn't found option 'table' of stream table {}",
+                        self.name()
+                    ),
+                }
+                .build()
             })?
             .as_str();
         let event_time_column = self.watermark().column.as_str();

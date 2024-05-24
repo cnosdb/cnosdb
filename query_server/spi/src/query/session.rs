@@ -18,7 +18,7 @@ use trace::{Span, SpanContext};
 use super::config::StreamTriggerInterval;
 use super::variable::VarProviderRef;
 use crate::service::protocol::Context;
-use crate::Result;
+use crate::QueryResult;
 
 extensions_options! {
     pub struct SqlExecInfo {
@@ -120,7 +120,7 @@ impl SessionCtxFactory {
         memory_pool: Arc<dyn MemoryPool>,
         span_ctx: Option<SpanContext>,
         coord: Arc<dyn Coordinator>,
-    ) -> Result<SessionCtx> {
+    ) -> QueryResult<SessionCtx> {
         let df_session_ctx =
             self.build_df_session_context(session_id, context, memory_pool, &span_ctx, coord)?;
 
@@ -144,7 +144,7 @@ impl SessionCtxFactory {
         memory_pool: Arc<dyn MemoryPool>,
         span_ctx: &Option<SpanContext>,
         coord: Arc<dyn Coordinator>,
-    ) -> Result<SessionContext> {
+    ) -> QueryResult<SessionContext> {
         let mut config = context.session_config().to_df_config().clone();
         if let Some(span_ctx) = span_ctx {
             // inject span context into datafusion session config, so that it can be used in execution

@@ -42,7 +42,7 @@ INSERT m3(TIME, t0, f0, t1) VALUES(7880390032659694555, '174906244', -370874632,
 statement ok
 INSERT m3(TIME, t0, f0, t1) VALUES(7381709403680827764, 'c]_tcQrM', -1598798851, '	0'), (3862455659464635599, '{\', 796269585, '1889832286'); -- 0ms;
 
-statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: TskvError: Fields can't be empty", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: Fields can't be empty", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
 INSERT m3(TIME, t1, t0) VALUES(8357345634210517894, 'T!', 't'); -- 0ms;
 
 statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Inconsistent data type across values list at row 1 column 1", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
@@ -54,7 +54,7 @@ INSERT m1(TIME, t0, f0, f2, f1) VALUES(5979869772620384424, '8N] ', 'M', 1043515
 statement ok
 INSERT m2(TIME, f0, t2, t0) VALUES(5830511419206974812, 297153453615660218, '<[#n3Lb', '~!k'); -- 0ms;
 
-statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: TskvError: Fields can't be empty", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: Fields can't be empty", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
 INSERT m4(TIME, t0) VALUES(1641279124618714342, '*Yk'), (6904427846636587726, 'Ff(u'), (8501508840232273345, 'CB<7E]'), (4535575739230910918, '9065525203050843594'); -- 0ms;
 
 statement ok
@@ -81,7 +81,7 @@ INSERT m0(TIME, f0, t0) VALUES(335803738395517921, 0.891098314343950259619475673
 statement ok
 INSERT m2(TIME, t2, f1) VALUES(1499579400425111068, 'a7|*擘~3', 0.3542197858214863881443079662858508527278900146484375); -- 0ms;
 
-statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: TskvError: Fields can't be empty", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: Fields can't be empty", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
 INSERT m2(TIME, t0, t2) VALUES(3792508435101275658, 't5sd/,D?7', ',d'); -- 0ms;
 
 statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Inconsistent data type across values list at row 1 column 1", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
@@ -114,7 +114,7 @@ INSERT m0(TIME, f0, t0) VALUES(3073736359632055652, 0.29942238016120981125567368
 statement ok
 INSERT m1(TIME, f1) VALUES(4405135655254137840, TRUE), (5010135736173590510, TRUE); -- 0ms;
 
-statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: TskvError: Fields can't be empty", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: Fields can't be empty", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
 INSERT m0(TIME, t0) VALUES(7830195537671872289, ''), (2960157668810740158, '0.08834751653967488'); -- 0ms;
 
 statement ok
@@ -126,7 +126,7 @@ INSERT m1(TIME, f2, f0) VALUES(341303125816519819, NULL, '3309273192353118515'),
 statement ok
 INSERT m3(TIME, f0, t0) VALUES(6634512753791616118, 1296743770, 'O~'); -- 0ms;
 
-statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: TskvError: Fields can't be empty", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: Fields can't be empty", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
 INSERT m0(TIME, t0) VALUES(681590122943006574, ''); -- 1ms;
 
 statement ok
@@ -141,7 +141,7 @@ INSERT m4(TIME, f0) VALUES(8628134510828718363, TRUE), (5632091374246825572, TRU
 statement ok
 INSERT m0(TIME, t0, f0) VALUES(8573280033733946014, 'z', 0.45063825268152390979281562977121211588382720947265625); -- 0ms;
 
-statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: TskvError: Fields can't be empty", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: Fields can't be empty", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
 INSERT m1(TIME, t0) VALUES(9025730320552868594, NULL); -- 0ms;
 
 statement ok
@@ -153,7 +153,7 @@ INSERT m1(TIME, f0, t0, f2) VALUES(781110224327458166, 'H2', '867050129928242716
 statement ok
 INSERT m0(TIME, f0, t0) VALUES(1324315595308255006, 0.8266616373816801921492469773511402308940887451171875, '.'); -- 0ms;
 
-statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: TskvError: Fields can't be empty", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: Fields can't be empty", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
 INSERT m3(TIME, t0) VALUES(5961690929868572693, 'Rn3'), (6927680728977609390, '0.46917222743479703'); -- 0ms;
 
 statement ok

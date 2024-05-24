@@ -360,7 +360,14 @@ fn cargo_build_cnosdb_meta(workspace_dir: impl AsRef<Path>) {
     let mut cargo_build = Command::new("cargo");
     let output = cargo_build
         .current_dir(workspace_dir)
-        .args(["build", "--package", "meta", "--bin", "cnosdb-meta"])
+        .args([
+            "build",
+            "--release",
+            "--package",
+            "meta",
+            "--bin",
+            "cnosdb-meta",
+        ])
         .output()
         .expect("failed to execute cargo build");
     if !output.status.success() {
@@ -380,7 +387,7 @@ fn cargo_build_cnosdb_data(workspace_dir: impl AsRef<Path>) {
     let mut cargo_build = Command::new("cargo");
     let output = cargo_build
         .current_dir(workspace_dir)
-        .args(["build", "--package", "main", "--bin", "cnosdb"])
+        .args(["build", "--release", "--package", "main", "--bin", "cnosdb"])
         .output()
         .expect("failed to execute cargo build");
     if !output.status.success() {
@@ -422,7 +429,7 @@ impl CnosdbMetaTestHelper {
             meta_node_definitions,
             exe_path: workspace_dir
                 .join("target")
-                .join("debug")
+                .join("release")
                 .join("cnosdb-meta"),
             client: Arc::new(Client::new()),
             meta_client: Arc::new(MetaHttpClient::new("127.0.0.1:8901")),
@@ -620,7 +627,7 @@ impl CnosdbDataTestHelper {
             workspace_dir: workspace_dir.clone(),
             test_dir: test_dir.as_ref().to_path_buf(),
             data_node_definitions,
-            exe_path: workspace_dir.join("target").join("debug").join("cnosdb"),
+            exe_path: workspace_dir.join("target").join("release").join("cnosdb"),
             enable_tls,
             client,
             sub_processes: HashMap::with_capacity(2),

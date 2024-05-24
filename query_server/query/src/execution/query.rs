@@ -8,7 +8,7 @@ use spi::query::execution::{Output, QueryExecution, QueryStateMachineRef};
 use spi::query::logical_planner::QueryPlan;
 use spi::query::optimizer::Optimizer;
 use spi::query::scheduler::SchedulerRef;
-use spi::{QueryError, Result};
+use spi::{QueryError, QueryResult};
 use trace::debug;
 
 pub struct SqlQueryExecution {
@@ -36,7 +36,7 @@ impl SqlQueryExecution {
         }
     }
 
-    async fn start(&self) -> Result<Output> {
+    async fn start(&self) -> QueryResult<Output> {
         // begin optimize
         self.query_state_machine.begin_optimize();
         let physical_plan = self
@@ -65,7 +65,7 @@ impl SqlQueryExecution {
 
 #[async_trait]
 impl QueryExecution for SqlQueryExecution {
-    async fn start(&self) -> Result<Output> {
+    async fn start(&self) -> QueryResult<Output> {
         let (task, abort_handle) = futures::future::abortable(self.start());
 
         {
@@ -75,7 +75,7 @@ impl QueryExecution for SqlQueryExecution {
         task.await.map_err(|_| QueryError::Cancel)?
     }
 
-    fn cancel(&self) -> Result<()> {
+    fn cancel(&self) -> QueryResult<()> {
         debug!(
             "cancel sql query execution: query_id: {:?}, sql: {}, state: {:?}",
             &self.query_state_machine.query_id,

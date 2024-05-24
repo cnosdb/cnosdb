@@ -455,3 +455,57 @@ impl ServiceBuilder {
         ))
     }
 }
+
+#[cfg(test)]
+mod delegation {
+    use snafu::prelude::*;
+    use snafu::{Backtrace, Location};
+
+    #[derive(Debug, Snafu)]
+    pub enum Error {
+        #[snafu(display("Please inject DBMS.{}", meg))]
+        NotFoundDBMS {
+            meg: String,
+            location: Location,
+            backtrace: Backtrace,
+        },
+    }
+
+    #[derive(Debug, Snafu)]
+    pub enum TestError {
+        Error1 { location: Location, source: Error },
+    }
+
+    pub fn result1() -> Result<(), Error> {
+        Err(NotFoundDBMSSnafu {
+            meg: "hello".to_string(),
+        }
+        .build())
+    }
+
+    pub fn result2() -> Result<(), TestError> {
+        result1().context(Error1Snafu)?;
+        println!("2222");
+        Ok(())
+    }
+
+    pub fn result3() -> Result<(), TestError> {
+        result2()?;
+        println!("3333");
+        Ok(())
+    }
+
+    pub fn result4() -> Result<(), TestError> {
+        result3()?;
+        println!("4444");
+        Ok(())
+    }
+
+    #[test]
+    fn main() {
+        let v = result4().unwrap_err();
+        println!("{}", v);
+        println!("------------------");
+        println!("{:?}", v);
+    }
+}

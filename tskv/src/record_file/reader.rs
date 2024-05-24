@@ -10,7 +10,10 @@ use super::{
     RECORD_MAGIC_NUMBER, RECORD_MAGIC_NUMBER_LEN,
 };
 use crate::byte_utils::decode_be_u32;
-use crate::error::{self, TskvError, TskvResult};
+use crate::error::{
+    self, ReadFileSnafu, RecordFileHashCheckFailedSnafu, RecordFileInvalidDataSizeSnafu, TskvError,
+    TskvResult,
+};
 use crate::file_system::async_filesystem::{LocalFileSystem, LocalFileType};
 use crate::file_system::file::stream_reader::FileStreamReader;
 use crate::file_system::FileSystem;
@@ -37,23 +40,21 @@ pub async fn read_footer_from(
 
     // Get file crc
     let mut buf = vec![0_u8; file_crc_source_len(file.len(), FILE_FOOTER_LEN)];
-    if let Err(e) = file.read_at(FILE_MAGIC_NUMBER_LEN, &mut buf).await {
-        return Err(TskvError::ReadFile {
+    file.read_at(FILE_MAGIC_NUMBER_LEN, &mut buf)
+        .await
+        .context(ReadFileSnafu {
             path: file_path.as_ref().to_path_buf(),
-            source: e,
-        });
-    }
+        })?;
     let crc = crc32fast::hash(&buf);
 
     // Read footer
     let footer_pos = file.len() - FILE_FOOTER_LEN;
     let mut footer = [0_u8; FILE_FOOTER_LEN];
-    if let Err(e) = file.read_at(footer_pos, &mut footer[..]).await {
-        return Err(TskvError::ReadFile {
+    file.read_at(footer_pos, &mut footer[..])
+        .await
+        .context(ReadFileSnafu {
             path: file_path.as_ref().to_path_buf(),
-            source: e,
-        });
-    }
+        })?;
 
     // Check file crc
     let footer_crc = decode_be_u32(
@@ -241,10 +242,11 @@ impl Reader {
                         "Record file: Failed to read data: file_size: {}, Data size ({}) at pos {} is greater than bytes readed ({})",
                         file_len, data_size, data_pos, record_bytes.len()
                     );
-                    return Err(TskvError::RecordFileInvalidDataSize {
+                    return Err(RecordFileInvalidDataSizeSnafu {
                         pos: header_pos as u64,
                         len: data_size,
-                    });
+                    }
+                    .build());
                 }
                 self.set_pos(data_pos + data_size as usize).await?;
                 record_data
@@ -270,7 +272,7 @@ impl Reader {
                 data_size + RECORD_HEADER_LEN as u32
             );
             self.set_pos(header_pos + 1).await?;
-            return Err(TskvError::RecordFileHashCheckFailed {
+            return Err(RecordFileHashCheckFailedSnafu {
                 crc: data_crc,
                 crc_calculated: data_crc_calculated,
                 record: Record {
@@ -279,7 +281,8 @@ impl Reader {
                     data,
                     pos: header_pos as u64,
                 },
-            });
+            }
+            .build());
         }
 
         Ok(Record {
@@ -311,9 +314,8 @@ impl Reader {
             .file
             .read_at(self.pos, &mut self.buf)
             .await
-            .map_err(|e| TskvError::ReadFile {
+            .context(ReadFileSnafu {
                 path: self.path.clone(),
-                source: e,
             })?;
         self.buf_use = 0;
         Ok(())

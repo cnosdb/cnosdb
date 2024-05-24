@@ -1,7 +1,9 @@
 use std::pin::Pin;
 use std::sync::Arc;
 
-use coordinator::errors::{encode_grpc_response, CoordinatorError, CoordinatorResult};
+use coordinator::errors::{
+    encode_grpc_response, ArrowSnafu, CommonSnafu, CoordinatorResult, TskvSnafu,
+};
 use coordinator::service::CoordinatorRef;
 use futures::{Stream, TryStreamExt};
 use meta::model::MetaRef;
@@ -13,6 +15,7 @@ use models::schema::TableColumn;
 use protos::kv_service::tskv_service_server::TskvService;
 use protos::kv_service::*;
 use protos::models::{PingBody, PingBodyBuilder};
+use snafu::ResultExt;
 use tokio::io::AsyncReadExt;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc;
@@ -49,7 +52,10 @@ impl TskvServiceImpl {
     ) -> CoordinatorResult<Vec<u8>> {
         match command {
             admin_command::Command::CompactVnode(req) => {
-                self.kv_inst.compact(req.vnode_ids.clone()).await?;
+                self.kv_inst
+                    .compact(req.vnode_ids.clone())
+                    .await
+                    .context(TskvSnafu)?;
                 Ok(vec![])
             }
 
@@ -70,8 +76,12 @@ impl TskvServiceImpl {
             }
 
             admin_command::Command::FetchChecksum(req) => {
-                let record = self.kv_inst.get_vnode_hash_tree(req.vnode_id).await?;
-                let data = record_batch_encode(&record)?;
+                let record = self
+                    .kv_inst
+                    .get_vnode_hash_tree(req.vnode_id)
+                    .await
+                    .context(TskvSnafu)?;
+                let data = record_batch_encode(&record).context(ArrowSnafu)?;
                 Ok(data)
             }
 
@@ -222,17 +232,17 @@ impl TskvService for TskvServiceImpl {
     ) -> Result<tonic::Response<BatchBytesResponse>, tonic::Status> {
         let inner = request.into_inner();
 
-        let client = self
-            .coord
-            .tenant_meta(&inner.tenant)
-            .await
-            .ok_or(self.internal_status(format!("Not Found tenant({}) meta", inner.tenant)))?;
+        let client = self.coord.tenant_meta(&inner.tenant).await.ok_or_else(|| {
+            self.internal_status(format!("Not Found tenant({}) meta", inner.tenant))
+        })?;
 
         let replica = client
             .get_replication_set(&inner.db_name, inner.replica_id)
             .await
             .map_err(|err| self.internal_status(format!("Meta for replication set: {:?}", err)))?
-            .ok_or(self.internal_status(format!("Not Found Replica Set({})", inner.replica_id)))?;
+            .ok_or_else(|| {
+                self.internal_status(format!("Not Found Replica Set({})", inner.replica_id))
+            })?;
 
         let writer = self.coord.tskv_raft_writer(inner);
         let result = writer.write_to_local(&replica).await;
@@ -250,9 +260,10 @@ impl TskvService for TskvServiceImpl {
             let result = self.warp_admin_request(&inner.tenant, &command).await;
             Ok(encode_grpc_response(result))
         } else {
-            Ok(encode_grpc_response(Err(CoordinatorError::CommonError {
+            Ok(encode_grpc_response(Err(CommonSnafu {
                 msg: "Command is None".to_string(),
-            })))
+            }
+            .build())))
         }
     }
 

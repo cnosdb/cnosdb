@@ -193,7 +193,7 @@ macro_rules! parser_err {
 pub struct DefaultParser {}
 
 impl CnosdbParser for DefaultParser {
-    fn parse(&self, sql: &str) -> spi::Result<VecDeque<ExtStatement>> {
+    fn parse(&self, sql: &str) -> spi::QueryResult<VecDeque<ExtStatement>> {
         ExtParser::parse_sql(sql).context(ParserSnafu)
     }
 }

@@ -3,7 +3,7 @@ use datafusion::arrow::ipc::reader::StreamReader;
 use datafusion::arrow::ipc::writer::StreamWriter;
 use datafusion::arrow::record_batch::RecordBatch;
 
-use crate::Error;
+use crate::errors::NoneRecordBatchSnafu;
 
 pub fn record_batch_encode(record: &RecordBatch) -> Result<Vec<u8>, ArrowError> {
     let buffer: Vec<u8> = Vec::new();
@@ -19,6 +19,6 @@ pub fn record_batch_decode(buf: &[u8]) -> Result<RecordBatch, ArrowError> {
     let mut stream_reader = StreamReader::try_new(std::io::Cursor::new(buf), None)?;
     let record = stream_reader
         .next()
-        .ok_or(ArrowError::ExternalError(Box::new(Error::NoneRecordBatch)))??;
+        .ok_or_else(|| ArrowError::ExternalError(Box::new(NoneRecordBatchSnafu.build())))??;
     Ok(record)
 }

@@ -3,16 +3,19 @@ use models::field_value::FieldVal;
 use models::schema::{PhysicalCType, TableColumn};
 use models::PhysicalDType;
 use serde::{Deserialize, Serialize};
+use snafu::{OptionExt, ResultExt};
 use utils::bitset::ImmutBitSet;
 
 use super::statistics::ValueStatistics;
 use crate::byte_utils::{decode_be_u32, decode_be_u64};
-use crate::error::TskvResult;
+use crate::error::{
+    DecodeSnafu, EncodeSnafu, TSMPageFileHashCheckFailedSnafu, TskvResult, TsmPageSnafu,
+    UnsupportedDataTypeSnafu,
+};
 use crate::tsm::codec::{
     get_bool_codec, get_encoding, get_f64_codec, get_i64_codec, get_str_codec, get_u64_codec,
 };
 use crate::tsm::data_block::MutableColumn;
-use crate::TskvError;
 
 #[derive(Debug)]
 pub struct Page {
@@ -52,11 +55,12 @@ impl Page {
         let data_crc_calculated = hasher.finalize();
         if data_crc != data_crc_calculated {
             // If crc not match, try to return error.
-            return Err(TskvError::TSMPageFileHashCheckFailed {
+            return Err(TSMPageFileHashCheckFailedSnafu {
                 crc: data_crc,
                 crc_calculated: data_crc_calculated,
                 page: Page { bytes, meta },
-            });
+            }
+            .build());
         }
         Ok(Page { bytes, meta })
     }
@@ -85,9 +89,10 @@ impl Page {
         let bitset = self.null_bitset();
         match col_type {
             PhysicalCType::Tag => {
-                return Err(TskvError::TsmPageError {
+                return Err(TsmPageSnafu {
                     reason: "tag column not support now".to_string(),
-                });
+                }
+                .build());
             }
             PhysicalCType::Time(_) | PhysicalCType::Field(PhysicalDType::Integer) => {
                 let encoding = get_encoding(data_buffer);
@@ -95,12 +100,13 @@ impl Page {
                 let mut target = Vec::new();
                 ts_codec
                     .decode(data_buffer, &mut target)
-                    .map_err(|e| TskvError::Decode { source: e })?;
+                    .context(DecodeSnafu)?;
+
                 let mut target = target.into_iter();
                 for i in 0..bitset.len() {
                     if bitset.get(i) {
-                        col.push(Some(FieldVal::Integer(target.next().ok_or(
-                            TskvError::TsmPageError {
+                        col.push(Some(FieldVal::Integer(target.next().context(
+                            TsmPageSnafu {
                                 reason: "data buffer not enough".to_string(),
                             },
                         )?)))?;
@@ -115,12 +121,13 @@ impl Page {
                 let mut target = Vec::new();
                 ts_codec
                     .decode(data_buffer, &mut target)
-                    .map_err(|e| TskvError::Decode { source: e })?;
+                    .context(DecodeSnafu)?;
+
                 let mut target = target.into_iter();
                 for i in 0..bitset.len() {
                     if bitset.get(i) {
-                        col.push(Some(FieldVal::Float(target.next().ok_or(
-                            TskvError::TsmPageError {
+                        col.push(Some(FieldVal::Float(target.next().context(
+                            TsmPageSnafu {
                                 reason: "data buffer not enough".to_string(),
                             },
                         )?)))?;
@@ -135,12 +142,12 @@ impl Page {
                 let mut target = Vec::new();
                 ts_codec
                     .decode(data_buffer, &mut target)
-                    .map_err(|e| TskvError::Decode { source: e })?;
+                    .context(DecodeSnafu)?;
                 let mut target = target.into_iter();
                 for i in 0..bitset.len() {
                     if bitset.get(i) {
-                        col.push(Some(FieldVal::Unsigned(target.next().ok_or(
-                            TskvError::TsmPageError {
+                        col.push(Some(FieldVal::Unsigned(target.next().context(
+                            TsmPageSnafu {
                                 reason: "data buffer not enough".to_string(),
                             },
                         )?)))?;
@@ -155,12 +162,13 @@ impl Page {
                 let mut target = Vec::new();
                 ts_codec
                     .decode(data_buffer, &mut target)
-                    .map_err(|e| TskvError::Decode { source: e })?;
+                    .context(DecodeSnafu)?;
+
                 let mut target = target.into_iter();
                 for i in 0..bitset.len() {
                     if bitset.get(i) {
-                        col.push(Some(FieldVal::Boolean(target.next().ok_or(
-                            TskvError::TsmPageError {
+                        col.push(Some(FieldVal::Boolean(target.next().context(
+                            TsmPageSnafu {
                                 reason: "data buffer not enough".to_string(),
                             },
                         )?)))?;
@@ -175,12 +183,13 @@ impl Page {
                 let mut target = Vec::new();
                 ts_codec
                     .decode(data_buffer, &mut target)
-                    .map_err(|e| TskvError::Decode { source: e })?;
+                    .context(DecodeSnafu)?;
+
                 let mut target = target.into_iter();
                 for i in 0..bitset.len() {
                     if bitset.get(i) {
-                        col.push(Some(FieldVal::Bytes(target.next().ok_or(
-                            TskvError::TsmPageError {
+                        col.push(Some(FieldVal::Bytes(target.next().context(
+                            TsmPageSnafu {
                                 reason: "data buffer not enough".to_string(),
                             },
                         )?)))?;
@@ -190,9 +199,10 @@ impl Page {
                 }
             }
             PhysicalCType::Field(PhysicalDType::Unknown) => {
-                return Err(TskvError::UnsupportedDataType {
+                return Err(UnsupportedDataTypeSnafu {
                     dt: "unknown".to_string(),
-                });
+                }
+                .build());
             }
         }
         Ok(col)
@@ -219,7 +229,8 @@ impl Page {
                 let encoder = get_f64_codec(column.column_desc().encoding);
                 encoder
                     .encode(&target_array, &mut buf)
-                    .map_err(|e| TskvError::Encode { source: e })?;
+                    .context(EncodeSnafu)?;
+
                 PageStatistics::F64(ValueStatistics::new(
                     Some(*min),
                     Some(*max),
@@ -242,7 +253,8 @@ impl Page {
                 let encoder = get_i64_codec(column.column_desc().encoding);
                 encoder
                     .encode(&target_array, &mut buf)
-                    .map_err(|e| TskvError::Encode { source: e })?;
+                    .context(EncodeSnafu)?;
+
                 PageStatistics::I64(ValueStatistics::new(
                     Some(*min),
                     Some(*max),
@@ -265,7 +277,8 @@ impl Page {
                 let encoder = get_u64_codec(column.column_desc().encoding);
                 encoder
                     .encode(&target_array, &mut buf)
-                    .map_err(|e| TskvError::Encode { source: e })?;
+                    .context(EncodeSnafu)?;
+
                 PageStatistics::U64(ValueStatistics::new(
                     Some(*min),
                     Some(*max),
@@ -288,7 +301,8 @@ impl Page {
                 let encoder = get_str_codec(column.column_desc().encoding);
                 encoder
                     .encode(&target_array, &mut buf)
-                    .map_err(|e| TskvError::Encode { source: e })?;
+                    .context(EncodeSnafu)?;
+
                 PageStatistics::Bytes(ValueStatistics::new(
                     Some(min.as_bytes().to_vec()),
                     Some(max.as_bytes().to_vec()),
@@ -311,7 +325,8 @@ impl Page {
                 let encoder = get_bool_codec(column.column_desc().encoding);
                 encoder
                     .encode(&target_array, &mut buf)
-                    .map_err(|e| TskvError::Encode { source: e })?;
+                    .context(EncodeSnafu)?;
+
                 PageStatistics::Bool(ValueStatistics::new(
                     Some(*min),
                     Some(*max),

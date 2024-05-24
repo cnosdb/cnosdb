@@ -8,6 +8,7 @@ use futures::{Stream, StreamExt};
 use models::arrow::stream::ParallelMergeStream;
 use models::datafusion::limit_record_batch::limit_record_batch;
 
+use crate::error::CommonSnafu;
 use crate::reader::{
     BatchReader, BatchReaderRef, SchemableTskvRecordBatchStream,
     SendableSchemableTskvRecordBatchStream,
@@ -27,9 +28,10 @@ impl ParallelMergeAdapter {
         limit: Option<usize>,
     ) -> TskvResult<Self> {
         if inputs.is_empty() {
-            return Err(TskvError::CommonError {
+            return Err(CommonSnafu {
                 reason: "No inputs provided for ParallelMergeAdapter".to_string(),
-            });
+            }
+            .build());
         }
 
         Ok(Self {

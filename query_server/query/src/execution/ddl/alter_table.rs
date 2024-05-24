@@ -5,9 +5,10 @@ use coordinator::resource_manager::ResourceManager;
 use meta::error::MetaError;
 use models::oid::Identifier;
 use models::schema::{ResourceInfo, ResourceOperator, TableColumn, TableSchema, TskvTableSchema};
+use snafu::ResultExt;
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::{AlterTable, AlterTableAction};
-use spi::{QueryError, Result};
+use spi::{CoordinatorSnafu, MetaSnafu, QueryError, QueryResult};
 
 // use crate::execution::ddl::query::spi::MetaSnafu;
 use crate::execution::ddl::DDLDefinitionTask;
@@ -23,20 +24,25 @@ impl AlterTableTask {
 }
 #[async_trait]
 impl DDLDefinitionTask for AlterTableTask {
-    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output> {
+    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> QueryResult<Output> {
         let table_name = &self.stmt.table_name;
         let tenant = table_name.tenant();
-        let client = query_state_machine.meta.tenant_meta(tenant).await.ok_or(
-            MetaError::TenantNotFound {
+        let client = query_state_machine
+            .meta
+            .tenant_meta(tenant)
+            .await
+            .ok_or_else(|| MetaError::TenantNotFound {
                 tenant: tenant.to_string(),
-            },
-        )?;
+            })
+            .context(MetaSnafu)?;
 
         let mut schema = client
-            .get_tskv_table_schema(table_name.database(), table_name.table())?
-            .ok_or(MetaError::TableNotFound {
+            .get_tskv_table_schema(table_name.database(), table_name.table())
+            .context(MetaSnafu)?
+            .ok_or_else(|| MetaError::TableNotFound {
                 table: table_name.to_string(),
-            })?
+            })
+            .context(MetaSnafu)?
             .as_ref()
             .clone();
 
@@ -128,11 +134,13 @@ impl DDLDefinitionTask for AlterTableTask {
                 query_state_machine.coord.node_id(),
             );
             ResourceManager::add_resource_task(query_state_machine.coord.clone(), resourceinfo)
-                .await?;
+                .await
+                .context(CoordinatorSnafu)?;
         } else {
             client
                 .update_table(&TableSchema::TsKvTableSchema(Arc::new(schema)))
-                .await?;
+                .await
+                .context(MetaSnafu)?;
         }
         return Ok(Output::Nil(()));
     }

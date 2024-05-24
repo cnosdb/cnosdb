@@ -5,9 +5,10 @@ use datafusion::arrow::array::{StringArray, UInt32Array};
 use datafusion::arrow::datatypes::{DataType, Field, Schema};
 use datafusion::arrow::record_batch::RecordBatch;
 use meta::error::MetaError;
+use snafu::ResultExt;
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::recordbatch::RecordBatchStreamWrapper;
-use spi::Result;
+use spi::{MetaSnafu, QueryResult};
 
 use crate::execution::ddl::DDLDefinitionTask;
 
@@ -21,12 +22,12 @@ impl ShowReplicasTask {
 
 #[async_trait]
 impl DDLDefinitionTask for ShowReplicasTask {
-    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output> {
+    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> QueryResult<Output> {
         show_replica(query_state_machine).await
     }
 }
 
-async fn show_replica(machine: QueryStateMachineRef) -> Result<Output> {
+async fn show_replica(machine: QueryStateMachineRef) -> QueryResult<Output> {
     let schema = Arc::new(Schema::new(vec![
         Field::new("replica_id", DataType::UInt32, false),
         Field::new("location", DataType::Utf8, false),
@@ -46,11 +47,12 @@ async fn show_replica(machine: QueryStateMachineRef) -> Result<Output> {
         .meta
         .tenant_meta(tenant)
         .await
-        .ok_or(MetaError::TenantNotFound {
+        .ok_or_else(|| MetaError::TenantNotFound {
             tenant: tenant.to_string(),
-        })?;
+        })
+        .context(MetaSnafu)?;
 
-    let databases = client.list_databases()?;
+    let databases = client.list_databases().context(MetaSnafu)?;
 
     for (db_name, db_info) in databases {
         for bucket in db_info.buckets {

@@ -5,8 +5,9 @@ use datafusion::datasource::{provider_as_source, TableProvider, ViewTable};
 use datafusion::logical_expr::{binary_expr, col, LogicalPlanBuilder, Operator};
 use datafusion::prelude::lit;
 use meta::error::MetaError;
+use snafu::ResultExt;
 use spi::query::session::SessionCtx;
-use spi::{QueryError, Result};
+use spi::{MetaSnafu, QueryError, QueryResult};
 
 use super::TableHandleProviderRef;
 use crate::data_source::table_source::TableHandle;
@@ -59,11 +60,12 @@ impl UsageSchemaProvider {
         USAGE_SCHEMA
     }
 
-    pub fn table(&self, session: &SessionCtx, name: &str) -> Result<Arc<dyn TableProvider>> {
+    pub fn table(&self, session: &SessionCtx, name: &str) -> QueryResult<Arc<dyn TableProvider>> {
         let usage_schema_table = self
             .table_factories
             .get(name)
-            .ok_or_else(|| MetaError::TableNotFound { table: name.into() })?;
+            .ok_or_else(|| MetaError::TableNotFound { table: name.into() })
+            .context(MetaSnafu)?;
         usage_schema_table.create(session, &self.default_table_provider)
     }
 }
@@ -76,14 +78,14 @@ pub trait UsageSchemaTableFactory {
         &self,
         session: &SessionCtx,
         base_table_provider: &TableHandleProviderRef,
-    ) -> Result<Arc<dyn TableProvider>>;
+    ) -> QueryResult<Arc<dyn TableProvider>>;
 }
 
 pub fn create_usage_schema_view_table(
     session: &SessionCtx,
     default_table_provider: &TableHandleProviderRef,
     view_table_name: &str,
-) -> spi::Result<Arc<dyn TableProvider>> {
+) -> spi::QueryResult<Arc<dyn TableProvider>> {
     let tenant_name = session.tenant();
     let table_handle = default_table_provider.build_table_handle(USAGE_SCHEMA, view_table_name)?;
 
@@ -122,7 +124,7 @@ macro_rules! generate_usage_schema_table_factory {
                 &self,
                 session: &SessionCtx,
                 base_table_provider: &TableHandleProviderRef,
-            ) -> Result<Arc<dyn TableProvider>> {
+            ) -> QueryResult<Arc<dyn TableProvider>> {
                 create_usage_schema_view_table(session, base_table_provider, $measure)
             }
         }

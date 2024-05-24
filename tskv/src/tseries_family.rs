@@ -13,12 +13,13 @@ use models::predicate::domain::{TimeRange, TimeRanges};
 use models::schema::{split_owner, TableColumn};
 use models::{ColumnId, FieldId, SeriesId, SeriesKey, Timestamp};
 use parking_lot::RwLock;
+use snafu::ResultExt;
 use tokio::sync::RwLock as TokioRwLock;
 use tokio::time::Instant;
 use trace::{debug, error, info};
 use utils::BloomFilter;
 
-use crate::error::TskvResult;
+use crate::error::{CommonSnafu, IndexErrSnafu, TskvResult};
 use crate::file_system::async_filesystem::LocalFileSystem;
 use crate::file_system::FileSystem;
 use crate::file_utils::{make_delta_file, make_tsm_file};
@@ -29,7 +30,6 @@ use crate::summary::{CompactMeta, VersionEdit};
 use crate::tsm::page::PageMeta;
 use crate::tsm::reader::TsmReader;
 use crate::tsm::{ColumnGroupID, TsmTombstone};
-use crate::TskvError::CommonError;
 use crate::{tsm, ColumnFileId, LevelId, Options, TseriesFamilyId};
 
 #[derive(Debug)]
@@ -995,9 +995,10 @@ impl TseriesFamily {
         points: HashMap<SeriesId, (SeriesKey, RowGroup)>,
     ) -> TskvResult<u64> {
         if self.status == VnodeStatus::Copying {
-            return Err(CommonError {
+            return Err(CommonSnafu {
                 reason: "vnode is moving please retry later".to_string(),
-            });
+            }
+            .build());
         }
         let mut res = 0;
         for (sid, (series_key, group)) in points {
@@ -1117,7 +1118,7 @@ impl TseriesFamily {
             .index_dir(self.tenant_database.as_str(), self.tf_id);
         let _ = std::fs::remove_dir_all(path.clone());
 
-        let index = TSIndex::new(path).await?;
+        let index = TSIndex::new(path).await.context(IndexErrSnafu)?;
         let index_clone = index.clone();
         let mut index_w = index_clone.write().await;
 
@@ -1128,7 +1129,10 @@ impl TseriesFamily {
         }
         for (sid, data) in series_data {
             let series_key = data.read().series_key.clone();
-            index_w.add_series_for_rebuild(sid, &series_key).await?;
+            index_w
+                .add_series_for_rebuild(sid, &series_key)
+                .await
+                .context(IndexErrSnafu)?;
         }
 
         // tsm index
@@ -1138,12 +1142,13 @@ impl TseriesFamily {
                 for chunk in reader.chunk().values() {
                     index_w
                         .add_series_for_rebuild(chunk.series_id(), chunk.series_key())
-                        .await?;
+                        .await
+                        .context(IndexErrSnafu)?;
                 }
             }
         }
 
-        index_w.flush().await?;
+        index_w.flush().await.context(IndexErrSnafu)?;
 
         Ok(index)
     }

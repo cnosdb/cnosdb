@@ -11,13 +11,14 @@ use metrics::metric_register::MetricsRegister;
 use models::Timestamp;
 use parking_lot::RwLock as SyncRwLock;
 use serde::{Deserialize, Serialize};
+use snafu::ResultExt;
 use tokio::runtime::Runtime;
 use tokio::sync::oneshot::Sender as OneShotSender;
 use tokio::sync::RwLock;
 use utils::BloomFilter;
 
 use crate::context::GlobalContext;
-use crate::error::{TskvError, TskvResult};
+use crate::error::{IOSnafu, RecordFileDecodeSnafu, RecordFileEncodeSnafu, TskvError, TskvResult};
 use crate::file_system::async_filesystem::LocalFileSystem;
 use crate::kv_option::{Options, StorageOptions, DELTA_PATH, TSM_PATH};
 use crate::memcache::MemCache;
@@ -224,18 +225,17 @@ impl VersionEdit {
     }
 
     pub fn encode(&self) -> TskvResult<Vec<u8>> {
-        bincode::serialize(self).map_err(|e| TskvError::RecordFileEncode { source: (e) })
+        bincode::serialize(self).context(RecordFileEncodeSnafu)
     }
 
     pub fn decode(buf: &[u8]) -> TskvResult<Self> {
-        bincode::deserialize(buf).map_err(|e| TskvError::RecordFileDecode { source: (e) })
+        bincode::deserialize(buf).context(RecordFileDecodeSnafu)
     }
 
     pub fn encode_vec(data: &[Self]) -> TskvResult<Vec<u8>> {
         let mut buf: Vec<u8> = Vec::with_capacity(data.len() * 32);
         for ve in data {
-            let ve_buf =
-                bincode::serialize(ve).map_err(|e| TskvError::RecordFileEncode { source: (e) })?;
+            let ve_buf = bincode::serialize(ve).context(RecordFileEncodeSnafu)?;
             let pos = buf.len();
             buf.resize(pos + 4 + ve_buf.len(), 0_u8);
             buf[pos..pos + 4].copy_from_slice((ve_buf.len() as u32).to_be_bytes().as_slice());
@@ -566,7 +566,7 @@ impl Summary {
 
         let old_path = &self.writer.path().clone();
         trace::info!("Remove summary file {:?} -> {:?}", new_path, old_path,);
-        std::fs::rename(new_path, old_path)?;
+        std::fs::rename(new_path, old_path).context(IOSnafu)?;
 
         self.writer = Writer::open(old_path, RecordDataType::Summary, SUMMARY_BUFFER_SIZE)
             .await

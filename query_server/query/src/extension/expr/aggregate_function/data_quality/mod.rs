@@ -7,7 +7,7 @@ use datafusion::logical_expr::{
 };
 use models::arrow::{DataType, Field};
 use spi::query::function::FunctionMetadataManager;
-use spi::Result;
+use spi::QueryResult;
 
 use self::accumulator::DataQualityAccumulator;
 use self::common::DataQualityFunction;
@@ -15,7 +15,7 @@ use self::common::DataQualityFunction;
 mod accumulator;
 mod common;
 
-pub fn register_udafs(func_manager: &mut dyn FunctionMetadataManager) -> Result<()> {
+pub fn register_udafs(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<()> {
     func_manager.register_udaf(new(DataQualityFunction::Completeness))?;
     func_manager.register_udaf(new(DataQualityFunction::Consistency))?;
     func_manager.register_udaf(new(DataQualityFunction::Timeliness))?;

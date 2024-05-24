@@ -58,7 +58,7 @@ impl VectorService {
         let event = event
             .event
             .clone()
-            .ok_or(Status::invalid_argument("missing event"))?;
+            .ok_or_else(|| Status::invalid_argument("missing event"))?;
         match event {
             Event::Log(log) => {
                 let db = log
@@ -133,7 +133,7 @@ impl VectorService {
             .coord
             .tenant_meta(tenant)
             .await
-            .ok_or(Status::invalid_argument("invalid tenant"))?
+            .ok_or_else(|| Status::invalid_argument("invalid tenant"))?
             .tenant()
             .id();
         let privilege = Privilege::TenantObject(
@@ -308,7 +308,7 @@ fn lower_bound(gamma_v: f64, bias: i32, k: i32) -> f64 {
 }
 
 fn handle_vector(event: EventWrapper) -> server::Result<String> {
-    let event = event.event.ok_or(Error::Common {
+    let event = event.event.ok_or_else(|| Error::Common {
         reason: "event is none".to_string(),
     })?;
     match event {
@@ -345,7 +345,7 @@ fn handle_vector_metric(mut metric: Metric) -> server::Result<String> {
         line.push_str(&format!("{}={},", key, value.replace(' ', "_")));
     }
 
-    match metric.value.ok_or(Error::Common {
+    match metric.value.ok_or_else(|| Error::Common {
         reason: "missing value in metric".to_string(),
     })? {
         MetricValue::Counter(counter) => {
@@ -374,7 +374,7 @@ fn handle_vector_metric(mut metric: Metric) -> server::Result<String> {
                     value: *value,
                 })
                 .collect::<Vec<_>>();
-            let statics = distribution_statics(simple).ok_or(Error::Common {
+            let statics = distribution_statics(simple).ok_or_else(|| Error::Common {
                 reason: "distribution statics failed".to_string(),
             })?;
             line.push_str(&format!("min={},", statics.min));
@@ -413,10 +413,11 @@ fn handle_vector_metric(mut metric: Metric) -> server::Result<String> {
         }
         MetricValue::Distribution2(distribution) => {
             line.push_str("metric_type=distribution2 ");
-            let statics =
-                distribution_statics(distribution.samples.to_vec()).ok_or(Error::Common {
+            let statics = distribution_statics(distribution.samples.to_vec()).ok_or_else(|| {
+                Error::Common {
                     reason: "distribution statics failed".to_string(),
-                })?;
+                }
+            })?;
             line.push_str(&format!("min={},", statics.min));
             line.push_str(&format!("max={},", statics.max));
             line.push_str(&format!("median={},", statics.median));
@@ -448,7 +449,7 @@ fn handle_vector_metric(mut metric: Metric) -> server::Result<String> {
         }
         MetricValue::Sketch(sketch) => {
             line.push_str("metric_type=sketch ");
-            let sketch = sketch.sketch.ok_or(Error::Common {
+            let sketch = sketch.sketch.ok_or_else(|| Error::Common {
                 reason: "missing sketch in metric".to_string(),
             })?;
             match sketch {

@@ -1,8 +1,9 @@
 use async_trait::async_trait;
 use meta::error::MetaError;
+use snafu::ResultExt;
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::GrantRevoke;
-use spi::{QueryError, Result};
+use spi::{MetaSnafu, QueryError, QueryResult};
 use trace::debug;
 
 use crate::execution::ddl::DDLDefinitionTask;
@@ -19,7 +20,7 @@ impl GrantRevokeTask {
 
 #[async_trait]
 impl DDLDefinitionTask for GrantRevokeTask {
-    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output> {
+    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> QueryResult<Output> {
         let GrantRevoke {
             is_grant,
             ref database_privileges,
@@ -55,7 +56,8 @@ impl DDLDefinitionTask for GrantRevokeTask {
             );
 
             meta.grant_privilege_to_custom_role(database_privileges.clone(), role_name)
-                .await?;
+                .await
+                .context(MetaSnafu)?;
         } else {
             // 给租户下的自定义角色撤销若干权限
             // fn revoke_privilege_from_custom_role_of_tenant(
@@ -71,7 +73,8 @@ impl DDLDefinitionTask for GrantRevokeTask {
             );
 
             meta.revoke_privilege_from_custom_role(database_privileges.clone(), role_name)
-                .await?;
+                .await
+                .context(MetaSnafu)?;
         }
 
         return Ok(Output::Nil(()));

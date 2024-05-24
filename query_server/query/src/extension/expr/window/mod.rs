@@ -1,9 +1,9 @@
 mod time_window;
 
 use spi::query::function::FunctionMetadataManager;
-use spi::Result;
+use spi::QueryResult;
 
-pub fn register_window_udfs(func_manager: &mut dyn FunctionMetadataManager) -> Result<()> {
+pub fn register_window_udfs(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<()> {
     // extend function...
     // eg.
     //   example::register_udf(func_manager)?;

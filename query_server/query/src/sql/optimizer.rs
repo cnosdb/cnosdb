@@ -8,7 +8,7 @@ use datafusion::physical_plan::{displayable, ExecutionPlan};
 use spi::query::optimizer::Optimizer;
 use spi::query::physical_planner::PhysicalPlanner;
 use spi::query::session::SessionCtx;
-use spi::Result;
+use spi::QueryResult;
 use trace::debug;
 use trace::span_ext::SpanExt;
 
@@ -29,7 +29,7 @@ impl Optimizer for CascadeOptimizer {
         &self,
         plan: &LogicalPlan,
         session: &SessionCtx,
-    ) -> Result<Arc<dyn ExecutionPlan>> {
+    ) -> QueryResult<Arc<dyn ExecutionPlan>> {
         debug!("Original logical plan:\n{}\n", plan.display_indent_schema(),);
 
         let optimized_logical_plan = self.logical_optimizer.optimize(plan, session)?;

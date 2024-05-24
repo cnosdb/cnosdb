@@ -10,7 +10,7 @@ use spi::query::datasource::WriteContext;
 use spi::SerializeCsvSnafu;
 
 use crate::data_source::sink::RecordBatchSerializer;
-use crate::data_source::Result;
+use crate::data_source::QueryResult;
 
 pub struct CsvRecordBatchSerializer {
     with_header: bool,
@@ -32,7 +32,7 @@ impl RecordBatchSerializer for CsvRecordBatchSerializer {
         &self,
         _ctx: &WriteContext,
         stream: SendableRecordBatchStream,
-    ) -> Result<(usize, Bytes)> {
+    ) -> QueryResult<(usize, Bytes)> {
         pin_mut!(stream);
 
         let mut num_rows = 0;
@@ -57,7 +57,7 @@ impl RecordBatchSerializer for CsvRecordBatchSerializer {
         _ctx: &WriteContext,
         _schema: SchemaRef,
         batches: &[RecordBatch],
-    ) -> Result<(usize, Bytes)> {
+    ) -> QueryResult<(usize, Bytes)> {
         let mut num_rows = 0;
         let mut bytes = vec![];
         {

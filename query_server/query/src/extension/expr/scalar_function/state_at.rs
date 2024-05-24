@@ -8,12 +8,12 @@ use datafusion::logical_expr::{ReturnTypeFunction, ScalarUDF, Signature, Volatil
 use datafusion::physical_expr::functions::make_scalar_function;
 use datafusion::scalar::ScalarValue;
 use spi::query::function::FunctionMetadataManager;
-use spi::{QueryError, Result};
+use spi::{AnalyzerSnafu, QueryResult};
 
 use crate::extension::expr::aggregate_function::StateAggData;
 use crate::extension::expr::scalar_function::STATE_AT;
 
-pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> Result<ScalarUDF> {
+pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<ScalarUDF> {
     let udf = new();
     func_manager.register_udf(udf.clone())?;
     Ok(udf)
@@ -64,8 +64,8 @@ fn state_at_implement(input: &[ArrayRef]) -> Result<ArrayRef, DataFusionError> {
         let ts = ScalarValue::try_from_array(input[1].as_ref(), i)?;
         let state_agg = StateAggData::try_from(state_agg)?;
         if state_agg.is_compact() {
-            return Err(DataFusionError::External(Box::new(QueryError::Analyzer {err:
-            "duration_in(state_agg, state, start_time, interval) doesn't support compact_agg".into()})));
+            return Err(DataFusionError::External(Box::new(AnalyzerSnafu {err:
+            "duration_in(state_agg, state, start_time, interval) doesn't support compact_agg".to_string()}.build())));
         }
         let value = state_agg.state_at(&ts)?;
         res.push(value)

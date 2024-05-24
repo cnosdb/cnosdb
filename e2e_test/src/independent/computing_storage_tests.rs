@@ -87,6 +87,7 @@ fn meta_primary_crash_test() {
             },
             auth: None,
         },
+        Step::Sleep(1),
         Step::CnosdbRequest {
             req: CnosdbRequest::Query {
                 url: "http://127.0.0.1:8912/api/v1/sql?db=public",

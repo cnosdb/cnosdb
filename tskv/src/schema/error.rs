@@ -1,10 +1,9 @@
 use meta::error::MetaError;
 use models::schema::ColumnType;
-use snafu::Snafu;
+use snafu::{Backtrace, Location, Snafu};
 
-pub type Result<T> = std::result::Result<T, SchemaError>;
+pub type SchemaResult<T> = Result<T, SchemaError>;
 
-#[allow(clippy::large_enum_variant)]
 #[derive(Snafu, Debug)]
 #[snafu(visibility(pub))]
 pub enum SchemaError {
@@ -16,6 +15,8 @@ pub enum SchemaError {
     TableNotFound {
         database: String,
         table: String,
+        location: Location,
+        backtrace: Backtrace,
     },
 
     #[snafu(display(
@@ -28,38 +29,50 @@ pub enum SchemaError {
         column: String,
         found: ColumnType,
         expected: ColumnType,
+        location: Location,
+        backtrace: Backtrace,
     },
 
-    #[snafu(display("field '{database}.{table}'.'{}' not found", field))]
+    #[snafu(display("field {} not found", msg))]
     FieldNotFound {
-        database: String,
-        table: String,
-        field: String,
+        msg: String,
+        location: Location,
+        backtrace: Backtrace,
     },
 
     #[snafu(display("column '{}' already exists", name))]
     ColumnAlreadyExists {
         name: String,
+        location: Location,
+        backtrace: Backtrace,
     },
 
     #[snafu(display("database '{}' not found", database))]
     DatabaseNotFound {
         database: String,
+        location: Location,
+        backtrace: Backtrace,
     },
 
     #[snafu(display("tenant '{}' not found from meta", tenant))]
     TenantNotFound {
         tenant: String,
+        location: Location,
+        backtrace: Backtrace,
     },
 
     #[snafu(display("database '{}' already exists", database))]
     DatabaseAlreadyExists {
         database: String,
+        location: Location,
+        backtrace: Backtrace,
     },
 
     #[snafu(display("column '{}' not found", column))]
     ColumnNotFound {
         column: String,
+        location: Location,
+        backtrace: Backtrace,
     },
 }
 

@@ -7,7 +7,7 @@ use snafu::ResultExt;
 use spi::query::datasource::stream::checker::StreamTableCheckerRef;
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::CreateStreamTable;
-use spi::{QueryError, Result};
+use spi::{MetaSnafu, QueryError, QueryResult};
 
 use crate::execution::ddl::DDLDefinitionTask;
 
@@ -24,7 +24,7 @@ impl CreateStreamTableTask {
 
 #[async_trait]
 impl DDLDefinitionTask for CreateStreamTableTask {
-    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output> {
+    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> QueryResult<Output> {
         let CreateStreamTable {
             ref name,
             ref if_not_exists,
@@ -32,12 +32,17 @@ impl DDLDefinitionTask for CreateStreamTableTask {
         } = self.stmt;
 
         let tenant = query_state_machine.session.tenant();
-        let client = query_state_machine.meta.tenant_meta(tenant).await.ok_or(
-            MetaError::TenantNotFound {
+        let client = query_state_machine
+            .meta
+            .tenant_meta(tenant)
+            .await
+            .ok_or_else(|| MetaError::TenantNotFound {
                 tenant: tenant.to_string(),
-            },
-        )?;
-        let table = client.get_table_schema(name.database(), name.table())?;
+            })
+            .context(MetaSnafu)?;
+        let table = client
+            .get_table_schema(name.database(), name.table())
+            .context(MetaSnafu)?;
 
         match (if_not_exists, table) {
             // do not create if exists
@@ -45,7 +50,8 @@ impl DDLDefinitionTask for CreateStreamTableTask {
             // Report an error if it exists
             (false, Some(_)) => Err(MetaError::TableAlreadyExists {
                 table_name: name.to_string(),
-            })?,
+            })
+            .context(MetaSnafu)?,
             // does not exist, create
             (_, None) => {
                 let table = build_table(&self.stmt);
@@ -63,17 +69,18 @@ impl DDLDefinitionTask for CreateStreamTableTask {
     }
 }
 
-async fn create_table(table: StreamTable, machine: QueryStateMachineRef) -> Result<()> {
+async fn create_table(table: StreamTable, machine: QueryStateMachineRef) -> QueryResult<()> {
     machine
         .meta
         .tenant_meta(table.tenant())
         .await
-        .ok_or(MetaError::TenantNotFound {
+        .ok_or_else(|| MetaError::TenantNotFound {
             tenant: table.tenant().into(),
-        })?
+        })
+        .context(MetaSnafu)?
         .create_table(&TableSchema::StreamTableSchema(Arc::new(table)))
         .await
-        .context(spi::MetaSnafu)
+        .context(MetaSnafu)
 }
 
 fn build_table(stmt: &CreateStreamTable) -> StreamTable {

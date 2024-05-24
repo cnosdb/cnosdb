@@ -7,7 +7,7 @@ use replication::network_http::RaftHttpAdmin;
 use replication::raft_node::RaftNode;
 use tokio::sync::RwLock;
 use trace::info;
-use tracing::debug;
+use tracing::{debug, error};
 use warp::{hyper, Filter};
 
 use crate::error::{MetaError, MetaResult};
@@ -61,7 +61,10 @@ impl HttpServer {
                 |req: hyper::body::Bytes, storage: Arc<RwLock<StateMachine>>| async move {
                     let req: ReadCommand = serde_json::from_slice(&req)
                         .map_err(MetaError::from)
-                        .map_err(warp::reject::custom)?;
+                        .map_err(|e| {
+                            error!("read command parse error: {:?}", e);
+                            warp::reject::custom(e)
+                        })?;
 
                     let rsp = storage.read().await.process_read_command(&req);
                     let res: Result<String, warp::Rejection> = Ok(rsp);
@@ -117,9 +120,10 @@ impl HttpServer {
             .and(self.with_storage())
             .and_then(
                 |req: hyper::body::Bytes, storage: Arc<RwLock<StateMachine>>| async move {
-                    let data = Self::process_watch(req, storage)
-                        .await
-                        .map_err(warp::reject::custom)?;
+                    let data = Self::process_watch(req, storage).await.map_err(|e| {
+                        error!("watch error: {:?}", e);
+                        warp::reject::custom(e)
+                    })?;
 
                     let res: Result<String, warp::Rejection> = Ok(data);
                     res
@@ -135,9 +139,13 @@ impl HttpServer {
             .and_then(|node: Arc<RaftNode>| async move {
                 match node.raw_raft().ensure_linearizable().await {
                     Ok(_) => {
-                        let data = Self::process_watch_meta_membership(node)
-                            .await
-                            .map_err(warp::reject::custom)?;
+                        let data =
+                            Self::process_watch_meta_membership(node)
+                                .await
+                                .map_err(|e| {
+                                    error!("watch_meta_membership error: {:?}", e);
+                                    warp::reject::custom(e)
+                                })?;
                         let resp =
                             warp::reply::with_status(data.into_bytes(), http::StatusCode::OK);
 
@@ -182,7 +190,10 @@ impl HttpServer {
                     .await
                     .backup()
                     .map_err(MetaError::from)
-                    .map_err(warp::reject::custom)?;
+                    .map_err(|e| {
+                        error!("dump error: {:?}", e);
+                        warp::reject::custom(e)
+                    })?;
 
                 let mut rsp = "".to_string();
                 for (key, val) in data.map.iter() {
@@ -209,7 +220,10 @@ impl HttpServer {
                 let storage = storage.read().await;
                 let res = dump_impl(&cluster, tenant.as_deref(), &storage)
                     .await
-                    .map_err(warp::reject::custom)?;
+                    .map_err(|e| {
+                        error!("dump sql error: {:?}", e);
+                        warp::reject::custom(e)
+                    })?;
                 Ok::<String, warp::Rejection>(res)
             },
         )
@@ -240,7 +254,10 @@ impl HttpServer {
 
                     let data = serde_json::to_vec(&command)
                         .map_err(MetaError::from)
-                        .map_err(warp::reject::custom)?;
+                        .map_err(|e| {
+                            error!("restore data parse error: {:?}", e);
+                            warp::reject::custom(e)
+                        })?;
 
                     if let Err(err) = node.raw_raft().client_write(data).await {
                         return Ok(err.to_string());
@@ -259,11 +276,10 @@ impl HttpServer {
     fn debug(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
         warp::path!("debug").and(self.with_storage()).and_then(
             |storage: Arc<RwLock<StateMachine>>| async move {
-                let data = storage
-                    .write()
-                    .await
-                    .debug_data()
-                    .map_err(warp::reject::custom)?;
+                let data = storage.write().await.debug_data().map_err(|e| {
+                    error!("debug error: {:?}", e);
+                    warp::reject::custom(e)
+                })?;
 
                 let res: Result<String, warp::Rejection> = Ok(data);
                 res

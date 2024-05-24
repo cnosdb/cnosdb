@@ -2,8 +2,9 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 
+use snafu::ResultExt;
 use spi::service::protocol::QueryId;
-use spi::QueryError;
+use spi::{QueryError, StdIoSnafu};
 use tokio::fs;
 
 pub type WatermarkTrackerRef = Arc<WatermarkTracker>;
@@ -26,7 +27,7 @@ impl WatermarkTracker {
 
         let watermark_ns = if std::path::Path::new(path.as_path()).exists() {
             let mut buf: [u8; 8] = [0; 8];
-            let bytes = std::fs::read(path.as_path())?;
+            let bytes = std::fs::read(path.as_path()).context(StdIoSnafu)?;
             if bytes.len() != 8 {
                 return Err(QueryError::Internal {
                     reason: format!(
@@ -41,7 +42,7 @@ impl WatermarkTracker {
             i64::from_be_bytes(buf)
         } else {
             if let Some(parent) = path.parent() {
-                std::fs::create_dir_all(parent)?;
+                std::fs::create_dir_all(parent).context(StdIoSnafu)?;
             }
             i64::MIN
         };
@@ -71,10 +72,13 @@ impl WatermarkTracker {
             .global_watermark_ns
             .load(Ordering::Relaxed)
             .to_be_bytes();
-        fs::write(&self.file_path, contents).await.map_err(|err| {
-            trace::error!("Commit streaming query watermark, error: {:?}", err);
-            err
-        })?;
+        fs::write(&self.file_path, contents)
+            .await
+            .map_err(|err| {
+                trace::error!("Commit streaming query watermark, error: {:?}", err);
+                err
+            })
+            .context(StdIoSnafu)?;
 
         Ok(())
     }

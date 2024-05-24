@@ -7,8 +7,9 @@ use heed::types::*;
 use heed::{Database, Env};
 use openraft::{LogId, StoredMembership, Vote};
 use serde::{Deserialize, Serialize};
+use snafu::ResultExt;
 
-use crate::errors::ReplicationResult;
+use crate::errors::{HeedSnafu, IOErrSnafu, MsgInvalidSnafu, ReplicationResult};
 use crate::node_store::StoredSnapshot;
 use crate::{RaftNodeId, RaftNodeInfo};
 
@@ -73,28 +74,33 @@ pub struct StateStorage {
 
 impl StateStorage {
     pub fn open(path: impl AsRef<Path>, size: usize) -> ReplicationResult<Self> {
-        fs::create_dir_all(&path)?;
+        fs::create_dir_all(&path).context(IOErrSnafu)?;
 
         let mut env_builder = heed::EnvOpenOptions::new();
         unsafe {
             env_builder.flag(Flags::MdbNoSync);
         }
 
-        let env = env_builder.map_size(size).max_dbs(1).open(path)?;
-        let db: Database<Str, OwnedSlice<u8>> = env.create_database(Some("data"))?;
+        let env = env_builder
+            .map_size(size)
+            .max_dbs(1)
+            .open(path)
+            .context(HeedSnafu)?;
+        let db: Database<Str, OwnedSlice<u8>> =
+            env.create_database(Some("data")).context(HeedSnafu)?;
         let storage = Self { env, db };
 
         Ok(storage)
     }
 
     fn reader_txn(&self) -> ReplicationResult<heed::RoTxn> {
-        let reader = self.env.read_txn()?;
+        let reader = self.env.read_txn().context(HeedSnafu)?;
 
         Ok(reader)
     }
 
     fn writer_txn(&self) -> ReplicationResult<heed::RwTxn> {
-        let writer = self.env.write_txn()?;
+        let writer = self.env.write_txn().context(HeedSnafu)?;
 
         Ok(writer)
     }
@@ -103,8 +109,9 @@ impl StateStorage {
     where
         for<'a> T: Deserialize<'a>,
     {
-        if let Some(data) = self.db.get(reader, key)? {
-            let val = serde_json::from_slice(&data)?;
+        if let Some(data) = self.db.get(reader, key).context(HeedSnafu)? {
+            let val = serde_json::from_slice(&data)
+                .map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())?;
 
             Ok(Some(val))
         } else {
@@ -116,24 +123,26 @@ impl StateStorage {
     where
         for<'a> T: Serialize,
     {
-        let data = serde_json::to_vec(val)?;
+        let data =
+            serde_json::to_vec(val).map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())?;
 
-        self.db.put(writer, key, &data)?;
+        self.db.put(writer, key, &data).context(HeedSnafu)?;
 
         Ok(())
     }
 
     fn del(&self, writer: &mut heed::RwTxn, key: &str) -> ReplicationResult<()> {
-        self.db.delete(writer, key)?;
+        self.db.delete(writer, key).context(HeedSnafu)?;
 
         Ok(())
     }
 
     pub fn is_already_init(&self, group_id: u32) -> ReplicationResult<bool> {
-        let reader = self.env.read_txn()?;
+        let reader = self.env.read_txn().context(HeedSnafu)?;
         if self
             .db
-            .get(&reader, &Key::already_init_key(group_id))?
+            .get(&reader, &Key::already_init_key(group_id))
+            .context(HeedSnafu)?
             .is_some()
         {
             Ok(true)
@@ -145,8 +154,9 @@ impl StateStorage {
     pub fn set_init_flag(&self, group_id: u32) -> ReplicationResult<()> {
         let mut writer = self.writer_txn()?;
         self.db
-            .put(&mut writer, &Key::already_init_key(group_id), b"true")?;
-        writer.commit()?;
+            .put(&mut writer, &Key::already_init_key(group_id), b"true")
+            .context(HeedSnafu)?;
+        writer.commit().context(HeedSnafu)?;
 
         Ok(())
     }
@@ -178,7 +188,7 @@ impl StateStorage {
             )?;
         }
 
-        writer.commit()?;
+        writer.commit().context(HeedSnafu)?;
 
         Ok(())
     }
@@ -191,9 +201,11 @@ impl StateStorage {
         let mut memberships = HashMap::new();
         let mut iter = self
             .db
-            .prefix_iter(&reader, &Key::membership_list_prefix(group_id))?;
-        while let Some((key, data)) = iter.next().transpose()? {
-            let value = serde_json::from_slice(&data)?;
+            .prefix_iter(&reader, &Key::membership_list_prefix(group_id))
+            .context(HeedSnafu)?;
+        while let Some((key, data)) = iter.next().transpose().context(HeedSnafu)? {
+            let value = serde_json::from_slice(&data)
+                .map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())?;
             memberships.insert(key.to_string(), value);
         }
 
@@ -232,7 +244,7 @@ impl StateStorage {
     ) -> ReplicationResult<()> {
         let mut writer = self.writer_txn()?;
         self.set(&mut writer, &Key::applied_log(group_id), &log_id)?;
-        writer.commit()?;
+        writer.commit().context(HeedSnafu)?;
 
         Ok(())
     }
@@ -256,7 +268,7 @@ impl StateStorage {
         let mut writer = self.writer_txn()?;
         let key = Key::snapshot_applied_log(group_id);
         self.set(&mut writer, &key, &log_id)?;
-        writer.commit()?;
+        writer.commit().context(HeedSnafu)?;
 
         Ok(())
     }
@@ -271,7 +283,7 @@ impl StateStorage {
     pub fn set_last_purged(&self, group_id: u32, log_id: LogId<u64>) -> ReplicationResult<()> {
         let mut writer = self.writer_txn()?;
         self.set(&mut writer, &Key::purged_log_id(group_id), &log_id)?;
-        writer.commit()?;
+        writer.commit().context(HeedSnafu)?;
 
         Ok(())
     }
@@ -288,7 +300,7 @@ impl StateStorage {
     pub fn set_snapshot_index(&self, group_id: u32, index: u64) -> ReplicationResult<()> {
         let mut writer = self.writer_txn()?;
         self.set(&mut writer, &Key::snapshot_index(group_id), &index)?;
-        writer.commit()?;
+        writer.commit().context(HeedSnafu)?;
 
         Ok(())
     }
@@ -301,7 +313,7 @@ impl StateStorage {
             + add;
 
         self.set(&mut writer, &Key::snapshot_index(group_id), &index)?;
-        writer.commit()?;
+        writer.commit().context(HeedSnafu)?;
 
         Ok(index)
     }
@@ -316,7 +328,7 @@ impl StateStorage {
     pub fn set_vote(&self, group_id: u32, vote: &Vote<RaftNodeId>) -> ReplicationResult<()> {
         let mut writer = self.writer_txn()?;
         self.set(&mut writer, &Key::vote_key(group_id), vote)?;
-        writer.commit()?;
+        writer.commit().context(HeedSnafu)?;
 
         Ok(())
     }
@@ -331,7 +343,7 @@ impl StateStorage {
     pub fn set_snapshot(&self, group_id: u32, snap: StoredSnapshot) -> ReplicationResult<()> {
         let mut writer = self.writer_txn()?;
         self.set(&mut writer, &Key::snapshot_key(group_id), &snap)?;
-        writer.commit()?;
+        writer.commit().context(HeedSnafu)?;
 
         Ok(())
     }
@@ -350,7 +362,7 @@ impl StateStorage {
     ) -> ReplicationResult<()> {
         let mut writer = self.writer_txn()?;
         self.set(&mut writer, &Key::node_summary(group_id), summary)?;
-        writer.commit()?;
+        writer.commit().context(HeedSnafu)?;
 
         Ok(())
     }
@@ -360,7 +372,7 @@ impl StateStorage {
         for key in keys {
             self.del(&mut writer, key)?;
         }
-        writer.commit()?;
+        writer.commit().context(HeedSnafu)?;
 
         Ok(())
     }
@@ -368,10 +380,14 @@ impl StateStorage {
     pub fn all_nodes_summary(&self) -> ReplicationResult<Vec<RaftNodeSummary>> {
         let mut nodes_summary = vec![];
         let reader = self.reader_txn()?;
-        let iter = self.db.prefix_iter(&reader, "node_summary_")?;
+        let iter = self
+            .db
+            .prefix_iter(&reader, "node_summary_")
+            .context(HeedSnafu)?;
         for pair in iter {
-            let (_, data) = pair?;
-            let summary: RaftNodeSummary = serde_json::from_slice(&data)?;
+            let (_, data) = pair.context(HeedSnafu)?;
+            let summary: RaftNodeSummary = serde_json::from_slice(&data)
+                .map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())?;
             nodes_summary.push(summary);
         }
 
@@ -393,7 +409,7 @@ impl StateStorage {
         for (key, _) in memberships {
             self.del(&mut writer, &key)?;
         }
-        writer.commit()?;
+        writer.commit().context(HeedSnafu)?;
 
         Ok(())
     }

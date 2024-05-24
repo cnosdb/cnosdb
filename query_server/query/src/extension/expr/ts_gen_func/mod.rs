@@ -4,7 +4,7 @@ mod utils;
 use data_repair::{timestamp_repair, value_fill, value_repair};
 use datafusion::logical_expr::ScalarUDF;
 use spi::query::function::FunctionMetadataManager;
-use spi::{DFResult, Result};
+use spi::{DFResult, QueryResult};
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
@@ -36,7 +36,7 @@ impl TSGenFunc {
         }
     }
 
-    pub fn register_all_udf(func_manager: &mut dyn FunctionMetadataManager) -> Result<()> {
+    pub fn register_all_udf(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<()> {
         for func in TSGenFunc::iter() {
             func_manager.register_udf(func.scalar_udf())?;
         }

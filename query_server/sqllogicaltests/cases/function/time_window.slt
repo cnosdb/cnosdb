@@ -73,7 +73,7 @@ select * from tmp order by window.start, time;
 {start: 1999-12-31T00:00:00.013, end: 1999-12-31T00:00:00.023} 1999-12-31T00:00:00.015 "tag14" "tag24" "NULL" 444 111.0
 
 # insert max timestamp
-statement error .*Coordinator: Meta request error: Error: create bucket unknown error db:time_window 9223372036854775807.*
+statement error .*Coordinator: Meta: Error: create bucket unknown error db:time_window 9223372036854775807.*
 INSERT time_window.err(TIME, f0, f1, t0, t1) VALUES('2262-04-11 23:47:16.854775807', 111, 444, 'tag11', 'tag21');
 
 # insert min timestamp

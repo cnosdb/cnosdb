@@ -12,7 +12,7 @@ use crate::kv_service::tskv_service_client::TskvServiceClient;
 use crate::models::{Column, Points, Table};
 use crate::raft_service::raft_service_client::RaftServiceClient;
 use flatbuffers::{ForwardsUOffset, Vector};
-use snafu::Snafu;
+use snafu::{Backtrace, Location, OptionExt, Snafu};
 use tonic::transport::Channel;
 use tower::timeout::Timeout;
 
@@ -25,31 +25,59 @@ type PointsResult<T> = Result<T, PointsError>;
 #[snafu(visibility(pub))]
 pub enum PointsError {
     #[snafu(display("{}", msg))]
-    Points { msg: String },
+    Points {
+        msg: String,
+        location: Location,
+        backtrace: Backtrace,
+    },
 
     #[snafu(display("Flatbuffers 'Points' missing database name (db)"))]
-    PointsMissingDatabaseName,
+    PointsMissingDatabaseName {
+        location: Location,
+        backtrace: Backtrace,
+    },
 
     #[snafu(display("Flatbuffers 'Points' missing tables data (tables)"))]
-    PointsMissingTables,
+    PointsMissingTables {
+        location: Location,
+        backtrace: Backtrace,
+    },
 
     #[snafu(display("Flatbuffers 'Table' missing table name (tab)"))]
-    TableMissingName,
+    TableMissingName {
+        location: Location,
+        backtrace: Backtrace,
+    },
 
     #[snafu(display("Flatbuffers 'Table' missing points data (points)"))]
-    TableMissingColumns,
+    TableMissingColumns {
+        location: Location,
+        backtrace: Backtrace,
+    },
 
     #[snafu(display("Flatbuffers 'Point' missing tags data (tags)"))]
-    PointMissingTags,
+    PointMissingTags {
+        location: Location,
+        backtrace: Backtrace,
+    },
 
     #[snafu(display("Flatbuffers 'Column' missing values"))]
-    ColumnMissingValues,
+    ColumnMissingValues {
+        location: Location,
+        backtrace: Backtrace,
+    },
 
     #[snafu(display("Flatbuffers 'Column' missing names"))]
-    ColumnMissingNames,
+    ColumnMissingNames {
+        location: Location,
+        backtrace: Backtrace,
+    },
 
     #[snafu(display("Flatbuffers 'Column' missing nullbits"))]
-    ColumnMissingNullbits,
+    ColumnMissingNullbits {
+        location: Location,
+        backtrace: Backtrace,
+    },
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -63,46 +91,40 @@ pub enum FieldValue {
 
 impl<'a> Points<'a> {
     pub fn db_ext(&'a self) -> PointsResult<&'a str> {
-        self.db().ok_or(PointsError::PointsMissingDatabaseName)
+        self.db().context(PointsMissingDatabaseNameSnafu)
     }
 
     pub fn tables_iter_ext(&'a self) -> PointsResult<impl Iterator<Item = Table<'a>>> {
-        Ok(self
-            .tables()
-            .ok_or(PointsError::PointsMissingTables)?
-            .iter())
+        Ok(self.tables().context(PointsMissingTablesSnafu)?.iter())
     }
 }
 
 impl<'a> Table<'a> {
     pub fn tab_ext(&'a self) -> PointsResult<&'a str> {
-        let name = self.tab().ok_or(PointsError::TableMissingName)?;
+        let name = self.tab().context(TableMissingNameSnafu)?;
         Ok(name)
     }
 
     pub fn columns_iter_ext(&'a self) -> PointsResult<impl Iterator<Item = Column<'a>>> {
-        Ok(self
-            .columns()
-            .ok_or(PointsError::TableMissingColumns)?
-            .iter())
+        Ok(self.columns().context(TableMissingColumnsSnafu)?.iter())
     }
 }
 
 impl<'a> Column<'a> {
     pub fn name_ext(&'a self) -> PointsResult<&'a str> {
-        let name = self.name().ok_or(PointsError::ColumnMissingNames)?;
+        let name = self.name().context(ColumnMissingNamesSnafu)?;
         Ok(name)
     }
 
     pub fn nullbit_ext(&self) -> PointsResult<Vector<u8>> {
-        let nullbit = self.nullbits().ok_or(PointsError::ColumnMissingNullbits)?;
+        let nullbit = self.nullbits().context(ColumnMissingNullbitsSnafu)?;
         Ok(nullbit)
     }
 
     pub fn string_values_len(&self) -> PointsResult<usize> {
         let len = self
             .col_values()
-            .ok_or(PointsError::ColumnMissingValues)?
+            .context(ColumnMissingValuesSnafu)?
             .string_value()
             .map(|v| v.len())
             .unwrap_or(0);
@@ -112,7 +134,7 @@ impl<'a> Column<'a> {
     pub fn string_values(&self) -> PointsResult<Vector<ForwardsUOffset<&str>>> {
         let values = self
             .col_values()
-            .ok_or(PointsError::ColumnMissingValues)?
+            .context(ColumnMissingValuesSnafu)?
             .string_value()
             .unwrap_or_default();
         Ok(values)
@@ -121,7 +143,7 @@ impl<'a> Column<'a> {
     pub fn bool_values_len(&self) -> PointsResult<usize> {
         let len = self
             .col_values()
-            .ok_or(PointsError::ColumnMissingValues)?
+            .context(ColumnMissingValuesSnafu)?
             .bool_value()
             .map(|v| v.len())
             .unwrap_or(0);
@@ -131,7 +153,7 @@ impl<'a> Column<'a> {
     pub fn bool_values(&self) -> PointsResult<Vector<bool>> {
         let values = self
             .col_values()
-            .ok_or(PointsError::ColumnMissingValues)?
+            .context(ColumnMissingValuesSnafu)?
             .bool_value()
             .unwrap_or_default();
         Ok(values)
@@ -140,7 +162,7 @@ impl<'a> Column<'a> {
     pub fn int_values_len(&self) -> PointsResult<usize> {
         let len = self
             .col_values()
-            .ok_or(PointsError::ColumnMissingValues)?
+            .context(ColumnMissingValuesSnafu)?
             .int_value()
             .map(|v| v.len())
             .unwrap_or(0);
@@ -150,7 +172,7 @@ impl<'a> Column<'a> {
     pub fn int_values(&self) -> PointsResult<Vector<i64>> {
         let values = self
             .col_values()
-            .ok_or(PointsError::ColumnMissingValues)?
+            .context(ColumnMissingValuesSnafu)?
             .int_value()
             .unwrap_or_default();
         Ok(values)
@@ -159,7 +181,7 @@ impl<'a> Column<'a> {
     pub fn float_values_len(&self) -> PointsResult<usize> {
         let len = self
             .col_values()
-            .ok_or(PointsError::ColumnMissingValues)?
+            .context(ColumnMissingValuesSnafu)?
             .float_value()
             .map(|v| v.len())
             .unwrap_or(0);
@@ -169,7 +191,7 @@ impl<'a> Column<'a> {
     pub fn float_values(&self) -> PointsResult<Vector<f64>> {
         let values = self
             .col_values()
-            .ok_or(PointsError::ColumnMissingValues)?
+            .context(ColumnMissingValuesSnafu)?
             .float_value()
             .unwrap_or_default();
         Ok(values)
@@ -178,7 +200,7 @@ impl<'a> Column<'a> {
     pub fn uint_values_len(&self) -> PointsResult<usize> {
         let len = self
             .col_values()
-            .ok_or(PointsError::ColumnMissingValues)?
+            .context(ColumnMissingValuesSnafu)?
             .uint_value()
             .map(|v| v.len())
             .unwrap_or(0);
@@ -188,7 +210,7 @@ impl<'a> Column<'a> {
     pub fn uint_values(&self) -> PointsResult<Vector<u64>> {
         let values = self
             .col_values()
-            .ok_or(PointsError::ColumnMissingValues)?
+            .context(ColumnMissingValuesSnafu)?
             .uint_value()
             .unwrap_or_default();
         Ok(values)

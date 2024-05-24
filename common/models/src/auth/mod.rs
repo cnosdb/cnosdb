@@ -1,10 +1,9 @@
 use bcrypt::BcryptError;
 use openssl::error::ErrorStack;
 pub use password::{bcrypt_hash, bcrypt_verify};
-use snafu::Snafu;
+use snafu::{Backtrace, Location, Snafu};
 
 use crate::auth::privilege::DatabasePrivilege;
-use crate::define_result;
 
 mod password;
 pub mod privilege;
@@ -12,7 +11,7 @@ pub mod role;
 pub mod rsa_utils;
 pub mod user;
 
-define_result!(AuthError);
+pub type AuthResult<T> = std::result::Result<T, AuthError>;
 
 #[derive(Debug, Snafu)]
 pub enum AuthError {
@@ -77,7 +76,11 @@ pub enum AuthError {
     code and we would welcome that you file an bug report in our issue tracker",
         err
     ))]
-    Internal { err: String },
+    Internal {
+        err: String,
+        location: Location,
+        backtrace: Backtrace,
+    },
 }
 
 impl From<BcryptError> for AuthError {

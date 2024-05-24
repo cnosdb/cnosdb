@@ -1,8 +1,8 @@
 use std::collections::VecDeque;
 
 use super::ast::ExtStatement;
-use crate::Result;
+use crate::QueryResult;
 
 pub trait Parser {
-    fn parse(&self, sql: &str) -> Result<VecDeque<ExtStatement>>;
+    fn parse(&self, sql: &str) -> QueryResult<VecDeque<ExtStatement>>;
 }

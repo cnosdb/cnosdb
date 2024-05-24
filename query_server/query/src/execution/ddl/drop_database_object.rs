@@ -3,9 +3,10 @@ use coordinator::resource_manager::ResourceManager;
 use meta::error::MetaError;
 use models::oid::Identifier;
 use models::schema::{ResourceInfo, ResourceOperator};
+use snafu::ResultExt;
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::{DatabaseObjectType, DropDatabaseObject};
-use spi::{QueryError, Result};
+use spi::{CoordinatorSnafu, MetaSnafu, QueryError, QueryResult};
 use trace::info;
 
 use super::DDLDefinitionTask;
@@ -23,7 +24,7 @@ impl DropDatabaseObjectTask {
 
 #[async_trait]
 impl DDLDefinitionTask for DropDatabaseObjectTask {
-    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> Result<Output> {
+    async fn execute(&self, query_state_machine: QueryStateMachineRef) -> QueryResult<Output> {
         let DropDatabaseObject {
             ref object_name,
             ref if_exist,
@@ -35,11 +36,14 @@ impl DDLDefinitionTask for DropDatabaseObjectTask {
                 // TODO 删除指定租户下的表
                 info!("Drop table {}", object_name);
                 let tenant = object_name.tenant();
-                let client = query_state_machine.meta.tenant_meta(tenant).await.ok_or(
-                    MetaError::TenantNotFound {
+                let client = query_state_machine
+                    .meta
+                    .tenant_meta(tenant)
+                    .await
+                    .ok_or_else(|| MetaError::TenantNotFound {
                         tenant: tenant.to_string(),
-                    },
-                )?;
+                    })
+                    .context(MetaSnafu)?;
 
                 if client
                     .get_table_schema(object_name.database(), object_name.table())
@@ -72,7 +76,8 @@ impl DDLDefinitionTask for DropDatabaseObjectTask {
                     query_state_machine.coord.node_id(),
                 );
                 ResourceManager::add_resource_task(query_state_machine.coord.clone(), resourceinfo)
-                    .await?;
+                    .await
+                    .context(CoordinatorSnafu)?;
             }
         };
 
