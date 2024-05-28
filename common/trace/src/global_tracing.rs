@@ -10,16 +10,14 @@ use opentelemetry_otlp::{Protocol, WithExportConfig};
 use opentelemetry_sdk::Resource;
 
 pub fn init_global_tracing(trace_config: &TraceConfig, service_name: String) {
-    match &trace_config.jaeger_endpoint {
+    match &trace_config.otlp_endpoint {
         None => (),
         Some(endpoint) => {
             let reporter = opentelemetry_reporter(endpoint.to_owned(), service_name);
             minitrace::set_reporter(
                 reporter,
                 Config::default()
-                    .batch_report_interval(Duration::from_millis(
-                        trace_config.batch_report_interval_millis,
-                    ))
+                    .batch_report_interval(trace_config.batch_report_interval)
                     .batch_report_max_spans(trace_config.batch_report_max_spans)
                     .max_spans_per_trace(trace_config.max_spans_per_trace),
             );

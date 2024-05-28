@@ -59,7 +59,10 @@ pub struct StorageConfig {
     )]
     pub copyinto_trigger_flush_size: u64,
 
-    #[serde(default = "StorageConfig::default_max_datablock_size")]
+    #[serde(
+        with = "bytes_num",
+        default = "StorageConfig::default_max_datablock_size"
+    )]
     pub max_datablock_size: u64,
 }
 
