@@ -6,7 +6,10 @@ pub mod stream_reader;
 pub mod stream_writer;
 
 use std::any::Any;
-use std::io::{Error, ErrorKind, Result};
+use std::future::Future;
+use std::io::Result;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 use async_trait::async_trait;
 use tokio::task::spawn_blocking;
@@ -36,18 +39,44 @@ pub trait WritableFile: Send + Sync {
     fn as_any(&self) -> &dyn Any;
 }
 
-pub(crate) async fn asyncify<F, T>(f: F) -> Result<T>
+pub(crate) async unsafe fn asyncify<'a, F, T>(f: F) -> Result<T>
 where
-    F: FnOnce() -> Result<T> + Send + 'static,
+    F: FnOnce() -> Result<T> + Send + 'a,
     T: Send + 'static,
 {
-    match spawn_blocking(f).await {
-        Ok(res) => res,
-        Err(e) => Err(Error::new(
-            ErrorKind::Other,
-            format!("background task failed: {:?}", e),
-        )),
+    struct Fut<F, T>(Option<F>)
+    where
+        F: Future<Output = T>;
+
+    impl<F, T> Future for Fut<F, T>
+    where
+        F: Future<Output = T> + Unpin,
+    {
+        type Output = T;
+
+        fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+            let r = Pin::new(self.0.as_mut().unwrap()).poll(cx);
+            if r.is_ready() {
+                self.0 = None;
+            }
+            r
+        }
     }
+
+    impl<F, T> Drop for Fut<F, T>
+    where
+        F: Future<Output = T>,
+    {
+        fn drop(&mut self) {
+            if let Some(f) = self.0.take() {
+                tokio::runtime::Handle::current().block_on(f);
+            }
+        }
+    }
+
+    let f: Box<dyn FnOnce() -> Result<T> + Send> = Box::new(f);
+    let f: Box<dyn FnOnce() -> Result<T> + Send + 'static> = std::mem::transmute(f);
+    Fut(Some(spawn_blocking(f))).await?
 }
 
 #[cfg(test)]

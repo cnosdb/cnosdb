@@ -17,7 +17,7 @@ pub struct AsyncFile {
 #[async_trait::async_trait]
 impl WritableFile for AsyncFile {
     async fn write_at(&mut self, pos: usize, data: &[u8]) -> Result<usize> {
-        let len = self.inner.pwrite(pos, data).await?;
+        let len = self.inner.write_all_at(pos, data).await?;
         self.size = self.size.max(pos + len);
         Ok(len)
     }
@@ -50,7 +50,7 @@ impl WritableFile for AsyncFile {
 #[async_trait::async_trait]
 impl file::ReadableFile for AsyncFile {
     async fn read_at(&self, pos: usize, data: &mut [u8]) -> Result<usize> {
-        self.inner.pread(pos, data).await
+        self.inner.read_all_at(pos, data).await
     }
 
     fn file_size(&self) -> usize {
@@ -69,8 +69,8 @@ impl AsyncFile {
             Ok(AsyncFile { inner, ctx, size })
         }
         #[cfg(not(feature = "io_uring"))]
-        {
-            let res = file::asyncify(move || {
+        unsafe {
+            let res = file::asyncify(|| {
                 let file = options.open(path)?;
                 let inner = RawFile(Arc::new(file));
                 let size = inner.file_size()?;
