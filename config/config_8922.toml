@@ -39,7 +39,7 @@ max_compact_size = "2G"              # 2147483648
 max_concurrent_compaction = 4
 strict_write = false
 reserve_space = "0"
-max_datablock_size = 102400
+max_datablock_size = "100KB"
 
 [wal]
 enabled = true
@@ -86,4 +86,4 @@ send_append_entries_timeout = "5000ms"
 
 # [trace]
 # auto_generate_span = true
-# jaeger_endpoint = 'http://localhost:4317'
+# otlp_endpoint = 'http://localhost:4317'

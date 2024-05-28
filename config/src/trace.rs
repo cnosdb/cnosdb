@@ -1,23 +1,56 @@
+use std::time::Duration;
+
 use serde::{Deserialize, Serialize};
 
+use crate::codec::duration;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(default)]
 pub struct TraceConfig {
+    #[serde(default = "TraceConfig::default_auto_generate_span")]
     pub auto_generate_span: bool,
+    #[serde(default = "TraceConfig::default_max_spans_per_trace")]
     pub max_spans_per_trace: Option<usize>,
-    pub batch_report_interval_millis: u64,
+    #[serde(
+        with = "duration",
+        default = "TraceConfig::default_batch_report_interval"
+    )]
+    pub batch_report_interval: Duration,
+    #[serde(default = "TraceConfig::default_batch_report_max_spans")]
     pub batch_report_max_spans: Option<usize>,
-    pub jaeger_endpoint: Option<String>,
+    #[serde(default = "TraceConfig::default_otlp_endpoint")]
+    pub otlp_endpoint: Option<String>,
+}
+
+impl TraceConfig {
+    fn default_auto_generate_span() -> bool {
+        false
+    }
+
+    fn default_max_spans_per_trace() -> Option<usize> {
+        None
+    }
+
+    fn default_batch_report_interval() -> Duration {
+        Duration::from_millis(500)
+    }
+
+    fn default_batch_report_max_spans() -> Option<usize> {
+        None
+    }
+
+    fn default_otlp_endpoint() -> Option<String> {
+        None
+    }
 }
 
 impl Default for TraceConfig {
     fn default() -> Self {
         Self {
-            auto_generate_span: Default::default(),
-            max_spans_per_trace: Default::default(),
-            batch_report_interval_millis: 500,
-            batch_report_max_spans: Default::default(),
-            jaeger_endpoint: Default::default(),
+            auto_generate_span: Self::default_auto_generate_span(),
+            max_spans_per_trace: Self::default_max_spans_per_trace(),
+            batch_report_interval: Self::default_batch_report_interval(),
+            batch_report_max_spans: Self::default_batch_report_max_spans(),
+            otlp_endpoint: Self::default_otlp_endpoint(),
         }
     }
 }
