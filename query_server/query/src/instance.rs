@@ -27,7 +27,7 @@ use crate::auth::auth_control::{AccessControlImpl, AccessControlNoCheck};
 use crate::data_source::split::SplitManager;
 use crate::data_source::stream::tskv::factory::{TskvStreamProviderFactory, TSKV_STREAM_PROVIDER};
 use crate::dispatcher::manager::SimpleQueryDispatcherBuilder;
-use crate::dispatcher::persister::LocalQueryPersister;
+use crate::dispatcher::persister::MetaQueryPersister;
 use crate::dispatcher::query_tracker::QueryTracker;
 use crate::execution::factory::SqlQueryExecutionFactory;
 use crate::execution::scheduler::local::LocalScheduler;
@@ -210,9 +210,7 @@ pub async fn make_cnosdbms(
     stream_checker_manager
         .register_stream_checker(TSKV_STREAM_PROVIDER, tskv_stream_provider_factory)?;
 
-    let query_persister = Arc::new(LocalQueryPersister::try_new(
-        query_dedicated_hidden_dir.clone(),
-    )?);
+    let query_persister = Arc::new(MetaQueryPersister::new(coord.meta_manager()));
     let query_tracker = Arc::new(QueryTracker::new(
         options.query.max_server_connections as usize,
         query_persister,

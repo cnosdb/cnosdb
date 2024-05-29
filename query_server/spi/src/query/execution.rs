@@ -173,8 +173,9 @@ impl Stream for Output {
 //     }
 // }
 
+#[async_trait]
 pub trait QueryExecutionFactory {
-    fn create_query_execution(
+    async fn create_query_execution(
         &self,
         plan: Plan,
         query_state_machine: QueryStateMachineRef,

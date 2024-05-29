@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use datafusion::logical_expr::{Extension, LogicalPlan};
 use models::runtime::executor::DedicatedExecutor;
 use spi::query::datasource::stream::checker::StreamCheckerManagerRef;
@@ -65,8 +66,9 @@ impl SqlQueryExecutionFactory {
 
 pub type QueryExecutionFactoryRef = Arc<dyn QueryExecutionFactory + Send + Sync>;
 
+#[async_trait]
 impl QueryExecutionFactory for SqlQueryExecutionFactory {
-    fn create_query_execution(
+    async fn create_query_execution(
         &self,
         plan: Plan,
         state_machine: QueryStateMachineRef,
@@ -103,7 +105,8 @@ impl QueryExecutionFactory for SqlQueryExecutionFactory {
                                 self.scheduler.clone(),
                                 self.trigger_executor_factory.clone(),
                                 self.runtime.clone(),
-                            )?;
+                            )
+                            .await?;
 
                         Ok(Arc::new(exec))
                     }
