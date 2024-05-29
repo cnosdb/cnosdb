@@ -21,7 +21,8 @@ nom = { workspace = true }
 humantime = { workspace = true }
 reqwest = { workspace = true }
 url = { workspace = true }
-
+clap = {workspace = true, features = ["derive"]}
+regex = {workspace = true}
 [features]
 default = []
 backtrace = ["async-backtrace"]

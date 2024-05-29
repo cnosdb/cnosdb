@@ -9,6 +9,7 @@ use arrow_flight::sql::client::FlightSqlServiceClient;
 use arrow_flight::utils::flight_data_to_batches;
 use async_trait::async_trait;
 use futures::TryStreamExt;
+use regex::Regex;
 use reqwest::{Client, Method, Request, Url};
 use sqllogictest::{ColumnType, DBOutput};
 use tonic::transport::{Channel, Endpoint};
@@ -20,18 +21,24 @@ use crate::error::{Result, SqlError};
 use crate::utils::normalize;
 
 pub struct CnosDBClient {
+    engine_name: String,
     relative_path: PathBuf,
     options: SqlClientOptions,
+    create_options: CreateOptions,
 }
 
 impl CnosDBClient {
     pub fn new(
+        engine_name: impl Into<String>,
         relative_path: impl Into<PathBuf>,
         options: SqlClientOptions,
+        create_options: CreateOptions,
     ) -> Result<Self, SqlError> {
         Ok(Self {
+            engine_name: engine_name.into(),
             relative_path: relative_path.into(),
             options,
+            create_options,
         })
     }
 }
@@ -48,7 +55,9 @@ impl sqllogictest::AsyncDB for CnosDBClient {
     ) -> std::result::Result<DBOutput<Self::ColumnType>, Self::Error> {
         let request = DBRequest::parse_db_request(request, &mut self.options)?;
 
-        let (schema, batches) = request.execute(&self.options, &self.relative_path).await?;
+        let (schema, batches) = request
+            .execute(&self.options, &self.create_options, &self.relative_path)
+            .await?;
         let types = normalize::convert_schema_to_types(schema.fields());
         let rows = normalize::convert_batches(batches)?;
 
@@ -60,7 +69,7 @@ impl sqllogictest::AsyncDB for CnosDBClient {
     }
 
     fn engine_name(&self) -> &str {
-        "CnosDB"
+        &self.engine_name
     }
 
     async fn sleep(dur: Duration) {
@@ -163,6 +172,7 @@ fn build_http_write_request(option: &SqlClientOptions, url: Url, body: &str) -> 
 
 pub async fn run_query(
     options: &SqlClientOptions,
+    create_option: &CreateOptions,
     sql: impl Into<String>,
 ) -> Result<(Schema, Vec<RecordBatch>)> {
     let SqlClientOptions {
@@ -187,7 +197,37 @@ pub async fn run_query(
     let _ = client.handshake(username, password).await?;
 
     // 2. execute query, get result metadata
-    let mut stmt = client.prepare(sql.into(), None).await?;
+    let mut sql = Into::<String>::into(sql);
+    let re = Regex::new(r"create\s+database").unwrap();
+    if re.is_match(&sql) {
+        let with = sql.to_ascii_lowercase().find("with");
+        if with.is_some() {
+            let with = with.unwrap();
+            if !sql.contains("shard") {
+                sql.insert_str(
+                    with + 4,
+                    format!(" shard {}", create_option.shard_num).as_str(),
+                );
+            }
+
+            if !sql.contains("REPLICA") {
+                sql.insert_str(
+                    with + 4,
+                    format!(" REPLICA {}", create_option.replication_num).as_str(),
+                );
+            }
+        } else {
+            sql.insert_str(
+                sql.len() - 1,
+                format!(
+                    " with shard {} replica {}",
+                    create_option.shard_num, create_option.replication_num
+                )
+                .as_str(),
+            );
+        }
+    }
+    let mut stmt = client.prepare(sql, None).await?;
     let flight_info = stmt.execute().await?;
 
     let mut batches = vec![];
@@ -299,6 +339,12 @@ impl ColumnType for CnosDBColumnType {
             Self::Another => '?',
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct CreateOptions {
+    pub replication_num: u32,
+    pub shard_num: u32,
 }
 
 #[derive(Debug, Clone)]
