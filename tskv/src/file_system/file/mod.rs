@@ -12,7 +12,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use async_trait::async_trait;
-use tokio::task::spawn_blocking;
+use tokio::task::{block_in_place, spawn_blocking};
 
 #[async_trait]
 pub trait ReadableFile: Send + Sync {
@@ -46,11 +46,13 @@ where
 {
     struct Fut<F, T>(Option<F>)
     where
-        F: Future<Output = T>;
+        F: Future<Output = T> + Unpin + Send + 'static,
+        T: Send + 'static;
 
     impl<F, T> Future for Fut<F, T>
     where
-        F: Future<Output = T> + Unpin,
+        F: Future<Output = T> + Unpin + Send + 'static,
+        T: Send + 'static,
     {
         type Output = T;
 
@@ -65,11 +67,14 @@ where
 
     impl<F, T> Drop for Fut<F, T>
     where
-        F: Future<Output = T>,
+        F: Future<Output = T> + Send + Unpin + 'static,
+        T: Send + 'static,
     {
         fn drop(&mut self) {
             if let Some(f) = self.0.take() {
-                tokio::runtime::Handle::current().block_on(f);
+                block_in_place(move || {
+                    tokio::runtime::Handle::current().block_on(f);
+                });
             }
         }
     }
@@ -83,9 +88,62 @@ where
 mod test {
     use std::path::Path;
 
+    use tokio::select;
+    use tokio_util::sync::CancellationToken;
+
     use crate::file_system::async_filesystem::{LocalFileSystem, LocalFileType};
     use crate::file_system::FileSystem;
 
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_drop_futures() {
+        let dir = "/tmp/test/file_system/test_drop_futures";
+        let _ = std::fs::remove_dir_all(dir);
+        std::fs::create_dir_all(dir).unwrap();
+
+        let path = Path::new(dir).join("test.txt");
+        let file_system = LocalFileSystem::new(LocalFileType::ThreadPool);
+        let mut write_file = file_system.open_file_writer(&path, 1024).await.unwrap();
+        write_file.truncate(2 * 1024 * 1024 * 1024).await.unwrap();
+
+        let token = CancellationToken::new();
+        let cloned_token = token.clone();
+        async fn test(file_system: LocalFileSystem, path: &Path) -> usize {
+            let mut pos = 0_usize;
+            let mut buf = vec![0_u8; 1024 * 1024 * 1024];
+            let read_file = file_system.open_file_reader(path).await.unwrap();
+            while pos < 2 * 1024 * 1024 * 1024 {
+                let read_size = read_file.read_at(pos, &mut buf).await.unwrap();
+                pos += read_size;
+            }
+            0
+        }
+
+        println!("start test");
+        let handle = tokio::spawn(async move {
+            select! {
+                _ = cloned_token.cancelled() => {
+                    println!("cancelled");
+                }
+                res = test(file_system, &path) => {
+                    println!("test read done");
+                    assert_eq!(res, 0);
+                }
+            }
+        });
+
+        tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+        token.cancel();
+        println!("start cancel!");
+
+        match handle.await {
+            Ok(_) => {
+                println!("ok test done");
+            }
+            Err(e) => {
+                panic!("error: {:?}", e);
+            }
+        }
+    }
     #[tokio::test]
     #[ignore]
     async fn test_delete_file_when_reading() {
