@@ -1334,6 +1334,7 @@ pub mod test_tseries_family {
     use crate::compaction::test::default_table_schema;
     use crate::compaction::{run_flush_memtable_job, FlushReq};
     use crate::context::{GlobalContext, GlobalSequenceContext};
+    use crate::database::Database;
     use crate::file_utils::make_tsm_file_name;
     use crate::kv_option::{Options, StorageOptions};
     use crate::kvcore::{COMPACT_REQ_CHANNEL_CAP, SUMMARY_REQ_CHANNEL_CAP};
@@ -1867,23 +1868,21 @@ pub mod test_tseries_family {
                 .get_db(&tenant, &database)
                 .unwrap();
             let cxt = Arc::new(GlobalContext::new());
-            let ts_family_id = db
-                .write()
-                .await
-                .add_tsfamily(
-                    0,
-                    0,
-                    None,
-                    summary_task_sender.clone(),
-                    flush_task_sender.clone(),
-                    compact_task_sender.clone(),
-                    cxt.clone(),
-                )
-                .await
-                .unwrap()
-                .read()
-                .await
-                .tf_id();
+            let ts_family_id = Database::add_tsfamily(
+                db.clone(),
+                0,
+                0,
+                None,
+                summary_task_sender.clone(),
+                flush_task_sender.clone(),
+                compact_task_sender.clone(),
+                cxt.clone(),
+            )
+            .await
+            .unwrap()
+            .read()
+            .await
+            .tf_id();
 
             run_flush_memtable_job(
                 flush_seq,

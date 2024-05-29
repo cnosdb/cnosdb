@@ -108,7 +108,7 @@ impl Database {
     // todo: Maybe TseriesFamily::new() should be refactored.
     #[allow(clippy::too_many_arguments)]
     pub async fn add_tsfamily(
-        &mut self,
+        database: Arc<RwLock<Database>>,
         tsf_id: u32,
         seq_no: u64,
         version_edit: Option<VersionEdit>,
@@ -117,6 +117,7 @@ impl Database {
         compact_task_sender: Sender<CompactTask>,
         global_ctx: Arc<GlobalContext>,
     ) -> Result<Arc<RwLock<TseriesFamily>>> {
+        let mut db_w = database.write().await;
         let (seq_no, version_edits, file_metas) = match version_edit {
             Some(mut ve) => {
                 ve.tsf_id = tsf_id;
@@ -127,7 +128,7 @@ impl Database {
                     let new_file_id = global_ctx.file_id_next();
                     f.tsf_id = tsf_id;
                     let file_path = f
-                        .rename_file(&self.opt.storage, &self.owner, f.tsf_id, new_file_id)
+                        .rename_file(&db_w.opt.storage, &db_w.owner, f.tsf_id, new_file_id)
                         .await?;
                     let file_reader = crate::tsm::TsmReader::open(file_path).await?;
                     file_metas.insert(new_file_id, file_reader.bloom_filter());
@@ -135,26 +136,26 @@ impl Database {
                 for f in ve.del_files.iter_mut() {
                     let new_file_id = global_ctx.file_id_next();
                     f.tsf_id = tsf_id;
-                    f.rename_file(&self.opt.storage, &self.owner, f.tsf_id, new_file_id)
+                    f.rename_file(&db_w.opt.storage, &db_w.owner, f.tsf_id, new_file_id)
                         .await?;
                 }
                 //move index
-                let origin_index = self
+                let origin_index = db_w
                     .opt
                     .storage
-                    .move_dir(&self.owner, tsf_id)
+                    .move_dir(&db_w.owner, tsf_id)
                     .join(INDEX_PATH);
-                let new_index = self.opt.storage.index_dir(&self.owner, tsf_id);
+                let new_index = db_w.opt.storage.index_dir(&db_w.owner, tsf_id);
                 info!("move index from {:?} to {:?}", &origin_index, &new_index);
                 file_utils::rename(origin_index, new_index).await?;
-                tokio::fs::remove_dir_all(self.opt.storage.move_dir(&self.owner, tsf_id)).await?;
+                tokio::fs::remove_dir_all(db_w.opt.storage.move_dir(&db_w.owner, tsf_id)).await?;
                 (ve.seq_no, vec![ve], Some(file_metas))
             }
             None => (
                 seq_no,
                 vec![VersionEdit::new_add_vnode(
                     tsf_id,
-                    self.owner.as_ref().clone(),
+                    db_w.owner.as_ref().clone(),
                     seq_no,
                 )],
                 None,
@@ -162,47 +163,48 @@ impl Database {
         };
 
         let cache =
-            cache::ShardedAsyncCache::create_lru_sharded_cache(self.opt.storage.max_cached_readers);
+            cache::ShardedAsyncCache::create_lru_sharded_cache(db_w.opt.storage.max_cached_readers);
 
         let ver = Arc::new(Version::new(
             tsf_id,
-            self.owner.clone(),
-            self.opt.storage.clone(),
+            db_w.owner.clone(),
+            db_w.opt.storage.clone(),
             seq_no,
-            LevelInfo::init_levels(self.owner.clone(), tsf_id, self.opt.storage.clone()),
+            LevelInfo::init_levels(db_w.owner.clone(), tsf_id, db_w.opt.storage.clone()),
             i64::MIN,
             cache.into(),
         ));
         let tf = TseriesFamily::new(
             tsf_id,
-            self.owner.clone(),
+            db_w.owner.clone(),
             MemCache::new(
                 tsf_id,
-                self.opt.cache.max_buffer_size,
-                self.opt.cache.partition,
+                db_w.opt.cache.max_buffer_size,
+                db_w.opt.cache.partition,
                 seq_no,
-                &self.memory_pool,
+                &db_w.memory_pool,
             ),
             ver,
-            self.opt.cache.clone(),
-            self.opt.storage.clone(),
+            db_w.opt.cache.clone(),
+            db_w.opt.storage.clone(),
             flush_task_sender.clone(),
             compact_task_sender.clone(),
-            self.memory_pool.clone(),
-            &self.metrics_register,
+            db_w.memory_pool.clone(),
+            &db_w.metrics_register,
         );
 
         let tf = Arc::new(RwLock::new(tf));
-        if let Some(tsf) = self.ts_families.get(&tsf_id) {
+        if let Some(tsf) = db_w.ts_families.get(&tsf_id) {
             return Ok(tsf.clone());
         }
         schedule_vnode_compaction(
-            self.runtime.clone(),
+            db_w.runtime.clone(),
             tf.clone(),
             flush_task_sender,
             compact_task_sender,
         );
-        self.ts_families.insert(tsf_id, tf.clone());
+        db_w.ts_families.insert(tsf_id, tf.clone());
+        drop(db_w);
 
         let (task_state_sender, _task_state_receiver) = oneshot::channel();
         let task = SummaryTask::new(version_edits, file_metas, None, task_state_sender);

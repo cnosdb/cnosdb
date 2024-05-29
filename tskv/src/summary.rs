@@ -851,17 +851,6 @@ pub struct WriteSummaryRequest {
     pub call_back: OneShotSender<Result<()>>,
 }
 
-#[derive(Clone)]
-pub struct SummaryScheduler {
-    sender: Sender<SummaryTask>,
-}
-
-impl SummaryScheduler {
-    pub fn new(sender: Sender<SummaryTask>) -> Self {
-        Self { sender }
-    }
-}
-
 #[cfg(test)]
 mod test {
     use std::collections::HashMap;
@@ -880,6 +869,7 @@ mod test {
 
     use crate::compaction::{CompactTask, FlushReq};
     use crate::context::{GlobalContext, GlobalSequenceTask};
+    use crate::database::Database;
     use crate::file_system::file_manager;
     use crate::kv_option::Options;
     use crate::kvcore::{
@@ -1225,19 +1215,18 @@ mod test {
                     .await
                     .unwrap();
                 for i in 0..20 {
-                    db.write()
-                        .await
-                        .add_tsfamily(
-                            i,
-                            0,
-                            None,
-                            test_helper_inner.summary_task_sender.clone(),
-                            test_helper_inner.flush_task_sender.clone(),
-                            test_helper_inner.compact_task_sender.clone(),
-                            test_helper_inner.global_context.clone(),
-                        )
-                        .await
-                        .expect("add tsfamily successfully");
+                    Database::add_tsfamily(
+                        db.clone(),
+                        i,
+                        0,
+                        None,
+                        test_helper_inner.summary_task_sender.clone(),
+                        test_helper_inner.flush_task_sender.clone(),
+                        test_helper_inner.compact_task_sender.clone(),
+                        test_helper_inner.global_context.clone(),
+                    )
+                    .await
+                    .expect("add tsfamily successfully");
                     let edit = VersionEdit::new_add_vnode(i, owned_database.to_string(), 0);
                     edits.push(edit.clone());
                 }
@@ -1309,19 +1298,18 @@ mod test {
                 )
                 .await
                 .unwrap();
-            db.write()
-                .await
-                .add_tsfamily(
-                    VNODE_ID,
-                    0,
-                    None,
-                    test_helper_inner.summary_task_sender.clone(),
-                    test_helper_inner.flush_task_sender.clone(),
-                    test_helper_inner.compact_task_sender.clone(),
-                    test_helper_inner.global_context.clone(),
-                )
-                .await
-                .expect("add vnode failed");
+            Database::add_tsfamily(
+                db.clone(),
+                VNODE_ID,
+                0,
+                None,
+                test_helper_inner.summary_task_sender.clone(),
+                test_helper_inner.flush_task_sender.clone(),
+                test_helper_inner.compact_task_sender.clone(),
+                test_helper_inner.global_context.clone(),
+            )
+            .await
+            .expect("add vnode failed");
             let mut edits = vec![VersionEdit::new_add_vnode(
                 VNODE_ID,
                 owned_database.to_string(),
