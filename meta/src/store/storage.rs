@@ -455,7 +455,20 @@ impl StateMachine {
             ReadCommand::ReplicationSet(cluster, tenant, db_name, repl_id) => response_encode(
                 self.process_read_replication_set(cluster, tenant, db_name, *repl_id),
             ),
+            ReadCommand::ReadQueryInfos(cluster, node_id) => {
+                response_encode(self.process_read_queries(cluster, *node_id))
+            }
         }
+    }
+
+    pub fn process_read_queries(&self, cluster: &str, node_id: NodeId) -> MetaResult<Vec<Vec<u8>>> {
+        let path = KeyPath::queries(cluster, node_id);
+        let queries: Vec<Vec<u8>> = self
+            .children_data::<Vec<u8>>(&path)?
+            .into_values()
+            .collect();
+
+        Ok(queries)
     }
 
     pub fn process_read_replication_set(
@@ -733,7 +746,36 @@ impl StateMachine {
             WriteCommand::ResourceInfosMark(cluster, node_id, is_lock) => {
                 response_encode(self.process_write_resourceinfos_mark(cluster, *node_id, *is_lock))
             }
+            WriteCommand::WriteQueryInfo(cluster, node_id, query_id, query_info) => {
+                response_encode(
+                    self.process_write_queryinfo(cluster, *node_id, *query_id, query_info),
+                )
+            }
+            WriteCommand::RemoveQueryInfo(cluster, node_id, query_id) => {
+                response_encode(self.process_remove_queryinfo(cluster, *node_id, *query_id))
+            }
         }
+    }
+
+    fn process_remove_queryinfo(
+        &self,
+        cluster: &str,
+        node_id: NodeId,
+        query_id: u64,
+    ) -> MetaResult<()> {
+        let key = KeyPath::query(cluster, node_id, query_id);
+        self.remove(&key)
+    }
+
+    fn process_write_queryinfo(
+        &self,
+        cluster: &str,
+        node_id: NodeId,
+        query_id: u64,
+        query_info: &Vec<u8>,
+    ) -> MetaResult<()> {
+        let key = KeyPath::query(cluster, node_id, query_id);
+        self.insert(&key, &value_encode(query_info)?)
     }
 
     fn process_write_set(&self, key: &str, val: &str) -> MetaResult<()> {

@@ -88,7 +88,7 @@ impl MicroBatchStreamExecutionBuilder {
         }
     }
 
-    pub fn build(
+    pub async fn build(
         self,
         query_state_machine: QueryStateMachineRef,
         scheduler: SchedulerRef,
@@ -105,10 +105,15 @@ impl MicroBatchStreamExecutionBuilder {
             .unwrap_or_else(|| extract_stream_providers(plan.as_ref()));
 
         let trigger_executor = trigger_executor_factory.create(&trigger_interval);
-        let watermark_tracker = Arc::new(WatermarkTracker::try_new(
-            query_state_machine.query_id,
-            query_state_machine.session.dedicated_hidden_dir(),
-        )?);
+        let watermark_tracker = Arc::new(
+            WatermarkTracker::try_new(
+                query_state_machine.query_id,
+                query_state_machine.coord.clone(),
+                query_state_machine.session.clone(),
+                query_state_machine.query.context().is_old(),
+            )
+            .await?,
+        );
 
         Ok(MicroBatchStreamExecution {
             query_state_machine,
@@ -362,7 +367,12 @@ where
             // If not updated, it means that the data has not been processed
             self.offset_tracker.commit(after_process_watermark_ns);
             // Persist watermark, in order to load the last watermark when restoring
-            self.watermark_tracker.commit(self.current_batch_id).await?;
+            self.watermark_tracker
+                .commit(
+                    self.current_batch_id,
+                    self.query_state_machine.coord.clone(),
+                )
+                .await?;
         } else {
             self.watermark_tracker
                 .update_watermark(current_watermark_ns, 0);

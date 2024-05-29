@@ -348,6 +348,7 @@ mod tests {
     use coordinator::service_mock::MockCoordinator;
     use datafusion::arrow::datatypes::Schema;
     use datafusion::physical_plan::EmptyRecordBatchStream;
+    use meta::model::meta_admin::AdminMeta;
     use models::auth::user::{User, UserDesc, UserOptions};
     use spi::query::dispatcher::{QueryInfo, QueryStatus};
     use spi::query::execution::{Output, QueryExecution, QueryState, RUNNING};
@@ -355,7 +356,7 @@ mod tests {
     use spi::QueryError;
 
     use super::QueryTracker;
-    use crate::dispatcher::persister::LocalQueryPersister;
+    use crate::dispatcher::persister::MetaQueryPersister;
 
     struct QueryExecutionMock {}
 
@@ -393,7 +394,7 @@ mod tests {
     fn new_query_tracker(limit: usize) -> QueryTracker {
         QueryTracker::new(
             limit,
-            Arc::new(LocalQueryPersister::try_new("/tmp/cnosdb/query").unwrap()),
+            Arc::new(MetaQueryPersister::new(Arc::new(AdminMeta::mock()))),
             Arc::new(MockCoordinator {}),
         )
     }

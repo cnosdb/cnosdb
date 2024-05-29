@@ -791,4 +791,30 @@ impl AdminMeta {
     pub fn take_resourceinfo_rx(&self) -> Option<Receiver<MetaModifyType>> {
         self.resource_tx_rx.1.lock().take()
     }
+
+    pub async fn write_queryinfo(
+        &self,
+        node_id: NodeId,
+        query_id: u64,
+        query_info: Vec<u8>,
+    ) -> MetaResult<()> {
+        let req =
+            command::WriteCommand::WriteQueryInfo(self.cluster(), node_id, query_id, query_info);
+
+        self.client.write::<()>(&req).await?;
+
+        Ok(())
+    }
+
+    pub async fn read_queryinfos(&self, node_id: NodeId) -> MetaResult<Vec<Vec<u8>>> {
+        let req = command::ReadCommand::ReadQueryInfos(self.cluster(), node_id);
+
+        self.client.read::<Vec<Vec<u8>>>(&req).await
+    }
+
+    pub async fn remove_queryinfo(&self, node_id: NodeId, query_id: u64) -> MetaResult<()> {
+        let req = command::WriteCommand::RemoveQueryInfo(self.cluster(), node_id, query_id);
+
+        self.client.write::<()>(&req).await
+    }
 }
