@@ -460,18 +460,17 @@ impl TsKv {
         match opt_tsf {
             Some(v) => Ok(v),
             None => {
-                db.write()
-                    .await
-                    .add_tsfamily(
-                        id,
-                        seq,
-                        ve,
-                        self.summary_task_sender.clone(),
-                        self.flush_task_sender.clone(),
-                        self.compact_task_sender.clone(),
-                        self.global_ctx.clone(),
-                    )
-                    .await
+                Database::add_tsfamily(
+                    db,
+                    id,
+                    seq,
+                    ve,
+                    self.summary_task_sender.clone(),
+                    self.flush_task_sender.clone(),
+                    self.compact_task_sender.clone(),
+                    self.global_ctx.clone(),
+                )
+                .await
             }
         }
     }
@@ -1184,26 +1183,25 @@ impl Engine for TsKv {
         }
 
         let db = self.get_db_or_else_create(tenant, database).await?;
-        let mut db_wlock = db.write().await;
         // If there is a ts_family here, delete and re-build it.
-        if db_wlock.get_tsfamily(vnode_id).is_some() {
+        if db.read().await.get_tsfamily(vnode_id).is_some() {
             return Err(Error::CommonError {
                 reason: format!("vnode:{}, already exist", vnode_id),
             });
         }
 
-        db_wlock
-            .add_tsfamily(
-                vnode_id,
-                self.global_seq_ctx.max_seq(),
-                Some(summary),
-                self.summary_task_sender.clone(),
-                self.flush_task_sender.clone(),
-                self.compact_task_sender.clone(),
-                self.global_ctx.clone(),
-            )
-            .await?;
-        db_wlock.get_ts_index_or_add(vnode_id).await?;
+        Database::add_tsfamily(
+            db.clone(),
+            vnode_id,
+            self.global_seq_ctx.max_seq(),
+            Some(summary),
+            self.summary_task_sender.clone(),
+            self.flush_task_sender.clone(),
+            self.compact_task_sender.clone(),
+            self.global_ctx.clone(),
+        )
+        .await?;
+        db.write().await.get_ts_index_or_add(vnode_id).await?;
         Ok(())
     }
 

@@ -480,6 +480,7 @@ mod test {
     use crate::compaction::check::{vnode_hash_tree, TimeRangeHashTreeNode, DEFAULT_DURATION};
     use crate::compaction::flush;
     use crate::context::GlobalContext;
+    use crate::database::Database;
     use crate::tseries_family::TseriesFamily;
     use crate::tsm::codec::DataBlockEncoding;
     use crate::tsm::DataBlock;
@@ -908,19 +909,18 @@ mod test {
             .get_db_or_else_create(tenant, database)
             .await
             .unwrap();
-        let mut db = db.write().await;
-        let tsf = db
-            .add_tsfamily(
-                vnode_id,
-                1,
-                None,
-                engine.summary_task_sender(),
-                engine.flush_task_sender(),
-                engine.compact_task_sender(),
-                Arc::new(GlobalContext::new()),
-            )
-            .await
-            .unwrap();
+        let tsf = Database::add_tsfamily(
+            db,
+            vnode_id,
+            1,
+            None,
+            engine.summary_task_sender(),
+            engine.flush_task_sender(),
+            engine.compact_task_sender(),
+            Arc::new(GlobalContext::new()),
+        )
+        .await
+        .unwrap();
         let tsf = tsf.read().await;
         assert_eq!(vnode_id, tsf.tf_id());
 
