@@ -556,7 +556,7 @@ impl VnodeStorage {
 
         for time_range in time_ranges.time_ranges() {
             version
-                .add_tombstone(series_ids, &column_ids, time_range)
+                .add_tombstone(series_ids, &column_ids, &time_range)
                 .await?;
         }
 
