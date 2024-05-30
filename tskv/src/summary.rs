@@ -544,7 +544,6 @@ impl Summary {
                     &[&buf],
                 )
                 .await?;
-            self.writer.sync().await?;
 
             tsf_version_edits
                 .entry(edit.tsf_id)
@@ -557,14 +556,20 @@ impl Summary {
                 del_tsf.insert(edit.tsf_id);
             }
         }
+        self.writer.sync().await?;
 
         // For each TseriesFamily - VersionEdits，generate a new Version and then apply it.
-        let version_set = self.version_set.read().await;
         let mut partly_deleted_file_paths: Vec<PathBuf> = Vec::new();
         let mut partly_deleted_files: HashSet<ColumnFileId> = HashSet::new();
         for (tsf_id, edits) in tsf_version_edits {
             let min_seq = tsf_min_seq.get(&tsf_id);
-            if let Some(tsf) = version_set.get_tsfamily_by_tf_id(tsf_id).await {
+            if let Some(tsf) = self
+                .version_set
+                .read()
+                .await
+                .get_tsfamily_by_tf_id(tsf_id)
+                .await
+            {
                 // Store tsm paths.
                 let tenant_database = &tsf.read().await.database().clone();
                 partly_deleted_file_paths.clear();
@@ -634,7 +639,6 @@ impl Summary {
                 trace::info!("Applied new version for ts_family {}.", tsf_id);
             }
         }
-        drop(version_set);
 
         // Send a GlobalSequenceTask to get a global min_sequence
         if let Err(_e) = self
