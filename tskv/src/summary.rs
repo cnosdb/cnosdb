@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs::{remove_file, rename};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 
 use cache::ShardedAsyncCache;
 use memory_pool::MemoryPoolRef;
@@ -14,6 +15,7 @@ use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot::Sender as OneShotSender;
 use tokio::sync::RwLock;
+use trace::info;
 use utils::BloomFilter;
 
 use crate::compaction::{CompactTask, FlushReq};
@@ -296,6 +298,7 @@ pub struct Summary {
     runtime: Arc<Runtime>,
     sequence_task_sender: Sender<GlobalSequenceTask>,
     metrics_register: Arc<MetricsRegister>,
+    all_edits: AtomicU64,
 }
 
 impl Summary {
@@ -334,6 +337,7 @@ impl Summary {
             runtime,
             sequence_task_sender,
             metrics_register,
+            all_edits: AtomicU64::new(1),
         })
     }
 
@@ -383,6 +387,7 @@ impl Summary {
             runtime,
             sequence_task_sender,
             metrics_register,
+            all_edits: AtomicU64::new(0),
         })
     }
 
@@ -545,6 +550,15 @@ impl Summary {
                 )
                 .await?;
 
+            if edit.has_file_id {
+                info!("flush edit, file ids : {:?}", edit.add_files.iter().map(|f| f.file_id).collect::<Vec<_>>());
+            } else if edit.add_tsf {
+                info!("add ts_family: {}", edit.tsf_id);
+            } else {
+                info!("other edit: {}", edit);
+            }
+            info!("all edits: {:?}", self.all_edits.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1);
+
             tsf_version_edits
                 .entry(edit.tsf_id)
                 .or_default()
@@ -632,11 +646,9 @@ impl Summary {
                     .await;
 
                 let flushed_mem_caches = mem_caches.get(&tsf_id);
-                trace::info!("Applying new version for ts_family {}.", tsf_id);
                 tsf.write()
                     .await
                     .new_version(new_version, flushed_mem_caches);
-                trace::info!("Applied new version for ts_family {}.", tsf_id);
             }
         }
 
