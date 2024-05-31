@@ -1272,6 +1272,7 @@ pub fn schedule_vnode_compaction(
                             let ts_rlock = last_modified.read().await;
                             if let Some(t) = *ts_rlock {
                                 if t.elapsed() >= compact_trigger_cold_duration {
+                                    info!("t.elapsed : {:?}, compact_trigger_cold_duration : {:?}", t.elapsed(), compact_trigger_cold_duration);
                                     drop(ts_rlock);
                                     let mut ts_wlock = last_modified.write().await;
                                     *ts_wlock = Some(Instant::now());

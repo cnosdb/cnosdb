@@ -6,6 +6,7 @@ version.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+async-backtrace = { workspace = true, optional = true }
 parking_lot = { workspace = true }
 lru = {workspace = true}
 tokio = { workspace = true , features = ["sync"]}
