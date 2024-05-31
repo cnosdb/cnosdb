@@ -222,3 +222,19 @@ show tables;
 
 statement error Read on database db2 of tenant
 describe database db2;
+
+# issue 2068 https://github.com/cnosdb/cnosdb/issues/2060
+statement ok
+--#USER_NAME = root
+
+statement ok
+revoke read on database db1 from r5;
+
+statement ok
+--#USER_NAME = u5
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Insufficient privileges, expected \[Read on database db2*
+show tables;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Insufficient privileges, expected \[Read on database db1 *
+describe database db1;
