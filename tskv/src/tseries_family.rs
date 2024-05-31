@@ -1031,6 +1031,10 @@ impl TseriesFamily {
     /// are not flushing or flushed should be greater than configuration `max_immutable_number`.
     /// If argument `force` is set to true, then do not check the total count.
     pub(crate) fn build_flush_req(&mut self, force: bool) -> Option<FlushReq> {
+        if force {
+            let backtrace = std::backtrace::Backtrace::capture();
+            info!("force flush vnode: {} backtrace: {:?}", self.tf_id, backtrace);
+        }
         let mut filtered_caches: Vec<Arc<RwLock<MemCache>>> = self
             .immut_cache
             .iter()
