@@ -172,6 +172,20 @@ impl CompactMetaBuilder {
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub enum Test {
+    ForceFlush,
+    Compact,
+    CopyVnode,
+    DontCare,
+}
+
+impl Default for Test {
+    fn default() -> Self {
+        Self::DontCare
+    }
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct VersionEdit {
     pub has_seq_no: bool,
     pub seq_no: u64,
@@ -190,6 +204,9 @@ pub struct VersionEdit {
     pub add_tsf: bool,
     pub tsf_id: TseriesFamilyId,
     pub tsf_name: String,
+
+    #[serde(skip)]
+    pub mode: Test,
 }
 
 impl Default for VersionEdit {
@@ -207,6 +224,7 @@ impl Default for VersionEdit {
             add_tsf: false,
             tsf_id: 0,
             tsf_name: String::from(""),
+            mode: Test::DontCare,
         }
     }
 }

@@ -23,7 +23,7 @@ use crate::index::{self, IndexResult};
 use crate::kv_option::{Options, INDEX_PATH};
 use crate::memcache::{MemCache, RowData, RowGroup};
 use crate::schema::schemas::DBschemas;
-use crate::summary::{SummaryTask, VersionEdit};
+use crate::summary::{SummaryTask, Test, VersionEdit};
 use crate::tseries_family::{
     schedule_vnode_compaction, LevelInfo, TseriesFamily, TsfMetrics, Version,
 };
@@ -123,6 +123,7 @@ impl Database {
                 ve.tsf_id = tsf_id;
                 ve.has_seq_no = true;
                 ve.seq_no = seq_no;
+                ve.mode = Test::CopyVnode;
                 let mut file_metas = HashMap::with_capacity(ve.add_files.len());
                 for f in ve.add_files.iter_mut() {
                     let new_file_id = global_ctx.file_id_next();

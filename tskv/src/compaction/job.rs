@@ -15,7 +15,7 @@ use trace::{debug, error, info, warn};
 use crate::compaction::{picker, CompactTask};
 use crate::context::{GlobalContext, GlobalSequenceContext};
 use crate::kv_option::StorageOptions;
-use crate::summary::SummaryTask;
+use crate::summary::{SummaryTask, Test};
 use crate::version_set::VersionSet;
 use crate::TseriesFamilyId;
 
@@ -242,13 +242,14 @@ impl CompactionJob {
             .change_state(VnodeCompactionState::Running)
             .await;
         match super::run_compaction_job(compact_req, context.ctx.clone()).await {
-            Ok(Some((version_edit, file_metas))) => {
+            Ok(Some((mut version_edit, file_metas))) => {
                 info!("Finished compaction, sending to summary write: {task}.");
                 metrics::incr_compaction_success();
                 let (summary_tx, summary_rx) = oneshot::channel();
                 compaction_info
                     .change_state(VnodeCompactionState::WritingSummary)
                     .await;
+                version_edit.mode = Test::Compact;
                 let _ = context
                     .summary_task_sender
                     .send(SummaryTask::new(

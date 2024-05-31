@@ -17,7 +17,7 @@ use crate::compaction::{CompactTask, FlushReq};
 use crate::context::{GlobalContext, GlobalSequenceContext};
 use crate::error::{self, Result};
 use crate::memcache::{FieldVal, MemCache, SeriesData};
-use crate::summary::{CompactMeta, CompactMetaBuilder, SummaryTask, VersionEdit};
+use crate::summary::{CompactMeta, CompactMetaBuilder, SummaryTask, Test, VersionEdit};
 use crate::tsm::codec::DataBlockEncoding;
 use crate::tsm::{self, DataBlock, TsmWriter};
 use crate::version_set::VersionSet;
@@ -233,6 +233,7 @@ pub async fn run_flush_memtable_job(
         let mut ve = VersionEdit::new(req.ts_family_id);
         ve.has_seq_no = true;
         ve.seq_no = global_sequence_context.max_seq();
+        ve.mode = Test::ForceFlush;
         version_edits.push(ve);
     }
 
