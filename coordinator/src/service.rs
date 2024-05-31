@@ -159,6 +159,7 @@ impl CoordService {
             config.clone(),
             meta.clone(),
             kv_inst.clone(),
+            metrics_register.clone(),
         ));
         RaftNodesManager::start_all_raft_node(runtime.clone(), raft_manager.clone())
             .await
@@ -167,6 +168,11 @@ impl CoordService {
         tokio::spawn(MultiRaft::raft_nodes_manager(
             raft_manager.multi_raft(),
             config.cluster.trigger_snapshot_interval,
+        ));
+
+        tokio::spawn(RaftNodesManager::update_raft_metrics(
+            raft_manager.clone(),
+            Duration::from_secs(10),
         ));
 
         let coord = Arc::new(Self {

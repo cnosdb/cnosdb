@@ -26,6 +26,7 @@ use tskv::VnodeSnapshot;
 use crate::errors::{CommonSnafu, CoordinatorResult, IOErrorsSnafu, MetaSnafu};
 
 pub mod manager;
+mod metrics;
 pub mod writer;
 
 pub struct TskvEngineStorage {

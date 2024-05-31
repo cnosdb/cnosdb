@@ -1,9 +1,10 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
 use meta::model::MetaRef;
+use metrics::metric_register::MetricsRegister;
 use models::meta_data::*;
 use openraft::SnapshotPolicy;
 use protos::kv_service::*;
@@ -19,6 +20,7 @@ use tracing::info;
 use tskv::wal::wal_store::RaftEntryStorage;
 use tskv::{wal, EngineRef};
 
+use super::metrics::RaftMetrics;
 use super::TskvEngineStorage;
 use crate::errors::{
     CommonSnafu, CoordinatorError, CoordinatorResult, LeaderIsWrongSnafu, MetaSnafu,
@@ -33,10 +35,18 @@ pub struct RaftNodesManager {
     kv_inst: Option<EngineRef>,
     raft_state: Arc<StateStorage>,
     raft_nodes: Arc<RwLock<MultiRaft>>,
+
+    register: Arc<MetricsRegister>,
+    metrics: Arc<RwLock<HashMap<ReplicationSetId, RaftMetrics>>>,
 }
 
 impl RaftNodesManager {
-    pub fn new(config: config::Config, meta: MetaRef, kv_inst: Option<EngineRef>) -> Self {
+    pub fn new(
+        config: config::Config,
+        meta: MetaRef,
+        kv_inst: Option<EngineRef>,
+        register: Arc<MetricsRegister>,
+    ) -> Self {
         let path = PathBuf::from(config.storage.path.clone()).join("raft-state");
         let state =
             StateStorage::open(path, config.cluster.lmdb_max_map_size.try_into().unwrap()).unwrap();
@@ -45,7 +55,9 @@ impl RaftNodesManager {
             meta,
             config,
             kv_inst,
+            register,
             raft_state: Arc::new(state),
+            metrics: Arc::new(RwLock::new(HashMap::new())),
             raft_nodes: Arc::new(RwLock::new(MultiRaft::new())),
         }
     }
@@ -71,17 +83,54 @@ impl RaftNodesManager {
         }
     }
 
+    async fn register_raft_metrics(
+        &self,
+        tenant: &str,
+        db_name: &str,
+        replica_id: ReplicationSetId,
+        raft_id: RaftNodeId,
+    ) {
+        let mut metrics_w = self.metrics.write().await;
+        if let Some(item) = metrics_w.get(&replica_id) {
+            item.drop();
+        }
+
+        metrics_w.insert(
+            replica_id,
+            RaftMetrics::new(self.register.clone(), tenant, db_name, replica_id, raft_id),
+        );
+    }
+
+    pub async fn update_raft_metrics(manager: Arc<RaftNodesManager>, interval: Duration) {
+        let start = std::time::Instant::now() + interval;
+        let mut ticker = tokio::time::interval_at(start.into(), interval);
+        loop {
+            let _ = ticker.tick().await;
+
+            for (group_id, item) in manager.metrics.write().await.iter_mut() {
+                if let Ok(Some(node)) = manager.raft_nodes.read().await.get_node(*group_id) {
+                    if let Ok(metrics) = node.metrics().await {
+                        item.update_values(metrics);
+                    }
+                }
+            }
+        }
+    }
+
     pub async fn start_all_raft_node(
         runtime: Arc<Runtime>,
-        raft: Arc<RaftNodesManager>,
+        manager: Arc<RaftNodesManager>,
     ) -> CoordinatorResult<()> {
-        let nodes_summary = raft.raft_state.all_nodes_summary().context(ReplicatSnafu)?;
-        let mut nodes = raft.raft_nodes.write().await;
+        let nodes_summary = manager
+            .raft_state
+            .all_nodes_summary()
+            .context(ReplicatSnafu)?;
+        let mut nodes = manager.raft_nodes.write().await;
         let mut futures = Vec::with_capacity(nodes_summary.len());
         for summary in nodes_summary {
-            let raft = raft.clone();
+            let manager = manager.clone();
             let future = runtime.spawn(async move {
-                let res = raft
+                let res = manager
                     .open_raft_node(
                         &summary.tenant,
                         &summary.db_name,
@@ -175,6 +224,9 @@ impl RaftNodesManager {
             .shutdown(group_id)
             .await
             .context(ReplicatSnafu)?;
+        if let Some(item) = self.metrics.write().await.remove(&group_id) {
+            item.drop();
+        }
 
         Ok(())
     }
@@ -403,6 +455,9 @@ impl RaftNodesManager {
             .shutdown(replica_id)
             .await
             .context(ReplicatSnafu)?;
+        if let Some(item) = self.metrics.write().await.remove(&replica_id) {
+            item.drop();
+        }
 
         update_replication_set(
             self.meta.clone(),
@@ -573,6 +628,9 @@ impl RaftNodesManager {
         self.raft_state
             .set_node_summary(group_id, &summary)
             .context(ReplicatSnafu)?;
+
+        self.register_raft_metrics(tenant, db_name, group_id, raft_id)
+            .await;
 
         Ok(Arc::new(node))
     }
