@@ -4,28 +4,32 @@ use std::fmt::Display;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use bytes::{Buf, Bytes};
 use cache::ShardedAsyncCache;
 use memory_pool::MemoryPoolRef;
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
+use models::utils::now_timestamp_millis;
 use models::Timestamp;
 use parking_lot::RwLock as SyncRwLock;
 use serde::{Deserialize, Serialize};
-use snafu::ResultExt;
+use snafu::{IntoError, ResultExt};
 use tokio::runtime::Runtime;
 use tokio::sync::oneshot::Sender as OneShotSender;
 use tokio::sync::RwLock;
 use utils::BloomFilter;
 
 use crate::context::GlobalContext;
-use crate::error::{IOSnafu, RecordFileDecodeSnafu, RecordFileEncodeSnafu, TskvError, TskvResult};
+use crate::error::{
+    IOSnafu, InvalidUtf8Snafu, RecordFileDecodeSnafu, RecordFileEncodeSnafu, TskvError, TskvResult,
+};
 use crate::file_system::async_filesystem::LocalFileSystem;
 use crate::kv_option::{Options, StorageOptions, DELTA_PATH, TSM_PATH};
 use crate::memcache::MemCache;
-use crate::record_file::{Reader, RecordDataType, RecordDataVersion, Writer};
+use crate::record_file::{Reader, RecordDataType, Writer};
 use crate::tseries_family::{ColumnFile, LevelInfo, TseriesFamily, Version};
 use crate::version_set::VersionSet;
-use crate::{byte_utils, file_utils, ColumnFileId, LevelId, TseriesFamilyId};
+use crate::{file_utils, ColumnFileId, LevelId, TseriesFamilyId};
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct CompactMeta {
@@ -120,6 +124,29 @@ impl CompactMeta {
 
         Ok(new_name)
     }
+
+    pub fn decode_vec(data: &mut Bytes, len: u64) -> TskvResult<Vec<Self>> {
+        let mut files = Vec::with_capacity(len as usize);
+        for _ in 0..len {
+            let file_id = data.get_u64_le();
+            let file_size = data.get_u64_le();
+            let tsf_id = data.get_u32_le();
+            let level = data.get_u32_le();
+            let min_ts = data.get_i64_le();
+            let max_ts = data.get_i64_le();
+            let is_delta = data.get_u8() == 1;
+            files.push(CompactMeta {
+                file_id,
+                file_size,
+                tsf_id,
+                level,
+                min_ts,
+                max_ts,
+                is_delta,
+            });
+        }
+        Ok(files)
+    }
 }
 
 pub struct CompactMetaBuilder {
@@ -151,6 +178,44 @@ impl CompactMetaBuilder {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VersionEditVersion {
+    V1,
+    V2,
+    Unknown(u8),
+}
+
+impl From<u8> for VersionEditVersion {
+    fn from(value: u8) -> Self {
+        match value {
+            1 => VersionEditVersion::V1,
+            2 => VersionEditVersion::V2,
+            other => VersionEditVersion::Unknown(other),
+        }
+    }
+}
+
+impl From<VersionEditVersion> for u8 {
+    fn from(v: VersionEditVersion) -> u8 {
+        v.into_u8()
+    }
+}
+
+impl VersionEditVersion {
+    pub fn into_u8(self) -> u8 {
+        match self {
+            VersionEditVersion::V1 => 1,
+            VersionEditVersion::V2 => 2,
+            VersionEditVersion::Unknown(v) => v,
+        }
+    }
+
+    /// Check if the version is greater or equal to the other.
+    pub fn meet_minimum_version(&self, other: Self) -> bool {
+        self.into_u8() >= other.into_u8()
+    }
+}
+
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct VersionEdit {
     pub seq_no: u64,
@@ -162,6 +227,9 @@ pub struct VersionEdit {
     pub act_tsf: VnodeAction,
     pub tsf_id: TseriesFamilyId,
     pub tsf_name: String,
+
+    // From: VersionEditVersion::V2.
+    pub timestamp_ms: Timestamp,
 }
 
 impl Default for VersionEdit {
@@ -175,6 +243,7 @@ impl Default for VersionEdit {
             act_tsf: VnodeAction::Update,
             tsf_id: 0,
             tsf_name: String::from(""),
+            timestamp_ms: now_timestamp_millis(),
         }
     }
 }
@@ -228,41 +297,59 @@ impl VersionEdit {
         bincode::serialize(self).context(RecordFileEncodeSnafu)
     }
 
-    pub fn decode(buf: &[u8]) -> TskvResult<Self> {
-        bincode::deserialize(buf).context(RecordFileDecodeSnafu)
+    pub fn decode(data: Vec<u8>, version: VersionEditVersion) -> TskvResult<Self> {
+        match version {
+            VersionEditVersion::V1 => Self::decode_v1(data),
+            VersionEditVersion::V2 => bincode::deserialize(&data).context(RecordFileDecodeSnafu),
+            VersionEditVersion::Unknown(v) => Err(RecordFileDecodeSnafu.into_error(Box::new(
+                bincode::ErrorKind::Custom(format!("Unknown version edit version: {v}")),
+            ))),
+        }
     }
 
-    pub fn encode_vec(data: &[Self]) -> TskvResult<Vec<u8>> {
-        let mut buf: Vec<u8> = Vec::with_capacity(data.len() * 32);
-        for ve in data {
-            let ve_buf = bincode::serialize(ve).context(RecordFileEncodeSnafu)?;
-            let pos = buf.len();
-            buf.resize(pos + 4 + ve_buf.len(), 0_u8);
-            buf[pos..pos + 4].copy_from_slice((ve_buf.len() as u32).to_be_bytes().as_slice());
-            buf[pos + 4..].copy_from_slice(&ve_buf);
-        }
-
-        Ok(buf)
-    }
-
-    pub fn decode_vec(buf: &[u8]) -> TskvResult<Vec<Self>> {
-        let mut list: Vec<Self> = Vec::with_capacity(buf.len() / 32 + 1);
-        let mut pos = 0_usize;
-        while pos < buf.len() {
-            if buf.len() - pos < 4 {
-                break;
+    fn decode_v1(data: Vec<u8>) -> TskvResult<Self> {
+        let mut r = Bytes::from(data);
+        let seq_no = r.get_u64_le();
+        let file_id = r.get_u64_le();
+        let max_level_ts = r.get_i64_le();
+        let add_files_len = r.get_u64_le();
+        let add_files = CompactMeta::decode_vec(&mut r, add_files_len)?;
+        let del_files_len = r.get_u64_le();
+        let del_files = CompactMeta::decode_vec(&mut r, del_files_len)?;
+        let act_tsf_code = r.get_u32_le();
+        let act_tsf = match act_tsf_code {
+            0 => VnodeAction::Add,
+            1 => VnodeAction::Delete,
+            2 => VnodeAction::Update,
+            c => {
+                return Err(RecordFileDecodeSnafu.into_error(Box::new(
+                    bincode::ErrorKind::Custom(format!("Unexpected enum code of ActTsv: {c}")),
+                )));
             }
-            let len = byte_utils::decode_be_u32(&buf[pos..pos + 4]);
-            pos += 4;
-            if buf.len() - pos < len as usize {
-                break;
-            }
-            let ve = Self::decode(&buf[pos..pos + len as usize])?;
-            pos += len as usize;
-            list.push(ve);
-        }
+        };
+        let tsf_id = r.get_u32_le();
+        let tsf_name_len = r.get_u64_le();
+        let tsf_name = if let Some(tsf_name_bytes) = r.get(..tsf_name_len as usize) {
+            let s = std::str::from_utf8(tsf_name_bytes).context(InvalidUtf8Snafu {
+                message: "Unexpected tsf_name of VersionEdit".to_string(),
+            })?;
+            s.to_string()
+        } else {
+            String::new()
+        };
+        let decoded_data = Self {
+            seq_no,
+            file_id,
+            max_level_ts,
+            add_files,
+            del_files,
+            act_tsf,
+            tsf_id,
+            tsf_name,
+            timestamp_ms: 0,
+        };
 
-        Ok(list)
+        Ok(decoded_data)
     }
 
     pub fn add_file(&mut self, compact_meta: CompactMeta, max_level_ts: i64) {
@@ -335,7 +422,7 @@ impl Summary {
         let buf = db.encode()?;
         let _ = w
             .write_record(
-                RecordDataVersion::V1.into(),
+                VersionEditVersion::V2.into(),
                 RecordDataType::Summary.into(),
                 &[&buf],
             )
@@ -425,27 +512,32 @@ impl Summary {
         let mut tsf_database_map: HashMap<TseriesFamilyId, Arc<String>> = HashMap::new();
 
         loop {
-            let res = reader.read_record().await;
-            match res {
-                Ok(result) => {
-                    let ed = VersionEdit::decode(&result.data)?;
-                    if ed.act_tsf == VnodeAction::Add {
-                        let db_ref = database_map
-                            .entry(ed.tsf_name.clone())
-                            .or_insert_with(|| Arc::new(ed.tsf_name.clone()));
-                        tsf_database_map.insert(ed.tsf_id, db_ref.clone());
-                        tsf_edits_map.insert(ed.tsf_id, vec![ed]);
-                    } else if ed.act_tsf == VnodeAction::Delete {
-                        tsf_edits_map.remove(&ed.tsf_id);
-                        tsf_database_map.remove(&ed.tsf_id);
-                    } else if let Some(data) = tsf_edits_map.get_mut(&ed.tsf_id) {
-                        data.push(ed);
-                    }
-                }
+            let record = match reader.read_record().await {
+                Ok(r) => r,
                 Err(TskvError::Eof) => break,
                 Err(TskvError::RecordFileHashCheckFailed { .. }) => continue,
                 Err(e) => {
                     return Err(e);
+                }
+            };
+            let version = VersionEditVersion::from(record.data_version);
+            let edit = VersionEdit::decode(record.data, version)?;
+            match edit.act_tsf {
+                VnodeAction::Add => {
+                    let db_ref = database_map
+                        .entry(edit.tsf_name.clone())
+                        .or_insert_with(|| Arc::new(edit.tsf_name.clone()));
+                    tsf_database_map.insert(edit.tsf_id, db_ref.clone());
+                    tsf_edits_map.insert(edit.tsf_id, vec![edit]);
+                }
+                VnodeAction::Delete => {
+                    tsf_edits_map.remove(&edit.tsf_id);
+                    tsf_database_map.remove(&edit.tsf_id);
+                }
+                VnodeAction::Update => {
+                    if let Some(data) = tsf_edits_map.get_mut(&edit.tsf_id) {
+                        data.push(edit);
+                    }
                 }
             }
         }
@@ -511,7 +603,7 @@ impl Summary {
         let _ = self
             .writer
             .write_record(
-                RecordDataVersion::V1.into(),
+                VersionEditVersion::V2.into(),
                 RecordDataType::Summary.into(),
                 &[&buf],
             )
@@ -591,7 +683,7 @@ pub async fn print_summary_statistics(path: impl AsRef<Path>) {
     loop {
         match reader.read_record().await {
             Ok(record) => {
-                let ve = VersionEdit::decode(&record.data).unwrap();
+                let ve = VersionEdit::decode(record.data, record.data_version.into()).unwrap();
                 println!("VersionEdit #{}, vnode_id: {}", i, ve.tsf_id);
                 println!("------------------------------------------------------------");
                 i += 1;
@@ -604,7 +696,7 @@ pub async fn print_summary_statistics(path: impl AsRef<Path>) {
                     println!("------------------------------------------------------------");
                 }
 
-                println!("  Presist sequence: {}", ve.seq_no);
+                println!("  Persist sequence: {}", ve.seq_no);
                 println!("------------------------------------------------------------");
 
                 if ve.add_files.is_empty() && ve.del_files.is_empty() {
@@ -683,13 +775,17 @@ mod test {
     use meta::model::meta_admin::AdminMeta;
     use metrics::metric_register::MetricsRegister;
     use models::schema::{make_owner, TenantOptions};
+    use models::Timestamp;
+    use serde::{Deserialize, Serialize};
     use sysinfo::{ProcessRefreshKind, RefreshKind, System};
     use tokio::runtime::Runtime;
     use tokio::sync::RwLock;
     use utils::BloomFilter;
 
     use crate::kv_option::{self, Options};
-    use crate::summary::{CompactMeta, Summary, SummaryTask, VersionEdit};
+    use crate::summary::{
+        CompactMeta, Summary, SummaryTask, VersionEdit, VersionEditVersion, VnodeAction,
+    };
     use crate::{Engine, TsKv, TseriesFamilyId};
 
     #[test]
@@ -709,13 +805,44 @@ mod test {
         ve.del_files.push(del_file_101);
 
         let ve_buf = ve.encode().unwrap();
-        let ve2 = VersionEdit::decode(&ve_buf).unwrap();
+        let ve2 = VersionEdit::decode(ve_buf, VersionEditVersion::V2).unwrap();
         assert_eq!(ve2, ve);
+    }
 
-        let ves = vec![ve, ve2];
-        let ves_buf = VersionEdit::encode_vec(&ves).unwrap();
-        let ves_2 = VersionEdit::decode_vec(&ves_buf).unwrap();
-        assert_eq!(ves, ves_2);
+    #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+    pub struct VersionEditV1 {
+        pub seq_no: u64,
+        pub file_id: u64,
+        pub max_level_ts: Timestamp,
+        pub add_files: Vec<CompactMeta>,
+        pub del_files: Vec<CompactMeta>,
+
+        pub act_tsf: VnodeAction,
+        pub tsf_id: TseriesFamilyId,
+        pub tsf_name: String,
+    }
+
+    #[test]
+    #[rustfmt::skip]
+    fn test_version_edit_upgrade() {
+        let v1 = VersionEditV1 {
+            seq_no: 0, file_id: 1, max_level_ts: 2, act_tsf: VnodeAction::Update, tsf_id: 9, tsf_name: "t1.d2".to_string(),
+            add_files: vec![], del_files: vec![CompactMeta { file_id: 3, file_size: 4, tsf_id: 5, level: 6, min_ts: 7, max_ts: 8, is_delta: false }],
+        };
+        let v2_from_v1 = VersionEdit {
+            seq_no: 0, file_id: 1, max_level_ts: 2, act_tsf: VnodeAction::Update, tsf_id: 9, tsf_name: "t1.d2".to_string(), timestamp_ms: 0,
+            add_files: vec![], del_files: vec![CompactMeta { file_id: 3, file_size: 4, tsf_id: 5, level: 6, min_ts: 7, max_ts: 8, is_delta: false }],
+        };
+        let v2 = VersionEdit {
+            seq_no: 10, file_id: 11, max_level_ts: 12, act_tsf: VnodeAction::Update, tsf_id: 19, tsf_name: "tn3.db4".to_string(), timestamp_ms: 20,
+            add_files: vec![], del_files: vec![CompactMeta { file_id: 13, file_size: 14, tsf_id: 15, level: 16, min_ts: 17, max_ts: 18, is_delta: false }],
+        };
+        let v1_bytes = bincode::serialize(&v1).unwrap();
+        let v2_bytes = bincode::serialize(&v2).unwrap();
+        let v2_dec_from_v1 = VersionEdit::decode(v1_bytes, VersionEditVersion::V1).unwrap();
+        assert_eq!(v2_from_v1, v2_dec_from_v1);
+        let v2_dec_from_v2 = VersionEdit::decode(v2_bytes, VersionEditVersion::V2).unwrap();
+        assert_eq!(v2, v2_dec_from_v2);
     }
 
     struct SummaryTestHelper {
