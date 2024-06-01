@@ -933,7 +933,7 @@ fn kill_child_process(mut proc: Child, force: bool) {
 }
 
 #[cfg(windows)]
-fn kill_child_process(proc: &mut Child, force: bool) {
+fn kill_child_process(proc: Child, force: bool) {
     let pid = proc.id().to_string();
     let mut kill = Command::new("taskkill.exe");
     let mut killing_thread = if force {
