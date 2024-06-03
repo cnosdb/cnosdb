@@ -24,10 +24,20 @@ impl FileStreamReader {
         Ok(read_size)
     }
 
+    pub async fn read_exact_at(&self, pos: usize, data: &mut [u8]) -> Result<()> {
+        self.file.read_exact_at(pos, data).await
+    }
+
     pub async fn read(&mut self, data: &mut [u8]) -> Result<usize> {
         let read_size = self.file.read_at(self.pos, data).await?;
         self.pos += read_size;
         Ok(read_size)
+    }
+
+    pub async fn read_exact(&mut self, data: &mut [u8]) -> Result<()> {
+        self.file.read_exact_at(self.pos, data).await?;
+        self.pos += data.len();
+        Ok(())
     }
 
     pub fn seek(&mut self, pos: SeekFrom) -> Result<usize> {

@@ -226,7 +226,7 @@ impl TsmReader {
                 }
                 let mut res_column_group = vec![0u8; column_group.size() as usize];
                 self.reader
-                    .read_at(column_group.pages_offset() as usize, &mut res_column_group)
+                    .read_exact_at(column_group.pages_offset() as usize, &mut res_column_group)
                     .await
                     .map_err(|e| {
                         ReadTsmSnafu {
@@ -315,7 +315,7 @@ pub async fn read_footer(reader: &FileStreamReader) -> TskvResult<Footer> {
     };
     let pos = reader.len() - FOOTER_SIZE;
     let mut buffer = vec![0u8; FOOTER_SIZE];
-    reader.read_at(pos, &mut buffer).await.map_err(|e| {
+    reader.read_exact_at(pos, &mut buffer).await.map_err(|e| {
         ReadTsmSnafu {
             reason: e.to_string(),
         }
@@ -331,7 +331,7 @@ pub async fn read_chunk_group_meta(
     let pos = footer.table().chunk_group_offset();
     let mut buffer = vec![0u8; footer.table().chunk_group_size() as usize];
     reader
-        .read_at(pos as usize, &mut buffer)
+        .read_exact_at(pos as usize, &mut buffer)
         .await
         .map_err(|e| {
             ReadTsmSnafu {
@@ -352,7 +352,7 @@ pub async fn read_chunk_groups(
         let pos = chunk.chunk_group_offset();
         let mut buffer = vec![0u8; chunk.chunk_group_size() as usize];
         reader
-            .read_at(pos as usize, &mut buffer)
+            .read_exact_at(pos as usize, &mut buffer)
             .await
             .map_err(|e| {
                 ReadTsmSnafu {
@@ -376,7 +376,7 @@ pub async fn read_chunk(
             let pos = chunk_spec.chunk_offset();
             let mut buffer = vec![0u8; chunk_spec.chunk_size() as usize];
             reader
-                .read_at(pos as usize, &mut buffer)
+                .read_exact_at(pos as usize, &mut buffer)
                 .await
                 .map_err(|e| {
                     ReadTsmSnafu {
@@ -395,7 +395,7 @@ async fn read_page(reader: &FileStreamReader, page_spec: &PageWriteSpec) -> Tskv
     let pos = page_spec.offset();
     let mut buffer = vec![0u8; page_spec.size() as usize];
     reader
-        .read_at(pos as usize, &mut buffer)
+        .read_exact_at(pos as usize, &mut buffer)
         .await
         .map_err(|e| {
             ReadTsmSnafu {

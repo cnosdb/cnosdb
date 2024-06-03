@@ -105,7 +105,7 @@ impl WalWriter {
         self.inner.sync().await
     }
 
-    pub async fn close(&mut self) -> TskvResult<usize> {
+    pub async fn close(&mut self) -> TskvResult<()> {
         trace::info!(
             "Wal '{}' closing with sequence: [{}, {})",
             self.path.display(),
@@ -113,10 +113,10 @@ impl WalWriter {
             self.max_sequence,
         );
         let mut footer = build_footer(self.min_sequence, self.max_sequence);
-        let size = self.inner.write_footer(&mut footer).await?;
+        self.inner.write_footer(&mut footer).await?;
         self.has_footer = true;
         self.inner.close().await?;
-        Ok(size)
+        Ok(())
     }
 
     pub async fn new_reader(&mut self) -> TskvResult<WalReader> {

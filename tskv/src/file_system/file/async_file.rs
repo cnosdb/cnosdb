@@ -16,10 +16,10 @@ pub struct AsyncFile {
 
 #[async_trait::async_trait]
 impl WritableFile for AsyncFile {
-    async fn write_at(&mut self, pos: usize, data: &[u8]) -> Result<usize> {
-        let len = self.inner.pwrite(pos, data).await?;
-        self.size = self.size.max(pos + len);
-        Ok(len)
+    async fn write_at(&mut self, pos: usize, data: &[u8]) -> Result<()> {
+        self.inner.pwrite_all(pos, data).await?;
+        self.size = self.size.max(pos + data.len());
+        Ok(())
     }
 
     async fn sync_data(&self) -> Result<()> {
@@ -51,6 +51,10 @@ impl WritableFile for AsyncFile {
 impl file::ReadableFile for AsyncFile {
     async fn read_at(&self, pos: usize, data: &mut [u8]) -> Result<usize> {
         self.inner.pread(pos, data).await
+    }
+
+    async fn read_exact_at(&self, pos: usize, data: &mut [u8]) -> Result<()> {
+        self.inner.pread_exact(pos, data).await
     }
 
     fn file_size(&self) -> usize {
@@ -112,7 +116,9 @@ mod test {
             if elapsed > target_duration {
                 break;
             }
-            pos += file.write(b"hello worldhello worldhello worldhello worldhello worldhello worldhello worldhello worldhello worldh").await.unwrap();
+            let data = b"hello worldhello worldhello worldhello worldhello worldhello worldhello worldhello worldhello worldh";
+            file.write(data).await.unwrap();
+            pos += data.len();
         }
         println!("write {} bytes", pos);
     }

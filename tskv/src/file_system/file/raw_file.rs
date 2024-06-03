@@ -18,11 +18,11 @@ impl RawFile {
         os::file_size(os::fd(self.0.as_ref()))
     }
 
-    pub(crate) async fn pwrite(&self, pos: usize, data: &[u8]) -> io::Result<usize> {
+    pub(crate) async fn pwrite_all(&self, pos: usize, data: &[u8]) -> io::Result<()> {
         #[cfg(feature = "io_uring")]
         {
             let completion = self.1.write_at(&self.0, &data, pos).await?;
-            Ok(data.len())
+            Ok(())
         }
 
         #[cfg(not(feature = "io_uring"))]
@@ -30,7 +30,7 @@ impl RawFile {
             let len = data.len();
             let ptr = data.as_ptr() as u64;
             let fd = os::fd(self.0.as_ref());
-            file::asyncify(move || os::pwrite(fd, pos, len, ptr)).await
+            file::asyncify(move || os::pwrite_all(fd, pos, len, ptr)).await
         }
     }
 
@@ -47,6 +47,21 @@ impl RawFile {
             let fd = os::fd(self.0.as_ref());
             let len = file::asyncify(move || os::pread(fd, pos, len, ptr)).await?;
             Ok(len)
+        }
+    }
+
+    pub(crate) async fn pread_exact(&self, pos: usize, data: &mut [u8]) -> io::Result<()> {
+        #[cfg(feature = "io_uring")]
+        {
+            let completion = self.1.read_at(&self.0, &data, pos).await?;
+            Ok(())
+        }
+        #[cfg(not(feature = "io_uring"))]
+        {
+            let len = data.len();
+            let ptr = data.as_ptr() as u64;
+            let fd = os::fd(self.0.as_ref());
+            file::asyncify(move || os::pread_exact(fd, pos, len, ptr)).await
         }
     }
 

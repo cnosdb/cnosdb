@@ -227,15 +227,13 @@ mod test {
 
             let data = [0, 1, 2, 3];
             // Write 4 bytes data.
-            let len = file.write(&data).await.unwrap();
+            file.write(&data).await.unwrap();
             file.flush().await.unwrap();
-            assert_eq!(data.len(), len);
 
             let file = file_system.open_file_reader(&path).await.unwrap();
 
             let mut buf = [0_u8; 2];
-            let size = file.read_at(1, &mut buf).await.unwrap();
-            assert_eq!(size, buf.len());
+            file.read_exact_at(1, &mut buf).await.unwrap();
             assert_eq!(buf, [1, 2]);
         }
         {
@@ -245,15 +243,13 @@ mod test {
 
             let data = [3, 2, 1, 0];
             // Write 4 bytes data.
-            let len = file.write(&data).await.unwrap();
+            file.write(&data).await.unwrap();
             file.flush().await.unwrap();
-            assert_eq!(data.len(), len);
 
             let file = file_system.open_file_reader(&path).await.unwrap();
 
             let mut buf = [0_u8; 2];
-            let size = file.read_at(1, &mut buf).await.unwrap();
-            assert_eq!(size, 2);
+            file.read_exact_at(1, &mut buf).await.unwrap();
             assert_eq!(buf, [2, 1]);
         }
         {
@@ -262,16 +258,14 @@ mod test {
 
             let data = [0, 1, 2, 3];
             // Append 4 bytes data.
-            let len = file.write(&data).await.unwrap();
+            file.write(&data).await.unwrap();
             file.flush().await.unwrap();
-            assert_eq!(data.len(), len);
 
             let file = file_system.open_file_reader(&path).await.unwrap();
 
-            let mut buf = [0_u8; 100];
-            let size = file.read_at(0, &mut buf).await.unwrap();
-            assert_eq!(size, 8);
-            assert_eq!(&buf[0..10], &[3, 2, 1, 0, 0, 1, 2, 3, 0, 0]);
+            let mut buf = [0_u8; 8];
+            file.read_exact_at(0, &mut buf).await.unwrap();
+            assert_eq!(buf, [3, 2, 1, 0, 0, 1, 2, 3]);
         }
     }
 
@@ -302,16 +296,14 @@ mod test {
         let read_file = file_system.open_file_reader(&path).await.unwrap();
 
         // Read 8 bytes at 1024.
-        read_file.read_at(1024, &mut buf).await.unwrap();
+        read_file.read_exact_at(1024, &mut buf).await.unwrap();
         assert_eq!(buf, [0, 1, 2, 3, 0, 1, 2, 3]);
 
         // Write 4 bytes at 1024 and read 8 bytes.
         write_file.seek(SeekFrom::Start(1024)).await.unwrap();
-        let mut len = write_file.write(&[1, 1, 1, 1]).await.unwrap();
+        write_file.write(&[1, 1, 1, 1]).await.unwrap();
         write_file.flush().await.unwrap();
-        assert_eq!(len, 4);
-        let size = read_file.read_at(1024, &mut buf).await.unwrap();
-        assert_eq!(size, buf.len());
+        read_file.read_exact_at(1024, &mut buf).await.unwrap();
         assert_eq!(buf, [1, 1, 1, 1, 0, 1, 2, 3]);
 
         // Write 8 bytes at end -4 and read 7 bytes at end - 4.
@@ -320,11 +312,12 @@ mod test {
             .seek(SeekFrom::Start((file_len - 4) as u64))
             .await
             .unwrap();
-        len = write_file.write(&new_chunk).await.unwrap();
+        write_file.write(&new_chunk).await.unwrap();
         write_file.flush().await.unwrap();
-        assert_eq!(len, new_chunk.len());
-        len = read_file.read_at(file_len - 4, &mut buf).await.unwrap();
-        assert_eq!(len, buf.len());
+        read_file
+            .read_exact_at(file_len - 4, &mut buf)
+            .await
+            .unwrap();
         assert_eq!(buf, new_chunk);
     }
 
@@ -339,13 +332,11 @@ mod test {
         {
             let mut write_file = file_system.open_file_writer(&path, 1024).await.unwrap();
             let read_file = file_system.open_file_reader(&path).await.unwrap();
-            let mut len = write_file.write(data).await.unwrap();
+            write_file.write(data).await.unwrap();
             write_file.flush().await.unwrap();
-            assert_eq!(len, data.len());
 
             let mut buf = [0_u8; 2];
-            len = read_file.read_at(1, &mut buf).await.unwrap();
-            assert_eq!(len, buf.len());
+            read_file.read_exact_at(1, &mut buf).await.unwrap();
             assert_eq!(buf, [1, 2]);
 
             write_file.truncate(3).await.unwrap();
@@ -354,8 +345,7 @@ mod test {
         let read_file = file_system.open_file_reader(&path).await.unwrap();
         assert_eq!(read_file.len(), 3);
         let mut buf = vec![0; 3];
-        let len = read_file.read_at(0, &mut buf).await.unwrap();
-        assert_eq!(len, 3);
+        read_file.read_exact_at(0, &mut buf).await.unwrap();
         assert_eq!(buf.as_slice(), &data[0..3]);
     }
 
@@ -395,15 +385,13 @@ mod test {
         let mut write_file = file_system.open_file_writer(&path, 1024).await.unwrap();
 
         for _ in 0..16 {
-            let len = write_file.write(&[0, 1, 2, 3, 4]).await.unwrap();
-            assert_eq!(len, 5);
+            write_file.write(&[0, 1, 2, 3, 4]).await.unwrap();
         }
         write_file.flush().await.unwrap();
         let mut read_file = file_system.open_file_reader(&path).await.unwrap();
         read_file.seek(SeekFrom::Start(5)).unwrap();
         let mut buf = [0_u8; 8];
-        let len = read_file.read(&mut buf[0..5]).await.unwrap();
-        assert_eq!(len, 5);
+        read_file.read_exact(&mut buf[0..5]).await.unwrap();
         assert_eq!(buf, [0, 1, 2, 3, 4, 0, 0, 0]);
     }
 

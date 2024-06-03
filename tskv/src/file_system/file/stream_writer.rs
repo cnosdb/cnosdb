@@ -65,10 +65,9 @@ impl FileStreamWriter {
         self.pos = pos;
     }
 
-    pub async fn write(&mut self, buf: &[u8]) -> Result<usize> {
+    pub async fn write(&mut self, buf: &[u8]) -> Result<()> {
         self.buf.extend_from_slice(buf);
-        self.try_flush().await?;
-        Ok(buf.len())
+        self.try_flush().await
     }
 
     pub async fn write_vec<'a>(&mut self, bufs: &'a [IoSlice<'a>]) -> Result<usize> {
@@ -83,20 +82,16 @@ impl FileStreamWriter {
         if !self.buf.is_full() {
             return Ok(());
         }
-        let size = self
-            .file
-            .write_at(self.pos, &self.buf.consume_data())
-            .await?;
-        self.set_pos(self.pos + size);
+        let data = self.buf.consume_data();
+        self.file.write_at(self.pos, &data).await?;
+        self.set_pos(self.pos + data.len());
         Ok(())
     }
 
     pub async fn flush(&mut self) -> Result<()> {
-        let size = self
-            .file
-            .write_at(self.pos, &self.buf.consume_data())
-            .await?;
-        self.set_pos(self.pos + size);
+        let data = self.buf.consume_data();
+        self.file.write_at(self.pos, &data).await?;
+        self.set_pos(self.pos + data.len());
         self.file.sync_data().await?;
         Ok(())
     }
@@ -170,9 +165,8 @@ mod test {
             .open_file_writer("reader.txt", 1024)
             .await
             .unwrap();
-        let len = wfile.write(b"hello world").await.unwrap();
+        wfile.write(b"hello world").await.unwrap();
         wfile.flush().await.unwrap();
-        assert_eq!(len, 11);
         let mut buf = vec![0_u8; 11];
         let rfile = wfile.shared_file().unwrap();
         let len = rfile.read_at(0, &mut buf).await.unwrap();

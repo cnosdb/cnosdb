@@ -45,6 +45,23 @@ impl ReadableFile for MmapFile {
         Ok(size)
     }
 
+    async fn read_exact_at(&self, pos: usize, data: &mut [u8]) -> Result<()> {
+        let mmap = self.mmap.clone();
+        let size = self.size;
+        let len = data.len();
+        let dst = data.as_ptr() as usize;
+        asyncify(move || {
+            unsafe {
+                let memory = std::slice::from_raw_parts(mmap.as_ptr(), size);
+                let src = memory.as_ptr().add(pos);
+                ptr::copy_nonoverlapping(src, dst as *mut u8, len);
+            }
+            Ok(())
+        })
+        .await?;
+        Ok(())
+    }
+
     fn file_size(&self) -> usize {
         self.size
     }

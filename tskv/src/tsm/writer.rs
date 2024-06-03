@@ -138,18 +138,19 @@ impl TsmWriter {
     }
 
     /// todo: write footer
-    pub async fn write_footer(&mut self) -> TskvResult<usize> {
+    pub async fn write_footer(&mut self) -> TskvResult<()> {
         let buf = self.footer.serialize()?;
-        let size = self.writer.write(&buf).await.context(IOSnafu)?;
-        self.size += size as u64;
-        Ok(size)
+        self.writer.write(&buf).await.context(IOSnafu)?;
+        self.size += buf.len() as u64;
+        Ok(())
     }
 
     pub async fn write_chunk_group(&mut self) -> TskvResult<()> {
         for (table, group) in &self.chunk_specs {
             let chunk_group_offset = self.writer.len() as u64;
             let buf = group.serialize()?;
-            let chunk_group_size = self.writer.write(&buf).await.context(IOSnafu)? as u64;
+            let chunk_group_size = buf.len() as u64;
+            self.writer.write(&buf).await.context(IOSnafu)?;
             self.size += chunk_group_size;
             let chunk_group_spec = ChunkGroupWriteSpec {
                 table_schema: self.table_schemas.get(table).unwrap().clone(),
@@ -167,7 +168,8 @@ impl TsmWriter {
     pub async fn write_chunk_group_specs(&mut self, series: SeriesMeta) -> TskvResult<()> {
         let chunk_group_specs_offset = self.writer.len() as u64;
         let buf = self.chunk_group_specs.serialize()?;
-        let chunk_group_specs_size = self.writer.write(&buf).await.context(IOSnafu)?;
+        let chunk_group_specs_size = buf.len();
+        self.writer.write(&buf).await.context(IOSnafu)?;
         self.size += chunk_group_specs_size as u64;
         let time_range = self.chunk_group_specs.time_range();
         self.footer.set_time_range(time_range);
@@ -185,7 +187,8 @@ impl TsmWriter {
             for (series, chunk) in group {
                 let chunk_offset = self.writer.len() as u64;
                 let buf = chunk.serialize()?;
-                let chunk_size = self.writer.write(&buf).await.context(IOSnafu)? as u64;
+                let chunk_size = buf.len() as u64;
+                self.writer.write(&buf).await.context(IOSnafu)?;
                 self.size += chunk_size;
                 let time_range = chunk.time_range();
                 self.min_ts = min(self.min_ts, time_range.min_ts);
@@ -276,7 +279,8 @@ impl TsmWriter {
         let table = schema.name.clone();
         for page in pages {
             let offset = self.writer.len() as u64;
-            let size = self.writer.write(&page.bytes).await.context(IOSnafu)?;
+            let size = page.bytes.len();
+            self.writer.write(&page.bytes).await.context(IOSnafu)?;
             self.size += size as u64;
             let spec = PageWriteSpec {
                 offset,
@@ -311,7 +315,8 @@ impl TsmWriter {
             self.create_column_group(schema.clone(), meta.series_id(), meta.series_key());
 
         let mut offset = self.writer.len() as u64;
-        let size = self.writer.write(&raw).await.context(IOSnafu)?;
+        let size = raw.len();
+        self.writer.write(&raw).await.context(IOSnafu)?;
         self.size += size as u64;
 
         let table = schema.name.to_string();

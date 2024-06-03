@@ -287,7 +287,7 @@ impl VnodeWal {
     }
 
     /// Close current record file, return count of bytes appended as footer.
-    pub async fn close(&mut self) -> TskvResult<usize> {
+    pub async fn close(&mut self) -> TskvResult<()> {
         self.current_wal.close().await
     }
 

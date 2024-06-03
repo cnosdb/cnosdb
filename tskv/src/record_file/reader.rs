@@ -40,7 +40,7 @@ pub async fn read_footer_from(
 
     // Get file crc
     let mut buf = vec![0_u8; file_crc_source_len(file.len(), FILE_FOOTER_LEN)];
-    file.read_at(FILE_MAGIC_NUMBER_LEN, &mut buf)
+    file.read_exact_at(FILE_MAGIC_NUMBER_LEN, &mut buf)
         .await
         .context(ReadFileSnafu {
             path: file_path.as_ref().to_path_buf(),
@@ -50,7 +50,7 @@ pub async fn read_footer_from(
     // Read footer
     let footer_pos = file.len() - FILE_FOOTER_LEN;
     let mut footer = [0_u8; FILE_FOOTER_LEN];
-    file.read_at(footer_pos, &mut footer[..])
+    file.read_exact_at(footer_pos, &mut footer[..])
         .await
         .context(ReadFileSnafu {
             path: file_path.as_ref().to_path_buf(),

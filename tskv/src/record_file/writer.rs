@@ -133,7 +133,7 @@ impl Writer {
         Ok(written_size)
     }
 
-    pub async fn write_footer(&mut self, footer: &mut [u8; FILE_FOOTER_LEN]) -> TskvResult<usize> {
+    pub async fn write_footer(&mut self, footer: &mut [u8; FILE_FOOTER_LEN]) -> TskvResult<()> {
         self.sync().await?;
 
         // Get file crc
@@ -143,7 +143,7 @@ impl Writer {
             .open_file_reader(&self.path)
             .await
             .map_err(|e| TskvError::FileSystemError { source: e })?;
-        file.read_at(FILE_MAGIC_NUMBER_LEN, &mut buf)
+        file.read_exact_at(FILE_MAGIC_NUMBER_LEN, &mut buf)
             .await
             .context(ReadFileSnafu {
                 path: self.path.clone(),
@@ -154,11 +154,11 @@ impl Writer {
         footer[4..8].copy_from_slice(&crc.to_be_bytes());
         self.footer = Some(*footer);
 
-        let written_size = self.file.write(footer).await.context(WriteFileSnafu {
+        self.file.write(footer).await.context(WriteFileSnafu {
             path: self.path.clone(),
         })?;
         // Only add file_size, does not add pos
-        Ok(written_size)
+        Ok(())
     }
 
     pub async fn truncate(&mut self, size: u64) -> TskvResult<()> {
@@ -246,8 +246,7 @@ pub(crate) mod test {
                 let data_size = writer.write_record(1, 1, data).await.unwrap();
                 assert_eq!(data_size, record_length(11));
             }
-            let footer_size = writer.write_footer(&mut footer).await.unwrap();
-            assert_eq!(footer_size, FILE_FOOTER_LEN);
+            writer.write_footer(&mut footer).await.unwrap();
             writer.close().await.unwrap();
             assert_record_file_data_eq(&path, &records, true).await;
         }
