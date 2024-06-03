@@ -70,6 +70,13 @@ impl Database {
         Ok(db)
     }
 
+    pub fn max_buffer_size(&self) -> u64 {
+        if self.schemas.is_usage_schema() {
+            return self.opt.cache.max_usage_schema_buffer_size;
+        }
+        self.opt.cache.max_buffer_size
+    }
+
     pub fn open_tsfamily(
         &mut self,
         ver: Arc<Version>,
@@ -81,7 +88,7 @@ impl Database {
             ver.database(),
             MemCache::new(
                 ver.tf_id(),
-                self.opt.cache.max_buffer_size,
+                self.max_buffer_size(),
                 self.opt.cache.partition,
                 ver.last_seq,
                 &self.memory_pool,
@@ -179,7 +186,7 @@ impl Database {
             db_w.owner.clone(),
             MemCache::new(
                 tsf_id,
-                db_w.opt.cache.max_buffer_size,
+                db_w.max_buffer_size(),
                 db_w.opt.cache.partition,
                 seq_no,
                 &db_w.memory_pool,

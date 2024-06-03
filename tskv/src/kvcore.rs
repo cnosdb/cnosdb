@@ -306,7 +306,7 @@ impl TsKv {
 
             let sync_interval = wal_manager.sync_interval();
             let mut check_total_size_ticker = tokio::time::interval(Duration::from_secs(10));
-            let check_to_flush_duration = Duration::from_secs(60);
+            let check_to_flush_duration = Duration::from_secs(3600);
             let mut check_to_flush_instant = Instant::now();
             if sync_interval == Duration::ZERO {
                 loop {

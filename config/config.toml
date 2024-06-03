@@ -97,7 +97,11 @@ path = '/var/lib/cnosdb/wal'
 #max_immutable_number = 4
 
 ## The partion number of memcache cache,default equal to cpu number
-# partition = 16
+#partition = 16
+
+## The maximum size of database USAGE_SCHEMA mutable cache.
+#max_usage_schema_buffer_size = "32K" # 131072
+
 
 [log]
 level = 'info'

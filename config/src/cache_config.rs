@@ -13,6 +13,11 @@ pub struct CacheConfig {
     pub max_immutable_number: u16,
     #[serde(default = "CacheConfig::default_partitions")]
     pub partition: usize,
+    #[serde(
+        with = "bytes_num",
+        default = "CacheConfig::default_max_usage_schema_buffer_size"
+    )]
+    pub max_usage_schema_buffer_size: u64,
 }
 
 impl CacheConfig {
@@ -27,6 +32,10 @@ impl CacheConfig {
         num_cpus::get()
     }
 
+    fn default_max_usage_schema_buffer_size() -> u64 {
+        32 * 1024
+    }
+
     pub fn override_by_env(&mut self) {
         if let Ok(size) = std::env::var("CNOSDB_CACHE_MAX_BUFFER_SIZE") {
             self.max_buffer_size = size.parse::<u64>().unwrap();
@@ -37,6 +46,9 @@ impl CacheConfig {
         if let Ok(size) = std::env::var("CNOSDB_CACHE_PARTITIONS") {
             self.partition = size.parse::<usize>().unwrap();
         }
+        if let Ok(size) = std::env::var("CNOSDB_CACHE_MAX_USAGE_SCHEMA_BUFFER_SIZE") {
+            self.max_usage_schema_buffer_size = size.parse::<u64>().unwrap();
+        }
     }
 }
 
@@ -46,6 +58,7 @@ impl Default for CacheConfig {
             max_buffer_size: Self::default_max_buffer_size(),
             max_immutable_number: Self::default_max_immutable_number(),
             partition: Self::default_partitions(),
+            max_usage_schema_buffer_size: Self::default_max_usage_schema_buffer_size(),
         }
     }
 }
