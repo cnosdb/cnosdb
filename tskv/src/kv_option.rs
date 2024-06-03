@@ -192,6 +192,7 @@ pub struct CacheOptions {
     pub max_buffer_size: u64,
     pub max_immutable_number: u16,
     pub partition: usize,
+    pub max_usage_schema_buffer_size: u64,
 }
 
 impl From<&Config> for CacheOptions {
@@ -200,6 +201,7 @@ impl From<&Config> for CacheOptions {
             max_buffer_size: config.cache.max_buffer_size,
             max_immutable_number: config.cache.max_immutable_number,
             partition: config.cache.partition,
+            max_usage_schema_buffer_size: config.cache.max_usage_schema_buffer_size,
         }
     }
 }

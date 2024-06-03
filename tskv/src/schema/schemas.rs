@@ -5,6 +5,7 @@ use meta::model::{MetaClientRef, MetaRef};
 use models::codec::Encoding;
 use models::schema::{
     ColumnType, DatabaseSchema, TableColumn, TableSchema, TskvTableSchema, TskvTableSchemaRef,
+    DEFAULT_CATALOG, USAGE_SCHEMA,
 };
 use models::ColumnId;
 use protos::models::FieldType;
@@ -18,6 +19,7 @@ const TIME_STAMP_NAME: &str = "time";
 pub struct DBschemas {
     tenant_name: String,
     database_name: String,
+    is_usage_schema: bool,
     client: MetaClientRef,
 }
 
@@ -32,9 +34,14 @@ impl DBschemas {
         if client.get_db_schema(db_schema.database_name())?.is_none() {
             client.create_db(db_schema.clone()).await?;
         }
+
+        let is_usage_schema =
+            db_schema.database_name() == USAGE_SCHEMA && db_schema.tenant_name() == DEFAULT_CATALOG;
+
         Ok(Self {
             tenant_name: db_schema.tenant_name().to_string(),
             database_name: db_schema.database_name().to_string(),
+            is_usage_schema,
             client,
         })
     }
@@ -332,5 +339,9 @@ impl DBschemas {
                     database: self.database_name.clone(),
                 })?;
         Ok(db_schema)
+    }
+
+    pub fn is_usage_schema(&self) -> bool {
+        self.is_usage_schema
     }
 }

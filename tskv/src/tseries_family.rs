@@ -1013,10 +1013,11 @@ impl TseriesFamily {
     }
 
     pub fn switch_to_immutable(&mut self) {
+        let max_buf_size = self.mut_cache.read().max_buf_size();
         self.immut_cache.push(self.mut_cache.clone());
         self.mut_cache = Arc::from(RwLock::new(MemCache::new(
             self.tf_id,
-            self.cache_opt.max_buffer_size,
+            max_buf_size,
             self.cache_opt.partition,
             self.seq_no,
             &self.memory_pool,
