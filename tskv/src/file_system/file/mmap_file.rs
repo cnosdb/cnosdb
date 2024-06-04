@@ -15,14 +15,16 @@ pub struct MmapFile {
 impl MmapFile {
     pub async fn open<P: AsRef<Path>>(path: P, options: OpenOptions) -> Result<MmapFile> {
         let path = path.as_ref().to_owned();
-        let res = asyncify(move || {
-            let file = RawFile(Arc::new(options.open(path)?));
-            let mmap = Arc::new(memmap2::MmapRaw::map_raw(&*file.0)?);
-            let size = mmap.len();
-            Ok(MmapFile { mmap, size })
-        })
-        .await?;
-        Ok(res)
+        unsafe {
+            let res = asyncify(|| {
+                let file = RawFile(Arc::new(options.open(path)?));
+                let mmap = Arc::new(memmap2::MmapRaw::map_raw(&*file.0)?);
+                let size = mmap.len();
+                Ok(MmapFile { mmap, size })
+            })
+            .await?;
+            Ok(res)
+        }
     }
 }
 
@@ -33,14 +35,14 @@ impl ReadableFile for MmapFile {
         let size = self.size;
         let len = data.len();
         let dst = data.as_ptr() as usize;
-        let size = asyncify(move || {
-            unsafe {
+        let size = unsafe {
+            asyncify(|| {
                 let memory = std::slice::from_raw_parts(mmap.as_ptr(), size);
                 let src = memory.as_ptr().add(pos);
                 ptr::copy_nonoverlapping(src, dst as *mut u8, len);
-            }
-            Ok(len)
-        })
+                Ok(len)
+            })
+        }
         .await?;
         Ok(size)
     }
@@ -74,15 +76,15 @@ mod test {
 
         let mmap = MmapRaw::map_raw(&file).unwrap();
 
-        asyncify(move || {
-            unsafe {
+        unsafe {
+            asyncify(|| {
                 let mut memory = std::slice::from_raw_parts_mut(mmap.as_mut_ptr(), 128);
                 memory.write_all(b"Hello, world!").unwrap();
                 mmap.flush().unwrap();
-            }
-            Ok(())
-        })
-        .await
-        .unwrap();
+                Ok(())
+            })
+            .await
+            .unwrap();
+        }
     }
 }
