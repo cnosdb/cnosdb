@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::convert::Infallible;
 use std::fmt;
 use std::fmt::Display;
+use std::mem::size_of_val;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Instant;
@@ -262,22 +263,51 @@ impl HttpService {
     fn ping(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
         warp::path!("api" / "v1" / "ping")
             .and(warp::get().or(warp::head()))
-            .map(|_| {
+            .and(self.with_http_metrics())
+            .and(self.with_hostaddr())
+            .map(|_, metrics: Arc<HttpMetrics>, addr: String| {
+                let start = Instant::now();
                 let mut resp = HashMap::new();
                 resp.insert("version", VERSION.as_str());
                 resp.insert("status", "healthy");
+                let keys_values_size: usize = resp
+                    .iter()
+                    .map(|(key, value)| size_of_val(*key) + size_of_val(*value))
+                    .sum();
+                http_response_time_and_flow_metrics(
+                    &metrics,
+                    &addr,
+                    keys_values_size,
+                    start,
+                    HttpApiType::ApiV1Ping,
+                );
                 warp::reply::json(&resp)
             })
     }
+
     fn backtrace(
         &self,
     ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
         warp::path!("debug" / "backtrace")
             .and(warp::get().or(warp::head()))
-            .map(|_| {
+            .and(self.with_http_metrics())
+            .and(self.with_hostaddr())
+            .map(|_, metrics: Arc<HttpMetrics>, addr: String| {
+                let start = Instant::now();
                 let res = backtrace::backtrace();
                 let mut resp = HashMap::new();
                 resp.insert("taskdump_tree:", res);
+                let keys_values_size: usize = resp
+                    .iter()
+                    .map(|(key, value)| size_of_val(*key) + size_of_val(value))
+                    .sum();
+                http_response_time_and_flow_metrics(
+                    &metrics,
+                    &addr,
+                    keys_values_size,
+                    start,
+                    HttpApiType::DebugBacktrace,
+                );
                 warp::reply::json(&resp)
             })
     }
@@ -388,6 +418,20 @@ impl HttpService {
                         start,
                         HttpApiType::ApiV1Sql,
                     );
+                    let result_size = size_of_val(&result);
+                    let value_size = match &result {
+                        Ok(value) => size_of_val(value),
+                        Err(error) => size_of_val(error),
+                    };
+
+                    let total_size = result_size + value_size + req_len;
+                    http_response_time_and_flow_metrics(
+                        &metrics,
+                        &addr,
+                        total_size,
+                        start,
+                        HttpApiType::ApiV1Sql,
+                    );
                     result
                 },
             )
@@ -478,6 +522,20 @@ impl HttpService {
                         start,
                         HttpApiType::ApiV1Write,
                     );
+                    let result_size = size_of_val(&resp);
+                    let value_size = match &resp {
+                        Ok(value) => size_of_val(value),
+                        Err(error) => size_of_val(error),
+                    };
+
+                    let total_size = result_size + value_size + req_len;
+                    http_response_time_and_flow_metrics(
+                        &metrics,
+                        &addr,
+                        total_size,
+                        start,
+                        HttpApiType::ApiV1Write,
+                    );
                     resp.map(|_| ResponseBuilder::ok()).map_err(|e| {
                         error!("Failed to handle http write request, err: {:?}", e);
                         reject::custom(e)
@@ -495,11 +553,16 @@ impl HttpService {
             .and(warp::query::query())
             .and(self.with_dbms())
             .and(self.with_coord())
+            .and(self.with_http_metrics())
+            .and(self.with_hostaddr())
             .and_then(
                 |req: Bytes,
                  mut query: HashMap<String, String>,
                  dbms: DBMSRef,
-                 coord: CoordinatorRef| async move {
+                 coord: CoordinatorRef,
+                 metrics: Arc<HttpMetrics>,
+                 addr: String| async move {
+                    let start = Instant::now();
                     let db = query.remove("db").unwrap_or(DEFAULT_DATABASE.to_string());
                     let header = Header::with(
                         Some(APPLICATION_JSON.to_string()),
@@ -541,6 +604,20 @@ impl HttpService {
                     )
                     .await;
 
+                    let result_size = size_of_val(&resp);
+                    let value_size = match &resp {
+                        Ok(value) => size_of_val(value),
+                        Err(error) => size_of_val(error),
+                    };
+
+                    let total_size = result_size + value_size + req.len();
+                    http_response_time_and_flow_metrics(
+                        &metrics,
+                        &addr,
+                        total_size,
+                        start,
+                        HttpApiType::Write,
+                    );
                     resp.map(|_| ResponseBuilder::ok()).map_err(|e| {
                         error!("Failed to handle http write request, err: {:?}", e);
                         reject::custom(e)
@@ -638,6 +715,21 @@ impl HttpService {
                         &ctx,
                         &addr,
                         req_len,
+                        start,
+                        HttpApiType::ApiV1OpenTsDBWrite,
+                    );
+
+                    let result_size = size_of_val(&resp);
+                    let value_size = match &resp {
+                        Ok(value) => size_of_val(value),
+                        Err(error) => size_of_val(error),
+                    };
+
+                    let total_size = result_size + value_size + req_len;
+                    http_response_time_and_flow_metrics(
+                        &metrics,
+                        &addr,
+                        total_size,
                         start,
                         HttpApiType::ApiV1OpenTsDBWrite,
                     );
@@ -749,6 +841,20 @@ impl HttpService {
                         start,
                         HttpApiType::ApiV1OpenTsDBPut,
                     );
+                    let result_size = size_of_val(&resp);
+                    let value_size = match &resp {
+                        Ok(value) => size_of_val(value),
+                        Err(error) => size_of_val(error),
+                    };
+
+                    let total_size = result_size + value_size + req_len;
+                    http_response_time_and_flow_metrics(
+                        &metrics,
+                        &addr,
+                        total_size,
+                        start,
+                        HttpApiType::ApiV1OpenTsDBPut,
+                    );
                     resp.map(|_| ResponseBuilder::ok()).map_err(|e| {
                         error!("Failed to handle http write request, err: {:?}", e);
                         reject::custom(e)
@@ -763,15 +869,38 @@ impl HttpService {
         warp::path!("api" / "v1" / "meta_leader")
             .and(self.handle_header())
             .and(self.with_coord())
-            .and_then(|_header: Header, coord: CoordinatorRef| async move {
-                match coord.meta_manager().meta_leader().await {
-                    Ok(data) => Ok(data),
-                    Err(err) => {
-                        error!("Failed to get meta leader addr, err: {:?}", err);
-                        Err(reject::custom(MetaSnafu.into_error(err)))
-                    }
-                }
-            })
+            .and(self.with_http_metrics())
+            .and(self.with_hostaddr())
+            .and_then(
+                |_header: Header,
+                 coord: CoordinatorRef,
+                 metrics: Arc<HttpMetrics>,
+                 addr: String| async move {
+                    let start = Instant::now();
+                    let resp = match coord.meta_manager().meta_leader().await {
+                        Ok(data) => Ok(data),
+                        Err(err) => {
+                            error!("Failed to get meta leader addr, err: {:?}", err);
+                            Err(reject::custom(MetaSnafu.into_error(err)))
+                        }
+                    };
+                    let result_size = size_of_val(&resp);
+                    let value_size = match &resp {
+                        Ok(value) => size_of_val(value),
+                        Err(error) => size_of_val(error),
+                    };
+
+                    let total_size = result_size + value_size;
+                    http_response_time_and_flow_metrics(
+                        &metrics,
+                        &addr,
+                        total_size,
+                        start,
+                        HttpApiType::ApiV1metaleader,
+                    );
+                    resp
+                },
+            )
     }
 
     fn print_meta(
@@ -780,23 +909,37 @@ impl HttpService {
         warp::path!("api" / "v1" / "meta")
             .and(self.handle_header())
             .and(self.with_coord())
-            .and_then(|_header: Header, coord: CoordinatorRef| async move {
-                let tenant = DEFAULT_CATALOG.to_string();
+            .and(self.with_http_metrics())
+            .and(self.with_hostaddr())
+            .and_then(
+                |_header: Header,
+                 coord: CoordinatorRef,
+                 metrics: Arc<HttpMetrics>,
+                 addr: String| async move {
+                    let start = Instant::now();
+                    let tenant = DEFAULT_CATALOG.to_string();
 
-                let meta_client = match coord.tenant_meta(&tenant).await {
-                    Some(client) => client,
-                    None => {
-                        let e = HttpError::Meta {
-                            source: MetaError::TenantNotFound { tenant },
-                        };
-                        error!("Failed to get meta client, err: {:?}", e);
-                        return Err(reject::custom(e));
-                    }
-                };
-                let data = meta_client.print_data();
-
-                Ok(data)
-            })
+                    let meta_client = match coord.tenant_meta(&tenant).await {
+                        Some(client) => client,
+                        None => {
+                            let e = HttpError::Meta {
+                                source: MetaError::TenantNotFound { tenant },
+                            };
+                            error!("Failed to get meta client, err: {:?}", e);
+                            return Err(reject::custom(e));
+                        }
+                    };
+                    let data = meta_client.print_data();
+                    http_response_time_and_flow_metrics(
+                        &metrics,
+                        &addr,
+                        data.len(),
+                        start,
+                        HttpApiType::ApiV1Meta,
+                    );
+                    Ok(data)
+                },
+            )
     }
 
     fn print_raft(
@@ -805,53 +948,113 @@ impl HttpService {
         warp::path!("api" / "v1" / "raft")
             .and(warp::query::<DebugParam>())
             .and(self.with_coord())
-            .and_then(|param: DebugParam, coord: CoordinatorRef| async move {
-                let raft_manager = coord.raft_manager();
-                let data = raft_manager.metrics(param.id.unwrap_or(0)).await;
+            .and(self.with_http_metrics())
+            .and(self.with_hostaddr())
+            .and_then(
+                |param: DebugParam,
+                 coord: CoordinatorRef,
+                 metrics: Arc<HttpMetrics>,
+                 addr: String| async move {
+                    let start = Instant::now();
+                    let raft_manager = coord.raft_manager();
+                    let data = raft_manager.metrics(param.id.unwrap_or(0)).await;
 
-                let res: Result<String, warp::Rejection> = Ok(data);
-                res
-            })
+                    let res: Result<String, warp::Rejection> = Ok(data);
+                    let result_size = size_of_val(&res);
+                    let value_size = match &res {
+                        Ok(value) => size_of_val(value),
+                        Err(error) => size_of_val(error),
+                    };
+
+                    let total_size = result_size + value_size;
+                    http_response_time_and_flow_metrics(
+                        &metrics,
+                        &addr,
+                        total_size,
+                        start,
+                        HttpApiType::ApiV1Raft,
+                    );
+                    res
+                },
+            )
     }
 
     fn debug_pprof(
         &self,
     ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-        warp::path!("debug" / "pprof").and_then(|| async move {
-            #[cfg(unix)]
-            {
-                let res = utils::pprof_tools::gernate_pprof().await;
-                info!("debug pprof: {:?}", res);
-                match res {
-                    Ok(v) => Ok(v),
-                    Err(e) => Err(reject::custom(HttpError::PProf { reason: e })),
+        warp::path!("debug" / "pprof")
+            .and(self.with_http_metrics())
+            .and(self.with_hostaddr())
+            .and_then(|metrics: Arc<HttpMetrics>, addr: String| async move {
+                let start = Instant::now();
+                #[cfg(unix)]
+                {
+                    let res = utils::pprof_tools::gernate_pprof().await;
+                    info!("debug pprof: {:?}", res);
+                    let resp = match res {
+                        Ok(v) => Ok(v),
+                        Err(e) => Err(reject::custom(HttpError::PProf { reason: e })),
+                    };
+                    let result_size = size_of_val(&resp);
+                    let value_size = match &resp {
+                        Ok(value) => size_of_val(value),
+                        Err(error) => size_of_val(error),
+                    };
+
+                    let total_size = result_size + value_size;
+                    http_response_time_and_flow_metrics(
+                        &metrics,
+                        &addr,
+                        total_size,
+                        start,
+                        HttpApiType::DebugPprof,
+                    );
+                    resp
                 }
-            }
-            #[cfg(not(unix))]
-            {
-                Err::<String, _>(reject::not_found())
-            }
-        })
+                #[cfg(not(unix))]
+                {
+                    Err::<String, _>(reject::not_found())
+                }
+            })
     }
 
     fn debug_jeprof(
         &self,
     ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-        warp::path!("debug" / "jeprof").and_then(|| async move {
-            #[cfg(unix)]
-            {
-                let res = utils::pprof_tools::gernate_jeprof().await;
-                info!("debug jeprof: {:?}", res);
-                match res {
-                    Ok(v) => Ok(v),
-                    Err(e) => Err(reject::custom(HttpError::PProf { reason: e })),
+        warp::path!("debug" / "jeprof")
+            .and(self.with_http_metrics())
+            .and(self.with_hostaddr())
+            .and_then(|metrics: Arc<HttpMetrics>, addr: String| async move {
+                let start = Instant::now();
+                #[cfg(unix)]
+                {
+                    let res = utils::pprof_tools::gernate_jeprof().await;
+                    info!("debug jeprof: {:?}", res);
+                    let resp = match res {
+                        Ok(v) => Ok(v),
+                        Err(e) => Err(reject::custom(HttpError::PProf { reason: e })),
+                    };
+                    let result_size = size_of_val(&resp);
+                    let value_size = match &resp {
+                        Ok(value) => size_of_val(value),
+                        Err(error) => size_of_val(error),
+                    };
+
+                    let total_size = result_size + value_size;
+                    http_response_time_and_flow_metrics(
+                        &metrics,
+                        &addr,
+                        total_size,
+                        start,
+                        HttpApiType::DebugJeprof,
+                    );
+                    resp
                 }
-            }
-            #[cfg(not(unix))]
-            {
-                Err::<String, _>(reject::not_found())
-            }
-        })
+                #[cfg(not(unix))]
+                {
+                    Err::<String, _>(reject::not_found())
+                }
+            })
     }
 
     fn metrics(
@@ -859,12 +1062,24 @@ impl HttpService {
     ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
         warp::path!("metrics")
             .and(self.with_metrics_register())
-            .map(|register: Arc<MetricsRegister>| {
-                let mut buffer = gather_metrics();
-                let mut prom_reporter = PromReporter::new(&mut buffer);
-                register.report(&mut prom_reporter);
-                Response::new(Body::from(buffer))
-            })
+            .and(self.with_http_metrics())
+            .and(self.with_hostaddr())
+            .map(
+                |register: Arc<MetricsRegister>, metrics: Arc<HttpMetrics>, addr: String| {
+                    let start = Instant::now();
+                    let mut buffer = gather_metrics();
+                    let mut prom_reporter = PromReporter::new(&mut buffer);
+                    register.report(&mut prom_reporter);
+                    http_response_time_and_flow_metrics(
+                        &metrics,
+                        &addr,
+                        size_of_val(&buffer),
+                        start,
+                        HttpApiType::Metrics,
+                    );
+                    Response::new(Body::from(buffer))
+                },
+            )
     }
 
     fn prom_remote_read(
@@ -956,6 +1171,20 @@ impl HttpService {
                         &context,
                         &addr,
                         req_len,
+                        start,
+                        HttpApiType::ApiV1PromRead,
+                    );
+                    let result_size = size_of_val(&result);
+                    let value_size = match &result {
+                        Ok(value) => size_of_val(value),
+                        Err(error) => size_of_val(error),
+                    };
+
+                    let total_size = result_size + value_size + req_len;
+                    http_response_time_and_flow_metrics(
+                        &metrics,
+                        &addr,
+                        total_size,
                         start,
                         HttpApiType::ApiV1PromRead,
                     );
@@ -1057,6 +1286,20 @@ impl HttpService {
                         HttpApiType::ApiV1PromWrite,
                     );
 
+                    let result_size = size_of_val(&resp);
+                    let value_size = match &resp {
+                        Ok(value) => size_of_val(value),
+                        Err(error) => size_of_val(error),
+                    };
+
+                    let total_size = result_size + value_size + req_len;
+                    http_response_time_and_flow_metrics(
+                        &metrics,
+                        &addr,
+                        total_size,
+                        start,
+                        HttpApiType::ApiV1PromWrite,
+                    );
                     resp.map(|_| ResponseBuilder::ok()).map_err(|e| {
                         error!("Failed to handle http write request, err: {:?}", e);
                         reject::custom(e)
@@ -1098,15 +1341,35 @@ impl HttpService {
         warp::path!("api" / "v1" / "dump" / "sql" / "ddl")
             .and(self.with_meta())
             .and(warp::query::<DumpParam>())
-            .and_then(|meta, param: DumpParam| async move {
-                dump_sql_ddl_impl(meta, param.tenant)
-                    .await
-                    .map(|r| r.into_bytes())
-                    .map_err(|e| {
-                        error!("Failed to dump ddl sql, err: {:?}", e);
-                        reject::custom(e)
-                    })
-            })
+            .and(self.with_http_metrics())
+            .and(self.with_hostaddr())
+            .and_then(
+                |meta, param: DumpParam, metrics: Arc<HttpMetrics>, addr: String| async move {
+                    let start = Instant::now();
+                    let resp = dump_sql_ddl_impl(meta, param.tenant)
+                        .await
+                        .map(|r| r.into_bytes())
+                        .map_err(|e| {
+                            error!("Failed to dump ddl sql, err: {:?}", e);
+                            reject::custom(e)
+                        });
+                    let result_size = size_of_val(&resp);
+                    let value_size = match &resp {
+                        Ok(value) => size_of_val(value),
+                        Err(error) => size_of_val(error),
+                    };
+
+                    let total_size = result_size + value_size;
+                    http_response_time_and_flow_metrics(
+                        &metrics,
+                        &addr,
+                        total_size,
+                        start,
+                        HttpApiType::ApiV1DumpSqlDdl,
+                    );
+                    resp
+                },
+            )
     }
 
     fn write_es_log(
@@ -1209,6 +1472,20 @@ impl HttpService {
                         &ctx,
                         &addr,
                         req_len,
+                        start,
+                        HttpApiType::ApiV1ESLogWrite,
+                    );
+                    let result_size = size_of_val(&resp);
+                    let value_size = match &resp {
+                        Ok(value) => size_of_val(value),
+                        Err(error) => size_of_val(error),
+                    };
+
+                    let total_size = result_size + value_size + req_len;
+                    http_response_time_and_flow_metrics(
+                        &metrics,
+                        &addr,
+                        total_size,
                         start,
                         HttpApiType::ApiV1ESLogWrite,
                     );
@@ -1765,6 +2042,19 @@ fn http_record_write_metrics(
     metrics
         .http_write_duration(tenant, user, db, addr, api_type)
         .record(start.elapsed());
+}
+
+fn http_response_time_and_flow_metrics(
+    metrics: &HttpMetrics,
+    addr: &str,
+    flow: usize,
+    start: Instant,
+    api_type: HttpApiType,
+) {
+    metrics
+        .http_response_time(addr, api_type)
+        .record(start.elapsed());
+    metrics.http_flow(addr, api_type).inc(flow as u64);
 }
 
 /*************** top ****************/

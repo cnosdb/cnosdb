@@ -15,6 +15,9 @@ pub struct HttpMetrics {
 
     http_query_duration: Metric<DurationHistogram>,
     http_write_duration: Metric<DurationHistogram>,
+
+    http_response_time: Metric<DurationHistogram>,
+    http_flow: Metric<U64Counter>,
 }
 
 unsafe impl Send for HttpMetrics {}
@@ -43,12 +46,29 @@ macro_rules! generate_gets {
     };
 }
 
+macro_rules! generate_gets_other {
+    ($field: ident, $metrics_type: ty) => {
+        impl HttpMetrics {
+            pub fn $field(
+                &self,
+                host: &str,
+                api: crate::http::api_type::HttpApiType,
+            ) -> $metrics_type {
+                self.$field
+                    .recorder([("host", host), ("api", &api.to_string())])
+            }
+        }
+    };
+}
+
 generate_gets!(http_queries, U64Counter);
 generate_gets!(http_writes, U64Counter);
 generate_gets!(http_data_in, U64Counter);
 generate_gets!(http_data_out, U64Counter);
 generate_gets!(http_query_duration, DurationHistogram);
 generate_gets!(http_write_duration, DurationHistogram);
+generate_gets_other!(http_flow, U64Counter);
+generate_gets_other!(http_response_time, DurationHistogram);
 
 impl HttpMetrics {
     pub fn new(register: &Arc<MetricsRegister>) -> Self {
@@ -77,6 +97,17 @@ impl HttpMetrics {
             DurationHistogramOptions::default(),
         );
 
+        let http_flow = register.metric(
+            "http_flow",
+            "Count the sum of request body len and response body len",
+        );
+
+        let http_response_time = register.register_metric(
+            "http_response_time",
+            "Duration of the http request",
+            DurationHistogramOptions::default(),
+        );
+
         Self {
             http_data_in,
             http_data_out,
@@ -84,6 +115,8 @@ impl HttpMetrics {
             http_writes,
             http_query_duration,
             http_write_duration,
+            http_response_time,
+            http_flow,
         }
     }
 
