@@ -25,6 +25,7 @@ chrono = { workspace = true }
 criterion = { workspace = true, features = ["async_tokio"] }
 flatbuffers = { workspace = true }
 futures = { workspace = true }
+futures-task = { workspace = true }
 minivec = { workspace = true }
 num_cpus = { workspace = true }
 parking_lot = { workspace = true }

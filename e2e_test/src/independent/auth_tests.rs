@@ -162,7 +162,7 @@ fn test1() {
         assert_eq!(resp.status(), status_code::OK);
         assert_eq!(
             resp.text().unwrap(),
-            "database_name\npublic\nusage_schema\n"
+            "database_name\ncluster_schema\npublic\nusage_schema\n"
         )
     }
 }

@@ -244,6 +244,7 @@ fn case3() {
                 url,
                 sql: "SHOW DATABASES",
                 resp: Ok(vec![
+                    "cluster_schema",
                     "database_name",
                     "oceanic_station",
                     "public",

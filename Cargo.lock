@@ -4652,6 +4652,7 @@ dependencies = [
  "dirs",
  "flatbuffers 24.3.25",
  "futures",
+ "futures-task",
  "geo",
  "geozero",
  "lazy_static",

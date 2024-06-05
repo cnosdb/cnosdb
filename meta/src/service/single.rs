@@ -32,6 +32,7 @@ pub async fn start_singe_meta_server(
         default_database: vec![
             models::schema::USAGE_SCHEMA.to_string(),
             models::schema::DEFAULT_DATABASE.to_string(),
+            models::schema::CLUSTER_SCHEMA.to_string(),
         ],
     };
     super::init::init_meta(&mut storage, init_data).await;

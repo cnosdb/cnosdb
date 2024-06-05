@@ -25,6 +25,8 @@ pub struct QueryConfig {
     pub stream_trigger_cpu: usize,
     #[serde(default = "QueryConfig::default_stream_executor_cpu")]
     pub stream_executor_cpu: usize,
+    #[serde(with = "duration", default = "QueryConfig::default_sql_record_timeout")]
+    pub sql_record_timeout: Duration,
 }
 
 impl QueryConfig {
@@ -59,6 +61,10 @@ impl QueryConfig {
     fn default_stream_executor_cpu() -> usize {
         2
     }
+
+    fn default_sql_record_timeout() -> Duration {
+        Duration::from_secs(10)
+    }
 }
 
 impl Default for QueryConfig {
@@ -72,6 +78,7 @@ impl Default for QueryConfig {
             write_timeout: Self::default_write_timeout(),
             stream_trigger_cpu: Self::default_stream_trigger_cpu(),
             stream_executor_cpu: Self::default_stream_executor_cpu(),
+            sql_record_timeout: Self::default_sql_record_timeout(),
         }
     }
 }
@@ -128,9 +135,17 @@ impl CheckConfig for QueryConfig {
         }
         if self.stream_trigger_cpu > 1024 {
             ret.add_warn(CheckConfigItemResult {
-                config: config_name,
+                config: config_name.clone(),
                 item: "stream_trigger_cpu".to_string(),
                 message: "'stream_trigger_cpu' maybe too big(more than 1024)".to_string(),
+            })
+        }
+
+        if self.sql_record_timeout.as_secs() < 1 {
+            ret.add_warn(CheckConfigItemResult {
+                config: config_name,
+                item: "sql_record_timeout".to_string(),
+                message: "'sql_record_timeout' maybe too small(less than 1)".to_string(),
             })
         }
 

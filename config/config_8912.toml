@@ -22,6 +22,7 @@ read_timeout = "3000ms"
 write_timeout = "3000ms"
 stream_trigger_cpu = 1
 stream_executor_cpu = 2
+sql_record_timeout = "10s"
 
 [storage]
 # Directory for summary: $path/summary/
