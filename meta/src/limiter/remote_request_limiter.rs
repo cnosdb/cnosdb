@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use config::{Bucket, RequestLimiterConfig};
+use config::common::{Bucket, RequestLimiterConfig};
 use limiter_bucket::RateBucket;
 use serde::{Deserialize, Serialize};
 

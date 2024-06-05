@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use config::QueryConfig;
+use config::tskv::QueryConfig;
 use futures::TryStreamExt;
 use meta::model::MetaRef;
 use models::meta_data::VnodeInfo;

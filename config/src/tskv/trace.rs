@@ -1,10 +1,11 @@
 use std::time::Duration;
 
+use macros::EnvKeys;
 use serde::{Deserialize, Serialize};
 
 use crate::codec::duration;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, EnvKeys)]
 pub struct TraceConfig {
     #[serde(default = "TraceConfig::default_auto_generate_span")]
     pub auto_generate_span: bool,

@@ -3,7 +3,7 @@ use std::path::Path;
 use std::str::FromStr;
 use std::sync::{Once, OnceLock};
 
-use config::LogConfig;
+use config::common::LogConfig;
 use time::UtcOffset;
 use tracing::debug;
 use tracing::level_filters::LevelFilter;
@@ -29,7 +29,7 @@ pub fn targets_filter(level: LevelFilter, defined_tokio_trace: bool) -> filter::
             ("coordinator", level),
             ("e2e_test", level),
             ("error_code", level),
-            ("error_code_macro", level),
+            ("macros", level),
             ("http_protocol", level),
             ("limiter_bucket", level),
             ("lru_cache", level),

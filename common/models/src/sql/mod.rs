@@ -504,7 +504,7 @@ mod test {
     use std::collections::HashMap;
 
     use arrow_schema::{DataType, Field, Fields, Schema, SchemaRef, TimeUnit};
-    use config::TenantLimiterConfig;
+    use config::common::TenantLimiterConfig;
 
     use crate::auth::user::{UserDesc, UserOptionsBuilder};
     use crate::schema::{

@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
+use macros::EnvKeys;
 use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
 use crate::codec::bytes_num;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, EnvKeys)]
 pub struct CacheConfig {
     #[serde(with = "bytes_num", default = "CacheConfig::default_max_buffer_size")]
     pub max_buffer_size: u64,
@@ -33,7 +34,7 @@ impl Default for CacheConfig {
 }
 
 impl CheckConfig for CacheConfig {
-    fn check(&self, _: &crate::Config) -> Option<CheckConfigResult> {
+    fn check(&self, _: &super::Config) -> Option<CheckConfigResult> {
         let config_name = Arc::new("cache".to_string());
         let mut ret = CheckConfigResult::default();
         if self.max_buffer_size < 1024 * 1024 {

@@ -8,7 +8,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Instant;
 
-use config::TLSConfig;
+use config::tskv::TLSConfig;
 use coordinator::service::CoordinatorRef;
 use http_protocol::encoding::Encoding;
 use http_protocol::header::{ACCEPT, APPLICATION_JSON, AUTHORIZATION, PRIVATE_KEY};

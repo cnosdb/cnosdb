@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
+use macros::EnvKeys;
 use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, EnvKeys)]
 pub struct GlobalConfig {
     #[serde(default = "GlobalConfig::default_node_id")]
     pub node_id: u64,
@@ -46,7 +47,7 @@ impl Default for GlobalConfig {
 }
 
 impl CheckConfig for GlobalConfig {
-    fn check(&self, _: &crate::Config) -> Option<CheckConfigResult> {
+    fn check(&self, _: &super::Config) -> Option<CheckConfigResult> {
         let config_name = Arc::new("global".to_string());
         let mut ret = CheckConfigResult::default();
 

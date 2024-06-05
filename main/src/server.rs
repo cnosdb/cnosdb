@@ -107,7 +107,7 @@ impl Server {
 
 pub(crate) struct ServiceBuilder {
     pub cpu: usize,
-    pub config: config::Config,
+    pub config: config::tskv::Config,
     pub runtime: Arc<Runtime>,
     pub memory_pool: MemoryPoolRef,
     pub metrics_register: Arc<MetricsRegister>,

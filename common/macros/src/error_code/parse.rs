@@ -6,7 +6,7 @@ use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::{custom_keyword, token, Attribute, Field, Fields, LitInt, LitStr};
 
-use crate::{default_mode_code, MultiSynResult};
+use super::{default_mode_code, MultiSynResult};
 
 #[derive(Clone)]
 pub struct Code {
@@ -126,7 +126,7 @@ pub fn enum_attributes_from_syn(
     let mut ours = Vec::new();
     let mut errs = Vec::new();
     for attr in attrs {
-        if attr.path.is_ident("error_code") {
+        if attr.path().is_ident("error_code") {
             let attr_list = Punctuated::<ErrorCodeEnumAttribute, token::Comma>::parse_terminated;
             match attr.parse_args_with(attr_list) {
                 Ok(attrs) => {
@@ -261,7 +261,7 @@ fn variant_attributes_from_syn(attrs: Vec<Attribute>) -> MultiSynResult<Vec<Erro
     let mut ours = Vec::new();
     let mut errs = Vec::new();
     for attr in attrs {
-        if attr.path.is_ident("error_code") {
+        if attr.path().is_ident("error_code") {
             let attr_list = Punctuated::<ErrorCodeAttribute, token::Comma>::parse_terminated;
             match attr.parse_args_with(attr_list) {
                 Ok(attrs) => {

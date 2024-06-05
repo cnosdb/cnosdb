@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
+use macros::EnvKeys;
 use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, EnvKeys)]
 pub struct DeploymentConfig {
     #[serde(default = "DeploymentConfig::default_mode")]
     pub mode: String,
@@ -39,7 +40,7 @@ impl Default for DeploymentConfig {
 }
 
 impl CheckConfig for DeploymentConfig {
-    fn check(&self, _: &crate::Config) -> Option<CheckConfigResult> {
+    fn check(&self, _: &super::Config) -> Option<CheckConfigResult> {
         let config_name = Arc::new("deployment".to_string());
         let mut ret = CheckConfigResult::default();
 

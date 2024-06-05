@@ -284,7 +284,7 @@ mod tests {
     use std::ops::DerefMut;
 
     use chrono::Utc;
-    use config::get_config_for_test;
+    use config::tskv::get_config_for_test;
     use coordinator::service_mock::MockCoordinator;
     use datafusion::arrow::record_batch::RecordBatch;
     use datafusion::arrow::util::pretty::pretty_format_batches;

@@ -1,12 +1,13 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use macros::EnvKeys;
 use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
 use crate::codec::{bytes_num, duration};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, EnvKeys)]
 pub struct StorageConfig {
     #[serde(default = "StorageConfig::default_path")]
     pub path: String,
@@ -153,7 +154,7 @@ impl Default for StorageConfig {
 }
 
 impl CheckConfig for StorageConfig {
-    fn check(&self, _: &crate::Config) -> Option<CheckConfigResult> {
+    fn check(&self, _: &super::Config) -> Option<CheckConfigResult> {
         let config_name = Arc::new("storage".to_string());
         let mut ret = CheckConfigResult::default();
 

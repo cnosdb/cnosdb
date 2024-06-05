@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+macros = { path = "../common/macros" }
 serde = { workspace = true }
 toml = { workspace = true }
 async-backtrace = { workspace = true, optional = true }

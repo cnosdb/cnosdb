@@ -2,7 +2,7 @@ use std::fmt::Formatter;
 use std::ops::Deref;
 
 use chrono::{DateTime, Utc};
-use config::RateBucketConfig;
+use config::common::RateBucketConfig;
 use parking_lot::{Mutex, MutexGuard};
 use serde::de::{MapAccess, SeqAccess, Visitor};
 use serde::ser::SerializeStruct;

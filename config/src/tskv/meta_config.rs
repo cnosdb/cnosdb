@@ -2,12 +2,13 @@ use std::net::ToSocketAddrs;
 use std::sync::Arc;
 use std::time::Duration;
 
+use macros::EnvKeys;
 use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
 use crate::codec::duration;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, EnvKeys)]
 pub struct MetaConfig {
     #[serde(default = "MetaConfig::default_service_addr")]
     pub service_addr: Vec<String>,
@@ -38,7 +39,7 @@ impl Default for MetaConfig {
 }
 
 impl CheckConfig for MetaConfig {
-    fn check(&self, _: &crate::Config) -> Option<CheckConfigResult> {
+    fn check(&self, _: &super::Config) -> Option<CheckConfigResult> {
         let config_name = Arc::new("meta".to_string());
         let mut ret = CheckConfigResult::default();
 

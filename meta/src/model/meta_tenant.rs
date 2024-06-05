@@ -5,7 +5,7 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 use client::MetaHttpClient;
-use config::TenantObjectLimiterConfig;
+use config::common::TenantObjectLimiterConfig;
 use models::auth::privilege::{DatabasePrivilege, Privilege};
 use models::auth::role::{CustomTenantRole, SystemTenantRole, TenantRoleIdentifier};
 use models::auth::user::UserDesc;

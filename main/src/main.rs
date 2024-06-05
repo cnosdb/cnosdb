@@ -6,7 +6,8 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use clap::{command, Args, Parser, Subcommand, ValueEnum};
-use config::{Config, VERSION};
+use config::tskv::Config;
+use config::VERSION;
 use memory_pool::GreedyMemoryPool;
 use metrics::init_tskv_metrics_recorder;
 use metrics::metric_register::MetricsRegister;
@@ -156,7 +157,7 @@ fn main() -> Result<(), std::io::Error> {
                 config,
                 show_warnings,
             } => {
-                config::check_config(config, show_warnings);
+                config::tskv::check_config(config, show_warnings);
                 return Ok(());
             }
         },
@@ -213,10 +214,10 @@ fn main() -> Result<(), std::io::Error> {
     Ok(())
 }
 
-fn parse_config(run_args: &RunArgs) -> config::Config {
+fn parse_config(run_args: &RunArgs) -> config::tskv::Config {
     println!("-----------------------------------------------------------");
     println!("Using Config File: {}\n", run_args.config);
-    let mut config = config::get_config(&run_args.config).unwrap();
+    let mut config = config::tskv::get_config(&run_args.config).unwrap();
     set_cli_args_to_config(run_args, &mut config);
     println!("Start with configuration: \n{}", config.to_string_pretty());
     println!("-----------------------------------------------------------");

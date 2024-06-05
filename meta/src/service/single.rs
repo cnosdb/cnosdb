@@ -5,6 +5,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 
+use config::meta::MetaInit;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info};
 use warp::{hyper, Filter};
@@ -23,7 +24,7 @@ pub async fn start_singe_meta_server(
     let db_path = format!("{}/meta/{}.data", path, 0);
     let mut storage = StateMachine::open(db_path, size).unwrap();
 
-    let init_data = crate::store::config::MetaInit {
+    let init_data = MetaInit {
         cluster_name,
         admin_user: models::auth::user::ROOT.to_string(),
         admin_pwd: models::auth::user::ROOT_PWD.to_string(),

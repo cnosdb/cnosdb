@@ -1,11 +1,12 @@
 use std::net::ToSocketAddrs;
 use std::sync::Arc;
 
+use macros::EnvKeys;
 use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, EnvKeys)]
 pub struct ServiceConfig {
     #[serde(default = "ServiceConfig::default_http_listen_port")]
     pub http_listen_port: Option<u16>,
@@ -98,7 +99,7 @@ pub struct ReportServiceConfig {
 }
 
 impl CheckConfig for ServiceConfig {
-    fn check(&self, config: &crate::Config) -> Option<CheckConfigResult> {
+    fn check(&self, config: &super::Config) -> Option<CheckConfigResult> {
         let config_name = Arc::new("service".to_string());
         let mut ret = CheckConfigResult::default();
 

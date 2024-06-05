@@ -1,9 +1,9 @@
+use config::meta::MetaInit;
 use models::auth::user::{UserDesc, UserOptionsBuilder};
 use models::schema::{Tenant, TenantOptionsBuilder};
 use replication::{ApplyContext, ApplyStorage, APPLY_TYPE_WRITE};
 
 use crate::store::command::WriteCommand;
-use crate::store::config::MetaInit;
 use crate::store::key_path::KeyPath;
 use crate::store::storage::StateMachine;
 

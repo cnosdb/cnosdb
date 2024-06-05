@@ -1312,7 +1312,7 @@ mod test_memcache {
         let dir = "/tmp/test/memcache/1";
         let _ = std::fs::remove_dir_all(dir);
         std::fs::create_dir_all(dir).unwrap();
-        let mut global_config = config::get_config_for_test();
+        let mut global_config = config::tskv::get_config_for_test();
         global_config.storage.path = dir.to_string();
         let opt = Arc::new(Options::from(&global_config));
 
@@ -1506,7 +1506,7 @@ mod test_memcache {
         let dir = "/tmp/test/memcache/2";
         let _ = std::fs::remove_dir_all(dir);
         std::fs::create_dir_all(dir).unwrap();
-        let mut global_config = config::get_config_for_test();
+        let mut global_config = config::tskv::get_config_for_test();
         global_config.storage.path = dir.to_string();
         let opt = Arc::new(Options::from(&global_config));
 
