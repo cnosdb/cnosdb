@@ -1,11 +1,12 @@
 use std::net::ToSocketAddrs;
 use std::sync::Arc;
 
+use macros::EnvKeys;
 use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, EnvKeys)]
 pub struct ServiceConfig {
     #[serde(default = "ServiceConfig::default_http_listen_port")]
     pub http_listen_port: Option<u16>,

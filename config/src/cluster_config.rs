@@ -1,12 +1,13 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use macros::EnvKeys;
 use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigResult};
 use crate::codec::{bytes_num, duration};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, EnvKeys)]
 pub struct ClusterConfig {
     #[serde(default = "ClusterConfig::default_raft_logs_to_keep")]
     pub raft_logs_to_keep: u64,

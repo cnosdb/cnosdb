@@ -10,10 +10,10 @@ members = [
     "common/utils",
     "common/http_protocol",
     "common/error_code",
-    "common/error_code/error_code_macro",
     "common/limiter_bucket",
     "common/memory_pool",
     "common/cache",
+    "common/macros",
     "query_server/spi",
     "query_server/query",
     "query_server/sqllogicaltests",
@@ -114,12 +114,14 @@ pprof = { version = "0.13.0", features = [
     "protobuf-codec",
     "frame-pointer",
 ] }
+proc-macro2 = "1.0.85"
 prost = "0.11.9"
 prost-build = "0.11.9"
 prost-types = "0.11.9"
 protobuf = "3.2"
 psutil = "3.3"
 pco = "0.2.3"
+quote = "1.0.36"
 radixdb = "0.2"
 rand = "0.8"
 ranges = "0.3.3"
@@ -148,6 +150,7 @@ stable-vec = "0.4.0"
 static_assertions = "1.1"
 strum = "0.26"
 strum_macros = "0.26"
+syn = "2.0.66"
 sys-info = "0.9.1"
 sysinfo = "0.30"
 tempfile = "3"

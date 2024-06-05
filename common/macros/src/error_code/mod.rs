@@ -1,12 +1,9 @@
 mod parse;
 
-extern crate core;
-
+use parse::{parse_error_code_enum, EnumInfo, FieldContainer};
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, ToTokens};
 use syn::{Data, Fields, LitStr};
-
-use crate::parse::{parse_error_code_enum, EnumInfo, FieldContainer};
 
 type MultiSynResult<T> = std::result::Result<T, Vec<syn::Error>>;
 
@@ -123,8 +120,8 @@ fn impl_error_code_macro(ast: syn::DeriveInput) -> proc_macro::TokenStream {
     gen.into()
 }
 
-#[proc_macro_derive(ErrorCoder, attributes(error_code))]
-pub fn error_code_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+// #[proc_macro_derive(ErrorCoder, attributes(error_code))]
+pub fn error_code_derive_inner(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ast = syn::parse(input).unwrap();
     impl_error_code_macro(ast)
 }

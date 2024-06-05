@@ -2,7 +2,7 @@ mod test;
 
 use std::fmt::{Debug, Display, Formatter};
 
-pub use error_code_macro::ErrorCoder;
+pub use macros::ErrorCoder;
 
 pub trait ErrorCode: std::error::Error {
     /// mod_code 2 , variant code 4, e.g. 010001

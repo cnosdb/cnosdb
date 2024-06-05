@@ -1,8 +1,12 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use check::{CheckConfig, CheckConfigResult};
 use figment::providers::{Env, Format, Toml};
+use figment::value::Uncased;
 use figment::Figment;
+use macros::EnvKeys;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 
@@ -44,7 +48,44 @@ pub static VERSION: Lazy<String> = Lazy::new(|| {
     )
 });
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+trait EnvKeys {
+    fn env_keys() -> Vec<String>;
+}
+
+macro_rules! impl_primitive_env_keys {
+    ($($t:ty),+) => {
+        $(impl EnvKeys for $t {
+            fn env_keys() -> Vec<String> {
+                vec![]
+            }
+        })+
+    };
+}
+
+impl_primitive_env_keys!(
+    i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize, f32, f64, bool, char, String,
+    Duration
+);
+
+impl<T> EnvKeys for Vec<T>
+where
+    T: EnvKeys,
+{
+    fn env_keys() -> Vec<String> {
+        T::env_keys()
+    }
+}
+
+impl<T> EnvKeys for Option<T>
+where
+    T: EnvKeys,
+{
+    fn env_keys() -> Vec<String> {
+        T::env_keys()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, EnvKeys)]
 pub struct Config {
     ///
     #[serde(default = "Default::default")]
@@ -101,9 +142,19 @@ impl Config {
 }
 
 pub fn get_config(path: impl AsRef<Path>) -> Result<Config, figment::Error> {
-    let figment = Figment::new()
-        .merge(Toml::file(path.as_ref()))
-        .merge(Env::prefixed("CNOSDB__").split("__"));
+    let env_keys = Config::env_keys();
+    let env_key_map = env_keys
+        .into_iter()
+        .map(|key| (key.replace('.', "_"), key))
+        .collect::<HashMap<String, String>>();
+    let figment =
+        Figment::new()
+            .merge(Toml::file(path.as_ref()))
+            .merge(Env::prefixed("CNOSDB_").filter_map(move |env| {
+                env_key_map
+                    .get(env.as_str())
+                    .map(|key| Uncased::from_owned(key.clone()))
+            }));
     let mut config: Config = figment.extract()?;
     config.wal.introspect();
     Ok(config)
@@ -172,7 +223,7 @@ pub fn check_config(path: impl AsRef<Path>, show_warnings: bool) {
 mod test {
     use std::io::Write;
 
-    use crate::Config;
+    use crate::{Config, EnvKeys};
 
     #[test]
     fn test_write_read() {
@@ -214,5 +265,11 @@ mod test {
         let config: Config = toml::from_str(config_str).unwrap();
         assert!(toml::to_string_pretty(&config).is_ok());
         dbg!(config);
+    }
+
+    #[test]
+    fn test_env_key() {
+        let keys = Config::env_keys();
+        dbg!(keys);
     }
 }

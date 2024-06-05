@@ -1,12 +1,13 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use macros::EnvKeys;
 use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
 use crate::codec::{bytes_num, duration};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, EnvKeys)]
 pub struct QueryConfig {
     #[serde(default = "QueryConfig::default_max_server_connections")]
     pub max_server_connections: u32,
