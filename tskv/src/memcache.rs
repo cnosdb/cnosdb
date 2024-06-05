@@ -439,6 +439,7 @@ impl SeriesData {
                 item.rows
                     .get_ref_rows()
                     .iter()
+                    .rev()
                     .filter(|row| row.ts < time_range.min_ts || row.ts > time_range.max_ts)
                     .for_each(|row| {
                         rows.insert(row.clone());
