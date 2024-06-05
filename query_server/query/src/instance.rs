@@ -216,7 +216,7 @@ pub async fn make_cnosdbms(
     let query_tracker = Arc::new(QueryTracker::new(
         options.query.max_server_connections as usize,
         query_persister,
-        coord.clone(),  
+        coord.clone(),
     ));
 
     let query_execution_factory = Arc::new(SqlQueryExecutionFactory::new(
