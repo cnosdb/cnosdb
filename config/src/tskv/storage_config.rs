@@ -154,7 +154,7 @@ impl Default for StorageConfig {
 }
 
 impl CheckConfig for StorageConfig {
-    fn check(&self, _: &crate::Config) -> Option<CheckConfigResult> {
+    fn check(&self, _: &super::Config) -> Option<CheckConfigResult> {
         let config_name = Arc::new("storage".to_string());
         let mut ret = CheckConfigResult::default();
 

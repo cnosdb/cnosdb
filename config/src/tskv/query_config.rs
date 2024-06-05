@@ -77,7 +77,7 @@ impl Default for QueryConfig {
 }
 
 impl CheckConfig for QueryConfig {
-    fn check(&self, _: &crate::Config) -> Option<CheckConfigResult> {
+    fn check(&self, _: &super::Config) -> Option<CheckConfigResult> {
         let config_name = Arc::new("query".to_string());
         let mut ret = CheckConfigResult::default();
 

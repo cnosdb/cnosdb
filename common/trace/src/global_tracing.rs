@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::time::Duration;
 
-use config::TraceConfig;
+use config::tskv::TraceConfig;
 use minitrace::collector::Config;
 use minitrace_opentelemetry::OpenTelemetryReporter;
 use opentelemetry::trace::SpanKind;

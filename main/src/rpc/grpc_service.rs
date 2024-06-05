@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use config::TLSConfig;
+use config::tskv::TLSConfig;
 use coordinator::service::CoordinatorRef;
 use metrics::metric_register::MetricsRegister;
 use protos::kv_service::tskv_service_server::TskvServiceServer;

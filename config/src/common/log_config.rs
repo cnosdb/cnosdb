@@ -60,7 +60,7 @@ impl Default for LogConfig {
 }
 
 impl CheckConfig for LogConfig {
-    fn check(&self, _: &crate::Config) -> Option<CheckConfigResult> {
+    fn check(&self, _: &crate::tskv::Config) -> Option<CheckConfigResult> {
         let config_name = Arc::new("log".to_string());
         let mut ret = CheckConfigResult::default();
 

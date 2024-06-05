@@ -85,7 +85,7 @@ impl Default for WalConfig {
 }
 
 impl CheckConfig for WalConfig {
-    fn check(&self, _: &crate::Config) -> Option<CheckConfigResult> {
+    fn check(&self, _: &super::Config) -> Option<CheckConfigResult> {
         let config_name = Arc::new("wal".to_string());
         let mut ret = CheckConfigResult::default();
 

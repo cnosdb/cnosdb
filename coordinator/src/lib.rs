@@ -4,7 +4,7 @@ use std::fmt::Debug;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use config::Config;
+use config::tskv::Config;
 use datafusion::arrow::record_batch::RecordBatch;
 use errors::CoordinatorError;
 use futures::Stream;

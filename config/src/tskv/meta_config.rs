@@ -39,7 +39,7 @@ impl Default for MetaConfig {
 }
 
 impl CheckConfig for MetaConfig {
-    fn check(&self, _: &crate::Config) -> Option<CheckConfigResult> {
+    fn check(&self, _: &super::Config) -> Option<CheckConfigResult> {
         let config_name = Arc::new("meta".to_string());
         let mut ret = CheckConfigResult::default();
 

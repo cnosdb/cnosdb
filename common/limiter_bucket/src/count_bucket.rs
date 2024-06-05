@@ -1,4 +1,4 @@
-use config::CountBucketConfing;
+use config::common::CountBucketConfing;
 use serde::{Deserialize, Serialize};
 
 #[derive(Default, Copy, Clone, Deserialize, Serialize, Debug)]

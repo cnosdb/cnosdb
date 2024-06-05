@@ -27,9 +27,9 @@ mod tests {
     /// If the given runtime is none, get_tskv will create a new runtime and
     /// put into the return value, or else the given runtime will be returned.
 
-    fn get_config(dir: impl AsRef<Path>) -> config::Config {
+    fn get_config(dir: impl AsRef<Path>) -> config::tskv::Config {
         let dir = dir.as_ref();
-        let mut global_config = config::get_config_for_test();
+        let mut global_config = config::tskv::get_config_for_test();
         global_config.wal.path = dir.join("wal").to_str().unwrap().to_string();
         global_config.storage.path = dir.to_str().unwrap().to_string();
         global_config.cache.max_buffer_size = 128;

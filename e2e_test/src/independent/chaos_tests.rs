@@ -113,7 +113,7 @@ pub mod test {
             .clone();
         let config_file = data_config_file_path("chaos_test", &file_name);
 
-        let config = config::get_config(config_file).unwrap();
+        let config = config::tskv::get_config(config_file).unwrap();
         let meta = runtime.block_on(AdminMeta::new(config));
         let meta_client = runtime.block_on(meta.tenant_meta("cnosdb")).unwrap();
 

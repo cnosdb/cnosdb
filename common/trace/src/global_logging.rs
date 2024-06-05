@@ -3,7 +3,7 @@ use std::path::Path;
 use std::str::FromStr;
 use std::sync::{Once, OnceLock};
 
-use config::LogConfig;
+use config::common::LogConfig;
 use time::UtcOffset;
 use tracing::debug;
 use tracing::level_filters::LevelFilter;

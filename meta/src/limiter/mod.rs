@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use config::RequestLimiterConfig;
+use config::common::RequestLimiterConfig;
 
 use crate::error::MetaResult;
 

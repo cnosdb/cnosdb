@@ -3,8 +3,8 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use config::Config as CnosdbConfig;
-use meta::store::config::Opt as MetaStoreConfig;
+use config::meta::Opt as MetaStoreConfig;
+use config::tskv::Config as CnosdbConfig;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CnosdbClusterDefinition {

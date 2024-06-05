@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 
 use arrow_flight::flight_service_server::FlightServiceServer;
-use config::TLSConfig;
+use config::tskv::TLSConfig;
 use spi::server::dbms::DBMSRef;
 use tokio::sync::oneshot;
 use tonic::transport::{Identity, Server, ServerTlsConfig};

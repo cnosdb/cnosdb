@@ -99,7 +99,7 @@ pub struct ReportServiceConfig {
 }
 
 impl CheckConfig for ServiceConfig {
-    fn check(&self, config: &crate::Config) -> Option<CheckConfigResult> {
+    fn check(&self, config: &super::Config) -> Option<CheckConfigResult> {
         let config_name = Arc::new("service".to_string());
         let mut ret = CheckConfigResult::default();
 

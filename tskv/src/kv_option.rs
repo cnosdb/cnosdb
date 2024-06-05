@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use config::Config;
+use config::tskv::Config;
 use models::meta_data::{NodeId, VnodeId};
 
 use crate::TseriesFamilyId;

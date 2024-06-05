@@ -31,7 +31,7 @@ use crate::{get_replica_all_info, update_replication_set};
 
 pub struct RaftNodesManager {
     meta: MetaRef,
-    config: config::Config,
+    config: config::tskv::Config,
     kv_inst: Option<EngineRef>,
     raft_state: Arc<StateStorage>,
     raft_nodes: Arc<RwLock<MultiRaft>>,
@@ -42,7 +42,7 @@ pub struct RaftNodesManager {
 
 impl RaftNodesManager {
     pub fn new(
-        config: config::Config,
+        config: config::tskv::Config,
         meta: MetaRef,
         kv_inst: Option<EngineRef>,
         register: Arc<MetricsRegister>,

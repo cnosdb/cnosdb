@@ -94,7 +94,7 @@ impl Default for ClusterConfig {
 }
 
 impl CheckConfig for ClusterConfig {
-    fn check(&self, _: &crate::Config) -> Option<CheckConfigResult> {
+    fn check(&self, _: &super::Config) -> Option<CheckConfigResult> {
         let _config_name = Arc::new("cluster".to_string());
         let ret = CheckConfigResult::default();
 

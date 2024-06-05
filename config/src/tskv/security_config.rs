@@ -11,7 +11,7 @@ pub struct SecurityConfig {
 }
 
 impl CheckConfig for SecurityConfig {
-    fn check(&self, all_config: &crate::Config) -> Option<CheckConfigResult> {
+    fn check(&self, all_config: &super::Config) -> Option<CheckConfigResult> {
         let mut ret = CheckConfigResult::default();
 
         if let Some(ref tls_config) = self.tls_config {
@@ -56,7 +56,7 @@ impl Default for TLSConfig {
 }
 
 impl CheckConfig for TLSConfig {
-    fn check(&self, _: &crate::Config) -> Option<CheckConfigResult> {
+    fn check(&self, _: &super::Config) -> Option<CheckConfigResult> {
         let config_name = Arc::new("security.tls".to_string());
         let mut ret = CheckConfigResult::default();
 

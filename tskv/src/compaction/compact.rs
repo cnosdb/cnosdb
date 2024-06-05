@@ -1045,7 +1045,7 @@ pub mod test {
     }
 
     pub(crate) fn create_options(base_dir: String) -> Arc<Options> {
-        let mut config = config::get_config_for_test();
+        let mut config = config::tskv::get_config_for_test();
         config.storage.path = base_dir;
         config.storage.max_datablock_size = 1000;
         let opt = Options::from(&config);

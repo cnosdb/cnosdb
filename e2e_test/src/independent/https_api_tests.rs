@@ -41,7 +41,7 @@ fn run_case_with_tls(
 
     let mut config = build_data_node_config(test_dir, &data_node_def.config_file_name);
     data_node_def.update_config(&mut config);
-    config.security.tls_config = Some(config::TLSConfig {
+    config.security.tls_config = Some(config::tskv::TLSConfig {
         certificate: test_dir_tls
             .join("server.crt")
             .to_string_lossy()

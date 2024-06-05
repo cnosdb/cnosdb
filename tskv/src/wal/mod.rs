@@ -373,6 +373,6 @@ fn encode_wal_raft_entry(entry: &wal_store::RaftEntry) -> TskvResult<Vec<u8>> {
 mod test {
     #[test]
     fn test_get_test_config() {
-        let _ = config::get_config_for_test();
+        let _ = config::tskv::get_config_for_test();
     }
 }

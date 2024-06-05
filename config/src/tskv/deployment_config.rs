@@ -40,7 +40,7 @@ impl Default for DeploymentConfig {
 }
 
 impl CheckConfig for DeploymentConfig {
-    fn check(&self, _: &crate::Config) -> Option<CheckConfigResult> {
+    fn check(&self, _: &super::Config) -> Option<CheckConfigResult> {
         let config_name = Arc::new("deployment".to_string());
         let mut ret = CheckConfigResult::default();
 
