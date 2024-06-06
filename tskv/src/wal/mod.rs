@@ -55,7 +55,7 @@ use crate::file_system::async_filesystem::LocalFileSystem;
 use crate::file_system::FileSystem;
 use crate::kv_option::WalOptions;
 use crate::tsm::codec::{get_str_codec, StringCodec};
-pub use crate::wal::reader::{print_wal_statistics, Block};
+pub use crate::wal::reader::print_wal_statistics;
 use crate::{error, file_utils, TskvResult};
 
 /// 9 = type(1) + sequence(8)

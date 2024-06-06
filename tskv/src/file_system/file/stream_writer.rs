@@ -156,18 +156,21 @@ impl FileStreamWriter {
 #[cfg(test)]
 mod test {
     use std::fs::OpenOptions;
+    use std::path::PathBuf;
 
     use crate::file_system::async_filesystem::LocalFileType;
     use crate::file_system::FileSystem;
 
     #[tokio::test]
     async fn test() {
+        let dir = PathBuf::from("/tmp/test/file_system/stream_writer");
+
         let mut opt = OpenOptions::new();
         opt.read(true).write(true).create(true).append(true);
         let file_system =
             crate::file_system::async_filesystem::LocalFileSystem::new(LocalFileType::ThreadPool);
         let mut wfile = file_system
-            .open_file_writer("reader.txt", 1024)
+            .open_file_writer(dir.join("reader.txt"), 1024)
             .await
             .unwrap();
         let len = wfile.write(b"hello world").await.unwrap();

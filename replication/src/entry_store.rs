@@ -135,7 +135,7 @@ impl EntryStorage for HeedEntryStorage {
         Ok(())
     }
 
-    async fn destory(&mut self) -> ReplicationResult<()> {
+    async fn destroy(&mut self) -> ReplicationResult<()> {
         let _ = fs::remove_dir_all(&self.path);
 
         Ok(())
