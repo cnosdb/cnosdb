@@ -290,7 +290,12 @@ fn case3() {
             req: CnosdbRequest::Query {
                 url,
                 sql: "SHOW DATABASES",
-                resp: Ok(vec!["database_name", "public", "usage_schema"]),
+                resp: Ok(vec![
+                    "cluster_schema",
+                    "database_name",
+                    "public",
+                    "usage_schema",
+                ]),
                 sorted: true,
                 regex: false,
             },
