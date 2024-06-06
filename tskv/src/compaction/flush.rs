@@ -108,55 +108,54 @@ impl FlushTask {
     /// (Sometimes one of the two file type.), returns `CompactMeta`s of the wrote files.
     async fn flush_mem_caches(
         &self,
-        mut caches_data: BTreeMap<SeriesId, Vec<Arc<RwLock<SeriesData>>>>,
+        caches_data: BTreeMap<SeriesId, Vec<Arc<RwLock<SeriesData>>>>,
         max_data_block_size: usize,
     ) -> Result<Option<(CompactMeta, Arc<BloomFilter>)>> {
         let mut writer = WriterWrapper::new(self.ts_family_id, max_data_block_size);
 
-        let mut column_encoding_map: HashMap<ColumnId, Encoding> = HashMap::new();
-        let mut column_values_map: BTreeMap<ColumnId, (ValueType, Vec<(Timestamp, FieldVal)>)> =
-            BTreeMap::new();
-        for (sid, series_datas) in caches_data.iter_mut() {
-            column_encoding_map.clear();
+        type FlushingData = (Vec<(Timestamp, FieldVal)>, ValueType, Encoding);
+        let mut column_values_map: HashMap<ColumnId, FlushingData> = HashMap::new();
+        let mut field_values_map: BTreeMap<FieldId, FlushingData> = BTreeMap::new();
+        for (sid, series_datas) in caches_data {
             column_values_map.clear();
 
             // Iterates [ MemCache ] -> next_series_id -> [ SeriesData ]
-            for series_data in series_datas.iter_mut() {
+            for series_data in series_datas {
                 // Iterates SeriesData -> [ RowGroups{ schema_id, schema, [ RowData ] } ]
                 for (_sch_id, sch_cols, rows) in series_data.read().flat_groups() {
-                    for i in sch_cols.columns().iter() {
-                        column_encoding_map.insert(i.id, i.encoding);
-                    }
                     // Iterates [ RowData ]
                     for row in rows.iter() {
                         // Iterates RowData -> [ Option<FieldVal>, column_id ]
                         for (val, col) in row.fields.iter().zip(sch_cols.fields().iter()) {
                             if let Some(v) = val {
-                                let (_, col_vals) = column_values_map
-                                    .entry(col.id)
-                                    .or_insert_with(|| (v.value_type(), Vec::with_capacity(64)));
-                                col_vals.push((row.ts, v.clone()));
+                                let (values, _, _) =
+                                    column_values_map.entry(col.id).or_insert_with(|| {
+                                        // Use the first column value to determine the value type and encoding.
+                                        (Vec::with_capacity(64), v.value_type(), col.encoding)
+                                    });
+                                values.push((row.ts, v.clone()));
                             }
                         }
                     }
                 }
             }
 
-            for (col_id, (value_type, values)) in column_values_map.iter_mut() {
+            for (cid, (mut values, value_type, encoding)) in column_values_map.drain() {
                 // Sort by timestamp.
                 values.sort_by_key(|a| a.0);
                 // Dedup by timestamp.
-                utils::dedup_front_by_key(values, |a| a.0);
+                utils::dedup_front_by_key(&mut values, |a| a.0);
 
-                let field_id = model_utils::unite_id(*col_id, *sid);
-                let encoding = DataBlockEncoding::new(
-                    Encoding::Default,
-                    column_encoding_map.get(col_id).copied().unwrap_or_default(),
-                );
-                writer
-                    .write_field(field_id, values, value_type, encoding, self)
-                    .await?;
+                let fid = model_utils::unite_id(cid, sid);
+                field_values_map.insert(fid, (values, value_type, encoding));
             }
+        }
+
+        for (field_id, (values, value_type, encoding)) in field_values_map {
+            let encoding = DataBlockEncoding::new(Encoding::Default, encoding);
+            writer
+                .write_field(field_id, values, value_type, encoding, self)
+                .await?;
         }
 
         // Flush the wrote files.
@@ -297,8 +296,8 @@ impl WriterWrapper {
     pub async fn write_field(
         &mut self,
         field_id: FieldId,
-        values: &[(Timestamp, FieldVal)],
-        value_type: &ValueType,
+        values: Vec<(Timestamp, FieldVal)>,
+        value_type: ValueType,
         encoding: DataBlockEncoding,
         flush_task: &FlushTask,
     ) -> Result<()> {
@@ -321,7 +320,7 @@ impl WriterWrapper {
         // Fill buffer and write to disk if buffer is full.
         for (ts, val) in values {
             let buffer = &mut self.buffers[buf_idx];
-            buffer.insert(val.data_value(*ts));
+            buffer.insert(val.data_value(ts));
             if buffer.len() > self.max_data_block_size {
                 buffer.set_encoding(encoding);
                 Self::write_tsm(&mut self.writer, flush_task, field_id, buffer).await?;
@@ -724,7 +723,7 @@ pub mod flush_tests {
         expected_delta_data.push((field_id, vec![delta_data_block]));
 
         writer
-            .write_field(field_id, &values, &value_type, encoding, flush_task)
+            .write_field(field_id, values, value_type, encoding, flush_task)
             .await
             .unwrap();
     }
