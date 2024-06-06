@@ -14,6 +14,9 @@ use super::CLUSTER_SCHEMA;
 mod builder;
 mod factory;
 
+pub const CLUSTER_SCHEMA_TENANTS: &str = "TENANTS";
+pub const CLUSTER_SCHEMA_USERS: &str = "USERS";
+
 pub struct ClusterSchemaProvider {
     table_factories: HashMap<String, BoxSystemTableFactory>,
 }

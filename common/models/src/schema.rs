@@ -56,6 +56,7 @@ pub const TIME_FIELD: &str = "time";
 
 pub const DEFAULT_DATABASE: &str = "public";
 pub const USAGE_SCHEMA: &str = "usage_schema";
+pub const CLUSTER_SCHEMA: &str = "cluster_schema";
 pub const DEFAULT_CATALOG: &str = "cnosdb";
 pub const DEFAULT_PRECISION: &str = "NS";
 

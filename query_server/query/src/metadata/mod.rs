@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use cluster_schema_provider::{CLUSTER_SCHEMA_TENANTS, CLUSTER_SCHEMA_USERS};
 use coordinator::service::CoordinatorRef;
 use datafusion::arrow::datatypes::DataType;
 use datafusion::common::Result as DFResult;
@@ -43,7 +44,7 @@ mod cluster_schema_provider;
 mod information_schema_provider;
 mod usage_schema_provider;
 
-pub const CLUSTER_SCHEMA: &str = "CLUSTER_SCHEMA";
+pub const CLUSTER_SCHEMA: &str = "cluster_schema";
 pub const INFORMATION_SCHEMA: &str = "INFORMATION_SCHEMA";
 pub const USAGE_SCHEMA: &str = "usage_schema";
 
@@ -153,6 +154,8 @@ impl MetadataProvider {
         // process CNOSDB(sys tenant) -> CLUSTER_SCHEMA
         if tenant_name.eq_ignore_ascii_case(DEFAULT_CATALOG)
             && database_name.eq_ignore_ascii_case(self.cluster_schema_provider.name())
+            && (table_name.eq_ignore_ascii_case(CLUSTER_SCHEMA_TENANTS)
+                || table_name.eq_ignore_ascii_case(CLUSTER_SCHEMA_USERS))
         {
             let mem_table = self
                 .cluster_schema_provider
