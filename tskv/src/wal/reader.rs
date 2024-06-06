@@ -146,7 +146,7 @@ impl WalReader {
 pub struct WalRecordData {
     pub typ: WalType,
     pub seq: u64,
-    pub block: Block,
+    pub block: Option<wal_store::RaftEntry>,
 }
 
 impl WalRecordData {
@@ -155,40 +155,28 @@ impl WalRecordData {
             return Self {
                 typ: WalType::Unknown,
                 seq: 0,
-                block: Block::Unknown,
+                block: None,
             };
         }
         let seq = decode_be_u64(&buf[1..9]);
         let entry_type: WalType = buf[0].into();
-        let block = match entry_type {
-            WalType::RaftBlankLog | WalType::RaftNormalLog | WalType::RaftMembershipLog => {
-                match super::decode_wal_raft_entry(&buf[WAL_HEADER_LEN..]) {
-                    Ok(e) => Block::RaftLog(e),
-                    Err(e) => {
-                        trace::error!("Failed to decode raft entry from wal: {e}");
-                        return Self {
-                            typ: WalType::Unknown,
-                            seq: 0,
-                            block: Block::Unknown,
-                        };
-                    }
-                }
+        let block = match super::decode_wal_raft_entry(&buf[WAL_HEADER_LEN..]) {
+            Ok(e) => e,
+            Err(e) => {
+                trace::error!("Failed to decode raft entry from wal: {e}");
+                return Self {
+                    typ: WalType::Unknown,
+                    seq: 0,
+                    block: None,
+                };
             }
-
-            WalType::Unknown => Block::Unknown,
         };
         Self {
             typ: entry_type,
             seq,
-            block,
+            block: Some(block),
         }
     }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Block {
-    RaftLog(wal_store::RaftEntry),
-    Unknown,
 }
 
 pub async fn print_wal_statistics(path: impl AsRef<Path>) {
@@ -199,7 +187,7 @@ pub async fn print_wal_statistics(path: impl AsRef<Path>) {
                 println!("============================================================");
                 println!("Seq: {}, Typ: {}", entry_block.seq, entry_block.typ);
                 match entry_block.block {
-                    Block::RaftLog(entry) => match entry.payload {
+                    Some(entry) => match entry.payload {
                         EntryPayload::Blank => {
                             println!("Raft log: empty");
                         }
@@ -211,7 +199,7 @@ pub async fn print_wal_statistics(path: impl AsRef<Path>) {
                         }
                     },
 
-                    Block::Unknown => {
+                    None => {
                         println!("Unknown WAL entry type.");
                     }
                 }

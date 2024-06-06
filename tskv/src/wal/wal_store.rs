@@ -12,7 +12,7 @@ use crate::file_system::async_filesystem::LocalFileSystem;
 use crate::file_system::FileSystem;
 use crate::record_file::Record;
 use crate::vnode_store::VnodeStorage;
-use crate::wal::reader::{Block, WalReader};
+use crate::wal::reader::WalReader;
 use crate::wal::VnodeWal;
 use crate::{file_utils, TskvError, TskvResult};
 
@@ -38,9 +38,9 @@ impl RaftEntryStorage {
     pub async fn recover(
         &mut self,
         apply_id: Option<LogId<u64>>,
-        vode_store: &mut VnodeStorage,
+        vnode_store: &mut VnodeStorage,
     ) -> TskvResult<()> {
-        self.inner.recover(apply_id, vode_store).await?;
+        self.inner.recover(apply_id, vnode_store).await?;
 
         info!(
             "recover vnode entries: [{:?}-{:?}], applied id: {:?}",
@@ -106,7 +106,7 @@ impl EntryStorage for RaftEntryStorage {
         self.inner.read_raft_entry_range(begin, end).await
     }
 
-    async fn destory(&mut self) -> ReplicationResult<()> {
+    async fn destroy(&mut self) -> ReplicationResult<()> {
         let _ = self.inner.wal.close().await;
 
         let path = self.inner.wal.wal_dir();
@@ -163,7 +163,7 @@ impl WalFileMeta {
         self.entry_index.push((index, pos));
     }
 
-    fn del_befor(&mut self, index: u64) {
+    fn del_before(&mut self, index: u64) {
         if self.min_seq == u64::MAX || self.min_seq >= index {
             return;
         }
@@ -221,7 +221,7 @@ impl WalFileMeta {
             .await
             .map_err(|e| ReplicationError::RaftInternalErr { msg: e.to_string() })?
         {
-            if let Block::RaftLog(entry) = record.block {
+            if let Some(entry) = record.block {
                 return Ok(Some(entry));
             }
         }
@@ -269,7 +269,7 @@ impl RaftEntryStorageInner {
 
         for item in self.files_meta.iter_mut() {
             if item.min_seq < seq_no {
-                item.del_befor(seq_no);
+                item.del_before(seq_no);
             } else {
                 break;
             }
@@ -396,7 +396,7 @@ impl RaftEntryStorageInner {
     pub async fn recover(
         &mut self,
         apply_id: Option<LogId<u64>>,
-        vode_store: &mut VnodeStorage,
+        vnode_store: &mut VnodeStorage,
     ) -> TskvResult<()> {
         let wal_files = LocalFileSystem::list_file_names(self.wal.wal_dir());
         for file_name in wal_files {
@@ -415,7 +415,7 @@ impl RaftEntryStorageInner {
                 let record = record_reader.read_record().await;
                 match record {
                     Ok(rec) => {
-                        self.recover_record(wal_id, rec, apply_id, vode_store)
+                        self.recover_record(wal_id, rec, apply_id, vnode_store)
                             .await?;
                     }
                     Err(TskvError::Eof) => {
@@ -438,16 +438,16 @@ impl RaftEntryStorageInner {
         wal_id: u64,
         record: Record,
         apply_id: Option<LogId<u64>>,
-        vode_store: &mut VnodeStorage,
+        vnode_store: &mut VnodeStorage,
     ) -> TskvResult<()> {
         if record.data.len() < 9 {
             return Ok(());
         }
 
         let wal_entry = WalRecordData::new(record.data);
-        if let Block::RaftLog(entry) = wal_entry.block {
+        if let Some(entry) = wal_entry.block {
             if let Some(apply_id) = apply_id {
-                let last_seq = vode_store.ts_family().read().await.version().last_seq();
+                let last_seq = vnode_store.ts_family().read().await.version().last_seq();
                 if entry.log_id.index > last_seq && entry.log_id.index <= apply_id.index {
                     if let EntryPayload::Normal(ref req) = entry.payload {
                         let ctx = replication::ApplyContext {
@@ -459,7 +459,7 @@ impl RaftEntryStorageInner {
                         let request = parse_prost_bytes::<RaftWriteCommand>(req)
                             .map_err(|e| DecodeSnafu.into_error(Box::new(e)))?;
                         if let Some(command) = request.command {
-                            vode_store.apply(&ctx, command).await?;
+                            vnode_store.apply(&ctx, command).await?;
                         }
                     }
                 }
@@ -565,7 +565,7 @@ mod test {
                 }
 
                 let wal_entry = WalRecordData::new(record.data);
-                if let crate::wal::Block::RaftLog(entry) = wal_entry.block {
+                if let Some(entry) = wal_entry.block {
                     storage
                         .inner
                         .mark_write_wal(entry, wal_id, record.pos)

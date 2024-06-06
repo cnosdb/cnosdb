@@ -62,7 +62,7 @@ impl NodeStorage {
     pub async fn destory(&self) -> ReplicationResult<()> {
         self.state.del_group(self.group_id())?;
         self.engine.write().await.destory().await?;
-        self.raft_logs.write().await.destory().await?;
+        self.raft_logs.write().await.destroy().await?;
 
         Ok(())
     }
