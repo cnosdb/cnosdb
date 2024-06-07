@@ -227,6 +227,11 @@ pub async fn run_query(
             );
         }
     }
+
+    if sql.contains("$pwd") {
+        sql = sql.replace("$pwd", options.pwd.as_str());
+    }
+
     let mut stmt = client.prepare(sql, None).await?;
     let flight_info = stmt.execute().await?;
 
@@ -358,6 +363,7 @@ pub struct SqlClientOptions {
     pub tenant: String,
     pub db: String,
     pub target_partitions: usize,
+    pub pwd: String,
     pub timeout: Option<Duration>,
     pub precision: Option<String>,
     pub chunked: Option<bool>,
@@ -427,6 +433,7 @@ mod test {
             password: "".to_string(),
             tenant: "".to_string(),
             db: "".to_string(),
+            pwd: "".to_string(),
             target_partitions: 0,
             timeout: None,
             precision: None,
