@@ -5,6 +5,7 @@ pub mod models_helper;
 pub mod prompb;
 pub mod test_helper;
 
+use core::time;
 use std::fmt::{Display, Formatter};
 use std::time::Duration;
 
@@ -13,7 +14,7 @@ use crate::models::{Column, Points, Table};
 use crate::raft_service::raft_service_client::RaftServiceClient;
 use flatbuffers::{ForwardsUOffset, Vector};
 use snafu::{Backtrace, Location, OptionExt, Snafu};
-use tonic::transport::Channel;
+use tonic::transport::{Channel, Endpoint};
 use tower::timeout::Timeout;
 
 // Default 100 MB
@@ -301,6 +302,38 @@ pub fn raft_service_time_out_client(
     } else {
         RaftServiceClient::max_encoding_message_size(client, max_message_size)
     }
+}
+
+pub async fn tskv_service_ping(addr: &str) -> Result<(), String> {
+    let connector = Endpoint::from_shared(format!("http://{}", addr)).map_err(|e| e.to_string())?;
+    let channel = connector
+        .connect()
+        .await
+        .map_err(|e| format!("connect to {} failed: {}", addr, e))?;
+
+    let mut client =
+        tskv_service_time_out_client(channel, time::Duration::from_secs(3), 1024 * 1024, false);
+
+    let mut fbb = flatbuffers::FlatBufferBuilder::new();
+    let payload = fbb.create_vector(b"hello world");
+    let mut builder = models::PingBodyBuilder::new(&mut fbb);
+    builder.add_payload(payload);
+    let root = builder.finish();
+    fbb.finish(root, None);
+    let data = fbb.finished_data();
+
+    let resp = client
+        .ping(tonic::Request::new(kv_service::PingRequest {
+            version: 1,
+            body: data.to_vec(),
+        }))
+        .await;
+
+    if let Err(status) = resp {
+        return Err(format!("request failed srtatus: {:?}", status));
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
