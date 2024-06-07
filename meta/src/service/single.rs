@@ -129,7 +129,7 @@ impl SingleServer {
                         warp::reject::custom(e)
                     })?;
 
-                    let rsp = storage.write().await.process_write_command(&req);
+                    let rsp = storage.write().await.process_write_command(&req).await;
                     let res: Result<String, warp::Rejection> = Ok(rsp);
                     res
                 },
@@ -227,7 +227,7 @@ impl SingleServer {
                             value: strs[1].to_string(),
                         };
 
-                        let _ = storage.write().await.process_write_command(&command);
+                        let _ = storage.write().await.process_write_command(&command).await;
 
                         count += 1;
                     }

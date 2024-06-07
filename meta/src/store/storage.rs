@@ -57,7 +57,7 @@ pub struct StateMachine {
 impl ApplyStorage for StateMachine {
     async fn apply(&mut self, _ctx: &ApplyContext, req: &Request) -> ReplicationResult<Response> {
         match serde_json::from_slice(req) {
-            Ok(command) => Ok(self.process_write_command(&command).into()),
+            Ok(command) => Ok(self.process_write_command(&command).await.into()),
 
             Err(err) => {
                 let err: MetaResult<()> = Err(MetaError::SerdeMsgInvalid {
@@ -612,7 +612,7 @@ impl StateMachine {
         }
     }
 
-    pub fn process_write_command(&self, req: &WriteCommand) -> CommandResp {
+    pub async fn process_write_command(&self, req: &WriteCommand) -> CommandResp {
         // debug!("meta process write command {:?}", req);
 
         match req {
@@ -645,7 +645,7 @@ impl StateMachine {
                 response_encode(self.process_update_table(cluster, tenant, schema))
             }
             WriteCommand::CreateBucket(cluster, tenant, db, ts) => {
-                response_encode(self.process_create_bucket(cluster, tenant, db, ts))
+                response_encode(self.process_create_bucket(cluster, tenant, db, ts).await)
             }
             WriteCommand::DeleteBucket(cluster, tenant, db, id) => {
                 response_encode(self.process_delete_bucket(cluster, tenant, db, *id))
@@ -1110,7 +1110,7 @@ impl StateMachine {
         Ok(node_info_list.into_iter().map(|(n, _)| n).collect())
     }
 
-    fn process_create_bucket(
+    async fn process_create_bucket(
         &self,
         cluster: &str,
         tenant: &str,
@@ -1131,6 +1131,8 @@ impl StateMachine {
             })?;
 
         let node_list = self.get_valid_node_list(cluster)?;
+        let node_list = ping_servers(&node_list).await;
+
         check_node_enough(db_schema.config.replica_or_default(), &node_list)?;
 
         if db_schema.config.shard_num_or_default() == 0 {
@@ -1605,6 +1607,26 @@ impl StateMachine {
         let key = KeyPath::resourceinfosmark(cluster);
         self.insert(&key, &value_encode(&(node_id, is_lock))?)
     }
+}
+
+async fn ping_servers(list: &[NodeInfo]) -> Vec<NodeInfo> {
+    let mut requests = vec![];
+    for item in list {
+        let request = protos::tskv_service_ping(&item.grpc_addr);
+        requests.push(request);
+    }
+
+    let mut alive_nodes = vec![];
+    let results = futures::future::join_all(requests).await;
+    for (node, result) in list.iter().zip(results.iter()) {
+        if let Err(err) = result {
+            info!("ping server {:?} failed: {}", node, err);
+        } else {
+            alive_nodes.push(node.clone());
+        }
+    }
+
+    alive_nodes
 }
 
 fn check_node_enough(need: u64, node_list: &[NodeInfo]) -> MetaResult<()> {
