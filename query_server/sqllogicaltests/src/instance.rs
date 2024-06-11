@@ -203,17 +203,17 @@ pub async fn run_query(
         let with = sql.to_ascii_lowercase().find("with");
         if with.is_some() {
             let with = with.unwrap();
-            if !sql.contains("shard") {
+            if !sql.to_ascii_lowercase().contains("shard") {
                 sql.insert_str(
                     with + 4,
                     format!(" shard {}", create_option.shard_num).as_str(),
                 );
             }
 
-            if !sql.contains("REPLICA") {
+            if !sql.to_ascii_lowercase().contains("replica") {
                 sql.insert_str(
                     with + 4,
-                    format!(" REPLICA {}", create_option.replication_num).as_str(),
+                    format!(" replica {}", create_option.replication_num).as_str(),
                 );
             }
         } else {
