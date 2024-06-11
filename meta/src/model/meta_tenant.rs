@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use client::MetaHttpClient;
 use config::common::TenantObjectLimiterConfig;
+use metrics::metric_register::MetricsRegister;
 use models::auth::privilege::{DatabasePrivilege, Privilege};
 use models::auth::role::{CustomTenantRole, SystemTenantRole, TenantRoleIdentifier};
 use models::auth::user::UserDesc;
@@ -40,17 +41,22 @@ impl TenantMeta {
             tenant: Tenant::default(),
             meta_url: "".to_string(),
             data: RwLock::new(TenantMetaData::new()),
-            client: MetaHttpClient::new(""),
+            client: MetaHttpClient::new("", Arc::new(MetricsRegister::default())),
         }
     }
 
-    pub async fn new(cluster: String, tenant: Tenant, meta_url: String) -> MetaResult<Arc<Self>> {
+    pub async fn new(
+        cluster: String,
+        tenant: Tenant,
+        meta_url: String,
+        metrics_register: Arc<MetricsRegister>,
+    ) -> MetaResult<Arc<Self>> {
         let client = Arc::new(Self {
             cluster,
             tenant,
             meta_url: meta_url.clone(),
             data: RwLock::new(TenantMetaData::new()),
-            client: MetaHttpClient::new(&meta_url),
+            client: MetaHttpClient::new(&meta_url, metrics_register),
         });
 
         client.sync_all_tenant_metadata().await?;

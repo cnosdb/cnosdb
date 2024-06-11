@@ -742,7 +742,8 @@ mod test {
             let memory_pool = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
 
             runtime_clone.block_on(async {
-                let meta_manager = AdminMeta::new(config.clone()).await;
+                let meta_manager =
+                    AdminMeta::new(config.clone(), Arc::new(MetricsRegister::default())).await;
                 meta_manager.add_data_node().await.unwrap();
                 let _ = meta_manager
                     .create_tenant("cnosdb".to_string(), TenantOptions::default())

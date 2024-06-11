@@ -1,10 +1,12 @@
 // mod test_cluster;
 #![cfg(feature = "meta_e2e_test")]
 use std::process::Command;
+use std::sync::Arc;
 use std::{env, thread, time};
 
 use meta::client;
 use meta::store::command;
+use metrics::metric_register::MetricsRegister;
 use models::meta_data::NodeInfo;
 use models::schema::Tenant;
 use sysinfo::System;
@@ -44,7 +46,7 @@ async fn write_data_to_meta() {
         grpc_addr: "".to_string(),
     };
     let req = command::WriteCommand::AddDataNode("cluster_xxx".to_string(), node);
-    let cli = client::MetaHttpClient::new("127.0.0.1:8901");
+    let cli = client::MetaHttpClient::new("127.0.0.1:8901", Arc::new(MetricsRegister::default()));
     cli.write::<()>(&req).await.unwrap();
     // let req = command::WriteCommand::CreateTenant(“cluster_xxx”.to_string(), (), ())
     let oid = UuidGenerator::default().next_id();
@@ -54,7 +56,7 @@ async fn write_data_to_meta() {
         models::schema::TenantOptions::default(),
     );
     let req = command::WriteCommand::CreateTenant("cluster_xxx".to_string(), tenant);
-    let cli = client::MetaHttpClient::new("127.0.0.1:8901");
+    let cli = client::MetaHttpClient::new("127.0.0.1:8901", Arc::new(MetricsRegister::default()));
     cli.write::<()>(&req).await.unwrap();
 }
 #[cfg(feature = "meta_e2e_test")]
@@ -63,7 +65,7 @@ async fn drop_data_from_meta() {
         "cluster_xxx".to_string(),
         "test_add_tenant001".to_string(),
     );
-    let cli = client::MetaHttpClient::new("127.0.0.1:8901");
+    let cli = client::MetaHttpClient::new("127.0.0.1:8901", Arc::new(MetricsRegister::default()));
     cli.write::<()>(&req).await.unwrap();
 }
 #[cfg(feature = "meta_e2e_test")]

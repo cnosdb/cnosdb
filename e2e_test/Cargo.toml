@@ -11,6 +11,7 @@ http_protocol = { path = "../common/http_protocol", features = ["http_client"] }
 meta = { path = "../meta" }
 models = { path = "../common/models" }
 protos = { path = "../common/protos", features = ["test"] }
+metrics = { path = "../common/metrics" }
 
 arrow-flight = { workspace = true, features = ["flight-sql-experimental"] }
 arrow-schema = { workspace = true, optional = false }
