@@ -51,7 +51,8 @@ mod tests {
         };
         let memory = Arc::new(GreedyMemoryPool::default());
         let tskv = rt.block_on(async {
-            let meta_manager = AdminMeta::new(global_config).await;
+            let meta_manager =
+                AdminMeta::new(global_config, Arc::new(MetricsRegister::default())).await;
             meta_manager.add_data_node().await.unwrap();
             let _ = meta_manager
                 .create_tenant("cnosdb".to_string(), TenantOptions::default())

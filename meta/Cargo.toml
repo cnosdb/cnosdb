@@ -17,6 +17,7 @@ models = { path = "../common/models" }
 trace = { path = "../common/trace" }
 utils = { path = "../common/utils" }
 protos = { path = "../common/protos", features = ["test"] }
+metrics = { path = "../common/metrics" }
 replication = { path = "../replication" }
 
 async-backtrace = { workspace = true, optional = true }

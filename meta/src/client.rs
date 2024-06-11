@@ -1,6 +1,10 @@
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::time::Instant;
 
+use metrics::count::U64Counter;
+use metrics::duration::{DurationHistogram, DurationHistogramOptions};
+use metrics::metric_register::MetricsRegister;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use tracing::info;
@@ -15,11 +19,50 @@ pub struct MetaHttpClient {
     inner: Arc<reqwest::Client>,
     pub addrs: Arc<RwLock<Vec<String>>>,
     pub leader: Arc<RwLock<String>>,
+    read_meta_count: U64Counter,
+    write_meta_count: U64Counter,
+    watch_meta_count: U64Counter,
+    read_meta_response_time: DurationHistogram,
+    write_meta_response_time: DurationHistogram,
+    watch_meta_response_time: DurationHistogram,
 }
 
 impl MetaHttpClient {
     /// Create new MetaHttpClient. Param `attrs` is meta server addresses split by character ';'.
-    pub fn new(addrs: &str) -> Self {
+    pub fn new(addrs: &str, metrics_register: Arc<MetricsRegister>) -> Self {
+        let labels = [("addr", addrs)];
+
+        let read_meta_count = metrics_register
+            .metric::<U64Counter>("read_meta_count", "read meta count")
+            .recorder(labels);
+        let write_meta_count = metrics_register
+            .metric::<U64Counter>("write_meta_count", "write meta count")
+            .recorder(labels);
+        let watch_meta_count = metrics_register
+            .metric::<U64Counter>("watch_meta_count", "watch meta count")
+            .recorder(labels);
+        let read_meta_response_time: DurationHistogram = metrics_register
+            .register_metric(
+                "read_meta_response_time",
+                "read meta response time",
+                DurationHistogramOptions::default(),
+            )
+            .recorder(labels);
+        let write_meta_response_time: DurationHistogram = metrics_register
+            .register_metric(
+                "write_meta_response_time",
+                "write meta response time",
+                DurationHistogramOptions::default(),
+            )
+            .recorder(labels);
+        let watch_meta_response_time: DurationHistogram = metrics_register
+            .register_metric(
+                "watch_meta_response_time",
+                "watch meta response time",
+                DurationHistogramOptions::default(),
+            )
+            .recorder(labels);
+
         let mut addrs: Vec<String> = addrs.split(';').map(|s| s.to_string()).collect();
         addrs.sort();
         let leader_addr = addrs[0].clone();
@@ -28,6 +71,12 @@ impl MetaHttpClient {
             inner: Arc::new(reqwest::Client::new()),
             addrs: Arc::new(RwLock::new(addrs)),
             leader: Arc::new(RwLock::new(leader_addr)),
+            read_meta_count,
+            write_meta_count,
+            watch_meta_count,
+            read_meta_response_time,
+            write_meta_response_time,
+            watch_meta_response_time,
         }
     }
 
@@ -35,33 +84,57 @@ impl MetaHttpClient {
     where
         T: for<'a> Deserialize<'a>,
     {
+        let start = Instant::now();
         let rsp = self.try_send_to_leader("read", req).await?;
 
-        serde_json::from_str::<MetaResult<T>>(&rsp).map_err(|err| MetaError::SerdeMsgInvalid {
-            err: err.to_string(),
-        })?
+        let result = serde_json::from_str::<MetaResult<T>>(&rsp).map_err(|err| {
+            MetaError::SerdeMsgInvalid {
+                err: err.to_string(),
+            }
+        })?;
+
+        self.read_meta_count.inc_one();
+        self.read_meta_response_time.record(start.elapsed());
+
+        result
     }
 
     pub async fn write<T>(&self, req: &WriteCommand) -> MetaResult<T>
     where
         T: for<'a> Deserialize<'a>,
     {
+        let start = Instant::now();
         let rsp = self.try_send_to_leader("write", req).await?;
 
-        serde_json::from_str::<MetaResult<T>>(&rsp).map_err(|err| MetaError::SerdeMsgInvalid {
-            err: err.to_string(),
-        })?
+        let result = serde_json::from_str::<MetaResult<T>>(&rsp).map_err(|err| {
+            MetaError::SerdeMsgInvalid {
+                err: err.to_string(),
+            }
+        })?;
+
+        self.write_meta_count.inc_one();
+        self.write_meta_response_time.record(start.elapsed());
+
+        result
     }
 
     pub async fn watch<T>(&self, req: &(String, String, HashSet<String>, u64)) -> MetaResult<T>
     where
         T: for<'a> Deserialize<'a>,
     {
+        let start = Instant::now();
         let rsp = self.try_send_to_leader("watch", req).await?;
 
-        serde_json::from_str::<MetaResult<T>>(&rsp).map_err(|err| MetaError::SerdeMsgInvalid {
-            err: err.to_string(),
-        })?
+        let result = serde_json::from_str::<MetaResult<T>>(&rsp).map_err(|err| {
+            MetaError::SerdeMsgInvalid {
+                err: err.to_string(),
+            }
+        })?;
+
+        self.watch_meta_count.inc_one();
+        self.watch_meta_response_time.record(start.elapsed());
+
+        result
     }
 
     pub async fn watch_meta_membership(&self) -> MetaResult<Vec<String>> {
@@ -206,8 +279,10 @@ impl MetaHttpClient {
 #[cfg(test)]
 mod test {
     use std::collections::HashSet;
+    use std::sync::Arc;
     use std::{thread, time};
 
+    use metrics::metric_register::MetricsRegister;
     use models::meta_data::NodeInfo;
 
     use crate::client::MetaHttpClient;
@@ -244,7 +319,7 @@ mod test {
 
         //let hand = tokio::spawn(watch_tenant("cluster_xxx", "tenant_test"));
 
-        let client = MetaHttpClient::new("127.0.0.1:8911");
+        let client = MetaHttpClient::new("127.0.0.1:8911", Arc::new(MetricsRegister::default()));
 
         let node = NodeInfo {
             id: 111,
@@ -273,7 +348,7 @@ mod test {
             0,
         );
 
-        let client = MetaHttpClient::new("127.0.0.1:8901");
+        let client = MetaHttpClient::new("127.0.0.1:8901", Arc::new(MetricsRegister::default()));
         loop {
             let watch_data = client.watch::<command::WatchData>(&request).await.unwrap();
             println!("{:?}", watch_data);

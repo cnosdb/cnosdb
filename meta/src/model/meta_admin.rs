@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use config::tskv::Config;
+use metrics::metric_register::MetricsRegister;
 use models::auth::user::{admin_user, User, UserDesc, UserOptions};
 use models::meta_data::*;
 use models::node_info::NodeStatus;
@@ -62,12 +63,13 @@ pub struct AdminMeta {
     limiters: Arc<LimiterManager>,
 
     resource_tx_rx: (Sender<MetaModifyType>, ReceiverType),
+    metrics_register: Arc<MetricsRegister>,
 }
 
 impl AdminMeta {
     pub fn mock() -> Self {
         let (watch_notify, _) = mpsc::channel(1024);
-        let client = MetaHttpClient::new("");
+        let client = MetaHttpClient::new("", Arc::new(MetricsRegister::default()));
         let config = Config::default();
 
         let limiters = LimiterManager::new(HashMap::new());
@@ -86,15 +88,16 @@ impl AdminMeta {
             watch_version: AtomicU64::new(0),
             watch_tenants: RwLock::new(HashSet::new()),
             resource_tx_rx: (tx, Arc::new(Mutex::new(Some(rx)))),
+            metrics_register: Arc::new(MetricsRegister::default()),
         }
     }
 
-    pub async fn new(config: Config) -> Arc<Self> {
+    pub async fn new(config: Config, metrics_register: Arc<MetricsRegister>) -> Arc<Self> {
         let meta_service_addr = config.meta.service_addr.clone();
         let meta_url = meta_service_addr.join(";");
         let (watch_notify, receiver) = mpsc::channel(1024);
 
-        let client = MetaHttpClient::new(&meta_url);
+        let client = MetaHttpClient::new(&meta_url, metrics_register.clone());
         let limiters = Arc::new(LimiterManager::new({
             let mut map = HashMap::new();
             map.insert(
@@ -120,6 +123,7 @@ impl AdminMeta {
             watch_version: AtomicU64::new(0),
             watch_tenants: RwLock::new(HashSet::new()),
             resource_tx_rx: (tx, Arc::new(Mutex::new(Some(rx)))),
+            metrics_register,
         });
 
         let base_ver = admin.sync_gobal_info().await.unwrap();
@@ -628,7 +632,13 @@ impl AdminMeta {
 
         self.limiters.create_limiter(limiter_key, config).await?;
 
-        let client = TenantMeta::new(self.cluster(), tenant_info, self.meta_addrs()).await?;
+        let client = TenantMeta::new(
+            self.cluster(),
+            tenant_info,
+            self.meta_addrs(),
+            self.metrics_register.clone(),
+        )
+        .await?;
 
         self.tenants
             .write()

@@ -18,6 +18,7 @@ use config::tskv::Config as CnosdbConfig;
 use datafusion::arrow::record_batch::RecordBatch;
 use futures::TryStreamExt;
 use meta::client::MetaHttpClient;
+use metrics::metric_register::MetricsRegister;
 use reqwest::blocking::{ClientBuilder, Request, RequestBuilder, Response};
 use reqwest::{Certificate, IntoUrl, Method, StatusCode};
 use sysinfo::{ProcessRefreshKind, RefreshKind, System};
@@ -439,7 +440,10 @@ impl CnosdbMetaTestHelper {
                 .join("release")
                 .join("cnosdb-meta"),
             client: Arc::new(Client::new()),
-            meta_client: Arc::new(MetaHttpClient::new("127.0.0.1:8901")),
+            meta_client: Arc::new(MetaHttpClient::new(
+                "127.0.0.1:8901",
+                Arc::new(MetricsRegister::default()),
+            )),
             sub_processes: HashMap::with_capacity(3),
         }
     }

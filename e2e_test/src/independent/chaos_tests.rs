@@ -6,6 +6,7 @@ pub mod test {
     use http_protocol::status_code;
     use meta::model::meta_admin::AdminMeta;
     use meta::model::meta_tenant::TenantMeta;
+    use metrics::metric_register::MetricsRegister;
     use rand::Rng;
 
     use crate::cluster_def;
@@ -114,7 +115,7 @@ pub mod test {
         let config_file = data_config_file_path("chaos_test", &file_name);
 
         let config = config::tskv::get_config(config_file).unwrap();
-        let meta = runtime.block_on(AdminMeta::new(config));
+        let meta = runtime.block_on(AdminMeta::new(config, Arc::new(MetricsRegister::default())));
         let meta_client = runtime.block_on(meta.tenant_meta("cnosdb")).unwrap();
 
         let client = Client::with_auth("root".to_string(), Some(String::new()));

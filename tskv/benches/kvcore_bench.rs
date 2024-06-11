@@ -24,7 +24,8 @@ async fn get_tskv() -> TsKv {
             .unwrap(),
     );
 
-    let meta_manager: MetaRef = AdminMeta::new(global_config.clone()).await;
+    let meta_manager: MetaRef =
+        AdminMeta::new(global_config.clone(), Arc::new(MetricsRegister::default())).await;
 
     meta_manager.add_data_node().await.unwrap();
 
