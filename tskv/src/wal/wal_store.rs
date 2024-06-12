@@ -409,22 +409,24 @@ impl RaftEntryStorageInner {
             if !LocalFileSystem::try_exists(&path) {
                 continue;
             }
-            let reader = self.wal.wal_reader(wal_id).await?;
-            let mut record_reader = reader.take_record_reader();
+            let mut record_reader = self.wal.wal_reader(wal_id).await?;
             loop {
-                let record = record_reader.read_record().await;
+                let pos = record_reader.pos();
+                let record = record_reader.next_wal_entry().await;
                 match record {
-                    Ok(rec) => {
+                    Ok(Some(rec)) => {
                         self.recover_record(wal_id, rec, apply_id, vnode_store)
                             .await?;
                     }
-                    Err(TskvError::Eof) => {
+                    Err(TskvError::Eof) | Ok(None) => {
                         break;
                     }
                     Err(TskvError::RecordFileHashCheckFailed { .. }) => continue,
-                    Err(e) => {
-                        trace::error!("Error reading wal: {:?}", e);
-                        return Err(WalTruncatedSnafu.build());
+                    // If the wal file is truncated, handle it.
+                    Err(_) => {
+                        let mut wal_reader = self.wal.wal_reader(wal_id).await?;
+                        wal_reader.handle_wal_truncated(pos).await?;
+                        break;
                     }
                 }
             }
@@ -445,6 +447,7 @@ impl RaftEntryStorageInner {
         }
 
         let wal_entry = WalRecordData::new(record.data);
+
         if let Some(entry) = wal_entry.block {
             if let Some(apply_id) = apply_id {
                 let last_seq = vnode_store.ts_family().read().await.version().last_seq();

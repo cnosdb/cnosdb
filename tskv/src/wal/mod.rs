@@ -127,7 +127,9 @@ impl VnodeWal {
             match file_utils::get_max_sequence_file_name(wal_dir, file_utils::get_wal_file_id) {
                 Some((_, id)) => {
                     let path = file_utils::make_wal_file(wal_dir, id);
-                    let (_, max_seq) = reader::read_footer(&path).await?.unwrap_or((1_u64, 1_u64));
+                    let (_, max_seq) = reader::read_footer(&path, config.clone())
+                        .await?
+                        .unwrap_or((1_u64, 1_u64));
                     (max_seq + 1, id)
                 }
                 None => (1_u64, 1_u64),
@@ -242,7 +244,7 @@ impl VnodeWal {
             }
 
             let path = self.wal_dir().join(&file_name);
-            if let Ok(reader) = WalReader::open(&path).await {
+            if let Ok(reader) = WalReader::open(&path, self.config.clone()).await {
                 if reader.max_sequence() < seq {
                     delete_ids.push(wal_id);
                 }
@@ -277,7 +279,7 @@ impl VnodeWal {
         } else {
             let wal_dir = self.config.wal_dir(&self.tenant_database, self.vnode_id);
             let wal_path = file_utils::make_wal_file(wal_dir, wal_id);
-            let reader = WalReader::open(wal_path).await?;
+            let reader = WalReader::open(wal_path, self.config.clone()).await?;
             Ok(reader)
         }
     }
