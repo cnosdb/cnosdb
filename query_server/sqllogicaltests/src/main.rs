@@ -18,6 +18,7 @@ const CNOSDB_FLIGHT_HOST_ENV: &str = "CNOSDB_FLIGHT_HOST";
 const CNOSDB_FLIGHT_PORT_ENV: &str = "CNOSDB_FLIGHT_PORT";
 const CNOSDB_HTTP_HOST_ENV: &str = "CNOSDB_HTTP_HOST";
 const CNOSDB_HTTP_PORT_ENV: &str = "CNOSDB_HTTP_PORT";
+const CNOSDB_WORK_DIR_ENV: &str = "CNOSDB_WORK_DIR";
 
 const CNOSDB_FLIGHT_HOST_DEFAULT: &str = "localhost";
 const CNOSDB_FLIGHT_PORT_DEFAULT: u16 = 8904;
@@ -48,6 +49,7 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
         password: CNOSDB_PASSWORD_DEFAULT.into(),
         tenant: CNOSDB_TENANT_DEFAULT.into(),
         db: CNOSDB_DB_DEFAULT.into(),
+        pwd: options.pwd.clone(),
         target_partitions: CNOSDB_TARGET_PARTITIONS_DEFAULT,
         timeout: None,
         precision: None,
@@ -152,6 +154,7 @@ struct Options {
     flight_port: u16,
     http_host: String,
     http_port: u16,
+    pwd: String,
 }
 
 #[derive(Debug, Parser)]
@@ -189,6 +192,9 @@ impl Options {
             e.parse::<u16>().expect("Parse CNOSDB_HTTP_PORT")
         });
 
+        let mut default_home = std::env::var("HOME").unwrap();
+        default_home.push_str("/cnosdb");
+        let pwd = std::env::var(CNOSDB_WORK_DIR_ENV).unwrap_or(default_home);
         // treat args after the first as filters to run (substring matching)
 
         Self {
@@ -201,6 +207,7 @@ impl Options {
             flight_port,
             http_host,
             http_port,
+            pwd,
         }
     }
 
