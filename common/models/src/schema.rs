@@ -289,8 +289,6 @@ impl ExternalTableSchema {
     pub fn table_options(&self) -> DataFusionResult<ListingOptions> {
         let file_compression_type = FileCompressionType::from_str(&self.file_compression_type)?;
         let file_type = FileType::from_str(&self.file_type)?;
-        let file_extension =
-            file_type.get_ext_with_compression(self.file_compression_type.to_owned().parse()?)?;
         let file_format: Arc<dyn FileFormat> = match file_type {
             FileType::CSV => Arc::new(
                 CsvFormat::default()
@@ -310,9 +308,8 @@ impl ExternalTableSchema {
             }
         };
 
-        let options = ListingOptions::new(file_format)
-            .with_file_extension(file_extension)
-            .with_target_partitions(self.target_partitions);
+        let options =
+            ListingOptions::new(file_format).with_target_partitions(self.target_partitions);
 
         Ok(options)
     }

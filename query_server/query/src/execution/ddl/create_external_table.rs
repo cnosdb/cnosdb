@@ -110,9 +110,7 @@ async fn build_table_schema(
         reason: "couldn't resolve tenant".to_string(),
     })?;
 
-    let options = build_external_table_config(stmt, state.config().target_partitions())?;
-
-    let schema = construct_listing_table_schema(stmt, state, &options).await?;
+    let schema = construct_listing_table_schema(stmt, state).await?;
 
     let schema = ExternalTableSchema {
         tenant: tenant.to_string(),
@@ -133,7 +131,6 @@ async fn build_table_schema(
 async fn construct_listing_table_schema(
     stmt: &CreateExternalTable,
     state: &SessionState,
-    options: &ListingOptions,
 ) -> QueryResult<SchemaRef> {
     let CreateExternalTable {
         ref schema,
@@ -149,6 +146,8 @@ async fn construct_listing_table_schema(
     };
 
     let table_path = ListingTableUrl::parse(location).context(DatafusionSnafu)?;
+    let options = build_external_table_config(stmt, state.config().target_partitions())?;
+
     Ok(match provided_schema {
         None => options
             .infer_schema(state, &table_path)
@@ -164,7 +163,6 @@ fn build_external_table_config(
 ) -> QueryResult<ListingOptions> {
     let file_compression_type = FileCompressionType::from(stmt.file_compression_type);
     let file_type = FileType::from_str(stmt.file_type.as_str())?;
-    let file_extension = file_type.get_ext_with_compression(file_compression_type.to_owned())?;
     let file_format: Arc<dyn FileFormat> = match file_type {
         FileType::CSV => Arc::new(
             CsvFormat::default()
@@ -184,9 +182,7 @@ fn build_external_table_config(
         }
     };
 
-    let options = ListingOptions::new(file_format)
-        .with_file_extension(file_extension)
-        .with_target_partitions(target_partitions);
+    let options = ListingOptions::new(file_format).with_target_partitions(target_partitions);
 
     Ok(options)
 }
