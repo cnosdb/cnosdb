@@ -343,8 +343,8 @@ impl Reader {
         Ok(())
     }
 
-    pub fn path(&self) -> PathBuf {
-        self.path.clone()
+    pub fn path(&self) -> &PathBuf {
+        &self.path
     }
 
     pub fn len(&self) -> u64 {

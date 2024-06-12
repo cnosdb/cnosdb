@@ -1,18 +1,27 @@
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use openraft::EntryPayload;
+use trace::error;
 
 use super::{wal_store, WalType, WAL_FOOTER_MAGIC_NUMBER, WAL_HEADER_LEN};
 use crate::byte_utils::{decode_be_u32, decode_be_u64};
-use crate::error::WalTruncatedSnafu;
+use crate::error::{CommonSnafu, WalTruncatedSnafu};
 use crate::file_system::async_filesystem::LocalFileSystem;
 use crate::file_system::FileSystem;
+use crate::file_utils::get_wal_file_id;
+use crate::kv_option::WalOptions;
+use crate::record_file::Record;
+use crate::wal::writer::WalWriter;
 use crate::{record_file, TskvError, TskvResult};
 
 /// Reads a wal file and parse footer, returns sequence range
-pub async fn read_footer(path: impl AsRef<Path>) -> TskvResult<Option<(u64, u64)>> {
+pub async fn read_footer(
+    path: impl AsRef<Path>,
+    config: Arc<WalOptions>,
+) -> TskvResult<Option<(u64, u64)>> {
     if LocalFileSystem::try_exists(&path) {
-        let reader = WalReader::open(path).await?;
+        let reader = WalReader::open(path, config).await?;
         Ok(Some((reader.min_sequence, reader.max_sequence)))
     } else {
         Ok(None)
@@ -40,10 +49,13 @@ pub struct WalReader {
     /// CnosDB was crushed or force-killed.
     max_sequence: u64,
     has_footer: bool,
+
+    config: Arc<WalOptions>,
+    read_sequence: u64,
 }
 
 impl WalReader {
-    pub async fn open(path: impl AsRef<Path>) -> TskvResult<Self> {
+    pub async fn open(path: impl AsRef<Path>, config: Arc<WalOptions>) -> TskvResult<Self> {
         let reader = record_file::Reader::open(&path).await?;
 
         let mut has_footer = true;
@@ -60,6 +72,8 @@ impl WalReader {
             min_sequence,
             max_sequence,
             has_footer,
+            config,
+            read_sequence: 0,
         })
     }
 
@@ -68,12 +82,15 @@ impl WalReader {
         min_sequence: u64,
         max_sequence: u64,
         has_footer: bool,
+        config: Arc<WalOptions>,
     ) -> Self {
         Self {
             inner: record_reader,
             min_sequence,
             max_sequence,
             has_footer,
+            config,
+            read_sequence: 0,
         }
     }
 
@@ -81,34 +98,72 @@ impl WalReader {
         self.has_footer
     }
 
-    pub async fn next_wal_entry(&mut self) -> TskvResult<Option<WalRecordData>> {
+    pub async fn next_wal_entry(&mut self) -> TskvResult<Option<Record>> {
         loop {
-            let data = match self.inner.read_record().await {
-                Ok(r) => r.data,
-                Err(TskvError::Eof) => {
-                    return Ok(None);
+            match self.inner.read_record().await {
+                Ok(r) => return Ok(Some(r)),
+                Err(TskvError::Eof) => return Ok(None),
+                Err(TskvError::RecordFileHashCheckFailed { .. }) => {
+                    error!("next wal entry Record file hash check failed.");
+                    continue;
                 }
-                Err(TskvError::RecordFileHashCheckFailed { .. }) => continue,
                 Err(e) => {
-                    trace::error!("Error reading wal: {:?}", e);
+                    error!("Error reading truncated wal: {:?}", e);
                     return Err(WalTruncatedSnafu.build());
                 }
-            };
-            return Ok(Some(WalRecordData::new(data)));
+            }
         }
     }
 
     pub async fn read_wal_record_data(&mut self, pos: u64) -> TskvResult<Option<WalRecordData>> {
         self.inner.reload_metadata().await?;
         match self.inner.read_record_at(pos).await {
-            Ok(r) => Ok(Some(WalRecordData::new(r.data))),
+            Ok(r) => {
+                let data = WalRecordData::new(r.data);
+                self.read_sequence = data.seq;
+                Ok(Some(data))
+            }
             Err(TskvError::Eof) => Ok(None),
             Err(e @ TskvError::RecordFileHashCheckFailed { .. }) => Err(e),
             Err(e) => {
-                trace::error!("Error reading wal: {:?}", e);
+                error!("Error reading truncated wal: {:?}", e);
                 Err(WalTruncatedSnafu.build())
             }
         }
+    }
+
+    pub async fn handle_wal_truncated(&mut self, location: u64) -> TskvResult<()> {
+        {
+            let id = get_wal_file_id(
+                self.inner
+                    .path()
+                    .file_name()
+                    .ok_or(
+                        CommonSnafu {
+                            reason: format!(
+                                "Failed to get file name from path: {:?}",
+                                self.inner.path()
+                            ),
+                        }
+                        .build(),
+                    )?
+                    .to_string_lossy()
+                    .as_ref(),
+            )?;
+            let mut writer = WalWriter::open(
+                self.config.clone(),
+                id,
+                self.inner.path(),
+                self.min_sequence,
+            )
+            .await?;
+            writer.truncate(location, self.read_sequence + 1).await;
+            writer.sync().await?;
+        }
+        self.inner.reload_metadata().await?;
+        self.has_footer = false;
+        self.max_sequence = self.read_sequence;
+        Ok(())
     }
 
     pub fn min_sequence(&self) -> u64 {
@@ -119,7 +174,7 @@ impl WalReader {
         self.max_sequence
     }
 
-    pub fn path(&self) -> PathBuf {
+    pub fn path(&self) -> &PathBuf {
         self.inner.path()
     }
 
@@ -141,8 +196,17 @@ impl WalReader {
     pub fn take_record_reader(self) -> record_file::Reader {
         self.inner
     }
+
+    pub fn config(&self) -> Arc<WalOptions> {
+        self.config.clone()
+    }
+
+    pub fn pos(&self) -> u64 {
+        self.inner.pos() as u64
+    }
 }
 
+#[derive(Debug)]
 pub struct WalRecordData {
     pub typ: WalType,
     pub seq: u64,
@@ -180,9 +244,19 @@ impl WalRecordData {
 }
 
 pub async fn print_wal_statistics(path: impl AsRef<Path>) {
-    let mut reader = WalReader::open(path).await.unwrap();
+    let mock_option = WalOptions {
+        enabled: true,
+        path: path.as_ref().to_path_buf(),
+        wal_req_channel_cap: 0,
+        max_file_size: 0,
+        flush_trigger_total_file_size: 0,
+        sync: false,
+        sync_interval: Default::default(),
+    };
+    let mut reader = WalReader::open(path, mock_option.into()).await.unwrap();
     loop {
-        match reader.next_wal_entry().await {
+        let pos = reader.pos();
+        match reader.read_wal_record_data(pos).await {
             Ok(Some(entry_block)) => {
                 println!("============================================================");
                 println!("Seq: {}, Typ: {}", entry_block.seq, entry_block.typ);

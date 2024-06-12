@@ -126,6 +126,7 @@ impl WalWriter {
             self.min_sequence,
             self.max_sequence,
             self.has_footer,
+            self.config.clone(),
         ))
     }
 
