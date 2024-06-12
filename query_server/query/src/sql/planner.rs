@@ -2538,15 +2538,9 @@ async fn build_external_location_table_source(
     default_schema: Option<SchemaRef>,
     file_format_options: FileFormatOptions,
 ) -> datafusion::common::Result<Arc<dyn TableSource>> {
-    let (file_extension, file_format) = build_file_extension_and_format(file_format_options)?;
-    let external_location_table = build_listing_table(
-        ctx.inner(),
-        table_path,
-        default_schema,
-        file_extension,
-        file_format,
-    )
-    .await?;
+    let file_format = build_file_format(file_format_options)?;
+    let external_location_table =
+        build_listing_table(ctx.inner(), table_path, default_schema, file_format).await?;
 
     let external_location_table_source = Arc::new(TableSourceAdapter::try_new(
         TableReference::bare(TEMP_LOCATION_TABLE_NAME),
@@ -2562,12 +2556,10 @@ async fn build_listing_table(
     ctx: &SessionState,
     table_path: ListingTableUrl,
     default_schema: Option<SchemaRef>,
-    file_extension: String,
     file_format: Arc<dyn FileFormat>,
 ) -> datafusion::common::Result<Arc<ListingTable>> {
     let options = ListingOptions::new(file_format)
         .with_collect_stat(ctx.config().collect_statistics())
-        .with_file_extension(file_extension)
         .with_target_partitions(ctx.config().target_partitions());
 
     let schema = if let Some(schema) = default_schema {
@@ -2587,16 +2579,15 @@ async fn build_listing_table(
     Ok(Arc::new(ListingTable::try_new(config)?))
 }
 
-fn build_file_extension_and_format(
+fn build_file_format(
     file_format_options: FileFormatOptions,
-) -> datafusion::common::Result<(String, Arc<dyn FileFormat>)> {
+) -> datafusion::common::Result<Arc<dyn FileFormat>> {
     let FileFormatOptions {
         file_type,
         delimiter,
         with_header,
         file_compression_type,
     } = file_format_options;
-    let file_extension = file_type.get_ext_with_compression(file_compression_type.to_owned())?;
     let file_format: Arc<dyn FileFormat> = match file_type {
         FileType::CSV => Arc::new(
             CsvFormat::default()
@@ -2616,7 +2607,7 @@ fn build_file_extension_and_format(
         }
     };
 
-    Ok((file_extension, file_format))
+    Ok(file_format)
 }
 
 // check
