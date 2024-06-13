@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Display;
 use std::mem::size_of_val;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
@@ -6,13 +6,16 @@ use std::sync::Arc;
 
 use memory_pool::{MemoryConsumer, MemoryPoolRef, MemoryReservation};
 use minivec::{mini_vec, MiniVec};
+use models::codec::Encoding;
 use models::predicate::domain::TimeRange;
 use models::schema::{
     timestamp_convert, Precision, TableColumn, TskvTableSchema, TskvTableSchemaRef,
 };
 use models::utils::split_id;
-use models::{ColumnId, FieldId, RwLockRef, SchemaId, SeriesId, Timestamp, ValueType};
-use parking_lot::RwLock;
+use models::{
+    utils as model_utils, ColumnId, FieldId, RwLockRef, SchemaId, SeriesId, Timestamp, ValueType,
+};
+use parking_lot::{RwLock, RwLockReadGuard};
 use protos::models as fb_models;
 use protos::models::FieldType;
 use utils::bitset::ImmutBitSet;
@@ -694,6 +697,136 @@ impl Display for DataType {
     }
 }
 
+struct RowGroupDesc {
+    /// All columns of fields in the row group.
+    field_columns: Vec<TableColumn>,
+    /// Mapping from column id to column index in `field_columns`.
+    column_id_to_index_map: BTreeMap<ColumnId, usize>,
+}
+
+pub struct SeriesDataFieldValuesBuilder<'a> {
+    series_data: Arc<RwLockReadGuard<'a, SeriesData>>,
+
+    column_ids: Vec<ColumnId>,
+    row_groups_descs: Arc<Vec<RowGroupDesc>>,
+}
+
+impl<'a> SeriesDataFieldValuesBuilder<'a> {
+    pub fn try_new(series_data: RwLockReadGuard<'a, SeriesData>) -> Option<Self> {
+        if series_data.groups.is_empty() {
+            return None;
+        }
+
+        let mut column_ids = BTreeSet::new();
+        let mut row_groups_meta = Vec::new();
+        for row in series_data.groups.iter() {
+            let field_columns = row.schema.fields();
+            if field_columns.is_empty() {
+                continue;
+            }
+            let mut column_id_to_index_map = BTreeMap::new();
+            for (col_i, col) in field_columns.iter().enumerate() {
+                column_ids.insert(col.id);
+                column_id_to_index_map.insert(col.id, col_i);
+            }
+            row_groups_meta.push(RowGroupDesc {
+                field_columns,
+                column_id_to_index_map,
+            });
+        }
+
+        if column_ids.is_empty() {
+            return None;
+        }
+        let column_ids = column_ids.into_iter().collect::<Vec<_>>();
+
+        Some(Self {
+            series_data: Arc::new(series_data),
+            column_ids,
+            row_groups_descs: Arc::new(row_groups_meta),
+        })
+    }
+
+    /// Build field values extractor for the next field.
+    pub fn build(self) -> Vec<SeriesDataFieldValues<'a>> {
+        let mut field_values = Vec::with_capacity(self.column_ids.len());
+        for column_id in self.column_ids.iter() {
+            let field_id = model_utils::unite_id(*column_id, self.series_data.series_id);
+            let field_value = SeriesDataFieldValues {
+                series_data: self.series_data.clone(),
+                field_id,
+
+                row_groups_descs: self.row_groups_descs.clone(),
+            };
+            field_values.push(field_value);
+        }
+        field_values
+    }
+}
+
+/// Extract field values from series data lazily.
+pub struct SeriesDataFieldValues<'a> {
+    series_data: Arc<RwLockReadGuard<'a, SeriesData>>,
+    field_id: FieldId,
+
+    row_groups_descs: Arc<Vec<RowGroupDesc>>,
+}
+
+impl<'a> SeriesDataFieldValues<'a> {
+    /// Get field values from series data, and return the field type and encoding.
+    pub fn get(&self, buf: &mut Vec<(Timestamp, FieldVal)>) -> (ValueType, Encoding) {
+        let column_id = model_utils::high(self.field_id);
+        let mut value_type = ValueType::Unknown;
+        let mut encoding = Encoding::Unknown;
+        for (row_i, row) in self.series_data.groups.iter().enumerate() {
+            let RowGroupDesc {
+                field_columns,
+                column_id_to_index_map,
+            } = &self.row_groups_descs[row_i];
+            if let Some(col_idx) = column_id_to_index_map.get(&column_id) {
+                let col = &field_columns[*col_idx];
+                if encoding == Encoding::Unknown {
+                    encoding = col.encoding;
+                }
+                for row in row.rows.iter() {
+                    if let Some(Some(field)) = row.fields.get(*col_idx) {
+                        if value_type == ValueType::Unknown {
+                            value_type = field.value_type();
+                        }
+                        buf.push((row.ts, field.clone()));
+                    }
+                }
+            }
+        }
+
+        (value_type, encoding)
+    }
+
+    pub fn field_id(&self) -> FieldId {
+        self.field_id
+    }
+}
+
+impl<'a> Ord for SeriesDataFieldValues<'a> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.field_id.cmp(&other.field_id)
+    }
+}
+
+impl<'a> PartialOrd for SeriesDataFieldValues<'a> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<'a> Eq for SeriesDataFieldValues<'a> {}
+
+impl<'a> PartialEq for SeriesDataFieldValues<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        self.field_id == other.field_id
+    }
+}
+
 pub(crate) mod test {
     use std::collections::HashMap;
     use std::mem::size_of;
@@ -774,15 +907,20 @@ pub(crate) mod test {
 
 #[cfg(test)]
 mod test_memcache {
+    use std::collections::{BTreeSet, HashMap};
     use std::sync::Arc;
 
     use datafusion::arrow::datatypes::TimeUnit;
-    use memory_pool::{GreedyMemoryPool, MemoryPool};
+    use memory_pool::{GreedyMemoryPool, MemoryPool, MemoryPoolRef};
     use models::predicate::domain::TimeRange;
     use models::schema::{ColumnType, TableColumn, TskvTableSchema};
-    use models::{SeriesId, ValueType};
+    use models::utils::{high, low, unite_id};
+    use models::{FieldId, SchemaId, SeriesId, Timestamp, ValueType};
 
     use super::{FieldVal, MemCache, RowData, RowGroup};
+    use crate::compaction::test::default_table_schema;
+    use crate::memcache::SeriesDataFieldValuesBuilder;
+    use crate::test::put_rows_to_cache;
 
     #[test]
     fn test_write_group() {
@@ -861,6 +999,93 @@ mod test_memcache {
             assert_eq!(TimeRange::new(1, 5), series_data.range);
             assert_eq!(2, series_data.groups.len());
             assert_eq!(row_group_2, series_data.groups[1]);
+        }
+    }
+
+    #[test]
+    #[rustfmt::skip]
+    #[allow(clippy::type_complexity)]
+    fn test_series_data_field_values() {
+        let memory_pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
+        let cache = MemCache::new(1, 16, 2, 0, &memory_pool);
+        // 1, 0: 1.0, 2.0, 3.0, 4.0, 5.0, 6.0
+        // 1, 2: 1.0, 2.0, 5.0, 6.0
+        // 1, 13: 3.0, 4.0, 5.0, 6.0
+        // 1, 41: 1.0, 2.0, 3.0, 4.0, 5.0, 6.0
+        // 2, 0: 1.0, 2.0, 3.0, 5.0, 6.0
+        // 2, 1: 1.0, 2.0, 3.0, 5.0, 6.0, 7.0, 8.0
+        // 2, 2: 1.0, 2.0, 3.0, 5.0, 6.0, 7.0, 8.0
+        // 2, 13: 1.0, 2.0, 3.0, 5.0, 6.0, 7.0, 8.0
+        // 2, 14: 5.0, 6.0, 7.0, 8.0
+        let cache_data: Vec<(SeriesId, SchemaId, TskvTableSchema, (Timestamp, Timestamp), bool)> = vec![
+            (1, 1, default_table_schema(vec![0, 41, 13]), (3, 4), false), // 3.0, 4.0
+            (1, 1, default_table_schema(vec![0, 41, 13]), (4, 5), false), // 4.0, 5.0
+            (1, 2, default_table_schema(vec![0, 2, 41]), (1, 2), false), // 1.0, 2.0
+            (1, 3, default_table_schema(vec![0, 13, 41, 2]), (5, 6), false), // 5.0, 6.0
+            (2, 1, default_table_schema(vec![0, 1, 2, 13]), (1, 3), false), // 1.0, 2.0, 3.0
+            (2, 2, default_table_schema(vec![1, 0, 2, 13]), (4, 5), true), // 4_null, 5_null
+            (2, 3, default_table_schema(vec![1, 0, 14, 13]), (5, 6), false), // 5.0, 6.0
+            (2, 4, default_table_schema(vec![1, 13, 2, 14]), (5, 8), false), // 5.0, 6.0, 7.0, 8.0
+        ];
+        for (sid, sch_id, schema, time_range, put_none) in cache_data {
+            put_rows_to_cache(&cache, sid, sch_id, schema, time_range, put_none);
+        }
+        let expected_data: Vec<(FieldId, Vec<Timestamp>)> = vec![
+            (unite_id(0, 1), vec![1, 2, 3, 4, 5, 6]),
+            (unite_id(0, 2), vec![1, 2, 3, 5, 6]),
+            (unite_id(1, 2), vec![1, 2, 3, 5, 6, 7, 8]),
+            (unite_id(2, 1), vec![1, 2, 5, 6]),
+            (unite_id(2, 2), vec![1, 2, 3, 5, 6, 7, 8]),
+            (unite_id(13, 1), vec![3, 4, 5, 6]),
+            (unite_id(13, 2), vec![1, 2, 3, 5, 6, 7, 8]),
+            (unite_id(14, 2), vec![5, 6, 7, 8]),
+            (unite_id(41, 1), vec![1, 2, 3, 4, 5, 6]),
+        ];
+        let mut expected_data_iter = expected_data.into_iter();
+
+        let mut series_data_map = HashMap::new();
+        for (series_id, series_data) in cache.read_series_data() {
+            series_data_map
+                .entry(series_id)
+                .or_insert_with(Vec::new)
+                .push(series_data);
+        }
+        assert!(!series_data_map.is_empty());
+
+        let mut field_values = BTreeSet::new();
+        for series_datas in series_data_map.values() {
+            for series_data in series_datas {
+                if let Some(builder) = SeriesDataFieldValuesBuilder::try_new(series_data.read()) {
+                    field_values.extend(builder.build());
+                }
+            }
+        }
+        assert!(!field_values.is_empty());
+        for fv in field_values.iter() {
+            let field_id = fv.field_id();
+            let fid_high = high(field_id);
+            let fid_low = low(field_id);
+            let mut values = Vec::with_capacity(8);
+            let (val_typ, val_enc) = fv.get(&mut values);
+            println!(
+                "field_id: {field_id} ({fid_high}_{fid_low}), value_type: {val_typ}, encoding: {}, values: {:?}",
+                val_enc.as_str(), values,
+            );
+            if let Some((exp_fid, exp_data)) = expected_data_iter.next() {
+                assert_eq!(
+                    field_id, exp_fid,
+                    "{field_id} != {exp_fid} ({fid_high}_{fid_low} != {}_{})", high(exp_fid), low(exp_fid)
+                );
+                values.sort_by_key(|(ts, _)| *ts);
+                utils::dedup_front_by_key(&mut values, |(ts, _)| *ts);
+                assert_eq!(values.len(), exp_data.len());
+                for ((ts, val), exp_ts) in values.into_iter().zip(exp_data.into_iter()) {
+                    assert_eq!(ts, exp_ts, "Timestamp not equal of field_id: {field_id} ({fid_high}_{fid_low})");
+                    assert_eq!(val, FieldVal::Float(exp_ts as f64), "FieldVal not equal of field_id: {field_id} ({fid_high}_{fid_low})");
+                }
+            } else {
+                panic!("Iterator has more data than expected");
+            }
         }
     }
 }
