@@ -329,6 +329,10 @@ impl WalManager {
         Ok(())
     }
 
+    pub fn max_seq_no_of_old_files(&self) -> Option<u64> {
+        self.old_file_max_sequence.values().max().cloned()
+    }
+
     pub async fn check_to_delete(&mut self) {
         let min_seq = self.global_seq_ctx.min_seq();
         let mut old_files_to_delete: Vec<u64> = Vec::new();
@@ -458,8 +462,8 @@ impl WalManager {
         self.current_file.max_sequence()
     }
 
-    pub fn sync_interval(&self) -> std::time::Duration {
-        self.config.sync_interval
+    pub fn wal_options(&self) -> &WalOptions {
+        self.config.as_ref()
     }
 
     pub fn is_total_file_size_exceed(&self) -> bool {

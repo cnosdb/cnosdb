@@ -713,16 +713,14 @@ impl Version {
 
     pub async fn get_tsm_reader(&self, path: impl AsRef<Path>) -> Result<Arc<TsmReader>> {
         let path = path.as_ref().display().to_string();
-        let mut lru_cache = self.tsm_reader_cache.lock_shard(&path).await;
-        let tsm_reader = match lru_cache.get(&path) {
-            Some(r) => r,
-            None => {
-                let tsm_reader = Arc::new(TsmReader::open(&path).await?);
-                lru_cache.insert(path, tsm_reader.clone());
-                tsm_reader
-            }
-        };
-        Ok(tsm_reader)
+        self.tsm_reader_cache
+            .get_or_insert(path.clone(), async {
+                match TsmReader::open(path).await {
+                    Ok(r) => Ok(Arc::new(r)),
+                    Err(e) => Err(e),
+                }
+            })
+            .await
     }
 
     // return: l0 , l1-l4 files
@@ -1003,7 +1001,7 @@ impl TseriesFamily {
             self.immut_cache = new_caches;
         }
         self.new_super_version(version.clone());
-        self.seq_no = version.last_seq;
+        self.seq_no = self.seq_no.max(version.last_seq);
         debug!(
             "Setting new version for ts_family({}), levels: {}",
             self.tf_id,

@@ -87,15 +87,17 @@ impl GlobalSequenceContext {
     /// Write lock the inner, apply arguments, then update atomic min_seq.
     pub fn next_stage(
         &self,
-        del_ts_family: HashSet<TseriesFamilyId>,
-        ts_family_min_seq: HashMap<TseriesFamilyId, u64>,
+        del_ts_family: Option<HashSet<TseriesFamilyId>>,
+        ts_family_min_seq: Option<HashMap<TseriesFamilyId, u64>>,
     ) {
         let mut inner = self.inner.write();
 
-        for (tsf_id, min_seq) in ts_family_min_seq {
-            inner.tsf_seq_map.insert(tsf_id, min_seq);
+        if let Some(ts_family_min_seq) = ts_family_min_seq {
+            for (tsf_id, min_seq) in ts_family_min_seq {
+                inner.tsf_seq_map.insert(tsf_id, min_seq);
+            }
         }
-        if !del_ts_family.is_empty() {
+        if let Some(del_ts_family) = del_ts_family {
             for tsf_id in del_ts_family {
                 inner.tsf_seq_map.remove(&tsf_id);
             }
@@ -174,8 +176,8 @@ impl GlobalSequenceContextInner {
 
 #[derive(Debug)]
 pub struct GlobalSequenceTask {
-    pub del_ts_family: HashSet<TseriesFamilyId>,
-    pub ts_family_min_seq: HashMap<TseriesFamilyId, u64>,
+    pub del_ts_family: Option<HashSet<TseriesFamilyId>>,
+    pub ts_family_min_seq: Option<HashMap<TseriesFamilyId, u64>>,
 }
 
 /// Start a async job to maintain GlobalSequenceCOntext.
@@ -212,15 +214,18 @@ mod test_context {
         assert_eq!(ctx.min_seq(), 0);
 
         // Add tsfamily, no delete tsfamily
-        ctx.next_stage(HashSet::new(), HashMap::from([(1, 2), (2, 10), (3, 5)]));
+        ctx.next_stage(None, Some(HashMap::from([(1, 2), (2, 10), (3, 5)])));
         assert_eq!(ctx.min_seq(), 2);
 
         // Delete tsfamily, no add tsfamily
-        ctx.next_stage(HashSet::from([1, 2]), HashMap::new());
+        ctx.next_stage(Some(HashSet::from([1, 2])), None);
         assert_eq!(ctx.min_seq(), 5);
 
         // Delete tsfamily and add tsfamily
-        ctx.next_stage(HashSet::from([3]), HashMap::from([(4, 6), (5, 8), (6, 10)]));
+        ctx.next_stage(
+            Some(HashSet::from([3])),
+            Some(HashMap::from([(4, 6), (5, 8), (6, 10)])),
+        );
         assert_eq!(ctx.min_seq(), 6);
     }
 }

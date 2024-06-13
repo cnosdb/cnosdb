@@ -83,6 +83,10 @@ path = '/var/lib/cnosdb/wal'
 ## Trigger all vnode flushing if size of WALs exceeds this value.
 #flush_trigger_total_file_size = "2G" # 2,147,483,648 bytes
 
+## Trigger all vnode flushing if size of WALs exceed 'flush_trigger_total_file_size',
+## and 'flush_trigger_minimum_interval' has passed since the last trigger of this mechanism.
+#flush_trigger_minimum_interval = "1h"
+
 ## If true, fsync will be called after every WAL writes.
 #sync = false
 

@@ -26,6 +26,12 @@ pub struct WalConfig {
     )]
     pub flush_trigger_total_file_size: u64,
 
+    #[serde(
+        with = "duration",
+        default = "WalConfig::default_flush_trigger_minimum_interval"
+    )]
+    pub flush_trigger_minimum_interval: Duration,
+
     #[serde(default = "WalConfig::default_sync")]
     pub sync: bool,
 
@@ -52,6 +58,10 @@ impl WalConfig {
 
     fn default_flush_trigger_total_file_size() -> u64 {
         2 * 1024 * 1024 * 1024
+    }
+
+    fn default_flush_trigger_minimum_interval() -> Duration {
+        Duration::from_secs(3600)
     }
 
     fn default_sync() -> bool {
@@ -91,6 +101,7 @@ impl Default for WalConfig {
             wal_req_channel_cap: Self::default_wal_req_channel_cap(),
             max_file_size: Self::default_max_file_size(),
             flush_trigger_total_file_size: Self::default_flush_trigger_total_file_size(),
+            flush_trigger_minimum_interval: Self::default_flush_trigger_minimum_interval(),
             sync: Self::default_sync(),
             sync_interval: Self::default_sync_interval(),
         }

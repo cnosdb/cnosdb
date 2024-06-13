@@ -44,6 +44,7 @@ path = '/tmp/cnosdb/2001/wal'
 wal_req_channel_cap = 64
 max_file_size = "1G" # 1073741824
 flush_trigger_total_file_size = "2G" # 2147483648
+flush_trigger_minimum_interval = "1h"
 sync = false
 sync_interval = "0"
 

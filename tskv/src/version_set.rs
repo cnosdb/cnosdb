@@ -211,14 +211,16 @@ impl VersionSet {
     }
 
     /// Try to build and send `FlushReq`s to flush job for all ts_families.
-    pub async fn send_flush_req(&self) {
+    pub async fn send_flush_req(&self, max_seq_no: u64) {
         for db in self.dbs.values() {
             for tsf in db.read().await.ts_families().values() {
                 let tsf_inner = tsf.clone();
                 self.runtime.spawn(async move {
                     let mut tsf = tsf_inner.write().await;
-                    tsf.switch_to_immutable();
-                    tsf.send_flush_req(true).await;
+                    if tsf.seq_no() <= max_seq_no {
+                        tsf.switch_to_immutable();
+                        tsf.send_flush_req(true).await;
+                    }
                 });
             }
         }

@@ -278,15 +278,29 @@ impl TsKv {
             check_to_flush_duration: &Duration,
             check_to_flush_instant: &mut Instant,
         ) {
+            let mut total_file_size_exceed = false;
+            if wal_manager.is_total_file_size_exceed() {
+                total_file_size_exceed = true;
+                debug!(
+                    "WAL total file size({}) exceed, checking to delete old files.",
+                    wal_manager.total_file_size()
+                );
+                wal_manager.check_to_delete().await;
+            }
+
             // TODO(zipper): This is not a good way to prevent too frequent flushing.
             if check_to_flush_instant.elapsed().lt(check_to_flush_duration) {
                 return;
             }
             *check_to_flush_instant = Instant::now();
-            if wal_manager.is_total_file_size_exceed() {
-                warn!("WAL total file size({}) exceed flush_trigger_total_file_size, force flushing all vnodes.", wal_manager.total_file_size());
-                version_set.read().await.send_flush_req().await;
-                wal_manager.check_to_delete().await;
+
+            if total_file_size_exceed {
+                let max_seq_no = wal_manager.max_seq_no_of_old_files().unwrap_or(0);
+                warn!(
+                    "WAL total file size({}) exceed flush_trigger_total_file_size, force flushing vnodes with seq_no <= {max_seq_no}.",
+                    wal_manager.total_file_size(),
+                );
+                version_set.read().await.send_flush_req(max_seq_no).await;
             }
         }
 
@@ -304,9 +318,9 @@ impl TsKv {
         self.runtime.spawn(async move {
             info!("Job 'WAL' started.");
 
-            let sync_interval = wal_manager.sync_interval();
+            let sync_interval = wal_manager.wal_options().sync_interval;
             let mut check_total_size_ticker = tokio::time::interval(Duration::from_secs(10));
-            let check_to_flush_duration = Duration::from_secs(3600);
+            let check_to_flush_duration = wal_manager.wal_options().flush_trigger_minimum_interval;
             let mut check_to_flush_instant = Instant::now();
             if sync_interval == Duration::ZERO {
                 loop {

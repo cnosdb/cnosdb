@@ -227,13 +227,14 @@ pub async fn run_flush_memtable_job(
         }
     }
 
-    // If there are no data flushed but it's a force flush,
-    // just write an empty VersionEdit with the max seq_no to the summary.
+    // If there are no data flushed, but it's a force flush,
+    // advance the global seq_no context and return, do not need to update the summary.
     if version_edits.is_empty() && req.force_flush {
-        let mut ve = VersionEdit::new(req.ts_family_id);
-        ve.has_seq_no = true;
-        ve.seq_no = global_sequence_context.max_seq();
-        version_edits.push(ve);
+        let global_max_seq_no = global_sequence_context.max_seq();
+        let mut vnode_id_max_seq_no = HashMap::with_capacity(1);
+        vnode_id_max_seq_no.insert(req.ts_family_id, global_max_seq_no);
+        global_sequence_context.next_stage(None, Some(vnode_id_max_seq_no));
+        return Ok(());
     }
 
     info!(
