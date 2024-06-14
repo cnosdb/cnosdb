@@ -23,8 +23,7 @@ use crate::file_system::file_manager::try_exists;
 use crate::kv_option::{Options, StorageOptions, DELTA_PATH, TSM_PATH};
 use crate::memcache::MemCache;
 use crate::record_file::{Reader, RecordDataType, RecordDataVersion, Writer};
-use crate::tseries_family::{ColumnFile, LevelInfo, Version};
-use crate::tsm::TsmReader;
+use crate::tseries_family::{ColumnFile, LevelInfo, TsmReaderCache, Version};
 use crate::version_set::VersionSet;
 use crate::{file_utils, ColumnFileId, LevelId, TseriesFamilyId};
 
@@ -677,7 +676,7 @@ impl Summary {
 async fn install_tombstones_for_tsm_readers(
     runtime: Arc<Runtime>,
     partly_deleted_file_paths: Vec<PathBuf>,
-    cache: Arc<ShardedAsyncCache<String, Arc<TsmReader>>>,
+    cache: TsmReaderCache,
 ) -> Result<()> {
     let partly_deleted_files_num = partly_deleted_file_paths.len();
     trace::debug!(
@@ -690,12 +689,7 @@ async fn install_tombstones_for_tsm_readers(
         let jh: tokio::task::JoinHandle<std::result::Result<(), Error>> = runtime.spawn(async move {
             let path_display = tsm_path.display();
             let path = path_display.to_string();
-            match cache_inner.get_or_insert(path.clone(), async {
-                match TsmReader::open(path).await {
-                    Ok(r) => Ok(Arc::new(r)),
-                    Err(e) => Err(e),
-                }
-            }).await {
+            match cache_inner.get_tsm_reader(&path).await {
                 Ok(tsm_reader) => {
                     tsm_reader.replace_tombstone_with_compact_tmp().await
                 }
@@ -1374,7 +1368,7 @@ mod test {
                     None,
                 )
                 .unwrap();
-            let tsm_reader_cache = Arc::downgrade(&version.tsm_reader_cache);
+            let tsm_reader_cache = Arc::downgrade(&version.tsm_reader_cache.0);
 
             let mut edit = VersionEdit::new(VNODE_ID);
             let meta = CompactMeta {

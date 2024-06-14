@@ -4,7 +4,6 @@ use std::num::NonZeroUsize;
 
 use async_trait::async_trait;
 use futures::future::join_all;
-use futures::Future;
 use rand::RngCore;
 use tokio::sync::{Mutex, MutexGuard};
 
@@ -42,24 +41,6 @@ where
     pub async fn lock_shard(&self, key: &K) -> MutexGuard<'_, Box<dyn Cache<K = K, V = V>>> {
         let index = shard(&key, self.shard.len());
         self.shard[index].lock().await
-    }
-
-    pub async fn get_or_insert<E: std::error::Error>(
-        &self,
-        key: K,
-        or_insert: impl Future<Output = Result<V, E>>,
-    ) -> Result<V, E> {
-        let index = shard(&key, self.shard.len());
-        let mut lru_cache = self.shard[index].lock().await;
-        let v = match lru_cache.get(&key) {
-            Some(v) => v,
-            None => {
-                let v = or_insert.await?;
-                lru_cache.insert(key, v.clone());
-                v
-            }
-        };
-        Ok(v)
     }
 }
 
