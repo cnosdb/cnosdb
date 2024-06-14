@@ -510,7 +510,7 @@ pub struct Version {
     /// The max timestamp of write batch in wal flushed to column file.
     pub max_level_ts: i64,
     pub levels_info: [LevelInfo; 5],
-    pub tsm_reader_cache: Arc<ShardedAsyncCache<String, Arc<TsmReader>>>,
+    pub tsm_reader_cache: TsmReaderCache,
 }
 
 impl Version {
@@ -531,7 +531,7 @@ impl Version {
             last_seq,
             max_level_ts,
             levels_info,
-            tsm_reader_cache,
+            tsm_reader_cache: TsmReaderCache(tsm_reader_cache),
         }
     }
 
@@ -562,7 +562,7 @@ impl Version {
             self.ts_family_id,
             self.storage_opt.clone(),
         );
-        let weak_tsm_reader_cache = Arc::downgrade(&self.tsm_reader_cache);
+        let weak_tsm_reader_cache = Arc::downgrade(&self.tsm_reader_cache.0);
         for (level_id, level) in self.levels_info.iter().enumerate() {
             for file in level.files.iter() {
                 if deleted_files[level_id].contains(&file.file_id) {
@@ -712,17 +712,7 @@ impl Version {
     }
 
     pub async fn get_tsm_reader(&self, path: impl AsRef<Path>) -> Result<Arc<TsmReader>> {
-        let path = path.as_ref().display().to_string();
-        let mut lru_cache = self.tsm_reader_cache.lock_shard(&path).await;
-        let tsm_reader = match lru_cache.get(&path) {
-            Some(r) => r,
-            None => {
-                let tsm_reader = Arc::new(TsmReader::open(&path).await?);
-                lru_cache.insert(path, tsm_reader.clone());
-                tsm_reader
-            }
-        };
-        Ok(tsm_reader)
+        self.tsm_reader_cache.get_tsm_reader(path).await
     }
 
     // return: l0 , l1-l4 files
@@ -745,6 +735,25 @@ impl Version {
         }
         let ans = unsafe { MaybeUninit::array_assume_init(res) };
         Ok(ans)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TsmReaderCache(pub Arc<ShardedAsyncCache<String, Arc<TsmReader>>>);
+
+impl TsmReaderCache {
+    pub async fn get_tsm_reader(&self, path: impl AsRef<Path>) -> Result<Arc<TsmReader>> {
+        let path = path.as_ref().display().to_string();
+        let mut lru_cache = self.0.lock_shard(&path).await;
+        let tsm_reader = match lru_cache.get(&path) {
+            Some(r) => r,
+            None => {
+                let tsm_reader = Arc::new(TsmReader::open(&path).await?);
+                lru_cache.insert(path, tsm_reader.clone());
+                tsm_reader
+            }
+        };
+        Ok(tsm_reader)
     }
 }
 
@@ -1003,7 +1012,7 @@ impl TseriesFamily {
             self.immut_cache = new_caches;
         }
         self.new_super_version(version.clone());
-        self.seq_no = version.last_seq;
+        self.seq_no = self.seq_no.max(version.last_seq);
         debug!(
             "Setting new version for ts_family({}), levels: {}",
             self.tf_id,
@@ -1045,7 +1054,7 @@ impl TseriesFamily {
 
         // Mark these caches marked as `flushing` in current thread and collect them.
         filtered_caches.retain(|c| c.read().mark_flushing());
-        if filtered_caches.is_empty() {
+        if !force && filtered_caches.is_empty() {
             return None;
         }
 

@@ -23,7 +23,7 @@ use crate::file_system::file_manager::try_exists;
 use crate::kv_option::{Options, StorageOptions, DELTA_PATH, TSM_PATH};
 use crate::memcache::MemCache;
 use crate::record_file::{Reader, RecordDataType, RecordDataVersion, Writer};
-use crate::tseries_family::{ColumnFile, LevelInfo, Version};
+use crate::tseries_family::{ColumnFile, LevelInfo, TsmReaderCache, Version};
 use crate::version_set::VersionSet;
 use crate::{file_utils, ColumnFileId, LevelId, TseriesFamilyId};
 
@@ -586,40 +586,12 @@ impl Summary {
                     min_seq.copied(),
                 )?;
 
-                // Try to replace tombstones with compact_tmp.
-                let mut replace_tombstone_compact_tmp_tasks =
-                    Vec::with_capacity(partly_deleted_file_paths.len());
-                for tsm_path in partly_deleted_file_paths.iter() {
-                    match new_version.get_tsm_reader(tsm_path).await {
-                        Ok(tsm_reader) => {
-                            replace_tombstone_compact_tmp_tasks.push(
-                                self.runtime.spawn(async move {
-                                    tsm_reader.replace_tombstone_with_compact_tmp().await
-                                }),
-                            );
-                        }
-                        Err(e) => {
-                            trace::error!(
-                                "Failed to get tsm_reader for file '{}' when trying to replace tombstones generated in delta-compaction: {e}",
-                                tsm_path.display(),
-                            )
-                        }
-                    }
-                }
-                for jh in replace_tombstone_compact_tmp_tasks {
-                    match jh.await {
-                        Ok(Ok(_)) => {}
-                        Ok(Err(e)) => {
-                            // TODO: This delta-compaction should be failed.
-                            trace::error!("Failed to replace tombstone with compact_tmp: {e}");
-                        }
-                        Err(e) => {
-                            trace::error!(
-                                "Maybe panicked replacing tombstone with compact_tmp: {e}"
-                            );
-                        }
-                    }
-                }
+                let _ = install_tombstones_for_tsm_readers(
+                    self.runtime.clone(),
+                    partly_deleted_file_paths.clone(),
+                    new_version.tsm_reader_cache.clone(),
+                )
+                .await;
 
                 // Mark all partly deleted files as not-compacting after ombstones are replaced with compact_tmp.
                 new_version
@@ -640,8 +612,8 @@ impl Summary {
         if let Err(_e) = self
             .sequence_task_sender
             .send(GlobalSequenceTask {
-                del_ts_family: del_tsf,
-                ts_family_min_seq: tsf_min_seq,
+                del_ts_family: Some(del_tsf),
+                ts_family_min_seq: Some(tsf_min_seq),
             })
             .await
         {
@@ -698,6 +670,63 @@ impl Summary {
     pub fn global_context(&self) -> Arc<GlobalContext> {
         self.ctx.clone()
     }
+}
+
+/// Replace tombstones with compact_tmp in parallel.
+async fn install_tombstones_for_tsm_readers(
+    runtime: Arc<Runtime>,
+    partly_deleted_file_paths: Vec<PathBuf>,
+    cache: TsmReaderCache,
+) -> Result<()> {
+    let partly_deleted_files_num = partly_deleted_file_paths.len();
+    trace::debug!(
+        "Installing tombstones after delta-compaction of {partly_deleted_files_num} tomb files."
+    );
+    let mut replace_tombstone_compact_tmp_tasks =
+        Vec::with_capacity(partly_deleted_file_paths.len());
+    for tsm_path in partly_deleted_file_paths {
+        let cache_inner = cache.clone();
+        let jh: tokio::task::JoinHandle<std::result::Result<(), Error>> = runtime.spawn(async move {
+            let path_display = tsm_path.display();
+            let path = path_display.to_string();
+            match cache_inner.get_tsm_reader(&path).await {
+                Ok(tsm_reader) => {
+                    tsm_reader.replace_tombstone_with_compact_tmp().await
+                }
+                Err(e) => {
+                    trace::error!(
+                        "Failed to get tsm_reader for file '{path_display}' when trying to replace tombstones generated in delta-compaction: {e}",
+                    );
+                    Ok(())
+                }
+            }
+        });
+        replace_tombstone_compact_tmp_tasks.push(jh);
+    }
+    let mut results = Vec::with_capacity(replace_tombstone_compact_tmp_tasks.len());
+    for jh in replace_tombstone_compact_tmp_tasks {
+        match jh.await {
+            Ok(Ok(_)) => {
+                results.push(Ok(()));
+            }
+            Ok(Err(e)) => {
+                // TODO: This delta-compaction should be failed.
+                trace::error!("Failed to replace tombstone with compact_tmp: {e}");
+                results.push(Err(e));
+            }
+            Err(e) => {
+                trace::error!("Maybe panicked replacing tombstone with compact_tmp: {e}");
+                results.push(Err(Error::RecordFileIo {
+                    reason: "".to_string(),
+                }));
+            }
+        }
+    }
+    trace::debug!(
+        "Installed tombstones after delta-compaction of {partly_deleted_files_num} tomb files."
+    );
+
+    Ok(())
 }
 
 pub async fn print_summary_statistics(path: impl AsRef<Path>) {
@@ -1339,7 +1368,7 @@ mod test {
                     None,
                 )
                 .unwrap();
-            let tsm_reader_cache = Arc::downgrade(&version.tsm_reader_cache);
+            let tsm_reader_cache = Arc::downgrade(&version.tsm_reader_cache.0);
 
             let mut edit = VersionEdit::new(VNODE_ID);
             let meta = CompactMeta {
