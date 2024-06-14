@@ -45,6 +45,7 @@ pub type ColumnId = u32;
 pub type TagKey = Vec<u8>;
 pub type TagValue = Vec<u8>;
 
+/// Unite of ColumnId(u32, high) and SeriesId(u32, low).
 pub type FieldId = u64;
 pub type FieldName = Vec<u8>;
 

@@ -982,7 +982,7 @@ impl TsmCache {
         let block_meta_len = block_meta.size();
 
         let mut load_off_start = 0_u64;
-        let mut load_len = 0_usize;
+        let mut load_len = 0_u64;
         let mut found_curr_field = false;
         'idx_iter: while let Some(idx) = self.index_iter.peek() {
             let blk_meta_iter = match out_time_ranges {
@@ -1004,34 +1004,49 @@ impl TsmCache {
                     continue;
                 }
                 let blk_len = blk.size();
-                if blk_len > (self.capacity - load_len) as u64 {
+                if load_len + blk_len > self.capacity as u64 {
                     // Cache is full, stop loading next BlockMeta, nether next IndeMeta.
+                    trace::trace!(
+                        "Cache(file:{}) is full({load_len} + {blk_len}> {} at offset: {load_off_start}",
+                        tsm_reader.file_id(), self.capacity,
+                    );
                     break 'idx_iter;
                 }
 
                 if load_off_start == 0 {
                     load_off_start = blk_off;
                 }
-                load_len = (blk_off + blk_len - load_off_start) as usize;
+                load_len = blk_off + blk_len - load_off_start;
             }
 
             self.index_iter.next();
         }
 
         if load_len == 0 {
+            trace::debug!("Cache not loaded, block_meta not found, file:{},field:{},off:{},len:{}, cache: off:{},len:{}",
+                tsm_reader.file_id(),
+                block_meta.field_id(),
+                block_meta.offset(),
+                block_meta.size(),
+                self.tsm_off,
+                self.data.len(),
+            );
             return Ok(None);
         }
         self.tsm_off = load_off_start;
         trace::trace!(
-            "Filling cache from file:{} for block_meta: field:{},off:{},len:{}, cache_scale: off:{},len:{}",
+            "Filling cache from file:{} for block_meta: file:{},field:{},off:{},len:{}, cache_scale: off:{},len:{}",
             tsm_reader.file_id(),
+            block_meta.file_id(),
             block_meta.field_id(),
             block_meta.offset(),
             block_meta.size(),
             load_off_start,
             load_len
         );
-        self.data = tsm_reader.get_raw_data(load_off_start, load_len).await?;
+        self.data = tsm_reader
+            .get_raw_data(load_off_start, load_len as usize)
+            .await?;
 
         let cache_off = (block_meta_off - self.tsm_off) as usize;
         Ok(Some(
@@ -1042,12 +1057,23 @@ impl TsmCache {
     /// Read cached data of block_meta, if data of block_meta is not loaded, return None.
     fn read(&self, block_meta: &BlockMeta) -> Option<&[u8]> {
         let blk_off = block_meta.offset();
+        // The block_meta is not in the cache.
+        if blk_off < self.tsm_off {
+            trace::debug!("Trying to load previous data, block_meta: file:{},field:{},off:{},len:{}, cache: off:{},len:{}",
+                block_meta.file_id(),
+                block_meta.field_id(),
+                block_meta.offset(),
+                block_meta.size(),
+                self.tsm_off,
+                self.data.len(),
+            );
+            return None;
+        }
+
         let blk_len = block_meta.size() as usize;
         let cache_off = (blk_off - self.tsm_off) as usize;
-        // The block_meta is not in the cache.
-        if blk_off < self.tsm_off
-            // Cached data is exceeded, need to fill the cache from the block_meta.
-            || cache_off >= self.data.len()
+        // Cached data is exceeded, need to fill the cache from the block_meta.
+        if cache_off >= self.data.len()
             // This means the block_meta is not for the file.
             || cache_off + blk_len > self.data.len()
         {

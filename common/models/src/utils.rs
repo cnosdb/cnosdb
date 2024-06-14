@@ -19,11 +19,18 @@ pub const MINUTES_MILLS: i64 = 60 * SECOND_MILLS;
 pub const HOUR_MILLS: i64 = 60 * MINUTES_MILLS;
 pub const DAY_MILLS: i64 = 24 * HOUR_MILLS;
 
+#[inline(always)]
+pub fn high(id: u64) -> u32 {
+    ((id & HIGH_32BIT_MASK) >> 32) as u32
+}
+
+#[inline(always)]
+pub fn low(id: u64) -> u32 {
+    (id & LOW_32BIT_MASK) as u32
+}
+
 pub fn split_id(id: u64) -> (u32, u32) {
-    (
-        ((id & HIGH_32BIT_MASK) >> 32) as u32,
-        (id & LOW_32BIT_MASK) as u32,
-    )
+    (high(id), low(id))
 }
 
 pub fn unite_id(hash_id: u32, incr_id: u32) -> u64 {
