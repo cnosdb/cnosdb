@@ -19,7 +19,6 @@ use meta::error::{MetaError, MetaResult};
 use meta::limiter::RequestLimiter;
 use meta::model::MetaRef;
 use metrics::count::U64Counter;
-use metrics::gather_metrics;
 use metrics::metric_register::MetricsRegister;
 use metrics::prom_reporter::PromReporter;
 use models::auth::privilege::{DatabasePrivilege, Privilege, TenantObjectPrivilege};
@@ -1067,7 +1066,7 @@ impl HttpService {
             .map(
                 |register: Arc<MetricsRegister>, metrics: Arc<HttpMetrics>, addr: String| {
                     let start = Instant::now();
-                    let mut buffer = gather_metrics();
+                    let mut buffer: Vec<u8> = Vec::new();
                     let mut prom_reporter = PromReporter::new(&mut buffer);
                     register.report(&mut prom_reporter);
                     http_response_time_and_flow_metrics(

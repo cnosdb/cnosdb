@@ -150,7 +150,6 @@ impl CompactJobInner {
                         .await;
                     if let Some(tsf) = ts_family {
                         info!("Starting compaction on ts_family {}", vnode_id);
-                        let start = Instant::now();
                         if !tsf.read().await.can_compaction() {
                             info!("forbidden compaction on moving vnode {}", vnode_id);
                             return;
@@ -159,10 +158,6 @@ impl CompactJobInner {
                         let version = tsf.read().await.version();
                         let compact_req = picker.pick_compaction(version);
                         if let Some(req) = compact_req {
-                            let database = req.database.clone();
-                            let compact_ts_family = req.ts_family_id;
-                            let out_level = req.out_level;
-
                             // Method acquire_owned() will return AcquireError if the semaphore has been closed.
                             let permit = compaction_limit.clone().acquire_owned().await.unwrap();
                             let enable_compaction = enable_compaction.clone();
@@ -182,7 +177,6 @@ impl CompactJobInner {
 
                                 match super::run_compaction_job(req, ctx.global_ctx.clone()).await {
                                     Ok(Some((version_edit, file_metas))) => {
-                                        metrics::incr_compaction_success();
                                         let (summary_tx, _summary_rx) = oneshot::channel();
                                         let _ = ctx
                                             .summary_task_sender
@@ -195,19 +189,12 @@ impl CompactJobInner {
                                             ))
                                             .await;
 
-                                        metrics::sample_tskv_compaction_duration(
-                                            database.as_str(),
-                                            compact_ts_family.to_string().as_str(),
-                                            out_level.to_string().as_str(),
-                                            start.elapsed().as_secs_f64(),
-                                        )
                                         // TODO Handle summary result using summary_rx.
                                     }
                                     Ok(None) => {
                                         info!("There is nothing to compact.");
                                     }
                                     Err(e) => {
-                                        metrics::incr_compaction_failed();
                                         error!("Compaction job failed: {:?}", e);
                                     }
                                 }

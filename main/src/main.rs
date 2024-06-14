@@ -9,7 +9,6 @@ use clap::{command, Args, Parser, Subcommand, ValueEnum};
 use config::tskv::Config;
 use config::VERSION;
 use memory_pool::GreedyMemoryPool;
-use metrics::init_tskv_metrics_recorder;
 use metrics::metric_register::MetricsRegister;
 use tokio::runtime::Runtime;
 use trace::global_logging::init_global_logging;
@@ -167,7 +166,6 @@ fn main() -> Result<(), std::io::Error> {
     let deployment_mode = get_deployment_mode(&config.deployment.mode)?;
 
     init_global_logging(&config.log, "tsdb.log");
-    init_tskv_metrics_recorder();
 
     let runtime = Arc::new(init_runtime(Some(config.deployment.cpu))?);
     let mem_bytes = run_args.memory.unwrap_or(config.deployment.memory) * 1024 * 1024 * 1024;
