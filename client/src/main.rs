@@ -7,10 +7,11 @@ use client::ctx::{SessionConfig, SessionContext};
 use client::print_format::PrintFormat;
 use client::print_options::PrintOptions;
 use client::{exec, CNOSDB_CLI_VERSION};
+use config::VERSION;
 use http_protocol::encoding::Encoding;
 
 #[derive(Debug, Clone, Parser, PartialEq)]
-#[command(author, version, about, long_about= None)]
+#[command(name = "cnosdb-cli", author, version = & VERSION[..], about, long_about= None)]
 struct CliArgs {
     #[command(subcommand)]
     subcommand: Option<CliCommand>,

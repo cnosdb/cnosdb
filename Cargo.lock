@@ -1139,6 +1139,7 @@ dependencies = [
  "async-backtrace",
  "base64",
  "clap",
+ "config",
  "datafusion",
  "dirs",
  "env_logger",

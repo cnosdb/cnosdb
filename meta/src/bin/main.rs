@@ -1,10 +1,12 @@
 #![allow(dead_code, clippy::field_reassign_with_default)]
 
 use clap::Parser;
+use config::VERSION;
 use meta::signal;
 use trace::global_logging::init_global_logging;
 
 #[derive(Debug, Parser)]
+#[command(name = "cnosdb-meta", version = & VERSION[..])]
 struct Cli {
     /// configuration path
     #[arg(short, long)]
