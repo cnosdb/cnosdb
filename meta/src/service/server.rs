@@ -57,19 +57,29 @@ pub async fn start_raft_node(opt: config::meta::Opt) -> MetaResult<()> {
         install_snapshot_timeout: opt.install_snapshot_timeout,
         snapshot_policy: SnapshotPolicy::LogsSinceLast(opt.raft_logs_to_keep),
     };
-
+    let init_data = MetaInit {
+        cluster_name: opt.cluster_name.clone(),
+        admin_user: models::auth::user::ROOT.to_string(),
+        admin_pwd: models::auth::user::ROOT_PWD.to_string(),
+        system_tenant: models::schema::DEFAULT_CATALOG.to_string(),
+        default_database: vec![
+            models::schema::USAGE_SCHEMA.to_string(),
+            models::schema::DEFAULT_DATABASE.to_string(),
+            models::schema::CLUSTER_SCHEMA.to_string(),
+        ],
+    };
     let node = RaftNode::new(id, info, Arc::new(storage), config)
         .await
         .unwrap();
     {
         let mut engine_w = engine.write().await;
-        init_meta(&mut engine_w, opt.meta_init.clone()).await;
+        init_meta(&mut engine_w, init_data.clone()).await;
     }
 
     tokio::spawn(detect_node_heartbeat(
         node.clone(),
         engine.clone(),
-        opt.meta_init.clone(),
+        init_data.clone(),
         opt.heartbeat.clone(),
     ));
 

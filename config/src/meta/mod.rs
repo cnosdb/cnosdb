@@ -28,9 +28,9 @@ pub struct Opt {
     pub raft_logs_to_keep: u64,
     pub install_snapshot_timeout: u64,    //ms
     pub send_append_entries_timeout: u64, //ms
+    pub cluster_name: String,
 
     pub log: LogConfig,
-    pub meta_init: MetaInit,
     pub heartbeat: HeartBeatConfig,
 }
 
@@ -49,7 +49,7 @@ impl Default for Opt {
             data_path: String::from("/var/lib/cnosdb/meta"),
             grpc_enable_gzip: false,
             log: Default::default(),
-            meta_init: Default::default(),
+            cluster_name: String::from("cluster_xxx"),
             heartbeat: Default::default(),
 
             lmdb_max_map_size: 1024 * 1024 * 1024,
@@ -90,18 +90,13 @@ id = 1
 host = "127.0.0.1"
 port = 8901
 data_path = "/tmp/cnosdb/meta"
+cluster_name = "cluster_xxx"
 grpc_enable_gzip = false
 
 [log]
 level = "warn"
 path = "/tmp/cnosdb/logs"
 
-[meta_init]
-cluster_name = "cluster_xxx"
-admin_user = "root"
-admin_pwd = "root"
-system_tenant = "cnosdb"
-default_database = ["public", "usage_schema"]
 
 [heartbeat]
 heartbeat_recheck_interval = 300
