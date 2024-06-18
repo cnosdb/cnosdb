@@ -267,7 +267,7 @@ impl PrimaryColumnData {
             }
             PrimaryColumnData::String(data, _, _) => data
                 .get(index)
-                .map(|val| FieldVal::Bytes(MiniVec::from(val.as_str()))),
+                .map(|val| FieldVal::Bytes(MiniVec::from(val.as_bytes()))),
             PrimaryColumnData::Bool(data, _, _) => {
                 data.get(index).map(|val| FieldVal::Boolean(*val))
             }
@@ -313,5 +313,16 @@ impl PrimaryColumnData {
             PrimaryColumnData::String(..) => PhysicalDType::String,
             PrimaryColumnData::Bool(..) => PhysicalDType::Boolean,
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use minivec::MiniVec;
+
+    #[test]
+    fn test() {
+        let v = MiniVec::from("".as_bytes());
+        assert_eq!(v.len(), 0);
     }
 }
