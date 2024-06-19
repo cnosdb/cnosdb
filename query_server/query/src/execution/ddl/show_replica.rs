@@ -5,6 +5,7 @@ use datafusion::arrow::array::{StringArray, UInt32Array};
 use datafusion::arrow::datatypes::{DataType, Field, Schema};
 use datafusion::arrow::record_batch::RecordBatch;
 use meta::error::MetaError;
+use models::schema::database_schema::{timestamp_convert, Precision};
 use snafu::ResultExt;
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::recordbatch::RecordBatchStreamWrapper;
@@ -60,16 +61,16 @@ async fn show_replica(machine: QueryStateMachineRef) -> QueryResult<Output> {
                 replica_id_list.push(replica.id);
                 database_list.push(db_name.clone());
 
-                let start_time_nanos = models::schema::timestamp_convert(
+                let start_time_nanos = timestamp_convert(
                     *db_info.schema.config.precision_or_default(),
-                    models::schema::Precision::NS,
+                    Precision::NS,
                     bucket.start_time,
                 )
                 .unwrap_or_default();
                 start_time_list.push(timestamp_to_string(start_time_nanos));
-                let end_time_nanos = models::schema::timestamp_convert(
+                let end_time_nanos = timestamp_convert(
                     *db_info.schema.config.precision_or_default(),
-                    models::schema::Precision::NS,
+                    Precision::NS,
                     bucket.end_time,
                 )
                 .unwrap_or_default();

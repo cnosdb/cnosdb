@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use meta::error::MetaError;
-use models::schema::DatabaseSchema;
+use models::schema::database_schema::DatabaseSchema;
 use snafu::ResultExt;
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::CreateDatabase;

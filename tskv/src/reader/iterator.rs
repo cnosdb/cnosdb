@@ -18,7 +18,7 @@ use models::field_value::DataType;
 use models::meta_data::VnodeId;
 use models::predicate::domain::{self, QueryArgs, QueryExpr, TimeRanges};
 use models::predicate::PlacedSplit;
-use models::schema::{PhysicalCType, TableColumn, TskvTableSchemaRef};
+use models::schema::tskv_table_schema::{PhysicalCType, TableColumn, TskvTableSchemaRef};
 use models::{ColumnId, PhysicalDType, SeriesId, SeriesKey, Timestamp};
 use protos::kv_service::QueryRecordBatchRequest;
 use snafu::ResultExt;

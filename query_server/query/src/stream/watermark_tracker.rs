@@ -8,9 +8,9 @@ use datafusion::arrow::record_batch::RecordBatch;
 use futures::TryStreamExt;
 use models::arrow::TimeUnit;
 use models::predicate::domain::Predicate;
-use models::schema::{
-    ColumnType, Precision, TableColumn, TskvTableSchema, CLUSTER_SCHEMA, DEFAULT_CATALOG,
-};
+use models::schema::database_schema::Precision;
+use models::schema::tskv_table_schema::{ColumnType, TableColumn, TskvTableSchema};
+use models::schema::{CLUSTER_SCHEMA, DEFAULT_CATALOG};
 use models::utils::now_timestamp_nanos;
 use models::ValueType;
 use protocol_parser::Line;

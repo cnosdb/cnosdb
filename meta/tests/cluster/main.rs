@@ -8,8 +8,9 @@ use meta::client;
 use meta::store::command;
 use metrics::metric_register::MetricsRegister;
 use models::meta_data::NodeInfo;
-use models::schema::Tenant;
+use models::schema::tenant::{Tenant, TenantOptions};
 use sysinfo::System;
+
 #[cfg(feature = "meta_e2e_test")]
 fn kill_cnosdb_meta_process(process_name: &str) {
     let system = System::new_all();
@@ -53,7 +54,7 @@ async fn write_data_to_meta() {
     let tenant = Tenant::new(
         oid,
         "test_add_tenant001".to_string(),
-        models::schema::TenantOptions::default(),
+        TenantOptions::default(),
     );
     let req = command::WriteCommand::CreateTenant("cluster_xxx".to_string(), tenant);
     let cli = client::MetaHttpClient::new("127.0.0.1:8901", Arc::new(MetricsRegister::default()));

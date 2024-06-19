@@ -8,7 +8,8 @@ mod tests {
     use meta::model::meta_admin::AdminMeta;
     use metrics::metric_register::MetricsRegister;
     use models::meta_data::VnodeId;
-    use models::schema::{make_owner, Precision, TenantOptions};
+    use models::schema::database_schema::{make_owner, Precision};
+    use models::schema::tenant::TenantOptions;
     use protos::kv_service::{raft_write_command, WriteDataRequest};
     use protos::models_helper;
     use serial_test::serial;
@@ -40,15 +41,12 @@ mod tests {
     fn get_tskv(dir: impl AsRef<Path>, runtime: Option<Arc<Runtime>>) -> (Arc<Runtime>, TsKv) {
         let global_config = get_config(dir);
         let opt = kv_option::Options::from(&global_config);
-        let rt = match runtime {
-            Some(rt) => rt,
-            None => {
-                let mut builder = runtime::Builder::new_multi_thread();
-                builder.enable_all().max_blocking_threads(2);
-                let runtime = builder.build().unwrap();
-                Arc::new(runtime)
-            }
-        };
+        let rt = runtime.unwrap_or_else(|| {
+            let mut builder = runtime::Builder::new_multi_thread();
+            builder.enable_all().max_blocking_threads(2);
+            let runtime = builder.build().unwrap();
+            Arc::new(runtime)
+        });
         let memory = Arc::new(GreedyMemoryPool::default());
         let tskv = rt.block_on(async {
             let meta_manager =

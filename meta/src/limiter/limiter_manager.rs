@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use models::schema::Tenant;
+use models::schema::tenant::Tenant;
 use parking_lot::RwLock;
 
 use crate::error::{MetaError, MetaResult};

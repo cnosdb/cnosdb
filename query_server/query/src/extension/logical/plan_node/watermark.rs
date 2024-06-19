@@ -6,7 +6,7 @@ use datafusion::common::{DFSchema, DFSchemaRef};
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::{LogicalPlan, UserDefinedLogicalNodeCore};
 use datafusion::prelude::{Column, Expr};
-use models::schema::Watermark;
+use models::schema::stream_table_schema::Watermark;
 
 use crate::extension::{EVENT_TIME_COLUMN, WATERMARK_DELAY_MS};
 

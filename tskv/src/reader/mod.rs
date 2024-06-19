@@ -15,7 +15,8 @@ use futures::{Stream, StreamExt};
 pub use iterator::QueryOption;
 use models::field_value::DataType;
 use models::predicate::domain::{TimeRange, TimeRanges};
-use models::schema::{PhysicalCType, TskvTableSchema, TIME_FIELD_NAME};
+use models::schema::tskv_table_schema::{PhysicalCType, TskvTableSchema};
+use models::schema::TIME_FIELD_NAME;
 use models::ColumnId;
 use parking_lot::RwLock;
 

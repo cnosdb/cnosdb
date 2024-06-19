@@ -13,9 +13,9 @@ use std::{io, thread};
 use meta::store::command::WriteCommand;
 use models::meta_data::TenantMetaData;
 use models::oid::UuidGenerator;
-use models::schema::{
-    DatabaseOptions, DatabaseSchema, Duration as CnosDuration, Precision, Tenant, TenantOptions,
-};
+use models::schema::database_schema::{DatabaseOptions, DatabaseSchema, Precision};
+use models::schema::tenant::{Tenant, TenantOptions};
+use models::schema::utils::Duration as CnosDuration;
 use serial_test::serial;
 use sysinfo::System;
 use walkdir::WalkDir;

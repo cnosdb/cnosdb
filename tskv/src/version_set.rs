@@ -4,7 +4,7 @@ use std::sync::Arc;
 use memory_pool::MemoryPoolRef;
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
-use models::schema::{make_owner, split_owner, DatabaseSchema};
+use models::schema::database_schema::{make_owner, split_owner, DatabaseSchema};
 use snafu::ResultExt;
 use tokio::runtime::Runtime;
 use tokio::sync::RwLock;

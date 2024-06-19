@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use meta::error::MetaError;
-use models::schema::{StreamTable, TableSchema};
+use models::schema::stream_table_schema::StreamTable;
+use models::schema::table_schema::TableSchema;
 use snafu::ResultExt;
 use spi::query::datasource::stream::checker::StreamTableCheckerRef;
 use spi::query::execution::{Output, QueryStateMachineRef};

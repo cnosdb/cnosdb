@@ -169,7 +169,7 @@ mod test {
     use datafusion::physical_planner::{DefaultPhysicalPlanner, PhysicalPlanner};
     use datafusion::prelude::{col, count, max, min, sum, Expr, SessionConfig};
     use meta::model::meta_tenant::TenantMeta;
-    use models::schema::{ColumnType, TableColumn, TskvTableSchema};
+    use models::schema::tskv_table_schema::{ColumnType, TableColumn, TskvTableSchema};
     use models::ValueType;
 
     use crate::data_source::batch::tskv::ClusterTable;

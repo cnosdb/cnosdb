@@ -682,7 +682,8 @@ mod test {
     use memory_pool::GreedyMemoryPool;
     use meta::model::meta_admin::AdminMeta;
     use metrics::metric_register::MetricsRegister;
-    use models::schema::{make_owner, TenantOptions};
+    use models::schema::database_schema::make_owner;
+    use models::schema::tenant::TenantOptions;
     use sysinfo::{ProcessRefreshKind, RefreshKind, System};
     use tokio::runtime::Runtime;
     use tokio::sync::RwLock;

@@ -13,7 +13,6 @@ pub mod consistency_level;
 pub mod errors;
 pub mod meta_data;
 pub mod node_info;
-pub mod schema;
 mod series_info;
 pub mod tag;
 pub mod utils;
@@ -34,6 +33,7 @@ pub mod oid;
 pub mod predicate;
 pub mod record_batch;
 pub mod runtime;
+pub mod schema;
 pub mod snappy;
 pub mod sql;
 

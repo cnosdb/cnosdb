@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use coordinator::service::CoordinatorRef;
-use models::schema::{Precision, DEFAULT_CATALOG, DEFAULT_DATABASE};
+use models::schema::database_schema::Precision;
+use models::schema::{DEFAULT_CATALOG, DEFAULT_DATABASE};
 use models::utils::now_timestamp_millis;
 use protocol_parser::open_tsdb::parser::Parser;
 use tokio::io::AsyncReadExt;

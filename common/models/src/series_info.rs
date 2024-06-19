@@ -8,7 +8,7 @@ use utils::BkdrHasher;
 use crate::errors::{
     EncodingSnafu, InvalidPointSnafu, InvalidSerdeMessageSnafu, InvalidTagSnafu, ModelResult,
 };
-use crate::schema::TskvTableSchema;
+use crate::schema::tskv_table_schema::TskvTableSchema;
 use crate::{tag, Tag, TagValue};
 
 #[derive(Serialize, Deserialize, Default, Debug, Clone, Hash, PartialEq, Eq)]

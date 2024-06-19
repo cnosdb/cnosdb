@@ -9,10 +9,13 @@ use crate::codec::Encoding;
 use crate::datafusion::SqlParserValue;
 use crate::errors::DumpSnafu;
 use crate::oid::{Identifier, Oid};
-use crate::schema::{
-    ColumnType, DatabaseSchema, DurationUnit, ExternalTableSchema, StreamTable, TableSchema,
-    Tenant, TskvTableSchema,
-};
+use crate::schema::database_schema::DatabaseSchema;
+use crate::schema::external_table_schema::ExternalTableSchema;
+use crate::schema::stream_table_schema::StreamTable;
+use crate::schema::table_schema::TableSchema;
+use crate::schema::tenant::Tenant;
+use crate::schema::tskv_table_schema::{ColumnType, TskvTableSchema};
+use crate::schema::utils::DurationUnit;
 use crate::ModelError;
 
 type Result<T, E = ModelError> = std::result::Result<T, E>;
@@ -507,10 +510,12 @@ mod test {
     use config::common::TenantLimiterConfig;
 
     use crate::auth::user::{UserDesc, UserOptionsBuilder};
-    use crate::schema::{
-        ColumnType, DatabaseOptions, DatabaseSchema, Duration, ExternalTableSchema, Precision,
-        StreamTable, TableColumn, Tenant, TenantOptionsBuilder, TskvTableSchema, Watermark,
-    };
+    use crate::schema::database_schema::{DatabaseOptions, DatabaseSchema, Precision};
+    use crate::schema::external_table_schema::ExternalTableSchema;
+    use crate::schema::stream_table_schema::{StreamTable, Watermark};
+    use crate::schema::tenant::{Tenant, TenantOptionsBuilder};
+    use crate::schema::tskv_table_schema::{ColumnType, TableColumn, TskvTableSchema};
+    use crate::schema::utils::Duration;
     use crate::sql::ToDDLSql;
     use crate::ValueType;
 

@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use models::predicate::domain::TimeRange;
-use models::schema::TskvTableSchemaRef;
+use models::schema::tskv_table_schema::TskvTableSchemaRef;
 use models::{SeriesId, SeriesKey};
 use snafu::{OptionExt, ResultExt};
 use utils::BloomFilter;
@@ -408,7 +408,7 @@ mod test {
     use models::codec::Encoding;
     use models::field_value::FieldVal;
     use models::predicate::domain::TimeRange;
-    use models::schema::{ColumnType, TableColumn, TskvTableSchema};
+    use models::schema::tskv_table_schema::{ColumnType, TableColumn, TskvTableSchema};
     use models::{SeriesKey, ValueType};
 
     use crate::tsm::data_block::MutableColumn;

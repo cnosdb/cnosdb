@@ -5,7 +5,7 @@ use coordinator::service::CoordinatorRef;
 use datafusion::logical_expr::type_coercion::is_timestamp;
 use meta::error::MetaError;
 use meta::model::MetaClientRef;
-use models::schema::StreamTable;
+use models::schema::stream_table_schema::StreamTable;
 use snafu::ResultExt;
 use spi::query::datasource::stream::checker::SchemaChecker;
 use spi::query::datasource::stream::{StreamProviderFactory, StreamProviderRef};

@@ -11,7 +11,8 @@ use models::auth::AuthError;
 use models::codec::Encoding;
 use models::error_code::ErrorCode;
 use models::meta_data::{NodeId, ReplicationSetId};
-use models::schema::{TenantOptionsBuilderError, TIME_FIELD_NAME};
+use models::schema::tenant::TenantOptionsBuilderError;
+use models::schema::TIME_FIELD_NAME;
 use models::ModelError;
 use snafu::{Backtrace, IntoError, Location, Snafu};
 

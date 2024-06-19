@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use models::schema::Tenant;
+use models::schema::tenant::Tenant;
 
 use crate::client::MetaHttpClient;
 use crate::error::{MetaError, MetaResult};

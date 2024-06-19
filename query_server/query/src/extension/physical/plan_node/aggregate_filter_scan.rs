@@ -15,7 +15,7 @@ use datafusion::physical_plan::{
 };
 use models::predicate::domain::{PredicateRef, PushedAggregateFunction};
 use models::predicate::PlacedSplit;
-use models::schema::TskvTableSchemaRef;
+use models::schema::tskv_table_schema::TskvTableSchemaRef;
 use trace::span_ext::SpanExt;
 use trace::{debug, Span, SpanContext};
 use tskv::reader::QueryOption;

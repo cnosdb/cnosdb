@@ -12,7 +12,7 @@ use datafusion::logical_expr::{TableProviderAggregationPushDown, TableProviderFi
 use datafusion::physical_plan::ExecutionPlan;
 use datafusion::prelude::Expr;
 use meta::model::MetaClientRef;
-use models::schema::{StreamTable, Watermark};
+use models::schema::stream_table_schema::{StreamTable, Watermark};
 
 use self::checker::SchemaChecker;
 use crate::QueryError;
