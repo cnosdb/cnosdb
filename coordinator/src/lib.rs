@@ -14,7 +14,8 @@ use models::meta_data::{
 };
 use models::object_reference::ResolvedTable;
 use models::predicate::domain::{ResolvedPredicate, ResolvedPredicateRef};
-use models::schema::{Precision, TskvTableSchemaRef};
+use models::schema::database_schema::Precision;
+use models::schema::tskv_table_schema::TskvTableSchemaRef;
 use protocol_parser::Line;
 use protos::kv_service::{RaftWriteCommand, UpdateSetValue};
 use raft::manager::RaftNodesManager;

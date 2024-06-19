@@ -20,7 +20,10 @@ use models::codec::Encoding;
 use models::datafusion::limit_record_batch::limit_record_batch;
 use models::predicate::domain::PredicateRef;
 use models::predicate::PlacedSplit;
-use models::schema::{ColumnType, TableColumn, TskvTableSchema, TskvTableSchemaRef, TIME_FIELD};
+use models::schema::tskv_table_schema::{
+    ColumnType, TableColumn, TskvTableSchema, TskvTableSchemaRef,
+};
+use models::schema::TIME_FIELD_NAME;
 use snafu::ResultExt;
 use spi::{CommonSnafu, CoordinatorSnafu, QueryResult};
 use trace::span_ext::SpanExt;
@@ -229,14 +232,14 @@ impl TableScanStream {
         let mut proj_fileds = Vec::with_capacity(proj_schema.fields().len());
         for item in proj_schema.fields().iter() {
             let field_name = item.name();
-            if field_name == TIME_FIELD {
-                let (encoding, column_type) = match table_schema.column(TIME_FIELD) {
+            if field_name == TIME_FIELD_NAME {
+                let (encoding, column_type) = match table_schema.column(TIME_FIELD_NAME) {
                     None => (Encoding::Default, ColumnType::Time(TimeUnit::Nanosecond)),
                     Some(v) => (v.encoding, v.column_type.clone()),
                 };
                 proj_fileds.push(TableColumn::new(
                     0,
-                    TIME_FIELD.to_string(),
+                    TIME_FIELD_NAME.to_string(),
                     column_type,
                     encoding,
                 ));

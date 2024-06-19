@@ -24,7 +24,8 @@ use metrics::prom_reporter::PromReporter;
 use models::auth::privilege::{DatabasePrivilege, Privilege, TenantObjectPrivilege};
 use models::error_code::UnknownCodeWithMessage;
 use models::oid::{Identifier, Oid};
-use models::schema::{Precision, DEFAULT_CATALOG, DEFAULT_DATABASE};
+use models::schema::database_schema::Precision;
+use models::schema::{DEFAULT_CATALOG, DEFAULT_DATABASE};
 use models::utils::now_timestamp_nanos;
 use protocol_parser::es_log::parser::{
     es_parse_to_line, flatten_json, Command, CommandInfo, ESLog,

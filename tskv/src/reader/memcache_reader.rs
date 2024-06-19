@@ -8,7 +8,7 @@ use arrow_array::{ArrayRef, RecordBatch};
 use arrow_schema::SchemaRef;
 use futures::Stream;
 use models::predicate::domain::{TimeRange, TimeRanges};
-use models::schema::{ColumnType, TableColumn};
+use models::schema::tskv_table_schema::{ColumnType, TableColumn};
 use models::{ColumnId, Timestamp};
 use parking_lot::RwLock;
 use skiplist::OrderedSkipList;
@@ -261,7 +261,7 @@ mod tests {
     use memory_pool::{GreedyMemoryPool, MemoryPool};
     use models::field_value::FieldVal;
     use models::predicate::domain::{TimeRange, TimeRanges};
-    use models::schema::{ColumnType, TableColumn, TskvTableSchema};
+    use models::schema::tskv_table_schema::{ColumnType, TableColumn, TskvTableSchema};
     use models::{SeriesId, SeriesKey, ValueType};
 
     use super::MemCacheReader;

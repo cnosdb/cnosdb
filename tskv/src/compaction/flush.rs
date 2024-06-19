@@ -242,7 +242,7 @@ pub mod flush_tests {
     use models::codec::Encoding;
     use models::field_value::FieldVal;
     use models::predicate::domain::TimeRange;
-    use models::schema::{ColumnType, TableColumn, TskvTableSchema};
+    use models::schema::tskv_table_schema::{ColumnType, TableColumn, TskvTableSchema};
     use models::{SeriesKey, ValueType};
     use parking_lot::lock_api::RwLock;
     use utils::dedup_front_by_key;

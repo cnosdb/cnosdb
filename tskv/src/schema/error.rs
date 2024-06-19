@@ -1,5 +1,5 @@
 use meta::error::MetaError;
-use models::schema::ColumnType;
+use models::schema::tskv_table_schema::ColumnType;
 use snafu::{Backtrace, Location, Snafu};
 
 pub type SchemaResult<T> = Result<T, SchemaError>;

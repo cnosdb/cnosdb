@@ -7,7 +7,7 @@ use std::sync::Arc;
 use datafusion::arrow::datatypes::DataType;
 use datafusion::scalar::ScalarValue;
 use models::predicate::domain::{utf8_from, ColumnDomains, Domain, Range};
-use models::schema::TskvTableSchema;
+use models::schema::tskv_table_schema::TskvTableSchema;
 use models::{tag, SeriesId, SeriesKey, Tag, TagKey, TagValue};
 use snafu::{OptionExt, ResultExt};
 use tokio::sync::RwLock;
@@ -641,7 +641,7 @@ mod test {
     use std::time::Duration;
 
     use datafusion::arrow::datatypes::{DataType, Field, Schema};
-    use models::schema::ExternalTableSchema;
+    use models::schema::external_table_schema::ExternalTableSchema;
     use models::{SeriesId, SeriesKey, Tag};
 
     use super::TSIndex;

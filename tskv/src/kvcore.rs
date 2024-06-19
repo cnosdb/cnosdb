@@ -8,7 +8,7 @@ use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::meta_data::VnodeId;
 use models::predicate::domain::ColumnDomains;
-use models::schema::{make_owner, split_owner, DatabaseSchema};
+use models::schema::database_schema::{make_owner, split_owner, DatabaseSchema};
 use models::{SeriesId, SeriesKey};
 use snafu::ResultExt;
 use tokio::runtime::Runtime;

@@ -5,7 +5,8 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 use models::predicate::domain::TimeRange;
-use models::schema::{TskvTableSchemaRef, TIME_FIELD};
+use models::schema::tskv_table_schema::TskvTableSchemaRef;
+use models::schema::TIME_FIELD_NAME;
 use models::SeriesId;
 use snafu::OptionExt;
 
@@ -417,7 +418,7 @@ pub fn decode_pages(pages: Vec<Page>, table_schema: TskvTableSchemaRef) -> TskvR
 
     for page in pages {
         let column = page.to_column()?;
-        if page.desc().name == TIME_FIELD {
+        if page.desc().name == TIME_FIELD_NAME {
             time_column = column;
         } else {
             other_columns.push(column);

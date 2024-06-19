@@ -12,9 +12,13 @@ use models::auth::role::{CustomTenantRole, SystemTenantRole, TenantRoleIdentifie
 use models::auth::user::UserDesc;
 use models::meta_data::*;
 use models::oid::{Identifier, Oid};
-use models::schema::{
-    DatabaseSchema, ExternalTableSchema, ResourceInfo, TableSchema, Tenant, TskvTableSchemaRef,
-};
+use models::schema::database_schema::DatabaseSchema;
+use models::schema::external_table_schema::ExternalTableSchema;
+use models::schema::resource_info::ResourceInfo;
+use models::schema::table_schema::TableSchema;
+use models::schema::tenant::Tenant;
+use models::schema::tskv_table_schema::TskvTableSchemaRef;
+use models::schema::utils::Duration;
 use parking_lot::RwLock;
 use store::command;
 use trace::info;
@@ -129,7 +133,7 @@ impl TenantMeta {
         match (db_schema.config.ttl(), max_retention_time) {
             (Some(ttl), Some(day)) => {
                 let ttl = ttl.to_nanoseconds();
-                let max = models::schema::Duration::new_with_day(*day as u64);
+                let max = Duration::new_with_day(*day as u64);
                 if ttl > max.to_nanoseconds() {
                     return Err(MetaError::ObjectLimit {
                         msg: format!("TTL reached limit, max is {} days", day),
@@ -138,7 +142,7 @@ impl TenantMeta {
             }
             (None, Some(day)) => db_schema
                 .config
-                .with_ttl(models::schema::Duration::new_with_day(*day as u64)),
+                .with_ttl(Duration::new_with_day(*day as u64)),
             _ => {}
         }
 

@@ -22,7 +22,8 @@ use datafusion::prelude::Column;
 use meta::error::MetaError;
 use meta::model::MetaClientRef;
 use models::predicate::domain::{Predicate, PredicateRef, PushedAggregateFunction};
-use models::schema::{TskvTableSchema, TskvTableSchemaRef, TIME_FIELD_NAME};
+use models::schema::tskv_table_schema::{TskvTableSchema, TskvTableSchemaRef};
+use models::schema::TIME_FIELD_NAME;
 use trace::debug;
 
 use crate::data_source::batch::filter_expr_rewriter::{has_udf_function, rewrite_filters};

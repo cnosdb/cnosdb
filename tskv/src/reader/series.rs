@@ -9,7 +9,8 @@ use arrow_array::RecordBatch;
 use datafusion::physical_plan::metrics::{ExecutionPlanMetricsSet, MetricBuilder, Time};
 use futures::{ready, Stream, StreamExt};
 use models::datafusion::limit_record_batch::limit_record_batch;
-use models::schema::{TskvTableSchemaRef, COLUMN_ID_META_KEY};
+use models::schema::tskv_table_schema::TskvTableSchemaRef;
+use models::schema::COLUMN_ID_META_KEY;
 use models::{ColumnId, SeriesKey, Tag};
 use snafu::{IntoError, ResultExt};
 
@@ -230,7 +231,9 @@ mod tests {
     use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
     use futures::TryStreamExt;
     use models::codec::Encoding;
-    use models::schema::{ColumnType, TableColumn, TskvTableSchema, TskvTableSchemaRef};
+    use models::schema::tskv_table_schema::{
+        ColumnType, TableColumn, TskvTableSchema, TskvTableSchemaRef,
+    };
     use models::{SeriesKey, Tag, ValueType};
 
     use crate::reader::series::SeriesReader;

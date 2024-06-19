@@ -3,7 +3,7 @@ use std::sync::Arc;
 use models::column_data::{ColumnData, PrimaryColumnData};
 use models::field_value::FieldVal;
 use models::predicate::domain::TimeRange;
-use models::schema::{TableColumn, TskvTableSchemaRef};
+use models::schema::tskv_table_schema::{TableColumn, TskvTableSchemaRef};
 use models::{ColumnId, SeriesId};
 use utils::bitset::BitSet;
 
@@ -354,7 +354,7 @@ mod tests {
     use models::codec::Encoding;
     use models::field_value::FieldVal;
     use models::predicate::domain::TimeRange;
-    use models::schema::{ColumnType, TableColumn, TskvTableSchema};
+    use models::schema::tskv_table_schema::{ColumnType, TableColumn, TskvTableSchema};
     use models::ValueType;
 
     use crate::file_system::async_filesystem::LocalFileSystem;

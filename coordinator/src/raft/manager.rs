@@ -6,6 +6,7 @@ use std::time::Duration;
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::meta_data::*;
+use models::schema::database_schema::make_owner;
 use openraft::SnapshotPolicy;
 use protos::kv_service::*;
 use replication::multi_raft::MultiRaft;
@@ -653,7 +654,7 @@ impl RaftNodesManager {
             .context(TskvSnafu)?;
 
         // 2. open raft logs storage
-        let owner = models::schema::make_owner(tenant, db_name);
+        let owner = make_owner(tenant, db_name);
         let wal_option = tskv::kv_option::WalOptions::from(&self.config);
         let wal = wal::VnodeWal::new(Arc::new(wal_option), Arc::new(owner), vnode_id)
             .await

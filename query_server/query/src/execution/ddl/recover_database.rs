@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use meta::error::MetaError;
 use models::oid::Identifier;
-use models::schema::{ResourceInfo, ResourceOperator, ResourceStatus};
+use models::schema::resource_info::{ResourceInfo, ResourceOperator, ResourceStatus};
 use snafu::ResultExt;
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::RecoverDatabase;

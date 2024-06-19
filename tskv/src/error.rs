@@ -9,7 +9,7 @@ use meta::error::MetaError;
 use models::codec::Encoding;
 use models::column_data::ColumnDataError;
 use models::meta_data::VnodeId;
-use models::schema::{ColumnType, TableColumn};
+use models::schema::tskv_table_schema::{ColumnType, TableColumn};
 use models::ModelError;
 use protos::PointsError;
 use snafu::{Backtrace, IntoError, Location, Snafu};

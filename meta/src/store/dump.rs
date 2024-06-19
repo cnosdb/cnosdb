@@ -3,9 +3,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use models::auth::role::{CustomTenantRole, TenantRoleIdentifier};
 use models::auth::user::{UserDesc, ROOT};
 use models::oid::{Identifier, Oid};
-use models::schema::{
-    DatabaseSchema, TableSchema, Tenant, DEFAULT_CATALOG, DEFAULT_DATABASE, USAGE_SCHEMA,
-};
+use models::schema::database_schema::DatabaseSchema;
+use models::schema::table_schema::TableSchema;
+use models::schema::tenant::Tenant;
+use models::schema::{DEFAULT_CATALOG, DEFAULT_DATABASE, USAGE_SCHEMA};
 use models::sql::{add_member_to_sql, create_table_sqls, role_to_sql, ToDDLSql};
 
 use crate::error::MetaResult;

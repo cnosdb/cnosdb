@@ -2,7 +2,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use models::meta_data::ReplicationSet;
-use models::schema::{ResourceInfo, ResourceOperator, ResourceStatus, TableSchema};
+use models::schema::resource_info::{ResourceInfo, ResourceOperator, ResourceStatus};
+use models::schema::table_schema::TableSchema;
 use protos::kv_service::{
     raft_write_command, DropColumnRequest, DropTableRequest, RaftWriteCommand, UpdateSetValue,
     UpdateTagsRequest,

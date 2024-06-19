@@ -9,7 +9,10 @@ use models::auth::role::{CustomTenantRole, SystemTenantRole, TenantRoleIdentifie
 use models::auth::user::{UserDesc, UserOptions};
 use models::meta_data::*;
 use models::oid::{Identifier, Oid, UuidGenerator};
-use models::schema::{DatabaseSchema, ResourceInfo, TableSchema, Tenant, TenantOptions};
+use models::schema::database_schema::DatabaseSchema;
+use models::schema::resource_info::ResourceInfo;
+use models::schema::table_schema::TableSchema;
+use models::schema::tenant::{Tenant, TenantOptions};
 use replication::errors::{HeedSnafu, MsgInvalidSnafu, ReplicationResult, SnapshotErrSnafu};
 use replication::{ApplyContext, ApplyStorage, EngineMetrics, Request, Response};
 use serde::{Deserialize, Serialize};

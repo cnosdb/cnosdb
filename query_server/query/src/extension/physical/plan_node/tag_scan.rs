@@ -20,7 +20,7 @@ use datafusion::physical_plan::{
 use futures::{Stream, StreamExt};
 use models::predicate::domain::PredicateRef;
 use models::predicate::PlacedSplit;
-use models::schema::{TskvTableSchema, TskvTableSchemaRef};
+use models::schema::tskv_table_schema::{TskvTableSchema, TskvTableSchemaRef};
 use snafu::ResultExt;
 use spi::{CommonSnafu, CoordinatorSnafu, QueryError};
 use trace::span_ext::SpanExt;

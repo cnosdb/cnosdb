@@ -12,7 +12,7 @@ use futures::{ready, Stream, StreamExt, TryFutureExt};
 use models::arrow::stream::MemoryRecordBatchStream;
 use models::arrow_array::build_arrow_array_builders;
 use models::meta_data::VnodeId;
-use models::schema::TskvTableSchemaRef;
+use models::schema::tskv_table_schema::TskvTableSchemaRef;
 use models::SeriesKey;
 use snafu::{OptionExt, ResultExt};
 use trace::Span;

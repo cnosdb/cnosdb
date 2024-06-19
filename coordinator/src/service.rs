@@ -30,10 +30,10 @@ use models::meta_data::{
 use models::object_reference::ResolvedTable;
 use models::oid::Identifier;
 use models::predicate::domain::{ResolvedPredicate, ResolvedPredicateRef, TimeRange, TimeRanges};
-use models::schema::{
-    timestamp_convert, ColumnType, Precision, ResourceInfo, ResourceOperator, ResourceStatus,
-    TskvTableSchemaRef, DEFAULT_CATALOG, TIME_FIELD, USAGE_SCHEMA,
-};
+use models::schema::database_schema::{timestamp_convert, Precision};
+use models::schema::resource_info::{ResourceInfo, ResourceOperator, ResourceStatus};
+use models::schema::tskv_table_schema::{ColumnType, TskvTableSchemaRef};
+use models::schema::{DEFAULT_CATALOG, TIME_FIELD_NAME, USAGE_SCHEMA};
 use models::utils::now_timestamp_nanos;
 use models::{record_batch_decode, SeriesKey, Tag};
 use protocol_parser::lines_convert::{
@@ -827,7 +827,7 @@ impl Coordinator for CoordService {
                     }
                     .build()
                 })?;
-                if name == TIME_FIELD {
+                if name == TIME_FIELD_NAME {
                     let precsion_and_value =
                         get_precision_and_value_from_arrow_column(column, idx)?;
                     precision = precsion_and_value.0;
@@ -864,7 +864,10 @@ impl Coordinator for CoordService {
 
             if !has_ts {
                 return Err(CommonSnafu {
-                    msg: format!("column {} not found in table {}", TIME_FIELD, table_name),
+                    msg: format!(
+                        "column {} not found in table {}",
+                        TIME_FIELD_NAME, table_name
+                    ),
                 }
                 .build());
             }

@@ -1,6 +1,6 @@
 use config::meta::MetaInit;
 use models::auth::user::{UserDesc, UserOptionsBuilder};
-use models::schema::{Tenant, TenantOptionsBuilder};
+use models::schema::tenant::{Tenant, TenantOptionsBuilder};
 use replication::{ApplyContext, ApplyStorage, APPLY_TYPE_WRITE};
 
 use crate::store::command::WriteCommand;

@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use models::meta_data::VnodeId;
 use models::predicate::domain::{ResolvedPredicate, TimeRange, TimeRanges};
-use models::schema::Precision;
+use models::schema::database_schema::Precision;
 use models::utils::now_timestamp_secs;
 use models::{ColumnId, SeriesId, SeriesKey};
 use protos::kv_service::{raft_write_command, WritePointsResponse, *};

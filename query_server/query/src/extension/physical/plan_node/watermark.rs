@@ -19,7 +19,7 @@ use datafusion::physical_plan::{
     Statistics,
 };
 use futures::{Stream, StreamExt};
-use models::schema::Watermark;
+use models::schema::stream_table_schema::Watermark;
 use spi::{QueryError, QueryResult};
 use trace::debug;
 

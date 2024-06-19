@@ -26,7 +26,7 @@ use super::transformation::RowExpressionToDomainsVisitor;
 use super::utils::filter_to_time_ranges;
 use super::PlacedSplit;
 use crate::errors::{InternalSnafu, InvalidQueryExprMsgSnafu, InvalidSerdeMessageSnafu};
-use crate::schema::{ColumnType, TableColumn, TskvTableSchemaRef};
+use crate::schema::tskv_table_schema::{ColumnType, TableColumn, TskvTableSchemaRef};
 use crate::{ModelResult, Timestamp};
 
 pub type PredicateRef = Arc<Predicate>;

@@ -25,9 +25,11 @@ use models::auth::user::{UserOptions, UserOptionsBuilder};
 use models::meta_data::{NodeId, ReplicationSetId, VnodeId};
 use models::object_reference::ResolvedTable;
 use models::oid::{Identifier, Oid};
-use models::schema::{
-    DatabaseOptions, Duration, TableColumn, Tenant, TenantOptions, TenantOptionsBuilder, Watermark,
-};
+use models::schema::database_schema::DatabaseOptions;
+use models::schema::stream_table_schema::Watermark;
+use models::schema::tenant::{Tenant, TenantOptions, TenantOptionsBuilder};
+use models::schema::tskv_table_schema::TableColumn;
+use models::schema::utils::Duration;
 use snafu::{IntoError, ResultExt};
 use tempfile::NamedTempFile;
 

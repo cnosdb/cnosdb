@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use meta::error::MetaError;
-use models::schema::{TableSchema, TskvTableSchema};
+use models::schema::table_schema::TableSchema;
+use models::schema::tskv_table_schema::TskvTableSchema;
 use snafu::ResultExt;
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::logical_planner::CreateTable;

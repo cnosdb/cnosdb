@@ -14,9 +14,10 @@ use datafusion::physical_plan::ExecutionPlan;
 use meta::model::MetaClientRef;
 use models::auth::user::User;
 use models::oid::Identifier;
-use models::schema::{
-    ColumnType, ExternalTableSchema, StreamTable, TableSchema, TskvTableSchemaRef,
-};
+use models::schema::external_table_schema::ExternalTableSchema;
+use models::schema::stream_table_schema::StreamTable;
+use models::schema::table_schema::TableSchema;
+use models::schema::tskv_table_schema::{ColumnType, TskvTableSchemaRef};
 use models::ValueType;
 
 use crate::dispatcher::query_tracker::QueryTracker;

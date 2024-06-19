@@ -11,7 +11,7 @@ use datafusion::logical_expr::logical_plan::AggWithGrouping;
 use datafusion::physical_plan::empty::EmptyExec;
 use datafusion::physical_plan::{project_schema, ExecutionPlan};
 use datafusion::prelude::{col, lit_timestamp_nano, Expr};
-use models::schema::Watermark;
+use models::schema::stream_table_schema::Watermark;
 use spi::query::datasource::stream::StreamProvider;
 use trace::debug;
 

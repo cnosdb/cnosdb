@@ -58,10 +58,14 @@ use models::auth::user::User;
 use models::gis::data_type::{Geometry, GeometryType};
 use models::object_reference::{Resolve, ResolvedTable};
 use models::oid::{Identifier, Oid};
-use models::schema::{
-    ColumnType, DatabaseOptions, Duration, Precision, TableColumn, Tenant, TskvTableSchema,
-    TskvTableSchemaRef, Watermark, DEFAULT_CATALOG, TIME_FIELD,
+use models::schema::database_schema::{DatabaseOptions, Precision};
+use models::schema::stream_table_schema::Watermark;
+use models::schema::tenant::Tenant;
+use models::schema::tskv_table_schema::{
+    ColumnType, TableColumn, TskvTableSchema, TskvTableSchemaRef,
 };
+use models::schema::utils::Duration;
+use models::schema::{DEFAULT_CATALOG, TIME_FIELD_NAME};
 use models::utils::SeqIdGenerator;
 use models::{ColumnId, ValueType};
 use object_store::ObjectStore;
@@ -1073,7 +1077,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         };
 
         let time_unit = if let ColumnType::Time(ref unit) = table_schema
-            .column(TIME_FIELD)
+            .column(TIME_FIELD_NAME)
             .ok_or_else(|| {
                 CommonSnafu {
                     msg: "schema missing time column".to_string(),
@@ -2980,7 +2984,7 @@ mod tests {
     use meta::error::MetaError;
     use models::auth::user::{User, UserDesc, UserOptions};
     use models::codec::Encoding;
-    use models::schema::{ColumnType, Tenant};
+    use models::schema::database_schema::Precision;
     use models::ValueType;
     use spi::query::session::SessionCtxFactory;
     use spi::service::protocol::ContextBuilder;

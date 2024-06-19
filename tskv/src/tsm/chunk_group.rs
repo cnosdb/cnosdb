@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use models::predicate::domain::TimeRange;
-use models::schema::{TskvTableSchema, TskvTableSchemaRef};
+use models::schema::tskv_table_schema::{TskvTableSchema, TskvTableSchemaRef};
 use serde::{Deserialize, Serialize};
 use snafu::IntoError;
 

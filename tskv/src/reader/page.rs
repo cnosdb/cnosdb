@@ -10,7 +10,7 @@ use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
 use minivec::MiniVec;
 use models::arrow::stream::BoxStream;
 use models::predicate::domain::TimeRange;
-use models::schema::PhysicalCType;
+use models::schema::tskv_table_schema::PhysicalCType;
 use models::{PhysicalDType, SeriesId};
 use snafu::{OptionExt, ResultExt};
 use utils::bitset::NullBitset;
@@ -355,7 +355,7 @@ pub(crate) mod tests {
     use models::arrow::stream::BoxStream;
     use models::field_value::FieldVal;
     use models::gis::data_type::{Geometry, GeometryType};
-    use models::schema::{ColumnType, TableColumn};
+    use models::schema::tskv_table_schema::{ColumnType, TableColumn};
     use models::{PhysicalDType, ValueType};
     use utils::bitset::BitSet;
 

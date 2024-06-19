@@ -7,7 +7,7 @@ use datafusion::logical_expr::{
 };
 use datafusion::prelude::{cast, lit, Expr};
 use datafusion::scalar::ScalarValue;
-use models::schema::Watermark;
+use models::schema::stream_table_schema::Watermark;
 use spi::query::datasource::stream::StreamProviderRef;
 use spi::query::logical_planner::{affected_row_expr, merge_affected_row_expr};
 use spi::QueryError;

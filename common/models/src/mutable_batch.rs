@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::column_data::{ColumnData, PrimaryColumnData};
 use crate::errors::CommonSnafu;
 use crate::field_value::FieldVal;
-use crate::schema::PhysicalCType;
+use crate::schema::tskv_table_schema::PhysicalCType;
 use crate::ModelResult;
 
 #[derive(Debug, Default, Clone)]

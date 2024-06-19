@@ -4,8 +4,10 @@ use async_recursion::async_recursion;
 use meta::error::{MetaError, TenantNotFoundSnafu};
 use meta::model::{MetaClientRef, MetaRef};
 use models::codec::Encoding;
-use models::schema::{
-    ColumnType, DatabaseSchema, TableColumn, TableSchema, TskvTableSchema, TskvTableSchemaRef,
+use models::schema::database_schema::DatabaseSchema;
+use models::schema::table_schema::TableSchema;
+use models::schema::tskv_table_schema::{
+    ColumnType, TableColumn, TskvTableSchema, TskvTableSchemaRef,
 };
 use snafu::OptionExt;
 

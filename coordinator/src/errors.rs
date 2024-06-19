@@ -7,7 +7,7 @@ use flatbuffers::InvalidFlatbuffer;
 use meta::error::MetaError;
 use models::error_code::{ErrorCode, ErrorCoder};
 use models::meta_data::{ReplicationSet, ReplicationSetId, VnodeId};
-use models::schema::Precision;
+use models::schema::database_schema::Precision;
 use models::Timestamp;
 use protos::PointsError;
 use replication::errors::ReplicationError;

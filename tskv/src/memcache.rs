@@ -10,9 +10,8 @@ use memory_pool::{MemoryConsumer, MemoryPoolRef, MemoryReservation};
 use minivec::MiniVec;
 use models::field_value::FieldVal;
 use models::predicate::domain::{TimeRange, TimeRanges};
-use models::schema::{
-    timestamp_convert, Precision, TableColumn, TskvTableSchema, TskvTableSchemaRef,
-};
+use models::schema::database_schema::{timestamp_convert, Precision};
+use models::schema::tskv_table_schema::{TableColumn, TskvTableSchema, TskvTableSchemaRef};
 use models::{ColumnId, RwLockRef, SeriesId, SeriesKey, Timestamp};
 use parking_lot::RwLock;
 use protos::models::{Column, FieldType};
@@ -864,7 +863,7 @@ pub(crate) mod test {
 
     use models::field_value::FieldVal;
     use models::predicate::domain::TimeRange;
-    use models::schema::TskvTableSchema;
+    use models::schema::tskv_table_schema::TskvTableSchema;
     use models::{SchemaVersion, SeriesId, SeriesKey, Timestamp};
     use parking_lot::RwLock;
 
@@ -976,7 +975,7 @@ mod test_memcache {
     use memory_pool::{GreedyMemoryPool, MemoryPool};
     use models::field_value::FieldVal;
     use models::predicate::domain::{TimeRange, TimeRanges};
-    use models::schema::{ColumnType, TableColumn, TskvTableSchema};
+    use models::schema::tskv_table_schema::{ColumnType, TableColumn, TskvTableSchema};
     use models::{SeriesId, SeriesKey, ValueType};
 
     use super::{dedup_and_sort_row_data, MemCache, OrderedRowsData, RowData, RowGroup};

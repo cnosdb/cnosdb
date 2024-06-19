@@ -1,6 +1,6 @@
 use models::column_data::PrimaryColumnData;
 use models::field_value::FieldVal;
-use models::schema::{PhysicalCType, TableColumn};
+use models::schema::tskv_table_schema::{PhysicalCType, TableColumn};
 use models::PhysicalDType;
 use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, ResultExt};
@@ -399,7 +399,7 @@ impl PageWriteSpec {
 #[cfg(test)]
 mod test {
     use arrow::datatypes::ToByteSlice;
-    use models::schema::{ColumnType, TableColumn};
+    use models::schema::tskv_table_schema::{ColumnType, TableColumn};
     use models::ValueType;
     use utils::bitset::BitSet;
 

@@ -7,7 +7,9 @@ use crate::auth::role::{CustomTenantRole, TenantRoleIdentifier};
 use crate::node_info::NodeStatus;
 use crate::oid::Oid;
 use crate::predicate::domain::TimeRange;
-use crate::schema::{DatabaseSchema, ResourceInfo, TableSchema};
+use crate::schema::database_schema::DatabaseSchema;
+use crate::schema::resource_info::ResourceInfo;
+use crate::schema::table_schema::TableSchema;
 
 pub type VnodeId = u32;
 pub type NodeId = u64;

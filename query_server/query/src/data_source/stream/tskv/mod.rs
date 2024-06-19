@@ -38,7 +38,8 @@ mod tests {
     use datafusion::sql::TableReference;
     use meta::model::meta_tenant::TenantMeta;
     use meta::model::MetaClientRef;
-    use models::schema::{StreamTable, TskvTableSchema, Watermark};
+    use models::schema::stream_table_schema::{StreamTable, Watermark};
+    use models::schema::tskv_table_schema::TskvTableSchema;
     use spi::query::datasource::stream::{StreamProviderManager, StreamProviderRef};
     use spi::QueryError;
 

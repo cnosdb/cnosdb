@@ -58,7 +58,7 @@ mod tests {
     use datafusion::physical_plan::expressions::{lit, BinaryExpr, Column};
     use datafusion::physical_plan::functions::create_physical_expr;
     use datafusion::scalar::ScalarValue;
-    use models::schema::{ColumnType, TableColumn};
+    use models::schema::tskv_table_schema::{ColumnType, TableColumn};
     use models::ValueType;
 
     use crate::reader::chunk::filter_column_groups_indices;

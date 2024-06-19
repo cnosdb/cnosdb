@@ -6,7 +6,7 @@ use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::execution::context::TaskContext;
 use datafusion::physical_plan::metrics::{self, Count, ExecutionPlanMetricsSet, MetricBuilder};
-use models::schema::TskvTableSchemaRef;
+use models::schema::tskv_table_schema::TskvTableSchemaRef;
 use snafu::ResultExt;
 use spi::{CoordinatorSnafu, MetaSnafu, QueryResult};
 use trace::span_ext::SpanExt;

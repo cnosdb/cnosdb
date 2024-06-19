@@ -19,7 +19,7 @@ use datafusion::physical_plan::{
 };
 use datafusion::scalar::ScalarValue;
 use futures::{StreamExt, TryStreamExt};
-use models::schema::TskvTableSchemaRef;
+use models::schema::tskv_table_schema::TskvTableSchemaRef;
 use protos::kv_service::UpdateSetValue;
 use snafu::IntoError;
 use spi::query::AFFECTED_ROWS;

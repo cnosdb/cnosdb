@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use arrow::datatypes::SchemaRef;
 use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
-use models::schema::TIME_FIELD;
+use models::schema::TIME_FIELD_NAME;
 
 use super::{
     BatchReader, BatchReaderRef, EmptySchemableTskvRecordBatchStream,
@@ -50,7 +50,7 @@ impl DataMerger {
             streams,
             self.schema.clone(),
             self.batch_size,
-            TIME_FIELD,
+            TIME_FIELD_NAME,
             &self.metrics,
         )
     }

@@ -8,7 +8,7 @@ use datafusion::arrow::datatypes::{SchemaRef, TimeUnit};
 use flatbuffers::{FlatBufferBuilder, WIPOffset};
 use models::column_data::PrimaryColumnData;
 use models::mutable_batch::MutableBatch;
-use models::schema::{PhysicalCType as ColumnType, TskvTableSchemaRef};
+use models::schema::tskv_table_schema::{PhysicalCType, TskvTableSchemaRef};
 use models::PhysicalDType as ValueType;
 use protos::models::{
     Column as FbColumn, ColumnBuilder, ColumnType as FbColumnType, FieldType, PointsBuilder,
@@ -30,7 +30,7 @@ pub fn line_to_batches(lines: &[Line]) -> Result<HashMap<String, MutableBatch>> 
         let row_count = batch.row_count;
         for (tag_key, tag_value) in line.tags.iter() {
             let col = batch
-                .column_mut(tag_key, ColumnType::Tag)
+                .column_mut(tag_key, PhysicalCType::Tag)
                 .map_err(|e| Error::Common {
                     content: format!("Error getting column: {}", e),
                 })?;
@@ -54,7 +54,7 @@ pub fn line_to_batches(lines: &[Line]) -> Result<HashMap<String, MutableBatch>> 
             match field_value {
                 FieldValue::U64(value) => {
                     let col = batch
-                        .column_mut(field_key, ColumnType::Field(ValueType::Unsigned))
+                        .column_mut(field_key, PhysicalCType::Field(ValueType::Unsigned))
                         .map_err(|e| Error::Common {
                             content: format!("Error getting column: {}", e),
                         })?;
@@ -76,7 +76,7 @@ pub fn line_to_batches(lines: &[Line]) -> Result<HashMap<String, MutableBatch>> 
                 }
                 FieldValue::I64(value) => {
                     let col = batch
-                        .column_mut(field_key, ColumnType::Field(ValueType::Integer))
+                        .column_mut(field_key, PhysicalCType::Field(ValueType::Integer))
                         .map_err(|e| Error::Common {
                             content: format!("Error getting column: {}", e),
                         })?;
@@ -98,7 +98,7 @@ pub fn line_to_batches(lines: &[Line]) -> Result<HashMap<String, MutableBatch>> 
                 }
                 FieldValue::Str(value) => {
                     let col = batch
-                        .column_mut(field_key, ColumnType::Field(ValueType::String))
+                        .column_mut(field_key, PhysicalCType::Field(ValueType::String))
                         .map_err(|e| Error::Common {
                             content: format!("Error getting column: {}", e),
                         })?;
@@ -120,7 +120,7 @@ pub fn line_to_batches(lines: &[Line]) -> Result<HashMap<String, MutableBatch>> 
                 }
                 FieldValue::F64(value) => {
                     let col = batch
-                        .column_mut(field_key, ColumnType::Field(ValueType::Float))
+                        .column_mut(field_key, PhysicalCType::Field(ValueType::Float))
                         .map_err(|e| Error::Common {
                             content: format!("Error getting column: {}", e),
                         })?;
@@ -142,7 +142,7 @@ pub fn line_to_batches(lines: &[Line]) -> Result<HashMap<String, MutableBatch>> 
                 }
                 FieldValue::Bool(value) => {
                     let col = batch
-                        .column_mut(field_key, ColumnType::Field(ValueType::Boolean))
+                        .column_mut(field_key, PhysicalCType::Field(ValueType::Boolean))
                         .map_err(|e| Error::Common {
                             content: format!("Error getting column: {}", e),
                         })?;
@@ -167,7 +167,7 @@ pub fn line_to_batches(lines: &[Line]) -> Result<HashMap<String, MutableBatch>> 
 
         let time = line.timestamp;
         let col = batch
-            .column_mut("time", ColumnType::default_time())
+            .column_mut("time", PhysicalCType::default_time())
             .map_err(|e| Error::Common {
                 content: format!("Error getting column: {}", e),
             })?;
@@ -208,9 +208,9 @@ pub fn mutable_batches_to_point(db: &str, batches: HashMap<String, MutableBatch>
         for (field_name, field_idx) in columns_names {
             let column = table_batch.columns.get(*field_idx).unwrap();
             let fb_column_type = match column.column_type {
-                ColumnType::Tag => FbColumnType::Tag,
-                ColumnType::Field(_) => FbColumnType::Field,
-                ColumnType::Time(_) => FbColumnType::Time,
+                PhysicalCType::Tag => FbColumnType::Tag,
+                PhysicalCType::Field(_) => FbColumnType::Field,
+                PhysicalCType::Time(_) => FbColumnType::Time,
             };
 
             let (field_type, values) = match column.column_data.primary_data {
@@ -294,11 +294,13 @@ pub fn arrow_array_to_points(
             content: format!("column {} not found in table {}", col_name, table_name),
         })?;
         let fb_column = match column_schema.column_type.to_physical_type() {
-            ColumnType::Tag => build_string_column(column, col_name, FbColumnType::Tag, &mut fbb)?,
-            ColumnType::Time(ref time_unit) => {
+            PhysicalCType::Tag => {
+                build_string_column(column, col_name, FbColumnType::Tag, &mut fbb)?
+            }
+            PhysicalCType::Time(ref time_unit) => {
                 build_timestamp_column(column, col_name, time_unit, &mut fbb)?
             }
-            ColumnType::Field(value_type) => match value_type {
+            PhysicalCType::Field(value_type) => match value_type {
                 ValueType::Unknown => {
                     return Err(Error::Common {
                         content: format!("column {} type is unknown", col_name),

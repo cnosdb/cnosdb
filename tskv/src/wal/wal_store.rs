@@ -504,7 +504,7 @@ mod test {
     use std::sync::atomic::AtomicUsize;
     use std::sync::{atomic, Arc};
 
-    use models::schema::make_owner;
+    use models::schema::database_schema::make_owner;
     use openraft::EntryPayload;
     use replication::apply_store::HeedApplyStorage;
     use replication::node_store::NodeStorage;

@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use self::domain::{ColumnDomains, PredicateRef, TimeRange, TimeRanges};
 use crate::meta_data::{ReplicationSet, ReplicationSetId, VnodeInfo};
 use crate::predicate::domain::{ResolvedPredicate, ResolvedPredicateRef};
-use crate::schema::{ColumnType, TskvTableSchemaRef};
+use crate::schema::tskv_table_schema::{ColumnType, TskvTableSchemaRef};
 use crate::ModelResult;
 
 pub mod domain;

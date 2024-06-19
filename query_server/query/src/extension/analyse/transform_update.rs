@@ -7,7 +7,7 @@ use datafusion::error::DataFusionError;
 use datafusion::logical_expr::{Extension, LogicalPlan, LogicalPlanBuilder};
 use datafusion::optimizer::analyzer::AnalyzerRule;
 use datafusion::prelude::{col, Expr};
-use models::schema::TskvTableSchema;
+use models::schema::tskv_table_schema::TskvTableSchema;
 use spi::query::logical_planner::{affected_row_expr, merge_affected_row_expr};
 use spi::{AnalyzerSnafu, QueryError};
 
