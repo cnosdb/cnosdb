@@ -588,6 +588,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "assert_float_eq"
+version = "1.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4cea652ffbedecf29e9cd41bb4c066881057a42c0c119040f022802b26853e77"
+
+[[package]]
 name = "async-backtrace"
 version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6389,6 +6395,7 @@ dependencies = [
  "arrow",
  "arrow-array",
  "arrow-schema",
+ "assert_float_eq",
  "async-backtrace",
  "async-recursion",
  "async-trait",

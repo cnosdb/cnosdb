@@ -86,6 +86,7 @@ io_uring = ["rio"]
 
 [dev-dependencies]
 arrow = { workspace = true, features = ["test_utils"] }
+assert_float_eq = { workspace = true }
 criterion = { workspace = true, features = ["async_tokio"] }
 parking_lot = { workspace = true, features = ["nightly"] }
 rand = { workspace = true }

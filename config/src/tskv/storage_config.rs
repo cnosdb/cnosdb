@@ -48,6 +48,9 @@ pub struct StorageConfig {
     #[serde(default = "StorageConfig::default_max_concurrent_compaction")]
     pub max_concurrent_compaction: u16,
 
+    #[serde(default = "StorageConfig::default_collect_compaction_metrics")]
+    pub collect_compaction_metrics: bool,
+
     #[serde(default = "StorageConfig::default_strict_write")]
     pub strict_write: bool,
 
@@ -113,6 +116,10 @@ impl StorageConfig {
         4
     }
 
+    fn default_collect_compaction_metrics() -> bool {
+        false
+    }
+
     fn default_strict_write() -> bool {
         false
     }
@@ -145,6 +152,7 @@ impl Default for StorageConfig {
             compact_trigger_cold_duration: Self::default_compact_trigger_cold_duration(),
             max_compact_size: Self::default_max_compact_size(),
             max_concurrent_compaction: Self::default_max_concurrent_compaction(),
+            collect_compaction_metrics: Self::default_collect_compaction_metrics(),
             strict_write: Self::default_strict_write(),
             reserve_space: Self::default_reserve_space(),
             copyinto_trigger_flush_size: Self::default_copyinto_trigger_flush_size(),
