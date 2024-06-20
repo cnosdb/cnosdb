@@ -5,10 +5,10 @@ edition.workspace = true
 
 [dependencies]
 trace = { path = "../trace" }
-parking_lot = { workspace = true, features = ["nightly"] }
 
-datafusion = { workspace = true }
 async-backtrace = { workspace = true, optional = true }
+datafusion = { workspace = true }
+parking_lot = { workspace = true, features = ["nightly"] }
 
 [features]
 default = []

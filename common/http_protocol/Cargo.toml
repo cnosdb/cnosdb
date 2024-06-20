@@ -13,9 +13,7 @@ brotli = { workspace = true }
 bytes = { workspace = true }
 flate2 = { workspace = true }
 lz4_flex = { workspace = true }
-reqwest = { workspace = true, default-features = false, features = [
-    "rustls-tls",
-] }
+reqwest = { workspace = true, default-features = false, features = ["rustls-tls"] }
 serde = { workspace = true }
 snafu = { workspace = true }
 snap = { workspace = true }
