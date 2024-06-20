@@ -10,19 +10,19 @@ models = { path = "../models" }
 protos = { path = "../protos" }
 utils = { path = "../utils" }
 
+async-backtrace = { workspace = true, optional = true }
 atoi_simd = { workspace = true }
 bytes = { workspace = true }
-chrono ={ workspace = true }
+chrono = { workspace = true }
+datafusion = { workspace = true }
 fast-float = { workspace = true }
-itertools = { workspace = true }
-serde = { workspace = true }
-serde_json ={ workspace = true }
-snafu = { workspace = true }
 flatbuffers = { workspace = true }
-async-backtrace = { workspace = true, optional = true }
+itertools = { workspace = true }
 lazy_static = { workspace = true }
 parking_lot = { workspace = true }
-datafusion = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+snafu = { workspace = true }
 
 [features]
 default = []

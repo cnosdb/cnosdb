@@ -8,14 +8,14 @@ edition.workspace = true
 [dependencies]
 config = { path = "../../config" }
 
-chrono = { workspace = true, features = ["serde"] }
-serde = { workspace = true, features = ["serde_derive"] }
-parking_lot = { workspace = true }
 async-backtrace = { workspace = true, optional = true }
+chrono = { workspace = true, features = ["serde"] }
+parking_lot = { workspace = true }
+serde = { workspace = true, features = ["serde_derive"] }
 
 [dev-dependencies]
 bincode = { workspace = true }
-serde_json = { workspace =true }
+serde_json = { workspace = true }
 
 [features]
 default = []

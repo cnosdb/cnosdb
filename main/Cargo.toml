@@ -22,14 +22,14 @@ memory_pool = { path = "../common/memory_pool" }
 meta = { path = "../meta" }
 metrics = { path = "../common/metrics" }
 models = { path = "../common/models" }
-protocol_parser =  { path = "../common/protocol_parser" }
+protocol_parser = { path = "../common/protocol_parser" }
 protos = { path = "../common/protos" }
 query = { path = "../query_server/query" }
+replication = { path = "../replication" }
 spi = { path = "../query_server/spi" }
 trace = { path = "../common/trace" }
 tskv = { path = "../tskv" }
 utils = { path = "../common/utils" }
-replication = { path = "../replication" }
 
 arrow-flight = { workspace = true, features = ["flight-sql-experimental"] }
 async-backtrace = { workspace = true, optional = true }
@@ -46,6 +46,7 @@ ctrlc = { workspace = true, features = ["termination"] }
 dashmap = { workspace = true }
 datafusion = { workspace = true }
 datafusion-proto = { workspace = true }
+dateparser = { workspace = true }
 dirs = { workspace = true }
 flatbuffers = { workspace = true }
 futures = { workspace = true, default-features = false, features = ["alloc"] }
@@ -71,7 +72,6 @@ tokio = { workspace = true, features = ["macros", "net", "parking_lot", "rt-mult
 tokio-stream = { workspace = true, features = ["net"] }
 tonic = { workspace = true, features = ["transport", "tls"] }
 warp = { workspace = true, features = ["tls"] }
-dateparser = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 pprof = { workspace = true, features = ["flamegraph", "protobuf-codec", "frame-pointer"] }
@@ -92,5 +92,3 @@ path = "examples/flight_sql_server.rs"
 [[example]]
 name = "flight_rpc_server"
 path = "examples/flight_rpc_server.rs"
-
-

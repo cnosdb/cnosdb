@@ -7,10 +7,11 @@ edition.workspace = true
 
 [dependencies]
 trace = { path = "../trace" }
-prometheus = { version = "0.13.2", default-features = false }
+
+async-backtrace = { workspace = true, optional = true }
 once_cell = { workspace = true }
 parking_lot = { workspace = true }
-async-backtrace = { workspace = true, optional = true }
+prometheus = { version = "0.13.2", default-features = false }
 
 [features]
 default = []

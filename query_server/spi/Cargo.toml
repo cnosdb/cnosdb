@@ -2,34 +2,36 @@
 name = "spi"
 version.workspace = true
 edition.workspace = true
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-models = { path = "../../common/models" }
+config = { path = "../../config" }
+coordinator = { path = "../../coordinator" }
 error_code = { path = "../../common/error_code" }
 meta = { path = "../../meta" }
-coordinator = { path = "../../coordinator" }
-tskv = { path = "../../tskv" }
-protos = { path = "../../common/protos" }
-config = { path = "../../config" }
-trace = { path = "../../common/trace" }
+models = { path = "../../common/models" }
 protocol_parser = { path = "../../common/protocol_parser" }
-flatbuffers = { workspace = true }
+protos = { path = "../../common/protos" }
+trace = { path = "../../common/trace" }
+tskv = { path = "../../tskv" }
+
+arrow-flight = { workspace = true }
 async-trait = { workspace = true }
+bytes = { workspace = true }
+chrono = { workspace = true }
 datafusion = { workspace = true }
-snafu = { workspace = true, features = ["backtraces"] }
 derive_builder = { workspace = true }
+duration-str = { workspace = true }
+flatbuffers = { workspace = true }
+futures = { workspace = true }
+lazy_static = { workspace = true }
 object_store = { workspace = true }
-url = { workspace = true }
-tempfile = { workspace = true }
+rand = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-bytes = { workspace = true }
+snafu = { workspace = true, features = ["backtraces"] }
 snap = { workspace = true }
-lazy_static = { workspace = true }
-duration-str = { workspace = true }
-futures = { workspace = true }
-arrow-flight = { workspace = true }
+tempfile = { workspace = true }
 tonic = { workspace = true, features = ["tls", "transport"] }
-chrono = { workspace = true }
-rand = { workspace = true }
+url = { workspace = true }
