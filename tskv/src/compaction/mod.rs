@@ -2,6 +2,7 @@ pub mod check;
 mod compact;
 mod flush;
 pub mod job;
+pub mod metrics;
 mod picker;
 
 use std::sync::Arc;

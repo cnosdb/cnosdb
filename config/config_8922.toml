@@ -38,6 +38,7 @@ compact_trigger_file_num = 4
 compact_trigger_cold_duration = "1h"
 max_compact_size = "2G"              # 2147483648
 max_concurrent_compaction = 4
+collect_compaction_metrics = false
 strict_write = false
 reserve_space = "0"
 max_datablock_size = "100KB"

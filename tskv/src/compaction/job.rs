@@ -2,12 +2,14 @@ use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::{atomic, Arc};
 use std::time::{Duration, Instant};
 
+use metrics::metric_register::MetricsRegister;
 use snafu::ResultExt;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::{oneshot, RwLock, RwLockWriteGuard, Semaphore};
 use trace::{error, info};
 
+use crate::compaction::metrics::{CompactionType, VnodeCompactionMetrics};
 use crate::compaction::{flush, CompactTask, FlushReq, LevelCompactionPicker, Picker};
 use crate::error::IndexErrSnafu;
 use crate::summary::SummaryTask;
@@ -44,9 +46,17 @@ pub struct CompactJob {
 }
 
 impl CompactJob {
-    pub fn new(runtime: Arc<Runtime>, ctx: Arc<TsKvContext>) -> Self {
+    pub fn new(
+        runtime: Arc<Runtime>,
+        ctx: Arc<TsKvContext>,
+        metrics_register: Arc<MetricsRegister>,
+    ) -> Self {
         Self {
-            inner: Arc::new(RwLock::new(CompactJobInner::new(runtime, ctx))),
+            inner: Arc::new(RwLock::new(CompactJobInner::new(
+                runtime,
+                ctx,
+                metrics_register,
+            ))),
         }
     }
 
@@ -71,18 +81,24 @@ impl std::fmt::Debug for CompactJob {
 struct CompactJobInner {
     ctx: Arc<TsKvContext>,
     runtime: Arc<Runtime>,
+    metrics_register: Arc<MetricsRegister>,
     compact_processor: Arc<RwLock<CompactProcessor>>,
     enable_compaction: Arc<AtomicBool>,
     running_compactions: Arc<AtomicUsize>,
 }
 
 impl CompactJobInner {
-    fn new(runtime: Arc<Runtime>, ctx: Arc<TsKvContext>) -> Self {
+    fn new(
+        runtime: Arc<Runtime>,
+        ctx: Arc<TsKvContext>,
+        metrics_register: Arc<MetricsRegister>,
+    ) -> Self {
         let compact_processor = Arc::new(RwLock::new(CompactProcessor::default()));
 
         Self {
             ctx,
             runtime,
+            metrics_register,
             compact_processor,
             enable_compaction: Arc::new(AtomicBool::new(false)),
             running_compactions: Arc::new(AtomicUsize::new(0)),
@@ -120,6 +136,7 @@ impl CompactJobInner {
         let enable_compaction = self.enable_compaction.clone();
         let running_compaction = self.running_compactions.clone();
         let ctx = self.ctx.clone();
+        let metrics_registry = self.metrics_register.clone();
 
         self.runtime.spawn(async move {
             // TODO: Concurrent compactions should not over argument $cpu.
@@ -164,18 +181,32 @@ impl CompactJobInner {
                             let running_compaction = running_compaction.clone();
 
                             let ctx = ctx.clone();
+                            let metrics_registry = metrics_registry.clone();
                             runtime_inner.spawn(async move {
                                 // Check enable compaction
                                 if !enable_compaction.load(atomic::Ordering::SeqCst) {
                                     return;
                                 }
-                                // Edit running_compation
+                                // Edit running_compaction
                                 running_compaction.fetch_add(1, atomic::Ordering::SeqCst);
                                 let _sub_running_compaction_guard = DeferGuard(Some(|| {
                                     running_compaction.fetch_sub(1, atomic::Ordering::SeqCst);
                                 }));
 
-                                match super::run_compaction_job(req, ctx.global_ctx.clone()).await {
+                                let vnode_compaction_metrics = VnodeCompactionMetrics::new(
+                                    &metrics_registry,
+                                    ctx.options.storage.node_id,
+                                    req.ts_family_id,
+                                    CompactionType::Normal,
+                                    ctx.options.storage.collect_compaction_metrics,
+                                );
+                                match super::run_compaction_job(
+                                    req,
+                                    ctx.global_ctx.clone(),
+                                    vnode_compaction_metrics,
+                                )
+                                .await
+                                {
                                     Ok(Some((version_edit, file_metas))) => {
                                         let (summary_tx, _summary_rx) = oneshot::channel();
                                         let _ = ctx
