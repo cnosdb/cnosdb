@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
+use std::time::Duration;
 
 use arrow_array::RecordBatch;
 use cache::{AsyncCache, ShardedAsyncCache};
@@ -833,7 +834,11 @@ impl TsfFactory {
         }
     }
 
-    pub fn create_tsf(&self, tf_id: TseriesFamilyId, version: Arc<Version>) -> TseriesFamily {
+    pub fn create_tsf(
+        &self,
+        tf_id: TseriesFamilyId,
+        version: Arc<Version>,
+    ) -> Arc<TokioRwLock<TseriesFamily>> {
         let mut_cache = Arc::new(RwLock::new(MemCache::new(
             tf_id,
             self.db_config.max_memcache_size(),
@@ -853,7 +858,7 @@ impl TsfFactory {
             0,
         ));
 
-        TseriesFamily {
+        let tsfamily = Arc::new(TokioRwLock::new(TseriesFamily {
             tf_id,
             owner: self.owner.clone(),
             mut_cache,
@@ -866,7 +871,11 @@ impl TsfFactory {
             memory_pool: self.memory_pool.clone(),
             tsf_metrics,
             status: VnodeStatus::Running,
-        }
+        }));
+        let weak_tsfamily = Arc::downgrade(&tsfamily);
+        tokio::spawn(TseriesFamily::update_vnode_metrics(weak_tsfamily));
+
+        tsfamily
     }
 
     pub fn drop_tsf(&self, tf_id: u32) {
@@ -1204,6 +1213,32 @@ impl TseriesFamily {
             .sum::<u64>()
             + self.mut_cache.read().cache_size()
     }
+
+    async fn update_vnode_metrics(tsfamily: Weak<TokioRwLock<TseriesFamily>>) {
+        let start = tokio::time::Instant::now() + Duration::from_secs(10);
+        let interval = Duration::from_secs(10);
+        let mut intv = tokio::time::interval_at(start, interval);
+        loop {
+            intv.tick().await;
+            match tsfamily.upgrade() {
+                Some(tsf_strong_ref) => {
+                    let cache_size = {
+                        let tsfamily = tsf_strong_ref.read().await;
+                        tsfamily.cache_size()
+                    };
+                    tsf_strong_ref
+                        .write()
+                        .await
+                        .tsf_metrics
+                        .record_cache_size(cache_size);
+                }
+                None => {
+                    break;
+                }
+            }
+        }
+    }
+
     pub fn can_compaction(&self) -> bool {
         self.status == VnodeStatus::Running
     }

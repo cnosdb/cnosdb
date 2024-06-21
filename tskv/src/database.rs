@@ -120,8 +120,7 @@ impl Database {
     pub fn open_tsfamily(&mut self, ver: Arc<Version>) {
         let tf_id = ver.tf_id();
         let tf = self.tsf_factory.create_tsf(tf_id, ver.clone());
-        self.ts_families
-            .insert(ver.tf_id(), Arc::new(RwLock::new(tf)));
+        self.ts_families.insert(ver.tf_id(), tf);
     }
 
     pub async fn create_tsfamily(
@@ -146,7 +145,6 @@ impl Database {
         ));
 
         let tf = self.tsf_factory.create_tsf(tsf_id, ver.clone());
-        let tf = Arc::new(RwLock::new(tf));
         self.ts_families.insert(tsf_id, tf.clone());
 
         let (task_state_sender, task_state_receiver) = oneshot::channel();
@@ -203,7 +201,6 @@ impl Database {
         ));
 
         let tf = self.tsf_factory.create_tsf(ve.tsf_id, ver.clone());
-        let tf = Arc::new(RwLock::new(tf));
         self.ts_families.insert(ve.tsf_id, tf.clone());
 
         let (task_state_sender, task_state_receiver) = oneshot::channel();
