@@ -11,6 +11,9 @@ statement ok
 alter tenant t001 add user u001 as member; 
 
 statement ok
+alter tenant cnosdb add user u001 as member;
+
+statement ok
 --#TENANT=t001
 
 statement ok
@@ -35,3 +38,32 @@ select name, action from information_schema.resource_status where name = 't001-d
 ----
 "t001-db001" "DropDatabase"
 
+statement ok
+--#TENANT=cnosdb
+--#USER_NAME=root
+
+statement ok
+drop tenant t001;
+
+query T
+select name, action from information_schema.resource_status where name = 't001';
+----
+"t001" "DropTenant"
+
+query T
+select name, action from information_schema.resource_status where name = 't001-db001';
+----
+"t001-db001" "DropDatabase"
+
+
+statement ok
+--#USER_NAME=u001
+
+query T
+select name, action from information_schema.resource_status where name = 't001';
+----
+
+
+query T
+select name, action from information_schema.resource_status where name = 't001-db001';
+----
