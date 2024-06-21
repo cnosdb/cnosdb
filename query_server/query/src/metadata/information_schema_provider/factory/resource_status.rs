@@ -88,10 +88,11 @@ impl TableProvider for InformationSchemaResourceStatusTable {
             for resourceinfo in resourceinfos {
                 // Check if the current user has at least read permission on this db, skip if not
                 let tenant_id_and_db = resourceinfo.get_tenant_id_and_db();
-                if !tenant_id_and_db.1.is_empty()
-                    && !self
-                        .user
-                        .can_read_database(tenant_id_and_db.0, &tenant_id_and_db.1)
+                if (tenant_id_and_db.1.is_empty() && !self.user.desc().is_admin())
+                    || (!tenant_id_and_db.1.is_empty()
+                        && !self
+                            .user
+                            .can_read_database(tenant_id_and_db.0, &tenant_id_and_db.1))
                 {
                     continue;
                 }
