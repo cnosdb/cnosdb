@@ -1123,9 +1123,9 @@ impl TseriesFamily {
         let mut index_w = index_clone.write().await;
 
         // cache index
-        let mut series_data = self.mut_cache.read().read_series_data();
+        let mut series_data = self.mut_cache.read().read_all_series_data();
         for imut_cache in self.immut_cache.iter() {
-            series_data.extend(imut_cache.read().read_series_data());
+            series_data.extend(imut_cache.read().read_all_series_data());
         }
         for (sid, data) in series_data {
             let series_key = data.read().series_key.clone();

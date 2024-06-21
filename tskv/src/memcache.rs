@@ -282,7 +282,7 @@ impl SeriesData {
     pub fn write(&mut self, group: RowGroup) {
         self.range.merge(&group.range);
 
-        for item in self.groups.iter_mut() {
+        for item in self.groups.iter_mut().rev() {
             if item.schema.schema_version == group.schema.schema_version {
                 item.range.merge(&group.range);
                 group.rows.get_rows().into_iter().for_each(|row| {
@@ -816,7 +816,7 @@ impl MemCache {
         }
     }
 
-    pub fn read_series_data(&self) -> Vec<(SeriesId, Arc<RwLock<SeriesData>>)> {
+    pub fn read_all_series_data(&self) -> Vec<(SeriesId, Arc<RwLock<SeriesData>>)> {
         let mut ret = Vec::new();
         self.partions.iter().for_each(|p| {
             let p_rlock = p.read();
@@ -825,6 +825,11 @@ impl MemCache {
             }
         });
         ret
+    }
+
+    pub fn read_series_data_by_id(&self, sid: SeriesId) -> Option<Arc<RwLock<SeriesData>>> {
+        let index = (sid as usize) % self.part_count;
+        self.partions[index].read().get(&sid).cloned()
     }
 
     pub fn is_full(&self) -> bool {
@@ -906,7 +911,7 @@ pub(crate) mod test {
         cache: Arc<RwLock<MemCache>>,
     ) -> HashMap<String, Vec<(Timestamp, FieldVal)>> {
         let mut fname_vals_map: HashMap<String, Vec<(Timestamp, FieldVal)>> = HashMap::new();
-        let series_data = cache.read().read_series_data();
+        let series_data = cache.read().read_all_series_data();
         for (_sid, sdata) in series_data {
             let sdata_rlock = sdata.read();
             let schema_groups = sdata_rlock.flat_groups();
@@ -1770,7 +1775,7 @@ mod test_memcache {
         mem_cache
             .write_group(2, SeriesKey::default(), 2, row_group_1.clone())
             .unwrap();
-        let series_data = mem_cache.read_series_data();
+        let series_data = mem_cache.read_all_series_data();
 
         assert_eq!(2, series_data.len());
         assert_eq!(
@@ -1843,7 +1848,7 @@ mod test_memcache {
         mem_cache
             .write_group(2, SeriesKey::default(), 2, row_group_1.clone())
             .unwrap();
-        let series_data = mem_cache.read_series_data();
+        let series_data = mem_cache.read_all_series_data();
         let sids = &[1, 2];
         let time_ranges = TimeRanges::new(vec![TimeRange::new(1, 3), TimeRange::new(7, 9)]);
         mem_cache.delete_series_by_time_ranges(sids, &time_ranges);
