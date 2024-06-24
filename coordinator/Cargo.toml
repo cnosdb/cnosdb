@@ -10,7 +10,7 @@ meta = { path = "../meta" }
 metrics = { path = "../common/metrics" }
 models = { path = "../common/models" }
 protocol_parser = { path = "../common/protocol_parser" }
-protos = { path = "../common/protos", features = ["test"] }
+protos = { path = "../common/protos" }
 replication = { path = "../replication" }
 trace = { path = "../common/trace" }
 tskv = { path = "../tskv" }

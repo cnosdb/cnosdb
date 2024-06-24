@@ -19,7 +19,6 @@ tower = { workspace = true }
 
 [features]
 default = []
-test = []
 backtrace = ["async-backtrace"]
 
 [build-dependencies]

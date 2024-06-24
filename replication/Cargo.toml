@@ -6,7 +6,7 @@ edition.workspace = true
 [dependencies]
 config = { path = "../config" }
 models = { path = "../common/models" }
-protos = { path = "../common/protos", features = ["test"] }
+protos = { path = "../common/protos" }
 trace = { path = "../common/trace" }
 utils = { path = "../common/utils" }
 metrics = { path = "../common/metrics" }

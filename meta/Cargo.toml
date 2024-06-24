@@ -15,7 +15,7 @@ error_code = { path = "../common/error_code" }
 limiter_bucket = { path = "../common/limiter_bucket" }
 metrics = { path = "../common/metrics" }
 models = { path = "../common/models" }
-protos = { path = "../common/protos", features = ["test"] }
+protos = { path = "../common/protos" }
 replication = { path = "../replication" }
 trace = { path = "../common/trace" }
 utils = { path = "../common/utils" }

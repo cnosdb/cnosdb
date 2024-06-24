@@ -12,7 +12,7 @@ memory_pool = { path = "../common/memory_pool" }
 meta = { path = "../meta" }
 metrics = { path = "../common/metrics" }
 models = { path = "../common/models" }
-protos = { path = "../common/protos", features = ["test"] }
+protos = { path = "../common/protos" }
 replication = { path = "../replication" }
 trace = { path = "../common/trace" }
 utils = { path = "../common/utils" }
