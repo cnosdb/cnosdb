@@ -9,13 +9,14 @@ use core::time;
 use std::fmt::{Display, Formatter};
 use std::time::Duration;
 
-use crate::kv_service::tskv_service_client::TskvServiceClient;
-use crate::models::{Column, Points, Table};
-use crate::raft_service::raft_service_client::RaftServiceClient;
 use flatbuffers::{ForwardsUOffset, Vector};
 use snafu::{Backtrace, Location, OptionExt, Snafu};
 use tonic::transport::{Channel, Endpoint};
 use tower::timeout::Timeout;
+
+use crate::kv_service::tskv_service_client::TskvServiceClient;
+use crate::models::{Column, Points, Table};
+use crate::raft_service::raft_service_client::RaftServiceClient;
 
 // Default 100 MB
 pub const DEFAULT_GRPC_SERVER_MESSAGE_LEN: usize = 100 * 1024 * 1024;
@@ -336,10 +337,11 @@ pub async fn tskv_service_ping(addr: &str) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "test"))]
 pub mod test {
-    use flatbuffers::FlatBufferBuilder;
     use std::collections::HashMap;
+
+    use flatbuffers::FlatBufferBuilder;
 
     use crate::models::{FieldType, Points};
     use crate::models_helper::create_const_points;
