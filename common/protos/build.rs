@@ -90,7 +90,9 @@ fn compile_protobuf_models<P: AsRef<Path>, S: AsRef<str>>(
             false
         }
         Err(version_err) => {
-            return Err(format!("Tool `protoc` {version_err}, please update it.").into());
+            // return Err(format!("Tool `protoc` {version_err}, please update it.").into());
+            println!("cargo:warning=Tool `protoc` {version_err}, please update it.");
+            false
         }
     };
 
@@ -115,10 +117,6 @@ fn compile_protobuf_models<P: AsRef<Path>, S: AsRef<str>>(
             .emit_rerun_if_changed(false)
             .compile(&proto_file_paths, &[proto_dir])
             .map_err(|e| format!("Failed to generate protobuf file: {e}."))?;
-        println!(
-            "cargo:warning=Generated protobuf files in {}",
-            rust_dir.display()
-        );
     }
 
     // $rust_dir/mod.rs
@@ -198,10 +196,6 @@ fn compile_flatbuffers_models<P: AsRef<Path>, S: AsRef<str>>(
             }
         }
     }
-    println!(
-        "cargo:warning=Generated flatbuffers files in {}",
-        rust_dir.display()
-    );
     generated_mod_rs.flush()?;
     sub_mod_rs.flush()?;
 
@@ -227,10 +221,6 @@ fn compile_prometheus_models<P: AsRef<Path>>(
         .emit_rerun_if_changed(false)
         .compile(&["types.proto", "remote.proto"], &[proto_dir])
         .map_err(|e| format!("Failed to generate protobuf file: {e}."))?;
-    println!(
-        "cargo:warning=Generated protobuf files in {}",
-        rust_dir.display()
-    );
 
     // $rust_dir/mod.rs
     let mut sub_mod_rs = fs::File::create(rust_dir.join("mod.rs"))?;
@@ -281,10 +271,16 @@ impl Version {
 
     fn compare_ext(&self, expected_version: &Self) -> Result<cmp::Ordering, String> {
         match env::var(ENV_BUILD_PROTOS) {
-            Ok(_build_protos) => match self.compare_major_version(expected_version) {
-                cmp::Ordering::Equal => Ok(cmp::Ordering::Equal),
-                _ => Err(Self::build_error_message(self, expected_version).unwrap()),
-            },
+            Ok(build_protos) => {
+                if build_protos.is_empty() || build_protos == "0" {
+                    Ok(self.compare_major_version(expected_version))
+                } else {
+                    match self.compare_major_version(expected_version) {
+                        cmp::Ordering::Equal => Ok(cmp::Ordering::Equal),
+                        _ => Err(Self::build_error_message(self, expected_version).unwrap()),
+                    }
+                }
+            }
             Err(_) => Ok(self.compare_major_version(expected_version)),
         }
     }

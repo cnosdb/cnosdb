@@ -337,7 +337,7 @@ pub async fn tskv_service_ping(addr: &str) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(all(test, feature = "test"))]
+#[cfg(test)]
 pub mod test {
     use std::collections::HashMap;
 

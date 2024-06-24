@@ -17,7 +17,7 @@ clippy:
 	BUILD_PROTOS=1 cargo clippy --workspace  --all-targets --features coordinator_e2e_test --features meta_e2e_test --fix --allow-staged
 
 build:
-	BUILD_PROTOS=1 cargo build --workspace --bins
+	cargo build --workspace --bins
 
 build_release:
 	BUILD_PROTOS=1 cargo build --release --workspace --bins
@@ -37,6 +37,6 @@ clean:
 	cargo clean
 
 run:
-	BUILD_PROTOS=1 cargo run -- run
+	cargo run -- run
 
 .PHONY: docs_check docs fmt_check fmt clippy_check clippy build build_release build_trace test check clean run

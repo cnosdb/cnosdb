@@ -1,4 +1,3 @@
-#[cfg(feature = "test")]
 pub use test::*;
 
 pub fn print_points(points: crate::models::Points) {
@@ -42,8 +41,7 @@ where
     T::decode(bytes)
 }
 
-#[cfg(feature = "test")]
-pub mod test {
+mod test {
     use std::collections::HashMap;
 
     use chrono::prelude::*;
