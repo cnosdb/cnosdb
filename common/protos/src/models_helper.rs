@@ -44,9 +44,10 @@ where
 
 #[cfg(feature = "test")]
 pub mod test {
+    use std::collections::HashMap;
+
     use chrono::prelude::*;
     use flatbuffers::{self, WIPOffset};
-    use std::collections::HashMap;
     use utils::bitset::BitSet;
 
     use crate::models::*;

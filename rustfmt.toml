@@ -3,6 +3,8 @@ edition = "2021"
 # ignore dir
 ignore = [
      "docs",
+     "common/protos/src/generated",
+     "common/protos/src/prompb"
 ]
 
 group_imports = "StdExternalCrate"
