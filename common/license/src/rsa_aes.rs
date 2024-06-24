@@ -125,7 +125,7 @@ mod test {
 
         use crate::rsa_aes::RsaAes;
 
-        let mut rng = OsRng::default();
+        let mut rng = OsRng;
         let mut key = [0; 32];
         let mut iv = [0; 16];
         rng.fill_bytes(&mut key);

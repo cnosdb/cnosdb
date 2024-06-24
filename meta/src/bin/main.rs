@@ -1,11 +1,12 @@
 #![allow(dead_code, clippy::field_reassign_with_default)]
 
 use clap::Parser;
+use config::VERSION;
 use meta::signal;
-use meta::store::{self};
 use trace::global_logging::init_global_logging;
 
 #[derive(Debug, Parser)]
+#[command(name = "cnosdb-meta", version = & VERSION[..])]
 struct Cli {
     /// configuration path
     #[arg(short, long)]
@@ -15,7 +16,11 @@ struct Cli {
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
-    let mut options = store::config::get_opt(cli.config);
+    let mut options = config::meta::get_opt(cli.config);
+    println!("-----------------------------------------------------------");
+    println!("Start meta server with configuration:");
+    println!("{}", options.to_string_pretty());
+    println!("-----------------------------------------------------------");
     options.log.path = format!("{}/{}", options.log.path, options.id);
     init_global_logging(&options.log, "meta_server.log");
 

@@ -1,17 +1,17 @@
 [package]
 name = "cache"
-edition.workspace = true
 version.workspace = true
+edition.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-parking_lot = { workspace = true }
-lru = {workspace = true}
-tokio = { workspace = true , features = ["sync"]}
+async-trait = { workspace = true }
 futures = { workspace = true, features = ["std"] }
-async-trait = {workspace = true }
+lru = { workspace = true }
+parking_lot = { workspace = true }
 rand = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
 
 [dev-dependencies]
 criterion = { workspace = true, features = ["async_tokio"] }

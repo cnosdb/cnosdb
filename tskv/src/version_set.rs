@@ -44,7 +44,7 @@ impl VersionSet {
     #[cfg(test)]
     pub fn build_empty_test(runtime: Arc<Runtime>) -> Self {
         use meta::model::meta_admin::AdminMeta;
-        let opt = Arc::new(Options::from(&config::Config::default()));
+        let opt = Arc::new(Options::from(&config::tskv::Config::default()));
         let register = Arc::new(MetricsRegister::default());
         let memory_pool = Arc::new(memory_pool::GreedyMemoryPool::default());
         let meta = Arc::new(AdminMeta::mock());

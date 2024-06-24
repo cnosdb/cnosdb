@@ -1123,9 +1123,9 @@ impl TseriesFamily {
         let mut index_w = index_clone.write().await;
 
         // cache index
-        let mut series_data = self.mut_cache.read().read_series_data();
+        let mut series_data = self.mut_cache.read().read_all_series_data();
         for imut_cache in self.immut_cache.iter() {
-            series_data.extend(imut_cache.read().read_series_data());
+            series_data.extend(imut_cache.read().read_all_series_data());
         }
         for (sid, data) in series_data {
             let series_key = data.read().series_key.clone();
@@ -1248,7 +1248,7 @@ pub mod test_tseries_family {
         let dir = "/tmp/test/ts_family/1";
         let _ = std::fs::remove_dir_all(dir);
         std::fs::create_dir_all(dir).unwrap();
-        let mut global_config = config::get_config_for_test();
+        let mut global_config = config::tskv::get_config_for_test();
         global_config.storage.path = dir.to_string();
         let opt = Arc::new(Options::from(&global_config));
 
@@ -1347,7 +1347,7 @@ pub mod test_tseries_family {
         let dir = "/tmp/test/ts_family/2";
         let _ = std::fs::remove_dir_all(dir);
         std::fs::create_dir_all(dir).unwrap();
-        let mut global_config = config::get_config_for_test();
+        let mut global_config = config::tskv::get_config_for_test();
         global_config.storage.path = dir.to_string();
         let opt = Arc::new(Options::from(&global_config));
 

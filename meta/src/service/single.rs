@@ -5,6 +5,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 
+use config::meta::MetaInit;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info};
 use warp::{hyper, Filter};
@@ -23,7 +24,7 @@ pub async fn start_singe_meta_server(
     let db_path = format!("{}/meta/{}.data", path, 0);
     let mut storage = StateMachine::open(db_path, size).unwrap();
 
-    let init_data = crate::store::config::MetaInit {
+    let init_data = MetaInit {
         cluster_name,
         admin_user: models::auth::user::ROOT.to_string(),
         admin_pwd: models::auth::user::ROOT_PWD.to_string(),
@@ -31,6 +32,7 @@ pub async fn start_singe_meta_server(
         default_database: vec![
             models::schema::USAGE_SCHEMA.to_string(),
             models::schema::DEFAULT_DATABASE.to_string(),
+            models::schema::CLUSTER_SCHEMA.to_string(),
         ],
     };
     super::init::init_meta(&mut storage, init_data).await;
@@ -127,7 +129,7 @@ impl SingleServer {
                         warp::reject::custom(e)
                     })?;
 
-                    let rsp = storage.write().await.process_write_command(&req);
+                    let rsp = storage.write().await.process_write_command(&req).await;
                     let res: Result<String, warp::Rejection> = Ok(rsp);
                     res
                 },
@@ -225,7 +227,7 @@ impl SingleServer {
                             value: strs[1].to_string(),
                         };
 
-                        let _ = storage.write().await.process_write_command(&command);
+                        let _ = storage.write().await.process_write_command(&command).await;
 
                         count += 1;
                     }

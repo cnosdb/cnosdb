@@ -13,7 +13,7 @@ use tokio::runtime::{self, Runtime};
 use tskv::{Engine, TsKv};
 
 async fn get_tskv() -> TsKv {
-    let mut global_config = config::get_config_for_test();
+    let mut global_config = config::tskv::get_config_for_test();
     global_config.wal.path = "/tmp/test_bench/wal".to_string();
     let opt = tskv::kv_option::Options::from(&global_config);
 
@@ -24,7 +24,8 @@ async fn get_tskv() -> TsKv {
             .unwrap(),
     );
 
-    let meta_manager: MetaRef = AdminMeta::new(global_config.clone()).await;
+    let meta_manager: MetaRef =
+        AdminMeta::new(global_config.clone(), Arc::new(MetricsRegister::default())).await;
 
     meta_manager.add_data_node().await.unwrap();
 

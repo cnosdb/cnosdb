@@ -678,7 +678,7 @@ impl SummaryTask {
 mod test {
     use std::sync::Arc;
 
-    use config::Config;
+    use config::tskv::Config;
     use memory_pool::GreedyMemoryPool;
     use meta::model::meta_admin::AdminMeta;
     use metrics::metric_register::MetricsRegister;
@@ -742,7 +742,8 @@ mod test {
             let memory_pool = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
 
             runtime_clone.block_on(async {
-                let meta_manager = AdminMeta::new(config.clone()).await;
+                let meta_manager =
+                    AdminMeta::new(config.clone(), Arc::new(MetricsRegister::default())).await;
                 meta_manager.add_data_node().await.unwrap();
                 let _ = meta_manager
                     .create_tenant("cnosdb".to_string(), TenantOptions::default())
@@ -769,7 +770,7 @@ mod test {
         }
 
         fn with_default_config(base_dir: String, test_case_name: String) -> Self {
-            let mut config = config::get_config_for_test();
+            let mut config = config::tskv::get_config_for_test();
             config.storage.path = base_dir;
             Self::new(config, test_case_name)
         }

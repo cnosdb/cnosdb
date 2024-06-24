@@ -16,7 +16,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
-use config::{RequestLimiterConfig, TenantLimiterConfig, TenantObjectLimiterConfig};
+use config::common::{RequestLimiterConfig, TenantLimiterConfig, TenantObjectLimiterConfig};
 use datafusion::arrow::datatypes::{
     DataType as ArrowDataType, Field as ArrowField, Schema, SchemaRef, TimeUnit,
 };
@@ -56,6 +56,7 @@ pub const TIME_FIELD: &str = "time";
 
 pub const DEFAULT_DATABASE: &str = "public";
 pub const USAGE_SCHEMA: &str = "usage_schema";
+pub const CLUSTER_SCHEMA: &str = "cluster_schema";
 pub const DEFAULT_CATALOG: &str = "cnosdb";
 pub const DEFAULT_PRECISION: &str = "NS";
 
@@ -288,8 +289,6 @@ impl ExternalTableSchema {
     pub fn table_options(&self) -> DataFusionResult<ListingOptions> {
         let file_compression_type = FileCompressionType::from_str(&self.file_compression_type)?;
         let file_type = FileType::from_str(&self.file_type)?;
-        let file_extension =
-            file_type.get_ext_with_compression(self.file_compression_type.to_owned().parse()?)?;
         let file_format: Arc<dyn FileFormat> = match file_type {
             FileType::CSV => Arc::new(
                 CsvFormat::default()
@@ -309,9 +308,8 @@ impl ExternalTableSchema {
             }
         };
 
-        let options = ListingOptions::new(file_format)
-            .with_file_extension(file_extension)
-            .with_target_partitions(self.target_partitions);
+        let options =
+            ListingOptions::new(file_format).with_target_partitions(self.target_partitions);
 
         Ok(options)
     }

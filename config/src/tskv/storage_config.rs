@@ -1,12 +1,13 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use macros::EnvKeys;
 use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
 use crate::codec::{bytes_num, duration};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, EnvKeys)]
 pub struct StorageConfig {
     #[serde(default = "StorageConfig::default_path")]
     pub path: String,
@@ -46,6 +47,9 @@ pub struct StorageConfig {
 
     #[serde(default = "StorageConfig::default_max_concurrent_compaction")]
     pub max_concurrent_compaction: u16,
+
+    #[serde(default = "StorageConfig::default_collect_compaction_metrics")]
+    pub collect_compaction_metrics: bool,
 
     #[serde(default = "StorageConfig::default_strict_write")]
     pub strict_write: bool,
@@ -112,6 +116,10 @@ impl StorageConfig {
         4
     }
 
+    fn default_collect_compaction_metrics() -> bool {
+        false
+    }
+
     fn default_strict_write() -> bool {
         false
     }
@@ -144,6 +152,7 @@ impl Default for StorageConfig {
             compact_trigger_cold_duration: Self::default_compact_trigger_cold_duration(),
             max_compact_size: Self::default_max_compact_size(),
             max_concurrent_compaction: Self::default_max_concurrent_compaction(),
+            collect_compaction_metrics: Self::default_collect_compaction_metrics(),
             strict_write: Self::default_strict_write(),
             reserve_space: Self::default_reserve_space(),
             copyinto_trigger_flush_size: Self::default_copyinto_trigger_flush_size(),
@@ -153,7 +162,7 @@ impl Default for StorageConfig {
 }
 
 impl CheckConfig for StorageConfig {
-    fn check(&self, _: &crate::Config) -> Option<CheckConfigResult> {
+    fn check(&self, _: &super::Config) -> Option<CheckConfigResult> {
         let config_name = Arc::new("storage".to_string());
         let mut ret = CheckConfigResult::default();
 

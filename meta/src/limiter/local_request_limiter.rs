@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use config::{Bucket, RequestLimiterConfig};
+use config::common::{Bucket, RequestLimiterConfig};
 use limiter_bucket::CountBucket;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, MutexGuard, RwLock};

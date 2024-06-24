@@ -11,6 +11,17 @@ pub enum HttpApiType {
     ApiV1Sql,
     ApiV1PromRead,
     ApiV1ESLogWrite,
+
+    ApiV1Ping,
+    DebugBacktrace,
+    Write,
+    ApiV1metaleader,
+    ApiV1Meta,
+    ApiV1Raft,
+    DebugPprof,
+    DebugJeprof,
+    Metrics,
+    ApiV1DumpSqlDdl,
 }
 
 impl Display for HttpApiType {
@@ -34,9 +45,38 @@ impl Display for HttpApiType {
             HttpApiType::ApiV1PromRead => {
                 write!(f, "api/v1/prom/read")
             }
-
             HttpApiType::ApiV1ESLogWrite => {
                 write!(f, "api/v1/es/write")
+            }
+            HttpApiType::ApiV1Ping => {
+                write!(f, "api/v1/ping")
+            }
+            HttpApiType::DebugBacktrace => {
+                write!(f, "debug/backtrace")
+            }
+            HttpApiType::Write => {
+                write!(f, "write")
+            }
+            HttpApiType::ApiV1metaleader => {
+                write!(f, "api/v1/meta_leader")
+            }
+            HttpApiType::ApiV1Meta => {
+                write!(f, "api/v1/meta")
+            }
+            HttpApiType::ApiV1Raft => {
+                write!(f, "api/v1/raft")
+            }
+            HttpApiType::DebugPprof => {
+                write!(f, "debug/pprof")
+            }
+            HttpApiType::DebugJeprof => {
+                write!(f, "debug/jeprof")
+            }
+            HttpApiType::Metrics => {
+                write!(f, "metrics")
+            }
+            HttpApiType::ApiV1DumpSqlDdl => {
+                write!(f, "api/v1/dump/sql/ddl")
             }
         }
     }
@@ -51,6 +91,16 @@ pub fn metrics_record_db(api: &HttpApiType) -> bool {
         | HttpApiType::ApiV1PromWrite
         | HttpApiType::ApiV1ESLogWrite
         | HttpApiType::ApiV1PromRead => true,
-        HttpApiType::ApiV1Sql => false,
+        HttpApiType::ApiV1Sql
+        | HttpApiType::ApiV1Ping
+        | HttpApiType::DebugBacktrace
+        | HttpApiType::Write
+        | HttpApiType::ApiV1metaleader
+        | HttpApiType::ApiV1Meta
+        | HttpApiType::ApiV1Raft
+        | HttpApiType::DebugPprof
+        | HttpApiType::DebugJeprof
+        | HttpApiType::Metrics
+        | HttpApiType::ApiV1DumpSqlDdl => false,
     }
 }

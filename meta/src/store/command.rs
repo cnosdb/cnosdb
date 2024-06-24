@@ -140,6 +140,12 @@ pub enum WriteCommand {
     ResourceInfo(String, String, ResourceInfo),
     // cluster, node_id, is_lock
     ResourceInfosMark(String, NodeId, bool),
+
+    // cluster, node_id, query_id, query_info
+    WriteQueryInfo(String, NodeId, u64, Vec<u8>),
+
+    // cluster, node_id, query_id
+    RemoveQueryInfo(String, NodeId, u64),
 }
 
 /******************* read command *************************/
@@ -177,6 +183,9 @@ pub enum ReadCommand {
 
     // cluster, tenant, db, replication set id
     ReplicationSet(String, String, String, u32),
+
+    // cluster, node_id
+    ReadQueryInfos(String, NodeId),
 }
 
 pub const ENTRY_LOG_TYPE_SET: i32 = 1;

@@ -107,7 +107,7 @@ impl Server {
 
 pub(crate) struct ServiceBuilder {
     pub cpu: usize,
-    pub config: config::Config,
+    pub config: config::tskv::Config,
     pub runtime: Arc<Runtime>,
     pub memory_pool: MemoryPoolRef,
     pub metrics_register: Arc<MetricsRegister>,
@@ -131,7 +131,7 @@ fn build_default_address(port: u16) -> String {
 
 impl ServiceBuilder {
     pub async fn build_storage_server(&self, server: &mut Server) -> Option<EngineRef> {
-        let meta = self.create_meta().await;
+        let meta = self.create_meta(self.metrics_register.clone()).await;
         meta.add_data_node().await.unwrap();
         tokio::spawn(regular_report_node_metrics(
             meta.clone(),
@@ -172,7 +172,7 @@ impl ServiceBuilder {
     }
 
     pub async fn build_query_server(&self, server: &mut Server) -> Option<EngineRef> {
-        let meta = self.create_meta().await;
+        let meta = self.create_meta(self.metrics_register.clone()).await;
         let coord = self
             .create_coord(meta, None, self.memory_pool.clone())
             .await;
@@ -194,7 +194,7 @@ impl ServiceBuilder {
     }
 
     pub async fn build_query_storage(&self, server: &mut Server) -> Option<EngineRef> {
-        let meta = self.create_meta().await;
+        let meta = self.create_meta(self.metrics_register.clone()).await;
         meta.add_data_node().await.unwrap();
         tokio::spawn(regular_report_node_metrics(
             meta.clone(),
@@ -253,8 +253,8 @@ impl ServiceBuilder {
         self.build_query_storage(server).await
     }
 
-    async fn create_meta(&self) -> MetaRef {
-        let meta: MetaRef = AdminMeta::new(self.config.clone()).await;
+    async fn create_meta(&self, metrics_register: Arc<MetricsRegister>) -> MetaRef {
+        let meta: MetaRef = AdminMeta::new(self.config.clone(), metrics_register).await;
 
         meta
     }

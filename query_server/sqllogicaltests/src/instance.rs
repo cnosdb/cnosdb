@@ -203,17 +203,17 @@ pub async fn run_query(
         let with = sql.to_ascii_lowercase().find("with");
         if with.is_some() {
             let with = with.unwrap();
-            if !sql.contains("shard") {
+            if !sql.to_ascii_lowercase().contains("shard") {
                 sql.insert_str(
                     with + 4,
                     format!(" shard {}", create_option.shard_num).as_str(),
                 );
             }
 
-            if !sql.contains("REPLICA") {
+            if !sql.to_ascii_lowercase().contains("replica") {
                 sql.insert_str(
                     with + 4,
-                    format!(" REPLICA {}", create_option.replication_num).as_str(),
+                    format!(" replica {}", create_option.replication_num).as_str(),
                 );
             }
         } else {
@@ -227,6 +227,11 @@ pub async fn run_query(
             );
         }
     }
+
+    if sql.contains("$pwd") {
+        sql = sql.replace("$pwd", options.pwd.as_str());
+    }
+
     let mut stmt = client.prepare(sql, None).await?;
     let flight_info = stmt.execute().await?;
 
@@ -358,6 +363,7 @@ pub struct SqlClientOptions {
     pub tenant: String,
     pub db: String,
     pub target_partitions: usize,
+    pub pwd: String,
     pub timeout: Option<Duration>,
     pub precision: Option<String>,
     pub chunked: Option<bool>,
@@ -427,6 +433,7 @@ mod test {
             password: "".to_string(),
             tenant: "".to_string(),
             db: "".to_string(),
+            pwd: "".to_string(),
             target_partitions: 0,
             timeout: None,
             precision: None,

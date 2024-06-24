@@ -317,7 +317,7 @@ mod tests {
 
         let trs = Arc::new(TimeRanges::new(vec![TimeRange::new(1, 3)]));
         let memcache_reader: Arc<dyn BatchReader> = MemCacheReader::try_new(
-            mem_cache.read_series_data()[0].1.clone(),
+            mem_cache.read_all_series_data()[0].1.clone(),
             trs,
             2,
             &[1, 2, 3],

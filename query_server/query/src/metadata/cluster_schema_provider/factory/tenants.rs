@@ -17,15 +17,13 @@ use models::oid::Identifier;
 use crate::metadata::cluster_schema_provider::builder::tenants::{
     ClusterSchemaTenantsBuilder, TENANT_SCHEMA,
 };
-use crate::metadata::cluster_schema_provider::ClusterSchemaTableFactory;
-
-const INFORMATION_SCHEMA_TENANTS: &str = "TENANTS";
+use crate::metadata::cluster_schema_provider::{ClusterSchemaTableFactory, CLUSTER_SCHEMA_TENANTS};
 
 pub struct ClusterSchemaTenantsFactory {}
 
 impl ClusterSchemaTableFactory for ClusterSchemaTenantsFactory {
     fn table_name(&self) -> &str {
-        INFORMATION_SCHEMA_TENANTS
+        CLUSTER_SCHEMA_TENANTS
     }
 
     fn create(&self, user: &User, metadata: MetaRef) -> Arc<dyn TableProvider> {

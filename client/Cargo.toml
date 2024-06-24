@@ -10,6 +10,7 @@ name = "cnosdb-cli"
 path = "src/main.rs"
 
 [dependencies]
+config = { path = "../config" }
 http_protocol = { path = "../common/http_protocol", features = ["http_client"] }
 
 anyhow = { workspace = true }

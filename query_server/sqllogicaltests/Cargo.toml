@@ -7,22 +7,24 @@ edition.workspace = true
 
 [dependencies]
 trace = { path = "../../common/trace" }
-sqllogictest = { workspace = true }
-async-trait = { workspace = true }
-tokio = { workspace = true, features = ["full", "tracing"] }
+
 arrow = { workspace = true }
 arrow-flight = { workspace = true, features = ["flight-sql-experimental"] }
-tonic = { workspace = true, features = ["transport", "tls"] }
-prost = { workspace = true }
-futures = { workspace = true, default-features = false, features = ["alloc"] }
-snafu = { workspace = true }
 async-backtrace = { workspace = true, optional = true }
-nom = { workspace = true }
+async-trait = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+futures = { workspace = true, default-features = false, features = ["alloc"] }
 humantime = { workspace = true }
+nom = { workspace = true }
+prost = { workspace = true }
+regex = { workspace = true }
 reqwest = { workspace = true }
+snafu = { workspace = true }
+sqllogictest = { workspace = true }
+tokio = { workspace = true, features = ["full", "tracing"] }
+tonic = { workspace = true, features = ["transport", "tls"] }
 url = { workspace = true }
-clap = {workspace = true, features = ["derive"]}
-regex = {workspace = true}
+
 [features]
 default = []
 backtrace = ["async-backtrace"]

@@ -2,18 +2,12 @@ id = 1
 host = "127.0.0.1"
 port = 8901
 data_path = "/var/lib/cnosdb/meta"
+cluster_name = "cluster_xxx"
 grpc_enable_gzip = false
 
 [log]
 level = "info"
 path = "/var/log/cnosdb"
-
-[meta_init]
-cluster_name = "cluster_xxx"
-admin_user = "root"
-admin_pwd = "root"
-system_tenant = "cnosdb"
-default_database = ["public", "usage_schema"]
 
 [heartbeat]
 heartbeat_recheck_interval = 300

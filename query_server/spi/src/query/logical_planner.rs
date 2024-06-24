@@ -3,7 +3,7 @@ use std::io::Write;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use config::TenantLimiterConfig;
+use config::common::TenantLimiterConfig;
 use datafusion::arrow::array::ArrayRef;
 use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use datafusion::datasource::file_format::file_type::{FileCompressionType, FileType};

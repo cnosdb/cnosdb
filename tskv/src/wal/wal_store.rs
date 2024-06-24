@@ -10,9 +10,8 @@ use super::reader::WalRecordData;
 use crate::error::{DecodeSnafu, WalTruncatedSnafu};
 use crate::file_system::async_filesystem::LocalFileSystem;
 use crate::file_system::FileSystem;
-use crate::record_file::Record;
 use crate::vnode_store::VnodeStorage;
-use crate::wal::reader::{Block, WalReader};
+use crate::wal::reader::WalReader;
 use crate::wal::VnodeWal;
 use crate::{file_utils, TskvError, TskvResult};
 
@@ -38,9 +37,9 @@ impl RaftEntryStorage {
     pub async fn recover(
         &mut self,
         apply_id: Option<LogId<u64>>,
-        vode_store: &mut VnodeStorage,
+        vnode_store: &mut VnodeStorage,
     ) -> TskvResult<()> {
-        self.inner.recover(apply_id, vode_store).await?;
+        self.inner.recover(apply_id, vnode_store).await?;
 
         info!(
             "recover vnode entries: [{:?}-{:?}], applied id: {:?}",
@@ -83,7 +82,7 @@ impl EntryStorage for RaftEntryStorage {
     }
 
     async fn del_before(&mut self, seq_no: u64) -> ReplicationResult<()> {
-        self.inner.mark_delete_before(seq_no).await;
+        self.inner.mark_delete_before(seq_no).await?;
 
         Ok(())
     }
@@ -106,7 +105,7 @@ impl EntryStorage for RaftEntryStorage {
         self.inner.read_raft_entry_range(begin, end).await
     }
 
-    async fn destory(&mut self) -> ReplicationResult<()> {
+    async fn destroy(&mut self) -> ReplicationResult<()> {
         let _ = self.inner.wal.close().await;
 
         let path = self.inner.wal.wal_dir();
@@ -163,7 +162,7 @@ impl WalFileMeta {
         self.entry_index.push((index, pos));
     }
 
-    fn del_befor(&mut self, index: u64) {
+    fn del_before(&mut self, index: u64) {
         if self.min_seq == u64::MAX || self.min_seq >= index {
             return;
         }
@@ -221,9 +220,7 @@ impl WalFileMeta {
             .await
             .map_err(|e| ReplicationError::RaftInternalErr { msg: e.to_string() })?
         {
-            if let Block::RaftLog(entry) = record.block {
-                return Ok(Some(entry));
-            }
+            return Ok(Some(record.block));
         }
 
         Ok(None)
@@ -262,22 +259,35 @@ impl RaftEntryStorageInner {
         Ok(())
     }
 
-    async fn mark_delete_before(&mut self, seq_no: u64) {
+    async fn mark_delete_before(&mut self, seq_no: u64) -> ReplicationResult<()> {
         if self.min_sequence() >= seq_no {
-            return;
+            return Ok(());
         }
 
+        let mut delete_file_ids = vec![];
         for item in self.files_meta.iter_mut() {
+            if item.max_seq < seq_no {
+                delete_file_ids.push(item.file_id);
+                continue;
+            }
+
             if item.min_seq < seq_no {
-                item.del_befor(seq_no);
+                item.del_before(seq_no);
             } else {
                 break;
             }
         }
 
         self.entry_cache.del_before(seq_no);
+        self.files_meta
+            .retain(|item| !delete_file_ids.contains(&item.file_id));
 
-        let _ = self.wal.delete_wal_before_seq(seq_no).await;
+        self.wal
+            .rollback_wal_writer(&delete_file_ids)
+            .await
+            .map_err(|e| ReplicationError::RaftInternalErr { msg: e.to_string() })?;
+
+        Ok(())
     }
 
     async fn mark_delete_after(&mut self, seq_no: u64) -> ReplicationResult<()> {
@@ -295,7 +305,7 @@ impl RaftEntryStorageInner {
             if item.max_seq >= seq_no {
                 let pos = item.del_after(seq_no);
                 if pos > 0 {
-                    let _ = self.wal.truncate_wal_file(item.file_id, pos, seq_no).await;
+                    let _ = self.wal.truncate_wal_file(item.file_id, pos).await;
                 }
             }
 
@@ -396,7 +406,7 @@ impl RaftEntryStorageInner {
     pub async fn recover(
         &mut self,
         apply_id: Option<LogId<u64>>,
-        vode_store: &mut VnodeStorage,
+        vnode_store: &mut VnodeStorage,
     ) -> TskvResult<()> {
         let wal_files = LocalFileSystem::list_file_names(self.wal.wal_dir());
         for file_name in wal_files {
@@ -409,22 +419,34 @@ impl RaftEntryStorageInner {
             if !LocalFileSystem::try_exists(&path) {
                 continue;
             }
-            let reader = self.wal.wal_reader(wal_id).await?;
-            let mut record_reader = reader.take_record_reader();
+
+            let mut record_reader = self.wal.wal_reader(wal_id).await?;
             loop {
-                let record = record_reader.read_record().await;
-                match record {
-                    Ok(rec) => {
-                        self.recover_record(wal_id, rec, apply_id, vode_store)
+                let begin_pos = record_reader.pos();
+                let wal_record = record_reader.next_wal_entry().await;
+                match wal_record {
+                    Ok(Some(record)) => {
+                        self.recover_record(wal_id, record, apply_id, vnode_store)
                             .await?;
                     }
-                    Err(TskvError::Eof) => {
+
+                    // If the wal file is truncated, handle it.
+                    Err(TskvError::RecordFileInvalidDataSize { .. }) => {
+                        info!(
+                            "truncate wal file: {} invalid size, start at: {}",
+                            file_name, begin_pos
+                        );
+                        self.wal.truncate_wal_file(wal_id, begin_pos).await?;
                         break;
                     }
-                    Err(TskvError::RecordFileHashCheckFailed { .. }) => continue,
-                    Err(e) => {
-                        trace::error!("Error reading wal: {:?}", e);
-                        return Err(WalTruncatedSnafu.build());
+
+                    Err(TskvError::Eof) | Ok(None) => {
+                        break;
+                    }
+
+                    Err(err) => {
+                        info!("recover wal {}, read entry failed: {}", file_name, err);
+                        continue;
                     }
                 }
             }
@@ -436,37 +458,41 @@ impl RaftEntryStorageInner {
     async fn recover_record(
         &mut self,
         wal_id: u64,
-        record: Record,
+        record: WalRecordData,
         apply_id: Option<LogId<u64>>,
-        vode_store: &mut VnodeStorage,
+        vnode_store: &mut VnodeStorage,
     ) -> TskvResult<()> {
-        if record.data.len() < 9 {
-            return Ok(());
-        }
+        let entry = record.block;
+        if let Some(apply_id) = apply_id {
+            let last_seq = vnode_store.ts_family().read().await.version().last_seq();
+            if entry.log_id.index > last_seq && entry.log_id.index <= apply_id.index {
+                if let EntryPayload::Normal(ref req) = entry.payload {
+                    let ctx = replication::ApplyContext {
+                        index: entry.log_id.index,
+                        raft_id: self.wal.vnode_id as u64,
+                        apply_type: replication::APPLY_TYPE_WAL,
+                    };
 
-        let wal_entry = WalRecordData::new(record.data);
-        if let Block::RaftLog(entry) = wal_entry.block {
-            if let Some(apply_id) = apply_id {
-                let last_seq = vode_store.ts_family().read().await.version().last_seq();
-                if entry.log_id.index > last_seq && entry.log_id.index <= apply_id.index {
-                    if let EntryPayload::Normal(ref req) = entry.payload {
-                        let ctx = replication::ApplyContext {
-                            index: entry.log_id.index,
-                            raft_id: self.wal.vnode_id as u64,
-                            apply_type: replication::APPLY_TYPE_WAL,
-                        };
-
-                        let request = parse_prost_bytes::<RaftWriteCommand>(req)
-                            .map_err(|e| DecodeSnafu.into_error(Box::new(e)))?;
-                        if let Some(command) = request.command {
-                            vode_store.apply(&ctx, command).await?;
-                        }
+                    let request = parse_prost_bytes::<RaftWriteCommand>(req)
+                        .map_err(|e| DecodeSnafu.into_error(Box::new(e)))?;
+                    if let Some(command) = request.command {
+                        vnode_store.apply(&ctx, command).await?;
                     }
                 }
             }
 
-            self.mark_write_wal(entry, wal_id, record.pos).await?;
+            if entry.log_id.index > apply_id.index {
+                info!(
+                    "truncate wal file: {}, start at: {} from sequence:{}, got entry index: {}",
+                    wal_id, record.pos, apply_id.index, entry.log_id.index
+                );
+                self.wal.truncate_wal_file(wal_id, record.pos).await?;
+
+                return Ok(());
+            }
         }
+
+        self.mark_write_wal(entry, wal_id, record.pos).await?;
 
         Ok(())
     }
@@ -564,14 +590,13 @@ mod test {
                     continue;
                 }
 
-                let wal_entry = WalRecordData::new(record.data);
-                if let crate::wal::Block::RaftLog(entry) = wal_entry.block {
-                    storage
-                        .inner
-                        .mark_write_wal(entry, wal_id, record.pos)
-                        .await
-                        .unwrap();
-                }
+                let wal_reocrd = WalRecordData::new(record.data, record.pos).unwrap();
+                let entry = wal_reocrd.block;
+                storage
+                    .inner
+                    .mark_write_wal(entry, wal_id, record.pos)
+                    .await
+                    .unwrap();
             }
         }
 

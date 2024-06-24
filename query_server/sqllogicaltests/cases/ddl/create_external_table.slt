@@ -55,3 +55,20 @@ query T rowsort
 show tables on create_external_table;
 ----
 "cpu"
+
+
+statement ok
+CREATE EXTERNAL TABLE basic (
+     name  STRING NOT NULL,
+     age     INT NOT NULL,
+     city    STRING NOT NULL,
+)
+STORED AS NDJSON
+LOCATION 'query_server/query/tests/data/json/basic.ndjson';
+
+query T rowsort
+SELECT * FROM basic;
+----
+"Alice" 25 "Los Angeles"
+"Bob" 35 "Chicago"
+"John" 30 "New York"

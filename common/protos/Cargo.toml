@@ -3,19 +3,19 @@ name = "protos"
 version.workspace = true
 edition.workspace = true
 
-
 [dependencies]
 utils = { path = "../utils" }
 
+async-backtrace = { workspace = true, optional = true }
 chrono = { workspace = true }
 flatbuffers = { workspace = true }
 prost = { workspace = true }
+protobuf = { workspace = true }
 rand = { workspace = true }
 snafu = { workspace = true }
+tokio = { workspace = true }
 tonic = { workspace = true, features = ["transport", "tls"] }
 tower = { workspace = true }
-protobuf = { workspace = true }
-async-backtrace = { workspace = true, optional = true }
 
 [features]
 default = []

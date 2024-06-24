@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::pin::Pin;
@@ -5,12 +6,17 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use async_trait::async_trait;
+use coordinator::service::CoordinatorRef;
 use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::common::Result as DFResult;
 use datafusion::physical_plan::{RecordBatchStream, SendableRecordBatchStream};
 use futures::{Stream, StreamExt};
+use models::schema::{Precision, CLUSTER_SCHEMA, DEFAULT_CATALOG};
+use models::utils::now_timestamp_nanos;
 use parking_lot::RwLock;
+use protocol_parser::Line;
+use protos::FieldValue;
 use spi::query::dispatcher::{QueryInfo, QueryStatus};
 use spi::query::execution::{Output, QueryExecution, QueryExecutionRef, QueryType};
 use spi::service::protocol::QueryId;
@@ -19,18 +25,26 @@ use trace::{debug, warn};
 
 use super::persister::QueryPersisterRef;
 
+const SQL_HISTORY: &str = "sql_history";
+
 pub struct QueryTracker {
     queries: RwLock<HashMap<QueryId, Arc<dyn QueryExecution>>>,
     query_limit: usize,
     query_persister: QueryPersisterRef,
+    coord: CoordinatorRef,
 }
 
 impl QueryTracker {
-    pub fn new(query_limit: usize, query_persister: QueryPersisterRef) -> Self {
+    pub fn new(
+        query_limit: usize,
+        query_persister: QueryPersisterRef,
+        coord: CoordinatorRef,
+    ) -> Self {
         Self {
             queries: RwLock::new(HashMap::new()),
             query_limit,
             query_persister,
+            coord,
         }
     }
 }
@@ -104,13 +118,96 @@ impl QueryTracker {
     }
 
     pub fn expire_query(&self, id: &QueryId) -> Option<Arc<dyn QueryExecution>> {
-        self.queries.write().remove(id).map(|q| {
-            if q.need_persist() {
+        self.queries.write().remove(id).map(|query| {
+            if query.need_persist() {
                 let _ = self.query_persister.remove(id).map_err(|err| {
                     warn!("Remove query from persister failed: {:?}", err);
                 });
             }
-            q
+            if *query.status().duration() >= self.coord.get_config().query.sql_record_timeout {
+                let info = query.info();
+                let status = query.status();
+
+                let query_text = info.query();
+                let user_id = info.user_id().to_string();
+                let user_name = info.user_name();
+                let tenant_id = info.tenant_id().to_string();
+                let tenant_name = info.tenant_name();
+
+                let state = status.query_state();
+                let duration = status.duration().as_secs_f64();
+                let processed_count = status.processed_count();
+                let error_count = status.error_count();
+                let line = Line {
+                    hash_id: 0,
+                    table: Cow::Owned(SQL_HISTORY.to_string()),
+                    tags: vec![
+                        (
+                            Cow::Owned("user_id".to_string()),
+                            Cow::Owned(user_id.to_string()),
+                        ),
+                        (
+                            Cow::Owned("user_name".to_string()),
+                            Cow::Owned(user_name.to_string()),
+                        ),
+                        (
+                            Cow::Owned("tenant_id".to_string()),
+                            Cow::Owned(tenant_id.to_string()),
+                        ),
+                        (
+                            Cow::Owned("tenant_name".to_string()),
+                            Cow::Owned(tenant_name.to_string()),
+                        ),
+                    ],
+                    fields: vec![
+                        (
+                            Cow::Owned("query_id".to_string()),
+                            FieldValue::Str(id.to_string().as_bytes().to_owned()),
+                        ),
+                        (
+                            Cow::Owned("query_type".to_string()),
+                            FieldValue::Str(query.query_type().to_string().as_bytes().to_owned()),
+                        ),
+                        (
+                            Cow::Owned("query_text".to_string()),
+                            FieldValue::Str(query_text.as_bytes().to_owned()),
+                        ),
+                        (
+                            Cow::Owned("state".to_string()),
+                            FieldValue::Str(state.as_ref().as_bytes().to_owned()),
+                        ),
+                        (
+                            Cow::Owned("duration".to_string()),
+                            FieldValue::F64(duration),
+                        ),
+                        (
+                            Cow::Owned("processed_count".to_string()),
+                            FieldValue::U64(processed_count),
+                        ),
+                        (
+                            Cow::Owned("error_count".to_string()),
+                            FieldValue::U64(error_count),
+                        ),
+                    ],
+                    timestamp: now_timestamp_nanos(),
+                };
+                let coord = self.coord.clone();
+                tokio::spawn(async move {
+                    let _ = coord
+                        .write_lines(
+                            DEFAULT_CATALOG,
+                            CLUSTER_SCHEMA,
+                            Precision::NS,
+                            vec![line],
+                            None,
+                        )
+                        .await
+                        .map_err(|err| {
+                            warn!("write_lines failed: {:?}", err);
+                        });
+                });
+            }
+            query
         })
     }
 
@@ -248,8 +345,10 @@ mod tests {
     use std::time::Duration;
 
     use async_trait::async_trait;
+    use coordinator::service_mock::MockCoordinator;
     use datafusion::arrow::datatypes::Schema;
     use datafusion::physical_plan::EmptyRecordBatchStream;
+    use meta::model::meta_admin::AdminMeta;
     use models::auth::user::{User, UserDesc, UserOptions};
     use spi::query::dispatcher::{QueryInfo, QueryStatus};
     use spi::query::execution::{Output, QueryExecution, QueryState, RUNNING};
@@ -257,7 +356,7 @@ mod tests {
     use spi::QueryError;
 
     use super::QueryTracker;
-    use crate::dispatcher::persister::LocalQueryPersister;
+    use crate::dispatcher::persister::MetaQueryPersister;
 
     struct QueryExecutionMock {}
 
@@ -295,7 +394,8 @@ mod tests {
     fn new_query_tracker(limit: usize) -> QueryTracker {
         QueryTracker::new(
             limit,
-            Arc::new(LocalQueryPersister::try_new("/tmp/cnosdb/query").unwrap()),
+            Arc::new(MetaQueryPersister::new(Arc::new(AdminMeta::mock()))),
+            Arc::new(MockCoordinator {}),
         )
     }
 

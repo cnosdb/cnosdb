@@ -122,6 +122,7 @@ jobs:
           TARGETPLATFORM="windows/amd64" bash ./.github/tools/install_dependencies.sh
       - name: Run and test
         run: |
+          cargo clippy --workspace  --all-targets --features coordinator_e2e_test --features meta_e2e_test -- -D warnings
           cargo build --profile test-ci --package main --bin cnosdb
           Copy-Item -Path .\target\test-ci\cnosdb.exe -Destination .\cnosdb.exe
           cargo clean

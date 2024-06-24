@@ -13,11 +13,12 @@ use arrow_flight::sql::client::FlightSqlServiceClient;
 use arrow_flight::utils::flight_data_to_batches;
 use arrow_flight::FlightInfo;
 use arrow_schema::ArrowError;
-use config::Config as CnosdbConfig;
+use config::meta::Opt as MetaStoreConfig;
+use config::tskv::Config as CnosdbConfig;
 use datafusion::arrow::record_batch::RecordBatch;
 use futures::TryStreamExt;
 use meta::client::MetaHttpClient;
-use meta::store::config::Opt as MetaStoreConfig;
+use metrics::metric_register::MetricsRegister;
 use reqwest::blocking::{ClientBuilder, Request, RequestBuilder, Response};
 use reqwest::{Certificate, IntoUrl, Method, StatusCode};
 use sysinfo::{ProcessRefreshKind, RefreshKind, System};
@@ -439,7 +440,10 @@ impl CnosdbMetaTestHelper {
                 .join("release")
                 .join("cnosdb-meta"),
             client: Arc::new(Client::new()),
-            meta_client: Arc::new(MetaHttpClient::new("127.0.0.1:8901")),
+            meta_client: Arc::new(MetaHttpClient::new(
+                "127.0.0.1:8901",
+                Arc::new(MetricsRegister::default()),
+            )),
             sub_processes: HashMap::with_capacity(3),
         }
     }

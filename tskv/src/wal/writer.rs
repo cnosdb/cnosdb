@@ -1,32 +1,19 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::file_system::async_filesystem::LocalFileSystem;
-use crate::file_system::FileSystem;
 use crate::kv_option::WalOptions;
-use crate::record_file::{RecordDataType, RecordDataVersion};
+use crate::record_file::{RecordDataType, RecordDataVersion, Writer};
 use crate::wal::reader::WalReader;
-use crate::wal::{reader, wal_store, WalType, WAL_BUFFER_SIZE, WAL_FOOTER_MAGIC_NUMBER};
+use crate::wal::{wal_store, WalType, WAL_BUFFER_SIZE};
 use crate::{record_file, TskvResult};
 
-fn build_footer(min_sequence: u64, max_sequence: u64) -> [u8; record_file::FILE_FOOTER_LEN] {
-    let mut footer = [0_u8; record_file::FILE_FOOTER_LEN];
-    footer[0..4].copy_from_slice(&WAL_FOOTER_MAGIC_NUMBER.to_be_bytes());
-    footer[16..24].copy_from_slice(&min_sequence.to_be_bytes());
-    footer[24..32].copy_from_slice(&max_sequence.to_be_bytes());
-    footer
-}
-
+// include min_sequence, exclude max_sequence
 pub struct WalWriter {
     id: u64,
     inner: record_file::Writer,
     size: u64,
     path: PathBuf,
     config: Arc<WalOptions>,
-
-    min_sequence: u64,
-    max_sequence: u64,
-    has_footer: bool,
 }
 
 impl WalWriter {
@@ -36,27 +23,9 @@ impl WalWriter {
         config: Arc<WalOptions>,
         id: u64,
         path: impl AsRef<Path>,
-        min_seq: u64,
     ) -> TskvResult<Self> {
         let path = path.as_ref();
-
-        // Use min_sequence existing in file, otherwise in parameter
-        let (writer, min_sequence, max_sequence) = if LocalFileSystem::try_exists(path) {
-            let writer =
-                record_file::Writer::open(path, RecordDataType::Wal, WAL_BUFFER_SIZE).await?;
-            let (min_sequence, max_sequence) = match writer.footer() {
-                Some(footer) => reader::parse_footer(footer).unwrap_or((min_seq, min_seq)),
-                None => (min_seq, min_seq),
-            };
-            (writer, min_sequence, max_sequence)
-        } else {
-            (
-                record_file::Writer::open(path, RecordDataType::Wal, WAL_BUFFER_SIZE).await?,
-                min_seq,
-                min_seq,
-            )
-        };
-
+        let writer = Writer::open(path, RecordDataType::Wal, WAL_BUFFER_SIZE).await?;
         let size = writer.file_size();
 
         Ok(Self {
@@ -65,9 +34,6 @@ impl WalWriter {
             size,
             path: PathBuf::from(path),
             config,
-            min_sequence,
-            max_sequence,
-            has_footer: false,
         })
     }
 
@@ -96,7 +62,6 @@ impl WalWriter {
             self.inner.sync().await?;
         }
 
-        self.max_sequence = seq + 1;
         self.size += written_size as u64;
         Ok(written_size)
     }
@@ -105,31 +70,18 @@ impl WalWriter {
         self.inner.sync().await
     }
 
-    pub async fn close(&mut self) -> TskvResult<usize> {
-        trace::info!(
-            "Wal '{}' closing with sequence: [{}, {})",
-            self.path.display(),
-            self.min_sequence,
-            self.max_sequence,
-        );
-        let mut footer = build_footer(self.min_sequence, self.max_sequence);
-        let size = self.inner.write_footer(&mut footer).await?;
-        self.has_footer = true;
+    pub async fn close(&mut self) -> TskvResult<()> {
+        trace::info!("Wal '{}' closing", self.path.display(),);
         self.inner.close().await?;
-        Ok(size)
+        Ok(())
     }
 
     pub async fn new_reader(&mut self) -> TskvResult<WalReader> {
         let record_reader = self.inner.new_reader().await?;
-        Ok(WalReader::new(
-            record_reader,
-            self.min_sequence,
-            self.max_sequence,
-            self.has_footer,
-        ))
+        Ok(WalReader::new(record_reader))
     }
 
-    pub async fn truncate(&mut self, size: u64, seq_no: u64) {
+    pub async fn truncate(&mut self, size: u64) {
         if self.size <= size {
             return;
         }
@@ -137,14 +89,6 @@ impl WalWriter {
         let _ = self.inner.truncate(size).await;
 
         self.size = size;
-        let mut new_max_sequence = 0;
-        if seq_no > 0 {
-            new_max_sequence = seq_no - 1;
-        }
-        self.set_max_sequence(new_max_sequence);
-        if self.min_sequence() > new_max_sequence {
-            self.set_min_sequence(new_max_sequence);
-        }
     }
 
     pub fn id(&self) -> u64 {
@@ -155,19 +99,7 @@ impl WalWriter {
         self.size
     }
 
-    pub fn min_sequence(&self) -> u64 {
-        self.min_sequence
-    }
-
-    pub fn max_sequence(&self) -> u64 {
-        self.max_sequence
-    }
-
-    pub fn set_max_sequence(&mut self, new_max_sequence: u64) {
-        self.max_sequence = new_max_sequence
-    }
-
-    pub fn set_min_sequence(&mut self, new_min_sequence: u64) {
-        self.min_sequence = new_min_sequence
+    pub fn path(&self) -> PathBuf {
+        self.path.clone()
     }
 }

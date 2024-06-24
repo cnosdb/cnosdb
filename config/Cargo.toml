@@ -4,13 +4,15 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-serde = { workspace = true }
-toml = { workspace = true }
+macros = { path = "../common/macros" }
+
 async-backtrace = { workspace = true, optional = true }
-sys-info = { workspace = true }
+figment = { workspace = true, features = ["toml", "env"] }
 num_cpus = { workspace = true }
 once_cell = { workspace = true }
-figment = { workspace = true, features = ["toml", "env"] }
+serde = { workspace = true }
+sys-info = { workspace = true }
+toml = { workspace = true }
 
 [features]
 default = []

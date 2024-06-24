@@ -6,9 +6,9 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use clap::{command, Args, Parser, Subcommand, ValueEnum};
-use config::{Config, VERSION};
+use config::tskv::Config;
+use config::VERSION;
 use memory_pool::GreedyMemoryPool;
-use metrics::init_tskv_metrics_recorder;
 use metrics::metric_register::MetricsRegister;
 use tokio::runtime::Runtime;
 use trace::global_logging::init_global_logging;
@@ -156,7 +156,7 @@ fn main() -> Result<(), std::io::Error> {
                 config,
                 show_warnings,
             } => {
-                config::check_config(config, show_warnings);
+                config::tskv::check_config(config, show_warnings);
                 return Ok(());
             }
         },
@@ -166,7 +166,6 @@ fn main() -> Result<(), std::io::Error> {
     let deployment_mode = get_deployment_mode(&config.deployment.mode)?;
 
     init_global_logging(&config.log, "tsdb.log");
-    init_tskv_metrics_recorder();
 
     let runtime = Arc::new(init_runtime(Some(config.deployment.cpu))?);
     let mem_bytes = run_args.memory.unwrap_or(config.deployment.memory) * 1024 * 1024 * 1024;
@@ -213,10 +212,10 @@ fn main() -> Result<(), std::io::Error> {
     Ok(())
 }
 
-fn parse_config(run_args: &RunArgs) -> config::Config {
+fn parse_config(run_args: &RunArgs) -> config::tskv::Config {
     println!("-----------------------------------------------------------");
     println!("Using Config File: {}\n", run_args.config);
-    let mut config = config::get_config(&run_args.config).unwrap();
+    let mut config = config::tskv::get_config(&run_args.config).unwrap();
     set_cli_args_to_config(run_args, &mut config);
     println!("Start with configuration: \n{}", config.to_string_pretty());
     println!("-----------------------------------------------------------");

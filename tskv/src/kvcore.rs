@@ -18,6 +18,7 @@ use tokio::sync::{oneshot, RwLock};
 use trace::{debug, error, info, warn};
 
 use crate::compaction::job::CompactJob;
+use crate::compaction::metrics::{CompactionType, VnodeCompactionMetrics};
 use crate::compaction::{self, check, LevelCompactionPicker, Picker};
 use crate::database::Database;
 use crate::error::{IndexErrSnafu, TskvResult};
@@ -40,7 +41,7 @@ pub struct TsKv {
     compact_job: CompactJob,
     runtime: Arc<Runtime>,
     vnodes: Arc<RwLock<HashMap<VnodeId, VnodeStorage>>>,
-    _metrics: Arc<MetricsRegister>,
+    metrics: Arc<MetricsRegister>,
     _memory_pool: Arc<dyn MemoryPool>,
     close_sender: BroadcastSender<Sender<()>>,
 }
@@ -76,14 +77,14 @@ impl TsKv {
         });
 
         let (close_sender, _close_receiver) = broadcast::channel(1);
-        let compact_job = CompactJob::new(runtime.clone(), ctx.clone());
+        let compact_job = CompactJob::new(runtime.clone(), ctx.clone(), metrics.clone());
         let core = Self {
             ctx,
             _meta_manager: meta_manager,
             _memory_pool: memory_pool,
             compact_job,
             close_sender,
-            _metrics: metrics,
+            metrics,
             runtime,
             vnodes: Default::default(),
         };
@@ -413,7 +414,20 @@ impl Engine for TsKv {
                 let picker = LevelCompactionPicker {};
                 let version = ts_family.read().await.version();
                 if let Some(req) = picker.pick_compaction(version) {
-                    match compaction::run_compaction_job(req, self.ctx.global_ctx.clone()).await {
+                    let vnode_compaction_metrics = VnodeCompactionMetrics::new(
+                        &self.metrics,
+                        self.ctx.options.storage.node_id,
+                        req.ts_family_id,
+                        CompactionType::Manual,
+                        self.ctx.options.storage.collect_compaction_metrics,
+                    );
+                    match compaction::run_compaction_job(
+                        req,
+                        self.ctx.global_ctx.clone(),
+                        vnode_compaction_metrics,
+                    )
+                    .await
+                    {
                         Ok(Some((version_edit, file_metas))) => {
                             let (summary_tx, _summary_rx) = oneshot::channel();
                             let _ = self

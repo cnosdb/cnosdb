@@ -64,6 +64,7 @@ impl QueryDispatcher for SimpleQueryDispatcher {
             let ctx = ContextBuilder::new(user)
                 .with_tenant(Some(tenant_name.to_owned()))
                 .with_database(Some(database_name.to_owned()))
+                .with_is_old(Some(true))
                 .build();
             let query = Query::new(ctx, sql.to_owned());
             match self
@@ -236,7 +237,8 @@ impl SimpleQueryDispatcher {
     ) -> QueryResult<Output> {
         let execution = self
             .query_execution_factory
-            .create_query_execution(logical_plan, query_state_machine.clone())?;
+            .create_query_execution(logical_plan, query_state_machine.clone())
+            .await?;
 
         // TrackedQuery.drop() is called implicitly when the value goes out of scope,
         self.query_tracker

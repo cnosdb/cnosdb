@@ -15,6 +15,7 @@ create database if not exists "avg_daily_driving_duration" with ttl '3650D';
 create database if not exists "bottom_func" with ttl '100000D';
 create database if not exists "ci_table_db" with ttl '3650D';
 create database if not exists "cli_precision" with precision 'MS' ttl '100000D';
+create database if not exists "cluster_schema";
 create database if not exists "create_external_table" with ttl '100000D';
 create database if not exists "createstreamtable";
 create database if not exists "db_precision" with precision 'MS' ttl '100000D';

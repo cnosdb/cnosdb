@@ -1,7 +1,7 @@
 use std::fmt::Display;
 use std::sync::Arc;
 
-use crate::Config;
+use crate::tskv::Config;
 
 // const NONE: &str = "/033[m";
 // const RED: &str = "/033[0;32;31m";

@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use config::Config;
+use config::tskv::Config;
 use models::meta_data::{NodeId, VnodeId};
 
 use crate::TseriesFamilyId;
@@ -47,6 +47,7 @@ pub struct StorageOptions {
     pub compact_trigger_cold_duration: Duration,
     pub max_compact_size: u64,
     pub max_concurrent_compaction: u16,
+    pub collect_compaction_metrics: bool,
     pub strict_write: bool,
     pub snapshot_holding_time: i64,
     pub max_datablock_size: u64,
@@ -104,6 +105,7 @@ impl From<&Config> for StorageOptions {
             compact_trigger_cold_duration: config.storage.compact_trigger_cold_duration,
             max_compact_size: config.storage.max_compact_size,
             max_concurrent_compaction: config.storage.max_concurrent_compaction,
+            collect_compaction_metrics: config.storage.collect_compaction_metrics,
             strict_write: config.storage.strict_write,
             snapshot_holding_time: config.cluster.snapshot_holding_time.as_secs() as i64,
             max_datablock_size: config.storage.max_datablock_size,

@@ -1,15 +1,16 @@
 use std::sync::Arc;
 
+use macros::EnvKeys;
 use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, EnvKeys)]
 pub struct TokioTrace {
     pub addr: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, EnvKeys)]
 pub struct LogConfig {
     #[serde(default = "LogConfig::default_level")]
     pub level: String,
@@ -59,7 +60,7 @@ impl Default for LogConfig {
 }
 
 impl CheckConfig for LogConfig {
-    fn check(&self, _: &crate::Config) -> Option<CheckConfigResult> {
+    fn check(&self, _: &crate::tskv::Config) -> Option<CheckConfigResult> {
         let config_name = Arc::new("log".to_string());
         let mut ret = CheckConfigResult::default();
 

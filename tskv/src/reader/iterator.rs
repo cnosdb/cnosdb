@@ -462,16 +462,12 @@ impl SeriesGroupBatchReaderFactory {
             .iter()
             .chain(iter::once(&caches.mut_cache))
         {
-            let series_data = cache.read().read_series_data();
-            for (series_id, series) in series_data {
-                if series_id == sid {
-                    if let Some(new_time_ranges) = time_ranges.intersect(&series.read().range) {
-                        rowgroups.push(DataReference::Memcache(
-                            series.clone(),
-                            Arc::new(new_time_ranges),
-                        ))
-                    }
-                    break;
+            if let Some(series) = cache.read().read_series_data_by_id(sid) {
+                if let Some(new_time_ranges) = time_ranges.intersect(&series.read().range) {
+                    rowgroups.push(DataReference::Memcache(
+                        series.clone(),
+                        Arc::new(new_time_ranges),
+                    ))
                 }
             }
         }

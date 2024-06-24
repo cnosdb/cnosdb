@@ -9,6 +9,8 @@ use snafu::OptionExt;
 use trace::{info, trace};
 use utils::BloomFilter;
 
+use super::metrics::VnodeCompactionMetrics;
+use crate::compaction::metrics::DurationMetricRecorder;
 use crate::compaction::CompactReq;
 use crate::context::GlobalContext;
 use crate::error::{CommonSnafu, TskvResult};
@@ -169,6 +171,7 @@ impl CompactingBlockMetaGroup {
 
     pub async fn merge(
         mut self,
+        metrics: &mut VnodeCompactionMetrics,
         previous_block: Option<CompactingBlock>,
         max_block_size: usize,
     ) -> TskvResult<Vec<CompactingBlock>> {
@@ -185,7 +188,9 @@ impl CompactingBlockMetaGroup {
             let meta_0 = &self.blk_metas[0].meta;
             let column_group_id = self.blk_metas[0].column_group_id;
             let column_group = self.blk_metas[0].column_group()?;
+            metrics.read_begin();
             let buf_0 = self.blk_metas[0].get_raw_data().await?;
+            metrics.read_end();
 
             if column_group.row_len() >= max_block_size {
                 // Raw data block is full, so do not merge with the previous, directly return.
@@ -215,7 +220,9 @@ impl CompactingBlockMetaGroup {
                 })?;
                 let decoded_raw_block = decode_pages_buf(&buf_0, chunk, column_group_id, schema)?;
                 let mut data_block = compacting_block.decode()?;
+                metrics.merge_begin();
                 let data_block = data_block.merge(decoded_raw_block)?;
+                metrics.merge_end();
 
                 merged_block = data_block;
             } else {
@@ -242,14 +249,20 @@ impl CompactingBlockMetaGroup {
 
             if let Some(compacting_block) = previous_block {
                 let mut data_block = compacting_block.decode()?;
+                metrics.merge_begin();
                 let data_block = data_block.merge(head_block)?;
+                metrics.merge_end();
                 head_block = data_block;
             }
 
             for blk_meta in self.blk_metas[1..].iter_mut() {
                 // Merge decoded data block.
+                metrics.read_begin();
                 let blk_block = blk_meta.get_data_block_filter_by_tomb().await?;
+                metrics.read_end();
+                metrics.merge_begin();
                 head_block = head_block.merge(blk_block)?;
+                metrics.merge_end();
             }
             merged_block = head_block;
         }
@@ -722,7 +735,9 @@ impl CompactIterator {
 pub async fn run_compaction_job(
     request: CompactReq,
     kernel: Arc<GlobalContext>,
+    mut metrics: VnodeCompactionMetrics,
 ) -> TskvResult<Option<(VersionEdit, HashMap<ColumnFileId, Arc<BloomFilter>>)>> {
+    metrics.begin();
     info!(
         "Compaction: Running compaction job on ts_family: {} and files: [ {} ]",
         request.ts_family_id,
@@ -781,7 +796,9 @@ pub async fn run_compaction_job(
         if sid.is_some() && sid != iter.curr_sid {
             // Iteration of next field id, write previous merged block.
             if let Some(blk) = previous_merged_block.take() {
+                metrics.write_begin();
                 tsm_writer.write_compacting_block(blk).await?;
+                metrics.write_end();
                 if handle_finish_write_tsm_meta(
                     &mut tsm_writer,
                     &mut file_metas,
@@ -799,7 +816,7 @@ pub async fn run_compaction_job(
 
         sid = iter.curr_sid;
         let mut compacting_blks = blk_meta_group
-            .merge(previous_merged_block.take(), max_block_size)
+            .merge(&mut metrics, previous_merged_block.take(), max_block_size)
             .await?;
         if compacting_blks.len() == 1 && compacting_blks[0].len() < max_block_size {
             // The only one data block too small, try to extend the next compacting blocks.
@@ -815,7 +832,9 @@ pub async fn run_compaction_job(
                 previous_merged_block = Some(blk);
                 break;
             }
+            metrics.write_begin();
             tsm_writer.write_compacting_block(blk).await?;
+            metrics.write_end();
             if handle_finish_write_tsm_meta(
                 &mut tsm_writer,
                 &mut file_metas,
@@ -830,7 +849,9 @@ pub async fn run_compaction_job(
         }
     }
     if let Some(blk) = previous_merged_block {
+        metrics.write_begin();
         tsm_writer.write_compacting_block(blk).await?;
+        metrics.write_end();
         handle_finish_write_tsm_meta(
             &mut tsm_writer,
             &mut file_metas,
@@ -922,6 +943,7 @@ pub mod test {
     use models::{SeriesId, SeriesKey, ValueType};
     use tokio::sync::RwLock;
 
+    use crate::compaction::metrics::VnodeCompactionMetrics;
     use crate::compaction::{run_compaction_job, CompactReq};
     use crate::context::GlobalContext;
     use crate::file_system::async_filesystem::LocalFileSystem;
@@ -1045,7 +1067,7 @@ pub mod test {
     }
 
     pub(crate) fn create_options(base_dir: String) -> Arc<Options> {
-        let mut config = config::get_config_for_test();
+        let mut config = config::tskv::get_config_for_test();
         config.storage.path = base_dir;
         config.storage.max_datablock_size = 1000;
         let opt = Options::from(&config);
@@ -1180,10 +1202,11 @@ pub mod test {
         let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data).await;
         let (compact_req, kernel) =
             prepare_compact_req_and_kernel(database, opt, next_file_id, files);
-        let (version_edit, _) = run_compaction_job(compact_req, kernel)
-            .await
-            .unwrap()
-            .unwrap();
+        let (version_edit, _) =
+            run_compaction_job(compact_req, kernel, VnodeCompactionMetrics::fake())
+                .await
+                .unwrap()
+                .unwrap();
         check_column_file(dir, version_edit, expected_data).await;
     }
 
@@ -1286,10 +1309,11 @@ pub mod test {
         let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data).await;
         let (compact_req, kernel) =
             prepare_compact_req_and_kernel(database, opt, next_file_id, files);
-        let (version_edit, _) = run_compaction_job(compact_req, kernel)
-            .await
-            .unwrap()
-            .unwrap();
+        let (version_edit, _) =
+            run_compaction_job(compact_req, kernel, VnodeCompactionMetrics::fake())
+                .await
+                .unwrap()
+                .unwrap();
         check_column_file(dir, version_edit, expected_data).await;
     }
 
@@ -1440,10 +1464,11 @@ pub mod test {
         let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data).await;
         let (compact_req, kernel) =
             prepare_compact_req_and_kernel(database, opt, next_file_id, files);
-        let (version_edit, _) = run_compaction_job(compact_req, kernel)
-            .await
-            .unwrap()
-            .unwrap();
+        let (version_edit, _) =
+            run_compaction_job(compact_req, kernel, VnodeCompactionMetrics::fake())
+                .await
+                .unwrap()
+                .unwrap();
         check_column_file(dir, version_edit, expected_data).await;
     }
 
@@ -2081,10 +2106,11 @@ pub mod test {
         let (compact_req, kernel) =
             prepare_compact_req_and_kernel(database, opt, next_file_id, column_files);
 
-        let (version_edit, _) = run_compaction_job(compact_req, kernel)
-            .await
-            .unwrap()
-            .unwrap();
+        let (version_edit, _) =
+            run_compaction_job(compact_req, kernel, VnodeCompactionMetrics::fake())
+                .await
+                .unwrap()
+                .unwrap();
 
         check_column_file(dir, version_edit, expected_data).await;
     }
@@ -2671,10 +2697,11 @@ pub mod test {
         let (compact_req, kernel) =
             prepare_compact_req_and_kernel(database, opt, next_file_id, column_files);
 
-        let (version_edit, _) = run_compaction_job(compact_req, kernel)
-            .await
-            .unwrap()
-            .unwrap();
+        let (version_edit, _) =
+            run_compaction_job(compact_req, kernel, VnodeCompactionMetrics::fake())
+                .await
+                .unwrap()
+                .unwrap();
 
         check_column_file(dir, version_edit, expected_data).await;
     }
@@ -2825,10 +2852,11 @@ pub mod test {
         let max_file_size = compact_req
             .storage_opt
             .level_max_file_size(compact_req.out_level);
-        let (version_edit, _) = run_compaction_job(compact_req, kernel.clone())
-            .await
-            .unwrap()
-            .unwrap();
+        let (version_edit, _) =
+            run_compaction_job(compact_req, kernel.clone(), VnodeCompactionMetrics::fake())
+                .await
+                .unwrap()
+                .unwrap();
         check_column_file(dir.clone(), version_edit.clone(), expected_data.clone()).await;
 
         let file_id = version_edit.add_files.first().unwrap().file_id;
@@ -2900,10 +2928,11 @@ pub mod test {
         cfs.push(Arc::new(cf));
         let (compact_req, kernel) = prepare_compact_req_and_kernel(database, opt, 5, cfs.clone());
         println!("cfs:{:?}", cfs.clone());
-        let (version_edit, _) = run_compaction_job(compact_req, kernel.clone())
-            .await
-            .unwrap()
-            .unwrap();
+        let (version_edit, _) =
+            run_compaction_job(compact_req, kernel.clone(), VnodeCompactionMetrics::fake())
+                .await
+                .unwrap()
+                .unwrap();
         println!("{:?}", version_edit);
         let data4 = DataBlock::new(
             schema.clone(),

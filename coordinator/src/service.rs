@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{mem, vec};
 
-use config::Config;
+use config::tskv::Config;
 use datafusion::arrow::array::{
     Array, ArrayRef, Int64Array, StringArray, TimestampMicrosecondArray, TimestampMillisecondArray,
     TimestampNanosecondArray, UInt32Array,

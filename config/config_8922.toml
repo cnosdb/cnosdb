@@ -19,9 +19,10 @@ query_sql_limit = "16777216B"  # 16 * 1024 * 1024
 write_sql_limit = "167772160B" # 160 * 1024 * 1024
 auth_enabled = false
 read_timeout = "3000ms"
-write_timeout_ms = "3000ms"
+write_timeout = "3000ms"
 stream_trigger_cpu = 1
 stream_executor_cpu = 2
+sql_record_timeout = "10s"
 
 [storage]
 # Directory for summary: $path/summary/
@@ -37,6 +38,7 @@ compact_trigger_file_num = 4
 compact_trigger_cold_duration = "1h"
 max_compact_size = "2G"              # 2147483648
 max_concurrent_compaction = 4
+collect_compaction_metrics = false
 strict_write = false
 reserve_space = "0"
 max_datablock_size = "100KB"

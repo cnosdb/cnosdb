@@ -9,7 +9,7 @@ use crate::query::config::StreamTriggerInterval;
 use crate::query::execution::Output;
 use crate::query::session::CnosSessionConfig;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct QueryId(u64);
 
 impl QueryId {
@@ -72,6 +72,7 @@ pub struct Context {
     precision: String,
     chunked: bool,
     session_config: CnosSessionConfig,
+    is_old: bool,
 }
 
 impl Context {
@@ -97,6 +98,9 @@ impl Context {
     pub fn chunked(&self) -> bool {
         self.chunked
     }
+    pub fn is_old(&self) -> bool {
+        self.is_old
+    }
 }
 
 pub struct ContextBuilder {
@@ -106,6 +110,7 @@ pub struct ContextBuilder {
     precision: String,
     chunked: bool,
     session_config: CnosSessionConfig,
+    is_old: bool,
 }
 
 impl ContextBuilder {
@@ -117,6 +122,7 @@ impl ContextBuilder {
             database: DEFAULT_DATABASE.to_string(),
             chunked: Default::default(),
             session_config: Default::default(),
+            is_old: Default::default(),
         }
     }
 
@@ -164,6 +170,13 @@ impl ContextBuilder {
         self
     }
 
+    pub fn with_is_old(mut self, is_old: Option<bool>) -> Self {
+        if let Some(is_old) = is_old {
+            self.is_old = is_old;
+        }
+        self
+    }
+
     pub fn build(self) -> Context {
         Context {
             user: self.user,
@@ -172,6 +185,7 @@ impl ContextBuilder {
             precision: self.precision,
             chunked: self.chunked,
             session_config: self.session_config,
+            is_old: self.is_old,
         }
     }
 }
