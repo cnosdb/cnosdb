@@ -99,7 +99,12 @@ impl TskvRaftWriter {
                     })
                 } else {
                     Err(RaftWriteSnafu {
-                        msg: err.to_string(),
+                        msg: format!(
+                            "write to replica: {}, id: {}, failed: {}",
+                            raft.group_id(),
+                            raft.raft_id(),
+                            err
+                        ),
                     }
                     .build())
                 }
