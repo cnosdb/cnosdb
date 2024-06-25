@@ -955,6 +955,7 @@ dependencies = [
 name = "cache"
 version = "2.4.1"
 dependencies = [
+ "async-backtrace",
  "async-trait",
  "criterion",
  "futures",
