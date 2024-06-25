@@ -287,10 +287,10 @@ pub mod test {
         let resp = client.post(SERVER_URL, "select count(*) from ma").unwrap();
         assert_eq!(resp.status(), status_code::OK);
         let actual = resp.text().unwrap();
-        let expected = format!("{}", 0);
+        let expected = format!("COUNT(UInt8(1))\n{}\n", 0);
         println!("\nselect count(*): {}", actual);
         println!("expected: {}", expected);
-        assert!(actual.contains(&expected));
+        assert_eq!(actual, expected);
 
         clean_env();
         println!("#### Test complete replica_test_case ####");
