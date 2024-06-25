@@ -189,6 +189,9 @@ pub enum ReadCommand {
 
     // cluster, node_id
     ReadQueryInfos(String, NodeId),
+
+    // cluster, tenant, db, table
+    ReadTableSchema(String, String, String, String),
 }
 
 pub const ENTRY_LOG_TYPE_SET: i32 = 1;

@@ -19,6 +19,7 @@ use crate::report::ReportService;
 
 mod flight_sql;
 mod http;
+mod jaeger;
 mod report;
 mod rpc;
 mod server;

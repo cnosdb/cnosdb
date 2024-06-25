@@ -20,6 +20,7 @@ use tskv::{EngineRef, TsKv};
 
 use crate::flight_sql::FlightSqlServiceAdapter;
 use crate::http::http_service::{HttpService, ServerMode};
+use crate::jaeger::jaeger_grpc_service::JaegerGrpcService;
 use crate::rpc::grpc_service::GrpcService;
 use crate::spi::service::ServiceRef;
 use crate::tcp::tcp_service::TcpService;
@@ -168,6 +169,12 @@ impl ServiceBuilder {
             server.add_service(Box::new(vector_service));
         }
 
+        if let Some(jaeger_service) =
+            self.create_jaeger_grpc_if_enabled(coord.clone(), dbms.clone())
+        {
+            server.add_service(Box::new(jaeger_service));
+        }
+
         Some(kv_inst)
     }
 
@@ -233,6 +240,12 @@ impl ServiceBuilder {
             self.create_vector_grpc_if_enabled(coord.clone(), dbms.clone())
         {
             server.add_service(Box::new(vector_service));
+        }
+
+        if let Some(jaeger_service) =
+            self.create_jaeger_grpc_if_enabled(coord.clone(), dbms.clone())
+        {
+            server.add_service(Box::new(jaeger_service));
         }
 
         Some(kv_inst)
@@ -408,6 +421,39 @@ impl ServiceBuilder {
             .expect("Config vector_grpc_listen_addr cannot be empty.");
 
         Some(VectorGrpcService::new(
+            coord,
+            dbms,
+            addr,
+            None,
+            self.metrics_register.clone(),
+            self.config.trace.auto_generate_span,
+        ))
+    }
+
+    fn create_jaeger_grpc_if_enabled(
+        &self,
+        coord: CoordinatorRef,
+        dbms: DBMSRef,
+    ) -> Option<JaegerGrpcService> {
+        let default_jaeger_grpc_addr = match self.config.service.jaeger_rpc_listen_port {
+            Some(port) => build_default_address(port),
+            None => return None,
+        };
+
+        let addr = default_jaeger_grpc_addr
+            .to_socket_addrs()
+            .map_err(|e| {
+                format!(
+                    "Cannot resolve vector_grpc_listen_addr '{}': {}",
+                    default_jaeger_grpc_addr, e
+                )
+            })
+            .unwrap()
+            .collect::<Vec<SocketAddr>>()
+            .first()
+            .copied()
+            .expect("Config vector_grpc_listen_addr cannot be empty.");
+        Some(JaegerGrpcService::new(
             coord,
             dbms,
             addr,

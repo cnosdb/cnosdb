@@ -22,6 +22,8 @@ pub struct ServiceConfig {
     pub vector_listen_port: Option<u16>,
     #[serde(default = "ServiceConfig::default_enable_report")]
     pub enable_report: bool,
+    #[serde(default = "ServiceConfig::default_jaeger_rpc_listen_port")]
+    pub jaeger_rpc_listen_port: Option<u16>,
 }
 
 impl ServiceConfig {
@@ -52,6 +54,10 @@ impl ServiceConfig {
     fn default_enable_report() -> bool {
         true
     }
+
+    fn default_jaeger_rpc_listen_port() -> Option<u16> {
+        None
+    }
 }
 
 impl Default for ServiceConfig {
@@ -64,6 +70,7 @@ impl Default for ServiceConfig {
             tcp_listen_port: ServiceConfig::default_tcp_listen_port(),
             vector_listen_port: ServiceConfig::default_vector_listen_port(),
             enable_report: ServiceConfig::default_enable_report(),
+            jaeger_rpc_listen_port: ServiceConfig::default_jaeger_rpc_listen_port(),
         }
     }
 }

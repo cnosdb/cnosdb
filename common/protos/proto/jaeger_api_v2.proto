@@ -1,0 +1,153 @@
+// Copyright (c) 2018 Uber Technologies, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax="proto3";
+
+package jaeger_api_v2;
+
+// import "google/protobuf/timestamp.proto";
+// import "google/protobuf/duration.proto";
+// import "gogoproto/gogo.proto";
+
+// TODO: document all types and fields
+
+// TODO: once this moves to jaeger-idl repo, we may want to change Go pkg to api_v2
+// and rewrite it to model only in this repo. That should make it easier to generate
+// classes in other languages.
+// option go_package = "model";
+// option java_package = "io.jaegertracing.api_v2";
+
+// Enable gogoprotobuf extensions (https://github.com/gogo/protobuf/blob/master/extensions.md).
+// Enable custom Marshal method.
+// option (gogoproto.marshaler_all) = true;
+// Enable custom Unmarshal method.
+// option (gogoproto.unmarshaler_all) = true;
+// Enable custom Size method (Required by Marshal and Unmarshal).
+// option (gogoproto.sizer_all) = true;
+
+message Timestamp {
+  // Represents seconds of UTC time since Unix epoch
+  // 1970-01-01T00:00:00Z. Must be from 0001-01-01T00:00:00Z to
+  // 9999-12-31T23:59:59Z inclusive.
+  int64 seconds = 1;
+
+  // Non-negative fractions of a second at nanosecond resolution. Negative
+  // second values with fractions must still have non-negative nanos values
+  // that count forward in time. Must be from 0 to 999,999,999
+  // inclusive.
+  int32 nanos = 2;
+}
+
+message Duration {
+  // Signed seconds of the span of time. Must be from -315,576,000,000
+  // to +315,576,000,000 inclusive. Note: these bounds are computed from:
+  // 60 sec/min * 60 min/hr * 24 hr/day * 365.25 days/year * 10000 years
+  int64 seconds = 1;
+
+  // Signed fractions of a second at nanosecond resolution of the span
+  // of time. Durations less than one second are represented with a 0
+  // `seconds` field and a positive or negative `nanos` field. For durations
+  // of one second or more, a non-zero value for the `nanos` field must be
+  // of the same sign as the `seconds` field. Must be from -999,999,999
+  // to +999,999,999 inclusive.
+  int32 nanos = 2;
+}
+
+enum ValueType {
+  STRING  = 0;
+  BOOL    = 1;
+  INT64   = 2;
+  FLOAT64 = 3;
+  BINARY  = 4;
+};
+
+message KeyValue {
+  // option (gogoproto.equal) = true;
+  // option (gogoproto.compare) = true;
+
+  string    key      = 1;
+  ValueType v_type    = 2;
+  string    v_str     = 3;
+  bool      v_bool    = 4;
+  int64     v_int64   = 5;
+  double    v_float64 = 6;
+  bytes     v_binary  = 7;
+}
+
+message Log {
+  Timestamp timestamp = 1;
+  repeated KeyValue fields = 2;
+}
+
+enum SpanRefType {
+  CHILD_OF = 0;
+  FOLLOWS_FROM = 1;
+};
+
+message SpanRef {
+  bytes trace_id = 1;
+  bytes span_id = 2;
+  SpanRefType ref_type = 3;
+}
+
+message Process {
+  string service_name = 1;
+  repeated KeyValue tags = 2;
+}
+
+message Span {
+  bytes trace_id = 1;
+  bytes span_id = 2;
+  string operation_name = 3;
+  repeated SpanRef references = 4;
+  uint32 flags = 5;
+  Timestamp start_time = 6;
+  Duration duration = 7;
+  repeated KeyValue tags = 8;
+  repeated Log logs = 9;
+  Process process = 10;
+  string process_id = 11;
+  repeated string warnings = 12;
+}
+
+message Trace {
+  message ProcessMapping {
+      string process_id = 1;
+      Process process = 2;
+  }
+  repeated Span spans = 1;
+  repeated ProcessMapping process_map = 2;
+  repeated string warnings = 3;
+}
+
+// Note that both Span and Batch may contain a Process.
+// This is different from the Thrift model which was only used
+// for transport, because Proto model is also used by the backend
+// as the domain model, where once a batch is received it is split
+// into individual spans which are all processed independently,
+// and therefore they all need a Process. As far as on-the-wire
+// semantics, both Batch and Spans in the same message may contain
+// their own instances of Process, with span.Process taking priority
+// over batch.Process.
+message Batch {
+    repeated Span spans = 1;
+    Process process = 2;
+}
+
+message DependencyLink {
+  string parent = 1;
+  string child = 2;
+  uint64 call_count = 3;
+  string source = 4;
+}

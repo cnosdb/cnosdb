@@ -1,0 +1,217 @@
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Timestamp {
+    /// Represents seconds of UTC time since Unix epoch
+    /// 1970-01-01T00:00:00Z. Must be from 0001-01-01T00:00:00Z to
+    /// 9999-12-31T23:59:59Z inclusive.
+    #[prost(int64, tag = "1")]
+    pub seconds: i64,
+    /// Non-negative fractions of a second at nanosecond resolution. Negative
+    /// second values with fractions must still have non-negative nanos values
+    /// that count forward in time. Must be from 0 to 999,999,999
+    /// inclusive.
+    #[prost(int32, tag = "2")]
+    pub nanos: i32,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Duration {
+    /// Signed seconds of the span of time. Must be from -315,576,000,000
+    /// to +315,576,000,000 inclusive. Note: these bounds are computed from:
+    /// 60 sec/min * 60 min/hr * 24 hr/day * 365.25 days/year * 10000 years
+    #[prost(int64, tag = "1")]
+    pub seconds: i64,
+    /// Signed fractions of a second at nanosecond resolution of the span
+    /// of time. Durations less than one second are represented with a 0
+    /// `seconds` field and a positive or negative `nanos` field. For durations
+    /// of one second or more, a non-zero value for the `nanos` field must be
+    /// of the same sign as the `seconds` field. Must be from -999,999,999
+    /// to +999,999,999 inclusive.
+    #[prost(int32, tag = "2")]
+    pub nanos: i32,
+}
+/// option (gogoproto.equal) = true;
+/// option (gogoproto.compare) = true;
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct KeyValue {
+    #[prost(string, tag = "1")]
+    pub key: ::prost::alloc::string::String,
+    #[prost(enumeration = "ValueType", tag = "2")]
+    pub v_type: i32,
+    #[prost(string, tag = "3")]
+    pub v_str: ::prost::alloc::string::String,
+    #[prost(bool, tag = "4")]
+    pub v_bool: bool,
+    #[prost(int64, tag = "5")]
+    pub v_int64: i64,
+    #[prost(double, tag = "6")]
+    pub v_float64: f64,
+    #[prost(bytes = "vec", tag = "7")]
+    pub v_binary: ::prost::alloc::vec::Vec<u8>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Log {
+    #[prost(message, optional, tag = "1")]
+    pub timestamp: ::core::option::Option<Timestamp>,
+    #[prost(message, repeated, tag = "2")]
+    pub fields: ::prost::alloc::vec::Vec<KeyValue>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SpanRef {
+    #[prost(bytes = "vec", tag = "1")]
+    pub trace_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "2")]
+    pub span_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(enumeration = "SpanRefType", tag = "3")]
+    pub ref_type: i32,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Process {
+    #[prost(string, tag = "1")]
+    pub service_name: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "2")]
+    pub tags: ::prost::alloc::vec::Vec<KeyValue>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Span {
+    #[prost(bytes = "vec", tag = "1")]
+    pub trace_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "2")]
+    pub span_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(string, tag = "3")]
+    pub operation_name: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "4")]
+    pub references: ::prost::alloc::vec::Vec<SpanRef>,
+    #[prost(uint32, tag = "5")]
+    pub flags: u32,
+    #[prost(message, optional, tag = "6")]
+    pub start_time: ::core::option::Option<Timestamp>,
+    #[prost(message, optional, tag = "7")]
+    pub duration: ::core::option::Option<Duration>,
+    #[prost(message, repeated, tag = "8")]
+    pub tags: ::prost::alloc::vec::Vec<KeyValue>,
+    #[prost(message, repeated, tag = "9")]
+    pub logs: ::prost::alloc::vec::Vec<Log>,
+    #[prost(message, optional, tag = "10")]
+    pub process: ::core::option::Option<Process>,
+    #[prost(string, tag = "11")]
+    pub process_id: ::prost::alloc::string::String,
+    #[prost(string, repeated, tag = "12")]
+    pub warnings: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Trace {
+    #[prost(message, repeated, tag = "1")]
+    pub spans: ::prost::alloc::vec::Vec<Span>,
+    #[prost(message, repeated, tag = "2")]
+    pub process_map: ::prost::alloc::vec::Vec<trace::ProcessMapping>,
+    #[prost(string, repeated, tag = "3")]
+    pub warnings: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+/// Nested message and enum types in `Trace`.
+pub mod trace {
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct ProcessMapping {
+        #[prost(string, tag = "1")]
+        pub process_id: ::prost::alloc::string::String,
+        #[prost(message, optional, tag = "2")]
+        pub process: ::core::option::Option<super::Process>,
+    }
+}
+/// Note that both Span and Batch may contain a Process.
+/// This is different from the Thrift model which was only used
+/// for transport, because Proto model is also used by the backend
+/// as the domain model, where once a batch is received it is split
+/// into individual spans which are all processed independently,
+/// and therefore they all need a Process. As far as on-the-wire
+/// semantics, both Batch and Spans in the same message may contain
+/// their own instances of Process, with span.Process taking priority
+/// over batch.Process.
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Batch {
+    #[prost(message, repeated, tag = "1")]
+    pub spans: ::prost::alloc::vec::Vec<Span>,
+    #[prost(message, optional, tag = "2")]
+    pub process: ::core::option::Option<Process>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DependencyLink {
+    #[prost(string, tag = "1")]
+    pub parent: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub child: ::prost::alloc::string::String,
+    #[prost(uint64, tag = "3")]
+    pub call_count: u64,
+    #[prost(string, tag = "4")]
+    pub source: ::prost::alloc::string::String,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ValueType {
+    String = 0,
+    Bool = 1,
+    Int64 = 2,
+    Float64 = 3,
+    Binary = 4,
+}
+impl ValueType {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            ValueType::String => "STRING",
+            ValueType::Bool => "BOOL",
+            ValueType::Int64 => "INT64",
+            ValueType::Float64 => "FLOAT64",
+            ValueType::Binary => "BINARY",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "STRING" => Some(Self::String),
+            "BOOL" => Some(Self::Bool),
+            "INT64" => Some(Self::Int64),
+            "FLOAT64" => Some(Self::Float64),
+            "BINARY" => Some(Self::Binary),
+            _ => None,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum SpanRefType {
+    ChildOf = 0,
+    FollowsFrom = 1,
+}
+impl SpanRefType {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            SpanRefType::ChildOf => "CHILD_OF",
+            SpanRefType::FollowsFrom => "FOLLOWS_FROM",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "CHILD_OF" => Some(Self::ChildOf),
+            "FOLLOWS_FROM" => Some(Self::FollowsFrom),
+            _ => None,
+        }
+    }
+}
