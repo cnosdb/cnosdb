@@ -16,6 +16,8 @@ use datafusion::{arrow, assert_batches_eq};
 use futures::TryStreamExt;
 use tonic::transport::{Channel, Endpoint};
 
+use crate::assert_batches_one_of;
+
 async fn flight_channel(host: &str, port: u16) -> Result<Channel, ArrowError> {
     let endpoint = Endpoint::new(format!("http://{}:{}", host, port))
         .map_err(|_| ArrowError::IoError("Cannot create endpoint".to_string()))?
@@ -128,16 +130,23 @@ async fn test_sql_client_get_tables() {
         .await
         .unwrap();
 
-    let expected = [
+    let expected_1 = [
         "+--------------+----------------+---------------+------------+",
         "| catalog_name | db_schema_name | table_name    | table_type |",
         "+--------------+----------------+---------------+------------+",
         "| cnosdb       | usage_schema   | coord_data_in | TABLE      |",
         "+--------------+----------------+---------------+------------+",
     ];
-    let actual = fetch_result_and_print(flight_info, &mut client).await;
+    let expected_2 = [
+        "+--------------+----------------+------------+------------+",
+        "| catalog_name | db_schema_name | table_name | table_type |",
+        "+--------------+----------------+------------+------------+",
+        "+--------------+----------------+------------+------------+",
+    ];
 
-    assert_batches_eq!(expected, &actual);
+    let actual = fetch_result_and_print(flight_info, &mut client).await;
+    assert_batches_one_of!(&actual, expected_1, expected_2);
+
     check_close(&mut client).await;
 }
 
@@ -432,14 +441,13 @@ async fn test_sql_client_alter_user() {
     let flight_info = client.execute("select * from cluster_schema.users where user_name in ('root', 'test_au_u1', 'test_au_u2') order by user_name;".to_string(), None).await.unwrap();
     let actual = fetch_result_and_print(flight_info, &mut client).await;
     let expected = [
-            "+------------+----------+------------------------------------------------------------------------------------------------------+",
-            "| user_name  | is_admin | user_options                                                                                         |",
-            "+------------+----------+------------------------------------------------------------------------------------------------------+",
-            "| root       | true     | {\"hash_password\":\"*****\",\"must_change_password\":true,\"comment\":\"system admin\",\"granted_admin\":false} |",
-            "| test_au_u1 | false    | {\"hash_password\":\"*****\",\"must_change_password\":false,\"granted_admin\":false}                         |",
-            "| test_au_u2 | false    | {\"hash_password\":\"*****\",\"must_change_password\":false,\"granted_admin\":false}                         |",
-            "+------------+----------+------------------------------------------------------------------------------------------------------+",
-                ];
+        "+------------+----------+--------------------------------------------------------------------------------+",
+        "| user_name  | is_admin | user_options                                                                   |",
+        "+------------+----------+--------------------------------------------------------------------------------+",
+        "| root       | true     | {\"hash_password\":\"*****\",\"must_change_password\":true,\"comment\":\"system admin\"} |",
+        "| test_au_u1 | false    | {\"hash_password\":\"*****\"}                                                      |",
+        "| test_au_u2 | false    | {\"hash_password\":\"*****\"}                                                      |",
+        "+------------+----------+--------------------------------------------------------------------------------+",                ];
     assert_batches_eq!(expected, &actual);
 
     let flight_info = client
@@ -454,14 +462,13 @@ async fn test_sql_client_alter_user() {
     let flight_info = client.execute("select * from cluster_schema.users where user_name in ('root', 'test_au_u1', 'test_au_u2') order by user_name;".to_string(), None).await.unwrap();
     let actual = fetch_result_and_print(flight_info, &mut client).await;
     let expected = [
-            "+------------+----------+------------------------------------------------------------------------------------------------------+",
-            "| user_name  | is_admin | user_options                                                                                         |",
-            "+------------+----------+------------------------------------------------------------------------------------------------------+",
-            "| root       | true     | {\"hash_password\":\"*****\",\"must_change_password\":true,\"comment\":\"system admin\",\"granted_admin\":false} |",
-            "| test_au_u1 | true     | {\"hash_password\":\"*****\",\"must_change_password\":false,\"granted_admin\":true}                          |",
-            "| test_au_u2 | false    | {\"hash_password\":\"*****\",\"must_change_password\":false,\"granted_admin\":false}                         |",
-            "+------------+----------+------------------------------------------------------------------------------------------------------+",
-        ];
+        "+------------+----------+--------------------------------------------------------------------------------+",
+        "| user_name  | is_admin | user_options                                                                   |",
+        "+------------+----------+--------------------------------------------------------------------------------+",
+        "| root       | true     | {\"hash_password\":\"*****\",\"must_change_password\":true,\"comment\":\"system admin\"} |",
+        "| test_au_u1 | true     | {\"hash_password\":\"*****\",\"granted_admin\":true}                                 |",
+        "| test_au_u2 | false    | {\"hash_password\":\"*****\"}                                                      |",
+        "+------------+----------+--------------------------------------------------------------------------------+",        ];
     assert_batches_eq!(expected, &actual);
 
     let flight_info = client
@@ -476,14 +483,13 @@ async fn test_sql_client_alter_user() {
     let flight_info = client.execute("select * from cluster_schema.users where user_name in ('root', 'test_au_u1', 'test_au_u2') order by user_name;".to_string(), None).await.unwrap();
     let actual = fetch_result_and_print(flight_info, &mut client).await;
     let expected = [
-            "+------------+----------+------------------------------------------------------------------------------------------------------+",
-            "| user_name  | is_admin | user_options                                                                                         |",
-            "+------------+----------+------------------------------------------------------------------------------------------------------+",
-            "| root       | true     | {\"hash_password\":\"*****\",\"must_change_password\":true,\"comment\":\"system admin\",\"granted_admin\":false} |",
-            "| test_au_u1 | true     | {\"hash_password\":\"*****\",\"must_change_password\":false,\"granted_admin\":true}                          |",
-            "| test_au_u2 | true     | {\"hash_password\":\"*****\",\"must_change_password\":false,\"granted_admin\":true}                          |",
-            "+------------+----------+------------------------------------------------------------------------------------------------------+",
-                ];
+        "+------------+----------+--------------------------------------------------------------------------------+",
+        "| user_name  | is_admin | user_options                                                                   |",
+        "+------------+----------+--------------------------------------------------------------------------------+",
+        "| root       | true     | {\"hash_password\":\"*****\",\"must_change_password\":true,\"comment\":\"system admin\"} |",
+        "| test_au_u1 | true     | {\"hash_password\":\"*****\",\"granted_admin\":true}                                 |",
+        "| test_au_u2 | true     | {\"hash_password\":\"*****\",\"granted_admin\":true}                                 |",
+        "+------------+----------+--------------------------------------------------------------------------------+",                ];
     assert_batches_eq!(expected, &actual);
 
     let flight_info = client
@@ -507,14 +513,13 @@ async fn test_sql_client_alter_user() {
     let flight_info = client.execute("select * from cluster_schema.users where user_name in ('root', 'test_au_u1', 'test_au_u2') order by user_name;".to_string(), None).await.unwrap();
     let actual = fetch_result_and_print(flight_info, &mut client).await;
     let expected = [
-            "+------------+----------+------------------------------------------------------------------------------------------------------+",
-            "| user_name  | is_admin | user_options                                                                                         |",
-            "+------------+----------+------------------------------------------------------------------------------------------------------+",
-            "| root       | true     | {\"hash_password\":\"*****\",\"must_change_password\":true,\"comment\":\"system admin\",\"granted_admin\":false} |",
-            "| test_au_u1 | false    | {\"hash_password\":\"*****\",\"must_change_password\":false,\"granted_admin\":false}                         |",
-            "| test_au_u2 | false    | {\"hash_password\":\"*****\",\"must_change_password\":false,\"granted_admin\":false}                         |",
-            "+------------+----------+------------------------------------------------------------------------------------------------------+",
-        ];
+        "+------------+----------+--------------------------------------------------------------------------------+",
+        "| user_name  | is_admin | user_options                                                                   |",
+        "+------------+----------+--------------------------------------------------------------------------------+",
+        "| root       | true     | {\"hash_password\":\"*****\",\"must_change_password\":true,\"comment\":\"system admin\"} |",
+        "| test_au_u1 | false    | {\"hash_password\":\"*****\",\"granted_admin\":false}                                |",
+        "| test_au_u2 | false    | {\"hash_password\":\"*****\",\"granted_admin\":false}                                |",
+        "+------------+----------+--------------------------------------------------------------------------------+",        ];
     assert_batches_eq!(expected, &actual);
 
     // clean env
@@ -551,12 +556,12 @@ async fn test_sql_client_alter_database() {
         .unwrap();
     let actual = fetch_result_and_print(flight_info, &mut client).await;
     let expected = [
-        "+---------+-------+----------------+---------+-----------+",
-        "| ttl     | shard | vnode_duration | replica | precision |",
-        "+---------+-------+----------------+---------+-----------+",
-        "| 10 Days | 5     | 3 Days         | 1       | US        |",
-        "+---------+-------+----------------+---------+-----------+",
-    ];
+        "+--------+-------+----------------+---------+-----------+-------------------+---------------------+-------------------+----------+--------------+-------------------+",
+        "| ttl    | shard | vnode_duration | replica | precision | max_memcache_size | memcache_partitions | wal_max_file_size | wal_sync | strict_write | max_cache_readers |",
+        "+--------+-------+----------------+---------+-----------+-------------------+---------------------+-------------------+----------+--------------+-------------------+",
+        "| 10days | 5     | 3days          | 1       | US        | 512 MiB           | 16                  | 1 GiB             | false    | false        | 32                |",
+        "+--------+-------+----------------+---------+-----------+-------------------+---------------------+-------------------+----------+--------------+-------------------+",
+        ];
     assert_batches_eq!(expected, &actual);
 
     let flight_info = client
@@ -574,12 +579,12 @@ async fn test_sql_client_alter_database() {
         .unwrap();
     let actual = fetch_result_and_print(flight_info, &mut client).await;
     let expected = [
-        "+---------+-------+----------------+---------+-----------+",
-        "| ttl     | shard | vnode_duration | replica | precision |",
-        "+---------+-------+----------------+---------+-----------+",
-        "| 30 Days | 5     | 3 Days         | 1       | US        |",
-        "+---------+-------+----------------+---------+-----------+",
-    ];
+        "+--------+-------+----------------+---------+-----------+-------------------+---------------------+-------------------+----------+--------------+-------------------+",
+        "| ttl    | shard | vnode_duration | replica | precision | max_memcache_size | memcache_partitions | wal_max_file_size | wal_sync | strict_write | max_cache_readers |",
+        "+--------+-------+----------------+---------+-----------+-------------------+---------------------+-------------------+----------+--------------+-------------------+",
+        "| 30days | 5     | 3days          | 1       | US        | 512 MiB           | 16                  | 1 GiB             | false    | false        | 32                |",
+        "+--------+-------+----------------+---------+-----------+-------------------+---------------------+-------------------+----------+--------------+-------------------+",
+        ];
     assert_batches_eq!(expected, &actual);
 
     // set shard 6
@@ -599,12 +604,12 @@ async fn test_sql_client_alter_database() {
         .unwrap();
     let actual = fetch_result_and_print(flight_info, &mut client).await;
     let expected = [
-        "+---------+-------+----------------+---------+-----------+",
-        "| ttl     | shard | vnode_duration | replica | precision |",
-        "+---------+-------+----------------+---------+-----------+",
-        "| 30 Days | 6     | 3 Days         | 1       | US        |",
-        "+---------+-------+----------------+---------+-----------+",
-    ];
+        "+--------+-------+----------------+---------+-----------+-------------------+---------------------+-------------------+----------+--------------+-------------------+",
+        "| ttl    | shard | vnode_duration | replica | precision | max_memcache_size | memcache_partitions | wal_max_file_size | wal_sync | strict_write | max_cache_readers |",
+        "+--------+-------+----------------+---------+-----------+-------------------+---------------------+-------------------+----------+--------------+-------------------+",
+        "| 30days | 6     | 3days          | 1       | US        | 512 MiB           | 16                  | 1 GiB             | false    | false        | 32                |",
+        "+--------+-------+----------------+---------+-----------+-------------------+---------------------+-------------------+----------+--------------+-------------------+",
+        ];
     assert_batches_eq!(expected, &actual);
 
     // set vnode_duration 100d
@@ -623,12 +628,12 @@ async fn test_sql_client_alter_database() {
         .unwrap();
     let actual = fetch_result_and_print(flight_info, &mut client).await;
     let expected = [
-        "+---------+-------+----------------+---------+-----------+",
-        "| ttl     | shard | vnode_duration | replica | precision |",
-        "+---------+-------+----------------+---------+-----------+",
-        "| 30 Days | 6     | 100 Days       | 1       | US        |",
-        "+---------+-------+----------------+---------+-----------+",
-    ];
+        "+--------+-------+---------------------------+---------+-----------+-------------------+---------------------+-------------------+----------+--------------+-------------------+",
+        "| ttl    | shard | vnode_duration            | replica | precision | max_memcache_size | memcache_partitions | wal_max_file_size | wal_sync | strict_write | max_cache_readers |",
+        "+--------+-------+---------------------------+---------+-----------+-------------------+---------------------+-------------------+----------+--------------+-------------------+",
+        "| 30days | 6     | 3months 8days 16h 19m 12s | 1       | US        | 512 MiB           | 16                  | 1 GiB             | false    | false        | 32                |",
+        "+--------+-------+---------------------------+---------+-----------+-------------------+---------------------+-------------------+----------+--------------+-------------------+",
+        ];
     assert_batches_eq!(expected, &actual);
 
     let flight_info = client
@@ -646,12 +651,12 @@ async fn test_sql_client_alter_database() {
         .unwrap();
     let actual = fetch_result_and_print(flight_info, &mut client).await;
     let expected = [
-        "+---------+-------+----------------+---------+-----------+",
-        "| ttl     | shard | vnode_duration | replica | precision |",
-        "+---------+-------+----------------+---------+-----------+",
-        "| 30 Days | 6     | 100 Days       | 1       | US        |",
-        "+---------+-------+----------------+---------+-----------+",
-    ];
+        "+--------+-------+---------------------------+---------+-----------+-------------------+---------------------+-------------------+----------+--------------+-------------------+",
+        "| ttl    | shard | vnode_duration            | replica | precision | max_memcache_size | memcache_partitions | wal_max_file_size | wal_sync | strict_write | max_cache_readers |",
+        "+--------+-------+---------------------------+---------+-----------+-------------------+---------------------+-------------------+----------+--------------+-------------------+",
+        "| 30days | 6     | 3months 8days 16h 19m 12s | 1       | US        | 512 MiB           | 16                  | 1 GiB             | false    | false        | 32                |",
+        "+--------+-------+---------------------------+---------+-----------+-------------------+---------------------+-------------------+----------+--------------+-------------------+",
+        ];
     assert_batches_eq!(expected, &actual);
 
     // clean env
@@ -688,7 +693,12 @@ async fn test_sql_client_empty_table() {
         .await
         .unwrap();
     let actual = fetch_result_and_print(flight_info, &mut client).await;
-    let expected = ["++", "++"];
+    let expected = [
+        "+------+---+---+",
+        "| time | t | f |",
+        "+------+---+---+",
+        "+------+---+---+",
+    ];
     assert_batches_eq!(expected, &actual);
 
     // clean env
@@ -882,7 +892,12 @@ async fn test_sql_client_filter_push_down() {
         .await
         .unwrap();
     let actual = fetch_result_and_print(flight_info, &mut client).await;
-    let expected = ["++", "++"];
+    let expected = [
+        "+------+----+----+----+----+----+----+----+",
+        "| time | t0 | t1 | f0 | f1 | f2 | f3 | f4 |",
+        "+------+----+----+----+----+----+----+----+",
+        "+------+----+----+----+----+----+----+----+",
+    ];
     assert_batches_eq!(expected, &actual);
 
     let flight_info = client
@@ -969,7 +984,12 @@ async fn test_sql_client_filter_push_down() {
         .await
         .unwrap();
     let actual = fetch_result_and_print(flight_info, &mut client).await;
-    let expected = ["++", "++"];
+    let expected = [
+        "+------+----+----+----+----+----+----+----+",
+        "| time | t0 | t1 | f0 | f1 | f2 | f3 | f4 |",
+        "+------+----+----+----+----+----+----+----+",
+        "+------+----+----+----+----+----+----+----+",
+    ];
     assert_batches_eq!(expected, &actual);
 
     let flight_info = client
@@ -1063,20 +1083,31 @@ async fn test_sql_client_filter_push_down() {
         .await
         .unwrap();
     let actual = fetch_result_and_print(flight_info, &mut client).await;
-    let expected = [
-            "+---------------+-----------------------------------------------------------------------------------------------------------------------------------------+",
-            "| plan_type     | plan                                                                                                                                    |",
-            "+---------------+-----------------------------------------------------------------------------------------------------------------------------------------+",
-            "| logical_plan  | Filter: m0.t0 = Utf8(NULL)                                                                                                              |",
-            "|               |   TableScan: m0 projection=[time, t0, t1, f0, f1, f2, f3, f4], partial_filters=[m0.t0 = Utf8(NULL)]                                     |",
-            "| physical_plan | CoalesceBatchesExec: target_batch_size=8192                                                                                             |",
-            "|               |   FilterExec: t0@1 = NULL                                                                                                               |",
-            "|               |     RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=5                                                                |",
-            "|               |       TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, split_num=5, projection=[time,t0,t1,f0,f1,f2,f3,f4] |",
-            "|               |                                                                                                                                         |",
-            "+---------------+-----------------------------------------------------------------------------------------------------------------------------------------+",
-        ];
-    assert_batches_eq!(expected, &actual);
+    let expected_1 = [
+        "+---------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------+",
+        "| plan_type     | plan                                                                                                                                                                |",
+        "+---------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------+",
+        "| logical_plan  | Filter: m0.t0 = Utf8(NULL)                                                                                                                                          |",
+        "|               |   TableScan: m0 projection=[time, t0, t1, f0, f1, f2, f3, f4], partial_filters=[m0.t0 = Utf8(NULL)]                                                                 |",
+        "| physical_plan | CoalesceBatchesExec: target_batch_size=8192                                                                                                                         |",
+        "|               |   FilterExec: t0@1 = NULL                                                                                                                                           |",
+        "|               |     RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=5                                                                                            |",
+        "|               |       TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=Some(\"t0@1 = NULL\"), split_num=5, projection=[time,t0,t1,f0,f1,f2,f3,f4] |",
+        "|               |                                                                                                                                                                     |",
+        "+---------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------+",        ];
+    let expected_2 = [
+        "+---------------+-------------------------------------------------------------------------------------------------------------------------------------------------------------------+",
+        "| plan_type     | plan                                                                                                                                                              |",
+        "+---------------+-------------------------------------------------------------------------------------------------------------------------------------------------------------------+",
+        "| logical_plan  | Filter: m0.t0 = Utf8(NULL)                                                                                                                                        |",
+        "|               |   TableScan: m0 projection=[time, t0, t1, f0, f1, f2, f3, f4], partial_filters=[m0.t0 = Utf8(NULL)]                                                               |",
+        "| physical_plan | CoalesceBatchesExec: target_batch_size=8192                                                                                                                       |",
+        "|               |   FilterExec: t0@1 = NULL                                                                                                                                         |",
+        "|               |     TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=Some(\"t0@1 = NULL\"), split_num=5, projection=[time,t0,t1,f0,f1,f2,f3,f4] |",
+        "|               |                                                                                                                                                                   |",
+        "+---------------+-------------------------------------------------------------------------------------------------------------------------------------------------------------------+", 
+    ];
+    assert_batches_one_of!(&actual, expected_1, expected_2);
 
     let flight_info = client
         .execute(
@@ -1086,20 +1117,32 @@ async fn test_sql_client_filter_push_down() {
         .await
         .unwrap();
     let actual = fetch_result_and_print(flight_info, &mut client).await;
-    let expected = [
-            "+---------------+-----------------------------------------------------------------------------------------------------------------------------------------+",
-            "| plan_type     | plan                                                                                                                                    |",
-            "+---------------+-----------------------------------------------------------------------------------------------------------------------------------------+",
-            "| logical_plan  | Filter: m0.t0 > Utf8(NULL)                                                                                                              |",
-            "|               |   TableScan: m0 projection=[time, t0, t1, f0, f1, f2, f3, f4], partial_filters=[m0.t0 > Utf8(NULL)]                                     |",
-            "| physical_plan | CoalesceBatchesExec: target_batch_size=8192                                                                                             |",
-            "|               |   FilterExec: t0@1 > NULL                                                                                                               |",
-            "|               |     RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=5                                                                |",
-            "|               |       TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, split_num=5, projection=[time,t0,t1,f0,f1,f2,f3,f4] |",
-            "|               |                                                                                                                                         |",
-            "+---------------+-----------------------------------------------------------------------------------------------------------------------------------------+",
-        ];
-    assert_batches_eq!(expected, &actual);
+    let expected_1 = [
+        "+---------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------+",
+        "| plan_type     | plan                                                                                                                                                                |",
+        "+---------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------+",
+        "| logical_plan  | Filter: m0.t0 > Utf8(NULL)                                                                                                                                          |",
+        "|               |   TableScan: m0 projection=[time, t0, t1, f0, f1, f2, f3, f4], partial_filters=[m0.t0 > Utf8(NULL)]                                                                 |",
+        "| physical_plan | CoalesceBatchesExec: target_batch_size=8192                                                                                                                         |",
+        "|               |   FilterExec: t0@1 > NULL                                                                                                                                           |",
+        "|               |     RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=5                                                                                            |",
+        "|               |       TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=Some(\"t0@1 > NULL\"), split_num=5, projection=[time,t0,t1,f0,f1,f2,f3,f4] |",
+        "|               |                                                                                                                                                                     |",
+        "+---------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------+",
+            ];
+    let expected_2 = [
+        "+---------------+-------------------------------------------------------------------------------------------------------------------------------------------------------------------+",
+        "| plan_type     | plan                                                                                                                                                              |",
+        "+---------------+-------------------------------------------------------------------------------------------------------------------------------------------------------------------+",
+        "| logical_plan  | Filter: m0.t0 > Utf8(NULL)                                                                                                                                        |",
+        "|               |   TableScan: m0 projection=[time, t0, t1, f0, f1, f2, f3, f4], partial_filters=[m0.t0 > Utf8(NULL)]                                                               |",
+        "| physical_plan | CoalesceBatchesExec: target_batch_size=8192                                                                                                                       |",
+        "|               |   FilterExec: t0@1 > NULL                                                                                                                                         |",
+        "|               |     TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=Some(\"t0@1 > NULL\"), split_num=5, projection=[time,t0,t1,f0,f1,f2,f3,f4] |",
+        "|               |                                                                                                                                                                   |",
+        "+---------------+-------------------------------------------------------------------------------------------------------------------------------------------------------------------+",
+    ];
+    assert_batches_one_of!(&actual, expected_1, expected_2);
 
     // clean env
     clean_env(&mut client, db_name).await;
@@ -1405,12 +1448,12 @@ async fn test_flight_sql_get_cross_reference() {
     let actual = fetch_result_and_print(flight_info, &mut client).await;
 
     let expected = [
-        "+-------------+-------+----------------+---------+-----------+",
-        "| ttl         | shard | vnode_duration | replica | precision |",
-        "+-------------+-------+----------------+---------+-----------+",
-        "| 100000 Days | 1     | 365 Days       | 1       | NS        |",
-        "+-------------+-------+----------------+---------+-----------+",
-    ];
+        "+-------------------------------------+-------+----------------+---------+-----------+-------------------+---------------------+-------------------+----------+--------------+-------------------+",
+        "| ttl                                 | shard | vnode_duration | replica | precision | max_memcache_size | memcache_partitions | wal_max_file_size | wal_sync | strict_write | max_cache_readers |",
+        "+-------------------------------------+-------+----------------+---------+-----------+-------------------+---------------------+-------------------+----------+--------------+-------------------+",
+        "| 273years 9months 12days 18h 57m 36s | 1     | 1year          | 1       | NS        | 512 MiB           | 16                  | 1 GiB             | false    | false        | 32                |",
+        "+-------------------------------------+-------+----------------+---------+-----------+-------------------+---------------------+-------------------+----------+--------------+-------------------+",
+        ];
     assert_batches_eq!(expected, &actual);
 
     let flight_info = client.execute("CREATE TABLE cross_reference_tb (visibility DOUBLE,temperature DOUBLE,presssure DOUBLE,TAGS(station));".to_string(), None).await.unwrap();

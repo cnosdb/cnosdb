@@ -41,6 +41,22 @@ pub fn get_workspace_dir() -> PathBuf {
 }
 
 #[macro_export]
+macro_rules! assert_batches_one_of {
+    ($batches:expr, $($expected:expr),*) => {
+        let expected_lines = vec![$($expected.as_ref(),)*];
+        let formatted = arrow::util::pretty::pretty_format_batches($batches)
+        .unwrap()
+        .to_string();
+        let actual_lines: Vec<&str> = formatted.trim().lines().collect();
+        assert!(
+            expected_lines.iter().any(|x| x == &actual_lines),
+            "\n\nexpected one of:\n\n{:#?}\nactual:\n\n{:#?}\n\n",
+            expected_lines, actual_lines
+        );
+    };
+}
+
+#[macro_export]
 macro_rules! headers {
     ($($k:expr => $v:expr),*) => {
         {

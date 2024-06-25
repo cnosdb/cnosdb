@@ -92,7 +92,7 @@ fn case1() {
         },
 
         Step::CnosdbRequest {
-            req: CnosdbRequest::Query { url, sql: "SHOW TABLES", resp: Ok(vec![]), sorted: false, regex: false, },
+            req: CnosdbRequest::Query { url, sql: "SHOW TABLES", resp: Ok(vec!["table_name"]), sorted: false, regex: false, },
             auth: None,
         },
     ]);
@@ -413,7 +413,7 @@ fn case4() {
             req: CnosdbRequest::Query {
                 url: url_cnosdb_public,
                 sql: "SELECT * FROM cluster_schema.users WHERE user_name = 'tester'",
-                resp: Ok(vec![]),
+                resp: Ok(vec!["user_name,is_admin,user_options"]),
                 sorted: false,
                 regex: false,
             },
@@ -492,7 +492,7 @@ fn case4() {
             req: CnosdbRequest::Query {
                 url: url_test_,
                 sql: "SHOW DATABASES",
-                resp: Ok(vec![]),
+                resp: Ok(vec!["database_name"]),
                 sorted: false,
                 regex: false,
             },
@@ -636,7 +636,7 @@ fn case5() {
             req: CnosdbRequest::Query {
                 url: url_test_,
                 sql: "SELECT * FROM information_schema.database_privileges WHERE role_name = 'r1'",
-                resp: Ok(vec![]),
+                resp: Ok(vec!["tenant_name,database_name,privilege_type,role_name"]),
                 sorted: false,
                 regex: false,
             },
@@ -663,7 +663,7 @@ fn case5() {
             req: CnosdbRequest::Query {
                 url: url_test_,
                 sql: "SELECT * FROM information_schema.roles WHERE role_name = 'r1'",
-                resp: Ok(vec![]),
+                resp: Ok(vec!["role_name,role_type,inherit_role"]),
                 sorted: false,
                 regex: false,
             },
@@ -681,7 +681,7 @@ fn case5() {
             req: CnosdbRequest::Query {
                 url: url_test_,
                 sql: "SELECT * FROM information_schema.database_privileges WHERE role_name = 'r1'",
-                resp: Ok(vec![]),
+                resp: Ok(vec!["tenant_name,database_name,privilege_type,role_name"]),
                 sorted: false,
                 regex: false,
             },

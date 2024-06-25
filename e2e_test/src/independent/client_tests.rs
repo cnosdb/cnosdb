@@ -387,7 +387,10 @@ fn client_password_leak_test() {
         let mut client = client_execute.run();
         let resp = client.write(&["show tables;\n"]);
         if let Ok(resp) = resp {
-            assert_eq!(&resp[0..10], "Query took")
+            assert_eq!(
+                &resp[..56],
+                "+------------+| table_name |+------------++------------+"
+            )
         }
     }
 }

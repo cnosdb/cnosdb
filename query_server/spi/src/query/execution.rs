@@ -78,7 +78,11 @@ impl Output {
         match self {
             Self::Nil(_) => Ok(vec![]),
             Self::StreamData(stream) => {
-                let res: Vec<RecordBatch> = stream.try_collect::<Vec<RecordBatch>>().await?;
+                let schema = stream.schema();
+                let mut res: Vec<RecordBatch> = stream.try_collect::<Vec<RecordBatch>>().await?;
+                if res.is_empty() {
+                    res.push(RecordBatch::new_empty(schema));
+                }
                 Ok(res)
             }
         }
