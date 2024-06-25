@@ -319,8 +319,8 @@ pub mod test {
             .clone();
 
         let config_file = data_config_file_path(&test_dir, &file_name);
-        let config = config::get_config(config_file).unwrap();
-        let meta = runtime.block_on(AdminMeta::new(config));
+        let config = config::tskv::get_config(config_file).unwrap();
+        let meta = runtime.block_on(AdminMeta::new(config, Arc::new(MetricsRegister::default())));
         let meta_client = runtime.block_on(meta.tenant_meta("cnosdb")).unwrap();
 
         let client = Client::with_auth("root".to_string(), Some(String::new()));
@@ -538,8 +538,8 @@ pub mod test {
             .clone();
         let config_file = data_config_file_path("replica_test_case_1query_1tskv", &file_name);
 
-        let config = config::get_config(config_file).unwrap();
-        let meta = runtime.block_on(AdminMeta::new(config));
+        let config = config::tskv::get_config(config_file).unwrap();
+        let meta = runtime.block_on(AdminMeta::new(config, Arc::new(MetricsRegister::default())));
         let meta_client = runtime.block_on(meta.tenant_meta("cnosdb")).unwrap();
 
         let client = Client::with_auth("root".to_string(), Some(String::new()));
