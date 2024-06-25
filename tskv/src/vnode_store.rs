@@ -29,7 +29,7 @@ pub struct VnodeStorage {
     ctx: Arc<TsKvContext>,
     db: Arc<RwLock<Database>>,
     flush_job: FlushJob,
-    pub ts_index: Arc<RwLock<TSIndex>>,
+    ts_index: Arc<RwLock<TSIndex>>,
     ts_family: Arc<RwLock<TseriesFamily>>,
 
     snapshots: Vec<VnodeSnapshot>,
