@@ -12,6 +12,7 @@ pub mod apply_store;
 pub mod entry_store;
 pub mod errors;
 
+pub mod metrics;
 pub mod multi_raft;
 pub mod network_client;
 pub mod network_grpc;

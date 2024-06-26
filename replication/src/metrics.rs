@@ -5,11 +5,12 @@ use maplit::hashmap;
 use metrics::gauge::U64Gauge;
 use metrics::metric_register::MetricsRegister;
 use models::meta_data::ReplicationSetId;
-use replication::raft_node::RaftNodeMetrics;
-use replication::RaftNodeId;
 
-#[derive(Debug)]
-pub struct RaftMetrics {
+use crate::raft_node::RaftNodeMetrics;
+use crate::RaftNodeId;
+
+#[derive(Debug, Clone)]
+pub struct ReplicationMetrics {
     pub applied_id: U64Gauge,
     pub snapshot_id: U64Gauge,
     pub flushed_id: U64Gauge,
@@ -24,7 +25,7 @@ pub struct RaftMetrics {
     register: Arc<MetricsRegister>,
 }
 
-impl RaftMetrics {
+impl ReplicationMetrics {
     pub fn new(
         register: Arc<MetricsRegister>,
         tenant: &str,
