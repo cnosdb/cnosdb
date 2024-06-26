@@ -23,7 +23,7 @@ pub enum ExtStatement {
     CreateExternalTable(CreateExternalTable),
     CreateTable(CreateTable),
     CreateStreamTable(Statement),
-    CreateDatabase(CreateDatabase),
+    CreateDatabase(Box<CreateDatabase>),
     CreateTenant(CreateTenant),
     CreateUser(CreateUser),
     CreateRole(CreateRole),
@@ -48,7 +48,7 @@ pub enum ExtStatement {
 
     // system cmd
     ShowQueries,
-    AlterDatabase(AlterDatabase),
+    AlterDatabase(Box<AlterDatabase>),
     AlterTable(AlterTable),
     AlterTenant(AlterTenant),
     AlterUser(AlterUser),
@@ -319,6 +319,7 @@ pub struct CreateDatabase {
     pub name: Ident,
     pub if_not_exists: bool,
     pub options: DatabaseOptions,
+    pub config: DatabaseConfig,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreateTable {
@@ -359,14 +360,33 @@ impl ColumnOption {
 pub struct DatabaseOptions {
     // data keep time
     pub ttl: Option<String>,
-
     pub shard_num: Option<u64>,
     // shard coverage time range
     pub vnode_duration: Option<String>,
-
     pub replica: Option<u64>,
-    // timestamp precision
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
+pub struct DatabaseConfig {
     pub precision: Option<String>,
+    pub max_memcache_size: Option<String>,
+    pub memcache_partitions: Option<u64>,
+    pub wal_max_file_size: Option<String>,
+    pub wal_sync: Option<String>,
+    pub strict_write: Option<String>,
+    pub max_cache_readers: Option<u64>,
+}
+
+impl DatabaseConfig {
+    pub fn has_some(&self) -> bool {
+        self.precision.is_some()
+            || self.max_memcache_size.is_some()
+            || self.memcache_partitions.is_some()
+            || self.wal_max_file_size.is_some()
+            || self.wal_sync.is_some()
+            || self.strict_write.is_some()
+            || self.max_cache_readers.is_some()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

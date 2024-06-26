@@ -14,6 +14,7 @@ use datafusion::prelude::Expr;
 use meta::model::MetaClientRef;
 use models::auth::user::User;
 use models::oid::Identifier;
+use models::schema::utils::CnosByteNumber;
 
 use crate::dispatcher::query_tracker::QueryTracker;
 use crate::metadata::information_schema_provider::builder::databases::{
@@ -95,14 +96,21 @@ impl TableProvider for InformationDatabasesTable {
             }
 
             let options = info.schema.options();
+            let config = info.schema.config();
             builder.append_row(
                 tenant_name,
                 info.schema.database_name(),
-                options.ttl_or_default().to_string(),
-                options.shard_num_or_default(),
-                options.vnode_duration_or_default().to_string(),
-                options.replica_or_default(),
-                options.precision_or_default().to_string(),
+                options.ttl().to_string(),
+                options.shard_num(),
+                options.vnode_duration().to_string(),
+                options.replica(),
+                config.precision().to_string(),
+                CnosByteNumber::format_bytes(config.max_memcache_size()),
+                config.memcache_partitions(),
+                CnosByteNumber::format_bytes(config.wal_max_file_size()),
+                config.wal_sync(),
+                config.strict_write(),
+                config.max_cache_readers(),
             );
         }
         let rb: RecordBatch = builder.try_into()?;

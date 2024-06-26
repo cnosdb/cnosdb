@@ -220,7 +220,7 @@ impl DatabaseInfo {
     }
 
     pub fn is_hidden(&self) -> bool {
-        self.schema.options().get_db_is_hidden()
+        self.schema.is_hidden()
     }
 
     // return the min timestamp value database allowed to store

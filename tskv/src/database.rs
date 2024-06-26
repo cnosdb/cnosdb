@@ -9,7 +9,7 @@ use memory_pool::MemoryPoolRef;
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::predicate::domain::TimeRange;
-use models::schema::database_schema::{DatabaseSchema, Precision};
+use models::schema::database_schema::{DatabaseConfig, DatabaseSchema, Precision};
 use models::schema::tskv_table_schema::{TskvTableSchema, TskvTableSchemaRef};
 use models::{SeriesId, SeriesKey};
 use protos::models::{Column, ColumnType, FieldType, Table};
@@ -38,6 +38,7 @@ pub struct Database {
     //tenant_name.database_name => owner
     owner: Arc<String>,
     opt: Arc<Options>,
+    config: Arc<DatabaseConfig>,
     db_name: Arc<String>,
 
     schemas: Arc<DBschemas>,
@@ -82,6 +83,10 @@ impl DatabaseFactory {
 }
 
 impl Database {
+    pub fn config(&self) -> Arc<DatabaseConfig> {
+        self.config.clone()
+    }
+
     pub async fn new(
         schema: DatabaseSchema,
         opt: Arc<Options>,
@@ -93,13 +98,14 @@ impl Database {
         let tsf_factory = TsfFactory::new(
             owner.clone(),
             opt.clone(),
+            schema.config().clone(),
             memory_pool.clone(),
             metrics_register.clone(),
         );
 
         let db = Self {
             opt,
-
+            config: schema.config().clone(),
             owner: Arc::new(schema.owner()),
             db_name: Arc::new(schema.database_name().to_owned()),
             schemas: Arc::new(DBschemas::new(schema, meta).await.context(SchemaSnafu)?),
@@ -124,7 +130,7 @@ impl Database {
         ctx: Arc<TsKvContext>,
     ) -> TskvResult<Arc<RwLock<TseriesFamily>>> {
         let tsm_reader_cache = Arc::new(cache::ShardedAsyncCache::create_lru_sharded_cache(
-            self.opt.storage.max_cached_readers,
+            self.config.max_cache_readers() as usize,
         ));
         let levels = LevelInfo::init_levels(self.owner.clone(), tsf_id, self.opt.storage.clone());
         let version_edit = VersionEdit::new_add_vnode(tsf_id, self.owner.as_ref().clone(), 0);
@@ -184,7 +190,7 @@ impl Database {
         let levels =
             LevelInfo::init_levels(self.owner.clone(), ve.tsf_id, self.opt.storage.clone());
         let tsm_reader_cache = Arc::new(cache::ShardedAsyncCache::create_lru_sharded_cache(
-            self.opt.storage.max_cached_readers,
+            self.config.max_cache_readers() as usize,
         ));
         let ver = Arc::new(Version::new(
             ve.tsf_id,
@@ -235,7 +241,7 @@ impl Database {
         recover_from_wal: bool,
         strict_write: Option<bool>,
     ) -> TskvResult<HashMap<SeriesId, (SeriesKey, RowGroup)>> {
-        let strict_write = strict_write.unwrap_or(self.opt.storage.strict_write);
+        let strict_write = strict_write.unwrap_or(self.config.strict_write());
 
         // (series id, schema id) -> RowGroup
         let mut map = HashMap::new();

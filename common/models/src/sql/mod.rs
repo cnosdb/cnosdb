@@ -15,7 +15,7 @@ use crate::schema::stream_table_schema::StreamTable;
 use crate::schema::table_schema::TableSchema;
 use crate::schema::tenant::Tenant;
 use crate::schema::tskv_table_schema::{ColumnType, TskvTableSchema};
-use crate::schema::utils::DurationUnit;
+use crate::schema::utils::CnosByteNumber;
 use crate::ModelError;
 
 type Result<T, E = ModelError> = std::result::Result<T, E>;
@@ -51,7 +51,7 @@ impl ToDDLSql for Tenant {
         let drop_after = option.get_drop_after().as_ref().map(|time| {
             (
                 "drop_after",
-                SqlParserValue::SingleQuotedString(time.drop_after_output()),
+                SqlParserValue::SingleQuotedString(time.to_string()),
             )
         });
         let limit = option
@@ -142,47 +142,38 @@ impl ToDDLSql for DatabaseSchema {
         }
         res.push_str(format!("\"{}\" ", self.database_name()).as_str());
         res.push_str("with ");
-        if let Some(p) = self.config.precision() {
-            res.push_str(
-                format!(
-                    "precision {} ",
-                    SqlParserValue::SingleQuotedString(p.to_string())
-                )
-                .as_str(),
-            );
-        };
 
-        if let Some(ttl) = self.config.ttl() {
-            let unit = match ttl.unit {
-                DurationUnit::Minutes => Some("M"),
-                DurationUnit::Hour => Some("H"),
-                DurationUnit::Day => Some("D"),
-                DurationUnit::Inf => None,
-            };
-            if let Some(u) = unit {
-                res.push_str(format!("ttl '{}{}' ", ttl.time_num, u).as_str())
-            }
-        }
-
-        if let Some(shard) = self.config.shard_num() {
-            res.push_str(format!("shard {} ", shard).as_str())
-        }
-
-        if let Some(rep) = self.config.replica() {
-            res.push_str(format!("replica {} ", rep).as_str())
-        }
-
-        if let Some(d) = self.config.vnode_duration() {
-            let unit = match d.unit {
-                DurationUnit::Minutes => Some("M"),
-                DurationUnit::Hour => Some("H"),
-                DurationUnit::Day => Some("D"),
-                DurationUnit::Inf => None,
-            };
-            if let Some(u) = unit {
-                res.push_str(format!("vnode_duration '{}{}' ", d.time_num, u).as_str())
-            }
-        }
+        res.push_str(
+            format!(
+                "precision {} ",
+                SqlParserValue::SingleQuotedString(self.config.precision().to_string())
+            )
+            .as_str(),
+        );
+        res.push_str(
+            format!(
+                "max_memcache_size '{}' ",
+                CnosByteNumber::format_bytes(self.config.max_memcache_size())
+            )
+            .as_str(),
+        );
+        res.push_str(
+            format!("memcache_partitions {} ", self.config.memcache_partitions()).as_str(),
+        );
+        res.push_str(
+            format!(
+                "wal_max_file_size '{}' ",
+                CnosByteNumber::format_bytes(self.config.wal_max_file_size())
+            )
+            .as_str(),
+        );
+        res.push_str(format!("wal_sync '{}' ", self.config.wal_sync()).as_str());
+        res.push_str(format!("strict_write '{}' ", self.config.strict_write()).as_str());
+        res.push_str(format!("max_cache_readers {} ", self.config.max_cache_readers()).as_str());
+        res.push_str(format!("ttl '{}' ", self.options.ttl()).as_str());
+        res.push_str(format!("shard {} ", self.options.shard_num()).as_str());
+        res.push_str(format!("replica {} ", self.options.replica()).as_str());
+        res.push_str(format!("vnode_duration '{}' ", self.options.vnode_duration()).as_str());
 
         if res.trim().ends_with("with") {
             res = res.trim().trim_end_matches("with").trim().to_string();
@@ -505,17 +496,20 @@ impl ToDDLSql for StreamTable {
 #[cfg(test)]
 mod test {
     use std::collections::HashMap;
+    use std::sync::Arc;
 
     use arrow_schema::{DataType, Field, Fields, Schema, SchemaRef, TimeUnit};
     use config::common::TenantLimiterConfig;
 
     use crate::auth::user::{UserDesc, UserOptionsBuilder};
-    use crate::schema::database_schema::{DatabaseOptions, DatabaseSchema, Precision};
+    use crate::schema::database_schema::{
+        DatabaseConfig, DatabaseOptions, DatabaseSchema, Precision,
+    };
     use crate::schema::external_table_schema::ExternalTableSchema;
     use crate::schema::stream_table_schema::{StreamTable, Watermark};
     use crate::schema::tenant::{Tenant, TenantOptionsBuilder};
     use crate::schema::tskv_table_schema::{ColumnType, TableColumn, TskvTableSchema};
-    use crate::schema::utils::Duration;
+    use crate::schema::utils::CnosDuration;
     use crate::sql::ToDDLSql;
     use crate::ValueType;
 
@@ -603,16 +597,24 @@ remote_bucket = {max = 100, initial = 0, refill = 100, interval = 100}
     #[test]
     fn test_create_database() {
         let db_option = DatabaseOptions::new(
-            Some(Duration::new_with_day(1)),
-            Some(3),
-            Some(Duration::new("50H").unwrap()),
-            Some(1),
-            Some(Precision::MS),
+            CnosDuration::new_with_day(1),
+            3,
+            CnosDuration::new("50h").unwrap(),
+            1,
         );
-        let db = DatabaseSchema::new_with_options("test", "test", db_option);
+        let db_config = DatabaseConfig::new(
+            Precision::US,
+            512 * 1024 * 1024 * 1024,
+            12,
+            1024,
+            false,
+            true,
+            32,
+        );
+        let db = DatabaseSchema::new("test", "test", db_option, Arc::new(db_config));
         assert_eq!(
             format!("{}", db.to_ddl_sql(true).unwrap()),
-            r#"create database if not exists "test" with precision 'MS' ttl '1D' shard 3 replica 1 vnode_duration '50H';"#
+            r#"create database if not exists "test" with precision 'US' max_memcache_size '512 GiB' memcache_partitions 12 wal_max_file_size '1 KiB' wal_sync 'false' strict_write 'true' max_cache_readers 32 ttl '1day' shard 3 replica 1 vnode_duration '2days 2h';"#
         );
     }
 

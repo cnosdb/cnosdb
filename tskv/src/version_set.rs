@@ -4,13 +4,12 @@ use std::sync::Arc;
 use memory_pool::MemoryPoolRef;
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
-use models::schema::database_schema::{make_owner, split_owner, DatabaseSchema};
-use snafu::ResultExt;
+use models::schema::database_schema::{make_owner, DatabaseSchema};
 use tokio::runtime::Runtime;
 use tokio::sync::RwLock;
 
 use crate::database::{Database, DatabaseFactory};
-use crate::error::{MetaSnafu, TskvResult};
+use crate::error::TskvResult;
 use crate::index::ts_index::TSIndex;
 use crate::summary::SummaryRequest;
 use crate::tseries_family::{TseriesFamily, Version};
@@ -56,29 +55,19 @@ impl VersionSet {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         meta: MetaRef,
         opt: Arc<Options>,
         runtime: Arc<Runtime>,
         memory_pool: MemoryPoolRef,
-        ver_set: HashMap<TseriesFamilyId, Arc<Version>>,
+        ver_set: HashMap<DatabaseSchema, Arc<Version>>,
         metrics_register: Arc<MetricsRegister>,
     ) -> TskvResult<Self> {
         let mut dbs = HashMap::new();
         let db_factory = DatabaseFactory::new(meta.clone(), memory_pool, metrics_register, opt);
 
-        for ver in ver_set.into_values() {
+        for (schema, ver) in ver_set.into_iter() {
             let owner = ver.tenant_database().to_string();
-            let (tenant, database) = split_owner(&owner);
-
-            let schema = match meta.tenant_meta(tenant).await {
-                None => DatabaseSchema::new(tenant, database),
-                Some(client) => match client.get_db_schema(database).context(MetaSnafu)? {
-                    None => DatabaseSchema::new(tenant, database),
-                    Some(schema) => schema,
-                },
-            };
 
             let db: &mut Arc<RwLock<Database>> = dbs.entry(owner).or_insert(Arc::new(RwLock::new(
                 db_factory.create_database(schema).await?,

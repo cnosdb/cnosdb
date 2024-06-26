@@ -14,8 +14,7 @@ CREATE DATABASE IF NOT EXISTS test1;
 query T rowsort
 DESCRIBE DATABASE test1;
 ----
-"INF" 1 "365 Days" 1 "NS"
-
+"INF" 1 "1year" 1 "NS" "512 MiB" 16 "1 GiB" false false 32
 
 statement ok
 CREATE DATABASE IF NOT EXISTS describetest2;
@@ -24,8 +23,7 @@ CREATE DATABASE IF NOT EXISTS describetest2;
 query T rowsort
 DESCRIBE DATABASE describetest2;
 ----
-"INF" 1 "365 Days" 1 "NS"
-
+"INF" 1 "1year" 1 "NS" "512 MiB" 16 "1 GiB" false false 32
 
 statement ok
 DROP DATABASE IF EXISTS describetest2;
@@ -57,3 +55,30 @@ CREATE TABLE test0(
 
 statement error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: Meta: Operation not support: create expired bucket", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
 insert describe_database.test0(TIME, column1, column2, column3, column4, column5, column6, column7) values (100, -1234, 'hello', 1234, false, 1.2, 'beijing', 'shanghai');
+
+statement ok
+drop database IF EXISTS tttest;
+
+statement ok
+create database tttest with ttl 'inf' shard 6 vnode_duration '2y1M' replica 1 precision 'us' max_memcache_size '128MiB' memcache_partitions 10 wal_max_file_size '300M' wal_sync 'true' strict_write 'true' max_cache_readers 100;
+
+query T rowsort
+DESCRIBE DATABASE tttest;
+----
+"INF" 6 "2years 1month" 1 "US" "128 MiB" 10 "286.102294921875 MiB" true true 100
+
+statement ok
+alter database tttest set ttl '1M';
+
+query T rowsort
+DESCRIBE DATABASE tttest;
+----
+"1month" 6 "2years 1month" 1 "US" "128 MiB" 10 "286.102294921875 MiB" true true 100
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: database config is unmodifiable, only can modify database option: TTL, SHARD, VNODE_DURATION, REPLICA", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+alter database tttest set max_memcache_size '100MiB';
+
+query T rowsort
+DESCRIBE DATABASE tttest;
+----
+"1month" 6 "2years 1month" 1 "US" "128 MiB" 10 "286.102294921875 MiB" true true 100

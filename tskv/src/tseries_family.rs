@@ -10,7 +10,7 @@ use metrics::gauge::U64Gauge;
 use metrics::metric_register::MetricsRegister;
 use models::meta_data::VnodeStatus;
 use models::predicate::domain::{TimeRange, TimeRanges};
-use models::schema::database_schema::split_owner;
+use models::schema::database_schema::{split_owner, DatabaseConfig};
 use models::schema::tskv_table_schema::TableColumn;
 use models::{ColumnId, FieldId, SeriesId, SeriesKey, Timestamp};
 use parking_lot::RwLock;
@@ -25,7 +25,7 @@ use crate::file_system::async_filesystem::LocalFileSystem;
 use crate::file_system::FileSystem;
 use crate::file_utils::{make_delta_file, make_tsm_file};
 use crate::index::ts_index::TSIndex;
-use crate::kv_option::{CacheOptions, StorageOptions};
+use crate::kv_option::StorageOptions;
 use crate::memcache::{MemCache, MemCacheStatistics, RowGroup};
 use crate::summary::{CompactMeta, VersionEdit};
 use crate::tsm::page::PageMeta;
@@ -655,7 +655,6 @@ impl CacheGroup {
 #[derive(Debug)]
 pub struct SuperVersion {
     pub ts_family_id: u32,
-    pub storage_opt: Arc<StorageOptions>,
     pub caches: CacheGroup,
     pub version: Arc<Version>,
     pub version_number: u64,
@@ -664,14 +663,12 @@ pub struct SuperVersion {
 impl SuperVersion {
     pub fn new(
         ts_family_id: u32,
-        storage_opt: Arc<StorageOptions>,
         caches: CacheGroup,
         version: Arc<Version>,
         version_number: u64,
     ) -> Self {
         Self {
             ts_family_id,
-            storage_opt,
             caches,
             version,
             version_number,
@@ -815,6 +812,7 @@ pub struct TsfFactory {
     // "tenant.db"
     database: Arc<String>,
     options: Arc<Options>,
+    db_config: Arc<DatabaseConfig>,
     memory_pool: MemoryPoolRef,
     metrics_register: Arc<MetricsRegister>,
 }
@@ -822,12 +820,14 @@ impl TsfFactory {
     pub fn new(
         database: Arc<String>,
         options: Arc<Options>,
+        db_config: Arc<DatabaseConfig>,
         memory_pool: MemoryPoolRef,
         metrics_register: Arc<MetricsRegister>,
     ) -> Self {
         Self {
             database,
             options,
+            db_config,
             memory_pool,
             metrics_register,
         }
@@ -836,8 +836,8 @@ impl TsfFactory {
     pub fn create_tsf(&self, tf_id: TseriesFamilyId, version: Arc<Version>) -> TseriesFamily {
         let mut_cache = Arc::new(RwLock::new(MemCache::new(
             tf_id,
-            self.options.cache.max_buffer_size,
-            self.options.cache.partition,
+            self.db_config.max_memcache_size(),
+            self.db_config.memcache_partitions() as usize,
             version.last_seq,
             &self.memory_pool,
         )));
@@ -845,7 +845,6 @@ impl TsfFactory {
             TsfMetrics::new(&self.metrics_register, self.database.as_str(), tf_id as u64);
         let super_version = Arc::new(SuperVersion::new(
             tf_id,
-            self.options.storage.clone(),
             CacheGroup {
                 mut_cache: mut_cache.clone(),
                 immut_cache: vec![],
@@ -861,7 +860,7 @@ impl TsfFactory {
             immut_cache: vec![],
             super_version,
             super_version_id: AtomicU64::new(0),
-            cache_opt: self.options.cache.clone(),
+            db_config: self.db_config.clone(),
             storage_opt: self.options.storage.clone(),
             last_modified: Arc::new(Default::default()),
             memory_pool: self.memory_pool.clone(),
@@ -884,7 +883,7 @@ pub struct TseriesFamily {
     immut_cache: Vec<Arc<RwLock<MemCache>>>,
     super_version: Arc<SuperVersion>,
     super_version_id: AtomicU64,
-    cache_opt: Arc<CacheOptions>,
+    db_config: Arc<DatabaseConfig>,
     storage_opt: Arc<StorageOptions>,
     last_modified: Arc<tokio::sync::RwLock<Option<Instant>>>,
     memory_pool: MemoryPoolRef,
@@ -900,7 +899,7 @@ impl TseriesFamily {
         tenant_database: Arc<String>,
         cache: MemCache,
         version: Arc<Version>,
-        cache_opt: Arc<CacheOptions>,
+        db_config: Arc<DatabaseConfig>,
         storage_opt: Arc<StorageOptions>,
         memory_pool: MemoryPoolRef,
         register: &Arc<MetricsRegister>,
@@ -914,7 +913,6 @@ impl TseriesFamily {
             immut_cache: Default::default(),
             super_version: Arc::new(SuperVersion::new(
                 tf_id,
-                storage_opt.clone(),
                 CacheGroup {
                     mut_cache: mm,
                     immut_cache: Default::default(),
@@ -923,7 +921,7 @@ impl TseriesFamily {
                 0,
             )),
             super_version_id: AtomicU64::new(0),
-            cache_opt,
+            db_config,
             storage_opt,
             last_modified: Arc::new(tokio::sync::RwLock::new(None)),
             memory_pool,
@@ -938,7 +936,6 @@ impl TseriesFamily {
         self.tsf_metrics.record_cache_size(self.cache_size());
         self.super_version = Arc::new(SuperVersion::new(
             self.tf_id,
-            self.storage_opt.clone(),
             CacheGroup {
                 mut_cache: self.mut_cache.clone(),
                 immut_cache: self.immut_cache.clone(),
@@ -981,8 +978,8 @@ impl TseriesFamily {
 
         self.mut_cache = Arc::from(RwLock::new(MemCache::new(
             self.tf_id,
-            self.cache_opt.max_buffer_size,
-            self.cache_opt.partition,
+            self.db_config.max_memcache_size(),
+            self.db_config.memcache_partitions() as usize,
             seq_no,
             &self.memory_pool,
         )));

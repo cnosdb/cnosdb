@@ -1,26 +1,27 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::kv_option::WalOptions;
+use models::schema::database_schema::DatabaseConfig;
+
 use crate::record_file::{RecordDataType, RecordDataVersion, Writer};
 use crate::wal::reader::WalReader;
 use crate::wal::{wal_store, WalType, WAL_BUFFER_SIZE};
-use crate::{record_file, TskvResult};
+use crate::TskvResult;
 
 // include min_sequence, exclude max_sequence
 pub struct WalWriter {
     id: u64,
-    inner: record_file::Writer,
+    inner: Writer,
     size: u64,
     path: PathBuf,
-    config: Arc<WalOptions>,
+    db_config: Arc<DatabaseConfig>,
 }
 
 impl WalWriter {
     /// Opens a wal file at path, returns a WalWriter with id and config.
     /// If wal file doesn't exist, create new wal file and set it's min_log_sequence(default 0).
     pub async fn open(
-        config: Arc<WalOptions>,
+        db_config: Arc<DatabaseConfig>,
         id: u64,
         path: impl AsRef<Path>,
     ) -> TskvResult<Self> {
@@ -33,7 +34,7 @@ impl WalWriter {
             inner: writer,
             size,
             path: PathBuf::from(path),
-            config,
+            db_config,
         })
     }
 
@@ -58,7 +59,7 @@ impl WalWriter {
             )
             .await?;
 
-        if self.config.sync {
+        if self.db_config.wal_sync() {
             self.inner.sync().await?;
         }
 

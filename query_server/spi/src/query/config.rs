@@ -54,7 +54,7 @@ impl FromStr for StreamTriggerInterval {
     ///
     /// # Errors
     ///
-    /// If the string is not a valid duration string, an error is returned.
+    /// If the string is not a valid duration or duration overflow string, an error is returned.
     ///
     /// ```
     /// use std::str::FromStr;

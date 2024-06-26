@@ -1017,7 +1017,7 @@ impl StateMachine {
     ) -> MetaResult<TenantMetaData> {
         let key = KeyPath::tenant_db_name(cluster, tenant, db);
         if let Some(mut db_schema) = self.get_struct::<DatabaseSchema>(&key)? {
-            db_schema.config.set_db_is_hidden(db_is_hidden);
+            db_schema.set_db_is_hidden(db_is_hidden);
             self.insert(&key, &value_encode(&db_schema)?)?;
             self.to_tenant_meta_data(cluster, tenant)
         } else {
@@ -1029,9 +1029,9 @@ impl StateMachine {
 
     fn check_db_schema_valid(&self, cluster: &str, db_schema: &DatabaseSchema) -> MetaResult<()> {
         let node_list = self.get_valid_node_list(cluster)?;
-        check_node_enough(db_schema.config.replica_or_default(), &node_list)?;
+        check_node_enough(db_schema.options.replica(), &node_list)?;
 
-        if db_schema.config.shard_num_or_default() == 0 {
+        if db_schema.options.shard_num() == 0 {
             return Err(MetaError::DatabaseSchemaInvalid {
                 name: db_schema.database_name().to_string(),
             });
@@ -1136,9 +1136,9 @@ impl StateMachine {
         let node_list = self.get_valid_node_list(cluster)?;
         let node_list = ping_servers(&node_list).await;
 
-        check_node_enough(db_schema.config.replica_or_default(), &node_list)?;
+        check_node_enough(db_schema.options.replica(), &node_list)?;
 
-        if db_schema.config.shard_num_or_default() == 0 {
+        if db_schema.options.shard_num() == 0 {
             return Err(MetaError::DatabaseSchemaInvalid {
                 name: db.to_string(),
             });
@@ -1159,14 +1159,14 @@ impl StateMachine {
         (bucket.start_time, bucket.end_time) = get_time_range(
             *ts,
             db_schema
-                .config
-                .vnode_duration_or_default()
-                .to_precision(*db_schema.config.precision_or_default()),
+                .options
+                .vnode_duration()
+                .to_precision(*db_schema.config.precision()),
         );
         let (group, used) = allocation_replication_set(
             node_list,
-            db_schema.config.shard_num_or_default() as u32,
-            db_schema.config.replica_or_default() as u32,
+            db_schema.options.shard_num() as u32,
+            db_schema.options.replica() as u32,
             bucket.id + 1,
         );
         bucket.shard_group = group;

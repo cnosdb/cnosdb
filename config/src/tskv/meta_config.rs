@@ -6,7 +6,7 @@ use macros::EnvKeys;
 use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
-use crate::codec::duration;
+use crate::codec::{bytes_num, duration};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, EnvKeys)]
 pub struct MetaConfig {
@@ -17,6 +17,16 @@ pub struct MetaConfig {
         default = "MetaConfig::default_report_time_interval"
     )]
     pub report_time_interval: Duration,
+    #[serde(
+        with = "bytes_num",
+        default = "MetaConfig::default_usage_schema_cache_size"
+    )]
+    pub usage_schema_cache_size: u64,
+    #[serde(
+        with = "bytes_num",
+        default = "MetaConfig::default_cluster_schema_cache_size"
+    )]
+    pub cluster_schema_cache_size: u64,
 }
 
 impl MetaConfig {
@@ -27,6 +37,14 @@ impl MetaConfig {
     fn default_report_time_interval() -> Duration {
         Duration::from_secs(30)
     }
+
+    fn default_usage_schema_cache_size() -> u64 {
+        32 * 1024
+    }
+
+    fn default_cluster_schema_cache_size() -> u64 {
+        32 * 1024
+    }
 }
 
 impl Default for MetaConfig {
@@ -34,6 +52,8 @@ impl Default for MetaConfig {
         Self {
             service_addr: MetaConfig::default_service_addr(),
             report_time_interval: MetaConfig::default_report_time_interval(),
+            usage_schema_cache_size: MetaConfig::default_usage_schema_cache_size(),
+            cluster_schema_cache_size: MetaConfig::default_cluster_schema_cache_size(),
         }
     }
 }

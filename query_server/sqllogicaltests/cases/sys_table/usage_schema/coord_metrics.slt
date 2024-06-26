@@ -5,8 +5,7 @@ sleep 100ms
 query 
 DESCRIBE DATABASE usage_schema;
 ----
-"INF" 1 "365 Days" 1 "NS"
-
+"INF" 1 "1year" 1 "NS" "32 KiB" 16 "1 GiB" false false 32
 
 query 
 DESCRIBE TABLE coord_data_in;

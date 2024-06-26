@@ -6,6 +6,7 @@ use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
+use config::tskv::Config;
 use coordinator::service::CoordinatorRef;
 use datafusion::arrow::datatypes::{Schema, SchemaRef};
 use datafusion::arrow::record_batch::RecordBatch;
@@ -306,6 +307,10 @@ impl QueryStateMachine {
             state,
             start: self.start,
         }
+    }
+
+    pub fn config(&self) -> Config {
+        self.coord.get_config()
     }
 }
 

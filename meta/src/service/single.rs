@@ -5,12 +5,15 @@ use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 
-use config::meta::MetaInit;
+use config::tskv::MetaConfig;
+use models::schema::database_schema::DatabaseConfig;
+use models::schema::DEFAULT_DATABASE;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info};
 use warp::{hyper, Filter};
 
 use crate::error::{MetaError, MetaResult};
+use crate::service::init::MetaInit;
 use crate::store::command::*;
 use crate::store::dump::dump_impl;
 use crate::store::storage::StateMachine;
@@ -18,26 +21,40 @@ use crate::store::storage::StateMachine;
 pub async fn start_singe_meta_server(
     path: String,
     cluster_name: String,
-    addr: String,
+    config: &MetaConfig,
     size: usize,
 ) {
+    let addr = config.service_addr[0].clone();
     let db_path = format!("{}/meta/{}.data", path, 0);
     let mut storage = StateMachine::open(db_path, size).unwrap();
 
-    let init_data = MetaInit {
-        cluster_name,
-        admin_user: models::auth::user::ROOT.to_string(),
-        admin_pwd: models::auth::user::ROOT_PWD.to_string(),
-        system_tenant: models::schema::DEFAULT_CATALOG.to_string(),
-        default_database: vec![
-            models::schema::USAGE_SCHEMA.to_string(),
-            models::schema::DEFAULT_DATABASE.to_string(),
-            models::schema::CLUSTER_SCHEMA.to_string(),
-        ],
-    };
-    super::init::init_meta(&mut storage, init_data).await;
+    let mut usage_schema_config = DatabaseConfig::default();
+    usage_schema_config.set_max_memcache_size(config.usage_schema_cache_size);
+    let mut cluster_schema_config = DatabaseConfig::default();
+    cluster_schema_config.set_max_memcache_size(config.cluster_schema_cache_size);
+    let default_database = vec![
+        (String::from(DEFAULT_DATABASE), DatabaseConfig::default()),
+        (
+            String::from(models::schema::USAGE_SCHEMA),
+            usage_schema_config,
+        ),
+        (
+            String::from(models::schema::CLUSTER_SCHEMA),
+            cluster_schema_config,
+        ),
+    ];
 
-    tracing::info!("single meta http server start addr: {}", addr);
+    let meta_init = MetaInit::new(
+        cluster_name,
+        models::auth::user::ROOT.to_string(),
+        models::auth::user::ROOT_PWD.to_string(),
+        models::schema::DEFAULT_CATALOG.to_string(),
+        default_database,
+    );
+
+    meta_init.init_meta(&mut storage).await;
+
+    info!("single meta http server start addr: {}", addr);
     let storage = Arc::new(RwLock::new(storage));
     let server = SingleServer { addr, storage };
 

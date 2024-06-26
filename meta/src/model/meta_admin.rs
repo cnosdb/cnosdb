@@ -675,6 +675,7 @@ impl AdminMeta {
         }
 
         let req = command::ReadCommand::Tenant(self.cluster(), name.to_string(), true);
+
         self.client.read::<Option<Tenant>>(&req).await
     }
 

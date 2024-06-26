@@ -2,10 +2,12 @@ use std::convert::Infallible as StdInfallible;
 use std::sync::Arc;
 use std::time::Duration;
 
-use config::meta::{HeartBeatConfig, MetaInit};
+use config::meta::HeartBeatConfig;
 use futures::TryFutureExt;
 use models::meta_data::NodeMetrics;
 use models::node_info::NodeStatus;
+use models::schema::database_schema::DatabaseConfig;
+use models::schema::DEFAULT_DATABASE;
 use openraft::SnapshotPolicy;
 use protos::raft_service::raft_service_server::RaftServiceServer;
 use replication::entry_store::HeedEntryStorage;
@@ -21,7 +23,7 @@ use tower::Service;
 use tracing::warn;
 use warp::hyper;
 
-use super::init::init_meta;
+use super::init::MetaInit;
 use crate::error::{MetaError, MetaResult};
 use crate::store::command::*;
 use crate::store::key_path::KeyPath;
@@ -48,7 +50,7 @@ pub async fn start_raft_node(opt: config::meta::Opt) -> MetaResult<()> {
 
     let storage = NodeStorage::open(id, info.clone(), state, engine.clone(), entry).await?;
     let config = ReplicationConfig {
-        cluster_name: "cnosdb_meta".to_string(),
+        cluster_name: opt.cluster_name.clone(),
         lmdb_max_map_size: opt.lmdb_max_map_size,
         grpc_enable_gzip: opt.grpc_enable_gzip,
         heartbeat_interval: opt.heartbeat_interval,
@@ -57,29 +59,42 @@ pub async fn start_raft_node(opt: config::meta::Opt) -> MetaResult<()> {
         install_snapshot_timeout: opt.install_snapshot_timeout,
         snapshot_policy: SnapshotPolicy::LogsSinceLast(opt.raft_logs_to_keep),
     };
-    let init_data = MetaInit {
-        cluster_name: opt.cluster_name.clone(),
-        admin_user: models::auth::user::ROOT.to_string(),
-        admin_pwd: models::auth::user::ROOT_PWD.to_string(),
-        system_tenant: models::schema::DEFAULT_CATALOG.to_string(),
-        default_database: vec![
-            models::schema::USAGE_SCHEMA.to_string(),
-            models::schema::DEFAULT_DATABASE.to_string(),
-            models::schema::CLUSTER_SCHEMA.to_string(),
-        ],
-    };
+    let mut usage_schema_config = DatabaseConfig::default();
+    usage_schema_config.set_max_memcache_size(opt.usage_schema_cache_size);
+    let mut cluster_schema_config = DatabaseConfig::default();
+    cluster_schema_config.set_max_memcache_size(opt.cluster_schema_cache_size);
+
+    let default_database = vec![
+        (String::from(DEFAULT_DATABASE), DatabaseConfig::default()),
+        (
+            String::from(models::schema::USAGE_SCHEMA),
+            usage_schema_config,
+        ),
+        (
+            String::from(models::schema::CLUSTER_SCHEMA),
+            cluster_schema_config,
+        ),
+    ];
+    let meta_init = MetaInit::new(
+        opt.cluster_name.clone(),
+        models::auth::user::ROOT.to_string(),
+        models::auth::user::ROOT_PWD.to_string(),
+        models::schema::DEFAULT_CATALOG.to_string(),
+        default_database,
+    );
     let node = RaftNode::new(id, info, Arc::new(storage), config)
         .await
         .unwrap();
     {
         let mut engine_w = engine.write().await;
-        init_meta(&mut engine_w, init_data.clone()).await;
+        meta_init.init_meta(&mut engine_w).await;
     }
 
+    let cluster_name = opt.cluster_name.clone();
     tokio::spawn(detect_node_heartbeat(
         node.clone(),
         engine.clone(),
-        init_data.clone(),
+        cluster_name,
         opt.heartbeat.clone(),
     ));
 
@@ -92,14 +107,14 @@ pub async fn start_raft_node(opt: config::meta::Opt) -> MetaResult<()> {
 async fn detect_node_heartbeat(
     node: RaftNode,
     storage: Arc<RwLock<StateMachine>>,
-    init_data: MetaInit,
+    cluster_name: String,
     heartbeat_config: HeartBeatConfig,
 ) {
     let mut interval = tokio::time::interval(Duration::from_secs(
         heartbeat_config.heartbeat_recheck_interval,
     ));
 
-    let metrics_path = KeyPath::data_nodes_metrics(&init_data.cluster_name);
+    let metrics_path = KeyPath::data_nodes_metrics(&cluster_name);
     loop {
         interval.tick().await;
 
@@ -122,10 +137,8 @@ async fn detect_node_heartbeat(
                             "Data node '{}' report heartbeat late, maybe unreachable.",
                             node_metrics.id
                         );
-                        let req = WriteCommand::ReportNodeMetrics(
-                            init_data.cluster_name.clone(),
-                            now_node_metrics,
-                        );
+                        let req =
+                            WriteCommand::ReportNodeMetrics(cluster_name.clone(), now_node_metrics);
 
                         if let Ok(data) = serde_json::to_vec(&req) {
                             if node.raw_raft().client_write(data).await.is_err() {

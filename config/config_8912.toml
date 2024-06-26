@@ -12,6 +12,8 @@ store_metrics = true
 [meta]
 service_addr = ["127.0.0.1:8901"]
 report_time_interval = "30s"
+usage_schema_cache_size = "32K" # 32KB
+cluster_schema_cache_size = "32K" # 32KB
 
 [query]
 max_server_connections = 10240
@@ -45,13 +47,9 @@ copyinto_trigger_flush_size = "128M" # 134217728
 max_datablock_size = "100KB"
 
 [wal]
-enabled = true
 path = '/tmp/cnosdb/2001/wal'
-wal_req_channel_cap = 64
 max_file_size = "1G"                 # 1073741824
-flush_trigger_total_file_size = "2G" # 2147483648
 sync = false
-sync_interval = "0"
 
 [cache]
 max_buffer_size = "512M" # 536,870,912

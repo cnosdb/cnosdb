@@ -13,9 +13,9 @@ use std::{io, thread};
 use meta::store::command::WriteCommand;
 use models::meta_data::TenantMetaData;
 use models::oid::UuidGenerator;
-use models::schema::database_schema::{DatabaseOptions, DatabaseSchema, Precision};
+use models::schema::database_schema::{DatabaseConfig, DatabaseOptions, DatabaseSchema, Precision};
 use models::schema::tenant::{Tenant, TenantOptions};
-use models::schema::utils::Duration as CnosDuration;
+use models::schema::utils::CnosDuration;
 use serial_test::serial;
 use sysinfo::System;
 use walkdir::WalkDir;
@@ -55,7 +55,12 @@ impl CnosdbMetaTestHelper {
             let create_database_req = WriteCommand::CreateDB(
                 DEFAULT_CLUSTER.to_string(),
                 name.clone(),
-                DatabaseSchema::new(&name, &database),
+                DatabaseSchema::new(
+                    &name,
+                    &database,
+                    DatabaseOptions::default(),
+                    DatabaseConfig::default().into(),
+                ),
             );
             println!("Creating database: {:?}", &create_database_req);
             let create_database_res = self.runtime.block_on(
@@ -293,17 +298,16 @@ fn test_replica() {
         let vnode_duration = CnosDuration::new_with_day(50);
         let shard_num = 8;
         let replica = 2;
-        let precision = Precision::NS;
+        let _precision = Precision::NS;
 
         // Create database.
-        let db_options = DatabaseOptions::new(
-            Some(duration),
-            Some(shard_num),
-            Some(vnode_duration),
-            Some(replica),
-            Some(precision),
+        let db_options = DatabaseOptions::new(duration, shard_num, vnode_duration, replica);
+        let db_schema = DatabaseSchema::new(
+            tenant_name,
+            database_name,
+            db_options,
+            DatabaseConfig::default().into(),
         );
-        let db_schema = DatabaseSchema::new_with_options(tenant_name, database_name, db_options);
         let create_db_req = WriteCommand::CreateDB(
             DEFAULT_CLUSTER.to_string(),
             tenant_name.to_string(),
@@ -363,17 +367,16 @@ fn test_shard() {
         let vnode_duration = CnosDuration::new_with_day(50);
         let shard_num = 8;
         let replica = 1;
-        let precision = Precision::NS;
+        let _precision = Precision::NS;
 
         // Create database.
-        let db_options = DatabaseOptions::new(
-            Some(duration),
-            Some(shard_num),
-            Some(vnode_duration),
-            Some(replica),
-            Some(precision),
+        let db_options = DatabaseOptions::new(duration, shard_num, vnode_duration, replica);
+        let db_schema = DatabaseSchema::new(
+            tenant_name,
+            database_name,
+            db_options,
+            DatabaseConfig::default().into(),
         );
-        let db_schema = DatabaseSchema::new_with_options(tenant_name, database_name, db_options);
         let create_db_req = WriteCommand::CreateDB(
             DEFAULT_CLUSTER.to_string(),
             tenant_name.to_string(),
@@ -434,20 +437,18 @@ fn test_ttl() {
         let vnode_duration = CnosDuration::new_with_day(50);
         let shard_num = 1;
         let replica = 1;
-        let precision = Precision::NS;
 
         let chrono_now = chrono::Utc::now();
         let chrono_duration = chrono::Duration::days(100);
 
         // Create database.
-        let db_options = DatabaseOptions::new(
-            Some(duration.clone()),
-            Some(shard_num),
-            Some(vnode_duration),
-            Some(replica),
-            Some(precision),
+        let db_options = DatabaseOptions::new(duration.clone(), shard_num, vnode_duration, replica);
+        let db_schema = DatabaseSchema::new(
+            tenant_name,
+            database_name,
+            db_options,
+            DatabaseConfig::default().into(),
         );
-        let db_schema = DatabaseSchema::new_with_options(tenant_name, database_name, db_options);
         let create_db_req = WriteCommand::CreateDB(
             DEFAULT_CLUSTER.to_string(),
             tenant_name.to_string(),
@@ -462,7 +463,7 @@ fn test_ttl() {
         let meta_key = format!("* /{DEFAULT_CLUSTER}/tenants/{tenant_name}/dbs/{database_name}: ");
         let mut meta_value = &meta_data[..0];
         let expected_meta = [
-            format!("\"time_num\":{}", duration.time_num),
+            format!("\"time_num\":{}", duration),
             String::from("\"unit\":\"Day\""),
         ];
         let mut ok_num = 0_usize;
@@ -477,8 +478,9 @@ fn test_ttl() {
                 break;
             }
         }
-        assert!(
-            ok_num == expected_meta.len(),
+        assert_eq!(
+            ok_num,
+            expected_meta.len(),
             "{meta_key} {meta_value} does not contains {:?}",
             expected_meta
         );
@@ -542,17 +544,16 @@ fn test_balance() {
         let vnode_duration = CnosDuration::new_with_day(50);
         let shard_num = 2;
         let replica = 2;
-        let precision = Precision::NS;
+        let _precision = Precision::NS;
 
         // Create database.
-        let db_options = DatabaseOptions::new(
-            Some(duration),
-            Some(shard_num),
-            Some(vnode_duration),
-            Some(replica),
-            Some(precision),
+        let db_options = DatabaseOptions::new(duration, shard_num, vnode_duration, replica);
+        let db_schema = DatabaseSchema::new(
+            tenant_name,
+            database_name,
+            db_options,
+            DatabaseConfig::default().into(),
         );
-        let db_schema = DatabaseSchema::new_with_options(tenant_name, database_name, db_options);
         let create_db_req = WriteCommand::CreateDB(
             DEFAULT_CLUSTER.to_string(),
             tenant_name.to_string(),

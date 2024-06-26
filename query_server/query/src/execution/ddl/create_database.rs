@@ -50,11 +50,14 @@ async fn create_database(stmt: &CreateDatabase, machine: QueryStateMachineRef) -
     let CreateDatabase {
         ref name,
         ref options,
+        ref config,
         ..
     } = stmt;
+    let db_options = options.clone().build();
+    let db_config = config.clone().build(machine.config());
 
-    let mut database_schema = DatabaseSchema::new(machine.session.tenant(), name);
-    database_schema.config = options.clone();
+    let database_schema =
+        DatabaseSchema::new(machine.session.tenant(), name, db_options, db_config.into());
     client.create_db(database_schema).await.context(MetaSnafu)?;
     Ok(())
 }

@@ -39,33 +39,33 @@ create user "user_b" with must_change_password=false, granted_admin=false;
 create user "writer" with must_change_password=false, granted_admin=false;
 -- Dump Tenant cnosdb Object
 \change_tenant cnosdb
-create database if not exists "alter_database" with precision 'US' ttl '30D' shard 6 replica 1 vnode_duration '100D';
-create database if not exists "alter_table" with ttl '100000D';
-create database if not exists "avg_daily_driving_duration" with ttl '3650D';
-create database if not exists "bottom_func" with ttl '100000D';
-create database if not exists "ci_table_db" with ttl '3650D';
-create database if not exists "cli_precision" with precision 'MS' ttl '100000D';
-create database if not exists "cluster_schema";
-create database if not exists "create_external_table" with ttl '100000D';
-create database if not exists "createstreamtable";
-create database if not exists "db_precision" with precision 'MS' ttl '100000D';
-create database if not exists "describe_database" with ttl '10D';
-create database if not exists "empty_table";
-create database if not exists "explain_stream_query";
-create database if not exists "filter_push_down" with ttl '100000D';
-create database if not exists "http_stream_select" with ttl '100000D';
-create database if not exists "limit" with ttl '100000D';
-create database if not exists "only_tag_col" with ttl '100000D';
-create database if not exists "only_time_col" with ttl '100000D';
-create database if not exists "show_series" with ttl '100000D';
-create database if not exists "show_tag_values" with ttl '100000D';
-create database if not exists "sqlancer1" with ttl '100000D';
-create database if not exists "sqlancer2" with ttl '100000D';
-create database if not exists "sqlancer3" with ttl '100000D';
-create database if not exists "tc_between" with ttl '100000D';
-create database if not exists "test_lp_writer" with ttl '10000D';
-create database if not exists "topk_func" with ttl '100000D';
-create database if not exists "usage_schema";
+create database if not exists "alter_database" with precision 'US' max_memcache_size '512 MiB' memcache_partitions 16 wal_max_file_size '1 GiB' wal_sync 'false' strict_write 'false' max_cache_readers 32 ttl '30days' shard 6 replica 1 vnode_duration '3months 8days 16h 19m 12s';
+create database if not exists "alter_table" with precision 'NS' max_memcache_size '512 MiB' memcache_partitions 16 wal_max_file_size '1 GiB' wal_sync 'false' strict_write 'false' max_cache_readers 32 ttl '273years 9months 12days 18h 57m 36s' shard 1 replica 1 vnode_duration '1year';
+create database if not exists "avg_daily_driving_duration" with precision 'NS' max_memcache_size '512 MiB' memcache_partitions 16 wal_max_file_size '1 GiB' wal_sync 'false' strict_write 'false' max_cache_readers 32 ttl '9years 11months 27days 21h 50m 24s' shard 1 replica 1 vnode_duration '1year';
+create database if not exists "bottom_func" with precision 'NS' max_memcache_size '512 MiB' memcache_partitions 16 wal_max_file_size '1 GiB' wal_sync 'false' strict_write 'false' max_cache_readers 32 ttl '273years 9months 12days 18h 57m 36s' shard 1 replica 1 vnode_duration '1year';
+create database if not exists "ci_table_db" with precision 'NS' max_memcache_size '512 MiB' memcache_partitions 16 wal_max_file_size '1 GiB' wal_sync 'false' strict_write 'false' max_cache_readers 32 ttl '9years 11months 27days 21h 50m 24s' shard 1 replica 1 vnode_duration '1year';
+create database if not exists "cli_precision" with precision 'MS' max_memcache_size '512 MiB' memcache_partitions 16 wal_max_file_size '1 GiB' wal_sync 'false' strict_write 'false' max_cache_readers 32 ttl '273years 9months 12days 18h 57m 36s' shard 1 replica 1 vnode_duration '1year';
+create database if not exists "cluster_schema" with precision 'NS' max_memcache_size '32 KiB' memcache_partitions 16 wal_max_file_size '1 GiB' wal_sync 'false' strict_write 'false' max_cache_readers 32 ttl 'INF' shard 1 replica 1 vnode_duration '1year';
+create database if not exists "create_external_table" with precision 'NS' max_memcache_size '512 MiB' memcache_partitions 16 wal_max_file_size '1 GiB' wal_sync 'false' strict_write 'false' max_cache_readers 32 ttl '273years 9months 12days 18h 57m 36s' shard 1 replica 1 vnode_duration '1year';
+create database if not exists "createstreamtable" with precision 'NS' max_memcache_size '512 MiB' memcache_partitions 16 wal_max_file_size '1 GiB' wal_sync 'false' strict_write 'false' max_cache_readers 32 ttl 'INF' shard 1 replica 1 vnode_duration '1year';
+create database if not exists "db_precision" with precision 'MS' max_memcache_size '512 MiB' memcache_partitions 16 wal_max_file_size '1 GiB' wal_sync 'false' strict_write 'false' max_cache_readers 32 ttl '273years 9months 12days 18h 57m 36s' shard 1 replica 1 vnode_duration '1year';
+create database if not exists "describe_database" with precision 'NS' max_memcache_size '512 MiB' memcache_partitions 16 wal_max_file_size '1 GiB' wal_sync 'false' strict_write 'false' max_cache_readers 32 ttl '10days' shard 1 replica 1 vnode_duration '1year';
+create database if not exists "empty_table" with precision 'NS' max_memcache_size '512 MiB' memcache_partitions 16 wal_max_file_size '1 GiB' wal_sync 'false' strict_write 'false' max_cache_readers 32 ttl 'INF' shard 1 replica 1 vnode_duration '1year';
+create database if not exists "explain_stream_query" with precision 'NS' max_memcache_size '512 MiB' memcache_partitions 16 wal_max_file_size '1 GiB' wal_sync 'false' strict_write 'false' max_cache_readers 32 ttl 'INF' shard 1 replica 1 vnode_duration '1year';
+create database if not exists "filter_push_down" with precision 'NS' max_memcache_size '512 MiB' memcache_partitions 16 wal_max_file_size '1 GiB' wal_sync 'false' strict_write 'false' max_cache_readers 32 ttl '273years 9months 12days 18h 57m 36s' shard 1 replica 1 vnode_duration '1year';
+create database if not exists "http_stream_select" with precision 'NS' max_memcache_size '512 MiB' memcache_partitions 16 wal_max_file_size '1 GiB' wal_sync 'false' strict_write 'false' max_cache_readers 32 ttl '273years 9months 12days 18h 57m 36s' shard 1 replica 1 vnode_duration '1year';
+create database if not exists "limit" with precision 'NS' max_memcache_size '512 MiB' memcache_partitions 16 wal_max_file_size '1 GiB' wal_sync 'false' strict_write 'false' max_cache_readers 32 ttl '273years 9months 12days 18h 57m 36s' shard 1 replica 1 vnode_duration '1year';
+create database if not exists "only_tag_col" with precision 'NS' max_memcache_size '512 MiB' memcache_partitions 16 wal_max_file_size '1 GiB' wal_sync 'false' strict_write 'false' max_cache_readers 32 ttl '273years 9months 12days 18h 57m 36s' shard 1 replica 1 vnode_duration '1year';
+create database if not exists "only_time_col" with precision 'NS' max_memcache_size '512 MiB' memcache_partitions 16 wal_max_file_size '1 GiB' wal_sync 'false' strict_write 'false' max_cache_readers 32 ttl '273years 9months 12days 18h 57m 36s' shard 1 replica 1 vnode_duration '1year';
+create database if not exists "show_series" with precision 'NS' max_memcache_size '512 MiB' memcache_partitions 16 wal_max_file_size '1 GiB' wal_sync 'false' strict_write 'false' max_cache_readers 32 ttl '273years 9months 12days 18h 57m 36s' shard 1 replica 1 vnode_duration '1year';
+create database if not exists "show_tag_values" with precision 'NS' max_memcache_size '512 MiB' memcache_partitions 16 wal_max_file_size '1 GiB' wal_sync 'false' strict_write 'false' max_cache_readers 32 ttl '273years 9months 12days 18h 57m 36s' shard 1 replica 1 vnode_duration '1year';
+create database if not exists "sqlancer1" with precision 'NS' max_memcache_size '512 MiB' memcache_partitions 16 wal_max_file_size '1 GiB' wal_sync 'false' strict_write 'false' max_cache_readers 32 ttl '273years 9months 12days 18h 57m 36s' shard 1 replica 1 vnode_duration '1year';
+create database if not exists "sqlancer2" with precision 'NS' max_memcache_size '512 MiB' memcache_partitions 16 wal_max_file_size '1 GiB' wal_sync 'false' strict_write 'false' max_cache_readers 32 ttl '273years 9months 12days 18h 57m 36s' shard 1 replica 1 vnode_duration '1year';
+create database if not exists "sqlancer3" with precision 'NS' max_memcache_size '512 MiB' memcache_partitions 16 wal_max_file_size '1 GiB' wal_sync 'false' strict_write 'false' max_cache_readers 32 ttl '273years 9months 12days 18h 57m 36s' shard 1 replica 1 vnode_duration '1year';
+create database if not exists "tc_between" with precision 'NS' max_memcache_size '512 MiB' memcache_partitions 16 wal_max_file_size '1 GiB' wal_sync 'false' strict_write 'false' max_cache_readers 32 ttl '273years 9months 12days 18h 57m 36s' shard 1 replica 1 vnode_duration '1year';
+create database if not exists "test_lp_writer" with precision 'NS' max_memcache_size '512 MiB' memcache_partitions 16 wal_max_file_size '1 GiB' wal_sync 'false' strict_write 'false' max_cache_readers 32 ttl '27years 4months 16days 11h 45m 36s' shard 1 replica 1 vnode_duration '1year';
+create database if not exists "topk_func" with precision 'NS' max_memcache_size '512 MiB' memcache_partitions 16 wal_max_file_size '1 GiB' wal_sync 'false' strict_write 'false' max_cache_readers 32 ttl '273years 9months 12days 18h 57m 36s' shard 1 replica 1 vnode_duration '1year';
+create database if not exists "usage_schema" with precision 'NS' max_memcache_size '32 KiB' memcache_partitions 16 wal_max_file_size '1 GiB' wal_sync 'false' strict_write 'false' max_cache_readers 32 ttl 'INF' shard 1 replica 1 vnode_duration '1year';
 create role "lp_writer" inherit member;
 grant Read on database "test_lp_writer" to "lp_writer";
 create role "role_a" inherit member;
@@ -142,12 +142,12 @@ create table if not exists "usage_schema"."vnode_cache_size" ("value" BIGINT UNS
 create table if not exists "usage_schema"."vnode_disk_storage" ("value" BIGINT UNSIGNED, tags ("database", "node_id", "tenant", "vnode_id"));
 -- Dump Tenant tenant_b Object
 \change_tenant tenant_b
-create database if not exists "db_b";
+create database if not exists "db_b" with precision 'NS' max_memcache_size '512 MiB' memcache_partitions 16 wal_max_file_size '1 GiB' wal_sync 'false' strict_write 'false' max_cache_readers 32 ttl 'INF' shard 1 replica 1 vnode_duration '1year';
 alter tenant "tenant_b" add user "user_b" as "owner";
 create table "db_b"."air_b" ("visibility" DOUBLE, "temperature" DOUBLE, "pressure" DOUBLE, tags ("station"));
 -- Dump Tenant test_cols_tenant1 Object
 \change_tenant test_cols_tenant1
-create database if not exists "public2";
+create database if not exists "public2" with precision 'NS' max_memcache_size '512 MiB' memcache_partitions 16 wal_max_file_size '1 GiB' wal_sync 'false' strict_write 'false' max_cache_readers 32 ttl 'INF' shard 1 replica 1 vnode_duration '1year';
 alter tenant "test_cols_tenant1" add user "root" as "member";
 alter tenant "test_cols_tenant1" add user "test_cols_u1" as "owner";
 alter tenant "test_cols_tenant1" add user "test_cols_u2" as "member";
@@ -157,13 +157,13 @@ create table "public2"."test_info_schema_tbl2" ("column1" BIGINT, "column2" STRI
 alter tenant "test_coord_data_in" add user "test_cdi_u1" as "owner";
 -- Dump Tenant test_dbs_tenant1 Object
 \change_tenant test_dbs_tenant1
-create database if not exists "test_dbs_db1";
-create database if not exists "test_dbs_db2";
+create database if not exists "test_dbs_db1" with precision 'NS' max_memcache_size '512 MiB' memcache_partitions 16 wal_max_file_size '1 GiB' wal_sync 'false' strict_write 'false' max_cache_readers 32 ttl 'INF' shard 1 replica 1 vnode_duration '1year';
+create database if not exists "test_dbs_db2" with precision 'NS' max_memcache_size '512 MiB' memcache_partitions 16 wal_max_file_size '1 GiB' wal_sync 'false' strict_write 'false' max_cache_readers 32 ttl 'INF' shard 1 replica 1 vnode_duration '1year';
 alter tenant "test_dbs_tenant1" add user "test_dbs_u1" as "owner";
 alter tenant "test_dbs_tenant1" add user "test_dbs_u2" as "member";
 -- Dump Tenant test_dps_tenant Object
 \change_tenant test_dps_tenant
-create database if not exists "test_dps_db" with ttl '100000D';
+create database if not exists "test_dps_db" with precision 'NS' max_memcache_size '512 MiB' memcache_partitions 16 wal_max_file_size '1 GiB' wal_sync 'false' strict_write 'false' max_cache_readers 32 ttl '273years 9months 12days 18h 57m 36s' shard 1 replica 1 vnode_duration '1year';
 create role "test_dps_role1" inherit member;
 grant Read on database "test_dps_db" to "test_dps_role1";
 create role "test_dps_role2" inherit member;
@@ -177,7 +177,7 @@ alter tenant "test_dps_tenant" add user "test_dps_u3" as "test_dps_role3";
 create table "test_dps_db"."test_dps_table1" ("a" BIGINT, tags ("b"));
 -- Dump Tenant test_dump_info Object
 \change_tenant test_dump_info
-create database if not exists "test_db";
+create database if not exists "test_db" with precision 'NS' max_memcache_size '512 MiB' memcache_partitions 16 wal_max_file_size '1 GiB' wal_sync 'false' strict_write 'false' max_cache_readers 32 ttl 'INF' shard 1 replica 1 vnode_duration '1year';
 create table "test_db"."test" ("visibility" DOUBLE CODEC(GORILLA), "temperature" DOUBLE, "pressure" DOUBLE, tags ("station"));
 -- Dump Tenant test_ers_tenant1 Object
 \change_tenant test_ers_tenant1
@@ -194,7 +194,7 @@ alter tenant "test_ms_tenant1" add user "test_ms_u2" as "member";
 create role "test_rs_role1" inherit member;
 -- Dump Tenant test_tbls_tenant1 Object
 \change_tenant test_tbls_tenant1
-create database if not exists "test_tbls_db1";
+create database if not exists "test_tbls_db1" with precision 'NS' max_memcache_size '512 MiB' memcache_partitions 16 wal_max_file_size '1 GiB' wal_sync 'false' strict_write 'false' max_cache_readers 32 ttl 'INF' shard 1 replica 1 vnode_duration '1year';
 alter tenant "test_tbls_tenant1" add user "test_tbls_u1" as "owner";
 alter tenant "test_tbls_tenant1" add user "test_tbls_u2" as "member";
 create table "test_tbls_db1"."test_info_schema_tbl" ("column1" BIGINT, "column2" STRING, "column3" BIGINT UNSIGNED, "column4" BOOLEAN, "column5" DOUBLE, tags ("column6", "column7"));

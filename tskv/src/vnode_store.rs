@@ -60,6 +60,10 @@ impl VnodeStorage {
         self.ts_family.clone()
     }
 
+    pub fn db(&self) -> Arc<RwLock<Database>> {
+        self.db.clone()
+    }
+
     pub async fn apply(
         &self,
         ctx: &replication::ApplyContext,

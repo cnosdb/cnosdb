@@ -60,7 +60,7 @@ impl RecordBatchSink for TskvRecordBatchSink {
                 database: db_name.to_string(),
             })
             .context(MetaSnafu)?;
-        if db_schema.options().get_db_is_hidden() {
+        if db_schema.is_hidden() {
             return Err(spi::QueryError::Meta {
                 source: meta::error::MetaError::DatabaseNotFound {
                     database: db_name.to_string(),
@@ -68,7 +68,7 @@ impl RecordBatchSink for TskvRecordBatchSink {
             });
         }
 
-        let db_precision = db_schema.config.precision_or_default();
+        let db_precision = db_schema.config.precision();
         let write_bytes = self
             .coord
             .write_record_batch(

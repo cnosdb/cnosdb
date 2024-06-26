@@ -18,7 +18,7 @@ use models::schema::resource_info::ResourceInfo;
 use models::schema::table_schema::TableSchema;
 use models::schema::tenant::Tenant;
 use models::schema::tskv_table_schema::TskvTableSchemaRef;
-use models::schema::utils::Duration;
+use models::schema::utils::CnosDuration;
 use parking_lot::RwLock;
 use store::command;
 use trace::info;
@@ -106,7 +106,7 @@ impl TenantMeta {
             }
         }
 
-        let replica = db_schema.config.replica_or_default();
+        let replica = db_schema.options.replica();
         if let Some(max) = max_replicate_number {
             if replica as usize > *max {
                 return Err(MetaError::ObjectLimit {
@@ -118,7 +118,7 @@ impl TenantMeta {
             }
         }
 
-        let shard = db_schema.config.shard_num_or_default();
+        let shard = db_schema.options.shard_num();
         if let Some(max) = max_shard_number {
             if shard as usize > *max {
                 return Err(MetaError::ObjectLimit {
@@ -130,22 +130,15 @@ impl TenantMeta {
             }
         }
 
-        match (db_schema.config.ttl(), max_retention_time) {
-            (Some(ttl), Some(day)) => {
-                let ttl = ttl.to_nanoseconds();
-                let max = Duration::new_with_day(*day as u64);
-                if ttl > max.to_nanoseconds() {
-                    return Err(MetaError::ObjectLimit {
-                        msg: format!("TTL reached limit, max is {} days", day),
-                    });
-                }
+        if let Some(day) = max_retention_time {
+            if db_schema.options.ttl().to_nanoseconds()
+                > CnosDuration::new_with_day(*day as u64).to_nanoseconds()
+            {
+                return Err(MetaError::ObjectLimit {
+                    msg: format!("TTL reached limit, max is {} days", day),
+                });
             }
-            (None, Some(day)) => db_schema
-                .config
-                .with_ttl(Duration::new_with_day(*day as u64)),
-            _ => {}
         }
-
         Ok(())
     }
 

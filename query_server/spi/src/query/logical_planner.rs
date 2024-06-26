@@ -25,11 +25,11 @@ use models::auth::user::{UserOptions, UserOptionsBuilder};
 use models::meta_data::{NodeId, ReplicationSetId, VnodeId};
 use models::object_reference::ResolvedTable;
 use models::oid::{Identifier, Oid};
-use models::schema::database_schema::DatabaseOptions;
+use models::schema::database_schema::{DatabaseConfigBuilder, DatabaseOptionsBuilder};
 use models::schema::stream_table_schema::Watermark;
 use models::schema::tenant::{Tenant, TenantOptions, TenantOptionsBuilder};
 use models::schema::tskv_table_schema::TableColumn;
-use models::schema::utils::Duration;
+use models::schema::utils::CnosDuration;
 use snafu::{IntoError, ResultExt};
 use tempfile::NamedTempFile;
 
@@ -260,7 +260,7 @@ pub struct DropTenantObject {
     pub name: String,
     pub if_exist: bool,
     pub obj_type: TenantObjectType,
-    pub after: Option<Duration>,
+    pub after: Option<CnosDuration>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -274,7 +274,7 @@ pub struct DropGlobalObject {
     pub name: String,
     pub if_exist: bool,
     pub obj_type: GlobalObjectType,
-    pub after: Option<Duration>,
+    pub after: Option<CnosDuration>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -338,7 +338,9 @@ pub struct CreateDatabase {
 
     pub if_not_exists: bool,
 
-    pub options: DatabaseOptions,
+    pub options: DatabaseOptionsBuilder,
+
+    pub config: DatabaseConfigBuilder,
 }
 
 #[derive(Debug, Clone)]
@@ -432,8 +434,8 @@ pub fn sql_option_to_alter_tenant_action(
         }
         TENANT_OPTION_DROP_AFTER => {
             let drop_after_str = parse_string_value(value).context(ParserSnafu)?;
-            let drop_after = Duration::new(&drop_after_str).ok_or_else(|| QueryError::Parser {
-                source: ParserError::ParserError(format!("{} is not a valid duration", drop_after_str)),
+            let drop_after = CnosDuration::new(&drop_after_str).ok_or_else(|| QueryError::Parser {
+                source: ParserError::ParserError(format!("{} is not a valid duration or duration overflow", drop_after_str)),
             })?;
             tenant_options_builder.drop_after(drop_after);
             Privilege::Global(GlobalPrivilege::Tenant(Some(tenant_id)))
@@ -472,8 +474,8 @@ pub fn sql_options_to_tenant_options(options: Vec<SqlOption>) -> QueryResult<Ten
             }
             TENANT_OPTION_DROP_AFTER => {
                 let drop_after_str = parse_string_value(value).context(ParserSnafu)?;
-                let drop_after = Duration::new(&drop_after_str).ok_or_else(|| QueryError::Parser {
-                    source: ParserError::ParserError(format!("{} is not a valid duration", drop_after_str)),
+                let drop_after = CnosDuration::new(&drop_after_str).ok_or_else(|| QueryError::Parser {
+                    source: ParserError::ParserError(format!("{} is not a valid duration or duration overflow", drop_after_str)),
                 })?;
                 builder.drop_after(drop_after);
             }
@@ -603,7 +605,7 @@ pub struct AlterTenantSetUser {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AlterDatabase {
     pub database_name: String,
-    pub database_options: DatabaseOptions,
+    pub database_options: DatabaseOptionsBuilder,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -62,14 +62,14 @@ async fn show_replica(machine: QueryStateMachineRef) -> QueryResult<Output> {
                 database_list.push(db_name.clone());
 
                 let start_time_nanos = timestamp_convert(
-                    *db_info.schema.config.precision_or_default(),
+                    *db_info.schema.config.precision(),
                     Precision::NS,
                     bucket.start_time,
                 )
                 .unwrap_or_default();
                 start_time_list.push(timestamp_to_string(start_time_nanos));
                 let end_time_nanos = timestamp_convert(
-                    *db_info.schema.config.precision_or_default(),
+                    *db_info.schema.config.precision(),
                     Precision::NS,
                     bucket.end_time,
                 )

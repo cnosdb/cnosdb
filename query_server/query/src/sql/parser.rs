@@ -19,10 +19,11 @@ use spi::query::ast::{
     self, parse_string_value, Action, AlterDatabase, AlterTable, AlterTableAction, AlterTenant,
     AlterTenantOperation, AlterUser, AlterUserOperation, ChecksumGroup, ColumnOption, CompactVnode,
     CopyIntoLocation, CopyIntoTable, CopyTarget, CopyVnode, CreateDatabase, CreateRole,
-    CreateStream, CreateTable, CreateTenant, CreateUser, DatabaseOptions, DescribeDatabase,
-    DescribeTable, DropDatabaseObject, DropGlobalObject, DropTenantObject, DropVnode, Explain,
-    ExtStatement, GrantRevoke, MoveVnode, OutputMode, Privilege, RecoverDatabase, RecoverTenant,
-    ShowSeries, ShowTagBody, ShowTagValues, Trigger, UriLocation, With,
+    CreateStream, CreateTable, CreateTenant, CreateUser, DatabaseConfig, DatabaseOptions,
+    DescribeDatabase, DescribeTable, DropDatabaseObject, DropGlobalObject, DropTenantObject,
+    DropVnode, Explain, ExtStatement, GrantRevoke, MoveVnode, OutputMode, Privilege,
+    RecoverDatabase, RecoverTenant, ShowSeries, ShowTagBody, ShowTagValues, Trigger, UriLocation,
+    With,
 };
 use spi::query::logical_planner::{DatabaseObjectType, GlobalObjectType, TenantObjectType};
 use spi::query::parser::Parser as CnosdbParser;
@@ -124,6 +125,19 @@ enum CnosKeyWord {
     DESTORY,
     #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
     REPLICAS,
+
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    MAX_MEMCACHE_SIZE,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    MEMCACHE_PARTITIONS,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    WAL_MAX_FILE_SIZE,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    WAL_SYNC,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    STRICT_WRITE,
+    #[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+    MAX_CACHE_READERS,
 }
 
 impl FromStr for CnosKeyWord {
@@ -172,6 +186,12 @@ impl FromStr for CnosKeyWord {
             "PROMOTE" => Ok(CnosKeyWord::PROMOTE),
             "DESTORY" => Ok(CnosKeyWord::DESTORY),
             "REPLICAS" => Ok(CnosKeyWord::REPLICAS),
+            "MAX_MEMCACHE_SIZE" => Ok(CnosKeyWord::MAX_MEMCACHE_SIZE),
+            "MEMCACHE_PARTITIONS" => Ok(CnosKeyWord::MEMCACHE_PARTITIONS),
+            "WAL_MAX_FILE_SIZE" => Ok(CnosKeyWord::WAL_MAX_FILE_SIZE),
+            "WAL_SYNC" => Ok(CnosKeyWord::WAL_SYNC),
+            "STRICT_WRITE" => Ok(CnosKeyWord::STRICT_WRITE),
+            "MAX_CACHE_READERS" => Ok(CnosKeyWord::MAX_CACHE_READERS),
             _ => Err(ParserError::ParserError(format!(
                 "fail parse {} to CnosKeyWord",
                 s
@@ -655,16 +675,23 @@ impl<'a> ExtParser<'a> {
         let database_name = self.parser.parse_identifier()?;
         self.parser.expect_keyword(Keyword::SET)?;
         let mut options = DatabaseOptions::default();
-        if !self.parse_database_option(&mut options)? {
+        let mut config = DatabaseConfig::default();
+        if !self.parse_database_option_or_config(&mut options, &mut config)? {
             return parser_err!(format!(
                 "expected database option, but found {}",
                 self.parser.peek_token()
             ));
         }
-        Ok(ExtStatement::AlterDatabase(AlterDatabase {
-            name: database_name,
-            options,
-        }))
+        if config.has_some() {
+            return parser_err!("database config is unmodifiable, only can modify database option: TTL, SHARD, VNODE_DURATION, REPLICA".to_string());
+        }
+        Ok(ExtStatement::AlterDatabase(
+            AlterDatabase {
+                name: database_name,
+                options,
+            }
+            .into(),
+        ))
     }
 
     fn parse_alter_tenant(&mut self) -> Result<ExtStatement> {
@@ -900,19 +927,24 @@ impl<'a> ExtParser<'a> {
         Ok(ExtStatement::CreateTable(create))
     }
 
-    fn parse_database_options(&mut self) -> Result<DatabaseOptions> {
+    fn parse_database_options_and_config(&mut self) -> Result<(DatabaseOptions, DatabaseConfig)> {
         if self.parser.parse_keyword(Keyword::WITH) {
             let mut options = DatabaseOptions::default();
+            let mut config = DatabaseConfig::default();
             loop {
-                if !self.parse_database_option(&mut options)? {
-                    return Ok(options);
+                if !self.parse_database_option_or_config(&mut options, &mut config)? {
+                    return Ok((options, config));
                 }
             }
         }
-        Ok(DatabaseOptions::default())
+        Ok((DatabaseOptions::default(), DatabaseConfig::default()))
     }
 
-    fn parse_database_option(&mut self, options: &mut DatabaseOptions) -> Result<bool> {
+    fn parse_database_option_or_config(
+        &mut self,
+        options: &mut DatabaseOptions,
+        config: &mut DatabaseConfig,
+    ) -> Result<bool> {
         if self.parse_cnos_keyword(CnosKeyWord::TTL) {
             let _ = self.parser.expect_token(&Token::Eq);
             options.ttl = Some(self.parse_string_value()?);
@@ -935,7 +967,25 @@ impl<'a> ExtParser<'a> {
             options.replica = Some(replica);
         } else if self.parse_cnos_keyword(CnosKeyWord::PRECISION) {
             let _ = self.parser.expect_token(&Token::Eq);
-            options.precision = Some(self.parse_string_value()?);
+            config.precision = Some(self.parse_string_value()?);
+        } else if self.parse_cnos_keyword(CnosKeyWord::MAX_MEMCACHE_SIZE) {
+            let _ = self.parser.expect_token(&Token::Eq);
+            config.max_memcache_size = Some(self.parse_string_value()?);
+        } else if self.parse_cnos_keyword(CnosKeyWord::MEMCACHE_PARTITIONS) {
+            let _ = self.parser.expect_token(&Token::Eq);
+            config.memcache_partitions = Some(self.parse_number::<u64>()?);
+        } else if self.parse_cnos_keyword(CnosKeyWord::WAL_MAX_FILE_SIZE) {
+            let _ = self.parser.expect_token(&Token::Eq);
+            config.wal_max_file_size = Some(self.parse_string_value()?);
+        } else if self.parse_cnos_keyword(CnosKeyWord::WAL_SYNC) {
+            let _ = self.parser.expect_token(&Token::Eq);
+            config.wal_sync = Some(self.parse_string_value()?);
+        } else if self.parse_cnos_keyword(CnosKeyWord::STRICT_WRITE) {
+            let _ = self.parser.expect_token(&Token::Eq);
+            config.strict_write = Some(self.parse_string_value()?);
+        } else if self.parse_cnos_keyword(CnosKeyWord::MAX_CACHE_READERS) {
+            let _ = self.parser.expect_token(&Token::Eq);
+            config.max_cache_readers = Some(self.parse_number::<u64>()?);
         } else {
             return Ok(false);
         }
@@ -1015,12 +1065,16 @@ impl<'a> ExtParser<'a> {
             self.parser
                 .parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
         let database_name = self.parser.parse_identifier()?;
-        let options = self.parse_database_options()?;
-        Ok(ExtStatement::CreateDatabase(CreateDatabase {
-            name: database_name,
-            if_not_exists,
-            options,
-        }))
+        let (options, config) = self.parse_database_options_and_config()?;
+        Ok(ExtStatement::CreateDatabase(
+            CreateDatabase {
+                name: database_name,
+                if_not_exists,
+                options,
+                config,
+            }
+            .into(),
+        ))
     }
 
     fn parse_grant_permission(&mut self) -> Result<Action, ParserError> {
@@ -2212,7 +2266,23 @@ mod tests {
             ExtStatement::CreateDatabase(ref stmt) => {
                 let ans = format!("{:?}", stmt);
                 println!("{ans}");
-                let expectd = "CreateDatabase { name: Ident { value: \"test\", quote_style: None }, if_not_exists: false, options: DatabaseOptions { ttl: Some(\"10d\"), shard_num: Some(5), vnode_duration: Some(\"3d\"), replica: Some(10), precision: Some(\"us\") } }";
+                let expectd = r#"CreateDatabase { name: Ident { value: "test", quote_style: None }, if_not_exists: false, options: DatabaseOptions { ttl: Some("10d"), shard_num: Some(5), vnode_duration: Some("3d"), replica: Some(10) }, config: DatabaseConfig { precision: Some("us"), max_memcache_size: None, memcache_partitions: None, wal_max_file_size: None, wal_sync: None, strict_write: None, max_cache_readers: None } }"#;
+                assert_eq!(ans, expectd);
+            }
+            _ => panic!("impossible"),
+        }
+    }
+
+    #[test]
+    fn test_create_database0() {
+        let sql = "create database test with ttl 'inf' shard 6 vnode_duration '730.5d' replica 1 precision 'us' max_memcache_size '128MiB' memcache_partitions 10 wal_max_file_size '300M' wal_sync 'true' strict_write 'true' max_cache_readers 100;";
+        let statements = ExtParser::parse_sql(sql).unwrap();
+        assert_eq!(statements.len(), 1);
+        match statements[0] {
+            ExtStatement::CreateDatabase(ref stmt) => {
+                let ans = format!("{:?}", stmt);
+                println!("{ans}");
+                let expectd = r#"CreateDatabase { name: Ident { value: "test", quote_style: None }, if_not_exists: false, options: DatabaseOptions { ttl: Some("inf"), shard_num: Some(6), vnode_duration: Some("730.5d"), replica: Some(1) }, config: DatabaseConfig { precision: Some("us"), max_memcache_size: Some("128MiB"), memcache_partitions: Some(10), wal_max_file_size: Some("300M"), wal_sync: Some("true"), strict_write: Some("true"), max_cache_readers: Some(100) } }"#;
                 assert_eq!(ans, expectd);
             }
             _ => panic!("impossible"),

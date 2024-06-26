@@ -5,7 +5,7 @@ use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 
 use crate::oid::{Identifier, Oid};
-use crate::schema::utils::Duration;
+use crate::schema::utils::CnosDuration;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Tenant {
@@ -43,8 +43,7 @@ impl Tenant {
 pub struct TenantOptions {
     pub comment: Option<String>,
     pub limiter_config: Option<TenantLimiterConfig>,
-    drop_after: Option<Duration>,
-    // None means now
+    drop_after: Option<CnosDuration>,
     tenant_is_hidden: bool,
 }
 
@@ -100,7 +99,7 @@ impl TenantOptions {
         self.tenant_is_hidden = tenant_is_hidden;
     }
 
-    pub fn get_drop_after(&self) -> Option<Duration> {
+    pub fn get_drop_after(&self) -> Option<CnosDuration> {
         self.drop_after.clone()
     }
 }

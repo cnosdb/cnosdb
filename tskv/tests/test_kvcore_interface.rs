@@ -4,6 +4,7 @@ mod tests {
     use std::sync::Arc;
     use std::time::{Duration, Instant};
 
+    use config::tskv::MetaConfig;
     use memory_pool::GreedyMemoryPool;
     use meta::model::meta_admin::AdminMeta;
     use metrics::metric_register::MetricsRegister;
@@ -33,7 +34,6 @@ mod tests {
         let mut global_config = config::tskv::get_config_for_test();
         global_config.wal.path = dir.join("wal").to_str().unwrap().to_string();
         global_config.storage.path = dir.to_str().unwrap().to_string();
-        global_config.cache.max_buffer_size = 128;
 
         global_config
     }
@@ -110,9 +110,14 @@ mod tests {
         let temp_dir = tempfile::Builder::new().prefix("meta").tempdir().unwrap();
         let path = temp_dir.path().to_string_lossy().to_string();
         let cluster_name = "cluster_001".to_string();
-        let addr = "127.0.0.1:8901".to_string();
         let size = 1024 * 1024 * 1024;
-        meta::service::single::start_singe_meta_server(path, cluster_name, addr, size).await;
+        meta::service::single::start_singe_meta_server(
+            path,
+            cluster_name,
+            &MetaConfig::default(),
+            size,
+        )
+        .await;
         let join_handle = tokio::spawn(async {
             let _ = tokio::task::spawn_blocking(|| {
                 test_kvcore_init();

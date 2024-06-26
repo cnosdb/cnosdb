@@ -50,8 +50,8 @@ statement ok
 query T rowsort
 select * from information_schema.DATABASES;
 ----
-"test_dbs_tenant1" "test_dbs_db1" "INF" 1 "365 Days" 1 "NS"
-"test_dbs_tenant1" "test_dbs_db2" "INF" 1 "365 Days" 1 "NS"
+"test_dbs_tenant1" "test_dbs_db1" "INF" 1 "1year" 1 "NS" "512 MiB" 16 "1 GiB" false false 32
+"test_dbs_tenant1" "test_dbs_db2" "INF" 1 "1year" 1 "NS" "512 MiB" 16 "1 GiB" false false 32
 
 
 statement ok
@@ -61,8 +61,8 @@ statement ok
 query T rowsort
 select * from information_schema.DATABASES;
 ----
-"test_dbs_tenant1" "test_dbs_db1" "INF" 1 "365 Days" 1 "NS"
-"test_dbs_tenant1" "test_dbs_db2" "INF" 1 "365 Days" 1 "NS"
+"test_dbs_tenant1" "test_dbs_db1" "INF" 1 "1year" 1 "NS" "512 MiB" 16 "1 GiB" false false 32
+"test_dbs_tenant1" "test_dbs_db2" "INF" 1 "1year" 1 "NS" "512 MiB" 16 "1 GiB" false false 32
 
 
 statement ok
@@ -72,5 +72,5 @@ statement ok
 query T rowsort
 select * from information_schema.DATABASES;
 ----
-"test_dbs_tenant1" "test_dbs_db1" "INF" 1 "365 Days" 1 "NS"
-"test_dbs_tenant1" "test_dbs_db2" "INF" 1 "365 Days" 1 "NS"
+"test_dbs_tenant1" "test_dbs_db1" "INF" 1 "1year" 1 "NS" "512 MiB" 16 "1 GiB" false false 32
+"test_dbs_tenant1" "test_dbs_db2" "INF" 1 "1year" 1 "NS" "512 MiB" 16 "1 GiB" false false 32

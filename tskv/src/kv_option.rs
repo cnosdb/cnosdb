@@ -19,7 +19,6 @@ pub const DELTA_PATH: &str = "delta";
 pub struct Options {
     pub storage: Arc<StorageOptions>,
     pub wal: Arc<WalOptions>,
-    pub cache: Arc<CacheOptions>,
     pub query: Arc<QueryOptions>,
 }
 
@@ -28,7 +27,6 @@ impl From<&Config> for Options {
         Self {
             storage: Arc::new(StorageOptions::from(config)),
             wal: Arc::new(WalOptions::from(config)),
-            cache: Arc::new(CacheOptions::from(config)),
             query: Arc::new(QueryOptions::from(config)),
         }
     }
@@ -41,14 +39,12 @@ pub struct StorageOptions {
     pub max_summary_size: u64,
     pub base_file_size: u64,
     pub flush_req_channel_cap: usize,
-    pub max_cached_readers: usize,
     pub max_level: u16,
     pub compact_trigger_file_num: u32,
     pub compact_trigger_cold_duration: Duration,
     pub max_compact_size: u64,
     pub max_concurrent_compaction: u16,
     pub collect_compaction_metrics: bool,
-    pub strict_write: bool,
     pub snapshot_holding_time: i64,
     pub max_datablock_size: u64,
 }
@@ -99,14 +95,12 @@ impl From<&Config> for StorageOptions {
             max_summary_size: config.storage.max_summary_size,
             base_file_size: config.storage.base_file_size,
             flush_req_channel_cap: config.storage.flush_req_channel_cap,
-            max_cached_readers: config.storage.max_cached_readers,
             max_level: config.storage.max_level,
             compact_trigger_file_num: config.storage.compact_trigger_file_num,
             compact_trigger_cold_duration: config.storage.compact_trigger_cold_duration,
             max_compact_size: config.storage.max_compact_size,
             max_concurrent_compaction: config.storage.max_concurrent_compaction,
             collect_compaction_metrics: config.storage.collect_compaction_metrics,
-            strict_write: config.storage.strict_write,
             snapshot_holding_time: config.cluster.snapshot_holding_time.as_secs() as i64,
             max_datablock_size: config.storage.max_datablock_size,
         }
@@ -142,25 +136,13 @@ impl From<&Config> for QueryOptions {
 
 #[derive(Debug, Clone)]
 pub struct WalOptions {
-    pub enabled: bool,
     pub path: PathBuf,
-    pub wal_req_channel_cap: usize,
-    pub max_file_size: u64,
-    pub flush_trigger_total_file_size: u64,
-    pub sync: bool,
-    pub sync_interval: Duration,
 }
 
 impl From<&Config> for WalOptions {
     fn from(config: &Config) -> Self {
         Self {
-            wal_req_channel_cap: config.wal.wal_req_channel_cap,
-            enabled: config.wal.enabled,
             path: PathBuf::from(config.wal.path.clone()),
-            max_file_size: config.wal.max_file_size,
-            flush_trigger_total_file_size: config.wal.flush_trigger_total_file_size,
-            sync: config.wal.sync,
-            sync_interval: config.wal.sync_interval,
         }
     }
 }
@@ -169,20 +151,5 @@ impl From<&Config> for WalOptions {
 impl WalOptions {
     pub fn wal_dir(&self, owner: &str, vnode_id: VnodeId) -> PathBuf {
         self.path.join(owner).join(vnode_id.to_string())
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct CacheOptions {
-    pub max_buffer_size: u64,
-    pub partition: usize,
-}
-
-impl From<&Config> for CacheOptions {
-    fn from(config: &Config) -> Self {
-        Self {
-            max_buffer_size: config.cache.max_buffer_size,
-            partition: config.cache.partition,
-        }
     }
 }

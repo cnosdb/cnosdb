@@ -9,9 +9,6 @@ use crate::codec::{bytes_num, duration};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, EnvKeys)]
 pub struct WalConfig {
-    #[serde(default = "WalConfig::default_enabled")]
-    pub enabled: bool,
-
     #[serde(default = "WalConfig::default_path")]
     pub path: String,
 
@@ -35,10 +32,6 @@ pub struct WalConfig {
 }
 
 impl WalConfig {
-    fn default_enabled() -> bool {
-        true
-    }
-
     fn default_path() -> String {
         let path = std::path::Path::new("cnosdb_data").join("wal");
         path.to_string_lossy().to_string()
@@ -73,7 +66,6 @@ impl WalConfig {
 impl Default for WalConfig {
     fn default() -> Self {
         Self {
-            enabled: Self::default_enabled(),
             path: Self::default_path(),
             wal_req_channel_cap: Self::default_wal_req_channel_cap(),
             max_file_size: Self::default_max_file_size(),

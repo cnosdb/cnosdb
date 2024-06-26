@@ -444,10 +444,8 @@ impl RaftNodesManager {
                 continue;
             }
 
-            let result = self
-                .drop_remote_raft_node(tenant, db_name, vnode, replica.id)
-                .await;
-            info!("destory replica group drop vnode: {:?},{:?}", vnode, result);
+            self.drop_remote_raft_node(tenant, db_name, vnode, replica.id)
+                .await?;
         }
 
         self.raft_nodes
@@ -656,9 +654,15 @@ impl RaftNodesManager {
         // 2. open raft logs storage
         let owner = make_owner(tenant, db_name);
         let wal_option = tskv::kv_option::WalOptions::from(&self.config);
-        let wal = wal::VnodeWal::new(Arc::new(wal_option), Arc::new(owner), vnode_id)
-            .await
-            .context(TskvSnafu)?;
+        let db_config = vnode_store.db().read().await.config();
+        let wal = wal::VnodeWal::new(
+            Arc::new(wal_option),
+            db_config.clone(),
+            Arc::new(owner),
+            vnode_id,
+        )
+        .await
+        .context(TskvSnafu)?;
         let mut raft_logs = RaftEntryStorage::new(wal);
 
         // 3. recover data...

@@ -1,5 +1,4 @@
 mod heart_beat_config;
-mod meta_init;
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -9,7 +8,6 @@ use figment::value::Uncased;
 use figment::Figment;
 pub use heart_beat_config::*;
 use macros::EnvKeys;
-pub use meta_init::*;
 use serde::{Deserialize, Serialize};
 
 use crate::common::LogConfig;
@@ -29,6 +27,8 @@ pub struct Opt {
     pub install_snapshot_timeout: u64,    //ms
     pub send_append_entries_timeout: u64, //ms
     pub cluster_name: String,
+    pub usage_schema_cache_size: u64,
+    pub cluster_schema_cache_size: u64,
 
     pub log: LogConfig,
     pub heartbeat: HeartBeatConfig,
@@ -57,6 +57,8 @@ impl Default for Opt {
             raft_logs_to_keep: 10000,
             install_snapshot_timeout: 3600 * 1000,
             send_append_entries_timeout: 5 * 1000,
+            usage_schema_cache_size: 32 * 1024,
+            cluster_schema_cache_size: 32 * 1024,
         }
     }
 }

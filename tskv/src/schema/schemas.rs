@@ -85,7 +85,7 @@ impl DBschemas {
                     vec![],
                 );
                 let db_schema = self.db_schema().await?;
-                let precision = db_schema.config.precision_or_default();
+                let precision = db_schema.config.precision();
                 schema.add_column(TableColumn::new_time_column(
                     schema.next_column_id(),
                     (*precision).into(),
