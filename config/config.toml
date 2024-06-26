@@ -104,7 +104,7 @@ path = '/var/lib/cnosdb/wal'
 #partition = 16
 
 ## The maximum size of database USAGE_SCHEMA mutable cache.
-#max_usage_schema_buffer_size = "32K" # 131072
+#max_usage_schema_buffer_size = "32K"
 
 
 [log]
