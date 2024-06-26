@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::meta_data::{NodeId, ReplicationSet};
 use crate::oid::Oid;
 use crate::schema::tskv_table_schema::{TableColumn, TskvTableSchema};
-use crate::schema::utils::Duration;
+use crate::schema::utils::CnosDuration;
 use crate::utils::now_timestamp_nanos;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -82,7 +82,7 @@ pub struct ResourceInfo {
     name: String,
     operator: ResourceOperator,
     try_count: u64,
-    after: Option<Duration>,
+    after: Option<CnosDuration>,
     // None means now
     status: ResourceStatus,
     comment: String,
@@ -95,7 +95,7 @@ impl ResourceInfo {
         tenant_id_and_db: (Oid, String),
         name: String,
         operator: ResourceOperator,
-        after: &Option<Duration>,
+        after: &Option<CnosDuration>,
         execute_node_id: NodeId,
     ) -> Self {
         let mut res_info = ResourceInfo {

@@ -46,6 +46,7 @@ use std::sync::Arc;
 use minivec::MiniVec;
 use models::codec::Encoding;
 use models::meta_data::VnodeId;
+use models::schema::database_schema::DatabaseConfig;
 use snafu::{IntoError, OptionExt, ResultExt};
 
 use self::reader::WalReader;
@@ -95,6 +96,7 @@ impl Display for WalType {
 
 pub struct VnodeWal {
     config: Arc<WalOptions>,
+    db_config: Arc<DatabaseConfig>,
     wal_dir: PathBuf,
     tenant_database: Arc<String>,
     vnode_id: VnodeId,
@@ -104,13 +106,15 @@ pub struct VnodeWal {
 impl VnodeWal {
     pub async fn new(
         config: Arc<WalOptions>,
+        db_config: Arc<DatabaseConfig>,
         tenant_database: Arc<String>,
         vnode_id: VnodeId,
     ) -> TskvResult<Self> {
         let wal_dir = config.wal_dir(&tenant_database, vnode_id);
-        let writer_file = Self::open_writer(config.clone(), &wal_dir).await?;
+        let writer_file = Self::open_writer(db_config.clone(), &wal_dir).await?;
         Ok(Self {
             config,
+            db_config,
             wal_dir,
             tenant_database,
             vnode_id,
@@ -118,7 +122,10 @@ impl VnodeWal {
         })
     }
 
-    pub async fn open_writer(config: Arc<WalOptions>, wal_dir: &Path) -> TskvResult<WalWriter> {
+    pub async fn open_writer(
+        db_config: Arc<DatabaseConfig>,
+        wal_dir: &Path,
+    ) -> TskvResult<WalWriter> {
         let next_file_id =
             match file_utils::get_max_sequence_file_name(wal_dir, file_utils::get_wal_file_id) {
                 Some((_, id)) => id,
@@ -126,7 +133,7 @@ impl VnodeWal {
             };
 
         let new_wal = file_utils::make_wal_file(wal_dir, next_file_id);
-        let writer_file = WalWriter::open(config, next_file_id, new_wal).await?;
+        let writer_file = WalWriter::open(db_config, next_file_id, new_wal).await?;
         trace::info!("WAL '{:?}' starts write", writer_file.path());
 
         Ok(writer_file)
@@ -139,7 +146,8 @@ impl VnodeWal {
             let new_file_id = self.current_wal.id() + 1;
             let new_file_name = file_utils::make_wal_file(&self.wal_dir, new_file_id);
 
-            let new_file = WalWriter::open(self.config.clone(), new_file_id, new_file_name).await?;
+            let new_file =
+                WalWriter::open(self.db_config.clone(), new_file_id, new_file_name).await?;
 
             let mut old_file = std::mem::replace(&mut self.current_wal, new_file);
             old_file.close().await?;
@@ -155,7 +163,7 @@ impl VnodeWal {
         }
 
         let file_name = file_utils::make_wal_file(&self.wal_dir, file_id);
-        let mut new_file = WalWriter::open(self.config.clone(), file_id, file_name).await?;
+        let mut new_file = WalWriter::open(self.db_config.clone(), file_id, file_name).await?;
         new_file.truncate(pos).await;
         new_file.sync().await?;
 
@@ -171,7 +179,7 @@ impl VnodeWal {
             }
         }
 
-        let new_writer = VnodeWal::open_writer(self.config(), self.wal_dir()).await?;
+        let new_writer = VnodeWal::open_writer(self.db_config.clone(), self.wal_dir()).await?;
         let _ = std::mem::replace(&mut self.current_wal, new_writer);
 
         Ok(())
@@ -181,7 +189,7 @@ impl VnodeWal {
         &mut self,
         raft_entry: &wal_store::RaftEntry,
     ) -> TskvResult<(u64, u64)> {
-        if let Err(err) = self.roll_wal_file(self.config.max_file_size).await {
+        if let Err(err) = self.roll_wal_file(self.db_config.wal_max_file_size()).await {
             trace::warn!("roll wal file failed: {}", err);
         }
 
@@ -228,10 +236,6 @@ impl VnodeWal {
 
     pub fn current_wal_size(&self) -> u64 {
         self.current_wal.size()
-    }
-
-    pub fn sync_interval(&self) -> std::time::Duration {
-        self.config.sync_interval
     }
 }
 

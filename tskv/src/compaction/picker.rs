@@ -276,6 +276,7 @@ mod test {
     use memory_pool::{GreedyMemoryPool, MemoryPoolRef};
     use metrics::metric_register::MetricsRegister;
     use models::predicate::domain::TimeRange;
+    use models::schema::database_schema::DatabaseConfig;
 
     use crate::compaction::test::create_options;
     use crate::compaction::{LevelCompactionPicker, Picker};
@@ -303,6 +304,7 @@ mod test {
     fn create_tseries_family(
         database: Arc<String>,
         opt: Arc<Options>,
+        db_config: Arc<DatabaseConfig>,
         levels_sketch: LevelsSketch,
     ) -> TseriesFamily {
         let ts_family_id = 0;
@@ -356,7 +358,7 @@ mod test {
             Arc::new("ts_family_1".to_string()),
             MemCache::new(1, 1000, 2, 1, &memory_pool),
             version,
-            opt.cache.clone(),
+            db_config,
             opt.storage.clone(),
             memory_pool,
             &Arc::new(MetricsRegister::default()),
@@ -370,6 +372,7 @@ mod test {
         //! and compact to Level 3.
         let dir = "/tmp/test/pick/1";
         let opt = create_options(dir.to_string());
+        let db_config = Arc::new(DatabaseConfig::default());
 
         #[rustfmt::skip]
         let levels_sketch: LevelsSketch = vec![
@@ -398,7 +401,7 @@ mod test {
             ]), // 0.00001
         ];
 
-        let tsf = create_tseries_family(Arc::new("dba".to_string()), opt, levels_sketch);
+        let tsf = create_tseries_family(Arc::new("dba".to_string()), opt, db_config, levels_sketch);
         let picker = LevelCompactionPicker {};
         let compact_req = picker.pick_compaction(tsf.version()).unwrap();
         assert_eq!(compact_req.out_level, 2);

@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::option::Option;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::{iter, vec};
 
@@ -58,13 +59,13 @@ use models::auth::user::User;
 use models::gis::data_type::{Geometry, GeometryType};
 use models::object_reference::{Resolve, ResolvedTable};
 use models::oid::{Identifier, Oid};
-use models::schema::database_schema::{DatabaseOptions, Precision};
+use models::schema::database_schema::{DatabaseConfigBuilder, DatabaseOptionsBuilder, Precision};
 use models::schema::stream_table_schema::Watermark;
 use models::schema::tenant::Tenant;
 use models::schema::tskv_table_schema::{
     ColumnType, TableColumn, TskvTableSchema, TskvTableSchemaRef,
 };
-use models::schema::utils::Duration;
+use models::schema::utils::{CnosByteNumber, CnosDuration};
 use models::schema::{DEFAULT_CATALOG, TIME_FIELD_NAME};
 use models::utils::SeqIdGenerator;
 use models::{ColumnId, ValueType};
@@ -76,10 +77,10 @@ use spi::query::ast::{
     AlterTableAction as ASTAlterTableAction, AlterTenantOperation, AlterUserOperation,
     ChecksumGroup as ASTChecksumGroup, ColumnOption, CompactVnode as ASTCompactVnode,
     CopyIntoTable, CopyTarget, CopyVnode as ASTCopyVnode, CreateDatabase as ASTCreateDatabase,
-    CreateTable as ASTCreateTable, DatabaseOptions as ASTDatabaseOptions,
-    DescribeDatabase as DescribeDatabaseOptions, DescribeTable as DescribeTableOptions,
-    DropVnode as ASTDropVnode, ExtStatement, MoveVnode as ASTMoveVnode,
-    ReplicaAdd as ASTReplicaAdd, ReplicaDestory as ASTReplicaDestory,
+    CreateTable as ASTCreateTable, DatabaseConfig as ASTDatabaseConfig,
+    DatabaseOptions as ASTDatabaseOptions, DescribeDatabase as DescribeDatabaseOptions,
+    DescribeTable as DescribeTableOptions, DropVnode as ASTDropVnode, ExtStatement,
+    MoveVnode as ASTMoveVnode, ReplicaAdd as ASTReplicaAdd, ReplicaDestory as ASTReplicaDestory,
     ReplicaPromote as ASTReplicaPromote, ReplicaRemove as ASTReplicaRemove,
     ShowSeries as ASTShowSeries, ShowTagBody, ShowTagValues as ASTShowTagValues, UriLocation, With,
 };
@@ -113,8 +114,10 @@ use crate::extension::logical::plan_node::update::UpdateNode;
 use crate::metadata::{
     is_system_database, ContextProviderExtension, DatabaseSet, COLUMNS_COLUMN_NAME,
     COLUMNS_COLUMN_TYPE, COLUMNS_COMPRESSION_CODEC, COLUMNS_DATABASE_NAME, COLUMNS_DATA_TYPE,
-    COLUMNS_TABLE_NAME, DATABASES_DATABASE_NAME, DATABASES_PRECISION, DATABASES_REPLICA,
-    DATABASES_SHARD, DATABASES_TTL, DATABASES_VNODE_DURATION, INFORMATION_SCHEMA,
+    COLUMNS_TABLE_NAME, DATABASES_DATABASE_NAME, DATABASES_MAX_CACHE_READERS,
+    DATABASES_MAX_MEMCACHE_SIZE, DATABASES_MEMCACHE_PARTITIONS, DATABASES_PRECISION,
+    DATABASES_REPLICA, DATABASES_SHARD, DATABASES_STRICT_WRITE, DATABASES_TTL,
+    DATABASES_VNODE_DURATION, DATABASES_WAL_MAX_FILE_SIZE, DATABASES_WAL_SYNC, INFORMATION_SCHEMA,
     INFORMATION_SCHEMA_COLUMNS, INFORMATION_SCHEMA_DATABASES, INFORMATION_SCHEMA_QUERIES,
     INFORMATION_SCHEMA_TABLES, TABLES_TABLE_DATABASE, TABLES_TABLE_NAME,
 };
@@ -194,7 +197,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             ExtStatement::DescribeDatabase(stmt) => self.describe_databases_to_plan(stmt, session),
             ExtStatement::ShowDatabases() => self.show_databases_to_plan(session),
             ExtStatement::ShowTables(stmt) => self.show_tables_to_plan(stmt, session),
-            ExtStatement::AlterDatabase(stmt) => self.database_to_alter(stmt, session),
+            ExtStatement::AlterDatabase(stmt) => self.database_to_alter(*stmt, session),
             ExtStatement::ShowSeries(stmt) => self.show_series_to_plan(*stmt, session),
             ExtStatement::Explain(stmt) => {
                 self.explain_statement_to_plan(
@@ -983,6 +986,12 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             col(DATABASES_VNODE_DURATION),
             col(DATABASES_REPLICA),
             col(DATABASES_PRECISION),
+            col(DATABASES_MAX_MEMCACHE_SIZE),
+            col(DATABASES_MEMCACHE_PARTITIONS),
+            col(DATABASES_WAL_MAX_FILE_SIZE),
+            col(DATABASES_WAL_SYNC),
+            col(DATABASES_STRICT_WRITE),
+            col(DATABASES_MAX_CACHE_READERS),
         ];
 
         let database_name = normalize_ident(statement.database_name);
@@ -1383,14 +1392,15 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
 
     fn database_to_plan(
         &self,
-        stmt: ASTCreateDatabase,
+        stmt: Box<ASTCreateDatabase>,
         session: &SessionCtx,
     ) -> QueryResult<PlanWithPrivileges> {
         let ASTCreateDatabase {
             name,
             if_not_exists,
             options,
-        } = stmt;
+            config,
+        } = *stmt;
 
         let name = normalize_ident(name);
         if is_system_database(session.tenant(), name.as_str()) && !if_not_exists {
@@ -1400,10 +1410,12 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         }
 
         let options = self.make_database_option(options)?;
+        let config = self.make_database_config(config)?;
         let plan = Plan::DDL(DDLPlan::CreateDatabase(CreateDatabase {
             name,
             if_not_exists,
             options,
+            config,
         }));
         // privileges
         let tenant_id = *session.tenant_id();
@@ -1512,11 +1524,6 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
     ) -> QueryResult<PlanWithPrivileges> {
         let ASTAlterDatabase { name, options } = stmt;
         let options = self.make_database_option(options)?;
-        if options.precision().is_some() {
-            return Err(QueryError::Semantic {
-                err: "Can not alter database precision".to_string(),
-            });
-        }
         let database_name = normalize_ident(name);
         let plan = Plan::DDL(DDLPlan::AlterDatabase(AlterDatabase {
             database_name: database_name.clone(),
@@ -1534,8 +1541,11 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         })
     }
 
-    fn make_database_option(&self, options: ASTDatabaseOptions) -> QueryResult<DatabaseOptions> {
-        let mut plan_options = DatabaseOptions::default();
+    fn make_database_option(
+        &self,
+        options: ASTDatabaseOptions,
+    ) -> QueryResult<DatabaseOptionsBuilder> {
+        let mut plan_options = DatabaseOptionsBuilder::new();
         if let Some(ttl) = options.ttl {
             plan_options.with_ttl(self.str_to_duration(&ttl)?);
         }
@@ -1548,8 +1558,16 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         if let Some(vnode_duration) = options.vnode_duration {
             plan_options.with_vnode_duration(self.str_to_duration(&vnode_duration)?);
         }
-        if let Some(precision) = options.precision {
-            plan_options.with_precision(Precision::new(&precision).ok_or_else(|| {
+        Ok(plan_options)
+    }
+
+    fn make_database_config(
+        &self,
+        config: ASTDatabaseConfig,
+    ) -> QueryResult<DatabaseConfigBuilder> {
+        let mut plan_config = DatabaseConfigBuilder::new();
+        if let Some(precision) = config.precision {
+            plan_config.with_precision(Precision::new(&precision).ok_or_else(|| {
                 QueryError::Parser {
                     source: ParserError::ParserError(format!(
                         "{} is not a valid precision, use like 'ms', 'us', 'ns'",
@@ -1558,13 +1576,56 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
                 }
             })?);
         }
-        Ok(plan_options)
+        if let Some(max_memcache_size) = config.max_memcache_size {
+            plan_config.with_max_memcache_size(self.str_to_bytes(&max_memcache_size)?);
+        }
+        if let Some(memcache_partitions) = config.memcache_partitions {
+            plan_config.with_memcache_partitions(memcache_partitions);
+        }
+        if let Some(wal_max_file_size) = config.wal_max_file_size {
+            plan_config.with_wal_max_file_size(self.str_to_bytes(&wal_max_file_size)?);
+        }
+        if let Some(wal_sync) = config.wal_sync {
+            plan_config.with_wal_sync(bool::from_str(wal_sync.as_str()).map_err(|_| {
+                QueryError::Parser {
+                    source: ParserError::ParserError(format!(
+                        "{} is not a valid bool value, use like 'true', 'false'",
+                        wal_sync
+                    )),
+                }
+            })?);
+        }
+        if let Some(strict_write) = config.strict_write {
+            plan_config.with_strict_write(bool::from_str(strict_write.as_str()).map_err(|_| {
+                QueryError::Parser {
+                    source: ParserError::ParserError(format!(
+                        "{} is not a valid bool value, use like 'true', 'false'",
+                        strict_write
+                    )),
+                }
+            })?);
+        }
+        if let Some(max_cache_readers) = config.max_cache_readers {
+            plan_config.with_max_cache_readers(max_cache_readers);
+        }
+
+        Ok(plan_config)
+    }
+    fn str_to_duration(&self, text: &str) -> QueryResult<CnosDuration> {
+        CnosDuration::new(text).ok_or_else(|| QueryError::Parser {
+            source: ParserError::ParserError(format!(
+                "{} is not a valid duration or duration overflow",
+                text
+            )),
+        })
     }
 
-    fn str_to_duration(&self, text: &str) -> QueryResult<Duration> {
-        Duration::new(text).ok_or_else(|| QueryError::Parser {
-            source: ParserError::ParserError(format!("{} is not a valid duration", text)),
-        })
+    fn str_to_bytes(&self, text: &str) -> QueryResult<u64> {
+        CnosByteNumber::new(text)
+            .ok_or_else(|| QueryError::Parser {
+                source: ParserError::ParserError(format!("{} is not a valid byte number", text)),
+            })
+            .map(|byte| byte.as_bytes())
     }
 
     fn make_data_type(
@@ -2279,7 +2340,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
 
     /// Construct an external file as an external table
     ///
-    /// Get target table‘s metadata and insert columns
+    /// Get target table's metadata and insert columns
     async fn build_source_and_target_table(
         &self,
         session: &SessionCtx,
@@ -3263,7 +3324,7 @@ mod tests {
         if let Plan::DDL(DDLPlan::CreateDatabase(create)) = plan.plan {
             let ans = format!("{:?}", create);
             println!("{ans}");
-            let expected = r#"CreateDatabase { name: "test", if_not_exists: false, options: DatabaseOptions { ttl: Some(Duration { time_num: 10, unit: Day }), shard_num: Some(5), vnode_duration: Some(Duration { time_num: 3, unit: Day }), replica: Some(10), precision: Some(US), db_is_hidden: false } }"#;
+            let expected = r#"CreateDatabase { name: "test", if_not_exists: false, options: DatabaseOptionsBuilder { ttl: Some(CnosDuration { duration: 864000s, is_inf: false }), shard_num: Some(5), vnode_duration: Some(CnosDuration { duration: 259200s, is_inf: false }), replica: Some(10) }, config: DatabaseConfigBuilder { precision: Some(US), max_memcache_size: None, memcache_partitions: None, wal_max_file_size: None, wal_sync: None, strict_write: None, max_cache_readers: None } }"#;
             assert_eq!(ans, expected);
         } else {
             panic!("expected create table plan")

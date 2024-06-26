@@ -141,7 +141,7 @@ fn make_time_window(expr: Expr, schema: DFSchemaRef) -> Result<TimeWindow, Query
 }
 
 fn valid_duration(dur: Duration) -> Result<Duration, QueryError> {
-    if dur.as_millis() > (365 * DAY).into() || dur.as_millis() == 0 {
+    if dur.as_millis() > (365 * DAY) as u128 || dur.as_millis() == 0 {
         return Err(QueryError::InvalidTimeWindowParam {
             reason: format!("Max duration is (0s, 365d], but found {}s", dur.as_secs()),
         });

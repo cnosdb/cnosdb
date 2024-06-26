@@ -19,6 +19,7 @@ async-backtrace = { workspace = true, optional = true }
 async-trait = { workspace = true }
 bcrypt = { workspace = true }
 bincode = { workspace = true }
+byte-unit = { workspace = true }
 byteorder = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
 datafusion = { workspace = true }
@@ -26,6 +27,7 @@ datafusion-proto = { workspace = true }
 derive_builder = { workspace = true }
 flatbuffers = { workspace = true }
 futures = { workspace = true }
+humantime = { workspace = true }
 libc = { workspace = true }
 minivec = { workspace = true }
 openssl = { workspace = true }

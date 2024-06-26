@@ -8,6 +8,7 @@ use cache::ShardedAsyncCache;
 use memory_pool::MemoryPoolRef;
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
+use models::schema::database_schema::split_owner;
 use models::Timestamp;
 use parking_lot::RwLock as SyncRwLock;
 use serde::{Deserialize, Serialize};
@@ -18,7 +19,9 @@ use tokio::sync::RwLock;
 use utils::BloomFilter;
 
 use crate::context::GlobalContext;
-use crate::error::{IOSnafu, RecordFileDecodeSnafu, RecordFileEncodeSnafu, TskvError, TskvResult};
+use crate::error::{
+    IOSnafu, MetaSnafu, RecordFileDecodeSnafu, RecordFileEncodeSnafu, TskvError, TskvResult,
+};
 use crate::file_system::async_filesystem::LocalFileSystem;
 use crate::kv_option::{Options, StorageOptions, DELTA_PATH, TSM_PATH};
 use crate::memcache::MemCache;
@@ -453,15 +456,16 @@ impl Summary {
         let mut versions = HashMap::new();
         let mut max_file_id = 0_u64;
         for (tsf_id, edits) in tsf_edits_map {
-            let database = tsf_database_map.remove(&tsf_id).unwrap();
+            let tenant_database = tsf_database_map.remove(&tsf_id).unwrap();
+            let (tenant, database) = split_owner(&tenant_database);
 
             let mut files: HashMap<u64, CompactMeta> = HashMap::new();
             let mut max_seq_no = 0;
             let mut max_level_ts = i64::MIN;
             for e in edits {
-                max_seq_no = std::cmp::max(max_seq_no, e.seq_no);
-                max_level_ts = std::cmp::max(max_level_ts, e.max_level_ts);
-                max_file_id = std::cmp::max(max_file_id, e.file_id);
+                max_seq_no = max(max_seq_no, e.seq_no);
+                max_level_ts = max(max_level_ts, e.max_level_ts);
+                max_file_id = max(max_file_id, e.file_id);
                 for m in e.del_files {
                     files.remove(&m.file_id);
                 }
@@ -470,12 +474,20 @@ impl Summary {
                 }
             }
 
+            let db_schema = match meta.tenant_meta(tenant).await {
+                None => continue,
+                Some(client) => match client.get_db_schema(database).context(MetaSnafu)? {
+                    None => continue,
+                    Some(schema) => schema,
+                },
+            };
             // Recover levels_info according to `CompactMeta`s;
             let tsm_reader_cache = Arc::new(ShardedAsyncCache::create_lru_sharded_cache(
-                opt.storage.max_cached_readers,
+                db_schema.config.max_cache_readers() as usize,
             ));
             let weak_tsm_reader_cache = Arc::downgrade(&tsm_reader_cache);
-            let mut levels = LevelInfo::init_levels(database.clone(), tsf_id, opt.storage.clone());
+            let mut levels =
+                LevelInfo::init_levels(tenant_database.clone(), tsf_id, opt.storage.clone());
             for meta in files.into_values() {
                 levels[meta.level as usize].push_compact_meta(
                     &meta,
@@ -485,14 +497,14 @@ impl Summary {
             }
             let ver = Version::new(
                 tsf_id,
-                database,
+                tenant_database,
                 opt.storage.clone(),
                 max_seq_no,
                 levels,
                 max_level_ts,
                 tsm_reader_cache,
             );
-            versions.insert(tsf_id, Arc::new(ver));
+            versions.insert(db_schema, Arc::new(ver));
         }
 
         ctx.set_file_id(max_file_id + 1);
@@ -678,7 +690,7 @@ impl SummaryTask {
 mod test {
     use std::sync::Arc;
 
-    use config::tskv::Config;
+    use config::tskv::{Config, MetaConfig};
     use memory_pool::GreedyMemoryPool;
     use meta::model::meta_admin::AdminMeta;
     use metrics::metric_register::MetricsRegister;
@@ -800,9 +812,14 @@ mod test {
         let temp_dir = tempfile::Builder::new().prefix("meta").tempdir().unwrap();
         let path = temp_dir.path().to_string_lossy().to_string();
         let cluster_name = "cluster_001".to_string();
-        let addr = "127.0.0.1:8901".to_string();
         let size = 1024 * 1024 * 1024;
-        meta::service::single::start_singe_meta_server(path, cluster_name, addr, size).await;
+        meta::service::single::start_singe_meta_server(
+            path,
+            cluster_name,
+            &MetaConfig::default(),
+            size,
+        )
+        .await;
         let join_handle = tokio::spawn(async {
             let _ = tokio::task::spawn_blocking(|| {
                 test_summary_recover();

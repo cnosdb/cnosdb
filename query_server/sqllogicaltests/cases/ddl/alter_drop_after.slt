@@ -8,7 +8,7 @@ query T
 select tenant_name 
 from cluster_schema.tenants 
 where 
-tenant_options like '%after":{"time_num%' 
+tenant_options like '%after":{"duration%'
 and tenant_name = 'tenant002';
 ----
 "tenant002"

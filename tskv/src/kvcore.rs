@@ -4,11 +4,12 @@ use std::time::Duration;
 
 use datafusion::arrow::record_batch::RecordBatch;
 use memory_pool::{MemoryPool, MemoryPoolRef};
+use meta::error::MetaError;
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::meta_data::VnodeId;
 use models::predicate::domain::ColumnDomains;
-use models::schema::database_schema::{make_owner, split_owner, DatabaseSchema};
+use models::schema::database_schema::{make_owner, split_owner};
 use models::{SeriesId, SeriesKey};
 use snafu::ResultExt;
 use tokio::runtime::Runtime;
@@ -21,7 +22,7 @@ use crate::compaction::job::CompactJob;
 use crate::compaction::metrics::{CompactionType, VnodeCompactionMetrics};
 use crate::compaction::{self, check, LevelCompactionPicker, Picker};
 use crate::database::Database;
-use crate::error::{IndexErrSnafu, TskvResult};
+use crate::error::{IndexErrSnafu, MetaSnafu, TskvResult};
 use crate::file_system::async_filesystem::LocalFileSystem;
 use crate::file_system::FileSystem;
 use crate::kv_option::{Options, StorageOptions};
@@ -37,7 +38,7 @@ pub const SUMMARY_REQ_CHANNEL_CAP: usize = 1024;
 
 pub struct TsKv {
     ctx: Arc<TsKvContext>,
-    _meta_manager: MetaRef,
+    meta_manager: MetaRef,
     compact_job: CompactJob,
     runtime: Arc<Runtime>,
     vnodes: Arc<RwLock<HashMap<VnodeId, VnodeStorage>>>,
@@ -80,7 +81,7 @@ impl TsKv {
         let compact_job = CompactJob::new(runtime.clone(), ctx.clone(), metrics.clone());
         let core = Self {
             ctx,
-            _meta_manager: meta_manager,
+            meta_manager,
             _memory_pool: memory_pool,
             compact_job,
             close_sender,
@@ -206,12 +207,27 @@ impl TsKv {
             return Ok(db);
         }
 
+        let db_schema = self
+            .meta_manager
+            .tenant_meta(tenant)
+            .await
+            .ok_or(MetaError::TenantNotFound {
+                tenant: tenant.to_string(),
+            })
+            .context(MetaSnafu)?
+            .get_db_schema(db_name)
+            .context(MetaSnafu)?
+            .ok_or(MetaError::DatabaseNotFound {
+                database: db_name.to_string(),
+            })
+            .context(MetaSnafu)?;
+
         let db = self
             .ctx
             .version_set
             .write()
             .await
-            .create_db(DatabaseSchema::new(tenant, db_name))
+            .create_db(db_schema)
             .await?;
         Ok(db)
     }

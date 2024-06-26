@@ -51,7 +51,7 @@ impl TableHandleProvider for BaseTableProvider {
                 ))
             })?;
 
-        if db_schema.options().get_db_is_hidden() {
+        if db_schema.is_hidden() {
             return Err(DataFusionError::Plan(format!(
                 "Table not found, tenant: {} db: {}, table: {}",
                 self.meta_client.tenant_name(),

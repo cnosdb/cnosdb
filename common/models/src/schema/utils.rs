@@ -1,110 +1,100 @@
-use std::fmt::{self};
+use core::time::Duration;
+use std::cmp::min;
+use std::fmt::{Display, Formatter};
+use std::str::FromStr;
 
+use byte_unit::{Byte, UnitType};
+use humantime::{format_duration, parse_duration};
 use serde::{Deserialize, Serialize};
 
 use crate::schema::database_schema::Precision;
-use crate::utils::{
-    DAY_MICROS, DAY_MILLS, DAY_NANOS, HOUR_MICROS, HOUR_MILLS, HOUR_NANOS, MINUTES_MICROS,
-    MINUTES_MILLS, MINUTES_NANOS,
-};
+
+pub const YEAR_SECOND: u64 = 31557600; // 356.25 day
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
-pub enum DurationUnit {
-    Minutes,
-    Hour,
-    Day,
-    Inf,
+pub struct CnosDuration {
+    duration: Duration,
+    is_inf: bool,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Duration {
-    pub time_num: u64,
-    pub unit: DurationUnit,
-}
-
-impl fmt::Display for Duration {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match &self.unit {
-            DurationUnit::Minutes => write!(f, "{} Minutes", self.time_num),
-            DurationUnit::Hour => write!(f, "{} Hours", self.time_num),
-            DurationUnit::Day => write!(f, "{} Days", self.time_num),
-            DurationUnit::Inf => write!(f, "INF"),
+impl Display for CnosDuration {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if self.is_inf {
+            write!(f, "INF")
+        } else {
+            write!(f, "{}", format_duration(self.duration))
         }
     }
 }
 
-impl Duration {
-    pub fn new_with_day(day: u64) -> Self {
-        Self {
-            time_num: day,
-            unit: DurationUnit::Day,
+impl CnosDuration {
+    pub const fn new_with_day(day: u64) -> Self {
+        if u64::MAX / 24 / 60 / 60 < day {
+            return Self::new_inf();
         }
+        Self {
+            duration: Duration::from_secs(day * 24 * 60 * 60),
+            is_inf: false,
+        }
+    }
+
+    pub const fn new_inf() -> Self {
+        Self {
+            is_inf: true,
+            duration: Duration::from_secs(0),
+        }
+    }
+
+    pub const fn new_with_duration(duration: Duration) -> Self {
+        Self {
+            duration,
+            is_inf: false,
+        }
+    }
+
+    pub const fn init(duration: Duration, is_inf: bool) -> Self {
+        Self { duration, is_inf }
     }
 
     // with default DurationUnit day
     pub fn new(text: &str) -> Option<Self> {
-        if text.is_empty() {
-            return None;
-        }
-        let len = text.len();
         if let Ok(v) = text.parse::<u64>() {
-            return Some(Duration {
-                time_num: v,
-                unit: DurationUnit::Day,
-            });
-        };
-
-        let time = &text[..len - 1];
-        let unit = &text[len - 1..];
-        let time_num = match time.parse::<u64>() {
+            return Some(Self::new_with_day(v));
+        }
+        if text.to_uppercase().as_str() == "INF" {
+            return Some(Self::new_inf());
+        }
+        let duration = match parse_duration(text) {
             Ok(v) => v,
-            Err(_) => {
-                return None;
-            }
+            Err(_) => return None,
         };
-        let time_unit = match unit.to_uppercase().as_str() {
-            "D" => DurationUnit::Day,
-            "H" => DurationUnit::Hour,
-            "M" => DurationUnit::Minutes,
-            _ => return None,
-        };
-        Some(Duration {
-            time_num,
-            unit: time_unit,
+        Some(Self {
+            duration,
+            is_inf: false,
         })
     }
 
-    pub fn new_inf() -> Self {
-        Self {
-            time_num: 100000,
-            unit: DurationUnit::Day,
-        }
-    }
-
     pub fn to_nanoseconds(&self) -> i64 {
-        match self.unit {
-            DurationUnit::Minutes => (self.time_num as i64).saturating_mul(MINUTES_NANOS),
-            DurationUnit::Hour => (self.time_num as i64).saturating_mul(HOUR_NANOS),
-            DurationUnit::Day => (self.time_num as i64).saturating_mul(DAY_NANOS),
-            DurationUnit::Inf => i64::MAX,
+        if self.is_inf {
+            i64::MAX
+        } else {
+            min(self.duration.as_nanos(), i64::MAX as u128) as i64
         }
     }
 
     pub fn to_microseconds(&self) -> i64 {
-        match self.unit {
-            DurationUnit::Minutes => (self.time_num as i64).saturating_mul(MINUTES_MICROS),
-            DurationUnit::Hour => (self.time_num as i64).saturating_mul(HOUR_MICROS),
-            DurationUnit::Day => (self.time_num as i64).saturating_mul(DAY_MICROS),
-            DurationUnit::Inf => i64::MAX,
+        if self.is_inf {
+            i64::MAX
+        } else {
+            min(self.duration.as_micros(), i64::MAX as u128) as i64
         }
     }
 
     pub fn to_millisecond(&self) -> i64 {
-        match self.unit {
-            DurationUnit::Minutes => (self.time_num as i64).saturating_mul(MINUTES_MILLS),
-            DurationUnit::Hour => (self.time_num as i64).saturating_mul(HOUR_MILLS),
-            DurationUnit::Day => (self.time_num as i64).saturating_mul(DAY_MILLS),
-            DurationUnit::Inf => i64::MAX,
+        if self.is_inf {
+            i64::MAX
+        } else {
+            min(self.duration.as_millis(), i64::MAX as u128) as i64
         }
     }
 
@@ -115,13 +105,27 @@ impl Duration {
             Precision::NS => self.to_nanoseconds(),
         }
     }
+}
 
-    pub fn drop_after_output(&self) -> String {
-        match &self.unit {
-            DurationUnit::Minutes => format!("{}m", self.time_num),
-            DurationUnit::Hour => format!("{}h", self.time_num),
-            DurationUnit::Day => format!("{}d", self.time_num),
-            _ => String::from(""),
+pub struct CnosByteNumber {
+    byte: Byte,
+}
+
+impl CnosByteNumber {
+    pub fn new(text: &str) -> Option<Self> {
+        match Byte::from_str(text) {
+            Ok(v) => Some(CnosByteNumber { byte: v }),
+            Err(_) => None,
         }
+    }
+
+    pub fn as_bytes(&self) -> u64 {
+        self.byte.as_u64()
+    }
+
+    pub fn format_bytes(bytes: u64) -> String {
+        Byte::from_u64(bytes)
+            .get_appropriate_unit(UnitType::Both)
+            .to_string()
     }
 }

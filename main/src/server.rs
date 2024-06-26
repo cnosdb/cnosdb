@@ -242,7 +242,7 @@ impl ServiceBuilder {
         meta::service::single::start_singe_meta_server(
             self.config.storage.path.clone(),
             self.config.global.cluster_name.clone(),
-            self.config.meta.service_addr[0].clone(),
+            &self.config.meta,
             self.config.cluster.lmdb_max_map_size.try_into().unwrap(),
         )
         .await;

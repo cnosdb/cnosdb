@@ -504,7 +504,7 @@ mod test {
     use std::sync::atomic::AtomicUsize;
     use std::sync::{atomic, Arc};
 
-    use models::schema::database_schema::make_owner;
+    use models::schema::database_schema::{make_owner, DatabaseConfig};
     use openraft::EntryPayload;
     use replication::apply_store::HeedApplyStorage;
     use replication::node_store::NodeStorage;
@@ -525,16 +525,16 @@ mod test {
         let owner = make_owner("cnosdb", "test_db");
         let owner = Arc::new(owner);
         let wal_option = crate::kv_option::WalOptions {
-            enabled: true,
             path: dir.to_path_buf(),
-            wal_req_channel_cap: 1024,
-            max_file_size: 10 * 1024,
-            flush_trigger_total_file_size: 128,
-            sync: false,
-            sync_interval: std::time::Duration::from_secs(3600),
         };
 
-        VnodeWal::new(Arc::new(wal_option), owner, 1234).await
+        VnodeWal::new(
+            Arc::new(wal_option),
+            DatabaseConfig::default().into(),
+            owner,
+            1234,
+        )
+        .await
     }
 
     #[tokio::test]

@@ -31,7 +31,6 @@ fn divisor_test() {
     let mut config = build_data_node_config(test_dir, &data_node_def.config_file_name);
     data_node_def.update_config(&mut config);
 
-    config.cache.max_buffer_size = 2 * 1024 * 1024;
     let config_dir = Path::new(test_dir).join("data").join("config");
     std::fs::create_dir_all(&config_dir).unwrap();
     let config_file_path = config_dir.join(&data_node_def.config_file_name);
@@ -40,6 +39,17 @@ fn divisor_test() {
     let server = run_singleton(test_dir, data_node_def, false, false);
 
     let data_dir = get_workspace_dir().join("e2e_test").join("test_data");
+    {
+        let resp = server
+            .client
+            .post(
+                "http://127.0.0.1:8902/api/v1/sql?db=test",
+                "create database test with max_memcache_size '2MiB';",
+            )
+            .unwrap();
+
+        assert_response_is_ok!(resp);
+    }
 
     {
         let mut buf = String::new();
@@ -47,7 +57,7 @@ fn divisor_test() {
         file.read_to_string(&mut buf).unwrap();
         let resp = server
             .client
-            .post("http://127.0.0.1:8902/api/v1/write?db=public", &buf)
+            .post("http://127.0.0.1:8902/api/v1/write?db=test", &buf)
             .unwrap();
 
         assert_response_is_ok!(resp);
@@ -59,7 +69,7 @@ fn divisor_test() {
         file.read_to_string(&mut buf).unwrap();
         let resp = server
             .client
-            .post("http://127.0.0.1:8902/api/v1/write?db=public", &buf)
+            .post("http://127.0.0.1:8902/api/v1/write?db=test", &buf)
             .unwrap();
 
         assert_response_is_ok!(resp);
@@ -67,7 +77,7 @@ fn divisor_test() {
     let resp = server
         .client
         .post(
-            "http://127.0.0.1:8902/api/v1/sql?db=public",
+            "http://127.0.0.1:8902/api/v1/sql?db=test",
             "select count(*) from log;",
         )
         .unwrap();
