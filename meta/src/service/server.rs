@@ -4,11 +4,13 @@ use std::time::Duration;
 
 use config::meta::{HeartBeatConfig, MetaInit};
 use futures::TryFutureExt;
+use metrics::metric_register::MetricsRegister;
 use models::meta_data::NodeMetrics;
 use models::node_info::NodeStatus;
 use openraft::SnapshotPolicy;
 use protos::raft_service::raft_service_server::RaftServiceServer;
 use replication::entry_store::HeedEntryStorage;
+use replication::metrics::ReplicationMetrics;
 use replication::multi_raft::MultiRaft;
 use replication::network_grpc::RaftCBServer;
 use replication::network_http::{EitherBody, RaftHttpAdmin, SyncSendError};
@@ -154,7 +156,16 @@ async fn start_warp_grpc_server(
     };
 
     let mut multi_raft = MultiRaft::new();
-    multi_raft.add_node(node);
+
+    let register = Arc::new(MetricsRegister::new([("address", addr.clone())]));
+    let metrics = ReplicationMetrics::new(
+        register,
+        "cnosdb_meta",
+        "cnosdb_meta",
+        node.group_id(),
+        node.raft_id(),
+    );
+    multi_raft.add_node(node, metrics);
     let nodes = Arc::new(RwLock::new(multi_raft));
 
     let addr = addr.parse().unwrap();

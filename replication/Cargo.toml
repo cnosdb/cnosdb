@@ -9,6 +9,7 @@ models = { path = "../common/models" }
 protos = { path = "../common/protos", features = ["test"] }
 trace = { path = "../common/trace" }
 utils = { path = "../common/utils" }
+metrics = { path = "../common/metrics" }
 
 actix-web = { workspace = true }
 clap = { version = "4.1.11", features = ["derive", "env"] }

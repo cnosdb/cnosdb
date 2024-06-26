@@ -4919,6 +4919,7 @@ dependencies = [
  "http-body",
  "maplit",
  "md-5",
+ "metrics",
  "models",
  "once_cell",
  "openraft",

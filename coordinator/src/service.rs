@@ -170,11 +170,6 @@ impl CoordService {
             config.cluster.trigger_snapshot_interval,
         ));
 
-        tokio::spawn(RaftNodesManager::update_raft_metrics(
-            raft_manager.clone(),
-            Duration::from_secs(10),
-        ));
-
         let coord = Arc::new(Self {
             runtime,
             kv_inst,

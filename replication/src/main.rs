@@ -4,11 +4,13 @@ use std::sync::Arc;
 
 use clap::Parser;
 use futures::future::TryFutureExt;
+use metrics::metric_register::MetricsRegister;
 use openraft::SnapshotPolicy;
 use protos::raft_service::raft_service_server::RaftServiceServer;
 use replication::apply_store::HeedApplyStorage;
 use replication::entry_store::HeedEntryStorage;
 use replication::errors::{MsgInvalidSnafu, ReplicationResult};
+use replication::metrics::ReplicationMetrics;
 use replication::multi_raft::MultiRaft;
 use replication::network_grpc::RaftCBServer;
 use replication::network_http::{EitherBody, RaftHttpAdmin, SyncSendError};
@@ -104,7 +106,16 @@ async fn create_raft_node(dir: &str, id_port: RaftNodeId) -> ReplicationResult<R
 // **************************** http and grpc server ************************************** //
 async fn start_server(node_server: RaftNodeServer) -> ReplicationResult<()> {
     let mut multi_raft = MultiRaft::new();
-    multi_raft.add_node(node_server.node.clone());
+
+    let register = Arc::new(MetricsRegister::new([("node_id", "8888")]));
+    let metrics = ReplicationMetrics::new(
+        register,
+        "test_t",
+        "test_d",
+        node_server.node.group_id(),
+        node_server.node.raft_id(),
+    );
+    multi_raft.add_node(node_server.node.clone(), metrics);
     let nodes = Arc::new(RwLock::new(multi_raft));
 
     let addr = node_server.http_addr.parse().unwrap();
