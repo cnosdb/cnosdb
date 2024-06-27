@@ -2060,8 +2060,8 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
     }
 
     fn show_queries_to_plan(&self, session: &SessionCtx) -> QueryResult<PlanWithPrivileges> {
-        // QUERY_SCHEMA: query_id, query_type, query_text, user_name, tenant_name, state, duration
-        let projections = vec![0, 1, 2, 4, 6, 7, 8];
+        // QUERY_SCHEMA: query_id, query_type, query_text, user_name, tenant_name,database_name, state, duration
+        let projections = vec![0, 1, 2, 4, 6, 7, 8, 9];
 
         let table_ref = TableReference::partial(INFORMATION_SCHEMA, INFORMATION_SCHEMA_QUERIES);
 

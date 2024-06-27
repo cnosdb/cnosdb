@@ -105,7 +105,7 @@ impl TableProvider for InformationQueriesTable {
             let user_name = info.user_name();
             let tenant_id = info.tenant_id().to_string();
             let tenant_name = info.tenant_name();
-
+            let database_name = info.database_name();
             let state = status.query_state();
             let duration = status.duration().as_secs_f64();
             let processed_count = status.processed_count();
@@ -119,6 +119,7 @@ impl TableProvider for InformationQueriesTable {
                 user_name,
                 tenant_id,
                 tenant_name,
+                database_name,
                 state,
                 duration,
                 processed_count,

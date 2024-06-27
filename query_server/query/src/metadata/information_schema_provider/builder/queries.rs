@@ -15,6 +15,7 @@ lazy_static! {
         Field::new("user_name", DataType::Utf8, false),
         Field::new("tenant_id", DataType::Utf8, false),
         Field::new("tenant_name", DataType::Utf8, false),
+        Field::new("database_name", DataType::Utf8, false),
         Field::new("state", DataType::Utf8, false),
         Field::new("duration", DataType::Float64, false),
         Field::new("processed_count", DataType::UInt64, false),
@@ -32,6 +33,7 @@ pub struct InformationSchemaQueriesBuilder {
     user_names: StringBuilder,
     tenant_ids: StringBuilder,
     tenant_names: StringBuilder,
+    database_name: StringBuilder,
     states: StringBuilder,
     durations: Float64Builder,
     processed_counts: UInt64Builder,
@@ -49,6 +51,7 @@ impl InformationSchemaQueriesBuilder {
         user_name: impl AsRef<str>,
         tenant_id: impl AsRef<str>,
         tenant_name: impl AsRef<str>,
+        database_name: impl AsRef<str>,
         state: impl AsRef<str>,
         duration: f64,
         processed_count: u64,
@@ -62,6 +65,7 @@ impl InformationSchemaQueriesBuilder {
         self.user_names.append_value(user_name.as_ref());
         self.tenant_ids.append_value(tenant_id.as_ref());
         self.tenant_names.append_value(tenant_name.as_ref());
+        self.database_name.append_value(database_name.as_ref());
         self.states.append_value(state.as_ref());
         self.durations.append_value(duration);
         self.processed_counts.append_value(processed_count);
@@ -81,6 +85,7 @@ impl TryFrom<InformationSchemaQueriesBuilder> for RecordBatch {
             mut user_names,
             mut tenant_ids,
             mut tenant_names,
+            mut database_name,
             mut states,
             mut durations,
             mut processed_counts,
@@ -97,6 +102,7 @@ impl TryFrom<InformationSchemaQueriesBuilder> for RecordBatch {
                 Arc::new(user_names.finish()),
                 Arc::new(tenant_ids.finish()),
                 Arc::new(tenant_names.finish()),
+                Arc::new(database_name.finish()),
                 Arc::new(states.finish()),
                 Arc::new(durations.finish()),
                 Arc::new(processed_counts.finish()),
