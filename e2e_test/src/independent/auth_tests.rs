@@ -6,7 +6,7 @@ use http_protocol::status_code;
 use serial_test::serial;
 
 use crate::utils::{build_data_node_config, kill_all, run_singleton, Client};
-use crate::{assert_response_is_ok, cluster_def};
+use crate::{check_response, cluster_def};
 
 #[test]
 #[serial]
@@ -24,22 +24,14 @@ fn test1() {
     {
         // Start cnosdb singleton with `auth_enabled = false`, alter password for root.
         let data = run_singleton(test_dir, data_node_def, false, true);
-        let resp = data
-            .client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "alter user root set password='abc'",
-            )
-            .unwrap();
-        assert_response_is_ok!(resp);
-        let resp = data
-            .client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "alter user root set must_change_password = false",
-            )
-            .unwrap();
-        assert_response_is_ok!(resp);
+        check_response!(data.client.post(
+            "http://127.0.0.1:8902/api/v1/sql?db=public",
+            "alter user root set password='abc'",
+        ));
+        check_response!(data.client.post(
+            "http://127.0.0.1:8902/api/v1/sql?db=public",
+            "alter user root set must_change_password = false",
+        ));
     }
 
     // Start cnosdb singleton with `auth_enabled = true`
@@ -80,27 +72,19 @@ fn test1() {
     {
         let client = Client::with_auth("root".to_string(), Some("abc".to_owned()));
 
-        let resp = client
-            .post("http://127.0.0.1:8902/api/v1/sql?db=public", "select 1")
-            .unwrap();
-        assert_response_is_ok!(resp);
+        let resp =
+            check_response!(client.post("http://127.0.0.1:8902/api/v1/sql?db=public", "select 1"));
         assert_eq!(resp.text().unwrap(), "Int64(1)\n1\n");
 
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "create user u1",
-            )
-            .unwrap();
-        assert_response_is_ok!(resp);
+        check_response!(client.post(
+            "http://127.0.0.1:8902/api/v1/sql?db=public",
+            "create user u1",
+        ));
 
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "alter tenant cnosdb add user u1 as member",
-            )
-            .unwrap();
-        assert_response_is_ok!(resp);
+        check_response!(client.post(
+            "http://127.0.0.1:8902/api/v1/sql?db=public",
+            "alter tenant cnosdb add user u1 as member",
+        ));
     }
     {
         let client = Client::with_auth("u1".to_string(), None);
@@ -137,18 +121,13 @@ fn test1() {
     {
         let client = Client::with_auth("root".to_string(), Some("abc".to_owned()));
 
-        let resp = client
-            .post("http://127.0.0.1:8902/api/v1/sql?db=public", "CREATE USER IF NOT EXISTS test WITH PASSWORD='123456', MUST_CHANGE_PASSWORD=false, COMMENT = 'test';")
-            .unwrap();
-        assert_response_is_ok!(resp);
+        check_response!(client
+            .post("http://127.0.0.1:8902/api/v1/sql?db=public", "CREATE USER IF NOT EXISTS test WITH PASSWORD='123456', MUST_CHANGE_PASSWORD=false, COMMENT = 'test';"));
 
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "alter user test set granted_admin = true;",
-            )
-            .unwrap();
-        assert_response_is_ok!(resp);
+        check_response!(client.post(
+            "http://127.0.0.1:8902/api/v1/sql?db=public",
+            "alter user test set granted_admin = true;",
+        ));
     }
     {
         let client = Client::with_auth("test".to_string(), Some("123456".to_owned()));
@@ -182,29 +161,18 @@ fn test2() {
     {
         // Start cnosdb singleton with `auth_enabled = false`, alter password for root.
         let data = run_singleton(test_dir, data_node_def, false, true);
-        let resp = data
-            .client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "create user test_must with must_change_password = true, password = '123';",
-            )
-            .unwrap();
-        assert_response_is_ok!(resp);
+        check_response!(data.client.post(
+            "http://127.0.0.1:8902/api/v1/sql?db=public",
+            "create user test_must with must_change_password = true, password = '123';",
+        ));
 
-        let resp = data
-            .client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "alter tenant cnosdb add user test_must as owner;",
-            )
-            .unwrap();
-        assert_response_is_ok!(resp);
+        check_response!(data.client.post(
+            "http://127.0.0.1:8902/api/v1/sql?db=public",
+            "alter tenant cnosdb add user test_must as owner;",
+        ));
 
         let client = Client::with_auth("test_must".to_string(), None);
-        let resp = client
-            .post("http://127.0.0.1:8902/api/v1/sql?db=public", "show tables;")
-            .unwrap();
-        assert_response_is_ok!(resp);
+        check_response!(client.post("http://127.0.0.1:8902/api/v1/sql?db=public", "show tables;"));
     }
     // Start cnosdb singleton with `auth_enabled = true`
     let mut config = build_data_node_config(test_dir, &data_node_def.config_file_name);
@@ -289,24 +257,16 @@ fn test2() {
             "{\"error_code\":\"010004\",\"error_message\":\"Insufficient privileges, expected [input different password]\"}" 
         );
 
-        let resp = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "alter user test_must set password = '1234';",
-            )
-            .unwrap();
-
-        assert_response_is_ok!(resp);
+        check_response!(client.post(
+            "http://127.0.0.1:8902/api/v1/sql?db=public",
+            "alter user test_must set password = '1234';",
+        ));
     }
 
     {
         let client = Client::with_auth("test_must".to_string(), Some("1234".to_string()));
 
-        let resp = client
-            .post("http://127.0.0.1:8902/api/v1/sql?db=public", "show tables;")
-            .unwrap();
-
-        assert_response_is_ok!(resp);
+        check_response!(client.post("http://127.0.0.1:8902/api/v1/sql?db=public", "show tables;"));
 
         let resp = client
             .post(

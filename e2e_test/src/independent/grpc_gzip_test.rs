@@ -6,7 +6,7 @@ use datafusion::{arrow, assert_batches_eq};
 use serial_test::serial;
 
 use crate::utils::{flight_authed_client, flight_fetch_result_and_print, kill_all, run_cluster};
-use crate::{assert_response_is_ok, cluster_def};
+use crate::{check_response, cluster_def};
 
 #[test]
 #[serial]
@@ -37,35 +37,22 @@ fn grpc_gzip_test() {
 
     let server = data_server.unwrap();
 
-    let resp = server
-        .client
-        .post(
-            "http://127.0.0.1:8902/api/v1/sql?db=public",
-            "create database db1 with replica 3",
-        )
-        .unwrap();
+    check_response!(server.client.post(
+        "http://127.0.0.1:8902/api/v1/sql?db=public",
+        "create database db1 with replica 3",
+    ));
 
-    assert_response_is_ok!(resp);
+    check_response!(server.client.post(
+        "http://127.0.0.1:8902/api/v1/sql?db=db1",
+        "create table tb1 (v bigint)",
+    ));
 
-    let resp = server
-        .client
-        .post(
-            "http://127.0.0.1:8902/api/v1/sql?db=db1",
-            "create table tb1 (v bigint)",
-        )
-        .unwrap();
-
-    assert_response_is_ok!(resp);
-
-    let resp = server
+    check_response!(server
         .client
         .post(
             "http://127.0.0.1:8902/api/v1/sql?db=db1",
             "insert tb1 values (1, 1), (2, 2), (3, 3), (4, 4), (5, 5), (6, 6), (7, 7), (8, 8), (9, 9), (10, 10)",
-        )
-        .unwrap();
-
-    assert_response_is_ok!(resp);
+        ));
 
     runtime.block_on(async {
         let mut client = flight_authed_client().await;

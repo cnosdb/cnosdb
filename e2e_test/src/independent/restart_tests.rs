@@ -735,7 +735,7 @@ fn case6() {
             req: CnosdbRequest::Ddl {
                 url: url_cnosdb_public,
                 sql: "drop database db1",
-                resp: Err(E2eError::ANY), // Error is expected, but the error message is not checked.
+                resp: Err(E2eError::Ignored), // Error is expected, but the error message is not checked.
             },
             auth: None,
         },

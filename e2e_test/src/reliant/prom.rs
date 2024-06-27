@@ -10,7 +10,7 @@ use protos::prompb::prometheus::{
 };
 use reqwest::Method;
 
-use crate::assert_response_is_ok;
+use crate::check_response;
 use crate::utils::Client;
 
 fn serialize<T: Message>(msg: T) -> Vec<u8> {
@@ -117,22 +117,17 @@ fn test_prom() {
 
     // clean data
     let body = "drop table if exists test_prom;";
-    let resp = client
-        .post("http://127.0.0.1:8902/api/v1/sql?db=public", body)
-        .unwrap();
-    assert_response_is_ok!(resp);
+    check_response!(client.post("http://127.0.0.1:8902/api/v1/sql?db=public", body));
 
     // write data
     let body = test_write_req();
-    let resp = client
+    check_response!(client
         .request_with_auth(
             Method::POST,
             "http://127.0.0.1:8902/api/v1/prom/write?db=public",
         )
         .body(body)
-        .send()
-        .unwrap();
-    assert_response_is_ok!(resp);
+        .send());
 
     // read data
     let body = test_read_req();

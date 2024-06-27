@@ -9,7 +9,7 @@ use std::time::Duration;
 use serial_test::serial;
 
 use crate::utils::{get_workspace_dir, kill_all, run_singleton, Client, CnosdbDataTestHelper};
-use crate::{assert_response_is_ok, cluster_def};
+use crate::{check_response, cluster_def};
 
 // use for cnosdb-cli
 struct ClientDef {
@@ -160,19 +160,9 @@ fn simple_test() {
     {
         let url = "http://127.0.0.1:8902/api/v1/write?db=public";
 
-        let resp = server
-            .client
-            .post(url, "ma,ta=a1 fa=1 1690510331000000000")
-            .unwrap();
+        check_response!(server.client.post(url, "ma,ta=a1 fa=1 1690510331000000000"));
 
-        assert_response_is_ok!(resp);
-
-        let resp = server
-            .client
-            .post(url, "ma,ta=a1 fb=2 1690510331000000000")
-            .unwrap();
-
-        assert_response_is_ok!(resp);
+        check_response!(server.client.post(url, "ma,ta=a1 fb=2 1690510331000000000"));
 
         let url = "http://127.0.0.1:8902/api/v1/sql?db=public";
         let resp = server.client.post(url, "select * from ma").unwrap();
@@ -186,67 +176,41 @@ fn simple_test() {
     // bug test for #1311 #1459
     {
         let url = "http://127.0.0.1:8902/api/v1/sql?db=public";
-        let resp = server.client.post(url, "CREATE TENANT tenant_a;").unwrap();
+        check_response!(server.client.post(url, "CREATE TENANT tenant_a;"));
 
-        assert_response_is_ok!(resp);
+        check_response!(server.client.post(url, "CREATE USER user_a;"));
 
-        let resp = server.client.post(url, "CREATE USER user_a;").unwrap();
-
-        assert_response_is_ok!(resp);
-
-        let resp = server
+        check_response!(server
             .client
-            .post(url, "ALTER TENANT tenant_a ADD USER user_a AS owner;")
-            .unwrap();
-
-        assert_response_is_ok!(resp);
+            .post(url, "ALTER TENANT tenant_a ADD USER user_a AS owner;"));
     }
     {
         let url = "http://127.0.0.1:8902/api/v1/sql?tenant=tenant_a&db=public";
 
         let client = Client::with_auth("user_a".to_string(), None);
 
-        let resp = client.post(url, "create database db1;").unwrap();
+        check_response!(client.post(url, "create database db1;"));
 
-        assert_response_is_ok!(resp);
+        check_response!(client
+            .post(url, "CREATE TABLE db1.air_a (visibility DOUBLE,temperature DOUBLE,pressure DOUBLE,TAGS(station));"));
 
-        let resp = client
-        .post(url, "CREATE TABLE db1.air_a (visibility DOUBLE,temperature DOUBLE,pressure DOUBLE,TAGS(station));")
-        .unwrap();
-
-        assert_response_is_ok!(resp);
-
-        let resp = client
-        .post(url, "INSERT INTO db1.air_a (TIME, station, visibility, temperature, pressure) VALUES(1666165200290401000, 'XiaoMaiDao', 56, 69, 77);")
-        .unwrap();
-
-        assert_response_is_ok!(resp);
+        check_response!( client
+            .post(url, "INSERT INTO db1.air_a (TIME, station, visibility, temperature, pressure) VALUES(1666165200290401000, 'XiaoMaiDao', 56, 69, 77);"));
     }
     {
         let url = "http://127.0.0.1:8902/api/v1/sql?db=public";
 
-        let resp = server.client.post(url, "drop tenant tenant_a;").unwrap();
+        check_response!(server.client.post(url, "drop tenant tenant_a;"));
 
-        assert_response_is_ok!(resp);
+        check_response!(server.client.post(url, "drop user user_a;"));
 
-        let resp = server.client.post(url, "drop user user_a;").unwrap();
+        check_response!(server.client.post(url, "CREATE TENANT tenant_a;"));
 
-        assert_response_is_ok!(resp);
+        check_response!(server.client.post(url, "CREATE USER user_a;"));
 
-        let resp = server.client.post(url, "CREATE TENANT tenant_a;").unwrap();
-
-        assert_response_is_ok!(resp);
-
-        let resp = server.client.post(url, "CREATE USER user_a;").unwrap();
-
-        assert_response_is_ok!(resp);
-
-        let resp = server
+        check_response!(server
             .client
-            .post(url, "ALTER TENANT tenant_a ADD USER user_a AS owner;")
-            .unwrap();
-
-        assert_response_is_ok!(resp);
+            .post(url, "ALTER TENANT tenant_a ADD USER user_a AS owner;"));
     }
     {
         let url = "http://127.0.0.1:8902/api/v1/sql?tenant=tenant_a&db=public";
@@ -260,21 +224,13 @@ fn simple_test() {
             "{\"error_code\":\"010001\",\"error_message\":\"Datafusion: Error during planning: Table not found, tenant: tenant_a db: db1, table: air_a\"}",
         );
 
-        let resp = client.post(url, "CREATE DATABASE db1;;").unwrap();
+        check_response!(client.post(url, "CREATE DATABASE db1;;"));
 
-        assert_response_is_ok!(resp);
+        check_response!(client
+            .post(url, "CREATE TABLE db1.air_a (visibility DOUBLE,temperature DOUBLE,pressure DOUBLE,TAGS(station));"));
 
-        let resp = client
-        .post(url, "CREATE TABLE db1.air_a (visibility DOUBLE,temperature DOUBLE,pressure DOUBLE,TAGS(station));")
-        .unwrap();
-
-        assert_response_is_ok!(resp);
-
-        let resp = client
-        .post(url, "INSERT INTO db1.air_a (TIME, station, visibility, temperature, pressure) VALUES(1666165200290401000, 'XiaoMaiDao', 56, 69, 77);")
-        .unwrap();
-
-        assert_response_is_ok!(resp);
+        check_response!(client
+            .post(url, "INSERT INTO db1.air_a (TIME, station, visibility, temperature, pressure) VALUES(1666165200290401000, 'XiaoMaiDao', 56, 69, 77);"));
     }
 }
 
@@ -338,16 +294,11 @@ fn client_start_test() {
             .unwrap();
         sleep(Duration::from_secs(1));
 
-        let resp = _server
-            .client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "alter tenant tenant001 add user user001 as owner",
-            )
-            .unwrap();
+        check_response!(_server.client.post(
+            "http://127.0.0.1:8902/api/v1/sql?db=public",
+            "alter tenant tenant001 add user user001 as owner",
+        ));
         sleep(Duration::from_secs(1));
-
-        assert_response_is_ok!(resp);
 
         let args = vec!["-u", "user001", "-t", "tenant001"];
         let mut client = ClientDef::new(args).run();
@@ -526,13 +477,10 @@ fn split_test() {
     }
     {
         let url = "http://127.0.0.1:8902/api/v1/sql?db=public";
-        let resp = server
+        check_response!(server
             .client
-            .post(url, "insert into test(str_col,ta)values('a2',';str');")
-            .unwrap();
+            .post(url, "insert into test(str_col,ta)values('a2',';str');"));
         sleep(Duration::from_secs(1));
-
-        assert_response_is_ok!(resp);
 
         let resp = server
             .client

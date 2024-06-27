@@ -14,7 +14,7 @@ use crate::utils::{
     build_data_node_config, copy_cnosdb_server_certificate, get_workspace_dir, kill_all,
     run_singleton, Client,
 };
-use crate::{assert_response_is_ok, cluster_def, headers, E2eError};
+use crate::{check_response, cluster_def, headers, E2eError};
 
 fn run_case_with_tls(
     test_dir: &str,
@@ -87,8 +87,7 @@ fn test_v1_sql_path() {
         let url_invalid_path = "https://127.0.0.1:8902/api/v1/xx";
 
         let body = "select 1;";
-        let resp = client.post(url, body).unwrap();
-        assert_response_is_ok!(resp);
+        let resp = check_response!(client.post(url, body));
         assert_eq!(
             resp.headers().get(CONTENT_TYPE).unwrap(),
             &HeaderValue::from_static("application/csv")
@@ -112,8 +111,7 @@ fn test_v1_sql_path() {
         req = req.headers(headers! {
             ACCEPT.as_str() => "application/csv"
         });
-        let resp = client.execute(req.build().unwrap()).unwrap();
-        assert_response_is_ok!(resp);
+        let resp = check_response!(client.execute(req.build().unwrap()));
         assert_eq!(
             resp.headers().get(CONTENT_TYPE).unwrap(),
             &HeaderValue::from_static("application/csv")
@@ -124,8 +122,7 @@ fn test_v1_sql_path() {
         req = req.headers(headers! {
             ACCEPT.as_str() => "application/json"
         });
-        let resp = client.execute(req.build().unwrap()).unwrap();
-        assert_response_is_ok!(resp);
+        let resp = check_response!(client.execute(req.build().unwrap()));
         assert_eq!(
             resp.headers().get(CONTENT_TYPE).unwrap(),
             &HeaderValue::from_static("application/json")
@@ -136,8 +133,7 @@ fn test_v1_sql_path() {
         req = req.headers(headers! {
             ACCEPT.as_str() => "application/nd-json"
         });
-        let resp = client.execute(req.build().unwrap()).unwrap();
-        assert_response_is_ok!(resp);
+        let resp = check_response!(client.execute(req.build().unwrap()));
         assert_eq!(
             resp.headers().get(CONTENT_TYPE).unwrap(),
             &HeaderValue::from_static("application/nd-json")
@@ -148,8 +144,7 @@ fn test_v1_sql_path() {
         req = req.headers(headers! {
             ACCEPT.as_str() => "application/*"
         });
-        let resp = client.execute(req.build().unwrap()).unwrap();
-        assert_response_is_ok!(resp);
+        let resp = check_response!(client.execute(req.build().unwrap()));
         assert_eq!(
             resp.headers().get(CONTENT_TYPE).unwrap(),
             &HeaderValue::from_static("application/csv")
@@ -160,8 +155,7 @@ fn test_v1_sql_path() {
         req = req.headers(headers! {
             ACCEPT.as_str() => "*/*"
         });
-        let resp = client.execute(req.build().unwrap()).unwrap();
-        assert_response_is_ok!(resp);
+        let resp = check_response!(client.execute(req.build().unwrap()));
         assert_eq!(
             resp.headers().get(CONTENT_TYPE).unwrap(),
             &HeaderValue::from_static("application/csv")
@@ -226,8 +220,7 @@ fn test_v1_write_path() {
         let url = "https://127.0.0.1:8902/api/v1/write?db=public";
         let body = "test_v1_write_path,ta=a1,tb=b1 fa=1,fb=2";
 
-        let resp = client.post(url, body).unwrap();
-        assert_response_is_ok!(resp);
+        check_response!(client.post(url, body));
 
         // lost username
         let req = client.request(Method::POST, url).body(body);
@@ -268,11 +261,9 @@ fn test_v1_ping_path() {
     fn case(_: PathBuf, client: &Client) {
         let url: &str = "https://127.0.0.1:8902/api/v1/ping";
 
-        let resp = client.get(url, "").unwrap();
-        assert_response_is_ok!(resp);
+        check_response!(client.get(url, ""));
 
-        let resp = client.head(url, "").unwrap();
-        assert_response_is_ok!(resp);
+        check_response!(client.head(url, ""));
 
         let resp = client.post(url, "").unwrap();
         assert_eq!(resp.status(), StatusCode::METHOD_NOT_ALLOWED);
