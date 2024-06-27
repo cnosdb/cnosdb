@@ -1514,17 +1514,17 @@ mod test_memcache {
         global_config.storage.path = dir.to_string();
         let opt = Arc::new(Options::from(&global_config));
 
-        let database = Arc::new("cnosdb.test".to_string());
+        let owner = Arc::new("cnosdb.test".to_string());
         let ts_family_id = 1;
-        let tsm_dir = opt.storage.tsm_dir(&database, ts_family_id);
+        let tsm_dir = opt.storage.tsm_dir(&owner, ts_family_id);
         #[rustfmt::skip]
             let levels = [
-            LevelInfo::init(database.clone(), 0, 0, opt.storage.clone()),
+            LevelInfo::init(owner.clone(), 0, 0, opt.storage.clone()),
             LevelInfo {
                 files: vec![
                     Arc::new(ColumnFile::new(3, 1, TimeRange::new(3001, 3100), 100, false, make_tsm_file(&tsm_dir, 3))),
                 ],
-                database: database.clone(),
+                owner: owner.clone(),
                 tsf_id: 1,
                 storage_opt: opt.storage.clone(),
                 level: 1,
@@ -1537,7 +1537,7 @@ mod test_memcache {
                     Arc::new(ColumnFile::new(1, 2, TimeRange::new(1, 1000), 1000, false, make_tsm_file(&tsm_dir, 1))),
                     Arc::new(ColumnFile::new(2, 2, TimeRange::new(1001, 2000), 1000, false, make_tsm_file(&tsm_dir, 2))),
                 ],
-                database: database.clone(),
+                owner: owner.clone(),
                 tsf_id: 1,
                 storage_opt: opt.storage.clone(),
                 level: 2,
@@ -1545,13 +1545,13 @@ mod test_memcache {
                 max_size: 10000,
                 time_range: TimeRange::new(1, 2000),
             },
-            LevelInfo::init(database.clone(), 3, 0, opt.storage.clone()),
-            LevelInfo::init(database.clone(), 4, 0, opt.storage.clone()),
+            LevelInfo::init(owner.clone(), 3, 0, opt.storage.clone()),
+            LevelInfo::init(owner.clone(), 4, 0, opt.storage.clone()),
         ];
         let tsm_reader_cache = Arc::new(ShardedAsyncCache::create_lru_sharded_cache(16));
         let version = Version::new(
             1,
-            database.clone(),
+            owner.clone(),
             opt.storage.clone(),
             1,
             levels,

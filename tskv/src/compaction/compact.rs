@@ -772,7 +772,7 @@ pub async fn run_compaction_job(
 
     let max_block_size = request.storage_opt.max_datablock_size as usize;
     let mut iter = CompactIterator::new(tsm_readers);
-    let tsm_dir = request.storage_opt.tsm_dir(&request.database, tsf_id);
+    let tsm_dir = request.storage_opt.tsm_dir(&request.owner, tsf_id);
     let max_file_size = request.storage_opt.level_max_file_size(request.out_level);
     let mut tsm_writer =
         TsmWriter::open(&tsm_dir, kernel.file_id_next(), max_file_size, false).await?;
@@ -786,7 +786,7 @@ pub async fn run_compaction_job(
     let mut file_metas: HashMap<ColumnFileId, Arc<BloomFilter>> = HashMap::new();
     let mut version_edit = VersionEdit::new_update_vnode(
         tsf_id,
-        request.database.to_string(),
+        request.owner.to_string(),
         request.version.last_seq(),
     );
     let mut previous_merged_block: Option<CompactingBlock> = None;
@@ -1075,23 +1075,23 @@ pub mod test {
     }
 
     fn prepare_compact_req_and_kernel(
-        database: Arc<String>,
+        owner: Arc<String>,
         opt: Arc<Options>,
         next_file_id: u64,
         files: Vec<Arc<ColumnFile>>,
     ) -> (CompactReq, Arc<GlobalContext>) {
         let version = Arc::new(Version::new(
             1,
-            database.clone(),
+            owner.clone(),
             opt.storage.clone(),
             1,
-            LevelInfo::init_levels(database.clone(), 0, opt.storage.clone()),
+            LevelInfo::init_levels(owner.clone(), 0, opt.storage.clone()),
             1000,
             Arc::new(ShardedAsyncCache::create_lru_sharded_cache(1)),
         ));
         let compact_req = CompactReq {
             ts_family_id: 1,
-            database,
+            owner,
             storage_opt: opt.storage.clone(),
             files,
             version,

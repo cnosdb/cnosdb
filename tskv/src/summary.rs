@@ -77,14 +77,14 @@ impl CompactMeta {
     pub fn file_path(
         &self,
         storage_opt: &StorageOptions,
-        database: &str,
+        owner: &str,
         ts_family_id: TseriesFamilyId,
     ) -> PathBuf {
         if self.is_delta {
-            let base_dir = storage_opt.delta_dir(database, ts_family_id);
+            let base_dir = storage_opt.delta_dir(owner, ts_family_id);
             file_utils::make_delta_file(base_dir, self.file_id)
         } else {
-            let base_dir = storage_opt.tsm_dir(database, ts_family_id);
+            let base_dir = storage_opt.tsm_dir(owner, ts_family_id);
             file_utils::make_tsm_file(base_dir, self.file_id)
         }
     }
@@ -424,8 +424,8 @@ impl Summary {
         metrics_register: Arc<MetricsRegister>,
     ) -> TskvResult<VersionSet> {
         let mut tsf_edits_map: HashMap<TseriesFamilyId, Vec<VersionEdit>> = HashMap::new();
-        let mut database_map: HashMap<String, Arc<String>> = HashMap::new();
-        let mut tsf_database_map: HashMap<TseriesFamilyId, Arc<String>> = HashMap::new();
+        let mut owner_map: HashMap<String, Arc<String>> = HashMap::new();
+        let mut tsf_owner_map: HashMap<TseriesFamilyId, Arc<String>> = HashMap::new();
 
         loop {
             let res = reader.read_record().await;
@@ -433,14 +433,14 @@ impl Summary {
                 Ok(result) => {
                     let ed = VersionEdit::decode(&result.data)?;
                     if ed.act_tsf == VnodeAction::Add {
-                        let db_ref = database_map
+                        let owner_ref = owner_map
                             .entry(ed.tsf_name.clone())
                             .or_insert_with(|| Arc::new(ed.tsf_name.clone()));
-                        tsf_database_map.insert(ed.tsf_id, db_ref.clone());
+                        tsf_owner_map.insert(ed.tsf_id, owner_ref.clone());
                         tsf_edits_map.insert(ed.tsf_id, vec![ed]);
                     } else if ed.act_tsf == VnodeAction::Delete {
                         tsf_edits_map.remove(&ed.tsf_id);
-                        tsf_database_map.remove(&ed.tsf_id);
+                        tsf_owner_map.remove(&ed.tsf_id);
                     } else if let Some(data) = tsf_edits_map.get_mut(&ed.tsf_id) {
                         data.push(ed);
                     }
@@ -456,8 +456,8 @@ impl Summary {
         let mut versions = HashMap::new();
         let mut max_file_id = 0_u64;
         for (tsf_id, edits) in tsf_edits_map {
-            let tenant_database = tsf_database_map.remove(&tsf_id).unwrap();
-            let (tenant, database) = split_owner(&tenant_database);
+            let owner = tsf_owner_map.remove(&tsf_id).unwrap();
+            let (tenant, database) = split_owner(&owner);
 
             let mut files: HashMap<u64, CompactMeta> = HashMap::new();
             let mut max_seq_no = 0;
@@ -486,8 +486,7 @@ impl Summary {
                 db_schema.config.max_cache_readers() as usize,
             ));
             let weak_tsm_reader_cache = Arc::downgrade(&tsm_reader_cache);
-            let mut levels =
-                LevelInfo::init_levels(tenant_database.clone(), tsf_id, opt.storage.clone());
+            let mut levels = LevelInfo::init_levels(owner.clone(), tsf_id, opt.storage.clone());
             for meta in files.into_values() {
                 levels[meta.level as usize].push_compact_meta(
                     &meta,
@@ -497,7 +496,7 @@ impl Summary {
             }
             let ver = Version::new(
                 tsf_id,
-                tenant_database,
+                owner,
                 opt.storage.clone(),
                 max_seq_no,
                 levels,

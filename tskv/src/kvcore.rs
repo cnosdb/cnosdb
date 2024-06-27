@@ -420,7 +420,7 @@ impl Engine for TsKv {
                     return Ok(());
                 }
 
-                let owner = ts_family.read().await.tenant_database();
+                let owner = ts_family.read().await.owner();
                 let (tenant, db_name) = split_owner(&owner);
 
                 if let Err(e) = self.flush_tsfamily(tenant, db_name, vnode_id, true).await {
@@ -480,7 +480,7 @@ impl Engine for TsKv {
             if let Some(ts_family) = db.ts_families().get(&vnode_id).cloned() {
                 drop(db);
 
-                let owner = ts_family.read().await.tenant_database();
+                let owner = ts_family.read().await.owner();
                 let (tenant, db_name) = split_owner(&owner);
                 self.flush_tsfamily(tenant, db_name, vnode_id, false)
                     .await?;

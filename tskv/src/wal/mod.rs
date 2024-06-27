@@ -98,7 +98,7 @@ pub struct VnodeWal {
     config: Arc<WalOptions>,
     db_config: Arc<DatabaseConfig>,
     wal_dir: PathBuf,
-    tenant_database: Arc<String>,
+    owner: Arc<String>,
     vnode_id: VnodeId,
     current_wal: WalWriter,
 }
@@ -107,16 +107,16 @@ impl VnodeWal {
     pub async fn new(
         config: Arc<WalOptions>,
         db_config: Arc<DatabaseConfig>,
-        tenant_database: Arc<String>,
+        owner: Arc<String>,
         vnode_id: VnodeId,
     ) -> TskvResult<Self> {
-        let wal_dir = config.wal_dir(&tenant_database, vnode_id);
+        let wal_dir = config.wal_dir(&owner, vnode_id);
         let writer_file = Self::open_writer(db_config.clone(), &wal_dir).await?;
         Ok(Self {
             config,
             db_config,
             wal_dir,
-            tenant_database,
+            owner,
             vnode_id,
             current_wal: writer_file,
         })
@@ -206,7 +206,7 @@ impl VnodeWal {
             let reader = self.current_wal.new_reader().await?;
             Ok(reader)
         } else {
-            let wal_dir = self.config.wal_dir(&self.tenant_database, self.vnode_id);
+            let wal_dir = self.config.wal_dir(&self.owner, self.vnode_id);
             let wal_path = file_utils::make_wal_file(wal_dir, wal_id);
             let reader = WalReader::open(wal_path).await?;
             Ok(reader)

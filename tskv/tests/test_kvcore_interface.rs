@@ -357,10 +357,10 @@ mod tests {
 
         let (runtime, tskv) = get_tskv(&dir, None);
 
-        let tenant_database = make_owner(tenant, database);
+        let owner = make_owner(tenant, database);
         let storage_opt = tskv.get_storage_options();
-        let vnode_tsm_dir = storage_opt.tsm_dir(&tenant_database, vnode_id);
-        let vnode_delta_dir = storage_opt.delta_dir(&tenant_database, vnode_id);
+        let vnode_tsm_dir = storage_opt.tsm_dir(&owner, vnode_id);
+        let vnode_delta_dir = storage_opt.delta_dir(&owner, vnode_id);
 
         {
             // Write test data
@@ -413,12 +413,12 @@ mod tests {
         };
 
         let vnode_backup_dir = dir.join("backup_for_test");
-        let vnode_data_dir = storage_opt.ts_family_dir(&tenant_database, vnode_id);
+        let vnode_data_dir = storage_opt.ts_family_dir(&owner, vnode_id);
         dircpy::copy_dir(vnode_data_dir, &vnode_backup_dir).unwrap();
 
         let new_vnode_id = 12;
-        let vnode_tsm_dir = storage_opt.tsm_dir(&tenant_database, new_vnode_id);
-        let vnode_delta_dir = storage_opt.delta_dir(&tenant_database, new_vnode_id);
+        let vnode_tsm_dir = storage_opt.tsm_dir(&owner, new_vnode_id);
+        let vnode_delta_dir = storage_opt.delta_dir(&owner, new_vnode_id);
 
         {
             let mut vnode = runtime
