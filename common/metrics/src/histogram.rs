@@ -88,3 +88,44 @@ impl MetricRecorder for U64Histogram {
         MetricValue::U64Histogram(self.fetch())
     }
 }
+
+#[cfg(test)]
+mod test {
+    use std::thread::{spawn, JoinHandle};
+
+    use super::*;
+
+    #[test]
+    fn test_u64_histogram() {
+        let histogram = Arc::new(U64Histogram::new(vec![1, 11, 21].into_iter()));
+        // 3 threads, each increment 10 times
+        let join_handles: Vec<JoinHandle<()>> = (0..3)
+            .map(|_| {
+                let histogram = histogram.clone();
+                spawn(move || {
+                    for _ in 0..10 {
+                        histogram.record(0);
+                        histogram.record(2);
+                        histogram.record(12);
+                        histogram.record(22); // should be ignored
+                    }
+                    histogram.record(0);
+                })
+            })
+            .collect();
+        for jh in join_handles {
+            jh.join().unwrap();
+        }
+        assert_eq!(
+            histogram.fetch(),
+            HistogramValue {
+                total: 420, // 3 * ((0 + 2 + 12) * 10 + 0)
+                buckets: vec![
+                    ValueBucket { le: 1, count: 33 },
+                    ValueBucket { le: 11, count: 30 },
+                    ValueBucket { le: 21, count: 30 },
+                ],
+            }
+        );
+    }
+}

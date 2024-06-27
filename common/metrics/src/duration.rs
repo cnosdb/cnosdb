@@ -15,8 +15,8 @@ pub struct DurationGauge {
 }
 
 impl DurationGauge {
-    pub fn inc(&self, duration: Duration) {
-        self.inner.inc(
+    pub fn set(&self, duration: Duration) {
+        self.inner.set(
             duration
                 .as_nanos()
                 .try_into()
@@ -183,5 +183,105 @@ impl MetricRecorder for DurationHistogram {
 
     fn value(&self) -> MetricValue {
         MetricValue::DurationHistogram(self.fetch())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::sync::Arc;
+    use std::thread::{spawn, JoinHandle};
+
+    use super::*;
+
+    #[test]
+    fn test_duration_gauge() {
+        let u64_gauge = U64Gauge::default();
+        let gauge = Arc::new(DurationGauge { inner: u64_gauge });
+        // 3 threads, each increment 10 times
+        let join_handles: Vec<JoinHandle<()>> = (1..=3)
+            .map(|n| {
+                let gauge = gauge.clone();
+                spawn(move || {
+                    for i in 0..=n * 10 {
+                        gauge.set(Duration::from_secs(i));
+                    }
+                })
+            })
+            .collect();
+        for jh in join_handles {
+            jh.join().unwrap();
+        }
+        let d = gauge.fetch().as_secs();
+        assert!(d == 10 || d == 20 || d == 30);
+
+        gauge.set(Duration::from_secs(1));
+        assert_eq!(gauge.fetch(), Duration::from_secs(1));
+    }
+
+    #[test]
+    fn test_duration_counter() {
+        let u64_counter = U64Counter::default();
+        let counter = Arc::new(DurationCounter { inner: u64_counter });
+        // 3 threads, each increment 10 times
+        let join_handles: Vec<JoinHandle<()>> = (0..3)
+            .map(|_| {
+                let counter = counter.clone();
+                spawn(move || {
+                    for _ in 0..10 {
+                        counter.inc(Duration::from_secs(1));
+                    }
+                })
+            })
+            .collect();
+        for jh in join_handles {
+            jh.join().unwrap();
+        }
+        assert_eq!(counter.fetch(), Duration::from_secs(30)); // 3 * 10
+    }
+
+    #[test]
+    fn test_duration_histogram() {
+        let u64_histogram = U64Histogram::new(vec![1, 11, 21].into_iter());
+        let histogram = Arc::new(DurationHistogram {
+            inner: u64_histogram,
+        });
+        // 3 threads, each increment 10 times
+        let join_handles: Vec<JoinHandle<()>> = (0..3)
+            .map(|_| {
+                let histogram = histogram.clone();
+                spawn(move || {
+                    for _ in 0..10 {
+                        histogram.record(Duration::from_nanos(0));
+                        histogram.record(Duration::from_nanos(2));
+                        histogram.record(Duration::from_nanos(12));
+                        histogram.record(Duration::from_nanos(22)); // should be ignored
+                    }
+                    histogram.record(Duration::from_nanos(0));
+                })
+            })
+            .collect();
+        for jh in join_handles {
+            jh.join().unwrap();
+        }
+        assert_eq!(
+            histogram.fetch(),
+            HistogramValue {
+                total: Duration::from_nanos(420), // 3 * ((0 + 2 + 12) * 10 + 0)
+                buckets: vec![
+                    ValueBucket {
+                        le: Duration::from_nanos(1),
+                        count: 33
+                    },
+                    ValueBucket {
+                        le: Duration::from_nanos(11),
+                        count: 30
+                    },
+                    ValueBucket {
+                        le: Duration::from_nanos(21),
+                        count: 30
+                    },
+                ],
+            }
+        );
     }
 }

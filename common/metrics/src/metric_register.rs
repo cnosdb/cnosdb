@@ -10,10 +10,17 @@ use crate::metric::Metric;
 use crate::reporter::Reporter;
 use crate::{CreateMetricRecorder, Measure, MetricRecorder};
 
+/// A registry for metrics.
 #[derive(Debug)]
 pub struct MetricsRegister {
+    /// The external labels for metrics.
+    /// Metrics and sub-registers in this register will inherit these labels.
     labels: Labels,
+
+    /// The metrics registered in this register.
     measures: Mutex<BTreeMap<Cow<'static, str>, Box<dyn Measure>>>,
+
+    /// The sub-registers of this register.
     sub_register: Mutex<BTreeMap<Labels, Arc<MetricsRegister>>>,
 }
 
@@ -27,6 +34,7 @@ impl Default for MetricsRegister {
 }
 
 impl MetricsRegister {
+    /// Create a new register with external labels.
     pub fn new(labels: impl Into<Labels>) -> Self {
         Self {
             labels: labels.into(),
@@ -35,6 +43,7 @@ impl MetricsRegister {
         }
     }
 
+    /// Create a sub-register with the given labels and the external labels.
     pub fn sub_register(&self, labels: impl Into<Labels>) -> Arc<MetricsRegister> {
         let mut register_labels = self.labels.clone();
         register_labels.extend(labels.into());
@@ -49,6 +58,7 @@ impl MetricsRegister {
         }
     }
 
+    /// Get all owned sub-registers of this register.
     pub fn sub_registers(&self) -> Vec<Arc<MetricsRegister>> {
         self.sub_register
             .lock()
@@ -57,6 +67,10 @@ impl MetricsRegister {
             .collect()
     }
 
+    /// Register a metric with the default implementation of CreateMetricRecorder and return Metric<I>,
+    /// type `<I>` could be `U64Counter`, `U64Gauge`, `DurationGauge`, `DurationCounter`.
+    ///
+    /// The external labels of the metric is inherited from the register.
     pub fn metric<I>(
         &self,
         name: impl Into<Cow<'static, str>>,
@@ -82,6 +96,10 @@ impl MetricsRegister {
         }
     }
 
+    /// Register a metric with the manual implementation of CreateMetricRecorder and return Metric<I>,
+    /// type `<I>` could be `U64Counter`, `U64Gauge`, `DurationGauge`, `DurationCounter`, `U64Histogram`, `DurationHistogram`.
+    ///
+    /// The external labels of the metric is inherited from the register.
     pub fn register_metric<I: MetricRecorder + Clone + 'static>(
         &self,
         name: impl Into<Cow<'static, str>>,
@@ -110,6 +128,7 @@ impl MetricsRegister {
         }
     }
 
+    /// Report all metrics in this register and its sub-registers.
     pub fn report(&self, reporter: &mut dyn Reporter) {
         let measures = self.measures.lock();
         for measure in measures.values() {

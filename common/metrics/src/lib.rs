@@ -1,3 +1,45 @@
+//! # Example
+//!
+//! ```rust
+//! use metrics::histogram::{U64Histogram, U64HistogramOptions};
+//! use metrics::label::Labels;
+//! use metrics::metric_register::MetricsRegister;
+//! use metrics::prom_reporter::PromReporter;
+//! use metrics::reporter::Reporter;
+//! use metrics::Measure;
+//!
+//! fn example()  {
+//!    let register = std::sync::Arc::new(MetricsRegister::default());
+//!
+//!    let histogram_buckets = vec![1, 10, 20, 30, 40, 50, 60, 70, 80, 90];
+//!    let histogram_options = U64HistogramOptions::new(histogram_buckets);
+//!    let metric_name = "example";
+//!    let metric_description = "example metrics";
+//!    // Create a new metric with the given name, description, and options.
+//!    let example_metric = register.register_metric::<U64Histogram>(metric_name, metric_description, histogram_options);
+//!    // Get the recorder of the metric with labels `database=test,tenant=cnosdb`.
+//!    let metric_labels: Labels = [("database", "test"), ("tenant", "cnosdb")].into();
+//!    let histogram = example_metric.recorder(metric_labels.clone());
+//!
+//!    // Store some values in the histogram.
+//!    histogram.record(5);
+//!    histogram.record(15);
+//!
+//!    // Create a buffer and a reporter to fill the buffer.
+//!    let mut buffer = Vec::new();
+//!    let mut reporter = PromReporter::new(&mut buffer);
+//!
+//!    // Report the metric to reporter.
+//!    example_metric.report(&mut reporter);
+//!
+//!    // Report all registered metrics to reporter.
+//!    register.report(&mut reporter);
+//!
+//!    // Release the metric.
+//!    example_metric.remove(metric_labels);
+//! }
+//! ```
+
 pub mod count;
 pub mod duration;
 pub mod gauge;
@@ -21,6 +63,7 @@ use crate::metric::Metric;
 use crate::metric_value::MetricValue;
 use crate::reporter::Reporter;
 
+/// Reportable metrics. Downcast to Metric<T> in further use.
 pub trait Measure: Debug {
     fn report(&self, reporter: &mut dyn Reporter);
     fn as_any(&self) -> &dyn Any;
@@ -37,22 +80,6 @@ impl<T: Default> CreateMetricRecorder for T {
         T::default()
     }
 }
-
-/// example:
-///
-/// ```rust
-/// use metrics::histogram::{U64Histogram, U64HistogramOptions};
-/// use metrics::metric_register::MetricsRegister;
-///
-///fn example()  {
-///    let register = MetricsRegister::default();
-///    let options = U64HistogramOptions::new(vec![1, 10, 20, 30, 40, 50, 60, 70, 80, 90]);
-///    let metric = register.register_metric::<U64Histogram>("example", "example metrics", options);
-///    let histogram = metric.recorder([("database", "test"), ("tenant", "cnosdb")]);
-///    histogram.record(5);
-/// }
-///
-/// ```
 
 pub trait MetricRecorder: CreateMetricRecorder + Clone + Debug {
     type Recorder;
