@@ -66,24 +66,24 @@ impl StorageOptions {
         self.path.join(SUMMARY_PATH)
     }
 
-    pub fn database_dir(&self, database: &str) -> PathBuf {
-        self.path.join(DATA_PATH).join(database)
+    pub fn owner_dir(&self, owner: &str) -> PathBuf {
+        self.path.join(DATA_PATH).join(owner)
     }
 
-    pub fn ts_family_dir(&self, database: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
-        self.database_dir(database).join(ts_family_id.to_string())
+    pub fn ts_family_dir(&self, owner: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
+        self.owner_dir(owner).join(ts_family_id.to_string())
     }
 
-    pub fn index_dir(&self, database: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
-        self.ts_family_dir(database, ts_family_id).join(INDEX_PATH)
+    pub fn index_dir(&self, owner: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
+        self.ts_family_dir(owner, ts_family_id).join(INDEX_PATH)
     }
 
-    pub fn tsm_dir(&self, database: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
-        self.ts_family_dir(database, ts_family_id).join(TSM_PATH)
+    pub fn tsm_dir(&self, owner: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
+        self.ts_family_dir(owner, ts_family_id).join(TSM_PATH)
     }
 
-    pub fn delta_dir(&self, database: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
-        self.ts_family_dir(database, ts_family_id).join(DELTA_PATH)
+    pub fn delta_dir(&self, owner: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
+        self.ts_family_dir(owner, ts_family_id).join(DELTA_PATH)
     }
 }
 

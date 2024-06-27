@@ -67,7 +67,7 @@ impl VersionSet {
         let db_factory = DatabaseFactory::new(meta.clone(), memory_pool, metrics_register, opt);
 
         for (schema, ver) in ver_set.into_iter() {
-            let owner = ver.tenant_database().to_string();
+            let owner = ver.owner().to_string();
 
             let db: &mut Arc<RwLock<Database>> = dbs.entry(owner).or_insert(Arc::new(RwLock::new(
                 db_factory.create_database(schema).await?,

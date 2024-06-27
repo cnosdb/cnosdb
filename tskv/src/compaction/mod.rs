@@ -22,7 +22,7 @@ pub struct CompactTask {
 
 pub struct CompactReq {
     pub ts_family_id: TseriesFamilyId,
-    pub database: Arc<String>,
+    pub owner: Arc<String>,
     storage_opt: Arc<StorageOptions>,
 
     files: Vec<Arc<ColumnFile>>,

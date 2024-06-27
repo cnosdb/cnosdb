@@ -164,7 +164,7 @@ impl VnodeStorage {
         info!("Snapshot: apply snapshot {}", snapshot);
 
         let vnode_id = self.id;
-        let owner = self.ts_family.read().await.tenant_database();
+        let owner = self.ts_family.read().await.owner();
         let storage_opt = self.ctx.options.storage.clone();
 
         // clear all snapshot
@@ -204,7 +204,7 @@ impl VnodeStorage {
             }
         }
 
-        let owner = self.ts_family.read().await.tenant_database();
+        let owner = self.ts_family.read().await.owner();
         let request = FlushReq {
             tf_id: self.id,
             owner: owner.to_string(),

@@ -141,7 +141,7 @@ impl Picker for LevelCompactionPicker {
 
         Some(CompactReq {
             ts_family_id: version.tf_id(),
-            database: version.tenant_database(),
+            owner: version.owner(),
             storage_opt: version.storage_opt(),
             files: picking_files,
             version: version.clone(),
@@ -333,7 +333,7 @@ mod test {
             }
             level_infos[level as usize] = LevelInfo {
                 files: col_files,
-                database: database.clone(),
+                owner: database.clone(),
                 tsf_id: 0,
                 storage_opt: opt.storage.clone(),
                 level,
