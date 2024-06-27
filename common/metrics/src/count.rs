@@ -38,3 +38,30 @@ impl MetricRecorder for U64Counter {
         MetricValue::U64Counter(self.fetch())
     }
 }
+
+#[cfg(test)]
+mod test {
+    use std::thread::{spawn, JoinHandle};
+
+    use super::*;
+
+    #[test]
+    fn test_u64_counter() {
+        let counter = Arc::new(U64Counter::default());
+        // 3 threads, each increment 10 times
+        let join_handles: Vec<JoinHandle<()>> = (0..3)
+            .map(|_| {
+                let counter = counter.clone();
+                spawn(move || {
+                    for _ in 0..10 {
+                        counter.inc(1);
+                    }
+                })
+            })
+            .collect();
+        for jh in join_handles {
+            jh.join().unwrap();
+        }
+        assert_eq!(counter.fetch(), 30); // 3 * 10
+    }
+}

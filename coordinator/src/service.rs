@@ -430,23 +430,16 @@ impl CoordService {
         let mut intv = tokio::time::interval_at(start, interval);
         loop {
             intv.tick().await;
-            let mut points_buffer = Vec::new();
-            let mut reporter = LPReporter::new(&mut points_buffer);
+            let mut lines_buffer = Vec::new();
+            let mut reporter = LPReporter::new(&mut lines_buffer);
             root_metrics_register.report(&mut reporter);
 
-            for lines in points_buffer {
-                if let Err(e) = coord
-                    .write_lines(
-                        DEFAULT_CATALOG,
-                        USAGE_SCHEMA,
-                        Precision::NS,
-                        lines.iter().map(|l| l.to_line()).collect::<Vec<_>>(),
-                        None,
-                    )
-                    .await
-                {
-                    error!("write metrics to {DEFAULT_CATALOG} fail. {e}")
-                }
+            let lines = lines_buffer.iter().map(|l| l.to_line()).collect::<Vec<_>>();
+            if let Err(e) = coord
+                .write_lines(DEFAULT_CATALOG, USAGE_SCHEMA, Precision::NS, lines, None)
+                .await
+            {
+                error!("write metrics to {DEFAULT_CATALOG} fail. {e}")
             }
         }
     }

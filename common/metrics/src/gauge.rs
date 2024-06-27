@@ -16,14 +16,6 @@ impl U64Gauge {
         self.state.store(value, Ordering::Relaxed);
     }
 
-    pub fn inc(&self, delta: u64) {
-        self.state.fetch_add(delta, Ordering::Relaxed);
-    }
-
-    pub fn dec(&self, delta: u64) {
-        self.state.fetch_sub(delta, Ordering::Relaxed);
-    }
-
     pub fn fetch(&self) -> u64 {
         self.state.load(Ordering::Relaxed)
     }
@@ -91,5 +83,36 @@ impl GaugeWrap {
 
     pub fn gauge(&self) -> Option<u64> {
         (self.gauge)()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::thread::{spawn, JoinHandle};
+
+    use super::*;
+
+    #[test]
+    fn test_u64_gauge() {
+        let gauge = Arc::new(U64Gauge::default());
+        // 3 threads, each increment 10 times
+        let join_handles: Vec<JoinHandle<()>> = (1..=3)
+            .map(|n| {
+                let gauge = gauge.clone();
+                spawn(move || {
+                    for i in 0..=n * 10 {
+                        gauge.set(i);
+                    }
+                })
+            })
+            .collect();
+        for jh in join_handles {
+            jh.join().unwrap();
+        }
+        let v = gauge.fetch();
+        assert!(v == 10 || v == 20 || v == 30);
+
+        gauge.set(1);
+        assert_eq!(gauge.fetch(), 1);
     }
 }

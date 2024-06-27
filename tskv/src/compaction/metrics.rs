@@ -6,6 +6,7 @@ use metrics::duration::{DurationHistogram, DurationHistogramOptions};
 use metrics::label::Labels;
 use metrics::metric::Metric;
 use metrics::metric_register::MetricsRegister;
+use metrics::DURATION_MAX;
 use models::meta_data::{NodeId, VnodeId};
 
 static UNIT: &str = "unit";
@@ -570,20 +571,19 @@ impl Aggregator {
 
 fn total_duration_buckets() -> DurationHistogramOptions {
     DurationHistogramOptions::new(vec![
-        Duration::from_secs(1),
+        Duration::from_secs(10),
         Duration::from_secs(30),
         Duration::from_secs(60),
-        Duration::from_secs(90),
-        Duration::from_secs(120),
-        Duration::from_secs(240),
-        Duration::from_secs(480),
-        Duration::from_secs(960),
+        Duration::from_secs(300),
+        Duration::from_secs(600),
+        Duration::from_secs(1800),
+        Duration::from_secs(3600),
+        DURATION_MAX,
     ])
 }
 
 fn read_duration_buckets() -> DurationHistogramOptions {
     DurationHistogramOptions::new(vec![
-        Duration::from_nanos(500),
         Duration::from_micros(1),
         Duration::from_micros(500),
         Duration::from_millis(1),
@@ -591,6 +591,7 @@ fn read_duration_buckets() -> DurationHistogramOptions {
         Duration::from_secs(1),
         Duration::from_secs(5),
         Duration::from_secs(10),
+        DURATION_MAX,
     ])
 }
 
@@ -598,27 +599,25 @@ fn merge_duration_buckets() -> DurationHistogramOptions {
     DurationHistogramOptions::new(vec![
         Duration::from_nanos(250),
         Duration::from_nanos(500),
-        Duration::from_nanos(750),
         Duration::from_micros(1),
         Duration::from_micros(250),
         Duration::from_micros(500),
-        Duration::from_micros(750),
         Duration::from_millis(1),
-        Duration::from_millis(500),
         Duration::from_secs(1),
+        DURATION_MAX,
     ])
 }
 
 fn write_duration_buckets() -> DurationHistogramOptions {
     DurationHistogramOptions::new(vec![
-        Duration::from_nanos(500),
         Duration::from_micros(1),
         Duration::from_micros(500),
         Duration::from_millis(1),
-        Duration::from_millis(250),
         Duration::from_millis(500),
         Duration::from_secs(1),
+        Duration::from_secs(5),
         Duration::from_secs(10),
+        DURATION_MAX,
     ])
 }
 
