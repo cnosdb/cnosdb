@@ -220,7 +220,7 @@ impl E2eExecutor {
                             match resp {
                                 Ok(_) => assert!(result_resp.is_ok(), "{fail_message}"),
                                 Err(exp_err) => {
-                                    if matches!(exp_err, E2eError::ANY) {
+                                    if matches!(exp_err, E2eError::Ignored) {
                                         return;
                                     }
                                     assert!(result_resp.is_err(), "{fail_message}");

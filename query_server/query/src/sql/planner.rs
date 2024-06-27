@@ -3029,6 +3029,7 @@ fn valid_delete(schema: &TskvTableSchema, selection: &Option<Expr>) -> QueryResu
 mod tests {
     use std::any::Any;
     use std::sync::Arc;
+    use std::time::Duration;
 
     use coordinator::service_mock::MockCoordinator;
     use datafusion::arrow::datatypes::TimeUnit::Nanosecond;
@@ -3322,10 +3323,25 @@ mod tests {
             .await
             .unwrap();
         if let Plan::DDL(DDLPlan::CreateDatabase(create)) = plan.plan {
-            let ans = format!("{:?}", create);
-            println!("{ans}");
-            let expected = r#"CreateDatabase { name: "test", if_not_exists: false, options: DatabaseOptionsBuilder { ttl: Some(CnosDuration { duration: 864000s, is_inf: false }), shard_num: Some(5), vnode_duration: Some(CnosDuration { duration: 259200s, is_inf: false }), replica: Some(10) }, config: DatabaseConfigBuilder { precision: Some(US), max_memcache_size: None, memcache_partitions: None, wal_max_file_size: None, wal_sync: None, strict_write: None, max_cache_readers: None } }"#;
-            assert_eq!(ans, expected);
+            let mut expected_options = DatabaseOptionsBuilder::new();
+            expected_options
+                .with_ttl(CnosDuration::new_with_duration(Duration::from_secs(
+                    24 * 3600 * 10,
+                )))
+                .with_shard_num(5)
+                .with_vnode_duration(CnosDuration::new_with_duration(Duration::from_secs(
+                    24 * 3600 * 3,
+                )))
+                .with_replica(10);
+            let mut expected_config = DatabaseConfigBuilder::new();
+            expected_config.with_precision(Precision::US);
+            let expected = CreateDatabase {
+                name: "test".to_string(),
+                if_not_exists: false,
+                options: expected_options,
+                config: expected_config,
+            };
+            assert_eq!(create, expected);
         } else {
             panic!("expected create table plan")
         }

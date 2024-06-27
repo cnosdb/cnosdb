@@ -6,7 +6,7 @@ use reqwest::header::{ACCEPT_ENCODING, CONTENT_ENCODING};
 use reqwest::{Method, StatusCode};
 
 use crate::utils::Client;
-use crate::{assert_response_is_ok, headers};
+use crate::{check_response, headers, E2eResult};
 
 #[test]
 fn test_v1_sql_path() {
@@ -17,8 +17,7 @@ fn test_v1_sql_path() {
     let body = "select 1;";
     let client = Client::with_auth("root".to_string(), None);
 
-    let resp = client.post(url, body).unwrap();
-    assert_response_is_ok!(resp);
+    let resp = check_response!(client.post(url, body));
     assert_eq!(
         resp.headers().get(CONTENT_TYPE).unwrap(),
         &HeaderValue::from_static("application/csv")
@@ -42,8 +41,7 @@ fn test_v1_sql_path() {
     req = req.headers(headers! {
         ACCEPT.as_str() => "application/csv"
     });
-    let resp = client.execute(req.build().unwrap()).unwrap();
-    assert_response_is_ok!(resp);
+    let resp = check_response!(client.execute(req.build().unwrap()));
     assert_eq!(
         resp.headers().get(CONTENT_TYPE).unwrap(),
         &HeaderValue::from_static("application/csv")
@@ -54,8 +52,7 @@ fn test_v1_sql_path() {
     req = req.headers(headers! {
         ACCEPT.as_str() => "application/json"
     });
-    let resp = client.execute(req.build().unwrap()).unwrap();
-    assert_response_is_ok!(resp);
+    let resp = check_response!(client.execute(req.build().unwrap()));
     assert_eq!(
         resp.headers().get(CONTENT_TYPE).unwrap(),
         &HeaderValue::from_static("application/json")
@@ -66,8 +63,7 @@ fn test_v1_sql_path() {
     req = req.headers(headers! {
         ACCEPT.as_str() => "application/nd-json"
     });
-    let resp = client.execute(req.build().unwrap()).unwrap();
-    assert_response_is_ok!(resp);
+    let resp = check_response!(client.execute(req.build().unwrap()));
     assert_eq!(
         resp.headers().get(CONTENT_TYPE).unwrap(),
         &HeaderValue::from_static("application/nd-json")
@@ -78,8 +74,7 @@ fn test_v1_sql_path() {
     req = req.headers(headers! {
         ACCEPT.as_str() => "application/*"
     });
-    let resp = client.execute(req.build().unwrap()).unwrap();
-    assert_response_is_ok!(resp);
+    let resp = check_response!(client.execute(req.build().unwrap()));
     assert_eq!(
         resp.headers().get(CONTENT_TYPE).unwrap(),
         &HeaderValue::from_static("application/csv")
@@ -90,8 +85,7 @@ fn test_v1_sql_path() {
     req = req.headers(headers! {
         ACCEPT.as_str() => "*/*"
     });
-    let resp = client.execute(req.build().unwrap()).unwrap();
-    assert_response_is_ok!(resp);
+    let resp = check_response!(client.execute(req.build().unwrap()));
     assert_eq!(
         resp.headers().get(CONTENT_TYPE).unwrap(),
         &HeaderValue::from_static("application/csv")
@@ -148,8 +142,7 @@ fn test_v1_write_path() {
     let body = "test_v1_write_path,ta=a1,tb=b1 fa=1,fb=2";
     let client = Client::with_auth("root".to_string(), None);
 
-    let resp = client.post(url, body).unwrap();
-    assert_response_is_ok!(resp);
+    check_response!(client.post(url, body));
 
     // lost username
     let req = client.request(Method::POST, url).body(body);
@@ -182,11 +175,9 @@ fn test_v1_ping_path() {
     let url: &str = "http://127.0.0.1:8902/api/v1/ping";
     let client = Client::with_auth("root".to_string(), None);
 
-    let resp = client.get(url, "").unwrap();
-    assert_response_is_ok!(resp);
+    check_response!(client.get(url, ""));
 
-    let resp = client.head(url, "").unwrap();
-    assert_response_is_ok!(resp);
+    check_response!(client.head(url, ""));
 
     let resp = client.post(url, "").unwrap();
     assert_eq!(resp.status(), StatusCode::METHOD_NOT_ALLOWED);
@@ -209,14 +200,14 @@ fn test_compression() {
         body: Vec<u8>,
         content_encoding: Encoding,
         accept_encoding: Encoding,
-    ) -> reqwest::blocking::Response {
+    ) -> E2eResult<reqwest::blocking::Response> {
         client
             .request_with_auth(Method::POST, url)
             .body(body)
             .header(CONTENT_ENCODING, content_encoding.to_header_value())
             .header(ACCEPT_ENCODING, accept_encoding.to_header_value())
             .send()
-            .unwrap()
+            .map_err(|e| Client::map_reqwest_err(e, url, "<encoded_data>"))
     }
 
     let client = Client::with_auth("root".to_string(), None);
@@ -239,7 +230,8 @@ fn test_compression() {
                 let req_bytes_dec = req_encoding.decode(req_bytes_enc.clone().into()).unwrap();
                 assert_eq!(body, req_bytes_dec.to_vec());
                 let resp =
-                    send_encoded_request(&client, url, req_bytes_enc, req_encoding, resp_encoding);
+                    send_encoded_request(&client, url, req_bytes_enc, req_encoding, resp_encoding)
+                        .unwrap();
                 if !resp.status().is_success() {
                     panic!(
                         "req_encoding: {:?}, resp_encoding: {:?}, resp: {:?}",
@@ -265,9 +257,13 @@ fn test_compression() {
             let req_bytes_enc = encoding.encode(body.clone()).unwrap();
             let req_bytes_dec = encoding.decode(req_bytes_enc.clone().into()).unwrap();
             assert_eq!(body, req_bytes_dec.to_vec());
-            let resp =
-                send_encoded_request(&client, url, req_bytes_enc, encoding, Encoding::Identity);
-            assert_response_is_ok!(resp);
+            check_response!(send_encoded_request(
+                &client,
+                url,
+                req_bytes_enc,
+                encoding,
+                Encoding::Identity
+            ));
         }
     }
 
@@ -278,9 +274,13 @@ fn test_compression() {
             let req_bytes_enc = encoding.encode(body.clone()).unwrap();
             let req_bytes_dec = encoding.decode(req_bytes_enc.clone().into()).unwrap();
             assert_eq!(body, req_bytes_dec.to_vec());
-            let resp =
-                send_encoded_request(&client, url, req_bytes_enc, encoding, Encoding::Identity);
-            assert_response_is_ok!(resp);
+            check_response!(send_encoded_request(
+                &client,
+                url,
+                req_bytes_enc,
+                encoding,
+                Encoding::Identity
+            ));
         }
     }
 }

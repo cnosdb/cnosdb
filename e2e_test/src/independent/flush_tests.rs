@@ -7,7 +7,7 @@ use std::path::Path;
 use serial_test::serial;
 
 use crate::utils::{build_data_node_config, get_workspace_dir, kill_all, run_singleton};
-use crate::{assert_response_is_ok, cluster_def};
+use crate::{check_response, cluster_def};
 
 #[test]
 #[serial]
@@ -40,48 +40,36 @@ fn divisor_test() {
 
     let data_dir = get_workspace_dir().join("e2e_test").join("test_data");
     {
-        let resp = server
-            .client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=test",
-                "create database test with max_memcache_size '2MiB';",
-            )
-            .unwrap();
-
-        assert_response_is_ok!(resp);
+        check_response!(server.client.post(
+            "http://127.0.0.1:8902/api/v1/sql?db=test",
+            "create database test with max_memcache_size '2MiB';",
+        ));
     }
 
     {
         let mut buf = String::new();
         let mut file = BufReader::new(File::open(data_dir.join("log_0.txt")).unwrap());
         file.read_to_string(&mut buf).unwrap();
-        let resp = server
-            .client
-            .post("http://127.0.0.1:8902/api/v1/write?db=test", &buf)
-            .unwrap();
 
-        assert_response_is_ok!(resp);
+        check_response!(server
+            .client
+            .post("http://127.0.0.1:8902/api/v1/write?db=test", &buf));
     }
 
     {
         let mut buf = String::new();
         let mut file = BufReader::new(File::open(data_dir.join("log_1.txt")).unwrap());
         file.read_to_string(&mut buf).unwrap();
-        let resp = server
-            .client
-            .post("http://127.0.0.1:8902/api/v1/write?db=test", &buf)
-            .unwrap();
 
-        assert_response_is_ok!(resp);
+        check_response!(server
+            .client
+            .post("http://127.0.0.1:8902/api/v1/write?db=test", &buf));
     }
-    let resp = server
-        .client
-        .post(
-            "http://127.0.0.1:8902/api/v1/sql?db=test",
-            "select count(*) from log;",
-        )
-        .unwrap();
-    assert_response_is_ok!(resp);
+
+    let resp = check_response!(server.client.post(
+        "http://127.0.0.1:8902/api/v1/sql?db=test",
+        "select count(*) from log;",
+    ));
 
     assert_eq!(resp.text().unwrap(), "COUNT(UInt8(1))\n17280\n")
 }

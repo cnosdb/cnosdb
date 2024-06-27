@@ -2264,10 +2264,29 @@ mod tests {
         assert_eq!(statements.len(), 1);
         match statements[0] {
             ExtStatement::CreateDatabase(ref stmt) => {
-                let ans = format!("{:?}", stmt);
-                println!("{ans}");
-                let expectd = r#"CreateDatabase { name: Ident { value: "test", quote_style: None }, if_not_exists: false, options: DatabaseOptions { ttl: Some("10d"), shard_num: Some(5), vnode_duration: Some("3d"), replica: Some(10) }, config: DatabaseConfig { precision: Some("us"), max_memcache_size: None, memcache_partitions: None, wal_max_file_size: None, wal_sync: None, strict_write: None, max_cache_readers: None } }"#;
-                assert_eq!(ans, expectd);
+                let expected = CreateDatabase {
+                    name: Ident {
+                        value: "test".to_string(),
+                        quote_style: None,
+                    },
+                    if_not_exists: false,
+                    options: DatabaseOptions {
+                        ttl: Some("10d".to_string()),
+                        shard_num: Some(5),
+                        vnode_duration: Some("3d".to_string()),
+                        replica: Some(10),
+                    },
+                    config: DatabaseConfig {
+                        precision: Some("us".to_string()),
+                        max_memcache_size: None,
+                        memcache_partitions: None,
+                        wal_max_file_size: None,
+                        wal_sync: None,
+                        strict_write: None,
+                        max_cache_readers: None,
+                    },
+                };
+                assert_eq!(stmt.as_ref(), &expected);
             }
             _ => panic!("impossible"),
         }
@@ -2280,10 +2299,29 @@ mod tests {
         assert_eq!(statements.len(), 1);
         match statements[0] {
             ExtStatement::CreateDatabase(ref stmt) => {
-                let ans = format!("{:?}", stmt);
-                println!("{ans}");
-                let expectd = r#"CreateDatabase { name: Ident { value: "test", quote_style: None }, if_not_exists: false, options: DatabaseOptions { ttl: Some("inf"), shard_num: Some(6), vnode_duration: Some("730.5d"), replica: Some(1) }, config: DatabaseConfig { precision: Some("us"), max_memcache_size: Some("128MiB"), memcache_partitions: Some(10), wal_max_file_size: Some("300M"), wal_sync: Some("true"), strict_write: Some("true"), max_cache_readers: Some(100) } }"#;
-                assert_eq!(ans, expectd);
+                let expected = CreateDatabase {
+                    name: Ident {
+                        value: "test".to_string(),
+                        quote_style: None,
+                    },
+                    if_not_exists: false,
+                    options: DatabaseOptions {
+                        ttl: Some("inf".to_string()),
+                        shard_num: Some(6),
+                        vnode_duration: Some("730.5d".to_string()),
+                        replica: Some(1),
+                    },
+                    config: DatabaseConfig {
+                        precision: Some("us".to_string()),
+                        max_memcache_size: Some("128MiB".to_string()),
+                        memcache_partitions: Some(10),
+                        wal_max_file_size: Some("300M".to_string()),
+                        wal_sync: Some("true".to_string()),
+                        strict_write: Some("true".to_string()),
+                        max_cache_readers: Some(100),
+                    },
+                };
+                assert_eq!(stmt.as_ref(), &expected);
             }
             _ => panic!("impossible"),
         }

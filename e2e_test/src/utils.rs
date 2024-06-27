@@ -13,8 +13,8 @@ use arrow_flight::sql::client::FlightSqlServiceClient;
 use arrow_flight::utils::flight_data_to_batches;
 use arrow_flight::FlightInfo;
 use arrow_schema::ArrowError;
-use config::meta::Opt as MetaStoreConfig;
-use config::tskv::Config as CnosdbConfig;
+use config::meta::{get_opt as read_meta_store_config, Opt as MetaStoreConfig};
+use config::tskv::{get_config as read_cnosdb_config, Config as CnosdbConfig};
 use datafusion::arrow::record_batch::RecordBatch;
 use futures::TryStreamExt;
 use meta::client::MetaHttpClient;
@@ -31,6 +31,13 @@ use crate::cluster_def::{
 use crate::{E2eError, E2eResult};
 
 pub const CRATE_DIR: &str = env!("CARGO_MANIFEST_DIR");
+#[cfg(feature = "debug")]
+pub const PROFILE: &str = "debug";
+#[cfg(not(feature = "debug"))]
+pub const PROFILE: &str = "release";
+
+pub type FnMutMetaStoreConfig = Box<dyn FnMut(&mut MetaStoreConfig)>;
+pub type FnMutCnosdbConfig = Box<dyn FnMut(&mut CnosdbConfig)>;
 
 pub fn get_workspace_dir() -> PathBuf {
     let crate_dir = std::path::PathBuf::from(CRATE_DIR);
@@ -57,16 +64,22 @@ macro_rules! headers {
 }
 
 #[macro_export]
-macro_rules! assert_response_is_ok {
+macro_rules! check_response {
     ($resp:expr) => {
-        assert_eq!(
-            reqwest::StatusCode::OK,
-            $resp.status(),
-            "{}",
-            $resp
-                .text()
-                .unwrap_or_else(|e| format!("failed to fetch response: {e}"))
-        );
+        match $resp {
+            Ok(r) => {
+                if r.status() != reqwest::StatusCode::OK {
+                    match r.text() {
+                        Ok(text) => panic!("serve responses error: '{text}'"),
+                        Err(e) => panic!("failed to fetch response: {e}"),
+                    };
+                }
+                r
+            }
+            Err(e) => {
+                panic!("failed to do request: {e}");
+            }
+        }
     };
 }
 
@@ -166,7 +179,7 @@ impl Client {
             req_builder = req_builder.header(reqwest::header::CONTENT_ENCODING, encoding);
         }
         if let Some(encoding) = accept_encoding {
-            req_builder = req_builder.header(reqwest::header::CONTENT_ENCODING, encoding);
+            req_builder = req_builder.header(reqwest::header::ACCEPT, encoding);
         }
         if !body.is_empty() {
             req_builder = req_builder.body(body.to_string());
@@ -296,96 +309,93 @@ impl Client {
     }
 }
 
-#[test]
-#[ignore]
-fn test_reqwest_https() {
-    let workspace_dir = get_workspace_dir();
-    let ca_crt_path = workspace_dir.join("config").join("tls").join("ca.crt");
-    let cert_bytes = std::fs::read(ca_crt_path).expect("fail to read crt file");
-    let cert = Certificate::from_pem(&cert_bytes).expect("fail to load crt file");
-    let client = ClientBuilder::new()
-        .add_root_certificate(cert)
+pub fn execute_command(command: Command) -> E2eResult<()> {
+    let mut cmd_str = command.get_program().to_string_lossy().into_owned();
+    command.get_args().for_each(|arg| {
+        cmd_str.push(' ');
+        cmd_str.push_str(arg.to_string_lossy().as_ref());
+    });
+    let cmd_str = Arc::new(cmd_str);
+
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
         .build()
-        .unwrap_or_else(|e| {
-            panic!("Failed to build http client with tls: {}", e);
-        });
+        .map_err(|e| E2eError::Command(format!("Failed to build tokio runtime: {e}")))?;
+    let mut command = tokio::process::Command::from(command);
 
-    let resp = client
-        .get("https://127.0.0.1:8902/api/v1/ping")
-        .send()
-        .unwrap();
-    assert_response_is_ok!(resp);
-    println!("{}", resp.text().unwrap());
-}
+    use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
+    async fn read_line_and_print<R: AsyncRead + Unpin, CmdStr: AsRef<String>>(
+        reader: R,
+        reader_type: &str,
+        cmd_str: CmdStr,
+    ) -> E2eResult<()> {
+        let cmd_str = cmd_str.as_ref();
+        let mut reader = BufReader::new(reader);
+        let mut buf = String::new();
+        let mut n;
+        loop {
+            n = reader.read_line(&mut buf).await.map_err(|e| {
+                E2eError::Command(format!("failed to read '{reader_type} of '{cmd_str}': {e}"))
+            })?;
+            if n == 0 {
+                break;
+            }
+            print!("{}", buf);
+            buf.clear();
+        }
+        Ok(())
+    }
 
-#[test]
-// #[ignore]
-fn test_reqwest_http() {
-    let client = ClientBuilder::new()
-        .timeout(Duration::from_secs(70))
-        .build()
-        .unwrap_or_else(|e| {
-            panic!("Failed to build http client: {}", e);
-        });
+    println!("  - Executing command '{cmd_str}'");
+    let ret = runtime.block_on(async move {
+        let mut handle = command
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| {
+                E2eError::Command(format!("Failed to execute command '{cmd_str}': {e}"))
+            })?;
+        let stdout = handle
+            .stdout
+            .take()
+            .ok_or_else(|| E2eError::Command(format!("failed to get stdout of '{cmd_str}'")))?;
+        let stderr = handle
+            .stderr
+            .take()
+            .ok_or_else(|| E2eError::Command(format!("failed to get stderr of '{cmd_str}'")))?;
 
-    let resp = client
-        .get("http://127.0.0.1:8902/api/v1/ping")
-        .send()
-        .unwrap();
-    assert_response_is_ok!(resp);
-    println!("{}", resp.text().unwrap());
+        let cmd_str_stdout = cmd_str.clone();
+        let jh_print_stdout = tokio::spawn(read_line_and_print(stdout, "stdout", cmd_str_stdout));
+        let cmd_str_stderr = cmd_str.clone();
+        let jh_print_stderr = tokio::spawn(read_line_and_print(stderr, "stderr", cmd_str_stderr));
+        let _ = jh_print_stdout.await;
+        let _ = jh_print_stderr.await;
+        println!("  - Waiting for '{cmd_str}' to finish...");
+        handle
+            .wait()
+            .await
+            .map_err(|e| E2eError::Command(format!("Process of '{cmd_str}' not running: {e}")))
+    })?;
 
-    let resp = client
-        .post("http://127.0.0.1:8902/api/v1/sql?db=public")
-        .basic_auth("root", Option::<&str>::None)
-        .body("show databases")
-        .send()
-        .unwrap();
-    assert_response_is_ok!(resp);
-    println!("{}", resp.text().unwrap());
-}
+    if !ret.success() {
+        panic!("Failed to build cnosdb-meta");
+    }
 
-#[tokio::test]
-#[ignore]
-async fn test_http_protocol_client() {
-    let client =
-        http_protocol::http_client::HttpClient::new("127.0.0.1", 8902, false, false, &[]).unwrap();
-    let resp = client
-        .post("/api/v1/sql")
-        .query(&[("db", "public")])
-        .basic_auth("root", Option::<&str>::None)
-        .header("Accept-Encoding", "*")
-        .body("show databases")
-        .send()
-        .await
-        .unwrap();
-    println!("{}", resp.text().await.unwrap());
+    Ok(())
 }
 
 fn cargo_build_cnosdb_meta(workspace_dir: impl AsRef<Path>) {
     let workspace_dir = workspace_dir.as_ref();
     println!("- Building 'meta' at '{}'", workspace_dir.display());
     let mut cargo_build = Command::new("cargo");
-    let output = cargo_build
-        .current_dir(workspace_dir)
-        .args([
-            "build",
-            "--release",
-            "--package",
-            "meta",
-            "--bin",
-            "cnosdb-meta",
-        ])
-        .output()
-        .expect("failed to execute cargo build");
-    if !output.status.success() {
-        let message = format!(
-            "Failed to build cnosdb-meta: stdout: {}, stderr: {}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-        panic!("Failed to build cnosdb-meta: {message}");
-    }
+    #[rustfmt::skip]
+    let build_args = if cfg!(feature = "debug") {
+        vec!["build", "--package", "meta", "--bin", "cnosdb-meta"]
+    } else {
+        vec!["build", "--release", "--package", "meta", "--bin", "cnosdb-meta"]
+    };
+    cargo_build.current_dir(workspace_dir).args(build_args);
+    execute_command(cargo_build).expect("Failed to build cnosdb-meta");
     println!("- Build 'meta' at '{}' completed", workspace_dir.display());
 }
 
@@ -393,19 +403,14 @@ fn cargo_build_cnosdb_data(workspace_dir: impl AsRef<Path>) {
     let workspace_dir = workspace_dir.as_ref();
     println!("Building 'main' at '{}'", workspace_dir.display());
     let mut cargo_build = Command::new("cargo");
-    let output = cargo_build
-        .current_dir(workspace_dir)
-        .args(["build", "--release", "--package", "main", "--bin", "cnosdb"])
-        .output()
-        .expect("failed to execute cargo build");
-    if !output.status.success() {
-        let message = format!(
-            "Failed to build cnosdb: stdout: {}, stderr: {}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-        panic!("Failed to build cnosdb-meta: {message}");
-    }
+    #[rustfmt::skip]
+    let build_args = if cfg!(feature = "debug") {
+        vec!["build", "--package", "main", "--bin", "cnosdb"]
+    } else {
+        vec!["build", "--release", "--package", "main", "--bin", "cnosdb"]
+    };
+    cargo_build.current_dir(workspace_dir).args(build_args);
+    execute_command(cargo_build).expect("Failed to build cnosdb");
     println!("Build 'main' at '{}' completed", workspace_dir.display());
 }
 
@@ -415,6 +420,7 @@ pub struct CnosdbMetaTestHelper {
     /// The meta test dir, usually /e2e_test/$mod/$test/meta
     pub test_dir: PathBuf,
     pub meta_node_definitions: Vec<MetaNodeDefinition>,
+    pub meta_node_configs: Vec<MetaStoreConfig>,
     pub exe_path: PathBuf,
 
     pub client: Arc<Client>,
@@ -428,6 +434,7 @@ impl CnosdbMetaTestHelper {
         workspace_dir: impl AsRef<Path>,
         test_base_dir: impl AsRef<Path>,
         meta_node_definitions: Vec<MetaNodeDefinition>,
+        meta_node_configs: Vec<MetaStoreConfig>,
     ) -> Self {
         let workspace_dir = workspace_dir.as_ref().to_path_buf();
         Self {
@@ -435,6 +442,7 @@ impl CnosdbMetaTestHelper {
             workspace_dir: workspace_dir.clone(),
             test_dir: test_base_dir.as_ref().to_path_buf(),
             meta_node_definitions,
+            meta_node_configs,
             exe_path: workspace_dir
                 .join("target")
                 .join("release")
@@ -608,6 +616,7 @@ pub struct CnosdbDataTestHelper {
     /// The data test dir, usually /e2e_test/$mod/$test/data
     pub test_dir: PathBuf,
     pub data_node_definitions: Vec<DataNodeDefinition>,
+    pub data_node_configs: Vec<CnosdbConfig>,
     pub exe_path: PathBuf,
     pub enable_tls: bool,
 
@@ -620,6 +629,7 @@ impl CnosdbDataTestHelper {
         workspace_dir: impl AsRef<Path>,
         test_dir: impl AsRef<Path>,
         data_node_definitions: Vec<DataNodeDefinition>,
+        data_node_configs: Vec<CnosdbConfig>,
         enable_tls: bool,
     ) -> Self {
         let workspace_dir = workspace_dir.as_ref().to_path_buf();
@@ -638,6 +648,7 @@ impl CnosdbDataTestHelper {
             workspace_dir: workspace_dir.clone(),
             test_dir: test_dir.as_ref().to_path_buf(),
             data_node_definitions,
+            data_node_configs,
             exe_path: workspace_dir.join("target").join("release").join("cnosdb"),
             enable_tls,
             client,
@@ -786,6 +797,26 @@ pub fn run_cluster(
     generate_meta_config: bool,
     generate_data_config: bool,
 ) -> (Option<CnosdbMetaTestHelper>, Option<CnosdbDataTestHelper>) {
+    run_cluster_with_customized_configs(
+        test_dir,
+        runtime,
+        cluster_def,
+        generate_meta_config,
+        generate_data_config,
+        vec![],
+        vec![],
+    )
+}
+
+pub fn run_cluster_with_customized_configs(
+    test_dir: impl AsRef<Path>,
+    runtime: Arc<Runtime>,
+    cluster_def: &CnosdbClusterDefinition,
+    generate_meta_config: bool,
+    generate_data_config: bool,
+    regenerate_update_meta_config: Vec<Option<FnMutMetaStoreConfig>>,
+    regenerate_update_data_config: Vec<Option<FnMutCnosdbConfig>>,
+) -> (Option<CnosdbMetaTestHelper>, Option<CnosdbDataTestHelper>) {
     let test_dir = test_dir.as_ref().to_path_buf();
     let workspace_dir = get_workspace_dir();
     cargo_build_cnosdb_meta(&workspace_dir);
@@ -799,14 +830,18 @@ pub fn run_cluster(
     if !cluster_def.meta_cluster_def.is_empty() {
         // If need to run `cnosdb-meta`
         let meta_test_dir = test_dir.join("meta");
-        if generate_meta_config {
-            write_meta_node_config_files(&test_dir, &cluster_def.meta_cluster_def);
-        }
+        let configs = write_meta_node_config_files(
+            &test_dir,
+            &cluster_def.meta_cluster_def,
+            generate_meta_config,
+            regenerate_update_meta_config,
+        );
         let mut meta = CnosdbMetaTestHelper::new(
             runtime,
             &workspace_dir,
             meta_test_dir,
             cluster_def.meta_cluster_def.clone(),
+            configs,
         );
         if cluster_def.meta_cluster_def.len() == 1 {
             meta.run_single_meta();
@@ -821,13 +856,17 @@ pub fn run_cluster(
     if !cluster_def.data_cluster_def.is_empty() {
         // If need to run `cnosdb run`
         let data_test_dir = test_dir.join("data");
-        if generate_data_config {
-            write_data_node_config_files(&test_dir, &cluster_def.data_cluster_def);
-        }
+        let configs = write_data_node_config_files(
+            &test_dir,
+            &cluster_def.data_cluster_def,
+            generate_data_config,
+            regenerate_update_data_config,
+        );
         let mut data = CnosdbDataTestHelper::new(
             workspace_dir,
             data_test_dir,
             cluster_def.data_cluster_def.clone(),
+            configs,
             false,
         );
         data.run();
@@ -846,6 +885,22 @@ pub fn run_singleton(
     enable_tls: bool,
     generate_data_config: bool,
 ) -> CnosdbDataTestHelper {
+    run_singleton_with_customized_configs(
+        test_dir,
+        data_node_definition,
+        enable_tls,
+        generate_data_config,
+        None,
+    )
+}
+
+pub fn run_singleton_with_customized_configs(
+    test_dir: impl AsRef<Path>,
+    data_node_definition: &DataNodeDefinition,
+    enable_tls: bool,
+    generate_data_config: bool,
+    regenerate_update_data_config: Option<FnMutCnosdbConfig>,
+) -> CnosdbDataTestHelper {
     let test_dir = test_dir.as_ref().to_path_buf();
     let workspace_dir = get_workspace_dir();
     cargo_build_cnosdb_data(&workspace_dir);
@@ -855,13 +910,17 @@ pub fn run_singleton(
     let mut data_node_definition = data_node_definition.clone();
     data_node_definition.mode = DeploymentMode::Singleton;
     let data_node_definitions = vec![data_node_definition];
-    if generate_data_config {
-        write_data_node_config_files(&test_dir, &data_node_definitions);
-    }
+    let configs = write_data_node_config_files(
+        &test_dir,
+        &data_node_definitions,
+        generate_data_config,
+        vec![regenerate_update_data_config],
+    );
     let mut data = CnosdbDataTestHelper::new(
         workspace_dir,
         data_test_dir,
         data_node_definitions,
+        configs,
         enable_tls,
     );
     data.run();
@@ -977,15 +1036,28 @@ pub fn build_meta_node_config(test_dir: impl AsRef<Path>, meta_dir_name: &str) -
 pub fn write_meta_node_config_files(
     test_dir: impl AsRef<Path>,
     meta_node_definitions: &[MetaNodeDefinition],
-) {
+    regenerate: bool,
+    mut regenerate_update_config: Vec<Option<FnMutMetaStoreConfig>>,
+) -> Vec<MetaStoreConfig> {
     let meta_config_dir = test_dir.as_ref().join("meta").join("config");
     std::fs::create_dir_all(&meta_config_dir).unwrap();
-    for meta_node_def in meta_node_definitions {
-        let mut meta_config = build_meta_node_config(&test_dir, &meta_node_def.config_file_name);
-        meta_node_def.update_config(&mut meta_config);
+    let mut meta_configs = Vec::with_capacity(meta_node_definitions.len());
+    for (i, meta_node_def) in meta_node_definitions.iter().enumerate() {
         let config_path = meta_config_dir.join(&meta_node_def.config_file_name);
-        std::fs::write(&config_path, meta_config.to_string_pretty()).unwrap();
+        let mut meta_config;
+        if regenerate {
+            meta_config = build_meta_node_config(&test_dir, &meta_node_def.config_file_name);
+            meta_node_def.update_config(&mut meta_config);
+            if let Some(Some(f)) = regenerate_update_config.get_mut(i) {
+                f(&mut meta_config);
+            }
+            std::fs::write(&config_path, meta_config.to_string_pretty()).unwrap();
+        } else {
+            meta_config = read_meta_store_config(Some(config_path));
+        }
+        meta_configs.push(meta_config);
     }
+    meta_configs
 }
 
 /// Build cnosdb config with paths:
@@ -1019,20 +1091,34 @@ pub fn build_data_node_config(test_dir: impl AsRef<Path>, data_dir_name: &str) -
 pub fn write_data_node_config_files(
     test_dir: impl AsRef<Path>,
     data_node_definitions: &[DataNodeDefinition],
-) {
-    for data_node_def in data_node_definitions {
-        let mut cnosdb_config = build_data_node_config(&test_dir, &data_node_def.config_file_name);
-        data_node_def.update_config(&mut cnosdb_config);
-        let config_path = data_config_file_path(&test_dir, &data_node_def.config_file_name);
-        std::fs::create_dir_all(config_path.parent().unwrap()).unwrap();
-        std::fs::write(&config_path, cnosdb_config.to_string_pretty()).unwrap();
+    regenerate: bool,
+    mut regenerate_update_config: Vec<Option<FnMutCnosdbConfig>>,
+) -> Vec<CnosdbConfig> {
+    let cnosdb_config_dir = test_dir.as_ref().join("data").join("config");
+    std::fs::create_dir_all(&cnosdb_config_dir).unwrap();
+    let mut data_configs = Vec::with_capacity(data_node_definitions.len());
+    for (i, data_node_def) in data_node_definitions.iter().enumerate() {
+        let config_path = cnosdb_config_dir.join(&data_node_def.config_file_name);
+        let mut cnosdb_config;
+        if regenerate {
+            cnosdb_config = build_data_node_config(&test_dir, &data_node_def.config_file_name);
+            data_node_def.update_config(&mut cnosdb_config);
+            if let Some(Some(f)) = regenerate_update_config.get_mut(i) {
+                f(&mut cnosdb_config);
+            }
+            std::fs::write(&config_path, cnosdb_config.to_string_pretty()).unwrap();
+        } else {
+            cnosdb_config = read_cnosdb_config(&config_path).unwrap()
+        }
 
         // If we do not make directory $storage.path, the data node seems to be sick by the meta node.
         // TODO(zipper): I think it's the data node who should do this job.
         if let Err(e) = std::fs::create_dir_all(&cnosdb_config.storage.path) {
             println!("Failed to pre-create $storage.path for data node: {e}");
         }
+        data_configs.push(cnosdb_config);
     }
+    data_configs
 }
 
 pub fn data_config_file_path(test_dir: impl AsRef<Path>, config_file_name: &str) -> PathBuf {

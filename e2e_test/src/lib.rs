@@ -22,7 +22,8 @@ pub enum E2eError {
     },
     MetaWrite(String),
     DataWrite(String),
-    ANY,
+    Command(String),
+    Ignored,
 }
 
 impl std::fmt::Display for E2eError {
@@ -67,7 +68,8 @@ impl std::fmt::Display for E2eError {
             }
             E2eError::MetaWrite(msg) => write!(f, "Meta write error: {msg}"),
             E2eError::DataWrite(msg) => write!(f, "Data write error: {msg}"),
-            E2eError::ANY => write!(f, "Any error"),
+            E2eError::Command(msg) => write!(f, "Execute program error: {msg}"),
+            E2eError::Ignored => write!(f, "Ignored"),
         }
     }
 }
