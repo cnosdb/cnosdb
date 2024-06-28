@@ -1033,7 +1033,7 @@ dependencies = [
 
 [[package]]
 name = "cache"
-version = "2.4.1"
+version = "2.4.2"
 dependencies = [
  "async-backtrace",
  "async-trait",
@@ -1226,7 +1226,7 @@ checksum = "702fc72eb24e5a1e48ce58027a675bc24edd52096d5397d4aea7c6dd9eca0bd1"
 
 [[package]]
 name = "client"
-version = "2.4.1"
+version = "2.4.2"
 dependencies = [
  "anyhow",
  "async-backtrace",
@@ -1273,7 +1273,7 @@ dependencies = [
 
 [[package]]
 name = "config"
-version = "2.4.1"
+version = "2.4.2"
 dependencies = [
  "async-backtrace",
  "figment",
@@ -1380,7 +1380,7 @@ dependencies = [
 
 [[package]]
 name = "coordinator"
-version = "2.4.1"
+version = "2.4.2"
 dependencies = [
  "async-backtrace",
  "async-trait",
@@ -2026,7 +2026,7 @@ dependencies = [
 
 [[package]]
 name = "e2e_test"
-version = "2.4.1"
+version = "2.4.2"
 dependencies = [
  "arrow-flight",
  "arrow-schema",
@@ -2171,7 +2171,7 @@ checksum = "26a147e1a6641a55d994b3e4e9fa4d9b180c8d652c09b363af8c9bf1b8e04139"
 
 [[package]]
 name = "error_code"
-version = "2.4.1"
+version = "2.4.2"
 dependencies = [
  "async-backtrace",
  "macros",
@@ -2738,7 +2738,7 @@ dependencies = [
 
 [[package]]
 name = "http_protocol"
-version = "2.4.1"
+version = "2.4.2"
 dependencies = [
  "async-backtrace",
  "brotli",
@@ -3155,7 +3155,7 @@ dependencies = [
 
 [[package]]
 name = "limiter_bucket"
-version = "2.4.1"
+version = "2.4.2"
 dependencies = [
  "async-backtrace",
  "bincode",
@@ -3289,7 +3289,7 @@ dependencies = [
 
 [[package]]
 name = "macros"
-version = "2.4.1"
+version = "2.4.2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3298,7 +3298,7 @@ dependencies = [
 
 [[package]]
 name = "main"
-version = "2.4.1"
+version = "2.4.2"
 dependencies = [
  "arrow-flight",
  "async-backtrace",
@@ -3418,7 +3418,7 @@ dependencies = [
 
 [[package]]
 name = "memory_pool"
-version = "2.4.1"
+version = "2.4.2"
 dependencies = [
  "async-backtrace",
  "datafusion",
@@ -3428,7 +3428,7 @@ dependencies = [
 
 [[package]]
 name = "meta"
-version = "2.4.1"
+version = "2.4.2"
 dependencies = [
  "async-backtrace",
  "async-trait",
@@ -3475,7 +3475,7 @@ dependencies = [
 
 [[package]]
 name = "metrics"
-version = "2.4.1"
+version = "2.4.2"
 dependencies = [
  "async-backtrace",
  "once_cell",
@@ -3587,7 +3587,7 @@ dependencies = [
 
 [[package]]
 name = "models"
-version = "2.4.1"
+version = "2.4.2"
 dependencies = [
  "arrow",
  "arrow-array",
@@ -4657,7 +4657,7 @@ dependencies = [
 
 [[package]]
 name = "protocol_parser"
-version = "2.4.1"
+version = "2.4.2"
 dependencies = [
  "async-backtrace",
  "atoi_simd",
@@ -4679,7 +4679,7 @@ dependencies = [
 
 [[package]]
 name = "protos"
-version = "2.4.1"
+version = "2.4.2"
 dependencies = [
  "async-backtrace",
  "chrono",
@@ -4763,7 +4763,7 @@ dependencies = [
 
 [[package]]
 name = "query"
-version = "2.4.1"
+version = "2.4.2"
 dependencies = [
  "async-backtrace",
  "async-recursion",
@@ -5034,7 +5034,7 @@ dependencies = [
 
 [[package]]
 name = "replication"
-version = "2.4.1"
+version = "2.4.2"
 dependencies = [
  "actix-web",
  "async-backtrace",
@@ -5693,7 +5693,7 @@ dependencies = [
 
 [[package]]
 name = "spi"
-version = "2.4.1"
+version = "2.4.2"
 dependencies = [
  "arrow-flight",
  "async-trait",
@@ -5742,7 +5742,7 @@ dependencies = [
 
 [[package]]
 name = "sqllogicaltests"
-version = "2.4.1"
+version = "2.4.2"
 dependencies = [
  "arrow",
  "arrow-flight",
@@ -6449,7 +6449,7 @@ checksum = "b6bc1c9ce2b5135ac7f93c72918fc37feb872bdc6a5533a8b85eb4b86bfdae52"
 
 [[package]]
 name = "trace"
-version = "2.4.1"
+version = "2.4.2"
 dependencies = [
  "async-backtrace",
  "chrono",
@@ -6583,7 +6583,7 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "tskv"
-version = "2.4.1"
+version = "2.4.2"
 dependencies = [
  "arrow",
  "arrow-array",
@@ -6802,7 +6802,7 @@ checksum = "711b9620af191e0cdc7468a8d14e709c3dcdb115b36f838e601583af800a370a"
 
 [[package]]
 name = "utils"
-version = "2.4.1"
+version = "2.4.2"
 dependencies = [
  "async-backtrace",
  "fnv",
