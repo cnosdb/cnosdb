@@ -10,12 +10,12 @@ use snafu::Snafu;
 use utils::BkdrHasher;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
-pub use es_log::parser::Error as ESLogError;
+pub use json_protocol::parser::Error as JsonLogError;
 pub use line_protocol::parser::Error as LineProtocolError;
 
 type NextTagRes<'a> = Result<Option<(Vec<(Cow<'a, str>, Cow<'a, str>)>, usize)>>;
 
-pub mod es_log;
+pub mod json_protocol;
 pub mod line_protocol;
 pub mod lines_convert;
 pub mod open_tsdb;

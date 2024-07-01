@@ -33,11 +33,11 @@ pub struct DebugParam {
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub struct ESLogParam {
+pub struct LogParam {
     pub tenant: Option<String>,
     pub db: Option<String>,
     pub table: Option<String>,
-    pub have_es_command: Option<bool>,
+    pub log_type: Option<String>,
     pub tag_columns: Option<String>,
     pub time_column: Option<String>,
 }

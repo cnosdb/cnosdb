@@ -113,13 +113,13 @@ pub enum Error {
 
     #[snafu(display("Error parsing message: {}", source))]
     #[error_code(code = 16)]
-    ParseESLog {
-        source: protocol_parser::ESLogError,
+    ParseLog {
+        source: protocol_parser::JsonLogError,
     },
 
     #[snafu(display("Error parsing message: {}", source))]
     #[error_code(code = 17)]
-    ParseESLogJson {
+    ParseLogJson {
         source: serde_json::Error,
     },
 
@@ -157,8 +157,8 @@ impl From<&Error> for Response {
             | Error::NotFoundTenant { .. }
             | Error::EncodeResponse { .. }
             | Error::ParseLineProtocol { .. }
-            | Error::ParseESLog { .. }
-            | Error::ParseESLogJson { .. }
+            | Error::ParseLog { .. }
+            | Error::ParseLogJson { .. }
             | Error::InvalidUTF8 { .. } => {
                 ResponseBuilder::new(UNPROCESSABLE_ENTITY).json(&error_resp)
             }

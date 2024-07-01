@@ -4670,6 +4670,7 @@ dependencies = [
  "lazy_static",
  "models",
  "parking_lot 0.12.1",
+ "prost 0.11.9",
  "protos",
  "serde",
  "serde_json",
