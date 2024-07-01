@@ -108,7 +108,7 @@ pub struct Client {
 
 impl Client {
     pub fn new() -> Self {
-        let inner = ClientBuilder::new().build().unwrap_or_else(|e| {
+        let inner = ClientBuilder::new().no_proxy().build().unwrap_or_else(|e| {
             panic!("Failed to build http client: {}", e);
         });
         Self {
@@ -119,7 +119,7 @@ impl Client {
     }
 
     pub fn with_auth(user: String, password: Option<String>) -> Self {
-        let inner = ClientBuilder::new().build().unwrap_or_else(|e| {
+        let inner = ClientBuilder::new().no_proxy().build().unwrap_or_else(|e| {
             panic!("Failed to build http client: {}", e);
         });
         Self {
@@ -137,6 +137,7 @@ impl Client {
         let cert_bytes = std::fs::read(crt_path).expect("fail to read crt file");
         let cert = Certificate::from_pem(&cert_bytes).expect("fail to load crt file");
         let inner = ClientBuilder::new()
+            .no_proxy()
             .add_root_certificate(cert)
             .build()
             .unwrap_or_else(|e| {
@@ -325,6 +326,7 @@ impl Client {
     }
 }
 
+/// Execute command and print stdout/stderr during the execution.
 pub fn execute_command(command: Command) -> E2eResult<()> {
     let mut cmd_str = command.get_program().to_string_lossy().into_owned();
     command.get_args().for_each(|arg| {
@@ -363,7 +365,9 @@ pub fn execute_command(command: Command) -> E2eResult<()> {
     }
 
     println!("  - Executing command '{cmd_str}'");
+    let cmd_str_inner = cmd_str.clone();
     let ret = runtime.block_on(async move {
+        let cmd_str = cmd_str_inner;
         let mut handle = command
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -394,7 +398,7 @@ pub fn execute_command(command: Command) -> E2eResult<()> {
     })?;
 
     if !ret.success() {
-        panic!("Failed to build cnosdb-meta");
+        panic!("Failed to execute '{cmd_str}'");
     }
 
     Ok(())
@@ -461,7 +465,7 @@ impl CnosdbMetaTestHelper {
             meta_node_configs,
             exe_path: workspace_dir
                 .join("target")
-                .join("release")
+                .join(PROFILE)
                 .join("cnosdb-meta"),
             client: Arc::new(Client::new()),
             meta_client: Arc::new(MetaHttpClient::new(
@@ -665,7 +669,7 @@ impl CnosdbDataTestHelper {
             test_dir: test_dir.as_ref().to_path_buf(),
             data_node_definitions,
             data_node_configs,
-            exe_path: workspace_dir.join("target").join("release").join("cnosdb"),
+            exe_path: workspace_dir.join("target").join(PROFILE).join("cnosdb"),
             enable_tls,
             client,
             sub_processes: HashMap::with_capacity(2),
@@ -806,6 +810,10 @@ impl Drop for CnosdbDataTestHelper {
 ///
 /// - Meta server directory: $test_dir/meta
 /// - Data server directory: $test_dir/data
+///
+/// # Arguments
+/// - generate_meta_config: If true, regenerate meta node config files.
+/// - generate_data_config: If true, regenerate data node config files.
 pub fn run_cluster(
     test_dir: impl AsRef<Path>,
     runtime: Arc<Runtime>,
@@ -824,6 +832,15 @@ pub fn run_cluster(
     )
 }
 
+/// Run CnosDB cluster with customized configs.
+///
+/// # Arguments
+/// - generate_meta_config: If true, regenerate meta node config files.
+/// - generate_data_config: If true, regenerate data node config files.
+/// - regenerate_update_meta_config: If generate_meta_config is true, and the `ith` optional closure is Some(Fn),
+///   alter the default config of the `ith` meta node by the Fn.
+/// - regenerate_update_meta_config: If generate_data_config is true, and the `ith` optional closure is Some(Fn),
+///   alter the default config of the `ith` data node by the Fn.
 pub fn run_cluster_with_customized_configs(
     test_dir: impl AsRef<Path>,
     runtime: Arc<Runtime>,
@@ -1012,7 +1029,7 @@ fn kill_child_process(mut proc: Child, force: bool) {
 }
 
 #[cfg(windows)]
-fn kill_child_process(proc: &mut Child, force: bool) {
+fn kill_child_process(proc: Child, force: bool) {
     let pid = proc.id().to_string();
     let mut kill = Command::new("taskkill.exe");
     let mut killing_thread = if force {

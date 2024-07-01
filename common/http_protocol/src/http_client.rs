@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use reqwest::header::HeaderValue;
 use reqwest::{Certificate, RequestBuilder};
 use snafu::{ResultExt, Snafu};
 
@@ -18,7 +19,12 @@ pub enum Error {
     },
 
     #[snafu(display("Failed to build http client: {source}"))]
-    BuildHttpClient { source: reqwest::Error },
+    BuildReqwestHttpClient { source: reqwest::Error },
+
+    #[snafu(display("Failed to build http header: {source}"))]
+    BuildHeader {
+        source: reqwest::header::InvalidHeaderValue,
+    },
 }
 
 pub struct HttpClient {
@@ -33,6 +39,29 @@ impl HttpClient {
         use_ssl: bool,
         use_unsafe_ssl: bool,
         cert_files: &[String],
+    ) -> Result<HttpClient, Error> {
+        Self::with_proxy_settings(
+            host,
+            port,
+            use_ssl,
+            use_unsafe_ssl,
+            cert_files,
+            &None,
+            &None,
+            &None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_proxy_settings(
+        host: &str,
+        port: u16,
+        use_ssl: bool,
+        use_unsafe_ssl: bool,
+        cert_files: &[String],
+        proxy_url: &Option<String>,
+        proxy_basic_auth: &Option<(String, String)>,
+        proxy_custom_auth: &Option<String>,
     ) -> Result<HttpClient, Error> {
         let mut client_builder = reqwest::Client::builder();
         let addr = if use_ssl || use_unsafe_ssl {
@@ -68,7 +97,29 @@ impl HttpClient {
             client_builder = client_builder.add_root_certificate(cert);
         }
 
-        let client = client_builder.build().context(BuildHttpClientSnafu)?;
+        client_builder = match proxy_url {
+            Some(url) => {
+                if !url.is_empty() {
+                    let mut proxy =
+                        reqwest::Proxy::all(url).context(BuildReqwestHttpClientSnafu)?;
+                    if let Some((user, pass)) = proxy_basic_auth {
+                        proxy = proxy.basic_auth(user, pass);
+                    }
+                    if let Some(auth) = proxy_custom_auth {
+                        let header = HeaderValue::from_str(auth).context(BuildHeaderSnafu)?;
+                        proxy = proxy.custom_http_auth(header)
+                    }
+                    client_builder.proxy(proxy)
+                } else {
+                    client_builder.no_proxy()
+                }
+            }
+            None => client_builder.no_proxy(),
+        };
+
+        let client = client_builder
+            .build()
+            .context(BuildReqwestHttpClientSnafu)?;
         Ok(HttpClient { client, addr })
     }
 

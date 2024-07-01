@@ -55,6 +55,7 @@ fn get_os_type() -> String {
 fn get_client() -> reqwest::Client {
     reqwest::ClientBuilder::new()
         // .use_native_tls()
+        .no_proxy()
         .build()
         .unwrap_or_default()
 }
