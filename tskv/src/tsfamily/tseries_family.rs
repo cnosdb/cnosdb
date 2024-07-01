@@ -82,7 +82,7 @@ impl TsfFactory {
 
         let tsfamily = Arc::new(TokioRwLock::new(TseriesFamily {
             tf_id,
-            tenant_database: self.database.clone(),
+            owner: self.database.clone(),
             mut_cache,
             immut_cache: vec![],
             super_version,
@@ -109,7 +109,7 @@ impl TsfFactory {
 #[derive(Debug)]
 pub struct TseriesFamily {
     tf_id: TseriesFamilyId,
-    tenant_database: Arc<String>,
+    owner: Arc<String>,
     mut_cache: Arc<RwLock<MemCache>>,
     immut_cache: Vec<Arc<RwLock<MemCache>>>,
     super_version: Arc<SuperVersion>,
@@ -139,7 +139,7 @@ impl TseriesFamily {
 
         Self {
             tf_id,
-            tenant_database: tenant_database.clone(),
+            owner: tenant_database.clone(),
             mut_cache: mm.clone(),
             immut_cache: Default::default(),
             super_version: Arc::new(SuperVersion::new(
@@ -310,7 +310,7 @@ impl TseriesFamily {
     /// Db-files' index data (field-id filter) will be inserted into `file_metas`.
     pub fn build_version_edit(&self) -> VersionEdit {
         let version = self.version();
-        let owner = (*self.tenant_database).clone();
+        let owner = (*self.owner).clone();
         let seq_no = version.last_seq();
         let max_level_ts = version.max_level_ts();
 
@@ -342,9 +342,7 @@ impl TseriesFamily {
     }
 
     pub async fn rebuild_index(&self) -> TskvResult<Arc<tokio::sync::RwLock<TSIndex>>> {
-        let path = self
-            .storage_opt
-            .index_dir(self.tenant_database.as_str(), self.tf_id);
+        let path = self.storage_opt.index_dir(self.owner.as_str(), self.tf_id);
         let _ = std::fs::remove_dir_all(path.clone());
 
         let index = TSIndex::new(path).await.context(IndexErrSnafu)?;
@@ -386,8 +384,8 @@ impl TseriesFamily {
         self.tf_id
     }
 
-    pub fn tenant_database(&self) -> Arc<String> {
-        self.tenant_database.clone()
+    pub fn owner(&self) -> Arc<String> {
+        self.owner.clone()
     }
 
     pub fn cache(&self) -> &Arc<RwLock<MemCache>> {
@@ -415,12 +413,11 @@ impl TseriesFamily {
     }
 
     pub fn get_delta_dir(&self) -> PathBuf {
-        self.storage_opt
-            .delta_dir(&self.tenant_database, self.tf_id)
+        self.storage_opt.delta_dir(&self.owner, self.tf_id)
     }
 
     pub fn get_tsm_dir(&self) -> PathBuf {
-        self.storage_opt.tsm_dir(&self.tenant_database, self.tf_id)
+        self.storage_opt.tsm_dir(&self.owner, self.tf_id)
     }
 
     pub fn disk_storage(&self) -> u64 {
@@ -519,7 +516,7 @@ pub mod test_tseries_family {
                 files: vec![
                     Arc::new(ColumnFile::new(3, 1, TimeRange::new(3001, 3100), 100, false, make_tsm_file(&tsm_dir, 3))),
                 ],
-                database: database.clone(),
+                owner: database.clone(),
                 tsf_id: 1,
                 storage_opt: opt.storage.clone(),
                 level: 1,
@@ -532,7 +529,7 @@ pub mod test_tseries_family {
                     Arc::new(ColumnFile::new(1, 2, TimeRange::new(1, 1000), 1000, false, make_tsm_file(&tsm_dir, 1))),
                     Arc::new(ColumnFile::new(2, 2, TimeRange::new(1001, 2000), 1000, false, make_tsm_file(&tsm_dir, 2))),
                 ],
-                database: database.clone(),
+                owner: database.clone(),
                 tsf_id: 1,
                 storage_opt: opt.storage.clone(),
                 level: 2,
@@ -619,7 +616,7 @@ pub mod test_tseries_family {
                     Arc::new(ColumnFile::new(3, 1, TimeRange::new(3001, 3100), 100, false, make_tsm_file(&tsm_dir, 3))),
                     Arc::new(ColumnFile::new(4, 1, TimeRange::new(3051, 3150), 100, false, make_tsm_file(&tsm_dir, 4))),
                 ],
-                database: database.clone(),
+                owner: database.clone(),
                 tsf_id: 1,
                 storage_opt: opt.storage.clone(),
                 level: 1,
@@ -632,7 +629,7 @@ pub mod test_tseries_family {
                     Arc::new(ColumnFile::new(1, 2, TimeRange::new(1, 1000), 1000, false, make_tsm_file(&tsm_dir, 1))),
                     Arc::new(ColumnFile::new(2, 2, TimeRange::new(1001, 2000), 1000, false, make_tsm_file(&tsm_dir, 2))),
                 ],
-                database: database.clone(),
+                owner: database.clone(),
                 tsf_id: 1,
                 storage_opt: opt.storage.clone(),
                 level: 2,
