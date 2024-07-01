@@ -143,6 +143,24 @@ impl SessionConfig {
         self
     }
 
+    pub fn with_proxy_url(mut self, proxy_url: Option<String>) -> Self {
+        self.connection_info.proxy_url = proxy_url;
+
+        self
+    }
+
+    pub fn with_proxy_basic_auth(mut self, proxy_basic_auth: Option<(String, String)>) -> Self {
+        self.connection_info.proxy_basic_auth = proxy_basic_auth;
+
+        self
+    }
+
+    pub fn with_proxy_custom_auth(mut self, proxy_custom_auth: Option<String>) -> Self {
+        self.connection_info.proxy_custom_auth = proxy_custom_auth;
+
+        self
+    }
+
     pub fn with_result_format(mut self, fmt: PrintFormat) -> Self {
         self.fmt = fmt;
 
@@ -210,6 +228,10 @@ pub struct ConnectionInfo {
     pub port: u16,
 
     pub ca_cert_files: Vec<String>,
+
+    pub proxy_url: Option<String>,
+    pub proxy_basic_auth: Option<(String, String)>,
+    pub proxy_custom_auth: Option<String>,
 }
 
 pub struct SessionContext {
@@ -221,12 +243,15 @@ pub struct SessionContext {
 impl SessionContext {
     pub fn new(session_config: SessionConfig) -> Self {
         let c = &session_config.connection_info;
-        let http_client = HttpClient::new(
+        let http_client = HttpClient::with_proxy_settings(
             &c.host,
             c.port,
             session_config.use_ssl,
             session_config.use_unsafe_ssl,
             &c.ca_cert_files,
+            &c.proxy_url,
+            &c.proxy_basic_auth,
+            &c.proxy_custom_auth,
         )
         .unwrap_or_else(|e| {
             eprintln!("ERROR: Failed to build http client: {}", e);

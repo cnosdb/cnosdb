@@ -989,6 +989,7 @@ impl HttpService {
             )
     }
 
+    #[allow(unused_variables)]
     fn debug_pprof(
         &self,
     ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
@@ -1028,6 +1029,7 @@ impl HttpService {
             })
     }
 
+    #[allow(unused_variables)]
     fn debug_jeprof(
         &self,
     ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {

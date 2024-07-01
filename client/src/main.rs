@@ -16,7 +16,7 @@ struct CliArgs {
     #[command(subcommand)]
     subcommand: Option<CliCommand>,
 
-    /// Host of CnosDB server.
+    /// Host of CnosDB server
     #[arg(
         short = 'H', long,
         default_value = "localhost",
@@ -24,7 +24,7 @@ struct CliArgs {
     )]
     host: String,
 
-    /// Port of CnosDB server HTTP API.
+    /// Port of CnosDB server HTTP API
     #[arg(
         short = 'P', long,
         default_value = "8902",
@@ -32,15 +32,15 @@ struct CliArgs {
     )]
     port: u16,
 
-    /// Username to connect to CnosDB server.
+    /// Username to connect to CnosDB server
     #[arg(short, long, default_value = "root")]
     user: String,
 
-    /// Use password to connect to CnosDB server.
+    /// Use password to connect to CnosDB server
     #[arg(short, long, default_value = "false")]
     password: bool,
 
-    /// Rsa private key path for key pair authentication used to connect to the CnosDB.
+    /// Rsa private key path for key pair authentication used to connect to the CnosDB
     #[arg(long)]
     private_key_path: Option<String>,
 
@@ -52,15 +52,15 @@ struct CliArgs {
     #[arg(short, long, default_value = "cnosdb")]
     tenant: String,
 
-    /// The precision of the unix timestamps, will be used as the url param 'precision'.
+    /// The precision of the unix timestamps, will be used as the url param 'precision'
     #[arg(long, value_parser = PossibleValuesParser::new(["ns", "us", "ms"]))]
     precision: Option<String>,
 
-    /// Number of partitions for query execution. Increasing partitions can increase concurrency.
+    /// Number of partitions for query execution. Increasing partitions can increase concurrency
     #[arg(long, value_parser = try_parse_target_partitions)]
     target_partitions: Option<usize>,
 
-    /// Optionally, specify the micro batch stream trigger interval. e.g. once, 1m, 10s .
+    /// Optionally, specify the micro batch stream trigger interval. e.g. once, 1m, 10s
     #[arg(short, long)]
     stream_trigger_interval: Option<String>,
 
@@ -68,21 +68,15 @@ struct CliArgs {
     #[arg(long, value_parser = try_parse_data_dir)]
     data_path: Option<String>,
 
-    /// HTTP response encoding. Support deflate, gzip, br, zstd.
+    /// HTTP response encoding. Support deflate, gzip, br, zstd
     #[arg(long,  value_parser = try_parse_encoding)]
     receive_data_encoding: Option<Encoding>,
 
-    /// HTTP request encoding. Support deflate, gzip, br, zstd.
+    /// HTTP request encoding. Support deflate, gzip, br, zstd
     #[arg(long,  value_parser = try_parse_encoding)]
     send_data_encoding: Option<Encoding>,
 
-    // #[arg(
-    //     long,
-    //     help = "The batch size of each query, or use CnosDB default",
-    //     value_parser = is_valid_batch_size
-    // )]
-    // batch_size: Option<usize>,
-    /// Execute commands from file(s), then exit.
+    /// Execute commands from file(s), then exit
     #[arg(
         short, long,
         num_args = 0..,
@@ -90,7 +84,7 @@ struct CliArgs {
     )]
     file: Vec<String>,
 
-    /// Run the provided files on startup instead of ~/.cnosdbrc .
+    /// Run the provided files on startup instead of ~/.cnosdbrc
     #[arg(
         long,
         num_args = 0..,
@@ -102,26 +96,30 @@ struct CliArgs {
     #[arg(long, value_enum, default_value_t = PrintFormat::Table)]
     format: PrintFormat,
 
-    /// Reduce printing other than the results and work quietly.
+    /// Reduce printing other than the results and work quietly
     #[arg(short, long)]
     quiet: bool,
 
-    /// Write line protocol from file.
+    /// Write line protocol from file
     #[arg(short = 'W', long, value_name = "FILE")]
     write_line_protocol: Option<PathBuf>,
 
-    /// Use HTTPS connection.
+    /// Use HTTPS connection
     #[arg(name = "ssl", long)]
     use_ssl: bool,
 
-    /// Allow unsafe HTTPS connections.
+    /// Allow unsafe HTTPS connections
     #[arg(name = "unsafe-ssl", long)]
     use_unsafe_ssl: bool,
 
     /// Use the specified certificate file to verify the connection peer.
-    /// The certificate(s) must be in PEM format.
+    /// The certificate(s) must be in PEM format
     #[arg(long, value_name = "FILE")]
     cacert: Vec<String>,
+
+    /// Proxy URL, for HTTP or HTTPS requests
+    #[arg(long, value_name = "URL")]
+    proxy_url: Option<String>,
 
     /// Enable chunk mode, and CnosDB server uses http streaming output
     #[arg(long, default_value = "false")]
@@ -134,6 +132,30 @@ struct CliArgs {
     /// Enable client command
     #[arg(long, default_value = "false")]
     process_cli_command: bool,
+}
+
+impl CliArgs {
+    fn to_session_config(&self) -> SessionConfig {
+        SessionConfig::from_env()
+            .with_host(self.host.clone())
+            .with_port(self.port)
+            .with_user(self.user.clone())
+            .with_tenant(self.tenant.clone())
+            .with_database(self.database.clone())
+            .with_target_partitions(self.target_partitions)
+            .with_stream_trigger_interval(self.stream_trigger_interval.clone())
+            .with_accept_encoding(self.receive_data_encoding)
+            .with_content_encoding(self.send_data_encoding)
+            .with_result_format(self.format)
+            .with_precision(self.precision.clone())
+            .with_ssl(self.use_ssl)
+            .with_unsafe_ssl(self.use_unsafe_ssl)
+            .with_ca_certs(self.cacert.clone())
+            .with_proxy_url(self.proxy_url.clone())
+            .with_chunked(self.chunked)
+            .with_process_cli_command(self.process_cli_command)
+            .with_error_stop(self.error_stop)
+    }
 }
 
 #[derive(Debug, Clone, Subcommand, PartialOrd, PartialEq)]
@@ -189,26 +211,10 @@ pub async fn main() -> Result<(), anyhow::Error> {
         fs::read_to_string(p).expect("Read private key file.")
     });
 
-    let session_config = SessionConfig::from_env()
-        .with_host(args.host)
-        .with_port(args.port)
-        .with_user(args.user)
+    let session_config = args
+        .to_session_config()
         .with_password(password)
-        .with_private_key(private_key)
-        .with_tenant(args.tenant)
-        .with_database(args.database)
-        .with_target_partitions(args.target_partitions)
-        .with_stream_trigger_interval(args.stream_trigger_interval)
-        .with_accept_encoding(args.receive_data_encoding)
-        .with_content_encoding(args.send_data_encoding)
-        .with_result_format(args.format)
-        .with_precision(args.precision)
-        .with_ssl(args.use_ssl)
-        .with_unsafe_ssl(args.use_unsafe_ssl)
-        .with_ca_certs(args.cacert)
-        .with_chunked(args.chunked)
-        .with_process_cli_command(args.process_cli_command)
-        .with_error_stop(args.error_stop);
+        .with_private_key(private_key);
 
     let mut ctx = SessionContext::new(session_config);
     if let Some(ref path) = args.write_line_protocol {
