@@ -14,7 +14,7 @@ use crate::compaction::{CompactTask, FlushReq};
 use crate::context::GlobalContext;
 use crate::error::TskvResult;
 use crate::file_system::async_filesystem::LocalFileSystem;
-use crate::memcache::MemCache;
+use crate::mem_cache::memcache::MemCache;
 use crate::summary::{CompactMetaBuilder, SummaryTask, VersionEdit};
 use crate::tsm::writer::TsmWriter;
 use crate::{TsKvContext, TseriesFamilyId};
@@ -249,8 +249,11 @@ pub mod flush_tests {
 
     use crate::compaction::flush::FlushTask;
     use crate::context::GlobalContext;
-    use crate::memcache::{MemCache, OrderedRowsData, RowData, RowGroup};
-    use crate::tseries_family::{LevelInfo, Version};
+    use crate::mem_cache::memcache::MemCache;
+    use crate::mem_cache::row_data::{OrderedRowsData, RowData};
+    use crate::mem_cache::series_data::RowGroup;
+    use crate::tsfamily::level_info::LevelInfo;
+    use crate::tsfamily::version::Version;
     use crate::tsm::data_block::{DataBlock, MutableColumn};
     use crate::tsm::reader::TsmReader;
     use crate::tsm::writer::TsmWriter;

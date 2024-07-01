@@ -20,7 +20,7 @@ use crate::database::Database;
 use crate::error::{IndexErrSnafu, InvalidParamSnafu, InvalidPointTableSnafu, TskvResult};
 use crate::index::ts_index::TSIndex;
 use crate::schema::error::{FieldNotFoundSnafu, TableNotFoundSnafu};
-use crate::tseries_family::TseriesFamily;
+use crate::tsfamily::tseries_family::TseriesFamily;
 use crate::{TsKvContext, VnodeSnapshot};
 
 #[derive(Clone)]

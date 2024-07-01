@@ -21,7 +21,7 @@ use models::ColumnId;
 use parking_lot::RwLock;
 
 use self::utils::{CombinedRecordBatchStream, TimeRangeProvider};
-use crate::memcache::SeriesData;
+use crate::mem_cache::series_data::SeriesData;
 use crate::tsm::chunk::Chunk;
 use crate::tsm::reader::TsmReader;
 use crate::{TskvError, TskvResult};

@@ -19,7 +19,8 @@ use super::{
     SendableSchemableTskvRecordBatchStream,
 };
 use crate::error::ArrowSnafu;
-use crate::memcache::{RowData, SeriesData};
+use crate::mem_cache::row_data::RowData;
+use crate::mem_cache::series_data::SeriesData;
 use crate::reader::iterator::{ArrayBuilderPtr, RowIterator};
 use crate::reader::utils::TimeRangeProvider;
 use crate::TskvResult;
@@ -97,7 +98,7 @@ impl MemCacheReader {
                 let column_ids: Vec<u32> = self.columns.iter().map(|c| c.id).collect();
                 self.series_data
                     .read()
-                    .read_data_v2(&column_ids[1..], &self.time_ranges, |d| {
+                    .read_data(&column_ids[1..], &self.time_ranges, |d| {
                         row_data_vec.insert(d)
                     });
 
@@ -265,7 +266,9 @@ mod tests {
     use models::{SeriesId, SeriesKey, ValueType};
 
     use super::MemCacheReader;
-    use crate::memcache::{MemCache, OrderedRowsData, RowData, RowGroup};
+    use crate::mem_cache::memcache::MemCache;
+    use crate::mem_cache::row_data::{OrderedRowsData, RowData};
+    use crate::mem_cache::series_data::RowGroup;
     use crate::reader::BatchReader;
 
     #[tokio::test]

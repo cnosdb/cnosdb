@@ -16,7 +16,7 @@ use summary::SummaryTask;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::RwLock;
-use tseries_family::Version;
+use tsfamily::version::Version;
 use version_set::VersionSet;
 use vnode_store::VnodeStorage;
 
@@ -25,7 +25,7 @@ pub use crate::kv_option::Options;
 use crate::kv_option::StorageOptions;
 pub use crate::kvcore::TsKv;
 pub use crate::summary::{print_summary_statistics, Summary, VersionEdit};
-use crate::tseries_family::SuperVersion;
+use crate::tsfamily::super_version::SuperVersion;
 // todo: add a method for print tsm statistics
 // pub use crate::tsm::print_tsm_statistics;
 pub use crate::wal::print_wal_statistics;
@@ -42,13 +42,13 @@ pub mod file_utils;
 pub mod index;
 pub mod kv_option;
 mod kvcore;
-mod memcache;
 // TODO supposedly private
+mod mem_cache;
 pub mod reader;
 mod record_file;
 mod schema;
 mod summary;
-mod tseries_family;
+mod tsfamily;
 pub mod tsm;
 mod version_set;
 pub mod vnode_store;
@@ -173,5 +173,5 @@ impl Display for VnodeSnapshot {
 }
 
 pub mod test {
-    pub use crate::memcache::test::{get_one_series_cache_data, put_rows_to_cache};
+    pub use crate::mem_cache::memcache::test::{get_one_series_cache_data, put_rows_to_cache};
 }

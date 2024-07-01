@@ -8,7 +8,7 @@ use models::{utils as model_utils, ColumnId, FieldId, SeriesId, Timestamp};
 use tokio::sync::RwLock;
 
 use crate::error::{TskvError, TskvResult};
-use crate::tseries_family::TseriesFamily;
+use crate::tsfamily::tseries_family::TseriesFamily;
 use crate::TseriesFamilyId;
 
 pub type Hash = [u8; 32];
