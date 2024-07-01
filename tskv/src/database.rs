@@ -24,10 +24,13 @@ use crate::error::{
 use crate::index::ts_index::TSIndex;
 use crate::index::IndexResult;
 use crate::kv_option::Options;
-use crate::memcache::{OrderedRowsData, RowData, RowGroup};
+use crate::mem_cache::row_data::{OrderedRowsData, RowData};
+use crate::mem_cache::series_data::RowGroup;
 use crate::schema::schemas::DBschemas;
 use crate::summary::{SummaryTask, VersionEdit};
-use crate::tseries_family::{LevelInfo, TseriesFamily, TsfFactory, Version};
+use crate::tsfamily::level_info::LevelInfo;
+use crate::tsfamily::tseries_family::{TseriesFamily, TsfFactory};
+use crate::tsfamily::version::Version;
 use crate::tsm::reader::TsmReader;
 use crate::{TsKvContext, TseriesFamilyId};
 

@@ -13,7 +13,9 @@ use tokio::sync::RwLock;
 
 use crate::index::ts_index::TSIndex;
 use crate::kv_option::StorageOptions;
-use crate::tseries_family::{ColumnFile, TseriesFamily, Version};
+use crate::tsfamily::column_file::ColumnFile;
+use crate::tsfamily::tseries_family::TseriesFamily;
+use crate::tsfamily::version::Version;
 use crate::{LevelId, TseriesFamilyId};
 
 pub struct CompactTask {

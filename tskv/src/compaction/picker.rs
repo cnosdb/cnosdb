@@ -5,7 +5,9 @@ use models::predicate::domain::TimeRange;
 use trace::{debug, info};
 
 use crate::compaction::CompactReq;
-use crate::tseries_family::{ColumnFile, LevelInfo, Version};
+use crate::tsfamily::column_file::ColumnFile;
+use crate::tsfamily::level_info::LevelInfo;
+use crate::tsfamily::version::Version;
 use crate::LevelId;
 
 pub trait Picker: Send + Sync + Debug {
@@ -282,8 +284,11 @@ mod test {
     use crate::compaction::{LevelCompactionPicker, Picker};
     use crate::file_utils::make_tsm_file;
     use crate::kv_option::Options;
-    use crate::memcache::MemCache;
-    use crate::tseries_family::{ColumnFile, LevelInfo, TseriesFamily, Version};
+    use crate::mem_cache::memcache::MemCache;
+    use crate::tsfamily::column_file::ColumnFile;
+    use crate::tsfamily::level_info::LevelInfo;
+    use crate::tsfamily::tseries_family::TseriesFamily;
+    use crate::tsfamily::version::Version;
 
     type ColumnFilesSketch = (u64, i64, i64, u64, bool);
     type LevelsSketch = Vec<(u32, i64, i64, Vec<ColumnFilesSketch>)>;

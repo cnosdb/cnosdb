@@ -951,7 +951,9 @@ pub mod test {
     use crate::file_utils;
     use crate::kv_option::Options;
     use crate::summary::VersionEdit;
-    use crate::tseries_family::{ColumnFile, LevelInfo, Version};
+    use crate::tsfamily::column_file::ColumnFile;
+    use crate::tsfamily::level_info::LevelInfo;
+    use crate::tsfamily::version::Version;
     use crate::tsm::data_block::{DataBlock, MutableColumn};
     use crate::tsm::reader::{decode_pages, TsmReader};
     use crate::tsm::writer::TsmWriter;

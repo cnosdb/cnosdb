@@ -1,585 +1,18 @@
-use std::cmp;
-use std::collections::{BTreeMap, HashMap, HashSet, LinkedList};
-use std::mem::size_of_val;
-use std::ops::Bound::Included;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-use flatbuffers::{ForwardsUOffset, Vector};
 use memory_pool::{MemoryConsumer, MemoryPoolRef, MemoryReservation};
-use minivec::MiniVec;
-use models::field_value::FieldVal;
 use models::predicate::domain::{TimeRange, TimeRanges};
-use models::schema::database_schema::{timestamp_convert, Precision};
-use models::schema::tskv_table_schema::{TableColumn, TskvTableSchema, TskvTableSchemaRef};
+use models::schema::tskv_table_schema::TableColumn;
 use models::{ColumnId, RwLockRef, SeriesId, SeriesKey, Timestamp};
 use parking_lot::RwLock;
-use protos::models::{Column, FieldType};
-use skiplist::OrderedSkipList;
-use snafu::OptionExt;
-use trace::error;
-use utils::bitset::ImmutBitSet;
 
-use crate::database::FbSchema;
-use crate::error::{CommonSnafu, FieldsIsEmptySnafu, MemoryExhaustedSnafu, TskvResult};
-use crate::tsm::data_block::{DataBlock, MutableColumn};
+use super::row_data::{OrderedRowsData, RowData};
+use super::series_data::{RowGroup, SeriesData};
+use crate::error::{MemoryExhaustedSnafu, TskvResult};
 use crate::tsm::TsmWriteData;
 use crate::TseriesFamilyId;
-
-// use skiplist::ordered_skiplist::OrderedSkipList;
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct RowData {
-    pub ts: i64,
-    pub fields: Vec<Option<FieldVal>>,
-}
-
-impl RowData {
-    pub fn point_to_row_data(
-        schema: &TskvTableSchema,
-        from_precision: Precision,
-        columns: &Vector<ForwardsUOffset<Column>>,
-        fb_schema: &FbSchema,
-        row_idx: Vec<usize>,
-    ) -> TskvResult<Vec<RowData>> {
-        let fields_id = schema.fields_id();
-        let mut res = Vec::with_capacity(row_idx.len());
-        for row_count in row_idx.into_iter() {
-            let mut fields = vec![None; fields_id.len()];
-            let mut has_fields = false;
-            for field_id in fb_schema.field_indexes.iter() {
-                let column = columns.get(*field_id);
-                let column_name = column.name_ext()?;
-                let column_nullbit = column.nullbit_ext()?;
-                match column.field_type() {
-                    FieldType::Integer => {
-                        let len = column.int_values_len()?;
-                        let column_nullbits =
-                            ImmutBitSet::new_without_check(len, column_nullbit.bytes());
-                        if !column_nullbits.get(row_count) {
-                            continue;
-                        }
-                        let val = column.int_values()?.get(row_count);
-                        match schema.column(column_name) {
-                            None => {
-                                error!("column {} not found in schema", column_name);
-                            }
-                            Some(column) => {
-                                let field_id = column.id;
-                                let field_idx = fields_id.get(&field_id).unwrap();
-                                fields[*field_idx] = Some(FieldVal::Integer(val));
-                                has_fields = true;
-                            }
-                        }
-                    }
-                    FieldType::Float => {
-                        let len = column.float_values_len()?;
-                        let column_nullbits =
-                            ImmutBitSet::new_without_check(len, column_nullbit.bytes());
-                        if !column_nullbits.get(row_count) {
-                            continue;
-                        }
-                        let val = column.float_values()?.get(row_count);
-                        match schema.column(column_name) {
-                            None => {
-                                error!("column {} not found in schema", column_name);
-                            }
-                            Some(column) => {
-                                let field_id = column.id;
-                                let field_idx = fields_id.get(&field_id).unwrap();
-                                fields[*field_idx] = Some(FieldVal::Float(val));
-                                has_fields = true;
-                            }
-                        }
-                    }
-                    FieldType::Unsigned => {
-                        let len = column.uint_values_len()?;
-                        let column_nullbits =
-                            ImmutBitSet::new_without_check(len, column_nullbit.bytes());
-                        if !column_nullbits.get(row_count) {
-                            continue;
-                        }
-                        let val = column.uint_values()?.get(row_count);
-                        match schema.column(column_name) {
-                            None => {
-                                error!("column {} not found in schema", column_name);
-                            }
-                            Some(column) => {
-                                let field_id = column.id;
-                                let field_idx = fields_id.get(&field_id).unwrap();
-                                fields[*field_idx] = Some(FieldVal::Unsigned(val));
-                                has_fields = true;
-                            }
-                        }
-                    }
-                    FieldType::Boolean => {
-                        let len = column.bool_values_len()?;
-                        let column_nullbits =
-                            ImmutBitSet::new_without_check(len, column_nullbit.bytes());
-                        if !column_nullbits.get(row_count) {
-                            continue;
-                        }
-                        let val = column.bool_values()?.get(row_count);
-                        match schema.column(column_name) {
-                            None => {
-                                error!("column {} not found in schema", column_name);
-                            }
-                            Some(column) => {
-                                let field_id = column.id;
-                                let field_idx = fields_id.get(&field_id).unwrap();
-                                fields[*field_idx] = Some(FieldVal::Boolean(val));
-                                has_fields = true;
-                            }
-                        }
-                    }
-                    FieldType::String => {
-                        let len = column.string_values_len()?;
-                        let column_nullbits =
-                            ImmutBitSet::new_without_check(len, column_nullbit.bytes());
-                        if !column_nullbits.get(row_count) {
-                            continue;
-                        }
-                        let val = column.string_values()?.get(row_count);
-                        match schema.column(column_name) {
-                            None => {
-                                error!("column {} not found in schema", column_name);
-                            }
-                            Some(column) => {
-                                let field_id = column.id;
-                                let field_idx = fields_id.get(&field_id).unwrap();
-                                fields[*field_idx] =
-                                    Some(FieldVal::Bytes(MiniVec::from(val.as_bytes())));
-                                has_fields = true;
-                            }
-                        }
-                    }
-                    _ => {
-                        error!("unsupported field type");
-                    }
-                }
-            }
-
-            if !has_fields {
-                return Err(FieldsIsEmptySnafu.build());
-            }
-
-            let ts_column = columns.get(fb_schema.time_index);
-            let ts = ts_column.int_values()?.get(row_count);
-            let to_precision = schema.time_column_precision();
-            let ts = timestamp_convert(from_precision, to_precision, ts).context(CommonSnafu {
-                reason: "timestamp overflow".to_string(),
-            })?;
-            res.push(RowData { ts, fields });
-        }
-        Ok(res)
-    }
-
-    pub fn size(&self) -> usize {
-        let mut size = 0;
-        for i in self.fields.iter() {
-            match i {
-                None => {
-                    size += size_of_val(i);
-                }
-                Some(v) => {
-                    size += size_of_val(i) + v.heap_size();
-                }
-            }
-        }
-        size += size_of_val(&self.ts);
-        size += size_of_val(&self.fields);
-        size
-    }
-}
-
-impl PartialOrd for RowData {
-    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
-        Some(self.ts.cmp(&other.ts))
-    }
-}
-
-#[derive(Debug, Eq, PartialEq)]
-pub struct OrderedRowsData {
-    rows: OrderedSkipList<RowData>,
-}
-
-impl OrderedRowsData {
-    pub fn new() -> Self {
-        let mut rows: OrderedSkipList<RowData> = OrderedSkipList::new();
-        unsafe { rows.sort_by(|a: &RowData, b: &RowData| a.partial_cmp(b).unwrap()) }
-        Self { rows }
-    }
-
-    pub fn get_rows(self) -> OrderedSkipList<RowData> {
-        self.rows
-    }
-
-    pub fn get_ref_rows(&self) -> &OrderedSkipList<RowData> {
-        &self.rows
-    }
-
-    pub fn clear(&mut self) {
-        self.rows.clear()
-    }
-
-    pub fn insert(&mut self, row: RowData) {
-        self.rows.insert(row);
-    }
-
-    pub fn retain(&mut self, mut f: impl FnMut(&RowData) -> bool) {
-        self.rows.retain(|row| f(row));
-    }
-}
-
-impl Default for OrderedRowsData {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Clone for OrderedRowsData {
-    fn clone(&self) -> Self {
-        let mut clone_rows: OrderedSkipList<RowData> = OrderedSkipList::new();
-        unsafe { clone_rows.sort_by(|a: &RowData, b: &RowData| a.partial_cmp(b).unwrap()) }
-        self.rows.iter().for_each(|row| {
-            clone_rows.insert(row.clone());
-        });
-        Self { rows: clone_rows }
-    }
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct RowGroup {
-    pub schema: Arc<TskvTableSchema>,
-    pub range: TimeRange,
-    pub rows: OrderedRowsData,
-    /// total size in stack and heap
-    pub size: usize,
-}
-
-#[derive(Debug)]
-pub struct SeriesData {
-    pub series_id: SeriesId,
-    pub series_key: SeriesKey,
-    pub range: TimeRange,
-    pub groups: LinkedList<RowGroup>,
-}
-
-impl SeriesData {
-    fn new(series_id: SeriesId, series_key: SeriesKey) -> Self {
-        Self {
-            series_id,
-            series_key,
-            range: TimeRange {
-                min_ts: i64::MAX,
-                max_ts: i64::MIN,
-            },
-            groups: LinkedList::new(),
-        }
-    }
-
-    pub fn write(&mut self, group: RowGroup) {
-        self.range.merge(&group.range);
-
-        for item in self.groups.iter_mut().rev() {
-            if item.schema.schema_version == group.schema.schema_version {
-                item.range.merge(&group.range);
-                group.rows.get_rows().into_iter().for_each(|row| {
-                    item.rows.insert(row);
-                });
-                item.schema = group.schema;
-                return;
-            }
-        }
-
-        self.groups.push_back(group);
-    }
-
-    pub fn drop_column(&mut self, column_id: ColumnId) {
-        for item in self.groups.iter_mut() {
-            let name = match item.schema.column_name(column_id) {
-                None => continue,
-                Some(name) => name.to_string(),
-            };
-            let index = match item.schema.fields_id().get(&column_id) {
-                None => continue,
-                Some(index) => *index,
-            };
-            let mut rowdata_vec: Vec<RowData> = item.rows.get_ref_rows().iter().cloned().collect();
-            item.rows.clear();
-            for row in rowdata_vec.iter_mut() {
-                if index < row.fields.len() {
-                    row.fields.remove(index);
-                }
-                item.rows.insert(row.clone());
-            }
-            let mut schema_t = item.schema.as_ref().clone();
-            schema_t.drop_column(&name);
-            //schema_t.schema_id += 1;
-            item.schema = Arc::new(schema_t)
-        }
-    }
-
-    pub fn change_column(&mut self, column_name: &str, new_column: &TableColumn) {
-        for item in self.groups.iter_mut() {
-            let mut schema_t = item.schema.as_ref().clone();
-            schema_t.change_column(column_name, new_column.clone());
-            schema_t.schema_version += 1;
-            item.schema = Arc::new(schema_t)
-        }
-    }
-
-    pub fn add_column(&mut self, new_column: &TableColumn) {
-        for item in self.groups.iter_mut() {
-            let mut schema_t = item.schema.as_ref().clone();
-            schema_t.add_column(new_column.clone());
-            schema_t.schema_version += 1;
-            item.schema = Arc::new(schema_t)
-        }
-    }
-
-    pub fn delete_series(&mut self, range: &TimeRange) {
-        if range.max_ts < self.range.min_ts || range.min_ts > self.range.max_ts {
-            return;
-        }
-
-        for item in self.groups.iter_mut() {
-            item.rows
-                .retain(|row| row.ts < range.min_ts || row.ts > range.max_ts);
-        }
-    }
-
-    pub fn read_data_v2(
-        &self,
-        column_ids: &[ColumnId],
-        time_ranges: &TimeRanges,
-        mut handle_data: impl FnMut(RowData),
-    ) {
-        match (time_ranges.is_boundless(), time_ranges.is_empty()) {
-            (_, false) => {
-                for group in self.groups.iter() {
-                    let field_index = group.schema.fields_id();
-                    for range in time_ranges.time_ranges() {
-                        for row in group.rows.get_ref_rows().range(
-                            Included(&RowData {
-                                ts: range.min_ts,
-                                fields: vec![],
-                            }),
-                            Included(&RowData {
-                                ts: range.max_ts,
-                                fields: vec![],
-                            }),
-                        ) {
-                            let mut fields = vec![None; column_ids.len()];
-                            column_ids.iter().enumerate().for_each(|(i, column_id)| {
-                                if let Some(index) = field_index.get(column_id) {
-                                    if let Some(Some(field)) = row.fields.get(*index) {
-                                        fields[i] = Some(field.clone());
-                                    }
-                                }
-                            });
-                            handle_data(RowData { ts: row.ts, fields });
-                        }
-                    }
-                }
-            }
-            (false, true) => {
-                for group in self.groups.iter() {
-                    let field_index = group.schema.fields_id();
-                    for row in group.rows.get_ref_rows().range(
-                        Included(&RowData {
-                            ts: time_ranges.min_ts(),
-                            fields: vec![],
-                        }),
-                        Included(&RowData {
-                            ts: time_ranges.max_ts(),
-                            fields: vec![],
-                        }),
-                    ) {
-                        let mut fields = vec![None; column_ids.len()];
-                        column_ids.iter().enumerate().for_each(|(i, column_id)| {
-                            if let Some(index) = field_index.get(column_id) {
-                                if let Some(Some(field)) = row.fields.get(*index) {
-                                    fields[i] = Some(field.clone());
-                                }
-                            }
-                        });
-                        handle_data(RowData { ts: row.ts, fields });
-                    }
-                }
-            }
-            (true, true) => {
-                for group in self.groups.iter() {
-                    let field_index = group.schema.fields_id();
-                    for row in group.rows.get_ref_rows() {
-                        let mut fields = vec![None; column_ids.len()];
-                        column_ids.iter().enumerate().for_each(|(i, column_id)| {
-                            if let Some(index) = field_index.get(column_id) {
-                                if let Some(Some(field)) = row.fields.get(*index) {
-                                    fields[i] = Some(field.clone());
-                                }
-                            }
-                        });
-                        handle_data(RowData { ts: row.ts, fields });
-                    }
-                }
-            }
-        }
-    }
-
-    pub fn delete_by_time_ranges(&mut self, time_ranges: &TimeRanges) {
-        for time_range in time_ranges.time_ranges() {
-            if time_range.max_ts < self.range.min_ts || time_range.min_ts > self.range.max_ts {
-                continue;
-            }
-
-            for item in self.groups.iter_mut() {
-                let mut rows = OrderedRowsData::new();
-                item.rows
-                    .get_ref_rows()
-                    .iter()
-                    .rev()
-                    .filter(|row| row.ts < time_range.min_ts || row.ts > time_range.max_ts)
-                    .for_each(|row| {
-                        rows.insert(row.clone());
-                    });
-                item.rows = rows;
-            }
-        }
-    }
-
-    pub fn read_timestamps(
-        &self,
-        time_ranges: &TimeRanges,
-        mut handle_data: impl FnMut(Timestamp),
-    ) {
-        match (time_ranges.is_boundless(), time_ranges.is_empty()) {
-            (_, false) => {
-                for group in self.groups.iter() {
-                    for range in time_ranges.time_ranges() {
-                        for row in group.rows.get_ref_rows().range(
-                            Included(&RowData {
-                                ts: range.min_ts,
-                                fields: vec![],
-                            }),
-                            Included(&RowData {
-                                ts: range.max_ts,
-                                fields: vec![],
-                            }),
-                        ) {
-                            handle_data(row.ts);
-                        }
-                    }
-                }
-            }
-            (false, true) => {
-                for group in self.groups.iter() {
-                    for row in group.rows.get_ref_rows().range(
-                        Included(&RowData {
-                            ts: time_ranges.min_ts(),
-                            fields: vec![],
-                        }),
-                        Included(&RowData {
-                            ts: time_ranges.max_ts(),
-                            fields: vec![],
-                        }),
-                    ) {
-                        handle_data(row.ts);
-                    }
-                }
-            }
-            (true, true) => {
-                for group in self.groups.iter() {
-                    for row in group.rows.get_ref_rows() {
-                        handle_data(row.ts);
-                    }
-                }
-            }
-        }
-    }
-
-    pub fn flat_groups(&self) -> Vec<(TskvTableSchemaRef, &OrderedRowsData)> {
-        self.groups
-            .iter()
-            .map(|g| (g.schema.clone(), &g.rows))
-            .collect()
-    }
-    pub fn get_schema(&self) -> Option<Arc<TskvTableSchema>> {
-        if let Some(item) = self.groups.back() {
-            return Some(item.schema.clone());
-        }
-        None
-    }
-    pub fn build_data_block(
-        &self,
-        max_level_ts: i64,
-    ) -> TskvResult<Option<(String, DataBlock, DataBlock)>> {
-        if let Some(schema) = self.get_schema() {
-            let field_ids = schema.fields_id();
-
-            let mut cols = schema
-                .fields()
-                .iter()
-                .map(|col| MutableColumn::empty(col.clone()))
-                .collect::<TskvResult<Vec<_>>>()?;
-            let mut delta_cols = cols.clone();
-            let mut time_array = MutableColumn::empty(schema.time_column())?;
-
-            let mut delta_time_array = time_array.clone();
-            let mut cols_desc = vec![None; schema.field_num()];
-            for (schema, rows) in self.flat_groups() {
-                let values = dedup_and_sort_row_data(rows);
-                for row in values {
-                    match row.ts.cmp(&max_level_ts) {
-                        cmp::Ordering::Greater => {
-                            time_array.push(Some(FieldVal::Integer(row.ts)))?;
-                        }
-                        _ => {
-                            delta_time_array.push(Some(FieldVal::Integer(row.ts)))?;
-                        }
-                    }
-                    for col in schema.fields().iter() {
-                        if let Some(index) = field_ids.get(&col.id) {
-                            let field = row.fields.get(*index).and_then(|v| v.clone());
-                            match row.ts.cmp(&max_level_ts) {
-                                cmp::Ordering::Greater => {
-                                    cols[*index].push(field)?;
-                                }
-                                _ => {
-                                    delta_cols[*index].push(field)?;
-                                }
-                            }
-                            if cols_desc[*index].is_none() {
-                                cols_desc[*index] = Some(col.clone());
-                            }
-                        }
-                    }
-                }
-            }
-
-            let cols_desc = cols_desc.into_iter().flatten().collect::<Vec<_>>();
-            if cols_desc.len() != cols.len() {
-                return Err(CommonSnafu {
-                    reason: "Invalid cols_desc".to_string(),
-                }
-                .build());
-            }
-
-            if !time_array.valid().is_all_set() || !delta_time_array.valid().is_all_set() {
-                return Err(CommonSnafu {
-                    reason: "Invalid time array in DataBlock".to_string(),
-                }
-                .build());
-            }
-            return Ok(Some((
-                schema.name.clone(),
-                DataBlock::new(schema.clone(), time_array, cols),
-                DataBlock::new(schema.clone(), delta_time_array, delta_cols),
-            )));
-        }
-        Ok(None)
-    }
-}
 
 pub struct MemCacheStatistics {
     _tf_id: TseriesFamilyId,
@@ -825,7 +258,6 @@ impl MemCache {
         });
         ret
     }
-
     pub fn read_series_data_by_id(&self, sid: SeriesId) -> Option<Arc<RwLock<SeriesData>>> {
         let index = (sid as usize) % self.part_count;
         self.partions[index].read().get(&sid).cloned()
@@ -867,7 +299,9 @@ pub(crate) mod test {
     use models::{SchemaVersion, SeriesId, SeriesKey, Timestamp};
     use parking_lot::RwLock;
 
-    use super::{MemCache, OrderedRowsData, RowData, RowGroup};
+    use super::MemCache;
+    use crate::mem_cache::row_data::{OrderedRowsData, RowData};
+    use crate::mem_cache::series_data::RowGroup;
 
     pub fn put_rows_to_cache(
         cache: &MemCache,
@@ -980,8 +414,10 @@ mod test_memcache {
 
     use super::{dedup_and_sort_row_data, MemCache, OrderedRowsData, RowData, RowGroup};
     use crate::file_utils::make_tsm_file;
-    use crate::memcache::SeriesData;
-    use crate::tseries_family::{ColumnFile, LevelInfo, Version};
+    use crate::mem_cache::series_data::SeriesData;
+    use crate::tsfamily::column_file::ColumnFile;
+    use crate::tsfamily::level_info::LevelInfo;
+    use crate::tsfamily::version::Version;
     use crate::Options;
 
     #[test]
@@ -1247,12 +683,13 @@ mod test_memcache {
             let schema = row_group.schema.clone();
             assert_eq!(4, schema.columns().len());
             assert!(!schema.contains_column("i_col_2"));
+            let test_rows = row_group.rows.get_ref_rows();
             assert_eq!(
                 RowData {
                     ts: 5,
                     fields: vec![Some(FieldVal::Float(3.0))]
                 },
-                row_group.rows.rows[1].clone()
+                test_rows[1].clone()
             )
         }
     }
@@ -1306,7 +743,16 @@ mod test_memcache {
 
         let time_ranges = TimeRanges::new(vec![TimeRange::new(1, 3), TimeRange::new(7, 9)]);
         series_data1.delete_by_time_ranges(&time_ranges);
-        assert_eq!(series_data1.groups.front().unwrap().rows.rows.len(), 1);
+        assert_eq!(
+            series_data1
+                .groups
+                .front()
+                .unwrap()
+                .rows
+                .get_ref_rows()
+                .len(),
+            1
+        );
     }
 
     #[test]

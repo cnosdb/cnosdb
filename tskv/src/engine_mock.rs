@@ -11,7 +11,7 @@ use models::{SeriesId, SeriesKey};
 
 use crate::error::TskvResult;
 use crate::kv_option::StorageOptions;
-use crate::tseries_family::SuperVersion;
+use crate::tsfamily::super_version::SuperVersion;
 use crate::vnode_store::VnodeStorage;
 use crate::{Engine, TseriesFamilyId};
 

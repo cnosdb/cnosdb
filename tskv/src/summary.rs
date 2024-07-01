@@ -24,9 +24,12 @@ use crate::error::{
 };
 use crate::file_system::async_filesystem::LocalFileSystem;
 use crate::kv_option::{Options, StorageOptions, DELTA_PATH, TSM_PATH};
-use crate::memcache::MemCache;
+use crate::mem_cache::memcache::MemCache;
 use crate::record_file::{Reader, RecordDataType, RecordDataVersion, Writer};
-use crate::tseries_family::{ColumnFile, LevelInfo, TseriesFamily, Version};
+use crate::tsfamily::column_file::ColumnFile;
+use crate::tsfamily::level_info::LevelInfo;
+use crate::tsfamily::tseries_family::TseriesFamily;
+use crate::tsfamily::version::Version;
 use crate::version_set::VersionSet;
 use crate::{byte_utils, file_utils, ColumnFileId, LevelId, TseriesFamilyId};
 

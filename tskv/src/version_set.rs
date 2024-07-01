@@ -12,7 +12,8 @@ use crate::database::{Database, DatabaseFactory};
 use crate::error::TskvResult;
 use crate::index::ts_index::TSIndex;
 use crate::summary::SummaryRequest;
-use crate::tseries_family::{TseriesFamily, Version};
+use crate::tsfamily::tseries_family::TseriesFamily;
+use crate::tsfamily::version::Version;
 use crate::{Options, TseriesFamilyId};
 
 #[derive(Debug)]

@@ -47,7 +47,9 @@ use crate::reader::trace::TraceCollectorBatcherReaderProxy;
 use crate::reader::utils::group_overlapping_segments;
 use crate::reader::{BatchReaderRef, CombinedBatchReader};
 use crate::schema::error::{ColumnNotFoundSnafu, SchemaResult};
-use crate::tseries_family::{CacheGroup, ColumnFile, SuperVersion};
+use crate::tsfamily::cache_group::CacheGroup;
+use crate::tsfamily::column_file::ColumnFile;
+use crate::tsfamily::super_version::SuperVersion;
 use crate::tsm::reader::TsmReader;
 use crate::EngineRef;
 
