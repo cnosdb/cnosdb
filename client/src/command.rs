@@ -52,15 +52,18 @@ impl Command {
                 e
             }),
             Self::ListTables => {
-                let results = ctx.sql("SHOW TABLES".to_string()).await?;
+                let resp = ctx.sql("SHOW TABLES".to_string()).await?;
+                let results = SessionContext::parse_response(resp).await?;
                 print_options.print_batches(&results, now)
             }
             Self::DescribeTable(name) => {
-                let results = ctx.sql(format!("DESCRIBE TABLE {}", name)).await?;
+                let resp = ctx.sql(format!("DESCRIBE TABLE {}", name)).await?;
+                let results = SessionContext::parse_response(resp).await?;
                 print_options.print_batches(&results, now)
             }
             Self::DescribeDatabase(name) => {
-                let results = ctx.sql(format!("DESCRIBE DATABASE {}", name)).await?;
+                let resp = ctx.sql(format!("DESCRIBE DATABASE {}", name)).await?;
+                let results = SessionContext::parse_response(resp).await?;
                 print_options.print_batches(&results, now)
             }
             Self::QuietMode(quiet) => {

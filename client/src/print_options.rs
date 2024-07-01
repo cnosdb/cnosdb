@@ -30,4 +30,14 @@ impl PrintOptions {
         }
         Ok(())
     }
+
+    pub fn print_stream_batches(&self, result_set: Option<&ResultSet>, now: Instant) -> Result<()> {
+        if let Some(result_set) = result_set {
+            result_set.print_fmt(&self.format)?;
+        } else if !self.quiet {
+            print_timing_info(0, now);
+        }
+
+        Ok(())
+    }
 }

@@ -3,13 +3,15 @@ use std::path::Path;
 
 use anyhow::anyhow;
 use base64::prelude::{Engine, BASE64_STANDARD};
+use bytes::Bytes;
 use datafusion::arrow::record_batch::RecordBatch;
 use http_protocol::encoding::Encoding;
 use http_protocol::header::{ACCEPT, PRIVATE_KEY};
 use http_protocol::http_client::HttpClient;
 use http_protocol::parameter::{DumpParam, SqlParam, WriteParam};
 use http_protocol::status_code::OK;
-use reqwest::header::{ACCEPT_ENCODING, CONTENT_ENCODING};
+use reqwest::header::{HeaderMap, ACCEPT_ENCODING, CONTENT_ENCODING};
+use reqwest::Response;
 use tokio::sync::mpsc;
 
 use crate::config::ConfigOptions;
@@ -257,7 +259,7 @@ impl SessionContext {
         &mut self.session_config
     }
 
-    pub async fn sql(&self, sql: String) -> Result<ResultSet> {
+    pub async fn sql(&self, sql: String) -> Result<Response> {
         let mut sql = sql.into_bytes();
         let user_info = &self.session_config.user_info;
 
@@ -298,22 +300,15 @@ impl SessionContext {
         };
 
         let resp = builder.query(&param).body(sql).send().await?;
+        Ok(resp)
+    }
 
+    pub async fn parse_response(resp: Response) -> Result<ResultSet> {
         match resp.status() {
             OK => {
-                let body = if let Some(content_encoding) = resp.headers().get(CONTENT_ENCODING) {
-                    let encoding_str = content_encoding.to_str()?;
-                    let encoding = match Encoding::from_str_opt(encoding_str) {
-                        Some(encoding) => Ok(encoding),
-                        None => Err(anyhow!("encoding not support: {}", encoding_str)),
-                    }?;
-                    encoding.decode(resp.bytes().await?)?
-                } else {
-                    resp.bytes().await?
-                }
-                .to_vec();
-
-                Ok(ResultSet::Bytes((body, 0)))
+                let header = resp.headers().clone();
+                let bytes = resp.bytes().await?;
+                Self::decode_body(bytes, &header).await
             }
             _ => {
                 let status = resp.status().to_string();
@@ -322,6 +317,22 @@ impl SessionContext {
                 Err(anyhow!("{status}, details: {body}"))
             }
         }
+    }
+
+    pub async fn decode_body(body: Bytes, header: &HeaderMap) -> Result<ResultSet> {
+        let body = if let Some(content_encoding) = header.get(CONTENT_ENCODING) {
+            let encoding_str = content_encoding.to_str()?;
+            let encoding = match Encoding::from_str_opt(encoding_str) {
+                Some(encoding) => Ok(encoding),
+                None => Err(anyhow!("encoding not support: {}", encoding_str)),
+            }?;
+            encoding.decode(body)?
+        } else {
+            body
+        }
+        .to_vec();
+
+        Ok(ResultSet::Bytes((body, 0)))
     }
 
     pub async fn write_line_protocol_file(&self, path: impl AsRef<Path>) -> Result<ResultSet> {
