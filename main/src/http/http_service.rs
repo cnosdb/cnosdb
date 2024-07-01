@@ -13,8 +13,9 @@ use config::tskv::TLSConfig;
 use coordinator::service::CoordinatorRef;
 use http_protocol::encoding::Encoding;
 use http_protocol::header::{ACCEPT, APPLICATION_JSON, AUTHORIZATION, PRIVATE_KEY};
-use http_protocol::parameter::{DebugParam, DumpParam, ESLogParam, SqlParam, WriteParam};
+use http_protocol::parameter::{DebugParam, DumpParam, LogParam, SqlParam, WriteParam};
 use http_protocol::response::ErrorResponse;
+use http_protocol::status_code::OK;
 use meta::error::{MetaError, MetaResult};
 use meta::limiter::RequestLimiter;
 use meta::model::MetaRef;
@@ -27,14 +28,16 @@ use models::oid::{Identifier, Oid};
 use models::schema::database_schema::Precision;
 use models::schema::{DEFAULT_CATALOG, DEFAULT_DATABASE};
 use models::utils::now_timestamp_nanos;
-use protocol_parser::es_log::parser::{
-    es_parse_to_line, flatten_json, Command, CommandInfo, ESLog,
+use protocol_parser::json_protocol::parser::{
+    parse_json_to_eslog, parse_json_to_lokilog, parse_json_to_ndjsonlog, parse_protobuf_to_lokilog,
+    parse_to_line, Command, JsonProtocol,
 };
+use protocol_parser::json_protocol::JsonType;
 use protocol_parser::line_protocol::line_protocol_to_lines;
 use protocol_parser::open_tsdb::open_tsdb_to_lines;
 use protocol_parser::{DataPoint, Line};
 use query::prom::remote_server::PromRemoteSqlServer;
-use reqwest::header::{ACCEPT_ENCODING, CONTENT_ENCODING};
+use reqwest::header::{HeaderName, HeaderValue, ACCEPT_ENCODING, CONTENT_ENCODING};
 use snafu::{IntoError, ResultExt};
 use spi::query::config::StreamTriggerInterval;
 use spi::server::dbms::DBMSRef;
@@ -243,6 +246,13 @@ impl HttpService {
             .or(self.write_open_tsdb())
             .or(self.put_open_tsdb())
             .or(self.write_line_protocol())
+            .or(self.get_es_version())
+            .or(self.get_es_empty())
+            .or(self.get_es_license())
+            .or(self.get_es_ingest())
+            .or(self.get_es_node())
+            .or(self.get_es_policy())
+            .or(self.get_es_template())
             .or(self.write_es_log())
     }
 
@@ -1372,15 +1382,102 @@ impl HttpService {
             )
     }
 
+    fn get_es_version(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        warp::path!("api" / "v1" / "es").and(warp::get()).map(|| {
+            #[derive(serde::Serialize)]
+            struct Version {
+                number: &'static str,
+            }
+
+            let mut resp = HashMap::new();
+            resp.insert("version", Version { number: "8.4.0" });
+            let mut builder = ResponseBuilder::new(OK);
+            builder = builder.insert_header((
+                HeaderName::from_static("x-elastic-product"),
+                HeaderValue::from_static("Elasticsearch"),
+            ));
+
+            builder.json(&resp)
+        })
+    }
+
+    fn get_es_empty(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        warp::path!("api" / "v1" / "es").and(warp::head()).map(|| {
+            let mut builder = ResponseBuilder::new(OK);
+            builder = builder.insert_header((
+                HeaderName::from_static("x-elastic-product"),
+                HeaderValue::from_static("Elasticsearch"),
+            ));
+            builder.build(Vec::new())
+        })
+    }
+
+    fn get_es_license(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        warp::path!("api" / "v1" / "es" / "_license")
+            .and(warp::get().or(warp::head()))
+            .map(|_| {
+                #[derive(serde::Serialize)]
+                struct License {
+                    uid: &'static str,
+                    license_type: &'static str,
+                    status: &'static str,
+                    expiry_date_in_millis: u64,
+                }
+
+                let mut resp = HashMap::new();
+                resp.insert(
+                    "license",
+                    License {
+                        uid: "cbff45e7-c553-41f7-ae4f-9205eabd80xx",
+                        license_type: "oss",
+                        status: "active",
+                        expiry_date_in_millis: 4000000000000,
+                    },
+                );
+                warp::reply::json(&resp)
+            })
+    }
+
+    fn get_es_ingest(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        warp::path!("api" / "v1" / "es" / "_ingest" / ..).map(ResponseBuilder::ok)
+    }
+
+    fn get_es_node(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        warp::path!("api" / "v1" / "es" / "_nodes" / ..).map(ResponseBuilder::ok)
+    }
+
+    fn get_es_policy(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        warp::path!("api" / "v1" / "es" / "_ilm" / "policy" / ..).map(ResponseBuilder::ok)
+    }
+
+    fn get_es_template(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        warp::path!("api" / "v1" / "es" / "_index_template" / ..).map(ResponseBuilder::ok)
+    }
+
     fn write_es_log(
         &self,
     ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-        warp::path!("api" / "v1" / "es" / "write")
+        warp::path!("api" / "v1" / "es" / "_bulk")
             .and(warp::post())
             .and(warp::body::content_length_limit(self.write_body_limit))
             .and(warp::body::bytes())
+            .and(warp::header::optional::<String>("content-type"))
             .and(self.handle_header())
-            .and(warp::query::<ESLogParam>())
+            .and(warp::query::<LogParam>())
             .and(self.with_dbms())
             .and(self.with_coord())
             .and(self.with_http_metrics())
@@ -1388,15 +1485,16 @@ impl HttpService {
             .and(self.handle_span_header())
             .and_then(
                 |mut req: Bytes,
+                 content_type: Option<String>,
                  header: Header,
-                 param: ESLogParam,
+                 param: LogParam,
                  dbms: DBMSRef,
                  coord: CoordinatorRef,
                  metrics: Arc<HttpMetrics>,
                  addr: String,
                  parent_span_ctx: Option<SpanContext>| async move {
                     let start = Instant::now();
-                    let span = Span::from_context("rest es log write", parent_span_ctx.as_ref());
+                    let span = Span::from_context("rest log write", parent_span_ctx.as_ref());
                     let span_context = span.context();
 
                     let req_len = req.len();
@@ -1415,14 +1513,15 @@ impl HttpService {
                     };
 
                     if param.table.is_none() {
-                        let e = HttpError::ParseESLog {
-                            source: protocol_parser::ESLogError::Common {
+                        let e = HttpError::ParseLog {
+                            source: protocol_parser::JsonLogError::Common {
                                 content: "table param is None".to_string(),
                             },
                         };
-                        error!("Failed to parse request to es log, err: {:?}", e);
+                        error!("Failed to parse request to log, err: {:?}", e);
                         return Err(reject::custom(e));
                     }
+
                     let ctx = {
                         let mut span =
                             Span::from_context("construct write context", span_context.as_ref());
@@ -1441,26 +1540,29 @@ impl HttpService {
                         ctx
                     };
 
+                    let log_type = param.log_type.unwrap_or("bulk".to_string());
+                    let log_type = JsonType::try_parse(log_type).map_err(|e| {
+                        error!("Failed to parse log_type, err: {:?}", e);
+                        HttpError::ParseLog { source: e }
+                    })?;
                     http_limiter_check_write(&coord.meta_manager(), ctx.tenant(), req_len).await?;
 
-                    let eslog = {
+                    let logs = {
                         let mut span =
-                            Span::from_context("try parse req to es log", span_context.as_ref());
+                            Span::from_context("try parse req to log", span_context.as_ref());
                         span.add_property(|| ("bytes", req.len().to_string()));
-                        try_parse_es_req(&req, param.have_es_command.unwrap_or(true)).map_err(
-                            |e| {
-                                error!("Failed to parse request to es log, err: {:?}", e);
-                                reject::custom(e)
-                            },
-                        )?
+                        try_parse_log_req(req, log_type, content_type).map_err(|e| {
+                            error!("Failed to parse request to log, err: {:?}", e);
+                            reject::custom(e)
+                        })?
                     };
 
-                    let resp = coord_write_eslog(
+                    let resp = coord_write_log(
                         &coord,
                         ctx.tenant(),
                         ctx.database(),
                         &param.table.unwrap(),
-                        eslog,
+                        logs,
                         param.time_column,
                         param.tag_columns,
                         span_context.as_ref(),
@@ -1767,65 +1869,48 @@ fn construct_write_tsdb_points_json_request(req: &Bytes) -> Result<Vec<Line>, Ht
     Ok(tsdb_datapoints)
 }
 
-fn try_parse_es_req(req: &Bytes, have_es_command: bool) -> Result<Vec<ESLog>, HttpError> {
+fn try_parse_log_req(
+    req: Bytes,
+    log_type: JsonType,
+    content_type: Option<String>,
+) -> Result<Vec<JsonProtocol>, HttpError> {
+    if let JsonType::Loki = log_type {
+        if content_type.is_some_and(|x| x.eq("application/x-protobuf")) {
+            let logs =
+                parse_protobuf_to_lokilog(req).map_err(|e| HttpError::ParseLog { source: e })?;
+            return Ok(logs);
+        }
+    }
+
     let lines = simdutf8::basic::from_utf8(req.as_ref())
         .map_err(|e| HttpError::InvalidUTF8 { source: e })?;
 
     let json_chunk: Vec<&str> = lines.trim().split('\n').collect();
-    let n = json_chunk.len();
-    let mut eslogs = vec![];
-
-    if have_es_command {
-        /*
-        because the es log is a pair of command and fields like:
-        { "index" : { "_index" : "test", "_id" : "1" } }
-        { "field1" : "value1" }
-        { "create" : { "_index" : "test", "_id" : "3" } }
-        { "field1" : "value3" }
-        */
-        if n % 2 != 0 {
-            return Err(HttpError::ParseESLog {
-                source: protocol_parser::ESLogError::InvaildSyntax,
-            });
+    match log_type {
+        JsonType::Bulk => {
+            let logs =
+                parse_json_to_eslog(json_chunk).map_err(|e| HttpError::ParseLog { source: e })?;
+            Ok(logs)
         }
-
-        let mut i = 0;
-        while i < n {
-            let command: Command = serde_json::from_str(json_chunk[i])
-                .map_err(|e| HttpError::ParseESLogJson { source: e })?;
-            let fields = flatten_json(
-                serde_json::from_str(json_chunk[i + 1])
-                    .map_err(|e| HttpError::ParseESLogJson { source: e })?,
-            );
-
-            eslogs.push(ESLog { command, fields });
-
-            i += 2;
+        JsonType::Ndjson => {
+            let logs = parse_json_to_ndjsonlog(json_chunk)
+                .map_err(|e| HttpError::ParseLog { source: e })?;
+            Ok(logs)
         }
-    } else {
-        for line in json_chunk {
-            let fields = flatten_json(
-                serde_json::from_str(line).map_err(|e| HttpError::ParseESLogJson { source: e })?,
-            );
-            eslogs.push(ESLog {
-                command: Command::Index(CommandInfo {
-                    _id: None,
-                    _index: None,
-                }),
-                fields,
-            });
+        JsonType::Loki => {
+            let logs =
+                parse_json_to_lokilog(json_chunk).map_err(|e| HttpError::ParseLog { source: e })?;
+            Ok(logs)
         }
     }
-
-    Ok(eslogs)
 }
 
-async fn coord_write_eslog(
+async fn coord_write_log(
     coord: &CoordinatorRef,
     tenant: &str,
     db: &str,
     table: &str,
-    es_log: Vec<ESLog>,
+    logs: Vec<JsonProtocol>,
     time_column: Option<String>,
     tag_columns: Option<String>,
     span_context: Option<&SpanContext>,
@@ -1836,8 +1921,8 @@ async fn coord_write_eslog(
         if let Some(meta) = coord.meta_manager().tenant_meta(tenant).await {
             meta.get_table_schema(db, table).unwrap().is_some()
         } else {
-            return Err(HttpError::ParseESLog {
-                source: protocol_parser::ESLogError::InvaildSyntax,
+            return Err(HttpError::ParseLog {
+                source: protocol_parser::JsonLogError::InvaildSyntax,
             });
         }
     };
@@ -1847,16 +1932,19 @@ async fn coord_write_eslog(
     let tag_columns = tag_columns.unwrap_or_default();
 
     let mut res: String = String::new();
-    for (i, es) in es_log.iter().enumerate() {
-        let line = es_parse_to_line(es, table, &time_column, &tag_columns)
-            .map_err(|e| HttpError::ParseESLog { source: e })?;
-        if let Command::Create(_) = es.command {
-            if table_exist {
-                res = format!("The {}th command fails because the table '{}' already exists and cannot be created repeatedly\n", i + 1, table).to_string();
-                break;
+    for (i, log) in logs.iter().enumerate() {
+        let line = parse_to_line(log, table, &time_column, &tag_columns)
+            .map_err(|e| HttpError::ParseLog { source: e })?;
+
+        if let JsonProtocol::ESLog(log) = log {
+            if let Command::Create(_) = log.command {
+                if table_exist {
+                    res = format!("The {}th command fails because the table '{}' already exists and cannot be created repeatedly\n", i + 1, table).to_string();
+                    break;
+                }
             }
+            table_exist = true;
         }
-        table_exist = true;
         lines.push(line);
     }
 

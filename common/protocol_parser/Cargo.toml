@@ -23,6 +23,7 @@ parking_lot = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 snafu = { workspace = true }
+prost ={ workspace = true }
 
 [features]
 default = []
