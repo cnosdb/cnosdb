@@ -6,6 +6,7 @@ use std::io::BufReader;
 use std::time::Instant;
 
 use anyhow::bail;
+use futures_util::TryStreamExt;
 use rustyline::error::ReadlineError;
 use rustyline::history::DefaultHistory;
 use rustyline::Editor;
@@ -221,8 +222,27 @@ async fn exec_and_print(
         }
 
         let now = Instant::now();
-        let results = ctx.sql(tmp.to_string() + ";").await?;
-        print_options.print_batches(&results, now)?;
+        let resp = ctx.sql(tmp.to_string() + ";").await?;
+        if ctx.get_session_config().chunked {
+            let header = resp.headers().clone();
+            let mut stream = resp.bytes_stream();
+            loop {
+                let chunk = stream
+                    .try_next()
+                    .await
+                    .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+                if let Some(chunk) = chunk {
+                    let results = SessionContext::decode_body(chunk, &header).await?;
+                    print_options.print_stream_batches(Some(&results), now)?;
+                } else {
+                    print_options.print_stream_batches(None, now)?;
+                    break;
+                }
+            }
+        } else {
+            let results = SessionContext::parse_response(resp).await?;
+            print_options.print_batches(&results, now)?;
+        }
     }
 
     Ok(())

@@ -16,16 +16,18 @@ http_protocol = { path = "../common/http_protocol", features = ["http_client"] }
 anyhow = { workspace = true }
 async-backtrace = { workspace = true, optional = true }
 base64 = { workspace = true }
+bytes = { workspace = true }
 clap = { workspace = true, features = ["derive", "cargo"] }
 datafusion = { workspace = true }
 dirs = { workspace = true }
 env_logger = { workspace = true }
 indicatif = { workspace = true }
-reqwest = { workspace = true }
+reqwest = { workspace = true, features = ["stream"] }
 rpassword = { workspace = true }
 rustyline = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "sync", "parking_lot", "tracing"] }
 walkdir = { workspace = true }
+futures-util = { workspace = true }
 
 [features]
 default = []
