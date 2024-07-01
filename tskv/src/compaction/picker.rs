@@ -307,16 +307,16 @@ mod test {
     ///   - size
     ///   - being_compact
     fn create_tseries_family(
-        database: Arc<String>,
+        owner: Arc<String>,
         opt: Arc<Options>,
         db_config: Arc<DatabaseConfig>,
         levels_sketch: LevelsSketch,
     ) -> TseriesFamily {
         let ts_family_id = 0;
         let mut level_infos =
-            LevelInfo::init_levels(database.clone(), ts_family_id, opt.storage.clone());
+            LevelInfo::init_levels(owner.clone(), ts_family_id, opt.storage.clone());
         let mut max_level_ts = 0_i64;
-        let tsm_dir = &opt.storage.tsm_dir(&database, ts_family_id);
+        let tsm_dir = &opt.storage.tsm_dir(&owner, ts_family_id);
         for (level, lts_min, lts_max, column_files_sketch) in levels_sketch {
             max_level_ts = max_level_ts.max(lts_max);
             let mut col_files = Vec::new();
@@ -338,7 +338,7 @@ mod test {
             }
             level_infos[level as usize] = LevelInfo {
                 files: col_files,
-                owner: database.clone(),
+                owner: owner.clone(),
                 tsf_id: 0,
                 storage_opt: opt.storage.clone(),
                 level,

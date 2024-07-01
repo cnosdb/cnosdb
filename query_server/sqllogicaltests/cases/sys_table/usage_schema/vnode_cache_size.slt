@@ -6,6 +6,9 @@ select count(*) >= 1 from usage_schema.vnode_cache_size;
 true
 
 statement ok
+drop database if exists test_vnode_cache_metric;
+
+statement ok
 create database test_vnode_cache_metric;
 
 statement ok
@@ -17,7 +20,12 @@ create table air(d1 double);
 statement ok
 insert into air(d1) values(1)
 
-sleep 10s
+sleep 20s
+
+statement ok
+insert into air(d1) values(2)
+
+sleep 20s
 
 statement ok
 --#DATABASE = usage_schema;
@@ -26,13 +34,9 @@ statement ok
 drop database test_vnode_cache_metric;
 
 query I
-select count(value) from vnode_cache_size where database = 'test_vnode_cache_metric';
+select value from vnode_cache_size where database = 'test_vnode_cache_metric' order by value;
 ----
-1
-
-sleep 10s
-
-query I
-select count(value) from vnode_cache_size where database = 'test_vnode_cache_metric';
-----
-1
+0
+160
+160
+320

@@ -22,7 +22,7 @@ use crate::{ColumnFileId, TseriesFamilyId};
 #[derive(Debug)]
 pub struct Version {
     ts_family_id: TseriesFamilyId,
-    tenant_database: Arc<String>,
+    owner: Arc<String>,
     storage_opt: Arc<StorageOptions>,
     /// The max seq_no of write batch in wal flushed to column file.
     last_seq: u64,
@@ -45,7 +45,7 @@ impl Version {
     ) -> Self {
         Self {
             ts_family_id,
-            tenant_database,
+            owner: tenant_database,
             storage_opt,
             last_seq,
             max_level_ts,
@@ -74,7 +74,7 @@ impl Version {
         }
 
         let mut new_levels = LevelInfo::init_levels(
-            self.tenant_database.clone(),
+            self.owner.clone(),
             self.ts_family_id,
             self.storage_opt.clone(),
         );
@@ -104,7 +104,7 @@ impl Version {
         let mut new_version = Self {
             last_seq: ve.seq_no,
             ts_family_id: self.ts_family_id,
-            tenant_database: self.tenant_database.clone(),
+            owner: self.owner.clone(),
             storage_opt: self.storage_opt.clone(),
             max_level_ts: self.max_level_ts,
             levels_info: new_levels,
@@ -135,8 +135,8 @@ impl Version {
         self.ts_family_id
     }
 
-    pub fn tenant_database(&self) -> Arc<String> {
-        self.tenant_database.clone()
+    pub fn owner(&self) -> Arc<String> {
+        self.owner.clone()
     }
 
     pub fn levels_info(&self) -> &[LevelInfo; 5] {
@@ -209,7 +209,7 @@ impl Version {
     pub fn inner(&self) -> Self {
         Self {
             ts_family_id: self.ts_family_id,
-            tenant_database: self.tenant_database.clone(),
+            owner: self.owner.clone(),
             storage_opt: self.storage_opt.clone(),
             last_seq: self.last_seq,
             max_level_ts: self.max_level_ts,
