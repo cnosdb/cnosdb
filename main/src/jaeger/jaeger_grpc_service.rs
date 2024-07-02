@@ -15,7 +15,7 @@ use crate::jaeger::jaeger_read_server::JaegerReadService;
 use crate::jaeger::jaeger_write_server::JaegerWriteService;
 use crate::server::ServiceHandle;
 use crate::spi::service::Service;
-use crate::{info, server};
+use crate::{build_grpc_server, info, server};
 
 pub struct JaegerGrpcService {
     addr: SocketAddr,
@@ -48,26 +48,6 @@ impl JaegerGrpcService {
     }
 }
 
-macro_rules! build_grpc_server {
-    ($tls_config:expr, $auto_generate_span:expr) => {{
-        let trace_layer = TraceLayer::new($auto_generate_span, "grpc_jaeger");
-        let mut server = Server::builder().layer(trace_layer);
-
-        if let Some(TLSConfig {
-            certificate,
-            private_key,
-        }) = $tls_config
-        {
-            let cert = std::fs::read(certificate)?;
-            let key = std::fs::read(private_key)?;
-            let identity = Identity::from_pem(cert, key);
-            server = server.tls_config(ServerTlsConfig::new().identity(identity))?;
-        }
-
-        server
-    }};
-}
-
 #[async_trait::async_trait]
 impl Service for JaegerGrpcService {
     fn start(&mut self) -> server::Result<()> {
@@ -78,7 +58,7 @@ impl Service for JaegerGrpcService {
         ));
         let jaeger_read_service =
             SpanReaderPluginServer::new(JaegerReadService::new(self.coord.clone()));
-        let mut grpc_builder = build_grpc_server!(&self.tls_config, self.auto_generate_span);
+        let mut grpc_builder = build_grpc_server!(&self.tls_config, self.auto_generate_span, "grpc_jaeger");
         let grpc_router = grpc_builder
             .add_service(jaeger_write_service)
             .add_service(jaeger_read_service);

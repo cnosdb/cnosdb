@@ -13,7 +13,7 @@ use trace::http::tower_layer::TraceLayer;
 use crate::server::ServiceHandle;
 use crate::spi::service::Service;
 use crate::vector::vector_server::VectorService;
-use crate::{info, server};
+use crate::{build_grpc_server, info, server};
 
 pub struct VectorGrpcService {
     addr: SocketAddr,
@@ -46,33 +46,13 @@ impl VectorGrpcService {
     }
 }
 
-macro_rules! build_grpc_server {
-    ($tls_config:expr, $auto_generate_span:expr) => {{
-        let trace_layer = TraceLayer::new($auto_generate_span, "grpc_vector");
-        let mut server = Server::builder().layer(trace_layer);
-
-        if let Some(TLSConfig {
-            certificate,
-            private_key,
-        }) = $tls_config
-        {
-            let cert = std::fs::read(certificate)?;
-            let key = std::fs::read(private_key)?;
-            let identity = Identity::from_pem(cert, key);
-            server = server.tls_config(ServerTlsConfig::new().identity(identity))?;
-        }
-
-        server
-    }};
-}
-
 #[async_trait::async_trait]
 impl Service for VectorGrpcService {
     fn start(&mut self) -> server::Result<()> {
         let (shutdown, rx) = oneshot::channel();
         let vector_service =
             VectorServer::new(VectorService::new(self.coord.clone(), self.dbms.clone()));
-        let mut grpc_builder = build_grpc_server!(&self.tls_config, self.auto_generate_span);
+        let mut grpc_builder = build_grpc_server!(&self.tls_config, self.auto_generate_span, "grpc_vector");
         let grpc_router = grpc_builder.add_service(vector_service);
         let server = grpc_router.serve_with_shutdown(self.addr, async {
             rx.await.ok();
