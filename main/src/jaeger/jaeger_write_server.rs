@@ -16,7 +16,6 @@ use protos::jaeger_storage_v1::{
 use spi::server::dbms::DBMSRef;
 use tonic::{Response, Status};
 
-const TABLE_FIELD: &str = "table";
 const USERNAME_FIELD: &str = "user";
 const PASSWORD_FIELD: &str = "password";
 pub const JAEGER_TRACE_TABLE: &str = "jaeger_trace";
@@ -31,7 +30,7 @@ impl JaegerWriteService {
         Self { coord, dbms }
     }
 
-    pub async fn get_tenant_db_and_check_privilege(&self, span: &Span) -> Result<(), Status> {
+    async fn get_tenant_db_and_check_privilege(&self, span: &Span) -> Result<(), Status> {
         let user = if let Some(kv) = span.tags.iter().find(|tag| tag.key == USERNAME_FIELD) {
             kv.v_str.clone()
         } else {
@@ -84,7 +83,7 @@ impl JaegerWriteService {
         Ok(())
     }
 
-    fn parse_kv(&self, prefix: &str, kv: &KeyValue) -> String {
+    fn encode_kv(prefix: &str, kv: &KeyValue) -> String {
         let mut line = String::new();
         let key = prefix.to_owned() + &kv.key;
         let mut buf = Vec::new();
@@ -98,7 +97,7 @@ impl JaegerWriteService {
         line
     }
 
-    fn parse_span(&self, span: &Span) -> String {
+    fn span_to_string(span: &Span) -> String {
         // spans table
         let mut line_spans_tb = String::new();
         let table = JAEGER_TRACE_TABLE.to_string() + " ";
@@ -164,7 +163,7 @@ impl JaegerWriteService {
 
         span.tags.iter().for_each(|kv| {
             if kv.key != USERNAME_FIELD && kv.key != PASSWORD_FIELD {
-                line_spans_tb.push_str(&self.parse_kv("tags.", kv));
+                line_spans_tb.push_str(&JaegerWriteService::encode_kv("tags.", kv));
                 line_spans_tb.push(',');
             }
         });
@@ -177,14 +176,14 @@ impl JaegerWriteService {
             }
             let prefix = format!("logs.{}.fields.", i);
             log.fields.iter().for_each(|kv| {
-                line_spans_tb.push_str(&self.parse_kv(&prefix, kv));
+                line_spans_tb.push_str(&JaegerWriteService::encode_kv(&prefix, kv));
                 line_spans_tb.push(',');
             });
         }
 
         if let Some(process) = span.process.as_ref() {
             process.tags.iter().for_each(|kv| {
-                line_spans_tb.push_str(&self.parse_kv("process.tags.", kv));
+                line_spans_tb.push_str(&JaegerWriteService::encode_kv("process.tags.", kv));
                 line_spans_tb.push(',');
             })
         }
@@ -224,7 +223,7 @@ impl SpanWriterPlugin for JaegerWriteService {
                 .map_err(|e| Status::permission_denied(e.to_string()))?;
 
             // parse span to line_str
-            let line_str = self.parse_span(&span);
+            let line_str = JaegerWriteService::span_to_string(&span);
 
             // parse line_str to line
             let parser = Parser::new(Utc::now().timestamp_millis());

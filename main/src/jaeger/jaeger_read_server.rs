@@ -315,7 +315,9 @@ impl SpanReaderPlugin for JaegerReadService {
         for batch in record_batch_vec {
             let col_operation_name = batch
                 .column_by_name("operation_name")
-                .unwrap()
+                .ok_or(Status::internal(
+                    "column operation_name is not exist".to_string(),
+                ))?
                 .as_any()
                 .downcast_ref::<StringArray>()
                 .ok_or(Status::internal(
@@ -331,7 +333,9 @@ impl SpanReaderPlugin for JaegerReadService {
             };
             let col_span_kind = batch
                 .column_by_name("tags.span.kind")
-                .unwrap()
+                .ok_or(Status::internal(
+                    "column tags.span.kind is not StringArray".to_string(),
+                ))?
                 .as_any()
                 .downcast_ref::<StringArray>()
                 .ok_or(Status::internal(
@@ -417,7 +421,7 @@ impl SpanReaderPlugin for JaegerReadService {
         for batch in record_batch_vec {
             let col_trace_id = batch
                 .column_by_name("trace_id")
-                .unwrap()
+                .ok_or(Status::internal("column trace_id is not exist".to_string()))?
                 .as_any()
                 .downcast_ref::<StringArray>()
                 .ok_or(Status::internal(
@@ -468,7 +472,7 @@ impl JaegerReadStream {
         KeyValue::decode(&value[..]).expect("decode KeyValue failed")
     }
 
-    fn get_span(batch: RecordBatch, row_i: usize) -> Result<Span, tonic::Status> {
+    fn recordbatch_to_span(batch: RecordBatch, row_i: usize) -> Result<Span, tonic::Status> {
         let all_col_names = batch
             .schema()
             .all_fields()
@@ -479,7 +483,7 @@ impl JaegerReadStream {
 
         let start_time = batch
             .column_by_name("time")
-            .unwrap()
+            .ok_or(Status::internal("column time is not exist".to_string()))?
             .as_any()
             .downcast_ref::<TimestampNanosecondArray>()
             .ok_or(Status::internal(
@@ -611,38 +615,56 @@ impl JaegerReadStream {
                     process.tags.push(Self::decode_kv(&value));
                 }
             } else if col_name.starts_with(&ref_prefix) {
-                let ref_ = SpanRef {
-                    trace_id: batch
-                        .column_by_name((ref_prefix.clone() + "trace_id").as_str())
-                        .unwrap()
-                        .as_any()
-                        .downcast_ref::<StringArray>()
-                        .unwrap()
-                        .value(row_i)
+                let col_ref_trace_id = batch
+                    .column_by_name((ref_prefix.clone() + "trace_id").as_str())
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref::<StringArray>()
+                    .unwrap()
+                    .value(row_i);
+                let trace_id = if !col_ref_trace_id.is_empty() {
+                    col_ref_trace_id
                         .split('_')
                         .map(|s| s.parse().unwrap())
-                        .collect(),
-                    span_id: batch
-                        .column_by_name((ref_prefix.clone() + "span_id").as_str())
-                        .unwrap()
-                        .as_any()
-                        .downcast_ref::<StringArray>()
-                        .unwrap()
-                        .value(row_i)
-                        .split('_')
-                        .map(|s| s.parse().unwrap())
-                        .collect(),
-                    ref_type: batch
-                        .column_by_name((ref_prefix + "ref_type").as_str())
-                        .unwrap()
-                        .as_any()
-                        .downcast_ref::<StringArray>()
-                        .unwrap()
-                        .value(row_i)
-                        .parse()
-                        .unwrap(),
+                        .collect()
+                } else {
+                    Vec::new()
                 };
-                span.references.push(ref_);
+
+                let col_ref_span_id = batch
+                    .column_by_name((ref_prefix.clone() + "span_id").as_str())
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref::<StringArray>()
+                    .unwrap()
+                    .value(row_i);
+                let span_id = if !col_ref_span_id.is_empty() {
+                    col_ref_span_id
+                        .split('_')
+                        .map(|s| s.parse().unwrap())
+                        .collect()
+                } else {
+                    Vec::new()
+                };
+
+                let col_ref_type = batch
+                    .column_by_name((ref_prefix.clone() + "ref_type").as_str())
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref::<StringArray>()
+                    .unwrap()
+                    .value(row_i);
+                let ref_type = if !col_ref_type.is_empty() {
+                    col_ref_type.parse().unwrap()
+                } else {
+                    0
+                };
+
+                span.references.push(SpanRef {
+                    trace_id,
+                    span_id,
+                    ref_type,
+                });
                 ref_i += 1;
             } else if col_name.starts_with(&log_prefix) {
                 let mut logs = Vec::new();
@@ -728,7 +750,7 @@ impl JaegerReadStream {
                             "column trace_id is not StringArray".to_string(),
                         ))?;
                     if let Some(i) = (0..column_trace_id.len()).next() {
-                        spans.push(Self::get_span(batch, i)?);
+                        spans.push(Self::recordbatch_to_span(batch, i)?);
                     }
                 }
                 Poll::Ready(Some(Ok(SpansResponseChunk { spans })))
