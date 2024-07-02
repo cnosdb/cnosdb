@@ -39,7 +39,7 @@ pub type FlatBufferTable<'a> = flatbuffers::Vector<'a, flatbuffers::ForwardsUOff
 #[derive(Debug)]
 pub struct Database {
     //tenant_name.database_name => owner
-    owner: Arc<String>,
+    owner: Arc<(String, String)>,
     opt: Arc<Options>,
     config: Arc<DatabaseConfig>,
     db_name: Arc<String>,
@@ -135,7 +135,7 @@ impl Database {
             self.config.max_cache_readers() as usize,
         ));
         let levels = LevelInfo::init_levels(self.owner.clone(), tsf_id, self.opt.storage.clone());
-        let version_edit = VersionEdit::new_add_vnode(tsf_id, self.owner.as_ref().clone(), 0);
+        let version_edit = VersionEdit::new_add_vnode(tsf_id, self.owner.clone(), 0);
 
         let ver = Arc::new(Version::new(
             tsf_id,
@@ -167,7 +167,10 @@ impl Database {
         data_dir: &Path,
         ctx: Arc<TsKvContext>,
     ) -> TskvResult<Arc<RwLock<TseriesFamily>>> {
-        let new_dir = self.opt.storage.ts_family_dir(&self.owner, ve.tsf_id);
+        let new_dir = self
+            .opt
+            .storage
+            .ts_family_dir(self.owner.clone(), ve.tsf_id);
         let new_dir = new_dir.as_path();
 
         let mut file_metas = HashMap::with_capacity(ve.add_files.len());
@@ -222,7 +225,7 @@ impl Database {
             let owner = tf.read().await.owner();
             let seq = tf.read().await.version().last_seq();
             self.tsf_factory.drop_tsf(tf_id);
-            let edit = VersionEdit::new_del_vnode(tf_id, owner.to_string(), seq);
+            let edit = VersionEdit::new_del_vnode(tf_id, owner, seq);
             let (task_state_sender, task_state_receiver) = oneshot::channel();
             let task = SummaryTask::new(tf.clone(), edit, None, None, task_state_sender);
             if let Err(e) = summary_task_sender.send(task).await {
@@ -476,7 +479,7 @@ impl Database {
             return Ok(v.clone());
         }
 
-        let path = self.opt.storage.index_dir(&self.owner, id);
+        let path = self.opt.storage.index_dir(self.owner.clone(), id);
 
         let idx = TSIndex::new(path).await.context(IndexErrSnafu)?;
 
@@ -493,7 +496,7 @@ impl Database {
         Ok(self.schemas.db_schema().await?)
     }
 
-    pub fn owner(&self) -> Arc<String> {
+    pub fn owner(&self) -> Arc<(String, String)> {
         self.owner.clone()
     }
 

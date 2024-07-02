@@ -33,7 +33,7 @@ use crate::{ColumnFileId, Options, TseriesFamilyId};
 #[derive(Debug)]
 pub struct TsfFactory {
     // "tenant.db"
-    owner: Arc<String>,
+    owner: Arc<(String, String)>,
     options: Arc<Options>,
     db_config: Arc<DatabaseConfig>,
     memory_pool: MemoryPoolRef,
@@ -41,7 +41,7 @@ pub struct TsfFactory {
 }
 impl TsfFactory {
     pub fn new(
-        owner: Arc<String>,
+        owner: Arc<(String, String)>,
         options: Arc<Options>,
         db_config: Arc<DatabaseConfig>,
         memory_pool: MemoryPoolRef,
@@ -68,8 +68,7 @@ impl TsfFactory {
             version.last_seq(),
             &self.memory_pool,
         )));
-        let tsf_metrics =
-            TsfMetrics::new(&self.metrics_register, self.owner.as_str(), tf_id as u64);
+        let tsf_metrics = TsfMetrics::new(&self.metrics_register, self.owner.clone(), tf_id as u64);
         let super_version = Arc::new(SuperVersion::new(
             tf_id,
             CacheGroup {
@@ -102,14 +101,14 @@ impl TsfFactory {
 
     pub fn drop_tsf(&self, tf_id: u32) {
         //todo other's thing may need to drop
-        TsfMetrics::drop(&self.metrics_register, self.owner.as_str(), tf_id as u64);
+        TsfMetrics::drop(&self.metrics_register, self.owner.clone(), tf_id as u64);
     }
 }
 
 #[derive(Debug)]
 pub struct TseriesFamily {
     tf_id: TseriesFamilyId,
-    owner: Arc<String>,
+    owner: Arc<(String, String)>,
     mut_cache: Arc<RwLock<MemCache>>,
     immut_cache: Vec<Arc<RwLock<MemCache>>>,
     super_version: Arc<SuperVersion>,
@@ -127,7 +126,7 @@ impl TseriesFamily {
     #[cfg(test)]
     pub fn new(
         tf_id: TseriesFamilyId,
-        owner: Arc<String>,
+        owner: Arc<(String, String)>,
         cache: MemCache,
         version: Arc<Version>,
         db_config: Arc<DatabaseConfig>,
@@ -156,7 +155,7 @@ impl TseriesFamily {
             storage_opt,
             last_modified: Arc::new(tokio::sync::RwLock::new(None)),
             memory_pool,
-            tsf_metrics: TsfMetrics::new(register, owner.as_str(), tf_id as u64),
+            tsf_metrics: TsfMetrics::new(register, owner, tf_id as u64),
             status: VnodeStatus::Running,
         }
     }
@@ -310,7 +309,7 @@ impl TseriesFamily {
     /// Db-files' index data (field-id filter) will be inserted into `file_metas`.
     pub fn build_version_edit(&self) -> VersionEdit {
         let version = self.version();
-        let owner = (*self.owner).clone();
+        let owner = self.owner();
         let seq_no = version.last_seq();
         let max_level_ts = version.max_level_ts();
 
@@ -342,7 +341,7 @@ impl TseriesFamily {
     }
 
     pub async fn rebuild_index(&self) -> TskvResult<Arc<tokio::sync::RwLock<TSIndex>>> {
-        let path = self.storage_opt.index_dir(self.owner.as_str(), self.tf_id);
+        let path = self.storage_opt.index_dir(self.owner(), self.tf_id);
         let _ = std::fs::remove_dir_all(path.clone());
 
         let index = TSIndex::new(path).await.context(IndexErrSnafu)?;
@@ -384,7 +383,7 @@ impl TseriesFamily {
         self.tf_id
     }
 
-    pub fn owner(&self) -> Arc<String> {
+    pub fn owner(&self) -> Arc<(String, String)> {
         self.owner.clone()
     }
 
@@ -413,11 +412,11 @@ impl TseriesFamily {
     }
 
     pub fn get_delta_dir(&self) -> PathBuf {
-        self.storage_opt.delta_dir(&self.owner, self.tf_id)
+        self.storage_opt.delta_dir(self.owner.clone(), self.tf_id)
     }
 
     pub fn get_tsm_dir(&self) -> PathBuf {
-        self.storage_opt.tsm_dir(&self.owner, self.tf_id)
+        self.storage_opt.tsm_dir(self.owner.clone(), self.tf_id)
     }
 
     pub fn disk_storage(&self) -> u64 {
@@ -506,9 +505,9 @@ pub mod test_tseries_family {
         global_config.storage.path = dir.to_string();
         let opt = Arc::new(Options::from(&global_config));
 
-        let database = Arc::new("test".to_string());
+        let database = Arc::new(("test".to_string(), "test".to_string()));
         let ts_family_id = 1;
-        let tsm_dir = opt.storage.tsm_dir(&database, ts_family_id);
+        let tsm_dir = opt.storage.tsm_dir(database.clone(), ts_family_id);
         #[rustfmt::skip]
             let levels = [
             LevelInfo::init(database.clone(), 0, 0, opt.storage.clone()),
@@ -551,7 +550,7 @@ pub mod test_tseries_family {
             tsm_reader_cache,
         );
 
-        let mut ve = VersionEdit::new_update_vnode(1, database.to_string(), 1);
+        let mut ve = VersionEdit::new_update_vnode(1, database.clone(), 1);
         #[rustfmt::skip]
         ve.add_file(
             CompactMeta {
@@ -567,7 +566,7 @@ pub mod test_tseries_family {
         );
         let version = version.copy_apply_version_edits(ve, &mut HashMap::new());
 
-        let mut ve = VersionEdit::new_update_vnode(1, database.to_string(), 3);
+        let mut ve = VersionEdit::new_update_vnode(1, database.clone(), 3);
         ve.del_file(1, 3, false);
         let new_version = version.copy_apply_version_edits(ve, &mut HashMap::new());
 
@@ -605,9 +604,9 @@ pub mod test_tseries_family {
         global_config.storage.path = dir.to_string();
         let opt = Arc::new(Options::from(&global_config));
 
-        let database = Arc::new("cnosdb.test".to_string());
+        let database = Arc::new(("cnosdb".to_string(), "test".to_string()));
         let ts_family_id = 1;
-        let tsm_dir = opt.storage.tsm_dir(&database, ts_family_id);
+        let tsm_dir = opt.storage.tsm_dir(database.clone(), ts_family_id);
         #[rustfmt::skip]
             let levels = [
             LevelInfo::init(database.clone(), 0, 1, opt.storage.clone()),
@@ -644,7 +643,7 @@ pub mod test_tseries_family {
         #[rustfmt::skip]
             let version = Version::new(1, database.clone(), opt.storage.clone(), 1, levels, 3150, tsm_reader_cache);
 
-        let mut ve = VersionEdit::new_update_vnode(1, database.to_string(), 1);
+        let mut ve = VersionEdit::new_update_vnode(1, database.clone(), 1);
         #[rustfmt::skip]
         ve.add_file(
             CompactMeta {
@@ -673,7 +672,7 @@ pub mod test_tseries_family {
         );
         let version = version.copy_apply_version_edits(ve, &mut HashMap::new());
 
-        let mut ve = VersionEdit::new_update_vnode(1, database.to_string(), 3);
+        let mut ve = VersionEdit::new_update_vnode(1, database.clone(), 3);
         ve.del_file(1, 3, false);
         ve.del_file(1, 4, false);
         ve.del_file(2, 1, false);

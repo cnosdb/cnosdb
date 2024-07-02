@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use config::tskv::Config;
 use models::meta_data::{NodeId, VnodeId};
+use models::schema::database_schema::make_owner;
 
 use crate::TseriesFamilyId;
 
@@ -66,23 +67,37 @@ impl StorageOptions {
         self.path.join(SUMMARY_PATH)
     }
 
-    pub fn owner_dir(&self, owner: &str) -> PathBuf {
-        self.path.join(DATA_PATH).join(owner)
+    pub fn owner_dir(&self, owner: Arc<(String, String)>) -> PathBuf {
+        self.path
+            .join(DATA_PATH)
+            .join(make_owner(owner.0.as_str(), owner.1.as_str()))
     }
 
-    pub fn ts_family_dir(&self, owner: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
+    pub fn ts_family_dir(
+        &self,
+        owner: Arc<(String, String)>,
+        ts_family_id: TseriesFamilyId,
+    ) -> PathBuf {
         self.owner_dir(owner).join(ts_family_id.to_string())
     }
 
-    pub fn index_dir(&self, owner: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
+    pub fn index_dir(
+        &self,
+        owner: Arc<(String, String)>,
+        ts_family_id: TseriesFamilyId,
+    ) -> PathBuf {
         self.ts_family_dir(owner, ts_family_id).join(INDEX_PATH)
     }
 
-    pub fn tsm_dir(&self, owner: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
+    pub fn tsm_dir(&self, owner: Arc<(String, String)>, ts_family_id: TseriesFamilyId) -> PathBuf {
         self.ts_family_dir(owner, ts_family_id).join(TSM_PATH)
     }
 
-    pub fn delta_dir(&self, owner: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
+    pub fn delta_dir(
+        &self,
+        owner: Arc<(String, String)>,
+        ts_family_id: TseriesFamilyId,
+    ) -> PathBuf {
         self.ts_family_dir(owner, ts_family_id).join(DELTA_PATH)
     }
 }

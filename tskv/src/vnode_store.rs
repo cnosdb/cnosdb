@@ -175,7 +175,7 @@ impl VnodeStorage {
         let summary_sender = self.ctx.summary_task_sender.clone();
         db_wlock.del_tsfamily(vnode_id, summary_sender).await;
         db_wlock.del_ts_index(vnode_id);
-        let vnode_dir = storage_opt.ts_family_dir(&owner, vnode_id);
+        let vnode_dir = storage_opt.ts_family_dir(owner, vnode_id);
         let _ = std::fs::remove_dir_all(&vnode_dir);
 
         // apply data and reopen
@@ -207,7 +207,7 @@ impl VnodeStorage {
         let owner = self.ts_family.read().await.owner();
         let request = FlushReq {
             tf_id: self.id,
-            owner: owner.to_string(),
+            owner,
             ts_index: self.ts_index.clone(),
             ts_family: self.ts_family.clone(),
             trigger_compact: compact,
@@ -295,12 +295,13 @@ impl VnodeStorage {
 
     async fn drop_table(&self, table: &str) -> TskvResult<()> {
         // TODO Create global DropTable flag for droping the same table at the same time.
-        let db_owner = self.db.read().await.owner();
+        let db_owner = (*self.db.read().await.owner()).clone();
+        let (tenant, database) = (db_owner.0, db_owner.1);
         let schemas = self.db.read().await.get_schemas();
         if let Some(fields) = schemas.get_table_schema(table).await? {
             let column_ids: Vec<ColumnId> = fields.columns().iter().map(|f| f.id).collect();
             info!(
-                "Drop table: deleting {} columns in table: {db_owner}.{table}",
+                "Drop table: deleting {} columns in table: {tenant}.{database}.{table}",
                 column_ids.len()
             );
 
@@ -317,7 +318,7 @@ impl VnodeStorage {
                 .delete_series(&series_ids, &TimeRange::all());
 
             info!(
-                "Drop table: vnode {} deleting {} fields in table: {db_owner}.{table}",
+                "Drop table: vnode {} deleting {} fields in table: {tenant}.{database}.{table}",
                 self.id,
                 column_ids.len() * series_ids.len()
             );
@@ -328,7 +329,7 @@ impl VnodeStorage {
                 .await?;
 
             info!(
-                "Drop table: index {} deleting {} fields in table: {db_owner}.{table}",
+                "Drop table: index {} deleting {} fields in table: {tenant}.{database}.{table}",
                 self.id,
                 series_ids.len()
             );
@@ -493,7 +494,8 @@ impl VnodeStorage {
     async fn drop_table_columns(&self, table: &str, column_ids: &[ColumnId]) -> TskvResult<()> {
         // TODO Create global DropTable flag for droping the same table at the same time.
         let db_rlock = self.db.read().await;
-        let db_owner = db_rlock.owner();
+        let db_owner = (*db_rlock.owner()).clone();
+        let (tenant, database) = (db_owner.0, db_owner.1);
         let schemas = db_rlock.get_schemas();
         if let Some(fields) = schemas.get_table_schema(table).await? {
             let table_column_ids: HashSet<ColumnId> =
@@ -514,7 +516,7 @@ impl VnodeStorage {
                 .await
                 .context(IndexErrSnafu)?;
             info!(
-                "drop table column: vnode: {} deleting {} fields in table: {db_owner}.{table}",
+                "drop table column: vnode: {} deleting {} fields in table: {tenant}.{database}.{table}",
                 self.id,
                 series_ids.len() * to_drop_column_ids.len()
             );

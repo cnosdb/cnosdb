@@ -48,8 +48,8 @@ impl DatabaseSchema {
         self.is_hidden
     }
 
-    pub fn owner(&self) -> String {
-        make_owner(&self.tenant, &self.database)
+    pub fn owner(&self) -> (String, String) {
+        (self.tenant.clone(), self.database.clone())
     }
 
     pub fn is_empty(&self) -> bool {
@@ -94,18 +94,6 @@ impl DatabaseSchema {
 
 pub fn make_owner(tenant_name: &str, database_name: &str) -> String {
     format!("{}.{}", tenant_name, database_name)
-}
-
-/// "tenant.database" -> ("tenant", "database")
-pub fn split_owner(owner: &str) -> (&str, &str) {
-    owner
-        .find('.')
-        .map(|index| {
-            (index < owner.len())
-                .then(|| (&owner[..index], &owner[(index + 1)..]))
-                .unwrap_or((owner, ""))
-        })
-        .unwrap_or_default()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
