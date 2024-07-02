@@ -12,8 +12,8 @@ store_metrics = true
 [meta]
 service_addr = ["127.0.0.1:8901"]
 report_time_interval = "30s"
-usage_schema_cache_size = "32K" # 32KB
-cluster_schema_cache_size = "32K" # 32KB
+usage_schema_cache_size = "2M" # 2MiB
+cluster_schema_cache_size = "2M" # 2MiB
 
 [query]
 max_server_connections = 10240
