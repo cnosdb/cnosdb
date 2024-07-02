@@ -39,11 +39,11 @@ impl MetaConfig {
     }
 
     fn default_usage_schema_cache_size() -> u64 {
-        32 * 1024
+        2 * 1024 * 1024
     }
 
     fn default_cluster_schema_cache_size() -> u64 {
-        32 * 1024
+        2 * 1024 * 1024
     }
 }
 

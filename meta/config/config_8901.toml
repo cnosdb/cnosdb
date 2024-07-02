@@ -9,8 +9,8 @@ heartbeat_interval = 3000
 raft_logs_to_keep = 10000
 install_snapshot_timeout = 3600000
 send_append_entries_timeout = 5000
-usage_schema_cache_size = 32768 # 32KB
-cluster_schema_cache_size = 32768 # 32KB
+usage_schema_cache_size = 2097152 # 2MiB
+cluster_schema_cache_size = 2097152 # 2MiB
 
 [log]
 level = "info"

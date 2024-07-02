@@ -57,8 +57,8 @@ impl Default for Opt {
             raft_logs_to_keep: 10000,
             install_snapshot_timeout: 3600 * 1000,
             send_append_entries_timeout: 5 * 1000,
-            usage_schema_cache_size: 32 * 1024,
-            cluster_schema_cache_size: 32 * 1024,
+            usage_schema_cache_size: 2 * 1024 * 1024,
+            cluster_schema_cache_size: 2 * 1024 * 1024,
         }
     }
 }
