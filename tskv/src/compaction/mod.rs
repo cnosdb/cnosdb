@@ -24,7 +24,7 @@ pub struct CompactTask {
 
 pub struct CompactReq {
     pub ts_family_id: TseriesFamilyId,
-    pub owner: Arc<String>,
+    pub owner: Arc<(String, String)>,
     storage_opt: Arc<StorageOptions>,
 
     files: Vec<Arc<ColumnFile>>,
@@ -35,7 +35,7 @@ pub struct CompactReq {
 #[derive(Clone)]
 pub struct FlushReq {
     pub tf_id: TseriesFamilyId,
-    pub owner: String,
+    pub owner: Arc<(String, String)>,
     pub ts_index: Arc<RwLock<TSIndex>>,
     pub ts_family: Arc<RwLock<TseriesFamily>>,
     pub trigger_compact: bool,
@@ -45,8 +45,8 @@ impl std::fmt::Display for FlushReq {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "FlushReq owner: {}, on vnode: {}",
-            self.owner, self.tf_id,
+            "FlushReq owner: {}.{}, on vnode: {}",
+            self.owner.0, self.owner.1, self.tf_id,
         )
     }
 }
