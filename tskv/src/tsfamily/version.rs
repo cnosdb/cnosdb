@@ -36,7 +36,7 @@ impl Version {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         ts_family_id: TseriesFamilyId,
-        tenant_database: Arc<String>,
+        owner: Arc<String>,
         storage_opt: Arc<StorageOptions>,
         last_seq: u64,
         levels_info: [LevelInfo; 5],
@@ -45,7 +45,7 @@ impl Version {
     ) -> Self {
         Self {
             ts_family_id,
-            owner: tenant_database,
+            owner,
             storage_opt,
             last_seq,
             max_level_ts,

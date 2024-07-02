@@ -33,7 +33,7 @@ use crate::{ColumnFileId, Options, TseriesFamilyId};
 #[derive(Debug)]
 pub struct TsfFactory {
     // "tenant.db"
-    database: Arc<String>,
+    owner: Arc<String>,
     options: Arc<Options>,
     db_config: Arc<DatabaseConfig>,
     memory_pool: MemoryPoolRef,
@@ -41,14 +41,14 @@ pub struct TsfFactory {
 }
 impl TsfFactory {
     pub fn new(
-        database: Arc<String>,
+        owner: Arc<String>,
         options: Arc<Options>,
         db_config: Arc<DatabaseConfig>,
         memory_pool: MemoryPoolRef,
         metrics_register: Arc<MetricsRegister>,
     ) -> Self {
         Self {
-            database,
+            owner,
             options,
             db_config,
             memory_pool,
@@ -69,7 +69,7 @@ impl TsfFactory {
             &self.memory_pool,
         )));
         let tsf_metrics =
-            TsfMetrics::new(&self.metrics_register, self.database.as_str(), tf_id as u64);
+            TsfMetrics::new(&self.metrics_register, self.owner.as_str(), tf_id as u64);
         let super_version = Arc::new(SuperVersion::new(
             tf_id,
             CacheGroup {
@@ -82,7 +82,7 @@ impl TsfFactory {
 
         let tsfamily = Arc::new(TokioRwLock::new(TseriesFamily {
             tf_id,
-            owner: self.database.clone(),
+            owner: self.owner.clone(),
             mut_cache,
             immut_cache: vec![],
             super_version,
@@ -102,7 +102,7 @@ impl TsfFactory {
 
     pub fn drop_tsf(&self, tf_id: u32) {
         //todo other's thing may need to drop
-        TsfMetrics::drop(&self.metrics_register, self.database.as_str(), tf_id as u64);
+        TsfMetrics::drop(&self.metrics_register, self.owner.as_str(), tf_id as u64);
     }
 }
 
@@ -127,7 +127,7 @@ impl TseriesFamily {
     #[cfg(test)]
     pub fn new(
         tf_id: TseriesFamilyId,
-        tenant_database: Arc<String>,
+        owner: Arc<String>,
         cache: MemCache,
         version: Arc<Version>,
         db_config: Arc<DatabaseConfig>,
@@ -139,7 +139,7 @@ impl TseriesFamily {
 
         Self {
             tf_id,
-            owner: tenant_database.clone(),
+            owner: owner.clone(),
             mut_cache: mm.clone(),
             immut_cache: Default::default(),
             super_version: Arc::new(SuperVersion::new(
@@ -156,7 +156,7 @@ impl TseriesFamily {
             storage_opt,
             last_modified: Arc::new(tokio::sync::RwLock::new(None)),
             memory_pool,
-            tsf_metrics: TsfMetrics::new(register, tenant_database.as_str(), tf_id as u64),
+            tsf_metrics: TsfMetrics::new(register, owner.as_str(), tf_id as u64),
             status: VnodeStatus::Running,
         }
     }
