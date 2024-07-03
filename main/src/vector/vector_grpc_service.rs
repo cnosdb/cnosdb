@@ -52,7 +52,8 @@ impl Service for VectorGrpcService {
         let (shutdown, rx) = oneshot::channel();
         let vector_service =
             VectorServer::new(VectorService::new(self.coord.clone(), self.dbms.clone()));
-        let mut grpc_builder = build_grpc_server!(&self.tls_config, self.auto_generate_span, "grpc_vector");
+        let mut grpc_builder =
+            build_grpc_server!(&self.tls_config, self.auto_generate_span, "grpc_vector");
         let grpc_router = grpc_builder.add_service(vector_service);
         let server = grpc_router.serve_with_shutdown(self.addr, async {
             rx.await.ok();

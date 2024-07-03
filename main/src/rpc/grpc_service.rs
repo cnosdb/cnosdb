@@ -105,7 +105,8 @@ impl Service for GrpcService {
                 .send_compressed(CompressionEncoding::Gzip);
         }
 
-        let mut grpc_builder = build_grpc_server!(&self.tls_config, self.auto_generate_span, "grpc");
+        let mut grpc_builder =
+            build_grpc_server!(&self.tls_config, self.auto_generate_span, "grpc");
         let grpc_router = grpc_builder
             .add_service(tskv_grpc_service)
             .add_service(raft_grpc_service);

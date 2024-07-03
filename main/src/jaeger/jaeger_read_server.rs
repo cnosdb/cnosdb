@@ -560,6 +560,74 @@ impl JaegerReadStream {
             });
         }
 
+        if let Some(array) = batch.column_by_name("tags.otel.status_code") {
+            let kv = KeyValue {
+                key: "otel.status_code".to_string(),
+                v_type: 0,
+                v_str: array
+                    .as_any()
+                    .downcast_ref::<StringArray>()
+                    .ok_or(Status::internal(
+                        "column operation_name is not StringArray".to_string(),
+                    ))?
+                    .value(row_i)
+                    .to_string(),
+                ..Default::default()
+            };
+            span.tags.push(kv);
+        }
+
+        if let Some(array) = batch.column_by_name("tags.span.kind") {
+            let kv = KeyValue {
+                key: "span.kind".to_string(),
+                v_type: 0,
+                v_str: array
+                    .as_any()
+                    .downcast_ref::<StringArray>()
+                    .ok_or(Status::internal(
+                        "column tags.span.kind is not StringArray".to_string(),
+                    ))?
+                    .value(row_i)
+                    .to_string(),
+                ..Default::default()
+            };
+            span.tags.push(kv);
+        }
+
+        if let Some(array) = batch.column_by_name("tags.otel.library.name") {
+            let kv = KeyValue {
+                key: "otel.library.name".to_string(),
+                v_type: 0,
+                v_str: array
+                    .as_any()
+                    .downcast_ref::<StringArray>()
+                    .ok_or(Status::internal(
+                        "column tags.otel.library.name is not StringArray".to_string(),
+                    ))?
+                    .value(row_i)
+                    .to_string(),
+                ..Default::default()
+            };
+            span.tags.push(kv);
+        }
+
+        if let Some(array) = batch.column_by_name("tags.otel.library.version") {
+            let kv = KeyValue {
+                key: "otel.library.version".to_string(),
+                v_type: 0,
+                v_str: array
+                    .as_any()
+                    .downcast_ref::<StringArray>()
+                    .ok_or(Status::internal(
+                        "column tags.otel.library.version is not StringArray".to_string(),
+                    ))?
+                    .value(row_i)
+                    .to_string(),
+                ..Default::default()
+            };
+            span.tags.push(kv);
+        }
+
         if let Some(array) = batch.column_by_name("process_id") {
             let process_id = array
                 .as_any()
@@ -590,7 +658,12 @@ impl JaegerReadStream {
             let ref_prefix = "references.".to_owned() + ref_i.to_string().as_str() + ".";
             let log_prefix = "log.".to_owned() + log_i.to_string().as_str() + ".";
             let warning_prefix = "warnings.".to_owned() + warning_i.to_string().as_str() + ".";
-            if col_name.starts_with("tags.") {
+            if col_name.starts_with("tags.")
+                && col_name != "tags.otel.status_code"
+                && col_name != "tags.span.kind"
+                && col_name != "tags.otel.library.name"
+                && col_name != "tags.otel.library.version"
+            {
                 let value = batch
                     .column_by_name(col_name)
                     .unwrap()

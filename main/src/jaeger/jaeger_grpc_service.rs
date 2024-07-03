@@ -58,7 +58,8 @@ impl Service for JaegerGrpcService {
         ));
         let jaeger_read_service =
             SpanReaderPluginServer::new(JaegerReadService::new(self.coord.clone()));
-        let mut grpc_builder = build_grpc_server!(&self.tls_config, self.auto_generate_span, "grpc_jaeger");
+        let mut grpc_builder =
+            build_grpc_server!(&self.tls_config, self.auto_generate_span, "grpc_jaeger");
         let grpc_router = grpc_builder
             .add_service(jaeger_write_service)
             .add_service(jaeger_read_service);

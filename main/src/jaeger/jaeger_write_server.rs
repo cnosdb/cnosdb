@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use chrono::Utc;
 use coordinator::service::CoordinatorRef;
 use models::auth::privilege::{DatabasePrivilege, Privilege, TenantObjectPrivilege};
@@ -97,40 +99,69 @@ impl JaegerWriteService {
         line
     }
 
+    fn kv_to_hashmap(tags: Vec<KeyValue>) -> HashMap<String, KeyValue> {
+        let mut map = HashMap::new();
+        for kv in tags {
+            map.insert(kv.key.clone(), kv);
+        }
+        map
+    }
+
     fn span_to_string(span: &Span) -> String {
+        // tags kv to hashmap
+        let tags_map = JaegerWriteService::kv_to_hashmap(span.tags.clone());
+
         // spans table
         let mut line_spans_tb = String::new();
-        let table = JAEGER_TRACE_TABLE.to_string() + " ";
+        let table = JAEGER_TRACE_TABLE.to_string() + ",";
         line_spans_tb.push_str(&table);
 
         // tag
-
-        // field
         let trace_id = span
             .trace_id
             .iter()
             .map(|b| b.to_string())
             .collect::<Vec<_>>()
             .join("_");
-        line_spans_tb.push_str(&format!("trace_id=\"{}\",", trace_id));
-
-        line_spans_tb.push_str(&format!("operation_name=\"{}\",", span.operation_name));
-
-        if let Some(process) = span.process.as_ref() {
-            line_spans_tb.push_str(&format!(
-                "process.service_name=\"{}\",",
-                process.service_name
-            ));
-        }
+        line_spans_tb.push_str(&format!("trace_id={},", trace_id));
 
         line_spans_tb.push_str(&format!(
-            "span_id=\"{}\",",
+            "span_id={},",
             span.span_id
                 .iter()
                 .map(|b| b.to_string())
                 .collect::<Vec<_>>()
                 .join("_")
         ));
+
+        line_spans_tb.push_str(&format!("operation_name={},", span.operation_name));
+
+        if let Some(kv) = tags_map.get("span.kind") {
+            line_spans_tb.push_str(&format!("tags.span.kind={},", kv.v_str));
+        }
+
+        if let Some(kv) = tags_map.get("otel.status_code") {
+            line_spans_tb.push_str(&format!("tags.otel.status_code={},", kv.v_str));
+        }
+
+        if let Some(kv) = tags_map.get("otel.library.name") {
+            line_spans_tb.push_str(&format!("tags.otel.library.name={},", kv.v_str));
+        }
+
+        if let Some(kv) = tags_map.get("otel.library.version") {
+            line_spans_tb.push_str(&format!("tags.otel.library.version={},", kv.v_str));
+        }
+
+        line_spans_tb.pop();
+        line_spans_tb.push(' ');
+
+        // field
+        if let Some(process) = span.process.as_ref() {
+            line_spans_tb.push_str(&format!(
+                "process.service_name=\"{}\",",
+                process.service_name
+            ));
+        }
 
         for (i, ref_) in span.references.iter().enumerate() {
             let trace_id = ref_
@@ -162,7 +193,13 @@ impl JaegerWriteService {
         line_spans_tb.push_str(&format!("duration={},", duration));
 
         span.tags.iter().for_each(|kv| {
-            if kv.key != USERNAME_FIELD && kv.key != PASSWORD_FIELD {
+            if kv.key != USERNAME_FIELD
+                && kv.key != PASSWORD_FIELD
+                && kv.key != "otel.status_code"
+                && kv.key != "span.kind"
+                && kv.key != "otel.library.name"
+                && kv.key != "otel.library.version"
+            {
                 line_spans_tb.push_str(&JaegerWriteService::encode_kv("tags.", kv));
                 line_spans_tb.push(',');
             }
