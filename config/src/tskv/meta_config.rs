@@ -38,11 +38,11 @@ impl MetaConfig {
         Duration::from_secs(30)
     }
 
-    fn default_usage_schema_cache_size() -> u64 {
+    pub fn default_usage_schema_cache_size() -> u64 {
         2 * 1024 * 1024
     }
 
-    fn default_cluster_schema_cache_size() -> u64 {
+    pub fn default_cluster_schema_cache_size() -> u64 {
         2 * 1024 * 1024
     }
 }

@@ -12,13 +12,13 @@ store_metrics = true
 [meta]
 service_addr = ["127.0.0.1:8901"]
 report_time_interval = "30s"
-usage_schema_cache_size = "2M" # 2MiB
-cluster_schema_cache_size = "2M" # 2MiB
+usage_schema_cache_size = "2M"
+cluster_schema_cache_size = "2M"
 
 [query]
 max_server_connections = 10240
-query_sql_limit = "16777216B"  # 16 * 1024 * 1024
-write_sql_limit = "167772160B" # 160 * 1024 * 1024
+query_sql_limit = "16M"  # 16777216
+write_sql_limit = "160M" # 167772160
 auth_enabled = false
 read_timeout = "3000ms"
 write_timeout = "3000ms"
@@ -43,6 +43,7 @@ max_concurrent_compaction = 4
 collect_compaction_metrics = false
 strict_write = false
 reserve_space = "0"
+copyinto_trigger_flush_size = "128M" # 134217728
 max_datablock_size = "100KB"
 
 [wal]
