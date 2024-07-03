@@ -1,11 +1,10 @@
 use std::sync::Arc;
-use std::time::Duration;
 
 use macros::EnvKeys;
 use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
-use crate::codec::{bytes_num, duration};
+use crate::codec::bytes_num;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, EnvKeys)]
 pub struct WalConfig {
@@ -18,17 +17,8 @@ pub struct WalConfig {
     #[serde(with = "bytes_num", default = "WalConfig::default_max_file_size")]
     pub max_file_size: u64,
 
-    #[serde(
-        with = "bytes_num",
-        default = "WalConfig::default_flush_trigger_total_file_size"
-    )]
-    pub flush_trigger_total_file_size: u64,
-
     #[serde(default = "WalConfig::default_sync")]
     pub sync: bool,
-
-    #[serde(with = "duration", default = "WalConfig::default_sync_interval")]
-    pub sync_interval: Duration,
 }
 
 impl WalConfig {
@@ -45,21 +35,8 @@ impl WalConfig {
         1024 * 1024 * 1024
     }
 
-    fn default_flush_trigger_total_file_size() -> u64 {
-        2 * 1024 * 1024 * 1024
-    }
-
     fn default_sync() -> bool {
         false
-    }
-
-    fn default_sync_interval() -> Duration {
-        Duration::from_secs(0)
-    }
-
-    pub fn introspect(&mut self) {
-        // Unit of wal.sync_interval is seconds
-        self.sync_interval = Duration::from_secs(self.sync_interval.as_secs());
     }
 }
 
@@ -69,9 +46,7 @@ impl Default for WalConfig {
             path: Self::default_path(),
             wal_req_channel_cap: Self::default_wal_req_channel_cap(),
             max_file_size: Self::default_max_file_size(),
-            flush_trigger_total_file_size: Self::default_flush_trigger_total_file_size(),
             sync: Self::default_sync(),
-            sync_interval: Self::default_sync_interval(),
         }
     }
 }
@@ -93,13 +68,6 @@ impl CheckConfig for WalConfig {
                 config: config_name.clone(),
                 item: "wal_req_channel_cap".to_string(),
                 message: "'wal_req_channel_cap' maybe too small(less than 16)".to_string(),
-            });
-        }
-        if self.sync_interval.as_nanos() < Duration::from_secs(1).as_nanos() {
-            ret.add_warn(CheckConfigItemResult {
-                config: config_name,
-                item: "sync_interval".to_string(),
-                message: "'sync_interval' maybe too small(less than 1 second)".to_string(),
             });
         }
 

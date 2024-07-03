@@ -4,7 +4,6 @@ host = "localhost"
 cluster_name = 'cluster_xxx'
 store_metrics = true
 
-
 [deployment]
 # mode = 'query_tskv'
 # cpu = 8
@@ -13,13 +12,13 @@ store_metrics = true
 [meta]
 service_addr = ["127.0.0.1:8901"]
 report_time_interval = "30s"
-usage_schema_cache_size = "2M" # 2MiB
-cluster_schema_cache_size = "2M" # 2MiB
+usage_schema_cache_size = "2M"
+cluster_schema_cache_size = "2M"
 
 [query]
 max_server_connections = 10240
-query_sql_limit = "16777216B"  # 16 * 1024 * 1024
-write_sql_limit = "167772160B" # 160 * 1024 * 1024
+query_sql_limit = "16M"  # 16,777,216 bytes
+write_sql_limit = "160M" # 167,772,160 bytes
 auth_enabled = false
 read_timeout = "3000ms"
 write_timeout = "3000ms"
@@ -70,13 +69,10 @@ strict_write = false
 ## copyinto trigger flush size
 #copyinto_trigger_flush_size = "128M" # 134217728
 
-## The maximum size of a datablock in compaction. 
+## The maximum size of a datablock in compaction.
 max_datablock_size = "100KB"
 
 [wal]
-
-## If true, write request on disk before writing to memory.
-enabled = true
 
 ## The directory where write ahead logs stored.
 path = '/var/lib/cnosdb/wal'
@@ -87,14 +83,8 @@ path = '/var/lib/cnosdb/wal'
 ## The maximum size of a WAL.
 # max_file_size = '1G' # 1,073,741,824 bytes
 
-## Trigger all vnode flushing if size of WALs exceeds this value.
-# flush_trigger_total_file_size = '2G' # 2,147,483,648 bytes
-
 ## If true, fsync will be called after every WAL writes.
 # sync = false
-
-## Interval for automatic WAL fsync.
-# sync_interval = '0' # h, m, s
 
 [cache]
 
@@ -118,7 +108,6 @@ path = '/var/log/cnosdb'
 ## "daily", "hourly", "minutely", "never"
 # file_rotation = "daily"
 
-
 ## Tokio trace, default turn off tokio trace
 # tokio_trace = { addr = "127.0.0.1:6669" }
 
@@ -136,20 +125,12 @@ tcp_listen_port = 8905
 vector_listen_port = 8906
 enable_report = true
 
-
 [cluster]
 # raft_logs_to_keep = 5000
-# using_raft_replication = false
-
-[hinted_off]
-enable = true
-path = '/var/lib/cnosdb/hh'
-threads = 3
-
 
 # [trace]
 # auto_generate_span = false
 # otlp_endpoint = 'http://localhost:4317'
 # max_spans_per_trace = 100
-# batch_report_interval_millis = 500
+# batch_report_interval = "500ms"
 # batch_report_max_spans = 100

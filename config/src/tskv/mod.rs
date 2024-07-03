@@ -104,8 +104,7 @@ pub fn get_config(path: impl AsRef<Path>) -> Result<Config, figment::Error> {
                     .get(env.as_str())
                     .map(|key| Uncased::from_owned(key.clone()))
             }));
-    let mut config: Config = figment.extract()?;
-    config.wal.introspect();
+    let config: Config = figment.extract()?;
     Ok(config)
 }
 
