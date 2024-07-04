@@ -12,7 +12,6 @@ use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::common::Result as DFResult;
 use datafusion::physical_plan::{RecordBatchStream, SendableRecordBatchStream};
 use futures::{Stream, StreamExt};
-use models::schema::database_schema::Precision;
 use models::schema::{CLUSTER_SCHEMA, DEFAULT_CATALOG};
 use models::utils::now_timestamp_nanos;
 use parking_lot::RwLock;
@@ -23,6 +22,7 @@ use spi::query::execution::{Output, QueryExecution, QueryExecutionRef, QueryType
 use spi::service::protocol::QueryId;
 use spi::{QueryError, QueryResult};
 use trace::{debug, warn};
+use utils::precision::Precision;
 
 use super::persister::QueryPersisterRef;
 

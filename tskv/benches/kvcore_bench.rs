@@ -6,11 +6,11 @@ use meta::model::meta_admin::AdminMeta;
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::meta_data::VnodeId;
-use models::schema::database_schema::Precision;
 use protos::kv_service::{raft_write_command, WriteDataRequest};
 use protos::models_helper;
 use tokio::runtime::{self, Runtime};
 use tskv::{Engine, TsKv};
+use utils::precision::Precision;
 
 async fn get_tskv() -> TsKv {
     let mut global_config = config::tskv::get_config_for_test();

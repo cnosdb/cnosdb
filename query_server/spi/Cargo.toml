@@ -15,6 +15,7 @@ protocol_parser = { path = "../../common/protocol_parser" }
 protos = { path = "../../common/protos" }
 trace = { path = "../../common/trace" }
 tskv = { path = "../../tskv" }
+utils={ path = "../../common/utils" }
 
 arrow-flight = { workspace = true }
 async-trait = { workspace = true }

@@ -5,11 +5,11 @@ use datafusion::arrow::array::{StringArray, UInt32Array};
 use datafusion::arrow::datatypes::{DataType, Field, Schema};
 use datafusion::arrow::record_batch::RecordBatch;
 use meta::error::MetaError;
-use models::schema::database_schema::{timestamp_convert, Precision};
 use snafu::ResultExt;
 use spi::query::execution::{Output, QueryStateMachineRef};
 use spi::query::recordbatch::RecordBatchStreamWrapper;
 use spi::{MetaSnafu, QueryResult};
+use utils::precision::{timestamp_convert, Precision};
 
 use crate::execution::ddl::DDLDefinitionTask;
 

@@ -1,11 +1,11 @@
 use std::fmt::{self};
 
 use serde::{Deserialize, Serialize};
+use utils::duration::CnosDuration;
 
 use crate::meta_data::{NodeId, ReplicationSet};
 use crate::oid::Oid;
 use crate::schema::tskv_table_schema::{TableColumn, TskvTableSchema};
-use crate::schema::utils::CnosDuration;
 use crate::utils::now_timestamp_nanos;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

@@ -12,8 +12,8 @@ store_metrics = true
 [meta]
 service_addr = ["127.0.0.1:8901"]
 report_time_interval = "30s"
-usage_schema_cache_size = "2M"
-cluster_schema_cache_size = "2M"
+usage_schema_cache_size = "2MiB"
+cluster_schema_cache_size = "2MiB"
 
 [query]
 max_server_connections = 10240
@@ -69,8 +69,8 @@ strict_write = false
 ## copyinto trigger flush size
 #copyinto_trigger_flush_size = "128M" # 134217728
 
-## The maximum size of a datablock in compaction.
-max_datablock_size = "100KB"
+## The maximum size of a datablock in compaction. 
+max_datablock_size = "100KiB"
 
 [wal]
 

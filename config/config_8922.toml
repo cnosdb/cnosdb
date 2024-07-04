@@ -12,8 +12,8 @@ store_metrics = true
 [meta]
 service_addr = ["127.0.0.1:8901"]
 report_time_interval = "30s"
-usage_schema_cache_size = "2M"
-cluster_schema_cache_size = "2M"
+usage_schema_cache_size = "2MiB"
+cluster_schema_cache_size = "2MiB"
 
 [query]
 max_server_connections = 10240
@@ -32,27 +32,27 @@ sql_record_timeout = "10s"
 # Directory for tsm: $path/data/$database/tsm/
 # Directory for delta: $path/data/$database/delta/
 path = '/tmp/cnosdb/3001/db'
-max_summary_size = "128M"            # 134217728
-base_file_size = "16M"               # 16777216
+max_summary_size = "128MiB"            # 134217728
+base_file_size = "16MiB"               # 16777216
 flush_req_channel_cap = 16
 max_cached_readers = 32
 compact_trigger_file_num = 4
 compact_trigger_cold_duration = "1h"
-max_compact_size = "2G"              # 2147483648
+max_compact_size = "2GiB"              # 2147483648
 max_concurrent_compaction = 4
 collect_compaction_metrics = false
 strict_write = false
 reserve_space = "0"
-copyinto_trigger_flush_size = "128M" # 134217728
-max_datablock_size = "100KB"
+copyinto_trigger_flush_size = "128MiB" # 134217728
+max_datablock_size = "100KiB"
 
 [wal]
 path = '/tmp/cnosdb/3001/wal'
-max_file_size = "1G"                 # 1073741824
+max_file_size = "1GiB"                 # 1073741824
 sync = false
 
 [cache]
-max_buffer_size = "512M" # 536,870,912
+max_buffer_size = "512MiB" # 536,870,912
 partition = 16           # default memcache partition number
 
 [log]

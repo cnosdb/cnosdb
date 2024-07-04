@@ -9,7 +9,7 @@ use memory_pool::MemoryPoolRef;
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::predicate::domain::TimeRange;
-use models::schema::database_schema::{DatabaseConfig, DatabaseSchema, Precision};
+use models::schema::database_schema::{DatabaseConfig, DatabaseSchema};
 use models::schema::tskv_table_schema::{TskvTableSchema, TskvTableSchemaRef};
 use models::{SeriesId, SeriesKey};
 use protos::models::{Column, ColumnType, FieldType, Table};
@@ -17,6 +17,7 @@ use snafu::{OptionExt, ResultExt};
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{oneshot, RwLock};
 use trace::error;
+use utils::precision::Precision;
 
 use crate::error::{
     CommonSnafu, IndexErrSnafu, ModelSnafu, SchemaSnafu, TableNotFoundSnafu, TskvResult,

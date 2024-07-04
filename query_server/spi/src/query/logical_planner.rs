@@ -29,9 +29,9 @@ use models::schema::database_schema::{DatabaseConfigBuilder, DatabaseOptionsBuil
 use models::schema::stream_table_schema::Watermark;
 use models::schema::tenant::{Tenant, TenantOptions, TenantOptionsBuilder};
 use models::schema::tskv_table_schema::TableColumn;
-use models::schema::utils::CnosDuration;
 use snafu::{IntoError, ResultExt};
 use tempfile::NamedTempFile;
+use utils::duration::CnosDuration;
 
 use super::ast::{parse_bool_value, parse_char_value, parse_string_value, ExtStatement};
 use super::datasource::azure::{AzblobStorageConfig, AzblobStorageConfigBuilder};

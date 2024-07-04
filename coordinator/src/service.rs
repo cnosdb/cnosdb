@@ -30,7 +30,6 @@ use models::meta_data::{
 use models::object_reference::ResolvedTable;
 use models::oid::Identifier;
 use models::predicate::domain::{ResolvedPredicate, ResolvedPredicateRef, TimeRange, TimeRanges};
-use models::schema::database_schema::{timestamp_convert, Precision};
 use models::schema::resource_info::{ResourceInfo, ResourceOperator, ResourceStatus};
 use models::schema::tskv_table_schema::{ColumnType, TskvTableSchemaRef};
 use models::schema::{DEFAULT_CATALOG, TIME_FIELD_NAME, USAGE_SCHEMA};
@@ -53,6 +52,7 @@ use tokio_retry::Retry;
 use trace::span_ext::SpanExt;
 use trace::{debug, error, info, Span, SpanContext};
 use tskv::EngineRef;
+use utils::precision::{timestamp_convert, Precision};
 use utils::BkdrHasher;
 
 use crate::errors::{

@@ -184,6 +184,7 @@ mod test {
         let cfg_path = "/tmp/test/cnosdb/config/1/config.toml";
         let mut cfg_file = std::fs::OpenOptions::new()
             .create(true)
+            .truncate(true)
             .write(true)
             .append(false)
             .open(cfg_path)

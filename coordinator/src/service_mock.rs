@@ -12,7 +12,6 @@ use meta::model::{MetaClientRef, MetaRef};
 use models::meta_data::{ReplicationSet, ReplicationSetId, VnodeId, VnodeInfo, VnodeStatus};
 use models::object_reference::ResolvedTable;
 use models::predicate::domain::{ResolvedPredicate, ResolvedPredicateRef};
-use models::schema::database_schema::Precision;
 use models::schema::tskv_table_schema::TskvTableSchemaRef;
 use protocol_parser::Line;
 use protos::kv_service::{RaftWriteCommand, UpdateSetValue};
@@ -20,6 +19,7 @@ use trace::SpanContext;
 use tskv::engine_mock::MockEngine;
 use tskv::reader::QueryOption;
 use tskv::EngineRef;
+use utils::precision::Precision;
 
 use crate::errors::CoordinatorResult;
 use crate::raft::manager::RaftNodesManager;

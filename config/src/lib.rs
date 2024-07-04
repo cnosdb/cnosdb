@@ -2,7 +2,6 @@ use std::time::Duration;
 
 use macros::EnvKeys;
 use once_cell::sync::Lazy;
-
 mod check;
 mod codec;
 pub mod common;

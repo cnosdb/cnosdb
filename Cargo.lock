@@ -1278,13 +1278,16 @@ name = "config"
 version = "2.4.2"
 dependencies = [
  "async-backtrace",
+ "byte-unit 5.1.4",
  "figment",
+ "humantime",
  "macros",
  "num_cpus",
  "once_cell",
  "serde",
  "sys-info",
  "toml",
+ "utils",
 ]
 
 [[package]]
@@ -2052,6 +2055,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tonic 0.9.2",
+ "utils",
  "walkdir",
 ]
 
@@ -5726,6 +5730,7 @@ dependencies = [
  "trace",
  "tskv",
  "url",
+ "utils",
 ]
 
 [[package]]
@@ -6808,8 +6813,11 @@ name = "utils"
 version = "2.4.2"
 dependencies = [
  "async-backtrace",
+ "byte-unit 5.1.4",
+ "datafusion",
  "fnv",
  "futures",
+ "humantime",
  "libc",
  "pprof",
  "rand",
@@ -6817,7 +6825,7 @@ dependencies = [
  "siphasher 1.0.1",
  "tikv-jemalloc-ctl",
  "tokio",
- "trace",
+ "tracing",
  "twox-hash",
 ]
 

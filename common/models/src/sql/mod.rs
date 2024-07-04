@@ -1,6 +1,7 @@
 use std::str::FromStr;
 
 use datafusion::datasource::file_format::file_type::{FileCompressionType, FileType};
+use utils::byte_nums::CnosByteNumber;
 
 use crate::arrow::arrow_data_type_to_sql_data_type;
 use crate::auth::role::CustomTenantRole;
@@ -15,7 +16,6 @@ use crate::schema::stream_table_schema::StreamTable;
 use crate::schema::table_schema::TableSchema;
 use crate::schema::tenant::Tenant;
 use crate::schema::tskv_table_schema::{ColumnType, TskvTableSchema};
-use crate::schema::utils::CnosByteNumber;
 use crate::ModelError;
 
 type Result<T, E = ModelError> = std::result::Result<T, E>;
@@ -500,16 +500,15 @@ mod test {
 
     use arrow_schema::{DataType, Field, Fields, Schema, SchemaRef, TimeUnit};
     use config::common::TenantLimiterConfig;
+    use utils::duration::CnosDuration;
+    use utils::precision::Precision;
 
     use crate::auth::user::{UserDesc, UserOptionsBuilder};
-    use crate::schema::database_schema::{
-        DatabaseConfig, DatabaseOptions, DatabaseSchema, Precision,
-    };
+    use crate::schema::database_schema::{DatabaseConfig, DatabaseOptions, DatabaseSchema};
     use crate::schema::external_table_schema::ExternalTableSchema;
     use crate::schema::stream_table_schema::{StreamTable, Watermark};
     use crate::schema::tenant::{Tenant, TenantOptionsBuilder};
     use crate::schema::tskv_table_schema::{ColumnType, TableColumn, TskvTableSchema};
-    use crate::schema::utils::CnosDuration;
     use crate::sql::ToDDLSql;
     use crate::ValueType;
 
@@ -561,6 +560,7 @@ remote_bucket = {max = 100, initial = 0, refill = 100, interval = 100}
 "#;
 
         let config: TenantLimiterConfig = toml::from_str(config_str).unwrap();
+        println!("{:?}", config);
 
         let opts = TenantOptionsBuilder::default()
             .comment("test")

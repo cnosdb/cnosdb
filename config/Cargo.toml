@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 macros = { path = "../common/macros" }
+utils = { path = "../common/utils" }
 
 async-backtrace = { workspace = true, optional = true }
 figment = { workspace = true, features = ["toml", "env"] }
@@ -13,6 +14,8 @@ once_cell = { workspace = true }
 serde = { workspace = true }
 sys-info = { workspace = true }
 toml = { workspace = true }
+byte-unit = { workspace = true }
+humantime = { workspace = true }
 
 [features]
 default = []

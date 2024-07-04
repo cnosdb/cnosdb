@@ -10,6 +10,12 @@ mod dedup;
 
 pub mod byte_utils;
 
+pub mod byte_nums;
+pub mod duration;
+pub mod precision;
+
+pub type Timestamp = i64;
+
 #[cfg(unix)]
 pub mod pprof_tools;
 

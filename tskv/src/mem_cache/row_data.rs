@@ -4,13 +4,13 @@ use std::mem::size_of_val;
 use flatbuffers::{ForwardsUOffset, Vector};
 use minivec::MiniVec;
 use models::field_value::FieldVal;
-use models::schema::database_schema::{timestamp_convert, Precision};
 use models::schema::tskv_table_schema::TskvTableSchema;
 use protos::models::{Column, FieldType};
 use skiplist::OrderedSkipList;
 use snafu::OptionExt;
 use trace::error;
 use utils::bitset::ImmutBitSet;
+use utils::precision::{timestamp_convert, Precision};
 
 use crate::database::FbSchema;
 use crate::error::{CommonSnafu, FieldsIsEmptySnafu, TskvResult};
