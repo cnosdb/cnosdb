@@ -61,13 +61,13 @@ impl VersionSet {
         opt: Arc<Options>,
         runtime: Arc<Runtime>,
         memory_pool: MemoryPoolRef,
-        ver_set: HashMap<DatabaseSchema, Arc<Version>>,
+        ver_set: HashMap<TseriesFamilyId, (DatabaseSchema, Arc<Version>)>,
         metrics_register: Arc<MetricsRegister>,
     ) -> TskvResult<Self> {
         let mut dbs = HashMap::new();
         let db_factory = DatabaseFactory::new(meta.clone(), memory_pool, metrics_register, opt);
 
-        for (schema, ver) in ver_set.into_iter() {
+        for (schema, ver) in ver_set.into_values() {
             let owner = (*ver.owner()).clone();
 
             let db: &mut Arc<RwLock<Database>> = dbs.entry(owner).or_insert(Arc::new(RwLock::new(
