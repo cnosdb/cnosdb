@@ -505,7 +505,7 @@ impl Summary {
                 max_level_ts,
                 tsm_reader_cache,
             );
-            versions.insert(db_schema, Arc::new(ver));
+            versions.insert(tsf_id, (db_schema, Arc::new(ver)));
         }
 
         ctx.set_file_id(max_file_id + 1);
