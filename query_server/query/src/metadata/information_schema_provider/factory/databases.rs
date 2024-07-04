@@ -14,7 +14,7 @@ use datafusion::prelude::Expr;
 use meta::model::MetaClientRef;
 use models::auth::user::User;
 use models::oid::Identifier;
-use models::schema::utils::CnosByteNumber;
+use utils::byte_nums::CnosByteNumber;
 
 use crate::dispatcher::query_tracker::QueryTracker;
 use crate::metadata::information_schema_provider::builder::databases::{

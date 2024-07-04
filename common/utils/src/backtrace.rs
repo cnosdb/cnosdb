@@ -1,4 +1,4 @@
-use trace::info;
+use tracing::info;
 
 pub fn backtrace() -> String {
     let res;

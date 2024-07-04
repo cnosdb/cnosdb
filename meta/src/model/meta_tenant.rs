@@ -18,10 +18,10 @@ use models::schema::resource_info::ResourceInfo;
 use models::schema::table_schema::TableSchema;
 use models::schema::tenant::Tenant;
 use models::schema::tskv_table_schema::TskvTableSchemaRef;
-use models::schema::utils::CnosDuration;
 use parking_lot::RwLock;
 use store::command;
 use trace::info;
+use utils::duration::CnosDuration;
 
 use crate::error::{MetaError, MetaResult};
 use crate::store::command::{EntryLog, ReadCommand};

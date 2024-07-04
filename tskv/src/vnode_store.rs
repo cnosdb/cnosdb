@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use models::meta_data::VnodeId;
 use models::predicate::domain::{ResolvedPredicate, TimeRange, TimeRanges};
-use models::schema::database_schema::Precision;
 use models::utils::now_timestamp_secs;
 use models::{ColumnId, SeriesId, SeriesKey};
 use protos::kv_service::{raft_write_command, WritePointsResponse, *};
@@ -13,6 +12,7 @@ use snafu::{OptionExt, ResultExt};
 use tokio::sync::RwLock;
 use trace::span_ext::SpanExt;
 use trace::{debug, error, info, Span, SpanContext};
+use utils::precision::Precision;
 
 use crate::compaction::job::FlushJob;
 use crate::compaction::FlushReq;

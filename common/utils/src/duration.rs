@@ -1,13 +1,11 @@
 use core::time::Duration;
 use std::cmp::min;
 use std::fmt::{Display, Formatter};
-use std::str::FromStr;
 
-use byte_unit::{Byte, UnitType};
 use humantime::{format_duration, parse_duration};
 use serde::{Deserialize, Serialize};
 
-use crate::schema::database_schema::Precision;
+use crate::precision::Precision;
 
 pub const YEAR_SECOND: u64 = 31557600; // 356.25 day
 
@@ -104,28 +102,5 @@ impl CnosDuration {
             Precision::US => self.to_microseconds(),
             Precision::NS => self.to_nanoseconds(),
         }
-    }
-}
-
-pub struct CnosByteNumber {
-    byte: Byte,
-}
-
-impl CnosByteNumber {
-    pub fn new(text: &str) -> Option<Self> {
-        match Byte::from_str(text) {
-            Ok(v) => Some(CnosByteNumber { byte: v }),
-            Err(_) => None,
-        }
-    }
-
-    pub fn as_bytes(&self) -> u64 {
-        self.byte.as_u64()
-    }
-
-    pub fn format_bytes(bytes: u64) -> String {
-        Byte::from_u64(bytes)
-            .get_appropriate_unit(UnitType::Both)
-            .to_string()
     }
 }

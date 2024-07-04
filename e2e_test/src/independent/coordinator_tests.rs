@@ -13,11 +13,12 @@ use std::{io, thread};
 use meta::store::command::WriteCommand;
 use models::meta_data::TenantMetaData;
 use models::oid::UuidGenerator;
-use models::schema::database_schema::{DatabaseConfig, DatabaseOptions, DatabaseSchema, Precision};
+use models::schema::database_schema::{DatabaseConfig, DatabaseOptions, DatabaseSchema};
 use models::schema::tenant::{Tenant, TenantOptions};
-use models::schema::utils::CnosDuration;
 use serial_test::serial;
 use sysinfo::System;
+use utils::duration::CnosDuration;
+use utils::precision::Precision;
 use walkdir::WalkDir;
 
 use crate::utils::{run_cluster, CnosdbDataTestHelper, CnosdbMetaTestHelper};

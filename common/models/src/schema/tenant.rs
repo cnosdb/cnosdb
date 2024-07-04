@@ -3,9 +3,9 @@ use std::fmt::Display;
 use config::common::{RequestLimiterConfig, TenantLimiterConfig, TenantObjectLimiterConfig};
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
+use utils::duration::CnosDuration;
 
 use crate::oid::{Identifier, Oid};
-use crate::schema::utils::CnosDuration;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Tenant {

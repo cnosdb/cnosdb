@@ -1,6 +1,5 @@
-use std::error::Error;
-
 use serde::{Deserialize, Deserializer, Serializer};
+use utils::byte_nums::CnosByteNumber;
 
 // The signature of a serialize_with function must follow the pattern:
 //
@@ -13,7 +12,8 @@ pub fn serialize<S>(num: &u64, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
-    let s = format_bytes_number(*num);
+    let s = CnosByteNumber::format_bytes(*num);
+
     serializer.serialize_str(&s)
 }
 
@@ -29,147 +29,7 @@ where
     D: Deserializer<'de>,
 {
     let s = String::deserialize(deserializer)?;
-    parse_bytes_number(&s).map_err(serde::de::Error::custom)
-}
-
-const UNITS_LIST: [&[char]; 10] = [
-    &['b'],
-    &['k', 'b'],
-    &['k', 'i', 'b'],
-    &['k'],
-    &['m', 'b'],
-    &['m', 'i', 'b'],
-    &['m'],
-    &['g', 'b'],
-    &['g', 'i', 'b'],
-    &['g'],
-];
-// terabytes
-// tebibytes
-// petabytes
-// pebibytes
-// exabytes
-// exbibytes
-// zettabyte
-// zebibyte
-
-const UNITS_STR_LIST: [&str; 10] = ["B", "KB", "KiB", "K", "MB", "MiB", "M", "GB", "GiB", "G"];
-
-const SCALES_LIST: [u64; 10] = [
-    1,
-    1_000,
-    1024,
-    1024,
-    1_000_000,
-    1024 * 1024,
-    1024 * 1024,
-    1_000_000_000,
-    1024 * 1024 * 1024,
-    1024 * 1024 * 1024,
-];
-
-pub(crate) fn format_bytes_number(num: u64) -> String {
-    if num == 0 {
-        return "0".to_string();
-    }
-
-    let mut i = 0_usize;
-    for s in SCALES_LIST.iter().skip(1) {
-        if num < *s {
-            break;
-        }
-        i += 1;
-    }
-    for s in SCALES_LIST[..=i].iter().rev() {
-        if num % *s == 0 {
-            break;
-        }
-        i -= 1;
-    }
-
-    format!("{}{}", num / SCALES_LIST[i], UNITS_STR_LIST[i])
-}
-
-/// Parse ([0-9]+[a-z]+) to u64 bytes.
-pub(crate) fn parse_bytes_number(num_str: &str) -> Result<u64, Box<dyn Error>> {
-    if num_str == "0" {
-        return Ok(0);
-    }
-    if num_str.is_empty() {
-        return Err(From::from(format!("Invalid bytes number '{}'", num_str)));
-    }
-
-    let chars: Vec<char> = num_str.to_lowercase().chars().collect();
-    let mut s = chars.as_slice();
-    let mut v;
-
-    // Consume integers
-    (v, s) = match consume_int(s) {
-        Ok((val, sli)) => (val, sli),
-        Err(e) => {
-            return Err(From::from(format!(
-                "Invalid bytes number ({}): '{}'",
-                e, num_str
-            )))
-        }
-    };
-
-    // Consume unit.
-    let mut i = 0_usize;
-    for c in s {
-        if *c == '.' || '0' <= *c && *c <= '9' {
-            break;
-        }
-        i += 1;
-    }
-    let mut unit = 0;
-    if i > 0 {
-        let u = &s[..i];
-        for (ui, cu) in UNITS_LIST.into_iter().enumerate() {
-            if cu == u {
-                unit = SCALES_LIST[ui];
-            }
-        }
-        if unit == 0 {
-            return Err(From::from(format!(
-                "Unknown unit '{:?}' in bytes number '{}'",
-                u, num_str
-            )));
-        }
-    } else {
-        // No unit means unit is byte.
-        unit = 1;
-    }
-
-    if v > u64::MAX / unit {
-        return Err(From::from(format!(
-            "Invalid bytes number (u64 overflow) '{}'",
-            num_str
-        )));
-    }
-    v *= unit;
-
-    Ok(v)
-}
-
-fn consume_int(s: &[char]) -> Result<(u64, &[char]), Box<dyn Error>> {
-    let mut i = 0_usize;
-    let mut x = 0_u64;
-    for c in s {
-        if *c == '_' {
-            i += 1;
-            continue;
-        }
-        if *c < '0' || *c > '9' {
-            break;
-        }
-        if x > u64::MAX / 10 {
-            return Err(From::from("u64 overflow"));
-        }
-        x = x * 10 + *c as u64 - '0' as u64;
-        i += 1;
-    }
-    Ok((x, &s[i..]))
+    CnosByteNumber::parse_bytes(&s).map_err(serde::de::Error::custom)
 }
 
 #[cfg(test)]
@@ -177,54 +37,79 @@ mod test {
     use std::any::Any;
 
     use serde::{Deserialize, Serialize};
+    use utils::byte_nums::CnosByteNumber;
 
-    use crate::codec::bytes_num::{self, format_bytes_number, parse_bytes_number};
+    use crate::codec::bytes_num;
 
     #[test]
     fn test_stringfy() {
-        assert_eq!(format_bytes_number(1024 + 1).as_str(), "1025B");
-        assert_eq!(format_bytes_number(1024).as_str(), "1K");
-        assert_eq!(format_bytes_number(1_000).as_str(), "1KB");
-        assert_eq!(format_bytes_number(102400).as_str(), "100K");
-        assert_eq!(format_bytes_number(100_000).as_str(), "100KB");
-        assert_eq!(format_bytes_number(1024 * (1024 + 1)).as_str(), "1025K");
         assert_eq!(
-            format_bytes_number(4 * 1024 * 1024 + 1024).as_str(),
-            "4097K"
+            CnosByteNumber::format_bytes(1024 + 1).as_str(),
+            "1.0009765625 KiB"
         );
-        assert_eq!(format_bytes_number(1024 * 1024).as_str(), "1M");
-        assert_eq!(format_bytes_number(1_000_000).as_str(), "1MB");
+        assert_eq!(CnosByteNumber::format_bytes(1024).as_str(), "1 KiB");
+        assert_eq!(CnosByteNumber::format_bytes(1_000).as_str(), "1 KB");
+        assert_eq!(CnosByteNumber::format_bytes(102400).as_str(), "100 KiB");
         assert_eq!(
-            format_bytes_number(1024 * 1024 * (1024 + 1)).as_str(),
-            "1025M"
+            CnosByteNumber::format_bytes(100_000).as_str(),
+            "97.65625 KiB"
         );
         assert_eq!(
-            format_bytes_number(4 * 1024 * 1024 * 1024 + 1024 * 1024).as_str(),
-            "4097M"
+            CnosByteNumber::format_bytes(1024 * (1024 + 1)).as_str(),
+            "1.0009765625 MiB"
         );
-        assert_eq!(format_bytes_number(1024 * 1024 * 1024).as_str(), "1G");
-        assert_eq!(format_bytes_number(1_000_000_000).as_str(), "1GB");
+        assert_eq!(
+            CnosByteNumber::format_bytes(4 * 1024 * 1024 + 1024).as_str(),
+            "4.0009765625 MiB"
+        );
+        assert_eq!(CnosByteNumber::format_bytes(1024 * 1024).as_str(), "1 MiB");
+        assert_eq!(CnosByteNumber::format_bytes(1_000_000).as_str(), "1 MB");
+        assert_eq!(
+            CnosByteNumber::format_bytes(1024 * 1024 * (1024 + 1)).as_str(),
+            "1.0009765625 GiB"
+        );
+        assert_eq!(
+            CnosByteNumber::format_bytes(4 * 1024 * 1024 * 1024 + 1024 * 1024).as_str(),
+            "4.0009765625 GiB"
+        );
+        assert_eq!(
+            CnosByteNumber::format_bytes(1024 * 1024 * 1024).as_str(),
+            "1 GiB"
+        );
+        assert_eq!(CnosByteNumber::format_bytes(1_000_000_000).as_str(), "1 GB");
     }
 
     #[test]
     fn test_parse() {
-        assert_eq!(parse_bytes_number("1024").unwrap(), 1024);
-        assert_eq!(parse_bytes_number("1Kib").unwrap(), 1024);
-        assert_eq!(parse_bytes_number("1k").unwrap(), 1024);
-        assert_eq!(parse_bytes_number("1K").unwrap(), 1024);
-        assert_eq!(parse_bytes_number("1kb").unwrap(), 1_000);
-        assert_eq!(parse_bytes_number("1mib").unwrap(), 1024 * 1024);
-        assert_eq!(parse_bytes_number("1Mib").unwrap(), 1024 * 1024);
-        assert_eq!(parse_bytes_number("1m").unwrap(), 1024 * 1024);
-        assert_eq!(parse_bytes_number("1M").unwrap(), 1024 * 1024);
-        assert_eq!(parse_bytes_number("1mb").unwrap(), 1_000_000);
-        assert_eq!(parse_bytes_number("1mB").unwrap(), 1_000_000);
-        assert_eq!(parse_bytes_number("1gib").unwrap(), 1024 * 1024 * 1024);
-        assert_eq!(parse_bytes_number("1Gib").unwrap(), 1024 * 1024 * 1024);
-        assert_eq!(parse_bytes_number("1g").unwrap(), 1024 * 1024 * 1024);
-        assert_eq!(parse_bytes_number("1G").unwrap(), 1024 * 1024 * 1024);
-        assert_eq!(parse_bytes_number("1gb").unwrap(), 1_000_000_000);
-        assert_eq!(parse_bytes_number("1Gb").unwrap(), 1_000_000_000);
+        assert_eq!(CnosByteNumber::parse_bytes("1024").unwrap(), 1024);
+        assert_eq!(CnosByteNumber::parse_bytes("1Kib").unwrap(), 1024);
+        assert_eq!(CnosByteNumber::parse_bytes("1k").unwrap(), 1000);
+        assert_eq!(CnosByteNumber::parse_bytes("1K").unwrap(), 1000);
+        assert_eq!(CnosByteNumber::parse_bytes("1kb").unwrap(), 1_000);
+        assert_eq!(CnosByteNumber::parse_bytes("1mib").unwrap(), 1024 * 1024);
+        assert_eq!(CnosByteNumber::parse_bytes("1Mib").unwrap(), 1024 * 1024);
+        assert_eq!(CnosByteNumber::parse_bytes("1m").unwrap(), 1000 * 1000);
+        assert_eq!(CnosByteNumber::parse_bytes("1M").unwrap(), 1000 * 1000);
+        assert_eq!(CnosByteNumber::parse_bytes("1mb").unwrap(), 1_000_000);
+        assert_eq!(CnosByteNumber::parse_bytes("1mB").unwrap(), 1_000_000);
+        assert_eq!(
+            CnosByteNumber::parse_bytes("1gib").unwrap(),
+            1024 * 1024 * 1024
+        );
+        assert_eq!(
+            CnosByteNumber::parse_bytes("1Gib").unwrap(),
+            1024 * 1024 * 1024
+        );
+        assert_eq!(
+            CnosByteNumber::parse_bytes("1g").unwrap(),
+            1000 * 1000 * 1000
+        );
+        assert_eq!(
+            CnosByteNumber::parse_bytes("1G").unwrap(),
+            1000 * 1000 * 1000
+        );
+        assert_eq!(CnosByteNumber::parse_bytes("1gb").unwrap(), 1_000_000_000);
+        assert_eq!(CnosByteNumber::parse_bytes("1Gb").unwrap(), 1_000_000_000);
     }
 
     #[derive(Serialize, Deserialize, Debug)]
@@ -246,7 +131,7 @@ mod test {
     #[test]
     fn test_ok() {
         let config_str = r#"
-            number = "1024_000"
+            number = "1_024_000"
             name = "Bar0"
         "#;
         check_foo(toml::from_str(config_str).unwrap(), "Bar0", 1024000).unwrap();
@@ -310,7 +195,7 @@ mod test {
   |
 2 |             number = "a1s"
   |                      ^^^^^
-Unknown unit '['a']' in bytes number 'a1s'
+the character 'a' is not a number
 "#;
         assert_eq!(&err_msg, exp_err_msg);
 
@@ -324,7 +209,7 @@ Unknown unit '['a']' in bytes number 'a1s'
   |
 2 |             number = "10_000_000_000_000Gib"
   |                      ^^^^^^^^^^^^^^^^^^^^^^^
-Invalid bytes number (u64 overflow) '10_000_000_000_000Gib'
+the value 10000000000000 exceeds the valid range
 "#;
         assert_eq!(&err_msg, exp_err_msg);
     }

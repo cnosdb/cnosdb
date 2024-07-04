@@ -8,7 +8,6 @@ use datafusion::arrow::record_batch::RecordBatch;
 use futures::TryStreamExt;
 use models::arrow::TimeUnit;
 use models::predicate::domain::Predicate;
-use models::schema::database_schema::Precision;
 use models::schema::tskv_table_schema::{ColumnType, TableColumn, TskvTableSchema};
 use models::schema::{CLUSTER_SCHEMA, DEFAULT_CATALOG};
 use models::utils::now_timestamp_nanos;
@@ -21,6 +20,7 @@ use spi::service::protocol::QueryId;
 use spi::{CoordinatorSnafu, ModelsSnafu, PersistQuerySnafu, QueryError};
 use trace::debug;
 use tskv::reader::QueryOption;
+use utils::precision::Precision;
 
 use crate::data_source::split::tskv::TableLayoutHandle;
 use crate::data_source::split::SplitManager;

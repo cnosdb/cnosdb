@@ -28,12 +28,12 @@ use meta::error::MetaError;
 use meta::model::MetaClientRef;
 use models::auth::user::UserDesc;
 use models::object_reference::{Resolve, ResolvedTable};
-use models::schema::database_schema::Precision;
 use models::schema::tenant::Tenant;
 use models::schema::{DEFAULT_CATALOG, DEFAULT_DATABASE};
 use parking_lot::RwLock;
 use spi::query::function::FuncMetaManagerRef;
 use spi::query::session::SessionCtx;
+use utils::precision::Precision;
 
 pub use self::base_table::BaseTableProvider;
 use self::cluster_schema_provider::ClusterSchemaProvider;

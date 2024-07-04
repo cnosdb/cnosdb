@@ -14,7 +14,6 @@ pub mod stream_table_schema;
 pub mod table_schema;
 pub mod tenant;
 pub mod tskv_table_schema;
-pub mod utils;
 
 pub const TIME_FIELD_NAME: &str = "time";
 pub const FIELD_ID: &str = "_field_id";

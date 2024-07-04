@@ -25,7 +25,6 @@ use metrics::prom_reporter::PromReporter;
 use models::auth::privilege::{DatabasePrivilege, Privilege, TenantObjectPrivilege};
 use models::error_code::UnknownCodeWithMessage;
 use models::oid::{Identifier, Oid};
-use models::schema::database_schema::Precision;
 use models::schema::{DEFAULT_CATALOG, DEFAULT_DATABASE};
 use models::utils::now_timestamp_nanos;
 use protocol_parser::json_protocol::parser::{
@@ -50,6 +49,7 @@ use trace::span_ctx_ext::SpanContextExt;
 use trace::span_ext::SpanExt;
 use trace::{debug, error, info, Span, SpanContext};
 use utils::backtrace;
+use utils::precision::Precision;
 use warp::hyper::body::Bytes;
 use warp::hyper::Body;
 use warp::reject::{MethodNotAllowed, MissingHeader, PayloadTooLarge};

@@ -9,7 +9,6 @@ mod tests {
     use meta::model::meta_admin::AdminMeta;
     use metrics::metric_register::MetricsRegister;
     use models::meta_data::VnodeId;
-    use models::schema::database_schema::Precision;
     use models::schema::tenant::TenantOptions;
     use protos::kv_service::{raft_write_command, WriteDataRequest};
     use protos::models_helper;
@@ -22,6 +21,7 @@ mod tests {
     use tskv::file_system::async_filesystem::LocalFileSystem;
     use tskv::file_system::FileSystem;
     use tskv::{file_utils, kv_option, Engine, TsKv};
+    use utils::precision::Precision;
 
     /// Initializes a TsKv instance in specified directory, with an optional runtime,
     /// returns the TsKv and runtime.

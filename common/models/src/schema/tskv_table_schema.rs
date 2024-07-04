@@ -13,11 +13,11 @@ use datafusion::error::DataFusionError;
 use datafusion::prelude::Column;
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
+use utils::precision::Precision;
 
 use crate::codec::Encoding;
 use crate::errors::InvalidSerdeMessageSnafu;
 use crate::gis::data_type::Geometry;
-use crate::schema::database_schema::Precision;
 use crate::schema::{
     COLUMN_ID_META_KEY, DEFAULT_CATALOG, DEFAULT_DATABASE, GIS_SRID_META_KEY,
     GIS_SUB_TYPE_META_KEY, TIME_FIELD_NAME,

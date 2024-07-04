@@ -59,13 +59,12 @@ use models::auth::user::User;
 use models::gis::data_type::{Geometry, GeometryType};
 use models::object_reference::{Resolve, ResolvedTable};
 use models::oid::{Identifier, Oid};
-use models::schema::database_schema::{DatabaseConfigBuilder, DatabaseOptionsBuilder, Precision};
+use models::schema::database_schema::{DatabaseConfigBuilder, DatabaseOptionsBuilder};
 use models::schema::stream_table_schema::Watermark;
 use models::schema::tenant::Tenant;
 use models::schema::tskv_table_schema::{
     ColumnType, TableColumn, TskvTableSchema, TskvTableSchemaRef,
 };
-use models::schema::utils::{CnosByteNumber, CnosDuration};
 use models::schema::{DEFAULT_CATALOG, TIME_FIELD_NAME};
 use models::utils::SeqIdGenerator;
 use models::{ColumnId, ValueType};
@@ -105,6 +104,9 @@ use spi::{
 use trace::span_ext::SpanExt;
 use trace::{debug, warn};
 use url::Url;
+use utils::byte_nums::CnosByteNumber;
+use utils::duration::CnosDuration;
+use utils::precision::Precision;
 
 use crate::data_source::source_downcast_adapter;
 use crate::data_source::stream::{get_event_time_column, get_watermark_delay};
@@ -3046,10 +3048,10 @@ mod tests {
     use meta::error::MetaError;
     use models::auth::user::{User, UserDesc, UserOptions};
     use models::codec::Encoding;
-    use models::schema::database_schema::Precision;
     use models::ValueType;
     use spi::query::session::SessionCtxFactory;
     use spi::service::protocol::ContextBuilder;
+    use utils::precision::Precision;
 
     use super::*;
     use crate::data_source::table_source::TableSourceAdapter;

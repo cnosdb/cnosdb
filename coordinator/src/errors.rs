@@ -7,11 +7,11 @@ use flatbuffers::InvalidFlatbuffer;
 use meta::error::MetaError;
 use models::error_code::{ErrorCode, ErrorCoder};
 use models::meta_data::{ReplicationSet, ReplicationSetId, VnodeId};
-use models::schema::database_schema::Precision;
 use models::Timestamp;
 use protos::PointsError;
 use replication::errors::ReplicationError;
 use snafu::{Backtrace, IntoError, Location, Snafu};
+use utils::precision::Precision;
 
 #[derive(Snafu, Debug, ErrorCoder)]
 #[snafu(visibility(pub))]

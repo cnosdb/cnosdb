@@ -6,15 +6,18 @@ edition.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-trace = { path = "../trace" }
 
+byte-unit = { workspace = true }
+humantime = { workspace = true }
 fnv = { workspace = true }
 siphasher = { workspace = true }
 twox-hash = { workspace = true }
 
 async-backtrace = { workspace = true, optional = true }
+datafusion = { workspace = true }
 futures = { workspace = true }
 libc = { workspace = true }
+tracing = { workspace = true }
 serde = { version = "1.0.171", features = ["derive"] }
 tokio = { workspace = true, features = ["full", "tracing"] }
 [target.'cfg(unix)'.dependencies]

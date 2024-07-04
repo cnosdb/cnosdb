@@ -7,7 +7,6 @@ use dateparser;
 use models::auth::privilege::{DatabasePrivilege, Privilege, TenantObjectPrivilege};
 use models::auth::user::{UserInfo, ROOT, ROOT_PWD};
 use models::oid::Identifier;
-use models::schema::database_schema::Precision;
 use models::schema::{DEFAULT_CATALOG, DEFAULT_DATABASE};
 use models::utils::now_timestamp_nanos;
 use protocol_parser::line_protocol::parser::Parser;
@@ -22,6 +21,7 @@ use protos::vector::{
 };
 use spi::server::dbms::DBMSRef;
 use tonic::{Request, Response, Status};
+use utils::precision::Precision;
 
 use crate::server;
 use crate::server::Error;
