@@ -1,0 +1,15 @@
+statement ok
+create database if not exists test;
+
+query T
+select query_type, query_text, database_name from information_schema.queries where query_text like '%information_schema.queries%';
+----
+"batch" "select query_type, query_text, database_name from information_schema.queries where query_text like '%information_schema.queries%';" "public"
+
+statement ok
+--#DATABASE=test
+
+query T
+select query_type, query_text, database_name from information_schema.queries where query_text like '%information_schema.queries%';
+----
+"batch" "select query_type, query_text, database_name from information_schema.queries where query_text like '%information_schema.queries%';" "test"
