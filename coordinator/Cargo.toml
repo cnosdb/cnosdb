@@ -28,6 +28,7 @@ maplit = { workspace = true }
 md-5 = { workspace = true }
 openraft = { workspace = true, features = ["serde"] }
 rand = { workspace = true }
+lazy_static = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 snafu = { workspace = true }

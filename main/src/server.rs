@@ -21,7 +21,7 @@ use tskv::{EngineRef, TsKv};
 use crate::flight_sql::FlightSqlServiceAdapter;
 use crate::http::http_service::{HttpService, ServerMode};
 use crate::rpc::grpc_service::GrpcService;
-use crate::spi::service::ServiceRef;
+use crate::spi::service::{ServiceRef, ServieceType};
 use crate::tcp::tcp_service::TcpService;
 use crate::vector::vector_grpc_service::VectorGrpcService;
 
@@ -102,6 +102,15 @@ impl Server {
         for x in self.services.iter_mut() {
             x.stop(force).await;
         }
+    }
+    pub fn get_coordinator(&self) -> Option<CoordinatorRef> {
+        self.services.iter().find_map(|x| match x.get_type() {
+            ServieceType::HttpService
+            | ServieceType::RpcService
+            | ServieceType::TcpService
+            | ServieceType::VectorGrpcService => Some(x.get_coord()),
+            _ => None,
+        })
     }
 }
 

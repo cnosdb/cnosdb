@@ -11,7 +11,7 @@ use utils::precision::Precision;
 
 use crate::server;
 use crate::server::{Error, ServiceHandle};
-use crate::spi::service::Service;
+use crate::spi::service::{Service, ServieceType};
 
 const MILLISECOND_TIMESTAMP: i64 = 1_000_000_000_000;
 
@@ -108,6 +108,12 @@ impl Service for TcpService {
         if let Some(stop) = self.handle.take() {
             stop.shutdown(force).await
         };
+    }
+    fn get_coord(&self) -> CoordinatorRef {
+        self.coord.clone()
+    }
+    fn get_type(&self) -> ServieceType {
+        ServieceType::TcpService
     }
 }
 

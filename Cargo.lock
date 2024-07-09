@@ -1396,6 +1396,7 @@ dependencies = [
  "datafusion-proto",
  "flatbuffers 24.3.25",
  "futures",
+ "lazy_static",
  "maplit",
  "md-5",
  "memory_pool",

@@ -65,7 +65,7 @@ use crate::http::response::{HttpResponse, ResponseBuilder};
 use crate::http::result_format::{get_result_format_from_header, ResultFormat};
 use crate::http::QuerySnafu;
 use crate::server::ServiceHandle;
-use crate::spi::service::Service;
+use crate::spi::service::{Service, ServieceType};
 use crate::{server, VERSION};
 
 pub enum ServerMode {
@@ -1682,6 +1682,12 @@ impl Service for HttpService {
         if let Some(stop) = self.handle.take() {
             stop.shutdown(force).await
         };
+    }
+    fn get_coord(&self) -> CoordinatorRef {
+        self.coord.clone()
+    }
+    fn get_type(&self) -> ServieceType {
+        ServieceType::HttpService
     }
 }
 

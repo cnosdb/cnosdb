@@ -11,7 +11,7 @@ use tonic::transport::{Identity, Server, ServerTlsConfig};
 use trace::http::tower_layer::TraceLayer;
 
 use crate::server::ServiceHandle;
-use crate::spi::service::Service;
+use crate::spi::service::{Service, ServieceType};
 use crate::vector::vector_server::VectorService;
 use crate::{info, server};
 
@@ -92,5 +92,11 @@ impl Service for VectorGrpcService {
         if let Some(stop) = self.handle.take() {
             stop.shutdown(force).await
         };
+    }
+    fn get_coord(&self) -> CoordinatorRef {
+        self.coord.clone()
+    }
+    fn get_type(&self) -> ServieceType {
+        ServieceType::VectorGrpcService
     }
 }
