@@ -1,10 +1,21 @@
 #![cfg(test)]
 
+use std::fmt::Write;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
+
+use rand::distributions::Alphanumeric;
+use rand::Rng;
 use reqwest::StatusCode;
 use serial_test::serial;
 
 use crate::case::{CnosdbAuth, CnosdbRequest, E2eExecutor, Step};
-use crate::{cluster_def, E2eError};
+use crate::cluster_def::CnosdbClusterDefinition;
+use crate::utils::{
+    kill_all, run_cluster_with_customized_configs, CnosdbDataTestHelper, CnosdbMetaTestHelper,
+};
+use crate::{check_response, cluster_def, E2eError};
 
 #[test]
 #[serial]
@@ -763,4 +774,116 @@ fn case6() {
             auth: None,
         },
     ]);
+}
+
+#[test]
+fn case8_count_after_restart_cluster() {
+    println!("Test begin case8 count after restart cluster");
+
+    let test_dir = PathBuf::from("/tmp/e2e_test/independent/restart/case8");
+    let _ = std::fs::remove_dir_all(&test_dir);
+    std::fs::create_dir_all(&test_dir).unwrap();
+
+    kill_all();
+
+    fn start_cluster(
+        test_dir: &PathBuf,
+        runtime: Arc<tokio::runtime::Runtime>,
+    ) -> (Option<CnosdbMetaTestHelper>, Option<CnosdbDataTestHelper>) {
+        run_cluster_with_customized_configs(
+            test_dir,
+            runtime,
+            &CnosdbClusterDefinition::with_ids(&[1], &[1, 2]),
+            true,
+            true,
+            vec![Some(Box::new(|c| {
+                c.data_path = "/tmp/e2e_test/independent/restart/case8/meta".to_string()
+            }))],
+            vec![
+                Some(Box::new(|c| {
+                    c.wal.max_file_size = 1_048_576;
+                    c.cluster.raft_logs_to_keep = 5;
+                    c.cluster.trigger_snapshot_interval = Duration::new(1, 0);
+                    c.global.store_metrics = false;
+                    c.cache.max_buffer_size = 2_097_152;
+                })),
+                Some(Box::new(|c| {
+                    c.wal.max_file_size = 1_048_576;
+                    c.cluster.raft_logs_to_keep = 5;
+                    c.cluster.trigger_snapshot_interval = Duration::new(1, 0);
+                    c.global.store_metrics = false;
+                    c.cache.max_buffer_size = 2_097_152
+                })),
+            ],
+        )
+    }
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .worker_threads(4)
+        .build()
+        .unwrap();
+    let runtime = Arc::new(runtime);
+    {
+        let (_meta, data) = start_cluster(&test_dir, runtime.clone());
+        let data = data.unwrap();
+        let client = data.client.clone();
+        check_response!(client.post(
+            "http://127.0.0.1:8902/api/v1/sql?db=public",
+            "create database db1 with shard 4 replica 2",
+        ));
+
+        let mut buffer = String::new();
+        for i in 0..30000 {
+            std::thread::sleep(std::time::Duration::new(0, 2000000));
+            let random_number = rand::thread_rng().gen_range(1000..10000);
+            let four_digit_float: f64 = rand::thread_rng().gen_range(0.0..1.0) * 10000.0;
+            let random_string: String = rand::thread_rng()
+                .sample_iter(&Alphanumeric)
+                .take(300)
+                .map(char::from)
+                .collect();
+            let line = format!(
+                "tb1,t1=t1a,t2=t2a,t3=t3a f1={}i,f2={},f3=\"{}\" {} ",
+                random_number, four_digit_float, random_string, i
+            );
+            if buffer.len() < 1_048_576 {
+                writeln!(&mut buffer, "{}", line).unwrap();
+            } else {
+                check_response!(client.post("http://127.0.0.1:8902/api/v1/write?db=db1", &buffer,));
+                buffer.clear();
+                writeln!(&mut buffer, "{}", line).unwrap();
+            }
+        }
+
+        check_response!(client.post("http://127.0.0.1:8902/api/v1/write?db=db1", &buffer,));
+        buffer.clear();
+
+        let result = client
+            .post(
+                "http://127.0.0.1:8902/api/v1/sql?db=db1",
+                "select count(*) from tb1",
+            )
+            .unwrap();
+        assert_eq!(result.status(), StatusCode::OK);
+        assert_eq!(result.text().unwrap(), "COUNT(UInt8(1))\n30000\n");
+    }
+
+    {
+        let (_meta, data) = start_cluster(&test_dir, runtime.clone());
+        let client = data.as_ref().map(|d| d.client.clone()).unwrap();
+
+        let result = client
+            .post(
+                "http://127.0.0.1:8902/api/v1/sql?db=db1",
+                "select count(*) from tb1",
+            )
+            .unwrap();
+        assert_eq!(result.status(), StatusCode::OK);
+        assert_eq!(result.text().unwrap(), "COUNT(UInt8(1))\n30000\n");
+    }
+
+    kill_all();
+    let _ = std::fs::remove_dir_all(&test_dir);
+    println!("Test begin case8 count after restart cluster");
 }
