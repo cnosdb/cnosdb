@@ -121,6 +121,10 @@ impl EntryStorage for RaftEntryStorage {
             max_seq: self.inner.max_sequence(),
         })
     }
+    async fn sync(&mut self) -> ReplicationResult<()> {
+        let _ = self.inner.wal.sync().await;
+        Ok(())
+    }
 }
 
 struct WalFileMeta {

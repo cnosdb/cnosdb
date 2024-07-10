@@ -128,5 +128,7 @@ pub trait EntryStorage: Send + Sync {
     async fn destroy(&mut self) -> ReplicationResult<()>;
 
     async fn metrics(&mut self) -> ReplicationResult<EntriesMetrics>;
+
+    async fn sync(&mut self) -> ReplicationResult<()>;
 }
 pub type EntryStorageRef = Arc<RwLock<dyn EntryStorage>>;

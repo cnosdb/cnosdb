@@ -757,4 +757,9 @@ impl RaftNodesManager {
 
         Ok(())
     }
+
+    pub async fn sync_wal_writer(&self) {
+        let raft_nodes = self.raft_nodes.write().await;
+        let _ = raft_nodes.sync_wal_writer().await;
+    }
 }

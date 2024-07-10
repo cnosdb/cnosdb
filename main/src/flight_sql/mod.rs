@@ -2,7 +2,6 @@ use std::net::SocketAddr;
 
 use arrow_flight::flight_service_server::FlightServiceServer;
 use config::tskv::TLSConfig;
-use coordinator::service::CoordinatorRef;
 use spi::server::dbms::DBMSRef;
 use tokio::sync::oneshot;
 use tonic::transport::{Identity, Server, ServerTlsConfig};
@@ -13,7 +12,7 @@ use self::flight_sql_server::FlightSqlServiceImpl;
 use crate::flight_sql::auth_middleware::basic_call_header_authenticator::BasicCallHeaderAuthenticator;
 use crate::flight_sql::auth_middleware::generated_bearer_token_authenticator::GeneratedBearerTokenAuthenticator;
 use crate::server::ServiceHandle;
-use crate::spi::service::{Service, ServieceType};
+use crate::spi::service::Service;
 
 mod auth_middleware;
 pub mod flight_sql_server;
@@ -97,11 +96,5 @@ impl Service for FlightSqlServiceAdapter {
         if let Some(stop) = self.handle.take() {
             stop.shutdown(force).await
         };
-    }
-    fn get_coord(&self) -> CoordinatorRef {
-        todo!()
-    }
-    fn get_type(&self) -> ServieceType {
-        ServieceType::FlightSqlService
     }
 }

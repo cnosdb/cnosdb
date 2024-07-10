@@ -199,4 +199,8 @@ impl RaftNode {
     pub async fn engine_metrics(&self) -> ReplicationResult<EngineMetrics> {
         self.storage.engine_metrics().await
     }
+
+    pub async fn sync_wal_writer(&self) {
+        let _ = self.storage.sync_wal_writer().await;
+    }
 }

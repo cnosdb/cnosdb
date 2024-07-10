@@ -568,4 +568,8 @@ impl VnodeStorage {
 
         Ok(())
     }
+
+    pub async fn sync_index(&self) {
+        let _ = self.ts_index.write().await.flush().await;
+    }
 }

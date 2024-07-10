@@ -194,7 +194,7 @@ fn main() -> Result<(), std::io::Error> {
         }
 
         let _ = std::fs::create_dir_all(config.storage.path);
-        let storage = match deployment_mode {
+        let (storage, coordinator) = match deployment_mode {
             DeploymentMode::QueryTskv => builder.build_query_storage(&mut server).await,
             DeploymentMode::Tskv => builder.build_storage_server(&mut server).await,
             DeploymentMode::Query => builder.build_query_server(&mut server).await,
@@ -204,16 +204,20 @@ fn main() -> Result<(), std::io::Error> {
         info!("CnosDB server start as {} mode", deployment_mode);
         server.start().expect("CnosDB server start.");
         signal::block_waiting_ctrl_c();
-        let writer_count = server.get_coordinator().unwrap().get_writer_count();
+        let raft_manager = coordinator.raft_manager();
+        let writer_count = coordinator.get_writer_count();
         server.stop(true).await;
         info!(
             "Waiting for write requests, current number of requests {}",
             writer_count.load(Ordering::Relaxed)
         );
         wait_for_writers(writer_count).await;
+        raft_manager.sync_wal_writer().await;
+
         if let Some(tskv) = storage {
             tskv.close().await;
         }
+
         finalize_global_tracing();
 
         println!("CnosDB is stopped.");

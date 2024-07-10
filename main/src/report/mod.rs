@@ -1,13 +1,12 @@
 use std::fmt::Debug;
 use std::ops::Add;
 
-use coordinator::service::CoordinatorRef;
 use lazy_static::lazy_static;
 use serde::Serialize;
 use tokio::task::JoinHandle;
 use trace::debug;
 
-use crate::spi::service::{Service, ServieceType};
+use crate::spi::service::Service;
 use crate::{server, VERSION};
 
 async fn get_country_code_and_regin_name() -> (String, String) {
@@ -161,11 +160,5 @@ impl Service for ReportService {
         if let Some(stop) = self.service_handle.take() {
             stop.abort();
         };
-    }
-    fn get_coord(&self) -> CoordinatorRef {
-        todo!()
-    }
-    fn get_type(&self) -> ServieceType {
-        ServieceType::ReportService
     }
 }

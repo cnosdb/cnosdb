@@ -17,7 +17,7 @@ use tskv::EngineRef;
 
 use crate::rpc::tskv::TskvServiceImpl;
 use crate::server::ServiceHandle;
-use crate::spi::service::{Service, ServieceType};
+use crate::spi::service::Service;
 use crate::{info, server};
 
 pub struct GrpcService {
@@ -126,11 +126,5 @@ impl Service for GrpcService {
         if let Some(stop) = self.handle.take() {
             stop.shutdown(force).await
         };
-    }
-    fn get_coord(&self) -> CoordinatorRef {
-        self.coord.clone()
-    }
-    fn get_type(&self) -> ServieceType {
-        ServieceType::RpcService
     }
 }

@@ -166,6 +166,12 @@ impl MultiRaft {
         }
         true
     }
+
+    pub async fn sync_wal_writer(&self) {
+        for (_, raft_node_wrapper) in self.nodes.iter() {
+            raft_node_wrapper.raft.sync_wal_writer().await;
+        }
+    }
 }
 
 #[cfg(test)]
