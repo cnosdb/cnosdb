@@ -794,7 +794,7 @@ fn case8_count_after_restart_cluster() {
             test_dir,
             runtime,
             &CnosdbClusterDefinition::with_ids(&[1], &[1, 2]),
-            false,
+            true,
             true,
             vec![],
             vec![
