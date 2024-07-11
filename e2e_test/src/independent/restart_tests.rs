@@ -794,11 +794,9 @@ fn case8_count_after_restart_cluster() {
             test_dir,
             runtime,
             &CnosdbClusterDefinition::with_ids(&[1], &[1, 2]),
+            false,
             true,
-            true,
-            vec![Some(Box::new(|c| {
-                c.data_path = "/tmp/e2e_test/independent/restart/case8/meta".to_string()
-            }))],
+            vec![],
             vec![
                 Some(Box::new(|c| {
                     c.wal.max_file_size = 1_048_576;
@@ -834,8 +832,8 @@ fn case8_count_after_restart_cluster() {
         ));
 
         let mut buffer = String::new();
+        let mut first_insert = true;
         for i in 0..30000 {
-            std::thread::sleep(std::time::Duration::new(0, 2000000));
             let random_number = rand::thread_rng().gen_range(1000..10000);
             let four_digit_float: f64 = rand::thread_rng().gen_range(0.0..1.0) * 10000.0;
             let random_string: String = rand::thread_rng()
@@ -843,16 +841,20 @@ fn case8_count_after_restart_cluster() {
                 .take(300)
                 .map(char::from)
                 .collect();
-            let line = format!(
-                "tb1,t1=t1a,t2=t2a,t3=t3a f1={}i,f2={},f3=\"{}\" {} ",
+            writeln!(
+                &mut buffer,
+                "tb1,t1=t1a,t2=t2a,t3=t3a f1={}i,f2={},f3=\"{}\" {}",
                 random_number, four_digit_float, random_string, i
-            );
+            )
+            .unwrap();
             if buffer.len() < 1_048_576 {
-                writeln!(&mut buffer, "{}", line).unwrap();
-            } else {
-                check_response!(client.post("http://127.0.0.1:8902/api/v1/write?db=db1", &buffer,));
-                buffer.clear();
-                writeln!(&mut buffer, "{}", line).unwrap();
+                continue;
+            }
+            check_response!(client.post("http://127.0.0.1:8902/api/v1/write?db=db1", &buffer,));
+            buffer.clear();
+            if first_insert {
+                first_insert = false;
+                std::thread::sleep(std::time::Duration::from_secs(10));
             }
         }
 
@@ -867,6 +869,7 @@ fn case8_count_after_restart_cluster() {
             .unwrap();
         assert_eq!(result.status(), StatusCode::OK);
         assert_eq!(result.text().unwrap(), "COUNT(UInt8(1))\n30000\n");
+        kill_all();
     }
 
     {
