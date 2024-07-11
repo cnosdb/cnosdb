@@ -832,7 +832,6 @@ fn case8_count_after_restart_cluster() {
         ));
 
         let mut buffer = String::new();
-        let mut first_insert = true;
         for i in 0..30000 {
             let random_number = rand::thread_rng().gen_range(1000..10000);
             let four_digit_float: f64 = rand::thread_rng().gen_range(0.0..1.0) * 10000.0;
@@ -852,10 +851,6 @@ fn case8_count_after_restart_cluster() {
             }
             check_response!(client.post("http://127.0.0.1:8902/api/v1/write?db=db1", &buffer,));
             buffer.clear();
-            if first_insert {
-                first_insert = false;
-                std::thread::sleep(std::time::Duration::from_secs(10));
-            }
         }
 
         check_response!(client.post("http://127.0.0.1:8902/api/v1/write?db=db1", &buffer,));
