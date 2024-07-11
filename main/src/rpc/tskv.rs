@@ -153,6 +153,7 @@ impl TskvServiceImpl {
             aggs,
             Arc::new(expr.df_schema),
             expr.table_schema,
+            expr.schema_meta,
         );
 
         let meta = self.coord.meta_manager();
@@ -180,6 +181,7 @@ impl TskvServiceImpl {
             None,
             Arc::new(expr.df_schema),
             expr.table_schema,
+            expr.schema_meta,
         );
 
         let node_id = meta.node_id();

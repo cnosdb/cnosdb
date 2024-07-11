@@ -1,16 +1,14 @@
-use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use arrow::datatypes::{DataType, Field, Fields, Schema, SchemaRef};
+use arrow::datatypes::{Field, Fields, Schema, SchemaRef};
 use arrow_array::builder::StringBuilder;
 use arrow_array::RecordBatch;
 use datafusion::physical_plan::metrics::{ExecutionPlanMetricsSet, MetricBuilder, Time};
 use futures::{ready, Stream, StreamExt};
 use models::datafusion::limit_record_batch::limit_record_batch;
 use models::schema::tskv_table_schema::TskvTableSchemaRef;
-use models::schema::COLUMN_ID_META_KEY;
 use models::{ColumnId, SeriesKey, Tag};
 use snafu::{IntoError, ResultExt};
 
@@ -73,20 +71,13 @@ impl BatchReader for SeriesReader {
                     .build()
                 })?;
 
-            let name = match self.query_schema.column_name(column_id) {
-                Some(name) => name.to_string(),
+            let field = match self.query_schema.column_id_column_map().get(&column_id) {
+                Some(column) => Arc::new(Field::from(*column)),
                 None => {
                     continue;
                 }
             };
 
-            let mut field = Field::new(name, DataType::Utf8, true);
-            field.set_metadata(HashMap::from([(
-                COLUMN_ID_META_KEY.to_string(),
-                column_id.to_string(),
-            )]));
-
-            let field = Arc::new(field);
             let array = String::from_utf8(value.to_vec()).map_err(|e| {
                 InvalidUtf8Snafu {
                     message: format!("Convert tag {}'s value: {:?}", field.name(), value),
@@ -102,7 +93,10 @@ impl BatchReader for SeriesReader {
             .iter()
             .chain(append_column.iter())
             .cloned();
-        let schema = Arc::new(Schema::new(Fields::from_iter(new_fields)));
+        let schema = Arc::new(Schema::new_with_metadata(
+            Fields::from_iter(new_fields),
+            ori_schema.metadata().clone(),
+        ));
 
         Ok(Box::pin(SeriesReaderStream {
             input,

@@ -220,6 +220,10 @@ impl BitSet {
     pub fn is_all_unset(&self) -> bool {
         self.buffer.iter().all(|&v| v == 0)
     }
+
+    pub fn into_bytes(self) -> Vec<u8> {
+        self.buffer
+    }
 }
 
 impl PartialEq for BitSet {

@@ -39,7 +39,7 @@ pub fn dictionary_filed_to_string(schema: SchemaRef) -> SchemaRef {
         })
         .collect::<Fields>();
 
-    Arc::new(Schema::new(fields))
+    Arc::new(Schema::new_with_metadata(fields, schema.metadata.clone()))
 }
 
 impl LocalTskvTagScanStream {

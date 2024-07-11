@@ -3,15 +3,17 @@ use std::collections::LinkedList;
 use std::ops::Bound::Included;
 use std::sync::Arc;
 
+use arrow_array::RecordBatch;
 use models::field_value::FieldVal;
 use models::predicate::domain::{TimeRange, TimeRanges};
 use models::schema::tskv_table_schema::{TableColumn, TskvTableSchema, TskvTableSchemaRef};
 use models::{ColumnId, SeriesId, SeriesKey, Timestamp};
+use snafu::ResultExt;
 
 use super::memcache::dedup_and_sort_row_data;
 use super::row_data::{OrderedRowsData, RowData};
-use crate::error::{CommonSnafu, TskvResult};
-use crate::tsm::data_block::{DataBlock, MutableColumn};
+use crate::error::{ArrowSnafu, CommonSnafu, ModelSnafu, TskvResult};
+use crate::tsm::mutable_column::MutableColumn;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct RowGroup {
@@ -275,10 +277,11 @@ impl SeriesData {
         }
         None
     }
-    pub fn build_data_block(
+
+    pub fn build_record_batch(
         &self,
         max_level_ts: i64,
-    ) -> TskvResult<Option<(String, DataBlock, DataBlock)>> {
+    ) -> TskvResult<Option<(TskvTableSchemaRef, RecordBatch, RecordBatch)>> {
         if let Some(schema) = self.get_schema() {
             let field_ids = schema.fields_id();
 
@@ -288,9 +291,10 @@ impl SeriesData {
                 .map(|col| MutableColumn::empty(col.clone()))
                 .collect::<TskvResult<Vec<_>>>()?;
             let mut delta_cols = cols.clone();
-            let mut time_array = MutableColumn::empty(schema.time_column())?;
 
+            let mut time_array = MutableColumn::empty(schema.time_column())?;
             let mut delta_time_array = time_array.clone();
+
             let mut cols_desc = vec![None; schema.field_num()];
             for (schema, rows) in self.flat_groups() {
                 let values = dedup_and_sort_row_data(rows);
@@ -336,10 +340,21 @@ impl SeriesData {
                 }
                 .build());
             }
+
+            let mut arrays = vec![time_array.to_arrow_array(None).context(ModelSnafu)?];
+            for col in cols {
+                arrays.push(col.to_arrow_array(None).context(ModelSnafu)?);
+            }
+            let mut delta_arrays =
+                vec![delta_time_array.to_arrow_array(None).context(ModelSnafu)?];
+            for col in delta_cols {
+                delta_arrays.push(col.to_arrow_array(None).context(ModelSnafu)?);
+            }
+            let record_schema = schema.to_record_data_schema();
             return Ok(Some((
-                schema.name.clone(),
-                DataBlock::new(schema.clone(), time_array, cols),
-                DataBlock::new(schema.clone(), delta_time_array, delta_cols),
+                schema.clone(),
+                RecordBatch::try_new(record_schema.clone(), arrays).context(ArrowSnafu)?,
+                RecordBatch::try_new(record_schema, delta_arrays).context(ArrowSnafu)?,
             )));
         }
         Ok(None)

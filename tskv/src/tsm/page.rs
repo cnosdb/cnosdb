@@ -1,21 +1,26 @@
+use arrow_array::{
+    Array, ArrayRef, BooleanArray, Float64Array, Int64Array, StringArray,
+    TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray,
+    TimestampSecondArray, UInt64Array,
+};
+use arrow_schema::{DataType, TimeUnit};
 use models::column_data::PrimaryColumnData;
-use models::field_value::FieldVal;
-use models::schema::tskv_table_schema::{PhysicalCType, TableColumn};
-use models::PhysicalDType;
+use models::schema::tskv_table_schema::TableColumn;
 use serde::{Deserialize, Serialize};
-use snafu::{OptionExt, ResultExt};
-use utils::bitset::ImmutBitSet;
+use snafu::ResultExt;
+use utils::bitset::{BitSet, ImmutBitSet, NullBitset};
 
 use super::statistics::ValueStatistics;
 use crate::byte_utils::{decode_be_u32, decode_be_u64};
 use crate::error::{
-    DecodeSnafu, EncodeSnafu, TskvResult, TsmPageFileHashCheckFailedSnafu, TsmPageSnafu,
+    EncodeSnafu, TskvResult, TsmPageFileHashCheckFailedSnafu, TsmPageSnafu,
     UnsupportedDataTypeSnafu,
 };
 use crate::tsm::codec::{
-    get_bool_codec, get_encoding, get_f64_codec, get_i64_codec, get_str_codec, get_u64_codec,
+    get_bool_codec, get_f64_codec, get_i64_codec, get_str_codec, get_ts_codec, get_u64_codec,
 };
-use crate::tsm::data_block::MutableColumn;
+use crate::tsm::mutable_column::MutableColumn;
+use crate::tsm::reader::data_buf_to_arrow_array;
 
 #[derive(Debug)]
 pub struct Page {
@@ -82,130 +87,238 @@ impl Page {
     }
 
     pub fn to_column(&self) -> TskvResult<MutableColumn> {
-        let col_type = self.meta.column.column_type.to_physical_type();
-        let mut col =
-            MutableColumn::empty_with_cap(self.meta.column.clone(), self.meta.num_values as usize)?;
-        let data_buffer = self.data_buffer();
-        let bitset = self.null_bitset();
-        match col_type {
-            PhysicalCType::Tag => {
-                return Err(TsmPageSnafu {
-                    reason: "tag column not support now".to_string(),
-                }
-                .build());
-            }
-            PhysicalCType::Time(_) | PhysicalCType::Field(PhysicalDType::Integer) => {
-                let encoding = get_encoding(data_buffer);
-                let ts_codec = get_i64_codec(encoding);
-                let mut target = Vec::new();
-                ts_codec
-                    .decode(data_buffer, &mut target)
-                    .context(DecodeSnafu)?;
+        MutableColumn::data_buf_to_column(
+            self.data_buffer(),
+            self.meta(),
+            &NullBitset::Ref(self.null_bitset()),
+        )
+    }
 
-                let mut target = target.into_iter();
-                for i in 0..bitset.len() {
-                    if bitset.get(i) {
-                        col.push(Some(FieldVal::Integer(target.next().context(
-                            TsmPageSnafu {
-                                reason: "data buffer not enough".to_string(),
-                            },
-                        )?)))?;
-                    } else {
-                        col.push(None)?;
-                    }
-                }
-            }
-            PhysicalCType::Field(PhysicalDType::Float) => {
-                let encoding = get_encoding(data_buffer);
-                let ts_codec = get_f64_codec(encoding);
-                let mut target = Vec::new();
-                ts_codec
-                    .decode(data_buffer, &mut target)
-                    .context(DecodeSnafu)?;
+    pub fn to_arrow_array(&self) -> TskvResult<ArrayRef> {
+        data_buf_to_arrow_array(self, NullBitset::Ref(self.null_bitset()))
+    }
 
-                let mut target = target.into_iter();
-                for i in 0..bitset.len() {
-                    if bitset.get(i) {
-                        col.push(Some(FieldVal::Float(target.next().context(
-                            TsmPageSnafu {
-                                reason: "data buffer not enough".to_string(),
-                            },
-                        )?)))?;
-                    } else {
-                        col.push(None)?;
+    pub fn arrow_array_to_page(array: ArrayRef, table_column: TableColumn) -> TskvResult<Page> {
+        let data_len = array.len() as u64;
+        let bit_set_buffer = match array.nulls() {
+            None => BitSet::with_size_all_set(data_len as usize).into_bytes(),
+            Some(nulls) => nulls.buffer().to_vec(),
+        };
+        let mut buf = vec![];
+        let statistics = match array.data_type() {
+            DataType::Boolean => {
+                let column = array
+                    .as_any()
+                    .downcast_ref::<BooleanArray>()
+                    .ok_or_else(|| {
+                        TsmPageSnafu {
+                            reason: "Arrow array is not BooleanArray".to_string(),
+                        }
+                        .build()
+                    })?;
+                let target_column = column.iter().flatten().collect::<Vec<_>>();
+                let encoder = get_bool_codec(table_column.encoding());
+                encoder
+                    .encode(&target_column, &mut buf)
+                    .context(EncodeSnafu)?;
+                PageStatistics::Bool(ValueStatistics::new(
+                    None,
+                    None,
+                    None,
+                    (array.len() - target_column.len()) as u64,
+                ))
+            }
+            DataType::Int64 => {
+                let column = array.as_any().downcast_ref::<Int64Array>().ok_or_else(|| {
+                    TsmPageSnafu {
+                        reason: "Arrow array is not Int64Array".to_string(),
+                    }
+                    .build()
+                })?;
+                let target_column = column.iter().flatten().collect::<Vec<_>>();
+                let max = target_column.iter().max().copied();
+                let min = target_column.iter().min().copied();
+                let encoder = get_i64_codec(table_column.encoding());
+                encoder
+                    .encode(&target_column, &mut buf)
+                    .context(EncodeSnafu)?;
+                PageStatistics::I64(ValueStatistics::new(
+                    min,
+                    max,
+                    None,
+                    (array.len() - target_column.len()) as u64,
+                ))
+            }
+            DataType::Timestamp(unit, _) => {
+                let target_column = match unit {
+                    TimeUnit::Second => {
+                        let column = array
+                            .as_any()
+                            .downcast_ref::<TimestampSecondArray>()
+                            .ok_or_else(|| {
+                                TsmPageSnafu {
+                                    reason: "Arrow array is not Int64Array".to_string(),
+                                }
+                                .build()
+                            })?;
+                        column.iter().flatten().collect::<Vec<_>>()
+                    }
+                    TimeUnit::Millisecond => {
+                        let column = array
+                            .as_any()
+                            .downcast_ref::<TimestampMillisecondArray>()
+                            .ok_or_else(|| {
+                                TsmPageSnafu {
+                                    reason: "Arrow array is not Int64Array".to_string(),
+                                }
+                                .build()
+                            })?;
+                        column.iter().flatten().collect::<Vec<_>>()
+                    }
+                    TimeUnit::Microsecond => {
+                        let column = array
+                            .as_any()
+                            .downcast_ref::<TimestampMicrosecondArray>()
+                            .ok_or_else(|| {
+                                TsmPageSnafu {
+                                    reason: "Arrow array is not Int64Array".to_string(),
+                                }
+                                .build()
+                            })?;
+                        column.iter().flatten().collect::<Vec<_>>()
+                    }
+                    TimeUnit::Nanosecond => {
+                        let column = array
+                            .as_any()
+                            .downcast_ref::<TimestampNanosecondArray>()
+                            .ok_or_else(|| {
+                                TsmPageSnafu {
+                                    reason: "Arrow array is not Int64Array".to_string(),
+                                }
+                                .build()
+                            })?;
+                        column.iter().flatten().collect::<Vec<_>>()
+                    }
+                };
+                let max = target_column.iter().max().copied();
+                let min = target_column.iter().min().copied();
+                let encoder = get_ts_codec(table_column.encoding());
+                encoder
+                    .encode(&target_column, &mut buf)
+                    .context(EncodeSnafu)?;
+                PageStatistics::I64(ValueStatistics::new(
+                    min,
+                    max,
+                    None,
+                    (array.len() - target_column.len()) as u64,
+                ))
+            }
+            DataType::UInt64 => {
+                let column = array
+                    .as_any()
+                    .downcast_ref::<UInt64Array>()
+                    .ok_or_else(|| {
+                        TsmPageSnafu {
+                            reason: "Arrow array is not UInt64Array".to_string(),
+                        }
+                        .build()
+                    })?;
+                let target_column = column.iter().flatten().collect::<Vec<_>>();
+                let max = target_column.iter().max().copied();
+                let min = target_column.iter().min().copied();
+                let encoder = get_u64_codec(table_column.encoding());
+                encoder
+                    .encode(&target_column, &mut buf)
+                    .context(EncodeSnafu)?;
+                PageStatistics::U64(ValueStatistics::new(
+                    min,
+                    max,
+                    None,
+                    (array.len() - target_column.len()) as u64,
+                ))
+            }
+            DataType::Float64 => {
+                let column = array
+                    .as_any()
+                    .downcast_ref::<Float64Array>()
+                    .ok_or_else(|| {
+                        TsmPageSnafu {
+                            reason: "Arrow array is not Float64Array".to_string(),
+                        }
+                        .build()
+                    })?;
+                let target_column = column.iter().flatten().collect::<Vec<_>>();
+                let mut max = f64::MIN;
+                let mut min = f64::MAX;
+                for v in target_column.iter() {
+                    if *v > max {
+                        max = *v;
+                    }
+                    if *v < min {
+                        min = *v;
                     }
                 }
+                let encoder = get_f64_codec(table_column.encoding());
+                encoder
+                    .encode(&target_column, &mut buf)
+                    .context(EncodeSnafu)?;
+                PageStatistics::F64(ValueStatistics::new(
+                    Some(min),
+                    Some(max),
+                    None,
+                    (array.len() - target_column.len()) as u64,
+                ))
             }
-            PhysicalCType::Field(PhysicalDType::Unsigned) => {
-                let encoding = get_encoding(data_buffer);
-                let ts_codec = get_u64_codec(encoding);
-                let mut target = Vec::new();
-                ts_codec
-                    .decode(data_buffer, &mut target)
-                    .context(DecodeSnafu)?;
-                let mut target = target.into_iter();
-                for i in 0..bitset.len() {
-                    if bitset.get(i) {
-                        col.push(Some(FieldVal::Unsigned(target.next().context(
-                            TsmPageSnafu {
-                                reason: "data buffer not enough".to_string(),
-                            },
-                        )?)))?;
-                    } else {
-                        col.push(None)?;
-                    }
-                }
+            DataType::Utf8 => {
+                let column = array
+                    .as_any()
+                    .downcast_ref::<StringArray>()
+                    .ok_or_else(|| {
+                        TsmPageSnafu {
+                            reason: "Arrow array is not StringArray".to_string(),
+                        }
+                        .build()
+                    })?;
+                let target_column = column
+                    .iter()
+                    .filter_map(|v| v.map(|v| v.as_bytes()))
+                    .collect::<Vec<_>>();
+                let max = target_column.iter().max().map(|value| value.to_vec());
+                let min = target_column.iter().min().map(|value| value.to_vec());
+                let encoder = get_str_codec(table_column.encoding());
+                encoder
+                    .encode(&target_column, &mut buf)
+                    .context(EncodeSnafu)?;
+                PageStatistics::Bytes(ValueStatistics::new(
+                    min,
+                    max,
+                    None,
+                    (array.len() - target_column.len()) as u64,
+                ))
             }
-            PhysicalCType::Field(PhysicalDType::Boolean) => {
-                let encoding = get_encoding(data_buffer);
-                let ts_codec = get_bool_codec(encoding);
-                let mut target = Vec::new();
-                ts_codec
-                    .decode(data_buffer, &mut target)
-                    .context(DecodeSnafu)?;
-
-                let mut target = target.into_iter();
-                for i in 0..bitset.len() {
-                    if bitset.get(i) {
-                        col.push(Some(FieldVal::Boolean(target.next().context(
-                            TsmPageSnafu {
-                                reason: "data buffer not enough".to_string(),
-                            },
-                        )?)))?;
-                    } else {
-                        col.push(None)?;
-                    }
-                }
-            }
-            PhysicalCType::Field(PhysicalDType::String) => {
-                let encoding = get_encoding(data_buffer);
-                let ts_codec = get_str_codec(encoding);
-                let mut target = Vec::new();
-                ts_codec
-                    .decode(data_buffer, &mut target)
-                    .context(DecodeSnafu)?;
-
-                let mut target = target.into_iter();
-                for i in 0..bitset.len() {
-                    if bitset.get(i) {
-                        col.push(Some(FieldVal::Bytes(target.next().context(
-                            TsmPageSnafu {
-                                reason: "data buffer not enough".to_string(),
-                            },
-                        )?)))?;
-                    } else {
-                        col.push(None)?;
-                    }
-                }
-            }
-            PhysicalCType::Field(PhysicalDType::Unknown) => {
+            _ => {
                 return Err(UnsupportedDataTypeSnafu {
-                    dt: "unknown".to_string(),
+                    dt: array.data_type().to_string(),
                 }
                 .build());
             }
-        }
-        Ok(col)
+        };
+        let mut data = vec![];
+        let mut hasher = crc32fast::Hasher::new();
+        hasher.update(&buf);
+        let data_crc = hasher.finalize().to_be_bytes();
+        data.extend_from_slice(&(bit_set_buffer.len() as u32).to_be_bytes());
+        data.extend_from_slice(&data_len.to_be_bytes());
+        data.extend_from_slice(&data_crc);
+        data.extend_from_slice(&bit_set_buffer);
+        data.extend_from_slice(&buf);
+        let bytes = bytes::Bytes::from(data);
+        let meta = PageMeta {
+            num_values: data_len as u32,
+            column: table_column,
+            statistics,
+        };
+        Ok(Page { bytes, meta })
     }
 
     pub fn col_to_page(column: &MutableColumn) -> TskvResult<Page> {
@@ -250,11 +363,17 @@ impl Page {
                         }
                     })
                     .collect::<Vec<_>>();
-                let encoder = get_i64_codec(column.column_desc().encoding);
-                encoder
-                    .encode(&target_array, &mut buf)
-                    .context(EncodeSnafu)?;
-
+                if column.column_desc().column_type.is_time() {
+                    let encoder = get_ts_codec(column.column_desc().encoding);
+                    encoder
+                        .encode(&target_array, &mut buf)
+                        .context(EncodeSnafu)?;
+                } else {
+                    let encoder = get_i64_codec(column.column_desc().encoding);
+                    encoder
+                        .encode(&target_array, &mut buf)
+                        .context(EncodeSnafu)?;
+                }
                 PageStatistics::I64(ValueStatistics::new(
                     Some(*min),
                     Some(*max),

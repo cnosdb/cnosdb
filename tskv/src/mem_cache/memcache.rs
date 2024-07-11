@@ -64,9 +64,9 @@ impl MemCache {
             .try_for_each(|(series_id, v)| -> TskvResult<()> {
                 let data = v.read();
                 if let Some((table, datablock, delta_datablock)) =
-                    data.build_data_block(max_level_ts)?
+                    data.build_record_batch(max_level_ts)?
                 {
-                    if !datablock.is_empty() {
+                    if datablock.num_rows() != 0 {
                         if let Some(chunk) = chunk_group.get_mut(&table) {
                             chunk.insert(*series_id, (data.series_key.clone(), datablock));
                         } else {
@@ -76,7 +76,7 @@ impl MemCache {
                         }
                     }
 
-                    if !delta_datablock.is_empty() {
+                    if delta_datablock.num_rows() != 0 {
                         if let Some(chunk) = delta_chunk_group.get_mut(&table) {
                             chunk.insert(*series_id, (data.series_key.clone(), delta_datablock));
                         } else {
@@ -837,13 +837,13 @@ mod test_memcache {
             size: 10,
         };
         series_data1.write(row_group_1.clone());
-        let result = series_data1.build_data_block(version.max_level_ts());
+        let result = series_data1.build_record_batch(version.max_level_ts());
         match result {
             Ok(opt_blocks) => {
-                if let Some((name, main_block, delta_block)) = opt_blocks {
-                    assert_eq!("test_table".to_owned(), name);
-                    assert_eq!(2, main_block.len());
-                    assert_eq!(3, delta_block.len());
+                if let Some((schema, main_block, delta_block)) = opt_blocks {
+                    assert_eq!("test_table".to_owned(), schema.name);
+                    assert_eq!(2, main_block.num_rows());
+                    assert_eq!(3, delta_block.num_rows());
                 } else {
                     println!("No data blocks were built.");
                 }
@@ -1036,9 +1036,10 @@ mod test_memcache {
             ts: 6,
             fields: vec![Some(FieldVal::Float(6.0))],
         });
+        let schema = Arc::new(schema_1);
         #[rustfmt::skip]
             let row_group_1 = RowGroup {
-            schema: Arc::new(schema_1),
+            schema: schema.clone(),
             range: TimeRange::new(1, 3),
             rows,
             size: 10,
@@ -1052,22 +1053,22 @@ mod test_memcache {
         assert_eq!(
             1,
             chunk_group
-                .get("test_table")
+                .get(&schema)
                 .unwrap()
                 .get(&1)
                 .unwrap()
                 .1
-                .len()
+                .num_rows()
         );
         assert_eq!(
             2,
             delta_chunk_group
-                .get("test_table")
+                .get(&schema)
                 .unwrap()
                 .get(&1)
                 .unwrap()
                 .1
-                .len()
+                .num_rows()
         );
     }
 

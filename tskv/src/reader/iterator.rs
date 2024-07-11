@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::iter;
 use std::ops::Not;
 use std::sync::Arc;
@@ -289,8 +290,10 @@ impl SeriesGroupBatchReaderFactory {
 
         let kv_schema = &self.query_option.table_schema;
         let schema = &self.query_option.df_schema;
+        let meta = self.query_option.schema_meta.clone();
         // TODO 投影中一定包含 time 列，后续优化掉
-        let time_fields_schema = project_time_fields(kv_schema, schema).context(SchemaSnafu)?;
+        let time_fields_schema =
+            project_time_fields(kv_schema, schema, meta).context(SchemaSnafu)?;
 
         let super_version = &self.super_version;
         let vnode_id = super_version.ts_family_id;
@@ -487,12 +490,13 @@ impl SeriesGroupBatchReaderFactory {
     ) -> TskvResult<Option<BatchReaderRef>> {
         let chunk_reader: Option<BatchReaderRef> = match chunk {
             DataReference::Chunk(chunk, reader) => {
-                let chunk_schema = chunk.schema();
+                let chunk_schema =
+                    chunk.schema_with_metadata(self.query_option.schema_meta.clone());
                 let cgs = chunk.column_group().values().cloned().collect::<Vec<_>>();
                 // filter column groups
                 metrics.column_group_nums().add(cgs.len());
                 trace::debug!("All column group nums: {}", cgs.len());
-                let cgs = filter_column_groups(cgs, predicate, chunk_schema)?;
+                let cgs = filter_column_groups(cgs, predicate, chunk_schema.clone())?;
                 trace::debug!("Filtered column group nums: {}", cgs.len());
                 metrics.filtered_column_group_nums().add(cgs.len());
 
@@ -504,6 +508,7 @@ impl SeriesGroupBatchReaderFactory {
                             chunk.series_id(),
                             e,
                             projection,
+                            chunk_schema.metadata().clone(),
                             batch_size,
                             self.column_group_reader_metrics_set.clone(),
                         )?;
@@ -513,10 +518,14 @@ impl SeriesGroupBatchReaderFactory {
 
                 Some(Arc::new(CombinedBatchReader::new(batch_readers)))
             }
-            DataReference::Memcache(series_data, time_ranges) => {
-                MemCacheReader::try_new(series_data, time_ranges, batch_size, projection)?
-                    .map(|e| e as BatchReaderRef)
-            }
+            DataReference::Memcache(series_data, time_ranges) => MemCacheReader::try_new(
+                series_data,
+                time_ranges,
+                batch_size,
+                projection,
+                self.query_option.schema_meta.clone(),
+            )?
+            .map(|e| e as BatchReaderRef),
         };
 
         // 数据过滤
@@ -682,6 +691,7 @@ impl Drop for SeriesGroupBatchReaderFactory {
 fn project_time_fields(
     table_schema: &TskvTableSchemaRef,
     schema: &SchemaRef,
+    schema_meta: HashMap<String, String>,
 ) -> SchemaResult<SchemaRef> {
     let mut fields = vec![];
     for field in schema.fields() {
@@ -697,7 +707,10 @@ fn project_time_fields(
         }
     }
 
-    Ok(SchemaRef::new(Schema::new(fields)))
+    Ok(SchemaRef::new(Schema::new_with_metadata(
+        fields,
+        schema_meta,
+    )))
 }
 
 /// Stores metrics about the table writer execution.
@@ -819,6 +832,7 @@ pub struct QueryOption {
     pub split: PlacedSplit,
     pub df_schema: SchemaRef,
     pub table_schema: TskvTableSchemaRef,
+    pub schema_meta: HashMap<String, String>,
     pub aggregates: Option<Vec<TableColumn>>, // TODO: Use PushedAggregateFunction
 }
 
@@ -830,6 +844,7 @@ impl QueryOption {
         aggregates: Option<Vec<TableColumn>>, // TODO: Use PushedAggregateFunction
         df_schema: SchemaRef,
         table_schema: TskvTableSchemaRef,
+        schema_meta: HashMap<String, String>,
     ) -> Self {
         Self {
             batch_size,
@@ -837,6 +852,7 @@ impl QueryOption {
             aggregates,
             df_schema,
             table_schema,
+            schema_meta,
         }
     }
 
@@ -857,6 +873,7 @@ impl QueryOption {
             split: self.split.clone(),
             df_schema: self.df_schema.as_ref().clone(),
             table_schema: self.table_schema.clone(),
+            schema_meta: self.schema_meta.clone(),
         };
 
         let args_bytes = QueryArgs::encode(&args)?;

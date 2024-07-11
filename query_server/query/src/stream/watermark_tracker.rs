@@ -94,6 +94,7 @@ impl WatermarkTracker {
                     None,
                     schema.clone(),
                     tskv_table_schema.clone(),
+                    tskv_table_schema.meta(),
                 );
                 let mut iter = coord
                     .table_scan(query_opt, session.get_span_ctx())

@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use arrow_schema::{Field, Schema, SchemaRef};
@@ -121,14 +121,14 @@ impl Chunk {
     }
 
     /// TODO high performance cost
-    pub fn schema(&self) -> SchemaRef {
+    pub fn schema_with_metadata(&self, meta: HashMap<String, String>) -> SchemaRef {
         if let Some((_, cg)) = self.column_group().first_key_value() {
             let fields = cg
                 .pages()
                 .iter()
                 .map(|p| (&p.meta().column).into())
                 .collect::<Vec<Field>>();
-            return Arc::new(Schema::new(fields));
+            return Arc::new(Schema::new_with_metadata(fields, meta));
         }
 
         Arc::new(Schema::empty())

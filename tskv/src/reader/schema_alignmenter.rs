@@ -216,7 +216,10 @@ fn reorder_and_align_schema(
         }
     }
 
-    let schema = Arc::new(Schema::new(fields));
+    let schema = Arc::new(Schema::new_with_metadata(
+        fields,
+        input_schema.metadata().clone(),
+    ));
 
     RecordBatch::try_new(schema, columns)
 }

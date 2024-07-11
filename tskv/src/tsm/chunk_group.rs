@@ -57,7 +57,6 @@ pub type TableId = u64;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ChunkGroupWriteSpec {
-    // pub(crate) id: TableId,
     pub(crate) table_schema: Arc<TskvTableSchema>,
     pub(crate) chunk_group_offset: u64,
     pub(crate) chunk_group_size: u64,

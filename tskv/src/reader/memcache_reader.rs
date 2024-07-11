@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -34,6 +35,7 @@ pub struct MemCacheReader {
     time_ranges: Arc<TimeRanges>,
     batch_size: usize,
     columns: Vec<TableColumn>,
+    schema_meta: HashMap<String, String>,
     read_mode: MemcacheReadMode,
 }
 
@@ -52,6 +54,7 @@ impl MemCacheReader {
         time_ranges: Arc<TimeRanges>,
         batch_size: usize,
         projection: &[ColumnId],
+        schema_meta: HashMap<String, String>,
     ) -> TskvResult<Option<Arc<Self>>> {
         if let Some(tskv_schema) = series_data.read().get_schema() {
             // filter columns by projection
@@ -75,6 +78,7 @@ impl MemCacheReader {
                 time_ranges,
                 batch_size,
                 columns,
+                schema_meta,
                 read_mode,
             })))
         } else {
@@ -174,7 +178,7 @@ impl BatchReader for MemCacheReader {
     fn process(&self) -> TskvResult<SendableSchemableTskvRecordBatchStream> {
         let builders = self.read_data_and_build_array()?;
         let fields = self.columns.iter().map(Field::from).collect::<Vec<_>>();
-        let schema = Arc::new(Schema::new(fields));
+        let schema = Arc::new(Schema::new_with_metadata(fields, self.schema_meta.clone()));
 
         Ok(Box::pin(MemcacheRecordBatchStream {
             schema,
@@ -254,6 +258,7 @@ fn convert_data_type_if_necessary(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::sync::Arc;
 
     use datafusion::arrow::datatypes::TimeUnit;
@@ -324,6 +329,7 @@ mod tests {
             trs,
             2,
             &[1, 2, 3],
+            HashMap::new(),
         )
         .unwrap()
         .unwrap();

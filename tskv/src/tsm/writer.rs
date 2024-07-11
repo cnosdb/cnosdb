@@ -4,14 +4,15 @@ use std::io::IoSlice;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use arrow_array::RecordBatch;
 use models::predicate::domain::TimeRange;
-use models::schema::tskv_table_schema::TskvTableSchemaRef;
+use models::schema::tskv_table_schema::{TableColumn, TskvTableSchemaRef};
 use models::{SeriesId, SeriesKey};
 use snafu::{OptionExt, ResultExt};
 use utils::BloomFilter;
 
 use crate::compaction::CompactingBlock;
-use crate::error::{CommonSnafu, IOSnafu};
+use crate::error::{CommonSnafu, IOSnafu, ModelSnafu};
 use crate::file_system::async_filesystem::{LocalFileSystem, LocalFileType};
 use crate::file_system::file::stream_writer::FileStreamWriter;
 use crate::file_system::FileSystem;
@@ -19,9 +20,8 @@ use crate::file_utils::{make_delta_file, make_tsm_file};
 use crate::tsm::chunk::{Chunk, ChunkStatics, ChunkWriteSpec};
 use crate::tsm::chunk_group::{ChunkGroup, ChunkGroupMeta, ChunkGroupWriteSpec};
 use crate::tsm::column_group::ColumnGroup;
-use crate::tsm::data_block::DataBlock;
 use crate::tsm::footer::{Footer, SeriesMeta, TableMeta, TsmVersion};
-use crate::tsm::page::{Page, PageWriteSpec};
+use crate::tsm::page::{Page, PageStatistics, PageWriteSpec};
 use crate::tsm::{ColumnGroupID, TsmWriteData, BLOOM_FILTER_BITS};
 use crate::{TskvError, TskvResult};
 
@@ -213,9 +213,10 @@ impl TsmWriter {
     }
     pub async fn write_data(&mut self, groups: TsmWriteData) -> TskvResult<()> {
         // write page data
-        for (_, group) in groups {
-            for (series, (series_buf, datablock)) in group {
-                self.write_datablock(series, series_buf, datablock).await?;
+        for (schema, group) in groups {
+            for (series, (series_buf, record_batch)) in group {
+                self.write_record_batch(series, series_buf, schema.clone(), record_batch)
+                    .await?;
             }
         }
         Ok(())
@@ -237,11 +238,12 @@ impl TsmWriter {
         ColumnGroup::new(chunk.next_column_group_id())
     }
 
-    pub async fn write_datablock(
+    pub async fn write_record_batch(
         &mut self,
         series_id: SeriesId,
         series_key: SeriesKey,
-        datablock: DataBlock,
+        table_schema: TskvTableSchemaRef,
+        record_batch: RecordBatch,
     ) -> TskvResult<()> {
         if self.state == State::Finished {
             return Err(CommonSnafu {
@@ -249,12 +251,56 @@ impl TsmWriter {
             }
             .build());
         }
+        let columns = record_batch
+            .schema()
+            .fields
+            .iter()
+            .map(|field| TableColumn::try_from(field.clone()).context(ModelSnafu))
+            .collect::<TskvResult<Vec<TableColumn>>>()?;
 
-        let time_range = datablock.time_range()?;
-        let schema = datablock.schema().clone();
-        let pages = datablock.block_to_page()?;
+        let pages = record_batch
+            .columns()
+            .iter()
+            .cloned()
+            .zip(columns.into_iter())
+            .collect::<Vec<(_, _)>>()
+            .into_iter()
+            .map(|(array, col_desc)| Page::arrow_array_to_page(array, col_desc))
+            .collect::<TskvResult<Vec<Page>>>()?;
 
-        self.write_pages(schema, series_id, series_key, pages, time_range)
+        let time_range = match pages
+            .iter()
+            .find(|page| page.meta.column.column_type.is_time())
+            .context(CommonSnafu {
+                reason: "time column not found".to_string(),
+            })?
+            .meta
+            .statistics
+        {
+            PageStatistics::I64(ref v) => {
+                let min = v.min().ok_or_else(|| {
+                    CommonSnafu {
+                        reason: "time column min not found".to_string(),
+                    }
+                    .build()
+                })?;
+                let max = v.max().ok_or_else(|| {
+                    CommonSnafu {
+                        reason: "time column max not found".to_string(),
+                    }
+                    .build()
+                })?;
+                TimeRange::new(min, max)
+            }
+            _ => {
+                return Err(CommonSnafu {
+                    reason: "time column type error".to_string(),
+                }
+                .build());
+            }
+        };
+
+        self.write_pages(table_schema, series_id, series_key, pages, time_range)
             .await?;
         Ok(())
     }
@@ -273,7 +319,7 @@ impl TsmWriter {
 
         let mut column_group = self.create_column_group(schema.clone(), series_id, &series_key);
 
-        let table = schema.name.clone();
+        let table_name = schema.name.clone();
         for page in pages {
             let offset = self.writer.len() as u64;
             let size = self.writer.write(&page.bytes).await.context(IOSnafu)?;
@@ -285,10 +331,10 @@ impl TsmWriter {
             };
             column_group.push(spec);
         }
-        self.table_schemas.insert(table.clone(), schema.clone());
+        self.insert_schema(schema.clone());
         column_group.time_range_merge(&time_range);
         self.page_specs
-            .entry(table.clone())
+            .entry(table_name.clone())
             .or_default()
             .entry(series_id)
             .or_insert(Chunk::new(schema.name.clone(), series_id, series_key))
@@ -314,7 +360,6 @@ impl TsmWriter {
         let size = self.writer.write(&raw).await.context(IOSnafu)?;
         self.size += size as u64;
 
-        let table = schema.name.to_string();
         let column_group = meta
             .column_group()
             .get(&column_group_id)
@@ -330,18 +375,29 @@ impl TsmWriter {
             offset += spec.size;
             new_column_group.push(spec);
         }
-        self.table_schemas.insert(table.clone(), schema.clone());
+        self.insert_schema(schema.clone());
         new_column_group.time_range_merge(column_group.time_range());
         let series_id = meta.series_id();
         let series_key = meta.series_key().clone();
+        let table_name = schema.name.clone();
         self.page_specs
-            .entry(table.clone())
+            .entry(table_name.clone())
             .or_default()
             .entry(series_id)
-            .or_insert(Chunk::new(table, series_id, series_key))
+            .or_insert(Chunk::new(table_name, series_id, series_key))
             .push(new_column_group.into())?;
 
         Ok(())
+    }
+
+    fn insert_schema(&mut self, schema: TskvTableSchemaRef) {
+        if let Some(table) = self.table_schemas.get(&schema.name) {
+            if table.schema_version < schema.schema_version {
+                self.table_schemas.insert(schema.name.clone(), schema);
+            }
+        } else {
+            self.table_schemas.insert(schema.name.clone(), schema);
+        }
     }
 
     pub async fn write_compacting_block(
@@ -350,12 +406,13 @@ impl TsmWriter {
     ) -> TskvResult<()> {
         match compacting_block {
             CompactingBlock::Decoded {
-                data_block,
+                record_batch,
                 series_id,
                 series_key,
+                table_schema,
                 ..
             } => {
-                self.write_datablock(series_id, series_key, data_block)
+                self.write_record_batch(series_id, series_key, table_schema, record_batch)
                     .await?
             }
             CompactingBlock::Encoded {
@@ -363,11 +420,17 @@ impl TsmWriter {
                 series_id,
                 series_key,
                 time_range,
-                data_block,
+                record_batch,
                 ..
             } => {
-                self.write_pages(table_schema, series_id, series_key, data_block, time_range)
-                    .await?
+                self.write_pages(
+                    table_schema,
+                    series_id,
+                    series_key,
+                    record_batch,
+                    time_range,
+                )
+                .await?
             }
             CompactingBlock::Raw {
                 table_schema,
@@ -405,17 +468,17 @@ mod test {
     use std::sync::Arc;
 
     use arrow::datatypes::TimeUnit;
+    use arrow_array::{ArrayRef, RecordBatch};
     use models::codec::Encoding;
     use models::field_value::FieldVal;
-    use models::predicate::domain::TimeRange;
     use models::schema::tskv_table_schema::{ColumnType, TableColumn, TskvTableSchema};
     use models::{SeriesKey, ValueType};
 
-    use crate::tsm::data_block::MutableColumn;
+    use crate::tsm::mutable_column::MutableColumn;
     use crate::tsm::reader::{decode_pages, TsmReader};
-    use crate::tsm::writer::{DataBlock, TsmWriter};
+    use crate::tsm::writer::TsmWriter;
 
-    fn i64_column(data: Vec<i64>) -> MutableColumn {
+    fn i64_column(data: Vec<i64>) -> ArrayRef {
         let mut col = MutableColumn::empty(TableColumn::new(
             1,
             "f1".to_string(),
@@ -426,10 +489,10 @@ mod test {
         for datum in data {
             col.push(Some(FieldVal::Integer(datum))).unwrap()
         }
-        col
+        col.to_arrow_array(None).unwrap()
     }
 
-    fn ts_column(data: Vec<i64>) -> MutableColumn {
+    fn ts_column(data: Vec<i64>) -> ArrayRef {
         let mut col = MutableColumn::empty(TableColumn::new(
             0,
             "time".to_string(),
@@ -440,7 +503,7 @@ mod test {
         for datum in data {
             col.push(Some(FieldVal::Integer(datum))).unwrap()
         }
-        col
+        col.to_arrow_array(None).unwrap()
     }
 
     #[tokio::test]
@@ -477,34 +540,30 @@ mod test {
             ],
         );
         let schema = Arc::new(schema);
-        let data1 = DataBlock::new(
-            schema.clone(),
-            ts_column(vec![1, 2, 3]),
+        let data1 = RecordBatch::try_new(
+            schema.to_record_data_schema(),
             vec![
+                ts_column(vec![1, 2, 3]),
                 i64_column(vec![1, 2, 3]),
                 i64_column(vec![1, 2, 3]),
                 i64_column(vec![1, 2, 3]),
             ],
-        );
+        )
+        .unwrap();
 
         let path = "/tmp/test/tsm";
         let mut tsm_writer = TsmWriter::open(&PathBuf::from(path), 1, 0, false)
             .await
             .unwrap();
-        let time_range = data1.time_range().unwrap();
-        let schema = data1.schema();
-        let pages1 = data1.block_to_page().unwrap();
         tsm_writer
-            .write_pages(schema, 1, SeriesKey::default(), pages1, time_range)
+            .write_record_batch(1, SeriesKey::default(), schema.clone(), data1.clone())
             .await
             .unwrap();
         tsm_writer.finish().await.unwrap();
         let tsm_reader = TsmReader::open(tsm_writer.path).await.unwrap();
         let pages2 = tsm_reader.read_series_pages(1, 0).await.unwrap();
-        let data2 = decode_pages(pages2, data1.schema()).unwrap();
+        let data2 = decode_pages(pages2, schema, None).unwrap();
         assert_eq!(data1, data2);
-        let time_range = data2.time_range().unwrap();
-        assert_eq!(time_range, TimeRange::new(1, 3));
     }
 
     #[tokio::test]
@@ -541,34 +600,30 @@ mod test {
             ],
         );
         let schema = Arc::new(schema);
-        let data1 = DataBlock::new(
-            schema.clone(),
-            ts_column(vec![1, 2, 3]),
+        let data1 = RecordBatch::try_new(
+            schema.to_record_data_schema(),
             vec![
+                ts_column(vec![1, 2, 3]),
                 i64_column(vec![1, 2, 3]),
                 i64_column(vec![1, 2, 3]),
                 i64_column(vec![1, 2, 3]),
             ],
-        );
+        )
+        .unwrap();
 
         let path = "/tmp/test/tsm2";
         let mut tsm_writer = TsmWriter::open(&PathBuf::from(path), 1, 0, false)
             .await
             .unwrap();
-        let time_range = data1.time_range().unwrap();
-        let schema = data1.schema();
-        let pages1 = data1.block_to_page().unwrap();
         tsm_writer
-            .write_pages(schema, 1, SeriesKey::default(), pages1, time_range)
+            .write_record_batch(1, SeriesKey::default(), schema.clone(), data1.clone())
             .await
             .unwrap();
         tsm_writer.finish().await.unwrap();
         let tsm_reader = TsmReader::open(tsm_writer.path).await.unwrap();
         let pages2 = tsm_reader.read_series_pages(1, 0).await.unwrap();
-        let data2 = decode_pages(pages2, data1.schema()).unwrap();
+        let data2 = decode_pages(pages2, schema, None).unwrap();
         assert_eq!(data1, data2);
-        let time_range = data2.time_range().unwrap();
-        assert_eq!(time_range, TimeRange::new(1, 3));
     }
 
     #[tokio::test]
@@ -605,22 +660,23 @@ mod test {
             ],
         );
         let schema = Arc::new(schema);
-        let data1 = DataBlock::new(
-            schema.clone(),
-            ts_column(vec![1, 2, 3]),
+        let data1 = RecordBatch::try_new(
+            schema.to_record_data_schema(),
             vec![
+                ts_column(vec![1, 2, 3]),
                 i64_column(vec![1, 2, 3]),
                 i64_column(vec![1, 2, 3]),
                 i64_column(vec![1, 2, 3]),
             ],
-        );
+        )
+        .unwrap();
 
         let path = "/tmp/test/tsm3";
         let mut tsm_writer = TsmWriter::open(&PathBuf::from(path), 1, 0, false)
             .await
             .unwrap();
         tsm_writer
-            .write_datablock(1, SeriesKey::default(), data1.clone())
+            .write_record_batch(1, SeriesKey::default(), schema.clone(), data1.clone())
             .await
             .unwrap();
         tsm_writer.finish().await.unwrap();

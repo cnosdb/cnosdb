@@ -3,8 +3,10 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fmt::{self, Display};
 use std::mem::size_of_val;
+use std::str::FromStr;
 use std::sync::Arc;
 
+use arrow_schema::FieldRef;
 use datafusion::arrow::datatypes::{
     DataType as ArrowDataType, Field as ArrowField, Schema, SchemaRef, TimeUnit,
 };
@@ -16,14 +18,15 @@ use snafu::ResultExt;
 use utils::precision::Precision;
 
 use crate::codec::Encoding;
-use crate::errors::InvalidSerdeMessageSnafu;
-use crate::gis::data_type::Geometry;
+use crate::errors::{InternalSnafu, InvalidSerdeMessageSnafu};
+use crate::gis::data_type::{Geometry, GeometryType};
 use crate::schema::{
-    COLUMN_ID_META_KEY, DEFAULT_CATALOG, DEFAULT_DATABASE, GIS_SRID_META_KEY,
-    GIS_SUB_TYPE_META_KEY, TIME_FIELD_NAME,
+    COLUMN_ENCODING_META_KEY, COLUMN_ID_META_KEY, DATABASE_NAME, DEFAULT_CATALOG, DEFAULT_DATABASE,
+    GIS_SRID_META_KEY, GIS_SUB_TYPE_META_KEY, IS_TAG, NEXT_COLUMN_ID, SCHEMA_VERSION, TABLE_NAME,
+    TENANT, TIME_FIELD_NAME,
 };
 use crate::value_type::ValueType;
-use crate::{ColumnId, ModelResult, PhysicalDType, SchemaVersion};
+use crate::{ColumnId, ModelError, ModelResult, PhysicalDType, SchemaVersion};
 
 pub type TskvTableSchemaRef = Arc<TskvTableSchema>;
 
@@ -67,22 +70,56 @@ impl Default for TskvTableSchema {
 }
 
 impl TskvTableSchema {
-    pub fn to_arrow_schema(&self) -> SchemaRef {
-        let fields: Vec<ArrowField> = self.columns.iter().map(|field| field.into()).collect();
-        Arc::new(Schema::new(fields))
+    pub fn meta(&self) -> HashMap<String, String> {
+        let mut meta = HashMap::new();
+        meta.insert(TENANT.to_string(), self.tenant.clone());
+        meta.insert(DATABASE_NAME.to_string(), self.db.clone());
+        meta.insert(TABLE_NAME.to_string(), self.name.clone());
+        meta.insert(SCHEMA_VERSION.to_string(), self.schema_version.to_string());
+        meta.insert(NEXT_COLUMN_ID.to_string(), self.next_column_id.to_string());
+        meta
     }
 
-    pub fn to_df_schema(&self) -> std::result::Result<DFSchemaRef, DataFusionError> {
+    pub fn to_record_data_schema(&self) -> SchemaRef {
+        let fields: Vec<ArrowField> = self
+            .columns
+            .iter()
+            .filter(|column| !column.column_type.is_tag())
+            .map(|field| field.into())
+            .collect();
+        Arc::new(Schema::new_with_metadata(fields, self.meta()))
+    }
+
+    pub fn schema_version_from_arrow_array_schema(schema: SchemaRef) -> ModelResult<SchemaVersion> {
+        let schema_version =
+            SchemaVersion::from_str(schema.metadata().get(SCHEMA_VERSION).ok_or_else(|| {
+                InternalSnafu {
+                    err: format!("schema version not found in schema: {:?}", schema),
+                }
+                .build()
+            })?)
+            .map_err(|e| {
+                InternalSnafu {
+                    err: format!("parse schema version error: {}", e),
+                }
+                .build()
+            })?;
+        Ok(schema_version)
+    }
+
+    pub fn to_arrow_schema(&self) -> SchemaRef {
+        let fields: Vec<ArrowField> = self.columns.iter().map(|field| field.into()).collect();
+        Arc::new(Schema::new_with_metadata(fields, self.meta()))
+    }
+
+    pub fn to_df_schema(&self) -> Result<DFSchemaRef, DataFusionError> {
         let fields: Vec<DFField> = self
             .columns
             .iter()
             .map(ArrowField::from)
             .map(|f| DFField::from_qualified(self.name.as_str(), f))
             .collect();
-        Ok(Arc::new(DFSchema::new_with_metadata(
-            fields,
-            HashMap::new(),
-        )?))
+        Ok(Arc::new(DFSchema::new_with_metadata(fields, self.meta())?))
     }
 
     pub fn new(tenant: String, db: String, name: String, columns: Vec<TableColumn>) -> Self {
@@ -288,10 +325,81 @@ pub struct TableColumn {
     pub encoding: Encoding,
 }
 
+impl TryFrom<FieldRef> for TableColumn {
+    type Error = ModelError;
+
+    fn try_from(value: FieldRef) -> Result<Self, Self::Error> {
+        let column_id = value
+            .metadata()
+            .get(COLUMN_ID_META_KEY)
+            .map(|v| v.parse::<ColumnId>())
+            .ok_or_else(|| {
+                InternalSnafu {
+                    err: format!("Column id not found in metadata: {:?}", value),
+                }
+                .build()
+            })?
+            .map_err(|e| {
+                InternalSnafu {
+                    err: format!("Failed to parse column id: {:?}", e),
+                }
+                .build()
+            })?;
+
+        let name = value.name().clone();
+
+        let encoding = value
+            .metadata()
+            .get(COLUMN_ENCODING_META_KEY)
+            .map(|v| Encoding::from_str(v))
+            .unwrap_or_else(|| Ok(Encoding::Default))
+            .map_err(|e| {
+                InternalSnafu {
+                    err: format!("Failed to parse column encoding: {:?}", e),
+                }
+                .build()
+            })?;
+
+        if let (Some(k), Some(v)) = (
+            value.metadata().get(GIS_SUB_TYPE_META_KEY),
+            value.metadata().get(GIS_SRID_META_KEY),
+        ) {
+            let sub_type = GeometryType::from_str(k).map_err(|e| {
+                InternalSnafu {
+                    err: format!("Failed to parse gis sub type: {:?}", e),
+                }
+                .build()
+            })?;
+            let srid = v.parse::<i16>().map_err(|e| {
+                InternalSnafu {
+                    err: format!("Failed to parse gis srid: {:?}", e),
+                }
+                .build()
+            })?;
+            return Ok(TableColumn::new(
+                column_id,
+                name,
+                ColumnType::Field(ValueType::Geometry(Geometry { sub_type, srid })),
+                Encoding::Default,
+            ));
+        }
+        if value.metadata().contains_key(IS_TAG) {
+            Ok(TableColumn::new_tag_column(column_id, name))
+        } else {
+            let column_type = value.data_type().clone().into();
+            Ok(TableColumn::new(column_id, name, column_type, encoding))
+        }
+    }
+}
+
 impl From<&TableColumn> for ArrowField {
     fn from(column: &TableColumn) -> Self {
         let mut map = HashMap::new();
         map.insert(COLUMN_ID_META_KEY.to_string(), column.id.to_string());
+        map.insert(
+            COLUMN_ENCODING_META_KEY.to_string(),
+            column.encoding.as_str().to_string(),
+        );
 
         // 通过 SRID_META_KEY 标记 Geometry 类型的列
         if let ColumnType::Field(ValueType::Geometry(Geometry { srid, sub_type })) =
@@ -299,6 +407,10 @@ impl From<&TableColumn> for ArrowField {
         {
             map.insert(GIS_SUB_TYPE_META_KEY.to_string(), sub_type.to_string());
             map.insert(GIS_SRID_META_KEY.to_string(), srid.to_string());
+        }
+
+        if let ColumnType::Tag = column.column_type {
+            map.insert(IS_TAG.to_string(), "".to_string());
         }
 
         let nullable = column.nullable();
@@ -391,6 +503,30 @@ impl TableColumn {
         }
 
         true
+    }
+
+    pub fn column_id_from_arrow_field(field: FieldRef) -> ModelResult<ColumnId> {
+        let column_id = field
+            .metadata()
+            .get(COLUMN_ID_META_KEY)
+            .ok_or_else(|| {
+                InternalSnafu {
+                    err: format!("Column id not found in metadata: {:?}", field),
+                }
+                .build()
+            })?
+            .parse::<ColumnId>()
+            .map_err(|e| {
+                InternalSnafu {
+                    err: format!("Failed to parse column id: {:?}", e),
+                }
+                .build()
+            })?;
+        Ok(column_id)
+    }
+
+    pub fn encoding(&self) -> Encoding {
+        self.encoding
     }
 }
 
@@ -501,6 +637,20 @@ impl ColumnType {
             Self::Tag => PhysicalDType::String,
             Self::Time(_) => PhysicalDType::Integer,
             Self::Field(value_type) => value_type.to_physical_type(),
+        }
+    }
+}
+
+impl From<ArrowDataType> for ColumnType {
+    fn from(t: ArrowDataType) -> Self {
+        match t {
+            ArrowDataType::Timestamp(unit, _) => ColumnType::Time(unit),
+            ArrowDataType::Float64 => ColumnType::Field(ValueType::Float),
+            ArrowDataType::Int64 => ColumnType::Field(ValueType::Integer),
+            ArrowDataType::UInt64 => ColumnType::Field(ValueType::Unsigned),
+            ArrowDataType::Boolean => ColumnType::Field(ValueType::Boolean),
+            ArrowDataType::Utf8 => ColumnType::Field(ValueType::String),
+            _ => ColumnType::Field(ValueType::Unknown),
         }
     }
 }

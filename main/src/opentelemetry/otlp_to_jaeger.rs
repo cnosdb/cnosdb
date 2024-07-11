@@ -293,6 +293,7 @@ impl OtlpToJaeger {
                     None,
                     schema.clone(),
                     tskv_table_schema.clone(),
+                    tskv_table_schema.meta(),
                 );
                 iterators.push(
                     coord
