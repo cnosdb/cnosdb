@@ -1765,6 +1765,7 @@ pub struct QueryExpr {
     pub split: PlacedSplit,
     pub df_schema: Schema,
     pub table_schema: TskvTableSchemaRef,
+    pub schema_meta: HashMap<String, String>,
 }
 
 impl QueryExpr {

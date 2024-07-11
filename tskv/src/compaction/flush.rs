@@ -231,6 +231,7 @@ pub mod flush_tests {
     use std::path::PathBuf;
     use std::sync::Arc;
 
+    use arrow_array::{ArrayRef, RecordBatch};
     use arrow_schema::TimeUnit;
     use cache::ShardedAsyncCache;
     use memory_pool::{GreedyMemoryPool, MemoryPool};
@@ -252,12 +253,12 @@ pub mod flush_tests {
     use crate::mem_cache::series_data::RowGroup;
     use crate::tsfamily::level_info::LevelInfo;
     use crate::tsfamily::version::Version;
-    use crate::tsm::data_block::{DataBlock, MutableColumn};
+    use crate::tsm::mutable_column::MutableColumn;
     use crate::tsm::reader::TsmReader;
     use crate::tsm::writer::TsmWriter;
     use crate::Options;
 
-    fn f64_column(data: Vec<f64>) -> MutableColumn {
+    fn f64_column(data: Vec<f64>) -> ArrayRef {
         let mut col = MutableColumn::empty(TableColumn::new(
             4,
             "f_col_1".to_string(),
@@ -268,10 +269,10 @@ pub mod flush_tests {
         for datum in data {
             col.push(Some(FieldVal::Float(datum))).unwrap()
         }
-        col
+        col.to_arrow_array(None).unwrap()
     }
 
-    fn ts_column(data: Vec<i64>) -> MutableColumn {
+    fn ts_column(data: Vec<i64>) -> ArrayRef {
         let mut col = MutableColumn::empty(TableColumn::new(
             1,
             "time".to_string(),
@@ -282,7 +283,7 @@ pub mod flush_tests {
         for datum in data {
             col.push(Some(FieldVal::Integer(datum))).unwrap()
         }
-        col
+        col.to_arrow_array(None).unwrap()
     }
 
     #[test]
@@ -479,24 +480,24 @@ pub mod flush_tests {
 
         schema.schema_version = 1;
         let schema = Arc::new(schema);
-        let data1 = DataBlock::new(
-            schema.clone(),
-            ts_column(vec![6, 9]),
-            vec![f64_column(vec![6.0, 9.0])],
-        );
+        let data1 = RecordBatch::try_new(
+            schema.to_record_data_schema(),
+            vec![ts_column(vec![6, 9]), f64_column(vec![6.0, 9.0])],
+        )
+        .unwrap();
 
-        let data2 = DataBlock::new(
-            schema.clone(),
-            ts_column(vec![1, 3]),
-            vec![f64_column(vec![1.0, 3.0])],
-        );
+        let data2 = RecordBatch::try_new(
+            schema.to_record_data_schema(),
+            vec![ts_column(vec![1, 3]), f64_column(vec![1.0, 3.0])],
+        )
+        .unwrap();
 
         {
             let tsm_writer = TsmWriter::open(&path_tsm, tsm_info.file_id, 100, false)
                 .await
                 .unwrap();
             let tsm_reader = TsmReader::open(tsm_writer.path()).await.unwrap();
-            let tsm_data = tsm_reader.read_datablock(1, 0).await.unwrap();
+            let tsm_data = tsm_reader.read_record_batch(1, 0).await.unwrap();
             assert_eq!(tsm_data, data1);
         }
 
@@ -505,7 +506,7 @@ pub mod flush_tests {
                 .await
                 .unwrap();
             let delta_reader = TsmReader::open(delta_writer.path()).await.unwrap();
-            let delta_data = delta_reader.read_datablock(1, 0).await.unwrap();
+            let delta_data = delta_reader.read_record_batch(1, 0).await.unwrap();
             assert_eq!(delta_data, data2);
         }
     }

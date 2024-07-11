@@ -3,21 +3,24 @@ use std::fmt::{Debug, Formatter};
 use std::path::Path;
 use std::sync::Arc;
 
+use arrow_array::{ArrayRef, RecordBatch};
+use arrow_schema::{Field, Schema};
 use bytes::Bytes;
+use models::column_data::PrimaryColumnData;
 use models::predicate::domain::TimeRange;
 use models::schema::tskv_table_schema::TskvTableSchemaRef;
-use models::schema::TIME_FIELD_NAME;
 use models::SeriesId;
-use snafu::OptionExt;
+use snafu::{OptionExt, ResultExt};
+use utils::bitset::{BitSet, NullBitset};
 
-use crate::error::{CommonSnafu, ReadTsmSnafu, TskvResult};
+use crate::error::{ArrowSnafu, CommonSnafu, ModelSnafu, ReadTsmSnafu, TskvResult};
 use crate::file_system::async_filesystem::{LocalFileSystem, LocalFileType};
 use crate::file_system::file::stream_reader::FileStreamReader;
 use crate::file_system::FileSystem;
 use crate::tsm::chunk::Chunk;
 use crate::tsm::chunk_group::{ChunkGroup, ChunkGroupMeta};
-use crate::tsm::data_block::{DataBlock, MutableColumn};
 use crate::tsm::footer::Footer;
+use crate::tsm::mutable_column::MutableColumn;
 use crate::tsm::page::{Page, PageMeta, PageWriteSpec};
 use crate::tsm::{ColumnGroupID, TsmTombstone, FOOTER_SIZE};
 use crate::{file_utils, TskvError};
@@ -241,11 +244,11 @@ impl TsmReader {
         Ok(vec![])
     }
 
-    pub async fn read_datablock(
+    pub async fn read_record_batch(
         &self,
         series_id: SeriesId,
         column_group_id: ColumnGroupID,
-    ) -> TskvResult<DataBlock> {
+    ) -> TskvResult<RecordBatch> {
         let column_group = self.read_series_pages(series_id, column_group_id).await?;
         let schema = self
             .tsm_meta
@@ -253,9 +256,12 @@ impl TsmReader {
             .context(CommonSnafu {
                 reason: format!("table schema for series id : {} not found", series_id),
             })?;
-        let data_block = decode_pages(column_group, schema)?;
-
-        Ok(data_block)
+        let record_batch = decode_pages(
+            column_group,
+            schema,
+            Some((self.tombstone.clone(), series_id)),
+        )?;
+        Ok(record_batch)
     }
 
     pub fn table_schema(&self, table_name: &str) -> Option<TskvTableSchemaRef> {
@@ -411,21 +417,70 @@ async fn read_page(reader: &FileStreamReader, page_spec: &PageWriteSpec) -> Tskv
     page.crc_validation()
 }
 
-pub fn decode_pages(pages: Vec<Page>, table_schema: TskvTableSchemaRef) -> TskvResult<DataBlock> {
-    let mut time_column = MutableColumn::empty_with_cap(table_schema.time_column(), 0)?;
+pub fn decode_pages(
+    pages: Vec<Page>,
+    table_schema: TskvTableSchemaRef,
+    tomb: Option<(Arc<TsmTombstone>, SeriesId)>,
+) -> TskvResult<RecordBatch> {
+    let mut target_arrays = Vec::new();
+    if let Some((tomb, series_id)) = tomb {
+        let time_column = {
+            let col_id = table_schema.time_column().id;
+            let time_page =
+                pages
+                    .iter()
+                    .find(|f| f.meta.column.id == col_id)
+                    .context(CommonSnafu {
+                        reason: "time field not found".to_string(),
+                    })?;
+            time_page.to_column()?
+        };
 
-    let mut other_columns = Vec::new();
-
-    for page in pages {
-        let column = page.to_column()?;
-        if page.desc().name == TIME_FIELD_NAME {
-            time_column = column;
-        } else {
-            other_columns.push(column);
+        let time_range = match time_column.data() {
+            PrimaryColumnData::I64(_, min, max) => TimeRange::new(*min, *max),
+            _ => {
+                return Err(CommonSnafu {
+                    reason: "time column data type error".to_string(),
+                }
+                .build())
+            }
+        };
+        let fields = pages
+            .iter()
+            .map(|page| Field::from(&page.meta.column))
+            .collect::<Vec<_>>();
+        let schema = Arc::new(Schema::new_with_metadata(fields, table_schema.meta()));
+        for page in pages {
+            let null_bits = if tomb.overlaps(series_id, page.meta.column.id, &time_range) {
+                let null_bitset = update_nullbits_by_tombstone(
+                    &time_column,
+                    &tomb,
+                    series_id,
+                    &time_range,
+                    &page,
+                )?;
+                NullBitset::Own(null_bitset)
+            } else {
+                NullBitset::Ref(page.null_bitset())
+            };
+            let array = data_buf_to_arrow_array(&page, null_bits)?;
+            target_arrays.push(array);
         }
+        let record_batch = RecordBatch::try_new(schema, target_arrays).context(ArrowSnafu)?;
+        Ok(record_batch)
+    } else {
+        let fields = pages
+            .iter()
+            .map(|page| Field::from(&page.meta.column))
+            .collect::<Vec<_>>();
+        let schema = Arc::new(Schema::new_with_metadata(fields, table_schema.meta()));
+        for page in pages {
+            let array = page.to_arrow_array()?;
+            target_arrays.push(array);
+        }
+        let record_batch = RecordBatch::try_new(schema, target_arrays).context(ArrowSnafu)?;
+        Ok(record_batch)
     }
-
-    Ok(DataBlock::new(table_schema, time_column, other_columns))
 }
 
 pub fn decode_pages_buf(
@@ -433,8 +488,67 @@ pub fn decode_pages_buf(
     chunk: Arc<Chunk>,
     column_group_id: ColumnGroupID,
     table_schema: TskvTableSchemaRef,
-) -> TskvResult<DataBlock> {
+) -> TskvResult<RecordBatch> {
     let pages = decode_buf_to_pages(chunk, column_group_id, pages_buf)?;
-    let data_block = decode_pages(pages, table_schema)?;
+    let data_block = decode_pages(pages, table_schema, None)?;
     Ok(data_block)
+}
+
+pub async fn page_to_arrow_array_with_tomb(
+    page: Page,
+    reader: Arc<TsmReader>,
+    series_id: SeriesId,
+    time_page_meta: Arc<PageWriteSpec>,
+    time_range: TimeRange,
+) -> TskvResult<ArrayRef> {
+    let tombstone = reader.tombstone();
+    let null_bitset = if tombstone.overlaps(series_id, page.meta.column.id, &time_range) {
+        let time_page = reader.read_page(&time_page_meta).await?;
+        let column = time_page.to_column()?;
+        let null_bitset =
+            update_nullbits_by_tombstone(&column, &tombstone, series_id, &time_range, &page)?;
+        NullBitset::Own(null_bitset)
+    } else {
+        NullBitset::Ref(page.null_bitset())
+    };
+
+    data_buf_to_arrow_array(&page, null_bitset)
+}
+
+fn update_nullbits_by_tombstone(
+    time_column: &MutableColumn,
+    tomb: &TsmTombstone,
+    series_id: SeriesId,
+    time_range: &TimeRange,
+    page: &Page,
+) -> TskvResult<BitSet> {
+    let time_ranges = tomb.get_overlapped_time_ranges(series_id, page.meta.column.id, time_range);
+    let mut null_bitset = page.null_bitset().to_bitset();
+    for time_range in time_ranges {
+        let start_index = time_column
+            .data()
+            .binary_search_for_i64_col(time_range.min_ts)
+            .map_err(|e| TskvError::ColumnDataError { source: e })?
+            .unwrap_or_else(|x| x);
+        let end_index = time_column
+            .data()
+            .binary_search_for_i64_col(time_range.max_ts)
+            .map_err(|e| TskvError::ColumnDataError { source: e })?
+            .map(|x| x + 1)
+            .unwrap_or_else(|x| x);
+        null_bitset.clear_bits(start_index, end_index);
+    }
+    Ok(null_bitset)
+}
+
+pub fn data_buf_to_arrow_array(page: &Page, null_bitset: NullBitset) -> TskvResult<ArrayRef> {
+    let column = MutableColumn::data_buf_to_column(
+        page.data_buffer(),
+        page.meta(),
+        &NullBitset::Ref(page.null_bitset()),
+    )?;
+    let array = column
+        .to_arrow_array(Some(null_bitset))
+        .context(ModelSnafu)?;
+    Ok(array)
 }

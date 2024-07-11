@@ -1,5 +1,6 @@
 pub mod statistics;
 
+use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -38,6 +39,7 @@ impl ColumnGroupReader {
         series_id: SeriesId,
         column_group: Arc<ColumnGroup>,
         projection: &[ColumnId],
+        schema_meta: HashMap<String, String>,
         _batch_size: usize,
         metrics: Arc<ExecutionPlanMetricsSet>,
     ) -> TskvResult<Self> {
@@ -67,7 +69,7 @@ impl ColumnGroupReader {
             .map(Field::from)
             .collect::<Vec<_>>();
 
-        let schema = Arc::new(Schema::new(fields));
+        let schema = Arc::new(Schema::new_with_metadata(fields, schema_meta));
 
         Ok(Self {
             column_group,

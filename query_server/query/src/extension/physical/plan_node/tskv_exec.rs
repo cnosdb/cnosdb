@@ -274,6 +274,7 @@ impl TableScanStream {
             None,
             proj_schema.clone(),
             proj_table_schema.into(),
+            table_schema.meta(),
         );
 
         let span_ctx = span.context();
