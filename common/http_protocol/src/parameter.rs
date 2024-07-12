@@ -17,6 +17,7 @@ pub struct WriteParam {
     pub precision: Option<String>,
     pub tenant: Option<String>,
     pub db: Option<String>,
+    pub table: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

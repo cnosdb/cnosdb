@@ -4,11 +4,12 @@ pub mod parser;
 
 use parser::Result;
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum JsonType {
     Bulk,
     Ndjson,
     Loki,
+    OtlpTrace,
 }
 
 impl JsonType {
@@ -17,6 +18,7 @@ impl JsonType {
             "bulk" => Ok(JsonType::Bulk),
             "ndjson" => Ok(JsonType::Ndjson),
             "loki" => Ok(JsonType::Loki),
+            "otlp_trace" => Ok(JsonType::OtlpTrace),
             _ => Err(parser::Error::InvalidType { name: s }),
         }
     }

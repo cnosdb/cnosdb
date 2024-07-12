@@ -73,7 +73,6 @@ grpc_enable_gzip = false
 flight_rpc_listen_port = 8924
 tcp_listen_port = 8925
 vector_listen_port = 8926
-jaeger_rpc_listen_port = 8927
 enable_report = true
 
 

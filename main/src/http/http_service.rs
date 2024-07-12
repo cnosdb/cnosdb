@@ -11,6 +11,8 @@ use std::time::Instant;
 
 use config::tskv::TLSConfig;
 use coordinator::service::CoordinatorRef;
+use datafusion::arrow::array::{Array, StringArray};
+use futures::TryStreamExt;
 use http_protocol::encoding::Encoding;
 use http_protocol::header::{ACCEPT, APPLICATION_JSON, AUTHORIZATION, PRIVATE_KEY};
 use http_protocol::parameter::{DebugParam, DumpParam, LogParam, SqlParam, WriteParam};
@@ -29,14 +31,14 @@ use models::schema::{DEFAULT_CATALOG, DEFAULT_DATABASE};
 use models::utils::now_timestamp_nanos;
 use protocol_parser::json_protocol::parser::{
     parse_json_to_eslog, parse_json_to_lokilog, parse_json_to_ndjsonlog, parse_protobuf_to_lokilog,
-    parse_to_line, Command, JsonProtocol,
+    parse_protobuf_to_otlptrace, parse_to_line, Command, JsonProtocol,
 };
 use protocol_parser::json_protocol::JsonType;
 use protocol_parser::line_protocol::line_protocol_to_lines;
 use protocol_parser::open_tsdb::open_tsdb_to_lines;
 use protocol_parser::{DataPoint, Line};
 use query::prom::remote_server::PromRemoteSqlServer;
-use reqwest::header::{HeaderName, HeaderValue, ACCEPT_ENCODING, CONTENT_ENCODING};
+use reqwest::header::{HeaderName, HeaderValue, ACCEPT_ENCODING, CONTENT_ENCODING, CONTENT_TYPE};
 use snafu::{IntoError, ResultExt};
 use spi::query::config::StreamTriggerInterval;
 use spi::server::dbms::DBMSRef;
@@ -64,6 +66,13 @@ use crate::http::metrics::HttpMetrics;
 use crate::http::response::{HttpResponse, ResponseBuilder};
 use crate::http::result_format::{get_result_format_from_header, ResultFormat};
 use crate::http::QuerySnafu;
+use crate::opentelemetry::jaeger_model::Trace;
+use crate::opentelemetry::otlp_to_jaeger::{
+    FilterType, OtlpToJaeger, LIBRARY_NAME_COL_NAME, LIBRARY_VERSION_COL_NAME,
+    OPERATION_NAME_COL_NAME, PARENT_SPAN_ID_COL_NAME, SERVICE_NAME_COL_NAME, SPAN_ID_COL_NAME,
+    STATUS_CODE_COL_NAME, TRACE_ID_COL_NAME, TRACE_STATE_COL_NAME,
+};
+use crate::opentelemetry::otlp_write::JAEGER_TRACE_TABLE;
 use crate::server::ServiceHandle;
 use crate::spi::service::Service;
 use crate::{server, VERSION};
@@ -254,6 +263,8 @@ impl HttpService {
             .or(self.get_es_policy())
             .or(self.get_es_template())
             .or(self.write_es_log())
+            .or(self.write_otlp_trace())
+            .or(self.get_trace())
     }
 
     fn routes_store(
@@ -584,6 +595,7 @@ impl HttpService {
                         db: Some(db),
                         precision: None,
                         tenant: None,
+                        table: None,
                     };
                     let precision = Precision::NS;
 
@@ -1510,6 +1522,7 @@ impl HttpService {
                         precision: None,
                         tenant: param.tenant,
                         db: param.db,
+                        table: param.table.clone(),
                     };
 
                     if param.table.is_none() {
@@ -1595,6 +1608,242 @@ impl HttpService {
                         error!("Failed to handle http write request, err: {:?}", e);
                         reject::custom(e)
                     })
+                },
+            )
+    }
+
+    fn write_otlp_trace(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        warp::path!("v1" / "traces")
+            .and(warp::post())
+            .and(warp::body::content_length_limit(self.write_body_limit))
+            .and(warp::body::bytes())
+            .and(warp::header::optional::<String>("content-type"))
+            .and(self.handle_header())
+            .and(warp::query::<WriteParam>())
+            .and(self.with_dbms())
+            .and(self.with_coord())
+            .and(self.with_http_metrics())
+            .and(self.with_hostaddr())
+            .and(self.handle_span_header())
+            .and_then(
+                |mut req: Bytes,
+                 content_type: Option<String>,
+                 header: Header,
+                 param: WriteParam,
+                 dbms: DBMSRef,
+                 coord: CoordinatorRef,
+                 metrics: Arc<HttpMetrics>,
+                 addr: String,
+                 parent_span_ctx: Option<SpanContext>| async move {
+                    let start = Instant::now();
+                    let span = Span::from_context("rest log write", parent_span_ctx.as_ref());
+                    let span_context = span.context();
+
+                    let tenant = param.tenant.clone().unwrap_or(DEFAULT_CATALOG.to_string());
+                    let db = param.db.clone().unwrap_or(DEFAULT_DATABASE.to_string());
+                    let table = param
+                        .table
+                        .clone()
+                        .unwrap_or(JAEGER_TRACE_TABLE.to_string());
+
+                    let span =
+                        Span::from_context("rest otlp trace write", parent_span_ctx.as_ref());
+
+                    let content_encoding = get_content_encoding_from_header(&header)?;
+                    if let Some(encoding) = content_encoding {
+                        req = encoding.decode(req).map_err(|e| {
+                            error!("Failed to decode request, err: {:?}", e);
+                            reject::custom(HttpError::DecodeRequest { source: e })
+                        })?;
+                    }
+
+                    let ctx = {
+                        let mut span = Span::enter_with_parent("construct write context", &span);
+                        let ctx = construct_write_context_and_check_privilege(
+                            header,
+                            param,
+                            dbms,
+                            coord.clone(),
+                        )
+                        .await
+                        .map_err(|e| {
+                            error!("Failed to construct write context, err: {:?}", e);
+                            reject::custom(e)
+                        })?;
+                        record_context_in_span(&mut span, &ctx);
+                        ctx
+                    };
+
+                    let req_len = req.len();
+                    http_limiter_check_write(&coord.meta_manager(), ctx.tenant(), req_len).await?;
+
+                    let logs = try_parse_log_req(req.clone(), JsonType::OtlpTrace, content_type)
+                        .map_err(|e| {
+                            error!("Failed to parse request to log, err: {:?}", e);
+                            reject::custom(e)
+                        })?;
+
+                    let time_column =
+                        "ResourceSpans/ScopeSpans/Span/start_time_unix_nano".to_string();
+                    let tag_columns = [
+                        LIBRARY_NAME_COL_NAME,
+                        LIBRARY_VERSION_COL_NAME,
+                        STATUS_CODE_COL_NAME,
+                        SPAN_ID_COL_NAME,
+                        OPERATION_NAME_COL_NAME,
+                        PARENT_SPAN_ID_COL_NAME,
+                        SPAN_ID_COL_NAME,
+                        TRACE_ID_COL_NAME,
+                        TRACE_STATE_COL_NAME,
+                        SERVICE_NAME_COL_NAME,
+                    ]
+                    .join(",");
+
+                    let resp = coord_write_log(
+                        &coord,
+                        &tenant,
+                        &db,
+                        &table,
+                        logs,
+                        Some(time_column),
+                        Some(tag_columns),
+                        span_context.as_ref(),
+                    )
+                    .await;
+
+                    http_record_write_metrics(
+                        &metrics,
+                        &ctx,
+                        &addr,
+                        req_len,
+                        start,
+                        HttpApiType::ApiV1Write,
+                    );
+                    let result_size = size_of_val(&resp);
+                    let value_size = match &resp {
+                        Ok(value) => size_of_val(value),
+                        Err(error) => size_of_val(error),
+                    };
+
+                    let total_size = result_size + value_size + req_len;
+                    http_response_time_and_flow_metrics(
+                        &metrics,
+                        &addr,
+                        total_size,
+                        start,
+                        HttpApiType::V1Traces,
+                    );
+
+                    resp.map(|_| ResponseBuilder::ok()).map_err(|e| {
+                        error!(
+                            "Failed to handle http write otlp traces request, err: {:?}",
+                            e
+                        );
+                        reject::custom(e)
+                    })
+                },
+            )
+    }
+
+    fn get_trace(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        warp::path!("traces" / String)
+            .and(warp::get())
+            .and(self.handle_header())
+            .and(warp::query::<WriteParam>())
+            .and(self.with_dbms())
+            .and(self.with_coord())
+            .and(self.handle_span_header())
+            .and_then(
+                |trace_id: String,
+                 header: Header,
+                 param: WriteParam,
+                 dbms: DBMSRef,
+                 coord: CoordinatorRef,
+                 parent_span_ctx: Option<SpanContext>| async move {
+                    let span = Span::from_context("rest log write", parent_span_ctx.as_ref());
+
+                    let tenant = param.tenant.clone().unwrap_or(DEFAULT_CATALOG.to_string());
+                    let db = param.db.clone().unwrap_or(DEFAULT_DATABASE.to_string());
+                    let table = param
+                        .table
+                        .clone()
+                        .unwrap_or(JAEGER_TRACE_TABLE.to_string());
+
+                    let mut span = Span::enter_with_parent("construct write context", &span);
+                    let ctx = construct_write_context_and_check_privilege(
+                        header,
+                        param,
+                        dbms,
+                        coord.clone(),
+                    )
+                    .await
+                    .map_err(|e| {
+                        error!("Failed to construct write context, err: {:?}", e);
+                        reject::custom(e)
+                    })?;
+                    record_context_in_span(&mut span, &ctx);
+
+                    // read span by trace_id
+                    let iterators = OtlpToJaeger::get_tskv_iterator(
+                        coord,
+                        FilterType::GetTraceID(trace_id.clone()),
+                        tenant,
+                        db,
+                        table,
+                    )
+                    .await
+                    .map_err(|e| HttpError::Query { source: e })?;
+
+                    let mut record_batch_vec = Vec::new();
+                    for mut iter in iterators {
+                        while let Some(record_batch) = iter
+                            .try_next()
+                            .await
+                            .map_err(|e| HttpError::Coordinator { source: e })?
+                        {
+                            record_batch_vec.push(record_batch);
+                        }
+                    }
+
+                    let mut trace = Trace {
+                        trace_id,
+                        ..Default::default()
+                    };
+                    for batch in record_batch_vec {
+                        let column_trace_id = batch
+                            .column_by_name(TRACE_ID_COL_NAME)
+                            .ok_or(HttpError::FetchResult {
+                                reason: format!("column {} is not exist", TRACE_ID_COL_NAME),
+                            })?
+                            .as_any()
+                            .downcast_ref::<StringArray>()
+                            .ok_or(HttpError::FetchResult {
+                                reason: format!("column {} is not StringArray", TRACE_ID_COL_NAME),
+                            })?;
+                        if let Some(i) = (0..column_trace_id.len()).next() {
+                            trace
+                                .spans
+                                .push(OtlpToJaeger::recordbatch_to_span(batch, i).map_err(
+                                    |e| HttpError::FetchResult {
+                                        reason: e.message().to_string(),
+                                    },
+                                )?);
+                        }
+                    }
+                    let data =
+                        serde_json::to_string(&trace).map_err(|e| HttpError::FetchResult {
+                            reason: e.to_string(),
+                        })?;
+
+                    let builder = ResponseBuilder::new(OK).insert_header((
+                        CONTENT_TYPE,
+                        HeaderValue::from_static("application/json"),
+                    ));
+                    Ok::<_, Rejection>(builder.json(&data))
                 },
             )
     }
@@ -1874,10 +2123,14 @@ fn try_parse_log_req(
     log_type: JsonType,
     content_type: Option<String>,
 ) -> Result<Vec<JsonProtocol>, HttpError> {
-    if let JsonType::Loki = log_type {
-        if content_type.is_some_and(|x| x.eq("application/x-protobuf")) {
+    if content_type.is_some_and(|x| x.eq("application/x-protobuf")) {
+        if log_type.eq(&JsonType::Loki) {
             let logs =
                 parse_protobuf_to_lokilog(req).map_err(|e| HttpError::ParseLog { source: e })?;
+            return Ok(logs);
+        } else if log_type.eq(&JsonType::OtlpTrace) {
+            let logs =
+                parse_protobuf_to_otlptrace(req).map_err(|e| HttpError::ParseLog { source: e })?;
             return Ok(logs);
         }
     }
@@ -1902,6 +2155,9 @@ fn try_parse_log_req(
                 parse_json_to_lokilog(json_chunk).map_err(|e| HttpError::ParseLog { source: e })?;
             Ok(logs)
         }
+        _ => Err(HttpError::ParseLog {
+            source: protocol_parser::JsonLogError::InvaildSyntax,
+        }),
     }
 }
 
