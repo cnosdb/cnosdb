@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use coordinator::service::CoordinatorRef;
@@ -9,13 +10,14 @@ use datafusion::execution::runtime_env::RuntimeEnv;
 use datafusion::logical_expr::{col, lit};
 use datafusion::prelude::SessionConfig;
 use datafusion::scalar::ScalarValue;
+use datafusion::sql::sqlparser::parser::ParserError;
+use http_protocol::parameter::FindTracesParam;
 use models::predicate::domain::Predicate;
 use models::schema::table_schema::TableSchema;
 use models::schema::tskv_table_schema::TskvTableSchema;
 use prost::Message;
 use protos::common::any_value::Value;
 use protos::common::KeyValue as OtlpKeyValue;
-use protos::jaeger_storage_v1::TraceQueryParameters;
 use protos::trace::status::StatusCode;
 use query::data_source::split::tskv::TableLayoutHandle;
 use query::data_source::split::SplitManager;
@@ -27,6 +29,7 @@ use tskv::reader::QueryOption;
 
 use super::jaeger_model::{KeyValue, Log, Process, Reference, ReferenceType, Span};
 
+pub const JAEGER_TRACE_TABLE: &str = "jaeger_trace";
 pub const TRACE_ID_COL_NAME: &str = "ResourceSpans/ScopeSpans/Span/trace_id";
 pub const SPAN_ID_COL_NAME: &str = "ResourceSpans/ScopeSpans/Span/span_id";
 pub const PARENT_SPAN_ID_COL_NAME: &str = "ResourceSpans/ScopeSpans/Span/parent_span_id";
@@ -53,8 +56,8 @@ pub enum FilterType {
     GetTraceID(String),
     GetServices,
     GetOperation(String, String),
-    FindTraces(Option<TraceQueryParameters>),
-    FindTraceIDs(Option<TraceQueryParameters>),
+    FindTraces(Option<FindTracesParam>),
+    FindTraceIDs(Option<FindTracesParam>),
 }
 
 pub struct OtlpToJaeger {}
@@ -78,7 +81,7 @@ impl OtlpToJaeger {
             let (tskv_table_schema, filter_expr, limit) = match &filter_type {
                 FilterType::GetTraceID(trace_id) => (
                     tskv_table_schema,
-                    Some(col(format!("jaeger_trace.\"{}\"", TRACE_ID_COL_NAME)).eq(lit(trace_id))),
+                    Some(col(format!("{}.\"{}\"", table, TRACE_ID_COL_NAME)).eq(lit(trace_id))),
                     None,
                 ),
                 FilterType::GetServices => (
@@ -89,7 +92,7 @@ impl OtlpToJaeger {
                         tskv_table_schema
                             .columns()
                             .iter()
-                            .filter(|col| col.name == "process.service_name" || col.name == "time")
+                            .filter(|col| col.name == SERVICE_NAME_COL_NAME || col.name == "time")
                             .cloned()
                             .collect(),
                     )),
@@ -100,14 +103,22 @@ impl OtlpToJaeger {
                     let filter_expr = if service_name.is_empty() && span_kind.is_empty() {
                         None
                     } else if service_name.is_empty() && !span_kind.is_empty() {
-                        Some(col("jaeger_trace.\"tags.span.kind\"").eq(lit(span_kind)))
+                        Some(
+                            col(format!("{}.\"{}\"", table, SPAN_KIND_COL_NAME)).eq(lit(span_kind)),
+                        )
                     } else if span_kind.is_empty() && !service_name.is_empty() {
-                        Some(col("jaeger_trace.\"process.service_name\"").eq(lit(service_name)))
+                        Some(
+                            col(format!("{}.\"{}\"", table, SERVICE_NAME_COL_NAME))
+                                .eq(lit(service_name)),
+                        )
                     } else {
                         Some(
-                            col("jaeger_trace.\"process.service_name\"")
+                            col(format!("{}.\"{}\"", table, SERVICE_NAME_COL_NAME))
                                 .eq(lit(service_name))
-                                .and(col("jaeger_trace.\"tags.span.kind\"").eq(lit(span_kind))),
+                                .and(
+                                    col(format!("{}.\"{}\"", table, SPAN_KIND_COL_NAME))
+                                        .eq(lit(span_kind)),
+                                ),
                         )
                     };
 
@@ -120,10 +131,9 @@ impl OtlpToJaeger {
                                 .columns()
                                 .iter()
                                 .filter(|col| {
-                                    col.name == "operation_name"
-                                        || col.name == "tags.span.name"
-                                        || col.name == "tags.span.kind"
-                                        || col.name == "process.service_name"
+                                    col.name == SERVICE_NAME_COL_NAME
+                                        || col.name == OPERATION_NAME_COL_NAME
+                                        || col.name == SPAN_KIND_COL_NAME
                                         || col.name == "time"
                                 })
                                 .cloned()
@@ -135,52 +145,117 @@ impl OtlpToJaeger {
                 }
                 FilterType::FindTraces(opt) | FilterType::FindTraceIDs(opt) => {
                     let (filter_expr, limit) = if let Some(query_paras) = opt {
-                        let mut filter_expr = col("jaeger_trace.\"process.service_name\"")
-                            .eq(lit(&query_paras.service_name));
-                        if !query_paras.operation_name.is_empty() {
-                            filter_expr = filter_expr.and(
-                                col("jaeger_trace.operation_name")
-                                    .eq(lit(&query_paras.operation_name)),
-                            );
-                        }
-                        for (k, v) in query_paras.tags.iter() {
-                            filter_expr = filter_expr
-                                .and(col(format!("jaeger_trace.\"tags.type0.{}\"", k)).eq(lit(v)));
-                        }
-                        if let Some(start_time_min) = &query_paras.start_time_min {
-                            let nanos: i64 = start_time_min.seconds * 1_000_000_000
-                                + start_time_min.nanos as i64;
-                            filter_expr =
-                                filter_expr.and(col("jaeger_trace.time").gt_eq(lit(
-                                    ScalarValue::TimestampNanosecond(Some(nanos), None),
-                                )));
-                        }
-                        if let Some(start_time_max) = &query_paras.start_time_max {
-                            let nanos: i64 = start_time_max.seconds * 1_000_000_000
-                                + start_time_max.nanos as i64;
-                            filter_expr =
-                                filter_expr.and(col("jaeger_trace.time").lt_eq(lit(
-                                    ScalarValue::TimestampNanosecond(Some(nanos), None),
-                                )));
-                        }
-                        if let Some(duration_min) = &query_paras.duration_min {
-                            let second = duration_min.seconds as f64
-                                + duration_min.nanos as f64 / 1_000_000_000.0;
-                            filter_expr =
-                                filter_expr.and(col("jaeger_trace.duration").gt_eq(lit(second)));
-                        }
-                        if let Some(duration_max) = &query_paras.duration_max {
-                            let second = duration_max.seconds as f64
-                                + duration_max.nanos as f64 / 1_000_000_000.0;
-                            if second > 0.0 {
-                                filter_expr = filter_expr
-                                    .and(col("jaeger_trace.duration").lt_eq(lit(second)));
+                        let mut filter_expr_opt = None;
+
+                        if let Some(service) = &query_paras.service {
+                            if !service.is_empty() {
+                                filter_expr_opt = Some(
+                                    col(format!("{}.\"{}\"", table, SERVICE_NAME_COL_NAME))
+                                        .eq(lit(service)),
+                                );
                             }
                         }
-                        (
-                            Some(filter_expr.clone()),
-                            Some(query_paras.num_traces as usize),
-                        )
+
+                        if let Some(operation) = &query_paras.operation {
+                            if !operation.is_empty() {
+                                let expr =
+                                    col(format!("{}.\"{}\"", table, OPERATION_NAME_COL_NAME))
+                                        .eq(lit(operation));
+                                if let Some(filter_expr) = filter_expr_opt {
+                                    filter_expr_opt = Some(filter_expr.and(expr));
+                                } else {
+                                    filter_expr_opt = Some(expr);
+                                }
+                            }
+                        }
+
+                        if let Some(start) = &query_paras.start {
+                            let nanos: i64 = start * 1_000;
+                            let expr = col(format!("{}.\"time\"", table))
+                                .gt_eq(lit(ScalarValue::TimestampNanosecond(Some(nanos), None)));
+                            if let Some(filter_expr) = filter_expr_opt {
+                                filter_expr_opt = Some(filter_expr.and(expr));
+                            } else {
+                                filter_expr_opt = Some(expr);
+                            }
+                        }
+
+                        if let Some(end) = &query_paras.end {
+                            let nanos = (end * 1_000) as f64;
+                            let expr = col(format!(
+                                "{}.\"ResourceSpans/ScopeSpans/Span/end_time_unix_nano\"",
+                                table
+                            ))
+                            .lt_eq(lit(nanos));
+                            if let Some(filter_expr) = filter_expr_opt {
+                                filter_expr_opt = Some(filter_expr.and(expr));
+                            } else {
+                                filter_expr_opt = Some(expr);
+                            }
+                        }
+
+                        let mut tag_map = HashMap::new();
+                        if let Some(tag) = &query_paras.tag {
+                            let tag = tag.split(',').collect::<Vec<&str>>();
+                            for item in tag.iter() {
+                                let parts: Vec<&str> = item.split(':').collect();
+                                if parts.len() == 2 {
+                                    tag_map.insert(parts[0].to_string(), parts[1].to_string());
+                                }
+                            }
+                        }
+                        if let Some(tags) = &query_paras.tags {
+                            let tags = tags.split(',').collect::<Vec<&str>>();
+                            for item in tags.iter() {
+                                let parts: HashMap<String, String> =
+                                    serde_json::from_str(item).unwrap();
+                                tag_map.extend(parts);
+                            }
+                        }
+                        for (k, v) in tag_map.iter() {
+                            let expr = col(format!(
+                                "{}.\"ResourceSpans/ScopeSpans/Span/attributes/{}\"",
+                                table, k
+                            ))
+                            .eq(lit(v));
+                            if let Some(filter_expr) = filter_expr_opt {
+                                filter_expr_opt = Some(filter_expr.and(expr));
+                            } else {
+                                filter_expr_opt = Some(expr);
+                            }
+                        }
+
+                        if let Some(duration_min) = &query_paras.min_duration {
+                            let duration_min = Self::parse_duration(duration_min)? as f64;
+                            let expr = col(format!(
+                                "{}.\"ResourceSpans/ScopeSpans/Span/duration_nano\"",
+                                table
+                            ))
+                            .gt_eq(lit(duration_min));
+                            if let Some(filter_expr) = filter_expr_opt {
+                                filter_expr_opt = Some(filter_expr.and(expr));
+                            } else {
+                                filter_expr_opt = Some(expr);
+                            }
+                        }
+
+                        if let Some(duration_max) = &query_paras.max_duration {
+                            let duration_max = Self::parse_duration(duration_max)? as f64;
+                            let expr = col(format!(
+                                "{}.\"ResourceSpans/ScopeSpans/Span/duration_nano\"",
+                                table
+                            ))
+                            .lt_eq(lit(duration_max));
+                            if let Some(filter_expr) = filter_expr_opt {
+                                filter_expr_opt = Some(filter_expr.and(expr));
+                            } else {
+                                filter_expr_opt = Some(expr);
+                            }
+                        }
+
+                        let limit = query_paras.limit.as_ref().copied();
+
+                        (filter_expr_opt, limit)
                     } else {
                         (None, None)
                     };
@@ -317,6 +392,18 @@ impl OtlpToJaeger {
         }
     }
 
+    pub fn to_jaeger_span_kind(span_kind: &str) -> &str {
+        match span_kind {
+            "SPAN_KIND_UNSPECIFIED" => "unspecified",
+            "SPAN_KIND_INTERNAL" => "internal",
+            "SPAN_KIND_SERVER" => "server",
+            "SPAN_KIND_CLIENT" => "client",
+            "SPAN_KIND_PRODUCER" => "producer",
+            "SPAN_KIND_CONSUMER" => "consumer",
+            _ => "unspecified",
+        }
+    }
+
     pub fn recordbatch_to_span(batch: RecordBatch, row_i: usize) -> Result<Span, tonic::Status> {
         let mut span = Span::default();
 
@@ -384,24 +471,24 @@ impl OtlpToJaeger {
         }
 
         if let Some(array) = batch.column_by_name(SPAN_KIND_COL_NAME) {
+            let span_kind = array
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .ok_or(Status::internal(format!(
+                    "column {} is not StringArray",
+                    SPAN_KIND_COL_NAME
+                )))?
+                .value(row_i);
+            let span_kind = Self::to_jaeger_span_kind(span_kind).to_string();
+
             span.tags.push(KeyValue {
                 key: "span.kind".to_string(),
                 value_type: Some(super::jaeger_model::ValueType::String),
-                value: serde_json::Value::String(
-                    array
-                        .as_any()
-                        .downcast_ref::<StringArray>()
-                        .ok_or(Status::internal(format!(
-                            "column {} is not StringArray",
-                            OPERATION_NAME_COL_NAME
-                        )))?
-                        .value(row_i)
-                        .to_string(),
-                ),
+                value: serde_json::Value::String(span_kind),
             });
         }
 
-        span.start_time = batch
+        span.start_time = (batch
             .column_by_name("time")
             .ok_or(Status::internal("column time is not exist".to_string()))?
             .as_any()
@@ -409,7 +496,8 @@ impl OtlpToJaeger {
             .ok_or(Status::internal(
                 "column time is not TimestampNanosecondArray".to_string(),
             ))?
-            .value(row_i) as u64;
+            .value(row_i)
+            / 1_000) as u64;
 
         if let Some(array) = batch.column_by_name(DURATION_COL_NAME) {
             span.duration = array
@@ -419,9 +507,11 @@ impl OtlpToJaeger {
                     "column {} is not Float64Array",
                     DURATION_COL_NAME
                 )))?
-                .value(row_i) as u64;
+                .value(row_i) as u64
+                / 1_000;
         }
 
+        let mut process = Process::default();
         if let Some(array) = batch.column_by_name(STATUS_CODE_COL_NAME) {
             let status_code = array
                 .as_any()
@@ -432,13 +522,13 @@ impl OtlpToJaeger {
                 )))?
                 .value(row_i)
                 .to_string();
-            span.tags.push(KeyValue {
+            process.tags.push(KeyValue {
                 key: "otel.status_code".to_string(),
                 value_type: Some(super::jaeger_model::ValueType::String),
                 value: serde_json::Value::String(status_code.clone()),
             });
             if StatusCode::from_str_name(&status_code).eq(&Some(StatusCode::Error)) {
-                span.tags.push(KeyValue {
+                process.tags.push(KeyValue {
                     key: "error".to_string(),
                     value_type: Some(super::jaeger_model::ValueType::Bool),
                     value: serde_json::Value::Bool(true),
@@ -447,7 +537,7 @@ impl OtlpToJaeger {
         }
 
         if let Some(array) = batch.column_by_name(STATUS_MESSAGE_COL_NAME) {
-            span.tags.push(KeyValue {
+            process.tags.push(KeyValue {
                 key: "otel.status_description".to_string(),
                 value_type: Some(super::jaeger_model::ValueType::String),
                 value: serde_json::Value::String(
@@ -465,7 +555,7 @@ impl OtlpToJaeger {
         }
 
         if let Some(array) = batch.column_by_name(LIBRARY_NAME_COL_NAME) {
-            span.tags.push(KeyValue {
+            process.tags.push(KeyValue {
                 key: "otel.library.name".to_string(),
                 value_type: Some(super::jaeger_model::ValueType::String),
                 value: serde_json::Value::String(
@@ -483,7 +573,7 @@ impl OtlpToJaeger {
         }
 
         if let Some(array) = batch.column_by_name(LIBRARY_VERSION_COL_NAME) {
-            span.tags.push(KeyValue {
+            process.tags.push(KeyValue {
                 key: "otel.library.version".to_string(),
                 value_type: Some(super::jaeger_model::ValueType::String),
                 value: serde_json::Value::String(
@@ -500,7 +590,6 @@ impl OtlpToJaeger {
             });
         }
 
-        let mut process = Process::default();
         if let Some(array) = batch.column_by_name(SERVICE_NAME_COL_NAME) {
             process.service_name = array
                 .as_any()
@@ -614,7 +703,7 @@ impl OtlpToJaeger {
                         col_name
                     )))?
                     .value(row_i) as i64;
-                process.tags.push(KeyValue {
+                span.tags.push(KeyValue {
                     key: col_name.split('/').last().unwrap_or(col_name).to_string(),
                     value_type: Some(super::jaeger_model::ValueType::Int64),
                     value: serde_json::Value::Number(value.into()),
@@ -771,5 +860,170 @@ impl OtlpToJaeger {
         span.process = Some(process);
 
         Ok(span)
+    }
+
+    fn parse_duration(s: &str) -> Result<u64, QueryError> {
+        let orig = s;
+        let mut s = s;
+        let mut d: u64 = 0;
+        let mut neg = false;
+
+        // Consume [-+]?
+        if !s.is_empty() {
+            let c = s.chars().next().unwrap();
+            if c == '-' || c == '+' {
+                neg = c == '-';
+                s = &s[1..];
+            }
+        }
+
+        // Special case: if all that is left is "0", this is zero.
+        if s == "0" {
+            return Ok(0);
+        }
+        if s.is_empty() {
+            return Err(QueryError::Parser {
+                source: ParserError::ParserError(format!("time: invalid duration {}", orig)),
+            });
+        }
+
+        while !s.is_empty() {
+            let mut f: u64 = 0;
+            let mut scale: f64 = 1.0;
+            let mut post = false;
+
+            // The next character must be [0-9.]
+            if !(s.starts_with('.') || s.chars().next().unwrap().is_ascii_digit()) {
+                return Err(QueryError::Parser {
+                    source: ParserError::ParserError(format!("time: invalid duration {}", orig)),
+                });
+            }
+
+            // Consume [0-9]*
+            let pl = s.len();
+            let (v_new, s_new) = Self::leading_int(s);
+            let mut v = v_new;
+            s = s_new;
+            let pre = pl != s.len();
+
+            // Consume (\.[0-9]*)?
+            if !s.is_empty() && s.starts_with('.') {
+                s = &s[1..];
+                let pl = s.len();
+                let (f_new, scale_new, s_new) = Self::leading_fraction(s);
+                f = f_new;
+                scale = scale_new;
+                s = s_new;
+                post = pl != s.len();
+            }
+
+            if !pre && !post {
+                return Err(QueryError::Parser {
+                    source: ParserError::ParserError(format!("time: invalid duration {}", orig)),
+                });
+            }
+
+            // Consume unit.
+            let i = s
+                .find(|c: char| c == '.' || c.is_ascii_digit())
+                .unwrap_or(s.len());
+            if i == 0 {
+                return Err(QueryError::Parser {
+                    source: ParserError::ParserError(format!("time: invalid duration {}", orig)),
+                });
+            }
+            let u = &s[..i];
+            s = &s[i..];
+
+            let unit = match Self::unit_map().get(u) {
+                Some(&unit) => unit,
+                None => {
+                    return Err(QueryError::Parser {
+                        source: ParserError::ParserError(format!(
+                            "time: unknown unit {} in duration {}",
+                            u, orig
+                        )),
+                    });
+                }
+            };
+
+            if v > (1 << 63) / unit {
+                return Err(QueryError::Parser {
+                    source: ParserError::ParserError(format!("time: invalid duration {}", orig)),
+                });
+            }
+            v *= unit;
+
+            if f > 0 {
+                v += (f as f64 * (unit as f64 / scale)) as u64;
+                if v > 1 << 63 {
+                    return Err(QueryError::Parser {
+                        source: ParserError::ParserError(format!(
+                            "time: invalid duration {}",
+                            orig
+                        )),
+                    });
+                }
+            }
+
+            d += v;
+            if d > 1 << 63 {
+                return Err(QueryError::Parser {
+                    source: ParserError::ParserError(format!("time: invalid duration {}", orig)),
+                });
+            }
+        }
+
+        if neg {
+            return Ok(-(d as i64) as u64);
+        }
+        if d > 1 << (63 - 1) {
+            return Err(QueryError::Parser {
+                source: ParserError::ParserError(format!("time: invalid duration {}", orig)),
+            });
+        }
+        Ok(d)
+    }
+
+    fn leading_int(s: &str) -> (u64, &str) {
+        let mut v: u64 = 0;
+        let mut i = 0;
+        for c in s.chars() {
+            if c.is_ascii_digit() {
+                v = v * 10 + c.to_digit(10).unwrap() as u64;
+                i += 1;
+            } else {
+                break;
+            }
+        }
+        (v, &s[i..])
+    }
+
+    fn leading_fraction(s: &str) -> (u64, f64, &str) {
+        let mut v: u64 = 0;
+        let mut scale: f64 = 1.0;
+        let mut i = 0;
+        for c in s.chars() {
+            if c.is_ascii_digit() {
+                v = v * 10 + c.to_digit(10).unwrap() as u64;
+                scale *= 10.0;
+                i += 1;
+            } else {
+                break;
+            }
+        }
+        (v, scale, &s[i..])
+    }
+
+    fn unit_map() -> HashMap<&'static str, u64> {
+        let mut m = HashMap::new();
+        m.insert("ns", 1);
+        m.insert("us", 1_000);
+        m.insert("µs", 1_000);
+        m.insert("ms", 1_000_000);
+        m.insert("s", 1_000_000_000);
+        m.insert("m", 60 * 1_000_000_000);
+        m.insert("h", 60 * 60 * 1_000_000_000);
+        m
     }
 }

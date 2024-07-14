@@ -390,7 +390,6 @@ impl SessionContext {
             precision: Some(precision),
             tenant: Some(tenant),
             db: Some(db),
-            table: None,
         };
 
         let mut builder = self

@@ -1,6 +1,6 @@
 #![allow(clippy::too_many_arguments)]
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
 use std::fmt;
 use std::fmt::Display;
@@ -15,7 +15,10 @@ use datafusion::arrow::array::{Array, StringArray};
 use futures::TryStreamExt;
 use http_protocol::encoding::Encoding;
 use http_protocol::header::{ACCEPT, APPLICATION_JSON, AUTHORIZATION, PRIVATE_KEY};
-use http_protocol::parameter::{DebugParam, DumpParam, LogParam, SqlParam, WriteParam};
+use http_protocol::parameter::{
+    DebugParam, DumpParam, FindTracesParam, GetOperationParam, LogParam, OtlpParam, SqlParam,
+    WriteParam,
+};
 use http_protocol::response::ErrorResponse;
 use http_protocol::status_code::OK;
 use meta::error::{MetaError, MetaResult};
@@ -66,13 +69,12 @@ use crate::http::metrics::HttpMetrics;
 use crate::http::response::{HttpResponse, ResponseBuilder};
 use crate::http::result_format::{get_result_format_from_header, ResultFormat};
 use crate::http::QuerySnafu;
-use crate::opentelemetry::jaeger_model::Trace;
+use crate::opentelemetry::jaeger_model::{Operation, Process, Trace};
 use crate::opentelemetry::otlp_to_jaeger::{
-    FilterType, OtlpToJaeger, LIBRARY_NAME_COL_NAME, LIBRARY_VERSION_COL_NAME,
+    FilterType, OtlpToJaeger, JAEGER_TRACE_TABLE, LIBRARY_NAME_COL_NAME, LIBRARY_VERSION_COL_NAME,
     OPERATION_NAME_COL_NAME, PARENT_SPAN_ID_COL_NAME, SERVICE_NAME_COL_NAME, SPAN_ID_COL_NAME,
-    STATUS_CODE_COL_NAME, TRACE_ID_COL_NAME, TRACE_STATE_COL_NAME,
+    SPAN_KIND_COL_NAME, STATUS_CODE_COL_NAME, TRACE_ID_COL_NAME, TRACE_STATE_COL_NAME,
 };
-use crate::opentelemetry::otlp_write::JAEGER_TRACE_TABLE;
 use crate::server::ServiceHandle;
 use crate::spi::service::Service;
 use crate::{server, VERSION};
@@ -264,7 +266,11 @@ impl HttpService {
             .or(self.get_es_template())
             .or(self.write_es_log())
             .or(self.write_otlp_trace())
+            .or(self.search_traces())
             .or(self.get_trace())
+            .or(self.get_services())
+            .or(self.get_operations())
+            .or(self.get_operations_by_service())
     }
 
     fn routes_store(
@@ -595,7 +601,6 @@ impl HttpService {
                         db: Some(db),
                         precision: None,
                         tenant: None,
-                        table: None,
                     };
                     let precision = Precision::NS;
 
@@ -1522,7 +1527,6 @@ impl HttpService {
                         precision: None,
                         tenant: param.tenant,
                         db: param.db,
-                        table: param.table.clone(),
                     };
 
                     if param.table.is_none() {
@@ -1621,7 +1625,7 @@ impl HttpService {
             .and(warp::body::bytes())
             .and(warp::header::optional::<String>("content-type"))
             .and(self.handle_header())
-            .and(warp::query::<WriteParam>())
+            .and(warp::query::<OtlpParam>())
             .and(self.with_dbms())
             .and(self.with_coord())
             .and(self.with_http_metrics())
@@ -1631,7 +1635,7 @@ impl HttpService {
                 |mut req: Bytes,
                  content_type: Option<String>,
                  header: Header,
-                 param: WriteParam,
+                 param: OtlpParam,
                  dbms: DBMSRef,
                  coord: CoordinatorRef,
                  metrics: Arc<HttpMetrics>,
@@ -1659,11 +1663,16 @@ impl HttpService {
                         })?;
                     }
 
+                    let write_param = WriteParam {
+                        precision: None,
+                        tenant: param.tenant,
+                        db: param.db,
+                    };
                     let ctx = {
                         let mut span = Span::enter_with_parent("construct write context", &span);
                         let ctx = construct_write_context_and_check_privilege(
                             header,
-                            param,
+                            write_param,
                             dbms,
                             coord.clone(),
                         )
@@ -1747,25 +1756,318 @@ impl HttpService {
             )
     }
 
+    fn search_traces(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        warp::path!("api" / "traces")
+            .and(warp::get())
+            .and(self.handle_header())
+            .and(warp::query::<FindTracesParam>())
+            .and(self.with_dbms())
+            .and(self.with_coord())
+            .and_then(
+                |header: Header,
+                 param: FindTracesParam,
+                 dbms: DBMSRef,
+                 coord: CoordinatorRef| async move {
+                    // authenticate
+                    let sql_param = SqlParam {
+                        tenant: param.tenant.clone(),
+                        db: param.db.clone(),
+                        chunked: None,
+                        target_partitions: None,
+                        stream_trigger_interval: None,
+                    };
+                    let _ = construct_read_context(&header, sql_param, dbms, coord.clone(), false)
+                        .await
+                        .map_err(|e| {
+                            error!("Failed to construct query, err: {:?}", e);
+                            reject::custom(e)
+                        })?;
+
+                    let traces = if let Some(trace_ids) = param.trace_ids {
+                        let param = OtlpParam {
+                            tenant: param.tenant.clone(),
+                            db: param.db.clone(),
+                            table: param.table.clone(),
+                        };
+                        let mut traces = Vec::new();
+                        for trace_id in trace_ids.split(',').collect::<Vec<&str>>() {
+                            traces.push(Self::get_trace_inner(coord.clone(), param.clone(), trace_id.to_string())
+                                .await
+                                .map_err(|e| {
+                                    error!("Failed to get trace, err: {:?}", e);
+                                    reject::custom(e)
+                                })?);
+                        }
+                        traces
+                    } else {
+                        // get param
+                        let tenant = param.tenant.clone().unwrap_or(DEFAULT_CATALOG.to_string());
+                        let db = param.db.clone().unwrap_or(DEFAULT_DATABASE.to_string());
+                        let table = param
+                            .table
+                            .clone()
+                            .unwrap_or(JAEGER_TRACE_TABLE.to_string());
+
+                        // contruct stream by query param
+                        let iterators = OtlpToJaeger::get_tskv_iterator(
+                            coord,
+                            FilterType::FindTraces(Some(param)),
+                            tenant,
+                            db,
+                            table,
+                        )
+                        .await
+                        .map_err(|e| HttpError::Query { source: e })?;
+
+                        // read recordbatch from stream
+                        let mut record_batch_vec = Vec::new();
+                        for mut iter in iterators {
+                            while let Some(record_batch) = iter
+                                .try_next()
+                                .await
+                                .map_err(|e| HttpError::Coordinator { source: e })?
+                            {
+                                record_batch_vec.push(record_batch);
+                            }
+                        }
+
+                        // contruct Trace from recordbatch
+                        let mut trace_map: HashMap<String, Trace> = HashMap::default();
+                        for batch in record_batch_vec {
+                            let column_trace_id = batch
+                                .column_by_name(TRACE_ID_COL_NAME)
+                                .ok_or(HttpError::FetchResult {
+                                    reason: format!("column {} is not exist", TRACE_ID_COL_NAME),
+                                })?
+                                .as_any()
+                                .downcast_ref::<StringArray>()
+                                .ok_or(HttpError::FetchResult {
+                                    reason: format!("column {} is not StringArray", TRACE_ID_COL_NAME),
+                                })?;
+                            if let Some(i) = (0..column_trace_id.len()).next() {
+                                let trace_id = column_trace_id.value(i).to_string();
+                                let mut span = OtlpToJaeger::recordbatch_to_span(batch, i).map_err(
+                                    |e| HttpError::FetchResult {
+                                        reason: e.message().to_string(),
+                                    },
+                                )?;
+                                if let Some(trace) = trace_map.get_mut(&trace_id) {
+                                    let process_id = format!("p{}", trace.spans.len());
+                                    span.process_id = Some(process_id.clone());
+                                    if let Some(process) = &span.process {
+                                        trace.processes.insert(process_id, process.clone());
+                                    }
+                                    trace.spans.push(span);
+                                } else {
+                                    let process_id = "p1";
+                                    span.process_id = Some(process_id.to_string());
+                                    let process = span.process.clone().unwrap_or(Process::default());
+                                    trace_map.entry(trace_id.clone()).or_insert_with(|| {
+                                        let mut trace = Trace {
+                                            trace_id: trace_id.clone(),
+                                            spans: vec![span],
+                                            ..Default::default()
+                                        };
+                                        trace.processes.insert(process_id.to_string(), process);
+                                        trace
+                                    });
+                                }
+                            }
+                        }
+
+                        trace_map.into_values().collect()
+                    };
+
+                    #[derive(serde::Serialize)]
+                    struct Traces {
+                        data: Vec<Trace>,
+                        total: u64,
+                        limit: u64,
+                        offset: u64,
+                        errors: Option<String>
+                    }
+
+                    let total = traces.len() as u64;
+                    let resp = Traces {
+                        data: traces,
+                        total,
+                        limit: 0,
+                        offset: 0,
+                        errors: None
+                    };
+
+                    // return
+                    let builder = ResponseBuilder::new(OK).insert_header((
+                        CONTENT_TYPE,
+                        HeaderValue::from_static("application/json"),
+                    ));
+                    Ok::<_, Rejection>(builder.json(&resp))
+                },
+            )
+    }
+
+    async fn get_trace_inner(
+        coord: CoordinatorRef,
+        param: OtlpParam,
+        trace_id: String,
+    ) -> Result<Trace, HttpError> {
+        // get param
+        let tenant = param.tenant.clone().unwrap_or(DEFAULT_CATALOG.to_string());
+        let db = param.db.clone().unwrap_or(DEFAULT_DATABASE.to_string());
+        let table = param
+            .table
+            .clone()
+            .unwrap_or(JAEGER_TRACE_TABLE.to_string());
+
+        // contruct stream by trace_id
+        let iterators = OtlpToJaeger::get_tskv_iterator(
+            coord,
+            FilterType::GetTraceID(trace_id.clone()),
+            tenant,
+            db,
+            table,
+        )
+        .await
+        .map_err(|e| HttpError::Query { source: e })?;
+
+        // read recordbatch from stream
+        let mut record_batch_vec = Vec::new();
+        for mut iter in iterators {
+            while let Some(record_batch) = iter
+                .try_next()
+                .await
+                .map_err(|e| HttpError::Coordinator { source: e })?
+            {
+                record_batch_vec.push(record_batch);
+            }
+        }
+
+        // contruct Trace from recordbatch
+        let mut trace = Trace::default();
+        for batch in record_batch_vec {
+            let column_trace_id = batch
+                .column_by_name(TRACE_ID_COL_NAME)
+                .ok_or(HttpError::FetchResult {
+                    reason: format!("column {} is not exist", TRACE_ID_COL_NAME),
+                })?
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .ok_or(HttpError::FetchResult {
+                    reason: format!("column {} is not StringArray", TRACE_ID_COL_NAME),
+                })?;
+            if let Some(i) = (0..column_trace_id.len()).next() {
+                trace
+                    .spans
+                    .push(OtlpToJaeger::recordbatch_to_span(batch, i).map_err(|e| {
+                        HttpError::FetchResult {
+                            reason: e.message().to_string(),
+                        }
+                    })?);
+            }
+        }
+        if !trace.spans.is_empty() {
+            trace.trace_id = trace_id;
+        }
+
+        Ok(trace)
+    }
+
     fn get_trace(
         &self,
     ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-        warp::path!("traces" / String)
+        warp::path!("api" / "traces" / String)
             .and(warp::get())
             .and(self.handle_header())
-            .and(warp::query::<WriteParam>())
+            .and(warp::query::<OtlpParam>())
             .and(self.with_dbms())
             .and(self.with_coord())
-            .and(self.handle_span_header())
             .and_then(
                 |trace_id: String,
                  header: Header,
-                 param: WriteParam,
+                 param: OtlpParam,
                  dbms: DBMSRef,
-                 coord: CoordinatorRef,
-                 parent_span_ctx: Option<SpanContext>| async move {
-                    let span = Span::from_context("rest log write", parent_span_ctx.as_ref());
+                 coord: CoordinatorRef| async move {
+                    // authenticate
+                    let sql_param = SqlParam {
+                        tenant: param.tenant.clone(),
+                        db: param.db.clone(),
+                        chunked: None,
+                        target_partitions: None,
+                        stream_trigger_interval: None,
+                    };
+                    let _ = construct_read_context(&header, sql_param, dbms, coord.clone(), false)
+                        .await
+                        .map_err(|e| {
+                            error!("Failed to construct query, err: {:?}", e);
+                            reject::custom(e)
+                        })?;
+                    let mut trace = Self::get_trace_inner(coord, param, trace_id).await?;
+                    for (i, span) in trace.spans.iter_mut().enumerate() {
+                        if let Some(process) = &span.process {
+                            let process_id = format!("p{}", i);
+                            span.process_id = Some(process_id.clone());
+                            trace.processes.insert(process_id, process.clone());
+                        }
+                    }
 
+                    #[derive(serde::Serialize)]
+                    struct Traces {
+                        data: Vec<Trace>,
+                        total: u64,
+                        limit: u64,
+                        offset: u64,
+                        errors: Option<String>,
+                    }
+                    let resp = Traces {
+                        data: vec![trace],
+                        total: 0,
+                        limit: 0,
+                        offset: 0,
+                        errors: None,
+                    };
+
+                    // return
+                    let builder = ResponseBuilder::new(OK).insert_header((
+                        CONTENT_TYPE,
+                        HeaderValue::from_static("application/json"),
+                    ));
+                    Ok::<_, Rejection>(builder.json(&resp))
+                },
+            )
+    }
+
+    fn get_services(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        warp::path!("api" / "services")
+            .and(warp::get())
+            .and(self.handle_header())
+            .and(warp::query::<OtlpParam>())
+            .and(self.with_dbms())
+            .and(self.with_coord())
+            .and_then(
+                |header: Header,
+                 param: OtlpParam,
+                 dbms: DBMSRef,
+                 coord: CoordinatorRef| async move {
+                    // authenticate
+                    let sql_param = SqlParam {
+                        tenant: param.tenant.clone(),
+                        db: param.db.clone(),
+                        chunked: None,
+                        target_partitions: None,
+                        stream_trigger_interval: None,
+                    };
+                    let _ = construct_read_context(&header, sql_param, dbms, coord.clone(), false)
+                        .await
+                        .map_err(|e| {
+                            error!("Failed to construct query, err: {:?}", e);
+                            reject::custom(e)
+                        })?;
+
+                    // get param
                     let tenant = param.tenant.clone().unwrap_or(DEFAULT_CATALOG.to_string());
                     let db = param.db.clone().unwrap_or(DEFAULT_DATABASE.to_string());
                     let table = param
@@ -1773,24 +2075,10 @@ impl HttpService {
                         .clone()
                         .unwrap_or(JAEGER_TRACE_TABLE.to_string());
 
-                    let mut span = Span::enter_with_parent("construct write context", &span);
-                    let ctx = construct_write_context_and_check_privilege(
-                        header,
-                        param,
-                        dbms,
-                        coord.clone(),
-                    )
-                    .await
-                    .map_err(|e| {
-                        error!("Failed to construct write context, err: {:?}", e);
-                        reject::custom(e)
-                    })?;
-                    record_context_in_span(&mut span, &ctx);
-
-                    // read span by trace_id
+                    // contruct stream
                     let iterators = OtlpToJaeger::get_tskv_iterator(
                         coord,
-                        FilterType::GetTraceID(trace_id.clone()),
+                        FilterType::GetServices,
                         tenant,
                         db,
                         table,
@@ -1798,6 +2086,7 @@ impl HttpService {
                     .await
                     .map_err(|e| HttpError::Query { source: e })?;
 
+                    // read recordbatch from stream
                     let mut record_batch_vec = Vec::new();
                     for mut iter in iterators {
                         while let Some(record_batch) = iter
@@ -1809,41 +2098,276 @@ impl HttpService {
                         }
                     }
 
-                    let mut trace = Trace {
-                        trace_id,
-                        ..Default::default()
-                    };
+                    // contruct services from recordbatch
+                    let mut services = HashSet::new();
                     for batch in record_batch_vec {
-                        let column_trace_id = batch
-                            .column_by_name(TRACE_ID_COL_NAME)
+                        let column = batch
+                            .column_by_name(SERVICE_NAME_COL_NAME)
                             .ok_or(HttpError::FetchResult {
-                                reason: format!("column {} is not exist", TRACE_ID_COL_NAME),
+                                reason: format!("column {} is not exist", SERVICE_NAME_COL_NAME),
                             })?
                             .as_any()
                             .downcast_ref::<StringArray>()
                             .ok_or(HttpError::FetchResult {
                                 reason: format!("column {} is not StringArray", TRACE_ID_COL_NAME),
                             })?;
-                        if let Some(i) = (0..column_trace_id.len()).next() {
-                            trace
-                                .spans
-                                .push(OtlpToJaeger::recordbatch_to_span(batch, i).map_err(
-                                    |e| HttpError::FetchResult {
-                                        reason: e.message().to_string(),
-                                    },
-                                )?);
+                        for i in 0..column.len() {
+                            services.insert(column.value(i).to_string());
                         }
                     }
-                    let data =
-                        serde_json::to_string(&trace).map_err(|e| HttpError::FetchResult {
-                            reason: e.to_string(),
-                        })?;
 
+                    #[derive(serde::Serialize)]
+                    struct Services {
+                        data: Vec<String>,
+                        total: u64,
+                        limit: u64,
+                        offset: u64,
+                        errors: Option<String>
+                    }
+
+                    let total = services.len() as u64;
+                    let resp = Services {
+                        data: services.into_iter().collect(),
+                        total,
+                        limit: 0,
+                        offset: 0,
+                        errors: None
+                    };
+
+                    // return
                     let builder = ResponseBuilder::new(OK).insert_header((
                         CONTENT_TYPE,
                         HeaderValue::from_static("application/json"),
                     ));
-                    Ok::<_, Rejection>(builder.json(&data))
+                    Ok::<_, Rejection>(builder.json(&resp))
+                },
+            )
+    }
+
+    fn get_operations(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        warp::path!("api" / "operations")
+            .and(warp::get())
+            .and(self.handle_header())
+            .and(warp::query::<GetOperationParam>())
+            .and(self.with_dbms())
+            .and(self.with_coord())
+            .and_then(
+                |header: Header,
+                 param: GetOperationParam,
+                 dbms: DBMSRef,
+                 coord: CoordinatorRef| async move {
+                    // authenticate
+                    let sql_param = SqlParam {
+                        tenant: param.tenant.clone(),
+                        db: param.db.clone(),
+                        chunked: None,
+                        target_partitions: None,
+                        stream_trigger_interval: None,
+                    };
+                    let _ = construct_read_context(&header, sql_param, dbms, coord.clone(), false)
+                        .await
+                        .map_err(|e| {
+                            error!("Failed to construct query, err: {:?}", e);
+                            reject::custom(e)
+                        })?;
+
+                    // get param
+                    let tenant = param.tenant.clone().unwrap_or(DEFAULT_CATALOG.to_string());
+                    let db = param.db.clone().unwrap_or(DEFAULT_DATABASE.to_string());
+                    let table = param
+                        .table
+                        .clone()
+                        .unwrap_or(JAEGER_TRACE_TABLE.to_string());
+                    let service = param.service.ok_or(HttpError::FetchResult {
+                        reason: "service is empty".to_string(),
+                    })?;
+                    let span_kind = param.span_kind.unwrap_or_default();
+
+                    // contruct stream by service and span_kind
+                    let iterators = OtlpToJaeger::get_tskv_iterator(
+                        coord,
+                        FilterType::GetOperation(service, span_kind),
+                        tenant,
+                        db,
+                        table,
+                    )
+                    .await
+                    .map_err(|e| HttpError::Query { source: e })?;
+
+                    // read recordbatch from stream
+                    let mut record_batch_vec = Vec::new();
+                    for mut iter in iterators {
+                        while let Some(record_batch) = iter
+                            .try_next()
+                            .await
+                            .map_err(|e| HttpError::Coordinator { source: e })?
+                        {
+                            record_batch_vec.push(record_batch);
+                        }
+                    }
+
+                    // contruct Operations from recordbatch
+                    let mut operations = HashSet::new();
+                    for batch in record_batch_vec {
+                        let name_col = batch
+                            .column_by_name(OPERATION_NAME_COL_NAME)
+                            .ok_or(HttpError::FetchResult {
+                                reason: format!("column {} is not exist", OPERATION_NAME_COL_NAME),
+                            })?
+                            .as_any()
+                            .downcast_ref::<StringArray>()
+                            .ok_or(HttpError::FetchResult {
+                                reason: format!("column {} is not StringArray", TRACE_ID_COL_NAME),
+                            })?;
+                        let span_kind_col = batch
+                            .column_by_name(SPAN_KIND_COL_NAME)
+                            .ok_or(HttpError::FetchResult {
+                                reason: format!("column {} is not exist", SPAN_KIND_COL_NAME),
+                            })?
+                            .as_any()
+                            .downcast_ref::<StringArray>()
+                            .ok_or(HttpError::FetchResult {
+                                reason: format!("column {} is not StringArray", TRACE_ID_COL_NAME),
+                            })?;
+                        for i in 0..name_col.len() {
+                            operations.insert(Operation {
+                                name: name_col.value(i).to_string(),
+                                span_kind: OtlpToJaeger::to_jaeger_span_kind(span_kind_col.value(i)).to_string(),
+                            });
+                        }
+                    }
+                    let operations = operations.into_iter().collect::<Vec<Operation>>();
+                    #[derive(serde::Serialize)]
+                    struct Operations {
+                        data: Vec<Operation>,
+                        total: u64,
+                        limit: u64,
+                        offset: u64,
+                        errors: Option<String>
+                    }
+                    let total = operations.len() as u64;
+                    let resp = Operations {
+                        data: operations.into_iter().collect(),
+                        total,
+                        limit: 0,
+                        offset: 0,
+                        errors: None
+                    };
+
+                    // return
+                    let builder = ResponseBuilder::new(OK).insert_header((
+                        CONTENT_TYPE,
+                        HeaderValue::from_static("application/json"),
+                    ));
+                    Ok::<_, Rejection>(builder.json(&resp))
+                },
+            )
+    }
+
+    fn get_operations_by_service(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        warp::path!("api" / "services" / String / "operations")
+            .and(warp::get())
+            .and(self.handle_header())
+            .and(warp::query::<OtlpParam>())
+            .and(self.with_dbms())
+            .and(self.with_coord())
+            .and_then(
+                |service: String,
+                 header: Header,
+                 param: OtlpParam,
+                 dbms: DBMSRef,
+                 coord: CoordinatorRef| async move {
+                    // authenticate
+                    let sql_param = SqlParam {
+                        tenant: param.tenant.clone(),
+                        db: param.db.clone(),
+                        chunked: None,
+                        target_partitions: None,
+                        stream_trigger_interval: None,
+                    };
+                    let _ = construct_read_context(&header, sql_param, dbms, coord.clone(), false)
+                        .await
+                        .map_err(|e| {
+                            error!("Failed to construct query, err: {:?}", e);
+                            reject::custom(e)
+                        })?;
+
+                    // get param
+                    let tenant = param.tenant.clone().unwrap_or(DEFAULT_CATALOG.to_string());
+                    let db = param.db.clone().unwrap_or(DEFAULT_DATABASE.to_string());
+                    let table = param
+                        .table
+                        .clone()
+                        .unwrap_or(JAEGER_TRACE_TABLE.to_string());
+
+                    // contruct stream by service and span_kind
+                    let iterators = OtlpToJaeger::get_tskv_iterator(
+                        coord,
+                        FilterType::GetOperation(service, "".to_string()),
+                        tenant,
+                        db,
+                        table,
+                    )
+                    .await
+                    .map_err(|e| HttpError::Query { source: e })?;
+
+                    // read recordbatch from stream
+                    let mut record_batch_vec = Vec::new();
+                    for mut iter in iterators {
+                        while let Some(record_batch) = iter
+                            .try_next()
+                            .await
+                            .map_err(|e| HttpError::Coordinator { source: e })?
+                        {
+                            record_batch_vec.push(record_batch);
+                        }
+                    }
+
+                    // contruct Operations from recordbatch
+                    let mut operations = HashSet::new();
+                    for batch in record_batch_vec {
+                        let name_col = batch
+                            .column_by_name(OPERATION_NAME_COL_NAME)
+                            .ok_or(HttpError::FetchResult {
+                                reason: format!("column {} is not exist", OPERATION_NAME_COL_NAME),
+                            })?
+                            .as_any()
+                            .downcast_ref::<StringArray>()
+                            .ok_or(HttpError::FetchResult {
+                                reason: format!("column {} is not StringArray", TRACE_ID_COL_NAME),
+                            })?;
+                        for i in 0..name_col.len() {
+                            operations.insert(name_col.value(i).to_string());
+                        }
+                    }
+                    let data = operations.into_iter().collect::<Vec<String>>();
+                    #[derive(serde::Serialize)]
+                    struct Operations {
+                        data: Vec<String>,
+                        total: u64,
+                        limit: u64,
+                        offset: u64,
+                        errors: Option<String>,
+                    }
+                    let total = data.len() as u64;
+                    let resp = Operations {
+                        data,
+                        total,
+                        limit: 0,
+                        offset: 0,
+                        errors: None,
+                    };
+
+                    // return
+                    let builder = ResponseBuilder::new(OK).insert_header((
+                        CONTENT_TYPE,
+                        HeaderValue::from_static("application/json"),
+                    ));
+                    Ok::<_, Rejection>(builder.json(&resp))
                 },
             )
     }

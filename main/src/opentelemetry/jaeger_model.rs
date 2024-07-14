@@ -18,7 +18,7 @@ pub type SpanID = String;
 pub type ProcessID = String;
 
 // ValueType 是存储在 KeyValue 结构体中的值的类型
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum ValueType {
     String,
     Bool,
@@ -100,7 +100,7 @@ pub struct Reference {
 }
 
 // Process 是发出一组 span 的进程
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct Process {
     #[serde(rename = "serviceName")]
     pub service_name: String,
@@ -120,7 +120,7 @@ pub struct Log {
 }
 
 // KeyValue 是一个带有类型化值的键值对
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct KeyValue {
     #[serde(rename = "key")]
     pub key: String,
@@ -146,7 +146,7 @@ pub struct DependencyLink {
 }
 
 // Operation 定义了按服务和 span 类型查询操作时的响应数据
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Hash, PartialEq, Eq)]
 pub struct Operation {
     #[serde(rename = "name")]
     pub name: String,
