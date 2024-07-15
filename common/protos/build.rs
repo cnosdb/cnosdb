@@ -132,13 +132,25 @@ fn compile_protobuf_models<P: AsRef<Path>, S: AsRef<str>>(
         if mod_name == "jaeger_storage_v1" {
             writeln!(&mut sub_mod_rs, "#[path = \"jaeger.storage.v1.rs\"]")?;
         } else if mod_name == "common" {
-            writeln!(&mut sub_mod_rs, "#[path = \"opentelemetry.proto.common.rs\"]")?;
+            writeln!(
+                &mut sub_mod_rs,
+                "#[path = \"opentelemetry.proto.common.rs\"]"
+            )?;
         } else if mod_name == "resource" {
-            writeln!(&mut sub_mod_rs, "#[path = \"opentelemetry.proto.resource.rs\"]")?;
+            writeln!(
+                &mut sub_mod_rs,
+                "#[path = \"opentelemetry.proto.resource.rs\"]"
+            )?;
         } else if mod_name == "trace" {
-            writeln!(&mut sub_mod_rs, "#[path = \"opentelemetry.proto.trace.rs\"]")?;
+            writeln!(
+                &mut sub_mod_rs,
+                "#[path = \"opentelemetry.proto.trace.rs\"]"
+            )?;
         } else if mod_name == "trace_service" {
-            writeln!(&mut sub_mod_rs, "#[path = \"opentelemetry.proto.collector.trace.rs\"]")?;
+            writeln!(
+                &mut sub_mod_rs,
+                "#[path = \"opentelemetry.proto.collector.trace.rs\"]"
+            )?;
         }
         writeln!(&mut sub_mod_rs, "pub mod {mod_name};")?;
     }
