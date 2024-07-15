@@ -42,19 +42,8 @@ pub struct LogParam {
     pub time_column: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
-#[serde(rename_all = "snake_case")]
-pub struct OtlpParam {
-    pub tenant: Option<String>,
-    pub db: Option<String>,
-    pub table: Option<String>,
-}
-
 #[derive(Debug, Deserialize, Serialize)]
 pub struct GetOperationParam {
-    pub tenant: Option<String>,
-    pub db: Option<String>,
-    pub table: Option<String>,
     pub service: Option<String>,
 
     #[serde(rename = "spanKind")]
@@ -63,9 +52,6 @@ pub struct GetOperationParam {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct FindTracesParam {
-    pub tenant: Option<String>,    // tenant=xxx
-    pub db: Option<String>,        // db=xxx
-    pub table: Option<String>,     // table=xxx
     pub service: Option<String>,   // service=xxx
     pub operation: Option<String>, // operation=xxx
     pub start: Option<i64>,        // start=xxx (usec since epoch)

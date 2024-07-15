@@ -12,6 +12,9 @@ pub struct Header {
     content_encoding: Option<String>,
     authorization: String,
     private_key: Option<String>,
+    tenant: Option<String>,
+    db: Option<String>,
+    table: Option<String>,
 }
 
 impl Header {
@@ -27,6 +30,9 @@ impl Header {
             content_encoding,
             authorization,
             private_key: None,
+            tenant: None,
+            db: None,
+            table: None,
         }
     }
 
@@ -36,6 +42,9 @@ impl Header {
         content_encoding: Option<String>,
         authorization: String,
         private_key: Option<String>,
+        tenant: Option<String>,
+        db: Option<String>,
+        table: Option<String>,
     ) -> Self {
         Self {
             accept,
@@ -43,6 +52,9 @@ impl Header {
             content_encoding,
             authorization,
             private_key,
+            tenant,
+            db,
+            table,
         }
     }
 
@@ -56,6 +68,18 @@ impl Header {
 
     pub fn get_content_encoding(&self) -> Option<&str> {
         self.content_encoding.as_deref()
+    }
+
+    pub fn get_tenant(&self) -> Option<String> {
+        self.tenant.clone()
+    }
+
+    pub fn get_db(&self) -> Option<String> {
+        self.db.clone()
+    }
+
+    pub fn get_table(&self) -> Option<String> {
+        self.table.clone()
     }
 
     pub fn try_get_basic_auth(&self) -> Result<UserInfo, HttpError> {

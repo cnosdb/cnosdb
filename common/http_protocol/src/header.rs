@@ -22,6 +22,7 @@ pub const BEARER_PREFIX: &str = "Bearer ";
 // parameters
 pub const TENANT: &str = "tenant";
 pub const DB: &str = "db";
+pub const TABLE: &str = "table";
 pub const TARGET_PARTITIONS: &str = "target_partitions";
 pub const STREAM_TRIGGER_INTERVAL: &str = "stream_trigger_interval";
 

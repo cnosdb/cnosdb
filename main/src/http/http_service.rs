@@ -14,10 +14,11 @@ use coordinator::service::CoordinatorRef;
 use datafusion::arrow::array::{Array, StringArray};
 use futures::TryStreamExt;
 use http_protocol::encoding::Encoding;
-use http_protocol::header::{ACCEPT, APPLICATION_JSON, AUTHORIZATION, PRIVATE_KEY};
+use http_protocol::header::{
+    ACCEPT, APPLICATION_JSON, AUTHORIZATION, DB, PRIVATE_KEY, TABLE, TENANT,
+};
 use http_protocol::parameter::{
-    DebugParam, DumpParam, FindTracesParam, GetOperationParam, LogParam, OtlpParam, SqlParam,
-    WriteParam,
+    DebugParam, DumpParam, FindTracesParam, GetOperationParam, LogParam, SqlParam, WriteParam,
 };
 use http_protocol::response::ErrorResponse;
 use http_protocol::status_code::OK;
@@ -159,14 +160,27 @@ impl HttpService {
             .and(header::optional::<String>(CONTENT_ENCODING.as_str()))
             .and(header::<String>(AUTHORIZATION.as_str()))
             .and(header::optional::<String>(PRIVATE_KEY))
+            .and(header::optional::<String>(TENANT))
+            .and(header::optional::<String>(DB))
+            .and(header::optional::<String>(TABLE))
             .and_then(
-                |accept, accept_encoding, content_encoding, authorization, private_key| async move {
+                |accept,
+                 accept_encoding,
+                 content_encoding,
+                 authorization,
+                 private_key,
+                 tenant,
+                 db,
+                 table| async move {
                     let res: Result<Header, warp::Rejection> = Ok(Header::with_private_key(
                         accept,
                         accept_encoding,
                         content_encoding,
                         authorization,
                         private_key,
+                        tenant,
+                        db,
+                        table,
                     ));
                     res
                 },
@@ -1625,7 +1639,6 @@ impl HttpService {
             .and(warp::body::bytes())
             .and(warp::header::optional::<String>("content-type"))
             .and(self.handle_header())
-            .and(warp::query::<OtlpParam>())
             .and(self.with_dbms())
             .and(self.with_coord())
             .and(self.with_http_metrics())
@@ -1635,7 +1648,6 @@ impl HttpService {
                 |mut req: Bytes,
                  content_type: Option<String>,
                  header: Header,
-                 param: OtlpParam,
                  dbms: DBMSRef,
                  coord: CoordinatorRef,
                  metrics: Arc<HttpMetrics>,
@@ -1645,10 +1657,16 @@ impl HttpService {
                     let span = Span::from_context("rest log write", parent_span_ctx.as_ref());
                     let span_context = span.context();
 
-                    let tenant = param.tenant.clone().unwrap_or(DEFAULT_CATALOG.to_string());
-                    let db = param.db.clone().unwrap_or(DEFAULT_DATABASE.to_string());
-                    let table = param
-                        .table
+                    let tenant = header
+                        .get_tenant()
+                        .clone()
+                        .unwrap_or(DEFAULT_CATALOG.to_string());
+                    let db = header
+                        .get_db()
+                        .clone()
+                        .unwrap_or(DEFAULT_DATABASE.to_string());
+                    let table = header
+                        .get_table()
                         .clone()
                         .unwrap_or(JAEGER_TRACE_TABLE.to_string());
 
@@ -1665,8 +1683,8 @@ impl HttpService {
 
                     let write_param = WriteParam {
                         precision: None,
-                        tenant: param.tenant,
-                        db: param.db,
+                        tenant: header.get_tenant(),
+                        db: header.get_db(),
                     };
                     let ctx = {
                         let mut span = Span::enter_with_parent("construct write context", &span);
@@ -1772,8 +1790,8 @@ impl HttpService {
                  coord: CoordinatorRef| async move {
                     // authenticate
                     let sql_param = SqlParam {
-                        tenant: param.tenant.clone(),
-                        db: param.db.clone(),
+                        tenant: header.get_tenant().clone(),
+                        db: header.get_db().clone(),
                         chunked: None,
                         target_partitions: None,
                         stream_trigger_interval: None,
@@ -1786,14 +1804,9 @@ impl HttpService {
                         })?;
 
                     let traces = if let Some(trace_ids) = param.trace_ids {
-                        let param = OtlpParam {
-                            tenant: param.tenant.clone(),
-                            db: param.db.clone(),
-                            table: param.table.clone(),
-                        };
                         let mut traces = Vec::new();
                         for trace_id in trace_ids.split(',').collect::<Vec<&str>>() {
-                            traces.push(Self::get_trace_inner(coord.clone(), param.clone(), trace_id.to_string())
+                            traces.push(Self::get_trace_inner(coord.clone(), &header, trace_id.to_string())
                                 .await
                                 .map_err(|e| {
                                     error!("Failed to get trace, err: {:?}", e);
@@ -1803,10 +1816,10 @@ impl HttpService {
                         traces
                     } else {
                         // get param
-                        let tenant = param.tenant.clone().unwrap_or(DEFAULT_CATALOG.to_string());
-                        let db = param.db.clone().unwrap_or(DEFAULT_DATABASE.to_string());
-                        let table = param
-                            .table
+                        let tenant = header.get_tenant().clone().unwrap_or(DEFAULT_CATALOG.to_string());
+                        let db = header.get_db().clone().unwrap_or(DEFAULT_DATABASE.to_string());
+                        let table = header
+                            .get_table()
                             .clone()
                             .unwrap_or(JAEGER_TRACE_TABLE.to_string());
 
@@ -1910,14 +1923,20 @@ impl HttpService {
 
     async fn get_trace_inner(
         coord: CoordinatorRef,
-        param: OtlpParam,
+        header: &Header,
         trace_id: String,
     ) -> Result<Trace, HttpError> {
         // get param
-        let tenant = param.tenant.clone().unwrap_or(DEFAULT_CATALOG.to_string());
-        let db = param.db.clone().unwrap_or(DEFAULT_DATABASE.to_string());
-        let table = param
-            .table
+        let tenant = header
+            .get_tenant()
+            .clone()
+            .unwrap_or(DEFAULT_CATALOG.to_string());
+        let db = header
+            .get_db()
+            .clone()
+            .unwrap_or(DEFAULT_DATABASE.to_string());
+        let table = header
+            .get_table()
             .clone()
             .unwrap_or(JAEGER_TRACE_TABLE.to_string());
 
@@ -1980,19 +1999,17 @@ impl HttpService {
         warp::path!("api" / "traces" / String)
             .and(warp::get())
             .and(self.handle_header())
-            .and(warp::query::<OtlpParam>())
             .and(self.with_dbms())
             .and(self.with_coord())
             .and_then(
                 |trace_id: String,
                  header: Header,
-                 param: OtlpParam,
                  dbms: DBMSRef,
                  coord: CoordinatorRef| async move {
                     // authenticate
                     let sql_param = SqlParam {
-                        tenant: param.tenant.clone(),
-                        db: param.db.clone(),
+                        tenant: header.get_tenant().clone(),
+                        db: header.get_db().clone(),
                         chunked: None,
                         target_partitions: None,
                         stream_trigger_interval: None,
@@ -2003,7 +2020,7 @@ impl HttpService {
                             error!("Failed to construct query, err: {:?}", e);
                             reject::custom(e)
                         })?;
-                    let mut trace = Self::get_trace_inner(coord, param, trace_id).await?;
+                    let mut trace = Self::get_trace_inner(coord, &header, trace_id).await?;
                     for (i, span) in trace.spans.iter_mut().enumerate() {
                         if let Some(process) = &span.process {
                             let process_id = format!("p{}", i);
@@ -2044,18 +2061,14 @@ impl HttpService {
         warp::path!("api" / "services")
             .and(warp::get())
             .and(self.handle_header())
-            .and(warp::query::<OtlpParam>())
             .and(self.with_dbms())
             .and(self.with_coord())
             .and_then(
-                |header: Header,
-                 param: OtlpParam,
-                 dbms: DBMSRef,
-                 coord: CoordinatorRef| async move {
+                |header: Header, dbms: DBMSRef, coord: CoordinatorRef| async move {
                     // authenticate
                     let sql_param = SqlParam {
-                        tenant: param.tenant.clone(),
-                        db: param.db.clone(),
+                        tenant: header.get_tenant().clone(),
+                        db: header.get_db().clone(),
                         chunked: None,
                         target_partitions: None,
                         stream_trigger_interval: None,
@@ -2068,10 +2081,16 @@ impl HttpService {
                         })?;
 
                     // get param
-                    let tenant = param.tenant.clone().unwrap_or(DEFAULT_CATALOG.to_string());
-                    let db = param.db.clone().unwrap_or(DEFAULT_DATABASE.to_string());
-                    let table = param
-                        .table
+                    let tenant = header
+                        .get_tenant()
+                        .clone()
+                        .unwrap_or(DEFAULT_CATALOG.to_string());
+                    let db = header
+                        .get_db()
+                        .clone()
+                        .unwrap_or(DEFAULT_DATABASE.to_string());
+                    let table = header
+                        .get_table()
                         .clone()
                         .unwrap_or(JAEGER_TRACE_TABLE.to_string());
 
@@ -2122,7 +2141,7 @@ impl HttpService {
                         total: u64,
                         limit: u64,
                         offset: u64,
-                        errors: Option<String>
+                        errors: Option<String>,
                     }
 
                     let total = services.len() as u64;
@@ -2131,7 +2150,7 @@ impl HttpService {
                         total,
                         limit: 0,
                         offset: 0,
-                        errors: None
+                        errors: None,
                     };
 
                     // return
@@ -2160,8 +2179,8 @@ impl HttpService {
                  coord: CoordinatorRef| async move {
                     // authenticate
                     let sql_param = SqlParam {
-                        tenant: param.tenant.clone(),
-                        db: param.db.clone(),
+                        tenant: header.get_tenant().clone(),
+                        db: header.get_db().clone(),
                         chunked: None,
                         target_partitions: None,
                         stream_trigger_interval: None,
@@ -2174,10 +2193,9 @@ impl HttpService {
                         })?;
 
                     // get param
-                    let tenant = param.tenant.clone().unwrap_or(DEFAULT_CATALOG.to_string());
-                    let db = param.db.clone().unwrap_or(DEFAULT_DATABASE.to_string());
-                    let table = param
-                        .table
+                    let tenant = header.get_tenant().clone().unwrap_or(DEFAULT_CATALOG.to_string());
+                    let db = header.get_db().clone().unwrap_or(DEFAULT_DATABASE.to_string());
+                    let table = header.get_table()
                         .clone()
                         .unwrap_or(JAEGER_TRACE_TABLE.to_string());
                     let service = param.service.ok_or(HttpError::FetchResult {
@@ -2272,19 +2290,14 @@ impl HttpService {
         warp::path!("api" / "services" / String / "operations")
             .and(warp::get())
             .and(self.handle_header())
-            .and(warp::query::<OtlpParam>())
             .and(self.with_dbms())
             .and(self.with_coord())
             .and_then(
-                |service: String,
-                 header: Header,
-                 param: OtlpParam,
-                 dbms: DBMSRef,
-                 coord: CoordinatorRef| async move {
+                |service: String, header: Header, dbms: DBMSRef, coord: CoordinatorRef| async move {
                     // authenticate
                     let sql_param = SqlParam {
-                        tenant: param.tenant.clone(),
-                        db: param.db.clone(),
+                        tenant: header.get_tenant().clone(),
+                        db: header.get_db().clone(),
                         chunked: None,
                         target_partitions: None,
                         stream_trigger_interval: None,
@@ -2297,10 +2310,16 @@ impl HttpService {
                         })?;
 
                     // get param
-                    let tenant = param.tenant.clone().unwrap_or(DEFAULT_CATALOG.to_string());
-                    let db = param.db.clone().unwrap_or(DEFAULT_DATABASE.to_string());
-                    let table = param
-                        .table
+                    let tenant = header
+                        .get_tenant()
+                        .clone()
+                        .unwrap_or(DEFAULT_CATALOG.to_string());
+                    let db = header
+                        .get_db()
+                        .clone()
+                        .unwrap_or(DEFAULT_DATABASE.to_string());
+                    let table = header
+                        .get_table()
                         .clone()
                         .unwrap_or(JAEGER_TRACE_TABLE.to_string());
 
