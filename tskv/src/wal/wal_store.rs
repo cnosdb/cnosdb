@@ -39,13 +39,21 @@ impl RaftEntryStorage {
         apply_id: Option<LogId<u64>>,
         vnode_store: &mut VnodeStorage,
     ) -> TskvResult<()> {
+        let last_seq = vnode_store.ts_family().read().await.version().last_seq();
+        info!(
+            "recover vnode {:?}  start at: {}, applied id: {:?}",
+            self.inner.wal.wal_dir(),
+            last_seq,
+            apply_id
+        );
+
         self.inner.recover(apply_id, vnode_store).await?;
 
         info!(
-            "recover vnode entries: [{:?}-{:?}], applied id: {:?}",
+            "recover vnode {:?}, entries: [{:?}-{:?}]",
+            self.inner.wal.wal_dir(),
             self.inner.min_sequence(),
             self.inner.max_sequence(),
-            apply_id
         );
 
         if let Some(apply_id) = apply_id {
