@@ -461,6 +461,9 @@ impl StateMachine {
             ReadCommand::ReadQueryInfos(cluster, node_id) => {
                 response_encode(self.process_read_queries(cluster, *node_id))
             }
+            ReadCommand::ReadTableSchema(cluster, tenant, db_name, table_name) => {
+                response_encode(self.process_read_table(cluster, tenant, db_name, table_name))
+            }
         }
     }
 
@@ -613,6 +616,24 @@ impl StateMachine {
             Some((node_id, is_lock)) => Ok((node_id, is_lock)),
             None => Ok((0, false)),
         }
+    }
+
+    fn process_read_table(
+        &self,
+        cluster: &str,
+        tenant: &str,
+        db_name: &str,
+        table_name: &str,
+    ) -> MetaResult<Option<TableSchema>> {
+        let key = KeyPath::tenant_schema_name(cluster, tenant, db_name, table_name);
+        if !self.contains_key(&key)? {
+            return Err(MetaError::TableNotFound {
+                table: table_name.to_string(),
+            });
+        }
+        let res = self.get_struct::<TableSchema>(&key)?;
+
+        Ok(res)
     }
 
     pub async fn process_write_command(&self, req: &WriteCommand) -> CommandResp {

@@ -57,9 +57,10 @@ impl GrpcService {
     }
 }
 
+#[macro_export]
 macro_rules! build_grpc_server {
-    ($tls_config:expr, $auto_generate_span:expr) => {{
-        let trace_layer = TraceLayer::new($auto_generate_span, "grpc");
+    ($tls_config:expr, $auto_generate_span:expr, $name:expr) => {{
+        let trace_layer = TraceLayer::new($auto_generate_span, $name);
         let mut server = Server::builder().layer(trace_layer);
 
         if let Some(TLSConfig {
@@ -104,7 +105,8 @@ impl Service for GrpcService {
                 .send_compressed(CompressionEncoding::Gzip);
         }
 
-        let mut grpc_builder = build_grpc_server!(&self.tls_config, self.auto_generate_span);
+        let mut grpc_builder =
+            build_grpc_server!(&self.tls_config, self.auto_generate_span, "grpc");
         let grpc_router = grpc_builder
             .add_service(tskv_grpc_service)
             .add_service(raft_grpc_service);

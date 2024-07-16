@@ -12,6 +12,7 @@ use models::meta_data::*;
 use models::node_info::NodeStatus;
 use models::oid::{Identifier, Oid, UuidGenerator};
 use models::schema::resource_info::{ResourceInfo, ResourceStatus};
+use models::schema::table_schema::TableSchema;
 use models::schema::tenant::{Tenant, TenantOptions};
 use models::utils::{build_address_with_optional_addr, now_timestamp_secs};
 use parking_lot::{Mutex, RwLock};
@@ -828,5 +829,21 @@ impl AdminMeta {
         let req = command::WriteCommand::RemoveQueryInfo(self.cluster(), node_id, query_id);
 
         self.client.write::<()>(&req).await
+    }
+
+    pub async fn read_tableschema(
+        &self,
+        tenant: &str,
+        db_name: &str,
+        table_name: &str,
+    ) -> MetaResult<TableSchema> {
+        let req = command::ReadCommand::ReadTableSchema(
+            self.cluster(),
+            tenant.to_string(),
+            db_name.to_string(),
+            table_name.to_string(),
+        );
+
+        self.client.read::<TableSchema>(&req).await
     }
 }

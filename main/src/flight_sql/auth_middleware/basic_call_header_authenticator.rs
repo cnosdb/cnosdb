@@ -31,9 +31,18 @@ impl CallHeaderAuthenticator for BasicCallHeaderAuthenticator {
             .ok_or_else(|| Status::unauthenticated("authorization field not present"))?;
         let private_key = utils::get_value_from_header(req_headers, PRIVATE_KEY, "");
 
-        let user_info = Header::with_private_key(None, None, None, authorization, private_key)
-            .try_get_basic_auth()
-            .map_err(|e| Status::invalid_argument(e.to_string()))?;
+        let user_info = Header::with_private_key(
+            None,
+            None,
+            None,
+            authorization,
+            private_key,
+            None,
+            None,
+            None,
+        )
+        .try_get_basic_auth()
+        .map_err(|e| Status::invalid_argument(e.to_string()))?;
 
         let tenant = utils::get_value_from_header(req_headers, header::TENANT, "");
 

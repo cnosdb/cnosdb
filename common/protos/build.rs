@@ -48,6 +48,12 @@ fn main() -> Result<(), AnyError> {
             ("vector_event.proto", "vector"),
             ("raft_service.proto", "raft_service"),
             ("logproto.proto", "logproto"),
+            ("jaeger_api_v2.proto", "jaeger_api_v2"),
+            ("jaeger_storage_v1.proto", "jaeger_storage_v1"),
+            ("otlp_common.proto", "common"),
+            ("otlp_resource.proto", "resource"),
+            ("otlp_trace.proto", "trace"),
+            ("otlp_trace_service.proto", "trace_service"),
         ],
     )?;
 
@@ -123,6 +129,29 @@ fn compile_protobuf_models<P: AsRef<Path>, S: AsRef<str>>(
     let mut sub_mod_rs = fs::File::create(rust_dir.join("mod.rs"))?;
     for (_proto, package) in proto_package_names.iter() {
         let mod_name = package.as_ref();
+        if mod_name == "jaeger_storage_v1" {
+            writeln!(&mut sub_mod_rs, "#[path = \"jaeger.storage.v1.rs\"]")?;
+        } else if mod_name == "common" {
+            writeln!(
+                &mut sub_mod_rs,
+                "#[path = \"opentelemetry.proto.common.rs\"]"
+            )?;
+        } else if mod_name == "resource" {
+            writeln!(
+                &mut sub_mod_rs,
+                "#[path = \"opentelemetry.proto.resource.rs\"]"
+            )?;
+        } else if mod_name == "trace" {
+            writeln!(
+                &mut sub_mod_rs,
+                "#[path = \"opentelemetry.proto.trace.rs\"]"
+            )?;
+        } else if mod_name == "trace_service" {
+            writeln!(
+                &mut sub_mod_rs,
+                "#[path = \"opentelemetry.proto.collector.trace.rs\"]"
+            )?;
+        }
         writeln!(&mut sub_mod_rs, "pub mod {mod_name};")?;
     }
     sub_mod_rs.flush()?;

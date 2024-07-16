@@ -22,6 +22,7 @@ pub enum HttpApiType {
     DebugJeprof,
     Metrics,
     ApiV1DumpSqlDdl,
+    V1Traces,
 }
 
 impl Display for HttpApiType {
@@ -78,6 +79,9 @@ impl Display for HttpApiType {
             HttpApiType::ApiV1DumpSqlDdl => {
                 write!(f, "api/v1/dump/sql/ddl")
             }
+            HttpApiType::V1Traces => {
+                write!(f, "v1/traces")
+            }
         }
     }
 }
@@ -90,7 +94,8 @@ pub fn metrics_record_db(api: &HttpApiType) -> bool {
         | HttpApiType::ApiV1OpenTsDBWrite
         | HttpApiType::ApiV1PromWrite
         | HttpApiType::ApiV1ESLogWrite
-        | HttpApiType::ApiV1PromRead => true,
+        | HttpApiType::ApiV1PromRead
+        | HttpApiType::V1Traces => true,
         HttpApiType::ApiV1Sql
         | HttpApiType::ApiV1Ping
         | HttpApiType::DebugBacktrace

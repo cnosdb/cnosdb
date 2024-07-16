@@ -5,6 +5,8 @@ use bytes::Bytes;
 use models::snappy::SnappyCodec;
 use models::utils::now_timestamp_nanos;
 use prost::Message;
+use protos::common::any_value::Value;
+use protos::trace_service::ExportTraceServiceRequest;
 use protos::{logproto, FieldValue};
 use serde::{Deserialize, Serialize};
 use serde_json;
@@ -28,30 +30,24 @@ pub struct CommandInfo {
 
 pub enum JsonProtocol {
     ESLog(ESLog),
-    Ndjson(NdJsonLog),
-    Loki(LoKiLog),
+    Ndjson(BTreeMap<String, serde_json::Value>),
+    Loki(BTreeMap<String, serde_json::Value>),
+    TraceServiceReq(BTreeMap<String, serde_json::Value>),
 }
 
 impl JsonProtocol {
     pub fn get_fields(&self) -> &BTreeMap<String, serde_json::Value> {
         match self {
             JsonProtocol::ESLog(log) => &log.fields,
-            JsonProtocol::Ndjson(log) => &log.fields,
-            JsonProtocol::Loki(log) => &log.fields,
+            JsonProtocol::Ndjson(log) => log,
+            JsonProtocol::Loki(log) => log,
+            JsonProtocol::TraceServiceReq(log) => log,
         }
     }
 }
 
 pub struct ESLog {
     pub command: Command,
-    pub fields: BTreeMap<String, serde_json::Value>,
-}
-
-pub struct NdJsonLog {
-    pub fields: BTreeMap<String, serde_json::Value>,
-}
-
-pub struct LoKiLog {
     pub fields: BTreeMap<String, serde_json::Value>,
 }
 
@@ -139,7 +135,7 @@ pub fn parse_json_to_ndjsonlog(json_chunk: Vec<&str>) -> Result<Vec<JsonProtocol
             serde_json::from_str(line).map_err(|_| Error::InvaildSyntax)?,
         );
 
-        logs.push(NdJsonLog { fields });
+        logs.push(fields);
     }
 
     let res = logs.into_iter().map(JsonProtocol::Ndjson).collect();
@@ -154,7 +150,7 @@ pub fn parse_json_to_lokilog(json_chunk: Vec<&str>) -> Result<Vec<JsonProtocol>>
             serde_json::from_str(line).map_err(|_| Error::InvaildSyntax)?,
         );
 
-        logs.push(LoKiLog { fields });
+        logs.push(fields);
     }
 
     let res = logs.into_iter().map(JsonProtocol::Loki).collect();
@@ -190,12 +186,279 @@ pub fn parse_protobuf_to_lokilog(req: Bytes) -> Result<Vec<JsonProtocol>> {
                 serde_json::Value::Number(timestamp.into()),
             );
             fields.insert("msg".to_string(), serde_json::Value::String(entry.line));
-            logs.push(LoKiLog {
-                fields: fields.clone(),
-            });
+            logs.push(fields.clone());
         }
     }
     let res = logs.into_iter().map(JsonProtocol::Loki).collect();
+    Ok(res)
+}
+
+pub fn parse_protobuf_to_otlptrace(req: Bytes) -> Result<Vec<JsonProtocol>> {
+    let export_trace_req =
+        ExportTraceServiceRequest::decode(req).map_err(|_| Error::InvaildSyntax)?;
+
+    let mut logs = Vec::new();
+    let mut fields = BTreeMap::new();
+    for resource_span in export_trace_req.resource_spans {
+        let mut prefix = vec!["ResourceSpans/".to_string()];
+        fields.clear();
+        if let Some(resource) = resource_span.resource {
+            prefix.push("Resource/".to_string());
+            for attribute in resource.attributes {
+                if attribute.key.eq("service.name") {
+                    if let Some(value) = attribute.value {
+                        if let Some(Value::StringValue(value)) = value.value {
+                            fields.insert(
+                                prefix.join("") + "attributes/" + &attribute.key,
+                                serde_json::Value::String(value),
+                            );
+                        }
+                    }
+                } else {
+                    let mut buf = Vec::new();
+                    attribute
+                        .encode(&mut buf)
+                        .expect("serialize key value failed");
+                    let value = buf
+                        .iter()
+                        .map(|b| b.to_string())
+                        .collect::<Vec<_>>()
+                        .join("_");
+                    fields.insert(
+                        prefix.join("") + "attributes/" + &attribute.key,
+                        serde_json::Value::String(value),
+                    );
+                }
+            }
+            fields.insert(
+                prefix.join("") + "dropped_attributes_count",
+                serde_json::Value::Number(resource.dropped_attributes_count.into()),
+            );
+            prefix.pop();
+        }
+        fields.insert(
+            prefix.join("") + "schema_url",
+            serde_json::Value::String(resource_span.schema_url),
+        );
+        for scope_span in resource_span.scope_spans {
+            prefix.push("ScopeSpans/".to_string());
+            if let Some(scope) = scope_span.scope {
+                prefix.push("InstrumentationScope/".to_string());
+                fields.insert(
+                    prefix.join("") + "name",
+                    serde_json::Value::String(scope.name),
+                );
+                fields.insert(
+                    prefix.join("") + "version",
+                    serde_json::Value::String(scope.version),
+                );
+                for attribute in scope.attributes {
+                    let mut buf = Vec::new();
+                    attribute
+                        .encode(&mut buf)
+                        .expect("serialize key value failed");
+                    let value = buf
+                        .iter()
+                        .map(|b| b.to_string())
+                        .collect::<Vec<_>>()
+                        .join("_");
+                    fields.insert(
+                        prefix.join("") + "attributes/" + &attribute.key,
+                        serde_json::Value::String(value),
+                    );
+                }
+                fields.insert(
+                    prefix.join("") + "dropped_attributes_count",
+                    serde_json::Value::Number(scope.dropped_attributes_count.into()),
+                );
+                prefix.pop();
+            }
+            fields.insert(
+                prefix.join("") + "schema_url",
+                serde_json::Value::String(scope_span.schema_url),
+            );
+            for span in scope_span.spans {
+                prefix.push("Span/".to_string());
+                fields.insert(
+                    prefix.join("") + "trace_id",
+                    serde_json::Value::String(
+                        span.trace_id
+                            .iter()
+                            .fold(String::new(), |acc, byte| acc + &format!("{:02x}", byte)),
+                    ),
+                );
+                fields.insert(
+                    prefix.join("") + "span_id",
+                    serde_json::Value::String(
+                        span.span_id
+                            .iter()
+                            .fold(String::new(), |acc, byte| acc + &format!("{:02x}", byte)),
+                    ),
+                );
+                fields.insert(
+                    prefix.join("") + "trace_state",
+                    serde_json::Value::String(span.trace_state.clone()),
+                );
+                fields.insert(
+                    prefix.join("") + "parent_span_id",
+                    serde_json::Value::String(
+                        span.parent_span_id
+                            .iter()
+                            .fold(String::new(), |acc, byte| acc + &format!("{:02x}", byte)),
+                    ),
+                );
+                fields.insert(
+                    prefix.join("") + "flags",
+                    serde_json::Value::Number(span.flags.into()),
+                );
+                fields.insert(
+                    prefix.join("") + "name",
+                    serde_json::Value::String(span.name.clone()),
+                );
+                fields.insert(
+                    prefix.join("") + "kind",
+                    serde_json::Value::String(span.kind().as_str_name().to_string()),
+                );
+                fields.insert(
+                    prefix.join("") + "start_time_unix_nano",
+                    serde_json::Value::Number(span.start_time_unix_nano.into()),
+                );
+                fields.insert(
+                    prefix.join("") + "end_time_unix_nano",
+                    serde_json::Value::Number(span.end_time_unix_nano.into()),
+                );
+                for attribute in span.attributes {
+                    let mut buf = Vec::new();
+                    attribute
+                        .encode(&mut buf)
+                        .expect("serialize key value failed");
+                    let value = buf
+                        .iter()
+                        .map(|b| b.to_string())
+                        .collect::<Vec<_>>()
+                        .join("_");
+                    fields.insert(
+                        prefix.join("") + "attributes/" + &attribute.key,
+                        serde_json::Value::String(value),
+                    );
+                }
+                fields.insert(
+                    prefix.join("") + "dropped_attributes_count",
+                    serde_json::Value::Number(span.dropped_attributes_count.into()),
+                );
+                for (i, event) in span.events.into_iter().enumerate() {
+                    prefix.push(format!("Event_{}/", i));
+                    fields.insert(
+                        prefix.join("") + "time_unix_nano",
+                        serde_json::Value::Number(event.time_unix_nano.into()),
+                    );
+                    fields.insert(
+                        prefix.join("") + "name",
+                        serde_json::Value::String(event.name),
+                    );
+                    for attribute in event.attributes {
+                        let mut buf = Vec::new();
+                        attribute
+                            .encode(&mut buf)
+                            .expect("serialize key value failed");
+                        let value = buf
+                            .iter()
+                            .map(|b| b.to_string())
+                            .collect::<Vec<_>>()
+                            .join("_");
+                        fields.insert(
+                            prefix.join("") + "attributes/" + &attribute.key,
+                            serde_json::Value::String(value),
+                        );
+                    }
+                    fields.insert(
+                        prefix.join("") + "dropped_attributes_count",
+                        serde_json::Value::Number(event.dropped_attributes_count.into()),
+                    );
+                    prefix.pop();
+                }
+                fields.insert(
+                    prefix.join("") + "dropped_events_count",
+                    serde_json::Value::Number(span.dropped_events_count.into()),
+                );
+                for (i, link) in span.links.into_iter().enumerate() {
+                    prefix.push(format!("Link_{}/", i));
+                    fields.insert(
+                        prefix.join("") + "trace_id",
+                        serde_json::Value::String(
+                            link.trace_id
+                                .iter()
+                                .fold(String::new(), |acc, byte| acc + &format!("{:02x}", byte)),
+                        ),
+                    );
+                    fields.insert(
+                        prefix.join("") + "span_id",
+                        serde_json::Value::String(
+                            link.span_id
+                                .iter()
+                                .fold(String::new(), |acc, byte| acc + &format!("{:02x}", byte)),
+                        ),
+                    );
+                    fields.insert(
+                        prefix.join("") + "trace_state",
+                        serde_json::Value::String(link.trace_state),
+                    );
+                    for attribute in link.attributes {
+                        let mut buf = Vec::new();
+                        attribute
+                            .encode(&mut buf)
+                            .expect("serialize key value failed");
+                        let value = buf
+                            .iter()
+                            .map(|b| b.to_string())
+                            .collect::<Vec<_>>()
+                            .join("_");
+                        fields.insert(
+                            prefix.join("") + "attributes/" + &attribute.key,
+                            serde_json::Value::String(value),
+                        );
+                    }
+                    fields.insert(
+                        prefix.join("") + "dropped_attributes_count",
+                        serde_json::Value::Number(link.dropped_attributes_count.into()),
+                    );
+                    fields.insert(
+                        prefix.join("") + "flags",
+                        serde_json::Value::Number(link.flags.into()),
+                    );
+                    prefix.pop();
+                }
+                fields.insert(
+                    prefix.join("") + "dropped_links_count",
+                    serde_json::Value::Number(span.dropped_links_count.into()),
+                );
+                if let Some(status) = span.status {
+                    prefix.push("Status/".to_string());
+                    fields.insert(
+                        prefix.join("") + "code",
+                        serde_json::Value::String(status.code().as_str_name().to_string()),
+                    );
+                    fields.insert(
+                        prefix.join("") + "message",
+                        serde_json::Value::String(status.message),
+                    );
+                    prefix.pop();
+                }
+                let duration_nano = span.end_time_unix_nano - span.start_time_unix_nano;
+                fields.insert(
+                    prefix.join("") + "duration_nano",
+                    serde_json::Value::Number(duration_nano.into()),
+                );
+                logs.push(fields.clone());
+                prefix.pop();
+            }
+            prefix.pop();
+        }
+    }
+    let res = logs
+        .into_iter()
+        .map(JsonProtocol::TraceServiceReq)
+        .collect();
     Ok(res)
 }
 

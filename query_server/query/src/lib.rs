@@ -2,7 +2,7 @@
 extern crate core;
 
 pub mod auth;
-mod data_source;
+pub mod data_source;
 pub mod dispatcher;
 mod execution;
 pub mod extension;

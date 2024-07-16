@@ -3,6 +3,7 @@ use http_protocol::response::ErrorResponse;
 use http_protocol::status_code::UNPROCESSABLE_ENTITY;
 use meta::error::MetaError;
 use models::error_code::{ErrorCode, ErrorCoder};
+use prost::DecodeError;
 use snafu::Snafu;
 use spi::QueryError;
 use trace::http::http_ctx::ContextError;
@@ -127,6 +128,12 @@ pub enum Error {
     #[error_code(code = 18)]
     Context {
         source: ContextError,
+    },
+
+    #[snafu(display("Error parsing message: {}", source))]
+    #[error_code(code = 19)]
+    ParseOtlpProtocol {
+        source: DecodeError,
     },
 }
 

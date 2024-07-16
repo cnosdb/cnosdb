@@ -64,19 +64,19 @@ impl WatermarkTracker {
                     Default::default(),
                 ),
             ];
-            let tskv_table_schame = Arc::new(TskvTableSchema::new(
+            let tskv_table_schema = Arc::new(TskvTableSchema::new(
                 DEFAULT_CATALOG.to_string(),
                 CLUSTER_SCHEMA.to_string(),
                 PERSISTER_SQL_TABLE.to_string(),
                 table_columns,
             ));
-            let schema = tskv_table_schame.to_arrow_schema();
+            let schema = tskv_table_schema.to_arrow_schema();
             let table_layout = TableLayoutHandle {
-                table: tskv_table_schame.clone(),
+                table: tskv_table_schema.clone(),
                 predicate: Arc::new(
                     Predicate::push_down_filter(
                         None,
-                        &*tskv_table_schame.to_df_schema()?,
+                        &*tskv_table_schema.to_df_schema()?,
                         &schema,
                         None,
                     )
@@ -93,7 +93,7 @@ impl WatermarkTracker {
                     split.clone(),
                     None,
                     schema.clone(),
-                    tskv_table_schame.clone(),
+                    tskv_table_schema.clone(),
                 );
                 let mut iter = coord
                     .table_scan(query_opt, session.get_span_ctx())
