@@ -73,7 +73,8 @@ impl RaftNodesManager {
         if let Ok(Some(node)) = self.raft_nodes.read().await.get_node(group_id) {
             let res = node.metrics().await;
             if let Ok(res) = res {
-                serde_json::to_string(&res).unwrap_or("encode  metrics to json failed".to_string())
+                serde_json::to_string(&res)
+                    .unwrap_or_else(|_| "encode  metrics to json failed".to_string())
             } else {
                 res.unwrap_err().to_string()
             }

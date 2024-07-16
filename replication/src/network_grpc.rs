@@ -55,7 +55,8 @@ impl RaftService for RaftCBServer {
 
         let node = self.get_node(inner.group_id).await?;
         let res = node.raw_raft().vote(vote).await;
-        let data = serde_json::to_string(&res).unwrap_or("encode vote rsp failed".to_string());
+        let data =
+            serde_json::to_string(&res).unwrap_or_else(|_| "encode vote rsp failed".to_string());
 
         Ok(tonic::Response::new(RaftResponse { code: 0, data }))
     }
@@ -78,7 +79,7 @@ impl RaftService for RaftCBServer {
 
         let node = self.get_node(inner.group_id).await?;
         let res = node.raw_raft().install_snapshot(snapshot).await;
-        let data = serde_json::to_string(&res).unwrap_or("encode vote rsp failed".to_string());
+        let data = serde_json::to_string(&res).unwrap_or_else(|_| "encode vote rsp failed".into());
 
         Ok(tonic::Response::new(RaftResponse { code: 0, data }))
     }
@@ -103,7 +104,7 @@ impl RaftService for RaftCBServer {
 
         let node = self.get_node(inner.group_id).await?;
         let res = node.raw_raft().append_entries(entries).await;
-        let data = serde_json::to_string(&res).unwrap_or("encode vote rsp failed".to_string());
+        let data = serde_json::to_string(&res).unwrap_or_else(|_| "encode vote rsp failed".into());
 
         Ok(tonic::Response::new(RaftResponse { code: 0, data }))
     }
