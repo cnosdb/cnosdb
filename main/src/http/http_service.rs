@@ -72,7 +72,7 @@ use crate::http::result_format::{get_result_format_from_header, ResultFormat};
 use crate::http::QuerySnafu;
 use crate::opentelemetry::jaeger_model::{Operation, Process, Trace};
 use crate::opentelemetry::otlp_to_jaeger::{
-    FilterType, OtlpToJaeger, JAEGER_TRACE_TABLE, LIBRARY_NAME_COL_NAME, LIBRARY_VERSION_COL_NAME,
+    FilterType, OtlpToJaeger, LIBRARY_NAME_COL_NAME, LIBRARY_VERSION_COL_NAME,
     OPERATION_NAME_COL_NAME, PARENT_SPAN_ID_COL_NAME, SERVICE_NAME_COL_NAME, SPAN_ID_COL_NAME,
     SPAN_KIND_COL_NAME, STATUS_CODE_COL_NAME, TRACE_ID_COL_NAME, TRACE_STATE_COL_NAME,
 };
@@ -1637,7 +1637,7 @@ impl HttpService {
     fn write_otlp_trace(
         &self,
     ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-        warp::path!("v1" / "traces")
+        warp::path!("api" / "v1" / "traces")
             .and(warp::post())
             .and(warp::body::content_length_limit(self.write_body_limit))
             .and(warp::body::bytes())
@@ -1669,10 +1669,11 @@ impl HttpService {
                         .get_db()
                         .clone()
                         .unwrap_or(DEFAULT_DATABASE.to_string());
-                    let table = header
-                        .get_table()
-                        .clone()
-                        .unwrap_or(JAEGER_TRACE_TABLE.to_string());
+                    let table = header.get_table().clone().ok_or(HttpError::ParseLog {
+                        source: protocol_parser::JsonLogError::Common {
+                            content: "table param is None".to_string(),
+                        },
+                    })?;
 
                     let span =
                         Span::from_context("rest otlp trace write", parent_span_ctx.as_ref());
@@ -1825,7 +1826,11 @@ impl HttpService {
                         let table = header
                             .get_table()
                             .clone()
-                            .unwrap_or(JAEGER_TRACE_TABLE.to_string());
+                            .ok_or(HttpError::ParseLog {
+                                source: protocol_parser::JsonLogError::Common {
+                                    content: "table param is None".to_string(),
+                                },
+                            })?;
 
                         // contruct stream by query param
                         let iterators = OtlpToJaeger::get_tskv_iterator(
@@ -1939,10 +1944,11 @@ impl HttpService {
             .get_db()
             .clone()
             .unwrap_or(DEFAULT_DATABASE.to_string());
-        let table = header
-            .get_table()
-            .clone()
-            .unwrap_or(JAEGER_TRACE_TABLE.to_string());
+        let table = header.get_table().clone().ok_or(HttpError::ParseLog {
+            source: protocol_parser::JsonLogError::Common {
+                content: "table param is None".to_string(),
+            },
+        })?;
 
         // contruct stream by trace_id
         let iterators = OtlpToJaeger::get_tskv_iterator(
@@ -2093,10 +2099,11 @@ impl HttpService {
                         .get_db()
                         .clone()
                         .unwrap_or(DEFAULT_DATABASE.to_string());
-                    let table = header
-                        .get_table()
-                        .clone()
-                        .unwrap_or(JAEGER_TRACE_TABLE.to_string());
+                    let table = header.get_table().clone().ok_or(HttpError::ParseLog {
+                        source: protocol_parser::JsonLogError::Common {
+                            content: "table param is None".to_string(),
+                        },
+                    })?;
 
                     // contruct stream
                     let iterators = OtlpToJaeger::get_tskv_iterator(
@@ -2201,7 +2208,11 @@ impl HttpService {
                     let db = header.get_db().clone().unwrap_or(DEFAULT_DATABASE.to_string());
                     let table = header.get_table()
                         .clone()
-                        .unwrap_or(JAEGER_TRACE_TABLE.to_string());
+                        .ok_or(HttpError::ParseLog {
+                            source: protocol_parser::JsonLogError::Common {
+                                content: "table param is None".to_string(),
+                            },
+                        })?;
                     let service = param.service.ok_or(HttpError::FetchResult {
                         reason: "service is empty".to_string(),
                     })?;
@@ -2322,10 +2333,11 @@ impl HttpService {
                         .get_db()
                         .clone()
                         .unwrap_or(DEFAULT_DATABASE.to_string());
-                    let table = header
-                        .get_table()
-                        .clone()
-                        .unwrap_or(JAEGER_TRACE_TABLE.to_string());
+                    let table = header.get_table().clone().ok_or(HttpError::ParseLog {
+                        source: protocol_parser::JsonLogError::Common {
+                            content: "table param is None".to_string(),
+                        },
+                    })?;
 
                     // contruct stream by service and span_kind
                     let iterators = OtlpToJaeger::get_tskv_iterator(
