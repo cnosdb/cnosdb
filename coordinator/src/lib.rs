@@ -44,7 +44,7 @@ pub type SendableCoordinatorRecordBatchStream =
 pub enum ReplicationCmdType {
     /// replica set id, dst nod id
     AddRaftFollower(u32, u64),
-    /// vnode id
+    /// vnode id. just remove the follower, if remove leader temporarily unavailable
     RemoveRaftNode(u32),
     /// replica set id
     DestoryRaftGroup(u32),
@@ -173,6 +173,26 @@ pub async fn get_replica_all_info(
             name: tenant.to_owned(),
         })?
         .get_replica_all_info(replica_id)
+        .ok_or(CoordinatorError::ReplicationSetNotFound { id: replica_id })?;
+
+    Ok(replica)
+}
+
+pub async fn get_replica_by_meta(
+    meta: MetaRef,
+    tenant: &str,
+    db_name: &str,
+    replica_id: ReplicationSetId,
+) -> CoordinatorResult<ReplicationSet> {
+    let replica = meta
+        .tenant_meta(tenant)
+        .await
+        .ok_or_else(|| CoordinatorError::TenantNotFound {
+            name: tenant.to_owned(),
+        })?
+        .get_replication_set_by_meta(db_name, replica_id)
+        .await
+        .context(MetaSnafu)?
         .ok_or(CoordinatorError::ReplicationSetNotFound { id: replica_id })?;
 
     Ok(replica)
