@@ -1,6 +1,7 @@
 #![allow(dead_code, unused_variables)]
 
 use std::fmt::Debug;
+use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 use std::todo;
 
@@ -240,5 +241,8 @@ impl Coordinator for MockCoordinator {
 
     fn get_config(&self) -> Config {
         Config::default()
+    }
+    fn get_writer_count(&self) -> Arc<AtomicUsize> {
+        todo!()
     }
 }

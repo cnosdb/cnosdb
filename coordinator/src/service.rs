@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{mem, vec};
@@ -79,6 +80,7 @@ pub struct CoordService {
     node_id: u64,
     meta: MetaRef,
     config: Config,
+    writer_count: Arc<AtomicUsize>,
 
     runtime: Arc<Runtime>,
     kv_inst: Option<EngineRef>,
@@ -181,6 +183,7 @@ impl CoordService {
             failed_task_joinhandle: Arc::new(Mutex::new(HashMap::new())),
             node_id: config.global.node_id,
             metrics: Arc::new(CoordServiceMetrics::new(metrics_register.as_ref())),
+            writer_count: Arc::new(AtomicUsize::new(0)),
         });
 
         let meta_task_receiver = coord
@@ -637,16 +640,17 @@ impl Coordinator for CoordService {
     }
 
     fn tskv_raft_writer(&self, request: RaftWriteCommand) -> TskvRaftWriter {
-        TskvRaftWriter {
+        TskvRaftWriter::new(
+            self.meta.clone(),
+            self.node_id,
+            self.config.query.write_timeout,
+            self.config.service.grpc_enable_gzip,
+            self.config.deployment.memory * 1024 * 1024 * 1024,
+            self.memory_pool.clone(),
+            self.raft_manager.clone(),
             request,
-            meta: self.meta.clone(),
-            node_id: self.node_id,
-            memory_pool: self.memory_pool.clone(),
-            raft_manager: self.raft_manager.clone(),
-            timeout: self.config.query.write_timeout,
-            enable_gzip: self.config.service.grpc_enable_gzip,
-            total_memory: self.config.deployment.memory * 1024 * 1024 * 1024,
-        }
+            self.writer_count.clone(),
+        )
     }
 
     async fn table_vnodes(
@@ -1292,6 +1296,10 @@ impl Coordinator for CoordService {
 
     fn get_config(&self) -> Config {
         self.config.clone()
+    }
+
+    fn get_writer_count(&self) -> Arc<AtomicUsize> {
+        self.writer_count.clone()
     }
 }
 

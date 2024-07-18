@@ -24,6 +24,7 @@ use crate::database::Database;
 use crate::error::{IndexErrSnafu, MetaSnafu, TskvResult};
 use crate::file_system::async_filesystem::LocalFileSystem;
 use crate::file_system::FileSystem;
+use crate::index::IndexResult;
 use crate::kv_option::{Options, StorageOptions};
 use crate::summary::{Summary, SummaryTask};
 use crate::tsfamily::super_version::SuperVersion;
@@ -192,6 +193,14 @@ impl TsKv {
                 }
             }
         });
+    }
+
+    async fn sync_indexs(&self) -> IndexResult<()> {
+        let vnodes_guard = self.vnodes.read().await;
+        for (_, vnode_storage) in vnodes_guard.iter() {
+            vnode_storage.sync_index().await;
+        }
+        Ok(())
     }
 
     pub async fn get_db(&self, tenant: &str, database: &str) -> Option<Arc<RwLock<Database>>> {
@@ -499,6 +508,10 @@ impl Engine for TsKv {
         while let Some(_x) = rx.recv().await {
             continue;
         }
+        self.sync_indexs()
+            .await
+            .expect("Tskv Index haven't been sync.");
+
         info!("TsKv closed");
     }
 }

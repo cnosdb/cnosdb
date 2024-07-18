@@ -130,7 +130,10 @@ fn build_default_address(port: u16) -> String {
 }
 
 impl ServiceBuilder {
-    pub async fn build_storage_server(&self, server: &mut Server) -> Option<EngineRef> {
+    pub async fn build_storage_server(
+        &self,
+        server: &mut Server,
+    ) -> (Option<EngineRef>, CoordinatorRef) {
         let meta = self.create_meta(self.metrics_register.clone()).await;
         meta.add_data_node().await.unwrap();
         tokio::spawn(regular_report_node_metrics(
@@ -168,10 +171,13 @@ impl ServiceBuilder {
             server.add_service(Box::new(vector_service));
         }
 
-        Some(kv_inst)
+        (Some(kv_inst), coord)
     }
 
-    pub async fn build_query_server(&self, server: &mut Server) -> Option<EngineRef> {
+    pub async fn build_query_server(
+        &self,
+        server: &mut Server,
+    ) -> (Option<EngineRef>, CoordinatorRef) {
         let meta = self.create_meta(self.metrics_register.clone()).await;
         let coord = self
             .create_coord(meta, None, self.memory_pool.clone())
@@ -190,10 +196,13 @@ impl ServiceBuilder {
             server.add_service(Box::new(flight_sql_service));
         }
 
-        None
+        (None, coord)
     }
 
-    pub async fn build_query_storage(&self, server: &mut Server) -> Option<EngineRef> {
+    pub async fn build_query_storage(
+        &self,
+        server: &mut Server,
+    ) -> (Option<EngineRef>, CoordinatorRef) {
         let meta = self.create_meta(self.metrics_register.clone()).await;
         meta.add_data_node().await.unwrap();
         tokio::spawn(regular_report_node_metrics(
@@ -235,10 +244,13 @@ impl ServiceBuilder {
             server.add_service(Box::new(vector_service));
         }
 
-        Some(kv_inst)
+        (Some(kv_inst), coord)
     }
 
-    pub async fn build_singleton(&self, server: &mut Server) -> Option<EngineRef> {
+    pub async fn build_singleton(
+        &self,
+        server: &mut Server,
+    ) -> (Option<EngineRef>, CoordinatorRef) {
         meta::service::single::start_singe_meta_server(
             self.config.storage.path.clone(),
             self.config.global.cluster_name.clone(),

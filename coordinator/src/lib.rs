@@ -2,6 +2,7 @@
 
 use std::fmt::Debug;
 use std::pin::Pin;
+use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 
 use config::tskv::Config;
@@ -137,6 +138,7 @@ pub trait Coordinator: Send + Sync {
     ) -> CoordinatorResult<()>;
 
     fn get_config(&self) -> Config;
+    fn get_writer_count(&self) -> Arc<AtomicUsize>;
 }
 
 #[async_trait::async_trait]
