@@ -29,7 +29,6 @@ use tskv::reader::QueryOption;
 
 use super::jaeger_model::{KeyValue, Log, Process, Reference, ReferenceType, Span};
 
-pub const JAEGER_TRACE_TABLE: &str = "jaeger_trace";
 pub const TRACE_ID_COL_NAME: &str = "ResourceSpans/ScopeSpans/Span/trace_id";
 pub const SPAN_ID_COL_NAME: &str = "ResourceSpans/ScopeSpans/Span/span_id";
 pub const PARENT_SPAN_ID_COL_NAME: &str = "ResourceSpans/ScopeSpans/Span/parent_span_id";
