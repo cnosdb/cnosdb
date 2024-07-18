@@ -284,8 +284,8 @@ impl TsmWriter {
                 meta: page.meta,
             };
             column_group.push(spec);
-            self.table_schemas.insert(table.clone(), schema.clone());
         }
+        self.table_schemas.insert(table.clone(), schema.clone());
         column_group.time_range_merge(&time_range);
         self.page_specs
             .entry(table.clone())
@@ -329,8 +329,8 @@ impl TsmWriter {
             };
             offset += spec.size;
             new_column_group.push(spec);
-            self.table_schemas.insert(table.clone(), schema.clone());
         }
+        self.table_schemas.insert(table.clone(), schema.clone());
         new_column_group.time_range_merge(column_group.time_range());
         let series_id = meta.series_id();
         let series_key = meta.series_key().clone();
