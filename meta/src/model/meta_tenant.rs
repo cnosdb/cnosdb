@@ -726,6 +726,20 @@ impl TenantMeta {
         self.client.read::<Option<ReplicationSet>>(&req).await
     }
 
+    pub async fn get_replication_set_by_meta(
+        &self,
+        db_name: &str,
+        repl_id: u32,
+    ) -> MetaResult<Option<ReplicationSet>> {
+        let req = ReadCommand::ReplicationSet(
+            self.cluster.clone(),
+            self.tenant.name().to_string(),
+            db_name.to_string(),
+            repl_id,
+        );
+        self.client.read::<Option<ReplicationSet>>(&req).await
+    }
+
     pub async fn update_vnode(&self, info: &VnodeAllInfo) -> MetaResult<()> {
         let args = command::UpdateVnodeArgs {
             cluster: self.cluster.clone(),

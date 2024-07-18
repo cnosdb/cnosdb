@@ -179,7 +179,7 @@ pub mod test {
         assert!(resp
             .text()
             .unwrap()
-            .contains("new membership can not be empty"));
+            .contains("just only on replica can't remove"));
         std::thread::sleep(std::time::Duration::from_secs(1));
         let info = meta.get_replica_all_info(replica_id).unwrap();
         assert_eq!(info.replica_set.vnodes.len(), 1);
@@ -437,7 +437,6 @@ pub mod test {
         assert_eq!(info.replica_set.leader_node_id, target_node);
 
         // test replica remove
-        // new membership can not be empty
         let command = format!(
             "replica remove replica_id {} node_id {}",
             replica_id, vnode.node_id
@@ -448,7 +447,7 @@ pub mod test {
         assert!(resp
             .text()
             .unwrap()
-            .contains("new membership can not be empty"));
+            .contains("just only on replica can't remove"));
         std::thread::sleep(std::time::Duration::from_secs(1));
         let info = meta_client.get_replica_all_info(replica_id).unwrap();
         assert_eq!(info.replica_set.vnodes.len(), 1);

@@ -614,6 +614,30 @@ impl CoordService {
 
         caller.do_request(node_id).await
     }
+
+    async fn check_remove_vnode_and_promote(
+        &self,
+        tenant: &str,
+        db_name: &str,
+        replica_id: ReplicationSetId,
+        vnode_id: VnodeId,
+    ) -> CoordinatorResult<()> {
+        let meta = self.meta.clone();
+        let replica_set = crate::get_replica_by_meta(meta, tenant, db_name, replica_id).await?;
+        if replica_set.leader_vnode_id == vnode_id {
+            let mut tmp_vnodes = replica_set.vnodes.clone();
+            tmp_vnodes.retain(|x| x.id != vnode_id);
+            if tmp_vnodes.is_empty() {
+                return Err(CoordinatorError::ReplicaCannotRemove { replica_id });
+            }
+
+            let new_leader = tmp_vnodes[0].id;
+            let cmd_type = ReplicationCmdType::PromoteLeader(replica_id, new_leader);
+            self.replication_manager(tenant, cmd_type).await?;
+        }
+
+        Ok(())
+    }
 }
 
 //***************************** Coordinator Interface ***************************************** */
@@ -1042,6 +1066,14 @@ impl Coordinator for CoordService {
             ReplicationCmdType::RemoveRaftNode(vnode_id) => {
                 let all_info = get_vnode_all_info(self.meta.clone(), tenant, vnode_id).await?;
                 let replica_id = all_info.repl_set_id;
+                self.check_remove_vnode_and_promote(
+                    tenant,
+                    &all_info.db_name,
+                    replica_id,
+                    vnode_id,
+                )
+                .await?;
+
                 let replica = get_replica_all_info(self.meta.clone(), tenant, replica_id).await?;
                 (
                     AdminCommand {
