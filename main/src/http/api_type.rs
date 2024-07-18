@@ -22,7 +22,12 @@ pub enum HttpApiType {
     DebugJeprof,
     Metrics,
     ApiV1DumpSqlDdl,
-    V1Traces,
+    ApiV1Traces,
+    ApiTraces,
+    ApiTracesID,
+    ApiServices,
+    ApiOperations,
+    ApiServicesOperations,
 }
 
 impl Display for HttpApiType {
@@ -79,8 +84,23 @@ impl Display for HttpApiType {
             HttpApiType::ApiV1DumpSqlDdl => {
                 write!(f, "api/v1/dump/sql/ddl")
             }
-            HttpApiType::V1Traces => {
-                write!(f, "v1/traces")
+            HttpApiType::ApiV1Traces => {
+                write!(f, "api/v1/traces")
+            }
+            HttpApiType::ApiTraces => {
+                write!(f, "api/traces")
+            }
+            HttpApiType::ApiTracesID => {
+                write!(f, "api/traces/id")
+            }
+            HttpApiType::ApiServices => {
+                write!(f, "api/services")
+            }
+            HttpApiType::ApiOperations => {
+                write!(f, "api/operations")
+            }
+            HttpApiType::ApiServicesOperations => {
+                write!(f, "api/services/name/operations")
             }
         }
     }
@@ -95,7 +115,12 @@ pub fn metrics_record_db(api: &HttpApiType) -> bool {
         | HttpApiType::ApiV1PromWrite
         | HttpApiType::ApiV1ESLogWrite
         | HttpApiType::ApiV1PromRead
-        | HttpApiType::V1Traces => true,
+        | HttpApiType::ApiV1Traces
+        | HttpApiType::ApiTraces
+        | HttpApiType::ApiTracesID
+        | HttpApiType::ApiServices
+        | HttpApiType::ApiOperations
+        | HttpApiType::ApiServicesOperations => true,
         HttpApiType::ApiV1Sql
         | HttpApiType::ApiV1Ping
         | HttpApiType::DebugBacktrace
