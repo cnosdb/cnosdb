@@ -1,15 +1,12 @@
 use std::path::PathBuf;
 
-use bytes::Bytes;
 use datafusion::arrow::error::ArrowError;
 use datafusion::error::DataFusionError;
 use error_code::{ErrorCode, ErrorCoder};
 use http_protocol::response::ErrorResponse;
 use meta::error::MetaError;
-use models::codec::Encoding;
 use models::column_data::ColumnDataError;
 use models::meta_data::VnodeId;
-use models::schema::tskv_table_schema::{ColumnType, TableColumn};
 use models::ModelError;
 use protos::PointsError;
 use snafu::{Backtrace, IntoError, Location, Snafu};
@@ -20,8 +17,7 @@ use crate::index::IndexError;
 use crate::record_file;
 use crate::record_file::Record;
 use crate::schema::error::SchemaError;
-use crate::tsm::page::{Page, PageMeta, PageStatistics};
-use crate::tsm::statistics::ValueStatistics;
+use crate::tsm::page::Page;
 
 pub type TskvResult<T, E = TskvError> = std::result::Result<T, E>;
 
@@ -278,7 +274,7 @@ pub enum TskvError {
     /// This error is handled by the caller of tsm_file::page
     #[snafu(display("TSM Page CRC not match , expected: {crc}, calculated: {crc_calculated}",))]
     #[error_code(code = 30)]
-    TSMPageFileHashCheckFailed {
+    TsmPageFileHashCheckFailed {
         crc: u32,
         crc_calculated: u32,
         page: Page,
@@ -466,55 +462,14 @@ impl TskvError {
     }
 
     pub fn vnode_broken_code(code: &str) -> bool {
-        let broken_error_code = vec![
-            ReadTsmSnafu {
-                reason: "test".to_string(),
-            }
-            .build()
-            .code(),
-            RecordFileHashCheckFailedSnafu {
-                crc: 0_u32,
-                crc_calculated: 0_u32,
-                record: Record {
-                    data_type: 0,
-                    data_version: 0,
-                    data: vec![],
-                    pos: 0,
-                },
-            }
-            .build()
-            .code(),
-            TSMPageFileHashCheckFailedSnafu {
-                crc: 0_u32,
-                crc_calculated: 0u32,
-                page: Page {
-                    bytes: Bytes::new(),
-                    meta: PageMeta {
-                        num_values: 0,
-                        column: TableColumn::new(
-                            0,
-                            "test".to_string(),
-                            ColumnType::Tag,
-                            Encoding::Default,
-                        ),
-                        statistics: PageStatistics::Bool(ValueStatistics::new(None, None, None, 0)),
-                    },
-                },
-            }
-            .build()
-            .code(),
-            OpenFileSnafu {
-                path: PathBuf::new(),
-            }
-            .into_error(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "file not found",
-            ))
-            .code(),
-            DecodeSnafu.into_error(Box::new(TskvError::Eof)).code(),
+        const VNODE_BROKEN_CODES: [&str; 5] = [
+            TskvError::code_read_tsm(),
+            TskvError::code_record_file_hash_check_failed(),
+            TskvError::code_tsm_page_file_hash_check_failed(),
+            TskvError::code_open_file(),
+            TskvError::code_decode(),
         ];
-
-        for error_code in broken_error_code {
+        for error_code in VNODE_BROKEN_CODES {
             if error_code == code {
                 return true;
             }

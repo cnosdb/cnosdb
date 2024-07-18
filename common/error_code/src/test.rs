@@ -20,12 +20,14 @@ enum TestError1 {
 
 #[test]
 fn test1() {
-    let a = TestError1::A1;
-    let b = TestError1::B1;
-    let c = TestError1::C1;
-    assert_eq!(a.code(), "000001");
-    assert_eq!(b.code(), "000002");
-    assert_eq!(c.code(), "000003");
+    assert_eq!(TestError1::A1.code(), "000001");
+    assert_eq!(TestError1::code_a_1(), "000001");
+
+    assert_eq!(TestError1::B1.code(), "000002");
+    assert_eq!(TestError1::code_b_1(), "000002");
+
+    assert_eq!(TestError1::C1.code(), "000003");
+    assert_eq!(TestError1::code_c_1(), "000003");
 }
 
 #[derive(ErrorCoder, Snafu, Debug)]
@@ -39,6 +41,8 @@ enum TestError2 {
 fn test2() {
     let a = TestError2::A2;
     assert_eq!(a.code(), "xx0000");
+    let b = TestError2::B2;
+    assert_eq!(b.code(), "xx0000");
 }
 
 #[derive(ErrorCoder, Snafu, Debug)]
@@ -54,10 +58,12 @@ enum TestError3 {
 #[test]
 fn test3() {
     let a = TestError3::A3;
+    assert_eq!(a.code(), "000001");
+    assert_eq!(TestError3::code_a_3(), "000001");
+
     let b = TestError3::B3 {
         source: std::io::Error::new(std::io::ErrorKind::AddrInUse, "test"),
     };
-    assert_eq!(a.code(), "000001");
     assert_eq!(b.code(), "000000");
 }
 
@@ -72,9 +78,9 @@ enum TestError4 {
 
 #[test]
 fn test4() {
-    let a = TestError4::A4;
-    let b = TestError4::B4;
+    assert_eq!(TestError4::A4.code(), "000002");
+    assert_eq!(TestError4::code_a_4(), "000002");
 
-    println!("{}", a.code());
-    println!("{}", b.code());
+    assert_eq!(TestError4::B4.code(), "000001");
+    assert_eq!(TestError4::code_b_4(), "000001");
 }
