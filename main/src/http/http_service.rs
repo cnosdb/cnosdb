@@ -1751,7 +1751,7 @@ impl HttpService {
                         &addr,
                         req_len,
                         start,
-                        HttpApiType::ApiV1Write,
+                        HttpApiType::ApiV1Traces,
                     );
                     let result_size = size_of_val(&resp);
                     let value_size = match &resp {
@@ -1765,7 +1765,7 @@ impl HttpService {
                         &addr,
                         total_size,
                         start,
-                        HttpApiType::V1Traces,
+                        HttpApiType::ApiV1Traces,
                     );
 
                     resp.map(|_| ResponseBuilder::ok()).map_err(|e| {
@@ -1788,11 +1788,16 @@ impl HttpService {
             .and(warp::query::<FindTracesParam>())
             .and(self.with_dbms())
             .and(self.with_coord())
+            .and(self.with_http_metrics())
+            .and(self.with_hostaddr())
             .and_then(
                 |header: Header,
                  param: FindTracesParam,
                  dbms: DBMSRef,
-                 coord: CoordinatorRef| async move {
+                 coord: CoordinatorRef,
+                 metrics: Arc<HttpMetrics>,
+                 addr: String| async move {
+                    let start = Instant::now();
                     // authenticate
                     let sql_param = SqlParam {
                         tenant: header.get_tenant().clone(),
@@ -1811,26 +1816,31 @@ impl HttpService {
                     let traces = if let Some(trace_ids) = param.trace_ids {
                         let mut traces = Vec::new();
                         for trace_id in trace_ids.split(',').collect::<Vec<&str>>() {
-                            traces.push(Self::get_trace_inner(coord.clone(), &header, trace_id.to_string())
-                                .await
-                                .map_err(|e| {
-                                    error!("Failed to get trace, err: {:?}", e);
-                                    reject::custom(e)
-                                })?);
+                            traces.push(
+                                Self::get_trace_inner(coord.clone(), &header, trace_id.to_string())
+                                    .await
+                                    .map_err(|e| {
+                                        error!("Failed to get trace, err: {:?}", e);
+                                        reject::custom(e)
+                                    })?,
+                            );
                         }
                         traces
                     } else {
                         // get param
-                        let tenant = header.get_tenant().clone().unwrap_or(DEFAULT_CATALOG.to_string());
-                        let db = header.get_db().clone().unwrap_or(DEFAULT_DATABASE.to_string());
-                        let table = header
-                            .get_table()
+                        let tenant = header
+                            .get_tenant()
                             .clone()
-                            .ok_or(HttpError::ParseLog {
-                                source: protocol_parser::JsonLogError::Common {
-                                    content: "table param is None".to_string(),
-                                },
-                            })?;
+                            .unwrap_or(DEFAULT_CATALOG.to_string());
+                        let db = header
+                            .get_db()
+                            .clone()
+                            .unwrap_or(DEFAULT_DATABASE.to_string());
+                        let table = header.get_table().clone().ok_or(HttpError::ParseLog {
+                            source: protocol_parser::JsonLogError::Common {
+                                content: "table param is None".to_string(),
+                            },
+                        })?;
 
                         // contruct stream by query param
                         let iterators = OtlpToJaeger::get_tskv_iterator(
@@ -1866,15 +1876,17 @@ impl HttpService {
                                 .as_any()
                                 .downcast_ref::<StringArray>()
                                 .ok_or(HttpError::FetchResult {
-                                    reason: format!("column {} is not StringArray", TRACE_ID_COL_NAME),
+                                    reason: format!(
+                                        "column {} is not StringArray",
+                                        TRACE_ID_COL_NAME
+                                    ),
                                 })?;
                             if let Some(i) = (0..column_trace_id.len()).next() {
                                 let trace_id = column_trace_id.value(i).to_string();
-                                let mut span = OtlpToJaeger::recordbatch_to_span(batch, i).map_err(
-                                    |e| HttpError::FetchResult {
+                                let mut span = OtlpToJaeger::recordbatch_to_span(batch, i)
+                                    .map_err(|e| HttpError::FetchResult {
                                         reason: e.message().to_string(),
-                                    },
-                                )?;
+                                    })?;
                                 if let Some(trace) = trace_map.get_mut(&trace_id) {
                                     let process_id = format!("p{}", trace.spans.len());
                                     span.process_id = Some(process_id.clone());
@@ -1885,7 +1897,8 @@ impl HttpService {
                                 } else {
                                     let process_id = "p1";
                                     span.process_id = Some(process_id.to_string());
-                                    let process = span.process.clone().unwrap_or(Process::default());
+                                    let process =
+                                        span.process.clone().unwrap_or(Process::default());
                                     trace_map.entry(trace_id.clone()).or_insert_with(|| {
                                         let mut trace = Trace {
                                             trace_id: trace_id.clone(),
@@ -1908,7 +1921,7 @@ impl HttpService {
                         total: u64,
                         limit: u64,
                         offset: u64,
-                        errors: Option<String>
+                        errors: Option<String>,
                     }
 
                     let total = traces.len() as u64;
@@ -1917,8 +1930,16 @@ impl HttpService {
                         total,
                         limit: 0,
                         offset: 0,
-                        errors: None
+                        errors: None,
                     };
+
+                    http_response_time_and_flow_metrics(
+                        &metrics,
+                        &addr,
+                        size_of_val(&resp),
+                        start,
+                        HttpApiType::ApiTraces,
+                    );
 
                     // return
                     let builder = ResponseBuilder::new(OK).insert_header((
@@ -2011,11 +2032,16 @@ impl HttpService {
             .and(self.handle_header())
             .and(self.with_dbms())
             .and(self.with_coord())
+            .and(self.with_http_metrics())
+            .and(self.with_hostaddr())
             .and_then(
                 |trace_id: String,
                  header: Header,
                  dbms: DBMSRef,
-                 coord: CoordinatorRef| async move {
+                 coord: CoordinatorRef,
+                 metrics: Arc<HttpMetrics>,
+                 addr: String| async move {
+                    let start = Instant::now();
                     // authenticate
                     let sql_param = SqlParam {
                         tenant: header.get_tenant().clone(),
@@ -2055,6 +2081,14 @@ impl HttpService {
                         errors: None,
                     };
 
+                    http_response_time_and_flow_metrics(
+                        &metrics,
+                        &addr,
+                        size_of_val(&resp),
+                        start,
+                        HttpApiType::ApiTracesID,
+                    );
+
                     // return
                     let builder = ResponseBuilder::new(OK).insert_header((
                         CONTENT_TYPE,
@@ -2073,8 +2107,15 @@ impl HttpService {
             .and(self.handle_header())
             .and(self.with_dbms())
             .and(self.with_coord())
+            .and(self.with_http_metrics())
+            .and(self.with_hostaddr())
             .and_then(
-                |header: Header, dbms: DBMSRef, coord: CoordinatorRef| async move {
+                |header: Header,
+                 dbms: DBMSRef,
+                 coord: CoordinatorRef,
+                 metrics: Arc<HttpMetrics>,
+                 addr: String| async move {
+                    let start = Instant::now();
                     // authenticate
                     let sql_param = SqlParam {
                         tenant: header.get_tenant().clone(),
@@ -2164,6 +2205,14 @@ impl HttpService {
                         errors: None,
                     };
 
+                    http_response_time_and_flow_metrics(
+                        &metrics,
+                        &addr,
+                        size_of_val(&resp),
+                        start,
+                        HttpApiType::ApiServices,
+                    );
+
                     // return
                     let builder = ResponseBuilder::new(OK).insert_header((
                         CONTENT_TYPE,
@@ -2183,11 +2232,16 @@ impl HttpService {
             .and(warp::query::<GetOperationParam>())
             .and(self.with_dbms())
             .and(self.with_coord())
+            .and(self.with_http_metrics())
+            .and(self.with_hostaddr())
             .and_then(
                 |header: Header,
                  param: GetOperationParam,
                  dbms: DBMSRef,
-                 coord: CoordinatorRef| async move {
+                 coord: CoordinatorRef,
+                 metrics: Arc<HttpMetrics>,
+                 addr: String| async move {
+                    let start = Instant::now();
                     // authenticate
                     let sql_param = SqlParam {
                         tenant: header.get_tenant().clone(),
@@ -2204,15 +2258,19 @@ impl HttpService {
                         })?;
 
                     // get param
-                    let tenant = header.get_tenant().clone().unwrap_or(DEFAULT_CATALOG.to_string());
-                    let db = header.get_db().clone().unwrap_or(DEFAULT_DATABASE.to_string());
-                    let table = header.get_table()
+                    let tenant = header
+                        .get_tenant()
                         .clone()
-                        .ok_or(HttpError::ParseLog {
-                            source: protocol_parser::JsonLogError::Common {
-                                content: "table param is None".to_string(),
-                            },
-                        })?;
+                        .unwrap_or(DEFAULT_CATALOG.to_string());
+                    let db = header
+                        .get_db()
+                        .clone()
+                        .unwrap_or(DEFAULT_DATABASE.to_string());
+                    let table = header.get_table().clone().ok_or(HttpError::ParseLog {
+                        source: protocol_parser::JsonLogError::Common {
+                            content: "table param is None".to_string(),
+                        },
+                    })?;
                     let service = param.service.ok_or(HttpError::FetchResult {
                         reason: "service is empty".to_string(),
                     })?;
@@ -2267,7 +2325,10 @@ impl HttpService {
                         for i in 0..name_col.len() {
                             operations.insert(Operation {
                                 name: name_col.value(i).to_string(),
-                                span_kind: OtlpToJaeger::to_jaeger_span_kind(span_kind_col.value(i)).to_string(),
+                                span_kind: OtlpToJaeger::to_jaeger_span_kind(
+                                    span_kind_col.value(i),
+                                )
+                                .to_string(),
                             });
                         }
                     }
@@ -2278,7 +2339,7 @@ impl HttpService {
                         total: u64,
                         limit: u64,
                         offset: u64,
-                        errors: Option<String>
+                        errors: Option<String>,
                     }
                     let total = operations.len() as u64;
                     let resp = Operations {
@@ -2286,8 +2347,16 @@ impl HttpService {
                         total,
                         limit: 0,
                         offset: 0,
-                        errors: None
+                        errors: None,
                     };
+
+                    http_response_time_and_flow_metrics(
+                        &metrics,
+                        &addr,
+                        size_of_val(&resp),
+                        start,
+                        HttpApiType::ApiOperations,
+                    );
 
                     // return
                     let builder = ResponseBuilder::new(OK).insert_header((
@@ -2307,8 +2376,16 @@ impl HttpService {
             .and(self.handle_header())
             .and(self.with_dbms())
             .and(self.with_coord())
+            .and(self.with_http_metrics())
+            .and(self.with_hostaddr())
             .and_then(
-                |service: String, header: Header, dbms: DBMSRef, coord: CoordinatorRef| async move {
+                |service: String,
+                 header: Header,
+                 dbms: DBMSRef,
+                 coord: CoordinatorRef,
+                 metrics: Arc<HttpMetrics>,
+                 addr: String| async move {
+                    let start = Instant::now();
                     // authenticate
                     let sql_param = SqlParam {
                         tenant: header.get_tenant().clone(),
@@ -2396,6 +2473,14 @@ impl HttpService {
                         offset: 0,
                         errors: None,
                     };
+
+                    http_response_time_and_flow_metrics(
+                        &metrics,
+                        &addr,
+                        size_of_val(&resp),
+                        start,
+                        HttpApiType::ApiServicesOperations,
+                    );
 
                     // return
                     let builder = ResponseBuilder::new(OK).insert_header((
