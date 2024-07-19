@@ -19,11 +19,15 @@ statement ok
 --#DATABASE = usage_schema
 
 sleep 8000ms
+
 query 
+--#HTTP
 DESCRIBE DATABASE usage_schema;
 ----
-"INF" 1 "1year" 1 "NS" "2 MiB" 16 "1 GiB" false false 32
+"ttl" "shard" "vnode_duration" "replica" "precision" "max_memcache_size" "memcache_partitions" "wal_max_file_size" "wal_sync" "strict_write" "max_cache_readers"
+"INF" "1" "1year" "1" "NS" "2 MiB" "16" "1 GiB" "false" "false" "32"
 
+sleep 10s
 
 query 
 select column_name, column_type, data_type from information_schema.columns
@@ -48,6 +52,13 @@ and database_name = 'usage_schema'
 and table_name = 'http_data_out'
 order by column_name;
 ----
+"api" "TAG" "STRING"
+"host" "TAG" "STRING"
+"node_id" "TAG" "STRING"
+"tenant" "TAG" "STRING"
+"time" "TIME" "TIMESTAMP(NANOSECOND)"
+"user" "TAG" "STRING"
+"value" "FIELD" "BIGINT UNSIGNED"
 
 
 query 
@@ -57,6 +68,13 @@ and database_name = 'usage_schema'
 and table_name = 'http_queries'
 order by column_name;
 ----
+"api" "TAG" "STRING"
+"host" "TAG" "STRING"
+"node_id" "TAG" "STRING"
+"tenant" "TAG" "STRING"
+"time" "TIME" "TIMESTAMP(NANOSECOND)"
+"user" "TAG" "STRING"
+"value" "FIELD" "BIGINT UNSIGNED"
 
 
 query 

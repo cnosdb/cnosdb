@@ -3,7 +3,9 @@
 
 use std::fmt::Display;
 use std::str::FromStr;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
 use clap::{command, Args, Parser, Subcommand, ValueEnum};
 use config::tskv::Config;
@@ -11,6 +13,7 @@ use config::VERSION;
 use memory_pool::GreedyMemoryPool;
 use metrics::metric_register::MetricsRegister;
 use tokio::runtime::Runtime;
+use tokio::time::sleep;
 use trace::global_logging::init_global_logging;
 use trace::global_tracing::{finalize_global_tracing, init_global_tracing};
 use trace::info;
@@ -192,7 +195,7 @@ fn main() -> Result<(), std::io::Error> {
         }
 
         let _ = std::fs::create_dir_all(config.storage.path);
-        let storage = match deployment_mode {
+        let (storage, coordinator) = match deployment_mode {
             DeploymentMode::QueryTskv => builder.build_query_storage(&mut server).await,
             DeploymentMode::Tskv => builder.build_storage_server(&mut server).await,
             DeploymentMode::Query => builder.build_query_server(&mut server).await,
@@ -202,10 +205,20 @@ fn main() -> Result<(), std::io::Error> {
         info!("CnosDB server start as {} mode", deployment_mode);
         server.start().expect("CnosDB server start.");
         signal::block_waiting_ctrl_c();
+        let raft_manager = coordinator.raft_manager();
+        let writer_count = coordinator.get_writer_count();
         server.stop(true).await;
+        info!(
+            "Waiting for write requests, current number of requests {}",
+            writer_count.load(Ordering::Relaxed)
+        );
+        wait_for_writers(writer_count).await;
+        raft_manager.sync_wal_writer().await;
+
         if let Some(tskv) = storage {
             tskv.close().await;
         }
+
         finalize_global_tracing();
 
         println!("CnosDB is stopped.");
@@ -263,5 +276,11 @@ fn set_cli_args_to_config(args: &RunArgs, config: &mut Config) {
 
     if let Some(c) = args.cpu {
         config.deployment.cpu = c;
+    }
+}
+
+async fn wait_for_writers(writer_count: Arc<AtomicUsize>) {
+    while writer_count.load(Ordering::Relaxed) > 0 {
+        sleep(Duration::from_millis(10)).await;
     }
 }

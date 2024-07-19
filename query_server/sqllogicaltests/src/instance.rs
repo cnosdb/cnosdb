@@ -10,7 +10,7 @@ use arrow_flight::utils::flight_data_to_batches;
 use async_trait::async_trait;
 use futures::TryStreamExt;
 use regex::Regex;
-use reqwest::{Client, Method, Request, Url};
+use reqwest::{Body, Client, Method, Request, Url};
 use sqllogictest::{ColumnType, DBOutput};
 use tonic::transport::{Channel, Endpoint};
 
@@ -18,7 +18,6 @@ use crate::db_request::{
     instruction_parse_identity, instruction_parse_str, instruction_parse_to, DBRequest,
 };
 use crate::error::{Result, SqlError};
-use crate::utils::normalize;
 
 pub struct CnosDBClient {
     engine_name: String,
@@ -55,11 +54,9 @@ impl sqllogictest::AsyncDB for CnosDBClient {
     ) -> std::result::Result<DBOutput<Self::ColumnType>, Self::Error> {
         let request = DBRequest::parse_db_request(request, &mut self.options)?;
 
-        let (schema, batches) = request
+        let (types, rows) = request
             .execute(&self.options, &self.create_options, &self.relative_path)
             .await?;
-        let types = normalize::convert_schema_to_types(schema.fields());
-        let rows = normalize::convert_batches(batches)?;
 
         if rows.is_empty() && types.is_empty() {
             Ok(DBOutput::StatementComplete(0))
@@ -102,6 +99,28 @@ pub fn construct_write_url(options: &SqlClientOptions) -> Result<Url> {
 
     http_query.push_str("&precision=");
     http_query.push_str(precision.as_ref().map(|s| s.as_str()).unwrap_or("NS"));
+    url.set_query(Some(http_query.as_str()));
+
+    Ok(url)
+}
+
+pub fn construct_sql_url(options: &SqlClientOptions) -> Result<Url> {
+    let SqlClientOptions {
+        http_host,
+        http_port,
+        tenant,
+        db,
+        ..
+    } = options;
+    let url = Url::parse(&format!("http://{}:{}", http_host, http_port))?;
+    let mut url = url.join("api/v1/sql")?;
+    let mut http_query = String::new();
+
+    http_query.push_str("db=");
+    http_query.push_str(db.as_str());
+
+    http_query.push_str("&tenant=");
+    http_query.push_str(tenant.as_str());
     url.set_query(Some(http_query.as_str()));
 
     Ok(url)
@@ -161,11 +180,16 @@ fn construct_opentsdb_json_url(option: &SqlClientOptions) -> Result<Url> {
     Ok(url)
 }
 
-fn build_http_write_request(option: &SqlClientOptions, url: Url, body: &str) -> Result<Request> {
+fn build_http_request(
+    option: &SqlClientOptions,
+    url: Url,
+    body: impl Into<Body>,
+) -> Result<Request> {
     let request = Client::default()
         .request(Method::POST, url)
         .basic_auth::<&str, &str>(option.username.as_str(), None)
-        .body(body.to_string())
+        .body(body)
+        .header(reqwest::header::ACCEPT, "application/csv")
         .build()?;
     Ok(request)
 }
@@ -251,8 +275,31 @@ pub async fn run_query(
     Ok((schema, batches))
 }
 
+pub async fn run_http_api_v1_sql(
+    options: &SqlClientOptions,
+    sql: impl Into<String>,
+) -> Result<Vec<Vec<String>>> {
+    let request = build_http_request(options, construct_sql_url(options)?, sql.into())?;
+    let client = Client::default();
+    let resp = client.execute(request).await?;
+    if resp.status().is_success() {
+        resp.text()
+            .await
+            .map(|text| {
+                text.lines()
+                    .map(|line| line.split(',').map(|s| format!("\"{s}\"")).collect())
+                    .collect()
+            })
+            .map_err(|e| SqlError::Http { err: e.to_string() })
+    } else {
+        Err(SqlError::Http {
+            err: resp.text().await?,
+        })
+    }
+}
+
 pub async fn run_lp_write(options: &SqlClientOptions, lp: &str) -> Result<()> {
-    let request = build_http_write_request(options, construct_write_url(options)?, lp)?;
+    let request = build_http_request(options, construct_write_url(options)?, lp.to_string())?;
     println!("{:#?}", request);
     let client = Client::default();
     let resp = client.execute(request).await?;
@@ -266,8 +313,11 @@ pub async fn run_lp_write(options: &SqlClientOptions, lp: &str) -> Result<()> {
 }
 
 pub async fn run_open_tsdb_write(options: &SqlClientOptions, content: &str) -> Result<()> {
-    let request =
-        build_http_write_request(options, construct_opentsdb_write_url(options)?, content)?;
+    let request = build_http_request(
+        options,
+        construct_opentsdb_write_url(options)?,
+        content.to_string(),
+    )?;
     let client = Client::default();
     let resp = client.execute(request).await?;
     let status_code = resp.status();
@@ -280,8 +330,11 @@ pub async fn run_open_tsdb_write(options: &SqlClientOptions, content: &str) -> R
 }
 
 pub async fn run_open_tsdb_json_write(options: &SqlClientOptions, content: &str) -> Result<()> {
-    let request =
-        build_http_write_request(options, construct_opentsdb_json_url(options)?, content)?;
+    let request = build_http_request(
+        options,
+        construct_opentsdb_json_url(options)?,
+        content.to_string(),
+    )?;
     let client = Client::default();
     let resp = client.execute(request).await?;
     let status_code = resp.status();

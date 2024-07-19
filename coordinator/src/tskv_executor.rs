@@ -96,10 +96,10 @@ impl TskvLeaderExecutor {
                 leader_vnode_id: new_leader,
             }) = &result
             {
-                if let Ok(data) = self
+                result = self
                     .redirect_request(tenant, replica, *new_leader, caller)
-                    .await
-                {
+                    .await;
+                if let Ok(data) = result {
                     return Ok(data);
                 }
             } else if let Ok(data) = result {

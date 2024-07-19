@@ -224,7 +224,7 @@ impl RaftNodeServer {
                         .await
                         .get(&req)
                         .map_or_else(|err| Some(err.to_string()), |v| v)
-                        .unwrap_or("not found value by key".to_string());
+                        .unwrap_or_else(|| "not found value by key".to_string());
 
                     let res: Result<String, warp::Rejection> = Ok(rsp);
 

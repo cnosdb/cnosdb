@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -25,9 +26,35 @@ pub struct TskvRaftWriter {
     pub raft_manager: Arc<RaftNodesManager>,
 
     pub request: RaftWriteCommand,
+
+    pub counter: Arc<AtomicUsize>,
 }
 
 impl TskvRaftWriter {
+    pub fn new(
+        meta: MetaRef,
+        node_id: NodeId,
+        timeout: Duration,
+        enable_gzip: bool,
+        total_memory: usize,
+        memory_pool: MemoryPoolRef,
+        raft_manager: Arc<RaftNodesManager>,
+        request: RaftWriteCommand,
+        counter: Arc<AtomicUsize>,
+    ) -> TskvRaftWriter {
+        counter.fetch_add(1, Ordering::SeqCst);
+        TskvRaftWriter {
+            meta,
+            node_id,
+            timeout,
+            enable_gzip,
+            total_memory,
+            memory_pool,
+            raft_manager,
+            request,
+            counter,
+        }
+    }
     async fn pre_check_write_to_raft(&self, request: &RaftWriteCommand) -> CoordinatorResult<()> {
         if let Some(command) = &request.command {
             match command {
@@ -146,5 +173,11 @@ impl TskvLeaderCaller for TskvRaftWriter {
         }
 
         Ok(vec![])
+    }
+}
+
+impl Drop for TskvRaftWriter {
+    fn drop(&mut self) {
+        self.counter.fetch_sub(1, Ordering::SeqCst);
     }
 }

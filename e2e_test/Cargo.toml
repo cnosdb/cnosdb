@@ -36,3 +36,4 @@ walkdir = { workspace = true }
 default = []
 coordinator_e2e_test = []
 not_passed = []
+debug = []

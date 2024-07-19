@@ -179,15 +179,15 @@ impl Options {
     fn new() -> Self {
         let args = CliOptions::parse();
 
-        let flight_host =
-            std::env::var(CNOSDB_FLIGHT_HOST_ENV).unwrap_or(CNOSDB_FLIGHT_HOST_DEFAULT.into());
+        let flight_host = std::env::var(CNOSDB_FLIGHT_HOST_ENV)
+            .unwrap_or_else(|_| CNOSDB_FLIGHT_HOST_DEFAULT.into());
         let flight_port = std::env::var(CNOSDB_FLIGHT_PORT_ENV)
             .map_or(CNOSDB_FLIGHT_PORT_DEFAULT, |e| {
                 e.parse::<u16>().expect("Parse CNOSDB_FLIGHT_PORT")
             });
 
         let http_host =
-            std::env::var(CNOSDB_HTTP_HOST_ENV).unwrap_or(CNOSDB_HTTP_HOST_DEFAULT.into());
+            std::env::var(CNOSDB_HTTP_HOST_ENV).unwrap_or_else(|_| CNOSDB_HTTP_HOST_DEFAULT.into());
         let http_port = std::env::var(CNOSDB_HTTP_PORT_ENV).map_or(CNOSDB_HTTP_PORT_DEFAULT, |e| {
             e.parse::<u16>().expect("Parse CNOSDB_HTTP_PORT")
         });

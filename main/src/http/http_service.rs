@@ -604,7 +604,9 @@ impl HttpService {
                  metrics: Arc<HttpMetrics>,
                  addr: String| async move {
                     let start = Instant::now();
-                    let db = query.remove("db").unwrap_or(DEFAULT_DATABASE.to_string());
+                    let db = query
+                        .remove("db")
+                        .unwrap_or_else(|| DEFAULT_DATABASE.to_string());
                     let header = Header::with(
                         Some(APPLICATION_JSON.to_string()),
                         None,
@@ -1020,6 +1022,7 @@ impl HttpService {
             )
     }
 
+    #[allow(unused_variables)]
     fn debug_pprof(
         &self,
     ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
@@ -1059,6 +1062,7 @@ impl HttpService {
             })
     }
 
+    #[allow(unused_variables)]
     fn debug_jeprof(
         &self,
     ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
@@ -1571,7 +1575,7 @@ impl HttpService {
                         ctx
                     };
 
-                    let log_type = param.log_type.unwrap_or("bulk".to_string());
+                    let log_type = param.log_type.unwrap_or_else(|| "bulk".to_string());
                     let log_type = JsonType::try_parse(log_type).map_err(|e| {
                         error!("Failed to parse log_type, err: {:?}", e);
                         HttpError::ParseLog { source: e }
@@ -2727,7 +2731,7 @@ async fn coord_write_log(
     };
     let mut lines = Vec::new();
 
-    let time_column = time_column.unwrap_or("time".to_string());
+    let time_column = time_column.unwrap_or_else(|| "time".to_string());
     let tag_columns = tag_columns.unwrap_or_default();
 
     let mut res: String = String::new();

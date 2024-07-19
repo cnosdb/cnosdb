@@ -66,28 +66,28 @@ impl VectorService {
                     .fields
                     .get(DATABASE_FIELD)
                     .map(|v| vector_value_to_string(v.clone()))
-                    .unwrap_or(DEFAULT_DATABASE.to_string())
+                    .unwrap_or_else(|| DEFAULT_DATABASE.to_string())
                     .trim_matches('\"')
                     .to_string();
                 let tenant = log
                     .fields
                     .get(TENANT_FIELD)
                     .map(|v| vector_value_to_string(v.clone()))
-                    .unwrap_or(DEFAULT_CATALOG.to_string())
+                    .unwrap_or_else(|| DEFAULT_CATALOG.to_string())
                     .trim_matches('\"')
                     .to_string();
                 let user = log
                     .fields
                     .get(USERNAME_FIELD)
                     .map(|v| vector_value_to_string(v.clone()))
-                    .unwrap_or(ROOT.to_string())
+                    .unwrap_or_else(|| ROOT.to_string())
                     .trim_matches('\"')
                     .to_string();
                 let password = log
                     .fields
                     .get(PASSWORD_FIELD)
                     .map(|v| vector_value_to_string(v.clone()))
-                    .unwrap_or(ROOT_PWD.to_string())
+                    .unwrap_or_else(|| ROOT_PWD.to_string())
                     .trim_matches('\"')
                     .to_string();
                 self.privilege_check(&tenant, &db, &user, &password).await?;
@@ -521,7 +521,7 @@ fn handle_vector_log_trace(mut log: Log) -> server::Result<String> {
         .fields
         .remove(TABLE_FIELD)
         .map(vector_value_to_string)
-        .unwrap_or(VECTOR_LOG_TABLE.to_string())
+        .unwrap_or_else(|| VECTOR_LOG_TABLE.to_string())
         .trim_matches('"')
         .to_string();
 

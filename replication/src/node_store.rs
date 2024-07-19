@@ -182,6 +182,10 @@ impl NodeStorage {
 
         Ok(())
     }
+    pub async fn sync_wal_writer(&self) {
+        let mut entry_storage = self.raft_logs.write().await;
+        let _ = entry_storage.sync().await;
+    }
 }
 
 type StorageResult<T> = Result<T, StorageError<RaftNodeId>>;

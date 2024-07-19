@@ -149,6 +149,10 @@ impl EntryStorage for HeedEntryStorage {
             max_seq: last.log_id.index,
         })
     }
+
+    async fn sync(&mut self) -> ReplicationResult<()> {
+        Ok(())
+    }
 }
 
 mod test {
