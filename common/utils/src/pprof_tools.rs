@@ -1,7 +1,17 @@
+use std::ffi::{c_char, CString};
 use std::fs::File;
 
 use pprof::protos::Message;
-use tikv_jemalloc_ctl::{Access, AsName};
+
+#[cfg(not(all(any(target_arch = "x86_64", target_arch = "aarch64"))))]
+pub async fn gernate_pprof() -> Result<String, String> {
+    Err("not support".to_string())
+}
+
+#[cfg(not(all(any(target_arch = "x86_64", target_arch = "aarch64"))))]
+pub async fn gernate_jeprof() -> Result<String, String> {
+    Err("not support".to_string())
+}
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub async fn gernate_pprof() -> Result<String, String> {
@@ -35,25 +45,16 @@ pub async fn gernate_pprof() -> Result<String, String> {
     }
 }
 
-#[cfg(not(all(any(target_arch = "x86_64", target_arch = "aarch64"))))]
-pub async fn gernate_pprof() -> Result<String, String> {
-    Err("not support".to_string())
-}
-
 // MALLOC_CONF=prof:true
-// CARGO_FEATURE_PROFILING=true
-const PROF_ACTIVE: &[u8] = b"prof.active\0";
 const PROF_DUMP: &[u8] = b"prof.dump\0";
-const PROFILE_OUTPUT_FILE: &[u8] = b"/tmp/mem_profile.out\0";
+const OPT_PROF: &[u8] = b"opt.prof\0";
 const PROFILE_OUTPUT_FILE_STR: &str = "/tmp/mem_profile.out";
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub async fn gernate_jeprof() -> Result<String, String> {
-    set_prof_active(true)?;
-    tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
     let _ = tokio::fs::remove_file(PROFILE_OUTPUT_FILE_STR).await;
-    dump_profile()?;
-    set_prof_active(false)?;
+
+    dump_mem_profile()?;
 
     Ok(format!(
         "gernate memory profile in: {}",
@@ -61,19 +62,25 @@ pub async fn gernate_jeprof() -> Result<String, String> {
     ))
 }
 
-#[cfg(not(all(any(target_arch = "x86_64", target_arch = "aarch64"))))]
-pub async fn gernate_jeprof() -> Result<String, String> {
-    Err("not support".to_string())
-}
+fn dump_mem_profile() -> Result<(), String> {
+    if !is_prof_enabled()? {
+        return Err("prof not enabled, please enable first!".to_string());
+    }
 
-fn set_prof_active(active: bool) -> Result<(), String> {
-    let name = PROF_ACTIVE.name();
-    name.write(active).map_err(|e| e.to_string())?;
+    let mut bytes = CString::new(PROFILE_OUTPUT_FILE_STR)
+        .map_err(|e| e.to_string())?
+        .into_bytes_with_nul();
+
+    // #safety: we always expect a valid temp file path to write profiling data to.
+    let ptr = bytes.as_mut_ptr() as *mut c_char;
+    unsafe {
+        tikv_jemalloc_ctl::raw::write(PROF_DUMP, ptr).map_err(|e| e.to_string())?;
+    }
+
     Ok(())
 }
 
-fn dump_profile() -> Result<(), String> {
-    let name = PROF_DUMP.name();
-    name.write(PROFILE_OUTPUT_FILE).map_err(|e| e.to_string())?;
-    Ok(())
+fn is_prof_enabled() -> Result<bool, String> {
+    // safety: OPT_PROF variable, if present, is always a boolean value.
+    Ok(unsafe { tikv_jemalloc_ctl::raw::read::<bool>(OPT_PROF).map_err(|e| e.to_string())? })
 }

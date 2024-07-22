@@ -20,9 +20,16 @@ libc = { workspace = true }
 tracing = { workspace = true }
 serde = { version = "1.0.171", features = ["derive"] }
 tokio = { workspace = true, features = ["full", "tracing"] }
+
 [target.'cfg(unix)'.dependencies]
 pprof = { workspace = true, features = ["flamegraph", "protobuf-codec", "frame-pointer"] }
-tikv-jemalloc-ctl = { workspace = true }
+
+[target.'cfg(not(windows))'.dependencies]
+tikv-jemalloc-ctl = { version = "0.5", features = ["use_std"] }
+
+[target.'cfg(not(windows))'.dependencies.tikv-jemalloc-sys]
+features = ["stats", "profiling", "unprefixed_malloc_on_supported_platforms"]
+version = "0.5"
 
 [features]
 default = []

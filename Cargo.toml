@@ -152,8 +152,6 @@ syn = "2.0.66"
 sys-info = "0.9.1"
 sysinfo = "0.30"
 tempfile = "3"
-tikv-jemalloc-ctl = "0.5"
-tikv-jemalloc-sys = { version = "0.5", features = ["stats", "profiling", "unprefixed_malloc_on_supported_platforms"] }
 tikv-jemallocator = "0.5"
 time = { version = "0.3" }
 tokio = { version = "1.35" }
