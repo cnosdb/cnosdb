@@ -75,7 +75,11 @@ pub fn flatten_json(name: String, input: serde_json::Value) -> BTreeMap<String, 
             for (k, v) in map {
                 let res = flatten_json(k, v);
                 for (k2, v2) in res {
-                    output.insert(format!("{}.{}", name, k2), v2);
+                    if name.is_empty() {
+                        output.insert(k2, v2);
+                    } else {
+                        output.insert(format!("{}.{}", name, k2), v2);
+                    }
                 }
             }
         }
@@ -84,7 +88,11 @@ pub fn flatten_json(name: String, input: serde_json::Value) -> BTreeMap<String, 
                 let res = flatten_json(idx.to_string(), value.clone());
 
                 for (k, v) in res {
-                    output.insert(format!("{}.{}", name, k), v);
+                    if name.is_empty() {
+                        output.insert(k, v);
+                    } else {
+                        output.insert(format!("{}.{}", name, k), v);
+                    }
                 }
             }
         }
