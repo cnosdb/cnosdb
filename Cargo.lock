@@ -6814,6 +6814,7 @@ dependencies = [
  "serde",
  "siphasher 1.0.1",
  "tikv-jemalloc-ctl",
+ "tikv-jemalloc-sys",
  "tokio",
  "trace",
  "twox-hash",
