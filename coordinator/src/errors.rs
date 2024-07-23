@@ -226,8 +226,6 @@ pub enum CoordinatorError {
     #[error_code(code = 28)]
     RaftGroupError {
         msg: String,
-        location: Location,
-        backtrace: Backtrace,
     },
 
     #[snafu(display(

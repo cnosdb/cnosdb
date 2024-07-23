@@ -25,7 +25,7 @@ use tskv::{wal, EngineRef};
 use super::TskvEngineStorage;
 use crate::errors::{
     CommonSnafu, CoordinatorError, CoordinatorResult, LeaderIsWrongSnafu, MetaSnafu,
-    RaftGroupSnafu, RaftNodeNotFoundSnafu, ReplicatSnafu, TskvSnafu,
+    RaftNodeNotFoundSnafu, ReplicatSnafu, TskvSnafu,
 };
 use crate::tskv_executor::{TskvAdminRequest, TskvLeaderExecutor};
 use crate::{get_replica_all_info, update_replication_set};
@@ -178,10 +178,9 @@ impl RaftNodesManager {
             if node.raft_id() == id as u64 {
                 return Ok(());
             } else {
-                return Err(RaftGroupSnafu {
+                return Err(CoordinatorError::RaftGroupError {
                     msg: "raft node already exit".to_string(),
-                }
-                .build());
+                });
             }
         }
 
@@ -213,7 +212,7 @@ impl RaftNodesManager {
         Ok(())
     }
 
-    async fn build_replica_group(
+    pub async fn build_replica_group(
         &self,
         tenant: &str,
         db_name: &str,
@@ -312,10 +311,9 @@ impl RaftNodesManager {
                     leader_vnode_id: *id as u32,
                 })
             } else {
-                Err(RaftGroupSnafu {
+                Err(CoordinatorError::RaftGroupError {
                     msg: format!("group-{}, is_leader failed: {}", raft_node.group_id(), err),
-                }
-                .build())
+                })
             }
         } else {
             Ok(())
