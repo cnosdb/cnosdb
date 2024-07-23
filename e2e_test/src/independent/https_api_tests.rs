@@ -335,7 +335,7 @@ fn es_api_test() {
                     status: StatusCode::UNPROCESSABLE_ENTITY,
                     url: None,
                     req: None,
-                    resp: Some(r#"{"error_code":"040016","error_message":"Error parsing message: table param is None"}"#.to_string())
+                    resp: Some(r#"{"error_code":"040016","error_message":"Error parsing log message: table param is None"}"#.to_string())
                 })
             },
             auth: None,
@@ -421,7 +421,7 @@ fn es_api_test() {
                 {"time":"2024-03-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}
                 {"create":{}}
                 {"time":"2024-04-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}"#,
-                resp: Ok("The 2th command fails because the table 'test9' already exists and cannot be created repeatedly".to_string()),
+                resp: Ok("".to_string()),
             },
             auth: None,
         },
@@ -432,7 +432,7 @@ fn es_api_test() {
                 {"time":"2024-03-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}
                 {"create":{}}
                 {"time":"2024-04-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}"#,
-                resp: Ok("The 2th command fails because the table 'test10' already exists and cannot be created repeatedly".to_string()),
+                resp: Ok("".to_string()),
             },
             auth: None,
         },
