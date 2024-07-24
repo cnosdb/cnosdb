@@ -2800,7 +2800,9 @@ fn try_parse_log_req(
             Ok(logs)
         }
         _ => Err(HttpError::ParseLog {
-            source: protocol_parser::JsonLogError::InvaildSyntax,
+            source: protocol_parser::JsonLogError::InvalidType {
+                name: "unsupported".to_string(),
+            },
         }),
     }
 }
