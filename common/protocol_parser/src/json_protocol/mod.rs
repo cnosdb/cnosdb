@@ -4,7 +4,7 @@ pub mod parser;
 
 use parser::Result;
 
-#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Clone)]
 pub enum JsonType {
     Bulk,
     Ndjson,

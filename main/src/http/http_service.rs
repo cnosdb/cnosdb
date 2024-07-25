@@ -1586,11 +1586,12 @@ impl HttpService {
                         let mut span =
                             Span::from_context("try parse req to log", span_context.as_ref());
                         span.add_property(|| ("bytes", req.len().to_string()));
-                        try_parse_log_req(req, log_type, content_type).map_err(|e| {
+                        try_parse_log_req(req, log_type.clone(), content_type).map_err(|e| {
                             error!("Failed to parse request to log, err: {:?}", e);
                             reject::custom(e)
                         })?
                     };
+                    let logs_len = logs.len();
 
                     let resp = coord_write_log(
                         &coord,
@@ -1626,10 +1627,27 @@ impl HttpService {
                         start,
                         HttpApiType::ApiV1ESLogWrite,
                     );
-                    resp.map_err(|e| {
-                        error!("Failed to handle http write request, err: {:?}", e);
-                        reject::custom(e)
-                    })
+
+                    if resp.is_err() || log_type != JsonType::Bulk {
+                        resp.map_err(|e| {
+                            error!("Failed to handle http write request, err: {:?}", e);
+                            reject::custom(e)
+                        })
+                    } else {
+                        // {"took":%d,"errors":false,"items":[{"create":{"status":201}}]}
+                        #[derive(serde::Serialize)]
+                        struct BulkResponse {
+                            took: u64,
+                            errors: bool,
+                            items: Vec<String>,
+                        }
+                        let resp = BulkResponse {
+                            took: start.elapsed().as_millis() as u64,
+                            errors: false,
+                            items: vec!["{\"create\":{\"status\":201}}".to_string(); logs_len],
+                        };
+                        Ok::<_, Rejection>(ResponseBuilder::new(OK).json(&resp))
+                    }
                 },
             )
     }
