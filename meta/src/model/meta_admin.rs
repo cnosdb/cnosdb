@@ -776,13 +776,16 @@ impl AdminMeta {
     }
 
     pub async fn read_resourceinfo_by_name(&self, name: &str) -> MetaResult<Option<ResourceInfo>> {
-        let req = command::ReadCommand::ResourceInfo(self.cluster(), name.to_string());
+        let req = command::ReadCommand::ResourceInfoByName(self.cluster(), name.to_string());
 
         self.client.read::<Option<ResourceInfo>>(&req).await
     }
 
-    pub async fn read_resourceinfos(&self) -> MetaResult<Vec<ResourceInfo>> {
-        let req = command::ReadCommand::ResourceInfos(self.cluster());
+    pub async fn read_resourceinfos_by_nodeid(
+        &self,
+        node_id: NodeId,
+    ) -> MetaResult<Vec<ResourceInfo>> {
+        let req = command::ReadCommand::ResourceInfosByNodeid(self.cluster(), node_id);
 
         self.client.read::<Vec<ResourceInfo>>(&req).await
     }

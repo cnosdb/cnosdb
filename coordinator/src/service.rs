@@ -332,13 +332,11 @@ impl CoordService {
                     .await
                     .map_err(|meta_err| CoordinatorError::Meta { source: meta_err })?;
                 if coord.node_id() == id && lock {
-                    let mut resourceinfos = coord
+                    let resourceinfos = coord
                         .meta_manager()
-                        .read_resourceinfos()
+                        .read_resourceinfos_by_nodeid(node_metrics.id)
                         .await
                         .map_err(|meta_err| CoordinatorError::Meta { source: meta_err })?;
-                    // find the dead node task
-                    resourceinfos.retain(|info| *info.get_execute_node_id() == node_metrics.id);
                     for mut resourceinfo in resourceinfos {
                         let coord = coord.clone();
                         resourceinfo.set_execute_node_id(coord.node_id());

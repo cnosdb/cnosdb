@@ -446,8 +446,11 @@ impl StateMachine {
                 let path = KeyPath::tenant_schema_name(cluster, tenant_name, db_name, table_name);
                 response_encode(self.get_struct::<TableSchema>(&path))
             }
-            ReadCommand::ResourceInfo(cluster, resource_name) => {
+            ReadCommand::ResourceInfoByName(cluster, resource_name) => {
                 response_encode(self.process_read_resourceinfo_by_name(cluster, resource_name))
+            }
+            ReadCommand::ResourceInfosByNodeid(cluster, node_id) => {
+                response_encode(self.process_read_resourceinfos_by_nodeid(cluster, *node_id))
             }
             ReadCommand::ResourceInfos(cluster) => {
                 response_encode(self.process_read_resourceinfos(cluster))
@@ -598,6 +601,21 @@ impl StateMachine {
         let res = self.get_struct::<ResourceInfo>(&path)?;
 
         Ok(res)
+    }
+
+    pub fn process_read_resourceinfos_by_nodeid(
+        &self,
+        cluster: &str,
+        node_id: NodeId,
+    ) -> MetaResult<Vec<ResourceInfo>> {
+        let path = KeyPath::resourceinfos(cluster, "");
+        let mut resourceinfos: Vec<ResourceInfo> = self
+            .children_data::<ResourceInfo>(&path)?
+            .into_values()
+            .collect();
+        resourceinfos.retain(|r| *r.get_execute_node_id() == node_id);
+
+        Ok(resourceinfos)
     }
 
     pub fn process_read_resourceinfos(&self, cluster: &str) -> MetaResult<Vec<ResourceInfo>> {

@@ -180,7 +180,9 @@ pub enum ReadCommand {
     // cluster
     ResourceInfos(String),
     // cluster, resource_name
-    ResourceInfo(String, String),
+    ResourceInfoByName(String, String),
+    // cluster, node_id
+    ResourceInfosByNodeid(String, NodeId),
     // cluster
     ResourceInfosMark(String),
 
