@@ -195,7 +195,10 @@ impl CoordService {
             meta_task_receiver,
         ));
         tokio::spawn(CoordService::db_ttl_service(coord.clone()));
-        tokio::spawn(CoordService::pre_create_bucket_service(coord.clone()));
+
+        if config.global.pre_create_bucket {
+            tokio::spawn(CoordService::pre_create_bucket_service(coord.clone()));
+        }
 
         if config.global.store_metrics {
             tokio::spawn(CoordService::metrics_service(
@@ -431,7 +434,7 @@ impl CoordService {
             let dur = tokio::time::Duration::from_secs(interval);
             tokio::time::sleep(dur).await;
 
-            let now = now_timestamp_nanos() + (interval * 1_1000_000_000) as i64;
+            let now = now_timestamp_nanos() + (interval * 1_000_000_000) as i64;
             let per_create = coord.meta.pre_create_bucket(now).await;
 
             for item in per_create {

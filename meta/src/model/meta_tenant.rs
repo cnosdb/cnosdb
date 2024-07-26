@@ -19,7 +19,6 @@ use models::schema::table_schema::TableSchema;
 use models::schema::tenant::Tenant;
 use models::schema::tskv_table_schema::TskvTableSchemaRef;
 use parking_lot::RwLock;
-
 use store::command;
 use trace::info;
 use utils::duration::CnosDuration;

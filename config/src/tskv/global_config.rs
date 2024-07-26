@@ -15,6 +15,8 @@ pub struct GlobalConfig {
     pub cluster_name: String,
     #[serde(default = "GlobalConfig::default_store_metrics")]
     pub store_metrics: bool,
+    #[serde(default = "GlobalConfig::default_pre_create_bucket")]
+    pub pre_create_bucket: bool,
 }
 
 impl GlobalConfig {
@@ -33,6 +35,10 @@ impl GlobalConfig {
     fn default_store_metrics() -> bool {
         true
     }
+
+    fn default_pre_create_bucket() -> bool {
+        false
+    }
 }
 
 impl Default for GlobalConfig {
@@ -42,6 +48,7 @@ impl Default for GlobalConfig {
             host: GlobalConfig::default_host(),
             cluster_name: GlobalConfig::default_cluster_name(),
             store_metrics: GlobalConfig::default_store_metrics(),
+            pre_create_bucket: GlobalConfig::default_pre_create_bucket(),
         }
     }
 }

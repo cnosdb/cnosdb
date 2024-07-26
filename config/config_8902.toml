@@ -3,6 +3,7 @@ node_id = 1001
 host = "localhost"
 cluster_name = 'cluster_xxx'
 store_metrics = true
+pre_creat_bucket = false
 
 [deployment]
 # mode = 'query_tskv'
