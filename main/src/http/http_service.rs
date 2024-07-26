@@ -35,7 +35,7 @@ use models::schema::{DEFAULT_CATALOG, DEFAULT_DATABASE};
 use models::utils::now_timestamp_nanos;
 use protocol_parser::json_protocol::parser::{
     parse_json_to_eslog, parse_json_to_lokilog, parse_json_to_ndjsonlog, parse_protobuf_to_lokilog,
-    parse_protobuf_to_otlptrace, parse_to_line, Command, JsonProtocol,
+    parse_protobuf_to_otlptrace, parse_to_line, JsonProtocol,
 };
 use protocol_parser::json_protocol::JsonType;
 use protocol_parser::line_protocol::line_protocol_to_lines;
@@ -1586,11 +1586,12 @@ impl HttpService {
                         let mut span =
                             Span::from_context("try parse req to log", span_context.as_ref());
                         span.add_property(|| ("bytes", req.len().to_string()));
-                        try_parse_log_req(req, log_type, content_type).map_err(|e| {
+                        try_parse_log_req(req, log_type.clone(), content_type).map_err(|e| {
                             error!("Failed to parse request to log, err: {:?}", e);
                             reject::custom(e)
                         })?
                     };
+                    let logs_len = logs.len();
 
                     let resp = coord_write_log(
                         &coord,
@@ -1626,10 +1627,27 @@ impl HttpService {
                         start,
                         HttpApiType::ApiV1ESLogWrite,
                     );
-                    resp.map_err(|e| {
-                        error!("Failed to handle http write request, err: {:?}", e);
-                        reject::custom(e)
-                    })
+
+                    if resp.is_err() || log_type != JsonType::Bulk {
+                        resp.map_err(|e| {
+                            error!("Failed to handle http write request, err: {:?}", e);
+                            reject::custom(e)
+                        })
+                    } else {
+                        // {"took":%d,"errors":false,"items":[{"create":{"status":201}}]}
+                        #[derive(serde::Serialize)]
+                        struct BulkResponse {
+                            took: u64,
+                            errors: bool,
+                            items: Vec<String>,
+                        }
+                        let resp = BulkResponse {
+                            took: start.elapsed().as_millis() as u64,
+                            errors: false,
+                            items: vec!["{\"create\":{\"status\":201}}".to_string(); logs_len],
+                        };
+                        Ok::<_, Rejection>(ResponseBuilder::new(OK).json(&resp))
+                    }
                 },
             )
     }
@@ -2800,7 +2818,9 @@ fn try_parse_log_req(
             Ok(logs)
         }
         _ => Err(HttpError::ParseLog {
-            source: protocol_parser::JsonLogError::InvaildSyntax,
+            source: protocol_parser::JsonLogError::InvalidType {
+                name: "unsupported".to_string(),
+            },
         }),
     }
 }
@@ -2817,34 +2837,14 @@ async fn coord_write_log(
 ) -> Result<Response, HttpError> {
     let span = Span::from_context("write points", span_context);
 
-    let mut table_exist = {
-        if let Some(meta) = coord.meta_manager().tenant_meta(tenant).await {
-            meta.get_table_schema(db, table).unwrap().is_some()
-        } else {
-            return Err(HttpError::ParseLog {
-                source: protocol_parser::JsonLogError::InvaildSyntax,
-            });
-        }
-    };
     let mut lines = Vec::new();
 
     let time_column = time_column.unwrap_or_else(|| "time".to_string());
     let tag_columns = tag_columns.unwrap_or_default();
 
-    let mut res: String = String::new();
-    for (i, log) in logs.iter().enumerate() {
+    for log in &logs {
         let line = parse_to_line(log, table, &time_column, &tag_columns)
             .map_err(|e| HttpError::ParseLog { source: e })?;
-
-        if let JsonProtocol::ESLog(log) = log {
-            if let Command::Create(_) = log.command {
-                if table_exist {
-                    res = format!("The {}th command fails because the table '{}' already exists and cannot be created repeatedly\n", i + 1, table).to_string();
-                    break;
-                }
-            }
-            table_exist = true;
-        }
         lines.push(line);
     }
 
@@ -2857,11 +2857,7 @@ async fn coord_write_log(
         })
         .context(CoordinatorSnafu)?;
 
-    if res.is_empty() {
-        Ok(ResponseBuilder::ok())
-    } else {
-        Ok(ResponseBuilder::new(warp::http::StatusCode::OK).build(res.into_bytes()))
-    }
+    Ok(ResponseBuilder::ok())
 }
 
 async fn coord_write_points_with_span_recorder(

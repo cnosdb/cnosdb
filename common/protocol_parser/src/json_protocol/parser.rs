@@ -56,8 +56,8 @@ pub enum Error {
     #[snafu(display("invalid log type: {name}"))]
     InvalidType { name: String },
 
-    #[snafu(display("invalid log syntax"))]
-    InvaildSyntax,
+    #[snafu(display("invalid log syntax: {content}"))]
+    InvaildSyntax { content: String },
 
     #[snafu(display("{}", content))]
     Common { content: String },
@@ -75,7 +75,11 @@ pub fn flatten_json(name: String, input: serde_json::Value) -> BTreeMap<String, 
             for (k, v) in map {
                 let res = flatten_json(k, v);
                 for (k2, v2) in res {
-                    output.insert(format!("{}.{}", name, k2), v2);
+                    if name.is_empty() {
+                        output.insert(k2, v2);
+                    } else {
+                        output.insert(format!("{}.{}", name, k2), v2);
+                    }
                 }
             }
         }
@@ -84,7 +88,11 @@ pub fn flatten_json(name: String, input: serde_json::Value) -> BTreeMap<String, 
                 let res = flatten_json(idx.to_string(), value.clone());
 
                 for (k, v) in res {
-                    output.insert(format!("{}.{}", name, k), v);
+                    if name.is_empty() {
+                        output.insert(k, v);
+                    } else {
+                        output.insert(format!("{}.{}", name, k), v);
+                    }
                 }
             }
         }
@@ -95,7 +103,9 @@ pub fn flatten_json(name: String, input: serde_json::Value) -> BTreeMap<String, 
     output
 }
 
-pub fn parse_json_to_eslog(json_chunk: Vec<&str>) -> Result<Vec<JsonProtocol>> {
+pub fn parse_json_to_eslog(mut json_chunk: Vec<&str>) -> Result<Vec<JsonProtocol>> {
+    json_chunk.retain(|&s| !s.is_empty());
+
     /*
     because the es log is a pair of command and fields like:
     { "index" : { "_index" : "test", "_id" : "1" } }
@@ -106,16 +116,22 @@ pub fn parse_json_to_eslog(json_chunk: Vec<&str>) -> Result<Vec<JsonProtocol>> {
     let n = json_chunk.len();
     let mut logs = vec![];
     if n % 2 != 0 {
-        return Err(Error::InvaildSyntax);
+        return Err(Error::InvaildSyntax {
+            content: "parse_json_to_eslog, es log must be a pair of command and fields".to_string(),
+        });
     }
 
     let mut i = 0;
     while i < n {
         let command: Command =
-            serde_json::from_str(json_chunk[i]).map_err(|_| Error::InvaildSyntax)?;
+            serde_json::from_str(json_chunk[i]).map_err(|e| Error::InvaildSyntax {
+                content: format!("parse_json_to_eslog, serde_json to Command error: {}", e),
+            })?;
         let fields = flatten_json(
             String::new(),
-            serde_json::from_str(json_chunk[i + 1]).map_err(|_| Error::InvaildSyntax)?,
+            serde_json::from_str(json_chunk[i + 1]).map_err(|e| Error::InvaildSyntax {
+                content: format!("parse_json_to_eslog, serde_json error: {}", e),
+            })?,
         );
 
         logs.push(ESLog { command, fields });
@@ -132,7 +148,9 @@ pub fn parse_json_to_ndjsonlog(json_chunk: Vec<&str>) -> Result<Vec<JsonProtocol
     for line in json_chunk {
         let fields = flatten_json(
             String::new(),
-            serde_json::from_str(line).map_err(|_| Error::InvaildSyntax)?,
+            serde_json::from_str(line).map_err(|e| Error::InvaildSyntax {
+                content: format!("parse_json_to_ndjsonlog error: {}", e),
+            })?,
         );
 
         logs.push(fields);
@@ -147,7 +165,9 @@ pub fn parse_json_to_lokilog(json_chunk: Vec<&str>) -> Result<Vec<JsonProtocol>>
     for line in json_chunk {
         let fields = flatten_json(
             String::new(),
-            serde_json::from_str(line).map_err(|_| Error::InvaildSyntax)?,
+            serde_json::from_str(line).map_err(|e| Error::InvaildSyntax {
+                content: format!("parse_json_to_lokilog error: {}", e),
+            })?,
         );
 
         logs.push(fields);
@@ -167,7 +187,9 @@ pub fn parse_protobuf_to_lokilog(req: Bytes) -> Result<Vec<JsonProtocol>> {
         })?;
     let buf = Bytes::from(buf);
 
-    let push_request = logproto::PushRequest::decode(buf).map_err(|_| Error::InvaildSyntax)?;
+    let push_request = logproto::PushRequest::decode(buf).map_err(|e| Error::InvaildSyntax {
+        content: format!("parse_protobuf_to_lokilog error: {}", e),
+    })?;
 
     let mut logs = Vec::new();
     let mut fields = BTreeMap::new();
@@ -195,7 +217,9 @@ pub fn parse_protobuf_to_lokilog(req: Bytes) -> Result<Vec<JsonProtocol>> {
 
 pub fn parse_protobuf_to_otlptrace(req: Bytes) -> Result<Vec<JsonProtocol>> {
     let export_trace_req =
-        ExportTraceServiceRequest::decode(req).map_err(|_| Error::InvaildSyntax)?;
+        ExportTraceServiceRequest::decode(req).map_err(|e| Error::InvaildSyntax {
+            content: format!("parse_protobuf_to_otlptrace error: {}", e),
+        })?;
 
     let mut logs = Vec::new();
     let mut fields = BTreeMap::new();

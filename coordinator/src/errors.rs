@@ -289,6 +289,12 @@ pub enum CoordinatorError {
         location: Location,
         backtrace: Backtrace,
     },
+
+    #[snafu(display("Replica Set({}) just only on replica can't remove", replica_id))]
+    #[error_code(code = 37)]
+    ReplicaCannotRemove {
+        replica_id: ReplicationSetId,
+    },
 }
 
 impl From<ArrowError> for CoordinatorError {

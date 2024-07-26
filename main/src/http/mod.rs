@@ -112,13 +112,13 @@ pub enum Error {
         source: simdutf8::basic::Utf8Error,
     },
 
-    #[snafu(display("Error parsing message: {}", source))]
+    #[snafu(display("Error parsing log message: {}", source))]
     #[error_code(code = 16)]
     ParseLog {
         source: protocol_parser::JsonLogError,
     },
 
-    #[snafu(display("Error parsing message: {}", source))]
+    #[snafu(display("Error parsing logjson message: {}", source))]
     #[error_code(code = 17)]
     ParseLogJson {
         source: serde_json::Error,
@@ -130,7 +130,7 @@ pub enum Error {
         source: ContextError,
     },
 
-    #[snafu(display("Error parsing message: {}", source))]
+    #[snafu(display("Error parsing otlp message: {}", source))]
     #[error_code(code = 19)]
     ParseOtlpProtocol {
         source: DecodeError,

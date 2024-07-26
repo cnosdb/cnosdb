@@ -9,7 +9,7 @@ use utils::bitset::ImmutBitSet;
 use super::statistics::ValueStatistics;
 use crate::byte_utils::{decode_be_u32, decode_be_u64};
 use crate::error::{
-    DecodeSnafu, EncodeSnafu, TSMPageFileHashCheckFailedSnafu, TskvResult, TsmPageSnafu,
+    DecodeSnafu, EncodeSnafu, TskvResult, TsmPageFileHashCheckFailedSnafu, TsmPageSnafu,
     UnsupportedDataTypeSnafu,
 };
 use crate::tsm::codec::{
@@ -55,7 +55,7 @@ impl Page {
         let data_crc_calculated = hasher.finalize();
         if data_crc != data_crc_calculated {
             // If crc not match, try to return error.
-            return Err(TSMPageFileHashCheckFailedSnafu {
+            return Err(TsmPageFileHashCheckFailedSnafu {
                 crc: data_crc,
                 crc_calculated: data_crc_calculated,
                 page: Page { bytes, meta },
