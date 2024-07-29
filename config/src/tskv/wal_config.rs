@@ -19,6 +19,9 @@ pub struct WalConfig {
 
     #[serde(default = "WalConfig::default_sync")]
     pub sync: bool,
+
+    #[serde(default = "WalConfig::default_compress")]
+    pub compress: String,
 }
 
 impl WalConfig {
@@ -38,6 +41,10 @@ impl WalConfig {
     fn default_sync() -> bool {
         false
     }
+
+    fn default_compress() -> String {
+        "zstd".to_string()
+    }
 }
 
 impl Default for WalConfig {
@@ -47,6 +54,7 @@ impl Default for WalConfig {
             wal_req_channel_cap: Self::default_wal_req_channel_cap(),
             max_file_size: Self::default_max_file_size(),
             sync: Self::default_sync(),
+            compress: Self::default_compress(),
         }
     }
 }

@@ -637,15 +637,9 @@ impl RaftNodesManager {
         // 2. open raft logs storage
         let owner = make_owner(tenant, db_name);
         let wal_option = tskv::kv_option::WalOptions::from(&self.config);
-        let db_config = vnode_store.db().read().await.config();
-        let wal = wal::VnodeWal::new(
-            Arc::new(wal_option),
-            db_config.clone(),
-            Arc::new(owner),
-            vnode_id,
-        )
-        .await
-        .context(TskvSnafu)?;
+        let wal = wal::VnodeWal::new(Arc::new(wal_option), Arc::new(owner), vnode_id)
+            .await
+            .context(TskvSnafu)?;
         let mut raft_logs = RaftEntryStorage::new(wal);
 
         // 3. recover data...

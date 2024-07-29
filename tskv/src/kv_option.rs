@@ -48,6 +48,7 @@ pub struct StorageOptions {
     pub collect_compaction_metrics: bool,
     pub snapshot_holding_time: i64,
     pub max_datablock_size: u64,
+    pub index_cache_capacity: u64,
 }
 
 // database/data/ts_family_id/tsm
@@ -118,6 +119,7 @@ impl From<&Config> for StorageOptions {
             collect_compaction_metrics: config.storage.collect_compaction_metrics,
             snapshot_holding_time: config.cluster.snapshot_holding_time.as_secs() as i64,
             max_datablock_size: config.storage.max_datablock_size,
+            index_cache_capacity: config.storage.index_cache_capacity,
         }
     }
 }
@@ -152,12 +154,18 @@ impl From<&Config> for QueryOptions {
 #[derive(Debug, Clone)]
 pub struct WalOptions {
     pub path: PathBuf,
+    pub wal_max_file_size: u64,
+    pub compress: String,
+    pub wal_sync: bool,
 }
 
 impl From<&Config> for WalOptions {
     fn from(config: &Config) -> Self {
         Self {
             path: PathBuf::from(config.wal.path.clone()),
+            wal_max_file_size: config.wal.max_file_size,
+            compress: config.wal.compress.clone(),
+            wal_sync: config.wal.sync,
         }
     }
 }

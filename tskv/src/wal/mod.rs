@@ -41,12 +41,12 @@ pub mod writer;
 
 use std::fmt::Display;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::Arc;
 
 use minivec::MiniVec;
 use models::codec::Encoding;
 use models::meta_data::VnodeId;
-use models::schema::database_schema::DatabaseConfig;
 use snafu::{IntoError, OptionExt, ResultExt};
 
 use self::reader::WalReader;
@@ -96,7 +96,6 @@ impl Display for WalType {
 
 pub struct VnodeWal {
     config: Arc<WalOptions>,
-    db_config: Arc<DatabaseConfig>,
     wal_dir: PathBuf,
     owner: Arc<String>,
     vnode_id: VnodeId,
@@ -106,15 +105,13 @@ pub struct VnodeWal {
 impl VnodeWal {
     pub async fn new(
         config: Arc<WalOptions>,
-        db_config: Arc<DatabaseConfig>,
         owner: Arc<String>,
         vnode_id: VnodeId,
     ) -> TskvResult<Self> {
         let wal_dir = config.wal_dir(&owner, vnode_id);
-        let writer_file = Self::open_writer(db_config.clone(), &wal_dir).await?;
+        let writer_file = Self::open_writer(config.clone(), &wal_dir).await?;
         Ok(Self {
             config,
-            db_config,
             wal_dir,
             owner,
             vnode_id,
@@ -122,10 +119,7 @@ impl VnodeWal {
         })
     }
 
-    pub async fn open_writer(
-        db_config: Arc<DatabaseConfig>,
-        wal_dir: &Path,
-    ) -> TskvResult<WalWriter> {
+    pub async fn open_writer(config: Arc<WalOptions>, wal_dir: &Path) -> TskvResult<WalWriter> {
         let next_file_id =
             match file_utils::get_max_sequence_file_name(wal_dir, file_utils::get_wal_file_id) {
                 Some((_, id)) => id,
@@ -133,7 +127,7 @@ impl VnodeWal {
             };
 
         let new_wal = file_utils::make_wal_file(wal_dir, next_file_id);
-        let writer_file = WalWriter::open(db_config, next_file_id, new_wal).await?;
+        let writer_file = WalWriter::open(config, next_file_id, new_wal).await?;
         trace::info!("WAL '{:?}' starts write", writer_file.path());
 
         Ok(writer_file)
@@ -146,8 +140,7 @@ impl VnodeWal {
             let new_file_id = self.current_wal.id() + 1;
             let new_file_name = file_utils::make_wal_file(&self.wal_dir, new_file_id);
 
-            let new_file =
-                WalWriter::open(self.db_config.clone(), new_file_id, new_file_name).await?;
+            let new_file = WalWriter::open(self.config.clone(), new_file_id, new_file_name).await?;
 
             let mut old_file = std::mem::replace(&mut self.current_wal, new_file);
             old_file.close().await?;
@@ -163,7 +156,7 @@ impl VnodeWal {
         }
 
         let file_name = file_utils::make_wal_file(&self.wal_dir, file_id);
-        let mut new_file = WalWriter::open(self.db_config.clone(), file_id, file_name).await?;
+        let mut new_file = WalWriter::open(self.config.clone(), file_id, file_name).await?;
         new_file.truncate(pos).await;
         new_file.sync().await?;
 
@@ -179,7 +172,7 @@ impl VnodeWal {
             }
         }
 
-        let new_writer = VnodeWal::open_writer(self.db_config.clone(), self.wal_dir()).await?;
+        let new_writer = VnodeWal::open_writer(self.config.clone(), self.wal_dir()).await?;
         let _ = std::mem::replace(&mut self.current_wal, new_writer);
 
         Ok(())
@@ -189,7 +182,7 @@ impl VnodeWal {
         &mut self,
         raft_entry: &wal_store::RaftEntry,
     ) -> TskvResult<(u64, u64)> {
-        if let Err(err) = self.roll_wal_file(self.db_config.wal_max_file_size()).await {
+        if let Err(err) = self.roll_wal_file(self.config.wal_max_file_size).await {
             trace::warn!("roll wal file failed: {}", err);
         }
 
@@ -208,7 +201,7 @@ impl VnodeWal {
         } else {
             let wal_dir = self.config.wal_dir(&self.owner, self.vnode_id);
             let wal_path = file_utils::make_wal_file(wal_dir, wal_id);
-            let reader = WalReader::open(wal_path).await?;
+            let reader = WalReader::open(wal_path, self.config.compress.clone()).await?;
             Ok(reader)
         }
     }
@@ -244,17 +237,11 @@ pub struct WalEntryCodec {
     codec: Box<dyn StringCodec + Send + Sync>,
 }
 
-impl Default for WalEntryCodec {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl WalEntryCodec {
-    pub fn new() -> Self {
+    pub fn new(encode: Encoding) -> Self {
         Self {
             buffer: Vec::new(),
-            codec: get_str_codec(Encoding::Zstd),
+            codec: get_str_codec(encode),
         }
     }
 
@@ -276,8 +263,9 @@ impl WalEntryCodec {
     }
 }
 
-fn decode_wal_raft_entry(buf: &[u8]) -> TskvResult<wal_store::RaftEntry> {
-    let mut decoder = WalEntryCodec::new();
+fn decode_wal_raft_entry(buf: &[u8], encode: &str) -> TskvResult<wal_store::RaftEntry> {
+    let encode = Encoding::from_str(encode).map_err(|e| EncodeSnafu.into_error(e.into()))?;
+    let mut decoder = WalEntryCodec::new(encode);
     let dec_data = decoder.decode(buf)?.context(CommonSnafu {
         reason: format!("raft entry decode is none, len: {}", buf.len()),
     })?;
@@ -285,10 +273,11 @@ fn decode_wal_raft_entry(buf: &[u8]) -> TskvResult<wal_store::RaftEntry> {
     bincode::deserialize(&dec_data).map_err(|e| DecodeSnafu.into_error(e))
 }
 
-fn encode_wal_raft_entry(entry: &wal_store::RaftEntry) -> TskvResult<Vec<u8>> {
+fn encode_wal_raft_entry(entry: &wal_store::RaftEntry, encode: &str) -> TskvResult<Vec<u8>> {
     let bytes = bincode::serialize(entry).map_err(|e| EncodeSnafu.into_error(e))?;
 
-    let encoder = WalEntryCodec::new();
+    let encode = Encoding::from_str(encode).map_err(|e| EncodeSnafu.into_error(e.into()))?;
+    let encoder = WalEntryCodec::new(encode);
     encoder.encode(&bytes)
 }
 

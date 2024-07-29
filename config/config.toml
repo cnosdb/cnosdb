@@ -72,6 +72,9 @@ strict_write = false
 ## The maximum size of a datablock in compaction. 
 max_datablock_size = "100KiB"
 
+## index cache capacity in every vnode
+index_cache_capacity = 100000
+
 [wal]
 
 ## The directory where write ahead logs stored.
@@ -85,6 +88,9 @@ path = '/var/lib/cnosdb/wal'
 
 ## If true, fsync will be called after every WAL writes.
 # sync = false
+
+## wal compress type
+# compress = "zstd"
 
 [cache]
 

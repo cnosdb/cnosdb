@@ -481,8 +481,9 @@ impl Database {
         }
 
         let path = self.opt.storage.index_dir(self.owner.clone(), id);
-
-        let idx = TSIndex::new(path).await.context(IndexErrSnafu)?;
+        let idx = TSIndex::new(path, self.opt.storage.index_cache_capacity)
+            .await
+            .context(IndexErrSnafu)?;
 
         self.ts_indexes.insert(id, idx.clone());
 
