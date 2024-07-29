@@ -88,7 +88,7 @@ pub struct TSIndex {
 }
 
 impl TSIndex {
-    pub async fn new(path: impl AsRef<Path>) -> IndexResult<Arc<RwLock<Self>>> {
+    pub async fn new(path: impl AsRef<Path>, cap: u64) -> IndexResult<Arc<RwLock<Self>>> {
         let path = path.as_ref();
         let storage = IndexEngine::new(path)?;
 
@@ -101,7 +101,7 @@ impl TSIndex {
             storage,
             incr_id: AtomicU32::new(incr_id),
             write_count: AtomicU32::new(0),
-            cache: IndexCache::new(1_000_000),
+            cache: IndexCache::new(cap as usize),
         };
 
         trace::info!(
@@ -696,7 +696,7 @@ mod test {
                 }
             }
 
-            let ts_index = TSIndex::new(dir).await.unwrap();
+            let ts_index = TSIndex::new(dir, 10000).await.unwrap();
             let mut ts_index = ts_index.write().await;
             // Insert series into index.
             let mut series_keys_sids = Vec::with_capacity(series_keys_desc.len());
@@ -761,7 +761,7 @@ mod test {
 
         {
             // Test re-open, query and insert.
-            let ts_index = TSIndex::new(dir).await.unwrap();
+            let ts_index = TSIndex::new(dir, 10000).await.unwrap();
             let mut ts_index = ts_index.write().await;
             let list = ts_index
                 .get_series_id_list("table_test", &[])
@@ -801,9 +801,9 @@ mod test {
         }
 
         // Test re-open, do not insert and then re-open.
-        let ts_index = TSIndex::new(dir).await.unwrap();
+        let ts_index = TSIndex::new(dir, 10000).await.unwrap();
         drop(ts_index);
-        let ts_index = TSIndex::new(dir).await.unwrap();
+        let ts_index = TSIndex::new(dir, 10000).await.unwrap();
         let mut ts_index = ts_index.write().await;
         #[rustfmt::skip]
         let series_keys_desc: Vec<SeriesKeyDesc> = vec![
@@ -862,7 +862,7 @@ mod test {
         let dir = "/tmp/test/cnosdb/ts_index/update_tags_value";
         let _ = std::fs::remove_dir_all(dir);
 
-        let ts_index = TSIndex::new(dir).await.unwrap();
+        let ts_index = TSIndex::new(dir, 10000).await.unwrap();
         let mut ts_index = ts_index.write().await;
 
         let tags1 = vec![

@@ -1,8 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use models::schema::database_schema::DatabaseConfig;
-
+use crate::kv_option::WalOptions;
 use crate::record_file::{RecordDataType, RecordDataVersion, Writer};
 use crate::wal::reader::WalReader;
 use crate::wal::{wal_store, WalType, WAL_BUFFER_SIZE};
@@ -14,14 +13,14 @@ pub struct WalWriter {
     inner: Writer,
     size: u64,
     path: PathBuf,
-    db_config: Arc<DatabaseConfig>,
+    config: Arc<WalOptions>,
 }
 
 impl WalWriter {
     /// Opens a wal file at path, returns a WalWriter with id and config.
     /// If wal file doesn't exist, create new wal file and set it's min_log_sequence(default 0).
     pub async fn open(
-        db_config: Arc<DatabaseConfig>,
+        config: Arc<WalOptions>,
         id: u64,
         path: impl AsRef<Path>,
     ) -> TskvResult<Self> {
@@ -34,7 +33,7 @@ impl WalWriter {
             inner: writer,
             size,
             path: PathBuf::from(path),
-            db_config,
+            config,
         })
     }
 
@@ -49,7 +48,7 @@ impl WalWriter {
         };
 
         let seq = raft_entry.log_id.index;
-        let data = super::encode_wal_raft_entry(raft_entry)?;
+        let data = super::encode_wal_raft_entry(raft_entry, &self.config.compress)?;
         let written_size = self
             .inner
             .write_record(
@@ -59,7 +58,7 @@ impl WalWriter {
             )
             .await?;
 
-        if self.db_config.wal_sync() {
+        if self.config.wal_sync {
             self.inner.sync().await?;
         }
 
@@ -79,7 +78,7 @@ impl WalWriter {
 
     pub async fn new_reader(&mut self) -> TskvResult<WalReader> {
         let record_reader = self.inner.new_reader().await?;
-        Ok(WalReader::new(record_reader))
+        Ok(WalReader::new(record_reader, self.config.compress.clone()))
     }
 
     pub async fn truncate(&mut self, size: u64) {

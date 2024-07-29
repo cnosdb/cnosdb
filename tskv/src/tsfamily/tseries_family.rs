@@ -344,7 +344,8 @@ impl TseriesFamily {
         let path = self.storage_opt.index_dir(self.owner(), self.tf_id);
         let _ = std::fs::remove_dir_all(path.clone());
 
-        let index = TSIndex::new(path).await.context(IndexErrSnafu)?;
+        let capacity = self.storage_opt.index_cache_capacity;
+        let index = TSIndex::new(path, capacity).await.context(IndexErrSnafu)?;
         let index_clone = index.clone();
         let mut index_w = index_clone.write().await;
 

@@ -9,18 +9,23 @@ use crate::error::{CommonSnafu, WalTruncatedSnafu};
 use crate::{record_file, TskvError, TskvResult};
 
 pub struct WalReader {
+    compress: String,
     inner: record_file::Reader,
 }
 
 impl WalReader {
-    pub async fn open(path: impl AsRef<Path>) -> TskvResult<Self> {
+    pub async fn open(path: impl AsRef<Path>, compress: String) -> TskvResult<Self> {
         let reader = record_file::Reader::open(&path).await?;
 
-        Ok(Self { inner: reader })
+        Ok(Self {
+            compress,
+            inner: reader,
+        })
     }
 
-    pub(super) fn new(record_reader: record_file::Reader) -> Self {
+    pub(super) fn new(record_reader: record_file::Reader, compress: String) -> Self {
         Self {
+            compress,
             inner: record_reader,
         }
     }
@@ -29,7 +34,7 @@ impl WalReader {
         loop {
             match self.inner.read_record().await {
                 Ok(r) => {
-                    let record = WalRecordData::new(r.data, r.pos)?;
+                    let record = WalRecordData::new(r.data, r.pos, &self.compress)?;
                     return Ok(Some(record));
                 }
                 Err(TskvError::Eof) => return Ok(None),
@@ -49,7 +54,7 @@ impl WalReader {
         self.inner.reload_metadata().await?;
         match self.inner.read_record_at(pos).await {
             Ok(r) => {
-                let data = WalRecordData::new(r.data, pos)?;
+                let data = WalRecordData::new(r.data, pos, &self.compress)?;
                 Ok(Some(data))
             }
             Err(TskvError::Eof) => Ok(None),
@@ -91,7 +96,7 @@ pub struct WalRecordData {
 }
 
 impl WalRecordData {
-    pub fn new(buf: Vec<u8>, pos: u64) -> TskvResult<WalRecordData> {
+    pub fn new(buf: Vec<u8>, pos: u64, encode: &str) -> TskvResult<WalRecordData> {
         if buf.len() < WAL_HEADER_LEN {
             return Err(CommonSnafu {
                 reason: format!("Decode wal record data to short: {}", buf.len()),
@@ -101,7 +106,7 @@ impl WalRecordData {
 
         let seq = decode_be_u64(&buf[1..9]);
         let typ: WalType = buf[0].into();
-        let block = super::decode_wal_raft_entry(&buf[WAL_HEADER_LEN..])?;
+        let block = super::decode_wal_raft_entry(&buf[WAL_HEADER_LEN..], encode)?;
         Ok(Self {
             pos,
             seq,
@@ -111,8 +116,8 @@ impl WalRecordData {
     }
 }
 
-pub async fn print_wal_statistics(path: impl AsRef<Path>) {
-    let mut reader = WalReader::open(path).await.unwrap();
+pub async fn print_wal_statistics(path: impl AsRef<Path>, compress: String) {
+    let mut reader = WalReader::open(path, compress).await.unwrap();
     loop {
         let pos = reader.pos();
         match reader.read_wal_record_data(pos).await {

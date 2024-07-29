@@ -5,11 +5,12 @@ const ARG_TSM: &str = "--tsm"; // To print a .tsm file
 const ARG_TOMBSTONE: &str = "--tombstone"; // To print a .tsm file with tombsotne
 const ARG_SUMMARY: &str = "--summary"; // To print a summary file
 const ARG_WAL: &str = "--wal"; // To print a wal file
+const ARG_COMPRESS: &str = "--compress"; // To print a wal file
 
 /// # Example
 /// tskv print [--tsm <tsm_path>] [--tombstone]
 /// tskv print [--summary <summary_path>]
-/// tskv print [--wal <wal_path>]
+/// tskv print [--wal <wal_path>] [--compress]
 /// - --tsm <tsm_path> print statistics for .tsm file at <tsm_path> .
 /// - --tombstone also print tombstone for every field_id in .tsm file.
 #[tokio::main]
@@ -25,6 +26,7 @@ async fn main() {
 
     let mut show_wal = false;
     let mut wal_path: Option<String> = None;
+    let mut wal_compress = "zstd".to_string();
 
     while let Some(arg) = args.peek() {
         // --print [--tsm <path>]
@@ -55,6 +57,9 @@ async fn main() {
                             println!("Invalid arguments: --wal <wal_path>")
                         }
                     }
+                    ARG_COMPRESS => {
+                        wal_compress = args.next().unwrap_or_default();
+                    }
                     _ => {}
                 }
             }
@@ -79,7 +84,7 @@ async fn main() {
     if show_wal {
         if let Some(p) = wal_path {
             println!("Wal Path: {}", p);
-            tskv::print_wal_statistics(p).await;
+            tskv::print_wal_statistics(p, wal_compress).await;
         }
     }
 }

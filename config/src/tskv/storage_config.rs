@@ -68,6 +68,9 @@ pub struct StorageConfig {
         default = "StorageConfig::default_max_datablock_size"
     )]
     pub max_datablock_size: u64,
+
+    #[serde(default = "StorageConfig::default_index_cache_capacity")]
+    pub index_cache_capacity: u64,
 }
 
 impl StorageConfig {
@@ -132,6 +135,10 @@ impl StorageConfig {
         100 * 1024
     }
 
+    fn default_index_cache_capacity() -> u64 {
+        100_000
+    }
+
     pub fn introspect(&mut self) {
         // Unit of storage.compact_trigger_cold_duration is seconds
         self.compact_trigger_cold_duration =
@@ -157,6 +164,7 @@ impl Default for StorageConfig {
             reserve_space: Self::default_reserve_space(),
             copyinto_trigger_flush_size: Self::default_copyinto_trigger_flush_size(),
             max_datablock_size: Self::default_max_datablock_size(),
+            index_cache_capacity: Self::default_index_cache_capacity(),
         }
     }
 }

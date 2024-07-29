@@ -516,7 +516,7 @@ mod test {
     use std::sync::atomic::AtomicUsize;
     use std::sync::{atomic, Arc};
 
-    use models::schema::database_schema::{make_owner, DatabaseConfig};
+    use models::schema::database_schema::make_owner;
     use openraft::EntryPayload;
     use replication::apply_store::HeedApplyStorage;
     use replication::node_store::NodeStorage;
@@ -538,15 +538,12 @@ mod test {
         let owner = Arc::new(owner);
         let wal_option = crate::kv_option::WalOptions {
             path: dir.to_path_buf(),
+            wal_max_file_size: 1024 * 1024 * 1024,
+            compress: "zstd".to_string(),
+            wal_sync: false,
         };
 
-        VnodeWal::new(
-            Arc::new(wal_option),
-            DatabaseConfig::default().into(),
-            owner,
-            1234,
-        )
-        .await
+        VnodeWal::new(Arc::new(wal_option), owner, 1234).await
     }
 
     #[tokio::test]
@@ -602,7 +599,7 @@ mod test {
                     continue;
                 }
 
-                let wal_reocrd = WalRecordData::new(record.data, record.pos).unwrap();
+                let wal_reocrd = WalRecordData::new(record.data, record.pos, "zstd").unwrap();
                 let entry = wal_reocrd.block;
                 storage
                     .inner
