@@ -6,13 +6,14 @@ use datafusion::arrow::datatypes::{DataType, Field, Schema};
 use datafusion::arrow::record_batch::RecordBatch;
 use models::auth::role::UserRole;
 use models::auth::user::{User, UserDesc, UserInfo, UserOptionsBuilder};
+use models::schema::query_info::QueryId;
 use trace::span_ext::SpanExt;
 use trace::SpanContext;
 
 use crate::query::execution::{Output, QueryStateMachine, QueryStateMachineRef};
 use crate::query::logical_planner::Plan;
 use crate::query::recordbatch::RecordBatchStreamWrapper;
-use crate::service::protocol::{Query, QueryHandle, QueryId};
+use crate::service::protocol::{Query, QueryHandle};
 use crate::QueryResult;
 
 pub type DBMSRef = Arc<dyn DatabaseManagerSystem + Send + Sync>;

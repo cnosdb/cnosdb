@@ -12,10 +12,11 @@ use datafusion::physical_plan::displayable;
 use datafusion::prelude::SessionConfig;
 use futures::TryStreamExt;
 use models::runtime::executor::{DedicatedExecutor, Job};
+use models::schema::query_info::QueryInfo;
 use parking_lot::Mutex;
 use spi::query::config::StreamTriggerInterval;
 use spi::query::datasource::stream::StreamProviderRef;
-use spi::query::dispatcher::{QueryInfo, QueryStatus, QueryStatusBuilder};
+use spi::query::dispatcher::{QueryStatus, QueryStatusBuilder};
 use spi::query::execution::{Output, QueryExecution, QueryStateMachineRef, QueryType};
 use spi::query::logical_planner::QueryPlan;
 use spi::query::physical_planner::PhysicalPlanner;
@@ -256,6 +257,7 @@ impl QueryExecution for MicroBatchStreamExecution {
             qsm.session.tenant().to_string(),
             qsm.session.default_database().to_string(),
             qsm.session.user().clone(),
+            qsm.coord.node_id(),
         )
     }
 

@@ -8,6 +8,7 @@ use meta::error::MetaError;
 use models::auth::user::{User, UserInfo};
 use models::auth::AuthError;
 use models::oid::Oid;
+use models::schema::query_info::QueryId;
 use models::schema::DEFAULT_CATALOG;
 use snafu::ResultExt;
 use spi::query::auth::AccessControlRef;
@@ -18,7 +19,7 @@ use spi::query::execution::QueryStateMachineRef;
 use spi::query::logical_planner::Plan;
 use spi::query::session::SessionCtxFactory;
 use spi::server::dbms::DatabaseManagerSystem;
-use spi::service::protocol::{Query, QueryHandle, QueryId};
+use spi::service::protocol::{Query, QueryHandle};
 use spi::{AuthSnafu, MetaSnafu, QueryResult};
 use trace::{debug, SpanContext};
 use tskv::kv_option::Options;
@@ -47,7 +48,7 @@ pub struct Cnosdbms<D: QueryDispatcher> {
     // TODO access control
     access_control: AccessControlRef,
     // query dispatcher & query execution
-    query_dispatcher: D,
+    query_dispatcher: Arc<D>,
 }
 
 #[async_trait]

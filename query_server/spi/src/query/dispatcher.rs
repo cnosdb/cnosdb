@@ -2,15 +2,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use models::auth::user::User;
-use models::oid::{Identifier, Oid};
-use serde::{Deserialize, Serialize};
+use models::oid::Oid;
+use models::schema::query_info::{QueryId, QueryInfo};
 use trace::SpanContext;
 
 use super::execution::QueryState;
 use crate::query::execution::{Output, QueryStateMachine};
 use crate::query::logical_planner::Plan;
-use crate::service::protocol::{Query, QueryId};
+use crate::service::protocol::Query;
 use crate::QueryResult;
 
 #[async_trait]
@@ -55,69 +54,6 @@ pub trait QueryDispatcher: Send + Sync {
     fn running_query_status(&self) -> Vec<QueryStatus>;
 
     fn cancel_query(&self, id: &QueryId);
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct QueryInfo {
-    query_id: QueryId,
-    query: String,
-
-    tenant_id: Oid,
-    tenant_name: String,
-    database_name: String,
-    user: User,
-}
-
-impl QueryInfo {
-    pub fn new(
-        query_id: QueryId,
-        query: String,
-        tenant_id: Oid,
-        tenant_name: String,
-        database_name: String,
-        user: User,
-    ) -> Self {
-        Self {
-            query_id,
-            query,
-            tenant_id,
-            tenant_name,
-            database_name,
-            user,
-        }
-    }
-
-    pub fn query_id(&self) -> QueryId {
-        self.query_id
-    }
-
-    pub fn query(&self) -> &str {
-        &self.query
-    }
-
-    pub fn tenant_id(&self) -> Oid {
-        self.tenant_id
-    }
-
-    pub fn tenant_name(&self) -> &str {
-        &self.tenant_name
-    }
-
-    pub fn database_name(&self) -> &str {
-        &self.database_name
-    }
-
-    pub fn user(&self) -> &User {
-        &self.user
-    }
-
-    pub fn user_id(&self) -> Oid {
-        *self.user.desc().id()
-    }
-
-    pub fn user_name(&self) -> &str {
-        self.user.desc().name()
-    }
 }
 
 #[derive(Debug)]

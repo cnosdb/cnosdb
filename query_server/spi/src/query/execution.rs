@@ -13,12 +13,13 @@ use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::physical_plan::SendableRecordBatchStream;
 use futures::{Stream, StreamExt, TryStreamExt};
 use meta::model::MetaRef;
+use models::schema::query_info::{QueryId, QueryInfo};
 use trace::SpanContext;
 
-use super::dispatcher::{QueryInfo, QueryStatus};
+use super::dispatcher::QueryStatus;
 use super::logical_planner::Plan;
 use super::session::SessionCtx;
-use crate::service::protocol::{Query, QueryId};
+use crate::service::protocol::Query;
 use crate::{QueryError, QueryResult};
 
 pub type QueryExecutionRef = Arc<dyn QueryExecution>;

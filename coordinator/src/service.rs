@@ -5,7 +5,7 @@ use std::fmt::Debug;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::AtomicUsize;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 use std::{mem, vec};
 
@@ -25,16 +25,14 @@ use metrics::label::Labels;
 use metrics::metric::Metric;
 use metrics::metric_register::MetricsRegister;
 use models::meta_data::{
-    ExpiredBucketInfo, MetaModifyType, NodeId, ReplicationSet, ReplicationSetId, VnodeId,
-    VnodeStatus,
+    ExpiredBucketInfo, NodeId, ReplicationSet, ReplicationSetId, VnodeId, VnodeStatus,
 };
 use models::object_reference::ResolvedTable;
 use models::oid::Identifier;
 use models::predicate::domain::{ResolvedPredicate, ResolvedPredicateRef, TimeRange, TimeRanges};
-use models::schema::resource_info::{ResourceInfo, ResourceOperator, ResourceStatus};
+use models::schema::resource_info::{ResourceInfo, ResourceOperator};
 use models::schema::tskv_table_schema::{ColumnType, TskvTableSchemaRef};
 use models::schema::{DEFAULT_CATALOG, TIME_FIELD_NAME, USAGE_SCHEMA};
-use models::utils::now_timestamp_nanos;
 use models::{record_batch_decode, SeriesKey, Tag};
 use protocol_parser::lines_convert::{
     arrow_array_to_points, line_to_batches, mutable_batches_to_point,
@@ -45,11 +43,6 @@ use protos::kv_service::*;
 use replication::multi_raft::MultiRaft;
 use snafu::{IntoError, OptionExt, ResultExt};
 use tokio::runtime::Runtime;
-use tokio::sync::mpsc::Receiver;
-use tokio::task::JoinHandle;
-use tokio::time::Instant;
-use tokio_retry::strategy::{jitter, ExponentialBackoff};
-use tokio_retry::Retry;
 use trace::span_ext::SpanExt;
 use trace::{debug, error, info, Span, SpanContext};
 use tskv::EngineRef;
@@ -87,8 +80,6 @@ pub struct CoordService {
     memory_pool: MemoryPoolRef,
     metrics: Arc<CoordServiceMetrics>,
     raft_manager: Arc<RaftNodesManager>,
-    async_task_joinhandle: Arc<Mutex<HashMap<String, JoinHandle<()>>>>,
-    failed_task_joinhandle: Arc<Mutex<HashMap<String, JoinHandle<()>>>>,
 }
 
 #[derive(Debug)]
@@ -179,21 +170,11 @@ impl CoordService {
             raft_manager,
             meta: meta.clone(),
             config: config.clone(),
-            async_task_joinhandle: Arc::new(Mutex::new(HashMap::new())),
-            failed_task_joinhandle: Arc::new(Mutex::new(HashMap::new())),
             node_id: config.global.node_id,
             metrics: Arc::new(CoordServiceMetrics::new(metrics_register.as_ref())),
             writer_count: Arc::new(AtomicUsize::new(0)),
         });
 
-        let meta_task_receiver = coord
-            .meta_manager()
-            .take_resourceinfo_rx()
-            .expect("meta resource channel only has one consumer");
-        tokio::spawn(CoordService::recv_meta_modify(
-            coord.clone(),
-            meta_task_receiver,
-        ));
         tokio::spawn(CoordService::db_ttl_service(coord.clone()));
 
         if config.global.store_metrics {
@@ -204,208 +185,6 @@ impl CoordService {
         }
 
         coord
-    }
-
-    async fn recv_meta_modify(coord: Arc<CoordService>, mut receiver: Receiver<MetaModifyType>) {
-        while let Some(modify_data) = receiver.recv().await {
-            // if error, max retry count 10
-            let _ = Retry::spawn(
-                ExponentialBackoff::from_millis(10).map(jitter).take(10),
-                || async {
-                    let res =
-                        CoordService::handle_meta_modify(coord.clone(), modify_data.clone()).await;
-                    if let Err(e) = &res {
-                        error!("handle meta modify error: {}, retry later", e.to_string());
-                    }
-                    res
-                },
-            )
-            .await;
-        }
-    }
-
-    async fn handle_meta_modify(
-        coord: Arc<CoordService>,
-        modify_data: MetaModifyType,
-    ) -> CoordinatorResult<()> {
-        match modify_data {
-            MetaModifyType::ResourceInfo(resourceinfo) => {
-                if !resourceinfo.get_is_new_add() {
-                    return Ok(()); // ignore the old task
-                }
-
-                // if current node get the lock, handle meta modify
-                let (id, lock) = coord
-                    .meta_manager()
-                    .read_resourceinfos_mark()
-                    .await
-                    .map_err(|meta_err| CoordinatorError::Meta { source: meta_err })?;
-                if id == coord.node_id() && lock {
-                    match *resourceinfo.get_status() {
-                        ResourceStatus::Schedule => {
-                            if let Ok(mut joinhandle_map) = coord.async_task_joinhandle.lock() {
-                                if let Some(handle) = joinhandle_map.get(resourceinfo.get_name()) {
-                                    handle.abort(); // same resource name, abort the old task
-                                }
-                                joinhandle_map.insert(
-                                    resourceinfo.get_name().to_string(),
-                                    tokio::spawn(CoordService::exec_async_task(
-                                        coord.clone(),
-                                        *resourceinfo,
-                                    )),
-                                );
-                            }
-                        }
-                        ResourceStatus::Failed => {
-                            if let Ok(mut joinhandle_map) = coord.failed_task_joinhandle.lock() {
-                                if joinhandle_map.contains_key(resourceinfo.get_name()) {
-                                    return Ok(()); // ignore repetition failed task
-                                }
-                                let coord = coord.clone();
-                                joinhandle_map.insert(
-                                    resourceinfo.get_name().to_string(),
-                                    tokio::spawn(ResourceManager::retry_failed_task(
-                                        coord,
-                                        *resourceinfo,
-                                    )),
-                                );
-                            }
-                        }
-                        ResourceStatus::Cancel => {
-                            if let Ok(mut joinhandle_map) = coord.async_task_joinhandle.lock() {
-                                if let Some(handle) = joinhandle_map.get(resourceinfo.get_name()) {
-                                    handle.abort(); // abort task
-                                }
-                                joinhandle_map.remove(resourceinfo.get_name()); // remove task
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-                Ok(())
-            }
-            MetaModifyType::NodeMetrics(node_metrics) => {
-                // if lock node dead, grap lock again
-                let (id, lock) = coord
-                    .meta_manager()
-                    .read_resourceinfos_mark()
-                    .await
-                    .map_err(|meta_err| CoordinatorError::Meta { source: meta_err })?;
-                if node_metrics.id == id && lock {
-                    // unlock the dead node
-                    if let Err(e) = coord
-                        .meta_manager()
-                        .write_resourceinfos_mark(node_metrics.id, false)
-                        .await
-                    {
-                        match e {
-                            MetaError::ResourceInfosMarkIsLock { .. } => {
-                                return Ok(());
-                            }
-                            _ => {
-                                return Err(CoordinatorError::Meta { source: e });
-                            }
-                        }
-                    }
-
-                    // grap lock again
-                    if let Err(e) = coord
-                        .meta_manager()
-                        .write_resourceinfos_mark(coord.node_id(), true)
-                        .await
-                    {
-                        match e {
-                            MetaError::ResourceInfosMarkIsLock { .. } => {
-                                return Ok(());
-                            }
-                            _ => {
-                                return Err(CoordinatorError::Meta { source: e });
-                            }
-                        }
-                    }
-                }
-
-                // if current node get the lock, get the dead node task
-                let (id, lock) = coord
-                    .meta_manager()
-                    .read_resourceinfos_mark()
-                    .await
-                    .map_err(|meta_err| CoordinatorError::Meta { source: meta_err })?;
-                if coord.node_id() == id && lock {
-                    let resourceinfos = coord
-                        .meta_manager()
-                        .read_resourceinfos_by_nodeid(node_metrics.id)
-                        .await
-                        .map_err(|meta_err| CoordinatorError::Meta { source: meta_err })?;
-                    for mut resourceinfo in resourceinfos {
-                        let coord = coord.clone();
-                        resourceinfo.set_execute_node_id(coord.node_id());
-                        resourceinfo.set_is_new_add(false);
-                        coord
-                            .meta_manager()
-                            .write_resourceinfo(resourceinfo.get_name(), resourceinfo.clone())
-                            .await
-                            .context(MetaSnafu)?;
-                        match *resourceinfo.get_status() {
-                            ResourceStatus::Schedule => {
-                                if let Ok(mut joinhandle_map) = coord.async_task_joinhandle.lock() {
-                                    if joinhandle_map.contains_key(resourceinfo.get_name()) {
-                                        return Ok(()); // ignore the dead node task
-                                    }
-
-                                    joinhandle_map.insert(
-                                        resourceinfo.get_name().to_string(),
-                                        tokio::spawn(CoordService::exec_async_task(
-                                            coord.clone(),
-                                            resourceinfo,
-                                        )),
-                                    );
-                                }
-                            }
-                            ResourceStatus::Executing => {
-                                let _ =
-                                    ResourceManager::add_resource_task(coord, resourceinfo).await;
-                            }
-                            ResourceStatus::Failed => {
-                                if let Ok(mut joinhandle_map) = coord.failed_task_joinhandle.lock()
-                                {
-                                    if joinhandle_map.contains_key(resourceinfo.get_name()) {
-                                        return Ok(()); // ignore repetition failed task
-                                    }
-                                    let coord = coord.clone();
-                                    joinhandle_map.insert(
-                                        resourceinfo.get_name().to_string(),
-                                        tokio::spawn(ResourceManager::retry_failed_task(
-                                            coord,
-                                            resourceinfo,
-                                        )),
-                                    );
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                Ok(())
-            }
-        }
-    }
-
-    async fn exec_async_task(coord: Arc<CoordService>, mut resourceinfo: ResourceInfo) {
-        let future_interval = resourceinfo.get_time() - now_timestamp_nanos();
-        let future_time = Instant::now() + Duration::from_nanos(future_interval as u64);
-        tokio::time::sleep_until(future_time).await;
-        resourceinfo.set_status(ResourceStatus::Executing);
-        resourceinfo.set_is_new_add(false);
-        if let Err(meta_err) = coord
-            .meta_manager()
-            .write_resourceinfo(resourceinfo.get_name(), resourceinfo.clone())
-            .await
-        {
-            error!("failed to execute the async task: {}", meta_err.to_string());
-        }
-        // execute, if failed, retry later
-        let _ = ResourceManager::do_operator(coord.clone(), resourceinfo.clone()).await;
     }
 
     async fn db_ttl_service(coord: Arc<CoordService>) {

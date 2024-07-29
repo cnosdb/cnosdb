@@ -11,6 +11,7 @@ use models::auth::user::{admin_user, User, UserDesc, UserOptions};
 use models::meta_data::*;
 use models::node_info::NodeStatus;
 use models::oid::{Identifier, Oid, UuidGenerator};
+use models::schema::query_info::QueryInfo;
 use models::schema::resource_info::{ResourceInfo, ResourceStatus};
 use models::schema::table_schema::TableSchema;
 use models::schema::tenant::{Tenant, TenantOptions};
@@ -808,14 +809,8 @@ impl AdminMeta {
         self.resource_tx_rx.1.lock().take()
     }
 
-    pub async fn write_queryinfo(
-        &self,
-        node_id: NodeId,
-        query_id: u64,
-        query_info: Vec<u8>,
-    ) -> MetaResult<()> {
-        let req =
-            command::WriteCommand::WriteQueryInfo(self.cluster(), node_id, query_id, query_info);
+    pub async fn write_queryinfo(&self, query_id: u64, query_info: QueryInfo) -> MetaResult<()> {
+        let req = command::WriteCommand::WriteQueryInfo(self.cluster(), query_id, query_info);
 
         self.client.write::<()>(&req).await?;
 
@@ -828,8 +823,19 @@ impl AdminMeta {
         self.client.read::<Vec<Vec<u8>>>(&req).await
     }
 
-    pub async fn remove_queryinfo(&self, node_id: NodeId, query_id: u64) -> MetaResult<()> {
-        let req = command::WriteCommand::RemoveQueryInfo(self.cluster(), node_id, query_id);
+    pub async fn remove_queryinfo(&self, query_id: u64) -> MetaResult<()> {
+        let req = command::WriteCommand::RemoveQueryInfo(self.cluster(), query_id);
+
+        self.client.write::<()>(&req).await
+    }
+
+    pub async fn move_queryinfo(
+        &self,
+        source_node_id: NodeId,
+        dest_node_id: NodeId,
+    ) -> MetaResult<()> {
+        let req =
+            command::WriteCommand::MoveQueryInfo(self.cluster(), source_node_id, dest_node_id);
 
         self.client.write::<()>(&req).await
     }

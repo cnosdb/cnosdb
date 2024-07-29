@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use meta::model::meta_admin::AdminMeta;
+use models::meta_data::NodeId;
+use models::schema::query_info::{QueryId, QueryInfo};
 use snafu::ResultExt;
-use spi::query::dispatcher::QueryInfo;
-use spi::service::protocol::QueryId;
 use spi::{MetaSnafu, PersistQuerySnafu, QueryError};
 use trace::{debug, warn};
 
@@ -30,7 +30,7 @@ impl QueryPersister for MetaQueryPersister {
 
         tokio::spawn(async move {
             let _ = admin_meta
-                .remove_queryinfo(admin_meta.node_id(), query_id)
+                .remove_queryinfo(query_id)
                 .await
                 .map_err(|err| warn!("Remove query dir failed: {:?}", err));
         });
@@ -41,16 +41,8 @@ impl QueryPersister for MetaQueryPersister {
     async fn save(&self, query_id: QueryId, query: QueryInfo) -> Result<(), QueryError> {
         debug!("Save query: {}, {:?}", query_id, query);
 
-        let body = serde_json::to_vec(&query).map_err(|err| {
-            trace::error!("Failed to serialize query info: {}", err);
-            PersistQuerySnafu {
-                reason: format!("Failed to serialize query info: {}", err),
-            }
-            .build()
-        })?;
-
         self.admin_meta
-            .write_queryinfo(self.admin_meta.node_id(), query_id.get(), body)
+            .write_queryinfo(query_id.get(), query)
             .await
             .map_err(|err| {
                 PersistQuerySnafu {
@@ -66,10 +58,10 @@ impl QueryPersister for MetaQueryPersister {
         Ok(())
     }
 
-    async fn queries(&self) -> Result<Vec<QueryInfo>, QueryError> {
+    async fn queries(&self, node_id: NodeId) -> Result<Vec<QueryInfo>, QueryError> {
         let query_infos = self
             .admin_meta
-            .read_queryinfos(self.admin_meta.node_id())
+            .read_queryinfos(node_id)
             .await
             .context(MetaSnafu)?;
 

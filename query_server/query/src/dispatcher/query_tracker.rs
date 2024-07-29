@@ -12,14 +12,15 @@ use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::common::Result as DFResult;
 use datafusion::physical_plan::{RecordBatchStream, SendableRecordBatchStream};
 use futures::{Stream, StreamExt};
+use models::meta_data::NodeId;
+use models::schema::query_info::{QueryId, QueryInfo};
 use models::schema::{CLUSTER_SCHEMA, DEFAULT_CATALOG};
 use models::utils::now_timestamp_nanos;
 use parking_lot::RwLock;
 use protocol_parser::Line;
 use protos::FieldValue;
-use spi::query::dispatcher::{QueryInfo, QueryStatus};
+use spi::query::dispatcher::QueryStatus;
 use spi::query::execution::{Output, QueryExecution, QueryExecutionRef, QueryType};
-use spi::service::protocol::QueryId;
 use spi::{QueryError, QueryResult};
 use trace::{debug, warn};
 use utils::precision::Precision;
@@ -107,8 +108,8 @@ impl QueryTracker {
     }
 
     /// all persistent queries
-    pub async fn persistent_queries(&self) -> QueryResult<Vec<QueryInfo>> {
-        self.query_persister.queries().await
+    pub async fn persistent_queries(&self, node_id: NodeId) -> QueryResult<Vec<QueryInfo>> {
+        self.query_persister.queries(node_id).await
     }
 
     /// Once closed, no new requests will be accepted
@@ -351,9 +352,9 @@ mod tests {
     use datafusion::physical_plan::EmptyRecordBatchStream;
     use meta::model::meta_admin::AdminMeta;
     use models::auth::user::{User, UserDesc, UserOptions};
-    use spi::query::dispatcher::{QueryInfo, QueryStatus};
+    use models::schema::query_info::{QueryId, QueryInfo};
+    use spi::query::dispatcher::QueryStatus;
     use spi::query::execution::{Output, QueryExecution, QueryState, RUNNING};
-    use spi::service::protocol::QueryId;
     use spi::QueryError;
 
     use super::QueryTracker;
@@ -382,6 +383,7 @@ mod tests {
                 "tenant".to_string(),
                 "db".to_string(),
                 user,
+                1001,
             )
         }
         fn status(&self) -> QueryStatus {
