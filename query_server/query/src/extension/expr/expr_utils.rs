@@ -114,7 +114,7 @@ where
 /// Collect all deeply nested selector function. They are returned in order of occurrence (depth
 /// first), with duplicates omitted.
 pub fn find_selector_function_exprs_deeply_nested(exprs: &[Expr]) -> Vec<Expr> {
-    find_exprs_in_exprs(exprs, &|nested_expr| {
+    find_exprs_in_exprs_deeply_nested(exprs, &|nested_expr| {
         matches!(
             nested_expr,
             Expr::ScalarUDF(expr::ScalarUDF {
