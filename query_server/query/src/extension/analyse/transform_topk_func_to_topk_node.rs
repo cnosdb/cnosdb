@@ -73,7 +73,8 @@ fn do_transform(topk_function: &Expr, projection: &Projection) -> Result<Logical
 
 fn valid_exprs(exprs: &[Expr]) -> Result<bool> {
     let selector_function_num = expr_utils::find_selector_function_exprs(exprs).len();
-    let selector_function_with_nested_num = expr_utils::find_selector_function_exprs(exprs).len();
+    let selector_function_with_nested_num =
+        expr_utils::find_selector_function_exprs_deeply_nested(exprs).len();
 
     // 1. There cannot be nested selection functions
     // 2. There cannot be multiple selection functions

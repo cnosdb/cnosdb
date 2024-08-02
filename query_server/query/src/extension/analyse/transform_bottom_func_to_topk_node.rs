@@ -77,7 +77,8 @@ fn do_transform(bottom_function: &Expr, projection: &Projection) -> Result<Logic
 
 fn valid_exprs(exprs: &[Expr]) -> Result<bool> {
     let selector_function_num = expr_utils::find_selector_function_exprs(exprs).len();
-    let selector_function_with_nested_num = expr_utils::find_selector_function_exprs(exprs).len();
+    let selector_function_with_nested_num =
+        expr_utils::find_selector_function_exprs_deeply_nested(exprs).len();
 
     let exprs = exprs
         .iter()
