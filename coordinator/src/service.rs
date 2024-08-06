@@ -33,6 +33,7 @@ use models::predicate::domain::{ResolvedPredicate, ResolvedPredicateRef, TimeRan
 use models::schema::resource_info::{ResourceInfo, ResourceOperator};
 use models::schema::tskv_table_schema::{ColumnType, TskvTableSchemaRef};
 use models::schema::{DEFAULT_CATALOG, TIME_FIELD_NAME, USAGE_SCHEMA};
+use models::utils::now_timestamp_nanos;
 use models::{record_batch_decode, SeriesKey, Tag};
 use protocol_parser::lines_convert::{
     arrow_array_to_points, line_to_batches, mutable_batches_to_point,

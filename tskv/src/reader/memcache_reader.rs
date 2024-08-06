@@ -8,7 +8,7 @@ use arrow::datatypes::{Field, Schema};
 use arrow_array::{ArrayRef, RecordBatch};
 use arrow_schema::SchemaRef;
 use futures::Stream;
-use models::predicate::domain::{TimeRange, TimeRanges};
+use models::predicate::domain::TimeRanges;
 use models::schema::tskv_table_schema::{ColumnType, TableColumn};
 use models::{ColumnId, Timestamp};
 use parking_lot::RwLock;
@@ -23,7 +23,6 @@ use crate::error::ArrowSnafu;
 use crate::mem_cache::row_data::RowData;
 use crate::mem_cache::series_data::SeriesData;
 use crate::reader::iterator::{ArrayBuilderPtr, RowIterator};
-use crate::reader::utils::TimeRangeProvider;
 use crate::TskvResult;
 
 enum MemcacheReadMode {
@@ -37,15 +36,6 @@ pub struct MemCacheReader {
     columns: Vec<TableColumn>,
     schema_meta: HashMap<String, String>,
     read_mode: MemcacheReadMode,
-}
-
-impl TimeRangeProvider for MemCacheReader {
-    fn time_range(&self) -> TimeRange {
-        self.time_ranges
-            .max_time_range()
-            .intersect(&self.series_data.read().range)
-            .unwrap_or_else(TimeRange::none)
-    }
 }
 
 impl MemCacheReader {

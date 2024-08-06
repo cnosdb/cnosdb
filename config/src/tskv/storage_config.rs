@@ -71,6 +71,9 @@ pub struct StorageConfig {
 
     #[serde(default = "StorageConfig::default_index_cache_capacity")]
     pub index_cache_capacity: u64,
+
+    #[serde(default = "StorageConfig::default_read_parallel")]
+    pub read_parallel: usize,
 }
 
 impl StorageConfig {
@@ -144,6 +147,10 @@ impl StorageConfig {
         self.compact_trigger_cold_duration =
             Duration::from_secs(self.compact_trigger_cold_duration.as_secs());
     }
+
+    pub fn default_read_parallel() -> usize {
+        num_cpus::get()
+    }
 }
 
 impl Default for StorageConfig {
@@ -165,6 +172,7 @@ impl Default for StorageConfig {
             copyinto_trigger_flush_size: Self::default_copyinto_trigger_flush_size(),
             max_datablock_size: Self::default_max_datablock_size(),
             index_cache_capacity: Self::default_index_cache_capacity(),
+            read_parallel: Self::default_read_parallel(),
         }
     }
 }
