@@ -12,8 +12,7 @@ use models::predicate::domain::ColumnDomains;
 use models::{SeriesId, SeriesKey};
 use snafu::ResultExt;
 use tokio::runtime::Runtime;
-use tokio::sync::broadcast::{self, Sender as BroadcastSender};
-use tokio::sync::mpsc::{self, Receiver, Sender};
+use tokio::sync::mpsc::{self, Receiver};
 use tokio::sync::{oneshot, RwLock};
 use trace::{debug, error, info, warn};
 
@@ -24,7 +23,6 @@ use crate::database::Database;
 use crate::error::{IndexErrSnafu, MetaSnafu, TskvResult};
 use crate::file_system::async_filesystem::LocalFileSystem;
 use crate::file_system::FileSystem;
-use crate::index::IndexResult;
 use crate::kv_option::{Options, StorageOptions};
 use crate::summary::{Summary, SummaryTask};
 use crate::tsfamily::super_version::SuperVersion;
@@ -45,7 +43,6 @@ pub struct TsKv {
     vnodes: Arc<RwLock<HashMap<VnodeId, VnodeStorage>>>,
     metrics: Arc<MetricsRegister>,
     _memory_pool: Arc<dyn MemoryPool>,
-    close_sender: BroadcastSender<Sender<()>>,
 }
 
 impl TsKv {
@@ -78,14 +75,12 @@ impl TsKv {
             global_ctx: summary.global_context(),
         });
 
-        let (close_sender, _close_receiver) = broadcast::channel(1);
         let compact_job = CompactJob::new(runtime.clone(), ctx.clone(), metrics.clone());
         let core = Self {
             ctx,
             meta_manager,
             _memory_pool: memory_pool,
             compact_job,
-            close_sender,
             metrics,
             runtime,
             vnodes: Default::default(),
@@ -195,14 +190,6 @@ impl TsKv {
         });
     }
 
-    async fn sync_indexs(&self) -> IndexResult<()> {
-        let vnodes_guard = self.vnodes.read().await;
-        for (_, vnode_storage) in vnodes_guard.iter() {
-            vnode_storage.sync_index().await;
-        }
-        Ok(())
-    }
-
     pub async fn get_db(&self, tenant: &str, database: &str) -> Option<Arc<RwLock<Database>>> {
         self.ctx.version_set.read().await.get_db(tenant, database)
     }
@@ -257,6 +244,10 @@ impl TsKv {
 
 #[async_trait::async_trait]
 impl Engine for TsKv {
+    async fn get_tsfamily(&self, vnode_id: VnodeId) -> Option<VnodeStorage> {
+        self.vnodes.write().await.get(&vnode_id).cloned()
+    }
+
     async fn open_tsfamily(
         &self,
         tenant: &str,
@@ -501,16 +492,10 @@ impl Engine for TsKv {
     }
 
     async fn close(&self) {
-        let (tx, mut rx) = mpsc::channel(1);
-        if let Err(e) = self.close_sender.send(tx) {
-            error!("Failed to broadcast close signal: {:?}", e);
+        let mut vnodes = self.vnodes.write().await;
+        for (_, vnode) in vnodes.iter_mut() {
+            vnode.close().await;
         }
-        while let Some(_x) = rx.recv().await {
-            continue;
-        }
-        self.sync_indexs()
-            .await
-            .expect("Tskv Index haven't been sync.");
 
         info!("TsKv closed");
     }

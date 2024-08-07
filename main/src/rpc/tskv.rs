@@ -269,6 +269,21 @@ impl TskvService for TskvServiceImpl {
         }
     }
 
+    async fn snapshot_renewal(
+        &self,
+        request: tonic::Request<SnapshotRenewalRequest>,
+    ) -> std::result::Result<tonic::Response<BatchBytesResponse>, tonic::Status> {
+        let inner = request.into_inner();
+        info!("snapshot renewal request: {:?}", inner);
+        if let Some(vnode) = self.kv_inst.get_tsfamily(inner.vnode_id).await {
+            vnode
+                .snapshot_renewal(inner.seq_no, &inner.create_time, inner.req_type)
+                .await
+        }
+
+        Ok(encode_grpc_response(Ok(vec![])))
+    }
+
     type DownloadFileStream = ResponseStream<BatchBytesResponse>;
     async fn download_file(
         &self,

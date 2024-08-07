@@ -254,6 +254,22 @@ pub struct DownloadFileRequest {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SnapshotRenewalRequest {
+    #[prost(string, tag = "1")]
+    pub tenant: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub db_name: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "3")]
+    pub vnode_id: u32,
+    #[prost(uint64, tag = "4")]
+    pub seq_no: u64,
+    #[prost(string, tag = "5")]
+    pub create_time: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "6")]
+    pub req_type: u32,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryRecordBatchRequest {
     #[prost(bytes = "vec", tag = "1")]
     pub args: ::prost::alloc::vec::Vec<u8>,
@@ -395,6 +411,31 @@ pub mod tskv_service_client {
                 .insert(GrpcMethod::new("kv_service.TSKVService", "DownloadFile"));
             self.inner.server_streaming(req, path, codec).await
         }
+        pub async fn snapshot_renewal(
+            &mut self,
+            request: impl tonic::IntoRequest<super::SnapshotRenewalRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::BatchBytesResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/kv_service.TSKVService/SnapshotRenewal",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("kv_service.TSKVService", "SnapshotRenewal"));
+            self.inner.unary(req, path, codec).await
+        }
         pub async fn tag_scan(
             &mut self,
             request: impl tonic::IntoRequest<super::QueryRecordBatchRequest>,
@@ -519,6 +560,13 @@ pub mod tskv_service_server {
             request: tonic::Request<super::DownloadFileRequest>,
         ) -> std::result::Result<
             tonic::Response<Self::DownloadFileStream>,
+            tonic::Status,
+        >;
+        async fn snapshot_renewal(
+            &self,
+            request: tonic::Request<super::SnapshotRenewalRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::BatchBytesResponse>,
             tonic::Status,
         >;
         /// Server streaming response type for the TagScan method.
@@ -724,6 +772,52 @@ pub mod tskv_service_server {
                                 max_encoding_message_size,
                             );
                         let res = grpc.server_streaming(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/kv_service.TSKVService/SnapshotRenewal" => {
+                    #[allow(non_camel_case_types)]
+                    struct SnapshotRenewalSvc<T: TskvService>(pub Arc<T>);
+                    impl<
+                        T: TskvService,
+                    > tonic::server::UnaryService<super::SnapshotRenewalRequest>
+                    for SnapshotRenewalSvc<T> {
+                        type Response = super::BatchBytesResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::SnapshotRenewalRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).snapshot_renewal(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = SnapshotRenewalSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)

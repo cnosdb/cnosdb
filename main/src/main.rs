@@ -213,8 +213,11 @@ fn main() -> Result<(), std::io::Error> {
             writer_count.load(Ordering::Relaxed)
         );
         wait_for_writers(writer_count).await;
+
+        info!("Begin sync wal files......");
         raft_manager.sync_wal_writer().await;
 
+        info!("Begin sync data files... And clear no used files");
         if let Some(tskv) = storage {
             tskv.close().await;
         }

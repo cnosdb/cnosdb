@@ -20,6 +20,10 @@ pub struct MockEngine {}
 
 #[async_trait]
 impl Engine for MockEngine {
+    async fn get_tsfamily(&self, vnode_id: VnodeId) -> Option<VnodeStorage> {
+        todo!()
+    }
+
     async fn open_tsfamily(
         &self,
         tenant: &str,

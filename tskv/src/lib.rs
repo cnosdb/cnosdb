@@ -10,6 +10,7 @@ use context::GlobalContext;
 use datafusion::arrow::record_batch::RecordBatch;
 use models::meta_data::{NodeId, VnodeId};
 use models::predicate::domain::ColumnDomains;
+use models::utils::now_timestamp_secs;
 use models::{SeriesId, SeriesKey};
 use serde::{Deserialize, Serialize};
 use summary::SummaryTask;
@@ -70,6 +71,9 @@ pub struct UpdateSetValue<K, V> {
 
 #[async_trait]
 pub trait Engine: Send + Sync + Debug {
+    /// get a tsfamily from cache, if not exist return None.
+    async fn get_tsfamily(&self, vnode_id: VnodeId) -> Option<VnodeStorage>;
+
     /// open a tsfamily, if already exist just return.
     async fn open_tsfamily(
         &self,
@@ -163,6 +167,26 @@ pub struct VnodeSnapshot {
     pub version: Option<Arc<Version>>,
     #[serde(skip_serializing, skip_deserializing)]
     pub active_time: i64, //active timestamp
+    #[serde(skip_serializing, skip_deserializing)]
+    pub ref_count: i32, //active timestamp
+}
+
+impl VnodeSnapshot {
+    pub fn retain(&self, hold_time: i64) -> bool {
+        if now_timestamp_secs() - self.active_time < 30 {
+            return true;
+        }
+
+        if self.ref_count == 0 {
+            return false;
+        }
+
+        if now_timestamp_secs() - self.active_time < hold_time {
+            return true;
+        }
+
+        false
+    }
 }
 
 impl Display for VnodeSnapshot {

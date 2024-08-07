@@ -150,6 +150,15 @@ message DownloadFileRequest {
   string filename = 1;
 }
 
+message SnapshotRenewalRequest {
+  string tenant = 1;
+  string db_name = 2;
+  uint32 vnode_id = 3;
+  uint64 seq_no = 4;
+  string create_time = 5;
+  uint32 req_type = 6;
+}
+
 message QueryRecordBatchRequest {
     bytes args = 1;
     bytes expr = 2;
@@ -160,6 +169,7 @@ message QueryRecordBatchRequest {
 service TSKVService {
   rpc Ping(PingRequest) returns (PingResponse) {};
   rpc DownloadFile(DownloadFileRequest) returns (stream BatchBytesResponse) {};
+  rpc SnapshotRenewal(SnapshotRenewalRequest) returns (BatchBytesResponse) {};
 
   rpc TagScan(QueryRecordBatchRequest) returns (stream BatchBytesResponse) {};
   rpc QueryRecordBatch(QueryRecordBatchRequest) returns (stream BatchBytesResponse) {};

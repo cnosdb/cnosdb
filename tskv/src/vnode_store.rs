@@ -23,6 +23,9 @@ use crate::schema::error::{FieldNotFoundSnafu, TableNotFoundSnafu};
 use crate::tsfamily::tseries_family::TseriesFamily;
 use crate::{TsKvContext, VnodeSnapshot};
 
+pub const SNAPSHOT_RENEWAL_ADD_REF: u32 = 1;
+pub const SNAPSHOT_RENEWAL_SUB_REF: u32 = 2;
+
 #[derive(Clone)]
 pub struct VnodeStorage {
     id: VnodeId,
@@ -31,8 +34,7 @@ pub struct VnodeStorage {
     flush_job: FlushJob,
     ts_index: Arc<RwLock<TSIndex>>,
     ts_family: Arc<RwLock<TseriesFamily>>,
-
-    snapshots: Vec<VnodeSnapshot>,
+    snapshots: Arc<RwLock<Vec<VnodeSnapshot>>>,
 }
 
 impl VnodeStorage {
@@ -52,7 +54,7 @@ impl VnodeStorage {
             flush_job,
             ts_index,
             ts_family,
-            snapshots: vec![],
+            snapshots: Arc::default(),
         }
     }
 
@@ -111,8 +113,23 @@ impl VnodeStorage {
         }
     }
 
+    pub async fn snapshot_renewal(&self, seq_no: u64, create_time: &str, req_type: u32) {
+        let mut snapshots = self.snapshots.write().await;
+        for snap in snapshots.iter_mut() {
+            if snap.last_seq_no == seq_no && snap.create_time == create_time {
+                if req_type == SNAPSHOT_RENEWAL_ADD_REF {
+                    snap.ref_count += 1;
+                }
+
+                if req_type == SNAPSHOT_RENEWAL_SUB_REF {
+                    snap.ref_count -= 1;
+                }
+            }
+        }
+    }
+
     pub async fn get_snapshot(&mut self) -> TskvResult<Option<VnodeSnapshot>> {
-        if let Some(snapshot) = self.snapshots.last_mut() {
+        if let Some(snapshot) = self.snapshots.write().await.last_mut() {
             snapshot.active_time = now_timestamp_secs();
 
             info!("Snapshot: Get snapshot {}", snapshot);
@@ -142,14 +159,16 @@ impl VnodeStorage {
             version: Some(snapshot_version),
             create_time: chrono::Local::now().format("%Y%m%d_%H%M%S_%3f").to_string(),
             active_time: 0,
+            ref_count: 0,
         };
         info!("Snapshot: build snapshot: {}", snapshot);
 
-        self.snapshots.retain(|x| {
-            now_timestamp_secs() - x.active_time < self.ctx.options.storage.snapshot_holding_time
-        });
+        self.snapshots
+            .write()
+            .await
+            .retain(|x| x.retain(self.ctx.options.storage.snapshot_holding_time));
 
-        self.snapshots.push(snapshot.clone());
+        self.snapshots.write().await.push(snapshot.clone());
 
         Ok(snapshot)
     }
@@ -168,7 +187,7 @@ impl VnodeStorage {
         let storage_opt = self.ctx.options.storage.clone();
 
         // clear all snapshot
-        self.snapshots = vec![];
+        self.snapshots.write().await.clear();
 
         // delete already exist data
         let mut db_wlock = self.db.write().await;
@@ -224,7 +243,7 @@ impl VnodeStorage {
         let last_applied_id = self.ts_family.read().await.last_seq();
         let flushed_apply_id = self.ts_family.read().await.version().last_seq();
         let mut snapshot_apply_id = 0;
-        if let Some(snapshot) = self.snapshots.last() {
+        if let Some(snapshot) = self.snapshots.read().await.last() {
             snapshot_apply_id = snapshot.last_seq_no;
         }
 
@@ -569,7 +588,10 @@ impl VnodeStorage {
         Ok(())
     }
 
-    pub async fn sync_index(&self) {
-        let _ = self.ts_index.write().await.flush().await;
+    pub async fn close(&mut self) {
+        self.snapshots.write().await.clear();
+
+        let result = self.ts_index.write().await.flush().await;
+        info!("close vnode: {}  {:?}", self.id, result);
     }
 }

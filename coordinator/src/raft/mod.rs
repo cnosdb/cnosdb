@@ -5,7 +5,7 @@ use meta::model::MetaRef;
 use models::meta_data::VnodeId;
 use models::schema::database_schema::make_owner;
 use protos::kv_service::tskv_service_client::TskvServiceClient;
-use protos::kv_service::{DownloadFileRequest, RaftWriteCommand};
+use protos::kv_service::{DownloadFileRequest, RaftWriteCommand, SnapshotRenewalRequest};
 use protos::models_helper::parse_prost_bytes;
 use protos::{tskv_service_time_out_client, DEFAULT_GRPC_SERVER_MESSAGE_LEN};
 use replication::errors::{
@@ -108,6 +108,18 @@ impl TskvEngineStorage {
             .join(&owner_concat)
             .join(snapshot.vnode_id.to_string());
 
+        let mut request = SnapshotRenewalRequest {
+            tenant: snapshot.version_edit.owner.0.clone(),
+            db_name: snapshot.version_edit.owner.1.clone(),
+            vnode_id: snapshot.vnode_id,
+            seq_no: snapshot.last_seq_no,
+            create_time: snapshot.create_time.clone(),
+            req_type: tskv::vnode_store::SNAPSHOT_RENEWAL_ADD_REF,
+        };
+        let _ = client
+            .snapshot_renewal(tonic::Request::new(request.clone()))
+            .await?;
+
         for info in snapshot.version_edit.add_files.iter() {
             let filename = dir.join(info.relative_path());
             let src_filename = src_dir
@@ -133,6 +145,11 @@ impl TskvEngineStorage {
                 .build());
             }
         }
+
+        request.req_type = tskv::vnode_store::SNAPSHOT_RENEWAL_SUB_REF;
+        let _ = client
+            .snapshot_renewal(tonic::Request::new(request))
+            .await?;
 
         Ok(())
     }
