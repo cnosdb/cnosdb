@@ -29,6 +29,13 @@ pub struct SysInfo {
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
+pub struct PreCreateBucketInfo {
+    pub tenant: String,
+    pub database: String,
+    pub ts: i64,
+}
+
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct ExpiredBucketInfo {
     pub tenant: String,
     pub database: String,

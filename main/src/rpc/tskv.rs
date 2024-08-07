@@ -137,6 +137,21 @@ impl TskvServiceImpl {
                     .await?;
                 Ok(vec![])
             }
+            admin_command::Command::BuildRaftGroup(command) => {
+                let replica = coordinator::get_replica_by_meta(
+                    self.coord.meta_manager(),
+                    tenant,
+                    &command.db_name,
+                    command.replica_id,
+                )
+                .await?;
+
+                self.coord
+                    .raft_manager()
+                    .build_replica_group(tenant, &command.db_name, &replica)
+                    .await?;
+                Ok(vec![])
+            }
         }
     }
 

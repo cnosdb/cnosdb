@@ -214,10 +214,18 @@ pub struct LearnerToFollowerRequest {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct BuildRaftGroupRequest {
+    #[prost(string, tag = "1")]
+    pub db_name: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "2")]
+    pub replica_id: u32,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AdminCommand {
     #[prost(string, tag = "1")]
     pub tenant: ::prost::alloc::string::String,
-    #[prost(oneof = "admin_command::Command", tags = "2, 3, 4, 5, 6, 7, 8, 9, 10")]
+    #[prost(oneof = "admin_command::Command", tags = "2, 3, 4, 5, 6, 7, 8, 9, 10, 11")]
     pub command: ::core::option::Option<admin_command::Command>,
 }
 /// Nested message and enum types in `AdminCommand`.
@@ -243,6 +251,8 @@ pub mod admin_command {
         PromoteLeader(super::PromoteLeaderRequest),
         #[prost(message, tag = "10")]
         LearnerToFollower(super::LearnerToFollowerRequest),
+        #[prost(message, tag = "11")]
+        BuildRaftGroup(super::BuildRaftGroupRequest),
     }
 }
 /// --------------------------------------------------------------------

@@ -760,6 +760,14 @@ impl AdminMeta {
         list
     }
 
+    pub async fn pre_create_bucket(&self, ts: i64) -> Vec<PreCreateBucketInfo> {
+        let mut list = vec![];
+        for (_key, val) in self.tenants.write().iter() {
+            list.append(&mut val.pre_create_bucket(ts));
+        }
+        list
+    }
+
     pub async fn limiter(&self, tenant: &str) -> MetaResult<Arc<dyn RequestLimiter>> {
         let key = LimiterKey(LimiterType::Tenant, tenant.to_string());
         self.limiters.get_limiter_or_create(key).await

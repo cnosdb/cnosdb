@@ -196,6 +196,10 @@ impl CoordService {
         ));
         tokio::spawn(CoordService::db_ttl_service(coord.clone()));
 
+        if config.global.pre_create_bucket {
+            tokio::spawn(CoordService::pre_create_bucket_service(coord.clone()));
+        }
+
         if config.global.store_metrics {
             tokio::spawn(CoordService::metrics_service(
                 coord.clone(),
@@ -424,6 +428,41 @@ impl CoordService {
         }
     }
 
+    async fn pre_create_bucket_service(coord: Arc<CoordService>) {
+        loop {
+            let interval = 5 * 60;
+            let dur = tokio::time::Duration::from_secs(interval);
+            tokio::time::sleep(dur).await;
+
+            let now = now_timestamp_nanos() + (interval * 1_000_000_000) as i64;
+            let per_create = coord.meta.pre_create_bucket(now).await;
+
+            for item in per_create {
+                if let Some(tenant_meta) = coord.meta.tenant_meta(&item.tenant).await {
+                    if let Ok(bucket) = tenant_meta.create_bucket(&item.database, item.ts).await {
+                        for replica_set in bucket.shard_group {
+                            let command = AdminCommand {
+                                tenant: item.tenant.clone(),
+                                command: Some(BuildRaftGroup(BuildRaftGroupRequest {
+                                    db_name: item.database.clone(),
+                                    replica_id: replica_set.id,
+                                })),
+                            };
+
+                            let result = coord
+                                .admin_command_on_node(replica_set.leader_node_id, command)
+                                .await;
+                            info!(
+                                "pre-create bucekt info: {:?}, replica-set: {:?}, result: {:?}",
+                                item, replica_set, result
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     async fn metrics_service(
         coord: Arc<CoordService>,
         root_metrics_register: Arc<MetricsRegister>,
@@ -600,7 +639,7 @@ impl CoordService {
         Ok(())
     }
 
-    async fn admin_command_on_node(
+    pub async fn admin_command_on_node(
         &self,
         node_id: u64,
         request: AdminCommand,

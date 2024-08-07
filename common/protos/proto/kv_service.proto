@@ -129,6 +129,11 @@ message LearnerToFollowerRequest {
     uint32 replica_id = 2;
 }
 
+message BuildRaftGroupRequest {
+    string db_name = 1;
+    uint32 replica_id = 2;
+}
+
 message AdminCommand {
   string tenant = 1;
   oneof command {
@@ -142,6 +147,7 @@ message AdminCommand {
     DestoryRaftGroupRequest destory_raft_group = 8;
     PromoteLeaderRequest promote_leader = 9;
     LearnerToFollowerRequest learner_to_follower = 10;
+    BuildRaftGroupRequest build_raft_group = 11;
   }
 }
 

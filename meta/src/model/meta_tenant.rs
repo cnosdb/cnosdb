@@ -22,6 +22,7 @@ use parking_lot::RwLock;
 use store::command;
 use trace::info;
 use utils::duration::CnosDuration;
+use utils::precision::{timestamp_convert, Precision};
 
 use crate::error::{MetaError, MetaResult};
 use crate::store::command::{EntryLog, ReadCommand};
@@ -598,6 +599,29 @@ impl TenantMeta {
                         bucket: bucket.clone(),
                     };
 
+                    list.push(info)
+                }
+            }
+        }
+
+        list
+    }
+
+    pub fn pre_create_bucket(&self, ts: i64) -> Vec<PreCreateBucketInfo> {
+        let mut list = vec![];
+        let data_r = self.data.read();
+        for (key, val) in data_r.dbs.iter() {
+            if val.schema.is_hidden() {
+                continue;
+            }
+
+            if let Some(ts) = timestamp_convert(Precision::NS, *val.schema.config.precision(), ts) {
+                if data_r.bucket_by_timestamp(key, ts).is_none() {
+                    let info = PreCreateBucketInfo {
+                        ts,
+                        tenant: self.tenant_name(),
+                        database: key.clone(),
+                    };
                     list.push(info)
                 }
             }
