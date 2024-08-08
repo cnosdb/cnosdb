@@ -9,6 +9,7 @@
 
 pub mod database_schema;
 pub mod external_table_schema;
+pub mod query_info;
 pub mod resource_info;
 pub mod stream_table_schema;
 pub mod table_schema;

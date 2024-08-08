@@ -360,10 +360,11 @@ mod test {
     use datafusion::arrow::datatypes::{DataType, Field, Schema, TimeUnit};
     use datafusion::arrow::record_batch::RecordBatch;
     use models::auth::user::{User, UserDesc, UserOptions};
+    use models::schema::query_info::QueryId;
     use protos::prompb::prometheus::{Label, Sample, TimeSeries};
     use spi::query::execution::Output;
     use spi::query::recordbatch::RecordBatchStreamWrapper;
-    use spi::service::protocol::{ContextBuilder, Query, QueryHandle, QueryId};
+    use spi::service::protocol::{ContextBuilder, Query, QueryHandle};
 
     use crate::prom::remote_server::transform_time_series;
 

@@ -10,6 +10,7 @@ use models::auth::user::{UserDesc, UserOptions};
 use models::meta_data::*;
 use models::oid::{Identifier, Oid, UuidGenerator};
 use models::schema::database_schema::DatabaseSchema;
+use models::schema::query_info::QueryInfo;
 use models::schema::resource_info::ResourceInfo;
 use models::schema::table_schema::TableSchema;
 use models::schema::tenant::{Tenant, TenantOptions};
@@ -446,8 +447,11 @@ impl StateMachine {
                 let path = KeyPath::tenant_schema_name(cluster, tenant_name, db_name, table_name);
                 response_encode(self.get_struct::<TableSchema>(&path))
             }
-            ReadCommand::ResourceInfo(cluster, resource_name) => {
+            ReadCommand::ResourceInfoByName(cluster, resource_name) => {
                 response_encode(self.process_read_resourceinfo_by_name(cluster, resource_name))
+            }
+            ReadCommand::ResourceInfosByNodeid(cluster, node_id) => {
+                response_encode(self.process_read_resourceinfos_by_nodeid(cluster, *node_id))
             }
             ReadCommand::ResourceInfos(cluster) => {
                 response_encode(self.process_read_resourceinfos(cluster))
@@ -467,12 +471,17 @@ impl StateMachine {
         }
     }
 
-    pub fn process_read_queries(&self, cluster: &str, node_id: NodeId) -> MetaResult<Vec<Vec<u8>>> {
-        let path = KeyPath::queries(cluster, node_id);
-        let queries: Vec<Vec<u8>> = self
-            .children_data::<Vec<u8>>(&path)?
+    pub fn process_read_queries(
+        &self,
+        cluster: &str,
+        node_id: NodeId,
+    ) -> MetaResult<Vec<QueryInfo>> {
+        let path = KeyPath::queries(cluster);
+        let mut queries: Vec<QueryInfo> = self
+            .children_data::<QueryInfo>(&path)?
             .into_values()
             .collect();
+        queries.retain(|q| q.node_id == node_id);
 
         Ok(queries)
     }
@@ -598,6 +607,21 @@ impl StateMachine {
         let res = self.get_struct::<ResourceInfo>(&path)?;
 
         Ok(res)
+    }
+
+    pub fn process_read_resourceinfos_by_nodeid(
+        &self,
+        cluster: &str,
+        node_id: NodeId,
+    ) -> MetaResult<Vec<ResourceInfo>> {
+        let path = KeyPath::resourceinfos(cluster, "");
+        let mut resourceinfos: Vec<ResourceInfo> = self
+            .children_data::<ResourceInfo>(&path)?
+            .into_values()
+            .collect();
+        resourceinfos.retain(|r| *r.get_execute_node_id() == node_id);
+
+        Ok(resourceinfos)
     }
 
     pub fn process_read_resourceinfos(&self, cluster: &str) -> MetaResult<Vec<ResourceInfo>> {
@@ -770,35 +794,50 @@ impl StateMachine {
             WriteCommand::ResourceInfosMark(cluster, node_id, is_lock) => {
                 response_encode(self.process_write_resourceinfos_mark(cluster, *node_id, *is_lock))
             }
-            WriteCommand::WriteQueryInfo(cluster, node_id, query_id, query_info) => {
-                response_encode(
-                    self.process_write_queryinfo(cluster, *node_id, *query_id, query_info),
-                )
+            WriteCommand::WriteQueryInfo(cluster, query_id, query_info) => {
+                response_encode(self.process_write_queryinfo(cluster, *query_id, query_info))
             }
-            WriteCommand::RemoveQueryInfo(cluster, node_id, query_id) => {
-                response_encode(self.process_remove_queryinfo(cluster, *node_id, *query_id))
+            WriteCommand::RemoveQueryInfo(cluster, query_id) => {
+                response_encode(self.process_remove_queryinfo(cluster, *query_id))
             }
+            WriteCommand::MoveQueryInfo(cluster, source_node_id, dest_node_id) => response_encode(
+                self.process_move_queryinfo(cluster, *source_node_id, *dest_node_id),
+            ),
         }
     }
 
-    fn process_remove_queryinfo(
+    fn process_move_queryinfo(
         &self,
         cluster: &str,
-        node_id: NodeId,
-        query_id: u64,
+        source_node_id: NodeId,
+        dest_node_id: NodeId,
     ) -> MetaResult<()> {
-        let key = KeyPath::query(cluster, node_id, query_id);
+        let mut queries = self.process_read_queries(cluster, source_node_id)?;
+
+        for query in queries.iter_mut() {
+            query.node_id = dest_node_id;
+        }
+
+        for query in queries {
+            let key = KeyPath::query(cluster, query.query_id().get());
+            self.insert(&key, &value_encode(&query)?)?;
+        }
+
+        Ok(())
+    }
+
+    fn process_remove_queryinfo(&self, cluster: &str, query_id: u64) -> MetaResult<()> {
+        let key = KeyPath::query(cluster, query_id);
         self.remove(&key)
     }
 
     fn process_write_queryinfo(
         &self,
         cluster: &str,
-        node_id: NodeId,
         query_id: u64,
-        query_info: &Vec<u8>,
+        query_info: &QueryInfo,
     ) -> MetaResult<()> {
-        let key = KeyPath::query(cluster, node_id, query_id);
+        let key = KeyPath::query(cluster, query_id);
         self.insert(&key, &value_encode(query_info)?)
     }
 

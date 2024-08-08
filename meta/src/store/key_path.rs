@@ -1,4 +1,3 @@
-use models::meta_data::NodeId;
 use models::oid::Oid;
 
 // **    /cluster_name/users ->
@@ -141,11 +140,11 @@ impl KeyPath {
         format!("/{}/resourceinfosmark", cluster)
     }
 
-    pub fn query(cluster: &str, node_id: NodeId, query_id: u64) -> String {
-        format!("/{}/{}/queries/{}", cluster, node_id, query_id)
+    pub fn query(cluster: &str, query_id: u64) -> String {
+        format!("/{}/queries/{}", cluster, query_id)
     }
 
-    pub fn queries(cluster: &str, node_id: NodeId) -> String {
-        format!("/{}/{}/queries", cluster, node_id)
+    pub fn queries(cluster: &str) -> String {
+        format!("/{}/queries", cluster)
     }
 }

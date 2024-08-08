@@ -11,12 +11,11 @@ use models::auth::AuthError;
 use models::codec::Encoding;
 use models::error_code::ErrorCode;
 use models::meta_data::{NodeId, ReplicationSetId};
+use models::schema::query_info::QueryId;
 use models::schema::tenant::TenantOptionsBuilderError;
 use models::schema::TIME_FIELD_NAME;
 use models::ModelError;
 use snafu::{Backtrace, IntoError, Location, Snafu};
-
-use crate::service::protocol::QueryId;
 
 pub mod query;
 pub mod server;

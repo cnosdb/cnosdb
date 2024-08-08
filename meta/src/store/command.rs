@@ -8,6 +8,7 @@ use models::auth::user::{UserDesc, UserOptions};
 use models::meta_data::*;
 use models::oid::Oid;
 use models::schema::database_schema::DatabaseSchema;
+use models::schema::query_info::QueryInfo;
 use models::schema::resource_info::ResourceInfo;
 use models::schema::table_schema::TableSchema;
 use models::schema::tenant::{Tenant, TenantOptions};
@@ -144,11 +145,14 @@ pub enum WriteCommand {
     // cluster, node_id, is_lock
     ResourceInfosMark(String, NodeId, bool),
 
-    // cluster, node_id, query_id, query_info
-    WriteQueryInfo(String, NodeId, u64, Vec<u8>),
+    // cluster, query_id, query_info
+    WriteQueryInfo(String, u64, QueryInfo),
 
-    // cluster, node_id, query_id
-    RemoveQueryInfo(String, NodeId, u64),
+    // cluster, query_id
+    RemoveQueryInfo(String, u64),
+
+    // cluster, source_node_id, dest_node_id
+    MoveQueryInfo(String, NodeId, NodeId),
 }
 
 /******************* read command *************************/
@@ -180,7 +184,9 @@ pub enum ReadCommand {
     // cluster
     ResourceInfos(String),
     // cluster, resource_name
-    ResourceInfo(String, String),
+    ResourceInfoByName(String, String),
+    // cluster, node_id
+    ResourceInfosByNodeid(String, NodeId),
     // cluster
     ResourceInfosMark(String),
 

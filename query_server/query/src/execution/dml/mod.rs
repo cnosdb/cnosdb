@@ -1,7 +1,8 @@
 mod delete_from_table;
 
 use async_trait::async_trait;
-use spi::query::dispatcher::{QueryInfo, QueryStatus};
+use models::schema::query_info::QueryInfo;
+use spi::query::dispatcher::QueryStatus;
 use spi::query::execution::{Output, QueryExecution, QueryStateMachineRef};
 use spi::query::logical_planner::DMLPlan;
 use spi::QueryResult;
@@ -67,6 +68,7 @@ impl QueryExecution for DMLExecution {
             qsm.session.tenant().to_string(),
             qsm.session.default_database().to_string(),
             qsm.session.user().clone(),
+            qsm.coord.node_id(),
         )
     }
 

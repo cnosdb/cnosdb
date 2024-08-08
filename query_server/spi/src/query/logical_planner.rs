@@ -26,6 +26,7 @@ use models::meta_data::{NodeId, ReplicationSetId, VnodeId};
 use models::object_reference::ResolvedTable;
 use models::oid::{Identifier, Oid};
 use models::schema::database_schema::{DatabaseConfigBuilder, DatabaseOptionsBuilder};
+use models::schema::query_info::QueryId;
 use models::schema::stream_table_schema::Watermark;
 use models::schema::tenant::{Tenant, TenantOptions, TenantOptionsBuilder};
 use models::schema::tskv_table_schema::TableColumn;
@@ -42,7 +43,6 @@ use super::datasource::s3::{S3StorageConfig, S3StorageConfigBuilder};
 use super::datasource::UriSchema;
 use super::session::SessionCtx;
 use super::AFFECTED_ROWS;
-use crate::service::protocol::QueryId;
 use crate::{
     ParserSnafu, QueryError, QueryResult, SerdeJsonSnafu, StdIoSnafu, TenantOptionsBuildFailSnafu,
 };

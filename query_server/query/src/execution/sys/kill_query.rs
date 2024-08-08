@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use models::schema::query_info::QueryId;
 use spi::query::execution::{Output, QueryStateMachineRef};
-use spi::service::protocol::QueryId;
 use spi::{QueryError, QueryResult};
 
 use super::SystemTask;

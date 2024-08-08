@@ -1,24 +1,36 @@
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use async_trait::async_trait;
+use coordinator::resource_manager::ResourceManager;
 use coordinator::service::CoordinatorRef;
 use memory_pool::MemoryPoolRef;
 use meta::error::MetaError;
 use meta::model::MetaClientRef;
+use models::meta_data::{MetaModifyType, NodeId};
 use models::oid::Oid;
+use models::schema::query_info::{QueryId, QueryInfo};
+use models::schema::resource_info::{ResourceInfo, ResourceStatus};
+use models::utils::now_timestamp_nanos;
 use snafu::ResultExt;
 use spi::query::ast::ExtStatement;
 use spi::query::datasource::stream::StreamProviderManagerRef;
-use spi::query::dispatcher::{QueryDispatcher, QueryInfo, QueryStatus};
+use spi::query::dispatcher::{QueryDispatcher, QueryStatus};
 use spi::query::execution::{Output, QueryStateMachine};
 use spi::query::function::FuncMetaManagerRef;
 use spi::query::logical_planner::{LogicalPlanner, Plan};
 use spi::query::parser::Parser;
 use spi::query::session::{SessionCtx, SessionCtxFactory};
-use spi::service::protocol::{ContextBuilder, Query, QueryId};
+use spi::service::protocol::{ContextBuilder, Query};
 use spi::{MetaSnafu, QueryError, QueryResult};
+use tokio::sync::mpsc::Receiver;
+use tokio::task::JoinHandle;
+use tokio::time::Instant;
+use tokio_retry::strategy::{jitter, ExponentialBackoff};
+use tokio_retry::Retry;
 use trace::span_ext::SpanExt;
-use trace::{info, Span, SpanContext};
+use trace::{error, info, Span, SpanContext};
 
 use super::query_tracker::QueryTracker;
 use crate::data_source::split::SplitManagerRef;
@@ -46,41 +58,15 @@ pub struct SimpleQueryDispatcher {
     func_manager: FuncMetaManagerRef,
     stream_provider_manager: StreamProviderManagerRef,
     span_ctx: Option<SpanContext>,
+
+    async_task_joinhandle: Arc<Mutex<HashMap<String, JoinHandle<()>>>>,
+    failed_task_joinhandle: Arc<Mutex<HashMap<String, JoinHandle<()>>>>,
 }
 
 #[async_trait]
 impl QueryDispatcher for SimpleQueryDispatcher {
     async fn start(&self) -> QueryResult<()> {
-        // 执行被持久化的任务
-        let queries = self.query_tracker.persistent_queries().await?;
-
-        for query in queries {
-            let query_id = query.query_id();
-            let sql = query.query();
-            let database_name = query.database_name();
-            let tenant_name = query.tenant_name();
-            let tenant_id = query.tenant_id();
-            let user = query.user().clone();
-            let ctx = ContextBuilder::new(user)
-                .with_tenant(Some(tenant_name.to_owned()))
-                .with_database(Some(database_name.to_owned()))
-                .with_is_old(Some(true))
-                .build();
-            let query = Query::new(ctx, sql.to_owned());
-            match self
-                .execute_query(tenant_id, query_id, &query, self.span_ctx.as_ref())
-                .await
-            {
-                Ok(_) => {
-                    info!("Re-execute persistent query: {}", query.content());
-                }
-                Err(err) => {
-                    trace::warn!("Ignore, failed to re-execute persistent query: {}", err)
-                }
-            }
-        }
-
-        Ok(())
+        self.execute_persister_query(self.coord.node_id()).await
     }
 
     fn stop(&self) {
@@ -210,6 +196,271 @@ impl QueryDispatcher for SimpleQueryDispatcher {
 }
 
 impl SimpleQueryDispatcher {
+    async fn execute_persister_query(&self, node_id: NodeId) -> QueryResult<()> {
+        // 执行被持久化的任务
+        let queries = self.query_tracker.persistent_queries(node_id).await?;
+
+        for query in queries {
+            let query_id = query.query_id();
+            let sql = query.query();
+            let database_name = query.database_name();
+            let tenant_name = query.tenant_name();
+            let tenant_id = query.tenant_id();
+            let user = query.user().clone();
+            let ctx = ContextBuilder::new(user)
+                .with_tenant(Some(tenant_name.to_owned()))
+                .with_database(Some(database_name.to_owned()))
+                .with_is_old(Some(true))
+                .build();
+            let query = Query::new(ctx, sql.to_owned());
+            match self
+                .execute_query(tenant_id, query_id, &query, self.span_ctx.as_ref())
+                .await
+            {
+                Ok(_) => {
+                    info!("Re-execute persistent query: {}", query.content());
+                }
+                Err(err) => {
+                    trace::warn!("Ignore, failed to re-execute persistent query: {}", err)
+                }
+            }
+        }
+
+        Ok(())
+    }
+    async fn recv_meta_modify(
+        dispatcher: Arc<SimpleQueryDispatcher>,
+        mut receiver: Receiver<MetaModifyType>,
+    ) {
+        while let Some(modify_data) = receiver.recv().await {
+            // if error, max retry count 10
+            let _ = Retry::spawn(
+                ExponentialBackoff::from_millis(10).map(jitter).take(10),
+                || async {
+                    let res = SimpleQueryDispatcher::handle_meta_modify(
+                        dispatcher.clone(),
+                        modify_data.clone(),
+                    )
+                    .await;
+                    if let Err(e) = &res {
+                        error!("handle meta modify error: {}, retry later", e.to_string());
+                    }
+                    res
+                },
+            )
+            .await;
+        }
+    }
+
+    async fn handle_meta_modify(
+        dispatcher: Arc<SimpleQueryDispatcher>,
+        modify_data: MetaModifyType,
+    ) -> QueryResult<()> {
+        match modify_data {
+            MetaModifyType::ResourceInfo(resourceinfo) => {
+                if !resourceinfo.get_is_new_add() {
+                    return Ok(()); // ignore the old task
+                }
+
+                // if current node get the lock, handle meta modify
+                let (id, lock) = dispatcher
+                    .coord
+                    .meta_manager()
+                    .read_resourceinfos_mark()
+                    .await
+                    .map_err(|meta_err| QueryError::Meta { source: meta_err })?;
+                if id == dispatcher.coord.node_id() && lock {
+                    match *resourceinfo.get_status() {
+                        ResourceStatus::Schedule => {
+                            if let Ok(mut joinhandle_map) = dispatcher.async_task_joinhandle.lock()
+                            {
+                                if let Some(handle) = joinhandle_map.get(resourceinfo.get_name()) {
+                                    handle.abort(); // same resource name, abort the old task
+                                }
+                                joinhandle_map.insert(
+                                    resourceinfo.get_name().to_string(),
+                                    tokio::spawn(SimpleQueryDispatcher::exec_async_task(
+                                        dispatcher.coord.clone(),
+                                        *resourceinfo,
+                                    )),
+                                );
+                            }
+                        }
+                        ResourceStatus::Failed => {
+                            if let Ok(mut joinhandle_map) = dispatcher.failed_task_joinhandle.lock()
+                            {
+                                if joinhandle_map.contains_key(resourceinfo.get_name()) {
+                                    return Ok(()); // ignore repetition failed task
+                                }
+                                joinhandle_map.insert(
+                                    resourceinfo.get_name().to_string(),
+                                    tokio::spawn(ResourceManager::retry_failed_task(
+                                        dispatcher.coord.clone(),
+                                        *resourceinfo,
+                                    )),
+                                );
+                            }
+                        }
+                        ResourceStatus::Cancel => {
+                            if let Ok(mut joinhandle_map) = dispatcher.async_task_joinhandle.lock()
+                            {
+                                if let Some(handle) = joinhandle_map.get(resourceinfo.get_name()) {
+                                    handle.abort(); // abort task
+                                }
+                                joinhandle_map.remove(resourceinfo.get_name()); // remove task
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                Ok(())
+            }
+            MetaModifyType::NodeMetrics(node_metrics) => {
+                // if lock node dead, grap lock again
+                let (id, lock) = dispatcher
+                    .coord
+                    .meta_manager()
+                    .read_resourceinfos_mark()
+                    .await
+                    .map_err(|meta_err| QueryError::Meta { source: meta_err })?;
+                if node_metrics.id == id && lock {
+                    // unlock the dead node
+                    if let Err(e) = dispatcher
+                        .coord
+                        .meta_manager()
+                        .write_resourceinfos_mark(node_metrics.id, false)
+                        .await
+                    {
+                        match e {
+                            MetaError::ResourceInfosMarkIsLock { .. } => {
+                                return Ok(());
+                            }
+                            _ => {
+                                return Err(QueryError::Meta { source: e });
+                            }
+                        }
+                    }
+
+                    // grap lock again
+                    if let Err(e) = dispatcher
+                        .coord
+                        .meta_manager()
+                        .write_resourceinfos_mark(dispatcher.coord.node_id(), true)
+                        .await
+                    {
+                        match e {
+                            MetaError::ResourceInfosMarkIsLock { .. } => {
+                                return Ok(());
+                            }
+                            _ => {
+                                return Err(QueryError::Meta { source: e });
+                            }
+                        }
+                    }
+                }
+
+                // if current node get the lock, get the dead node task
+                let (id, lock) = dispatcher
+                    .coord
+                    .meta_manager()
+                    .read_resourceinfos_mark()
+                    .await
+                    .map_err(|meta_err| QueryError::Meta { source: meta_err })?;
+                if dispatcher.coord.node_id() == id && lock {
+                    let resourceinfos = dispatcher
+                        .coord
+                        .meta_manager()
+                        .read_resourceinfos_by_nodeid(node_metrics.id)
+                        .await
+                        .map_err(|meta_err| QueryError::Meta { source: meta_err })?;
+                    for mut resourceinfo in resourceinfos {
+                        resourceinfo.set_execute_node_id(dispatcher.coord.node_id());
+                        resourceinfo.set_is_new_add(false);
+                        dispatcher
+                            .coord
+                            .meta_manager()
+                            .write_resourceinfo(resourceinfo.get_name(), resourceinfo.clone())
+                            .await
+                            .context(MetaSnafu)?;
+                        match *resourceinfo.get_status() {
+                            ResourceStatus::Schedule => {
+                                if let Ok(mut joinhandle_map) =
+                                    dispatcher.async_task_joinhandle.lock()
+                                {
+                                    if joinhandle_map.contains_key(resourceinfo.get_name()) {
+                                        return Ok(()); // ignore the dead node task
+                                    }
+
+                                    joinhandle_map.insert(
+                                        resourceinfo.get_name().to_string(),
+                                        tokio::spawn(SimpleQueryDispatcher::exec_async_task(
+                                            dispatcher.coord.clone(),
+                                            resourceinfo,
+                                        )),
+                                    );
+                                }
+                            }
+                            ResourceStatus::Executing => {
+                                let _ = ResourceManager::add_resource_task(
+                                    dispatcher.coord.clone(),
+                                    resourceinfo,
+                                )
+                                .await;
+                            }
+                            ResourceStatus::Failed => {
+                                if let Ok(mut joinhandle_map) =
+                                    dispatcher.failed_task_joinhandle.lock()
+                                {
+                                    if joinhandle_map.contains_key(resourceinfo.get_name()) {
+                                        return Ok(()); // ignore repetition failed task
+                                    }
+                                    joinhandle_map.insert(
+                                        resourceinfo.get_name().to_string(),
+                                        tokio::spawn(ResourceManager::retry_failed_task(
+                                            dispatcher.coord.clone(),
+                                            resourceinfo,
+                                        )),
+                                    );
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+
+                    // handle dead node persistent query
+                    // 1.execute the persistent query
+                    dispatcher.execute_persister_query(node_metrics.id).await?;
+
+                    // 2.move the dead node persistent query to current node
+                    dispatcher
+                        .coord
+                        .meta_manager()
+                        .move_queryinfo(node_metrics.id, dispatcher.coord.node_id())
+                        .await
+                        .context(MetaSnafu)?;
+                }
+                Ok(())
+            }
+        }
+    }
+
+    async fn exec_async_task(coord: CoordinatorRef, mut resourceinfo: ResourceInfo) {
+        let future_interval = resourceinfo.get_time() - now_timestamp_nanos();
+        let future_time = Instant::now() + Duration::from_nanos(future_interval as u64);
+        tokio::time::sleep_until(future_time).await;
+        resourceinfo.set_status(ResourceStatus::Executing);
+        resourceinfo.set_is_new_add(false);
+        if let Err(meta_err) = coord
+            .meta_manager()
+            .write_resourceinfo(resourceinfo.get_name(), resourceinfo.clone())
+            .await
+        {
+            error!("failed to execute the async task: {}", meta_err.to_string());
+        }
+        // execute, if failed, retry later
+        let _ = ResourceManager::do_operator(coord.clone(), resourceinfo.clone()).await;
+    }
+
     async fn statement_to_logical_plan<S: ContextProviderExtension + Send + Sync>(
         &self,
         stmt: ExtStatement,
@@ -379,7 +630,7 @@ impl SimpleQueryDispatcherBuilder {
         self
     }
 
-    pub fn build(self) -> QueryResult<SimpleQueryDispatcher> {
+    pub fn build(self) -> QueryResult<Arc<SimpleQueryDispatcher>> {
         let coord = self.coord.ok_or_else(|| QueryError::BuildQueryDispatcher {
             err: "lost of coord".to_string(),
         })?;
@@ -440,7 +691,7 @@ impl SimpleQueryDispatcherBuilder {
 
         let span_ctx = self.span_ctx;
 
-        Ok(SimpleQueryDispatcher {
+        let dispatcher = Arc::new(SimpleQueryDispatcher {
             coord,
             default_table_provider,
             split_manager,
@@ -452,6 +703,20 @@ impl SimpleQueryDispatcherBuilder {
             func_manager,
             stream_provider_manager,
             span_ctx,
-        })
+            async_task_joinhandle: Arc::new(Mutex::new(HashMap::new())),
+            failed_task_joinhandle: Arc::new(Mutex::new(HashMap::new())),
+        });
+
+        let meta_task_receiver = dispatcher
+            .coord
+            .meta_manager()
+            .take_resourceinfo_rx()
+            .expect("meta resource channel only has one consumer");
+        tokio::spawn(SimpleQueryDispatcher::recv_meta_modify(
+            dispatcher.clone(),
+            meta_task_receiver,
+        ));
+
+        Ok(dispatcher)
     }
 }

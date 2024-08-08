@@ -1,6 +1,7 @@
 use async_trait::async_trait;
+use models::schema::query_info::QueryInfo;
 use spi::query::datasource::stream::checker::StreamCheckerManagerRef;
-use spi::query::dispatcher::{QueryInfo, QueryStatus};
+use spi::query::dispatcher::QueryStatus;
 use spi::query::execution::{Output, QueryExecution, QueryStateMachineRef};
 use spi::query::logical_planner::DDLPlan;
 use spi::QueryResult;
@@ -127,6 +128,7 @@ impl QueryExecution for DDLExecution {
             qsm.session.tenant().to_string(),
             qsm.session.default_database().to_string(),
             qsm.session.user().clone(),
+            qsm.coord.node_id(),
         )
     }
 
