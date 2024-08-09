@@ -65,18 +65,6 @@ impl QueryPersister for MetaQueryPersister {
             .await
             .context(MetaSnafu)?;
 
-        let mut result = vec![];
-        for query_info in query_infos {
-            match serde_json::from_slice::<QueryInfo>(&query_info) {
-                Ok(query_info) => {
-                    result.push(query_info);
-                }
-                Err(err) => {
-                    trace::warn!("Failed to deserialize query, error: {}", err,);
-                }
-            }
-        }
-
-        Ok(result)
+        Ok(query_infos)
     }
 }
