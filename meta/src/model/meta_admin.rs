@@ -825,10 +825,10 @@ impl AdminMeta {
         Ok(())
     }
 
-    pub async fn read_queryinfos(&self, node_id: NodeId) -> MetaResult<Vec<Vec<u8>>> {
+    pub async fn read_queryinfos(&self, node_id: NodeId) -> MetaResult<Vec<QueryInfo>> {
         let req = command::ReadCommand::ReadQueryInfos(self.cluster(), node_id);
 
-        self.client.read::<Vec<Vec<u8>>>(&req).await
+        self.client.read::<Vec<QueryInfo>>(&req).await
     }
 
     pub async fn remove_queryinfo(&self, query_id: u64) -> MetaResult<()> {
