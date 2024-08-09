@@ -5,28 +5,24 @@ use std::sync::Arc;
 
 use arrow::datatypes::{Schema, SchemaRef};
 use datafusion::arrow::array::{
-    ArrayBuilder, BooleanBuilder, Float64Builder, Int64Builder, PrimitiveBuilder, StringBuilder,
+    ArrayBuilder, BooleanBuilder, Float64Builder, Int64Builder, StringBuilder,
     TimestampMicrosecondBuilder, TimestampMillisecondBuilder, TimestampNanosecondBuilder,
     TimestampSecondBuilder, UInt64Builder,
 };
-use datafusion::arrow::datatypes::{
-    ArrowPrimitiveType, Float64Type, Int64Type, TimeUnit, TimestampMicrosecondType,
-    TimestampMillisecondType, TimestampNanosecondType, TimestampSecondType, UInt64Type,
-};
+use datafusion::arrow::datatypes::TimeUnit;
 use datafusion::physical_plan::metrics::{self, ExecutionPlanMetricsSet, MetricBuilder};
 use datafusion_proto::physical_plan::from_proto::parse_physical_expr;
-use models::field_value::DataType;
 use models::meta_data::VnodeId;
 use models::predicate::domain::{self, QueryArgs, QueryExpr, TimeRanges};
 use models::predicate::PlacedSplit;
 use models::schema::tskv_table_schema::{PhysicalCType, TableColumn, TskvTableSchemaRef};
-use models::{ColumnId, PhysicalDType, SeriesId, SeriesKey, Timestamp};
+use models::{ColumnId, PhysicalDType, SeriesId, SeriesKey};
 use protos::kv_service::QueryRecordBatchRequest;
 use snafu::ResultExt;
 use tokio::runtime::Runtime;
 use tokio_util::sync::CancellationToken;
 use trace::span_ext::SpanExt;
-use trace::{debug, error, Span, SpanContext};
+use trace::{debug, Span, SpanContext};
 
 use super::display::DisplayableBatchReader;
 use super::memcache_reader::MemCacheReader;
@@ -53,151 +49,6 @@ use crate::tsfamily::column_file::ColumnFile;
 use crate::tsfamily::super_version::SuperVersion;
 use crate::tsm::reader::TsmReader;
 use crate::EngineRef;
-
-pub struct ArrayBuilderPtr {
-    pub ptr: Box<dyn ArrayBuilder>,
-    pub column_type: PhysicalCType,
-}
-
-impl ArrayBuilderPtr {
-    pub fn new(ptr: Box<dyn ArrayBuilder>, column_type: PhysicalCType) -> Self {
-        Self { ptr, column_type }
-    }
-
-    #[inline(always)]
-    fn builder<T: ArrowPrimitiveType>(&mut self) -> Option<&mut PrimitiveBuilder<T>> {
-        self.ptr.as_any_mut().downcast_mut::<PrimitiveBuilder<T>>()
-    }
-
-    pub fn append_primitive<T: ArrowPrimitiveType>(&mut self, t: T::Native) {
-        if let Some(b) = self.builder::<T>() {
-            b.append_value(t);
-        } else {
-            error!(
-                "Failed to get primitive-type array builder to insert {:?} array",
-                self.column_type
-            );
-        }
-    }
-
-    pub fn append_timestamp(&mut self, unit: &TimeUnit, timestamp: Timestamp) {
-        match unit {
-            TimeUnit::Second => self.append_primitive::<TimestampSecondType>(timestamp),
-            TimeUnit::Millisecond => self.append_primitive::<TimestampMillisecondType>(timestamp),
-            TimeUnit::Microsecond => self.append_primitive::<TimestampMicrosecondType>(timestamp),
-            TimeUnit::Nanosecond => self.append_primitive::<TimestampNanosecondType>(timestamp),
-        }
-    }
-
-    pub fn append_value(
-        &mut self,
-        value_type: PhysicalDType,
-        value: Option<DataType>,
-        column_name: &str,
-    ) -> TskvResult<()> {
-        match value_type {
-            PhysicalDType::Unknown => {
-                return Err(CommonSnafu {
-                    reason: format!("unknown type of column '{}'", column_name),
-                }
-                .build());
-            }
-            PhysicalDType::String => match value {
-                Some(DataType::Str(_, val)) => {
-                    // Safety
-                    // All val is valid UTF-8 String
-                    let str = unsafe { std::str::from_utf8_unchecked(val.as_slice()) };
-                    self.append_string(str)
-                }
-                _ => self.append_null_string(),
-            },
-            PhysicalDType::Boolean => {
-                if let Some(DataType::Bool(_, val)) = value {
-                    self.append_bool(val);
-                } else {
-                    self.append_null_bool();
-                }
-            }
-            PhysicalDType::Float => {
-                if let Some(DataType::F64(_, val)) = value {
-                    self.append_primitive::<Float64Type>(val);
-                } else {
-                    self.append_primitive_null::<Float64Type>();
-                }
-            }
-            PhysicalDType::Integer => {
-                if let Some(DataType::I64(_, val)) = value {
-                    self.append_primitive::<Int64Type>(val);
-                } else {
-                    self.append_primitive_null::<Int64Type>();
-                }
-            }
-            PhysicalDType::Unsigned => {
-                if let Some(DataType::U64(_, val)) = value {
-                    self.append_primitive::<UInt64Type>(val);
-                } else {
-                    self.append_primitive_null::<UInt64Type>();
-                }
-            }
-        }
-        Ok(())
-    }
-
-    pub fn append_primitive_null<T: ArrowPrimitiveType>(&mut self) {
-        if let Some(b) = self.builder::<T>() {
-            b.append_null();
-        } else {
-            error!(
-                "Failed to get primitive-type array builder to insert {:?} array",
-                self.column_type
-            );
-        }
-    }
-
-    pub fn append_bool(&mut self, data: bool) {
-        if let Some(b) = self.ptr.as_any_mut().downcast_mut::<BooleanBuilder>() {
-            b.append_value(data);
-        } else {
-            error!(
-                "Failed to get boolean array builder to insert {:?} array",
-                self.column_type
-            );
-        }
-    }
-
-    pub fn append_null_bool(&mut self) {
-        if let Some(b) = self.ptr.as_any_mut().downcast_mut::<BooleanBuilder>() {
-            b.append_null();
-        } else {
-            error!(
-                "Failed to get boolean array builder to insert {:?} array",
-                self.column_type
-            );
-        }
-    }
-
-    pub fn append_string(&mut self, data: &str) {
-        if let Some(b) = self.ptr.as_any_mut().downcast_mut::<StringBuilder>() {
-            b.append_value(data);
-        } else {
-            error!(
-                "Failed to get string array builder to insert {:?} array",
-                self.column_type
-            );
-        }
-    }
-
-    pub fn append_null_string(&mut self) {
-        if let Some(b) = self.ptr.as_any_mut().downcast_mut::<StringBuilder>() {
-            b.append_null();
-        } else {
-            error!(
-                "Failed to get string array builder to insert {:?} array",
-                self.column_type
-            );
-        }
-    }
-}
 
 pub struct SeriesGroupBatchReaderFactory {
     engine: EngineRef,
@@ -813,19 +664,6 @@ impl SeriesGroupBatchReaderMetrics {
     }
 }
 
-// 1. Tsm文件遍历： KeyCursor
-//  功能：根据输入参数遍历Tsm文件
-//  输入参数： SeriesKey、FieldName、StartTime、EndTime、Ascending
-//  功能函数：调用Peek()—>(value, timestamp)得到一个值；调用Next()方法游标移到下一个值。
-// 2. Field遍历： FiledCursor
-//  功能：一个Field特定SeriesKey的遍历
-//  输入输出参数同KeyCursor，区别是需要读取缓存数据，并按照特定顺序返回
-// 3. Fields->行转换器
-//  一行数据是由同一个时间点的多个Field得到。借助上面的FieldCursor按照时间点对齐多个Field-Value拼接成一行数据。其过程类似于多路归并排序。
-// 4. Iterator接口抽象层
-//  调用Next接口返回一行数据，并且屏蔽查询是本机节点数据还是其他节点数据
-// 5. 行数据到DataFusion的RecordBatch转换器
-//  调用Iterator.Next得到行数据，然后转换行数据为RecordBatch结构
 #[derive(Debug, Clone)]
 pub struct QueryOption {
     pub batch_size: usize,

@@ -46,6 +46,7 @@ mod trace;
 mod utils;
 mod visitor;
 
+mod array_builder;
 pub mod query_executor;
 pub mod serialize;
 pub mod sort_merge;
