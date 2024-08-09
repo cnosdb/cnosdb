@@ -48,7 +48,12 @@ impl WatermarkTracker {
         let mut watermark_ns = i64::MIN;
         let mut timestamp = now_timestamp_nanos();
 
-        if is_old {
+        let is_have_watermark = coord
+            .meta_manager()
+            .read_tableschema(DEFAULT_CATALOG, CLUSTER_SCHEMA, PERSISTER_SQL_TABLE)
+            .await;
+
+        if is_have_watermark.is_ok() && is_old {
             let table_columns = vec![
                 TableColumn::new_time_column(0, TimeUnit::Nanosecond),
                 TableColumn::new(
