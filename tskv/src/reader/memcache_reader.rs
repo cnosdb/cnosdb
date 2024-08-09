@@ -22,7 +22,8 @@ use super::{
 use crate::error::ArrowSnafu;
 use crate::mem_cache::row_data::RowData;
 use crate::mem_cache::series_data::SeriesData;
-use crate::reader::iterator::{ArrayBuilderPtr, RowIterator};
+use crate::reader::array_builder::ArrayBuilderPtr;
+use crate::reader::iterator::RowIterator;
 use crate::reader::utils::TimeRangeProvider;
 use crate::TskvResult;
 
