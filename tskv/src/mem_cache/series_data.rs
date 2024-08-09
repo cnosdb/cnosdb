@@ -359,4 +359,8 @@ impl SeriesData {
         }
         Ok(None)
     }
+
+    pub fn update_tag_value(&mut self, series_key: SeriesKey) {
+        self.series_key = series_key
+    }
 }

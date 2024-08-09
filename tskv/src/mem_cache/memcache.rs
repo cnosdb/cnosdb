@@ -267,6 +267,17 @@ impl MemCache {
         self.memory.read().size() >= self.max_size as usize
     }
 
+    pub fn update_tag_value(&self, series: &HashMap<SeriesId, SeriesKey>) {
+        for (sid, key) in series {
+            let index = (*sid as usize) % self.part_count;
+            let partion = self.partions[index].read();
+            let series_data = partion.get(sid);
+            if let Some(series_data) = series_data {
+                series_data.write().update_tag_value(key.clone());
+            }
+        }
+    }
+
     pub fn tf_id(&self) -> TseriesFamilyId {
         self.tf_id
     }

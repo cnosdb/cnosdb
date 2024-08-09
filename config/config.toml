@@ -76,6 +76,9 @@ max_datablock_size = "100KiB"
 ## index cache capacity in every vnode
 index_cache_capacity = 100000
 
+## the parallel of read file
+read_parallel = 8
+
 [wal]
 
 ## The directory where write ahead logs stored.

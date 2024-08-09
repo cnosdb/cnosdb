@@ -134,7 +134,7 @@ impl TSIndex {
     pub async fn add_series_if_not_exists(
         &mut self,
         series_keys: Vec<SeriesKey>,
-    ) -> IndexResult<Vec<(u32, SeriesKey)>> {
+    ) -> IndexResult<Vec<(SeriesId, SeriesKey)>> {
         let mut ids = Vec::with_capacity(series_keys.len());
         for series_key in series_keys.into_iter() {
             let key_buf = encode_series_key(series_key.table(), series_key.tags());
@@ -213,7 +213,7 @@ impl TSIndex {
     pub async fn get_tombstone_series_id(
         &self,
         series_key: &SeriesKey,
-    ) -> IndexResult<Option<u32>> {
+    ) -> IndexResult<Option<SeriesId>> {
         let key_buf = encode_tombstone_series_key(series_key.table(), series_key.tags());
         if let Some(val) = self.storage.get(&key_buf)? {
             let id = byte_utils::decode_be_u32(&val);
@@ -294,7 +294,7 @@ impl TSIndex {
     }
 
     /// if tags == [] return all
-    pub async fn get_series_id_list(&self, tab: &str, tags: &[Tag]) -> IndexResult<Vec<u32>> {
+    pub async fn get_series_id_list(&self, tab: &str, tags: &[Tag]) -> IndexResult<Vec<SeriesId>> {
         let rb = self.get_series_id_bitmap(tab, tags).await?;
 
         Ok(rb.iter().collect())
@@ -385,7 +385,7 @@ impl TSIndex {
         &self,
         table_schema: &TskvTableSchema,
         tag_domains: &ColumnDomains<String>,
-    ) -> Result<Vec<u32>, TskvError> {
+    ) -> Result<Vec<SeriesId>, TskvError> {
         let tab = table_schema.name.as_str();
         if tag_domains.is_all() {
             // Match all records

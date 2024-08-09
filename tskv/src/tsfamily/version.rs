@@ -168,6 +168,11 @@ impl Version {
         Ok(tsm_reader)
     }
 
+    pub async fn remove_tsm_reader_cache(&self, path: impl AsRef<Path>) {
+        let path = path.as_ref().display().to_string();
+        self.tsm_reader_cache.remove(&path).await;
+    }
+
     pub fn max_level_ts(&self) -> i64 {
         self.max_level_ts
     }
