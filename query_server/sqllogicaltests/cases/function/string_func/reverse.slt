@@ -1,0 +1,78 @@
+include ./../setup.slt
+
+statement ok
+drop table if exists test_strings;
+
+
+statement ok
+CREATE TABLE IF NOT EXISTS test_strings (
+    original_text string
+);
+
+# 插入测试数据
+statement ok
+INSERT test_strings (time, original_text) VALUES
+(1, 'Hello World'),
+(2, 'SQL REVERSE function example'),
+(3, 'Reverse function in SQL is useful'),
+(4, 'Another test for SQL REVERSE'),
+(5, ''), -- 空字符串
+(6, '12345'), -- 数字字符串
+(7, 'A'), -- 单字符
+(8, 'PalindromeemordnilaP'), -- 回文字符串
+(9, 'Spaces    and     tabs    '); -- 多个空格和制表符
+
+# 使用 REVERSE 函数反转字符串并进行查询
+query T
+SELECT  REVERSE(original_text)
+FROM test_strings
+ORDER BY time;
+----
+"dlroW olleH"
+"elpmaxe noitcnuf ESREVER LQS"
+"lufesu si LQS ni noitcnuf esreveR"
+"ESREVER LQS rof tset rehtonA"
+""
+"54321"
+"A"
+"PalindromeemordnilaP"
+"    sbat     dna    secapS"
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'reverse\(\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\treverse\(Utf8/LargeUtf8\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select Reverse();
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'reverse\(Utf8, Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\treverse\(Utf8/LargeUtf8\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select Reverse('ssddff','efref');
+
+statement ok
+drop table if exists func_test;
+
+statement ok
+CREATE table if not exists func_test(f0_bigint bigint,f1_bigint_unsign bigint unsigned,f2_boolean boolean,f3_string STRING,f4_double DOUBLE);
+
+statement ok
+INSERT func_test(TIME,f0_bigint,f1_bigint_unsign,f2_boolean,f3_string,f4_double)
+values
+(1,111,238989,true,'string000',3.138247239),
+(2,4839478,29843279,false,'string222',3.149843059483);
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"reverse\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select Reverse(f0_bigint) from func_test;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"reverse\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select reverse(f1_bigint_unsign) from func_test;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"reverse\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select reverse(f2_boolean) from func_test;
+
+query 
+select reverse(f3_string) from func_test;
+----
+"000gnirts"
+"222gnirts"
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"reverse\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select reverse(f4_double) from func_test;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"reverse\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select reverse(time) from func_test;

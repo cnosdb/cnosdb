@@ -1,0 +1,126 @@
+include ./../setup.slt
+
+
+# 创建测试表
+statement ok
+drop table if exists test_split_part;
+
+statement ok
+CREATE TABLE IF NOT EXISTS test_split_part (
+    original_text string,
+    delimiter string,
+    position bigint
+);
+
+# 插入测试数据
+statement ok
+INSERT test_split_part (time, original_text, delimiter, position) VALUES
+(1, 'apple,banana,cherry', ',', 1),
+(2, 'apple,banana,cherry', ',', 2),
+(3, 'apple,banana,cherry', ',', 3),
+(4, 'apple,banana,cherry', ',', 4),  -- 超出范围
+(5, 'a:b:c:d:e', ':', 3),
+(6, 'a:b:c:d:e', ':', 5),
+(7, 'a:b:c:d:e', ':', 6),  -- 超出范围
+(8, 'no delimiter here', ',', 1),  -- 无分隔符
+(9, 'no delimiter here', ',', 2),  -- 超出范围
+(10, '', ',', 1),  -- 空字符串
+(11, 'only one part', ' ', 1),  -- 单一部分
+(12, 'multiple   spaces', ' ', 2),  -- 多个空格作为分隔符
+(13, 'a|b|c|d', '|', 4),
+(14, 'a|b|c|d', '|', 5),  -- 超出范围
+(15, 'apple|banana|cherry|date', '|', 3);
+
+# 使用 split_part 函数进行查询并排序
+query T
+SELECT split_part(test_split_part.original_text, test_split_part.delimiter, test_split_part.position) FROM test_split_part;
+----
+"apple"
+"banana"
+"cherry"
+""
+"c"
+"e"
+""
+"no delimiter here"
+""
+""
+"only"
+""
+"d"
+""
+"cherry"
+
+# 测试错误输入: 无参数
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'split_part\(\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tsplit_part\(Utf8, Utf8, Int64\)\\n\\tsplit_part\(LargeUtf8, Utf8, Int64\)\\n\\tsplit_part\(Utf8, LargeUtf8, Int64\)\\n\\tsplit_part\(LargeUtf8, LargeUtf8, Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT split_part();
+
+# 测试错误输入: 一个参数
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'split_part\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tsplit_part\(Utf8, Utf8, Int64\)\\n\\tsplit_part\(LargeUtf8, Utf8, Int64\)\\n\\tsplit_part\(Utf8, LargeUtf8, Int64\)\\n\\tsplit_part\(LargeUtf8, LargeUtf8, Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT split_part('a,b,c');
+
+# 测试错误输入: 两个参数
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'split_part\(Utf8, Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tsplit_part\(Utf8, Utf8, Int64\)\\n\\tsplit_part\(LargeUtf8, Utf8, Int64\)\\n\\tsplit_part\(Utf8, LargeUtf8, Int64\)\\n\\tsplit_part\(LargeUtf8, LargeUtf8, Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT split_part('a,b,c', ',');
+
+# 测试错误输入: 超出参数数量
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'split_part\(Utf8, Utf8, Int64, Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tsplit_part\(Utf8, Utf8, Int64\)\\n\\tsplit_part\(LargeUtf8, Utf8, Int64\)\\n\\tsplit_part\(Utf8, LargeUtf8, Int64\)\\n\\tsplit_part\(LargeUtf8, LargeUtf8, Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT split_part('a,b,c', ',', 1, 'extra');
+
+query 
+select split_part('apple,banana,cherry',',', 1);
+----
+"apple"
+
+
+# 测试错误输入: 字符串为空
+query 
+SELECT split_part(NULL, ',', 1);  -- original_text 为 NULL
+----
+"NULL"
+
+# 测试错误输入: 分隔符为空
+query 
+SELECT split_part('apple,banana,cherry', '', 1);  -- delimiter 为空
+----
+""
+
+# 测试错误输入: position 为负数
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: field position must be greater than zero", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT split_part('apple,banana,cherry', ',', -1);  -- position 为负数
+
+# 测试错误输入: position 超出范围
+query 
+SELECT split_part('apple,banana,cherry', ',', 10);  -- position 超出范围
+----
+""
+
+# 测试错误输入: delimiter 为 NULL
+query 
+SELECT split_part('apple,banana,cherry', NULL, 1);  -- delimiter 为 NULL
+----
+"NULL"
+
+# 测试错误输入: position 为 NULL
+query 
+SELECT split_part('apple,banana,cherry', ',', NULL);  -- position 为 NULL
+----
+"NULL"
+
+# 测试错误输入: position 为非整数
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'split_part\(Utf8, Utf8, Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tsplit_part\(Utf8, Utf8, Int64\)\\n\\tsplit_part\(LargeUtf8, Utf8, Int64\)\\n\\tsplit_part\(Utf8, LargeUtf8, Int64\)\\n\\tsplit_part\(LargeUtf8, LargeUtf8, Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT split_part('apple,banana,cherry', ',', 'two');  -- position 为非整数
+
+# 测试错误输入: original_text 为非字符串类型
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"split_part\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT split_part(12345, ',', 1);  -- original_text 为非字符串类型
+
+# 测试错误输入: delimiter 为非字符串类型
+query 
+SELECT split_part('apple,banana,cherry', 123, 1);  -- delimiter 为非字符串类型
+----
+"apple,banana,cherry"
+
+# 测试错误输入: position 为非整数类型
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'split_part\(Utf8, Utf8, Float64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tsplit_part\(Utf8, Utf8, Int64\)\\n\\tsplit_part\(LargeUtf8, Utf8, Int64\)\\n\\tsplit_part\(Utf8, LargeUtf8, Int64\)\\n\\tsplit_part\(LargeUtf8, LargeUtf8, Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT split_part('apple,banana,cherry', ',', 1.5);  -- position 为非整数类型

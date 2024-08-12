@@ -1,0 +1,124 @@
+include ./../setup.slt
+
+statement ok
+drop table if exists test_strpos;
+
+statement ok
+CREATE TABLE IF NOT EXISTS test_strpos (
+    original_text string,
+    search_text string
+);
+
+statement ok
+INSERT INTO test_strpos (time, original_text, search_text) VALUES
+(1, 'hello world', 'world'),  -- 存在的子字符串
+(2, 'hello world', 'hello'),  -- 子字符串在开头
+(3, 'hello world', 'o'),      -- 存在的单字符子字符串
+(4, 'hello world', 'z'),      -- 不存在的子字符串
+(5, 'hello world', ''),       -- 空子字符串
+(6, '', 'world'),             -- 空原始字符串
+(7, '', ''),                  -- 空原始字符串和空子字符串
+(8, 'hello hello', 'hello'),  -- 子字符串重复
+(9, 'a quick brown fox', 'quick'),  -- 中间位置的子字符串
+(10, 'a quick brown fox', 'fox'),    -- 子字符串在结尾
+(11, 'a quick brown fox', 'brown'),  -- 子字符串在中间
+(12, 'a quick brown fox', 'quick brown fox');  -- 完全匹配
+
+# 使用 strpos 函数进行查询
+query I
+SELECT strpos(test_strpos.original_text, test_strpos.search_text) FROM test_strpos;
+----
+7
+1
+5
+0
+1
+0
+1
+1
+3
+15
+9
+3
+
+# 测试错误输入: 无参数
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'strpos\(\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tstrpos\(Utf8, Utf8\)\\n\\tstrpos\(Utf8, LargeUtf8\)\\n\\tstrpos\(LargeUtf8, Utf8\)\\n\\tstrpos\(LargeUtf8, LargeUtf8\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT strpos();
+
+# 测试错误输入: 一个参数
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'strpos\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tstrpos\(Utf8, Utf8\)\\n\\tstrpos\(Utf8, LargeUtf8\)\\n\\tstrpos\(LargeUtf8, Utf8\)\\n\\tstrpos\(LargeUtf8, LargeUtf8\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT strpos('hello world');
+
+# 测试错误输入: 两个参数，一个为空
+query 
+SELECT strpos('hello world', '');
+----
+1
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'strpos\(Utf8, Utf8, Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tstrpos\(Utf8, Utf8\)\\n\\tstrpos\(Utf8, LargeUtf8\)\\n\\tstrpos\(LargeUtf8, Utf8\)\\n\\tstrpos\(LargeUtf8, LargeUtf8\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select strpos('headers','','');
+
+
+# 测试错误输入: 参数类型不匹配
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"strpos\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT strpos(123, 'hello');  -- 原始文本为非字符串类型
+
+query 
+SELECT strpos('hello world', 456);  -- 搜索文本为非字符串类型
+----
+0
+
+
+statement ok
+drop table if exists func_test;
+
+statement ok
+CREATE table if not exists func_test(f0_bigint bigint,f1_bigint_unsign bigint unsigned,f2_boolean boolean,f3_string STRING,f4_double DOUBLE);
+
+statement ok
+INSERT func_test(TIME,f0_bigint,f1_bigint_unsign,f2_boolean,f3_string,f4_double)
+values
+(1,111,238989,true,'string000',3.138247239),
+(2,4839478,29843279,false,'string222',3.149843059483);
+
+
+query 
+select strpos(f3_string,time) from func_test;
+----
+0
+0
+
+
+query 
+select strpos(f3_string,f0_bigint) from func_test;
+----
+0
+0
+
+query 
+select strpos(f3_string,f1_bigint_unsign) from func_test;
+----
+0
+0
+
+query 
+select strpos(f3_string,f2_boolean) from func_test;
+----
+0
+0
+
+query 
+select strpos(f3_string,f3_string) from func_test;
+----
+1
+1
+
+query 
+select strpos(f3_string,f4_double) from func_test;
+----
+0
+0
+
+
+statement ok
+drop table if exists func_test;

@@ -1,0 +1,235 @@
+
+statement ok
+drop table if exists test_row_number;
+
+statement ok
+CREATE TABLE IF NOT EXISTS test_row_number (
+    category string,
+    value bigint
+);
+
+statement ok
+INSERT INTO test_row_number (time, category, value) VALUES
+(1, 'A', 10),
+(2, 'A', 20),
+(3, 'A', 30),
+(4, 'B', 40),
+(5, 'B', 50),
+(6, 'C', 60),
+(7, 'C', 70),
+(8, 'C', 80),
+(9, 'C', 90);
+
+query PTII
+SELECT
+    time,
+    category,
+    value,
+    ROW_NUMBER() OVER (PARTITION BY category ORDER BY time) AS row_num
+FROM test_row_number
+ORDER BY category, time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 1
+1970-01-01T00:00:00.000000002 "A" 20 2
+1970-01-01T00:00:00.000000003 "A" 30 3
+1970-01-01T00:00:00.000000004 "B" 40 1
+1970-01-01T00:00:00.000000005 "B" 50 2
+1970-01-01T00:00:00.000000006 "C" 60 1
+1970-01-01T00:00:00.000000007 "C" 70 2
+1970-01-01T00:00:00.000000008 "C" 80 3
+1970-01-01T00:00:00.000000009 "C" 90 4
+
+
+# 错误输入测试
+
+# 错误输入: row_number 函数不带 OVER 子句
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Invalid function 'row_number'\.\\nDid you mean 'power'\?", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT time, category, value, ROW_NUMBER()
+FROM test_row_number;
+
+# row_number 函数的 OVER 子句中没有 PARTITION BY 或 ORDER BY
+query PTII
+SELECT time, category, value, ROW_NUMBER() OVER ()
+FROM test_row_number;
+----
+1970-01-01T00:00:00.000000001 "A" 10 1
+1970-01-01T00:00:00.000000002 "A" 20 2
+1970-01-01T00:00:00.000000003 "A" 30 3
+1970-01-01T00:00:00.000000004 "B" 40 4
+1970-01-01T00:00:00.000000005 "B" 50 5
+1970-01-01T00:00:00.000000006 "C" 60 6
+1970-01-01T00:00:00.000000007 "C" 70 7
+1970-01-01T00:00:00.000000008 "C" 80 8
+1970-01-01T00:00:00.000000009 "C" 90 9
+
+
+# 错误输入: row_number 函数的 OVER 子句中带有无效的排序列
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Schema error: No field named non_existent_column\. Valid fields are test_row_number\.time, test_row_number\.category, test_row_number\.value\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT time, category, value, ROW_NUMBER() OVER (PARTITION BY category ORDER BY non_existent_column)
+FROM test_row_number;
+
+# 错误输入: row_number 函数的 OVER 子句中带有无效的分区列
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Schema error: No field named non_existent_column\. Valid fields are test_row_number\.time, test_row_number\.category, test_row_number\.value\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT time, category, value, ROW_NUMBER() OVER (PARTITION BY non_existent_column ORDER BY time)
+FROM test_row_number;
+
+
+# 基本使用：在分类内按时间排序并计算行号
+query 
+SELECT
+    time,
+    category,
+    value,
+    ROW_NUMBER() OVER (PARTITION BY category ORDER BY time) AS row_num
+FROM test_row_number
+ORDER BY category, time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 1
+1970-01-01T00:00:00.000000002 "A" 20 2
+1970-01-01T00:00:00.000000003 "A" 30 3
+1970-01-01T00:00:00.000000004 "B" 40 1
+1970-01-01T00:00:00.000000005 "B" 50 2
+1970-01-01T00:00:00.000000006 "C" 60 1
+1970-01-01T00:00:00.000000007 "C" 70 2
+1970-01-01T00:00:00.000000008 "C" 80 3
+1970-01-01T00:00:00.000000009 "C" 90 4
+
+# 在没有分区的情况下按时间排序并计算行号
+query 
+SELECT
+    time,
+    category,
+    value,
+    ROW_NUMBER() OVER (ORDER BY time) AS row_num
+FROM test_row_number
+ORDER BY time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 1
+1970-01-01T00:00:00.000000002 "A" 20 2
+1970-01-01T00:00:00.000000003 "A" 30 3
+1970-01-01T00:00:00.000000004 "B" 40 4
+1970-01-01T00:00:00.000000005 "B" 50 5
+1970-01-01T00:00:00.000000006 "C" 60 6
+1970-01-01T00:00:00.000000007 "C" 70 7
+1970-01-01T00:00:00.000000008 "C" 80 8
+1970-01-01T00:00:00.000000009 "C" 90 9
+
+# 在分区内按值排序并计算行号
+query 
+SELECT
+    time,
+    category,
+    value,
+    ROW_NUMBER() OVER (PARTITION BY category ORDER BY value DESC) AS row_num
+FROM test_row_number
+ORDER BY category, value DESC;
+----
+1970-01-01T00:00:00.000000003 "A" 30 1
+1970-01-01T00:00:00.000000002 "A" 20 2
+1970-01-01T00:00:00.000000001 "A" 10 3
+1970-01-01T00:00:00.000000005 "B" 50 1
+1970-01-01T00:00:00.000000004 "B" 40 2
+1970-01-01T00:00:00.000000009 "C" 90 1
+1970-01-01T00:00:00.000000008 "C" 80 2
+1970-01-01T00:00:00.000000007 "C" 70 3
+1970-01-01T00:00:00.000000006 "C" 60 4
+
+# 多列分区：按类别和值分区并按时间排序
+query 
+SELECT
+    time,
+    category,
+    value,
+    ROW_NUMBER() OVER (PARTITION BY category, value ORDER BY time) AS row_num
+FROM test_row_number
+ORDER BY category, value, time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 1
+1970-01-01T00:00:00.000000002 "A" 20 1
+1970-01-01T00:00:00.000000003 "A" 30 1
+1970-01-01T00:00:00.000000004 "B" 40 1
+1970-01-01T00:00:00.000000005 "B" 50 1
+1970-01-01T00:00:00.000000006 "C" 60 1
+1970-01-01T00:00:00.000000007 "C" 70 1
+1970-01-01T00:00:00.000000008 "C" 80 1
+1970-01-01T00:00:00.000000009 "C" 90 1
+
+# 使用窗口函数与其他聚合函数结合
+query 
+SELECT
+    category,
+    value,
+    ROW_NUMBER() OVER (PARTITION BY category ORDER BY value) AS row_num,
+    SUM(value) OVER (PARTITION BY category) AS total_value
+FROM test_row_number
+ORDER BY category, value;
+----
+"A" 10 1 60
+"A" 20 2 60
+"A" 30 3 60
+"B" 40 1 90
+"B" 50 2 90
+"C" 60 1 300
+"C" 70 2 300
+"C" 80 3 300
+"C" 90 4 300
+
+
+# 错误输入: row_number 函数使用聚合函数
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Projection references non\-aggregate values: Expression test_row_number\.time could not be resolved from available columns: test_row_number\.category, SUM\(test_row_number\.value\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT category, SUM(value), ROW_NUMBER() OVER (PARTITION BY category ORDER BY time)
+FROM test_row_number
+GROUP BY category;
+
+# 错误输入: ROW_NUMBER 函数的参数不是窗口函数
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Invalid function 'row_number'\.\\nDid you mean 'power'\?", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT time, category, value, ROW_NUMBER(time)
+FROM test_row_number;
+
+# ROW_NUMBER 与其他窗口函数的参数冲突
+query 
+SELECT
+    time,
+    category,
+    value,
+    ROW_NUMBER() OVER (PARTITION BY category ORDER BY time, value) AS row_num
+FROM test_row_number
+ORDER BY category, time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 1
+1970-01-01T00:00:00.000000002 "A" 20 2
+1970-01-01T00:00:00.000000003 "A" 30 3
+1970-01-01T00:00:00.000000004 "B" 40 1
+1970-01-01T00:00:00.000000005 "B" 50 2
+1970-01-01T00:00:00.000000006 "C" 60 1
+1970-01-01T00:00:00.000000007 "C" 70 2
+1970-01-01T00:00:00.000000008 "C" 80 3
+1970-01-01T00:00:00.000000009 "C" 90 4
+
+# 错误输入: ROW_NUMBER 与空字符串参数
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Expected ROWS, RANGE, GROUPS, found: ''", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT time, category, value, ROW_NUMBER() OVER ('')
+FROM test_row_number;
+
+# 错误输入: ROW_NUMBER 与NULL作为参数
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Invalid function 'row_number'\.\\nDid you mean 'power'\?", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT time, category, value, ROW_NUMBER(NULL)
+FROM test_row_number;
+
+# ROW_NUMBER 函数中混合不同类型的排序列
+query 
+SELECT time, category, value, ROW_NUMBER() OVER (ORDER BY time, category, value)
+FROM test_row_number;
+----
+1970-01-01T00:00:00.000000001 "A" 10 1
+1970-01-01T00:00:00.000000002 "A" 20 2
+1970-01-01T00:00:00.000000003 "A" 30 3
+1970-01-01T00:00:00.000000004 "B" 40 4
+1970-01-01T00:00:00.000000005 "B" 50 5
+1970-01-01T00:00:00.000000006 "C" 60 6
+1970-01-01T00:00:00.000000007 "C" 70 7
+1970-01-01T00:00:00.000000008 "C" 80 8
+1970-01-01T00:00:00.000000009 "C" 90 9
+
+statement ok
+drop table if exists test_row_number;

@@ -1,0 +1,260 @@
+statement ok
+drop table if exists test_first_value;
+
+
+# 创建测试表
+statement ok
+CREATE TABLE IF NOT EXISTS test_first_value (
+    category string,
+    value bigint
+);
+
+# 插入测试数据
+statement ok
+INSERT INTO test_first_value (time, category, value) VALUES
+(1, 'A', 10),
+(2, 'A', 20),
+(3, 'A', 30),
+(4, 'B', 40),
+(5, 'B', 50),
+(6, 'C', 60),
+(7, 'C', 70),
+(8, 'C', 80),
+(9, 'C', 90);
+
+# 基本使用：计算窗口框架的第一个值
+query 
+SELECT
+    time,
+    category,
+    value,
+    FIRST_VALUE(value) OVER (PARTITION BY category ORDER BY time) AS first_value
+FROM test_first_value
+ORDER BY category, time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 10
+1970-01-01T00:00:00.000000002 "A" 20 10
+1970-01-01T00:00:00.000000003 "A" 30 10
+1970-01-01T00:00:00.000000004 "B" 40 40
+1970-01-01T00:00:00.000000005 "B" 50 40
+1970-01-01T00:00:00.000000006 "C" 60 60
+1970-01-01T00:00:00.000000007 "C" 70 60
+1970-01-01T00:00:00.000000008 "C" 80 60
+1970-01-01T00:00:00.000000009 "C" 90 60
+
+# 不同窗口框架的使用
+query 
+SELECT
+    time,
+    category,
+    value,
+    FIRST_VALUE(value) OVER (PARTITION BY category ORDER BY time ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS first_value
+FROM test_first_value
+ORDER BY category, time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 10
+1970-01-01T00:00:00.000000002 "A" 20 10
+1970-01-01T00:00:00.000000003 "A" 30 10
+1970-01-01T00:00:00.000000004 "B" 40 40
+1970-01-01T00:00:00.000000005 "B" 50 40
+1970-01-01T00:00:00.000000006 "C" 60 60
+1970-01-01T00:00:00.000000007 "C" 70 60
+1970-01-01T00:00:00.000000008 "C" 80 60
+1970-01-01T00:00:00.000000009 "C" 90 60
+
+# 没有分区的情况下使用first_value函数
+query 
+SELECT
+    time,
+    category,
+    value,
+    FIRST_VALUE(value) OVER (ORDER BY time) AS first_value
+FROM test_first_value
+ORDER BY time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 10
+1970-01-01T00:00:00.000000002 "A" 20 10
+1970-01-01T00:00:00.000000003 "A" 30 10
+1970-01-01T00:00:00.000000004 "B" 40 10
+1970-01-01T00:00:00.000000005 "B" 50 10
+1970-01-01T00:00:00.000000006 "C" 60 10
+1970-01-01T00:00:00.000000007 "C" 70 10
+1970-01-01T00:00:00.000000008 "C" 80 10
+1970-01-01T00:00:00.000000009 "C" 90 10
+
+# 错误输入测试
+
+# 错误输入: first_value函数不带OVER子句
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Projection references non\-aggregate values: Expression test_first_value\.time could not be resolved from available columns: FIRST_VALUE\(test_first_value\.value\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT time, category, value, FIRST_VALUE(value)
+FROM test_first_value;
+
+#  first_value函数的OVER子句中没有PARTITION BY或ORDER BY
+query 
+SELECT time, category, value, FIRST_VALUE(value) OVER ()
+FROM test_first_value;
+----
+1970-01-01T00:00:00.000000001 "A" 10 10
+1970-01-01T00:00:00.000000002 "A" 20 10
+1970-01-01T00:00:00.000000003 "A" 30 10
+1970-01-01T00:00:00.000000004 "B" 40 10
+1970-01-01T00:00:00.000000005 "B" 50 10
+1970-01-01T00:00:00.000000006 "C" 60 10
+1970-01-01T00:00:00.000000007 "C" 70 10
+1970-01-01T00:00:00.000000008 "C" 80 10
+1970-01-01T00:00:00.000000009 "C" 90 10
+
+# 错误输入: first_value函数的OVER子句中带有无效的排序列
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Schema error: No field named non_existent_column\. Valid fields are test_first_value\.time, test_first_value\.category, test_first_value\.value\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT time, category, value, FIRST_VALUE(value) OVER (PARTITION BY category ORDER BY non_existent_column)
+FROM test_first_value;
+
+# 错误输入: first_value函数的OVER子句中带有无效的分区列
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Schema error: No field named non_existent_column\. Valid fields are test_first_value\.time, test_first_value\.category, test_first_value\.value\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT time, category, value, FIRST_VALUE(value) OVER (PARTITION BY non_existent_column ORDER BY time)
+FROM test_first_value;
+
+# 错误输入: first_value函数使用聚合函数
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Projection references non\-aggregate values: Expression test_first_value\.value could not be resolved from available columns: test_first_value\.category, SUM\(test_first_value\.value\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT category, SUM(value), FIRST_VALUE(value) OVER (PARTITION BY category ORDER BY time)
+FROM test_first_value
+GROUP BY category;
+
+#  first_value函数的参数类型不匹配
+query 
+SELECT time, category, value, FIRST_VALUE('string_value') OVER (PARTITION BY category ORDER BY time)
+FROM test_first_value
+order by time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 "string_value"
+1970-01-01T00:00:00.000000002 "A" 20 "string_value"
+1970-01-01T00:00:00.000000003 "A" 30 "string_value"
+1970-01-01T00:00:00.000000004 "B" 40 "string_value"
+1970-01-01T00:00:00.000000005 "B" 50 "string_value"
+1970-01-01T00:00:00.000000006 "C" 60 "string_value"
+1970-01-01T00:00:00.000000007 "C" 70 "string_value"
+1970-01-01T00:00:00.000000008 "C" 80 "string_value"
+1970-01-01T00:00:00.000000009 "C" 90 "string_value"
+
+#  first_value函数中混合不同类型的排序列
+query 
+SELECT time, category, value, FIRST_VALUE(3.12314232) OVER (ORDER BY time, category, value)
+FROM test_first_value
+order by time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 3.12314232
+1970-01-01T00:00:00.000000002 "A" 20 3.12314232
+1970-01-01T00:00:00.000000003 "A" 30 3.12314232
+1970-01-01T00:00:00.000000004 "B" 40 3.12314232
+1970-01-01T00:00:00.000000005 "B" 50 3.12314232
+1970-01-01T00:00:00.000000006 "C" 60 3.12314232
+1970-01-01T00:00:00.000000007 "C" 70 3.12314232
+1970-01-01T00:00:00.000000008 "C" 80 3.12314232
+1970-01-01T00:00:00.000000009 "C" 90 3.12314232
+
+# first_value函数的窗口框架定义错误
+query 
+SELECT time, category, value, FIRST_VALUE(value) OVER (PARTITION BY category ORDER BY time ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING)
+FROM test_first_value
+order by time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 10
+1970-01-01T00:00:00.000000002 "A" 20 20
+1970-01-01T00:00:00.000000003 "A" 30 30
+1970-01-01T00:00:00.000000004 "B" 40 40
+1970-01-01T00:00:00.000000005 "B" 50 50
+1970-01-01T00:00:00.000000006 "C" 60 60
+1970-01-01T00:00:00.000000007 "C" 70 70
+1970-01-01T00:00:00.000000008 "C" 80 80
+1970-01-01T00:00:00.000000009 "C" 90 90
+
+
+
+
+query 
+SELECT time, category, value, FIRST_VALUE(TRUE) OVER (PARTITION BY category ORDER BY time)
+FROM test_first_value
+order by time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 true
+1970-01-01T00:00:00.000000002 "A" 20 true
+1970-01-01T00:00:00.000000003 "A" 30 true
+1970-01-01T00:00:00.000000004 "B" 40 true
+1970-01-01T00:00:00.000000005 "B" 50 true
+1970-01-01T00:00:00.000000006 "C" 60 true
+1970-01-01T00:00:00.000000007 "C" 70 true
+1970-01-01T00:00:00.000000008 "C" 80 true
+1970-01-01T00:00:00.000000009 "C" 90 true
+
+# 错误输入测试: first_value的expression为FLOAT类型
+query 
+SELECT time, category, value, FIRST_VALUE(3.14) OVER (PARTITION BY category ORDER BY time)
+FROM test_first_value
+order by time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 3.14
+1970-01-01T00:00:00.000000002 "A" 20 3.14
+1970-01-01T00:00:00.000000003 "A" 30 3.14
+1970-01-01T00:00:00.000000004 "B" 40 3.14
+1970-01-01T00:00:00.000000005 "B" 50 3.14
+1970-01-01T00:00:00.000000006 "C" 60 3.14
+1970-01-01T00:00:00.000000007 "C" 70 3.14
+1970-01-01T00:00:00.000000008 "C" 80 3.14
+1970-01-01T00:00:00.000000009 "C" 90 3.14
+
+# 错误输入测试: first_value的expression为DATE类型
+query 
+SELECT time, category, value, FIRST_VALUE(DATE '2024-08-08') OVER (PARTITION BY category ORDER BY time)
+FROM test_first_value
+order by time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 2024-08-08
+1970-01-01T00:00:00.000000002 "A" 20 2024-08-08
+1970-01-01T00:00:00.000000003 "A" 30 2024-08-08
+1970-01-01T00:00:00.000000004 "B" 40 2024-08-08
+1970-01-01T00:00:00.000000005 "B" 50 2024-08-08
+1970-01-01T00:00:00.000000006 "C" 60 2024-08-08
+1970-01-01T00:00:00.000000007 "C" 70 2024-08-08
+1970-01-01T00:00:00.000000008 "C" 80 2024-08-08
+1970-01-01T00:00:00.000000009 "C" 90 2024-08-08
+
+# 错误输入测试: first_value的expression为ARRAY类型
+query 
+SELECT time, category, value, FIRST_VALUE(ARRAY[1,2,3]) OVER (PARTITION BY category ORDER BY time)
+FROM test_first_value
+order by time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 [1, 2, 3]
+1970-01-01T00:00:00.000000002 "A" 20 [1, 2, 3]
+1970-01-01T00:00:00.000000003 "A" 30 [1, 2, 3]
+1970-01-01T00:00:00.000000004 "B" 40 [1, 2, 3]
+1970-01-01T00:00:00.000000005 "B" 50 [1, 2, 3]
+1970-01-01T00:00:00.000000006 "C" 60 [1, 2, 3]
+1970-01-01T00:00:00.000000007 "C" 70 [1, 2, 3]
+1970-01-01T00:00:00.000000008 "C" 80 [1, 2, 3]
+1970-01-01T00:00:00.000000009 "C" 90 [1, 2, 3]
+
+# 错误输入测试: first_value的expression为MAP类型
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Invalid function 'map'\.\\nDid you mean 'MAX'\?", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT time, category, value, FIRST_VALUE(MAP('key', 'value')) OVER (PARTITION BY category ORDER BY time)
+FROM test_first_value;
+
+# 错误输入测试: first_value的expression为结构体类型
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Invalid function 'row'\.\\nDid you mean 'now'\?", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT time, category, value, FIRST_VALUE(ROW(1, 'text')) OVER (PARTITION BY category ORDER BY time)
+FROM test_first_value;
+
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function expected 1 arguments but received 2", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT time, category, value, FIRST_VALUE(value,'112fsdfs') OVER (PARTITION BY category ORDER BY time)
+FROM test_first_value
+order by time;
+
+query error Arrow error: Io error: Status \{ code: Cancelled, message: "h2 protocol error: http2 error: stream error received: stream no longer needed", source: Some\(tonic::transport::Error\(Transport, hyper::Error\(Http2, Error \{ kind: Reset\(StreamId\(3\), CANCEL, Remote\) \}\)\)\) \}
+SELECT time, category, value, FIRST_VALUE() OVER (PARTITION BY category ORDER BY time)
+FROM test_first_value
+order by time;
+
+statement ok
+drop table if exists test_first_value;

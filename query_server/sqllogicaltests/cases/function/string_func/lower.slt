@@ -1,0 +1,86 @@
+include ./../setup.slt
+
+statement ok
+CREATE TABLE func_tb (input STRING, expected STRING);
+
+statement ok
+INSERT INTO func_tb (time,input, expected) VALUES 
+    (1,'Hello World', 'hello world'),
+    (2,'SQL Logic Test', 'sql logic test'),
+    (3,'123 ABC def', '123 abc def'),
+    (4,'MIXED Case', 'mixed case'),
+    (5,'lowercase', 'lowercase'),
+    (6,'UPPERCASE', 'uppercase'),
+    (7,'Special Chars !@#$', 'special chars !@#$'),
+    (8,'Whitespace   ', 'whitespace   '),
+    (9,'   Leading and trailing whitespace   ', '   leading and trailing whitespace   '),
+    (10,'1234567890', '1234567890'),
+    (11,'', ''),
+    (12,'SOME-MIXED_case123', 'some-mixed_case123'),
+    (13,'ümläuts ÜMLÄUTS', 'ümläuts ümläuts'),
+    (14,'ÇÇçç', 'çççç'),
+    (15,'Русский Текст', 'русский текст'),
+    (16,'中文字符', '中文字符'),
+    (17,'》',' ');
+
+# 测试 lower 函数
+query T
+SELECT lower(input) AS result FROM func_tb;
+----
+"hello world"
+"sql logic test"
+"123 abc def"
+"mixed case"
+"lowercase"
+"uppercase"
+"special chars !@#$"
+"whitespace   "
+"   leading and trailing whitespace   "
+"1234567890"
+""
+"some-mixed_case123"
+"ümläuts ÜmlÄuts"
+"ÇÇçç"
+"Русский Текст"
+"中文字符"
+"》"
+
+
+statement ok
+DROP TABLE func_tb;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'lower\(\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tlower\(Utf8/LargeUtf8\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select lower();
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'lower\(Utf8, Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tlower\(Utf8/LargeUtf8\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select lower('fdds','JBJIK');
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Unterminated string literal at Line: 1, Column 14", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select lower('JKJKKJ");
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Schema error: No field named sdjfsdla\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select lower("sdjfsdla");
+
+#bigint
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"lower\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select lower(f0) from func_tbl;
+
+#bigint unsigned
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"lower\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select lower(f0) from func_tb2;
+
+#boolean
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"lower\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select lower(f2) from func_tb2;
+
+#string
+query 
+select distinct lower(f3) as a1 from func_tb2 ORDER by a1 desc;
+----
+"f3007"
+"f3003"
+"f3001"
+
+#TIME
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"lower\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select lower(TIME) from func_tbl;

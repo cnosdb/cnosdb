@@ -1,0 +1,112 @@
+include ./../setup.slt
+
+statement ok
+drop table if exists test_to_hex;
+
+statement ok
+CREATE TABLE IF NOT EXISTS test_to_hex (
+    original_int bigint
+);
+
+statement ok
+INSERT INTO test_to_hex (time, original_int) VALUES
+(1, 0),            -- 0 应该转换为 '0'
+(2, 1),            -- 1 应该转换为 '1'
+(3, 15),           -- 15 应该转换为 'F'
+(4, 255),          -- 255 应该转换为 'FF'
+(5, 4095),         -- 4095 应该转换为 'FFF'
+(6, 65535),        -- 65535 应该转换为 'FFFF'
+(7, 1048575),      -- 1048575 应该转换为 'FFFFF'
+(8, 16777215),     -- 16777215 应该转换为 'FFFFFF'
+(9, 2147483647),   -- 2147483647 应该转换为 '7FFFFFFF'
+(10, -1);          -- 负数通常应处理为空或报错，根据实现决定
+
+query 
+SELECT time, original_int, to_hex(original_int) AS hex_value
+FROM test_to_hex
+ORDER BY time;
+----
+1970-01-01T00:00:00.000000001 0 "0"
+1970-01-01T00:00:00.000000002 1 "1"
+1970-01-01T00:00:00.000000003 15 "f"
+1970-01-01T00:00:00.000000004 255 "ff"
+1970-01-01T00:00:00.000000005 4095 "fff"
+1970-01-01T00:00:00.000000006 65535 "ffff"
+1970-01-01T00:00:00.000000007 1048575 "fffff"
+1970-01-01T00:00:00.000000008 16777215 "ffffff"
+1970-01-01T00:00:00.000000009 2147483647 "7fffffff"
+1970-01-01T00:00:00.000000010 -1 "ffffffffffffffff"
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'to_hex\(\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tto_hex\(Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT to_hex();
+
+# 错误输入: 非整数类型输入
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Expected an SQL statement, found: query", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT to_hex('string');  -- 字符串类型不能转换为十六进制
+query
+SELECT to_hex(3.14159);   -- 浮点数类型不能转换为十六进制
+query
+SELECT to_hex(TRUE);      -- 布尔值不能转换为十六进制
+
+# 错误输入: 空值输入
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The to_hex function can only accept integers\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT to_hex(NULL);      -- NULL 值的处理依赖于具体实现
+
+
+# 测试多参数错误示例
+
+# 错误输入: 两个参数
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'to_hex\(Int64, Int64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tto_hex\(Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT to_hex(255, 1);  -- `to_hex` 函数只接受一个参数
+
+# 错误输入: 三个参数
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'to_hex\(Int64, Int64, Int64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tto_hex\(Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT to_hex(255, 1, 2);  -- `to_hex` 函数只接受一个参数
+
+# 错误输入: 四个参数
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'to_hex\(Int64, Int64, Int64, Int64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tto_hex\(Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT to_hex(255, 1, 2, 3);  -- `to_hex` 函数只接受一个参数
+
+# 错误输入: 非整数参数类型与整数混合
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'to_hex\(Int64, Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tto_hex\(Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT to_hex(255, 'string');  -- `to_hex` 函数只接受一个整数参数
+
+# 错误输入: 非整数参数类型和浮点数
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'to_hex\(Int64, Float64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tto_hex\(Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT to_hex(255, 3.14);  -- `to_hex` 函数只接受一个整数参数
+
+
+statement ok
+drop table if exists func_test;
+
+statement ok
+CREATE table if not exists func_test(f0_bigint bigint,f1_bigint_unsign bigint unsigned,f2_boolean boolean,f3_string STRING,f4_double DOUBLE);
+
+statement ok
+INSERT func_test(TIME,f0_bigint,f1_bigint_unsign,f2_boolean,f3_string,f4_double)
+values
+(1,111,238989,true,'string000',3.138247239),
+(2,4839478,29843279,false,'string222',3.149843059483);
+
+
+query 
+select to_hex(f0_bigint) from func_test;
+----
+"6f"
+"49d836"
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'to_hex\(UInt64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tto_hex\(Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select to_hex(f1_bigint_unsign) from func_test;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'to_hex\(Boolean\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tto_hex\(Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select to_hex(f2_boolean) from func_test;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'to_hex\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tto_hex\(Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select to_hex(f3_string) from func_test;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'to_hex\(Float64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tto_hex\(Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select to_hex(f4_double) from func_test;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'to_hex\(Timestamp\(Nanosecond, None\)\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tto_hex\(Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select to_hex(time) from func_test;

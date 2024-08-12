@@ -1,0 +1,67 @@
+include ./../setup.slt
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'chr\(\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tchr\(Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select chr();
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'chr\(Int64, Int64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tchr\(Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select chr(13,67);
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Expected an expression:, found: ,", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select chr(,);
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: null character not permitted\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select chr(0);
+
+#bigint
+query T
+select chr(f0) from func_tbl ORDER by TIME DESC;
+----
+"ȫ"
+"Ƽ"
+"ō"
+"Þ"
+"Ƽ"
+"ō"
+"Þ"
+"o"
+
+#bigint unsigned
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'chr\(UInt64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tchr\(Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select chr(f0) from func_tb2;
+
+#boolean
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'chr\(Boolean\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tchr\(Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select chr(f2) from func_tb2;
+
+#DOUBLE
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'chr\(Float64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tchr\(Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select chr(f4_double) from func_tb3;
+
+#string
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'chr\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tchr\(Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select chr(f3) from func_tb2;
+
+#TIME
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'chr\(Timestamp\(Nanosecond, None\)\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tchr\(Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select chr(TIME) from func_tbl;
+
+
+query 
+SELECT CHR(65);
+----
+"A"
+
+query 
+select * from func_tb2 
+where SUBSTRING(f3, 1, 1)=chr(102)
+ORDER by TIME DESC;
+----
+1970-01-01T00:00:00.000000107 "tag01" "tag16" "tag24" 1000 2000.0 false "f3001" -40002
+1970-01-01T00:00:00.000000106 "tag02" "tag11" "tag21" 1004 2000.0 true "f3001" -40002
+1970-01-01T00:00:00.000000105 "tag01" "tag16" "tag24" 1000 2000.0 false "f3001" -40002
+1970-01-01T00:00:00.000000104 "tag01" "tag11" "tag21" 1000 2005.0 true "f3007" -40002
+1970-01-01T00:00:00.000000103 "tag01" "tag11" "tag21" 1002 2000.0 false "f3001" 40002
+1970-01-01T00:00:00.000000102 "tag01" "tag13" "tag29" 1000 2003.0 true "f3003" -40002
+1970-01-01T00:00:00.000000101 "tag02" "tag11" "tag21" 1001 2000.0 false "f3001" 40001
+1970-01-01T00:00:00.000000100 "tag01" "tag11" "tag21" 1000 2010.0 true "f3001" -40001

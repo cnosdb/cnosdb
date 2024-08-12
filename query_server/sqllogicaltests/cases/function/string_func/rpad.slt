@@ -1,0 +1,255 @@
+include ./../setup.slt
+
+
+# rpad function tests
+
+# Test rpad with regular string
+query I
+SELECT rpad('Hello', 10, ' ');
+----
+"Hello     "
+
+# Test rpad with multi-character pad string
+query I
+SELECT rpad('Hello', 10, 'xy');
+----
+"Helloxyxyx"
+
+# Test rpad with length shorter than original string
+query I
+SELECT rpad('Hello', 3, ' ');
+----
+"Hel"
+
+# Test rpad with length equal to original string length
+query I
+SELECT rpad('Hello', 5, ' ');
+----
+"Hello"
+
+# Test rpad with length zero
+query I
+SELECT rpad('Hello', 0, ' ');
+----
+""
+
+# Test rpad with negative length (should return empty result)
+query I
+SELECT rpad('Hello', -1, ' ');
+----
+""
+
+# Test rpad with empty string
+query I
+SELECT rpad('', 5, ' ');
+----
+"     "
+
+# Test rpad with empty pad string (should return original string or error)
+query I
+SELECT rpad('Hello', 10, '');
+----
+"Hello"
+
+# Test rpad with multi-byte characters (e.g., UTF-8)
+query I
+SELECT rpad('世界', 5, '你好');
+----
+"世界你好你"
+
+# Test rpad with numeric input
+query I
+SELECT rpad('123', 5, '0');
+----
+"12300"
+
+# Test rpad with special characters
+query I
+SELECT rpad('!@#', 6, '$');
+----
+"!@#$$$"
+
+# Test rpad with NULL input
+query I
+SELECT rpad(NULL, 5, ' ');
+----
+"NULL"
+
+# Test rpad with NULL pad string
+query I
+SELECT rpad('Hello', 10, NULL);
+----
+"NULL"
+
+# Test rpad with spaces in the string
+query I
+SELECT rpad(' spaced', 10, '_');
+----
+" spaced___"
+
+# Test rpad with SQL injection attempt (should handle safely)
+query I
+SELECT rpad('Hello''; DROP TABLE users; --', 30, '-');
+----
+"Hello'; DROP TABLE users; ----"
+
+
+#SELECT rpad(REPEAT('a', 10000), 10010, 'b');
+
+# Test rpad with very long string
+query I
+SELECT rpad(REPEAT('a', 1), 1, 'b');
+----
+"a"
+
+# Test rpad with very large length (boundary test)
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: rpad requested length 9223372036854775807 too large", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT rpad('Boundary test', 9223372036854775807, ' ');
+
+# Test rpad with zero length on multi-byte characters
+query I
+SELECT rpad('世界', 0, '你好');
+----
+""
+
+# Test rpad with special unicode characters
+query I
+SELECT rpad('世界', 5, '🌟');
+----
+"世界🌟🌟🌟"
+
+# Test rpad with escape characters
+query I
+SELECT rpad('Hello\nWorld\t!', 15, '-');
+----
+"Hello\nWorld\t!"
+
+# Test rpad with mixed content
+query I
+SELECT rpad('abc123!@#你好', 20, '*');
+----
+"abc123!@#你好*********"
+
+# Test rpad with combination of special characters and spaces
+query I
+SELECT rpad('!@#', 10, ' *');
+----
+"!@# * * * "
+
+# Test rpad with fractional length (should truncate or error depending on SQL implementation)
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'rpad\(Utf8, Float64, Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\trpad\(Utf8, Int64\)\\n\\trpad\(LargeUtf8, Int64\)\\n\\trpad\(Utf8, Int64, Utf8\)\\n\\trpad\(LargeUtf8, Int64, Utf8\)\\n\\trpad\(Utf8, Int64, LargeUtf8\)\\n\\trpad\(LargeUtf8, Int64, LargeUtf8\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT rpad('Hello', 7.5, '-');
+
+# Test rpad with concatenated strings
+query I
+SELECT rpad(CONCAT('Hello', 'World'), 15, '-');
+----
+"HelloWorld-----"
+
+
+
+#SELECT rpad(REPEAT('abc', 1000000), 1000010, 'd');     statement ok
+
+# Test rpad with very large string and length
+query I
+SELECT rpad(REPEAT('abc', 1), 10, 'd');
+----
+"abcddddddd"
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'rpad\(\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\trpad\(Utf8, Int64\)\\n\\trpad\(LargeUtf8, Int64\)\\n\\trpad\(Utf8, Int64, Utf8\)\\n\\trpad\(LargeUtf8, Int64, Utf8\)\\n\\trpad\(Utf8, Int64, LargeUtf8\)\\n\\trpad\(LargeUtf8, Int64, LargeUtf8\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select rpad();
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'rpad\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\trpad\(Utf8, Int64\)\\n\\trpad\(LargeUtf8, Int64\)\\n\\trpad\(Utf8, Int64, Utf8\)\\n\\trpad\(LargeUtf8, Int64, Utf8\)\\n\\trpad\(Utf8, Int64, LargeUtf8\)\\n\\trpad\(LargeUtf8, Int64, LargeUtf8\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select rpad('ssss');
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"rpad\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select rpad(13233,12);
+
+query 
+select rpad('111',9);
+----
+"111      "
+
+
+
+query 
+select rpad('aaa',10);
+----
+"aaa       "
+
+#bigint
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"rpad\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select rpad(func_tbl.f0,10) from func_tb2,func_tb3,func_tbl;
+
+#bigint unsigned
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"rpad\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select rpad(func_tb2.f0,10) from func_tb2,func_tb3,func_tbl;
+
+#boolean
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"rpad\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select rpad(func_tb2.f2,10) from func_tb2,func_tb3,func_tbl;
+
+#DOUBLE
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"rpad\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select rpad(func_tb3.f4_double,10) from func_tb2,func_tb3,func_tbl;
+
+#string
+query 
+select rpad(func_tb2.f3,10) as a1 from func_tb2 order by a1;
+----
+"f3001     "
+"f3001     "
+"f3001     "
+"f3001     "
+"f3001     "
+"f3001     "
+"f3003     "
+"f3007     "
+
+#TIME
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"rpad\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select rpad(func_tbl.TIME,10) from func_tb2,func_tb3,func_tbl;
+
+
+
+statement ok
+drop table if exists func_test;
+
+statement ok
+CREATE table if not exists func_test(f0_bigint bigint,f1_bigint_unsign bigint unsigned,f2_boolean boolean,f3_string STRING,f4_double DOUBLE);
+
+statement ok
+INSERT func_test(TIME,f0_bigint,f1_bigint_unsign,f2_boolean,f3_string,f4_double)
+values
+(1,111,238989,true,'string000',3.138247239),
+(2,4838,29843279,false,'string222',3.149843059483);
+
+
+
+
+query T
+select distinct rpad(f3_string,10,f0_bigint) as a1 from func_test order by a1;
+----
+"string0001"
+"string2224"
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'rpad\(Utf8, UInt64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\trpad\(Utf8, Int64\)\\n\\trpad\(LargeUtf8, Int64\)\\n\\trpad\(Utf8, Int64, Utf8\)\\n\\trpad\(LargeUtf8, Int64, Utf8\)\\n\\trpad\(Utf8, Int64, LargeUtf8\)\\n\\trpad\(LargeUtf8, Int64, LargeUtf8\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select rpad(func_tb2.f3,func_tb2.f0) from func_tb2,func_tb3,func_tbl;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'rpad\(Utf8, Boolean\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\trpad\(Utf8, Int64\)\\n\\trpad\(LargeUtf8, Int64\)\\n\\trpad\(Utf8, Int64, Utf8\)\\n\\trpad\(LargeUtf8, Int64, Utf8\)\\n\\trpad\(Utf8, Int64, LargeUtf8\)\\n\\trpad\(LargeUtf8, Int64, LargeUtf8\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select rpad(func_tb2.f3,func_tb2.f2) from func_tb2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'rpad\(Utf8, Float64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\trpad\(Utf8, Int64\)\\n\\trpad\(LargeUtf8, Int64\)\\n\\trpad\(Utf8, Int64, Utf8\)\\n\\trpad\(LargeUtf8, Int64, Utf8\)\\n\\trpad\(Utf8, Int64, LargeUtf8\)\\n\\trpad\(LargeUtf8, Int64, LargeUtf8\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select rpad(func_tb2.f3,func_tb3.f4_double) from func_tb2,func_tb3,func_tbl;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'rpad\(Utf8, Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\trpad\(Utf8, Int64\)\\n\\trpad\(LargeUtf8, Int64\)\\n\\trpad\(Utf8, Int64, Utf8\)\\n\\trpad\(LargeUtf8, Int64, Utf8\)\\n\\trpad\(Utf8, Int64, LargeUtf8\)\\n\\trpad\(LargeUtf8, Int64, LargeUtf8\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select rpad(func_tb2.f3,func_tb2.f3) from func_tb2,func_tb3,func_tbl;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'rpad\(Utf8, Timestamp\(Nanosecond, None\)\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\trpad\(Utf8, Int64\)\\n\\trpad\(LargeUtf8, Int64\)\\n\\trpad\(Utf8, Int64, Utf8\)\\n\\trpad\(LargeUtf8, Int64, Utf8\)\\n\\trpad\(Utf8, Int64, LargeUtf8\)\\n\\trpad\(LargeUtf8, Int64, LargeUtf8\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select rpad(func_tb2.f3,func_tbl.TIME) from func_tb2,func_tb3,func_tbl;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Expected an expression:, found: \)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select rpad(func_tb2.f3, ) from func_tb2,func_tb3,func_tbl;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: variable \[\\"@\\"\] has no type information", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select rpad(f3,@) from func_tb2;
