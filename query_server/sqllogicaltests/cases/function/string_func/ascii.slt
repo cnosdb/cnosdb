@@ -1,0 +1,115 @@
+include ./../../setup.slt
+
+##########
+## Query
+##########
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'ascii\(\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tascii\(Utf8/LargeUtf8\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT ascii();
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'ascii\(Utf8, Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tascii\(Utf8/LargeUtf8\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT ascii(',', ',');
+
+
+query 
+SELECT  ascii('a');
+----
+97
+
+#string
+query 
+SELECT  ascii('abbbdfj');
+----
+97
+
+
+query 
+SELECT  ascii(98);
+----
+57
+
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Schema error: No field named aaa\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT ascii(aaa);
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Expected an expression:, found: !", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT ascii(!);
+
+
+
+#bigint
+query 
+SELECT ascii(f0) from func_tbl ORDER BY time DESC;
+----
+53
+52
+51
+50
+52
+51
+50
+49
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Schema error: No field named func_tbl\.f0\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select ascii(func_tbl.f0);
+
+
+#bigint unsigned
+query 
+SELECT ascii(f0) from func_tb2;
+----
+49
+49
+49
+49
+49
+49
+49
+49
+
+
+#BOOLEAN
+query 
+select ascii(f2) from func_tb2 ORDER BY time DESC;
+----
+48
+49
+48
+49
+48
+49
+48
+49
+
+#DOUBLE
+query 
+select ascii(f4_double) from func_tb3;
+----
+51
+51
+51
+51
+51
+51
+51
+51
+51
+51
+
+#TIME
+query 
+select ascii(TIME) from func_tbl;
+----
+49
+49
+49
+49
+49
+49
+49
+49

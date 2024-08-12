@@ -1,0 +1,181 @@
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'initcap\(\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tinitcap\(Utf8/LargeUtf8\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select initcap();
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Expected an expression:, found: ,", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select initcap(,);
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'initcap\(Utf8, Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tinitcap\(Utf8/LargeUtf8\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select initcap('sss','ddd');
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Schema error: No field named sss\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select initcap(sss);
+
+query 
+SELECT initcap('hello world');
+----
+"Hello World"
+
+
+#bigint
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"initcap\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select initcap(f0) from func_tbl;
+
+#bigint unsigned
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"initcap\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select initcap(f0) from func_tb2;
+
+#boolean
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"initcap\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select initcap(f2) from func_tb2;
+
+#DOUBLE
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"initcap\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select initcap(f4_double) from func_tb3;
+
+#string
+query T
+select initcap(f3) from func_tb2 ORDER by func_tb2.time;
+----
+"F3001"
+"F3001"
+"F3003"
+"F3001"
+"F3007"
+"F3001"
+"F3001"
+"F3001"
+
+#TIME
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"initcap\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select initcap(TIME) from func_tbl;
+
+query 
+select initcap('  !@#');
+----
+"  !@#"
+
+query T
+select initcap(' ');
+----
+" "
+
+query 
+select initcap('~');
+----
+"~"
+
+query 
+select initcap('!');
+----
+"!"
+
+query 
+select initcap('@');
+----
+"@"
+
+query 
+select initcap('#');
+----
+"#"
+
+query 
+select initcap('$');
+----
+"$"
+
+query 
+select initcap('%');
+----
+"%"
+
+query 
+select initcap('^');
+----
+"^"
+
+query 
+select initcap('&');
+----
+"&"
+
+query 
+select initcap('*');
+----
+"*"
+
+query 
+select initcap('()');
+----
+"()"
+
+query 
+select initcap('-');
+----
+"-"
+
+query 
+select initcap('=');
+----
+"="
+
+query 
+select initcap('¥');
+----
+"¥"
+
+
+query T
+select initcap('……');
+----
+"……"
+
+query 
+select initcap('【');
+----
+"【"
+
+query 
+select initcap('】');
+----
+"】"
+
+query 
+select initcap('「');
+----
+"「"
+
+query 
+select initcap('」');
+----
+"」"
+
+query 
+select initcap('{}');
+----
+"{}"
+
+query 
+select initcap('[]');
+----
+"[]"
+
+query 
+select initcap('<>');
+----
+"<>"
+
+query 
+select initcap('《》');
+----
+"《》"
+
+query 
+select initcap('');
+----
+""
+
+query 
+select initcap('');
+----
+""

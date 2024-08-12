@@ -1,0 +1,89 @@
+
+statement ok
+drop table if exists func_tb;
+
+statement ok
+CREATE TABLE if not exists func_tb (input STRING, expected STRING);
+
+statement ok
+INSERT INTO func_tb (TIME,input, expected) VALUES 
+    (1,'  Hello World', 'Hello World'),
+    (2,'    Leading spaces', 'Leading spaces'),
+    (3,'NoLeadingSpace', 'NoLeadingSpace'),
+    (4,'     Mixed     spaces    ', 'Mixed     spaces    '),
+    (5,'Only trailing spaces   ', 'Only trailing spaces   '),
+    (6,'', ''),
+    (7,'     ', ''),
+    (8,'  Special chars !@#$', 'Special chars !@#$'),
+    (9,'   Whitespace at end   ', 'Whitespace at end   '),
+    (10,'   Leading and trailing whitespace   ', 'Leading and trailing whitespace   '),
+    (11,'1234567890', '1234567890'),
+    (12,'   中文字符', '中文字符'),
+    (13,'   Русский текст', 'Русский текст');
+
+# 测试 ltrim 函数
+query T
+SELECT ltrim(input) AS result FROM func_tb;
+----
+"Hello World"
+"Leading spaces"
+"NoLeadingSpace"
+"Mixed     spaces    "
+"Only trailing spaces   "
+""
+""
+"Special chars !@#$"
+"Whitespace at end   "
+"Leading and trailing whitespace   "
+"1234567890"
+"中文字符"
+"Русский текст"
+
+
+statement ok
+DROP TABLE func_tb;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'ltrim\(\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tltrim\(Utf8\)\\n\\tltrim\(Utf8, Utf8\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select ltrim();
+
+query 
+select ltrim('sdfhsau');
+----
+"sdfhsau"
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Schema error: No field named sjdfksa\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select ltrim("sjdfksa");
+
+#bigint
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"ltrim\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select ltrim(f0) from func_tbl;
+
+#bigint unsigned
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"ltrim\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select ltrim(f0) from func_tb2;
+
+#boolean
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"ltrim\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select ltrim(f2) from func_tb2;
+
+#DOUBLE
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"ltrim\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select ltrim(f4_double) from func_tb3;
+
+#string
+query T
+select distinct ltrim(f3) as a1 from func_tb2 order by a1;
+----
+"f3001"
+"f3003"
+"f3007"
+
+#TIME
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"ltrim\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select ltrim(TIME) from func_tbl;
+
+
+query 
+select ltrim('   sdf',' s');
+----
+"df"

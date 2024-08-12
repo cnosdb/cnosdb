@@ -1,0 +1,89 @@
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'repeat\(\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\trepeat\(Utf8, Int64\)\\n\\trepeat\(LargeUtf8, Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select REPEAT();
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'repeat\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\trepeat\(Utf8, Int64\)\\n\\trepeat\(LargeUtf8, Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select REPEAT('sss');
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'repeat\(Int64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\trepeat\(Utf8, Int64\)\\n\\trepeat\(LargeUtf8, Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select REPEAT(1323);
+
+#bigint
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'repeat\(Int64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\trepeat\(Utf8, Int64\)\\n\\trepeat\(LargeUtf8, Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select repeat(f0) from func_tbl;
+
+
+#bigint unsigned
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'repeat\(UInt64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\trepeat\(Utf8, Int64\)\\n\\trepeat\(LargeUtf8, Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select repeat(f0) from func_tb2;
+
+#boolean
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'repeat\(Boolean\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\trepeat\(Utf8, Int64\)\\n\\trepeat\(LargeUtf8, Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select repeat(f2) from func_tb2;
+
+#string
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'repeat\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\trepeat\(Utf8, Int64\)\\n\\trepeat\(LargeUtf8, Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select repeat(f3) from func_tb2;
+
+#TIME
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'repeat\(Timestamp\(Nanosecond, None\)\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\trepeat\(Utf8, Int64\)\\n\\trepeat\(LargeUtf8, Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select repeat(TIME) from func_tbl;
+
+#bigint
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"repeat\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select repeat(f0,2) from func_tbl;
+
+
+#bigint unsigned
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"repeat\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select repeat(f0,2) from func_tb2;
+
+#boolean
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"repeat\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select repeat(f2,2) from func_tb2;
+
+#string
+query T
+select repeat(f3,2) as a1 from func_tb2 order by a1;
+----
+"f3001f3001"
+"f3001f3001"
+"f3001f3001"
+"f3001f3001"
+"f3001f3001"
+"f3001f3001"
+"f3003f3003"
+"f3007f3007"
+
+#TIME
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"repeat\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select repeat(TIME,2) from func_tbl;
+
+#string+bigint unsigned
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'repeat\(Utf8, UInt64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\trepeat\(Utf8, Int64\)\\n\\trepeat\(LargeUtf8, Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select repeat(func_tb2.f3,func_tb2.f0) from func_tb2;
+
+#string+boolean
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'repeat\(Utf8, Boolean\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\trepeat\(Utf8, Int64\)\\n\\trepeat\(LargeUtf8, Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select repeat(func_tb2.f3,func_tb2.f2) from func_tb2;
+
+#string+DOUBLE
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'repeat\(Utf8, Float64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\trepeat\(Utf8, Int64\)\\n\\trepeat\(LargeUtf8, Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select repeat(func_tb2.f3,func_tb3.f4_double) from func_tb3,func_tb2;
+
+#string+string
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'repeat\(Utf8, Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\trepeat\(Utf8, Int64\)\\n\\trepeat\(LargeUtf8, Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select repeat(func_tb2.f3,func_tb2.f3) from func_tb2;
+
+#string+TIME
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'repeat\(Utf8, Timestamp\(Nanosecond, None\)\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\trepeat\(Utf8, Int64\)\\n\\trepeat\(LargeUtf8, Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select repeat(func_tb2.f3,func_tbl.TIME) from func_tbl,func_tb2;
+
+#string+%^&*
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Expected an expression:, found: \)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select repeat(func_tb2.f3, ) from func_tb2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: variable \[\\"@\\"\] has no type information", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select repeat(f3,@) from func_tb2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Expected an expression:, found: \)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select repeat(f3,()) from func_tb2;

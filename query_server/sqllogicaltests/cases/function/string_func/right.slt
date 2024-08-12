@@ -1,0 +1,101 @@
+statement ok
+drop table if exists test_strings;
+
+
+statement ok
+CREATE TABLE IF NOT EXISTS test_strings (
+    original_text string,
+    num_chars bigint
+);
+
+# 插入测试数据
+statement ok
+INSERT test_strings (time, original_text, num_chars)
+VALUES
+(1, 'Hello World', 5),  -- 常规测试数据
+(2, '12345', 2),        -- 数字字符串
+(3, 'truefalse', 4),    -- 布尔字符串
+(4, NULL, 3),           -- NULL 字符串
+(5, 'Special!@#$', 6),  -- 特殊字符
+(6, '', 3);             -- 空字符串
+
+# 测试正确输入
+query T
+SELECT RIGHT(original_text, num_chars) AS right_part
+FROM test_strings
+ORDER BY time;
+----
+"World"
+"45"
+"alse"
+"NULL"
+"al!@#$"
+""
+
+
+
+# 测试错误输入: 无参数
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'right\(\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tright\(Utf8, Int64\)\\n\\tright\(LargeUtf8, Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT RIGHT();
+
+# 测试错误输入: 一个参数
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'right\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tright\(Utf8, Int64\)\\n\\tright\(LargeUtf8, Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT RIGHT('Hello World');
+
+# 测试错误输入: 参数类型错误（非字符串）
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"right\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT RIGHT(12345, 2);
+
+# 测试错误输入: 参数类型错误（布尔值）
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"right\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT RIGHT(true, 2);
+
+# 测试错误输入: 超出参数数量
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'right\(Utf8, Int64, Int64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tright\(Utf8, Int64\)\\n\\tright\(LargeUtf8, Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT RIGHT('Hello World', 5, 1);
+
+statement ok
+drop table if exists func_test;
+
+statement ok
+CREATE table if not exists func_test(f0_bigint bigint,f1_bigint_unsign bigint unsigned,f2_boolean boolean,f3_string STRING,f4_double DOUBLE);
+
+statement ok
+INSERT func_test(TIME,f0_bigint,f1_bigint_unsign,f2_boolean,f3_string,f4_double)
+values
+(1,111,238989,true,'string000',3.138247239),
+(2,4839478,29843279,false,'string222',3.149843059483);
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"right\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select right(f1_bigint_unsign,3) from func_test;
+
+query T
+select right(f3_string,5) from func_test;
+----
+"ng000"
+"ng222"
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"right\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select right(f4_double,5) from func_test;
+
+
+query 
+select right(f3_string,f0_bigint) from func_test;
+----
+"string000"
+"string222"
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'right\(Utf8, UInt64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tright\(Utf8, Int64\)\\n\\tright\(LargeUtf8, Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select right(f3_string,f1_bigint_unsign) from func_test;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'right\(Utf8, Boolean\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tright\(Utf8, Int64\)\\n\\tright\(LargeUtf8, Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select right(f3_string,f2_boolean) from func_test;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'right\(Utf8, Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tright\(Utf8, Int64\)\\n\\tright\(LargeUtf8, Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select right(f3_string,f3_string) from func_test;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'right\(Utf8, Float64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tright\(Utf8, Int64\)\\n\\tright\(LargeUtf8, Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select right(f3_string,f4_double) from func_test;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'right\(Utf8, Timestamp\(Nanosecond, None\)\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tright\(Utf8, Int64\)\\n\\tright\(LargeUtf8, Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select right(f3_string,time) from func_test;

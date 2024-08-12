@@ -1,0 +1,150 @@
+statement ok
+drop table if exists test_translate;
+
+statement ok
+CREATE TABLE IF NOT EXISTS test_translate (
+    original_text string,
+    chars string,
+    translation string
+);
+
+# 插入测试数据
+statement ok
+INSERT INTO test_translate (time, original_text, chars, translation) VALUES
+(1, 'hello world', 'ho', 'xy'),            -- 替换 'h' 和 'o' 为 'x' 和 'y'
+(2, 'abcd', 'abcd', '1234'),                -- 替换 'a' 为 '1', 'b' 为 '2', 依此类推
+(3, '1234', '12', 'ab'),                    -- 替换 '1' 为 'a', '2' 为 'b'
+(4, 'openai', 'opn', 'xyz'),                -- 替换 'o', 'p', 'n' 为 'x', 'y', 'z'
+(5, 'test', '', ''),                        -- 空字符映射，结果应为 'test'
+(6, 'test', 'test', 'abcd'),                -- 完全映射，每个字符被替换
+(7, 'example', 'ae', '12'),                 -- 替换 'a' 为 '1', 'e' 为 '2'
+(8, 'example', 'ex', '12'),                 -- 替换 'e' 为 '1', 'x' 为 '2'
+(9, 'abcdef', 'abc', '123'),                -- 替换 'a', 'b', 'c' 为 '1', '2', '3'
+(10, 'abcdef', 'abcdef', '123456');        -- 完全映射，每个字符都被替换
+
+# 查询测试数据
+query 
+SELECT time, original_text, chars, translation,
+       translate(original_text, chars, translation) AS translated_text
+FROM test_translate
+ORDER BY time;
+----
+1970-01-01T00:00:00.000000001 "hello world" "ho" "xy" "xelly wyrld"
+1970-01-01T00:00:00.000000002 "abcd" "abcd" "1234" "1234"
+1970-01-01T00:00:00.000000003 "1234" "12" "ab" "ab34"
+1970-01-01T00:00:00.000000004 "openai" "opn" "xyz" "xyezai"
+1970-01-01T00:00:00.000000005 "test" "" "" "test"
+1970-01-01T00:00:00.000000006 "test" "test" "abcd" "dbcd"
+1970-01-01T00:00:00.000000007 "example" "ae" "12" "2x1mpl2"
+1970-01-01T00:00:00.000000008 "example" "ex" "12" "12ampl1"
+1970-01-01T00:00:00.000000009 "abcdef" "abc" "123" "123def"
+1970-01-01T00:00:00.000000010 "abcdef" "abcdef" "123456" "123456"
+
+# 错误输入测试
+
+# 错误输入: 无参数
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'translate\(\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\ttranslate\(Utf8, Utf8, Utf8\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT translate();
+
+# 错误输入: 只有一个参数
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'translate\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\ttranslate\(Utf8, Utf8, Utf8\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT translate('example');
+
+# 错误输入: 只有两个参数
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'translate\(Utf8, Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\ttranslate\(Utf8, Utf8, Utf8\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT translate('example', 'ex');
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'translate\(Utf8, Utf8, Utf8, Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\ttranslate\(Utf8, Utf8, Utf8\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select translate('example', 'abc', '12','12');
+
+# 错误输入: chars 和 translation 长度不匹配
+query 
+SELECT translate('example', 'abc', '12');  -- chars 长度为 3，但 translation 长度为 2
+----
+"ex1mple"
+
+query 
+select translate('example','exa','12');
+----
+"12mpl1"
+
+query T
+select translate('example','e','123');
+----
+"1xampl1"
+
+# chars 中包含 translation 中不存在的字符
+query 
+SELECT translate('example', 'xyz', '123');  -- chars 包含 translation 中不存在的字符
+----
+"e1ample"
+
+# chars 和 translation 为空字符串
+query 
+SELECT translate('example', '', '');  -- chars 和 translation 均为空字符串的处理
+----
+"example"
+
+# chars 包含非字符类型
+query 
+SELECT translate('example', 123, 'abc');  -- chars 参数为非字符串类型
+----
+"example"
+
+# 错误输入: translation 包含非字符类型
+query 
+SELECT translate('example', 'ex', 123);  -- translation 参数为非字符串类型
+----
+"12ampl1"
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"translate\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select translate(132132432,1,9);
+
+
+statement ok
+drop table if exists func_test;
+
+statement ok
+CREATE table if not exists func_test(f0_bigint bigint,f1_bigint_unsign bigint unsigned,f2_boolean boolean,f3_string STRING,f4_double DOUBLE);
+
+statement ok
+INSERT func_test(TIME,f0_bigint,f1_bigint_unsign,f2_boolean,f3_string,f4_double)
+values
+(1,111,238989,true,'string000',3.138247239),
+(2,4839478,29843279,false,'string222',3.149843059483),
+(3,12323,31245,true,'string111',3.12345678907);
+
+query 
+select translate(f3_string,f1_bigint_unsign,f0_bigint) from func_test;
+----
+"string000"
+"string777"
+"string222"
+
+query 
+select translate(f3_string,f0_bigint,f1_bigint_unsign) from func_test;
+----
+"string000"
+"string222"
+"string333"
+
+query T
+select translate(f3_string,time,f2_boolean) from func_test;
+----
+"string"
+"string"
+"string"
+
+query 
+select translate(f3_string,f2_boolean,f3_string) from func_test;
+----
+"string000"
+"string222"
+"stringsss"
+
+query 
+select translate(f3_string,f4_double,f4_double) from func_test;
+----
+"string000"
+"string222"
+"string111"

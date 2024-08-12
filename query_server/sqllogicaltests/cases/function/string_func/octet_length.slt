@@ -1,0 +1,86 @@
+# 测试 OCTET_LENGTH 函数
+# 测试用例：返回字符串的长度（以字节为单位）
+
+statement ok
+drop table if exists func_tb;
+
+statement ok
+CREATE TABLE if not exists func_tb (input STRING, expected_length BIGINT);
+
+statement ok
+INSERT func_tb (TIME, input, expected_length) VALUES 
+    (1,'', 0),
+    (2,'a', 1),
+    (3,'abc', 3),
+    (4,'message digest', 14),
+    (5,'abcdefghijklmnopqrstuvwxyz', 26),
+    (6,'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789', 62),
+    (7,'1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890', 100),
+    (8,'     ', 5),
+    (9,'Hello, World!', 13),
+    (10,'中文字符', 12),  -- Each Chinese character is 3 bytes in UTF-8
+    (11,'Русский текст', 25),  -- Each Russian character is 2 bytes in UTF-8
+    (12,'Special chars !@#$%^&*()_+-=', 27);
+
+# 测试 OCTET_LENGTH 函数
+query TI
+SELECT input, OCTET_LENGTH(input) AS result FROM func_tb;
+----
+"" 0
+"a" 1
+"abc" 3
+"message digest" 14
+"abcdefghijklmnopqrstuvwxyz" 26
+"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789" 62
+"1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890" 100
+"     " 5
+"Hello, World!" 13
+"中文字符" 12
+"Русский текст" 25
+"Special chars !@#$%^&*()_+-=" 28
+
+
+
+statement ok
+DROP TABLE func_tb;
+
+query I
+SELECT OCTET_LENGTH(CAST('francais   ' AS STRING));
+----
+11
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'octet_length\(Utf8, Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\toctet_length\(Utf8/LargeUtf8\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select OCTET_LENGTH('sdfs','sdfed');
+
+#bigint
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"octet_length\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select OCTET_LENGTH(f0) from func_tbl;
+
+#bigint unsigned
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"octet_length\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select OCTET_LENGTH(f0) from func_tb2;
+
+#boolean
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"octet_length\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select OCTET_LENGTH(f2) from func_tb2;
+
+#DOUBLE
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"octet_length\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select OCTET_LENGTH(f4_double) from func_tb3;
+
+#string
+query 
+select OCTET_LENGTH(f3) from func_tb2;
+----
+5
+5
+5
+5
+5
+5
+5
+5
+
+#TIME
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"octet_length\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select OCTET_LENGTH(TIME) from func_tbl;
