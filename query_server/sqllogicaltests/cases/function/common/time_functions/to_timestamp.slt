@@ -1,0 +1,64 @@
+# 删除表（如果存在）
+statement ok
+drop table IF EXISTS test_to_timestamp;
+
+# 创建测试表
+statement ok
+create table IF NOT EXISTS test_to_timestamp (
+    id BIGINT,
+    string_value STRING,
+    int_value BIGINT,
+    double_value DOUBLE
+);
+
+# 插入测试数据
+statement ok
+insert into test_to_timestamp (TIME,id, string_value, int_value, double_value) VALUES
+('1999-12-31 08:11:35.000', 1, '2023-01-31T09:26:56.123456789-05:00', 1672537600, 1672537600.123456),
+('2000-02-15 00:12:30.150', 2, '2024-05-13T12:00:00Z', 1672538600, 1672538600.654321),
+('2024-08-06 05:45:00.000', 3, '2023-07-20T05:44:00', 1672539600, 1672539600.987654),
+('2024-09-06 23:45:00.000', 4, 'invalid_date', -9223372037, 9223372036.123456);
+
+# 验证 to_timestamp 函数的基本行为（字符串输入）
+query I
+select to_timestamp(string_value) from test_to_timestamp WHERE id = 1;
+----
+2023-01-31T14:26:56.123456789
+
+# 验证 to_timestamp 函数的基本行为（整数输入）
+query I
+select to_timestamp(int_value) from test_to_timestamp WHERE id = 2;
+----
+1970-01-01T00:00:01.672538600
+
+# 验证 to_timestamp 函数的基本行为（双精度浮点数输入）
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Arrow: Parser error: Error parsing timestamp from '1672539600\.987654': error parsing date", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select to_timestamp(double_value) from test_to_timestamp WHERE id = 3;
+
+# 验证 to_timestamp 函数的子查询
+query I
+select to_timestamp(subquery.string_value) 
+from (select string_value from test_to_timestamp WHERE id = 1) AS subquery;
+----
+2023-01-31T14:26:56.123456789
+
+# 负面用例：无效的日期字符串
+query error
+select to_timestamp(string_value) from test_to_timestamp WHERE id = 4;
+
+
+query P
+select to_timestamp(-9223372038) from test_to_timestamp;
+----
+1969-12-31T23:59:50.776627962
+1969-12-31T23:59:50.776627962
+1969-12-31T23:59:50.776627962
+1969-12-31T23:59:50.776627962
+
+# 负面用例：超出范围的双精度浮点数
+query error
+select to_timestamp(9223372037.123456) from test_to_timestamp;
+
+# 删除测试表
+statement ok
+drop table test_to_timestamp;

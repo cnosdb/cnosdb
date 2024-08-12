@@ -1,0 +1,57 @@
+include ./setup.slt
+#domain[-1,1]
+
+query 
+select acos(subquery.d_bigint) from (select * from extreme_data_tbl order by value asc) as subquery;
+----
+1.5707963267948966
+0.0
+3.141592653589793
+NaN
+NaN
+NaN
+NaN
+
+query 
+select acos(subquery.d_double) from (select * from extreme_data_tbl order by value asc) as subquery;
+----
+1.5707953267948966
+1.5707973267948965
+NaN
+NaN
+NaN
+NaN
+1.0186215992754282
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'acos\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tacos\(Float64/Float32\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select acos(subquery.d_string) from (select * from extreme_data_tbl order by value asc) as subquery;
+
+
+
+query 
+select acos(1);
+----
+0.0
+
+query 
+select acos(0);
+----
+1.5707963267948966
+
+query 
+select acos(-1);
+----
+3.141592653589793
+
+query 
+select acos(-2);
+----
+NaN
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'acos\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tacos\(Float64/Float32\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select acos('a');
+
+query 
+select acos(pi() * pi());
+----
+NaN

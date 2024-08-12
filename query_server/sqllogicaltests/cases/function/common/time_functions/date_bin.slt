@@ -1,0 +1,124 @@
+# 该测试文件验证 date_bin 函数的行为
+include ./../../setup.slt
+
+statement ok
+drop table if exists test_date_bin;
+
+statement ok
+create table if not exists test_date_bin(values bigint);
+
+statement ok
+insert into test_date_bin(TIME, values) values
+('1969-12-31 23:59:59.010', 0),
+('1979-12-31 23:59:59.010', 1),
+('1970-01-01 00:00:00.040', 2),
+('2000-02-15 00:12:30.150', 3),
+('2024-08-06 05:45:00.300', 4),
+('2024-09-06 05:45:54.050', 5);
+
+query 
+select date_bin(INTERVAL '1' MONTH, timestamp '1969-12-31T23:59:45');
+----
+1969-12-01T00:00:00
+
+
+# 验证 date_bin 函数的秒间隔
+query P
+select date_bin(INTERVAL '15' SECOND, TIME) from test_date_bin order by values asc;
+----
+1969-12-31T23:59:45
+1979-12-31T23:59:45
+1970-01-01T00:00:00
+2000-02-15T00:12:30
+2024-08-06T05:45:00
+2024-09-06T05:45:45
+
+
+
+query P
+select date_bin(INTERVAL '1' HOUR, TIME) from test_date_bin order by values asc;
+----
+1969-12-31T23:00:00
+1979-12-31T23:00:00
+1970-01-01T00:00:00
+2000-02-15T00:00:00
+2024-08-06T05:00:00
+2024-09-06T05:00:00
+
+# 验证 date_bin 函数的分钟间隔
+query P
+select date_bin(INTERVAL '15' MINUTE, TIME) from test_date_bin order by values asc;
+----
+1969-12-31T23:45:00
+1979-12-31T23:45:00
+1970-01-01T00:00:00
+2000-02-15T00:00:00
+2024-08-06T05:45:00
+2024-09-06T05:45:00
+
+# 验证 date_bin 函数的天间隔
+query P
+select date_bin(INTERVAL '15' DAY, TIME) from test_date_bin order by values asc;
+----
+1969-12-17T00:00:00
+1979-12-25T00:00:00
+1970-01-01T00:00:00
+2000-02-08T00:00:00
+2024-07-31T00:00:00
+2024-08-30T00:00:00
+
+# 验证 date_bin 函数的月间隔
+query error Arrow error: Io error: Status \{ code: Cancelled, message: "h2 protocol error: http2 error: stream error received: stream no longer needed", source: Some\(tonic::transport::Error\(Transport, hyper::Error\(Http2, Error \{ kind: Reset\(StreamId\(7\), CANCEL, Remote\) \}\)\)\) \}
+select date_bin(INTERVAL '1' MONTH, TIME) from test_date_bin order by values asc;
+
+# 验证 date_bin 函数的年间隔
+query error Arrow error: Io error: Status \{ code: Cancelled, message: "h2 protocol error: http2 error: stream error received: stream no longer needed", source: Some\(tonic::transport::Error\(Transport, hyper::Error\(Http2, Error \{ kind: Reset\(StreamId\(7\), CANCEL, Remote\) \}\)\)\) \}
+select date_bin(INTERVAL '15' YEAR, TIME) from test_date_bin order by values asc;
+
+# 验证 date_bin 函数带有 origin-timestamp 参数
+query error Arrow error: Io error: Status \{ code: Cancelled, message: "h2 protocol error: http2 error: stream error received: stream no longer needed", source: Some\(tonic::transport::Error\(Transport, hyper::Error\(Http2, Error \{ kind: Reset\(StreamId\(7\), CANCEL, Remote\) \}\)\)\) \}
+select date_bin(INTERVAL '15' YEAR, TIME, TIMESTAMP '1985-01-01T00:00:00Z') FROM test_date_bin order by values asc;
+
+query error Arrow error: Io error: Status \{ code: Cancelled, message: "h2 protocol error: http2 error: stream error received: stream no longer needed", source: Some\(tonic::transport::Error\(Transport, hyper::Error\(Http2, Error \{ kind: Reset\(StreamId\(7\), CANCEL, Remote\) \}\)\)\) \}
+select date_bin(INTERVAL '15' YEAR, TIME, TIMESTAMP '2000-01-01T00:00:00Z') FROM test_date_bin order by values asc;
+
+query error Arrow error: Io error: Status \{ code: Cancelled, message: "h2 protocol error: http2 error: stream error received: stream no longer needed", source: Some\(tonic::transport::Error\(Transport, hyper::Error\(Http2, Error \{ kind: Reset\(StreamId\(7\), CANCEL, Remote\) \}\)\)\) \}
+select date_bin(INTERVAL '15' YEAR, TIME, TIMESTAMP '2005-01-01T00:00:00Z') FROM test_date_bin order by values asc;
+
+# 负面用例：无效的时间间隔
+query error
+SELECT date_bin(INTERVAL 'abc' MINUTE, TIME) FROM test_date_bin;
+
+# 负面用例：无效的时间戳
+query error
+select date_bin(INTERVAL '15' MINUTE, 1999);
+
+query error
+select date_bin(INTERVAL '15' MINUTE);
+
+# 负面用例：无效的 origin-timestamp 参数
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nArrow error: Parser error: Error parsing timestamp from '2024\-13\-06 05:45:00\.000': error parsing date", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select date_bin(INTERVAL '15' MINUTE, TIME, '2024-13-06 05:45:00.000') FROM test_date_bin;
+
+#一个参数
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'date_bin\(Timestamp\(Nanosecond, None\)\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tdate_bin\(Interval\(MonthDayNano\), Timestamp\(Nanosecond, None\), Timestamp\(Nanosecond, None\)\)\\n\\tdate_bin\(Interval\(DayTime\), Timestamp\(Nanosecond, None\), Timestamp\(Nanosecond, None\)\)\\n\\tdate_bin\(Interval\(MonthDayNano\), Timestamp\(Nanosecond, None\)\)\\n\\tdate_bin\(Interval\(DayTime\), Timestamp\(Nanosecond, None\)\)\\n\\tdate_bin\(Interval\(MonthDayNano\), Timestamp\(Microsecond, None\), Timestamp\(Nanosecond, None\)\)\\n\\tdate_bin\(Interval\(DayTime\), Timestamp\(Microsecond, None\), Timestamp\(Nanosecond, None\)\)\\n\\tdate_bin\(Interval\(MonthDayNano\), Timestamp\(Microsecond, None\)\)\\n\\tdate_bin\(Interval\(DayTime\), Timestamp\(Microsecond, None\)\)\\n\\tdate_bin\(Interval\(MonthDayNano\), Timestamp\(Millisecond, None\), Timestamp\(Nanosecond, None\)\)\\n\\tdate_bin\(Interval\(DayTime\), Timestamp\(Millisecond, None\), Timestamp\(Nanosecond, None\)\)\\n\\tdate_bin\(Interval\(MonthDayNano\), Timestamp\(Millisecond, None\)\)\\n\\tdate_bin\(Interval\(DayTime\), Timestamp\(Millisecond, None\)\)\\n\\tdate_bin\(Interval\(MonthDayNano\), Timestamp\(Second, None\), Timestamp\(Nanosecond, None\)\)\\n\\tdate_bin\(Interval\(DayTime\), Timestamp\(Second, None\), Timestamp\(Nanosecond, None\)\)\\n\\tdate_bin\(Interval\(MonthDayNano\), Timestamp\(Second, None\)\)\\n\\tdate_bin\(Interval\(DayTime\), Timestamp\(Second, None\)\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select date_bin(TIME) from test_date_bin;
+
+# 负数时间间隔
+query P
+select date_bin(INTERVAL '-15' DAY, TIME) from test_date_bin order by values asc;
+----
+1970-01-01T00:00:00
+1979-12-25T00:00:00
+1970-01-01T00:00:00
+2000-02-08T00:00:00
+2024-07-31T00:00:00
+2024-08-30T00:00:00
+
+# 负面用例：极大的时间间隔
+query error Arrow error: Io error: Status \{ code: Cancelled, message: "h2 protocol error: http2 error: stream error received: stream no longer needed", source: Some\(tonic::transport::Error\(Transport, hyper::Error\(Http2, Error \{ kind: Reset\(StreamId\(7\), CANCEL, Remote\) \}\)\)\) \}
+select date_bin(INTERVAL '10000' YEAR, TIME) from test_date_bin order by values asc;
+
+# 删除测试表
+statement ok
+DROP TABLE test_date_bin;

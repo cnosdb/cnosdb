@@ -1,0 +1,117 @@
+include ./../../setup.slt
+
+statement ok
+drop table if exists test_date_trunc;
+
+statement ok
+create table if not exists test_date_trunc(values bigint);
+
+statement ok
+insert into test_date_trunc(TIME, values) values
+('1960-12-31 07:23:04.000', 1),
+('1999-12-31 08:11:35.000', 2),
+('2000-02-15 00:12:30.150', 3),
+('2024-08-06 05:45:00.000', 4),
+('2024-09-06 23:45:00.000', 5);
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'date_trunc\(Timestamp\(Nanosecond, None\)\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tdate_trunc\(Utf8, Timestamp\(Nanosecond, None\)\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select date_trunc(TIME) from test_date_trunc order by values asc;
+
+# 验证 date_trunc 函数的基本行为（按年截断）
+query I
+select date_trunc('year', TIME) from test_date_trunc order by values asc;
+----
+1960-01-01T00:00:00
+1999-01-01T00:00:00
+2000-01-01T00:00:00
+2024-01-01T00:00:00
+2024-01-01T00:00:00
+
+# 验证 date_trunc 函数的按季度截断
+query I
+select date_trunc('quarter', TIME) from test_date_trunc order by values asc;
+----
+1960-10-01T00:00:00
+1999-10-01T00:00:00
+2000-01-01T00:00:00
+2024-07-01T00:00:00
+2024-07-01T00:00:00
+
+# 验证 date_trunc 函数的按月截断
+query I
+select date_trunc('month', TIME) from test_date_trunc order by values asc;
+----
+1960-12-01T00:00:00
+1999-12-01T00:00:00
+2000-02-01T00:00:00
+2024-08-01T00:00:00
+2024-09-01T00:00:00
+
+# 验证 date_trunc 函数的按周截断
+query I
+select date_trunc('week', TIME) from test_date_trunc order by values asc;
+----
+1960-12-26T00:00:00
+1999-12-27T00:00:00
+2000-02-14T00:00:00
+2024-08-05T00:00:00
+2024-09-02T00:00:00
+
+# 验证 date_trunc 函数的按天截断
+query I
+select date_trunc('day', TIME) from test_date_trunc order by values asc;
+----
+1960-12-31T00:00:00
+1999-12-31T00:00:00
+2000-02-15T00:00:00
+2024-08-06T00:00:00
+2024-09-06T00:00:00
+
+# 验证 date_trunc 函数的按小时截断
+query I
+select date_trunc('hour', TIME) from test_date_trunc order by values asc;
+----
+1960-12-31T07:00:00
+1999-12-31T08:00:00
+2000-02-15T00:00:00
+2024-08-06T05:00:00
+2024-09-06T23:00:00
+
+# 验证 date_trunc 函数的按分钟截断
+query I
+select date_trunc('minute', TIME) from test_date_trunc order by values asc;
+----
+1960-12-31T07:23:00
+1999-12-31T08:11:00
+2000-02-15T00:12:00
+2024-08-06T05:45:00
+2024-09-06T23:45:00
+
+# 验证 date_trunc 函数的按秒截断
+query I
+select date_trunc('second', TIME) from test_date_trunc order by values asc;
+----
+1960-12-31T07:23:04
+1999-12-31T08:11:35
+2000-02-15T00:12:30
+2024-08-06T05:45:00
+2024-09-06T23:45:00
+
+# 子查询测试
+query I
+select date_trunc('day', subquery.TIME)
+from (select TIME from test_date_trunc WHERE values = 1) AS subquery;
+----
+1960-12-31T00:00:00
+
+# 负面用例：无效的精度
+query error
+select date_trunc('invalid', TIME) from test_date_trunc order by values asc;
+
+# 负面用例：无效的时间戳
+query error
+select date_trunc('day', 'invalid_timestamp');
+
+# 删除测试表
+statement ok
+drop table test_date_trunc;

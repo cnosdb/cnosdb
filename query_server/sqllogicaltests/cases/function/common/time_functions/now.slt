@@ -1,0 +1,19 @@
+include ./../../setup.slt
+
+
+query 
+select now() between '2024-08-06T03:23:01.861328Z' and '2094-08-06T03:23:01.861328Z';
+----
+true
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'now\(Int64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tnow\(\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select now(1);
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'now\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tnow\(\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select now('a');
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'now\(Int64, Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tnow\(\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select now(1, 'a');
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'now\(Null\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tnow\(\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select now(NULL);

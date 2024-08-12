@@ -1,0 +1,71 @@
+statement ok
+DROP TABLE IF EXISTS air;
+
+statement ok
+CREATE TABLE air (
+    id bigint,
+    temperature double
+);
+
+
+statement ok
+INSERT INTO air (TIME, id, temperature) VALUES
+('1999-12-31 00:00:00.000', 1, 65.0),
+('1999-12-31 00:00:00.001', 2, 64.5),
+('1999-12-31 00:00:00.002', 3, 64.9),
+('1999-12-31 00:00:00.003', 4, 65.1),
+('1999-12-31 00:00:00.004', 5, 64.7);
+
+
+query I
+SELECT approx_percentile_cont(temperature, 0.1, 100) AS approx_10th_percentile FROM air;
+----
+64.5
+
+
+query I
+SELECT approx_percentile_cont(temperature, 0.5, 100) AS approx_median FROM air;
+----
+64.9
+
+
+query I
+SELECT approx_percentile_cont(temperature, 0.9, 100) AS approx_90th_percentile FROM air;
+----
+65.1
+
+
+statement ok
+INSERT INTO air (TIME, id, temperature) VALUES
+('1999-12-31 00:00:00.005', 6, NULL),
+('1999-12-31 00:00:00.006', 7, -5.0),
+('1999-12-31 00:00:00.007', 8, -10.0),
+('1999-12-31 00:00:00.008', 9, -2.5);
+
+
+query error Arrow error: Io error: Status \{ code: Cancelled, message: "h2 protocol error: http2 error: stream error received: stream no longer needed", source: Some\(tonic::transport::Error\(Transport, hyper::Error\(Http2, Error \{ kind: Reset\(StreamId\(7\), CANCEL, Remote\) \}\)\)\) \}
+SELECT approx_percentile_cont(temperature, 0.1, 100) AS approx_10th_percentile FROM air;
+
+
+query error Arrow error: Io error: Status \{ code: Cancelled, message: "h2 protocol error: http2 error: stream error received: stream no longer needed", source: Some\(tonic::transport::Error\(Transport, hyper::Error\(Http2, Error \{ kind: Reset\(StreamId\(7\), CANCEL, Remote\) \}\)\)\) \}
+SELECT approx_percentile_cont(temperature, 0.5, 100) AS approx_median FROM air;
+
+
+query error Arrow error: Io error: Status \{ code: Cancelled, message: "h2 protocol error: http2 error: stream error received: stream no longer needed", source: Some\(tonic::transport::Error\(Transport, hyper::Error\(Http2, Error \{ kind: Reset\(StreamId\(7\), CANCEL, Remote\) \}\)\)\) \}
+SELECT approx_percentile_cont(temperature, 0.9, 100) AS approx_90th_percentile FROM air;
+
+
+query error Arrow error: Io error: Status \{ code: Cancelled, message: "h2 protocol error: http2 error: stream error received: stream no longer needed", source: Some\(tonic::transport::Error\(Transport, hyper::Error\(Http2, Error \{ kind: Reset\(StreamId\(7\), CANCEL, Remote\) \}\)\)\) \}
+SELECT approx_percentile_cont(temperature, 0.5, 50) AS approx_median FROM air;
+
+
+query 
+SELECT approx_percentile_cont(temperature, 1.1, 100) AS approx_invalid_percentile FROM air;
+
+
+query 
+SELECT approx_percentile_cont(temperature, -0.1, 100) AS approx_invalid_percentile FROM air;
+
+
+query 
+SELECT approx_percentile_cont(temperature, 0.5, -10) AS approx_invalid_centroids FROM air;

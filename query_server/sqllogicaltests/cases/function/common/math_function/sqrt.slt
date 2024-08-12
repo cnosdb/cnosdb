@@ -1,0 +1,31 @@
+include ./setup.slt
+
+query 
+select sqrt(30.25);
+----
+5.5
+
+query R
+select sqrt(subquery.d_double) from (select * from extreme_data_tbl) as subquery;
+----
+0.001
+NaN
+9560.847372502294
+NaN
+937.7228240370392
+1.7724538509055159
+0.7242513375893758
+
+query R
+select sqrt(subquery.d_bigint) from (select * from extreme_data_tbl) as subquery;
+----
+0.0
+1.0
+NaN
+1.4142135623730951
+NaN
+1000.0
+NaN
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'sqrt\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tsqrt\(Float64/Float32\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select sqrt(subquery.d_string) from (select * from extreme_data_tbl) as subquery;

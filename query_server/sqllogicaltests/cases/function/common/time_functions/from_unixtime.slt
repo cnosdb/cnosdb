@@ -1,0 +1,58 @@
+# 删除表（如果存在）
+statement ok
+drop table IF EXISTS test_from_unixtime;
+
+# 创建测试表
+statement ok
+create table IF NOT EXISTS test_from_unixtime (
+    id BIGINT,
+    string_value STRING,
+    int_value BIGINT,
+    double_value DOUBLE
+);
+
+# 插入测试数据
+statement ok
+insert into test_from_unixtime (TIME,id, string_value, int_value, double_value) VALUES
+('1999-12-31 08:11:35.000', 1, '2023-01-31T09:26:56.123456789-05:00', 1672537600, 1672537600.123456),
+('2000-02-15 00:12:30.150', 2, '2024-05-13T12:00:00Z', 1672538600, 1672538600.654321),
+('2024-08-06 05:45:00.000', 3, '2023-07-20T05:44:00', 1672539600, 1672539600.987654);
+
+#（字符串输入）
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'from_unixtime\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tfrom_unixtime\(Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select from_unixtime(string_value) from test_from_unixtime;
+
+# 验证 from_unixtime 函数的基本行为（整数输入）
+query I
+select from_unixtime(int_value) from test_from_unixtime;
+----
+2023-01-01T02:20:00
+2023-01-01T02:03:20
+2023-01-01T01:46:40
+
+# （双精度浮点数输入）
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'from_unixtime\(Float64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tfrom_unixtime\(Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select from_unixtime(double_value) from test_from_unixtime;
+
+# 验证 from_unixtime 函数的子查询
+query P
+select from_unixtime(subquery.int_value) 
+from (select int_value from test_from_unixtime where id = 1) as subquery;
+----
+2023-01-01T01:46:40
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'from_unixtime\(Float64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tfrom_unixtime\(Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select from_unixtime(-9223372038.0);
+
+query P
+select from_unixtime(-9223372038);
+----
+1677-09-21T00:12:42
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'from_unixtime\(Float64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tfrom_unixtime\(Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select from_unixtime(9223372037.123456) from test_from_unixtime;
+
+# 删除测试表
+statement ok
+drop table test_from_unixtime;
