@@ -1,0 +1,47 @@
+
+statement ok
+CREATE TABLE func_tb (input STRING, expected STRING);
+
+statement ok
+INSERT INTO func_tb (time,input, expected) VALUES 
+    (1,'Hello World', 'hello world'),
+    (2,'SQL Logic Test', 'sql logic test'),
+    (3,'123 ABC def', '123 abc def'),
+    (4,'MIXED Case', 'mixed case'),
+    (5,'lowercase', 'lowercase'),
+    (6,'UPPERCASE', 'uppercase'),
+    (7,'Special Chars !@#$', 'special chars !@#$'),
+    (8,'Whitespace   ', 'whitespace   '),
+    (9,'   Leading and trailing whitespace   ', '   leading and trailing whitespace   '),
+    (10,'1234567890', '1234567890'),
+    (11,'', ''),
+    (12,'SOME-MIXED_case123', 'some-mixed_case123'),
+    (13,'ümläuts ÜMLÄUTS', 'ümläuts ümläuts'),
+    (14,'ÇÇçç', 'çççç'),
+    (15,'Русский Текст', 'русский текст'),
+    (16,'中文字符', '中文字符');
+
+# 测试 lower 函数
+query T
+SELECT lower(input) AS result FROM func_tb;
+----
+"hello world"
+"sql logic test"
+"123 abc def"
+"mixed case"
+"lowercase"
+"uppercase"
+"special chars !@#$"
+"whitespace   "
+"   leading and trailing whitespace   "
+"1234567890"
+""
+"some-mixed_case123"
+"ümläuts ÜmlÄuts"
+"ÇÇçç"
+"Русский Текст"
+"中文字符"
+
+
+statement ok
+DROP TABLE func_tb;

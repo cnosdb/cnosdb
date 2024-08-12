@@ -1,0 +1,358 @@
+statement ok
+drop table if exists test_lag;
+
+# 创建测试表
+statement ok
+CREATE TABLE IF NOT EXISTS test_lag (
+    category string,
+    value bigint
+);
+
+# 插入测试数据
+statement ok
+INSERT INTO test_lag (time, category, value) VALUES
+(1, 'A', 10),
+(2, 'A', 20),
+(3, 'A', 30),
+(4, 'B', 40),
+(5, 'B', 50),
+(6, 'C', 60),
+(7, 'C', 70),
+(8, 'C', 80),
+(9, 'C', 90);
+
+# 基本使用：计算lag值，使用默认的offset和default值
+query 
+SELECT
+    time,
+    category,
+    value,
+    LAG(value) OVER (PARTITION BY category ORDER BY time) AS lag_value
+FROM test_lag
+ORDER BY category, time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 NULL
+1970-01-01T00:00:00.000000002 "A" 20 10
+1970-01-01T00:00:00.000000003 "A" 30 20
+1970-01-01T00:00:00.000000004 "B" 40 NULL
+1970-01-01T00:00:00.000000005 "B" 50 40
+1970-01-01T00:00:00.000000006 "C" 60 NULL
+1970-01-01T00:00:00.000000007 "C" 70 60
+1970-01-01T00:00:00.000000008 "C" 80 70
+1970-01-01T00:00:00.000000009 "C" 90 80
+
+# 指定offset和default值
+query 
+SELECT
+    time,
+    category,
+    value,
+    LAG(value, 2, 0) OVER (PARTITION BY category ORDER BY time) AS lag_value
+FROM test_lag
+ORDER BY category, time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 0
+1970-01-01T00:00:00.000000002 "A" 20 0
+1970-01-01T00:00:00.000000003 "A" 30 10
+1970-01-01T00:00:00.000000004 "B" 40 0
+1970-01-01T00:00:00.000000005 "B" 50 0
+1970-01-01T00:00:00.000000006 "C" 60 0
+1970-01-01T00:00:00.000000007 "C" 70 0
+1970-01-01T00:00:00.000000008 "C" 80 60
+1970-01-01T00:00:00.000000009 "C" 90 70
+
+# 没有分区的情况下使用lag函数
+query 
+SELECT
+    time,
+    category,
+    value,
+    LAG(value, 1, -1) OVER (ORDER BY time) AS lag_value
+FROM test_lag
+ORDER BY time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 -1
+1970-01-01T00:00:00.000000002 "A" 20 10
+1970-01-01T00:00:00.000000003 "A" 30 20
+1970-01-01T00:00:00.000000004 "B" 40 30
+1970-01-01T00:00:00.000000005 "B" 50 40
+1970-01-01T00:00:00.000000006 "C" 60 50
+1970-01-01T00:00:00.000000007 "C" 70 60
+1970-01-01T00:00:00.000000008 "C" 80 70
+1970-01-01T00:00:00.000000009 "C" 90 80
+
+# 使用负offset值的错误示例
+query 
+SELECT
+    time,
+    category,
+    value,
+    LAG(value, -1, 0) OVER (PARTITION BY category ORDER BY time) AS lag_value
+FROM test_lag
+ORDER BY category, time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 20
+1970-01-01T00:00:00.000000002 "A" 20 30
+1970-01-01T00:00:00.000000003 "A" 30 0
+1970-01-01T00:00:00.000000004 "B" 40 50
+1970-01-01T00:00:00.000000005 "B" 50 0
+1970-01-01T00:00:00.000000006 "C" 60 70
+1970-01-01T00:00:00.000000007 "C" 70 80
+1970-01-01T00:00:00.000000008 "C" 80 90
+1970-01-01T00:00:00.000000009 "C" 90 0
+
+# 错误输入测试
+
+# 错误输入: lag函数不带OVER子句
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Invalid function 'lag'\.\\nDid you mean 'log'\?", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT time, category, value, LAG(value)
+FROM test_lag;
+
+# lag函数的OVER子句中没有PARTITION BY或ORDER BY
+#默认order by time？
+query 
+SELECT time, category, value, LAG(value) OVER ()
+FROM test_lag;
+----
+1970-01-01T00:00:00.000000001 "A" 10 NULL
+1970-01-01T00:00:00.000000002 "A" 20 10
+1970-01-01T00:00:00.000000003 "A" 30 20
+1970-01-01T00:00:00.000000004 "B" 40 30
+1970-01-01T00:00:00.000000005 "B" 50 40
+1970-01-01T00:00:00.000000006 "C" 60 50
+1970-01-01T00:00:00.000000007 "C" 70 60
+1970-01-01T00:00:00.000000008 "C" 80 70
+1970-01-01T00:00:00.000000009 "C" 90 80
+
+# 错误输入: lag函数的OVER子句中带有无效的排序列
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Schema error: No field named non_existent_column\. Valid fields are test_lag\.time, test_lag\.category, test_lag\.value\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT time, category, value, LAG(value) OVER (PARTITION BY category ORDER BY non_existent_column)
+FROM test_lag;
+
+# 错误输入: lag函数的OVER子句中带有无效的分区列
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Schema error: No field named non_existent_column\. Valid fields are test_lag\.time, test_lag\.category, test_lag\.value\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT time, category, value, LAG(value) OVER (PARTITION BY non_existent_column ORDER BY time)
+FROM test_lag;
+
+# 错误输入: lag函数使用聚合函数
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Projection references non\-aggregate values: Expression test_lag\.value could not be resolved from available columns: test_lag\.category, SUM\(test_lag\.value\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT category, SUM(value), LAG(value) OVER (PARTITION BY category ORDER BY time)
+FROM test_lag
+GROUP BY category;
+
+# 错误输入: lag函数的参数类型不匹配
+query 
+SELECT time, category, value, LAG(value, 'invalid_offset', 0) OVER (PARTITION BY category ORDER BY time)
+FROM test_lag
+order by time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 0
+1970-01-01T00:00:00.000000002 "A" 20 10
+1970-01-01T00:00:00.000000003 "A" 30 20
+1970-01-01T00:00:00.000000004 "B" 40 0
+1970-01-01T00:00:00.000000005 "B" 50 40
+1970-01-01T00:00:00.000000006 "C" 60 0
+1970-01-01T00:00:00.000000007 "C" 70 60
+1970-01-01T00:00:00.000000008 "C" 80 70
+1970-01-01T00:00:00.000000009 "C" 90 80
+
+#  lag函数中使用负offset值
+query 
+SELECT time, category, value, LAG(value, -1, 0) OVER (PARTITION BY category ORDER BY time)
+FROM test_lag
+order by time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 20
+1970-01-01T00:00:00.000000002 "A" 20 30
+1970-01-01T00:00:00.000000003 "A" 30 0
+1970-01-01T00:00:00.000000004 "B" 40 50
+1970-01-01T00:00:00.000000005 "B" 50 0
+1970-01-01T00:00:00.000000006 "C" 60 70
+1970-01-01T00:00:00.000000007 "C" 70 80
+1970-01-01T00:00:00.000000008 "C" 80 90
+1970-01-01T00:00:00.000000009 "C" 90 0
+
+query 
+SELECT time, category, value, LAG(value, -2, 0) OVER (PARTITION BY category ORDER BY time)
+FROM test_lag
+order by time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 30
+1970-01-01T00:00:00.000000002 "A" 20 0
+1970-01-01T00:00:00.000000003 "A" 30 0
+1970-01-01T00:00:00.000000004 "B" 40 0
+1970-01-01T00:00:00.000000005 "B" 50 0
+1970-01-01T00:00:00.000000006 "C" 60 80
+1970-01-01T00:00:00.000000007 "C" 70 90
+1970-01-01T00:00:00.000000008 "C" 80 0
+1970-01-01T00:00:00.000000009 "C" 90 0
+
+# 错误输入: lag函数中混合不同类型的排序列
+query 
+SELECT time, category, value, LAG(value) OVER (ORDER BY time, category, value)
+FROM test_lag;
+----
+1970-01-01T00:00:00.000000001 "A" 10 NULL
+1970-01-01T00:00:00.000000002 "A" 20 10
+1970-01-01T00:00:00.000000003 "A" 30 20
+1970-01-01T00:00:00.000000004 "B" 40 30
+1970-01-01T00:00:00.000000005 "B" 50 40
+1970-01-01T00:00:00.000000006 "C" 60 50
+1970-01-01T00:00:00.000000007 "C" 70 60
+1970-01-01T00:00:00.000000008 "C" 80 70
+1970-01-01T00:00:00.000000009 "C" 90 80
+
+# 错误输入: lag函数中使用空字符串作为参数
+query 
+SELECT time, category, value, LAG(value, '', 0) OVER (PARTITION BY category ORDER BY time)
+FROM test_lag
+order by time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 0
+1970-01-01T00:00:00.000000002 "A" 20 10
+1970-01-01T00:00:00.000000003 "A" 30 20
+1970-01-01T00:00:00.000000004 "B" 40 0
+1970-01-01T00:00:00.000000005 "B" 50 40
+1970-01-01T00:00:00.000000006 "C" 60 0
+1970-01-01T00:00:00.000000007 "C" 70 60
+1970-01-01T00:00:00.000000008 "C" 80 70
+1970-01-01T00:00:00.000000009 "C" 90 80
+
+# 错误输入: lag函数中使用NULL作为offset参数
+query 
+SELECT time, category, value, LAG(value, NULL, 0) OVER (PARTITION BY category ORDER BY time)
+FROM test_lag
+order by time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 0
+1970-01-01T00:00:00.000000002 "A" 20 10
+1970-01-01T00:00:00.000000003 "A" 30 20
+1970-01-01T00:00:00.000000004 "B" 40 0
+1970-01-01T00:00:00.000000005 "B" 50 40
+1970-01-01T00:00:00.000000006 "C" 60 0
+1970-01-01T00:00:00.000000007 "C" 70 60
+1970-01-01T00:00:00.000000008 "C" 80 70
+1970-01-01T00:00:00.000000009 "C" 90 80
+
+# 错误输入: lag函数中多余的参数
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Coercion from \[Int64, Int64, Int64, Int64\] to the signature OneOf\(\[Any\(1\), Any\(2\), Any\(3\)\]\) failed\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT time, category, value, LAG(value, 1, 0, 5) OVER (PARTITION BY category ORDER BY time)
+FROM test_lag;
+
+#  lag函数中非整数类型作为offset参数
+query 
+SELECT time, category, value, LAG(value, 1.5, 0) OVER (PARTITION BY category ORDER BY time)
+FROM test_lag
+order by time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 0
+1970-01-01T00:00:00.000000002 "A" 20 10
+1970-01-01T00:00:00.000000003 "A" 30 20
+1970-01-01T00:00:00.000000004 "B" 40 0
+1970-01-01T00:00:00.000000005 "B" 50 40
+1970-01-01T00:00:00.000000006 "C" 60 0
+1970-01-01T00:00:00.000000007 "C" 70 60
+1970-01-01T00:00:00.000000008 "C" 80 70
+1970-01-01T00:00:00.000000009 "C" 90 80
+
+query 
+SELECT time, category, value, LAG(value, 2.5, 0) OVER (PARTITION BY category ORDER BY time)
+FROM test_lag
+order by time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 0
+1970-01-01T00:00:00.000000002 "A" 20 10
+1970-01-01T00:00:00.000000003 "A" 30 20
+1970-01-01T00:00:00.000000004 "B" 40 0
+1970-01-01T00:00:00.000000005 "B" 50 40
+1970-01-01T00:00:00.000000006 "C" 60 0
+1970-01-01T00:00:00.000000007 "C" 70 60
+1970-01-01T00:00:00.000000008 "C" 80 70
+1970-01-01T00:00:00.000000009 "C" 90 80
+
+# 错误输入: lag函数中布尔类型作为offset参数
+query 
+SELECT time, category, value, LAG(value, true, 0) OVER (PARTITION BY category ORDER BY time)
+FROM test_lag
+order by time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 0
+1970-01-01T00:00:00.000000002 "A" 20 10
+1970-01-01T00:00:00.000000003 "A" 30 20
+1970-01-01T00:00:00.000000004 "B" 40 0
+1970-01-01T00:00:00.000000005 "B" 50 40
+1970-01-01T00:00:00.000000006 "C" 60 0
+1970-01-01T00:00:00.000000007 "C" 70 60
+1970-01-01T00:00:00.000000008 "C" 80 70
+1970-01-01T00:00:00.000000009 "C" 90 80
+
+query 
+SELECT time, category, value, LAG(value, false, 0) OVER (PARTITION BY category ORDER BY time)
+FROM test_lag
+order by time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 0
+1970-01-01T00:00:00.000000002 "A" 20 10
+1970-01-01T00:00:00.000000003 "A" 30 20
+1970-01-01T00:00:00.000000004 "B" 40 0
+1970-01-01T00:00:00.000000005 "B" 50 40
+1970-01-01T00:00:00.000000006 "C" 60 0
+1970-01-01T00:00:00.000000007 "C" 70 60
+1970-01-01T00:00:00.000000008 "C" 80 70
+1970-01-01T00:00:00.000000009 "C" 90 80
+
+# 错误输入: lag函数中日期类型作为offset参数
+query 
+SELECT time, category, value, LAG(value, '2023-01-01', 0) OVER (PARTITION BY category ORDER BY time)
+FROM test_lag
+order by time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 0
+1970-01-01T00:00:00.000000002 "A" 20 10
+1970-01-01T00:00:00.000000003 "A" 30 20
+1970-01-01T00:00:00.000000004 "B" 40 0
+1970-01-01T00:00:00.000000005 "B" 50 40
+1970-01-01T00:00:00.000000006 "C" 60 0
+1970-01-01T00:00:00.000000007 "C" 70 60
+1970-01-01T00:00:00.000000008 "C" 80 70
+1970-01-01T00:00:00.000000009 "C" 90 80
+
+# 错误输入: lag函数中其他数据类型作为default参数
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Datafusion: Internal error: Expects default value to have Int64 type\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT time, category, value, LAG(value, 1, true) OVER (PARTITION BY category ORDER BY time)
+FROM test_lag;
+
+# 错误输入: lag函数中default参数为日期类型
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Datafusion: Internal error: Expects default value to have Int64 type\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT time, category, value, LAG(value, 1, '2023-01-01') OVER (PARTITION BY category ORDER BY time)
+FROM test_lag;
+
+# 错误输入: lag函数中default参数为浮点类型
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Datafusion: Internal error: Expects default value to have Int64 type\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT time, category, value, LAG(value, 1, 3.14) OVER (PARTITION BY category ORDER BY time)
+FROM test_lag;
+
+# 错误输入: lag函数中default参数为整数类型但与value不兼容
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Datafusion: Internal error: Expects default value to have Int64 type\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT time, category, value, LAG(value, 1, 'string_default') OVER (PARTITION BY category ORDER BY time)
+FROM test_lag;
+
+
+query 
+SELECT time, category, value, LAG(value, 1, 12345) OVER (PARTITION BY category ORDER BY time)
+FROM test_lag
+order by time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 12345
+1970-01-01T00:00:00.000000002 "A" 20 10
+1970-01-01T00:00:00.000000003 "A" 30 20
+1970-01-01T00:00:00.000000004 "B" 40 12345
+1970-01-01T00:00:00.000000005 "B" 50 40
+1970-01-01T00:00:00.000000006 "C" 60 12345
+1970-01-01T00:00:00.000000007 "C" 70 60
+1970-01-01T00:00:00.000000008 "C" 80 70
+1970-01-01T00:00:00.000000009 "C" 90 80
+
+
+statement ok
+drop table if exists test_lag;

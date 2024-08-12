@@ -1,0 +1,222 @@
+# left function tests
+
+# Test LEFT with regular string
+query I
+SELECT LEFT('Hello, World!', 5);
+----
+"Hello"
+
+# Test LEFT with length longer than string
+query I
+SELECT LEFT('Hello', 10);
+----
+"Hello"
+
+# Test LEFT with length zero
+query I
+SELECT LEFT('Hello', 0);
+----
+""
+
+# Test LEFT with negative length
+query I
+SELECT LEFT('Hello', -1);
+----
+"Hell"
+
+# Test LEFT with empty string
+query I
+SELECT LEFT('', 5);
+----
+""
+
+# Test LEFT with multi-byte characters (e.g., UTF-8)
+query I
+SELECT LEFT('你好，世界！', 2);
+----
+"你好"
+
+# Test LEFT with multi-byte characters and length larger than string
+query I
+SELECT LEFT('你好', 10);
+----
+"你好"
+
+# Test LEFT with numeric input
+query I
+SELECT LEFT('1234567890', 3);
+----
+"123"
+
+# Test LEFT with special characters
+query I
+SELECT LEFT('!@#$%^&*()', 4);
+----
+"!@#$"
+
+# Test LEFT with NULL input
+query I
+SELECT LEFT(NULL, 5);
+----
+"NULL"
+
+# Test LEFT with NULL length
+query I
+SELECT LEFT('Hello', NULL);
+----
+"NULL"
+
+# Test LEFT with spaces in the string
+query I
+SELECT LEFT('   spaced', 3);
+----
+"   "
+
+# Test LEFT with SQL injection attempt (should handle safely)
+query I
+SELECT LEFT('Hello''; DROP TABLE users; --', 5);
+----
+"Hello"
+
+# Test LEFT with very long string
+query error Arrow error: Io error: Cannot collect flight data: Status \{ code: OutOfRange, message: "Error, message length too large: found 10000169 bytes, the limit is: 4194304 bytes", source: None, \}
+SELECT LEFT(REPEAT('a', 10000000), 10000000);
+
+# Test LEFT with very large length (boundary test)
+query I
+SELECT LEFT('Boundary test', 9223372036854775807);
+----
+"Boundary test"
+
+# Test LEFT with zero length on multi-byte characters
+query I
+SELECT LEFT('你好，世界！', 0);
+----
+""
+
+# Test LEFT with special unicode characters
+query I
+SELECT LEFT('こんにちは世界', 5);
+----
+"こんにちは"
+
+# Test LEFT with escape characters
+query I
+SELECT LEFT('Hello\nWorld\t!', 7);
+----
+"Hello\n"
+
+# Test LEFT with mixed content
+query I
+SELECT LEFT('abc123!@#你好', 9);
+----
+"abc123!@#"
+
+# Test LEFT with combination of special characters and spaces
+query I
+SELECT LEFT('   !@#$%^&*()   ', 10);
+----
+"   !@#$%^&"
+
+# Test LEFT with fractional length (should truncate or error depending on SQL implementation)
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'left\(Utf8, Float64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tleft\(Utf8, Int64\)\\n\\tleft\(LargeUtf8, Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT LEFT('Hello', 2.7);
+
+# Test LEFT with concatenated strings
+query I
+SELECT LEFT(CONCAT('Hello', 'World'), 8);
+----
+"HelloWor"
+
+# Test LEFT with very large string and length
+query I
+SELECT LEFT(REPEAT('abc', 10000000), 10);
+----
+"abcabcabca"
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'left\(\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tleft\(Utf8, Int64\)\\n\\tleft\(LargeUtf8, Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select left();
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'left\(Int64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tleft\(Utf8, Int64\)\\n\\tleft\(LargeUtf8, Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select left(29834832);
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"left\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select left(19383924,23);
+
+
+
+#bigint
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"left\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select left(f0,5) from func_tbl;
+
+#bigint unsigned
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"left\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select left(f0,3) from func_tb2;
+
+#boolean
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"left\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select left(f2,4) from func_tb2;
+
+#DOUBLE
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"left\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select left(f4_double,4) from func_tb3;
+
+#string
+query T
+select left(f3,4) from func_tb2;
+----
+"f300"
+"f300"
+"f300"
+"f300"
+"f300"
+"f300"
+"f300"
+"f300"
+
+
+#TIME
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"left\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select left(TIME,4) from func_tbl;
+
+
+
+
+#string+bigint
+query T
+select distinct left(func_tb2.f3,func_tbl.f0) AS extracted_substring from func_tbl,func_tb2 ORDER BY extracted_substring;
+----
+"f3001"
+"f3003"
+"f3007"
+
+#string+bigint unsigned
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'left\(Utf8, UInt64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tleft\(Utf8, Int64\)\\n\\tleft\(LargeUtf8, Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select left(func_tb2.f3,func_tb2.f0) from func_tb2;
+
+#string+boolean
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'left\(Utf8, Boolean\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tleft\(Utf8, Int64\)\\n\\tleft\(LargeUtf8, Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select left(func_tb2.f3,func_tb2.f2) from func_tb2;
+
+#string+DOUBLE
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'left\(Utf8, Float64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tleft\(Utf8, Int64\)\\n\\tleft\(LargeUtf8, Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select left(func_tb2.f3,func_tb3.f4_double) from func_tb3,func_tb2;
+
+#string+string
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'left\(Utf8, Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tleft\(Utf8, Int64\)\\n\\tleft\(LargeUtf8, Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select left(func_tb2.f3,func_tb2.f3) from func_tb2;
+
+#string+TIME
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'left\(Utf8, Timestamp\(Nanosecond, None\)\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tleft\(Utf8, Int64\)\\n\\tleft\(LargeUtf8, Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select left(func_tb2.f3,func_tbl.TIME) from func_tbl,func_tb2;
+
+#string+%^&*
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Expected an expression:, found: \)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select left(func_tb2.f3, ) from func_tb2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: variable \[\\"@\\"\] has no type information", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select left(f3,@) from func_tb2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Expected an expression:, found: \)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select left(f3,()) from func_tb2;

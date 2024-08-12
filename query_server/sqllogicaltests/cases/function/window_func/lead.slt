@@ -1,0 +1,262 @@
+statement ok
+drop table if exists test_lead;
+
+
+# 创建测试表
+statement ok
+CREATE TABLE IF NOT EXISTS test_lead (
+    category string,
+    value bigint
+);
+
+# 插入测试数据
+statement ok
+INSERT INTO test_lead (time, category, value) VALUES
+(1, 'A', 10),
+(2, 'A', 20),
+(3, 'A', 30),
+(4, 'B', 40),
+(5, 'B', 50),
+(6, 'C', 60),
+(7, 'C', 70),
+(8, 'C', 80),
+(9, 'C', 90);
+
+# 基本使用：计算lead值，使用默认的offset和default值
+query 
+SELECT
+    time,
+    category,
+    value,
+    LEAD(value) OVER (PARTITION BY category ORDER BY time) AS lead_value
+FROM test_lead
+ORDER BY category, time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 20
+1970-01-01T00:00:00.000000002 "A" 20 30
+1970-01-01T00:00:00.000000003 "A" 30 NULL
+1970-01-01T00:00:00.000000004 "B" 40 50
+1970-01-01T00:00:00.000000005 "B" 50 NULL
+1970-01-01T00:00:00.000000006 "C" 60 70
+1970-01-01T00:00:00.000000007 "C" 70 80
+1970-01-01T00:00:00.000000008 "C" 80 90
+1970-01-01T00:00:00.000000009 "C" 90 NULL
+
+# 指定offset和default值
+query 
+SELECT
+    time,
+    category,
+    value,
+    LEAD(value, 2, 0) OVER (PARTITION BY category ORDER BY time) AS lead_value
+FROM test_lead
+ORDER BY category, time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 30
+1970-01-01T00:00:00.000000002 "A" 20 0
+1970-01-01T00:00:00.000000003 "A" 30 0
+1970-01-01T00:00:00.000000004 "B" 40 0
+1970-01-01T00:00:00.000000005 "B" 50 0
+1970-01-01T00:00:00.000000006 "C" 60 80
+1970-01-01T00:00:00.000000007 "C" 70 90
+1970-01-01T00:00:00.000000008 "C" 80 0
+1970-01-01T00:00:00.000000009 "C" 90 0
+
+# 没有分区的情况下使用lead函数
+query 
+SELECT
+    time,
+    category,
+    value,
+    LEAD(value, 1, -1) OVER (ORDER BY time) AS lead_value
+FROM test_lead
+ORDER BY time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 20
+1970-01-01T00:00:00.000000002 "A" 20 30
+1970-01-01T00:00:00.000000003 "A" 30 40
+1970-01-01T00:00:00.000000004 "B" 40 50
+1970-01-01T00:00:00.000000005 "B" 50 60
+1970-01-01T00:00:00.000000006 "C" 60 70
+1970-01-01T00:00:00.000000007 "C" 70 80
+1970-01-01T00:00:00.000000008 "C" 80 90
+1970-01-01T00:00:00.000000009 "C" 90 -1
+
+# 使用负offset值的错误示例
+query 
+SELECT
+    time,
+    category,
+    value,
+    LEAD(value, -1, 0) OVER (PARTITION BY category ORDER BY time) AS lead_value
+FROM test_lead
+ORDER BY category, time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 0
+1970-01-01T00:00:00.000000002 "A" 20 10
+1970-01-01T00:00:00.000000003 "A" 30 20
+1970-01-01T00:00:00.000000004 "B" 40 0
+1970-01-01T00:00:00.000000005 "B" 50 40
+1970-01-01T00:00:00.000000006 "C" 60 0
+1970-01-01T00:00:00.000000007 "C" 70 60
+1970-01-01T00:00:00.000000008 "C" 80 70
+1970-01-01T00:00:00.000000009 "C" 90 80
+
+# 错误输入测试
+
+# 错误输入: lead函数不带OVER子句
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Invalid function 'lead'\.\\nDid you mean 'lpad'\?", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT time, category, value, LEAD(value)
+FROM test_lead;
+
+# lead函数的OVER子句中没有PARTITION BY或ORDER BY
+query 
+SELECT time, category, value, LEAD(value) OVER ()
+FROM test_lead;
+----
+1970-01-01T00:00:00.000000001 "A" 10 20
+1970-01-01T00:00:00.000000002 "A" 20 30
+1970-01-01T00:00:00.000000003 "A" 30 40
+1970-01-01T00:00:00.000000004 "B" 40 50
+1970-01-01T00:00:00.000000005 "B" 50 60
+1970-01-01T00:00:00.000000006 "C" 60 70
+1970-01-01T00:00:00.000000007 "C" 70 80
+1970-01-01T00:00:00.000000008 "C" 80 90
+1970-01-01T00:00:00.000000009 "C" 90 NULL
+
+# 错误输入: lead函数的OVER子句中带有无效的排序列
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Schema error: No field named non_existent_column\. Valid fields are test_lead\.time, test_lead\.category, test_lead\.value\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT time, category, value, LEAD(value) OVER (PARTITION BY category ORDER BY non_existent_column)
+FROM test_lead;
+
+# 错误输入: lead函数的OVER子句中带有无效的分区列
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Schema error: No field named non_existent_column\. Valid fields are test_lead\.time, test_lead\.category, test_lead\.value\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT time, category, value, LEAD(value) OVER (PARTITION BY non_existent_column ORDER BY time)
+FROM test_lead;
+
+# 错误输入: lead函数使用聚合函数
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Projection references non\-aggregate values: Expression test_lead\.value could not be resolved from available columns: test_lead\.category, SUM\(test_lead\.value\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT category, SUM(value), LEAD(value) OVER (PARTITION BY category ORDER BY time)
+FROM test_lead
+GROUP BY category;
+
+#  lead函数的参数类型不匹配
+query 
+SELECT time, category, value, LEAD(value, 'invalid_offset', 0) OVER (PARTITION BY category ORDER BY time)
+FROM test_lead
+order by time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 20
+1970-01-01T00:00:00.000000002 "A" 20 30
+1970-01-01T00:00:00.000000003 "A" 30 0
+1970-01-01T00:00:00.000000004 "B" 40 50
+1970-01-01T00:00:00.000000005 "B" 50 0
+1970-01-01T00:00:00.000000006 "C" 60 70
+1970-01-01T00:00:00.000000007 "C" 70 80
+1970-01-01T00:00:00.000000008 "C" 80 90
+1970-01-01T00:00:00.000000009 "C" 90 0
+
+# lead函数中使用负offset值
+query 
+SELECT time, category, value, LEAD(value, -1, 0) OVER (PARTITION BY category ORDER BY time)
+FROM test_lead
+order by time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 0
+1970-01-01T00:00:00.000000002 "A" 20 10
+1970-01-01T00:00:00.000000003 "A" 30 20
+1970-01-01T00:00:00.000000004 "B" 40 0
+1970-01-01T00:00:00.000000005 "B" 50 40
+1970-01-01T00:00:00.000000006 "C" 60 0
+1970-01-01T00:00:00.000000007 "C" 70 60
+1970-01-01T00:00:00.000000008 "C" 80 70
+1970-01-01T00:00:00.000000009 "C" 90 80
+
+# lead函数中混合不同类型的排序列
+query 
+SELECT time, category, value, LEAD(value) OVER (ORDER BY time, category, value)
+FROM test_lead
+order by time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 20
+1970-01-01T00:00:00.000000002 "A" 20 30
+1970-01-01T00:00:00.000000003 "A" 30 40
+1970-01-01T00:00:00.000000004 "B" 40 50
+1970-01-01T00:00:00.000000005 "B" 50 60
+1970-01-01T00:00:00.000000006 "C" 60 70
+1970-01-01T00:00:00.000000007 "C" 70 80
+1970-01-01T00:00:00.000000008 "C" 80 90
+1970-01-01T00:00:00.000000009 "C" 90 NULL
+
+# lead函数中使用空字符串作为offset参数
+query 
+SELECT time, category, value, LEAD(value, '', 0) OVER (PARTITION BY category ORDER BY time)
+FROM test_lead
+order by time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 20
+1970-01-01T00:00:00.000000002 "A" 20 30
+1970-01-01T00:00:00.000000003 "A" 30 0
+1970-01-01T00:00:00.000000004 "B" 40 50
+1970-01-01T00:00:00.000000005 "B" 50 0
+1970-01-01T00:00:00.000000006 "C" 60 70
+1970-01-01T00:00:00.000000007 "C" 70 80
+1970-01-01T00:00:00.000000008 "C" 80 90
+1970-01-01T00:00:00.000000009 "C" 90 0
+
+# lead函数中使用NULL作为offset参数
+query 
+SELECT time, category, value, LEAD(value, NULL, 0) OVER (PARTITION BY category ORDER BY time)
+FROM test_lead
+order by time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 20
+1970-01-01T00:00:00.000000002 "A" 20 30
+1970-01-01T00:00:00.000000003 "A" 30 0
+1970-01-01T00:00:00.000000004 "B" 40 50
+1970-01-01T00:00:00.000000005 "B" 50 0
+1970-01-01T00:00:00.000000006 "C" 60 70
+1970-01-01T00:00:00.000000007 "C" 70 80
+1970-01-01T00:00:00.000000008 "C" 80 90
+1970-01-01T00:00:00.000000009 "C" 90 0
+
+# 错误输入: lead函数中default参数为布尔类型
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Datafusion: Internal error: Expects default value to have Int64 type\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT time, category, value, LEAD(value, 1, TRUE) OVER (PARTITION BY category ORDER BY time)
+FROM test_lead;
+
+# 错误输入: lead函数中default参数为浮点类型
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Datafusion: Internal error: Expects default value to have Int64 type\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT time, category, value, LEAD(value, 1, 3.14) OVER (PARTITION BY category ORDER BY time)
+FROM test_lead;
+
+# 错误输入: lead函数中default参数为日期类型
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Datafusion: Internal error: Expects default value to have Int64 type\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT time, category, value, LEAD(value, 1, '2024-08-07') OVER (PARTITION BY category ORDER BY time)
+FROM test_lead;
+
+# 错误输入: lead函数中default参数为字符串类型
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Datafusion: Internal error: Expects default value to have Int64 type\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT time, category, value, LEAD(value, 1, 'string_default') OVER (PARTITION BY category ORDER BY time)
+FROM test_lead;
+
+
+
+query 
+SELECT time, category, value, LEAD(value, 1, 12345) OVER (PARTITION BY category ORDER BY time)
+FROM test_lag
+order by time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 20
+1970-01-01T00:00:00.000000002 "A" 20 30
+1970-01-01T00:00:00.000000003 "A" 30 12345
+1970-01-01T00:00:00.000000004 "B" 40 50
+1970-01-01T00:00:00.000000005 "B" 50 12345
+1970-01-01T00:00:00.000000006 "C" 60 70
+1970-01-01T00:00:00.000000007 "C" 70 80
+1970-01-01T00:00:00.000000008 "C" 80 90
+1970-01-01T00:00:00.000000009 "C" 90 12345
+
+
+statement ok
+drop table if exists test_lead;

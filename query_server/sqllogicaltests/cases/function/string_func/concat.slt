@@ -1,0 +1,144 @@
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'concat\(\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tconcat\(Utf8, \.\.\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select concat();
+
+query 
+select concat('aaa');
+----
+"aaa"
+
+
+query 
+select concat('','');
+----
+""
+
+query 
+SELECT CONCAT('December 25, ', '2008');
+----
+"December 25, 2008"
+
+query 
+SELECT 'December 25, '||'2008';
+----
+"December 25, 2008"
+
+query 
+SELECT CONCAT('Thursday, ', CONCAT('December 25, ', '2008'));
+----
+"Thursday, December 25, 2008"
+
+query error Arrow error: Io error: Cannot collect flight data: Status \{ code: OutOfRange, message: "Error, message length too large: found 4294481 bytes, the limit is: 4194304 bytes", source: None, \}
+SELECT CONCAT(REPEAT('a', 4294305));
+
+
+#cnosdb仍然可以运行
+
+query error Arrow error: Io error: Cannot collect flight data: Status \{ code: OutOfRange, message: "Error, message length too large: found 8000169 bytes, the limit is: 4194304 bytes", source: None, \}
+select concat(REPEAT('a',8000000));
+
+
+#cnosdb仍然可以运行，Query took 63.187 seconds.
+
+
+
+query error Arrow error: Io error: Cannot collect flight data: Status \{ code: OutOfRange, message: "Error, message length too large: found 30000169 bytes, the limit is: 4194304 bytes", source: None, \}
+select concat(REPEAT('a',30000000));
+
+
+#Query took 233.916 seconds.
+
+
+#bigint
+query T
+select concat(f0) from func_tbl ORDER by func_tbl.time;
+----
+"111"
+"222"
+"333"
+"444"
+"222"
+"333"
+"444"
+"555"
+
+
+
+#bigint unsigned
+query T
+select concat(f0) from func_tb2 ORDER by func_tb2.time;
+----
+"1000"
+"1001"
+"1000"
+"1002"
+"1000"
+"1000"
+"1004"
+"1000"
+
+
+#boolean
+query T
+select concat(f2) from func_tb2 ORDER by func_tb2.time;
+----
+"1"
+"0"
+"1"
+"0"
+"1"
+"0"
+"1"
+"0"
+
+
+
+
+#DOUBLE
+query T
+select concat(f4_double) from func_tb3 ORDER by func_tb3.time;
+----
+"3.1415926"
+"3.1415926"
+"3.1415643926"
+"3.12415926"
+"3.1415926"
+"3.1413235926"
+"3.1415926"
+"3.145415926"
+"3.1415926"
+"34.1415926"
+
+
+
+
+query 
+select concat(f3) from func_tb2 ORDER by func_tb2.time;
+----
+"f3001"
+"f3001"
+"f3003"
+"f3001"
+"f3007"
+"f3001"
+"f3001"
+"f3001"
+
+#TIME;
+query T
+select concat(TIME) from func_tbl ORDER by func_tbl.time;
+----
+"1999-12-31T00:00:00"
+"1999-12-31T00:00:00.005"
+"1999-12-31T00:00:00.010"
+"1999-12-31T00:00:10.015"
+"1999-12-31T00:00:10.020"
+"1999-12-31T00:10:00.025"
+"1999-12-31T00:10:00.030"
+"1999-12-31T01:00:00.035"
+
+
+
+query 
+SELECT CONCAT('-', '1', NULL, '2', '3');
+----
+"-123"

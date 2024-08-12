@@ -1,0 +1,290 @@
+
+statement ok
+drop table if exists test_strings;
+
+statement ok
+CREATE TABLE IF NOT EXISTS test_strings (original_text STRING);
+
+statement ok
+INSERT test_strings(TIME,original_text)
+VALUES
+    (1,'Hello World'),
+    (2,'SQL REPLACE function example'),
+    (3,'Replace function in SQL is useful'),
+    (4,'Another test for SQL REPLACE'),
+    (5,''),
+    (6,'Some text without the search term'),
+    (7,'shdfhsWORLDworldwordWorldsWorldjfh'),
+    (8,'Spaces    and     tabs    '),
+    (9,'Edge cases like   triple spaces'),
+    (10,'Replace entire content'),
+    (11,'Replace content with NULL'),
+    (12,'sjdfwordworldsjf');
+
+
+query PTT
+SELECT REPLACE(original_text, 'World', 'Universe') AS replaced_text
+FROM test_strings;
+----
+"Hello Universe"
+"SQL REPLACE function example"
+"Replace function in SQL is useful"
+"Another test for SQL REPLACE"
+""
+"Some text without the search term"
+"shdfhsWORLDworldwordUniversesUniversejfh"
+"Spaces    and     tabs    "
+"Edge cases like   triple spaces"
+"Replace entire content"
+"Replace content with NULL"
+"sjdfwordworldsjf"
+
+query PTT
+SELECT REPLACE(original_text, 'SQL', 'MySQL') AS replaced_text
+FROM test_strings;
+----
+"Hello World"
+"MySQL REPLACE function example"
+"Replace function in MySQL is useful"
+"Another test for MySQL REPLACE"
+""
+"Some text without the search term"
+"shdfhsWORLDworldwordWorldsWorldjfh"
+"Spaces    and     tabs    "
+"Edge cases like   triple spaces"
+"Replace entire content"
+"Replace content with NULL"
+"sjdfwordworldsjf"
+
+query PTT
+SELECT REPLACE(original_text, 'test', 'sample') AS replaced_text
+FROM test_strings;
+----
+"Hello World"
+"SQL REPLACE function example"
+"Replace function in SQL is useful"
+"Another sample for SQL REPLACE"
+""
+"Some text without the search term"
+"shdfhsWORLDworldwordWorldsWorldjfh"
+"Spaces    and     tabs    "
+"Edge cases like   triple spaces"
+"Replace entire content"
+"Replace content with NULL"
+"sjdfwordworldsjf"
+
+query PTT
+SELECT REPLACE(original_text, '', 'replacement') AS replaced_text
+FROM test_strings;
+----
+"replacementHreplacementereplacementlreplacementlreplacementoreplacement replacementWreplacementoreplacementrreplacementlreplacementdreplacement"
+"replacementSreplacementQreplacementLreplacement replacementRreplacementEreplacementPreplacementLreplacementAreplacementCreplacementEreplacement replacementfreplacementureplacementnreplacementcreplacementtreplacementireplacementoreplacementnreplacement replacementereplacementxreplacementareplacementmreplacementpreplacementlreplacementereplacement"
+"replacementRreplacementereplacementpreplacementlreplacementareplacementcreplacementereplacement replacementfreplacementureplacementnreplacementcreplacementtreplacementireplacementoreplacementnreplacement replacementireplacementnreplacement replacementSreplacementQreplacementLreplacement replacementireplacementsreplacement replacementureplacementsreplacementereplacementfreplacementureplacementlreplacement"
+"replacementAreplacementnreplacementoreplacementtreplacementhreplacementereplacementrreplacement replacementtreplacementereplacementsreplacementtreplacement replacementfreplacementoreplacementrreplacement replacementSreplacementQreplacementLreplacement replacementRreplacementEreplacementPreplacementLreplacementAreplacementCreplacementEreplacement"
+"replacement"
+"replacementSreplacementoreplacementmreplacementereplacement replacementtreplacementereplacementxreplacementtreplacement replacementwreplacementireplacementtreplacementhreplacementoreplacementureplacementtreplacement replacementtreplacementhreplacementereplacement replacementsreplacementereplacementareplacementrreplacementcreplacementhreplacement replacementtreplacementereplacementrreplacementmreplacement"
+"replacementsreplacementhreplacementdreplacementfreplacementhreplacementsreplacementWreplacementOreplacementRreplacementLreplacementDreplacementwreplacementoreplacementrreplacementlreplacementdreplacementwreplacementoreplacementrreplacementdreplacementWreplacementoreplacementrreplacementlreplacementdreplacementsreplacementWreplacementoreplacementrreplacementlreplacementdreplacementjreplacementfreplacementhreplacement"
+"replacementSreplacementpreplacementareplacementcreplacementereplacementsreplacement replacement replacement replacement replacementareplacementnreplacementdreplacement replacement replacement replacement replacement replacementtreplacementareplacementbreplacementsreplacement replacement replacement replacement replacement"
+"replacementEreplacementdreplacementgreplacementereplacement replacementcreplacementareplacementsreplacementereplacementsreplacement replacementlreplacementireplacementkreplacementereplacement replacement replacement replacementtreplacementrreplacementireplacementpreplacementlreplacementereplacement replacementsreplacementpreplacementareplacementcreplacementereplacementsreplacement"
+"replacementRreplacementereplacementpreplacementlreplacementareplacementcreplacementereplacement replacementereplacementnreplacementtreplacementireplacementrreplacementereplacement replacementcreplacementoreplacementnreplacementtreplacementereplacementnreplacementtreplacement"
+"replacementRreplacementereplacementpreplacementlreplacementareplacementcreplacementereplacement replacementcreplacementoreplacementnreplacementtreplacementereplacementnreplacementtreplacement replacementwreplacementireplacementtreplacementhreplacement replacementNreplacementUreplacementLreplacementLreplacement"
+"replacementsreplacementjreplacementdreplacementfreplacementwreplacementoreplacementrreplacementdreplacementwreplacementoreplacementrreplacementlreplacementdreplacementsreplacementjreplacementfreplacement"
+
+query PTT
+SELECT REPLACE(original_text, 'nonexistent', 'replacement') AS replaced_text
+FROM test_strings;
+----
+"Hello World"
+"SQL REPLACE function example"
+"Replace function in SQL is useful"
+"Another test for SQL REPLACE"
+""
+"Some text without the search term"
+"shdfhsWORLDworldwordWorldsWorldjfh"
+"Spaces    and     tabs    "
+"Edge cases like   triple spaces"
+"Replace entire content"
+"Replace content with NULL"
+"sjdfwordworldsjf"
+
+query PT?
+SELECT TIME, 
+       CASE
+           WHEN original_text IS NULL THEN NULL
+           ELSE REPLACE(original_text, 'Replace', 'Substitute')
+       END AS replaced_text
+FROM test_strings;
+----
+1970-01-01T00:00:00.000000001 "Hello World"
+1970-01-01T00:00:00.000000002 "SQL REPLACE function example"
+1970-01-01T00:00:00.000000003 "Substitute function in SQL is useful"
+1970-01-01T00:00:00.000000004 "Another test for SQL REPLACE"
+1970-01-01T00:00:00.000000005 ""
+1970-01-01T00:00:00.000000006 "Some text without the search term"
+1970-01-01T00:00:00.000000007 "shdfhsWORLDworldwordWorldsWorldjfh"
+1970-01-01T00:00:00.000000008 "Spaces    and     tabs    "
+1970-01-01T00:00:00.000000009 "Edge cases like   triple spaces"
+1970-01-01T00:00:00.000000010 "Substitute entire content"
+1970-01-01T00:00:00.000000011 "Substitute content with NULL"
+1970-01-01T00:00:00.000000012 "sjdfwordworldsjf"
+
+query PTT
+SELECT REPLACE(REPLACE(original_text, '    ', ' '), '   ', ' ') AS replaced_text
+FROM test_strings;
+----
+"Hello World"
+"SQL REPLACE function example"
+"Replace function in SQL is useful"
+"Another test for SQL REPLACE"
+""
+"Some text without the search term"
+"shdfhsWORLDworldwordWorldsWorldjfh"
+"Spaces and  tabs "
+"Edge cases like triple spaces"
+"Replace entire content"
+"Replace content with NULL"
+"sjdfwordworldsjf"
+
+query PT
+SELECT TIME, REPLACE(original_text, original_text, 'Replaced Entire Content') AS replaced_text
+FROM test_strings
+WHERE original_text IS NOT NULL;
+----
+1970-01-01T00:00:00.000000001 "Replaced Entire Content"
+1970-01-01T00:00:00.000000002 "Replaced Entire Content"
+1970-01-01T00:00:00.000000003 "Replaced Entire Content"
+1970-01-01T00:00:00.000000004 "Replaced Entire Content"
+1970-01-01T00:00:00.000000005 "Replaced Entire Content"
+1970-01-01T00:00:00.000000006 "Replaced Entire Content"
+1970-01-01T00:00:00.000000007 "Replaced Entire Content"
+1970-01-01T00:00:00.000000008 "Replaced Entire Content"
+1970-01-01T00:00:00.000000009 "Replaced Entire Content"
+1970-01-01T00:00:00.000000010 "Replaced Entire Content"
+1970-01-01T00:00:00.000000011 "Replaced Entire Content"
+1970-01-01T00:00:00.000000012 "Replaced Entire Content"
+
+query PT
+SELECT TIME, REPLACE(original_text, 'Replace content', NULL) AS replaced_text
+FROM test_strings;
+----
+1970-01-01T00:00:00.000000001 "NULL"
+1970-01-01T00:00:00.000000002 "NULL"
+1970-01-01T00:00:00.000000003 "NULL"
+1970-01-01T00:00:00.000000004 "NULL"
+1970-01-01T00:00:00.000000005 "NULL"
+1970-01-01T00:00:00.000000006 "NULL"
+1970-01-01T00:00:00.000000007 "NULL"
+1970-01-01T00:00:00.000000008 "NULL"
+1970-01-01T00:00:00.000000009 "NULL"
+1970-01-01T00:00:00.000000010 "NULL"
+1970-01-01T00:00:00.000000011 "NULL"
+1970-01-01T00:00:00.000000012 "NULL"
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'replace\(\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\treplace\(Utf8, Utf8, Utf8\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select replace();
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'replace\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\treplace\(Utf8, Utf8, Utf8\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select replace('ssfsdfe');
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'replace\(Utf8, Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\treplace\(Utf8, Utf8, Utf8\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select replace('sdhfjsd','s');
+
+query 
+select replace('saadhas','s','dd');
+----
+"ddaadhadd"
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'replace\(Utf8, Utf8, Utf8, Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\treplace\(Utf8, Utf8, Utf8\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select replace('sseedefd','s','d','ssfdf');
+
+statement ok
+drop table if exists func_test;
+
+statement ok
+CREATE table if not exists func_test(f0_bigint bigint,f1_bigint_unsign bigint unsigned,f2_boolean boolean,f3_string STRING,f4_double DOUBLE);
+
+statement ok
+INSERT func_test(TIME,f0_bigint,f1_bigint_unsign,f2_boolean,f3_string,f4_double)
+values
+(1,111,238989,true,'string000',3.138247239),
+(2,4839478,29843279,false,'string222',3.149843059483);
+
+
+query 
+select replace('sdsfdsdfsdfd','y','d');
+----
+"sdsfdsdfsdfd"
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"replace\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select replace(f0_bigint,'a','s') from func_test;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"replace\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select replace(f1_bigint_unsign,'1','3') from func_test;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Schema error: No field named f2_boolean\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select replace(f2_boolean,'1','0');
+
+query 
+select replace(f3_string,'s','g') from func_test;
+----
+"gtring000"
+"gtring222"
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"replace\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select replace(f4_double,'3','4') from func_test;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"replace\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select replace(TIME,'1','2') from func_test;
+
+query 
+select replace('sfsdffsd','s',1);
+----
+"1f1dff1d"
+
+
+query 
+select replace(f3_string,0,9) from func_test;
+----
+"string999"
+"string222"
+
+
+query 
+select replace(f3_string,'s',f0_bigint) from func_test;
+----
+"111tring000"
+"4839478tring222"
+
+query 
+select replace(f3_string,0,f1_bigint_unsign) from func_test;
+----
+"string238989238989238989"
+"string222"
+
+query 
+select replace(f3_string,f3_string,f2_boolean) from func_test;
+----
+"1"
+"0"
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Schema error: No field named i\. Valid fields are func_test\.time, func_test\.f0_bigint, func_test\.f1_bigint_unsign, func_test\.f2_boolean, func_test\.f3_string, func_test\.f4_double\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select replace(f3_string,i,f3_string) from func_test;
+
+query 
+select replace(f3_string,'i',f3_string) from func_test;
+----
+"strstring000ng000"
+"strstring222ng222"
+
+query 
+select replace(f3_string,'s',f4_double) from func_test;
+----
+"3.138247239tring000"
+"3.149843059483tring222"
+
+query 
+select replace(f3_string,'s',TIME) from func_test;
+----
+"1970-01-01T00:00:00.000000001tring000"
+"1970-01-01T00:00:00.000000002tring222"
