@@ -1,0 +1,116 @@
+name: Build package and push
+
+permissions:
+  contents: write
+
+on:
+  push:
+    tags:
+      - v[0-9]+.*
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'tag(with "v")'
+        required: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        target:
+          - aarch64-unknown-linux-gnu
+          - x86_64-unknown-linux-gnu
+    runs-on: ubuntu-latest
+    steps:
+    - name: Get tag
+      id: get-tag
+      run: |
+        if [[ "${{ github.event_name }}" = "workflow_dispatch" ]]; then
+          echo "TAG=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+        else
+          echo "TAG=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+        fi
+    - name: Set up cargo-zigbuild
+      shell: bash
+      run: |
+        curl -o zig.tar.xz -sL https://ziglang.org/download/0.11.0/zig-linux-x86_64-0.11.0.tar.xz
+        sudo tar -xf zig.tar.xz -C /opt
+        echo "/opt/zig-linux-x86_64-0.11.0" >> $GITHUB_PATH
+        cargo install cargo-zigbuild
+    - uses: actions/checkout@v3
+    - name: Install dependencies
+      shell: bash
+      run: |
+        TARGETPLATFORM="linux/amd64" bash ./.github/tools/install_dependencies.sh
+    - name: Install build tools
+      shell: bash
+      run: |
+        sudo gem install fpm
+    - name: Compiler
+      run: |
+        rustup target add ${{ matrix.target }}
+        cargo zigbuild --workspace --bins --release --target ${{ matrix.target }}.2.17
+    - name: Package
+      run: |
+        bash -x ./packages/build_package.sh -n cnosdb -v ${{ steps.get-tag.outputs.TAG }} -b release -t ${{ matrix.target }}
+        bash -x ./packages/build_package.sh -n cnosdb-meta -v ${{ steps.get-tag.outputs.TAG }} -b release -t ${{ matrix.target }}
+    - name: Setup Ossutil
+      uses: manyuanrong/setup-ossutil@v3.0
+      with:
+        endpoint: "oss-cn-beijing.aliyuncs.com"
+        access-key-id: ${{ secrets.PACKAGING_OSS_ACCESS_KEY }}
+        access-key-secret: ${{ secrets.PACKAGING_OSS_ACCESS_KEY_SECRET }}
+    - name: Upload to Oss
+      shell: bash
+      run: |
+        touch uploading
+        ossutil cp -f ./uploading oss://tk3stzc21/uploading
+        ossutil cp -rf ./ oss://tk3stzc21/temp/ --include "*.rpm" --include "*.deb"
+        ossutil rm -f oss://tk3stzc21/uploading
+    - name: Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          *.deb
+          *.rpm
+        tag_name: ${{ steps.get-tag.outputs.TAG }}
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+    - name: Get tag
+      id: get-tag
+      shell: bash
+      run: |
+        if [[ "${{ github.event_name }}" = "workflow_dispatch" ]]; then
+          echo "TAG=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+        else
+          echo "TAG=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+        fi
+    - uses: actions/checkout@v3
+    - name: Install Dependencies
+      shell: bash
+      run: |
+        TARGETPLATFORM="windows/amd64" bash ./.github/tools/install_dependencies.sh
+    - name: Compiler
+      run: cargo build --workspace --bins --release --target x86_64-pc-windows-msvc
+    - name: Package
+      run: |
+        New-Item -ItemType Directory -Path .\windows
+        Copy-Item -Path .\target\x86_64-pc-windows-msvc\release\cnosdb.exe -Destination .\windows\cnosdb.exe
+        Copy-Item -Path .\target\x86_64-pc-windows-msvc\release\cnosdb-meta.exe -Destination .\windows\cnosdb-meta.exe
+        Copy-Item -Path .\target\x86_64-pc-windows-msvc\release\cnosdb-cli.exe -Destination .\windows\cnosdb-cli.exe
+        Copy-Item -Path .\config\config.toml -Destination .\windows\cnosdb.conf
+        Copy-Item -Path .\meta\config\config.toml -Destination .\windows\cnosdb-meta.conf
+        $tag = "${{ steps.get-tag.outputs.TAG }}"
+        $version = $tag.substring(1)
+        Compress-Archive -Path .\windows\* -Destination .\cnosdb-community-${version}-windows_x86_64.zip
+    - name: Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          *windows_x86_64.zip
+        tag_name: ${{ steps.get-tag.outputs.TAG }}

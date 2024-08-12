@@ -1,0 +1,76 @@
+name: community-latest docker build and push
+
+on:
+  schedule:
+    - cron: "00 10 * * 1-5"
+  workflow_dispatch:
+
+jobs:
+  docker:
+    strategy:
+      matrix:
+        image:
+          - cnosdb
+          - cnosdb-meta
+    runs-on: ubuntu-latest
+    if: github.repository_owner == 'cnosdb' && github.repository == 'cnosdb/cnosdb' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Get current date
+        id: date
+        run: echo "today=$(TZ=UTC-8 date +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+      - name: Set up cargo-zigbuild
+        shell: bash
+        run: |
+          curl -o zig.tar.xz -sL https://ziglang.org/download/0.11.0/zig-linux-x86_64-0.11.0.tar.xz
+          sudo tar -xf zig.tar.xz -C /opt
+          echo "/opt/zig-linux-x86_64-0.11.0" >> $GITHUB_PATH
+          cargo install cargo-zigbuild
+      - uses: actions/checkout@v3
+      - name: Install dependencies
+        shell: bash
+        run: |
+          TARGETPLATFORM="linux/amd64" bash ./.github/tools/install_dependencies.sh
+      -
+        name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      -
+        name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      -
+        name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      -
+        name: Compiler
+        run: |
+          rustup target add aarch64-unknown-linux-gnu
+          mkdir -p linux/amd64 linux/arm64
+          if [[ "${{ matrix.image }}" = "cnosdb" ]]; then
+            cargo zigbuild --package main --package client --release --target aarch64-unknown-linux-gnu
+            cargo zigbuild --package main --package client --release --target x86_64-unknown-linux-gnu
+            mv ./target/aarch64-unknown-linux-gnu/release/cnosdb ./linux/arm64/cnosdb
+            mv ./target/aarch64-unknown-linux-gnu/release/cnosdb-cli ./linux/arm64/cnosdb-cli
+            mv ./target/x86_64-unknown-linux-gnu/release/cnosdb ./linux/amd64/cnosdb
+            mv ./target/x86_64-unknown-linux-gnu/release/cnosdb-cli ./linux/amd64/cnosdb-cli
+          else
+            cargo zigbuild --package meta --release --target aarch64-unknown-linux-gnu
+            cargo zigbuild --package meta --release --target x86_64-unknown-linux-gnu
+            mv ./target/aarch64-unknown-linux-gnu/release/cnosdb-meta ./linux/arm64/cnosdb-meta
+            mv ./target/x86_64-unknown-linux-gnu/release/cnosdb-meta ./linux/amd64/cnosdb-meta
+          fi
+      -
+        name: Build and push
+        run: |
+          if [[ "${{ matrix.image }}" = "cnosdb" ]]; then
+            docker buildx build -f docker/Dockerfile --platform linux/amd64,linux/arm64 \
+              -t cnosdb/${{matrix.image}}:community-latest \
+              -t cnosdb/${{matrix.image}}:community-${{ steps.date.outputs.today }} \
+              --build-arg="git_hash=${{ github.sha }}" . --push
+          else
+            docker buildx build -f docker/Dockerfile_meta --platform linux/amd64,linux/arm64 \
+              -t cnosdb/${{matrix.image}}:community-latest \
+              -t cnosdb/${{matrix.image}}:community-${{ steps.date.outputs.today }} \
+              --build-arg="git_hash=${{ github.sha }}" . --push
+          fi

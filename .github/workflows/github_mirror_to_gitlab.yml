@@ -1,0 +1,25 @@
+name: Mirror and run GitLab CI
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+    - name: Mirrror + trigger CI
+      uses: lutengda/gitlab-mirror-and-ci-action@master
+      with:
+        args: "http://43.247.178.238:18280/root/cnosdb"
+      env:
+        FOLLOW_TAGS: "false"
+        FORCE_PUSH: "true"
+        LOCAL_GITHUB_REF: ${{ github.ref }}
+        GITLAB_HOSTNAME: "43.247.178.238:18280"
+        GITLAB_USERNAME: "root"
+        GITLAB_PASSWORD: ${{ secrets.GITLAB_PASSWORD }}
+        GITLAB_PROJECT_ID: "5"
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
