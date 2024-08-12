@@ -3,7 +3,7 @@
 host = "localhost"
 cluster_name = 'cluster_xxx'
 store_metrics = true
-pre_creat_bucket = false
+pre_create_bucket = false
 
 [deployment]
 # mode = 'query_tskv'
@@ -75,6 +75,9 @@ max_datablock_size = "100KiB"
 
 ## index cache capacity in every vnode
 index_cache_capacity = 100000
+
+## reserve space for data stroage
+reserve_space = '0G'
 
 [wal]
 
