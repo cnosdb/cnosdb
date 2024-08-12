@@ -1,0 +1,46 @@
+include ./setup.slt
+
+query 
+select round(log(0.000000000001), 15);
+----
+-11.999999999999998
+
+query 
+select log(1);
+----
+0.0
+
+query 
+select log(-1);
+----
+NaN
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'log\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tlog\(Float32\)\\n\\tlog\(Float64\)\\n\\tlog\(Float32, Float32\)\\n\\tlog\(Float64, Float64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select log(subquery.d_string) from (select * from extreme_data_tbl order by d_bigint desc ) as subquery;
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'log\(Timestamp\(Nanosecond, None\)\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tlog\(Float32\)\\n\\tlog\(Float64\)\\n\\tlog\(Float32, Float32\)\\n\\tlog\(Float64, Float64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select log(subquery.TIME) from (select * from extreme_data_tbl order by d_bigint desc ) as subquery;
+
+
+query R
+select round(log(subquery.d_bigint), 15) from (select * from extreme_data_tbl order by d_bigint desc ) as subquery;
+----
+6.0
+0.30102998
+0.0
+-inf
+NaN
+NaN
+NaN
+
+query R
+select round(log(subquery.d_double), 15) from (select * from extreme_data_tbl order by d_bigint desc ) as subquery;
+----
+0.497149872694134
+NaN
+NaN
+-5.999999999999999
+7.960992770513111
+5.944148973602281
+-0.280221388086445

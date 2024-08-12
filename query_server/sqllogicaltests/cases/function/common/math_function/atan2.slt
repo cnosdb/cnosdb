@@ -1,0 +1,59 @@
+#test atan2#domain x!=0
+include ./setup.slt
+
+query R
+select atan2(subquery.value, subquery.d_bigint) from (select * from extreme_data_tbl order by TIME asc ) as subquery;
+----
+1.5707964
+1.1071488
+1.8925469
+1.1071488
+1.9513026
+6.0e-6
+3.1415856
+
+query R
+select round(atan2(subquery.d_bigint, subquery.d_double), 15) from (select * from extreme_data_tbl order by TIME asc ) as subquery;
+----
+0.0
+1.570797326794897
+-1.0939746e-8
+3.14159257213202
+-2.274474238e-6
+1.570793185202243
+-1.570795802254897
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'atan2\(Int64, Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tatan2\(Float32, Float32\)\\n\\tatan2\(Float64, Float64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select atan2(subquery.d_bigint, subquery.d_string) from (select * from extreme_data_tbl order by TIME asc ) as subquery;
+
+query 
+select atan2(0,1);
+----
+0.0
+
+query 
+select atan2(0, 0);
+----
+0.0
+
+query 
+select round(atan2(0.000000000001, 0.000000000001), 15);
+----
+0.785398163397448
+
+query 
+select atan2(10, 3);
+----
+1.2793396
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'atan2\(Utf8, Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tatan2\(Float32, Float32\)\\n\\tatan2\(Float64, Float64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select atan2('a', 'b');
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Schema error: No field named c\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select atan2(-1, c);
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Schema error: No field named a\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select atan2(a, -1);
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Schema error: No field named a\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select atan2(a, b);

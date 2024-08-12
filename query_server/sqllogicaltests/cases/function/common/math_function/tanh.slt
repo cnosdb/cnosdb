@@ -1,0 +1,26 @@
+include ./setup.slt
+
+query R
+select round(tanh(subquery.d_double), 15) from (select * from extreme_data_tbl order by value asc) as subquery;
+----
+1.0e-6
+-1.0e-6
+1.0
+-1.0
+1.0
+0.99627207622075
+0.481196389600453
+
+query R
+select round(tanh(subquery.d_bigint), 15) from (select * from extreme_data_tbl) as subquery;
+----
+0.0
+0.761594155955765
+-0.761594155955765
+0.964027580075817
+-0.964027580075817
+1.0
+-1.0
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'tanh\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\ttanh\(Float64/Float32\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select tanh(subquery.d_string) from (select * from extreme_data_tbl) as subquery;

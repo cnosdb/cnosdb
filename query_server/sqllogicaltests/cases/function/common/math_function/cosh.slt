@@ -1,0 +1,48 @@
+#test cosh#R
+
+include ./setup.slt
+
+query R
+select round(cosh(subquery.d_bigint), 15) from (select * from extreme_data_tbl order by TIME asc ) as subquery;
+----
+1.0
+1.543080634815244
+1.543080634815244
+3.762195691083632
+3.762195691083632
+inf
+inf
+
+query R
+select round(cosh(subquery.d_double), 15) from (select * from extreme_data_tbl order by TIME asc ) as subquery;
+----
+1.0000000000005
+1.0000000000005
+inf
+inf
+inf
+11.591953275521519
+1.140754479281271
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'cosh\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tcosh\(Float64/Float32\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select cosh(subquery.d_string) from (select * from extreme_data_tbl order by TIME asc ) as subquery;
+
+
+
+query 
+select cosh(0.000000000001);
+----
+1.0
+
+query 
+select round(cosh(pi()), 15);
+----
+11.591953275521519
+
+query 
+select round(cosh(-1), 15);
+----
+1.543080634815244
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'cosh\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tcosh\(Float64/Float32\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select cosh('abc');

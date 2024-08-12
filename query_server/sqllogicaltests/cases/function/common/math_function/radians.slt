@@ -1,0 +1,34 @@
+include ./setup.slt
+
+
+query 
+select radians(0);
+----
+0.0
+
+query 
+select round(radians(-1), 15);
+----
+-0.017453292519943
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'radians\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tradians\(Float64/Float32\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select radians('a');
+
+query R
+select round(radians(subquery.d_double), 15) from (select d_double from extreme_data_tbl) as subquery;
+----
+1.7453293e-8
+-1.7453293e-8
+1595402.0218786353
+-428523.6851180446
+15347.100644982487
+0.054831135561608
+0.009154950058411
+
+query 
+select round(radians(pi()), 15);
+----
+0.054831135561608
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'radians\(Timestamp\(Nanosecond, None\)\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tradians\(Float64/Float32\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select radians(subquery.TIME) from (select TIME from extreme_data_tbl) as subquery;

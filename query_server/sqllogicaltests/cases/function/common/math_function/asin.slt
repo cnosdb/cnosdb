@@ -1,0 +1,53 @@
+#test asin#domain: [-1,1]
+include ./setup.slt
+
+query R
+select round(asin(subquery.d_bigint), 15) from (select * from extreme_data_tbl order by TIME asc ) as subquery;
+----
+0.0
+1.570796326794897
+-1.570796326794897
+NaN
+NaN
+NaN
+NaN
+
+query R
+select round(asin(subquery.d_double), 15) from (select * from extreme_data_tbl order by TIME asc ) as subquery;
+----
+1.0e-6
+-1.0e-6
+NaN
+NaN
+NaN
+NaN
+0.552174727519469
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'asin\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tasin\(Float64/Float32\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select round(asin(subquery.d_string), 15) from (select * from extreme_data_tbl order by TIME asc ) as subquery;
+
+
+query 
+select round(asin(0.5), 15);
+----
+0.523598775598299
+
+query 
+select asin(0);
+----
+0.0
+
+query 
+select round(asin(-1), 15);
+----
+-1.570796326794897
+
+query 
+select asin(-2);
+----
+NaN
+
+query 
+select asin(0.000000000001);
+----
+1.0e-12

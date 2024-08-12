@@ -1,0 +1,55 @@
+#test acosh#domain:1,+∞
+
+include ./setup.slt
+
+query R
+select round(acosh(subquery.d_bigint), 15) from (select * from extreme_data_tbl order by TIME asc ) as subquery;
+----
+NaN
+0.0
+NaN
+1.316957896924817
+NaN
+14.508657738523969
+NaN
+
+query R
+select round(acosh(subquery.d_double), 15) from (select * from extreme_data_tbl order by TIME asc ) as subquery;
+----
+NaN
+NaN
+19.024010459376804
+NaN
+14.380055997712091
+1.811526272460853
+NaN
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'acosh\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tacosh\(Float64/Float32\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select round(acosh(subquery.d_string), 15) from (select * from extreme_data_tbl order by TIME asc ) as subquery;
+
+query 
+select round(acosh(10000000000000000000000000000001), 15);
+----
+72.07328506337537
+
+query 
+select round(acosh(0.000000000001), 15);
+----
+NaN
+
+query 
+select round(acosh(-1), 15);
+----
+NaN
+
+
+query 
+select round(acosh(2), 15);
+----
+1.316957896924817
+
+
+query 
+select round(acosh(random()), 15);
+----
+NaN

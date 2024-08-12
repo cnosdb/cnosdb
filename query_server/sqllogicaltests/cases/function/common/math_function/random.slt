@@ -1,0 +1,29 @@
+include ./setup.slt
+
+
+statement ok
+create table if not exists test_random (val double);
+
+# 插入一行数据，使用 random() 函数
+statement ok
+insert into test_random (val) VALUES (random()), (random()), (random()), (random()), (random()), (random()), (random()), (random()), (random()), (random());
+
+query I
+select case 
+    when val >= 0.0 and val < 1.0 then 1
+    else 0
+end 
+from test_random;
+----
+1
+
+# 清理测试数据
+statement ok
+drop TABLE test_random;
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'random\(Int64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\trandom\(\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select random(1);
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'random\(Int64, Int64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\trandom\(\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select random(1, 2);

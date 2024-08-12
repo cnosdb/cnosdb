@@ -1,0 +1,25 @@
+#test trunc#
+#include ./setup.slt
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'trunc\(Float64, Int64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\ttrunc\(Float64/Float32\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select trunc(subquery.d_double, 2) from (select * from extreme_data_tbl order by value asc) as subquery;
+
+query R
+select trunc(pi());
+----
+3.0
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'trunc\(Float64, Int64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\ttrunc\(Float64/Float32\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select trunc(pi(), 5);
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'trunc\(Float64, Int64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\ttrunc\(Float64/Float32\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select trunc(3.1415926, 5);
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'trunc\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\ttrunc\(Float64/Float32\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select trunc('a');
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'trunc\(Float64, Int64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\ttrunc\(Float64/Float32\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select trunc(subquery.d_double, 1) from (select * from extreme_data_tbl) as subquery;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'trunc\(Utf8, Int64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\ttrunc\(Float64/Float32\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select trunc(subquery.d_string, 1) from (select * from extreme_data_tbl) as subquery;
