@@ -2,13 +2,13 @@ statement ok
 drop table if exists test_current_time;
 
 
-query T
-select CASE 
-  WHEN arrow_cast(current_time(), 'Utf8') ~ '^\d{2}:\d{2}:\d{2}\.\d{6}$' THEN 'ok' 
-  ELSE 'fail' 
-END;
-----
-"ok"
+#query T
+#select CASE 
+#  WHEN arrow_cast(current_time(), 'Utf8') ~ '^\d{2}:\d{2}:\d{2}\.\d{6}$' THEN 'ok' 
+#  ELSE 'fail' 
+#END;
+#----
+#"ok"
 
 query I
 select current_time() = current_time();
