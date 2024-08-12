@@ -1,4 +1,4 @@
-# Test the CONCAT_WS function
+include ./../setup.slt
 
 #Test case 1: Basic concatenation with a comma separator
 query 

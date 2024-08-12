@@ -1,4 +1,4 @@
-# left function tests
+include ./../setup.slt
 
 # Test LEFT with regular string
 query I

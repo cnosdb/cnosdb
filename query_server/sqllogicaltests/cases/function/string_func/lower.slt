@@ -1,3 +1,4 @@
+include ./../setup.slt
 
 statement ok
 CREATE TABLE func_tb (input STRING, expected STRING);

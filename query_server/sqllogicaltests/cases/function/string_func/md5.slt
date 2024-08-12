@@ -1,10 +1,13 @@
-# 测试 MD5 函数
-# 测试用例：将字符串转换为 MD5 哈希值
+include ./../setup.slt
 
-statement error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Meta: Table func_tb already exists\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "Wed, 07 Aug 2024 03:49:21 GMT", "content\-length": "0"\} \}, source: None \}
+statement ok
+drop table if exists func_tb;
+
+
+statement ok
 CREATE TABLE func_tb (input STRING, expected_md5 STRING);
 
-statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Semantic error: Insert column 'expected_md5' does not exist in target table, expect time,input,expected_length", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "Wed, 07 Aug 2024 03:49:21 GMT", "content\-length": "0"\} \}, source: None \}
+statement ok
 INSERT INTO func_tb (TIME,input, expected_md5) VALUES 
     (1,'', 'd41d8cd98f00b204e9800998ecf8427e'),
     (2,'a', '0cc175b9c0f1b6a831c399e269772661'),
@@ -39,7 +42,7 @@ SELECT input, MD5(input) AS result FROM func_tb;
 
 
 statement ok
-DROP TABLE func_tb;
+DROP TABLE if EXISTS func_tb;
 
 
 query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'md5\(\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tmd5\(Utf8/LargeUtf8/Binary/LargeBinary\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}

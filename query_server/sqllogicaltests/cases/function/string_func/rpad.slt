@@ -1,4 +1,4 @@
-include ./../../setup.slt
+include ./../setup.slt
 
 
 # rpad function tests

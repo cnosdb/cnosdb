@@ -1,3 +1,5 @@
+include ./../setup.slt
+
 query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'repeat\(\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\trepeat\(Utf8, Int64\)\\n\\trepeat\(LargeUtf8, Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
 select REPEAT();
 

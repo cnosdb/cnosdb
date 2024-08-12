@@ -1,5 +1,4 @@
-# 测试 OCTET_LENGTH 函数
-# 测试用例：返回字符串的长度（以字节为单位）
+include ./../setup.slt
 
 statement ok
 drop table if exists func_tb;

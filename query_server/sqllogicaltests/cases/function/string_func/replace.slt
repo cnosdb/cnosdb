@@ -1,3 +1,4 @@
+include ./../setup.slt
 
 statement ok
 drop table if exists test_strings;

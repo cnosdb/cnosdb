@@ -1,3 +1,6 @@
+include ./../setup.slt
+
+
 # 创建测试表
 statement ok
 drop table if exists test_split_part;

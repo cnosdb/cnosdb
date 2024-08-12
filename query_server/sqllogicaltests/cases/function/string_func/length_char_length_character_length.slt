@@ -1,3 +1,5 @@
+include ./../setup.slt
+
 query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Invalid function 'len'\.\\nDid you mean 'ln'\?", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
 select len('sss');
 
