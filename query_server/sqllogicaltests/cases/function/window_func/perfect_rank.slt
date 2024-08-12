@@ -1,4 +1,7 @@
 statement ok
+alter database public set ttl 'INF';
+
+statement ok
 drop table if exists test_percent_rank;
 
 # 创建测试表
