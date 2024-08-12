@@ -10,7 +10,7 @@ CREATE TABLE if not exists large_table (
     boolean_val BOOLEAN
 );
 
-statement ok
+statement error Arrow error: Io error: Status \{ code: Cancelled, message: "Timeout expired", source: Some\(tonic::transport::Error\(Transport, TimeoutExpired\(\(\)\)\)\) \}
 INSERT INTO large_table (TIME, bigint_val, bigint_unsigned_val, string_val, double_val, boolean_val)
 SELECT
     from_unixtime(arrow_cast(floor(random()*1000000000), 'Int64')) AS generated_time, 

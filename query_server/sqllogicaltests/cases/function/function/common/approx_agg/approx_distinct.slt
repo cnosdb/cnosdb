@@ -87,12 +87,12 @@ select approx_distinct(s_val) from tbl_with_nulls where val > 2;
 #query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: This feature is not implemented: Support for 'approx_distinct' for data type Float64 is not implemented", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
 #select approx_distinct(double_val) from large_table;
 
-#query 
+#query
 #select approx_distinct(bigint_val) from large_table;
 #----
 #15575
 #
-#query 
+#query
 #select approx_distinct(bigint_unsigned_val) from large_table;
 #----
 #15422

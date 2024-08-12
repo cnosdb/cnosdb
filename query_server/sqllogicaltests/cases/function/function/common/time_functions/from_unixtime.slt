@@ -30,6 +30,7 @@ select from_unixtime(int_value) from test_from_unixtime order by id desc;
 2023-01-01T02:03:20
 2023-01-01T01:46:40
 
+
 # （双精度浮点数输入）
 query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'from_unixtime\(Float64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tfrom_unixtime\(Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
 select from_unixtime(double_value) from test_from_unixtime;
