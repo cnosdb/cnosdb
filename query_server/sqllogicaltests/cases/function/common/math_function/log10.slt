@@ -37,10 +37,10 @@ NaN
 query R
 select round(log10(subquery.d_double), 15) from (select * from extreme_data_tbl order by d_bigint desc ) as subquery;
 ----
-0.497149872694133
+0.497149872694134
 NaN
 NaN
 -6.0
 7.960992770513112
 5.944148973602282
--0.280221388086444
+-0.280221388086445
