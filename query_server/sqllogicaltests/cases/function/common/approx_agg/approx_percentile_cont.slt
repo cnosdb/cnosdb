@@ -17,19 +17,19 @@ INSERT INTO air (TIME, id, temperature) VALUES
 ('1999-12-31 00:00:00.004', 5, 64.7);
 
 
-query I
+query R
 SELECT approx_percentile_cont(temperature, 0.1, 100) AS approx_10th_percentile FROM air;
 ----
 64.5
 
 
-query I
+query R
 SELECT approx_percentile_cont(temperature, 0.5, 100) AS approx_median FROM air;
 ----
 64.9
 
 
-query I
+query R
 SELECT approx_percentile_cont(temperature, 0.9, 100) AS approx_90th_percentile FROM air;
 ----
 65.1
@@ -59,13 +59,13 @@ query error Arrow error: Io error: Status \{ code: Cancelled, message: "h2 proto
 SELECT approx_percentile_cont(temperature, 0.5, 50) AS approx_median FROM air;
 
 
-query 
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Error during planning: Percentile value must be between 0\.0 and 1\.0 inclusive, 1\.1 is invalid", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
 SELECT approx_percentile_cont(temperature, 1.1, 100) AS approx_invalid_percentile FROM air;
 
 
-query 
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Error during planning: Percentile value must be between 0\.0 and 1\.0 inclusive, \-0\.1 is invalid", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
 SELECT approx_percentile_cont(temperature, -0.1, 100) AS approx_invalid_percentile FROM air;
 
 
-query 
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: This feature is not implemented: Tdigest max_size value for 'APPROX_PERCENTILE_CONT' must be UInt > 0 literal \(got data type Int64\)\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
 SELECT approx_percentile_cont(temperature, 0.5, -10) AS approx_invalid_centroids FROM air;
