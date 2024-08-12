@@ -24,7 +24,7 @@ select from_unixtime(string_value) from test_from_unixtime;
 
 # 验证 from_unixtime 函数的基本行为（整数输入）
 query I
-select from_unixtime(int_value) from test_from_unixtime;
+select from_unixtime(int_value) from test_from_unixtime order by id desc;
 ----
 2023-01-01T02:20:00
 2023-01-01T02:03:20
