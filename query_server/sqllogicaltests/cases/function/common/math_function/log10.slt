@@ -37,7 +37,7 @@ NaN
 query R
 select log10(subquery.d_double) from (select * from extreme_data_tbl order by d_bigint desc ) as subquery;
 ----
-0.49714987269413385
+0.4971498726941338
 NaN
 NaN
 -6.0
