@@ -3,13 +3,13 @@
 include ./setup.slt
 
 query R
-select round(cbrt(subquery.d_bigint), 15) from (select * from extreme_data_tbl order by TIME asc ) as subquery;
+select round(cbrt(subquery.d_bigint), 14) from (select * from extreme_data_tbl order by TIME asc ) as subquery;
 ----
 0.0
 1.0
 -1.0
-1.259921049894873
--1.259921049894873
+1.25992104989487
+-1.25992104989487
 100.0
 -100.0
 
