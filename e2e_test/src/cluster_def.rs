@@ -100,7 +100,8 @@ impl MetaNodeDefinition {
         config.id = self.id as u64;
         let (host, port) = self.to_host_port();
         config.host = host;
-        config.port = port
+        config.port = port;
+        config.system_database_replica = 1;
     }
 }
 
