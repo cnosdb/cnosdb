@@ -226,11 +226,13 @@ impl CompactingBlockMetaGroup {
                 metrics.merge_end();
                 let merged_blks = record_batches
                     .into_iter()
-                    .map(|rb| CompactingBlock::Decoded {
-                        series_id: self.series_id,
-                        series_key: self.chunk.series_key().clone(),
-                        table_schema: table_schema.clone(),
-                        record_batch: rb,
+                    .map(|rb| {
+                        CompactingBlock::decoded(
+                            self.series_id,
+                            self.chunk.series_key().clone(),
+                            table_schema.clone(),
+                            rb,
+                        )
                     })
                     .collect::<Vec<_>>();
                 return Ok(merged_blks);
@@ -272,11 +274,13 @@ impl CompactingBlockMetaGroup {
             };
             let merged_blks = record_batches
                 .into_iter()
-                .map(|rb| CompactingBlock::Decoded {
-                    series_id: self.series_id,
-                    series_key: self.chunk.series_key().clone(),
-                    table_schema: table_schema.clone(),
-                    record_batch: rb,
+                .map(|rb| {
+                    CompactingBlock::decoded(
+                        self.series_id,
+                        self.chunk.series_key().clone(),
+                        table_schema.clone(),
+                        rb,
+                    )
                 })
                 .collect::<Vec<_>>();
             Ok(merged_blks)
@@ -290,10 +294,9 @@ impl CompactingBlockMetaGroup {
         let (adapted_record_batches, target_schema) =
             Self::schema_adapt_record_batches(record_batches)?;
         let merge_streams = adapted_record_batches
-            .iter()
+            .into_iter()
             .map(|rb| {
-                let stream =
-                    SchemableMemoryBatchReaderStream::new(target_schema.clone(), vec![rb.clone()]);
+                let stream = SchemableMemoryBatchReaderStream::new(target_schema.clone(), vec![rb]);
                 Ok(Box::pin(stream) as SendableSchemableTskvRecordBatchStream)
             })
             .collect::<TskvResult<Vec<_>>>()?;
@@ -342,6 +345,9 @@ impl CompactingBlockMetaGroup {
                 }
                 .build()
             })?;
+        if let Some(e) = potential_error {
+            return Err(e);
+        }
         let mut adapted_record_batches = Vec::with_capacity(record_batches.len());
         for record_batch in record_batches {
             let adapted_record_batch =
@@ -427,6 +433,36 @@ pub enum CompactingBlock {
 }
 
 impl CompactingBlock {
+    pub fn decoded(
+        series_id: SeriesId,
+        series_key: SeriesKey,
+        table_schema: TskvTableSchemaRef,
+        record_batch: RecordBatch,
+    ) -> CompactingBlock {
+        CompactingBlock::Decoded {
+            series_id,
+            series_key,
+            table_schema,
+            record_batch,
+        }
+    }
+
+    pub fn encoded(
+        table_schema: TskvTableSchemaRef,
+        series_id: SeriesId,
+        series_key: SeriesKey,
+        time_range: TimeRange,
+        record_batch: Vec<Page>,
+    ) -> CompactingBlock {
+        CompactingBlock::Encoded {
+            table_schema,
+            series_id,
+            series_key,
+            time_range,
+            record_batch,
+        }
+    }
+
     pub fn raw(
         chunk: Arc<Chunk>,
         table_schema: TskvTableSchemaRef,
