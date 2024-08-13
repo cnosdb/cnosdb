@@ -51,7 +51,11 @@ impl PartialOrd for TskvTableSchema {
 
 impl Ord for TskvTableSchema {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.schema_version.cmp(&other.schema_version)
+        self.tenant
+            .cmp(&other.tenant)
+            .then_with(|| self.db.cmp(&other.db))
+            .then_with(|| self.name.cmp(&other.name))
+            .then_with(|| self.schema_version.cmp(&other.schema_version))
     }
 }
 
