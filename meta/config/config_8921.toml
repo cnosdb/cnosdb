@@ -11,6 +11,7 @@ install_snapshot_timeout = 3600000
 send_append_entries_timeout = 5000
 usage_schema_cache_size = 2097152 # 2MiB
 cluster_schema_cache_size = 2097152 # 2MiB
+system_database_replica = 3
 
 [log]
 level = "info"

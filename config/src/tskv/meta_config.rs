@@ -27,6 +27,8 @@ pub struct MetaConfig {
         default = "MetaConfig::default_cluster_schema_cache_size"
     )]
     pub cluster_schema_cache_size: u64,
+    #[serde(default = "MetaConfig::default_system_database_replica")]
+    pub system_database_replica: u64,
 }
 
 impl MetaConfig {
@@ -45,6 +47,10 @@ impl MetaConfig {
     pub fn default_cluster_schema_cache_size() -> u64 {
         2 * 1024 * 1024
     }
+
+    pub fn default_system_database_replica() -> u64 {
+        3
+    }
 }
 
 impl Default for MetaConfig {
@@ -54,6 +60,7 @@ impl Default for MetaConfig {
             report_time_interval: MetaConfig::default_report_time_interval(),
             usage_schema_cache_size: MetaConfig::default_usage_schema_cache_size(),
             cluster_schema_cache_size: MetaConfig::default_cluster_schema_cache_size(),
+            system_database_replica: MetaConfig::default_system_database_replica(),
         }
     }
 }
