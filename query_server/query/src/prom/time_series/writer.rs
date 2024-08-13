@@ -27,7 +27,8 @@ pub struct Writer<'a> {
 }
 
 impl Writer<'_> {
-    fn get_labels(&self, batch: &[ArrayRef], row_index: usize) -> QueryResult<Vec<Label>> {
+    /// Convert a record to a metric
+    fn apply(&mut self, batch: &[ArrayRef], row_index: usize) -> QueryResult<()> {
         let mut labels = Vec::with_capacity(self.tag_name_indices.len());
         for (tag_idx, tag_name) in self.tag_name_indices.iter().zip(&self.tag_names) {
             let col = &batch[*tag_idx];
@@ -45,17 +46,12 @@ impl Writer<'_> {
                     .build());
                 }
             };
-
             labels.push(Label {
-                name: tag_name.to_string(),
+                name: tag_name.to_owned(),
                 value: tag_value,
             });
         }
 
-        Ok(labels)
-    }
-
-    fn get_sample_value(&self, batch: &[ArrayRef], row_index: usize) -> QueryResult<f64> {
         let col = &batch[self.sample_value_idx];
         let sample_value = unsafe {
             match col.data_type() {
@@ -85,10 +81,6 @@ impl Writer<'_> {
             }
         };
 
-        Ok(sample_value)
-    }
-
-    fn get_sample_time(&self, batch: &[ArrayRef], row_index: usize) -> QueryResult<i64> {
         let col = &batch[self.sample_time_idx];
         let sample_timestamp_ms = unsafe {
             match col.data_type() {
@@ -129,17 +121,6 @@ impl Writer<'_> {
             }
         };
 
-        Ok(sample_timestamp_ms)
-    }
-
-    /// Convert a record to a metric
-    fn apply(&mut self, batch: &[ArrayRef], row_index: usize) -> QueryResult<()> {
-        // get labels
-        let labels = self.get_labels(batch, row_index)?;
-        // get sample value
-        let sample_value = self.get_sample_value(batch, row_index)?;
-        // get sample time
-        let sample_timestamp_ms = self.get_sample_time(batch, row_index)?;
         // construct sample
         let sample = Sample {
             value: sample_value,
@@ -253,8 +234,7 @@ impl WriterBuilder {
 fn concat_labels(labels: &[Label]) -> String {
     labels
         .iter()
-        .flat_map(|e| [&e.name, &e.value])
-        .cloned()
+        .flat_map(|e| [e.name[..].as_ref(), e.value[..].as_ref()])
         .collect::<Vec<_>>()
         // 0x01 cannot occur in valid UTF-8 sequences, so use it
         // as a separator here.
