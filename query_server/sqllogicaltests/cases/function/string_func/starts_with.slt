@@ -1,0 +1,161 @@
+include ./../setup.slt
+
+statement ok
+drop table if exists test_starts_with;
+
+statement ok
+CREATE TABLE IF NOT EXISTS test_starts_with (
+    original_text string,
+    search_text string
+);
+
+statement ok
+INSERT INTO test_starts_with (time, original_text, search_text) VALUES
+(1, 'hello world', 'hello'),        -- 正确开头
+(2, 'hello world', 'world'),        -- 不匹配的子字符串
+(3, 'goodbye world', 'good'),       -- 正确开头
+(4, 'goodbye world', 'bye'),         -- 不匹配的子字符串
+(5, 'a quick brown fox', 'a'),      -- 开头匹配
+(6, 'a quick brown fox', 'quick'),  -- 不匹配的子字符串
+(7, 'data analysis', 'data'),       -- 正确开头
+(8, 'data analysis', 'analysis'),   -- 不匹配的子字符串
+(9, 'empty', ''),                   -- 空子字符串
+(10, '', 'test'),                   -- 空原始字符串
+(11, '', ''),                       -- 空原始字符串和空子字符串
+(12, 'start with', 'start'),        -- 开头匹配
+(13, 'start with', 'with');         -- 不匹配的子字符串
+
+# 使用 starts_with 函数进行查询
+query B
+SELECT starts_with(original_text, search_text) AS result
+FROM test_starts_with;
+----
+true
+false
+true
+false
+true
+false
+true
+false
+true
+false
+true
+true
+false
+
+# 测试错误输入: 无参数
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'starts_with\(\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tstarts_with\(Utf8, Utf8\)\\n\\tstarts_with\(Utf8, LargeUtf8\)\\n\\tstarts_with\(LargeUtf8, Utf8\)\\n\\tstarts_with\(LargeUtf8, LargeUtf8\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT starts_with();
+
+# 测试错误输入: 一个参数
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'starts_with\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tstarts_with\(Utf8, Utf8\)\\n\\tstarts_with\(Utf8, LargeUtf8\)\\n\\tstarts_with\(LargeUtf8, Utf8\)\\n\\tstarts_with\(LargeUtf8, LargeUtf8\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT starts_with('hello world');
+
+# 测试错误输入: 两个参数，一个为空
+query 
+SELECT starts_with('hello world', '');
+----
+true
+
+# 测试错误输入: 三个参数
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'starts_with\(Utf8, Utf8, Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tstarts_with\(Utf8, Utf8\)\\n\\tstarts_with\(Utf8, LargeUtf8\)\\n\\tstarts_with\(LargeUtf8, Utf8\)\\n\\tstarts_with\(LargeUtf8, LargeUtf8\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select starts_with('hello','','');
+
+# 测试错误输入: 参数类型不匹配
+query 
+SELECT starts_with(123, 'hello');  -- 原始文本为非字符串类型
+----
+false
+
+query 
+SELECT starts_with('hello world', 456);  -- 搜索文本为非字符串类型
+----
+false
+
+query 
+SELECT starts_with(123, '23');  -- 原始文本为整数类型
+----
+false
+
+query 
+SELECT starts_with(12.34, '34');  -- 原始文本为浮点数类型
+----
+false
+
+query 
+SELECT starts_with(TRUE, 'T');  -- 原始文本为布尔类型
+----
+false
+
+query 
+SELECT starts_with(DATE '2024-08-07', '2024');  -- 原始文本为日期类型
+----
+true
+
+# 测试错误输入: 子字符串为非字符串类型
+query 
+SELECT starts_with('example', 34);  -- 子字符串为整数类型
+----
+false
+
+query 
+SELECT starts_with('example', 12.34);  -- 子字符串为浮点数类型
+----
+false
+
+query 
+SELECT starts_with('example', TRUE);  -- 子字符串为布尔类型
+----
+false
+
+query 
+SELECT starts_with('2024-08-07', DATE '2024-08-07');  -- 子字符串为日期类型
+----
+true
+
+query 
+SELECT starts_with('example', DATE '2024-08-07');  -- 子字符串为日期类型
+----
+false
+
+# 测试错误输入: 两个参数都为非字符串类型
+query 
+SELECT starts_with(123, 456);  -- 两个参数均为整数类型
+----
+false
+
+query 
+SELECT starts_with(12.34, 12.34);  -- 两个参数均为浮点数类型
+----
+true
+
+query 
+SELECT starts_with(12.34, 56.78);  -- 两个参数均为浮点数类型
+----
+false
+
+query 
+SELECT starts_with(TRUE, TRUE);  -- 两个参数均为布尔类型
+----
+true
+
+query 
+SELECT starts_with(TRUE, FALSE);  -- 两个参数均为布尔类型
+----
+false
+
+query 
+SELECT starts_with(DATE '2024-08-07', DATE '2024-08-07');  -- 两个参数均为日期类型
+----
+true
+
+query 
+select starts_with(123,123.0);
+----
+false
+
+query 
+select starts_with(123,'123');
+----
+true

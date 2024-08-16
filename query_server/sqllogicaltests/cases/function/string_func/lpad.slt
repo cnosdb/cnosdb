@@ -1,0 +1,252 @@
+include ./../setup.slt
+
+
+# lpad function tests
+
+# Test LPAD with regular string
+query I
+SELECT LPAD('Hello', 10, ' ');
+----
+"     Hello"
+
+# Test LPAD with multi-character pad string
+query I
+SELECT LPAD('Hello', 10, 'xy');
+----
+"xyxyxHello"
+
+# Test LPAD with length shorter than original string
+query I
+SELECT LPAD('Hello', 3, ' ');
+----
+"Hel"
+
+# Test LPAD with length equal to original string length
+query I
+SELECT LPAD('Hello', 5, ' ');
+----
+"Hello"
+
+# Test LPAD with length zero
+query I
+SELECT LPAD('Hello', 0, ' ');
+----
+""
+
+# Test LPAD with negative length (should return empty result)
+query I
+SELECT LPAD('Hello', -1, ' ');
+----
+""
+
+# Test LPAD with empty string
+query I
+SELECT LPAD('', 5, ' ');
+----
+"     "
+
+# Test LPAD with empty pad string (should return original string or error)
+query I
+SELECT LPAD('Hello', 10, '');
+----
+"Hello"
+
+# Test LPAD with multi-byte characters (e.g., UTF-8)
+query I
+SELECT LPAD('世界', 5, '你好');
+----
+"你好你世界"
+
+# Test LPAD with numeric input
+query I
+SELECT LPAD('123', 5, '0');
+----
+"00123"
+
+# Test LPAD with special characters
+query I
+SELECT LPAD('!@#', 6, '$');
+----
+"$$$!@#"
+
+# Test LPAD with NULL input
+query I
+SELECT LPAD(NULL, 5, ' ');
+----
+"NULL"
+
+# Test LPAD with NULL pad string
+query I
+SELECT LPAD('Hello', 10, NULL);
+----
+"NULL"
+
+# Test LPAD with spaces in the string
+query I
+SELECT LPAD(' spaced', 10, '_');
+----
+"___ spaced"
+
+# Test LPAD with SQL injection attempt (should handle safely)
+query I
+SELECT LPAD('Hello''; DROP TABLE users; --', 30, '-');
+----
+"--Hello'; DROP TABLE users; --"
+
+
+#SELECT LPAD(REPEAT('a', 10000), 10010, 'b');
+
+# Test LPAD with very long string
+query I
+SELECT LPAD(REPEAT('a', 1), 1, 'b');
+----
+"a"
+
+# Test LPAD with very large length (boundary test)
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: lpad requested length 9223372036854775807 too large", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT LPAD('Boundary test', 9223372036854775807, ' ');
+
+# Test LPAD with zero length on multi-byte characters
+query I
+SELECT LPAD('世界', 0, '你好');
+----
+""
+
+# Test LPAD with special unicode characters
+query I
+SELECT LPAD('世界', 5, '🌟');
+----
+"🌟🌟🌟世界"
+
+# Test LPAD with escape characters
+query I
+SELECT LPAD('Hello\nWorld\t!', 15, '-');
+----
+"Hello\nWorld\t!"
+
+# Test LPAD with mixed content
+query I
+SELECT LPAD('abc123!@#你好', 20, '*');
+----
+"*********abc123!@#你好"
+
+# Test LPAD with combination of special characters and spaces
+query I
+SELECT LPAD('!@#', 10, ' *');
+----
+" * * * !@#"
+
+# Test LPAD with fractional length (should truncate or error depending on SQL implementation)
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'lpad\(Utf8, Float64, Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tlpad\(Utf8, Int64\)\\n\\tlpad\(LargeUtf8, Int64\)\\n\\tlpad\(Utf8, Int64, Utf8\)\\n\\tlpad\(LargeUtf8, Int64, Utf8\)\\n\\tlpad\(Utf8, Int64, LargeUtf8\)\\n\\tlpad\(LargeUtf8, Int64, LargeUtf8\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT LPAD('Hello', 7.5, '-');
+
+# Test LPAD with concatenated strings
+query I
+SELECT LPAD(CONCAT('Hello', 'World'), 15, '-');
+----
+"-----HelloWorld"
+
+
+
+#SELECT LPAD(REPEAT('abc', 1000000), 1000010, 'd');     statement ok
+
+# Test LPAD with very large string and length
+query I
+SELECT LPAD(REPEAT('abc', 1), 10, 'd');
+----
+"dddddddabc"
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'lpad\(\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tlpad\(Utf8, Int64\)\\n\\tlpad\(LargeUtf8, Int64\)\\n\\tlpad\(Utf8, Int64, Utf8\)\\n\\tlpad\(LargeUtf8, Int64, Utf8\)\\n\\tlpad\(Utf8, Int64, LargeUtf8\)\\n\\tlpad\(LargeUtf8, Int64, LargeUtf8\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select lpad();
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'lpad\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tlpad\(Utf8, Int64\)\\n\\tlpad\(LargeUtf8, Int64\)\\n\\tlpad\(Utf8, Int64, Utf8\)\\n\\tlpad\(LargeUtf8, Int64, Utf8\)\\n\\tlpad\(Utf8, Int64, LargeUtf8\)\\n\\tlpad\(LargeUtf8, Int64, LargeUtf8\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select lpad('ssss');
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"lpad\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select lpad(13233,12);
+
+query 
+select lpad('111',9);
+----
+"      111"
+
+
+
+query 
+select lpad('aaa',10);
+----
+"       aaa"
+
+#bigint
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"lpad\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select lpad(func_tbl.f0,10) from func_tb2,func_tb3,func_tbl;
+
+#bigint unsigned
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"lpad\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select lpad(func_tb2.f0,10) from func_tb2,func_tb3,func_tbl;
+
+#boolean
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"lpad\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select lpad(func_tb2.f2,10) from func_tb2,func_tb3,func_tbl;
+
+#DOUBLE
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"lpad\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select lpad(func_tb3.f4_double,10) from func_tb2,func_tb3,func_tbl;
+
+#string
+query 
+select lpad(func_tb2.f3,10) as a1 from func_tb2 order by a1;
+----
+"     f3001"
+"     f3001"
+"     f3001"
+"     f3001"
+"     f3001"
+"     f3001"
+"     f3003"
+"     f3007"
+
+#TIME
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"lpad\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select lpad(func_tbl.TIME,10) from func_tb2,func_tb3,func_tbl;
+
+statement ok
+drop table if exists func_test;
+
+statement ok
+CREATE table if not exists func_test(f0_bigint bigint,f1_bigint_unsign bigint unsigned,f2_boolean boolean,f3_string STRING,f4_double DOUBLE);
+
+statement ok
+INSERT func_test(TIME,f0_bigint,f1_bigint_unsign,f2_boolean,f3_string,f4_double)
+values
+(1,111,238989,true,'string000',3.138247239),
+(2,4838,29843279,false,'string222',3.149843059483);
+
+
+query T
+select lpad(f3_string,f0_bigint) from func_test;
+----
+"                                                                                                      string000"
+"                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             string222"
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'lpad\(Utf8, UInt64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tlpad\(Utf8, Int64\)\\n\\tlpad\(LargeUtf8, Int64\)\\n\\tlpad\(Utf8, Int64, Utf8\)\\n\\tlpad\(LargeUtf8, Int64, Utf8\)\\n\\tlpad\(Utf8, Int64, LargeUtf8\)\\n\\tlpad\(LargeUtf8, Int64, LargeUtf8\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select lpad(func_tb2.f3,func_tb2.f0) from func_tb2,func_tb3,func_tbl;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'lpad\(Utf8, Boolean\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tlpad\(Utf8, Int64\)\\n\\tlpad\(LargeUtf8, Int64\)\\n\\tlpad\(Utf8, Int64, Utf8\)\\n\\tlpad\(LargeUtf8, Int64, Utf8\)\\n\\tlpad\(Utf8, Int64, LargeUtf8\)\\n\\tlpad\(LargeUtf8, Int64, LargeUtf8\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select lpad(func_tb2.f3,func_tb2.f2) from func_tb2;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'lpad\(Utf8, Float64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tlpad\(Utf8, Int64\)\\n\\tlpad\(LargeUtf8, Int64\)\\n\\tlpad\(Utf8, Int64, Utf8\)\\n\\tlpad\(LargeUtf8, Int64, Utf8\)\\n\\tlpad\(Utf8, Int64, LargeUtf8\)\\n\\tlpad\(LargeUtf8, Int64, LargeUtf8\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select lpad(func_tb2.f3,func_tb3.f4_double) from func_tb2,func_tb3,func_tbl;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'lpad\(Utf8, Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tlpad\(Utf8, Int64\)\\n\\tlpad\(LargeUtf8, Int64\)\\n\\tlpad\(Utf8, Int64, Utf8\)\\n\\tlpad\(LargeUtf8, Int64, Utf8\)\\n\\tlpad\(Utf8, Int64, LargeUtf8\)\\n\\tlpad\(LargeUtf8, Int64, LargeUtf8\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select lpad(func_tb2.f3,func_tb2.f3) from func_tb2,func_tb3,func_tbl;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'lpad\(Utf8, Timestamp\(Nanosecond, None\)\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tlpad\(Utf8, Int64\)\\n\\tlpad\(LargeUtf8, Int64\)\\n\\tlpad\(Utf8, Int64, Utf8\)\\n\\tlpad\(LargeUtf8, Int64, Utf8\)\\n\\tlpad\(Utf8, Int64, LargeUtf8\)\\n\\tlpad\(LargeUtf8, Int64, LargeUtf8\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select lpad(func_tb2.f3,func_tbl.TIME) from func_tb2,func_tb3,func_tbl;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Expected an expression:, found: \)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select lpad(func_tb2.f3, ) from func_tb2,func_tb3,func_tbl;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: variable \[\\"@\\"\] has no type information", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select lpad(f3,@) from func_tb2;

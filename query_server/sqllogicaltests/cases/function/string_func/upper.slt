@@ -1,0 +1,77 @@
+include ./../setup.slt
+
+statement ok
+drop table if exists func_tb;
+
+statement ok
+CREATE TABLE if not exists func_tb (input STRING, expected STRING);
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Inconsistent data length across values list: got 3 values in row 16 but expected 2", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+INSERT INTO func_tb (time,input) VALUES 
+    (1,'Hello World'),
+    (2,'SQL Logic Test'),
+    (3,'123 ABC def'),
+    (4,'MIXED Case'),
+    (5,'uppercase'),
+    (6,'UPPERCASE'),
+    (7,'Special Chars !@#$'),
+    (8,'Whitespace   '),
+    (9,'   Leading and trailing whitespace   '),
+    (10,'1234567890'),
+    (11,''),
+    (12,'SOME-MIXED_case123'),
+    (13,'ümläuts ÜMLÄUTS'),
+    (14,'ÇÇçç'),
+    (15,'Русский Текст'),
+    (16,'中文字符'),
+    (17,'》',' ');
+
+# 测试 upper 函数
+query T
+SELECT upper(input) AS result FROM func_tb;
+----
+
+
+statement ok
+DROP TABLE func_tb;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'upper\(\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tupper\(Utf8/LargeUtf8\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select upper();
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'upper\(Utf8, Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tupper\(Utf8/LargeUtf8\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select upper('fdds','JBJIK');
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Unterminated string literal at Line: 1, Column 14", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select upper('JKJKKJ");
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Schema error: No field named sdjfsdla\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select upper("sdjfsdla");
+
+#bigint
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"upper\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select upper(f0) from func_tbl;
+
+#bigint unsigned
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"upper\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select upper(f0) from func_tb2;
+
+#boolean
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"upper\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select upper(f2) from func_tb2;
+
+#string
+query 
+select upper(f3) as a1 from func_tb2 order by a1;
+----
+"F3001"
+"F3001"
+"F3001"
+"F3001"
+"F3001"
+"F3001"
+"F3003"
+"F3007"
+
+#TIME
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"upper\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select upper(TIME) from func_tbl;

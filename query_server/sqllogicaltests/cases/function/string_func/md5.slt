@@ -1,0 +1,85 @@
+include ./../setup.slt
+
+statement ok
+drop table if exists func_tb;
+
+
+statement ok
+CREATE TABLE func_tb (input STRING, expected_md5 STRING);
+
+statement ok
+INSERT INTO func_tb (TIME,input, expected_md5) VALUES 
+    (1,'', 'd41d8cd98f00b204e9800998ecf8427e'),
+    (2,'a', '0cc175b9c0f1b6a831c399e269772661'),
+    (3,'abc', '900150983cd24fb0d6963f7d28e17f72'),
+    (4,'message digest', 'f96b697d7cb7938d525a2f31aaf161d0'),
+    (5,'abcdefghijklmnopqrstuvwxyz', 'c3fcd3d76192e4007dfb496cca67e13b'),
+    (6,'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789', 'd174ab98d277d9f5a5611c2c9f419d9f'),
+    (7,'1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890', '49cb3608e2b33fad6b65df8cb8f49668'),
+    (8,'     ', '01545e945d5c3e7d9fa642d0a57fc8432'),
+    (9,'Hello, World!', '65a8e27d8879283831b664bd8b7f0ad4'),
+    (10,'中文字符', '389bf319232a7a8972d8d7e389656c81'),
+    (11,'Русский текст', '634e9637b67185af29aa7d9aee1e6736'),
+    (12,'Special chars !@#$%^&*()_+-=', '1a7e2f2b519d54e679cfa3d3014d802b');
+
+# 测试 MD5 函数
+query I
+SELECT input, MD5(input) AS result FROM func_tb;
+----
+"" "d41d8cd98f00b204e9800998ecf8427e"
+"a" "0cc175b9c0f1b6a831c399e269772661"
+"abc" "900150983cd24fb0d6963f7d28e17f72"
+"message digest" "f96b697d7cb7938d525a2f31aaf161d0"
+"abcdefghijklmnopqrstuvwxyz" "c3fcd3d76192e4007dfb496cca67e13b"
+"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789" "d174ab98d277d9f5a5611c2c9f419d9f"
+"1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890" "49cb3608e2b33fad6b65df8cb8f49668"
+"     " "1545e945d5c3e7d9fa642d0a57fc8432"
+"Hello, World!" "65a8e27d8879283831b664bd8b7f0ad4"
+"中文字符" "389bf319232a7a8972d8d7e389656c81"
+"Русский текст" "634e9637b67185af29aa7d9aee1e6736"
+"Special chars !@#$%^&*()_+-=" "d09400c76c49714c8120fa38c128d42a"
+
+
+
+statement ok
+DROP TABLE if EXISTS func_tb;
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'md5\(\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tmd5\(Utf8/LargeUtf8/Binary/LargeBinary\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select MD5();
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"md5\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select MD5(121324);
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'md5\(Int64, Int64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tmd5\(Utf8/LargeUtf8/Binary/LargeBinary\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select MD5(1233,1233);
+
+#bigint
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"md5\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select md5(f0) from func_tbl;
+
+
+#bigint unsigned
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"md5\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select md5(f0) from func_tb2;
+
+#boolean
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"md5\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select md5(f2) from func_tb2;
+
+#string
+query 
+select md5(f3) as a1 from func_tb2 order by a1;
+----
+"2e6988c887bcfba537de5afafcb2f4f9"
+"50e2f823e1cc8395234ad945c978da34"
+"f630059f92cd704e1f00595f88c6411b"
+"f630059f92cd704e1f00595f88c6411b"
+"f630059f92cd704e1f00595f88c6411b"
+"f630059f92cd704e1f00595f88c6411b"
+"f630059f92cd704e1f00595f88c6411b"
+"f630059f92cd704e1f00595f88c6411b"
+
+#TIME
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"md5\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select md5(TIME) from func_tbl;

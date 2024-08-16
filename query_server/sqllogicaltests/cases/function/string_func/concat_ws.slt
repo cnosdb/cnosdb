@@ -1,0 +1,229 @@
+include ./../setup.slt
+
+#Test case 1: Basic concatenation with a comma separator
+query 
+SELECT CONCAT_WS(',', 'apple', 'banana', 'cherry');
+----
+"apple,banana,cherry"
+
+# Test case 2: Concatenation with a space separator
+query 
+SELECT CONCAT_WS(' ', 'hello', 'world');
+----
+"hello world"
+
+#Test case 3: Concatenation with an empty string separator
+query 
+SELECT CONCAT_WS('', 'a', 'b', 'c');
+----
+"abc"
+
+#Test case 4: Concatenation with NULL values (NULL values should be ignored)
+query 
+SELECT CONCAT_WS('-', '1', NULL, '2', '3');
+----
+"1-2-3"
+
+#Test case 5: Concatenation with leading and trailing spaces in separator
+query 
+SELECT CONCAT_WS(' | ', 'first', 'second', 'third');
+----
+"first | second | third"
+
+#Test case 6: Concatenation with NULL separator (should be treated as an empty string)
+query 
+SELECT CONCAT_WS(NULL, 'x', 'y', 'z');
+----
+"NULL"
+
+#Test case 7: Concatenation with only NULL values (result should be an empty string)
+query 
+SELECT CONCAT_WS(',', NULL, NULL, NULL);
+----
+""
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'concat_ws\(\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tconcat_ws\(Utf8, \.\.\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT CONCAT_WS();
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nInternal error: concat_ws was called with 1 arguments\. It requires at least 2\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT CONCAT_WS('1');
+
+#Query took 26.811 seconds.
+query error Arrow error: Io error: Cannot collect flight data: Status \{ code: OutOfRange, message: "Error, message length too large: found 10000169 bytes, the limit is: 4194304 bytes", source: None, \}
+SELECT concat_ws('1',repeat('a',10000000));
+
+#Cannot run,timeout
+query error Arrow error: Io error: Cannot collect flight data: Status \{ code: OutOfRange, message: "Error, message length too large: found 10000169 bytes, the limit is: 4194304 bytes", source: None, \}
+SELECT concat_ws('1',repeat('a',10000000));
+
+#bigint
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Datafusion: Internal error: concat_ws was called with 1 arguments\. It requires at least 2\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select concat_ws(f0) from func_tbl;
+
+#bigint unsigned
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Datafusion: Internal error: concat_ws was called with 1 arguments\. It requires at least 2\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select concat_ws(f0) from func_tb2;
+
+#boolean
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Datafusion: Internal error: concat_ws was called with 1 arguments\. It requires at least 2\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select concat_ws(f2) from func_tb2;
+
+#DOUBLE
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Datafusion: Internal error: concat_ws was called with 1 arguments\. It requires at least 2\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select concat_ws(f4_double) from func_tb3;
+
+#string
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Datafusion: Internal error: concat_ws was called with 1 arguments\. It requires at least 2\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select concat_ws(f3) from func_tb2;
+
+#TIME
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Datafusion: Internal error: concat_ws was called with 1 arguments\. It requires at least 2\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select concat_ws(TIME) from func_tbl;
+
+
+
+#bigint
+query 
+select concat_ws(f0,f0) from func_tbl ORDER by TIME DESC;
+----
+"555"
+"444"
+"333"
+"222"
+"444"
+"333"
+"222"
+"111"
+
+#bigint unsigned
+query 
+select concat_ws(f0,f0) from func_tb2 ORDER by TIME DESC;
+----
+"1000"
+"1004"
+"1000"
+"1000"
+"1002"
+"1000"
+"1001"
+"1000"
+
+#boolean
+query 
+select concat_ws(f2,f2) from func_tb2 ORDER by TIME DESC;
+----
+"0"
+"1"
+"0"
+"1"
+"0"
+"1"
+"0"
+"1"
+
+#DOUBLE
+query 
+select concat_ws(f4_double,f4_double) from func_tb3 ORDER by TIME DESC;
+----
+"34.1415926"
+"3.1415926"
+"3.145415926"
+"3.1415926"
+"3.1413235926"
+"3.1415926"
+"3.12415926"
+"3.1415643926"
+"3.1415926"
+"3.1415926"
+
+#string
+query 
+select concat_ws(f3,f3) from func_tb2 ORDER by TIME DESC;
+----
+"f3001"
+"f3001"
+"f3001"
+"f3007"
+"f3001"
+"f3003"
+"f3001"
+"f3001"
+
+#TIME
+query 
+select concat_ws(TIME,TIME) from func_tbl ORDER by TIME DESC;
+----
+"1999-12-31T01:00:00.035"
+"1999-12-31T00:10:00.030"
+"1999-12-31T00:10:00.025"
+"1999-12-31T00:00:10.020"
+"1999-12-31T00:00:10.015"
+"1999-12-31T00:00:00.010"
+"1999-12-31T00:00:00.005"
+"1999-12-31T00:00:00"
+
+
+statement ok
+drop table if exists func_test;
+
+statement ok
+CREATE table if not exists func_test(f0_bigint bigint,f1_bigint_unsign bigint unsigned,f2_boolean boolean,f3_string STRING,f4_double DOUBLE);
+
+statement ok
+INSERT func_test(TIME,f0_bigint,f1_bigint_unsign,f2_boolean,f3_string,f4_double)
+values
+(1,111,238989,true,'string000',3.138247239),
+(2,4839478,29843279,false,'string222',3.149843059483);
+
+
+#bigint+bigint unsigned
+query T
+select concat_ws('-',func_test.f0_bigint,func_test.f1_bigint_unsign) from func_test ORDER BY func_test.TIME
+----
+"111-238989"
+"4839478-29843279"
+
+
+
+#bigint unsigned+string
+query T
+    SELECT 
+        CONCAT_WS('-', func_test.f0_bigint, func_test.f3_string)
+    FROM func_test;
+----
+"111-string000"
+"4839478-string222"
+
+
+#boolean+DOUBLE
+query T
+select concat_ws('-',func_test.f2_boolean,func_test.f4_double) from func_test;
+----
+"1-3.138247239"
+"0-3.149843059483"
+
+#DOUBLE
+query 
+select concat_ws(f4_double,f4_double,f4_double) from func_test;
+----
+"3.1382472393.1382472393.138247239"
+"3.1498430594833.1498430594833.149843059483"
+
+#string
+query 
+select concat_ws(f3_string,f3_string,f3_string) from func_test;
+----
+"string000string000string000"
+"string222string222string222"
+
+#TIME
+query 
+select concat_ws(TIME,TIME,TIME) from func_test;
+----
+"1970-01-01T00:00:00.0000000011970-01-01T00:00:00.0000000011970-01-01T00:00:00.000000001"
+"1970-01-01T00:00:00.0000000021970-01-01T00:00:00.0000000021970-01-01T00:00:00.000000002"
+
+statement ok
+drop table if exists func_test;

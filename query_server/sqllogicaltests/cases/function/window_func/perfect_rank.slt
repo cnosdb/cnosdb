@@ -1,0 +1,216 @@
+statement ok
+alter database public set ttl 'INF';
+
+statement ok
+drop table if exists test_percent_rank;
+
+# 创建测试表
+statement ok
+CREATE TABLE IF NOT EXISTS test_percent_rank (
+    category string,
+    value bigint
+);
+
+# 插入测试数据
+statement ok
+INSERT INTO test_percent_rank (time, category, value) VALUES
+(1, 'A', 10),
+(2, 'A', 20),
+(3, 'A', 30),
+(4, 'B', 40),
+(5, 'B', 50),
+(6, 'C', 60),
+(7, 'C', 70),
+(8, 'C', 80),
+(9, 'C', 90);
+
+# 基本使用：在分类内按时间排序并计算百分比排名
+query PTIR
+SELECT
+    time,
+    category,
+    value,
+    PERCENT_RANK() OVER (PARTITION BY category ORDER BY time) AS percent_rank_num
+FROM test_percent_rank
+ORDER BY category, time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 0.0
+1970-01-01T00:00:00.000000002 "A" 20 0.5
+1970-01-01T00:00:00.000000003 "A" 30 1.0
+1970-01-01T00:00:00.000000004 "B" 40 0.0
+1970-01-01T00:00:00.000000005 "B" 50 1.0
+1970-01-01T00:00:00.000000006 "C" 60 0.0
+1970-01-01T00:00:00.000000007 "C" 70 0.3333333333333333
+1970-01-01T00:00:00.000000008 "C" 80 0.6666666666666666
+1970-01-01T00:00:00.000000009 "C" 90 1.0
+
+# 在没有分区的情况下按时间排序并计算百分比排名
+query PTIR
+SELECT
+    time,
+    category,
+    value,
+    PERCENT_RANK() OVER (ORDER BY time) AS percent_rank_num
+FROM test_percent_rank
+ORDER BY time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 0.0
+1970-01-01T00:00:00.000000002 "A" 20 0.125
+1970-01-01T00:00:00.000000003 "A" 30 0.25
+1970-01-01T00:00:00.000000004 "B" 40 0.375
+1970-01-01T00:00:00.000000005 "B" 50 0.5
+1970-01-01T00:00:00.000000006 "C" 60 0.625
+1970-01-01T00:00:00.000000007 "C" 70 0.75
+1970-01-01T00:00:00.000000008 "C" 80 0.875
+1970-01-01T00:00:00.000000009 "C" 90 1.0
+
+# 在分区内按值排序并计算百分比排名
+query PTIR
+SELECT
+    time,
+    category,
+    value,
+    PERCENT_RANK() OVER (PARTITION BY category ORDER BY value DESC) AS percent_rank_num
+FROM test_percent_rank
+ORDER BY category, value DESC;
+----
+1970-01-01T00:00:00.000000003 "A" 30 0.0
+1970-01-01T00:00:00.000000002 "A" 20 0.5
+1970-01-01T00:00:00.000000001 "A" 10 1.0
+1970-01-01T00:00:00.000000005 "B" 50 0.0
+1970-01-01T00:00:00.000000004 "B" 40 1.0
+1970-01-01T00:00:00.000000009 "C" 90 0.0
+1970-01-01T00:00:00.000000008 "C" 80 0.3333333333333333
+1970-01-01T00:00:00.000000007 "C" 70 0.6666666666666666
+1970-01-01T00:00:00.000000006 "C" 60 1.0
+
+# 多列分区：按类别和值分区并按时间排序
+query PTIR
+SELECT
+    time,
+    category,
+    value,
+    PERCENT_RANK() OVER (PARTITION BY category, value ORDER BY time) AS percent_rank_num
+FROM test_percent_rank
+ORDER BY category, value, time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 0.0
+1970-01-01T00:00:00.000000002 "A" 20 0.0
+1970-01-01T00:00:00.000000003 "A" 30 0.0
+1970-01-01T00:00:00.000000004 "B" 40 0.0
+1970-01-01T00:00:00.000000005 "B" 50 0.0
+1970-01-01T00:00:00.000000006 "C" 60 0.0
+1970-01-01T00:00:00.000000007 "C" 70 0.0
+1970-01-01T00:00:00.000000008 "C" 80 0.0
+1970-01-01T00:00:00.000000009 "C" 90 0.0
+
+# 使用窗口函数与其他聚合函数结合
+query TIRI
+SELECT
+    category,
+    value,
+    PERCENT_RANK() OVER (PARTITION BY category ORDER BY value) AS percent_rank_num,
+    SUM(value) OVER (PARTITION BY category) AS total_value
+FROM test_percent_rank
+ORDER BY category, value;
+----
+"A" 10 0.0 60
+"A" 20 0.5 60
+"A" 30 1.0 60
+"B" 40 0.0 90
+"B" 50 1.0 90
+"C" 60 0.0 300
+"C" 70 0.3333333333333333 300
+"C" 80 0.6666666666666666 300
+"C" 90 1.0 300
+
+# 错误输入测试
+
+# 错误输入: percent_rank 函数不带 OVER 子句
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Invalid function 'percent_rank'\.\\nDid you mean 'current_date'\?", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT time, category, value, PERCENT_RANK()
+FROM test_percent_rank;
+
+# 错误输入: percent_rank 函数的 OVER 子句中没有 PARTITION BY 或 ORDER BY
+query PTIR
+SELECT time, category, value, PERCENT_RANK() OVER ()
+FROM test_percent_rank;
+----
+1970-01-01T00:00:00.000000001 "A" 10 0.0
+1970-01-01T00:00:00.000000002 "A" 20 0.0
+1970-01-01T00:00:00.000000003 "A" 30 0.0
+1970-01-01T00:00:00.000000004 "B" 40 0.0
+1970-01-01T00:00:00.000000005 "B" 50 0.0
+1970-01-01T00:00:00.000000006 "C" 60 0.0
+1970-01-01T00:00:00.000000007 "C" 70 0.0
+1970-01-01T00:00:00.000000008 "C" 80 0.0
+1970-01-01T00:00:00.000000009 "C" 90 0.0
+
+# 错误输入: percent_rank 函数的 OVER 子句中带有无效的排序列
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Schema error: No field named non_existent_column\. Valid fields are test_percent_rank\.time, test_percent_rank\.category, test_percent_rank\.value\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT time, category, value, PERCENT_RANK() OVER (PARTITION BY category ORDER BY non_existent_column)
+FROM test_percent_rank;
+
+# 错误输入: percent_rank 函数的 OVER 子句中带有无效的分区列
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Schema error: No field named non_existent_column\. Valid fields are test_percent_rank\.time, test_percent_rank\.category, test_percent_rank\.value\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT time, category, value, PERCENT_RANK() OVER (PARTITION BY non_existent_column ORDER BY time)
+FROM test_percent_rank;
+
+# 错误输入: percent_rank 函数使用聚合函数
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Projection references non\-aggregate values: Expression test_percent_rank\.time could not be resolved from available columns: test_percent_rank\.category, SUM\(test_percent_rank\.value\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT category, SUM(value), PERCENT_RANK() OVER (PARTITION BY category ORDER BY time)
+FROM test_percent_rank
+GROUP BY category;
+
+# 错误输入: PERCENT_RANK 函数的参数不是窗口函数
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Invalid function 'percent_rank'\.\\nDid you mean 'current_date'\?", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT time, category, value, PERCENT_RANK(time)
+FROM test_percent_rank;
+
+# 错误输入: PERCENT_RANK 与其他窗口函数的参数冲突
+query PTIR
+SELECT
+    time,
+    category,
+    value,
+    PERCENT_RANK() OVER (PARTITION BY category ORDER BY time, value) AS percent_rank_num
+FROM test_percent_rank
+ORDER BY category, time;
+----
+1970-01-01T00:00:00.000000001 "A" 10 0.0
+1970-01-01T00:00:00.000000002 "A" 20 0.5
+1970-01-01T00:00:00.000000003 "A" 30 1.0
+1970-01-01T00:00:00.000000004 "B" 40 0.0
+1970-01-01T00:00:00.000000005 "B" 50 1.0
+1970-01-01T00:00:00.000000006 "C" 60 0.0
+1970-01-01T00:00:00.000000007 "C" 70 0.3333333333333333
+1970-01-01T00:00:00.000000008 "C" 80 0.6666666666666666
+1970-01-01T00:00:00.000000009 "C" 90 1.0
+
+# 错误输入: PERCENT_RANK 与空字符串参数
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Expected ROWS, RANGE, GROUPS, found: ''", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT time, category, value, PERCENT_RANK() OVER ('')
+FROM test_percent_rank;
+
+# 错误输入: PERCENT_RANK 与 NULL 作为参数
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Invalid function 'percent_rank'\.\\nDid you mean 'current_date'\?", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT time, category, value, PERCENT_RANK(NULL)
+FROM test_percent_rank;
+
+# 错误输入: PERCENT_RANK 函数中混合不同类型的排序列
+query PTIR
+SELECT time, category, value, PERCENT_RANK() OVER (ORDER BY time, category, value)
+FROM test_percent_rank;
+----
+1970-01-01T00:00:00.000000001 "A" 10 0.0
+1970-01-01T00:00:00.000000002 "A" 20 0.125
+1970-01-01T00:00:00.000000003 "A" 30 0.25
+1970-01-01T00:00:00.000000004 "B" 40 0.375
+1970-01-01T00:00:00.000000005 "B" 50 0.5
+1970-01-01T00:00:00.000000006 "C" 60 0.625
+1970-01-01T00:00:00.000000007 "C" 70 0.75
+1970-01-01T00:00:00.000000008 "C" 80 0.875
+1970-01-01T00:00:00.000000009 "C" 90 1.0
+
+statement ok
+drop table if exists test_percent_rank;

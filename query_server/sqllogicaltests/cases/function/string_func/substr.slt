@@ -1,0 +1,123 @@
+include ./../setup.slt
+
+statement ok
+DROP TABLE IF EXISTS test_substr;
+
+statement ok
+CREATE TABLE IF NOT EXISTS test_substr (
+    original_text STRING,
+    start_pos bigint,
+    length bigint
+);
+
+
+statement ok
+INSERT INTO test_substr (time, original_text, start_pos, length) VALUES
+(1, 'hello world', 1, 5),          -- 从开始位置提取5个字符，结果应为 'hello'
+(2, 'hello world', 7, 5),          -- 从第7个位置提取5个字符，结果应为 'world'
+(3, 'hello world', 7, 20),         -- 从第7个位置提取20个字符，超出范围，结果应为 'world'
+(4, 'hello world', 1, 0),          -- 从第1个位置提取0个字符，结果应为空
+(5, 'hello world', 12, 5),         -- 起始位置12超出范围，结果应为空
+(6, 'hello world', 1, NULL),       -- 从第1个位置提取到字符串末尾，长度为NULL时结果应为 'hello world'
+(7, 'hello world', 6, 5),          -- 起始位置为负数时，重新定义为有效起始位置 6，结果应为 'world'
+(8, 'hello world', 1, 5),          -- 长度为负数的情况修改为有效长度 5，结果应为 'hello'
+(9, '', 1, 5),                    -- 空字符串，起始位置1超出范围，结果应为空
+(10, 'example', 1, 10);           -- 从第1个位置提取10个字符，超出范围时通常结果应为 'example'
+
+
+
+query PTIIT
+SELECT time, original_text, start_pos, length,
+       substr(original_text, start_pos, length) AS substring
+FROM test_substr
+ORDER BY time;
+----
+1970-01-01T00:00:00.000000001 "hello world" 1 5 "hello"
+1970-01-01T00:00:00.000000002 "hello world" 7 5 "world"
+1970-01-01T00:00:00.000000003 "hello world" 7 20 "world"
+1970-01-01T00:00:00.000000004 "hello world" 1 0 ""
+1970-01-01T00:00:00.000000005 "hello world" 12 5 ""
+1970-01-01T00:00:00.000000006 "hello world" 1 NULL "NULL"
+1970-01-01T00:00:00.000000007 "hello world" 6 5 " worl"
+1970-01-01T00:00:00.000000008 "hello world" 1 5 "hello"
+1970-01-01T00:00:00.000000009 "" 1 5 ""
+1970-01-01T00:00:00.000000010 "example" 1 10 "example"
+
+
+
+# 测试错误输入: 无参数
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'substr\(\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tsubstr\(Utf8, Int64\)\\n\\tsubstr\(LargeUtf8, Int64\)\\n\\tsubstr\(Utf8, Int64, Int64\)\\n\\tsubstr\(LargeUtf8, Int64, Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT substr();
+
+# 测试错误输入: 一个参数
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'substr\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tsubstr\(Utf8, Int64\)\\n\\tsubstr\(LargeUtf8, Int64\)\\n\\tsubstr\(Utf8, Int64, Int64\)\\n\\tsubstr\(LargeUtf8, Int64, Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT substr('hello world');
+
+# 测试错误输入: 起始位置为非整数
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'substr\(Utf8, Utf8, Int64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tsubstr\(Utf8, Int64\)\\n\\tsubstr\(LargeUtf8, Int64\)\\n\\tsubstr\(Utf8, Int64, Int64\)\\n\\tsubstr\(LargeUtf8, Int64, Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT substr('hello world', 'a', 5);  -- 起始位置为非整数类型
+
+# 测试错误输入: 长度为非整数
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'substr\(Utf8, Int64, Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tsubstr\(Utf8, Int64\)\\n\\tsubstr\(LargeUtf8, Int64\)\\n\\tsubstr\(Utf8, Int64, Int64\)\\n\\tsubstr\(LargeUtf8, Int64, Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT substr('hello world', 1, 'b');  -- 长度为非整数类型
+
+# 测试错误输入: 起始位置为负数，但长度为零
+query 
+SELECT substr('hello world', -1, 0);  -- 起始位置为负数，但长度为零
+----
+""
+
+# 测试错误输入: 起始位置为负数，长度为负数
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: negative substring length not allowed: substr\(<str>, \-1, \-5\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT substr('hello world', -1, -5);  -- 起始位置和长度均为负数
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: negative substring length not allowed: substr\(<str>, 1, \-5\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT substr('hello world', 1, -5);  -- 起始位置和长度均为负数
+
+# 测试错误输入: 起始位置超出范围
+query 
+SELECT substr('hello world', 15, 5);  -- 起始位置超出字符串长度
+----
+""
+
+# 测试错误输入: 长度超出范围
+query 
+SELECT substr('hello world', 1, 100);  -- 长度超出字符串长度
+----
+"hello world"
+
+
+# 错误输入: 起始字符串为 BIGINT 类型
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"substr\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT substr(123456, 1, 5);
+
+# 错误输入: 起始字符串为 BIGINT UNSIGNED 类型
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"substr\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT substr(12345678901234567890, 1, 5);
+
+# 错误输入: 起始字符串为 BOOLEAN 类型
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"substr\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT substr(TRUE, 1, 5);
+
+# 错误输入: 起始字符串为 FLOAT 类型
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"substr\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT substr(3.14159, 1, 5);
+
+# 错误输入: 起始字符串为 DOUBLE 类型
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"substr\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT substr(2.718281828459, 1, 5);
+
+# 错误输入: 起始字符串为 DATE 类型
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"substr\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT substr(DATE '2024-08-07', 1, 5);
+
+# 错误输入: 起始字符串为 TIMESTAMP 类型
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Internal error: The \\"substr\\" function can only accept strings\.\. This was likely caused by a bug in DataFusion's code and we would welcome that you file an bug report in our issue tracker", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT substr(TIMESTAMP '2024-08-07 12:34:56', 1, 5);
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'substr\(Utf8, Boolean, Int64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tsubstr\(Utf8, Int64\)\\n\\tsubstr\(LargeUtf8, Int64\)\\n\\tsubstr\(Utf8, Int64, Int64\)\\n\\tsubstr\(LargeUtf8, Int64, Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT substr('hello world', true, 100); 
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'substr\(Utf8, Int64, Boolean\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tsubstr\(Utf8, Int64\)\\n\\tsubstr\(LargeUtf8, Int64\)\\n\\tsubstr\(Utf8, Int64, Int64\)\\n\\tsubstr\(LargeUtf8, Int64, Int64\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT substr('hello world', 1, true); 
