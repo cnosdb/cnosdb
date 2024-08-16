@@ -610,6 +610,7 @@ remote_bucket = {max = 100, initial = 0, refill = 100, interval = 100}
             false,
             true,
             32,
+            1,
         );
         let db = DatabaseSchema::new("test", "test", db_option, Arc::new(db_config));
         assert_eq!(

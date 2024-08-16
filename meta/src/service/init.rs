@@ -85,7 +85,9 @@ impl MetaInit {
     }
 
     fn db_config_schema_init(tenant: &str, db: &str, config: DatabaseConfig) -> String {
-        let db_schema = DatabaseSchema::new(tenant, db, DatabaseOptions::default(), config.into());
+        let mut db_opt = DatabaseOptions::default();
+        db_opt.set_replica(config.replica());
+        let db_schema = DatabaseSchema::new(tenant, db, db_opt, config.into());
         value_encode(&db_schema).unwrap()
     }
 }

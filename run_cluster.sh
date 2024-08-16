@@ -39,6 +39,11 @@ sleep 1
 echo "*** start CnosDB server 8912......"
 nohup ./target/debug/cnosdb run --config ./config/config_8912.toml > /tmp/cnosdb/logs/data_node.2001.log 2>&1 &
 
+sleep 1
+
+echo "*** start CnosDB server 8922......"
+nohup ./target/debug/cnosdb run --config ./config/config_8922.toml > /tmp/cnosdb/logs/data_node.3001.log 2>&1 &
+
 echo "\n*** CnosDB Data Server Cluster is running ......"
 
 sleep 1000000000

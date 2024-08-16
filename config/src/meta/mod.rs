@@ -29,6 +29,7 @@ pub struct Opt {
     pub cluster_name: String,
     pub usage_schema_cache_size: u64,
     pub cluster_schema_cache_size: u64,
+    pub system_database_replica: u64,
 
     pub log: LogConfig,
     pub heartbeat: HeartBeatConfig,
@@ -59,6 +60,7 @@ impl Default for Opt {
             send_append_entries_timeout: 5 * 1000,
             usage_schema_cache_size: tskv::MetaConfig::default_cluster_schema_cache_size(),
             cluster_schema_cache_size: tskv::MetaConfig::default_usage_schema_cache_size(),
+            system_database_replica: tskv::MetaConfig::default_system_database_replica(),
         }
     }
 }

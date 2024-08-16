@@ -61,13 +61,20 @@ pub async fn start_raft_node(opt: config::meta::Opt) -> MetaResult<()> {
         install_snapshot_timeout: opt.install_snapshot_timeout,
         snapshot_policy: SnapshotPolicy::LogsSinceLast(opt.raft_logs_to_keep),
     };
+
+    let mut public_config = DatabaseConfig::default();
+    public_config.set_replica(opt.system_database_replica);
+
     let mut usage_schema_config = DatabaseConfig::default();
     usage_schema_config.set_max_memcache_size(opt.usage_schema_cache_size);
+    usage_schema_config.set_replica(opt.system_database_replica);
+
     let mut cluster_schema_config = DatabaseConfig::default();
     cluster_schema_config.set_max_memcache_size(opt.cluster_schema_cache_size);
+    cluster_schema_config.set_replica(opt.system_database_replica);
 
     let default_database = vec![
-        (String::from(DEFAULT_DATABASE), DatabaseConfig::default()),
+        (String::from(DEFAULT_DATABASE), public_config),
         (
             String::from(models::schema::USAGE_SCHEMA),
             usage_schema_config,
