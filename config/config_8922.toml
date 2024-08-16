@@ -3,7 +3,7 @@ node_id = 3001
 host = "localhost"
 cluster_name = 'cluster_xxx'
 store_metrics = true
-pre_creat_bucket = false
+pre_create_bucket = false
 
 [deployment]
 # mode = 'query_tskv'
@@ -43,7 +43,7 @@ max_compact_size = "2GiB"              # 2147483648
 max_concurrent_compaction = 4
 collect_compaction_metrics = false
 strict_write = false
-reserve_space = "0"
+reserve_space = '0G'
 copyinto_trigger_flush_size = "128MiB" # 134217728
 max_datablock_size = "100KiB"
 index_cache_capacity = 100000
