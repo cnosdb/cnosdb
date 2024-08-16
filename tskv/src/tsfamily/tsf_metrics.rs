@@ -1,7 +1,6 @@
-use std::sync::Arc;
-
 use metrics::gauge::U64Gauge;
 use metrics::metric_register::MetricsRegister;
+use models::schema::database_schema::split_owner;
 
 #[derive(Debug)]
 pub struct TsfMetrics {
@@ -10,8 +9,8 @@ pub struct TsfMetrics {
 }
 
 impl TsfMetrics {
-    pub fn new(register: &MetricsRegister, owner: Arc<(String, String)>, vnode_id: u64) -> Self {
-        let (tenant, db) = (owner.0.as_str(), owner.1.as_str());
+    pub fn new(register: &MetricsRegister, owner: &str, vnode_id: u64) -> Self {
+        let (tenant, db) = split_owner(owner);
         let metric = register.metric::<U64Gauge>("vnode_disk_storage", "disk storage of vnode");
         let disk_storage_gauge = metric.recorder([
             ("tenant", tenant),
@@ -40,8 +39,8 @@ impl TsfMetrics {
         self.vnode_cache_size.set(size)
     }
 
-    pub fn drop(register: &MetricsRegister, owner: Arc<(String, String)>, vnode_id: u64) {
-        let (tenant, db) = (owner.0.as_str(), owner.1.as_str());
+    pub fn drop(register: &MetricsRegister, owner: &str, vnode_id: u64) {
+        let (tenant, db) = split_owner(owner);
         let metric = register.metric::<U64Gauge>("vnode_disk_storage", "disk storage of vnode");
         metric.remove([
             ("tenant", tenant),

@@ -9,6 +9,7 @@ use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::meta_data::VnodeId;
 use models::predicate::domain::ColumnDomains;
+use models::schema::database_schema::{make_owner, split_owner};
 use models::{SeriesId, SeriesKey};
 use snafu::ResultExt;
 use tokio::runtime::Runtime;
@@ -291,10 +292,11 @@ impl Engine for TsKv {
                 .del_tsfamily(vnode_id, self.ctx.summary_task_sender.clone())
                 .await;
 
-            let ts_dir = self.ctx.options.storage.ts_family_dir(
-                Arc::new((tenant.to_string(), database.to_string())),
-                vnode_id,
-            );
+            let ts_dir = self
+                .ctx
+                .options
+                .storage
+                .ts_family_dir(&make_owner(tenant, database), vnode_id);
             match std::fs::remove_dir_all(&ts_dir) {
                 Ok(()) => {
                     info!("Removed TsFamily directory '{}'", ts_dir.display());
@@ -429,7 +431,7 @@ impl Engine for TsKv {
                 }
 
                 let owner = ts_family.read().await.owner();
-                let (tenant, db_name) = (owner.0.as_str(), owner.1.as_str());
+                let (tenant, db_name) = split_owner(&owner);
 
                 if let Err(e) = self.flush_tsfamily(tenant, db_name, vnode_id, true).await {
                     error!("Failed to flush vnode {}: {:?}", vnode_id, e);
@@ -489,7 +491,7 @@ impl Engine for TsKv {
                 drop(db);
 
                 let owner = ts_family.read().await.owner();
-                let (tenant, db_name) = (owner.0.as_str(), owner.1.as_str());
+                let (tenant, db_name) = split_owner(&owner);
                 self.flush_tsfamily(tenant, db_name, vnode_id, false)
                     .await?;
 

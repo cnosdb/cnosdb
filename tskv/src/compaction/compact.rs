@@ -794,7 +794,7 @@ pub async fn run_compaction_job(
 
     let max_block_size = request.storage_opt.max_datablock_size as usize;
     let mut iter = CompactIterator::new(tsm_readers);
-    let tsm_dir = request.storage_opt.tsm_dir(request.owner.clone(), tsf_id);
+    let tsm_dir = request.storage_opt.tsm_dir(&request.owner, tsf_id);
     let max_file_size = request.storage_opt.level_max_file_size(request.out_level);
     let mut tsm_writer =
         TsmWriter::open(&tsm_dir, kernel.file_id_next(), max_file_size, false).await?;
@@ -806,8 +806,11 @@ pub async fn run_compaction_job(
     );
 
     let mut file_metas: HashMap<ColumnFileId, Arc<BloomFilter>> = HashMap::new();
-    let mut version_edit =
-        VersionEdit::new_update_vnode(tsf_id, request.owner.clone(), request.version.last_seq());
+    let mut version_edit = VersionEdit::new_update_vnode(
+        tsf_id,
+        request.owner.to_string(),
+        request.version.last_seq(),
+    );
     let mut previous_merged_block: Option<CompactingBlock> = None;
     let mut sid = iter.curr_sid;
     while let Some(blk_meta_group) = iter.next().await? {
@@ -1099,7 +1102,7 @@ pub mod test {
     }
 
     fn prepare_compact_req_and_kernel(
-        owner: Arc<(String, String)>,
+        owner: Arc<String>,
         opt: Arc<Options>,
         next_file_id: u64,
         files: Vec<Arc<ColumnFile>>,
@@ -1223,14 +1226,14 @@ pub mod test {
         let expected_data = HashMap::from([(1 as SeriesId, vec![expected_data])]);
 
         let dir = "/tmp/test/compaction/fast";
-        let database = Arc::new(("dba".to_string(), "dba".to_string()));
+        let database = Arc::new("dba".to_string());
         let opt = create_options(dir.to_string());
-        let dir = opt.storage.tsm_dir(database.clone(), 1);
+        let dir = opt.storage.tsm_dir(&database, 1);
 
         let (next_file_id, files) =
             write_data_blocks_to_column_file(&dir, data, schema.clone()).await;
         let (compact_req, kernel) =
-            prepare_compact_req_and_kernel(database.clone(), opt, next_file_id, files);
+            prepare_compact_req_and_kernel(database, opt, next_file_id, files);
         let (version_edit, _) =
             run_compaction_job(compact_req, kernel, VnodeCompactionMetrics::fake())
                 .await
@@ -1335,9 +1338,9 @@ pub mod test {
         let expected_data = HashMap::from([(1 as SeriesId, vec![expected_data])]);
 
         let dir = "/tmp/test/compaction/1";
-        let database = Arc::new(("dba".to_string(), "dba".to_string()));
+        let database = Arc::new("dba".to_string());
         let opt = create_options(dir.to_string());
-        let dir = opt.storage.tsm_dir(database.clone(), 1);
+        let dir = opt.storage.tsm_dir(&database, 1);
 
         let (next_file_id, files) =
             write_data_blocks_to_column_file(&dir, data, schema.clone()).await;
@@ -1507,9 +1510,9 @@ pub mod test {
         let expected_data = HashMap::from([(1 as SeriesId, vec![expected_data])]);
 
         let dir = "/tmp/test/compaction/2";
-        let database = Arc::new(("dba".to_string(), "dba".to_string()));
+        let database = Arc::new("dba".to_string());
         let opt = create_options(dir.to_string());
-        let dir = opt.storage.tsm_dir(database.clone(), 1);
+        let dir = opt.storage.tsm_dir(&database, 1);
 
         let (next_file_id, files) =
             write_data_blocks_to_column_file(&dir, data, schema.clone()).await;
@@ -2187,9 +2190,9 @@ pub mod test {
         let expected_data = HashMap::from([(1 as SeriesId, expected_data)]);
 
         let dir = "/tmp/test/compaction/3";
-        let database = Arc::new(("dba".to_string(), "dba".to_string()));
+        let database = Arc::new("dba".to_string());
         let opt = create_options(dir.to_string());
-        let dir = opt.storage.tsm_dir(database.clone(), 1);
+        let dir = opt.storage.tsm_dir(&database, 1);
         if !LocalFileSystem::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
         }
@@ -2829,9 +2832,9 @@ pub mod test {
         let expected_data = HashMap::from([(1 as SeriesId, expected_data)]);
 
         let dir = "/tmp/test/compaction/4";
-        let database = Arc::new(("dba".to_string(), "dba".to_string()));
+        let database = Arc::new("dba".to_string());
         let opt = create_options(dir.to_string());
-        let dir = opt.storage.tsm_dir(database.clone(), 1);
+        let dir = opt.storage.tsm_dir(&database, 1);
         if !LocalFileSystem::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
         }
@@ -3028,9 +3031,9 @@ pub mod test {
         ]);
 
         let dir = "/tmp/test/compaction/5";
-        let database = Arc::new(("dba".to_string(), "dba".to_string()));
+        let database = Arc::new("dba".to_string());
         let opt = create_options(dir.to_string());
-        let dir = opt.storage.tsm_dir(database.clone(), 1);
+        let dir = opt.storage.tsm_dir(&database, 1);
 
         let (next_file_id, files) =
             write_data_blocks_to_column_file(&dir, data, schema.clone()).await;

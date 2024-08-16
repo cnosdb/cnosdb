@@ -9,6 +9,7 @@ mod tests {
     use meta::model::meta_admin::AdminMeta;
     use metrics::metric_register::MetricsRegister;
     use models::meta_data::VnodeId;
+    use models::schema::database_schema::make_owner;
     use models::schema::tenant::TenantOptions;
     use protos::kv_service::{raft_write_command, WriteDataRequest};
     use protos::models_helper;
@@ -357,10 +358,10 @@ mod tests {
 
         let (runtime, tskv) = get_tskv(&dir, None);
 
-        let owner = Arc::new((tenant.to_string(), database.to_string()));
+        let owner = make_owner(tenant, database);
         let storage_opt = tskv.get_storage_options();
-        let vnode_tsm_dir = storage_opt.tsm_dir(owner.clone(), vnode_id);
-        let vnode_delta_dir = storage_opt.delta_dir(owner.clone(), vnode_id);
+        let vnode_tsm_dir = storage_opt.tsm_dir(&owner, vnode_id);
+        let vnode_delta_dir = storage_opt.delta_dir(&owner, vnode_id);
 
         {
             // Write test data
@@ -413,12 +414,12 @@ mod tests {
         };
 
         let vnode_backup_dir = dir.join("backup_for_test");
-        let vnode_data_dir = storage_opt.ts_family_dir(owner.clone(), vnode_id);
+        let vnode_data_dir = storage_opt.ts_family_dir(&owner, vnode_id);
         dircpy::copy_dir(vnode_data_dir, &vnode_backup_dir).unwrap();
 
         let new_vnode_id = 12;
-        let vnode_tsm_dir = storage_opt.tsm_dir(owner.clone(), new_vnode_id);
-        let vnode_delta_dir = storage_opt.delta_dir(owner.clone(), new_vnode_id);
+        let vnode_tsm_dir = storage_opt.tsm_dir(&owner, new_vnode_id);
+        let vnode_delta_dir = storage_opt.delta_dir(&owner, new_vnode_id);
 
         {
             let mut vnode = runtime
