@@ -1,0 +1,26 @@
+include ./setup.slt
+
+query R
+select round(sin(subquery.d_double), 15) from (select * from extreme_data_tbl) as subquery;
+----
+1.0e-6
+-1.0e-6
+-0.526291722709638
+-0.428368256224317
+-0.986424620707328
+0.0
+0.500814902646354
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'sin\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tsin\(Float64/Float32\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select sin(subquery.d_string) from (select * from extreme_data_tbl) as subquery;
+
+query R
+select round(sin(subquery.d_bigint), 15) from (select * from extreme_data_tbl) as subquery;
+----
+0.0
+0.841470984807897
+-0.841470984807897
+0.909297426825682
+-0.909297426825682
+-0.349993502171293
+0.349993502171293

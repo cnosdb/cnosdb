@@ -1,0 +1,73 @@
+statement ok
+DROP TABLE IF EXISTS air_with_weights;
+
+statement ok
+CREATE TABLE air_with_weights (
+    id bigint,
+    temperature double,
+    weight double
+);
+
+statement ok
+INSERT INTO air_with_weights (TIME, id, temperature, weight) VALUES
+('1999-12-31 00:00:00.000', 1, 65.0, 1.0),
+('1999-12-31 00:00:00.001', 2, 64.5, 0.5),
+('1999-12-31 00:00:00.002', 3, 64.9, 1.5),
+('1999-12-31 00:00:00.003', 4, 65.1, 0.8),
+('1999-12-31 00:00:00.004', 5, 64.7, 2.0);
+
+query R
+SELECT approx_percentile_cont_with_weight(temperature, weight, 0.5) AS approx_weighted_median FROM air_with_weights;
+----
+64.825
+
+query R
+SELECT approx_percentile_cont_with_weight(temperature, weight, 0.1) AS approx_10th_percentile FROM air_with_weights;
+----
+64.6
+
+query R
+SELECT approx_percentile_cont_with_weight(temperature, weight, 0.9) AS approx_90th_percentile FROM air_with_weights;
+----
+65.08749999999999
+
+statement ok
+INSERT INTO air_with_weights (TIME, id, temperature, weight) VALUES
+('1999-12-31 00:00:00.005', 6, NULL, 1.0),
+('1999-12-31 00:00:00.006', 7, -5.0, 1.0),
+('1999-12-31 00:00:00.007', 8, -10.0, 0.5),
+('1999-12-31 00:00:00.008', 9, -2.5, NULL);
+
+query R
+SELECT approx_percentile_cont_with_weight(temperature, weight, 0.5) AS approx_weighted_median FROM air_with_weights;
+----
+64.75
+
+query R
+SELECT approx_percentile_cont_with_weight(temperature, weight, 0.1) AS approx_10th_percentile FROM air_with_weights;
+----
+-5.5
+
+query R
+SELECT approx_percentile_cont_with_weight(temperature, weight, 0.9) AS approx_90th_percentile FROM air_with_weights;
+----
+65.03999999999999
+
+query R
+SELECT approx_percentile_cont_with_weight(temperature, 1.0, 0.5) AS approx_weighted_median_const FROM air_with_weights;
+----
+64.5
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Error during planning: Percentile value must be between 0\.0 and 1\.0 inclusive, 1\.1 is invalid", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT approx_percentile_cont_with_weight(temperature, weight, 1.1) AS approx_invalid_percentile FROM air_with_weights;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Error during planning: Percentile value must be between 0\.0 and 1\.0 inclusive, \-0\.1 is invalid", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT approx_percentile_cont_with_weight(temperature, weight, -0.1) AS approx_invalid_percentile FROM air_with_weights;
+
+query R
+SELECT approx_percentile_cont_with_weight(temperature, -1.0, 0.5) AS approx_invalid_weight FROM air_with_weights;
+----
+34.07777777777778
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function ApproxPercentileContWithWeight does not accept 1 function arguments\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select approx_percentile_cont_with_weight(null);

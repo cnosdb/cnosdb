@@ -1,0 +1,44 @@
+# 该测试文件验证 current_date 函数的行为
+
+statement ok
+drop table if exists test_current_date;
+
+statement ok
+create table if not exists test_current_date(val bigint);
+
+statement ok
+insert test_current_date (TIME, val) values (current_date(), 1);
+
+# 验证 current_date 函数在插入数据时的行为
+query I
+select case 
+    when TIME = current_date() 
+    then 1 else 0 
+end 
+from test_current_date;
+----
+1
+
+# 验证 current_date 函数直接返回当前日期
+#query I
+#select current_date();
+#----
+#2024-08-07
+
+query 
+select arrow_typeof(current_date());
+----
+"Date32"
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Unsupported argument types\. Can not evaluate Date32 \+ Int64", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select current_date() + 1;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'current_date\(Int64\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tcurrent_date\(\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select current_date(1);
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'current_date\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tcurrent_date\(\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select current_date('a');
+
+# 删除测试表
+statement ok
+drop table test_current_date;

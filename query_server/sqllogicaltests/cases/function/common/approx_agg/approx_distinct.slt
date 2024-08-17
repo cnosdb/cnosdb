@@ -1,0 +1,106 @@
+#include ./setup.slt
+
+statement ok
+drop table if exists empty_tbl;
+
+statement ok
+CREATE TABLE empty_tbl (
+    val bigint,
+    s_val string
+);
+
+# Test approx_distinct on an empty table
+query I
+SELECT approx_distinct(s_val) AS approx_unique_s_val FROM empty_tbl;
+----
+0
+
+statement ok
+drop table if exists tbl_with_nulls;
+
+# Create a table with null values
+statement ok
+CREATE TABLE tbl_with_nulls (
+    val bigint, 
+    s_val string,
+    d_val double,
+    b_val boolean,
+    u_val bigint unsigned
+);
+
+# Insert sample data with null values
+statement ok
+INSERT INTO tbl_with_nulls (time, val, s_val, d_val, b_val, u_val) VALUES
+('1999-12-31 00:00:00.000', 1, 's_val1', 0.11, true, 1),
+('1999-12-31 00:00:01.000', 2, 's_val2', 0.11, false, 0),
+('1999-12-31 00:00:02.000', 3, NULL, NULL, NULL, NULL),
+('1999-12-31 00:00:03.000', 4, 's_val3', 53718.4708571, true, 2),
+('1999-12-31 00:00:04.000', 5, NULL, -1571984.887109, false, 1000),
+('1999-12-31 00:00:05.000', NULL, 's_val4', -0.3154546, NULL, NULL);
+
+# Test approx_distinct on a column with null values
+query I
+SELECT approx_distinct(s_val) AS approx_unique_s_val FROM tbl_with_nulls;
+----
+4
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: This feature is not implemented: Support for 'approx_distinct' for data type Timestamp\(Nanosecond, None\) is not implemented", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT approx_distinct(TIME) FROM tbl_with_nulls;
+
+query I
+SELECT approx_distinct(val) FROM tbl_with_nulls;
+----
+5
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: This feature is not implemented: Support for 'approx_distinct' for data type Float64 is not implemented", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT approx_distinct(d_val) FROM tbl_with_nulls;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: This feature is not implemented: Support for 'approx_distinct' for data type Boolean is not implemented", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT approx_distinct(b_val) FROM tbl_with_nulls;
+
+query I
+SELECT approx_distinct(u_val) FROM tbl_with_nulls;
+----
+4
+
+
+# Test approx_distinct with invalid syntax
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Table not found, tenant: cnosdb db: public, table: tbl", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT approx_distinct FROM tbl;
+
+query 
+select approx_distinct(1);
+----
+1
+
+query I
+select approx_distinct(subquery.s_val) from (select * from tbl_with_nulls) as subquery;
+----
+4
+
+query I
+select approx_distinct(s_val) from tbl_with_nulls where val > 2;
+----
+1
+
+#large table
+#query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: This feature is not implemented: Support for 'approx_distinct' for data type Float64 is not implemented", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+#select approx_distinct(double_val) from large_table;
+
+#query
+#select approx_distinct(bigint_val) from large_table;
+#----
+#15575
+#
+#query
+#select approx_distinct(bigint_unsigned_val) from large_table;
+#----
+#15422
+
+#query I
+#select approx_distinct(string_val) from large_table;
+#----
+#1009
+
+#query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: This feature is not implemented: Support for 'approx_distinct' for data type Boolean is not implemented", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+#select approx_distinct(boolean_val) from large_table;

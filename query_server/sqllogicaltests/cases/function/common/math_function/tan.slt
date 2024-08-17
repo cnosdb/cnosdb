@@ -1,0 +1,36 @@
+include ./setup.slt
+
+query R
+select round(tan(subquery.d_double), 15) from (select * from extreme_data_tbl order by value asc) as subquery;
+----
+1.0e-6
+-1.0e-6
+-0.618945312883177
+0.474066226622817
+-6.006920338577737
+0.0
+0.578605917769087
+
+query R
+select round(tan(subquery.d_bigint), 15) from (select * from extreme_data_tbl) as subquery;
+----
+0.0
+1.557407724654902
+-1.557407724654902
+-2.185039863261519
+2.185039863261519
+-0.373624453987599
+0.373624453987599
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'tan\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\ttan\(Float64/Float32\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select tan(subquery.d_string) from (select * from extreme_data_tbl) as subquery;
+
+query 
+select tan(0);
+----
+0.0
+
+query 
+select round(tan(radians(90)), 15);
+----
+1.6331239353195372e16
