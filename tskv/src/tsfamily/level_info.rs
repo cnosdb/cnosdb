@@ -18,7 +18,7 @@ pub struct LevelInfo {
     /// the time_range of column file is overlap in L0,
     /// the time_range of column file is not overlap in L0,
     pub files: Vec<Arc<ColumnFile>>,
-    pub owner: Arc<(String, String)>,
+    pub owner: Arc<String>,
     pub tsf_id: u32,
     pub storage_opt: Arc<StorageOptions>,
     pub level: u32,
@@ -29,7 +29,7 @@ pub struct LevelInfo {
 
 impl LevelInfo {
     pub fn init(
-        owner: Arc<(String, String)>,
+        database: Arc<String>,
         level: u32,
         tsf_id: u32,
         storage_opt: Arc<StorageOptions>,
@@ -37,7 +37,7 @@ impl LevelInfo {
         let max_size = storage_opt.level_max_file_size(level);
         Self {
             files: Vec::new(),
-            owner,
+            owner: database,
             tsf_id,
             storage_opt,
             level,
@@ -51,16 +51,16 @@ impl LevelInfo {
     }
 
     pub fn init_levels(
-        owner: Arc<(String, String)>,
+        database: Arc<String>,
         tsf_id: u32,
         storage_opt: Arc<StorageOptions>,
     ) -> [LevelInfo; 5] {
         [
-            Self::init(owner.clone(), 0, tsf_id, storage_opt.clone()),
-            Self::init(owner.clone(), 1, tsf_id, storage_opt.clone()),
-            Self::init(owner.clone(), 2, tsf_id, storage_opt.clone()),
-            Self::init(owner.clone(), 3, tsf_id, storage_opt.clone()),
-            Self::init(owner, 4, tsf_id, storage_opt),
+            Self::init(database.clone(), 0, tsf_id, storage_opt.clone()),
+            Self::init(database.clone(), 1, tsf_id, storage_opt.clone()),
+            Self::init(database.clone(), 2, tsf_id, storage_opt.clone()),
+            Self::init(database.clone(), 3, tsf_id, storage_opt.clone()),
+            Self::init(database, 4, tsf_id, storage_opt),
         ]
     }
 
@@ -71,10 +71,10 @@ impl LevelInfo {
         tsm_reader_cache: Weak<ShardedAsyncCache<String, Arc<TsmReader>>>,
     ) {
         let file_path = if compact_meta.is_delta {
-            let base_dir = self.storage_opt.delta_dir(self.owner.clone(), self.tsf_id);
+            let base_dir = self.storage_opt.delta_dir(&self.owner, self.tsf_id);
             make_delta_file(base_dir, compact_meta.file_id)
         } else {
-            let base_dir = self.storage_opt.tsm_dir(self.owner.clone(), self.tsf_id);
+            let base_dir = self.storage_opt.tsm_dir(&self.owner, self.tsf_id);
             make_tsm_file(base_dir, compact_meta.file_id)
         };
         self.files.push(Arc::new(ColumnFile::with_compact_data(

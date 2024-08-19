@@ -4,7 +4,7 @@ use std::sync::Arc;
 use memory_pool::MemoryPoolRef;
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
-use models::schema::database_schema::DatabaseSchema;
+use models::schema::database_schema::{make_owner, DatabaseSchema};
 use tokio::runtime::Runtime;
 use tokio::sync::RwLock;
 
@@ -19,7 +19,7 @@ use crate::{Options, TseriesFamilyId};
 #[derive(Debug)]
 pub struct VersionSet {
     /// Maps DBName -> DB
-    dbs: HashMap<(String, String), Arc<RwLock<Database>>>,
+    dbs: HashMap<String, Arc<RwLock<Database>>>,
     _runtime: Arc<Runtime>,
     db_factory: DatabaseFactory,
 }
@@ -98,21 +98,22 @@ impl VersionSet {
     }
 
     pub fn delete_db(&mut self, tenant: &str, database: &str) -> Option<Arc<RwLock<Database>>> {
-        self.dbs.remove(&(tenant.to_string(), database.to_string()))
+        let owner = make_owner(tenant, database);
+        self.dbs.remove(&owner)
     }
 
     pub fn db_exists(&self, tenant: &str, database: &str) -> bool {
-        self.dbs
-            .get(&(tenant.to_string(), database.to_string()))
-            .is_some()
+        let owner = make_owner(tenant, database);
+        self.dbs.get(&owner).is_some()
     }
 
-    pub fn get_all_db(&self) -> &HashMap<(String, String), Arc<RwLock<Database>>> {
+    pub fn get_all_db(&self) -> &HashMap<String, Arc<RwLock<Database>>> {
         &self.dbs
     }
 
-    pub fn get_db(&self, tenant: &str, database: &str) -> Option<Arc<RwLock<Database>>> {
-        if let Some(v) = self.dbs.get(&(tenant.to_string(), database.to_string())) {
+    pub fn get_db(&self, tenant_name: &str, db_name: &str) -> Option<Arc<RwLock<Database>>> {
+        let owner_name = make_owner(tenant_name, db_name);
+        if let Some(v) = self.dbs.get(&owner_name) {
             return Some(v.clone());
         }
 
@@ -159,7 +160,8 @@ impl VersionSet {
         database: &str,
         tf_id: u32,
     ) -> Option<Arc<RwLock<TseriesFamily>>> {
-        if let Some(db) = self.dbs.get(&(tenant.to_string(), database.to_string())) {
+        let owner = make_owner(tenant, database);
+        if let Some(db) = self.dbs.get(&owner) {
             return db.read().await.get_tsfamily(tf_id);
         }
 
@@ -222,7 +224,8 @@ impl VersionSet {
         tenant: &str,
         database: &str,
     ) -> Option<Vec<Arc<RwLock<TseriesFamily>>>> {
-        if let Some(db) = self.dbs.get(&(tenant.to_string(), database.to_string())) {
+        let owner = make_owner(tenant, database);
+        if let Some(db) = self.dbs.get(&owner) {
             return Some(db.read().await.ts_families().values().cloned().collect());
         }
 

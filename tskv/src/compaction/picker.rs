@@ -307,7 +307,7 @@ mod test {
     ///   - size
     ///   - being_compact
     fn create_tseries_family(
-        owner: Arc<(String, String)>,
+        owner: Arc<String>,
         opt: Arc<Options>,
         db_config: Arc<DatabaseConfig>,
         levels_sketch: LevelsSketch,
@@ -316,7 +316,7 @@ mod test {
         let mut level_infos =
             LevelInfo::init_levels(owner.clone(), ts_family_id, opt.storage.clone());
         let mut max_level_ts = 0_i64;
-        let tsm_dir = &opt.storage.tsm_dir(owner.clone(), ts_family_id);
+        let tsm_dir = &opt.storage.tsm_dir(&owner, ts_family_id);
         for (level, lts_min, lts_max, column_files_sketch) in levels_sketch {
             max_level_ts = max_level_ts.max(lts_max);
             let mut col_files = Vec::new();
@@ -350,7 +350,7 @@ mod test {
         let memory_pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::default());
         let version = Arc::new(Version::new(
             1,
-            Arc::new(("version".to_string(), "_1".to_string())),
+            Arc::new("version_1".to_string()),
             opt.storage.clone(),
             1,
             level_infos,
@@ -360,7 +360,7 @@ mod test {
 
         TseriesFamily::new(
             1,
-            Arc::new(("ts_family".to_string(), "_1".to_string())),
+            Arc::new("ts_family_1".to_string()),
             MemCache::new(1, 1000, 2, 1, &memory_pool),
             version,
             db_config,
@@ -406,12 +406,7 @@ mod test {
             ]), // 0.00001
         ];
 
-        let tsf = create_tseries_family(
-            Arc::new(("dba".to_string(), "dba".to_string())),
-            opt,
-            db_config,
-            levels_sketch,
-        );
+        let tsf = create_tseries_family(Arc::new("dba".to_string()), opt, db_config, levels_sketch);
         let picker = LevelCompactionPicker {};
         let compact_req = picker.pick_compaction(tsf.version()).unwrap();
         assert_eq!(compact_req.out_level, 2);

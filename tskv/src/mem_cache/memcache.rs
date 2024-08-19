@@ -766,7 +766,7 @@ mod test_memcache {
         global_config.storage.path = dir.to_string();
         let opt = Arc::new(Options::from(&global_config));
 
-        let database = Arc::new(("cnosdb".to_string(), "test".to_string()));
+        let database = Arc::new("cnosdb.test".to_string());
         #[rustfmt::skip]
             let levels = [
             LevelInfo::init(database.clone(), 0, 0, opt.storage.clone()),
@@ -960,9 +960,9 @@ mod test_memcache {
         global_config.storage.path = dir.to_string();
         let opt = Arc::new(Options::from(&global_config));
 
-        let owner = Arc::new(("cnosdb".to_string(), "test".to_string()));
+        let owner = Arc::new("cnosdb.test".to_string());
         let ts_family_id = 1;
-        let tsm_dir = opt.storage.tsm_dir(owner.clone(), ts_family_id);
+        let tsm_dir = opt.storage.tsm_dir(&owner, ts_family_id);
         #[rustfmt::skip]
             let levels = [
             LevelInfo::init(owner.clone(), 0, 0, opt.storage.clone()),
