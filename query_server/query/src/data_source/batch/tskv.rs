@@ -14,7 +14,7 @@ use datafusion::logical_expr::logical_plan::AggWithGrouping;
 use datafusion::logical_expr::{
     aggregate_function, Expr, TableProviderAggregationPushDown, TableProviderFilterPushDown,
 };
-use datafusion::optimizer::utils::{conjunction, split_conjunction};
+use datafusion::optimizer::utils::conjunction;
 use datafusion::physical_expr::PhysicalExpr;
 use datafusion::physical_plan::empty::EmptyExec;
 use datafusion::physical_plan::{project_schema, ExecutionPlan};
@@ -31,7 +31,6 @@ use crate::data_source::sink::tskv::TskvRecordBatchSinkProvider;
 use crate::data_source::split::tskv::TableLayoutHandle;
 use crate::data_source::split::SplitManagerRef;
 use crate::data_source::{UpdateExecExt, WriteExecExt};
-use crate::extension::expr::expr_utils;
 use crate::extension::physical::plan_node::aggregate_filter_scan::AggregateFilterTskvExec;
 use crate::extension::physical::plan_node::table_writer::TableWriterExec;
 use crate::extension::physical::plan_node::tag_scan::TagScanExec;
@@ -319,7 +318,7 @@ impl TableProvider for ClusterTable {
 
         // FIXME: tag support Exact Filter PushDown
         // TODO: REMOVE
-        let exprs = split_conjunction(expr);
+        /* let exprs = split_conjunction(expr);
         let exprs = exprs.into_iter().cloned().collect::<Vec<_>>();
         if expr_utils::find_exprs_in_exprs(&exprs, &|nested_expr| {
             !expr_utils::is_time_filter(nested_expr)
@@ -328,9 +327,10 @@ impl TableProvider for ClusterTable {
         {
             // all exprs are time range filter
             return Ok(TableProviderFilterPushDown::Exact);
-        }
+        } */
 
-        Ok(TableProviderFilterPushDown::Inexact)
+        // tskv handle all filters
+        Ok(TableProviderFilterPushDown::Exact)
     }
 
     fn supports_aggregate_pushdown(
@@ -342,41 +342,41 @@ impl TableProvider for ClusterTable {
             return Ok(TableProviderAggregationPushDown::Unsupported);
         }
 
-        // let result = if aggr_expr.iter().all(|e| {
-        //     match e {
-        //         Expr::AggregateFunction(AggregateFunction {
-        //             fun,
-        //             args,
-        //             distinct,
-        //             filter,
-        //             order_by,
-        //         }) => {
-        //             let support_agg_func = matches!(
-        //                 fun,
-        //                 aggregate_function::AggregateFunction::Count // TODO
-        //                                                              // | aggregate_function::AggregateFunction::Max
-        //                                                              // | aggregate_function::AggregateFunction::Min
-        //                                                              // | aggregate_function::AggregateFunction::Sum
-        //             );
+        /* let result = if aggr_expr.iter().all(|e| {
+            match e {
+                Expr::AggregateFunction(AggregateFunction {
+                    fun,
+                    args,
+                    distinct,
+                    filter,
+                    order_by,
+                }) => {
+                    let support_agg_func = matches!(
+                        fun,
+                        aggregate_function::AggregateFunction::Count // TODO
+                                                                     | aggregate_function::AggregateFunction::Max
+                                                                     | aggregate_function::AggregateFunction::Min
+                                                                     // | aggregate_function::AggregateFunction::Sum
+                    );
 
-        //             support_agg_func
-        //                 && args.len() == 1
-        //                 // count(*) | count(1) | count(col)
-        //                 && (matches!(args[0], Expr::Column(_)) || matches!(args[0], Expr::Literal(_)))
-        //                 // not distinct
-        //                 && !*distinct
-        //                 && filter.is_none()
-        //                 && order_by.is_none()
-        //         }
-        //         _ => false,
-        //     }
-        // }) {
-        //     TableProviderAggregationPushDown::Ungrouped
-        // } else {
-        //     TableProviderAggregationPushDown::Unsupported
-        // };
+                    support_agg_func
+                        && args.len() == 1
+                        // count(*) | count(1) | count(col)
+                        && (matches!(args[0], Expr::Column(_)) || matches!(args[0], Expr::Literal(_)))
+                        // not distinct
+                        && !*distinct
+                        && filter.is_none()
+                        && order_by.is_none()
+                }
+                _ => false,
+            }
+        }) {
+            TableProviderAggregationPushDown::Ungrouped
+        } else {
+            TableProviderAggregationPushDown::Unsupported
+        };
 
-        // Ok(result)
+        Ok(result) */
 
         Ok(TableProviderAggregationPushDown::Unsupported)
     }
