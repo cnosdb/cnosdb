@@ -3,7 +3,6 @@ use std::time::Duration;
 
 use meta::model::MetaRef;
 use models::meta_data::VnodeId;
-use models::schema::database_schema::make_owner;
 use protos::kv_service::tskv_service_client::TskvServiceClient;
 use protos::kv_service::{DownloadFileRequest, RaftWriteCommand};
 use protos::models_helper::parse_prost_bytes;
@@ -100,12 +99,8 @@ impl TskvEngineStorage {
         snapshot: &VnodeSnapshot,
         client: &mut TskvServiceClient<Timeout<Channel>>,
     ) -> CoordinatorResult<()> {
-        let owner_concat = make_owner(
-            &snapshot.version_edit.owner.0,
-            &snapshot.version_edit.owner.1,
-        );
         let src_dir = PathBuf::from(DATA_PATH)
-            .join(&owner_concat)
+            .join(&snapshot.version_edit.tsf_name)
             .join(snapshot.vnode_id.to_string());
 
         for info in snapshot.version_edit.add_files.iter() {

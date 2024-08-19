@@ -22,7 +22,7 @@ use crate::{ColumnFileId, TseriesFamilyId};
 #[derive(Debug)]
 pub struct Version {
     ts_family_id: TseriesFamilyId,
-    owner: Arc<(String, String)>,
+    owner: Arc<String>,
     storage_opt: Arc<StorageOptions>,
     /// The max seq_no of write batch in wal flushed to column file.
     last_seq: u64,
@@ -36,7 +36,7 @@ impl Version {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         ts_family_id: TseriesFamilyId,
-        owner: Arc<(String, String)>,
+        owner: Arc<String>,
         storage_opt: Arc<StorageOptions>,
         last_seq: u64,
         levels_info: [LevelInfo; 5],
@@ -135,7 +135,7 @@ impl Version {
         self.ts_family_id
     }
 
-    pub fn owner(&self) -> Arc<(String, String)> {
+    pub fn owner(&self) -> Arc<String> {
         self.owner.clone()
     }
 

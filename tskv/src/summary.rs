@@ -8,6 +8,7 @@ use cache::ShardedAsyncCache;
 use memory_pool::MemoryPoolRef;
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
+use models::schema::database_schema::split_owner;
 use models::Timestamp;
 use parking_lot::RwLock as SyncRwLock;
 use serde::{Deserialize, Serialize};
@@ -79,7 +80,7 @@ impl CompactMeta {
     pub fn file_path(
         &self,
         storage_opt: &StorageOptions,
-        owner: Arc<(String, String)>,
+        owner: &str,
         ts_family_id: TseriesFamilyId,
     ) -> PathBuf {
         if self.is_delta {
@@ -166,7 +167,7 @@ pub struct VersionEdit {
 
     pub act_tsf: VnodeAction,
     pub tsf_id: TseriesFamilyId,
-    pub owner: Arc<(String, String)>,
+    pub tsf_name: String,
 }
 
 impl Default for VersionEdit {
@@ -179,39 +180,39 @@ impl Default for VersionEdit {
             del_files: vec![],
             act_tsf: VnodeAction::Update,
             tsf_id: 0,
-            owner: Arc::new((String::from(""), String::from(""))),
+            tsf_name: String::from(""),
         }
     }
 }
 
 impl VersionEdit {
-    pub fn new_update_vnode(vnode_id: u32, owner: Arc<(String, String)>, seq_no: u64) -> Self {
+    pub fn new_update_vnode(vnode_id: u32, owner: String, seq_no: u64) -> Self {
         Self {
             seq_no,
             act_tsf: VnodeAction::Update,
-            owner,
+            tsf_name: owner,
             tsf_id: vnode_id,
             ..Default::default()
         }
     }
 
-    pub fn new_add_vnode(vnode_id: u32, owner: Arc<(String, String)>, seq_no: u64) -> Self {
+    pub fn new_add_vnode(vnode_id: u32, owner: String, seq_no: u64) -> Self {
         Self {
             seq_no,
             act_tsf: VnodeAction::Add,
             tsf_id: vnode_id,
-            owner,
+            tsf_name: owner,
 
             ..Default::default()
         }
     }
 
-    pub fn new_del_vnode(vnode_id: u32, owner: Arc<(String, String)>, seq_no: u64) -> Self {
+    pub fn new_del_vnode(vnode_id: u32, owner: String, seq_no: u64) -> Self {
         Self {
             seq_no,
             act_tsf: VnodeAction::Delete,
             tsf_id: vnode_id,
-            owner,
+            tsf_name: owner,
 
             ..Default::default()
         }
@@ -288,8 +289,8 @@ impl VersionEdit {
 
 impl Display for VersionEdit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "seq_no: {}, file_id: {}, add_files: {}, del_files: {}, act_tsf: {}, tsf_id: {}, tsf_name: {}.{}, max_level_ts: {}",
-               self.seq_no, self.file_id, self.add_files.len(), self.del_files.len(), self.act_tsf, self.tsf_id, self.owner.0,self.owner.1, self.max_level_ts)
+        write!(f, "seq_no: {}, file_id: {}, add_files: {}, del_files: {}, act_tsf: {}, tsf_id: {}, tsf_name: {}, max_level_ts: {}",
+               self.seq_no, self.file_id, self.add_files.len(), self.del_files.len(), self.act_tsf, self.tsf_id, self.tsf_name, self.max_level_ts)
     }
 }
 
@@ -426,8 +427,8 @@ impl Summary {
         metrics_register: Arc<MetricsRegister>,
     ) -> TskvResult<VersionSet> {
         let mut tsf_edits_map: HashMap<TseriesFamilyId, Vec<VersionEdit>> = HashMap::new();
-        let mut owner_map: HashMap<(String, String), Arc<(String, String)>> = HashMap::new();
-        let mut tsf_owner_map: HashMap<TseriesFamilyId, Arc<(String, String)>> = HashMap::new();
+        let mut owner_map: HashMap<String, Arc<String>> = HashMap::new();
+        let mut tsf_owner_map: HashMap<TseriesFamilyId, Arc<String>> = HashMap::new();
 
         loop {
             let res = reader.read_record().await;
@@ -436,8 +437,8 @@ impl Summary {
                     let ed = VersionEdit::decode(&result.data)?;
                     if ed.act_tsf == VnodeAction::Add {
                         let owner_ref = owner_map
-                            .entry((*ed.owner).clone())
-                            .or_insert_with(|| ed.owner.clone());
+                            .entry(ed.tsf_name.clone())
+                            .or_insert_with(|| Arc::new(ed.tsf_name.clone()));
                         tsf_owner_map.insert(ed.tsf_id, owner_ref.clone());
                         tsf_edits_map.insert(ed.tsf_id, vec![ed]);
                     } else if ed.act_tsf == VnodeAction::Delete {
@@ -459,7 +460,7 @@ impl Summary {
         let mut max_file_id = 0_u64;
         for (tsf_id, edits) in tsf_edits_map {
             let owner = tsf_owner_map.remove(&tsf_id).unwrap();
-            let (tenant, database) = (owner.0.as_str(), owner.1.as_str());
+            let (tenant, database) = split_owner(&owner);
 
             let mut files: HashMap<u64, CompactMeta> = HashMap::new();
             let mut max_seq_no = 0;
@@ -695,6 +696,7 @@ mod test {
     use memory_pool::GreedyMemoryPool;
     use meta::model::meta_admin::AdminMeta;
     use metrics::metric_register::MetricsRegister;
+    use models::schema::database_schema::make_owner;
     use models::schema::tenant::TenantOptions;
     use sysinfo::{ProcessRefreshKind, RefreshKind, System};
     use tokio::runtime::Runtime;
@@ -865,16 +867,9 @@ mod test {
             .unwrap();
 
             let version_set = summary.version_set.read().await;
-            let all_db_names: Vec<(String, String)> =
-                version_set.get_all_db().keys().cloned().collect();
-            assert_eq!(
-                all_db_names,
-                vec![("cnosdb".to_string(), "hello".to_string())]
-            );
-            let db = version_set
-                .get_all_db()
-                .get(&("cnosdb".to_string(), "hello".to_string()))
-                .unwrap();
+            let all_db_names: Vec<String> = version_set.get_all_db().keys().cloned().collect();
+            assert_eq!(all_db_names, vec!["cnosdb.hello".to_string()]);
+            let db = version_set.get_all_db().get("cnosdb.hello").unwrap();
             let vnode_ids: Vec<TseriesFamilyId> =
                 db.read().await.ts_families().keys().cloned().collect();
             assert_eq!(vnode_ids, vec![100]);
@@ -1007,7 +1002,7 @@ mod test {
             let version = vnode.ts_family().read().await.version();
             let tsm_reader_cache = Arc::downgrade(version.tsm_reader_cache());
 
-            let owner = Arc::new((tenant.to_string(), database.to_string()));
+            let owner = make_owner(tenant, database);
             let mut edit = VersionEdit::new_update_vnode(VNODE_ID, owner, 100);
             let meta = CompactMeta {
                 file_id: 15,

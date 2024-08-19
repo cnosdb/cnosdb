@@ -19,7 +19,7 @@ use crate::tsm::writer::TsmWriter;
 use crate::{TsKvContext, TseriesFamilyId};
 
 pub struct FlushTask {
-    owner: Arc<(String, String)>,
+    owner: String,
     tsf_id: TseriesFamilyId,
     mem_caches: Vec<Arc<RwLock<MemCache>>>,
     global_context: Arc<GlobalContext>,
@@ -32,7 +32,7 @@ pub struct FlushTask {
 
 impl FlushTask {
     pub async fn new(
-        owner: Arc<(String, String)>,
+        owner: String,
         tsf_id: TseriesFamilyId,
         mem_caches: Vec<Arc<RwLock<MemCache>>>,
         global_context: Arc<GlobalContext>,
@@ -167,8 +167,8 @@ pub async fn flush_memtable(
         (tsf_rlock.storage_opt(), tsf_rlock.version().max_level_ts())
     };
 
-    let path_tsm = storage_opt.tsm_dir(req.owner.clone(), req.tf_id);
-    let path_delta = storage_opt.delta_dir(req.owner.clone(), req.tf_id);
+    let path_tsm = storage_opt.tsm_dir(&req.owner, req.tf_id);
+    let path_delta = storage_opt.delta_dir(&req.owner, req.tf_id);
     let mut flush_task = FlushTask::new(
         req.owner.clone(),
         req.tf_id,
@@ -189,8 +189,8 @@ pub async fn flush_memtable(
     };
 
     info!(
-        "Flush: completed: owner: {}.{} tsf_id: {}, version edit: {:?}",
-        req.owner.0, req.owner.1, req.tf_id, version_edit
+        "Flush: completed: owner: {} tsf_id: {}, version edit: {:?}",
+        req.owner, req.tf_id, version_edit
     );
 
     let (task_state_sender, task_state_receiver) = oneshot::channel();
@@ -363,7 +363,7 @@ pub mod flush_tests {
         global_config.storage.path = dir.to_string();
         let opt = Arc::new(Options::from(&global_config));
 
-        let database = Arc::new(("cnosdb".to_string(), "test".to_string()));
+        let database = Arc::new("cnosdb.test".to_string());
 
         #[rustfmt::skip]
             let levels = [
@@ -431,7 +431,7 @@ pub mod flush_tests {
         let path_tsm = PathBuf::from("/tmp/test/flush/tsm1");
         let path_delta = PathBuf::from("/tmp/test/flush/tsm2");
         let mut flush_task = FlushTask::new(
-            database,
+            database.to_string(),
             1,
             mem_caches,
             Arc::new(GlobalContext::new()),
@@ -520,7 +520,7 @@ pub mod flush_tests {
         global_config.storage.path = dir.to_string();
         let opt = Arc::new(Options::from(&global_config));
 
-        let database = Arc::new(("cnosdb".to_string(), "test".to_string()));
+        let database = Arc::new("cnosdb.test".to_string());
 
         #[rustfmt::skip]
             let levels = [
@@ -597,7 +597,7 @@ pub mod flush_tests {
         let path_tsm = PathBuf::from("/tmp/test/flush2/tsm1");
         let path_delta = PathBuf::from("/tmp/test/flush2/tsm2");
         let mut flush_task = FlushTask::new(
-            database,
+            database.as_str().to_string(),
             1,
             mem_caches,
             Arc::new(GlobalContext::new()),
