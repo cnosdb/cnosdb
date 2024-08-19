@@ -1,19 +1,22 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 
 use cache::{AsyncCache, ShardedAsyncCache};
 use models::predicate::domain::TimeRange;
-use models::{ColumnId, FieldId, SeriesId};
+use models::{ColumnId, FieldId, SeriesId, SeriesKey};
+use snafu::ResultExt;
 use tokio::sync::RwLock as TokioRwLock;
 use trace::{debug, error, info};
 use utils::BloomFilter;
 
-use crate::error::TskvResult;
-use crate::file_system::async_filesystem::LocalFileSystem;
+use crate::error::{FileSystemSnafu, TskvResult};
+use crate::file_system::async_filesystem::{LocalFileSystem, LocalFileType};
 use crate::file_system::FileSystem;
 use crate::summary::CompactMeta;
 use crate::tsm::reader::TsmReader;
+use crate::tsm::writer::TsmWriter;
 use crate::tsm::TsmTombstone;
 use crate::{tsm, ColumnFileId, LevelId};
 
@@ -159,6 +162,32 @@ impl ColumnFile {
             .await?;
         tombstone.flush().await?;
         Ok(())
+    }
+
+    pub async fn update_tag_value(
+        &self,
+        series: &HashMap<SeriesId, SeriesKey>,
+    ) -> TskvResult<Option<PathBuf>> {
+        let mut meta = if self
+            .contains_any_series_id(&series.keys().copied().collect::<Vec<_>>())
+            .await?
+        {
+            TsmReader::open(&self.path)
+                .await?
+                .tsm_meta_data()
+                .as_ref()
+                .clone()
+        } else {
+            return Ok(None);
+        };
+        meta.update_tag_value(series)?;
+        let local_file_system = LocalFileSystem::new(LocalFileType::ThreadPool);
+        let writer = local_file_system
+            .open_file_writer(&self.path, 1024)
+            .await
+            .context(FileSystemSnafu)?;
+        TsmWriter::update_file_meta_data(self.file_id, self.path.clone(), writer, meta).await?;
+        Ok(Some(self.path.clone()))
     }
 }
 

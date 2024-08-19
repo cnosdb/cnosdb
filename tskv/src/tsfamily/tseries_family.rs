@@ -9,7 +9,6 @@ use metrics::metric_register::MetricsRegister;
 use models::meta_data::VnodeStatus;
 use models::predicate::domain::{TimeRange, TimeRanges};
 use models::schema::database_schema::DatabaseConfig;
-use models::schema::tskv_table_schema::TableColumn;
 use models::{ColumnId, SeriesId, SeriesKey};
 use parking_lot::RwLock;
 use snafu::ResultExt;
@@ -260,30 +259,10 @@ impl TseriesFamily {
         *self.last_modified.read().await
     }
 
-    pub fn update_status(&mut self, status: VnodeStatus) {
-        self.status = status;
-    }
-
     pub fn drop_columns(&self, series_ids: &[SeriesId], column_ids: &[ColumnId]) {
         self.mut_cache.read().drop_columns(series_ids, column_ids);
         for memcache in self.immut_cache.iter() {
             memcache.read().drop_columns(series_ids, column_ids);
-        }
-    }
-
-    pub fn change_column(&self, sids: &[SeriesId], column_name: &str, new_column: &TableColumn) {
-        self.mut_cache
-            .read()
-            .change_column(sids, column_name, new_column);
-        for memcache in self.immut_cache.iter() {
-            memcache.read().change_column(sids, column_name, new_column);
-        }
-    }
-
-    pub fn add_column(&self, sids: &[SeriesId], new_column: &TableColumn) {
-        self.mut_cache.read().add_column(sids, new_column);
-        for memcache in self.immut_cache.iter() {
-            memcache.read().add_column(sids, new_column);
         }
     }
 
@@ -379,6 +358,26 @@ impl TseriesFamily {
         index_w.flush().await.context(IndexErrSnafu)?;
 
         Ok(index)
+    }
+
+    pub async fn update_tag_value(&self, series: HashMap<SeriesId, SeriesKey>) -> TskvResult<()> {
+        self.mut_cache.read().update_tag_value(&series);
+        for cache in self.immut_cache.iter() {
+            cache.read().update_tag_value(&series);
+        }
+
+        let files = self
+            .version()
+            .levels_info()
+            .iter()
+            .flat_map(|level| level.files.clone())
+            .collect::<Vec<_>>();
+        for file in files {
+            if let Some(path) = file.update_tag_value(&series).await? {
+                self.version().remove_tsm_reader_cache(path).await;
+            }
+        }
+        Ok(())
     }
 
     pub fn tf_id(&self) -> TseriesFamilyId {

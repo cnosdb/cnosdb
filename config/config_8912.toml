@@ -47,6 +47,7 @@ reserve_space = '0G'
 copyinto_trigger_flush_size = "128MiB" # 134217728
 max_datablock_size = "100KiB"
 index_cache_capacity = 100000
+read_parallel = 8
 
 [wal]
 path = '/tmp/cnosdb/2001/wal'

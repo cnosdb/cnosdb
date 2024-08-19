@@ -1,5 +1,4 @@
-use std::cmp;
-use std::fmt::{Debug, Formatter};
+use std::cmp::{min, Ordering};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -15,89 +14,70 @@ use datafusion::physical_plan::PhysicalExpr;
 use datafusion::scalar::ScalarValue;
 use futures::{Stream, StreamExt};
 use models::predicate::domain::TimeRange;
+use models::SeriesId;
 
 use super::metrics::BaselineMetrics;
 use super::{Predicate, SchemableTskvRecordBatchStream, SendableSchemableTskvRecordBatchStream};
 use crate::error::MismatchedSchemaSnafu;
 use crate::TskvResult;
 
-pub struct OverlappingSegments<T: TimeRangeProvider> {
-    segments: Vec<T>,
-}
-
-impl<T: TimeRangeProvider> OverlappingSegments<T> {
-    pub fn segments(self) -> Vec<T> {
-        self.segments
-    }
-}
-
-impl<T: TimeRangeProvider> IntoIterator for OverlappingSegments<T> {
-    type Item = T;
-    type IntoIter = std::vec::IntoIter<T>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.segments.into_iter()
-    }
-}
-
-impl<T: TimeRangeProvider> Debug for OverlappingSegments<T> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.debug_list()
-            .entries(self.segments.iter().map(|t| t.time_range()))
-            .finish()
-    }
-}
-
-pub trait TimeRangeProvider {
+pub trait DataReferenceExt {
+    fn series_id(&self) -> SeriesId;
     fn time_range(&self) -> TimeRange;
+    fn data_id(&self) -> u64;
+    fn set_data_id(&mut self, data_id: u64);
+    fn file_id(&self) -> u64;
 }
 
-/// Given a slice of range-like items `ordered_chunks`, this function groups overlapping segments
-/// and returns a vector of `OverlappingSegments`. It checks for overlaps between the segments
-/// and groups them accordingly.
-///
-/// # Arguments
-///
-/// * `ordered_chunks` - A slice of range-like items that need to be grouped based on overlaps.
-///
-/// # Type Parameters
-///
-/// * `R` - Type representing a range-like item.
-/// * `T` - Type that is used within the range-like item and implements `Ord` and `Copy` traits.
-///
-/// # Returns
-///
-/// A vector of `OverlappingSegments`, where each element contains a group of overlapping segments.
-pub fn group_overlapping_segments<R: TimeRangeProvider + Clone>(
-    ordered_chunks: &[R],
-) -> Vec<OverlappingSegments<R>> {
-    let mut result: Vec<OverlappingSegments<R>> = Vec::new();
+impl PartialEq for dyn DataReferenceExt {
+    fn eq(&self, other: &Self) -> bool {
+        self.file_id() == other.file_id()
+            && self.series_id() == other.series_id()
+            && self.time_range() == other.time_range()
+    }
+}
 
-    let mut global_min_ts = i64::MIN;
+impl Eq for dyn DataReferenceExt {}
 
-    for chunk in ordered_chunks {
-        let mut found = false;
+impl PartialOrd for dyn DataReferenceExt {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
 
-        // Check if the current segment overlaps any existing grouping
-        if let Some(segment_group) = result.last_mut() {
-            if chunk.time_range().min_ts <= global_min_ts {
-                segment_group.segments.push(chunk.clone());
-                found = true;
+impl Ord for dyn DataReferenceExt {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.data_id()
+            .cmp(&other.data_id())
+            .then_with(|| self.series_id().cmp(&other.series_id()))
+            .then_with(|| self.file_id().cmp(&other.file_id()))
+            .then_with(|| self.time_range().cmp(&other.time_range()))
+    }
+}
+
+pub fn preprocess_metadata<T: DataReferenceExt + 'static>(metadata_list: &mut [T]) {
+    metadata_list.sort_by(|a, b| {
+        a.series_id()
+            .cmp(&b.series_id())
+            .then_with(|| a.time_range().cmp(&b.time_range()))
+    });
+
+    for i in 0..metadata_list.len() {
+        for j in (i + 1)..metadata_list.len() {
+            if metadata_list[i].series_id() == metadata_list[j].series_id()
+                && metadata_list[i].time_range().max_ts > metadata_list[j].time_range().min_ts
+            {
+                let data_id_i = metadata_list[i].data_id();
+                let data_id_j = metadata_list[j].data_id();
+                metadata_list[j].set_data_id(min(data_id_i, data_id_j));
             }
         }
-
-        if !found {
-            // If there is no overlap, create a new grouping
-            let new_segment_group = OverlappingSegments {
-                segments: vec![chunk.clone()],
-            };
-            result.push(new_segment_group);
-        }
-
-        global_min_ts = cmp::max(chunk.time_range().max_ts, global_min_ts);
     }
-
-    result
+    metadata_list.sort_by(|a, b| {
+        let a = a as &dyn DataReferenceExt;
+        let b = b as &dyn DataReferenceExt;
+        a.cmp(b)
+    });
 }
 
 /// CombinedRecordBatchStream can be used to combine a Vec of SendableRecordBatchStreams into one
@@ -297,52 +277,77 @@ impl TreeNodeRewriter for PredicateColumnsReassigner {
 #[cfg(test)]
 mod tests {
     use models::predicate::domain::TimeRange;
+    use models::SeriesId;
 
-    use super::{group_overlapping_segments, TimeRangeProvider};
+    use crate::reader::utils::{preprocess_metadata, DataReferenceExt};
 
-    #[derive(Clone)]
-    struct TestTimeRangeProvider {
-        tr: TimeRange,
+    #[derive(Debug, Eq, Ord, PartialOrd, PartialEq)]
+    struct TestDataReference {
+        series_id: SeriesId,
+        time_range: TimeRange,
+        data_id: u64,
+        file_id: u64,
     }
 
-    impl TestTimeRangeProvider {
-        fn new(tr: TimeRange) -> Self {
-            Self { tr }
+    impl DataReferenceExt for TestDataReference {
+        fn series_id(&self) -> SeriesId {
+            self.series_id
         }
-    }
 
-    impl TimeRangeProvider for TestTimeRangeProvider {
         fn time_range(&self) -> TimeRange {
-            self.tr
+            self.time_range
+        }
+
+        fn data_id(&self) -> u64 {
+            self.data_id
+        }
+
+        fn set_data_id(&mut self, data_id: u64) {
+            self.data_id = data_id;
+        }
+
+        fn file_id(&self) -> u64 {
+            self.file_id
         }
     }
 
-    fn test_time_range_provider(min_ts: i64, max_ts: i64) -> TestTimeRangeProvider {
-        TestTimeRangeProvider::new(TimeRange { min_ts, max_ts })
+    impl TestDataReference {
+        pub fn new(series_id: SeriesId, time_range: TimeRange, data_id: u64, file_id: u64) -> Self {
+            Self {
+                series_id,
+                time_range,
+                data_id,
+                file_id,
+            }
+        }
     }
 
     #[test]
     fn test_group_overlapping_segments() {
-        let trs = vec![
-            test_time_range_provider(0, 10),
-            test_time_range_provider(1, 3),
-            test_time_range_provider(4, 7),
-            test_time_range_provider(6, 10),
-            test_time_range_provider(11, 14),
-            test_time_range_provider(12, 15),
-            test_time_range_provider(16, 18),
+        let mut meta_data_list = vec![
+            TestDataReference::new(3, TimeRange::new(1, 3), 1, 1),
+            TestDataReference::new(4, TimeRange::new(2, 4), 1, 1),
+            TestDataReference::new(5, TimeRange::new(3, 5), 1, 1),
+            TestDataReference::new(3, TimeRange::new(4, 6), 2, 2),
+            TestDataReference::new(4, TimeRange::new(3, 7), 2, 2),
+            TestDataReference::new(5, TimeRange::new(1, 3), 2, 2),
+            TestDataReference::new(3, TimeRange::new(1, 3), u64::MAX, u64::MAX),
+            TestDataReference::new(4, TimeRange::new(2, 4), u64::MAX, u64::MAX),
+            TestDataReference::new(5, TimeRange::new(3, 5), u64::MAX, u64::MAX),
         ];
-
-        let grouped_trs = group_overlapping_segments(&trs);
-
-        assert_eq!(grouped_trs.len(), 3);
-
-        let g4 = &grouped_trs[0];
-        let g2 = &grouped_trs[1];
-        let g1 = &grouped_trs[2];
-
-        assert_eq!(g4.segments.len(), 4);
-        assert_eq!(g2.segments.len(), 2);
-        assert_eq!(g1.segments.len(), 1);
+        preprocess_metadata(&mut meta_data_list);
+        let expected_list = vec![
+            TestDataReference::new(3, TimeRange::new(1, 3), 1, 1),
+            TestDataReference::new(3, TimeRange::new(1, 3), 1, u64::MAX),
+            TestDataReference::new(4, TimeRange::new(2, 4), 1, 1),
+            TestDataReference::new(4, TimeRange::new(3, 7), 1, 2),
+            TestDataReference::new(4, TimeRange::new(2, 4), 1, u64::MAX),
+            TestDataReference::new(5, TimeRange::new(3, 5), 1, 1),
+            TestDataReference::new(5, TimeRange::new(3, 5), 1, u64::MAX),
+            TestDataReference::new(3, TimeRange::new(4, 6), 2, 2),
+            TestDataReference::new(5, TimeRange::new(1, 3), 2, 2),
+        ];
+        assert_eq!(meta_data_list, expected_list);
+        // println!("{:#?}", meta_data_list);
     }
 }

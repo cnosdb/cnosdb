@@ -17,11 +17,12 @@ use models::field_value::DataType;
 use models::predicate::domain::{TimeRange, TimeRanges};
 use models::schema::tskv_table_schema::{PhysicalCType, TskvTableSchema};
 use models::schema::TIME_FIELD_NAME;
-use models::ColumnId;
+use models::{ColumnId, SeriesId, SeriesKey};
 use parking_lot::RwLock;
 
-use self::utils::{CombinedRecordBatchStream, TimeRangeProvider};
+use self::utils::CombinedRecordBatchStream;
 use crate::mem_cache::series_data::SeriesData;
+use crate::reader::utils::DataReferenceExt;
 use crate::tsm::chunk::Chunk;
 use crate::tsm::reader::TsmReader;
 use crate::{TskvError, TskvResult};
@@ -278,22 +279,53 @@ impl Stream for SchemableMemoryBatchReaderStream {
 
 #[derive(Clone)]
 pub enum DataReference {
-    Chunk(Arc<Chunk>, Arc<TsmReader>),
-    Memcache(Arc<RwLock<SeriesData>>, Arc<TimeRanges>),
+    Chunk(u64, Arc<Chunk>, Arc<TsmReader>),
+    Memcache(u64, Arc<RwLock<SeriesData>>, Arc<TimeRanges>),
 }
 
-impl DataReference {
-    pub fn time_range(&self) -> TimeRange {
+impl DataReferenceExt for DataReference {
+    fn series_id(&self) -> SeriesId {
         match self {
-            DataReference::Chunk(chunk, _) => *chunk.time_range(),
-            DataReference::Memcache(_, trs) => trs.max_time_range(),
+            DataReference::Chunk(_, chunk, _) => chunk.series_id(),
+            DataReference::Memcache(_, data, _) => data.read().series_id,
+        }
+    }
+
+    fn time_range(&self) -> TimeRange {
+        match self {
+            DataReference::Chunk(_, chunk, _) => *chunk.time_range(),
+            DataReference::Memcache(_, _, trs) => trs.max_time_range(),
+        }
+    }
+
+    fn data_id(&self) -> u64 {
+        match self {
+            DataReference::Chunk(id, _, _) => *id,
+            DataReference::Memcache(id, _, _) => *id,
+        }
+    }
+
+    fn set_data_id(&mut self, id: u64) {
+        match self {
+            DataReference::Chunk(ref mut data_id, _, _) => *data_id = id,
+            DataReference::Memcache(ref mut data_id, _, _) => *data_id = id,
+        }
+    }
+
+    fn file_id(&self) -> u64 {
+        match self {
+            DataReference::Chunk(_, _, reader) => reader.file_id(),
+            DataReference::Memcache(..) => u64::MAX,
         }
     }
 }
 
-impl TimeRangeProvider for DataReference {
-    fn time_range(&self) -> TimeRange {
-        self.time_range()
+impl DataReference {
+    pub fn series_key(&self) -> SeriesKey {
+        match self {
+            DataReference::Chunk(_, chunk, _) => chunk.series_key().clone(),
+            DataReference::Memcache(_, data, _) => data.read().series_key.clone(),
+        }
     }
 }
 

@@ -22,6 +22,7 @@ use crate::tsm::chunk_group::{ChunkGroup, ChunkGroupMeta, ChunkGroupWriteSpec};
 use crate::tsm::column_group::ColumnGroup;
 use crate::tsm::footer::{Footer, SeriesMeta, TableMeta, TsmVersion};
 use crate::tsm::page::{Page, PageStatistics, PageWriteSpec};
+use crate::tsm::reader::TsmMetaData;
 use crate::tsm::{ColumnGroupID, TsmWriteData, BLOOM_FILTER_BITS};
 use crate::{TskvError, TskvResult};
 
@@ -96,6 +97,44 @@ impl TsmWriter {
             footer: Footer::empty(TsmVersion::V1),
             state: State::Initialised,
         }
+    }
+
+    pub async fn update_file_meta_data(
+        file_id: u64,
+        path: PathBuf,
+        mut writer: Box<FileStreamWriter>,
+        meta: TsmMetaData,
+    ) -> TskvResult<Self> {
+        writer
+            .truncate(meta.footer().series().chunk_offset() as usize)
+            .await
+            .context(IOSnafu)?;
+        let mut writer = Self {
+            file_id,
+            max_ts: i64::MIN,
+            min_ts: i64::MAX,
+            size: writer.len() as u64,
+            max_size: 0,
+            path,
+            series_bloom_filter: BloomFilter::new(BLOOM_FILTER_BITS),
+            writer,
+            table_schemas: Default::default(),
+            page_specs: Default::default(),
+            chunk_specs: Default::default(),
+            chunk_group_specs: Default::default(),
+            footer: Footer::empty(TsmVersion::V1),
+            state: State::Initialised,
+        };
+        let mut page_specs = BTreeMap::new();
+        for chunk in meta.chunk().values() {
+            page_specs
+                .entry(chunk.table_name().to_string())
+                .or_insert_with(BTreeMap::new)
+                .insert(chunk.series_id(), chunk.as_ref().clone());
+        }
+        writer.page_specs = page_specs;
+        writer.finish().await?;
+        Ok(writer)
     }
 
     pub fn file_id(&self) -> u64 {
