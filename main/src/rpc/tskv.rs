@@ -9,9 +9,8 @@ use futures::{Stream, TryStreamExt};
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::meta_data::VnodeInfo;
-use models::predicate::domain::{self, QueryArgs, QueryExpr};
+use models::predicate::domain::{self, PushedAggregateFunction, QueryArgs, QueryExpr};
 use models::record_batch_encode;
-use models::schema::tskv_table_schema::TableColumn;
 use protos::kv_service::tskv_service_server::TskvService;
 use protos::kv_service::*;
 use protos::models::{PingBody, PingBodyBuilder};
@@ -159,7 +158,7 @@ impl TskvServiceImpl {
         self,
         args: QueryArgs,
         expr: QueryExpr,
-        aggs: Option<Vec<TableColumn>>,
+        aggs: Option<Vec<PushedAggregateFunction>>,
         span_ctx: Option<&SpanContext>,
     ) -> TskvResult<SendableTskvRecordBatchStream> {
         let option = QueryOption::new(

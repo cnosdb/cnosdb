@@ -513,8 +513,7 @@ mod test {
             test_plan(
                 plan,
                 "\
-                Aggregate: groupBy=[[?table?.value]], aggr=[[SUM(?table?.value)]]\
-                \n  Projection: ?table?.value\
+                Aggregate: groupBy=[[?table?.value]], aggr=[[SUM(?table?.value)]]\n  Projection: ?table?.value\
                 \n    TableScan: ?table? projection=[time, value]",
                 "\
                 AggregateExec: mode=FinalPartitioned, gby=[value@0 as value], aggr=[SUM(?table?.value)]\

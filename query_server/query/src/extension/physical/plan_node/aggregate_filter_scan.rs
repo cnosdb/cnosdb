@@ -88,16 +88,16 @@ impl ExecutionPlan for AggregateFilterTskvExec {
         partition: usize,
         context: Arc<TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
-        let mut agg_columns = Vec::with_capacity(self.pushed_aggs.len());
+        /* let mut agg_columns = Vec::with_capacity(self.pushed_aggs.len());
         for agg in self.pushed_aggs.iter() {
             match agg {
                 PushedAggregateFunction::Count(column) => {
                     if let Some(col) = self.table_schema.column(column) {
-                        agg_columns.push(col.clone());
+                        agg_columns.push((col.clone(), ));
                     }
                 }
             }
-        }
+        } */
 
         let split = unsafe {
             debug_assert!(partition < self.splits.len(), "Partition not exists");
@@ -109,7 +109,7 @@ impl ExecutionPlan for AggregateFilterTskvExec {
         let query_opt = QueryOption::new(
             100_usize,
             split,
-            Some(agg_columns),
+            Some(self.pushed_aggs.clone()),
             self.schema.clone(),
             self.table_schema.clone(),
             self.table_schema.meta(),
