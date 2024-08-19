@@ -47,6 +47,7 @@ impl AddSortExec {
                     vec![physical_sort_expr],
                     sort_plan,
                 ));
+
                 return Ok(Transformed::Yes(sort_merge_plan));
             }
 

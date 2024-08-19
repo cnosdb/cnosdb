@@ -574,13 +574,9 @@ fn explain_time_count_tests() {
         let mut expected_resp_lines = [
             "plan_type,plan",
             "logical_plan,\"Projection: m0.time",
-            "  Filter: m0.f0 >= Utf8(\"\"1997-01-31\"\")",
-            "    TableScan: m0 projection=[time, f0], partial_filters=[m0.f0 >= Utf8(\"\"1997-01-31\"\")]\"",
+            "  TableScan: m0 projection=[time, f0], full_filters=[m0.f0 >= Utf8(\"\"1997-01-31\"\")]\"",
             "physical_plan,\"ProjectionExec: expr=[time@0 as time]",
-            "  CoalesceBatchesExec: target_batch_size=8192",
-            "    FilterExec: f0@1 >= 1997-01-31",
-            "      RepartitionExec: partitioning=RoundRobinBatch(3), input_partitions=7",
-            "        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: \"\"f0\"\" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Utf8, value: Some(Utf8(\"\"1997-01-31\"\")), bound: Exactly }: Range { low: Marker { data_type: Utf8, value: Some(Utf8(\"\"1997-01-31\"\")), bound: Exactly }, high: Marker { data_type: Utf8, value: None, bound: Below } }} })}) }, filter=Some(\"\"f0@1 >= 1997-01-31\"\"), split_num=3, projection=[time,f0]",
+            "  TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: \"\"f0\"\" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Utf8, value: Some(Utf8(\"\"1997-01-31\"\")), bound: Exactly }: Range { low: Marker { data_type: Utf8, value: Some(Utf8(\"\"1997-01-31\"\")), bound: Exactly }, high: Marker { data_type: Utf8, value: None, bound: Below } }} })}) }, filter=Some(\"\"f0@1 >= 1997-01-31\"\"), split_num=1, projection=[time,f0]",
             "\"",
             "",
         ];
@@ -588,21 +584,12 @@ fn explain_time_count_tests() {
         let resp_lines = resp_string.split('\n').collect::<Vec<&str>>();
         assert_eq!(resp_lines.len(), expected_resp_lines.len());
 
-        let expected_resp_lines_7 = replace_src_by_dst(
-            expected_resp_lines[7].to_string(),
-            resp_lines[7],
-            vec![
-                (Some("RoundRobinBatch("), Some(")")),
-                (Some("input_partitions="), None),
-            ],
-        );
-        expected_resp_lines[7] = &expected_resp_lines_7;
-        let expected_resp_lines_8 = replace_src_by_dst(
-            expected_resp_lines[8].to_string(),
-            resp_lines[8],
+        let expected_resp_lines_4 = replace_src_by_dst(
+            expected_resp_lines[4].to_string(),
+            resp_lines[4],
             vec![(Some("split_num="), Some(","))],
         );
-        expected_resp_lines[8] = &expected_resp_lines_8;
+        expected_resp_lines[4] = &expected_resp_lines_4;
 
         let expected_resp_string = expected_resp_lines.join("\n");
         assert_eq!(resp_string, expected_resp_string);

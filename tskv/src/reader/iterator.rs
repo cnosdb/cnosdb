@@ -13,9 +13,9 @@ use datafusion::arrow::datatypes::TimeUnit;
 use datafusion::physical_plan::metrics::{self, ExecutionPlanMetricsSet, MetricBuilder};
 use datafusion_proto::physical_plan::from_proto::parse_physical_expr;
 use models::meta_data::VnodeId;
-use models::predicate::domain::{self, QueryArgs, QueryExpr, TimeRanges};
+use models::predicate::domain::{self, PushedAggregateFunction, QueryArgs, QueryExpr, TimeRanges};
 use models::predicate::PlacedSplit;
-use models::schema::tskv_table_schema::{PhysicalCType, TableColumn, TskvTableSchemaRef};
+use models::schema::tskv_table_schema::{PhysicalCType, TskvTableSchemaRef};
 use models::{ColumnId, PhysicalDType, SeriesId, SeriesKey};
 use protos::kv_service::QueryRecordBatchRequest;
 use snafu::ResultExt;
@@ -671,7 +671,7 @@ pub struct QueryOption {
     pub df_schema: SchemaRef,
     pub table_schema: TskvTableSchemaRef,
     pub schema_meta: HashMap<String, String>,
-    pub aggregates: Option<Vec<TableColumn>>, // TODO: Use PushedAggregateFunction
+    pub aggregates: Option<Vec<PushedAggregateFunction>>, // TODO: Use PushedAggregateFunction
 }
 
 impl QueryOption {
@@ -679,7 +679,7 @@ impl QueryOption {
     pub fn new(
         batch_size: usize,
         split: PlacedSplit,
-        aggregates: Option<Vec<TableColumn>>, // TODO: Use PushedAggregateFunction
+        aggregates: Option<Vec<PushedAggregateFunction>>, // TODO: Use PushedAggregateFunction
         df_schema: SchemaRef,
         table_schema: TskvTableSchemaRef,
         schema_meta: HashMap<String, String>,
@@ -897,13 +897,13 @@ async fn build_stream(
         )));
     }
 
-    if query_option.aggregates.is_some() {
+    /* if query_option.aggregates.is_some() {
         // TODO: 重新实现聚合下推
         return Err(CommonSnafu {
             reason: "aggregates push down is not supported yet".to_string(),
         }
         .build());
-    }
+    } */
 
     let factory = SeriesGroupBatchReaderFactory::new(
         engine,
