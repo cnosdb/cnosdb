@@ -68,8 +68,8 @@ fn divisor_test() {
 
     let resp = check_response!(server.client.post(
         "http://127.0.0.1:8902/api/v1/sql?db=test",
-        "select count(*) from log;",
+        "select exact_count_star(null) from log;",
     ));
 
-    assert_eq!(resp.text().unwrap(), "COUNT(UInt8(1))\n17280\n")
+    assert_eq!(resp.text().unwrap(), "COUNT(UInt8(0))\n17280\n")
 }

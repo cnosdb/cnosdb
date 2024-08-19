@@ -35,14 +35,10 @@ where fa = '12345678865';
 ----
 "logical_plan"
 "Projection: test_double_conv.time
---Filter: CAST(test_double_conv.fa AS Utf8) = Utf8(\"12345678865\")
-----TableScan: test_double_conv projection=[time, fa], partial_filters=[CAST(test_double_conv.fa AS Utf8) = Utf8(\"12345678865\")]"
+--TableScan: test_double_conv projection=[time, fa], full_filters=[CAST(test_double_conv.fa AS Utf8) = Utf8(\"12345678865\")]"
 "physical_plan"
 "ProjectionExec: expr=[time@0 as time]
---CoalesceBatchesExec: target_batch_size=8192
-----FilterExec: CAST(fa@1 AS Utf8) = 12345678865
-------RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=2
---------TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=Some(\"CAST(fa@1 AS Utf8) = 12345678865\"), split_num=2, projection=[time,fa]
+--TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=Some(\"CAST(fa@1 AS Utf8) = 12345678865\"), split_num=2, projection=[time,fa]
 "
 
 
@@ -92,14 +88,10 @@ where fa < '12345678865';
 ----
 "logical_plan"
 "Projection: test_double_conv.time
---Filter: CAST(test_double_conv.fa AS Utf8) < Utf8(\"12345678865\")
-----TableScan: test_double_conv projection=[time, fa], partial_filters=[CAST(test_double_conv.fa AS Utf8) < Utf8(\"12345678865\")]"
+--TableScan: test_double_conv projection=[time, fa], full_filters=[CAST(test_double_conv.fa AS Utf8) < Utf8(\"12345678865\")]"
 "physical_plan"
 "ProjectionExec: expr=[time@0 as time]
---CoalesceBatchesExec: target_batch_size=8192
-----FilterExec: CAST(fa@1 AS Utf8) < 12345678865
-------RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=2
---------TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=Some(\"CAST(fa@1 AS Utf8) < 12345678865\"), split_num=2, projection=[time,fa]
+--TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=Some(\"CAST(fa@1 AS Utf8) < 12345678865\"), split_num=2, projection=[time,fa]
 "
 
 
@@ -111,14 +103,10 @@ where fa <= '12345678865';
 ----
 "logical_plan"
 "Projection: test_double_conv.time
---Filter: CAST(test_double_conv.fa AS Utf8) <= Utf8(\"12345678865\")
-----TableScan: test_double_conv projection=[time, fa], partial_filters=[CAST(test_double_conv.fa AS Utf8) <= Utf8(\"12345678865\")]"
+--TableScan: test_double_conv projection=[time, fa], full_filters=[CAST(test_double_conv.fa AS Utf8) <= Utf8(\"12345678865\")]"
 "physical_plan"
 "ProjectionExec: expr=[time@0 as time]
---CoalesceBatchesExec: target_batch_size=8192
-----FilterExec: CAST(fa@1 AS Utf8) <= 12345678865
-------RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=2
---------TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=Some(\"CAST(fa@1 AS Utf8) <= 12345678865\"), split_num=2, projection=[time,fa]
+--TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=Some(\"CAST(fa@1 AS Utf8) <= 12345678865\"), split_num=2, projection=[time,fa]
 "
 
 
@@ -130,14 +118,10 @@ where fa > '12345678865';
 ----
 "logical_plan"
 "Projection: test_double_conv.time
---Filter: CAST(test_double_conv.fa AS Utf8) > Utf8(\"12345678865\")
-----TableScan: test_double_conv projection=[time, fa], partial_filters=[CAST(test_double_conv.fa AS Utf8) > Utf8(\"12345678865\")]"
+--TableScan: test_double_conv projection=[time, fa], full_filters=[CAST(test_double_conv.fa AS Utf8) > Utf8(\"12345678865\")]"
 "physical_plan"
 "ProjectionExec: expr=[time@0 as time]
---CoalesceBatchesExec: target_batch_size=8192
-----FilterExec: CAST(fa@1 AS Utf8) > 12345678865
-------RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=2
---------TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=Some(\"CAST(fa@1 AS Utf8) > 12345678865\"), split_num=2, projection=[time,fa]
+--TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=Some(\"CAST(fa@1 AS Utf8) > 12345678865\"), split_num=2, projection=[time,fa]
 "
 
 
@@ -149,14 +133,10 @@ where fa >= '12345678865';
 ----
 "logical_plan"
 "Projection: test_double_conv.time
---Filter: CAST(test_double_conv.fa AS Utf8) >= Utf8(\"12345678865\")
-----TableScan: test_double_conv projection=[time, fa], partial_filters=[CAST(test_double_conv.fa AS Utf8) >= Utf8(\"12345678865\")]"
+--TableScan: test_double_conv projection=[time, fa], full_filters=[CAST(test_double_conv.fa AS Utf8) >= Utf8(\"12345678865\")]"
 "physical_plan"
 "ProjectionExec: expr=[time@0 as time]
---CoalesceBatchesExec: target_batch_size=8192
-----FilterExec: CAST(fa@1 AS Utf8) >= 12345678865
-------RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=2
---------TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=Some(\"CAST(fa@1 AS Utf8) >= 12345678865\"), split_num=2, projection=[time,fa]
+--TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=Some(\"CAST(fa@1 AS Utf8) >= 12345678865\"), split_num=2, projection=[time,fa]
 "
 
 
@@ -168,14 +148,10 @@ where fa >= '12345678865';
 ----
 "logical_plan"
 "Projection: test_double_conv.time
---Filter: CAST(test_double_conv.fa AS Utf8) >= Utf8(\"12345678865\")
-----TableScan: test_double_conv projection=[time, fa], partial_filters=[CAST(test_double_conv.fa AS Utf8) >= Utf8(\"12345678865\")]"
+--TableScan: test_double_conv projection=[time, fa], full_filters=[CAST(test_double_conv.fa AS Utf8) >= Utf8(\"12345678865\")]"
 "physical_plan"
 "ProjectionExec: expr=[time@0 as time]
---CoalesceBatchesExec: target_batch_size=8192
-----FilterExec: CAST(fa@1 AS Utf8) >= 12345678865
-------RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=2
---------TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=Some(\"CAST(fa@1 AS Utf8) >= 12345678865\"), split_num=2, projection=[time,fa]
+--TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=Some(\"CAST(fa@1 AS Utf8) >= 12345678865\"), split_num=2, projection=[time,fa]
 "
 
 
@@ -188,14 +164,10 @@ where fa >= '1997-01-31';
 ----
 "logical_plan"
 "Projection: test_double_conv.time
---Filter: CAST(test_double_conv.fa AS Utf8) >= Utf8(\"1997-01-31\")
-----TableScan: test_double_conv projection=[time, fa], partial_filters=[CAST(test_double_conv.fa AS Utf8) >= Utf8(\"1997-01-31\")]"
+--TableScan: test_double_conv projection=[time, fa], full_filters=[CAST(test_double_conv.fa AS Utf8) >= Utf8(\"1997-01-31\")]"
 "physical_plan"
 "ProjectionExec: expr=[time@0 as time]
---CoalesceBatchesExec: target_batch_size=8192
-----FilterExec: CAST(fa@1 AS Utf8) >= 1997-01-31
-------RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=2
---------TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=Some(\"CAST(fa@1 AS Utf8) >= 1997-01-31\"), split_num=2, projection=[time,fa]
+--TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=Some(\"CAST(fa@1 AS Utf8) >= 1997-01-31\"), split_num=2, projection=[time,fa]
 "
 
 
@@ -207,14 +179,10 @@ where fa >= 'xxx';
 ----
 "logical_plan"
 "Projection: test_double_conv.time
---Filter: CAST(test_double_conv.fa AS Utf8) >= Utf8(\"xxx\")
-----TableScan: test_double_conv projection=[time, fa], partial_filters=[CAST(test_double_conv.fa AS Utf8) >= Utf8(\"xxx\")]"
+--TableScan: test_double_conv projection=[time, fa], full_filters=[CAST(test_double_conv.fa AS Utf8) >= Utf8(\"xxx\")]"
 "physical_plan"
 "ProjectionExec: expr=[time@0 as time]
---CoalesceBatchesExec: target_batch_size=8192
-----FilterExec: CAST(fa@1 AS Utf8) >= xxx
-------RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=2
---------TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=Some(\"CAST(fa@1 AS Utf8) >= xxx\"), split_num=2, projection=[time,fa]
+--TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=Some(\"CAST(fa@1 AS Utf8) >= xxx\"), split_num=2, projection=[time,fa]
 "
 
 #-- error end
@@ -229,16 +197,10 @@ where fa between '12345678865' and 12345678869;
 ----
 "logical_plan"
 "Projection: test_double_conv.time
---Filter: CAST(test_double_conv.fa AS Utf8)test_double_conv.fa >= Utf8(\"12345678865\") AND CAST(test_double_conv.fa AS Utf8)test_double_conv.fa <= Utf8(\"12345678869\")
-----Projection: CAST(test_double_conv.fa AS Utf8) AS CAST(test_double_conv.fa AS Utf8)test_double_conv.fa, test_double_conv.time
-------TableScan: test_double_conv projection=[time, fa], partial_filters=[CAST(test_double_conv.fa AS Utf8) AS test_double_conv.fa >= Utf8(\"12345678865\"), CAST(test_double_conv.fa AS Utf8) AS test_double_conv.fa <= Utf8(\"12345678869\"), CAST(test_double_conv.fa AS Utf8) >= Utf8(\"12345678865\"), CAST(test_double_conv.fa AS Utf8) <= Utf8(\"12345678869\")]"
+--TableScan: test_double_conv projection=[time, fa], full_filters=[CAST(test_double_conv.fa AS Utf8) >= Utf8(\"12345678865\"), CAST(test_double_conv.fa AS Utf8) <= Utf8(\"12345678869\")], partial_filters=[CAST(test_double_conv.fa AS Utf8) AS test_double_conv.fa >= Utf8(\"12345678865\"), CAST(test_double_conv.fa AS Utf8) AS test_double_conv.fa <= Utf8(\"12345678869\")]"
 "physical_plan"
-"ProjectionExec: expr=[time@1 as time]
---CoalesceBatchesExec: target_batch_size=8192
-----FilterExec: CAST(test_double_conv.fa AS Utf8)test_double_conv.fa@0 >= 12345678865 AND CAST(test_double_conv.fa AS Utf8)test_double_conv.fa@0 <= 12345678869
-------ProjectionExec: expr=[CAST(fa@1 AS Utf8) as CAST(test_double_conv.fa AS Utf8)test_double_conv.fa, time@0 as time]
---------RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=2
-----------TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=Some(\"CAST(fa@1 AS Utf8) >= 12345678865 AND CAST(fa@1 AS Utf8) <= 12345678869 AND CAST(fa@1 AS Utf8) >= 12345678865 AND CAST(fa@1 AS Utf8) <= 12345678869\"), split_num=2, projection=[time,fa]
+"ProjectionExec: expr=[time@0 as time]
+--TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=Some(\"CAST(fa@1 AS Utf8) >= 12345678865 AND CAST(fa@1 AS Utf8) <= 12345678869 AND CAST(fa@1 AS Utf8) >= 12345678865 AND CAST(fa@1 AS Utf8) <= 12345678869\"), split_num=2, projection=[time,fa]
 "
 
 
@@ -250,14 +212,10 @@ where fa between 12345678865 and 12345678869;
 ----
 "logical_plan"
 "Projection: test_double_conv.time
---Filter: test_double_conv.fa >= Float64(12345678865) AND test_double_conv.fa <= Float64(12345678869)
-----TableScan: test_double_conv projection=[time, fa], partial_filters=[test_double_conv.fa >= Float64(12345678865), test_double_conv.fa <= Float64(12345678869)]"
+--TableScan: test_double_conv projection=[time, fa], full_filters=[test_double_conv.fa >= Float64(12345678865), test_double_conv.fa <= Float64(12345678869)]"
 "physical_plan"
 "ProjectionExec: expr=[time@0 as time]
---CoalesceBatchesExec: target_batch_size=8192
-----FilterExec: fa@1 >= 12345678865 AND fa@1 <= 12345678869
-------RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=2
---------TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: \"fa\" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }, high: Marker { data_type: Float64, value: Some(Float64(12345678869)), bound: Exactly } }} })}) }, filter=Some(\"fa@1 >= 12345678865 AND fa@1 <= 12345678869\"), split_num=2, projection=[time,fa]
+--TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: \"fa\" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }: Range { low: Marker { data_type: Float64, value: Some(Float64(12345678865)), bound: Exactly }, high: Marker { data_type: Float64, value: Some(Float64(12345678869)), bound: Exactly } }} })}) }, filter=Some(\"fa@1 >= 12345678865 AND fa@1 <= 12345678869\"), split_num=2, projection=[time,fa]
 "
 
 

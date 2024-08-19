@@ -42,6 +42,7 @@ mod metrics;
 mod page;
 mod paralle_merge;
 mod partitioned_stream;
+mod pushdown_agg_reader;
 mod schema_alignmenter;
 mod series;
 mod trace;

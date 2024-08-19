@@ -33,7 +33,7 @@ SELECT COUNT(*) FROM data_ttl.test;
 sleep 3m
 
 query 
-SELECT COUNT(*) FROM data_ttl.test;
+SELECT exact_count_star(null) FROM data_ttl.test;
 ----
 0
 
