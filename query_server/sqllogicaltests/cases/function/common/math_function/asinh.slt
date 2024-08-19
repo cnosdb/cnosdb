@@ -1,0 +1,44 @@
+#test asinh#domain:R
+
+include ./setup.slt
+
+query R
+select round(asinh(subquery.d_bigint), 10) from (select * from extreme_data_tbl order by TIME asc ) as subquery;
+----
+0.0
+0.881373587
+-0.881373587
+1.4436354752
+-1.4436354752
+14.5086577385
+-14.5086577385
+
+query R
+select round(asinh(subquery.d_double), 10) from (select * from extreme_data_tbl order by TIME asc ) as subquery;
+----
+1.0e-6
+-1.0e-6
+19.0240104594
+-17.7094754356
+14.3800559977
+1.8622957433
+0.5030526622
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'asinh\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tasinh\(Float64/Float32\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select asinh(subquery.d_string) from (select * from extreme_data_tbl order by TIME asc ) as subquery;
+
+
+query 
+select asinh(0.000000000001);
+----
+1.0e-12
+
+query 
+select round(asinh(-2), 10);
+----
+-1.4436354752
+
+query 
+select round(asinh(2), 10);
+----
+1.4436354752

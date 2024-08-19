@@ -1,0 +1,147 @@
+# 删除表（如果存在）
+statement ok
+DROP TABLE IF EXISTS func_data_tbl;
+
+# 创建表（如果不存在）
+statement ok
+CREATE TABLE IF NOT EXISTS func_data_tbl(
+    d_bigint BIGINT,
+    d_double_1 DOUBLE,
+    d_string STRING,
+    d_double_2 DOUBLE
+);
+
+# 插入测试数据
+statement ok
+INSERT func_data_tbl(TIME, d_bigint, d_double_1, d_string, d_double_2) VALUES
+('1999-12-31 00:00:00.000', 1, 69.0, 'A', 30.0),
+('1999-12-31 00:00:00.005', 2, 78.0, 'B', NULL),
+('1999-12-31 00:00:00.010', 3, NULL, 'C', 40.0),
+('1999-12-31 00:00:00.015', 4, 79.0, NULL, 50.0),
+('1999-12-31 00:00:00.020', 5, NULL, NULL, NULL),
+('1999-12-31 00:00:00.025', 6, 72.0, 'F', 60.0),
+('1999-12-31 00:00:00.030', 7, 71.0, NULL, NULL),
+('1999-12-31 00:00:00.035', 8, NULL, 'H', NULL),
+('1999-12-31 00:00:00.040', 9, 80.0, 'I', 70.0),
+('1999-12-31 00:00:00.045', 10, 74.0, 'J', NULL),
+('1999-12-31 00:00:00.050', 11, NULL, NULL, 80.0),
+('1999-12-31 00:00:00.055', 12, 70.0, 'L', 90.0),
+('1999-12-31 00:00:00.060', 13, NULL, 'M', 100.0);
+
+# 验证 nullif 函数的基本行为
+query R
+SELECT nullif(d_double_1, 70) FROM func_data_tbl;
+----
+69.0
+78.0
+NULL
+79.0
+NULL
+72.0
+71.0
+NULL
+80.0
+74.0
+NULL
+NULL
+NULL
+
+# 验证 nullif 函数在所有参数均为 null 的情况下的行为
+query I
+SELECT nullif(NULL, NULL) FROM func_data_tbl LIMIT 1;
+----
+NULL
+
+# 验证 nullif 函数在部分参数为 null 的情况下的行为
+query R
+SELECT nullif(d_double_1, NULL) FROM func_data_tbl;
+----
+69.0
+78.0
+NULL
+79.0
+NULL
+72.0
+71.0
+NULL
+80.0
+74.0
+NULL
+70.0
+NULL
+
+# 验证 nullif 函数在多个非 null 参数的情况下的行为
+query T
+SELECT nullif(d_string, 'C') FROM func_data_tbl;
+----
+"A"
+"B"
+"NULL"
+"NULL"
+"NULL"
+"F"
+"NULL"
+"H"
+"I"
+"J"
+"NULL"
+"L"
+"M"
+
+# 验证 nullif 函数在有非 null 常量参数的情况下的行为
+query T
+SELECT nullif(d_string, 'A') FROM func_data_tbl;
+----
+"NULL"
+"B"
+"C"
+"NULL"
+"NULL"
+"F"
+"NULL"
+"H"
+"I"
+"J"
+"NULL"
+"L"
+"M"
+
+# 验证 nullif 函数在有非 null 表达式参数的情况下的行为
+query R
+SELECT nullif(d_double_1 + 1, 70) FROM func_data_tbl;
+----
+NULL
+79.0
+NULL
+80.0
+NULL
+73.0
+72.0
+NULL
+81.0
+75.0
+NULL
+71.0
+NULL
+
+# 验证 nullif 函数在不同类型参数下的行为
+query R
+SELECT nullif(d_double_2, 80) FROM func_data_tbl;
+----
+30.0
+NULL
+40.0
+50.0
+NULL
+60.0
+NULL
+NULL
+70.0
+NULL
+NULL
+90.0
+100.0
+
+# 删除测试表
+statement ok
+DROP TABLE func_data_tbl;

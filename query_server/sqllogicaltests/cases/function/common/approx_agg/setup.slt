@@ -1,0 +1,29 @@
+statement ok
+drop table if exists large_table;
+
+statement ok
+CREATE TABLE if not exists large_table (
+    bigint_val BIGINT,
+    bigint_unsigned_val BIGINT unsigned,
+    string_val STRING,
+    double_val DOUBLE,
+    boolean_val BOOLEAN
+);
+
+statement error Arrow error: Io error: Status \{ code: Cancelled, message: "Timeout expired", source: Some\(tonic::transport::Error\(Transport, TimeoutExpired\(\(\)\)\)\) \}
+INSERT INTO large_table (TIME, bigint_val, bigint_unsigned_val, string_val, double_val, boolean_val)
+SELECT
+    from_unixtime(arrow_cast(floor(random()*1000000000), 'Int64')) AS generated_time, 
+    FLOOR(random() * 1000000) AS bigint_val,
+    FLOOR(random() * 1000000) AS bigint_unsigned_val,
+    CONCAT('str_', FLOOR(random() * 1000)) AS string_val,
+    random() * 1000 AS double_val,
+    random() > 0.5 AS boolean_val
+FROM
+    (SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5) AS t1,
+    (SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5) AS t2,
+    (SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5) AS t3,
+    (SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5) AS t4,
+    (SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5) AS t5,
+    (SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5) AS t6
+LIMIT 1000000;

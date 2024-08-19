@@ -1,0 +1,150 @@
+#include ./../setup.slt
+
+statement ok
+drop table if exists func_data_tbl;
+
+statement ok
+create table if not exists func_data_tbl(d_bigint bigint, d_double_1 double, d_string string, d_double_2 double);
+
+statement ok
+insert func_data_tbl(TIME, d_bigint, d_double_1, d_string, d_double_2) VALUES
+('1999-12-31 00:00:00.000', 1, 69.0, 'A', 30.0),
+('1999-12-31 00:00:00.005', 2, 78.0, 'B', NULL),
+('1999-12-31 00:00:00.010', 3, NULL, 'C', 40.0),
+('1999-12-31 00:00:00.015', 4, 79.0, NULL, 50.0),
+('1999-12-31 00:00:00.020', 5, NULL, NULL, NULL),
+('1999-12-31 00:00:00.025', 6, 72.0, 'F', 60.0),
+('1999-12-31 00:00:00.030', 7, 71.0, NULL, NULL),
+('1999-12-31 00:00:00.035', 8, NULL, 'H', NULL),
+('1999-12-31 00:00:00.040', 9, 80.0, 'I', 70.0),
+('1999-12-31 00:00:00.045', 10, 74.0, 'J', NULL),
+('1999-12-31 00:00:00.050', 11, NULL, NULL, 80.0),
+('1999-12-31 00:00:00.055', 12, 70.0, 'L', 90.0),
+('1999-12-31 00:00:00.060', 13, NULL, 'M', 100.0);
+
+query T
+SELECT coalesce(d_double_1, null, d_string) FROM func_data_tbl;
+----
+"69.0"
+"78.0"
+"C"
+"79.0"
+"NULL"
+"72.0"
+"71.0"
+"H"
+"80.0"
+"74.0"
+"NULL"
+"70.0"
+"M"
+
+query I
+SELECT coalesce(null, null, null) FROM func_data_tbl LIMIT 1;
+----
+NULL
+
+query T
+SELECT coalesce(null, d_string, d_double_1) FROM func_data_tbl;
+----
+"A"
+"B"
+"C"
+"79.0"
+"NULL"
+"F"
+"71.0"
+"H"
+"I"
+"J"
+"NULL"
+"L"
+"M"
+
+query T
+SELECT coalesce(d_double_1, d_string, d_double_2) FROM func_data_tbl;
+----
+"69.0"
+"78.0"
+"C"
+"79.0"
+"NULL"
+"72.0"
+"71.0"
+"H"
+"80.0"
+"74.0"
+"80.0"
+"70.0"
+"M"
+
+query T
+SELECT coalesce(null, 'default', d_double_1) FROM func_data_tbl;
+----
+"default"
+"default"
+"default"
+"default"
+"default"
+"default"
+"default"
+"default"
+"default"
+"default"
+"default"
+"default"
+"default"
+
+query T
+SELECT coalesce(d_double_1 + 1, null, d_string) FROM func_data_tbl;
+----
+"70.0"
+"79.0"
+"C"
+"80.0"
+"NULL"
+"73.0"
+"72.0"
+"H"
+"81.0"
+"75.0"
+"NULL"
+"71.0"
+"M"
+
+query I
+SELECT coalesce(null, null, null) FROM func_data_tbl;
+----
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+NULL
+
+query T
+SELECT coalesce(d_double_2, d_double_1, d_string) FROM func_data_tbl;
+----
+"30.0"
+"78.0"
+"40.0"
+"50.0"
+"NULL"
+"60.0"
+"71.0"
+"H"
+"70.0"
+"74.0"
+"80.0"
+"90.0"
+"100.0"
+
+statement ok
+DROP TABLE func_data_tbl;

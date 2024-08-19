@@ -1,0 +1,138 @@
+#include ./setup.slt
+
+statement ok
+drop table if exists test_approx_median_tbl;
+
+
+statement ok
+CREATE TABLE test_approx_median_tbl (
+    val bigint,
+    s_val string,
+    d_val double,
+    b_val boolean,
+    u_val bigint unsigned
+);
+
+statement ok
+INSERT INTO test_approx_median_tbl(time, val, s_val, d_val, b_val, u_val) VALUES
+('1999-12-31 00:00:00.000', 1, 's_val1', 2.15, true, 2),
+('1999-12-31 00:00:01.000', 4, 's_val2', 0.19, false, 0),
+('1999-12-31 00:00:03.000', 5, 's_val3', 53718.4708571, true, 3),
+('1999-12-31 00:00:04.000', 6, NULL, -1571984.887109, false, 1000);
+
+
+
+query R
+SELECT approx_median(d_val)  FROM test_approx_median_tbl;
+----
+0.19
+
+
+query 
+SELECT median(d_val)  FROM test_approx_median_tbl;
+----
+1.17
+
+query I
+SELECT approx_median(val)  FROM test_approx_median_tbl;
+----
+4
+
+query I
+SELECT median(val)  FROM test_approx_median_tbl;
+----
+4
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function ApproxMedian does not support inputs of type Utf8\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT approx_median(s_val)  FROM test_approx_median_tbl;
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function ApproxMedian does not support inputs of type Boolean\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+SELECT approx_median(b_val)  FROM test_approx_median_tbl;
+
+query I
+SELECT approx_median(u_val)  FROM test_approx_median_tbl;
+----
+2
+
+query I
+SELECT median(u_val)  FROM test_approx_median_tbl;
+----
+2
+
+statement ok
+INSERT INTO test_approx_median_tbl (TIME, val, d_val) VALUES
+('1999-12-31 00:00:00.005', 6, 905092.579);
+
+query R
+SELECT approx_median(d_val)  FROM test_approx_median_tbl;
+----
+2.15
+
+
+statement ok
+INSERT INTO test_approx_median_tbl (TIME, val, d_val) VALUES
+('1999-12-31 00:00:00.006', 7, -5.0),
+('1999-12-31 00:00:00.007', 8, -10.0),
+('1999-12-31 00:00:00.008', 9, -2.5);
+
+query R
+SELECT approx_median(d_val)  FROM test_approx_median_tbl;
+----
+-0.9725000000000001
+
+statement ok
+drop table if exists single_value;
+
+statement ok
+CREATE TABLE single_value (
+    int_val bigint,
+    value double
+);
+
+statement ok
+INSERT INTO single_value (TIME, int_val, value) VALUES
+('1999-12-31 00:00:00.009', 1, 50.0);
+
+query R
+SELECT approx_median(value) as approx_median_value FROM single_value;
+----
+50.0
+
+statement ok
+drop table if exists same_values;
+
+
+statement ok
+CREATE TABLE same_values (
+    int_val bigint,
+    value double
+);
+
+statement ok
+INSERT INTO same_values (TIME, int_val, value) VALUES
+('1999-12-31 00:00:00.010', 1, 30.0),
+('1999-12-31 00:00:00.011', 2, 30.0),
+('1999-12-31 00:00:00.012', 3, 30.0),
+('1999-12-31 00:00:00.013', 4, 30.0),
+('1999-12-31 00:00:00.0014', 5, 30.0);
+
+query R
+SELECT approx_median(value) as approx_median_value FROM same_values;
+----
+30.0
+
+
+#query R
+#SELECT approx_median(double_val) FROM large_table;
+#----
+#501.24218932115133
+
+#query R
+#SELECT approx_median(bigint_val) FROM large_table;
+#----
+#498227
+
+#query R
+#SELECT approx_median(bigint_unsigned_val) FROM large_table;
+#----
+#499555
