@@ -333,7 +333,6 @@ impl DatabaseConfigBuilder {
         let max_cache_readers = self
             .max_cache_readers
             .unwrap_or(config.storage.max_cached_readers as u64);
-        let replica = self.replica.unwrap_or(config.meta.system_database_replica);
         DatabaseConfig::new(
             precision,
             max_memcache_size,
@@ -342,7 +341,6 @@ impl DatabaseConfigBuilder {
             wal_sync,
             strict_write,
             max_cache_readers,
-            replica,
         )
     }
 }
@@ -356,7 +354,6 @@ pub struct DatabaseConfig {
     wal_sync: bool,
     strict_write: bool,
     max_cache_readers: u64,
-    replica: u64,
 }
 
 impl DatabaseConfig {
@@ -367,7 +364,6 @@ impl DatabaseConfig {
     pub const DEFAULT_WAL_SYNC: bool = false;
     pub const DEFAULT_STRICT_WRITE: bool = false;
     pub const DEFAULT_MAX_CACHE_READERS: u64 = 32;
-    pub const DEFAULT_REPLICA: u64 = 1;
 
     pub fn new(
         precision: Precision,
@@ -377,7 +373,6 @@ impl DatabaseConfig {
         wal_sync: bool,
         strict_write: bool,
         max_cache_readers: u64,
-        replica: u64,
     ) -> Self {
         DatabaseConfig {
             precision,
@@ -387,7 +382,6 @@ impl DatabaseConfig {
             wal_sync,
             strict_write,
             max_cache_readers,
-            replica,
         }
     }
 
@@ -419,16 +413,8 @@ impl DatabaseConfig {
         self.max_cache_readers
     }
 
-    pub fn replica(&self) -> u64 {
-        self.replica
-    }
-
     pub fn set_max_memcache_size(&mut self, max_memcache_size: u64) {
         self.max_memcache_size = max_memcache_size;
-    }
-
-    pub fn set_replica(&mut self, replica: u64) {
-        self.replica = replica;
     }
 }
 
@@ -442,7 +428,6 @@ impl Default for DatabaseConfig {
             wal_sync: DatabaseConfig::DEFAULT_WAL_SYNC,
             strict_write: DatabaseConfig::DEFAULT_STRICT_WRITE,
             max_cache_readers: DatabaseConfig::DEFAULT_MAX_CACHE_READERS,
-            replica: DatabaseConfig::DEFAULT_REPLICA,
         }
     }
 }
