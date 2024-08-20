@@ -1,0 +1,53 @@
+#test abs
+
+include ./setup.slt
+
+query R
+select abs(subquery.d_bigint) from (select * from extreme_data_tbl order by value asc) as subquery;
+----
+0.0
+1.0
+1.0
+2.0
+2.0
+1000000.0
+1000000.0
+
+query R
+select abs(subquery.d_double) from (select * from extreme_data_tbl order by value desc) as subquery;
+----
+0.52454
+3.141592653589793
+879324.09472
+24552598.578657
+91409802.480284
+1.0e-6
+1.0e-6
+
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'abs\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tabs\(Float64/Float32\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select abs(subquery.d_string) from (select * from extreme_data_tbl order by value desc) as subquery;
+
+
+query 
+select abs(-pi());
+----
+3.141592653589793
+
+
+
+query 
+select abs(-9%5);
+----
+4.0
+
+query 
+select abs(9-100);
+----
+91.0
+
+
+query 
+select abs(-1.0/3);
+----
+0.3333333333333333

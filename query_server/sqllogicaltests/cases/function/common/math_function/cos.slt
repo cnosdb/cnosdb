@@ -1,0 +1,44 @@
+include ./setup.slt
+
+query R
+select round(cos(subquery.d_bigint), 10) from (select * from extreme_data_tbl order by TIME asc ) as subquery;
+----
+1.0
+0.5403023059
+0.5403023059
+-0.4161468365
+-0.4161468365
+0.9367521275
+0.9367521275
+
+query R
+select round(cos(subquery.d_double), 10) from (select * from extreme_data_tbl order by TIME asc ) as subquery;
+----
+1.0
+1.0
+0.8503040766
+-0.903604248
+0.1642146999
+-1.0
+0.865554408
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'cos\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tcos\(Float64/Float32\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select cos(subquery.d_string) from (select * from extreme_data_tbl order by TIME asc ) as subquery;
+
+query 
+select cos(0.000000000001);
+----
+1.0
+
+query 
+select round(cos(1), 10);
+----
+0.5403023059
+
+query 
+select cos(pi());
+----
+-1.0
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'cos\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tcos\(Float64/Float32\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select cos('a');

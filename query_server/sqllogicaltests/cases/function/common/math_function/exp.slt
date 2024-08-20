@@ -1,0 +1,43 @@
+include ./setup.slt
+
+query R
+select round(exp(subquery.d_bigint), 10) from (select * from extreme_data_tbl order by TIME asc ) as subquery;
+----
+1.0
+2.7182818285
+0.3678794412
+7.3890560989
+0.1353352832
+inf
+0.0
+
+query R
+select round(exp(subquery.d_double), 10) from (select * from extreme_data_tbl order by TIME asc ) as subquery;
+----
+1.000001
+0.999999
+inf
+0.0
+inf
+23.1406926328
+1.6896814161
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'exp\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\texp\(Float64/Float32\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select exp(subquery.d_string) from (select * from extreme_data_tbl order by TIME asc ) as subquery;
+
+
+query 
+select exp(0.000000000001);
+----
+1.000000000001
+
+query 
+select round(exp(1), 10);
+----
+2.7182818285
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'exp\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\texp\(Float64/Float32\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select exp('abc123');
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'exp\(Timestamp\(Nanosecond, None\)\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\texp\(Float64/Float32\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select exp(subquery.TIME) from (select TIME from extreme_data_tbl order by d_bigint desc ) as subquery;

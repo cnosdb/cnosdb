@@ -1,0 +1,18 @@
+#include ./../../setup.slt
+
+statement ok
+drop table if exists extreme_data_tbl;
+
+statement ok
+create table if not exists extreme_data_tbl(value bigint, d_bigint bigint, d_double double, d_string string);
+
+statement ok
+insert extreme_data_tbl(TIME, value, d_bigint, d_double, d_string)
+values
+    ('1999-12-31 00:00:00.000', 1, 0, 0.000001, 'a'),
+    ('1999-12-31 00:00:00.005', 2, 1, -0.000001, 'stringabc'),
+    ('1999-12-31 00:00:00.010', 3, -1, 91409802.480284, 'string12345'),
+    ('1999-12-31 00:00:10.015', 4, 2, -24552598.578657, '23456'),
+    ('1999-12-31 00:00:10.020', 5, -2, 879324.09472, '2024-08-05'),
+    ('1999-12-31 00:10:00.025', 6, 1000000, pi(), '00:00:00.000'),
+    ('1999-12-31 00:10:00.030', 7, -1000000, 0.52454, '1234567899');

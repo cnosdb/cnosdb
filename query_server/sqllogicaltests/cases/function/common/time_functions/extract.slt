@@ -1,0 +1,171 @@
+statement ok
+drop table if exists test_extract;
+
+statement ok
+create table if not exists test_extract(values bigint);
+
+statement ok
+insert into test_extract(TIME, values) values
+('1960-12-31 07:23:04.000', 1),
+('1999-12-31 08:11:35.000', 2),
+('2000-02-15 00:12:30.150', 3),
+('2024-08-06 05:45:00.000', 4),
+('2024-09-06 23:45:00.000', 5);
+
+query I
+select extract(year from TIME) from test_extract order by values asc;
+----
+1960.0
+1999.0
+2000.0
+2024.0
+2024.0
+
+# 验证 extract 函数的按季度提取
+query I
+select extract(quarter from TIME) from test_extract order by values asc;
+----
+4.0
+4.0
+1.0
+3.0
+3.0
+
+# 验证 extract 函数的按月提取
+query I
+select extract(month from TIME) from test_extract order by values asc;
+----
+12.0
+12.0
+2.0
+8.0
+9.0
+
+# 验证 extract 函数的按周提取
+query I
+select extract(week from TIME) from test_extract order by values asc;
+----
+52.0
+52.0
+7.0
+32.0
+36.0
+
+# 验证 extract 函数的按天提取
+query I
+select extract(day from TIME) from test_extract order by values asc;
+----
+31.0
+31.0
+15.0
+6.0
+6.0
+
+# 验证 extract 函数的按小时提取
+query I
+select extract(hour from TIME) from test_extract order by values asc;
+----
+7.0
+8.0
+0.0
+5.0
+23.0
+
+# 验证 extract 函数的按分钟提取
+query I
+select extract(minute from TIME) from test_extract order by values asc;
+----
+23.0
+11.0
+12.0
+45.0
+45.0
+
+# 验证 extract 函数的按秒提取
+query I
+select extract(second from TIME) from test_extract order by values asc;
+----
+4.0
+35.0
+30.15
+0.0
+0.0
+
+# 验证 extract 函数的按毫秒提取
+query I
+select extract(millisecond from TIME) from test_extract order by values asc;
+----
+4000.0
+35000.0
+30150.0
+0.0
+0.0
+
+# 验证 extract 函数的按微秒提取
+query I
+select extract(microsecond from TIME) from test_extract order by values asc;
+----
+4000000.0
+35000000.0
+30150000.0
+0.0
+0.0
+
+# 验证 extract 函数的按纳秒提取
+query I
+select extract(nanosecond from TIME) from test_extract order by values asc;
+----
+4000000000.0
+3.5e10
+3.015e10
+0.0
+0.0
+
+# 验证 extract 函数的按一周的天提取
+query I
+select extract(dow from TIME) from test_extract order by values asc;
+----
+6.0
+5.0
+2.0
+2.0
+5.0
+
+# 验证 extract 函数的按一年中的天提取
+query I
+select extract(doy from TIME) from test_extract order by values asc;
+----
+366.0
+365.0
+46.0
+219.0
+250.0
+
+# 验证 extract 函数的 epoch 提取
+query I
+select extract(epoch from TIME) from test_extract order by values asc;
+----
+-284056616.0
+946627895.0
+950573550.15
+1722923100.0
+1725666300.0
+
+# 子查询测试
+query R
+select extract(month from subquery.TIME)
+from (select TIME from test_extract WHERE values = 1) AS subquery;
+----
+12.0
+
+# 负面用例：无效的部分
+query error
+select extract(1 from TIME) from test_extract order by values asc;
+
+# 负面用例：无效的时间表达式
+query error
+select extract(month from '2000-13-01');
+
+# 删除测试表
+statement ok
+drop table test_extract;

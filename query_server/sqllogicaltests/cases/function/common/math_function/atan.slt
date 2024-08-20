@@ -1,0 +1,46 @@
+#test atan#domain:R
+include ./setup.slt
+
+query R
+select round(atan(subquery.d_bigint), 10) from (select * from extreme_data_tbl order by TIME asc ) as subquery;
+----
+0.0
+0.7853981634
+-0.7853981634
+1.1071487178
+-1.1071487178
+1.5707953268
+-1.5707953268
+
+query R
+select round(atan(subquery.d_double), 10) from (select * from extreme_data_tbl order by TIME asc ) as subquery;
+----
+1.0e-6
+-1.0e-6
+1.5707963159
+-1.5707962861
+1.5707951896
+1.2626272557
+0.4830863258
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'atan\(Utf8\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tatan\(Float64/Float32\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select atan(subquery.d_string) from (select * from extreme_data_tbl order by TIME asc ) as subquery;
+
+
+query 
+select atan(0.000000000001);
+----
+1.0e-12
+
+query 
+select round(atan(1), 10);
+----
+0.7853981634
+
+query 
+select round(atan(-1), 10);
+----
+-0.7853981634
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: No function matches the given name and argument types 'atan\(Timestamp\(Nanosecond, None\)\)'\. You might need to add explicit type casts\.\\n\\tCandidate functions:\\n\\tatan\(Float64/Float32\)", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+select atan(subquery.TIME) from (select TIME from extreme_data_tbl order by TIME desc ) as subquery;
