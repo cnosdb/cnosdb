@@ -23,7 +23,6 @@ use meta::error::MetaError;
 use meta::model::MetaClientRef;
 use models::predicate::domain::{Predicate, PredicateRef, PushedAggregateFunction};
 use models::schema::tskv_table_schema::{TskvTableSchema, TskvTableSchemaRef};
-use models::schema::TIME_FIELD_NAME;
 use trace::debug;
 
 use crate::data_source::batch::filter_expr_rewriter::{has_udf_function, rewrite_filters};
@@ -52,7 +51,7 @@ impl ClusterTable {
         projection: Option<&Vec<usize>>,
         predicate: PredicateRef,
     ) -> Result<Arc<dyn ExecutionPlan>> {
-        let proj_schema = self.project_schema(projection)?;
+        let proj_schema = project_schema(&self.schema.to_arrow_schema(), projection)?;
 
         let table_layout = TableLayoutHandle {
             table: self.schema.clone(),
@@ -237,13 +236,6 @@ impl ClusterTable {
     pub fn table_schema(&self) -> TskvTableSchemaRef {
         self.schema.clone()
     }
-
-    // Check and return the projected schema
-    fn project_schema(&self, projection: Option<&Vec<usize>>) -> Result<SchemaRef> {
-        valid_project(&self.schema, projection)
-            .map_err(|err| DataFusionError::External(Box::new(err)))?;
-        project_schema(&self.schema.to_arrow_schema(), projection)
-    }
 }
 
 #[async_trait]
@@ -381,8 +373,8 @@ impl TableProvider for ClusterTable {
         Ok(TableProviderAggregationPushDown::Unsupported)
     }
 
-    fn push_down_projection(&self, proj: &[usize]) -> Option<Vec<usize>> {
-        let mut contain_time = false;
+    fn push_down_projection(&self, _proj: &[usize]) -> Option<Vec<usize>> {
+        /* let mut contain_time = false;
         let mut contain_field = false;
 
         proj.iter()
@@ -402,7 +394,7 @@ impl TableProvider for ClusterTable {
                     .collect::<Vec<_>>();
                 return Some(new_proj);
             }
-        }
+        } */
 
         None
     }

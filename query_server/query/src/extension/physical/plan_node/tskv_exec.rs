@@ -230,6 +230,8 @@ impl TableScanStream {
         span: Span,
     ) -> QueryResult<Self> {
         let mut proj_fileds = Vec::with_capacity(proj_schema.fields().len());
+        let mut contain_time = false;
+        let mut contain_field = false;
         for item in proj_schema.fields().iter() {
             let field_name = item.name();
             if field_name == TIME_FIELD_NAME {
@@ -243,7 +245,14 @@ impl TableScanStream {
                     column_type,
                     encoding,
                 ));
+                contain_time = true;
                 continue;
+            }
+
+            if let Some(v) = table_schema.column(field_name) {
+                if v.column_type.is_field() {
+                    contain_field = true;
+                }
             }
 
             if let Some(v) = table_schema.column(field_name) {
@@ -257,6 +266,20 @@ impl TableScanStream {
                 }
                 .build());
             }
+        }
+
+        if contain_field && !contain_time {
+            let (encoding, column_type) = match table_schema.column(TIME_FIELD_NAME) {
+                None => (Encoding::Default, ColumnType::Time(TimeUnit::Nanosecond)),
+                Some(v) => (v.encoding, v.column_type.clone()),
+            };
+            proj_fileds.push(TableColumn::new(
+                0,
+                TIME_FIELD_NAME.to_string(),
+                column_type,
+                encoding,
+            ));
+            proj_fileds.reverse();
         }
 
         let proj_table_schema = TskvTableSchema::new(

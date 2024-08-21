@@ -160,12 +160,8 @@ impl OptimizerRule for PushDownAggregation {
 
                             // Find distinct group by exprs in the case where we have a grouping set
                             let mut new_required_columns = Default::default();
-                            let all_group_expr: Vec<Expr> =
-                                grouping_set_to_exprlist(group_expr)?;
-                            exprlist_to_columns(
-                                &all_group_expr,
-                                &mut new_required_columns,
-                            )?;
+                            let all_group_expr: Vec<Expr> = grouping_set_to_exprlist(group_expr)?;
+                            exprlist_to_columns(&all_group_expr, &mut new_required_columns)?;
 
                             let projection_expr = new_required_columns
                                 .into_iter()
