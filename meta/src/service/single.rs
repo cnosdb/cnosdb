@@ -33,16 +33,20 @@ pub async fn start_singe_meta_server(
     let mut cluster_schema_config = DatabaseConfig::default();
     cluster_schema_config.set_max_memcache_size(config.cluster_schema_cache_size);
     let default_database = vec![
-        (String::from(DEFAULT_DATABASE), DatabaseConfig::default(), DatabaseOptions::default()),
+        (
+            String::from(DEFAULT_DATABASE),
+            DatabaseConfig::default(),
+            DatabaseOptions::default(),
+        ),
         (
             String::from(models::schema::USAGE_SCHEMA),
             usage_schema_config,
-            DatabaseOptions::default()
+            DatabaseOptions::default(),
         ),
         (
             String::from(models::schema::CLUSTER_SCHEMA),
             cluster_schema_config,
-            DatabaseOptions::default()
+            DatabaseOptions::default(),
         ),
     ];
 
