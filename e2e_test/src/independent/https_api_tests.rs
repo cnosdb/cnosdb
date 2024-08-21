@@ -90,7 +90,7 @@ fn test_v1_sql_path() {
         let resp = check_response!(client.post(url, body));
         assert_eq!(
             resp.headers().get(CONTENT_TYPE).unwrap(),
-            &HeaderValue::from_static("application/csv")
+            &HeaderValue::from_static("text/csv")
         );
 
         // invalid basic auth
@@ -106,15 +106,15 @@ fn test_v1_sql_path() {
         let resp = client.execute(req.build().unwrap()).unwrap();
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 
-        // accept: application/csv
+        // accept: text/csv
         let mut req = client.request_with_auth(Method::POST, url).body(body);
         req = req.headers(headers! {
-            ACCEPT.as_str() => "application/csv"
+            ACCEPT.as_str() => "text/csv"
         });
         let resp = check_response!(client.execute(req.build().unwrap()));
         assert_eq!(
             resp.headers().get(CONTENT_TYPE).unwrap(),
-            &HeaderValue::from_static("application/csv")
+            &HeaderValue::from_static("text/csv")
         );
 
         // accept: application/json
@@ -147,7 +147,7 @@ fn test_v1_sql_path() {
         let resp = check_response!(client.execute(req.build().unwrap()));
         assert_eq!(
             resp.headers().get(CONTENT_TYPE).unwrap(),
-            &HeaderValue::from_static("application/csv")
+            &HeaderValue::from_static("text/csv")
         );
 
         // accept: */*
@@ -158,7 +158,7 @@ fn test_v1_sql_path() {
         let resp = check_response!(client.execute(req.build().unwrap()));
         assert_eq!(
             resp.headers().get(CONTENT_TYPE).unwrap(),
-            &HeaderValue::from_static("application/csv")
+            &HeaderValue::from_static("text/csv")
         );
 
         // accept: *
