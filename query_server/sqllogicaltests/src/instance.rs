@@ -189,7 +189,7 @@ fn build_http_request(
         .request(Method::POST, url)
         .basic_auth::<&str, &str>(option.username.as_str(), None)
         .body(body)
-        .header(reqwest::header::ACCEPT, "application/csv")
+        .header(reqwest::header::ACCEPT, "text/csv")
         .build()?;
     Ok(request)
 }
