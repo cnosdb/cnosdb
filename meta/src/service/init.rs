@@ -14,7 +14,7 @@ pub struct MetaInit {
     pub admin_user: String,
     pub admin_pwd: String,
     pub system_tenant: String,
-    pub default_database: Vec<(String, DatabaseConfig)>,
+    pub default_database: Vec<(String, DatabaseConfig, DatabaseOptions)>,
 }
 
 impl MetaInit {
@@ -23,7 +23,7 @@ impl MetaInit {
         admin_user: String,
         admin_pwd: String,
         system_tenant: String,
-        default_database: Vec<(String, DatabaseConfig)>,
+        default_database: Vec<(String, DatabaseConfig, DatabaseOptions)>,
     ) -> Self {
         Self {
             cluster_name,
@@ -71,10 +71,10 @@ impl MetaInit {
         storage.apply(&ctx, &data).await.expect("expect success");
 
         // init database
-        for (db, config) in self.default_database.into_iter() {
+        for (db, config, opt) in self.default_database.into_iter() {
             let req = WriteCommand::Set {
                 key: KeyPath::tenant_db_name(&self.cluster_name, &self.system_tenant, &db),
-                value: Self::db_config_schema_init(&self.system_tenant, &db, config),
+                value: Self::db_config_schema_init(&self.system_tenant, &db, config, opt),
             };
 
             let data = serde_json::to_vec(&req).unwrap();
@@ -84,10 +84,13 @@ impl MetaInit {
         storage.set_already_init().unwrap();
     }
 
-    fn db_config_schema_init(tenant: &str, db: &str, config: DatabaseConfig) -> String {
-        let mut db_opt = DatabaseOptions::default();
-        db_opt.set_replica(config.replica());
-        let db_schema = DatabaseSchema::new(tenant, db, db_opt, config.into());
+    fn db_config_schema_init(
+        tenant: &str,
+        db: &str,
+        config: DatabaseConfig,
+        opt: DatabaseOptions,
+    ) -> String {
+        let db_schema = DatabaseSchema::new(tenant, db, opt, config.into());
         value_encode(&db_schema).unwrap()
     }
 }

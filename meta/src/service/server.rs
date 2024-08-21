@@ -7,7 +7,7 @@ use futures::TryFutureExt;
 use metrics::metric_register::MetricsRegister;
 use models::meta_data::NodeMetrics;
 use models::node_info::NodeStatus;
-use models::schema::database_schema::DatabaseConfig;
+use models::schema::database_schema::{DatabaseConfig, DatabaseOptions};
 use models::schema::DEFAULT_DATABASE;
 use openraft::SnapshotPolicy;
 use protos::raft_service::raft_service_server::RaftServiceServer;
@@ -62,26 +62,30 @@ pub async fn start_raft_node(opt: config::meta::Opt) -> MetaResult<()> {
         snapshot_policy: SnapshotPolicy::LogsSinceLast(opt.raft_logs_to_keep),
     };
 
-    let mut public_config = DatabaseConfig::default();
-    public_config.set_replica(opt.system_database_replica);
+    let mut db_opt = DatabaseOptions::default();
+    db_opt.set_replica(opt.system_database_replica);
 
     let mut usage_schema_config = DatabaseConfig::default();
     usage_schema_config.set_max_memcache_size(opt.usage_schema_cache_size);
-    usage_schema_config.set_replica(opt.system_database_replica);
 
     let mut cluster_schema_config = DatabaseConfig::default();
     cluster_schema_config.set_max_memcache_size(opt.cluster_schema_cache_size);
-    cluster_schema_config.set_replica(opt.system_database_replica);
 
     let default_database = vec![
-        (String::from(DEFAULT_DATABASE), public_config),
+        (
+            String::from(DEFAULT_DATABASE),
+            DatabaseConfig::default(),
+            db_opt.clone(),
+        ),
         (
             String::from(models::schema::USAGE_SCHEMA),
             usage_schema_config,
+            db_opt.clone(),
         ),
         (
             String::from(models::schema::CLUSTER_SCHEMA),
             cluster_schema_config,
+            db_opt,
         ),
     ];
     let meta_init = MetaInit::new(
