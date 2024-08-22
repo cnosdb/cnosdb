@@ -276,13 +276,10 @@ impl TableScanStream {
                 None => (Encoding::Default, ColumnType::Time(TimeUnit::Nanosecond)),
                 Some(v) => (v.encoding, v.column_type.clone()),
             };
-            proj_fileds.push(TableColumn::new(
+            proj_fileds.insert(
                 0,
-                TIME_FIELD_NAME.to_string(),
-                column_type,
-                encoding,
-            ));
-            proj_fileds.reverse();
+                TableColumn::new(0, TIME_FIELD_NAME.to_string(), column_type, encoding),
+            );
         }
 
         let proj_table_schema = TskvTableSchema::new(

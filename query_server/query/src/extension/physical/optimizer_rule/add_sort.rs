@@ -60,8 +60,7 @@ impl AddSortExec {
                     metadata.insert("column_encoding".to_string(), "DEFAULT".to_string());
                     metadata.insert("column_id".to_string(), "0".to_string());
                     time_field = time_field.with_metadata(metadata);
-                    fields.push(time_field);
-                    fields.reverse();
+                    fields.insert(0, time_field);
                     let new_schema = Arc::new(Schema::new_with_metadata(
                         fields.clone(),
                         schema.metadata().clone(),
