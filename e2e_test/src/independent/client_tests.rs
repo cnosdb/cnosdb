@@ -582,7 +582,6 @@ fn explain_time_count_tests() {
         ];
         let resp_string = resp.text().unwrap();
         let resp_lines = resp_string.split('\n').collect::<Vec<&str>>();
-        println!("resp_lines:{:?}, \nexpected_resp_lines:{:?}", resp_lines, expected_resp_lines);
         assert_eq!(resp_lines.len(), expected_resp_lines.len());
 
         let expected_resp_lines_4 = replace_src_by_dst(

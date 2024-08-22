@@ -11,7 +11,7 @@ use datafusion::physical_expr::create_physical_expr;
 use datafusion::physical_optimizer::PhysicalOptimizerRule;
 use datafusion::physical_plan::aggregates::AggregateExec;
 use datafusion::physical_plan::expressions::{
-    Correlation, Covariance, CovariancePop, Stddev, StddevPop, Variance, VariancePop
+    Correlation, Covariance, CovariancePop, Stddev, StddevPop, Variance, VariancePop,
 };
 use datafusion::physical_plan::projection::ProjectionExec;
 use datafusion::physical_plan::sorts::sort_preserving_merge::SortPreservingMergeExec;
@@ -37,7 +37,11 @@ impl AddSortExec {
             if let Some(tskv_exec) = downcast_execution_plan::<TskvExec>(plan.as_ref()) {
                 let mut new_tskv_exec = tskv_exec.clone();
                 let schema = new_tskv_exec.schema();
-                let mut fields = schema.all_fields().iter().map(|f| (**f).clone()).collect::<Vec<Field>>();
+                let mut fields = schema
+                    .all_fields()
+                    .iter()
+                    .map(|f| (**f).clone())
+                    .collect::<Vec<Field>>();
                 let mut contain_time = false;
 
                 for field in &fields {
@@ -47,14 +51,21 @@ impl AddSortExec {
                 }
 
                 if !contain_time {
-                    let mut time_field = Field::new("time", DataType::Timestamp(TimeUnit::Nanosecond, None), false);
+                    let mut time_field = Field::new(
+                        "time",
+                        DataType::Timestamp(TimeUnit::Nanosecond, None),
+                        false,
+                    );
                     let mut metadata = HashMap::new();
                     metadata.insert("column_encoding".to_string(), "DEFAULT".to_string());
                     metadata.insert("column_id".to_string(), "0".to_string());
                     time_field = time_field.with_metadata(metadata);
                     fields.push(time_field);
                     fields.reverse();
-                    let new_schema = Arc::new(Schema::new_with_metadata(fields.clone(), schema.metadata().clone()));
+                    let new_schema = Arc::new(Schema::new_with_metadata(
+                        fields.clone(),
+                        schema.metadata().clone(),
+                    ));
                     new_tskv_exec.set_schema(new_schema);
                 }
 
@@ -86,9 +97,13 @@ impl AddSortExec {
                             &sort_merge_plan.schema(),
                             &ExecutionProps::new(),
                         )?;
-                        physical_projection_exprs.push((physical_projection_expr, fields[i].name().clone()));
+                        physical_projection_exprs
+                            .push((physical_projection_expr, fields[i].name().clone()));
                     }
-                    let projection = Arc::new(ProjectionExec::try_new(physical_projection_exprs, sort_merge_plan)?);
+                    let projection = Arc::new(ProjectionExec::try_new(
+                        physical_projection_exprs,
+                        sort_merge_plan,
+                    )?);
                     return Ok(Transformed::Yes(projection));
                 }
 
