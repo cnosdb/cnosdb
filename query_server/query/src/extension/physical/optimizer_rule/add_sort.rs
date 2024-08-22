@@ -89,8 +89,8 @@ impl AddSortExec {
 
                 if !contain_time {
                     let mut physical_projection_exprs = Vec::new();
-                    for i in 1..fields.len() {
-                        let col = Column::from_name(fields[i].name());
+                    for field in fields.iter().skip(1) {
+                        let col = Column::from_name(field.name());
                         let physical_projection_expr = create_physical_expr(
                             &Expr::Column(col),
                             &sort_merge_plan.schema().to_dfschema()?,
@@ -98,7 +98,7 @@ impl AddSortExec {
                             &ExecutionProps::new(),
                         )?;
                         physical_projection_exprs
-                            .push((physical_projection_expr, fields[i].name().clone()));
+                            .push((physical_projection_expr, field.name().clone()));
                     }
                     let projection = Arc::new(ProjectionExec::try_new(
                         physical_projection_exprs,
