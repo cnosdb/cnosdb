@@ -68,6 +68,9 @@ impl TskvExec {
     pub fn filter(&self) -> PredicateRef {
         self.filter.clone()
     }
+    pub fn set_schema(&mut self, schema: SchemaRef) {
+        self.proj_schema = schema
+    }
 }
 
 impl ExecutionPlan for TskvExec {
