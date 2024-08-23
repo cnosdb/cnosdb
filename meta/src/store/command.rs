@@ -159,7 +159,7 @@ pub enum WriteCommand {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ReadCommand {
     DataNodes(String),              //cluster
-    TenaneMetaData(String, String), // cluster tenant
+    TenantMetaData(String, String), // cluster tenant
 
     NodeMetrics(String), //cluster
 

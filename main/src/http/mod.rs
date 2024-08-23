@@ -70,7 +70,7 @@ pub enum Error {
         name: String,
     },
 
-    #[snafu(display("gerante pprof files: {}", reason))]
+    #[snafu(display("generate pprof files: {}", reason))]
     #[error_code(code = 9)]
     PProf {
         reason: String,
