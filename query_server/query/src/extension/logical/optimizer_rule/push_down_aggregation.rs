@@ -16,6 +16,7 @@
 
 use std::ops::Deref;
 
+// use std::sync::Arc;
 use datafusion::common::Column;
 use datafusion::error::{DataFusionError, Result};
 use datafusion::logical_expr::expr::AggregateFunction;
@@ -65,11 +66,11 @@ impl OptimizerRule for PushDownAggregation {
             if let LogicalPlan::TableScan(TableScan {
                 table_name,
                 source,
+                projection: _,
                 projected_schema: _,
                 filters,
-                fetch,
                 agg_with_grouping,
-                ..
+                fetch,
             }) = input.deref()
             {
                 if agg_with_grouping.is_none() {
@@ -78,6 +79,25 @@ impl OptimizerRule for PushDownAggregation {
                     {
                         TableProviderAggregationPushDown::Unsupported => None,
                         TableProviderAggregationPushDown::Ungrouped => {
+                            /*let new_table_scan = LogicalPlan::TableScan(TableScan {
+                                table_name: table_name.clone(),
+                                source: source.clone(),
+                                projection: projection.clone(),
+                                projected_schema: projected_schema.clone(),
+                                filters: filters.clone(),
+                                agg_with_grouping: Some(AggWithGrouping {
+                                    group_expr: group_expr.clone(),
+                                    agg_expr: aggr_expr.clone(),
+                                    schema: schema.clone(),
+                                }),
+                                fetch: *fetch,
+                            });
+                            let new_agg = LogicalPlan::Aggregate(Aggregate::try_new(
+                                Arc::new(new_table_scan),
+                                group_expr.clone(),
+                                aggr_expr.clone(),
+                            )?);
+                            Some(new_agg) */
                             // Save final agg node, can remove partial agg node
                             // Change the optimized logical plan to reflect the pushed down aggregate
                             //
