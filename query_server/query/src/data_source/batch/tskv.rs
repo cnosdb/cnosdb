@@ -14,7 +14,7 @@ use datafusion::logical_expr::logical_plan::AggWithGrouping;
 use datafusion::logical_expr::{
     aggregate_function, Expr, TableProviderAggregationPushDown, TableProviderFilterPushDown,
 };
-use datafusion::optimizer::utils::conjunction;
+use datafusion::optimizer::utils::{conjunction, split_conjunction};
 use datafusion::physical_expr::PhysicalExpr;
 use datafusion::physical_plan::empty::EmptyExec;
 use datafusion::physical_plan::{project_schema, ExecutionPlan};
@@ -30,6 +30,7 @@ use crate::data_source::sink::tskv::TskvRecordBatchSinkProvider;
 use crate::data_source::split::tskv::TableLayoutHandle;
 use crate::data_source::split::SplitManagerRef;
 use crate::data_source::{UpdateExecExt, WriteExecExt};
+use crate::extension::expr::expr_utils;
 use crate::extension::physical::plan_node::aggregate_filter_scan::AggregateFilterTskvExec;
 use crate::extension::physical::plan_node::table_writer::TableWriterExec;
 use crate::extension::physical::plan_node::tag_scan::TagScanExec;
@@ -310,19 +311,19 @@ impl TableProvider for ClusterTable {
 
         // FIXME: tag support Exact Filter PushDown
         // TODO: REMOVE
-        /* let exprs = split_conjunction(expr);
+        let exprs = split_conjunction(expr);
         let exprs = exprs.into_iter().cloned().collect::<Vec<_>>();
         if expr_utils::find_exprs_in_exprs(&exprs, &|nested_expr| {
-            !expr_utils::is_time_filter(nested_expr)
+            !expr_utils::can_exact_filter(nested_expr, self.schema())
         })
         .is_empty()
         {
             // all exprs are time range filter
             return Ok(TableProviderFilterPushDown::Exact);
-        } */
+        }
 
         // tskv handle all filters
-        Ok(TableProviderFilterPushDown::Exact)
+        Ok(TableProviderFilterPushDown::Inexact)
     }
 
     fn supports_aggregate_pushdown(

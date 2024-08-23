@@ -4,7 +4,7 @@ use datafusion::error::DataFusionError;
 use datafusion::logical_expr::utils::find_exprs_in_expr;
 use datafusion::logical_expr::{expr, BinaryExpr, Operator};
 use datafusion::prelude::Expr;
-use models::schema::TIME_FIELD_NAME;
+use models::arrow::SchemaRef;
 use spi::AnalyzerSnafu;
 
 use super::selector_function::{BOTTOM, TOPK};
@@ -45,25 +45,24 @@ pub fn check_args_eq_any(func_name: &str, expects: &[usize], input: &[DataType])
     Ok(())
 }
 
-pub fn is_time_filter(expr: &Expr) -> bool {
+pub fn can_exact_filter(expr: &Expr, schema: SchemaRef) -> bool {
     match expr {
-        Expr::BinaryExpr(BinaryExpr { left, op, right }) => {
-            (is_time_column(left) || is_time_column(right))
-                && matches!(
-                    op,
-                    Operator::Eq | Operator::Lt | Operator::LtEq | Operator::Gt | Operator::GtEq
-                )
+        Expr::BinaryExpr(BinaryExpr { op, .. }) => {
+            matches!(
+                op,
+                Operator::Eq | Operator::Lt | Operator::LtEq | Operator::Gt | Operator::GtEq
+            )
         }
+        Expr::IsNull(col) | Expr::IsNotNull(col) => is_column(col, schema),
         _ => false,
     }
 }
 
-pub fn is_time_column(expr: &Expr) -> bool {
+pub fn is_column(expr: &Expr, schema: SchemaRef) -> bool {
     if let Expr::Column(c) = expr {
-        c.name == TIME_FIELD_NAME
-    } else {
-        false
+        return schema.column_with_name(&c.name).is_some();
     }
+    false
 }
 
 /// Replace 'replace' in 'exprs' with 'with'
