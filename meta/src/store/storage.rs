@@ -417,7 +417,7 @@ impl StateMachine {
             ReadCommand::NodeMetrics(cluster) => {
                 response_encode(self.process_read_node_metrics(cluster))
             }
-            ReadCommand::TenaneMetaData(cluster, tenant) => {
+            ReadCommand::TenantMetaData(cluster, tenant) => {
                 response_encode(self.to_tenant_meta_data(cluster, tenant))
             }
             ReadCommand::CustomRole(cluster, role_name, tenant_name) => {
