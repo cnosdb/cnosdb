@@ -218,7 +218,7 @@ select * from m0
 where t0 = null;
 ----
 "TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=Some(\"t0@1 = NULL\"), split_num=7, projection=[time,t0,t1,f0,f1,f2,f3,f4]
-"logical_plan" "TableScan: m0 projection=[time, t0, t1, f0, f1, f2, f3, f4], full_filters=[m0.t0 = Utf8(NULL)]""physical_plan"
+"logical_plan" "TableScan: m0 projection=[time, t0, t1, f0, f1, f2, f3, f4], full_filters=[m0.t0 = Utf8(NULL)]"
 "physical_plan"
 
 query T rowsort
