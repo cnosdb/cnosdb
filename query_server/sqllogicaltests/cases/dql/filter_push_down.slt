@@ -218,14 +218,10 @@ select * from m0
 where t0 = null;
 ----
 "
-"CoalesceBatchesExec: target_batch_size=8192
-"Filter: m0.t0 = Utf8(NULL)
 "logical_plan"
 "physical_plan"
-------TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=Some(\"t0@1 = NULL\"), split_num=7, projection=[time,t0,t1,f0,f1,f2,f3,f4]
-----RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=7
---FilterExec: t0@1 = NULL
---TableScan: m0 projection=[time, t0, t1, f0, f1, f2, f3, f4], partial_filters=[m0.t0 = Utf8(NULL)]"
+TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=Some(\"t0@1 = NULL\"), split_num=7, projection=[time,t0,t1,f0,f1,f2,f3,f4]
+TableScan: m0 projection=[time, t0, t1, f0, f1, f2, f3, f4], full_filters=[m0.t0 = Utf8(NULL)]"
 
 
 query T rowsort
@@ -234,11 +230,7 @@ select * from m0
 where t0 > null;
 ----
 "
-"CoalesceBatchesExec: target_batch_size=8192
-"Filter: m0.t0 > Utf8(NULL)
 "logical_plan"
 "physical_plan"
-------TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=Some(\"t0@1 > NULL\"), split_num=7, projection=[time,t0,t1,f0,f1,f2,f3,f4]
-----RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=7
---FilterExec: t0@1 > NULL
---TableScan: m0 projection=[time, t0, t1, f0, f1, f2, f3, f4], partial_filters=[m0.t0 > Utf8(NULL)]"
+TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=Some(\"t0@1 > NULL\"), split_num=7, projection=[time,t0,t1,f0,f1,f2,f3,f4]
+TableScan: m0 projection=[time, t0, t1, f0, f1, f2, f3, f4], full_filters=[m0.t0 > Utf8(NULL)]"
