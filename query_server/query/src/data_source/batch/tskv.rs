@@ -314,7 +314,7 @@ impl TableProvider for ClusterTable {
         let exprs = split_conjunction(expr);
         let exprs = exprs.into_iter().cloned().collect::<Vec<_>>();
         if expr_utils::find_exprs_in_exprs(&exprs, &|nested_expr| {
-            !expr_utils::can_exact_filter(nested_expr, self.schema())
+            !expr_utils::can_exact_filter(nested_expr, self.table_schema())
         })
         .is_empty()
         {
