@@ -7,7 +7,6 @@ use datafusion::physical_plan::metrics::{BaselineMetrics, ExecutionPlanMetricsSe
 pub mod aggregate_filter_scan;
 pub mod assert;
 pub mod expand;
-pub mod gapfill;
 pub mod state_restore;
 pub mod state_save;
 pub mod table_writer;
