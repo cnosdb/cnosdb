@@ -26,7 +26,6 @@ use super::optimizer::PhysicalOptimizer;
 use crate::extension::physical::optimizer_rule::add_assert::AddAssertExec;
 use crate::extension::physical::optimizer_rule::add_sort::AddSortExec;
 use crate::extension::physical::transform_rule::expand::ExpandPlanner;
-use crate::extension::physical::transform_rule::gapfill::GapFillPlanner;
 use crate::extension::physical::transform_rule::table_writer::TableWriterPlanner;
 use crate::extension::physical::transform_rule::tag_scan::TagScanPlanner;
 use crate::extension::physical::transform_rule::ts_gen_func::TsGenFuncPlanner;
@@ -67,7 +66,6 @@ impl Default for DefaultPhysicalPlanner {
             Arc::new(UpdateTagValuePlanner {}),
             Arc::new(TagScanPlanner {}),
             Arc::new(ExpandPlanner::new()),
-            Arc::new(GapFillPlanner::new()),
             Arc::new(TsGenFuncPlanner),
         ];
 
