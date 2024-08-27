@@ -1,25 +1,20 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use datafusion::common::tree_node::{Transformed, TreeNode};
-use datafusion::common::{Column, Result as DFResult, ToDFSchema};
+use datafusion::common::{Result as DFResult, ToDFSchema};
 use datafusion::config::ConfigOptions;
 use datafusion::execution::context::ExecutionProps;
 use datafusion::logical_expr::expr::Sort;
 use datafusion::logical_expr::{col, Expr};
-use datafusion::physical_expr::create_physical_expr;
 use datafusion::physical_optimizer::PhysicalOptimizerRule;
 use datafusion::physical_plan::aggregates::AggregateExec;
 use datafusion::physical_plan::expressions::{
     Correlation, Covariance, CovariancePop, Stddev, StddevPop, Variance, VariancePop,
 };
-use datafusion::physical_plan::projection::ProjectionExec;
 use datafusion::physical_plan::sorts::sort_preserving_merge::SortPreservingMergeExec;
 use datafusion::physical_plan::udaf::AggregateFunctionExpr;
 use datafusion::physical_plan::ExecutionPlan;
 use datafusion::physical_planner::create_physical_sort_expr;
-use models::arrow::{DataType, Field, Schema, TimeUnit};
-use models::schema::TIME_FIELD_NAME;
 
 use crate::extension::physical::plan_node::tskv_exec::TskvExec;
 use crate::extension::utils::downcast_execution_plan;
@@ -35,49 +30,16 @@ impl AddSortExec {
     fn optimize_inner(&self, plan: Arc<dyn ExecutionPlan>) -> DFResult<Arc<dyn ExecutionPlan>> {
         plan.transform_up(&|plan| {
             if let Some(tskv_exec) = downcast_execution_plan::<TskvExec>(plan.as_ref()) {
-                let mut new_tskv_exec = tskv_exec.clone();
-                let schema = new_tskv_exec.schema();
-                let mut fields = schema
-                    .all_fields()
-                    .iter()
-                    .map(|f| (**f).clone())
-                    .collect::<Vec<Field>>();
-                let mut contain_time = false;
-
-                for field in &fields {
-                    if field.name() == TIME_FIELD_NAME {
-                        contain_time = true;
-                    }
-                }
-
-                if !contain_time {
-                    let mut time_field = Field::new(
-                        "time",
-                        DataType::Timestamp(TimeUnit::Nanosecond, None),
-                        false,
-                    );
-                    let mut metadata = HashMap::new();
-                    metadata.insert("column_encoding".to_string(), "DEFAULT".to_string());
-                    metadata.insert("column_id".to_string(), "0".to_string());
-                    time_field = time_field.with_metadata(metadata);
-                    fields.insert(0, time_field);
-                    let new_schema = Arc::new(Schema::new_with_metadata(
-                        fields.clone(),
-                        schema.metadata().clone(),
-                    ));
-                    new_tskv_exec.set_schema(new_schema);
-                }
-
                 let physical_sort_expr = create_physical_sort_expr(
                     &Expr::Sort(Sort::new(Box::new(col("time")), true, false)),
-                    &new_tskv_exec.schema().to_dfschema()?,
-                    &new_tskv_exec.schema(),
+                    &tskv_exec.schema().to_dfschema()?,
+                    &tskv_exec.schema(),
                     &ExecutionProps::new(),
                 )?;
                 let sort_plan = Arc::new(
                     datafusion::physical_plan::sorts::sort::SortExec::new(
                         vec![physical_sort_expr.clone()],
-                        Arc::new(new_tskv_exec) as Arc<dyn ExecutionPlan>,
+                        plan.clone(),
                     )
                     .with_preserve_partitioning(true),
                 );
@@ -85,26 +47,6 @@ impl AddSortExec {
                     vec![physical_sort_expr],
                     sort_plan,
                 ));
-
-                if !contain_time {
-                    let mut physical_projection_exprs = Vec::new();
-                    for field in fields.iter().skip(1) {
-                        let col = Column::from_name(field.name());
-                        let physical_projection_expr = create_physical_expr(
-                            &Expr::Column(col),
-                            &sort_merge_plan.schema().to_dfschema()?,
-                            &sort_merge_plan.schema(),
-                            &ExecutionProps::new(),
-                        )?;
-                        physical_projection_exprs
-                            .push((physical_projection_expr, field.name().clone()));
-                    }
-                    let projection = Arc::new(ProjectionExec::try_new(
-                        physical_projection_exprs,
-                        sort_merge_plan,
-                    )?);
-                    return Ok(Transformed::Yes(projection));
-                }
 
                 return Ok(Transformed::Yes(sort_merge_plan));
             }

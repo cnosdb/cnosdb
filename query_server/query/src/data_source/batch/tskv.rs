@@ -23,6 +23,7 @@ use meta::error::MetaError;
 use meta::model::MetaClientRef;
 use models::predicate::domain::{Predicate, PredicateRef, PushedAggregateFunction};
 use models::schema::tskv_table_schema::{TskvTableSchema, TskvTableSchemaRef};
+use models::schema::TIME_FIELD_NAME;
 use trace::debug;
 
 use crate::data_source::batch::filter_expr_rewriter::{has_udf_function, rewrite_filters};
@@ -374,8 +375,8 @@ impl TableProvider for ClusterTable {
         Ok(TableProviderAggregationPushDown::Unsupported)
     }
 
-    fn push_down_projection(&self, _proj: &[usize]) -> Option<Vec<usize>> {
-        /* let mut contain_time = false;
+    fn push_down_projection(&self, proj: &[usize]) -> Option<Vec<usize>> {
+        let mut contain_time = false;
         let mut contain_field = false;
 
         proj.iter()
@@ -395,7 +396,7 @@ impl TableProvider for ClusterTable {
                     .collect::<Vec<_>>();
                 return Some(new_proj);
             }
-        } */
+        }
 
         None
     }

@@ -10,15 +10,12 @@ use datafusion::arrow::array::{
     TimestampSecondBuilder, UInt64Builder,
 };
 use datafusion::arrow::datatypes::TimeUnit;
-use datafusion::physical_plan::expressions::{Column, IsNotNullExpr, IsNullExpr};
 use datafusion::physical_plan::metrics::{self, ExecutionPlanMetricsSet, MetricBuilder};
 use datafusion_proto::physical_plan::from_proto::parse_physical_expr;
 use models::meta_data::VnodeId;
 use models::predicate::domain::{self, QueryArgs, QueryExpr, TimeRanges};
 use models::predicate::PlacedSplit;
-use models::schema::tskv_table_schema::{
-    PhysicalCType, TableColumn, TskvTableSchema, TskvTableSchemaRef,
-};
+use models::schema::tskv_table_schema::{PhysicalCType, TableColumn, TskvTableSchemaRef};
 use models::{ColumnId, PhysicalDType, SeriesId, SeriesKey};
 use protos::kv_service::QueryRecordBatchRequest;
 use snafu::ResultExt;
@@ -181,21 +178,14 @@ impl SeriesGroupBatchReaderFactory {
 
         // 获取所有的符合条件的chunk Vec<(SeriesKey, Vec<DataReference>)>
         let mut series_chunk_readers = Vec::with_capacity(series_ids.len());
-        let null_filter = Self::get_null_filter(kv_schema, &predicate);
         for (sid, series_key) in series_ids.iter().zip(sid_keys) {
             // 选择含有series的所有chunk Vec<DataReference::Chunk(chunk, reader)>
-            let mut chunks =
-                Self::filter_chunks(&column_files_with_reader, *sid, &null_filter).await?;
+            let mut chunks = Self::filter_chunks(&column_files_with_reader, *sid).await?;
             // 获取所有符合条件的 memcache rowgroup Vec<DataReference::Memcache(rowgroup)>)
             chunks.append(
-                Self::filter_rowgroups(
-                    super_version.caches.clone(),
-                    *sid,
-                    time_ranges.clone(),
-                    &null_filter,
-                )
-                .await?
-                .as_mut(),
+                Self::filter_rowgroups(super_version.caches.clone(), *sid, time_ranges.clone())
+                    .await?
+                    .as_mut(),
             );
             // 按时间范围过滤chunk reader
             chunks.retain(|d| {
@@ -289,41 +279,10 @@ impl SeriesGroupBatchReaderFactory {
         Ok(sid_keys)
     }
 
-    fn get_null_filter(
-        kv_schema: &Arc<TskvTableSchema>,
-        predicate: &Option<Arc<Predicate>>,
-    ) -> Option<(String, bool)> {
-        // get IsNullExpr or IsNotNullExpr
-        if let Some(pre) = predicate {
-            if let Some(expr) = pre.expr() {
-                if let Some(is_null_expr) = expr.as_any().downcast_ref::<IsNullExpr>() {
-                    if let Some(column) = is_null_expr.arg().as_any().downcast_ref::<Column>() {
-                        if let Some(column) = kv_schema.column(column.name()) {
-                            if column.column_type.is_tag() {
-                                return Some((column.id.to_string(), true));
-                            }
-                        }
-                    }
-                } else if let Some(is_not_null_expr) = expr.as_any().downcast_ref::<IsNotNullExpr>()
-                {
-                    if let Some(column) = is_not_null_expr.arg().as_any().downcast_ref::<Column>() {
-                        if let Some(column) = kv_schema.column(column.name()) {
-                            if column.column_type.is_tag() {
-                                return Some((column.id.to_string(), false));
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        None
-    }
-
     /// 从给定的文件列表中选择含有指定series的所有chunk及其对应的TsmReader
     async fn filter_chunks(
         column_files: &[(Arc<ColumnFile>, Arc<TsmReader>)],
         sid: SeriesId,
-        null_filter: &Option<(String, bool)>,
     ) -> TskvResult<Vec<DataReference>> {
         // 选择含有series的所有文件
         let mut files = Vec::new();
@@ -339,14 +298,6 @@ impl SeriesGroupBatchReaderFactory {
             match chunk {
                 None => continue,
                 Some(chunk) => {
-                    let chunk_meta = chunk.series_key();
-                    if let Some((column_name, is_null)) = &null_filter {
-                        if (!is_null && chunk_meta.tag_val(column_name).is_none())
-                            || (*is_null && chunk_meta.tag_val(column_name).is_some())
-                        {
-                            continue;
-                        }
-                    }
                     chunks.push(DataReference::Chunk(chunk.clone(), reader.clone()));
                 }
             }
@@ -360,7 +311,6 @@ impl SeriesGroupBatchReaderFactory {
         caches: CacheGroup,
         sid: SeriesId,
         time_ranges: Arc<TimeRanges>,
-        null_filter: &Option<(String, bool)>,
     ) -> TskvResult<Vec<DataReference>> {
         let mut rowgroups = Vec::new();
         for cache in caches
@@ -369,13 +319,6 @@ impl SeriesGroupBatchReaderFactory {
             .chain(iter::once(&caches.mut_cache))
         {
             if let Some(series) = cache.read().read_series_data_by_id(sid) {
-                if let Some((column_name, is_null)) = &null_filter {
-                    if (!is_null && series.read().series_key.tag_val(column_name).is_none())
-                        || (*is_null && series.read().series_key.tag_val(column_name).is_some())
-                    {
-                        continue;
-                    }
-                }
                 if let Some(new_time_ranges) = time_ranges.intersect(&series.read().range) {
                     rowgroups.push(DataReference::Memcache(
                         series.clone(),

@@ -47,24 +47,41 @@ pub fn check_args_eq_any(func_name: &str, expects: &[usize], input: &[DataType])
 
 pub fn can_exact_filter(expr: &Expr, schema: TskvTableSchemaRef) -> bool {
     match expr {
-        Expr::BinaryExpr(BinaryExpr { op, .. }) => {
-            matches!(
-                op,
-                Operator::Eq | Operator::Lt | Operator::LtEq | Operator::Gt | Operator::GtEq
-            )
+        Expr::BinaryExpr(BinaryExpr { left, op, right }) => {
+            ((is_column(left, schema.clone()) && is_literal(right))
+                || (is_column(right, schema.clone()) && is_literal(left)))
+                && matches!(
+                    op,
+                    Operator::Eq | Operator::Lt | Operator::LtEq | Operator::Gt | Operator::GtEq
+                )
         }
-        Expr::IsNull(col) | Expr::IsNotNull(col) => is_field_column(col, schema),
+        // Expr::IsNull(col) | Expr::IsNotNull(col) => is_column(col, schema),
         _ => false,
     }
 }
 
-pub fn is_field_column(expr: &Expr, schema: TskvTableSchemaRef) -> bool {
-    if let Expr::Column(c) = expr {
-        if let Some(col) = schema.column(&c.name) {
-            return col.column_type.is_field();
+pub fn is_column(expr: &Expr, schema: TskvTableSchemaRef) -> bool {
+    let col = if let Expr::Column(col) = expr {
+        Some(col)
+    } else if let Expr::Cast(cast) = expr {
+        if let Expr::Column(col) = cast.expr.as_ref() {
+            Some(col)
+        } else {
+            None
         }
+    } else {
+        None
+    };
+
+    if let Some(col) = col {
+        return schema.column(&col.name).is_some();
     }
+
     false
+}
+
+pub fn is_literal(expr: &Expr) -> bool {
+    matches!(expr, Expr::Literal(_))
 }
 
 /// Replace 'replace' in 'exprs' with 'with'
