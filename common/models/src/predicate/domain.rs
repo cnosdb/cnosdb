@@ -26,7 +26,7 @@ use super::transformation::RowExpressionToDomainsVisitor;
 use super::utils::filter_to_time_ranges;
 use super::PlacedSplit;
 use crate::errors::{InternalSnafu, InvalidQueryExprMsgSnafu, InvalidSerdeMessageSnafu};
-use crate::schema::tskv_table_schema::{ColumnType, TableColumn, TskvTableSchemaRef};
+use crate::schema::tskv_table_schema::{ColumnType, TskvTableSchemaRef};
 use crate::{ModelResult, Timestamp};
 
 pub type PredicateRef = Arc<Predicate>;
@@ -1778,15 +1778,15 @@ impl QueryExpr {
     }
 }
 
-pub fn encode_agg(agg: &Option<Vec<TableColumn>>) -> ModelResult<Vec<u8>> {
+pub fn encode_agg(agg: &Option<Vec<PushedAggregateFunction>>) -> ModelResult<Vec<u8>> {
     let d = bincode::serialize(agg).context(InvalidSerdeMessageSnafu)?;
 
     Ok(d)
 }
 
-pub fn decode_agg(buf: &[u8]) -> ModelResult<Option<Vec<TableColumn>>> {
+pub fn decode_agg(buf: &[u8]) -> ModelResult<Option<Vec<PushedAggregateFunction>>> {
     let args =
-        bincode::deserialize::<Option<Vec<TableColumn>>>(buf).context(InvalidSerdeMessageSnafu)?;
+        bincode::deserialize::<Option<Vec<PushedAggregateFunction>>>(buf).context(InvalidSerdeMessageSnafu)?;
 
     Ok(args)
 }

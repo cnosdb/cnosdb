@@ -53,7 +53,7 @@ impl ClusterTable {
         projection: Option<&Vec<usize>>,
         predicate: PredicateRef,
     ) -> Result<Arc<dyn ExecutionPlan>> {
-        let proj_schema = project_schema(&self.schema.to_arrow_schema(), projection)?;
+        let proj_schema = self.project_schema(projection)?;
 
         let table_layout = TableLayoutHandle {
             table: self.schema.clone(),
@@ -238,6 +238,13 @@ impl ClusterTable {
     pub fn table_schema(&self) -> TskvTableSchemaRef {
         self.schema.clone()
     }
+
+    // Check and return the projected schema
+    fn project_schema(&self, projection: Option<&Vec<usize>>) -> Result<SchemaRef> {
+        valid_project(&self.schema, projection)
+            .map_err(|err| DataFusionError::External(Box::new(err)))?;
+        project_schema(&self.schema.to_arrow_schema(), projection)
+    }
 }
 
 #[async_trait]
@@ -329,14 +336,14 @@ impl TableProvider for ClusterTable {
 
     fn supports_aggregate_pushdown(
         &self,
-        group_expr: &[Expr],
-        _aggr_expr: &[Expr],
+        _group_expr: &[Expr],
+        aggr_expr: &[Expr],
     ) -> Result<TableProviderAggregationPushDown> {
-        if !group_expr.is_empty() {
+        /* if !group_expr.is_empty() {
             return Ok(TableProviderAggregationPushDown::Unsupported);
-        }
+        } */
 
-        /* let result = if aggr_expr.iter().all(|e| {
+        let result = if aggr_expr.iter().all(|e| {
             match e {
                 Expr::AggregateFunction(AggregateFunction {
                     fun,
@@ -348,9 +355,9 @@ impl TableProvider for ClusterTable {
                     let support_agg_func = matches!(
                         fun,
                         aggregate_function::AggregateFunction::Count // TODO
-                                                                     | aggregate_function::AggregateFunction::Max
-                                                                     | aggregate_function::AggregateFunction::Min
-                                                                     // | aggregate_function::AggregateFunction::Sum
+                        /* | aggregate_function::AggregateFunction::Max
+                        | aggregate_function::AggregateFunction::Min
+                        | aggregate_function::AggregateFunction::Sum */
                     );
 
                     support_agg_func
@@ -370,9 +377,9 @@ impl TableProvider for ClusterTable {
             TableProviderAggregationPushDown::Unsupported
         };
 
-        Ok(result) */
+        Ok(result)
 
-        Ok(TableProviderAggregationPushDown::Unsupported)
+        //Ok(TableProviderAggregationPushDown::Unsupported)
     }
 
     fn push_down_projection(&self, proj: &[usize]) -> Option<Vec<usize>> {

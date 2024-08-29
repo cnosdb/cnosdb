@@ -79,37 +79,40 @@ impl OptimizerRule for PushDownAggregation {
                     {
                         TableProviderAggregationPushDown::Unsupported => None,
                         TableProviderAggregationPushDown::Ungrouped => {
-                            /*let new_table_scan = LogicalPlan::TableScan(TableScan {
-                                table_name: table_name.clone(),
-                                source: source.clone(),
-                                projection: projection.clone(),
-                                projected_schema: projected_schema.clone(),
-                                filters: filters.clone(),
-                                agg_with_grouping: Some(AggWithGrouping {
-                                    group_expr: group_expr.clone(),
-                                    agg_expr: aggr_expr.clone(),
-                                    schema: schema.clone(),
-                                }),
-                                fetch: *fetch,
-                            });
-                            let new_agg = LogicalPlan::Aggregate(Aggregate::try_new(
-                                Arc::new(new_table_scan),
-                                group_expr.clone(),
-                                aggr_expr.clone(),
-                            )?);
-                            Some(new_agg) */
-                            // Save final agg node, can remove partial agg node
-                            // Change the optimized logical plan to reflect the pushed down aggregate
-                            //
-                            // e.g.
-                            //
-                            // Aggregate: groupBy=[[]], aggr=[[min(c1), max(c1)]]
-                            //   TableScan: t1 projection=[c1]
-                            // ->
-                            // == Optimized Logical Plan ==
-                            // Aggregate: groupBy=[[]], aggr=[[min(min(c1)) as min(c1), max(max(c1)) as max(c1)]]
-                            //   TableScan: t1 projection=[c1] groupBy=[[]], aggr=[[min(c1), max(c1)]]
-                            let new_agg_expr_with_alias = aggr_expr
+                            if !group_expr.is_empty() {
+                                /* let new_table_scan = LogicalPlan::TableScan(TableScan {
+                                    table_name: table_name.clone(),
+                                    source: source.clone(),
+                                    projection: projection.clone(),
+                                    projected_schema: projected_schema.clone(),
+                                    filters: filters.clone(),
+                                    agg_with_grouping: Some(AggWithGrouping {
+                                        group_expr: group_expr.clone(),
+                                        agg_expr: aggr_expr.clone(),
+                                        schema: schema.clone(),
+                                    }),
+                                    fetch: *fetch,
+                                });
+                                
+                                let new_agg = LogicalPlanBuilder::from(new_table_scan).aggregate(
+                                    group_expr.clone(),
+                                    aggr_expr.clone(),
+                                )?.build()?;
+                                Some(new_agg) */
+                                Some(plan.clone())
+                            } else {
+                                // Save final agg node, can remove partial agg node
+                                // Change the optimized logical plan to reflect the pushed down aggregate
+                                //
+                                // e.g.
+                                //
+                                // Aggregate: groupBy=[[]], aggr=[[min(c1), max(c1)]]
+                                //   TableScan: t1 projection=[c1]
+                                // ->
+                                // == Optimized Logical Plan ==
+                                // Aggregate: groupBy=[[]], aggr=[[min(min(c1)) as min(c1), max(max(c1)) as max(c1)]]
+                                //   TableScan: t1 projection=[c1] groupBy=[[]], aggr=[[min(c1), max(c1)]]
+                                let new_agg_expr_with_alias = aggr_expr
                                 .iter()
                                 .map(|e| {
                                     let col_name = e.display_name()?;
@@ -175,40 +178,42 @@ impl OptimizerRule for PushDownAggregation {
                                 })
                                 .collect::<Result<Vec<_>>>()?;
 
-                            let (new_agg_expr, projection_agg_expr): (Vec<_>, Vec<_>) =
-                                new_agg_expr_with_alias.into_iter().unzip();
+                                let (new_agg_expr, projection_agg_expr): (Vec<_>, Vec<_>) =
+                                    new_agg_expr_with_alias.into_iter().unzip();
 
-                            // Find distinct group by exprs in the case where we have a grouping set
-                            let mut new_required_columns = Default::default();
-                            let all_group_expr: Vec<Expr> = grouping_set_to_exprlist(group_expr)?;
-                            exprlist_to_columns(&all_group_expr, &mut new_required_columns)?;
+                                // Find distinct group by exprs in the case where we have a grouping set
+                                let mut new_required_columns = Default::default();
+                                let all_group_expr: Vec<Expr> = grouping_set_to_exprlist(group_expr)?;
+                                exprlist_to_columns(&all_group_expr, &mut new_required_columns)?;
 
-                            let projection_expr = new_required_columns
-                                .into_iter()
-                                .map(Expr::Column)
-                                .chain(projection_agg_expr)
-                                .collect::<Vec<_>>();
+                                let projection_expr = new_required_columns
+                                    .into_iter()
+                                    .map(Expr::Column)
+                                    .chain(projection_agg_expr)
+                                    .collect::<Vec<_>>();
 
-                            let new_table_scan = LogicalPlan::TableScan(TableScan {
-                                table_name: table_name.clone(),
-                                source: source.clone(),
-                                projection: None,
-                                projected_schema: schema.clone(),
-                                filters: filters.clone(),
-                                fetch: *fetch,
-                                agg_with_grouping: Some(AggWithGrouping {
-                                    group_expr: group_expr.clone(),
-                                    agg_expr: aggr_expr.clone(),
-                                    schema: schema.clone(),
-                                }),
-                            });
+                                let new_table_scan = LogicalPlan::TableScan(TableScan {
+                                    table_name: table_name.clone(),
+                                    source: source.clone(),
+                                    projection: None,
+                                    projected_schema: schema.clone(),
+                                    filters: filters.clone(),
+                                    fetch: *fetch,
+                                    agg_with_grouping: Some(AggWithGrouping {
+                                        group_expr: group_expr.clone(),
+                                        agg_expr: aggr_expr.clone(),
+                                        schema: schema.clone(),
+                                    }),
+                                });
 
-                            let new_plan = LogicalPlanBuilder::from(new_table_scan)
-                                .aggregate(group_expr.clone(), new_agg_expr)?
-                                .project(projection_expr)?
-                                .build()?;
+                                let new_plan = LogicalPlanBuilder::from(new_table_scan)
+                                    .aggregate(group_expr.clone(), new_agg_expr)?
+                                    .project(projection_expr)?
+                                    .build()?;
 
-                            Some(new_plan)
+                                Some(new_plan)
+                            }
+                            
                         }
                         TableProviderAggregationPushDown::Grouped => {
                             // Remove `Aggregate` node
