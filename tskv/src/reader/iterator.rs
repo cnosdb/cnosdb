@@ -897,13 +897,13 @@ async fn build_stream(
         )));
     }
 
-    /* if query_option.aggregates.is_some() {
+    if query_option.aggregates.is_some() {
         // TODO: 重新实现聚合下推
         return Err(CommonSnafu {
             reason: "aggregates push down is not supported yet".to_string(),
         }
         .build());
-    } */
+    }
 
     let factory = SeriesGroupBatchReaderFactory::new(
         engine,
