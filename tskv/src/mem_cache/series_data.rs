@@ -1,19 +1,16 @@
-use std::cmp;
-use std::collections::LinkedList;
+use std::collections::{HashMap, LinkedList};
 use std::ops::Bound::Included;
 use std::sync::Arc;
 
-use arrow_array::RecordBatch;
-use models::field_value::FieldVal;
 use models::predicate::domain::{TimeRange, TimeRanges};
 use models::schema::tskv_table_schema::{TableColumn, TskvTableSchema, TskvTableSchemaRef};
 use models::{ColumnId, SeriesId, SeriesKey, Timestamp};
-use snafu::ResultExt;
+use skiplist::skiplist;
 
-use super::memcache::dedup_and_sort_row_data;
-use super::row_data::{OrderedRowsData, RowData};
-use crate::error::{ArrowSnafu, CommonSnafu, ModelSnafu, TskvResult};
-use crate::tsm::mutable_column::MutableColumn;
+use super::row_data::{OrderedRowsData, RowData, RowDataRef};
+use crate::error::{CommonSnafu, TskvResult};
+use crate::tsm::mutable_column_ref::MutableColumnRef;
+use crate::tsm::page;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct RowGroup {
@@ -265,98 +262,316 @@ impl SeriesData {
         }
     }
 
-    pub fn flat_groups(&self) -> Vec<(TskvTableSchemaRef, &OrderedRowsData)> {
+    pub fn flat_groups(
+        &self,
+    ) -> Vec<(
+        TskvTableSchemaRef,
+        HashMap<ColumnId, usize>,
+        &OrderedRowsData,
+    )> {
         self.groups
             .iter()
-            .map(|g| (g.schema.clone(), &g.rows))
+            .map(|g| (g.schema.clone(), g.schema.fields_id(), &g.rows))
             .collect()
     }
     pub fn get_schema(&self) -> Option<Arc<TskvTableSchema>> {
         if let Some(item) = self.groups.back() {
             return Some(item.schema.clone());
         }
+
         None
     }
 
-    pub fn build_record_batch(
+    #[allow(clippy::type_complexity)]
+    pub fn convert_to_page(
         &self,
         max_level_ts: i64,
-    ) -> TskvResult<Option<(TskvTableSchemaRef, RecordBatch, RecordBatch)>> {
-        if let Some(schema) = self.get_schema() {
-            let field_ids = schema.fields_id();
+    ) -> TskvResult<Option<(Arc<TskvTableSchema>, Vec<page::Page>, Vec<page::Page>)>> {
+        let latest_schema = match self.get_schema() {
+            Some(schema) => schema,
+            None => return Ok(None),
+        };
 
-            let mut cols = schema
-                .fields()
-                .iter()
-                .map(|col| MutableColumn::empty(col.clone()))
-                .collect::<TskvResult<Vec<_>>>()?;
-            let mut delta_cols = cols.clone();
+        let mut time_array = MutableColumnRef::empty(latest_schema.time_column())?;
+        let mut delta_time_array = time_array.clone();
 
-            let mut time_array = MutableColumn::empty(schema.time_column())?;
-            let mut delta_time_array = time_array.clone();
+        let fields_schema = latest_schema.fields_orderby_id();
+        let mut fields_array = fields_schema
+            .iter()
+            .map(|col| MutableColumnRef::empty(col.clone()))
+            .collect::<TskvResult<Vec<_>>>()?;
+        let mut delta_fields_array = fields_array.clone();
 
-            let mut cols_desc = vec![None; schema.field_num()];
-            for (schema, rows) in self.flat_groups() {
-                let values = dedup_and_sort_row_data(rows);
-                for row in values {
-                    match row.ts.cmp(&max_level_ts) {
-                        cmp::Ordering::Greater => {
-                            time_array.push(Some(FieldVal::Integer(row.ts)))?;
-                        }
-                        _ => {
-                            delta_time_array.push(Some(FieldVal::Integer(row.ts)))?;
-                        }
+        let iter = SeriesDedupMergeSortIterator::new(self.flat_groups(), latest_schema.clone());
+        for row_data in iter {
+            match row_data.ts.cmp(&max_level_ts) {
+                std::cmp::Ordering::Greater => {
+                    time_array.push_ts(row_data.ts)?;
+                    for (idx, field) in row_data.fields.iter().enumerate() {
+                        fields_array[idx].push(*field)?;
                     }
-                    for col in schema.fields().iter() {
-                        if let Some(index) = field_ids.get(&col.id) {
-                            let field = row.fields.get(*index).and_then(|v| v.clone());
-                            match row.ts.cmp(&max_level_ts) {
-                                cmp::Ordering::Greater => {
-                                    cols[*index].push(field)?;
-                                }
-                                _ => {
-                                    delta_cols[*index].push(field)?;
-                                }
-                            }
-                            if cols_desc[*index].is_none() {
-                                cols_desc[*index] = Some(col.clone());
-                            }
-                        }
+                }
+                _ => {
+                    delta_time_array.push_ts(row_data.ts)?;
+                    for (idx, field) in row_data.fields.iter().enumerate() {
+                        delta_fields_array[idx].push(*field)?;
                     }
                 }
             }
-
-            let cols_desc = cols_desc.into_iter().flatten().collect::<Vec<_>>();
-            if cols_desc.len() != cols.len() {
-                return Err(CommonSnafu {
-                    reason: "Invalid cols_desc".to_string(),
-                }
-                .build());
-            }
-
-            if !time_array.valid().is_all_set() || !delta_time_array.valid().is_all_set() {
-                return Err(CommonSnafu {
-                    reason: "Invalid time array in DataBlock".to_string(),
-                }
-                .build());
-            }
-
-            let mut arrays = vec![time_array.to_arrow_array(None).context(ModelSnafu)?];
-            for col in cols {
-                arrays.push(col.to_arrow_array(None).context(ModelSnafu)?);
-            }
-            let mut delta_arrays =
-                vec![delta_time_array.to_arrow_array(None).context(ModelSnafu)?];
-            for col in delta_cols {
-                delta_arrays.push(col.to_arrow_array(None).context(ModelSnafu)?);
-            }
-            let record_schema = schema.to_record_data_schema();
-            return Ok(Some((
-                schema.clone(),
-                RecordBatch::try_new(record_schema.clone(), arrays).context(ArrowSnafu)?,
-                RecordBatch::try_new(record_schema, delta_arrays).context(ArrowSnafu)?,
-            )));
         }
-        Ok(None)
+
+        if !time_array.column_data.valid.is_all_set()
+            || !delta_time_array.column_data.valid.is_all_set()
+        {
+            return Err(CommonSnafu {
+                reason: "Invalid time array in DataBlock".to_string(),
+            }
+            .build());
+        }
+
+        let mut pages_data = vec![];
+        if !time_array.column_data.valid.is_empty() {
+            pages_data.push(page::Page::colref_to_page(time_array)?);
+            for field_array in fields_array {
+                pages_data.push(page::Page::colref_to_page(field_array)?);
+            }
+        }
+
+        let mut delta_pages_data = vec![];
+        if !delta_time_array.column_data.valid.is_empty() {
+            delta_pages_data.push(page::Page::colref_to_page(delta_time_array)?);
+            for field_array in delta_fields_array {
+                delta_pages_data.push(page::Page::colref_to_page(field_array)?);
+            }
+        }
+
+        Ok(Some((latest_schema, pages_data, delta_pages_data)))
+    }
+}
+
+#[allow(clippy::type_complexity)]
+pub struct SeriesDedupMergeSortIterator<'a> {
+    groups: Vec<(
+        Arc<TskvTableSchema>,
+        HashMap<u32, usize>,
+        &'a OrderedRowsData,
+    )>,
+
+    vec_pq: Vec<(usize, Option<&'a RowData>, skiplist::Iter<'a, RowData>)>,
+
+    align_fileds: Vec<TableColumn>,
+}
+
+impl<'a> SeriesDedupMergeSortIterator<'a> {
+    pub fn new(
+        groups: Vec<(
+            Arc<TskvTableSchema>,
+            HashMap<u32, usize>,
+            &'a OrderedRowsData,
+        )>,
+        align_schema: Arc<TskvTableSchema>,
+    ) -> SeriesDedupMergeSortIterator<'a> {
+        let mut vec_pq = Vec::with_capacity(groups.len());
+        for (idx, group) in groups.iter().enumerate() {
+            let mut iter = group.2.get_ref_rows().iter();
+            let data = iter.next();
+            vec_pq.push((idx, data, iter));
+        }
+
+        let align_fileds = align_schema.fields_orderby_id();
+        SeriesDedupMergeSortIterator {
+            vec_pq,
+            groups,
+            align_fileds,
+        }
+    }
+}
+
+impl<'a> Iterator for SeriesDedupMergeSortIterator<'a> {
+    type Item = RowDataRef<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut min_ts = i64::MAX;
+        for (_, data, _) in self.vec_pq.iter() {
+            if let Some(data) = data {
+                if min_ts > data.ts {
+                    min_ts = data.ts
+                }
+            }
+        }
+        if min_ts == i64::MAX {
+            return None;
+        }
+
+        let mut result = RowDataRef {
+            ts: min_ts,
+            fields: vec![None; self.align_fileds.len()],
+        };
+
+        for (idx, data, it) in self.vec_pq.iter_mut().rev() {
+            while let Some(row) = data {
+                if row.ts != min_ts {
+                    break;
+                }
+
+                for (align_idx, col) in self.align_fileds.iter().enumerate() {
+                    if let Some(index) = self.groups[*idx].1.get(&col.id) {
+                        if let Some(Some(field)) = row.fields.get(*index) {
+                            if result.fields[align_idx].is_none() {
+                                result.fields[align_idx] = Some(field);
+                            }
+                        }
+                    }
+                }
+
+                *data = it.next();
+            }
+        }
+
+        Some(result)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    #[derive(Debug, Clone)]
+    pub struct Tuple {
+        pub a: i32,
+        pub b: i32,
+    }
+
+    impl PartialOrd for Tuple {
+        fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+            Some(self.a.cmp(&other.a))
+        }
+    }
+
+    impl PartialEq for Tuple {
+        fn eq(&self, other: &Self) -> bool {
+            self.a == other.a
+        }
+    }
+
+    impl Ord for Tuple {
+        fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+            self.a.cmp(&other.a)
+        }
+    }
+
+    impl Eq for Tuple {}
+
+    #[test]
+    #[ignore]
+    fn test_ordered_skiplist() {
+        let mut list = skiplist::OrderedSkipList::new();
+        list.insert(Tuple { a: 1, b: 12 });
+        list.insert(Tuple { a: 1, b: 13 });
+        list.insert(Tuple { a: 1, b: 11 });
+        list.insert(Tuple { a: 1, b: 10 });
+        list.insert(Tuple { a: 1, b: 9 });
+        list.insert(Tuple { a: 1, b: 8 });
+        list.insert(Tuple { a: 1, b: 7 });
+        list.insert(Tuple { a: 1, b: 6 });
+        list.insert(Tuple { a: 1, b: 14 });
+        list.insert(Tuple { a: 1, b: 15 });
+        list.insert(Tuple { a: 1, b: 16 });
+        list.insert(Tuple { a: 1, b: 17 });
+        list.insert(Tuple { a: 1, b: 11 });
+        // list.insert(Tuple { a: 2, b: 11 });
+        // list.insert(Tuple { a: 3, b: 11 });
+        // list.insert(Tuple { a: 4, b: 11 });
+
+        for it in list.iter() {
+            println!("------ {:?}", it);
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn test_binary_heap() {
+        let mut pq = std::collections::BinaryHeap::new();
+        pq.push(Tuple { a: 1, b: 12 });
+        pq.push(Tuple { a: 1, b: 13 });
+        pq.push(Tuple { a: 1, b: 11 });
+        pq.push(Tuple { a: 2, b: 11 });
+        pq.push(Tuple { a: 3, b: 11 });
+        pq.push(Tuple { a: 4, b: 11 });
+
+        while let Some(it) = pq.pop() {
+            println!("------ {:?}", it);
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn test_alloc_perf() {
+        //-----------------分配一次，多次用默认值填充--------------------------
+        let start = std::time::Instant::now();
+        let mut result = crate::mem_cache::row_data::RowDataRef {
+            ts: 0,
+            fields: vec![None; 32],
+        };
+        for _ in 0..10000000 {
+            //result.fields.fill(None);
+
+            // for it in result.fields.iter_mut() {
+            //     *it = None;
+            // }
+
+            for i in 0..32 {
+                result.fields[i] = None;
+            }
+        }
+        let elapsed = start.elapsed();
+        println!("---------- {:?}", elapsed);
+
+        //---------------多次分配，分配时用默认值填充----------------------------
+        let start = std::time::Instant::now();
+        for _ in 0..10000000 {
+            let _result = crate::mem_cache::row_data::RowDataRef {
+                ts: 0,
+                fields: vec![None; 32],
+            };
+        }
+        let elapsed = start.elapsed();
+        println!("---------- {:?}", elapsed);
+
+        //---------------一次分配，通过clone方式构造----------------------------
+        let start = std::time::Instant::now();
+        let result = crate::mem_cache::row_data::RowDataRef {
+            ts: 0,
+            fields: vec![None; 32],
+        };
+        for _ in 0..10000000 {
+            let _res = result.clone();
+        }
+        let elapsed = start.elapsed();
+        println!("---------- {:?}", elapsed);
+    }
+
+    #[test]
+    #[ignore]
+    fn test_iter_perf() {
+        let result = crate::mem_cache::row_data::RowDataRef {
+            ts: 0,
+            fields: vec![None; 3],
+        };
+
+        //---------------通过迭代器访问----------------------------
+        let start = std::time::Instant::now();
+        for _ in 0..100000000 {
+            let mut it = result.fields.iter();
+            let _tmp = it.next();
+        }
+        let elapsed = start.elapsed();
+        println!("---------- {:?}", elapsed);
+
+        //-----------------通过下标访问--------------------------
+        let start = std::time::Instant::now();
+        for _ in 0..100000000 {
+            let _tmp = result.fields[0];
+        }
+        let elapsed = start.elapsed();
+        println!("---------- {:?}", elapsed);
     }
 }

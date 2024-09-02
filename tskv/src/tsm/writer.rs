@@ -22,7 +22,7 @@ use crate::tsm::chunk_group::{ChunkGroup, ChunkGroupMeta, ChunkGroupWriteSpec};
 use crate::tsm::column_group::ColumnGroup;
 use crate::tsm::footer::{Footer, SeriesMeta, TableMeta, TsmVersion};
 use crate::tsm::page::{Page, PageStatistics, PageWriteSpec};
-use crate::tsm::{ColumnGroupID, TsmWriteData, BLOOM_FILTER_BITS};
+use crate::tsm::{ColumnGroupID, BLOOM_FILTER_BITS};
 use crate::{TskvError, TskvResult};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -210,16 +210,6 @@ impl TsmWriter {
             chunk_size,
         );
         Ok(series)
-    }
-    pub async fn write_data(&mut self, groups: TsmWriteData) -> TskvResult<()> {
-        // write page data
-        for (schema, group) in groups {
-            for (series, (series_buf, record_batch)) in group {
-                self.write_record_batch(series, series_buf, schema.clone(), record_batch)
-                    .await?;
-            }
-        }
-        Ok(())
     }
 
     fn create_column_group(

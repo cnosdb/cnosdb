@@ -283,6 +283,19 @@ impl TskvTableSchema {
             .collect()
     }
 
+    pub fn fields_orderby_id(&self) -> Vec<TableColumn> {
+        let mut columns: Vec<TableColumn> = self
+            .columns
+            .iter()
+            .filter(|column| column.column_type.is_field())
+            .cloned()
+            .collect();
+
+        columns.sort_by_key(|k| k.id);
+
+        columns
+    }
+
     // return (table_field_id, index), index mean field location which column
     pub fn fields_id(&self) -> HashMap<ColumnId, usize> {
         let mut ans = vec![];
