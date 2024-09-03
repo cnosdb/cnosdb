@@ -27,6 +27,7 @@ pub use information_schema_provider::{
 use meta::error::MetaError;
 use meta::model::MetaClientRef;
 use models::auth::user::UserDesc;
+use models::meta_data::DatabaseInfo;
 use models::object_reference::{Resolve, ResolvedTable};
 use models::schema::tenant::Tenant;
 use models::schema::{DEFAULT_CATALOG, DEFAULT_DATABASE};
@@ -61,6 +62,7 @@ pub trait ContextProviderExtension: ContextProvider {
     /// Clear the access record and return the content before clearing
     fn reset_access_databases(&self) -> DatabaseSet;
     fn get_db_precision(&self, name: &str) -> Result<Precision, MetaError>;
+    fn get_db_info(&self, name: &str) -> Result<Option<DatabaseInfo>, MetaError>;
     fn get_table_source(
         &self,
         name: TableReference,
@@ -231,6 +233,10 @@ impl ContextProviderExtension for MetadataProvider {
         }
 
         Ok(*db_schema.config.precision())
+    }
+
+    fn get_db_info(&self, name: &str) -> Result<Option<DatabaseInfo>, MetaError> {
+        self.meta_client.get_db_info(name)
     }
 
     fn get_table_source(
