@@ -23,7 +23,7 @@ use trace::error;
 use crate::file_system::async_filesystem::LocalFileSystem;
 use crate::file_system::FileSystem;
 use crate::record_file::{self, RecordDataType, RecordDataVersion};
-use crate::{byte_utils, file_utils, TskvError, TskvResult};
+use crate::{byte_utils, file_utils, ColumnFileId, TskvError, TskvResult};
 
 pub const TOMBSTONE_FILE_SUFFIX: &str = "tombstone";
 const ENTRY_LEN: usize = 24; // 4 + 4 + 8 + 8
@@ -59,7 +59,7 @@ pub struct TsmTombstone {
 }
 
 impl TsmTombstone {
-    pub async fn open(path: impl AsRef<Path>, tsm_file_id: u64) -> TskvResult<Self> {
+    pub async fn open(path: impl AsRef<Path>, tsm_file_id: ColumnFileId) -> TskvResult<Self> {
         let path = file_utils::make_tsm_tombstone_file(path, tsm_file_id);
         let (mut reader, writer) = if LocalFileSystem::try_exists(&path) {
             (

@@ -1,5 +1,6 @@
 #![allow(clippy::arc_with_non_send_sync)]
 
+use std::cmp::Ordering;
 use std::fmt;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -22,9 +23,10 @@ use parking_lot::RwLock;
 
 use self::utils::{CombinedRecordBatchStream, TimeRangeProvider};
 use crate::mem_cache::series_data::SeriesData;
+use crate::tsfamily::column_file::ColumnFile;
 use crate::tsm::chunk::Chunk;
 use crate::tsm::reader::TsmReader;
-use crate::{TskvError, TskvResult};
+use crate::{ColumnFileId, TskvError, TskvResult};
 
 mod batch_builder;
 mod chunk;
@@ -278,15 +280,51 @@ impl Stream for SchemableMemoryBatchReaderStream {
 
 #[derive(Clone)]
 pub enum DataReference {
-    Chunk(Arc<Chunk>, Arc<TsmReader>),
-    Memcache(Arc<RwLock<SeriesData>>, Arc<TimeRanges>),
+    Chunk(Arc<Chunk>, Arc<TsmReader>, Arc<ColumnFile>),
+    Memcache(Arc<RwLock<SeriesData>>, Arc<TimeRanges>, ColumnFileId),
+}
+
+impl Eq for DataReference {}
+
+impl PartialEq<Self> for DataReference {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (DataReference::Chunk(_, _, _), DataReference::Memcache(_, _, _)) => false,
+            (DataReference::Memcache(_, _, _), DataReference::Chunk(_, _, _)) => false,
+            (DataReference::Chunk(_, _, f1), DataReference::Chunk(_, _, f2)) => {
+                f1.file_id() == f2.file_id() && f1.level() == f2.level()
+            }
+            (DataReference::Memcache(_, _, c1), DataReference::Memcache(_, _, c2)) => c1 == c2,
+        }
+    }
+}
+
+impl PartialOrd<Self> for DataReference {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for DataReference {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match (self, other) {
+            (DataReference::Chunk(_, _, _), DataReference::Memcache(_, _, _)) => Ordering::Less,
+            (DataReference::Memcache(_, _, _), DataReference::Chunk(_, _, _)) => Ordering::Greater,
+            (DataReference::Chunk(_, _, f1), DataReference::Chunk(_, _, f2)) => f1
+                .level()
+                .cmp(&f2.level())
+                .reverse()
+                .then(f1.file_id().cmp(&f2.file_id())),
+            (DataReference::Memcache(_, _, c1), DataReference::Memcache(_, _, c2)) => c1.cmp(c2),
+        }
+    }
 }
 
 impl DataReference {
     pub fn time_range(&self) -> TimeRange {
         match self {
-            DataReference::Chunk(chunk, _) => *chunk.time_range(),
-            DataReference::Memcache(_, trs) => trs.max_time_range(),
+            DataReference::Chunk(chunk, ..) => *chunk.time_range(),
+            DataReference::Memcache(_, trs, ..) => trs.max_time_range(),
         }
     }
 }

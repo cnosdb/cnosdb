@@ -19,6 +19,7 @@ use tokio::sync::{oneshot, RwLock};
 use trace::error;
 use utils::precision::Precision;
 
+use crate::context::GlobalContext;
 use crate::error::{
     CommonSnafu, IndexErrSnafu, ModelSnafu, SchemaSnafu, TableNotFoundSnafu, TskvResult,
 };
@@ -57,6 +58,7 @@ pub struct DatabaseFactory {
     memory_pool: MemoryPoolRef,
     metrics_register: Arc<MetricsRegister>,
     opt: Arc<Options>,
+    ctx: Arc<GlobalContext>,
 }
 
 impl DatabaseFactory {
@@ -65,12 +67,14 @@ impl DatabaseFactory {
         memory_pool: MemoryPoolRef,
         metrics_register: Arc<MetricsRegister>,
         opt: Arc<Options>,
+        ctx: Arc<GlobalContext>,
     ) -> Self {
         Self {
             meta,
             memory_pool,
             metrics_register,
             opt,
+            ctx,
         }
     }
 
@@ -78,6 +82,7 @@ impl DatabaseFactory {
         Database::new(
             schema,
             self.opt.clone(),
+            self.ctx.clone(),
             self.meta.clone(),
             self.memory_pool.clone(),
             self.metrics_register.clone(),
@@ -94,6 +99,7 @@ impl Database {
     pub async fn new(
         schema: DatabaseSchema,
         opt: Arc<Options>,
+        ctx: Arc<GlobalContext>,
         meta: MetaRef,
         memory_pool: MemoryPoolRef,
         metrics_register: Arc<MetricsRegister>,
@@ -102,6 +108,7 @@ impl Database {
         let tsf_factory = TsfFactory::new(
             owner.clone(),
             opt.clone(),
+            ctx.clone(),
             schema.config().clone(),
             memory_pool.clone(),
             metrics_register.clone(),

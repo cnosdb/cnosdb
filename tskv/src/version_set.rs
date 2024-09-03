@@ -8,6 +8,7 @@ use models::schema::database_schema::{make_owner, DatabaseSchema};
 use tokio::runtime::Runtime;
 use tokio::sync::RwLock;
 
+use crate::context::GlobalContext;
 use crate::database::{Database, DatabaseFactory};
 use crate::error::TskvResult;
 use crate::index::ts_index::TSIndex;
@@ -28,27 +29,14 @@ impl VersionSet {
     pub fn empty(
         meta: MetaRef,
         opt: Arc<Options>,
+        ctx: Arc<GlobalContext>,
         runtime: Arc<Runtime>,
         memory_pool: MemoryPoolRef,
         metrics_register: Arc<MetricsRegister>,
     ) -> Self {
-        let db_factory = DatabaseFactory::new(meta, memory_pool.clone(), metrics_register, opt);
+        let db_factory =
+            DatabaseFactory::new(meta, memory_pool.clone(), metrics_register, opt, ctx);
 
-        Self {
-            dbs: HashMap::new(),
-            _runtime: runtime,
-            db_factory,
-        }
-    }
-
-    #[cfg(test)]
-    pub fn build_empty_test(runtime: Arc<Runtime>) -> Self {
-        use meta::model::meta_admin::AdminMeta;
-        let opt = Arc::new(Options::from(&config::tskv::Config::default()));
-        let register = Arc::new(MetricsRegister::default());
-        let memory_pool = Arc::new(memory_pool::GreedyMemoryPool::default());
-        let meta = Arc::new(AdminMeta::mock());
-        let db_factory = DatabaseFactory::new(meta, memory_pool, register, opt);
         Self {
             dbs: HashMap::new(),
             _runtime: runtime,
@@ -59,13 +47,15 @@ impl VersionSet {
     pub async fn new(
         meta: MetaRef,
         opt: Arc<Options>,
+        ctx: Arc<GlobalContext>,
         runtime: Arc<Runtime>,
         memory_pool: MemoryPoolRef,
         ver_set: HashMap<TseriesFamilyId, (DatabaseSchema, Arc<Version>)>,
         metrics_register: Arc<MetricsRegister>,
     ) -> TskvResult<Self> {
         let mut dbs = HashMap::new();
-        let db_factory = DatabaseFactory::new(meta.clone(), memory_pool, metrics_register, opt);
+        let db_factory =
+            DatabaseFactory::new(meta.clone(), memory_pool, metrics_register, opt, ctx);
 
         for (schema, ver) in ver_set.into_values() {
             let owner = (*ver.owner()).clone();

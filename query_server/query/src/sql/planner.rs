@@ -2146,14 +2146,12 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         let vnode_ids = db
             .buckets
             .iter()
-            .map(|bucket| {
+            .flat_map(|bucket| {
                 bucket
                     .shard_group
                     .iter()
-                    .map(|group| group.vnodes.iter().map(|vnode| vnode.id))
-                    .flatten()
+                    .flat_map(|group| group.vnodes.iter().map(|vnode| vnode.id))
             })
-            .flatten()
             .collect::<Vec<_>>();
 
         let plan = Plan::DDL(DDLPlan::CompactVnode(CompactVnode { vnode_ids }));
@@ -3118,7 +3116,7 @@ mod tests {
             Ok(Precision::NS)
         }
 
-        fn get_db_info(&self, name: &str) -> std::result::Result<Option<DatabaseInfo>, MetaError> {
+        fn get_db_info(&self, _name: &str) -> std::result::Result<Option<DatabaseInfo>, MetaError> {
             todo!()
         }
 

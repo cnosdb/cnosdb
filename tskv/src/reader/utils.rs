@@ -31,6 +31,12 @@ impl<T: TimeRangeProvider> OverlappingSegments<T> {
     }
 }
 
+impl<T: PartialOrd + Ord + TimeRangeProvider> OverlappingSegments<T> {
+    pub fn sort(&mut self) {
+        self.segments.sort();
+    }
+}
+
 impl<T: TimeRangeProvider> IntoIterator for OverlappingSegments<T> {
     type Item = T;
     type IntoIter = std::vec::IntoIter<T>;

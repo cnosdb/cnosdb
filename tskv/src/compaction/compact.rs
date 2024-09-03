@@ -1009,7 +1009,6 @@ pub mod test {
     use crate::context::GlobalContext;
     use crate::file_system::async_filesystem::LocalFileSystem;
     use crate::file_system::FileSystem;
-    use crate::file_utils;
     use crate::kv_option::Options;
     use crate::summary::VersionEdit;
     use crate::tsfamily::column_file::ColumnFile;
@@ -1019,6 +1018,7 @@ pub mod test {
     use crate::tsm::reader::{decode_pages, TsmReader};
     use crate::tsm::writer::TsmWriter;
     use crate::tsm::TsmTombstone;
+    use crate::{file_utils, ColumnFileId};
 
     pub(crate) async fn write_data_blocks_to_column_file(
         dir: impl AsRef<Path>,
@@ -1140,7 +1140,7 @@ pub mod test {
     fn prepare_compact_req_and_kernel(
         owner: Arc<String>,
         opt: Arc<Options>,
-        next_file_id: u64,
+        next_file_id: ColumnFileId,
         files: Vec<Arc<ColumnFile>>,
     ) -> (CompactReq, Arc<GlobalContext>) {
         let version = Arc::new(Version::new(
