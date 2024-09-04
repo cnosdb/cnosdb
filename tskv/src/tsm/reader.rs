@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::{Debug, Formatter};
 use std::path::Path;
 use std::sync::Arc;
@@ -9,7 +9,7 @@ use bytes::Bytes;
 use models::column_data::PrimaryColumnData;
 use models::predicate::domain::TimeRange;
 use models::schema::tskv_table_schema::TskvTableSchemaRef;
-use models::SeriesId;
+use models::{SeriesId, SeriesKey};
 use snafu::{OptionExt, ResultExt};
 use utils::bitset::{BitSet, NullBitset};
 
@@ -25,6 +25,7 @@ use crate::tsm::page::{Page, PageMeta, PageWriteSpec};
 use crate::tsm::{ColumnGroupID, TsmTombstone, FOOTER_SIZE};
 use crate::{file_utils, TskvError};
 
+#[derive(Clone)]
 pub struct TsmMetaData {
     footer: Arc<Footer>,
     chunk_group_meta: Arc<ChunkGroupMeta>,
@@ -84,6 +85,16 @@ impl TsmMetaData {
         }
         None
     }
+
+    pub fn update_tag_value(&mut self, series: &HashMap<SeriesId, SeriesKey>) -> TskvResult<()> {
+        for (series_id, key) in series.iter() {
+            if let Some(chunk) = self.chunk.get(series_id) {
+                let new_chunk = chunk.update_series(key.clone());
+                self.chunk.insert(*series_id, Arc::new(new_chunk));
+            }
+        }
+        Ok(())
+    }
 }
 
 pub struct TsmReader {
@@ -96,7 +107,7 @@ pub struct TsmReader {
 impl TsmReader {
     pub async fn open(tsm_path: impl AsRef<Path>) -> TskvResult<Self> {
         let path = tsm_path.as_ref().to_path_buf();
-        let file_system = LocalFileSystem::new(LocalFileType::ThreadPool);
+        let file_system = LocalFileSystem::new(LocalFileType::Mmap);
         let reader = file_system
             .open_file_reader(&path)
             .await

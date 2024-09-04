@@ -78,6 +78,8 @@ index_cache_capacity = 100000
 
 ## reserve space for data stroage
 reserve_space = '0G'
+## the parallel of read file
+read_parallel = 8
 
 [wal]
 

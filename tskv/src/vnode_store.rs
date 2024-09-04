@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -423,8 +423,8 @@ impl VnodeStorage {
         let mut series = Vec::with_capacity(cmd.matched_series.len());
         for key in cmd.matched_series.iter() {
             let ss = SeriesKey::decode(key).map_err(|e| InvalidParamSnafu {
-            reason: format!("Deserialize 'matched_series' of 'UpdateTagsRequest' failed, expected: SeriesKey, error msg: {e}"),
-        }.build())?;
+                reason: format!("Deserialize 'matched_series' of 'UpdateTagsRequest' failed, expected: SeriesKey, error msg: {e}"),
+            }.build())?;
             series.push(ss);
         }
 
@@ -445,6 +445,11 @@ impl VnodeStorage {
         if cmd.dry_run {
             return Ok(());
         }
+        let series = sids
+            .iter()
+            .copied()
+            .zip(new_series_keys.iter().cloned())
+            .collect::<HashMap<_, _>>();
 
         // 更新索引
         if let Err(err) = self
@@ -459,6 +464,7 @@ impl VnodeStorage {
             return Err(crate::error::TskvError::IndexErr { source: err });
         }
 
+        self.ts_family.read().await.update_tag_value(series).await?;
         Ok(())
     }
 
