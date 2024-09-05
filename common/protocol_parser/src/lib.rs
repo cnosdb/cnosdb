@@ -33,7 +33,7 @@ pub enum Error {
     Common { content: String },
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Default, PartialEq)]
 pub struct Line<'a> {
     pub hash_id: u64,
     pub table: Cow<'a, str>,
@@ -87,6 +87,19 @@ impl<'a> Line<'_> {
         }
     }
 
+    pub fn init_ordered_hash_id(&mut self) {
+        if self.hash_id == 0 {
+            let mut hasher = BkdrHasher::new();
+            hasher.hash_with(self.table.as_bytes());
+            for (k, v) in &self.tags {
+                hasher.hash_with(k.as_bytes());
+                hasher.hash_with(v.as_bytes());
+            }
+
+            self.hash_id = hasher.number()
+        }
+    }
+
     pub fn new(
         measurement: Cow<'a, str>,
         tags: Vec<(Cow<'a, str>, Cow<'a, str>)>,
@@ -109,7 +122,7 @@ impl<'a> Line<'_> {
         self.fields.sort_by(|a, b| a.0.cmp(&b.0));
         self.tags.dedup_by(|a, b| a.0 == b.0);
         self.fields.dedup_by(|a, b| a.0 == b.0);
-        self.init_hash_id();
+        self.init_ordered_hash_id();
     }
 }
 
@@ -272,5 +285,31 @@ fn next_value(buf: &str) -> Option<(&str, usize)> {
         Some((&buf[tok_begin..tok_end], tok_end + 1))
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::line_protocol::parser::Parser;
+    use crate::lines_convert::{line_to_batches, mutable_batches_to_point};
+
+    #[test]
+    #[ignore]
+    fn test_lp_to_flatbuffer() {
+        let filename = "/Users/cnosdb/github.com/cnosdb/test_data-iot-seed-123-scale-100";
+        let file_data = std::fs::read_to_string(filename).unwrap();
+
+        let t = std::time::Instant::now();
+        let parser = Parser::new(100000);
+        let lines = parser.parse(&file_data).unwrap();
+        println!("parse lines: {} elapsed: {:?}", lines.len(), t.elapsed());
+
+        let t = std::time::Instant::now();
+        let batch = line_to_batches(&lines).unwrap();
+        println!("line_to_batches elapsed: {:?}", t.elapsed());
+
+        let t = std::time::Instant::now();
+        let flatbuf = mutable_batches_to_point("test_db_12345678", batch);
+        println!("to flatbuf: {} elapsed: {:?}", flatbuf.len(), t.elapsed());
     }
 }
