@@ -106,7 +106,7 @@ once_cell = "1.19.0"
 openraft = { version = "0.9.5", features = ["serde"] }
 # openraft = { git = "https://github.com/datafuselabs/openraft", rev = "4b78dd38b9f3b22d87695fb06446dcf0311629c2", features = ["serde"] }
 maplit = "1.0.2"
-openssl = { version = "0.10.48", features = ["vendored"] }
+openssl = { version = "0.10.66", features = ["vendored"] }
 opentelemetry = "0.21"
 opentelemetry-otlp = "0.14"
 opentelemetry_sdk = "0.21"

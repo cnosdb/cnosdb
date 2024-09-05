@@ -58,6 +58,7 @@ pub enum ExtStatement {
     CopyVnode(CopyVnode),
     MoveVnode(MoveVnode),
     CompactVnode(CompactVnode),
+    CompactDatabase(CompactDatabase),
     ChecksumGroup(ChecksumGroup),
 
     // recover cmd
@@ -103,6 +104,11 @@ pub struct ChecksumGroup {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompactVnode {
     pub vnode_ids: Vec<VnodeId>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompactDatabase {
+    pub database_name: Ident,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

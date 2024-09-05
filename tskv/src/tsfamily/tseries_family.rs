@@ -22,6 +22,7 @@ use super::cache_group::CacheGroup;
 use super::super_version::SuperVersion;
 use super::tsf_metrics::TsfMetrics;
 use super::version::Version;
+use crate::context::GlobalContext;
 use crate::error::{CommonSnafu, IndexErrSnafu, TskvResult};
 use crate::index::ts_index::TSIndex;
 use crate::kv_option::StorageOptions;
@@ -35,6 +36,7 @@ pub struct TsfFactory {
     // "tenant.db"
     owner: Arc<String>,
     options: Arc<Options>,
+    ctx: Arc<GlobalContext>,
     db_config: Arc<DatabaseConfig>,
     memory_pool: MemoryPoolRef,
     metrics_register: Arc<MetricsRegister>,
@@ -43,6 +45,7 @@ impl TsfFactory {
     pub fn new(
         owner: Arc<String>,
         options: Arc<Options>,
+        ctx: Arc<GlobalContext>,
         db_config: Arc<DatabaseConfig>,
         memory_pool: MemoryPoolRef,
         metrics_register: Arc<MetricsRegister>,
@@ -50,6 +53,7 @@ impl TsfFactory {
         Self {
             owner,
             options,
+            ctx,
             db_config,
             memory_pool,
             metrics_register,
@@ -63,6 +67,8 @@ impl TsfFactory {
     ) -> Arc<TokioRwLock<TseriesFamily>> {
         let mut_cache = Arc::new(RwLock::new(MemCache::new(
             tf_id,
+            self.ctx.file_id_next(),
+            self.ctx.file_id_next(),
             self.db_config.max_memcache_size(),
             self.db_config.memcache_partitions() as usize,
             version.last_seq(),
@@ -82,6 +88,7 @@ impl TsfFactory {
 
         let tsfamily = Arc::new(TokioRwLock::new(TseriesFamily {
             tf_id,
+            ctx: self.ctx.clone(),
             owner: self.owner.clone(),
             mut_cache,
             immut_cache: vec![],
@@ -109,6 +116,7 @@ impl TsfFactory {
 #[derive(Debug)]
 pub struct TseriesFamily {
     tf_id: TseriesFamilyId,
+    ctx: Arc<GlobalContext>,
     owner: Arc<String>,
     mut_cache: Arc<RwLock<MemCache>>,
     immut_cache: Vec<Arc<RwLock<MemCache>>>,
@@ -139,6 +147,7 @@ impl TseriesFamily {
 
         Self {
             tf_id,
+            ctx: Arc::new(GlobalContext::new()),
             owner: owner.clone(),
             mut_cache: mm.clone(),
             immut_cache: Default::default(),
@@ -209,6 +218,8 @@ impl TseriesFamily {
 
         self.mut_cache = Arc::from(RwLock::new(MemCache::new(
             self.tf_id,
+            self.ctx.file_id_next(),
+            self.ctx.file_id_next(),
             self.db_config.max_memcache_size(),
             self.db_config.memcache_partitions() as usize,
             seq_no,

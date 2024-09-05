@@ -7,11 +7,12 @@ pub const PRIVATE_KEY: &str = "X-CnosDB-PrivateKey";
 
 // value
 pub const APPLICATION_PREFIX: &str = "application/";
-pub const APPLICATION_CSV: &str = "application/csv";
-pub const APPLICATION_TSV: &str = "application/tsv";
+pub const TEXT_PREFIX: &str = "text/";
+pub const APPLICATION_CSV: &str = "text/csv";
+pub const APPLICATION_TSV: &str = "text/tsv";
 pub const APPLICATION_JSON: &str = "application/json";
 pub const APPLICATION_NDJSON: &str = "application/nd-json";
-pub const APPLICATION_TABLE: &str = "application/table";
+pub const APPLICATION_TABLE: &str = "text/table";
 pub const APPLICATION_STAR: &str = "application/*";
 pub const STAR_STAR: &str = "*/*";
 

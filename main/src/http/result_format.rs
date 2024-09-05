@@ -8,7 +8,7 @@ use datafusion::arrow::util::pretty::pretty_format_batches;
 use http_protocol::encoding::Encoding;
 use http_protocol::header::{
     APPLICATION_CSV, APPLICATION_JSON, APPLICATION_NDJSON, APPLICATION_PREFIX, APPLICATION_STAR,
-    APPLICATION_TABLE, APPLICATION_TSV, CONTENT_TYPE, STAR_STAR,
+    APPLICATION_TABLE, APPLICATION_TSV, CONTENT_TYPE, STAR_STAR, TEXT_PREFIX,
 };
 use http_protocol::status_code::OK;
 use metrics::count::U64Counter;
@@ -131,6 +131,11 @@ impl TryFrom<&str> for ResultFormat {
         }
 
         if let Some(fmt) = s.strip_prefix(APPLICATION_PREFIX) {
+            return ResultFormat::from_str(fmt)
+                .map_err(|reason| HttpError::InvalidHeader { reason });
+        }
+
+        if let Some(fmt) = s.strip_prefix(TEXT_PREFIX) {
             return ResultFormat::from_str(fmt)
                 .map_err(|reason| HttpError::InvalidHeader { reason });
         }
