@@ -23,7 +23,7 @@ use crate::tsm::column_group::ColumnGroup;
 use crate::tsm::footer::{Footer, SeriesMeta, TableMeta, TsmVersion};
 use crate::tsm::page::{Page, PageStatistics, PageWriteSpec};
 use crate::tsm::{ColumnGroupID, BLOOM_FILTER_BITS};
-use crate::{TskvError, TskvResult};
+use crate::{ColumnFileId, TskvError, TskvResult};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum State {
@@ -35,7 +35,7 @@ pub enum State {
 const TSM_MAGIC: [u8; 4] = 0x12CDA16_u32.to_be_bytes();
 const TSM_BUFFER_SIZE: usize = 16 * 1024 * 1024;
 pub struct TsmWriter {
-    file_id: u64,
+    file_id: ColumnFileId,
     min_ts: i64,
     max_ts: i64,
     size: u64,
@@ -62,7 +62,7 @@ pub struct TsmWriter {
 impl TsmWriter {
     pub async fn open(
         path_buf: &impl AsRef<Path>,
-        file_id: u64,
+        file_id: ColumnFileId,
         max_size: u64,
         is_delta: bool,
     ) -> TskvResult<Self> {
@@ -79,7 +79,12 @@ impl TsmWriter {
         let writer = Self::new(file_path, file, file_id, max_size);
         Ok(writer)
     }
-    fn new(path: PathBuf, writer: Box<FileStreamWriter>, file_id: u64, max_size: u64) -> Self {
+    fn new(
+        path: PathBuf,
+        writer: Box<FileStreamWriter>,
+        file_id: ColumnFileId,
+        max_size: u64,
+    ) -> Self {
         Self {
             file_id,
             max_ts: i64::MIN,

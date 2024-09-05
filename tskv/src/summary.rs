@@ -150,7 +150,7 @@ impl CompactMeta {
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct VersionEdit {
     pub seq_no: u64,
-    pub file_id: u64,
+    pub file_id: ColumnFileId,
     pub max_level_ts: Timestamp,
     pub add_files: Vec<CompactMeta>,
     pub del_files: Vec<CompactMeta>,
@@ -267,7 +267,7 @@ impl VersionEdit {
         self.add_files.push(compact_meta);
     }
 
-    pub fn del_file(&mut self, level: LevelId, file_id: u64, is_delta: bool) {
+    pub fn del_file(&mut self, level: LevelId, file_id: ColumnFileId, is_delta: bool) {
         self.del_files.push(CompactMeta {
             file_id,
             level,
@@ -337,6 +337,7 @@ impl Summary {
             )
             .await?;
         w.sync().await?;
+        let ctx = Arc::new(GlobalContext::default());
 
         Ok(Self {
             _meta: meta.clone(),
@@ -344,11 +345,12 @@ impl Summary {
             version_set: Arc::new(RwLock::new(VersionSet::empty(
                 meta.clone(),
                 opt.clone(),
+                ctx.clone(),
                 runtime.clone(),
                 memory_pool,
                 metrics_register.clone(),
             ))),
-            ctx: Arc::new(GlobalContext::default()),
+            ctx,
             writer: w,
             opt,
             _runtime: runtime,
@@ -382,7 +384,7 @@ impl Summary {
         let vs = Self::recover_version(
             meta.clone(),
             rd,
-            &ctx,
+            ctx.clone(),
             opt.clone(),
             runtime.clone(),
             memory_pool,
@@ -410,7 +412,7 @@ impl Summary {
     pub async fn recover_version(
         meta: MetaRef,
         mut reader: Box<Reader>,
-        ctx: &GlobalContext,
+        ctx: Arc<GlobalContext>,
         opt: Arc<Options>,
         runtime: Arc<Runtime>,
         memory_pool: MemoryPoolRef,
@@ -500,8 +502,16 @@ impl Summary {
         }
 
         ctx.set_file_id(max_file_id + 1);
-        let vs =
-            VersionSet::new(meta, opt, runtime, memory_pool, versions, metrics_register).await?;
+        let vs = VersionSet::new(
+            meta,
+            opt,
+            ctx,
+            runtime,
+            memory_pool,
+            versions,
+            metrics_register,
+        )
+        .await?;
         Ok(vs)
     }
 

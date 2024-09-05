@@ -290,7 +290,7 @@ pub enum TskvError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("Faield to do decode: {}", source))]
+    #[snafu(display("Failed to do decode: {}", source))]
     #[error_code(code = 32)]
     Decode {
         source: Box<dyn std::error::Error + Send + Sync>,

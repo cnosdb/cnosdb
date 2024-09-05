@@ -70,7 +70,7 @@ impl TenantMeta {
     }
 
     pub async fn sync_all_tenant_metadata(&self) -> MetaResult<()> {
-        let req = command::ReadCommand::TenaneMetaData(self.cluster.clone(), self.tenant_name());
+        let req = command::ReadCommand::TenantMetaData(self.cluster.clone(), self.tenant_name());
         let resp = self.client.read::<TenantMetaData>(&req).await?;
 
         let mut data = self.data.write();

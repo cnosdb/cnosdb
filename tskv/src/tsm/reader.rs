@@ -23,7 +23,7 @@ use crate::tsm::footer::Footer;
 use crate::tsm::mutable_column::MutableColumn;
 use crate::tsm::page::{Page, PageMeta, PageWriteSpec};
 use crate::tsm::{ColumnGroupID, TsmTombstone, FOOTER_SIZE};
-use crate::{file_utils, TskvError};
+use crate::{file_utils, ColumnFileId, TskvError};
 
 pub struct TsmMetaData {
     footer: Arc<Footer>,
@@ -87,7 +87,7 @@ impl TsmMetaData {
 }
 
 pub struct TsmReader {
-    file_id: u64,
+    file_id: ColumnFileId,
     reader: Box<FileStreamReader>,
     tsm_meta: Arc<TsmMetaData>,
     tombstone: Arc<TsmTombstone>,

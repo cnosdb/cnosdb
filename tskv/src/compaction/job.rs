@@ -157,6 +157,7 @@ impl CompactJobInner {
                 let vnode_ids = compact_processor.write().await.take();
                 let vnode_ids_for_debug = vnode_ids.clone();
                 let now = Instant::now();
+                let mut features = Vec::with_capacity(vnode_ids.len());
                 info!("Compacting on vnode(job start): {:?}", &vnode_ids_for_debug);
                 for vnode_id in vnode_ids {
                     let ts_family = ctx
@@ -182,7 +183,7 @@ impl CompactJobInner {
 
                             let ctx = ctx.clone();
                             let metrics_registry = metrics_registry.clone();
-                            runtime_inner.spawn(async move {
+                            features.push(runtime_inner.spawn(async move {
                                 // Check enable compaction
                                 if !enable_compaction.load(atomic::Ordering::SeqCst) {
                                     return;
@@ -230,10 +231,15 @@ impl CompactJobInner {
                                     }
                                 }
                                 drop(permit);
-                            });
+                            }));
                         } else {
                             info!("There is no need to compact.");
                         }
+                    }
+                }
+                for feature in features {
+                    if let Err(e) = feature.await {
+                        error!("Compaction job feature failed: {:?}", e);
                     }
                 }
                 info!(

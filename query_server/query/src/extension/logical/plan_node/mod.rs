@@ -7,7 +7,6 @@ use datafusion::prelude::Expr;
 use crate::extension::expr::expr_rewriter::ExprReplacer;
 
 pub mod expand;
-pub mod gapfill;
 pub mod stream_scan;
 pub mod table_writer;
 pub mod table_writer_merge;

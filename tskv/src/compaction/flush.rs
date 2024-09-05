@@ -9,25 +9,23 @@ use trace::{error, info, warn};
 use utils::BloomFilter;
 
 use crate::compaction::{CompactTask, FlushReq};
-use crate::context::GlobalContext;
 use crate::error::TskvResult;
 use crate::file_system::async_filesystem::LocalFileSystem;
 use crate::file_utils::{make_delta_file, make_tsm_file};
 use crate::mem_cache::memcache::{MemCache, MemCacheSeriesScanIterator};
 use crate::summary::{CompactMeta, SummaryTask, VersionEdit};
 use crate::tsm::writer::TsmWriter;
-use crate::{TsKvContext, TseriesFamilyId};
+use crate::{ColumnFileId, TsKvContext, TseriesFamilyId};
 
 pub struct FlushTask {
     owner: String,
     tsf_id: TseriesFamilyId,
     mem_caches: Vec<Arc<RwLock<MemCache>>>,
-    global_context: Arc<GlobalContext>,
 
     path_tsm: PathBuf,
-    current_tsm_file_id: u64,
+    current_tsm_file_id: ColumnFileId,
     path_delta: PathBuf,
-    current_delta_file_id: u64,
+    current_delta_file_id: ColumnFileId,
 }
 
 impl FlushTask {
@@ -35,7 +33,6 @@ impl FlushTask {
         owner: String,
         tsf_id: TseriesFamilyId,
         mem_caches: Vec<Arc<RwLock<MemCache>>>,
-        global_context: Arc<GlobalContext>,
         path_tsm: PathBuf,
         path_delta: PathBuf,
     ) -> TskvResult<Self> {
@@ -43,7 +40,6 @@ impl FlushTask {
             owner,
             tsf_id,
             mem_caches,
-            global_context,
             path_tsm,
             path_delta,
             current_tsm_file_id: 0,
@@ -73,10 +69,11 @@ impl FlushTask {
             VersionEdit::new_update_vnode(self.tsf_id, self.owner.clone(), high_seq_no);
         let mut max_level_ts = max_level_ts;
         for memcache in self.mem_caches.iter() {
-            let file_id = self.global_context.file_id_next();
+            let file_id = memcache.read().tsm_file_id();
             self.current_tsm_file_id = file_id;
             let mut tsm_writer = TsmWriter::open(&self.path_tsm, file_id, 0, false).await?;
-            let file_id = self.global_context.file_id_next();
+
+            let file_id = memcache.read().delta_file_id();
             self.current_delta_file_id = file_id;
             let mut delta_writer = TsmWriter::open(&self.path_delta, file_id, 0, true).await?;
 
@@ -205,7 +202,6 @@ pub async fn flush_memtable(
         req.owner.clone(),
         req.tf_id,
         mems.clone(),
-        ctx.global_ctx.clone(),
         path_tsm,
         path_delta,
     )
@@ -243,7 +239,7 @@ pub async fn flush_memtable(
 
     if let Err(e) = task_state_receiver.await {
         error!(
-            "Flush: failed to receive summary task result for tsf_id: {}, beaceuse : {:?}",
+            "Flush: failed to receive summary task result for tsf_id: {}, because : {:?}",
             req.tf_id, e
         );
     }
@@ -277,7 +273,6 @@ pub mod flush_tests {
     use utils::dedup_front_by_key;
 
     use crate::compaction::flush::FlushTask;
-    use crate::context::GlobalContext;
     use crate::file_system::async_filesystem::LocalFileSystem;
     use crate::file_system::FileSystem;
     use crate::mem_cache::memcache::MemCache;
@@ -418,7 +413,7 @@ pub mod flush_tests {
         );
         let sid = 1;
         let memory_pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
-        let mem_cache = MemCache::new(1, 1000, 2, 1, &memory_pool);
+        let mem_cache = MemCache::new(1, 0, 1, 1000, 2, 1, &memory_pool);
         #[rustfmt::skip]
             let mut schema_1 = TskvTableSchema::new(
             "test_tenant".to_string(), "test_db".to_string(), "test_table".to_string(),
@@ -466,7 +461,6 @@ pub mod flush_tests {
             database.to_string(),
             1,
             mem_caches,
-            Arc::new(GlobalContext::new()),
             path_tsm.clone(),
             path_delta.clone(),
         )
@@ -575,8 +569,8 @@ pub mod flush_tests {
         );
         let sid = 1;
         let memory_pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
-        let mem_cache1 = MemCache::new(1, 1000, 2, 1, &memory_pool);
-        let mem_cache2 = MemCache::new(1, 1000, 2, 1, &memory_pool);
+        let mem_cache1 = MemCache::new(1, 0, 1, 1000, 2, 1, &memory_pool);
+        let mem_cache2 = MemCache::new(1, 2, 3, 1000, 2, 1, &memory_pool);
 
         #[rustfmt::skip]
             let mut schema_1 = TskvTableSchema::new(
@@ -632,7 +626,6 @@ pub mod flush_tests {
             database.as_str().to_string(),
             1,
             mem_caches,
-            Arc::new(GlobalContext::new()),
             path_tsm.clone(),
             path_delta.clone(),
         )

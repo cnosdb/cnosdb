@@ -1,0 +1,43 @@
+statement ok
+DROP DATABASE IF EXISTS file_query;
+
+statement ok
+CREATE DATABASE file_query;
+
+statement ok
+--#DATABASE = file_query;
+
+statement ok
+CREATE TABLE air (visibility DOUBLE,temperature DOUBLE,pressure DOUBLE,TAGS(station));
+
+statement ok
+INSERT INTO air (TIME, station, visibility, temperature, pressure) VALUES (1666165200290401000, 'XiaoMaiDao', 56, 69, 77);
+
+query 
+select * from air;
+----
+2022-10-19T07:40:00.290401 "XiaoMaiDao" 56.0 69.0 77.0
+
+statement ok
+compact database file_query;
+
+query 
+select * from air;
+----
+2022-10-19T07:40:00.290401 "XiaoMaiDao" 56.0 69.0 77.0
+
+statement ok
+INSERT INTO air (TIME, station, visibility, temperature, pressure) VALUES (1666165200290401000, 'XiaoMaiDao', 56, 70, 77);
+
+query T
+select * from air;
+----
+2022-10-19T07:40:00.290401 "XiaoMaiDao" 56.0 70.0 77.0
+
+statement ok
+compact database file_query;
+
+query T
+select * from air;
+----
+2022-10-19T07:40:00.290401 "XiaoMaiDao" 56.0 70.0 77.0
