@@ -51,10 +51,10 @@ impl BatchReader for PushDownAggregateReader {
         match &self.aggregate {
             PushedAggregateFunction::Count(col_name) => {
                 let num_count = match &self.chunk {
-                    DataReference::Chunk(chunk, _) => {
+                    DataReference::Chunk(chunk, ..) => {
                         self.get_rows_number_by_column_name(chunk, col_name.as_str())
                     }
-                    DataReference::Memcache(series_data, _) => {
+                    DataReference::Memcache(series_data, ..) => {
                         let mut num_count: i64 = 0;
                         series_data.read().groups.iter().for_each(|group| {
                             num_count += group.rows.get_ref_rows().len() as i64;

@@ -77,3 +77,71 @@ query
 select count(f3) from func_tb2;
 ----
 8
+
+statement ok
+drop table air;
+
+statement ok
+CREATE TABLE air(visibility DOUBLE, temperature DOUBLE, pressure DOUBLE, TAGS(station));
+
+statement ok
+INSERT INTO air (TIME, station, visibility, temperature, pressure) VALUES
+                ('2022-10-19 01:40:00', 'XiaoMaiDao', 55, 68, 71), 
+                ('2022-10-19 01:40:00', 'XiaoMaiDao', 55, 68, 72),
+                ('2022-10-19 02:40:00', 'XiaoMaiDao', 55, 68, 73),
+                ('2022-10-19 02:40:00', 'XiaoMaiDao', 55, 68, 74),
+                ('2022-10-19 03:40:00', 'XiaoMaiDao', 55, 68, 75),
+                ('2022-10-19 03:40:00', 'XiaoMaiDao', 55, 68, 76),
+                ('2022-10-19 04:40:00', 'XiaoMaiDao', 55, 68, 77),
+                ('2022-10-19 04:40:00', 'XiaoMaiDao', 55, 68, 78),
+                ('2022-10-19 05:40:00', 'XiaoMaiDao', 55, 68, 79),
+                ('2022-10-19 05:40:00', 'XiaoMaiDao', 55, 68, 80);
+
+query T
+select * from air;
+----
+2022-10-19T01:40:00 "XiaoMaiDao" 55.0 68.0 72.0
+2022-10-19T02:40:00 "XiaoMaiDao" 55.0 68.0 74.0
+2022-10-19T03:40:00 "XiaoMaiDao" 55.0 68.0 76.0
+2022-10-19T04:40:00 "XiaoMaiDao" 55.0 68.0 78.0
+2022-10-19T05:40:00 "XiaoMaiDao" 55.0 68.0 80.0
+
+query
+select count(*) from air;
+----
+10
+
+query
+select exact_count_star(null) from air;
+----
+5
+
+query
+explain select count(*) from air;
+----
+"logical_plan"
+"Projection: SUM(COUNT(UInt8(1))) AS COUNT(UInt8(1))
+--Aggregate: groupBy=[[]], aggr=[[SUM(COUNT(UInt8(1)))]]
+----TableScan: air, grouping=[], agg=[AggregateFunction(AggregateFunction { fun: Count, args: [Literal(UInt8(1))], distinct: false, filter: None, order_by: None })]"
+"physical_plan"
+"ProjectionExec: expr=[SUM(COUNT(UInt8(1)))@0 as COUNT(UInt8(1))]
+--AggregateExec: mode=Final, gby=[], aggr=[SUM(COUNT(UInt8(1)))]
+----CoalescePartitionsExec
+------AggregateExec: mode=Partial, gby=[], aggr=[SUM(COUNT(UInt8(1)))]
+--------RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=3
+----------AggregateFilterTskvExec: agg=[[Count(\"time\")]], filter=[Predicate { pushed_down_domains: ColumnDomains { column_to_domain: Some({}) }, physical_expr: None, limit: None }]
+"
+
+query
+explain select exact_count_star(null) from air;
+----
+"logical_plan"
+"Aggregate: groupBy=[[]], aggr=[[COUNT(UInt8(0))]]
+--TableScan: air projection=[time]"
+"physical_plan"
+"AggregateExec: mode=Final, gby=[], aggr=[COUNT(UInt8(0))]
+--CoalescePartitionsExec
+----AggregateExec: mode=Partial, gby=[], aggr=[COUNT(UInt8(0))]
+------RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=3
+--------TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=None, split_num=3, projection=[time]
+"
