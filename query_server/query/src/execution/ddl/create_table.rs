@@ -42,6 +42,9 @@ impl DDLDefinitionTask for CreateTableTask {
 async fn create_table(stmt: &CreateTable, machine: QueryStateMachineRef) -> QueryResult<()> {
     let CreateTable { name, .. } = stmt;
 
+    if name.table().to_string().contains("/"){
+        return Err(QueryError::InvalidTableName { table_name: name.table().to_string()});
+    };
     let client = machine
         .meta
         .tenant_meta(name.tenant())

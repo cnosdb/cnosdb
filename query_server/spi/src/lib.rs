@@ -590,6 +590,12 @@ pub enum QueryError {
     Models {
         source: ModelError,
     },
+
+    #[snafu(display("table name cannot contain special characters: {}", table_name))]
+    #[error_code(code = 80)]
+    InvalidTableName {
+        table_name: String,
+    },
 }
 
 impl From<DataFusionError> for QueryError {
