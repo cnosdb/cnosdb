@@ -17,13 +17,13 @@ use models::meta_data::{NodeId, ReplicationSetId, VnodeId};
 use snafu::ResultExt;
 use spi::query::ast::{
     self, parse_string_value, Action, AlterDatabase, AlterTable, AlterTableAction, AlterTenant,
-    AlterTenantOperation, AlterUser, AlterUserOperation, ChecksumGroup, ColumnOption, CompactVnode,
-    CopyIntoLocation, CopyIntoTable, CopyTarget, CopyVnode, CreateDatabase, CreateRole,
-    CreateStream, CreateTable, CreateTenant, CreateUser, DatabaseConfig, DatabaseOptions,
-    DescribeDatabase, DescribeTable, DropDatabaseObject, DropGlobalObject, DropTenantObject,
-    DropVnode, Explain, ExtStatement, GrantRevoke, MoveVnode, OutputMode, Privilege,
-    RecoverDatabase, RecoverTenant, ShowSeries, ShowTagBody, ShowTagValues, Trigger, UriLocation,
-    With,
+    AlterTenantOperation, AlterUser, AlterUserOperation, ChecksumGroup, ColumnOption,
+    CompactDatabase, CompactVnode, CopyIntoLocation, CopyIntoTable, CopyTarget, CopyVnode,
+    CreateDatabase, CreateRole, CreateStream, CreateTable, CreateTenant, CreateUser,
+    DatabaseConfig, DatabaseOptions, DescribeDatabase, DescribeTable, DropDatabaseObject,
+    DropGlobalObject, DropTenantObject, DropVnode, Explain, ExtStatement, GrantRevoke, MoveVnode,
+    OutputMode, Privilege, RecoverDatabase, RecoverTenant, ShowSeries, ShowTagBody, ShowTagValues,
+    Trigger, UriLocation, With,
 };
 use spi::query::logical_planner::{DatabaseObjectType, GlobalObjectType, TenantObjectType};
 use spi::query::parser::Parser as CnosdbParser;
@@ -1599,6 +1599,11 @@ impl<'a> ExtParser<'a> {
                 }
             }
             Ok(ExtStatement::CompactVnode(CompactVnode { vnode_ids }))
+        } else if self.parser.parse_keyword(Keyword::DATABASE) {
+            let database_name = self.parser.parse_identifier()?;
+            Ok(ExtStatement::CompactDatabase(CompactDatabase {
+                database_name,
+            }))
         } else {
             parser_err!("Expected VNODE, after COMPACT")
         }

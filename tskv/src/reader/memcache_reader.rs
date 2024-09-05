@@ -280,7 +280,7 @@ mod tests {
     #[tokio::test]
     async fn test_memcache_reader() {
         let memory_pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
-        let mem_cache = MemCache::new(1, 1000, 2, 1, &memory_pool);
+        let mem_cache = MemCache::new(1, 0, 1, 1000, 2, 1, &memory_pool);
 
         let mut schema_1 = TskvTableSchema::new(
             "test_tenant".to_string(),

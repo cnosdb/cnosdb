@@ -293,12 +293,16 @@ impl SeriesGroupBatchReaderFactory {
         }
         // 选择含有series的所有chunk
         let mut chunks = Vec::with_capacity(files.len());
-        for (_, reader) in files {
+        for (cf, reader) in files {
             let chunk = reader.chunk().get(&sid);
             match chunk {
                 None => continue,
                 Some(chunk) => {
-                    chunks.push(DataReference::Chunk(chunk.clone(), reader.clone()));
+                    chunks.push(DataReference::Chunk(
+                        chunk.clone(),
+                        reader.clone(),
+                        cf.clone(),
+                    ));
                 }
             }
         }
@@ -318,11 +322,13 @@ impl SeriesGroupBatchReaderFactory {
             .iter()
             .chain(iter::once(&caches.mut_cache))
         {
-            if let Some(series) = cache.read().read_series_data_by_id(sid) {
+            let cache = cache.read();
+            if let Some(series) = cache.read_series_data_by_id(sid) {
                 if let Some(new_time_ranges) = time_ranges.intersect(&series.read().range) {
                     rowgroups.push(DataReference::Memcache(
                         series.clone(),
                         Arc::new(new_time_ranges),
+                        cache.tsm_file_id(),
                     ))
                 }
             }
@@ -340,15 +346,15 @@ impl SeriesGroupBatchReaderFactory {
         metrics: &SeriesGroupBatchReaderMetrics,
     ) -> TskvResult<Option<BatchReaderRef>> {
         let chunk_reader: Option<BatchReaderRef> = match chunk {
-            DataReference::Chunk(chunk, reader) => {
+            DataReference::Chunk(chunk, reader, _) => {
                 let chunk_schema =
                     chunk.schema_with_metadata(self.query_option.schema_meta.clone());
                 let cgs = chunk.column_group().values().cloned().collect::<Vec<_>>();
                 // filter column groups
                 metrics.column_group_nums().add(cgs.len());
-                trace::debug!("All column group nums: {}", cgs.len());
+                debug!("All column group nums: {}", cgs.len());
                 let cgs = filter_column_groups(cgs, predicate, chunk_schema.clone())?;
-                trace::debug!("Filtered column group nums: {}", cgs.len());
+                debug!("Filtered column group nums: {}", cgs.len());
                 metrics.filtered_column_group_nums().add(cgs.len());
 
                 let batch_readers = cgs
@@ -369,7 +375,7 @@ impl SeriesGroupBatchReaderFactory {
 
                 Some(Arc::new(CombinedBatchReader::new(batch_readers)))
             }
-            DataReference::Memcache(series_data, time_ranges) => MemCacheReader::try_new(
+            DataReference::Memcache(series_data, time_ranges, _) => MemCacheReader::try_new(
                 series_data,
                 time_ranges,
                 batch_size,
@@ -448,7 +454,8 @@ impl SeriesGroupBatchReaderFactory {
         // 对 chunk 按照时间顺序排序
         // 使用 group_overlapping_segments 函数来对具有重叠关系的chunk进行分组。
         chunks.sort_unstable_by_key(|e| e.time_range());
-        let grouped_chunks = group_overlapping_segments(&chunks);
+        let mut grouped_chunks = group_overlapping_segments(&chunks);
+        grouped_chunks.iter_mut().for_each(|g| g.sort());
 
         debug!(
             "series_key: {:?}, grouped_chunks num: {}, grouped_chunks: {:?}",

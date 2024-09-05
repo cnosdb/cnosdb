@@ -74,12 +74,13 @@ use spi::query::ast;
 use spi::query::ast::{
     AlterDatabase as ASTAlterDatabase, AlterTable as ASTAlterTable,
     AlterTableAction as ASTAlterTableAction, AlterTenantOperation, AlterUserOperation,
-    ChecksumGroup as ASTChecksumGroup, ColumnOption, CompactVnode as ASTCompactVnode,
-    CopyIntoTable, CopyTarget, CopyVnode as ASTCopyVnode, CreateDatabase as ASTCreateDatabase,
-    CreateTable as ASTCreateTable, DatabaseConfig as ASTDatabaseConfig,
-    DatabaseOptions as ASTDatabaseOptions, DescribeDatabase as DescribeDatabaseOptions,
-    DescribeTable as DescribeTableOptions, DropVnode as ASTDropVnode, ExtStatement,
-    MoveVnode as ASTMoveVnode, ReplicaAdd as ASTReplicaAdd, ReplicaDestory as ASTReplicaDestory,
+    ChecksumGroup as ASTChecksumGroup, ColumnOption, CompactDatabase as ASTCompactDatabase,
+    CompactVnode as ASTCompactVnode, CopyIntoTable, CopyTarget, CopyVnode as ASTCopyVnode,
+    CreateDatabase as ASTCreateDatabase, CreateTable as ASTCreateTable,
+    DatabaseConfig as ASTDatabaseConfig, DatabaseOptions as ASTDatabaseOptions,
+    DescribeDatabase as DescribeDatabaseOptions, DescribeTable as DescribeTableOptions,
+    DropVnode as ASTDropVnode, ExtStatement, MoveVnode as ASTMoveVnode,
+    ReplicaAdd as ASTReplicaAdd, ReplicaDestory as ASTReplicaDestory,
     ReplicaPromote as ASTReplicaPromote, ReplicaRemove as ASTReplicaRemove,
     ShowSeries as ASTShowSeries, ShowTagBody, ShowTagValues as ASTShowTagValues, UriLocation, With,
 };
@@ -224,6 +225,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             ExtStatement::CopyVnode(stmt) => self.copy_vnode_to_plan(stmt),
             ExtStatement::MoveVnode(stmt) => self.move_vnode_to_plan(stmt),
             ExtStatement::CompactVnode(stmt) => self.compact_vnode_to_plan(stmt),
+            ExtStatement::CompactDatabase(stmt) => self.compact_database_to_plan(stmt),
             ExtStatement::ChecksumGroup(stmt) => self.checksum_group_to_plan(stmt),
             ExtStatement::CreateStream(_) => Err(QueryError::NotImplemented {
                 err: "CreateStream Planner.".to_string(),
@@ -2126,6 +2128,39 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         })
     }
 
+    fn compact_database_to_plan(
+        &self,
+        stmt: ASTCompactDatabase,
+    ) -> QueryResult<PlanWithPrivileges> {
+        let ASTCompactDatabase { database_name } = stmt;
+
+        let database_name = normalize_ident(database_name);
+        let db = self
+            .schema_provider
+            .get_db_info(&database_name)
+            .context(MetaSnafu)?
+            .ok_or_else(|| QueryError::DatabaseNotFound {
+                name: database_name.clone(),
+            })?;
+
+        let vnode_ids = db
+            .buckets
+            .iter()
+            .flat_map(|bucket| {
+                bucket
+                    .shard_group
+                    .iter()
+                    .flat_map(|group| group.vnodes.iter().map(|vnode| vnode.id))
+            })
+            .collect::<Vec<_>>();
+
+        let plan = Plan::DDL(DDLPlan::CompactVnode(CompactVnode { vnode_ids }));
+        Ok(PlanWithPrivileges {
+            plan,
+            privileges: vec![Privilege::Global(GlobalPrivilege::System)],
+        })
+    }
+
     fn checksum_group_to_plan(&self, stmt: ASTChecksumGroup) -> QueryResult<PlanWithPrivileges> {
         let ASTChecksumGroup { replication_set_id } = stmt;
 
@@ -3048,6 +3083,7 @@ mod tests {
     use meta::error::MetaError;
     use models::auth::user::{User, UserDesc, UserOptions};
     use models::codec::Encoding;
+    use models::meta_data::DatabaseInfo;
     use models::ValueType;
     use spi::query::session::SessionCtxFactory;
     use spi::service::protocol::ContextBuilder;
@@ -3078,6 +3114,10 @@ mod tests {
 
         fn get_db_precision(&self, _name: &str) -> std::result::Result<Precision, MetaError> {
             Ok(Precision::NS)
+        }
+
+        fn get_db_info(&self, _name: &str) -> std::result::Result<Option<DatabaseInfo>, MetaError> {
+            todo!()
         }
 
         fn get_table_source(
