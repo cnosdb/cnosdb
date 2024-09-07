@@ -55,11 +55,7 @@ impl MemCacheSeriesScanIterator {
             .iter()
             .flat_map(|lock| {
                 let inner_map = lock.read();
-                let values = inner_map
-                    .iter()
-                    .map(|(_id, rw_lock_ref)| rw_lock_ref.clone())
-                    .collect::<Vec<_>>();
-                values
+                inner_map.values().cloned().collect::<Vec<_>>()
             })
             .collect();
 
