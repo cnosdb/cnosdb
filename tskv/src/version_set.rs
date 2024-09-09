@@ -15,7 +15,7 @@ use crate::index::ts_index::TSIndex;
 use crate::summary::SummaryRequest;
 use crate::tsfamily::tseries_family::TseriesFamily;
 use crate::tsfamily::version::Version;
-use crate::{Options, TseriesFamilyId};
+use crate::{Options, VnodeId};
 
 #[derive(Debug)]
 pub struct VersionSet {
@@ -50,7 +50,7 @@ impl VersionSet {
         ctx: Arc<GlobalContext>,
         runtime: Arc<Runtime>,
         memory_pool: MemoryPoolRef,
-        ver_set: HashMap<TseriesFamilyId, (DatabaseSchema, Arc<Version>)>,
+        ver_set: HashMap<VnodeId, (DatabaseSchema, Arc<Version>)>,
         metrics_register: Arc<MetricsRegister>,
     ) -> TskvResult<Self> {
         let mut dbs = HashMap::new();
@@ -185,7 +185,7 @@ impl VersionSet {
         Ok(requests)
     }
 
-    pub async fn get_tsfamily_seq_no_map(&self) -> HashMap<TseriesFamilyId, u64> {
+    pub async fn get_tsfamily_seq_no_map(&self) -> HashMap<VnodeId, u64> {
         let mut r = HashMap::with_capacity(self.dbs.len());
         for db in self.dbs.values() {
             let db = db.read().await;
