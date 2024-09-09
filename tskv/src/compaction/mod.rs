@@ -16,14 +16,14 @@ use crate::kv_option::StorageOptions;
 use crate::tsfamily::column_file::ColumnFile;
 use crate::tsfamily::tseries_family::TseriesFamily;
 use crate::tsfamily::version::Version;
-use crate::{LevelId, TseriesFamilyId};
+use crate::{LevelId, VnodeId};
 
 pub struct CompactTask {
-    pub tsf_id: TseriesFamilyId,
+    pub tsf_id: VnodeId,
 }
 
 pub struct CompactReq {
-    pub ts_family_id: TseriesFamilyId,
+    pub ts_family_id: VnodeId,
     pub owner: Arc<String>,
     storage_opt: Arc<StorageOptions>,
 
@@ -34,7 +34,7 @@ pub struct CompactReq {
 
 #[derive(Clone)]
 pub struct FlushReq {
-    pub tf_id: TseriesFamilyId,
+    pub tf_id: VnodeId,
     pub owner: String,
     pub ts_index: Arc<RwLock<TSIndex>>,
     pub ts_family: Arc<RwLock<TseriesFamily>>,

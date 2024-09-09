@@ -13,7 +13,7 @@ use crate::error::TskvResult;
 use crate::kv_option::StorageOptions;
 use crate::tsfamily::super_version::SuperVersion;
 use crate::vnode_store::VnodeStorage;
-use crate::{Engine, TseriesFamilyId};
+use crate::Engine;
 
 #[derive(Debug, Default)]
 pub struct MockEngine {}
@@ -102,7 +102,7 @@ impl Engine for MockEngine {
         todo!()
     }
 
-    async fn compact(&self, vnode_ids: Vec<TseriesFamilyId>) -> TskvResult<()> {
+    async fn compact(&self, vnode_ids: Vec<VnodeId>) -> TskvResult<()> {
         todo!()
     }
 

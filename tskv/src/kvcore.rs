@@ -32,7 +32,7 @@ use crate::tsfamily::super_version::SuperVersion;
 use crate::tsfamily::tseries_family::TseriesFamily;
 use crate::version_set::VersionSet;
 use crate::vnode_store::VnodeStorage;
-use crate::{file_utils, Engine, TsKvContext, TseriesFamilyId};
+use crate::{file_utils, Engine, TsKvContext};
 
 // TODO: A small summay channel capacity can cause a block
 pub const COMPACT_REQ_CHANNEL_CAP: usize = 1024;
@@ -244,7 +244,7 @@ impl TsKv {
 
     pub(crate) async fn get_tsfamily_or_else_create(
         &self,
-        id: TseriesFamilyId,
+        id: VnodeId,
         db: Arc<RwLock<Database>>,
     ) -> TskvResult<Arc<RwLock<TseriesFamily>>> {
         let mut db = db.write().await;
@@ -414,7 +414,7 @@ impl Engine for TsKv {
         self.ctx.options.storage.clone()
     }
 
-    async fn compact(&self, vnode_ids: Vec<TseriesFamilyId>) -> TskvResult<()> {
+    async fn compact(&self, vnode_ids: Vec<VnodeId>) -> TskvResult<()> {
         for vnode_id in vnode_ids {
             if let Some(ts_family) = self
                 .ctx
