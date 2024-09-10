@@ -73,7 +73,7 @@ impl OptimizerRule for PushDownAggregation {
                 fetch,
             }) = input.deref()
             {
-                if agg_with_grouping.is_none() {
+                if agg_with_grouping.is_none() && filters.is_empty() {
                     let new_plan = match source
                         .supports_aggregate_pushdown(group_expr, aggr_expr)?
                     {

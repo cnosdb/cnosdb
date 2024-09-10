@@ -5303,3 +5303,28 @@ false "f0" "t0"
 query T rowsort
 SELECT ALL m1.f1, m1.f0, m1.t0 FROM m1 WHERE ((((((NOT ((m1.f1) IS NOT UNKNOWN))AND(CAST(+ (1526963605) AS BOOLEAN))))AND((-1029718495) IN (326575169)))) IS TRUE) IS NULL;
 ----
+
+statement ok
+drop table if exists air1;
+
+statement ok
+CREATE TABLE air1(visibility DOUBLE,temperature DOUBLE,pressure DOUBLE,TAGS(station));
+
+statement ok
+INSERT INTO air1 (TIME, station, visibility, temperature, pressure) VALUES
+                ('2022-10-19 05:40:00', 'XiaoMaiDao', 55, 68, 76), 
+                ('2022-10-19 04:40:00', 'XiaoMaiDao', 55, 68, 76),
+                ('2022-10-19 05:41:00', 'XiaoMaiDao1', 55, 68, 76),
+                ('2022-10-19 05:42:00', 'XiaoMaiDao1', 55, 68, 76),
+                ('2022-10-19 05:43:00', 'XiaoMaiDao', 55, 68, 76);
+
+query T rowsort
+select count(*) from air1 group by station;
+----
+2
+3
+
+query T rowsort
+select count(*) from air1 where station IS NOT NULL;
+----
+5
