@@ -609,8 +609,8 @@ impl OtlpToJaeger {
             if col_name.starts_with("ResourceSpans/Resource/attributes")
                 && !col_name.eq(SERVICE_NAME_COL_NAME)
             {
-                let value = convert_column_to_any_value(&batch, &col_name, 0)?;
-                process.tags.push(Self::normal_decode_kv(&col_name, value));    
+                let value = convert_column_to_any_value(&batch, col_name, 0)?;
+                process.tags.push(Self::normal_decode_kv(col_name, value));    
             } else if col_name.eq(RESOURCE_DROPPED_ATTRIBUTES_COUNT_COL_NAME) {
                 let value = batch
                     .column_by_name(col_name)
@@ -631,8 +631,8 @@ impl OtlpToJaeger {
                     value: serde_json::Value::Number(value.into()),
                 });
             } else if col_name.starts_with("ResourceSpans/ScopeSpans/Span/attributes/") {
-                let value = convert_column_to_any_value(&batch, &col_name, 0)?;
-                process.tags.push(Self::normal_decode_kv(&col_name, value)); 
+                let value = convert_column_to_any_value(&batch, col_name, 0)?;
+                process.tags.push(Self::normal_decode_kv(col_name, value)); 
             }else if col_name.eq(SPAN_DROPPED_ATTRIBUTES_COUNT_COL_NAME)
                 || col_name.eq(SPAN_DROPPED_EVENTS_COUNT_COL_NAME)
                 || col_name.eq(SPAN_DROPPED_LINKS_COUNT_COL_NAME)
@@ -695,8 +695,8 @@ impl OtlpToJaeger {
                 let attributes_prefix = event_prefix.clone() + "attributes/";
                 for col_name in &all_col_names {
                     if col_name.starts_with(&attributes_prefix){
-                        let value = convert_column_to_any_value(&batch, &col_name, 0)?;
-                        process.tags.push(Self::normal_decode_kv(&col_name, value)); 
+                        let value = convert_column_to_any_value(&batch, col_name, 0)?;
+                        process.tags.push(Self::normal_decode_kv(col_name, value)); 
                     }
                     else if col_name.eq(&(event_prefix.clone() + "name")) {
                         attributes.push(KeyValue {
