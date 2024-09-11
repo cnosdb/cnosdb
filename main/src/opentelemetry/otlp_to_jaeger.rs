@@ -3,7 +3,9 @@ use std::sync::Arc;
 
 use coordinator::service::CoordinatorRef;
 use coordinator::SendableCoordinatorRecordBatchStream;
-use datafusion::arrow::array::{Array, Float64Array, StringArray, TimestampNanosecondArray};
+use datafusion::arrow::array::{
+    Array, BooleanArray, Float64Array, Int64Array, StringArray, TimestampNanosecondArray,
+};
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::execution::context::SessionState;
 use datafusion::execution::runtime_env::RuntimeEnv;
@@ -15,13 +17,13 @@ use http_protocol::parameter::FindTracesParam;
 use models::predicate::domain::Predicate;
 use models::schema::table_schema::TableSchema;
 use models::schema::tskv_table_schema::TskvTableSchema;
+use prost::alloc::vec::Vec;
 use prost::Message;
 use protos::common::any_value::Value;
-use protos::common::KeyValue as OtlpKeyValue;
+use protos::common::AnyValue;
 use protos::trace::status::StatusCode;
 use query::data_source::split::tskv::TableLayoutHandle;
 use query::data_source::split::SplitManager;
-use serde_json::Number;
 use snafu::ResultExt;
 use spi::{CoordinatorSnafu, ModelsSnafu, QueryError};
 use tonic::Status;
@@ -192,7 +194,6 @@ impl OtlpToJaeger {
                                 filter_expr_opt = Some(expr);
                             }
                         }
-
                         let mut tag_map = HashMap::new();
                         if let Some(tag) = &query_paras.tag {
                             let tag = tag.split(',').collect::<Vec<&str>>();
@@ -305,90 +306,69 @@ impl OtlpToJaeger {
         Ok(iterators)
     }
 
-    fn decode_kv(value: &str) -> KeyValue {
-        let value = value.split('_').collect::<Vec<_>>();
-        let value: Vec<u8> = value.iter().map(|s| s.parse().unwrap()).collect();
-        let kv = OtlpKeyValue::decode(&value[..]).expect("decode KeyValue failed");
-        if let Some(value) = kv.value {
-            if let Some(value) = value.value {
-                match value {
-                    Value::StringValue(v_str) => KeyValue {
-                        key: kv.key,
-                        value_type: Some(super::jaeger_model::ValueType::String),
-                        value: serde_json::Value::String(v_str),
-                    },
-                    Value::BoolValue(v_bool) => KeyValue {
-                        key: kv.key,
-                        value_type: Some(super::jaeger_model::ValueType::Bool),
-                        value: serde_json::Value::Bool(v_bool),
-                    },
-                    Value::IntValue(v_int64) => KeyValue {
-                        key: kv.key,
-                        value_type: Some(super::jaeger_model::ValueType::Int64),
-                        value: serde_json::Value::Number(v_int64.into()),
-                    },
-                    Value::DoubleValue(v_float64) => {
-                        let value = if let Some(v_float64) = Number::from_f64(v_float64) {
-                            serde_json::Value::Number(v_float64)
-                        } else {
-                            let v_int64 = v_float64 as i64;
-                            serde_json::Value::Number(v_int64.into())
-                        };
-                        KeyValue {
-                            key: kv.key,
-                            value_type: Some(super::jaeger_model::ValueType::Float64),
-                            value,
-                        }
-                    }
-                    Value::ArrayValue(array_value) => KeyValue {
-                        key: kv.key,
-                        value_type: Some(super::jaeger_model::ValueType::Binary),
-                        value: serde_json::Value::String(
-                            array_value
-                                .encode_to_vec()
-                                .iter()
-                                .map(|b| b.to_string())
-                                .collect::<Vec<_>>()
-                                .join("_"),
-                        ),
-                    },
-                    Value::KvlistValue(kvlist_value) => KeyValue {
-                        key: kv.key,
-                        value_type: Some(super::jaeger_model::ValueType::Binary),
-                        value: serde_json::Value::String(
-                            kvlist_value
-                                .encode_to_vec()
-                                .iter()
-                                .map(|b| b.to_string())
-                                .collect::<Vec<_>>()
-                                .join("_"),
-                        ),
-                    },
-                    Value::BytesValue(bytes_value) => KeyValue {
-                        key: kv.key,
-                        value_type: Some(super::jaeger_model::ValueType::Binary),
-                        value: serde_json::Value::String(
-                            bytes_value
-                                .iter()
-                                .map(|b| b.to_string())
-                                .collect::<Vec<_>>()
-                                .join("_"),
-                        ),
-                    },
-                }
-            } else {
-                KeyValue {
-                    key: kv.key,
-                    value_type: Some(super::jaeger_model::ValueType::String),
-                    value: serde_json::Value::String("".to_string()),
-                }
-            }
-        } else {
-            KeyValue {
-                key: kv.key,
+    fn normal_decode_kv(col_name: &str, value: AnyValue) -> KeyValue {
+        match value.value {
+            Some(Value::StringValue(v_str)) => KeyValue {
+                key: col_name.to_string(),
+                value_type: Some(super::jaeger_model::ValueType::String),
+                value: serde_json::Value::String(v_str),
+            },
+            Some(Value::BoolValue(v_bool)) => KeyValue {
+                key: col_name.to_string(),
+                value_type: Some(super::jaeger_model::ValueType::String),
+                value: serde_json::Value::String(v_bool.to_string()),
+            },
+
+            Some(Value::IntValue(v_int64)) => KeyValue {
+                key: col_name.to_string(),
+                value_type: Some(super::jaeger_model::ValueType::String),
+                value: serde_json::Value::String(v_int64.to_string()),
+            },
+            Some(Value::DoubleValue(v_float64)) => KeyValue {
+                key: col_name.to_string(),
+                value_type: Some(super::jaeger_model::ValueType::String),
+                value: serde_json::Value::String(v_float64.to_string()),
+            },
+            Some(Value::BytesValue(bytes)) => KeyValue {
+                key: col_name.to_string(),
+                value_type: Some(super::jaeger_model::ValueType::Binary),
+                value: serde_json::Value::String(
+                    bytes
+                        .iter()
+                        .map(|b| b.to_string().to_lowercase())
+                        .collect::<Vec<_>>()
+                        .join("_"),
+                ),
+            },
+            Some(Value::KvlistValue(kvlist)) => KeyValue {
+                key: col_name.to_string(),
+                value_type: Some(super::jaeger_model::ValueType::Binary),
+                value: serde_json::Value::String(
+                    kvlist
+                        .encode_to_vec()
+                        .iter()
+                        .map(|b| b.to_string().to_lowercase())
+                        .collect::<Vec<_>>()
+                        .join("_"),
+                ),
+            },
+            Some(Value::ArrayValue(array_value)) => KeyValue {
+                key: col_name.to_string(),
+                value_type: Some(super::jaeger_model::ValueType::Binary),
+                value: serde_json::Value::String(
+                    array_value
+                        .encode_to_vec()
+                        .iter()
+                        .map(|b| b.to_string().to_lowercase())
+                        .collect::<Vec<_>>()
+                        .join("_"),
+                ),
+            },
+            None => KeyValue {
+                key: col_name.to_string(),
                 value_type: Some(super::jaeger_model::ValueType::String),
                 value: serde_json::Value::String("".to_string()),
-            }
+            },
         }
     }
 
@@ -620,29 +600,8 @@ impl OtlpToJaeger {
             if col_name.starts_with("ResourceSpans/Resource/attributes")
                 && !col_name.eq(SERVICE_NAME_COL_NAME)
             {
-                let value = batch
-                    .column_by_name(col_name)
-                    .ok_or(Status::internal(format!(
-                        "column {} is not exist",
-                        col_name
-                    )))?
-                    .as_any()
-                    .downcast_ref::<StringArray>()
-                    .ok_or(Status::internal(format!(
-                        "column {} is not StringArray",
-                        col_name
-                    )))?
-                    .value(row_i)
-                    .to_string();
-                if !value.is_empty() {
-                    process.tags.push(Self::decode_kv(&value));
-                } else {
-                    process.tags.push(KeyValue {
-                        key: col_name.split('/').last().unwrap_or(col_name).to_string(),
-                        value_type: Some(super::jaeger_model::ValueType::String),
-                        value: serde_json::Value::String("".to_string()),
-                    });
-                }
+                let value = convert_column_to_any_value(&batch, col_name, 0)?;
+                process.tags.push(Self::normal_decode_kv(col_name, value));
             } else if col_name.eq(RESOURCE_DROPPED_ATTRIBUTES_COUNT_COL_NAME) {
                 let value = batch
                     .column_by_name(col_name)
@@ -663,29 +622,8 @@ impl OtlpToJaeger {
                     value: serde_json::Value::Number(value.into()),
                 });
             } else if col_name.starts_with("ResourceSpans/ScopeSpans/Span/attributes/") {
-                let value = batch
-                    .column_by_name(col_name)
-                    .ok_or(Status::internal(format!(
-                        "column {} is not exist",
-                        col_name
-                    )))?
-                    .as_any()
-                    .downcast_ref::<StringArray>()
-                    .ok_or(Status::internal(format!(
-                        "column {} is not StringArray",
-                        col_name
-                    )))?
-                    .value(row_i)
-                    .to_string();
-                if !value.is_empty() {
-                    span.tags.push(Self::decode_kv(&value));
-                } else {
-                    span.tags.push(KeyValue {
-                        key: col_name.split('/').last().unwrap_or(col_name).to_string(),
-                        value_type: Some(super::jaeger_model::ValueType::String),
-                        value: serde_json::Value::String("".to_string()),
-                    });
-                }
+                let value = convert_column_to_any_value(&batch, col_name, 0)?;
+                process.tags.push(Self::normal_decode_kv(col_name, value));
             } else if col_name.eq(SPAN_DROPPED_ATTRIBUTES_COUNT_COL_NAME)
                 || col_name.eq(SPAN_DROPPED_EVENTS_COUNT_COL_NAME)
                 || col_name.eq(SPAN_DROPPED_LINKS_COUNT_COL_NAME)
@@ -748,29 +686,8 @@ impl OtlpToJaeger {
                 let attributes_prefix = event_prefix.clone() + "attributes/";
                 for col_name in &all_col_names {
                     if col_name.starts_with(&attributes_prefix) {
-                        let value = batch
-                            .column_by_name(col_name)
-                            .ok_or(Status::internal(format!(
-                                "column {} is not exist",
-                                col_name
-                            )))?
-                            .as_any()
-                            .downcast_ref::<StringArray>()
-                            .ok_or(Status::internal(format!(
-                                "column {} is not StringArray",
-                                col_name
-                            )))?
-                            .value(row_i)
-                            .to_string();
-                        if !value.is_empty() {
-                            attributes.push(Self::decode_kv(&value));
-                        } else {
-                            attributes.push(KeyValue {
-                                key: col_name.split('/').last().unwrap_or(col_name).to_string(),
-                                value_type: Some(super::jaeger_model::ValueType::String),
-                                value: serde_json::Value::String("".to_string()),
-                            });
-                        }
+                        let value = convert_column_to_any_value(&batch, col_name, 0)?;
+                        process.tags.push(Self::normal_decode_kv(col_name, value));
                     } else if col_name.eq(&(event_prefix.clone() + "name")) {
                         attributes.push(KeyValue {
                             key: "name".to_string(),
@@ -1026,4 +943,58 @@ impl OtlpToJaeger {
         m.insert("h", 60 * 60 * 1_000_000_000);
         m
     }
+}
+
+fn convert_column_to_any_value(
+    batch: &RecordBatch,
+    col_name: &str,
+    row_i: usize,
+) -> Result<AnyValue, Status> {
+    let array = batch
+        .column_by_name(col_name)
+        .ok_or_else(|| Status::internal(format!("column {} does not exist", col_name)))?;
+
+    let any_value = if let Some(array) = array.as_any().downcast_ref::<StringArray>() {
+        if row_i < array.len() {
+            AnyValue {
+                value: Some(Value::StringValue(array.value(row_i).to_string())),
+            }
+        } else {
+            AnyValue { value: None }
+        }
+    } else if let Some(array) = array.as_any().downcast_ref::<BooleanArray>() {
+        if row_i < array.len() {
+            AnyValue {
+                // value: Some(Value::BoolValue(array.value(row_i))),
+                value: Some(Value::StringValue(array.value(row_i).to_string())),
+            }
+        } else {
+            AnyValue { value: None }
+        }
+    } else if let Some(array) = array.as_any().downcast_ref::<Int64Array>() {
+        if row_i < array.len() {
+            AnyValue {
+                // value: Some(Value::IntValue(array.value(row_i))),
+                value: Some(Value::StringValue(array.value(row_i).to_string())),
+            }
+        } else {
+            AnyValue { value: None }
+        }
+    } else if let Some(array) = array.as_any().downcast_ref::<Float64Array>() {
+        if row_i < array.len() {
+            AnyValue {
+                // value: Some(Value::DoubleValue(array.value(row_i))),
+                value: Some(Value::StringValue(array.value(row_i).to_string())),
+            }
+        } else {
+            AnyValue { value: None }
+        }
+    } else {
+        return Err(Status::internal(format!(
+            "Unsupported array type for column {}",
+            col_name
+        )));
+    };
+
+    Ok(any_value)
 }
