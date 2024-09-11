@@ -243,7 +243,12 @@ impl TenantMeta {
             *user_id,
         );
 
-        self.client.read::<Option<TenantRoleIdentifier>>(&req).await
+        let res = self.client.read::<Option<TenantRoleIdentifier>>(&req).await;
+        if let Ok(Some(role)) = &res {
+            let mut data = self.data.write();
+            data.members.insert(user_id.to_string(), role.clone());
+        }
+        res
     }
 
     pub async fn members(&self) -> MetaResult<HashMap<String, TenantRoleIdentifier>> {
