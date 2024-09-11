@@ -214,7 +214,7 @@ impl OtlpToJaeger {
                                     serde_json::from_str(item).unwrap();
                                 let lowercased_parts: HashMap<String, String> = parts
                                     .into_iter()
-                                    .map(|(k, v)| (k.to_lowercase(), v.to_lowercase())) // key 和 value 都调用 to_lowercase()
+                                    .map(|(k, v)| (k, v.to_lowercase())) // key 和 value 都调用 to_lowercase()
                                     .collect();
                                 tag_map.extend(lowercased_parts);
                             }
