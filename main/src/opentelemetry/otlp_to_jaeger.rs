@@ -209,11 +209,7 @@ impl OtlpToJaeger {
                             for item in tags.iter() {
                                 let parts: HashMap<String, String> =
                                     serde_json::from_str(item).unwrap();
-                                let lowercased_parts: HashMap<String, String> = parts
-                                    .into_iter()
-                                    .map(|(k, v)| (k, v)) // key 和 value 都调用 to_lowercase()
-                                    .collect();
-                                tag_map.extend(lowercased_parts);
+                                tag_map.extend(parts);
                             }
                         }
                         for (k, v) in tag_map.iter() {
