@@ -200,10 +200,7 @@ impl OtlpToJaeger {
                             for item in tag.iter() {
                                 let parts: Vec<&str> = item.split(':').collect();
                                 if parts.len() == 2 {
-                                    tag_map.insert(
-                                        parts[0].to_string(),
-                                        parts[1].to_string(),
-                                    );
+                                    tag_map.insert(parts[0].to_string(), parts[1].to_string());
                                 }
                             }
                         }
@@ -964,9 +961,7 @@ fn convert_column_to_any_value(
     let any_value = if let Some(array) = array.as_any().downcast_ref::<StringArray>() {
         if row_i < array.len() {
             AnyValue {
-                value: Some(Value::StringValue(
-                    array.value(row_i).to_string(),
-                )),
+                value: Some(Value::StringValue(array.value(row_i).to_string())),
             }
         } else {
             AnyValue { value: None }
@@ -975,9 +970,7 @@ fn convert_column_to_any_value(
         if row_i < array.len() {
             AnyValue {
                 // value: Some(Value::BoolValue(array.value(row_i))),
-                value: Some(Value::StringValue(
-                    array.value(row_i).to_string(),
-                )),
+                value: Some(Value::StringValue(array.value(row_i).to_string())),
             }
         } else {
             AnyValue { value: None }
@@ -986,9 +979,7 @@ fn convert_column_to_any_value(
         if row_i < array.len() {
             AnyValue {
                 // value: Some(Value::IntValue(array.value(row_i))),
-                value: Some(Value::StringValue(
-                    array.value(row_i).to_string(),
-                )),
+                value: Some(Value::StringValue(array.value(row_i).to_string())),
             }
         } else {
             AnyValue { value: None }
@@ -997,9 +988,7 @@ fn convert_column_to_any_value(
         if row_i < array.len() {
             AnyValue {
                 // value: Some(Value::DoubleValue(array.value(row_i))),
-                value: Some(Value::StringValue(
-                    array.value(row_i).to_string(),
-                )),
+                value: Some(Value::StringValue(array.value(row_i).to_string())),
             }
         } else {
             AnyValue { value: None }
