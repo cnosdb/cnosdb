@@ -202,7 +202,7 @@ impl OtlpToJaeger {
                                 if parts.len() == 2 {
                                     tag_map.insert(
                                         parts[0].to_string(),
-                                        parts[1].to_string().to_lowercase(),
+                                        parts[1].to_string(),
                                     );
                                 }
                             }
@@ -214,7 +214,7 @@ impl OtlpToJaeger {
                                     serde_json::from_str(item).unwrap();
                                 let lowercased_parts: HashMap<String, String> = parts
                                     .into_iter()
-                                    .map(|(k, v)| (k, v.to_lowercase())) // key 和 value 都调用 to_lowercase()
+                                    .map(|(k, v)| (k, v)) // key 和 value 都调用 to_lowercase()
                                     .collect();
                                 tag_map.extend(lowercased_parts);
                             }
@@ -318,23 +318,23 @@ impl OtlpToJaeger {
             Some(Value::StringValue(v_str)) => KeyValue {
                 key: col_name.to_string(),
                 value_type: Some(super::jaeger_model::ValueType::String),
-                value: serde_json::Value::String(v_str.to_lowercase()),
+                value: serde_json::Value::String(v_str),
             },
             Some(Value::BoolValue(v_bool)) => KeyValue {
                 key: col_name.to_string(),
                 value_type: Some(super::jaeger_model::ValueType::String),
-                value: serde_json::Value::String(v_bool.to_string().to_lowercase()),
+                value: serde_json::Value::String(v_bool.to_string()),
             },
 
             Some(Value::IntValue(v_int64)) => KeyValue {
                 key: col_name.to_string(),
                 value_type: Some(super::jaeger_model::ValueType::String),
-                value: serde_json::Value::String(v_int64.to_string().to_lowercase()),
+                value: serde_json::Value::String(v_int64.to_string()),
             },
             Some(Value::DoubleValue(v_float64)) => KeyValue {
                 key: col_name.to_string(),
                 value_type: Some(super::jaeger_model::ValueType::String),
-                value: serde_json::Value::String(v_float64.to_string().to_lowercase()),
+                value: serde_json::Value::String(v_float64.to_string()),
             },
             Some(Value::BytesValue(bytes)) => KeyValue {
                 key: col_name.to_string(),
@@ -965,7 +965,7 @@ fn convert_column_to_any_value(
         if row_i < array.len() {
             AnyValue {
                 value: Some(Value::StringValue(
-                    array.value(row_i).to_string().to_lowercase(),
+                    array.value(row_i).to_string(),
                 )),
             }
         } else {
@@ -976,7 +976,7 @@ fn convert_column_to_any_value(
             AnyValue {
                 // value: Some(Value::BoolValue(array.value(row_i))),
                 value: Some(Value::StringValue(
-                    array.value(row_i).to_string().to_lowercase(),
+                    array.value(row_i).to_string(),
                 )),
             }
         } else {
@@ -987,7 +987,7 @@ fn convert_column_to_any_value(
             AnyValue {
                 // value: Some(Value::IntValue(array.value(row_i))),
                 value: Some(Value::StringValue(
-                    array.value(row_i).to_string().to_lowercase(),
+                    array.value(row_i).to_string(),
                 )),
             }
         } else {
@@ -998,7 +998,7 @@ fn convert_column_to_any_value(
             AnyValue {
                 // value: Some(Value::DoubleValue(array.value(row_i))),
                 value: Some(Value::StringValue(
-                    array.value(row_i).to_string().to_lowercase(),
+                    array.value(row_i).to_string(),
                 )),
             }
         } else {
