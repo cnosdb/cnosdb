@@ -12,10 +12,10 @@ use super::row_data::{OrderedRowsData, RowData};
 use super::series_data::{RowGroup, SeriesData};
 use crate::error::{MemoryExhaustedSnafu, TskvResult};
 use crate::tsm::TsmWriteData;
-use crate::{ColumnFileId, TseriesFamilyId};
+use crate::{ColumnFileId, VnodeId};
 
 pub struct MemCacheStatistics {
-    _tf_id: TseriesFamilyId,
+    _tf_id: VnodeId,
     /// greater seq mean the last write
     seq_no: u64,
     _statistics: HashMap<SeriesId, TimeRange>,
@@ -29,7 +29,7 @@ impl MemCacheStatistics {
 
 #[derive(Debug)]
 pub struct MemCache {
-    tf_id: TseriesFamilyId,
+    tf_id: VnodeId,
 
     max_size: u64,
     min_seq_no: u64,
@@ -93,7 +93,7 @@ impl MemCache {
         Ok((chunk_group, delta_chunk_group))
     }
     pub fn new(
-        tf_id: TseriesFamilyId,
+        tf_id: VnodeId,
         tsm_file_id: ColumnFileId,
         delta_file_id: ColumnFileId,
         max_size: u64,
@@ -273,7 +273,7 @@ impl MemCache {
         self.memory.read().size() >= self.max_size as usize
     }
 
-    pub fn tf_id(&self) -> TseriesFamilyId {
+    pub fn tf_id(&self) -> VnodeId {
         self.tf_id
     }
 

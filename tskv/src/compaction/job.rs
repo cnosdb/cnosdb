@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::{atomic, Arc};
 use std::time::{Duration, Instant};
@@ -6,30 +7,57 @@ use metrics::metric_register::MetricsRegister;
 use snafu::ResultExt;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Receiver;
-use tokio::sync::{oneshot, RwLock, RwLockWriteGuard, Semaphore};
+use tokio::sync::{oneshot, Mutex, RwLock, RwLockWriteGuard, Semaphore};
 use trace::{error, info};
 
 use crate::compaction::metrics::{CompactionType, VnodeCompactionMetrics};
 use crate::compaction::{flush, CompactTask, FlushReq, LevelCompactionPicker, Picker};
-use crate::error::IndexErrSnafu;
+use crate::error::{CommonSnafu, IndexErrSnafu};
 use crate::summary::SummaryTask;
-use crate::{TsKvContext, TseriesFamilyId, TskvResult};
+use crate::{TsKvContext, TskvResult, VnodeId};
 
 const COMPACT_BATCH_CHECKING_SECONDS: u64 = 1;
 
 struct CompactProcessor {
-    vnode_ids: Vec<TseriesFamilyId>,
+    vnode_ids: Vec<VnodeId>,
+    vnode_compaction_limit: HashMap<VnodeId, Arc<Mutex<()>>>,
 }
 
 impl CompactProcessor {
-    fn insert(&mut self, vnode_id: TseriesFamilyId) {
+    fn insert(&mut self, vnode_id: VnodeId) {
         if !self.vnode_ids.contains(&vnode_id) {
-            self.vnode_ids.push(vnode_id)
+            self.vnode_ids.push(vnode_id);
+            if self.vnode_compaction_limit.get(&vnode_id).is_none() {
+                self.vnode_compaction_limit
+                    .insert(vnode_id, Arc::new(Mutex::new(())));
+            }
         }
     }
 
-    fn take(&mut self) -> Vec<TseriesFamilyId> {
-        std::mem::replace(&mut self.vnode_ids, Vec::with_capacity(32))
+    fn take(&mut self) -> TskvResult<Vec<(VnodeId, Arc<Mutex<()>>)>> {
+        let vnode_ids: Vec<VnodeId> =
+            std::mem::replace(&mut self.vnode_ids, Vec::with_capacity(32));
+
+        vnode_ids
+            .into_iter()
+            .map(|vnode_id| {
+                Ok((
+                    vnode_id,
+                    self.vnode_compaction_limit
+                        .get(&vnode_id)
+                        .ok_or_else(|| {
+                            CommonSnafu {
+                                reason: format!(
+                                    "vnode_id {} not found in vnode_compaction_limit",
+                                    vnode_id
+                                ),
+                            }
+                            .build()
+                        })?
+                        .clone(),
+                ))
+            })
+            .collect::<TskvResult<Vec<(VnodeId, Arc<Mutex<()>>)>>>()
     }
 }
 
@@ -37,6 +65,7 @@ impl Default for CompactProcessor {
     fn default() -> Self {
         Self {
             vnode_ids: Vec::with_capacity(32),
+            vnode_compaction_limit: HashMap::with_capacity(32),
         }
     }
 }
@@ -154,12 +183,17 @@ impl CompactJobInner {
                 if compact_processor.read().await.vnode_ids.is_empty() {
                     continue;
                 }
-                let vnode_ids = compact_processor.write().await.take();
+                let vnode_ids = match compact_processor.write().await.take() {
+                    Ok(vnode_ids) => vnode_ids,
+                    Err(e) => {
+                        error!("Failed to take vnode_ids from compact_processor: {:?}", e);
+                        break;
+                    }
+                };
                 let vnode_ids_for_debug = vnode_ids.clone();
                 let now = Instant::now();
-                let mut features = Vec::with_capacity(vnode_ids.len());
                 info!("Compacting on vnode(job start): {:?}", &vnode_ids_for_debug);
-                for vnode_id in vnode_ids {
+                for (vnode_id, limit) in vnode_ids {
                     let ts_family = ctx
                         .version_set
                         .read()
@@ -183,7 +217,8 @@ impl CompactJobInner {
 
                             let ctx = ctx.clone();
                             let metrics_registry = metrics_registry.clone();
-                            features.push(runtime_inner.spawn(async move {
+                            runtime_inner.spawn(async move {
+                                let _guard = limit.lock().await;
                                 // Check enable compaction
                                 if !enable_compaction.load(atomic::Ordering::SeqCst) {
                                     return;
@@ -231,15 +266,10 @@ impl CompactJobInner {
                                     }
                                 }
                                 drop(permit);
-                            }));
+                            });
                         } else {
                             info!("There is no need to compact.");
                         }
-                    }
-                }
-                for feature in features {
-                    if let Err(e) = feature.await {
-                        error!("Compaction job feature failed: {:?}", e);
                     }
                 }
                 info!(
@@ -360,7 +390,7 @@ mod test {
 
     use super::DeferGuard;
     use crate::compaction::job::CompactProcessor;
-    use crate::TseriesFamilyId;
+    use crate::VnodeId;
 
     #[test]
     fn test_build_compact_batch() {
@@ -371,11 +401,16 @@ mod test {
         compact_batch_builder.insert(3);
         assert_eq!(compact_batch_builder.vnode_ids.len(), 3);
 
-        let mut keys: Vec<TseriesFamilyId> = compact_batch_builder.vnode_ids.clone();
+        let mut keys: Vec<VnodeId> = compact_batch_builder.vnode_ids.clone();
         keys.sort();
         assert_eq!(keys, vec![1, 2, 3]);
 
-        let vnode_ids = compact_batch_builder.take();
+        let vnode_ids = compact_batch_builder
+            .take()
+            .unwrap()
+            .into_iter()
+            .map(|(vnode_id, _)| vnode_id)
+            .collect::<Vec<VnodeId>>();
         assert_eq!(vnode_ids, vec![1, 2, 3]);
     }
 

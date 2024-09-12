@@ -57,7 +57,6 @@ pub mod wal;
 /// The column file ID is unique in a KV instance
 /// and uniquely corresponds to one column file.
 pub type ColumnFileId = u64;
-type TseriesFamilyId = VnodeId;
 type LevelId = u32;
 
 pub type EngineRef = Arc<dyn Engine>;
@@ -130,7 +129,7 @@ pub trait Engine: Send + Sync + Debug {
 
     /// For the specified storage units, flush all caches into files, then compact
     /// files into larger files.
-    async fn compact(&self, vnode_ids: Vec<TseriesFamilyId>) -> TskvResult<()>;
+    async fn compact(&self, vnode_ids: Vec<VnodeId>) -> TskvResult<()>;
 
     /// Get a compressed hash_tree(ID and checksum of each vnode) of engine.
     async fn get_vnode_hash_tree(&self, vnode_id: VnodeId) -> TskvResult<RecordBatch>;
