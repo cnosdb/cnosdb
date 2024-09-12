@@ -335,17 +335,34 @@ impl StateMachine {
             let (key, val) = pair?;
             match key.strip_prefix(path.as_str()) {
                 Some(sub_key) => {
-                    if sub_key.find('/').is_some() {
-                        continue;
-                    }
                     if sub_key.is_empty() {
                         continue;
                     }
-
-                    let info: T = serde_json::from_str(val)?;
-                    result.insert(sub_key.to_string(), info);
+                    if (path.ends_with("/dbs/")
+                        && !(sub_key.contains("buckets") || sub_key.contains("schemas")))
+                        || path.ends_with("/schemas/")
+                        || path.ends_with("/roles/")
+                        || path.ends_with("/buckets/")
+                        || path.ends_with("/members/")
+                        || path.ends_with("/data_nodes/")
+                        || path.ends_with("/data_nodes_metrics/")
+                        || path.ends_with("/resourceinfos/")
+                        || path.ends_with("/users/")
+                    {
+                        info!("sub_key left is {:?}", sub_key);
+                        let info: T = serde_json::from_str(val)?;
+                        result.insert(sub_key.to_string(), info);
+                    } else if path.ends_with("/tenants/") {
+                        if sub_key.contains('/') {
+                            continue;
+                        } else {
+                            let info: T = serde_json::from_str(val)?;
+                            result.insert(sub_key.to_string(), info);
+                        }
+                    } else {
+                        continue;
+                    }
                 }
-
                 None => break,
             }
         }
@@ -417,7 +434,7 @@ impl StateMachine {
             ReadCommand::NodeMetrics(cluster) => {
                 response_encode(self.process_read_node_metrics(cluster))
             }
-            ReadCommand::TenantMetaData(cluster, tenant) => {
+            ReadCommand::TenaneMetaData(cluster, tenant) => {
                 response_encode(self.to_tenant_meta_data(cluster, tenant))
             }
             ReadCommand::CustomRole(cluster, role_name, tenant_name) => {

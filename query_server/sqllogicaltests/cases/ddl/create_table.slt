@@ -1,4 +1,17 @@
 statement ok
+create table "test/0001"(f1 bigint, tags(t1));
+
+query 
+describe table "test/0001";
+----
+"time" "TIMESTAMP(NANOSECOND)" "TIME" "DEFAULT"
+"t1" "STRING" "TAG" "DEFAULT"
+"f1" "BIGINT" "FIELD" "DEFAULT"
+
+statement ok
+drop table "test/0001";
+
+statement ok
 --#DATABASE=createtable
 
 sleep 100ms
