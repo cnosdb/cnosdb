@@ -3,9 +3,7 @@ use std::sync::Arc;
 
 use coordinator::service::CoordinatorRef;
 use coordinator::SendableCoordinatorRecordBatchStream;
-use datafusion::arrow::array::{
-    Array, Float64Array, StringArray, TimestampNanosecondArray,
-};
+use datafusion::arrow::array::{Array, Float64Array, StringArray, TimestampNanosecondArray};
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::execution::context::SessionState;
 use datafusion::execution::runtime_env::RuntimeEnv;
@@ -312,14 +310,13 @@ impl OtlpToJaeger {
                 value_type: Some(super::jaeger_model::ValueType::String),
                 value: serde_json::Value::String(v_str),
             }
-        }else{
+        } else {
             KeyValue {
                 key: col_name.to_string(),
                 value_type: Some(super::jaeger_model::ValueType::String),
                 value: serde_json::Value::String("".to_string()),
             }
         }
-
     }
 
     pub fn to_jaeger_span_kind(span_kind: &str) -> &str {
@@ -550,7 +547,7 @@ impl OtlpToJaeger {
             if col_name.starts_with("ResourceSpans/Resource/attributes")
                 && !col_name.eq(SERVICE_NAME_COL_NAME)
             {
-                let value = convert_column_to_any_value(&batch, col_name,row_i)?;
+                let value = convert_column_to_any_value(&batch, col_name, row_i)?;
                 process.tags.push(Self::normal_decode_kv(col_name, value));
             } else if col_name.eq(RESOURCE_DROPPED_ATTRIBUTES_COUNT_COL_NAME) {
                 let value = batch
@@ -572,7 +569,7 @@ impl OtlpToJaeger {
                     value: serde_json::Value::Number(value.into()),
                 });
             } else if col_name.starts_with("ResourceSpans/ScopeSpans/Span/attributes/") {
-                let value = convert_column_to_any_value(&batch, col_name,row_i)?;
+                let value = convert_column_to_any_value(&batch, col_name, row_i)?;
                 process.tags.push(Self::normal_decode_kv(col_name, value));
             } else if col_name.eq(SPAN_DROPPED_ATTRIBUTES_COUNT_COL_NAME)
                 || col_name.eq(SPAN_DROPPED_EVENTS_COUNT_COL_NAME)
@@ -636,7 +633,7 @@ impl OtlpToJaeger {
                 let attributes_prefix = event_prefix.clone() + "attributes/";
                 for col_name in &all_col_names {
                     if col_name.starts_with(&attributes_prefix) {
-                        let value = convert_column_to_any_value(&batch, col_name,row_i)?;
+                        let value = convert_column_to_any_value(&batch, col_name, row_i)?;
                         process.tags.push(Self::normal_decode_kv(col_name, value));
                     } else if col_name.eq(&(event_prefix.clone() + "name")) {
                         attributes.push(KeyValue {
@@ -912,7 +909,7 @@ fn convert_column_to_any_value(
         } else {
             AnyValue { value: None }
         }
-    }else {
+    } else {
         return Err(Status::internal(format!(
             "Unsupported array type for column {}",
             col_name
