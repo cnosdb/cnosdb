@@ -5328,3 +5328,15 @@ query T rowsort
 select count(*) from air1 where station IS NOT NULL;
 ----
 5
+
+query T rowsort
+select count(1,2,3) from air1 group by station;
+----
+2
+3
+
+query T rowsort
+select count(*),count(1) from air1 group by station;
+----
+2 2
+3 3
