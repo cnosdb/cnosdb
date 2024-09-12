@@ -20,10 +20,20 @@ impl AnalyzerRule for TransformCountGenTimeColRule {
 
 fn analyze_internal(plan: LogicalPlan) -> Result<Transformed<LogicalPlan>> {
     if let LogicalPlan::Aggregate(Aggregate { aggr_expr, .. }) = &plan {
-        if aggr_expr.len() == 1 {
-            if let Expr::AggregateFunction(AggregateFunction { fun, args, .. }) = &aggr_expr[0] {
-                if fun == &aggregate_function::AggregateFunction::Count && args.len() == 1 {
-                    if let Expr::Literal(_) = &args[0] {
+        for expr in aggr_expr {
+            if let Expr::AggregateFunction(AggregateFunction { fun, args, .. }) = &expr {
+                if fun == &aggregate_function::AggregateFunction::Count {
+                    let mut only_literal = true;
+                    for arg in args {
+                        match arg {
+                            Expr::Literal(_) => {}
+                            _ => {
+                                only_literal = false;
+                                break;
+                            }
+                        }
+                    }
+                    if only_literal {
                         let mut plan_vec = vec![plan.clone()];
                         loop {
                             let last = plan_vec.last().unwrap().clone();
