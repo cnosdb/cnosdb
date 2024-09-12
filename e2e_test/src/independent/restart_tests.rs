@@ -57,6 +57,16 @@ fn case1() {
         Step::CnosdbRequest {
             req: CnosdbRequest::Query {
                 url,
+                sql: "compact database public",
+                resp: Ok(vec![]),
+                sorted: false,
+                regex: false,
+            },
+            auth: None,
+        },
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Query {
+                url,
                 sql: "SELECT * FROM air order by time",
                 resp: Ok(vec![
                     "time,station,visibility,temperature,pressure",
@@ -71,14 +81,35 @@ fn case1() {
         },
         Step::RestartDataNode(0),
         Step::CnosdbRequest {
+            req: CnosdbRequest::Insert {
+                url,
+                sql: "INSERT INTO air (time, station, visibility, temperature, pressure) VALUES
+                    ('2023-01-01 01:10:00', 'XiaoMaiDao', 89, 90, 73),
+                    ('2023-01-01 01:20:00', 'XiaoMaiDao', 90, 70, 73),
+                    ('2023-01-01 01:30:00', 'XiaoMaiDao', 91, 80, 71)",
+                resp: Ok(()),
+            },
+            auth: None,
+        },
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Query {
+                url,
+                sql: "compact database public",
+                resp: Ok(vec![]),
+                sorted: false,
+                regex: false,
+            },
+            auth: None,
+        },
+        Step::CnosdbRequest {
             req: CnosdbRequest::Query {
                 url,
                 sql: "SELECT * FROM air order by time",
                 resp: Ok(vec![
                     "time,station,visibility,temperature,pressure",
-                    "2023-01-01T01:10:00.000000000,XiaoMaiDao,79.0,80.0,63.0",
-                    "2023-01-01T01:20:00.000000000,XiaoMaiDao,80.0,60.0,63.0",
-                    "2023-01-01T01:30:00.000000000,XiaoMaiDao,81.0,70.0,61.0",
+                    "2023-01-01T01:10:00.000000000,XiaoMaiDao,89.0,90.0,73.0",
+                    "2023-01-01T01:20:00.000000000,XiaoMaiDao,90.0,70.0,73.0",
+                    "2023-01-01T01:30:00.000000000,XiaoMaiDao,91.0,80.0,71.0",
                 ]),
                 sorted: false,
                 regex: false,
