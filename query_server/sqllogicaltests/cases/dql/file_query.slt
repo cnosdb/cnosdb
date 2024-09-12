@@ -41,3 +41,213 @@ query T
 select * from air;
 ----
 2022-10-19T07:40:00.290401 "XiaoMaiDao" 56.0 70.0 77.0
+
+statement ok
+INSERT INTO air (TIME, station, visibility, temperature, pressure) VALUES (1666165200290401000, 'XiaoMaiDao', 1, 1, 1);
+
+statement ok
+INSERT INTO air (TIME, station, visibility, temperature, pressure) VALUES (1666165200290401000, 'XiaoMaiDao', 2, 2, 2);
+
+query T
+select * from air;
+----
+2022-10-19T07:40:00.290401 "XiaoMaiDao" 2.0 2.0 2.0
+
+statement ok
+compact database file_query;
+
+query T
+select * from air;
+----
+2022-10-19T07:40:00.290401 "XiaoMaiDao" 2.0 2.0 2.0
+
+statement ok
+INSERT INTO air (TIME, station, visibility, temperature, pressure) VALUES (1666165200290401000, 'XiaoMaiDao', 1, 1, 1);
+
+query T
+select * from air;
+----
+2022-10-19T07:40:00.290401 "XiaoMaiDao" 1.0 1.0 1.0
+
+statement ok
+compact database file_query;
+
+query T
+select * from air;
+----
+2022-10-19T07:40:00.290401 "XiaoMaiDao" 1.0 1.0 1.0
+
+statement ok
+create table inner_csv(
+  latitude double,
+  longitude double,
+  elevation double,
+  velocity double,
+  heading double,
+  grade double,
+  fuel_consumption double,
+  load_capacity double,
+  fuel_capacity double,
+  nominal_fuel_consumption double,
+  tags(name, fleet, driver, model, device_version)
+);
+
+statement ok
+copy into inner_csv
+from 'query_server/sqllogicaltests/resource/csv/part-0.csv' 
+file_format = (type = 'csv');
+
+query T
+select * from inner_csv;
+----
+2022-01-01T02:00:10 "truck_2991" "West" "Trish" "H_2" "v1_0" 34.5 1508.0 167.0 28.0 NULL NULL NULL NULL NULL NULL
+2022-01-01T02:00:20 "truck_2991" "West" "Trish" "H_2" "v1_0" 31.9 1510.0 167.0 26.0 NULL NULL NULL NULL NULL NULL
+2022-01-01T02:00:30 "truck_2991" "West" "Trish" "H_2" "v1_0" 29.1 1509.0 168.0 25.0 NULL NULL NULL NULL NULL NULL
+2022-01-01T02:00:40 "truck_2991" "West" "Trish" "H_2" "v1_0" 26.3 1509.0 167.0 26.0 NULL NULL NULL NULL NULL NULL
+2022-01-01T02:01:00 "truck_2991" "West" "Trish" "H_2" "v1_0" 22.2 1510.0 167.0 29.0 NULL NULL NULL NULL NULL NULL
+2022-01-01T02:01:10 "truck_2991" "West" "Trish" "H_2" "v1_0" 27.0 1510.0 166.0 27.0 NULL NULL NULL NULL NULL NULL
+2022-01-01T02:01:20 "truck_2991" "West" "Trish" "H_2" "v1_0" 22.3 1509.0 166.0 28.0 NULL NULL NULL NULL NULL NULL
+2022-01-01T02:01:30 "truck_2991" "West" "Trish" "H_2" "v1_0" 20.8 1507.0 167.0 28.0 NULL NULL NULL NULL NULL NULL
+2022-01-01T02:01:40 "truck_2991" "West" "Trish" "H_2" "v1_0" 22.9 1506.0 166.0 29.0 NULL NULL NULL NULL NULL NULL
+2022-01-01T02:01:50 "truck_2991" "West" "Trish" "H_2" "v1_0" 24.2 1505.0 166.0 28.0 NULL NULL NULL NULL NULL NULL
+
+statement ok
+compact database file_query;
+
+query T
+select * from inner_csv;
+----
+2022-01-01T02:00:10 "truck_2991" "West" "Trish" "H_2" "v1_0" 34.5 1508.0 167.0 28.0 NULL NULL NULL NULL NULL NULL
+2022-01-01T02:00:20 "truck_2991" "West" "Trish" "H_2" "v1_0" 31.9 1510.0 167.0 26.0 NULL NULL NULL NULL NULL NULL
+2022-01-01T02:00:30 "truck_2991" "West" "Trish" "H_2" "v1_0" 29.1 1509.0 168.0 25.0 NULL NULL NULL NULL NULL NULL
+2022-01-01T02:00:40 "truck_2991" "West" "Trish" "H_2" "v1_0" 26.3 1509.0 167.0 26.0 NULL NULL NULL NULL NULL NULL
+2022-01-01T02:01:00 "truck_2991" "West" "Trish" "H_2" "v1_0" 22.2 1510.0 167.0 29.0 NULL NULL NULL NULL NULL NULL
+2022-01-01T02:01:10 "truck_2991" "West" "Trish" "H_2" "v1_0" 27.0 1510.0 166.0 27.0 NULL NULL NULL NULL NULL NULL
+2022-01-01T02:01:20 "truck_2991" "West" "Trish" "H_2" "v1_0" 22.3 1509.0 166.0 28.0 NULL NULL NULL NULL NULL NULL
+2022-01-01T02:01:30 "truck_2991" "West" "Trish" "H_2" "v1_0" 20.8 1507.0 167.0 28.0 NULL NULL NULL NULL NULL NULL
+2022-01-01T02:01:40 "truck_2991" "West" "Trish" "H_2" "v1_0" 22.9 1506.0 166.0 29.0 NULL NULL NULL NULL NULL NULL
+2022-01-01T02:01:50 "truck_2991" "West" "Trish" "H_2" "v1_0" 24.2 1505.0 166.0 28.0 NULL NULL NULL NULL NULL NULL
+
+statement ok
+copy into inner_csv
+from 'query_server/sqllogicaltests/resource/csv/part-1.csv'
+file_format = (type = 'csv');
+
+query T
+select * from inner_csv;
+----
+2022-01-01T02:00:10 "truck_2991" "West" "Trish" "H_2" "v1_0" 34.5 1508.0 167.0 28.0 1.0 1.0 1.0 1.0 1.0 1.0
+2022-01-01T02:00:20 "truck_2991" "West" "Trish" "H_2" "v1_0" 31.9 1510.0 167.0 26.0 1.0 1.0 1.0 1.0 1.0 1.0
+2022-01-01T02:00:30 "truck_2991" "West" "Trish" "H_2" "v1_0" 29.1 1509.0 168.0 25.0 1.0 1.0 1.0 1.0 1.0 1.0
+2022-01-01T02:00:40 "truck_2991" "West" "Trish" "H_2" "v1_0" 26.3 1509.0 167.0 26.0 1.0 1.0 1.0 1.0 1.0 1.0
+2022-01-01T02:01:00 "truck_2991" "West" "Trish" "H_2" "v1_0" 22.2 1510.0 167.0 29.0 1.0 1.0 1.0 1.0 1.0 1.0
+2022-01-01T02:01:10 "truck_2991" "West" "Trish" "H_2" "v1_0" 27.0 1510.0 166.0 27.0 1.0 1.0 1.0 1.0 1.0 1.0
+2022-01-01T02:01:20 "truck_2991" "West" "Trish" "H_2" "v1_0" 22.3 1509.0 166.0 28.0 1.0 1.0 1.0 1.0 1.0 1.0
+2022-01-01T02:01:30 "truck_2991" "West" "Trish" "H_2" "v1_0" 20.8 1507.0 167.0 28.0 1.0 1.0 1.0 1.0 1.0 1.0
+2022-01-01T02:01:40 "truck_2991" "West" "Trish" "H_2" "v1_0" 22.9 1506.0 166.0 29.0 1.0 1.0 1.0 1.0 1.0 1.0
+2022-01-01T02:01:50 "truck_2991" "West" "Trish" "H_2" "v1_0" 24.2 1505.0 166.0 28.0 1.0 1.0 1.0 1.0 1.0 1.0
+
+statement ok
+compact database file_query;
+
+query T
+select * from inner_csv;
+----
+2022-01-01T02:00:10 "truck_2991" "West" "Trish" "H_2" "v1_0" 34.5 1508.0 167.0 28.0 1.0 1.0 1.0 1.0 1.0 1.0
+2022-01-01T02:00:20 "truck_2991" "West" "Trish" "H_2" "v1_0" 31.9 1510.0 167.0 26.0 1.0 1.0 1.0 1.0 1.0 1.0
+2022-01-01T02:00:30 "truck_2991" "West" "Trish" "H_2" "v1_0" 29.1 1509.0 168.0 25.0 1.0 1.0 1.0 1.0 1.0 1.0
+2022-01-01T02:00:40 "truck_2991" "West" "Trish" "H_2" "v1_0" 26.3 1509.0 167.0 26.0 1.0 1.0 1.0 1.0 1.0 1.0
+2022-01-01T02:01:00 "truck_2991" "West" "Trish" "H_2" "v1_0" 22.2 1510.0 167.0 29.0 1.0 1.0 1.0 1.0 1.0 1.0
+2022-01-01T02:01:10 "truck_2991" "West" "Trish" "H_2" "v1_0" 27.0 1510.0 166.0 27.0 1.0 1.0 1.0 1.0 1.0 1.0
+2022-01-01T02:01:20 "truck_2991" "West" "Trish" "H_2" "v1_0" 22.3 1509.0 166.0 28.0 1.0 1.0 1.0 1.0 1.0 1.0
+2022-01-01T02:01:30 "truck_2991" "West" "Trish" "H_2" "v1_0" 20.8 1507.0 167.0 28.0 1.0 1.0 1.0 1.0 1.0 1.0
+2022-01-01T02:01:40 "truck_2991" "West" "Trish" "H_2" "v1_0" 22.9 1506.0 166.0 29.0 1.0 1.0 1.0 1.0 1.0 1.0
+2022-01-01T02:01:50 "truck_2991" "West" "Trish" "H_2" "v1_0" 24.2 1505.0 166.0 28.0 1.0 1.0 1.0 1.0 1.0 1.0
+
+statement ok
+alter table air add field humidity double codec(default);
+
+statement ok
+INSERT INTO air (TIME, station, visibility, temperature, pressure, humidity) VALUES (1666165200290401000, 'XiaoMaiDao', 1, 1, 1, 1);
+
+
+statement ok
+compact database file_query;
+
+query 
+select * from air;
+----
+2022-10-19T07:40:00.290401 "XiaoMaiDao" 1.0 1.0 1.0 1.0
+
+statement ok
+alter table air drop temperature;
+
+statement ok
+INSERT INTO air (TIME, station, visibility, pressure, humidity) VALUES (1666165200290401000, 'XiaoMaiDao', 1, 1, 1);
+
+statement ok
+compact database file_query;
+
+query 
+select * from air;
+----
+2022-10-19T07:40:00.290401 "XiaoMaiDao" 1.0 1.0 1.0
+
+statement ok
+alter table air add tag loaction;
+
+statement ok
+INSERT INTO air (TIME, station, loaction, visibility, pressure, humidity) VALUES (1666165200290401000, 'XiaoMaiDao', 'Nexus Center', 1, 1, 1);
+
+statement ok
+compact database file_query;
+
+query 
+select * from air;
+----
+2022-10-19T07:40:00.290401 "XiaoMaiDao" 1.0 1.0 1.0 "Nexus Center"
+2022-10-19T07:40:00.290401 "XiaoMaiDao" 1.0 1.0 1.0 "NULL"
+
+statement ok
+INSERT INTO air (TIME, station, loaction, visibility, pressure, humidity) VALUES (1666165201290401000, 'XiaoMaiDao', 'Nexus Center', 1, 1, 1),(1666165202290401000, 'XiaoMaiDao', 'Nexus Center', 1, 1, 1);
+
+query 
+select * from air order by time;
+----
+2022-10-19T07:40:00.290401 "XiaoMaiDao" 1.0 1.0 1.0 "Nexus Center"
+2022-10-19T07:40:00.290401 "XiaoMaiDao" 1.0 1.0 1.0 "NULL"
+2022-10-19T07:40:01.290401 "XiaoMaiDao" 1.0 1.0 1.0 "Nexus Center"
+2022-10-19T07:40:02.290401 "XiaoMaiDao" 1.0 1.0 1.0 "Nexus Center"
+
+statement ok
+compact database file_query;
+
+query 
+select * from air order by time;
+----
+2022-10-19T07:40:00.290401 "XiaoMaiDao" 1.0 1.0 1.0 "Nexus Center"
+2022-10-19T07:40:00.290401 "XiaoMaiDao" 1.0 1.0 1.0 "NULL"
+2022-10-19T07:40:01.290401 "XiaoMaiDao" 1.0 1.0 1.0 "Nexus Center"
+2022-10-19T07:40:02.290401 "XiaoMaiDao" 1.0 1.0 1.0 "Nexus Center"
+
+statement ok
+INSERT INTO air (TIME, station, loaction, visibility, pressure, humidity) VALUES (1666165201290401000, 'XiaoMaiDao', 'Nexus Center', 11, 12, 13),(1666165202290401000, 'XiaoMaiDao', 'Nexus Center', 16, 15, 14);
+
+query
+select * from air order by time;
+----
+2022-10-19T07:40:00.290401 "XiaoMaiDao" 1.0 1.0 1.0 "Nexus Center"
+2022-10-19T07:40:00.290401 "XiaoMaiDao" 1.0 1.0 1.0 "NULL"
+2022-10-19T07:40:01.290401 "XiaoMaiDao" 11.0 12.0 13.0 "Nexus Center"
+2022-10-19T07:40:02.290401 "XiaoMaiDao" 16.0 15.0 14.0 "Nexus Center"
+
+statement ok
+compact database file_query;
+
+query
+select * from air order by time;
+----
+2022-10-19T07:40:00.290401 "XiaoMaiDao" 1.0 1.0 1.0 "Nexus Center"
+2022-10-19T07:40:00.290401 "XiaoMaiDao" 1.0 1.0 1.0 "NULL"
+2022-10-19T07:40:01.290401 "XiaoMaiDao" 11.0 12.0 13.0 "Nexus Center"
+2022-10-19T07:40:02.290401 "XiaoMaiDao" 16.0 15.0 14.0 "Nexus Center"
