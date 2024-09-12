@@ -238,19 +238,18 @@ pub fn parse_protobuf_to_otlptrace(req: Bytes) -> Result<Vec<JsonProtocol>> {
                             );
                         }
                     }
-                } else {
-                    let mut buf = Vec::new();
-                    attribute
-                        .encode(&mut buf)
-                        .expect("serialize key value failed");
-                    let value = buf
-                        .iter()
-                        .map(|b| b.to_string())
-                        .collect::<Vec<_>>()
-                        .join("_");
+                } else if let Some(ref value) = attribute.value {
+                    let string_value = match value.value {
+                        Some(Value::StringValue(ref str_value)) => str_value.clone(), // 字符串类型直接克隆
+                        Some(Value::BoolValue(bool_value)) => bool_value.to_string(), // 布尔类型转换为字符串
+                        Some(Value::IntValue(int_value)) => int_value.to_string(), // 整数类型转换为字符串
+                        Some(Value::DoubleValue(double_value)) => double_value.to_string(), // 浮点数类型转换为字符串
+                        Some(_) => format!("{:?}", value).to_lowercase(), // 任何类型都直接用 Debug trait 转换成字符串
+                        None => "".to_string(), // 如果没有值，返回空字符串
+                    };
                     fields.insert(
-                        prefix.join("") + "attributes/" + &attribute.key,
-                        serde_json::Value::String(value),
+                        prefix.join("") + "attributes/" + &attribute.key, // 拼接 key
+                        serde_json::Value::String(string_value),          // 将所有值作为字符串插入
                     );
                 }
             }
@@ -277,19 +276,21 @@ pub fn parse_protobuf_to_otlptrace(req: Bytes) -> Result<Vec<JsonProtocol>> {
                     serde_json::Value::String(scope.version),
                 );
                 for attribute in scope.attributes {
-                    let mut buf = Vec::new();
-                    attribute
-                        .encode(&mut buf)
-                        .expect("serialize key value failed");
-                    let value = buf
-                        .iter()
-                        .map(|b| b.to_string())
-                        .collect::<Vec<_>>()
-                        .join("_");
-                    fields.insert(
-                        prefix.join("") + "attributes/" + &attribute.key,
-                        serde_json::Value::String(value),
-                    );
+                    if let Some(ref value) = attribute.value {
+                        let string_value = match value.value {
+                            Some(Value::StringValue(ref str_value)) => str_value.clone(), // 字符串类型直接克隆
+                            Some(Value::BoolValue(bool_value)) => bool_value.to_string(), // 布尔类型转换为字符串
+                            Some(Value::IntValue(int_value)) => int_value.to_string(), // 整数类型转换为字符串
+                            Some(Value::DoubleValue(double_value)) => double_value.to_string(), // 浮点数类型转换为字符串
+                            Some(_) => format!("{:?}", value).to_lowercase(), // 任何类型都直接用 Debug trait 转换成字符串
+                            None => "".to_string(), // 如果没有值，返回空字符串
+                        };
+
+                        fields.insert(
+                            prefix.join("") + "attributes/" + &attribute.key, // 拼接 key
+                            serde_json::Value::String(string_value), // 将所有值作为字符串插入
+                        );
+                    }
                 }
                 fields.insert(
                     prefix.join("") + "dropped_attributes_count",
@@ -352,19 +353,21 @@ pub fn parse_protobuf_to_otlptrace(req: Bytes) -> Result<Vec<JsonProtocol>> {
                     serde_json::Value::Number(span.end_time_unix_nano.into()),
                 );
                 for attribute in span.attributes {
-                    let mut buf = Vec::new();
-                    attribute
-                        .encode(&mut buf)
-                        .expect("serialize key value failed");
-                    let value = buf
-                        .iter()
-                        .map(|b| b.to_string())
-                        .collect::<Vec<_>>()
-                        .join("_");
-                    fields.insert(
-                        prefix.join("") + "attributes/" + &attribute.key,
-                        serde_json::Value::String(value),
-                    );
+                    if let Some(ref value) = attribute.value {
+                        let string_value = match value.value {
+                            Some(Value::StringValue(ref str_value)) => str_value.clone(), // 字符串类型直接克隆
+                            Some(Value::BoolValue(bool_value)) => bool_value.to_string(), // 布尔类型转换为字符串
+                            Some(Value::IntValue(int_value)) => int_value.to_string(), // 整数类型转换为字符串
+                            Some(Value::DoubleValue(double_value)) => double_value.to_string(), // 浮点数类型转换为字符串
+                            Some(_) => format!("{:?}", value).to_lowercase(), // 任何类型都直接用 Debug trait 转换成字符串
+                            None => "".to_string(), // 如果没有值，返回空字符串
+                        };
+
+                        fields.insert(
+                            prefix.join("") + "attributes/" + &attribute.key, // 拼接 key
+                            serde_json::Value::String(string_value), // 将所有值作为字符串插入
+                        );
+                    }
                 }
                 fields.insert(
                     prefix.join("") + "dropped_attributes_count",
@@ -381,19 +384,21 @@ pub fn parse_protobuf_to_otlptrace(req: Bytes) -> Result<Vec<JsonProtocol>> {
                         serde_json::Value::String(event.name),
                     );
                     for attribute in event.attributes {
-                        let mut buf = Vec::new();
-                        attribute
-                            .encode(&mut buf)
-                            .expect("serialize key value failed");
-                        let value = buf
-                            .iter()
-                            .map(|b| b.to_string())
-                            .collect::<Vec<_>>()
-                            .join("_");
-                        fields.insert(
-                            prefix.join("") + "attributes/" + &attribute.key,
-                            serde_json::Value::String(value),
-                        );
+                        if let Some(ref value) = attribute.value {
+                            let string_value = match value.value {
+                                Some(Value::StringValue(ref str_value)) => str_value.clone(), // 字符串类型直接克隆
+                                Some(Value::BoolValue(bool_value)) => bool_value.to_string(), // 布尔类型转换为字符串
+                                Some(Value::IntValue(int_value)) => int_value.to_string(), // 整数类型转换为字符串
+                                Some(Value::DoubleValue(double_value)) => double_value.to_string(), // 浮点数类型转换为字符串
+                                Some(_) => format!("{:?}", value).to_lowercase(), // 任何类型都直接用 Debug trait 转换成字符串
+                                None => "".to_string(), // 如果没有值，返回空字符串
+                            };
+
+                            fields.insert(
+                                prefix.join("") + "attributes/" + &attribute.key, // 拼接 key
+                                serde_json::Value::String(string_value), // 将所有值作为字符串插入
+                            );
+                        }
                     }
                     fields.insert(
                         prefix.join("") + "dropped_attributes_count",
@@ -428,19 +433,21 @@ pub fn parse_protobuf_to_otlptrace(req: Bytes) -> Result<Vec<JsonProtocol>> {
                         serde_json::Value::String(link.trace_state),
                     );
                     for attribute in link.attributes {
-                        let mut buf = Vec::new();
-                        attribute
-                            .encode(&mut buf)
-                            .expect("serialize key value failed");
-                        let value = buf
-                            .iter()
-                            .map(|b| b.to_string())
-                            .collect::<Vec<_>>()
-                            .join("_");
-                        fields.insert(
-                            prefix.join("") + "attributes/" + &attribute.key,
-                            serde_json::Value::String(value),
-                        );
+                        if let Some(ref value) = attribute.value {
+                            let string_value = match value.value {
+                                Some(Value::StringValue(ref str_value)) => str_value.clone(), // 字符串类型直接克隆
+                                Some(Value::BoolValue(bool_value)) => bool_value.to_string(), // 布尔类型转换为字符串
+                                Some(Value::IntValue(int_value)) => int_value.to_string(), // 整数类型转换为字符串
+                                Some(Value::DoubleValue(double_value)) => double_value.to_string(), // 浮点数类型转换为字符串
+                                Some(_) => format!("{:?}", value).to_lowercase(), // 任何类型都直接用 Debug trait 转换成字符串
+                                None => "".to_string(), // 如果没有值，返回空字符串
+                            };
+
+                            fields.insert(
+                                prefix.join("") + "attributes/" + &attribute.key, // 拼接 key
+                                serde_json::Value::String(string_value), // 将所有值作为字符串插入
+                            );
+                        }
                     }
                     fields.insert(
                         prefix.join("") + "dropped_attributes_count",
