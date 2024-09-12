@@ -289,6 +289,8 @@ impl StateMachine {
         }
     }
 
+    pub fn children_fullpath(&self, path: &str) -> MetaResult<Vec<String>> {
+        let mut path = path.to_owned();
         if !path.ends_with('/') {
             path.push('/');
         }
@@ -367,6 +369,7 @@ impl StateMachine {
 
         Ok(result)
     }
+
     pub fn read_change_logs(
         &self,
         cluster: &str,
