@@ -289,8 +289,6 @@ impl StateMachine {
         }
     }
 
-    pub fn children_fullpath(&self, path: &str) -> MetaResult<Vec<String>> {
-        let mut path = path.to_owned();
         if !path.ends_with('/') {
             path.push('/');
         }
@@ -369,7 +367,6 @@ impl StateMachine {
 
         Ok(result)
     }
-
     pub fn read_change_logs(
         &self,
         cluster: &str,
@@ -434,7 +431,7 @@ impl StateMachine {
             ReadCommand::NodeMetrics(cluster) => {
                 response_encode(self.process_read_node_metrics(cluster))
             }
-            ReadCommand::TenaneMetaData(cluster, tenant) => {
+            ReadCommand::TenantMetaData(cluster, tenant) => {
                 response_encode(self.to_tenant_meta_data(cluster, tenant))
             }
             ReadCommand::CustomRole(cluster, role_name, tenant_name) => {
