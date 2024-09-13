@@ -12,8 +12,8 @@ use crate::compaction::{CompactTask, FlushReq};
 use crate::error::TskvResult;
 use crate::file_system::async_filesystem::LocalFileSystem;
 use crate::file_utils::{make_delta_file, make_tsm_file};
-use crate::mem_cache::memcache::MemCache;
-use crate::summary::{CompactMetaBuilder, SummaryTask, VersionEdit};
+use crate::mem_cache::memcache::{MemCache, MemCacheSeriesScanIterator};
+use crate::summary::{CompactMeta, SummaryTask, VersionEdit};
 use crate::tsm::writer::TsmWriter;
 use crate::{ColumnFileId, TsKvContext, VnodeId};
 
@@ -69,36 +69,64 @@ impl FlushTask {
             VersionEdit::new_update_vnode(self.tsf_id, self.owner.clone(), high_seq_no);
         let mut max_level_ts = max_level_ts;
         for memcache in self.mem_caches.iter() {
+            let file_id = memcache.read().tsm_file_id();
+            self.current_tsm_file_id = file_id;
+            let mut tsm_writer = TsmWriter::open(&self.path_tsm, file_id, 0, false).await?;
+
+            let file_id = memcache.read().delta_file_id();
+            self.current_delta_file_id = file_id;
+            let mut delta_writer = TsmWriter::open(&self.path_delta, file_id, 0, true).await?;
+
             let mut tsm_writer_is_used = false;
             let mut delta_writer_is_used = false;
-            let (group, delta_group) = {
-                let memcache = memcache.read();
-                self.current_tsm_file_id = memcache.tsm_file_id();
-                self.current_delta_file_id = memcache.delta_file_id();
-                memcache.to_chunk_group(max_level_ts)?
-            };
-            let mut tsm_writer =
-                TsmWriter::open(&self.path_tsm, self.current_tsm_file_id, 0, false).await?;
-            let mut delta_writer =
-                TsmWriter::open(&self.path_delta, self.current_delta_file_id, 0, true).await?;
-            if !group.is_empty() {
-                tsm_writer_is_used = true;
-                tsm_writer.write_data(group).await?;
+            let series_iter = MemCacheSeriesScanIterator::new(memcache.clone());
+            for series in series_iter {
+                let (series_id, series_key, time_range, convert_result) = {
+                    let series = series.read();
+                    (
+                        series.series_id,
+                        series.series_key.clone(),
+                        series.range,
+                        series.convert_to_page(max_level_ts)?,
+                    )
+                };
+                if let Some((schema, pages, delta_pages)) = convert_result {
+                    if !pages.is_empty() {
+                        tsm_writer_is_used = true;
+                        tsm_writer
+                            .write_pages(
+                                schema.clone(),
+                                series_id,
+                                series_key.clone(),
+                                pages,
+                                time_range,
+                            )
+                            .await?;
+                    }
+
+                    if !delta_pages.is_empty() {
+                        delta_writer_is_used = true;
+                        delta_writer
+                            .write_pages(
+                                schema,
+                                series_id,
+                                series_key.clone(),
+                                delta_pages,
+                                time_range,
+                            )
+                            .await?;
+                    }
+                }
             }
 
-            if !delta_group.is_empty() {
-                delta_writer_is_used = true;
-                delta_writer.write_data(delta_group).await?;
-            }
-
-            let compact_meta_builder = CompactMetaBuilder::new(self.tsf_id);
             if tsm_writer_is_used {
                 tsm_writer.finish().await?;
                 files_meta.insert(
                     tsm_writer.file_id(),
                     Arc::new(tsm_writer.series_bloom_filter().clone()),
                 );
-                let tsm_meta = compact_meta_builder.build(
+                let tsm_meta = CompactMeta::new(
+                    self.tsf_id,
                     tsm_writer.file_id(),
                     tsm_writer.size(),
                     1,
@@ -120,7 +148,8 @@ impl FlushTask {
                     Arc::new(delta_writer.series_bloom_filter().clone()),
                 );
 
-                let delta_meta = compact_meta_builder.build(
+                let delta_meta = CompactMeta::new(
+                    self.tsf_id,
                     delta_writer.file_id(),
                     delta_writer.size(),
                     0,
@@ -136,6 +165,7 @@ impl FlushTask {
                 info!("Flush: remove unsed file: {:?}, {:?}", path, result);
             }
         }
+
         Ok((version_edit, files_meta))
     }
 }
@@ -573,7 +603,7 @@ pub mod flush_tests {
         #[rustfmt::skip]
             let row_group_1 = RowGroup {
             schema: Arc::new(schema_1),
-            range: TimeRange::new(1, 3),
+            range: TimeRange::new(1, 9),
             rows,
             size: 10,
         };

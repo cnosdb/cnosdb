@@ -77,6 +77,25 @@ impl From<&ColumnFile> for CompactMeta {
 }
 
 impl CompactMeta {
+    pub fn new(
+        tsf_id: VnodeId,
+        file_id: u64,
+        file_size: u64,
+        level: LevelId,
+        min_ts: Timestamp,
+        max_ts: Timestamp,
+    ) -> CompactMeta {
+        CompactMeta {
+            file_id,
+            file_size,
+            tsf_id,
+            level,
+            min_ts,
+            max_ts,
+            is_delta: level == 0,
+        }
+    }
+
     pub fn file_path(
         &self,
         storage_opt: &StorageOptions,
@@ -125,35 +144,6 @@ impl CompactMeta {
         file_utils::rename(&old_name, &new_name).await?;
 
         Ok(new_name)
-    }
-}
-
-pub struct CompactMetaBuilder {
-    pub ts_family_id: VnodeId,
-}
-
-impl CompactMetaBuilder {
-    pub fn new(ts_family_id: VnodeId) -> Self {
-        Self { ts_family_id }
-    }
-
-    pub fn build(
-        &self,
-        file_id: ColumnFileId,
-        file_size: u64,
-        level: LevelId,
-        min_ts: Timestamp,
-        max_ts: Timestamp,
-    ) -> CompactMeta {
-        CompactMeta {
-            file_id,
-            file_size,
-            tsf_id: self.ts_family_id,
-            level,
-            min_ts,
-            max_ts,
-            is_delta: level == 0,
-        }
     }
 }
 
