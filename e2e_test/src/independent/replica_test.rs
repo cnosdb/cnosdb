@@ -284,11 +284,13 @@ pub mod test {
 
         replica_test(meta_client);
 
-        let resp = client.post(SERVER_URL, "select count(*) from ma").unwrap();
+        let resp = client
+            .post(SERVER_URL, "select exact_count_star(null) from ma")
+            .unwrap();
         assert_eq!(resp.status(), status_code::OK);
         let actual = resp.text().unwrap();
-        let expected = format!("COUNT(UInt8(1))\n{}\n", 0);
-        println!("\nselect count(*): {}", actual);
+        let expected = format!("COUNT(UInt8(0))\n{}\n", 0);
+        println!("\nselect exact_count_star(null): {}", actual);
         println!("expected: {}", expected);
         assert_eq!(actual, expected);
 
@@ -502,10 +504,12 @@ pub mod test {
         assert_eq!(resp.status(), 422);
         assert!(resp.text().unwrap().contains("ReplicationSet not found"));
 
-        let resp = client.post(SERVER_URL, "select count(*) from ma").unwrap();
+        let resp = client
+            .post(SERVER_URL, "select exact_count_star(null) from ma")
+            .unwrap();
         assert_eq!(resp.status(), status_code::OK);
         let actual = resp.text().unwrap();
-        assert_eq!(actual, "COUNT(UInt8(1))\n0\n");
+        assert_eq!(actual, "COUNT(UInt8(0))\n0\n");
 
         clean_env();
         println!("#### Test complete replica_test_case_singleton ####");
@@ -600,10 +604,12 @@ pub mod test {
         assert_eq!(resp.status(), status_code::OK);
         std::thread::sleep(std::time::Duration::from_secs(1));
 
-        let resp = client.post(req_url, "select count(*) from ma").unwrap();
+        let resp = client
+            .post(req_url, "select exact_count_star(null) from ma")
+            .unwrap();
         assert_eq!(resp.status(), status_code::OK);
         let actual = resp.text().unwrap();
-        assert_eq!(actual, "COUNT(UInt8(1))\n0\n");
+        assert_eq!(actual, "COUNT(UInt8(0))\n0\n");
 
         clean_env();
         println!("#### Test complete replica_test_case_1query_1tskv ####");

@@ -4,6 +4,8 @@ use datafusion::logical_expr::LogicalPlan;
 pub mod initial_plan_checker;
 pub mod stream_checker;
 pub mod transform_bottom_func_to_topk_node;
+pub mod transform_count_gen_time_col;
+pub mod transform_exact_count_to_count;
 pub mod transform_time_window;
 pub mod transform_topk_func_to_topk_node;
 pub mod transform_ts_gen_func;

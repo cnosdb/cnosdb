@@ -13,7 +13,9 @@ use datafusion::arrow::datatypes::{
 use datafusion::common::{DFField, DFSchema, DFSchemaRef};
 use datafusion::error::DataFusionError;
 use datafusion::prelude::Column;
-use serde::{Deserialize, Serialize};
+use serde::de::{MapAccess, SeqAccess, Visitor};
+use serde::ser::SerializeStruct;
+use serde::{Deserialize, Serialize, Serializer};
 use snafu::ResultExt;
 use utils::precision::Precision;
 
@@ -30,7 +32,7 @@ use crate::{ColumnId, ModelError, ModelResult, PhysicalDType, SchemaVersion};
 
 pub type TskvTableSchemaRef = Arc<TskvTableSchema>;
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TskvTableSchema {
     pub tenant: String,
     pub db: String,
@@ -41,6 +43,188 @@ pub struct TskvTableSchema {
     columns: Vec<TableColumn>,
     //ColumnName -> ColumnsIndex
     columns_index: HashMap<String, usize>,
+    fields_ids: HashMap<ColumnId, usize>,
+}
+
+impl Serialize for TskvTableSchema {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut state = serializer.serialize_struct("TskvTableSchema", 6)?;
+        state.serialize_field("tenant", &self.tenant)?;
+        state.serialize_field("db", &self.db)?;
+        state.serialize_field("name", &self.name)?;
+        state.serialize_field("schema_version", &self.schema_version)?;
+        state.serialize_field("next_column_id", &self.next_column_id)?;
+        state.serialize_field("columns", &self.columns)?;
+        state.serialize_field("columns_index", &self.columns_index)?;
+        state.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for TskvTableSchema {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct TskvTableSchemaVisitor;
+        impl<'de> Visitor<'de> for TskvTableSchemaVisitor {
+            type Value = TskvTableSchema;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("struct TskvTableSchema")
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: SeqAccess<'de>,
+            {
+                let tenant = seq
+                    .next_element::<String>()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
+                let db = seq
+                    .next_element::<String>()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(1, &self))?;
+                let name = seq
+                    .next_element::<String>()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(2, &self))?;
+                let schema_version = seq
+                    .next_element::<SchemaVersion>()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(3, &self))?;
+                let next_column_id = seq
+                    .next_element::<ColumnId>()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(4, &self))?;
+                let columns = seq
+                    .next_element::<Vec<TableColumn>>()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(5, &self))?;
+                let columns_index = seq
+                    .next_element::<HashMap<String, usize>>()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(6, &self))?;
+                let fields_ids = TskvTableSchema::build_fields_ids(&columns);
+                Ok(TskvTableSchema {
+                    tenant,
+                    db,
+                    name,
+                    schema_version,
+                    next_column_id,
+                    columns,
+                    columns_index,
+                    fields_ids,
+                })
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                let mut tenant = None;
+                let mut db = None;
+                let mut name = None;
+                let mut schema_version = None;
+                let mut next_column_id = None;
+                let mut columns = None;
+                let mut columns_index = None;
+                while let Some(key) = map.next_key()? {
+                    match key {
+                        "tenant" => {
+                            if tenant.is_some() {
+                                return Err(serde::de::Error::duplicate_field("tenant"));
+                            }
+                            tenant = Some(map.next_value::<String>()?);
+                        }
+                        "db" => {
+                            if db.is_some() {
+                                return Err(serde::de::Error::duplicate_field("db"));
+                            }
+                            db = Some(map.next_value::<String>()?);
+                        }
+                        "name" => {
+                            if name.is_some() {
+                                return Err(serde::de::Error::duplicate_field("name"));
+                            }
+                            name = Some(map.next_value::<String>()?);
+                        }
+                        "schema_version" => {
+                            if schema_version.is_some() {
+                                return Err(serde::de::Error::duplicate_field("schema_version"));
+                            }
+                            schema_version = Some(map.next_value::<SchemaVersion>()?);
+                        }
+                        "next_column_id" => {
+                            if next_column_id.is_some() {
+                                return Err(serde::de::Error::duplicate_field("next_column_id"));
+                            }
+                            next_column_id = Some(map.next_value::<ColumnId>()?);
+                        }
+                        "columns" => {
+                            if columns.is_some() {
+                                return Err(serde::de::Error::duplicate_field("columns"));
+                            }
+                            columns = Some(map.next_value::<Vec<TableColumn>>()?);
+                        }
+                        "columns_index" => {
+                            if columns_index.is_some() {
+                                return Err(serde::de::Error::duplicate_field("columns_index"));
+                            }
+                            columns_index = Some(map.next_value::<HashMap<String, usize>>()?);
+                        }
+                        _ => {
+                            return Err(serde::de::Error::unknown_field(
+                                key,
+                                &[
+                                    "tenant",
+                                    "db",
+                                    "name",
+                                    "schema_version",
+                                    "next_column_id",
+                                    "columns",
+                                    "columns_index",
+                                ],
+                            ))?;
+                        }
+                    }
+                }
+                let tenant = tenant.ok_or_else(|| serde::de::Error::missing_field("tenant"))?;
+                let db = db.ok_or_else(|| serde::de::Error::missing_field("db"))?;
+                let name = name.ok_or_else(|| serde::de::Error::missing_field("name"))?;
+                let schema_version = schema_version
+                    .ok_or_else(|| serde::de::Error::missing_field("schema_version"))?;
+                let next_column_id = next_column_id
+                    .ok_or_else(|| serde::de::Error::missing_field("next_column_id"))?;
+                let columns = columns.ok_or_else(|| serde::de::Error::missing_field("columns"))?;
+                let columns_index = columns
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, e)| (e.name.clone(), idx))
+                    .collect();
+                let fields_ids = TskvTableSchema::build_fields_ids(&columns);
+                Ok(TskvTableSchema {
+                    tenant,
+                    db,
+                    name,
+                    schema_version,
+                    next_column_id,
+                    columns,
+                    columns_index,
+                    fields_ids,
+                })
+            }
+        }
+        deserializer.deserialize_struct(
+            "TskvTableSchema",
+            &[
+                "tenant",
+                "db",
+                "name",
+                "schema_version",
+                "next_column_id",
+                "columns",
+                "columns_index",
+            ],
+            TskvTableSchemaVisitor,
+        )
+    }
 }
 
 impl PartialOrd for TskvTableSchema {
@@ -69,6 +253,7 @@ impl Default for TskvTableSchema {
             next_column_id: 0,
             columns: Default::default(),
             columns_index: Default::default(),
+            fields_ids: Default::default(),
         }
     }
 }
@@ -133,6 +318,7 @@ impl TskvTableSchema {
             .map(|(idx, e)| (e.name.clone(), idx))
             .collect();
 
+        let fields_ids = Self::build_fields_ids(&columns);
         Self {
             tenant,
             db,
@@ -141,7 +327,23 @@ impl TskvTableSchema {
             next_column_id: columns.len() as ColumnId,
             columns,
             columns_index,
+            fields_ids,
         }
+    }
+
+    pub fn build_fields_ids(columns: &[TableColumn]) -> HashMap<ColumnId, usize> {
+        let mut ans = vec![];
+        for i in columns.iter() {
+            if matches!(i.column_type, ColumnType::Field(_)) {
+                ans.push(i.id);
+            }
+        }
+        ans.sort();
+        let mut map = HashMap::new();
+        for (i, id) in ans.iter().enumerate() {
+            map.insert(*id, i);
+        }
+        map
     }
 
     /// only for mock!!!
@@ -163,6 +365,7 @@ impl TskvTableSchema {
                 self.columns.push(col);
                 self.columns.len() - 1
             });
+        self.fields_ids = Self::build_fields_ids(&self.columns);
         self.next_column_id += 1;
     }
 
@@ -177,6 +380,7 @@ impl TskvTableSchema {
             .enumerate()
             .map(|(idx, e)| (e.name.clone(), idx))
             .collect();
+        self.fields_ids = Self::build_fields_ids(&self.columns);
         self.columns_index = columns_index;
     }
 
@@ -188,6 +392,7 @@ impl TskvTableSchema {
         self.columns_index.remove(col_name);
         self.columns_index.insert(new_column.name.clone(), id);
         self.columns[id] = new_column;
+        self.fields_ids = Self::build_fields_ids(&self.columns);
     }
 
     /// Get the metadata of the column according to the column name
@@ -297,19 +502,8 @@ impl TskvTableSchema {
     }
 
     // return (table_field_id, index), index mean field location which column
-    pub fn fields_id(&self) -> HashMap<ColumnId, usize> {
-        let mut ans = vec![];
-        for i in self.columns.iter() {
-            if matches!(i.column_type, ColumnType::Field(_)) {
-                ans.push(i.id);
-            }
-        }
-        ans.sort();
-        let mut map = HashMap::new();
-        for (i, id) in ans.iter().enumerate() {
-            map.insert(*id, i);
-        }
-        map
+    pub fn fields_id(&self) -> &HashMap<ColumnId, usize> {
+        &self.fields_ids
     }
 
     pub fn next_column_id(&self) -> ColumnId {

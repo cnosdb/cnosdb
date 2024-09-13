@@ -14,7 +14,6 @@ use datafusion::optimizer::extract_equijoin_predicate::ExtractEquijoinPredicate;
 use datafusion::optimizer::filter_null_join_keys::FilterNullJoinKeys;
 use datafusion::optimizer::merge_projection::MergeProjection;
 use datafusion::optimizer::propagate_empty_relation::PropagateEmptyRelation;
-use datafusion::optimizer::push_down_aggregation::PushDownAggregation;
 use datafusion::optimizer::push_down_filter::PushDownFilter;
 use datafusion::optimizer::push_down_limit::PushDownLimit;
 use datafusion::optimizer::push_down_projection::PushDownProjection;
@@ -31,6 +30,7 @@ use spi::QueryResult;
 use trace::debug;
 use trace::span_ext::SpanExt;
 
+use crate::extension::logical::optimizer_rule::push_down_aggregation::PushDownAggregation;
 use crate::extension::logical::optimizer_rule::rewrite_tag_scan::RewriteTagScan;
 use crate::sql::analyzer::DefaultAnalyzer;
 

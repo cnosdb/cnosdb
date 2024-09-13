@@ -1,4 +1,5 @@
 mod data_quality;
+mod exact_count_agg;
 #[cfg(test)]
 mod example;
 mod first;
@@ -31,6 +32,7 @@ pub const COMPLETENESS_UDF_NAME: &str = "completeness";
 pub const CONSISTENCY_UDF_NAME: &str = "consistency";
 pub const TIMELINESS_UDF_NAME: &str = "timeliness";
 pub const VALIDITY_UDF_NAME: &str = "validity";
+pub const EXACT_COUNT_STAR_UDAF_NAME: &str = "exact_count_star";
 pub use gauge::GaugeData;
 pub use state_agg::StateAggData;
 
@@ -46,6 +48,7 @@ pub fn register_udafs(func_manager: &mut dyn FunctionMetadataManager) -> QueryRe
     mode::register_udaf(func_manager)?;
     increase::register_udaf(func_manager)?;
     data_quality::register_udafs(func_manager)?;
+    exact_count_agg::register_udaf(func_manager)?;
     Ok(())
 }
 

@@ -15,11 +15,11 @@ use crate::file_utils::{make_delta_file, make_tsm_file};
 use crate::mem_cache::memcache::{MemCache, MemCacheSeriesScanIterator};
 use crate::summary::{CompactMeta, SummaryTask, VersionEdit};
 use crate::tsm::writer::TsmWriter;
-use crate::{ColumnFileId, TsKvContext, TseriesFamilyId};
+use crate::{ColumnFileId, TsKvContext, VnodeId};
 
 pub struct FlushTask {
     owner: String,
-    tsf_id: TseriesFamilyId,
+    tsf_id: VnodeId,
     mem_caches: Vec<Arc<RwLock<MemCache>>>,
 
     path_tsm: PathBuf,
@@ -31,7 +31,7 @@ pub struct FlushTask {
 impl FlushTask {
     pub async fn new(
         owner: String,
-        tsf_id: TseriesFamilyId,
+        tsf_id: VnodeId,
         mem_caches: Vec<Arc<RwLock<MemCache>>>,
         path_tsm: PathBuf,
         path_delta: PathBuf,

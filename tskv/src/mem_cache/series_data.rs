@@ -271,7 +271,7 @@ impl SeriesData {
     )> {
         self.groups
             .iter()
-            .map(|g| (g.schema.clone(), g.schema.fields_id(), &g.rows))
+            .map(|g| (g.schema.clone(), g.schema.fields_id().clone(), &g.rows))
             .collect()
     }
     pub fn get_schema(&self) -> Option<Arc<TskvTableSchema>> {

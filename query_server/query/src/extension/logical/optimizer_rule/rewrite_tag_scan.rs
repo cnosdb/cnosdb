@@ -27,8 +27,8 @@ impl OptimizerRule for RewriteTagScan {
             projection,
             projected_schema,
             filters,
+            agg_with_grouping,
             fetch,
-            ..
         }) = plan
         {
             if let Some(cluster_table) = source_as_provider(source)?
@@ -55,7 +55,8 @@ impl OptimizerRule for RewriteTagScan {
                             }
                         });
 
-                    if contain_tag && !contain_field && !contain_time {
+                    if contain_tag && !contain_field && !contain_time && agg_with_grouping.is_none()
+                    {
                         // If it does not contain non-tag columns, convert TableScan to TagScan
                         let tag_plan = LogicalPlan::Extension(Extension {
                             node: Arc::new(TagScanPlanNode {

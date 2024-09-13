@@ -9,13 +9,13 @@ use tokio::sync::RwLock;
 
 use crate::error::{TskvError, TskvResult};
 use crate::tsfamily::tseries_family::TseriesFamily;
-use crate::TseriesFamilyId;
+use crate::VnodeId;
 
 pub type Hash = [u8; 32];
 
 #[derive(Default, Debug)]
 pub struct VnodeHashTreeNode {
-    pub vnode_id: TseriesFamilyId,
+    pub vnode_id: VnodeId,
     pub fields: Vec<FieldHashTreeNode>,
 }
 

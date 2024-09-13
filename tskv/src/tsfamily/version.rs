@@ -17,11 +17,11 @@ use crate::summary::{CompactMeta, VersionEdit};
 use crate::tsm::page::PageMeta;
 use crate::tsm::reader::TsmReader;
 use crate::tsm::ColumnGroupID;
-use crate::{ColumnFileId, TseriesFamilyId};
+use crate::{ColumnFileId, VnodeId};
 
 #[derive(Debug)]
 pub struct Version {
-    ts_family_id: TseriesFamilyId,
+    ts_family_id: VnodeId,
     owner: Arc<String>,
     storage_opt: Arc<StorageOptions>,
     /// The max seq_no of write batch in wal flushed to column file.
@@ -35,7 +35,7 @@ pub struct Version {
 impl Version {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        ts_family_id: TseriesFamilyId,
+        ts_family_id: VnodeId,
         owner: Arc<String>,
         storage_opt: Arc<StorageOptions>,
         last_seq: u64,
@@ -131,7 +131,7 @@ impl Version {
         self.max_level_ts = max_ts;
     }
 
-    pub fn tf_id(&self) -> TseriesFamilyId {
+    pub fn tf_id(&self) -> VnodeId {
         self.ts_family_id
     }
 

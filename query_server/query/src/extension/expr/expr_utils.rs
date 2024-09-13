@@ -4,7 +4,7 @@ use datafusion::error::DataFusionError;
 use datafusion::logical_expr::utils::find_exprs_in_expr;
 use datafusion::logical_expr::{expr, BinaryExpr, Operator};
 use datafusion::prelude::Expr;
-use models::schema::TIME_FIELD_NAME;
+use models::schema::tskv_table_schema::TskvTableSchemaRef;
 use spi::AnalyzerSnafu;
 
 use super::selector_function::{BOTTOM, TOPK};
@@ -45,25 +45,43 @@ pub fn check_args_eq_any(func_name: &str, expects: &[usize], input: &[DataType])
     Ok(())
 }
 
-pub fn is_time_filter(expr: &Expr) -> bool {
+pub fn can_exact_filter(expr: &Expr, schema: TskvTableSchemaRef) -> bool {
     match expr {
         Expr::BinaryExpr(BinaryExpr { left, op, right }) => {
-            (is_time_column(left) || is_time_column(right))
+            ((is_column(left, schema.clone()) && is_literal(right))
+                || (is_column(right, schema.clone()) && is_literal(left)))
                 && matches!(
                     op,
                     Operator::Eq | Operator::Lt | Operator::LtEq | Operator::Gt | Operator::GtEq
                 )
         }
+        // Expr::IsNull(col) | Expr::IsNotNull(col) => is_column(col, schema),
         _ => false,
     }
 }
 
-pub fn is_time_column(expr: &Expr) -> bool {
-    if let Expr::Column(c) = expr {
-        c.name == TIME_FIELD_NAME
+pub fn is_column(expr: &Expr, schema: TskvTableSchemaRef) -> bool {
+    let col = if let Expr::Column(col) = expr {
+        Some(col)
+    } else if let Expr::Cast(cast) = expr {
+        if let Expr::Column(col) = cast.expr.as_ref() {
+            Some(col)
+        } else {
+            None
+        }
     } else {
-        false
+        None
+    };
+
+    if let Some(col) = col {
+        return schema.column(&col.name).is_some();
     }
+
+    false
+}
+
+pub fn is_literal(expr: &Expr) -> bool {
+    matches!(expr, Expr::Literal(_))
 }
 
 /// Replace 'replace' in 'exprs' with 'with'

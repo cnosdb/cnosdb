@@ -28,7 +28,7 @@ use crate::tsm::page::Page;
 use crate::tsm::reader::{decode_pages, decode_pages_buf, TsmReader};
 use crate::tsm::writer::TsmWriter;
 use crate::tsm::ColumnGroupID;
-use crate::{ColumnFileId, LevelId, TseriesFamilyId};
+use crate::{ColumnFileId, LevelId, VnodeId};
 
 /// Temporary compacting data block meta
 #[derive(Clone)]
@@ -969,11 +969,7 @@ async fn handle_finish_write_tsm_meta(
     Ok(true)
 }
 
-fn new_compact_meta(
-    tsm_writer: &TsmWriter,
-    tsf_id: TseriesFamilyId,
-    level: LevelId,
-) -> CompactMeta {
+fn new_compact_meta(tsm_writer: &TsmWriter, tsf_id: VnodeId, level: LevelId) -> CompactMeta {
     CompactMeta {
         file_id: tsm_writer.file_id(),
         file_size: tsm_writer.size(),

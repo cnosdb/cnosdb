@@ -5,81 +5,59 @@ bench-job:
   tags:
     - shell
   script:
-    # - source /root/.bashrc
-    #- echo "clean env"
-    # - rm -rf /tmp/cnosdb
+    # update benchmark-result
     - cd /home/gitlab-runner/benchmark-result
     - git pull
     - cd -
+
+    # delete cnosdb data
     - set +e
     - killall cnosdb
     - set -e
-    # - pkill -9 cnosdb-meta
     - sudo rm -rf /home/gitlab-runner/cnosdb
+
+    # complie cnosdb
     - echo "compile code"
     - source ~/.cargo/env
     - make build_release
+
+    # modify config and start cnosdb
     - sleep 10
     - ulimit -n 65535
     - ulimit -a
     - echo "modify default config"
     - sed -i "s/tmp/home\/gitlab-runner/g" config/config_8902.toml
-    #- sed -i "s/tmp/data1/g" config/config_8912.toml
-    #- sed -i "s/tmp/data1/g" meta/config/config_8921.toml
-    #- sed -i "s/tmp/data1/g" meta/config/config_8901.toml
-    #- sed -i "s/tmp/data1/g" meta/config/config_8911.toml
-    #- sed -i "s/tmp/data1/g" run_cluster.sh
-    #- sed -i "s/1000000000/10/g" run_cluster.sh
-    #- sed -i "s/tmp/data1/g" meta/cluster.sh
-    #- sed -i "s/debug/release/g" meta/cluster.sh
-    #- sed -i "s/build/& --release/g" meta/cluster.sh
-    #- sed -i "s/build/& --release/g" run_cluster.sh
-    #- sed -i "s/debug/release/g" run_cluster.sh
-    #- sed -i "s/run/& -c 64 -m 256 /" run_cluster.sh
     - echo "starting cnosdb"
     - nohup ./target/release/cnosdb run --config ./config/config_8902.toml -M singleton > ./target/cnosdb_output.log 2>&1 &
     - echo "cnosdb is running"
+
+    # hits test and update benchmark-result
     - echo "hits test"
     - commit_id=${commit_id:-$(git log -1 --pretty=%h)}
     - cd benchmark
     - export HITS_DATA_URL="/home/cnosdb_dev/hits.parquet"
-    - export TSBS_DATA_URL="/home/cnosdb_dev/cnosdb_iot_123_2022.gz"
+    - export TSBS_DATA_URL="/home/cnosdb_dev/cnosdb_iot_123_500000.gz"
     - export TSBS_QUERY_DIR="/home/cnosdb_dev/queries"
     - sudo mv ../target/release/cnosdb-cli /bin/
     - ./benchmark.sh hits
     - ./update-results.sh hits
     - cp ./results/hits.html /home/gitlab-runner/benchmark-result/benchmark-hits/hits_${commit_id}.html
-    #- rm -f ./results/hits.html
-    #- rm -f ./results/hits/${commit_id}.json
+
+    # tsbs test and update benchmark-result
     - echo "tsbs test"
     - ./benchmark.sh tsbs
     - ./update-results.sh tsbs
     - cp ./results/tsbs.html /home/gitlab-runner/benchmark-result/benchmark-tsbs/tsbs_${commit_id}.html
+
+    # push benchmark-result
     - cd /home/gitlab-runner/benchmark-result
     - git add .
     - git commit -m "Add file hits_${commit_id}.html and tsbs_${commit_id}.html"
     - git push
+
+    # save logs and clean env
     - cd -
     - cd ..
-    #- echo "create database"
-    #- cnosdb-cli -P 8902 -h 127.0.0.1 -f /home/gitlab-runner/benchmark.sh 
-    # - echo "generate data"
-    # - generate_data --use-case="iot" --seed=123 --scale=100 --timestamp-start="2023-01-01T00:00:00Z"  --timestamp-end="2023-01-01T01:00:00Z" --log-interval='6.3s' --format="cnosdb" | gzip >/cnosdb_1h_data.gz
-    # - echo "data is ready"
-    #- echo "loading data"
-    #- cat /data/cnosdb_iot_123_2022.gz| gunzip | load_cnosdb --urls http://127.0.0.1:8902 --workers 24
-    #- echo "query low-fuel"
-    #- run_queries_cnosdb --workers 8 --urls http://127.0.0.1:8902 --file /data/queries/low-fuel.txt 
-    #- echo "query last-loc"
-    #- run_queries_cnosdb --workers 8 --urls http://127.0.0.1:8902 --file /data/queries/last-loc.txt 
-    #- echo "query high-load"
-    #- run_queries_cnosdb --workers 8 --urls http://127.0.0.1:8902 --file /data/queries/high-load.txt
-    #- echo "query stationary-trucks"
-    #- run_queries_cnosdb --workers 8 --urls http://127.0.0.1:8902 --file /data/queries/stationary-trucks.txt
-    #- echo "query long-driving-sessions"
-    #- run_queries_cnosdb --workers 8 --urls http://127.0.0.1:8902 --file /data/queries/long-driving-sessions.txt
-    #- echo "query avg-daily-driving-duration"
-    #- run_queries_cnosdb --workers 8 --urls http://127.0.0.1:8902 --file /data/queries/avg-daily-driving-duration.txt
     - set +e
     - killall cnosdb
     - set -e

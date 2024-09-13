@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use memory_pool::{MemoryConsumer, MemoryPoolRef, MemoryReservation};
+use models::meta_data::VnodeId;
 use models::predicate::domain::{TimeRange, TimeRanges};
 use models::schema::tskv_table_schema::TableColumn;
 use models::{ColumnId, RwLockRef, SeriesId, SeriesKey, Timestamp};
@@ -10,10 +11,10 @@ use parking_lot::RwLock;
 
 use super::series_data::{RowGroup, SeriesData};
 use crate::error::{MemoryExhaustedSnafu, TskvResult};
-use crate::{ColumnFileId, TseriesFamilyId};
+use crate::ColumnFileId;
 
 pub struct MemCacheStatistics {
-    _tf_id: TseriesFamilyId,
+    _tf_id: VnodeId,
     /// greater seq mean the last write
     seq_no: u64,
     _statistics: HashMap<SeriesId, TimeRange>,
@@ -27,7 +28,7 @@ impl MemCacheStatistics {
 
 #[derive(Debug)]
 pub struct MemCache {
-    tf_id: TseriesFamilyId,
+    tf_id: VnodeId,
 
     max_size: u64,
     min_seq_no: u64,
@@ -79,7 +80,7 @@ impl Iterator for MemCacheSeriesScanIterator {
 
 impl MemCache {
     pub fn new(
-        tf_id: TseriesFamilyId,
+        tf_id: VnodeId,
         tsm_file_id: ColumnFileId,
         delta_file_id: ColumnFileId,
         max_size: u64,
@@ -259,7 +260,7 @@ impl MemCache {
         self.memory.read().size() >= self.max_size as usize
     }
 
-    pub fn tf_id(&self) -> TseriesFamilyId {
+    pub fn tf_id(&self) -> VnodeId {
         self.tf_id
     }
 

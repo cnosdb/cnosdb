@@ -13,9 +13,9 @@ use datafusion::arrow::datatypes::TimeUnit;
 use datafusion::physical_plan::metrics::{self, ExecutionPlanMetricsSet, MetricBuilder};
 use datafusion_proto::physical_plan::from_proto::parse_physical_expr;
 use models::meta_data::VnodeId;
-use models::predicate::domain::{self, QueryArgs, QueryExpr, TimeRanges};
+use models::predicate::domain::{self, PushedAggregateFunction, QueryArgs, QueryExpr, TimeRanges};
 use models::predicate::PlacedSplit;
-use models::schema::tskv_table_schema::{PhysicalCType, TableColumn, TskvTableSchemaRef};
+use models::schema::tskv_table_schema::{PhysicalCType, TskvTableSchemaRef};
 use models::{ColumnId, PhysicalDType, SeriesId, SeriesKey};
 use protos::kv_service::QueryRecordBatchRequest;
 use snafu::ResultExt;
@@ -27,6 +27,7 @@ use trace::{debug, Span, SpanContext};
 use super::display::DisplayableBatchReader;
 use super::memcache_reader::MemCacheReader;
 use super::merge::DataMerger;
+use super::pushdown_agg_reader::PushDownAggregateReader;
 use super::series::SeriesReader;
 use super::trace::Recorder;
 use super::{
@@ -143,8 +144,11 @@ impl SeriesGroupBatchReaderFactory {
         let schema = &self.query_option.df_schema;
         let meta = self.query_option.schema_meta.clone();
         // TODO 投影中一定包含 time 列，后续优化掉
-        let time_fields_schema =
-            project_time_fields(kv_schema, schema, meta).context(SchemaSnafu)?;
+        let time_fields_schema = if self.query_option.aggregates.is_none() {
+            project_time_fields(kv_schema, schema, meta).context(SchemaSnafu)?
+        } else {
+            schema.clone()
+        };
 
         let super_version = &self.super_version;
         let vnode_id = super_version.ts_family_id;
@@ -211,6 +215,7 @@ impl SeriesGroupBatchReaderFactory {
                     schema.clone(),
                     time_fields_schema.clone(),
                     &metrics,
+                    &self.query_option.aggregates,
                 )
                 .transpose()
             })
@@ -344,59 +349,68 @@ impl SeriesGroupBatchReaderFactory {
         projection: &[ColumnId],
         predicate: &Option<Arc<Predicate>>,
         metrics: &SeriesGroupBatchReaderMetrics,
+        aggregates: &Option<Vec<PushedAggregateFunction>>,
     ) -> TskvResult<Option<BatchReaderRef>> {
-        let chunk_reader: Option<BatchReaderRef> = match chunk {
-            DataReference::Chunk(chunk, reader, _) => {
-                let chunk_schema =
-                    chunk.schema_with_metadata(self.query_option.schema_meta.clone());
-                let cgs = chunk.column_group().values().cloned().collect::<Vec<_>>();
-                // filter column groups
-                metrics.column_group_nums().add(cgs.len());
-                debug!("All column group nums: {}", cgs.len());
-                let cgs = filter_column_groups(cgs, predicate, chunk_schema.clone())?;
-                debug!("Filtered column group nums: {}", cgs.len());
-                metrics.filtered_column_group_nums().add(cgs.len());
+        if let Some(aggregates) = aggregates {
+            Ok(Some(Arc::new(PushDownAggregateReader::try_new(
+                self.schema(),
+                aggregates[0].clone(),
+                chunk,
+            )?)))
+        } else {
+            let chunk_reader: Option<BatchReaderRef> = match chunk {
+                DataReference::Chunk(chunk, reader, _) => {
+                    let chunk_schema =
+                        chunk.schema_with_metadata(self.query_option.schema_meta.clone());
+                    let cgs = chunk.column_group().values().cloned().collect::<Vec<_>>();
+                    // filter column groups
+                    metrics.column_group_nums().add(cgs.len());
+                    debug!("All column group nums: {}", cgs.len());
+                    let cgs = filter_column_groups(cgs, predicate, chunk_schema.clone())?;
+                    debug!("Filtered column group nums: {}", cgs.len());
+                    metrics.filtered_column_group_nums().add(cgs.len());
 
-                let batch_readers = cgs
-                    .into_iter()
-                    .map(|e| {
-                        let column_group_reader = ColumnGroupReader::try_new(
-                            reader.clone(),
-                            chunk.series_id(),
-                            e,
-                            projection,
-                            chunk_schema.metadata().clone(),
-                            batch_size,
-                            self.column_group_reader_metrics_set.clone(),
-                        )?;
-                        Ok(Arc::new(column_group_reader) as BatchReaderRef)
-                    })
-                    .collect::<TskvResult<Vec<_>>>()?;
+                    let batch_readers = cgs
+                        .into_iter()
+                        .map(|e| {
+                            let column_group_reader = ColumnGroupReader::try_new(
+                                reader.clone(),
+                                chunk.series_id(),
+                                e,
+                                projection,
+                                chunk_schema.metadata().clone(),
+                                batch_size,
+                                self.column_group_reader_metrics_set.clone(),
+                            )?;
+                            Ok(Arc::new(column_group_reader) as BatchReaderRef)
+                        })
+                        .collect::<TskvResult<Vec<_>>>()?;
 
-                Some(Arc::new(CombinedBatchReader::new(batch_readers)))
+                    Some(Arc::new(CombinedBatchReader::new(batch_readers)))
+                }
+                DataReference::Memcache(series_data, time_ranges, _) => MemCacheReader::try_new(
+                    series_data,
+                    time_ranges,
+                    batch_size,
+                    projection,
+                    self.query_option.schema_meta.clone(),
+                )?
+                .map(|e| e as BatchReaderRef),
+            };
+
+            // 数据过滤
+            if let Some(predicate) = &predicate {
+                if let Some(chunk_reader) = chunk_reader {
+                    return Ok(Some(Arc::new(DataFilter::new(
+                        predicate.clone(),
+                        chunk_reader,
+                        self.filter_reader_metrics_set.clone(),
+                    ))));
+                }
             }
-            DataReference::Memcache(series_data, time_ranges, _) => MemCacheReader::try_new(
-                series_data,
-                time_ranges,
-                batch_size,
-                projection,
-                self.query_option.schema_meta.clone(),
-            )?
-            .map(|e| e as BatchReaderRef),
-        };
 
-        // 数据过滤
-        if let Some(predicate) = &predicate {
-            if let Some(chunk_reader) = chunk_reader {
-                return Ok(Some(Arc::new(DataFilter::new(
-                    predicate.clone(),
-                    chunk_reader,
-                    self.filter_reader_metrics_set.clone(),
-                ))));
-            }
+            Ok(chunk_reader)
         }
-
-        Ok(chunk_reader)
     }
 
     fn build_chunk_readers(
@@ -406,6 +420,7 @@ impl SeriesGroupBatchReaderFactory {
         projection: &Projection,
         predicate: &Option<Arc<Predicate>>,
         metrics: &SeriesGroupBatchReaderMetrics,
+        aggregates: &Option<Vec<PushedAggregateFunction>>,
     ) -> TskvResult<Vec<BatchReaderRef>> {
         let projection = if chunks.len() > 1 {
             // 需要进行合并去重，所以必须含有time列
@@ -422,6 +437,7 @@ impl SeriesGroupBatchReaderFactory {
                 projection,
                 predicate,
                 metrics,
+                aggregates,
             )?;
             if let Some(chunk_reader) = chunk_reader {
                 chunk_readers.push(chunk_reader);
@@ -431,6 +447,7 @@ impl SeriesGroupBatchReaderFactory {
         Ok(chunk_readers)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn build_series_reader(
         &self,
         series_key: SeriesKey,
@@ -442,6 +459,7 @@ impl SeriesGroupBatchReaderFactory {
         schema: SchemaRef,
         time_fields_schema: SchemaRef,
         metrics: &SeriesGroupBatchReaderMetrics,
+        aggregates: &Option<Vec<PushedAggregateFunction>>,
     ) -> TskvResult<Option<BatchReaderRef>> {
         if chunks.is_empty() {
             return Ok(None);
@@ -474,53 +492,62 @@ impl SeriesGroupBatchReaderFactory {
                     projection,
                     predicate,
                     metrics,
+                    aggregates,
                 )?;
 
-                // 用 Null 值补齐缺失的 Field 列
-                let chunk_readers = chunk_readers
-                    .into_iter()
-                    .map(|r| {
-                        Arc::new(SchemaAlignmenter::new(
-                            r,
+                if aggregates.is_none() {
+                    // 用 Null 值补齐缺失的 Field 列
+                    let chunk_readers = chunk_readers
+                        .into_iter()
+                        .map(|r| {
+                            Arc::new(SchemaAlignmenter::new(
+                                r,
+                                time_fields_schema.clone(),
+                                self.schema_align_reader_metrics_set.clone(),
+                            )) as BatchReaderRef
+                        })
+                        .collect::<Vec<_>>();
+
+                    let reader: BatchReaderRef = if chunk_readers.len() > 1 {
+                        // 如果有多个重叠的 chunk reader 则需要做合并
+                        Arc::new(DataMerger::new(
                             time_fields_schema.clone(),
-                            self.schema_align_reader_metrics_set.clone(),
-                        )) as BatchReaderRef
-                    })
-                    .collect::<Vec<_>>();
+                            chunk_readers,
+                            batch_size,
+                            self.merge_reader_metrics_set.clone(),
+                        ))
+                    } else {
+                        Arc::new(CombinedBatchReader::new(chunk_readers))
+                    };
 
-                let reader: BatchReaderRef = if chunk_readers.len() > 1 {
-                    // 如果有多个重叠的 chunk reader 则需要做合并
-                    Arc::new(DataMerger::new(
-                        time_fields_schema.clone(),
-                        chunk_readers,
-                        batch_size,
-                        self.merge_reader_metrics_set.clone(),
-                    ))
+                    Ok(reader)
                 } else {
-                    Arc::new(CombinedBatchReader::new(chunk_readers))
-                };
-
-                Ok(reader)
+                    Ok(Arc::new(CombinedBatchReader::new(chunk_readers)))
+                }
             })
             .collect::<TskvResult<Vec<_>>>()?;
 
         let limit = predicate.as_ref().and_then(|p| p.limit());
         // 根据 series key 补齐对应的 tag 列
-        let series_reader = Arc::new(SeriesReader::new(
-            series_key,
-            Arc::new(CombinedBatchReader::new(readers)),
-            query_schema,
-            self.series_reader_metrics_set.clone(),
-            limit,
-        ));
-        // 用 Null 值补齐缺失的 tag 列
-        let reader = Arc::new(SchemaAlignmenter::new(
-            series_reader,
-            schema,
-            self.schema_align_reader_metrics_set.clone(),
-        ));
+        if self.query_option.aggregates.is_none() {
+            let series_reader = Arc::new(SeriesReader::new(
+                series_key,
+                Arc::new(CombinedBatchReader::new(readers)),
+                query_schema,
+                self.series_reader_metrics_set.clone(),
+                limit,
+            ));
+            // 用 Null 值补齐缺失的 tag 列
+            let reader = Arc::new(SchemaAlignmenter::new(
+                series_reader,
+                schema,
+                self.schema_align_reader_metrics_set.clone(),
+            ));
 
-        Ok(Some(reader))
+            Ok(Some(reader))
+        } else {
+            Ok(Some(Arc::new(CombinedBatchReader::new(readers))))
+        }
     }
 }
 
@@ -678,7 +705,7 @@ pub struct QueryOption {
     pub df_schema: SchemaRef,
     pub table_schema: TskvTableSchemaRef,
     pub schema_meta: HashMap<String, String>,
-    pub aggregates: Option<Vec<TableColumn>>, // TODO: Use PushedAggregateFunction
+    pub aggregates: Option<Vec<PushedAggregateFunction>>, // TODO: Use PushedAggregateFunction
 }
 
 impl QueryOption {
@@ -686,7 +713,7 @@ impl QueryOption {
     pub fn new(
         batch_size: usize,
         split: PlacedSplit,
-        aggregates: Option<Vec<TableColumn>>, // TODO: Use PushedAggregateFunction
+        aggregates: Option<Vec<PushedAggregateFunction>>, // TODO: Use PushedAggregateFunction
         df_schema: SchemaRef,
         table_schema: TskvTableSchemaRef,
         schema_meta: HashMap<String, String>,
@@ -904,13 +931,13 @@ async fn build_stream(
         )));
     }
 
-    if query_option.aggregates.is_some() {
+    /* if query_option.aggregates.is_some() {
         // TODO: 重新实现聚合下推
         return Err(CommonSnafu {
             reason: "aggregates push down is not supported yet".to_string(),
         }
         .build());
-    }
+    } */
 
     let factory = SeriesGroupBatchReaderFactory::new(
         engine,
