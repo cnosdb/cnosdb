@@ -1,18 +1,17 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use memory_pool::{MemoryConsumer, MemoryPoolRef, MemoryReservation};
+use models::meta_data::VnodeId;
 use models::predicate::domain::{TimeRange, TimeRanges};
 use models::schema::tskv_table_schema::TableColumn;
 use models::{ColumnId, RwLockRef, SeriesId, SeriesKey, Timestamp};
 use parking_lot::RwLock;
 
-use super::row_data::{OrderedRowsData, RowData};
 use super::series_data::{RowGroup, SeriesData};
 use crate::error::{MemoryExhaustedSnafu, TskvResult};
-use crate::tsm::TsmWriteData;
-use crate::{ColumnFileId, VnodeId};
+use crate::ColumnFileId;
 
 pub struct MemCacheStatistics {
     _tf_id: VnodeId,
@@ -44,54 +43,42 @@ pub struct MemCache {
     partions: Vec<RwLock<HashMap<SeriesId, RwLockRef<SeriesData>>>>,
 }
 
-impl MemCache {
-    pub fn to_chunk_group(&self, max_level_ts: i64) -> TskvResult<(TsmWriteData, TsmWriteData)> {
-        let partions: HashMap<SeriesId, Arc<RwLock<SeriesData>>> = self
+pub struct MemCacheSeriesScanIterator {
+    index: usize,
+    serieses: Vec<RwLockRef<SeriesData>>,
+}
+
+impl MemCacheSeriesScanIterator {
+    pub fn new(memcache: Arc<RwLock<MemCache>>) -> Self {
+        let memcache = memcache.read();
+        let serieses: Vec<RwLockRef<SeriesData>> = memcache
             .partions
             .iter()
             .flat_map(|lock| {
                 let inner_map = lock.read();
-                let values = inner_map
-                    .iter()
-                    .map(|(id, rw_lock_ref)| (*id, rw_lock_ref.clone()))
-                    .collect::<Vec<_>>();
-                values
+                inner_map.values().cloned().collect::<Vec<_>>()
             })
             .collect();
 
-        let mut chunk_group: TsmWriteData = BTreeMap::new();
-        let mut delta_chunk_group: TsmWriteData = BTreeMap::new();
-        partions
-            .iter()
-            .try_for_each(|(series_id, v)| -> TskvResult<()> {
-                let data = v.read();
-                if let Some((table, datablock, delta_datablock)) =
-                    data.build_record_batch(max_level_ts)?
-                {
-                    if datablock.num_rows() != 0 {
-                        if let Some(chunk) = chunk_group.get_mut(&table) {
-                            chunk.insert(*series_id, (data.series_key.clone(), datablock));
-                        } else {
-                            let mut chunk = BTreeMap::new();
-                            chunk.insert(*series_id, (data.series_key.clone(), datablock));
-                            chunk_group.insert(table.clone(), chunk);
-                        }
-                    }
-
-                    if delta_datablock.num_rows() != 0 {
-                        if let Some(chunk) = delta_chunk_group.get_mut(&table) {
-                            chunk.insert(*series_id, (data.series_key.clone(), delta_datablock));
-                        } else {
-                            let mut chunk = BTreeMap::new();
-                            chunk.insert(*series_id, (data.series_key.clone(), delta_datablock));
-                            delta_chunk_group.insert(table, chunk);
-                        }
-                    }
-                }
-                Ok(())
-            })?;
-        Ok((chunk_group, delta_chunk_group))
+        Self { index: 0, serieses }
     }
+}
+
+impl Iterator for MemCacheSeriesScanIterator {
+    type Item = RwLockRef<SeriesData>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index < self.serieses.len() {
+            let tmp = Some(self.serieses[self.index].clone());
+            self.index += 1;
+            tmp
+        } else {
+            None
+        }
+    }
+}
+
+impl MemCache {
     pub fn new(
         tf_id: VnodeId,
         tsm_file_id: ColumnFileId,
@@ -362,7 +349,7 @@ pub(crate) mod test {
         for (_sid, sdata) in series_data {
             let sdata_rlock = sdata.read();
             let schema_groups = sdata_rlock.flat_groups();
-            for (sch, row) in schema_groups {
+            for (sch, _, row) in schema_groups {
                 let fields = sch.fields();
                 for r in row.get_ref_rows().iter() {
                     for (i, f) in r.fields.iter().enumerate() {
@@ -385,40 +372,10 @@ pub(crate) mod test {
     }
 }
 
-pub fn dedup_and_sort_row_data(data: &OrderedRowsData) -> Vec<RowData> {
-    // let mut data = data.iter().cloned().collect::<Vec<_>>();
-    // data.sort_by(|a, b| a.ts.cmp(&b.ts));
-    let mut dedup_ts = HashSet::new();
-    data.get_ref_rows().iter().for_each(|row_data| {
-        if !dedup_ts.contains(&row_data.ts) {
-            dedup_ts.insert(row_data.ts);
-        }
-    });
-
-    let mut result: Vec<RowData> = Vec::with_capacity(dedup_ts.len());
-    for row_data in data.get_ref_rows() {
-        if let Some(existing_row) = result.last_mut() {
-            if existing_row.ts == row_data.ts {
-                for (index, field) in row_data.fields.iter().enumerate() {
-                    if existing_row.fields[index].is_none() {
-                        existing_row.fields[index] = field.clone();
-                    }
-                }
-            } else {
-                result.push(row_data.clone());
-            }
-        } else {
-            result.push(row_data.clone());
-        }
-    }
-    result
-}
-
 #[cfg(test)]
 mod test_memcache {
     use std::sync::Arc;
 
-    use cache::ShardedAsyncCache;
     use datafusion::arrow::datatypes::TimeUnit;
     use memory_pool::{GreedyMemoryPool, MemoryPool};
     use models::field_value::FieldVal;
@@ -426,76 +383,9 @@ mod test_memcache {
     use models::schema::tskv_table_schema::{ColumnType, TableColumn, TskvTableSchema};
     use models::{SeriesId, SeriesKey, ValueType};
 
-    use super::{dedup_and_sort_row_data, MemCache, OrderedRowsData, RowData, RowGroup};
-    use crate::file_utils::make_tsm_file;
-    use crate::mem_cache::series_data::SeriesData;
-    use crate::tsfamily::column_file::ColumnFile;
-    use crate::tsfamily::level_info::LevelInfo;
-    use crate::tsfamily::version::Version;
-    use crate::Options;
-
-    #[test]
-    fn test_dedup_and_sort_row_data() {
-        let mut rows1 = OrderedRowsData::new();
-
-        rows1.insert(RowData {
-            ts: 3,
-            fields: vec![Some(FieldVal::Float(3.0))],
-        });
-        rows1.insert(RowData {
-            ts: 1,
-            fields: vec![Some(FieldVal::Float(1.0))],
-        });
-        rows1.insert(RowData {
-            ts: 7,
-            fields: vec![Some(FieldVal::Float(7.0))],
-        });
-        rows1.insert(RowData {
-            ts: 5,
-            fields: vec![Some(FieldVal::Float(5.0))],
-        });
-        rows1.insert(RowData {
-            ts: 9,
-            fields: vec![Some(FieldVal::Float(9.0))],
-        });
-        rows1.insert(RowData {
-            ts: 7,
-            fields: vec![Some(FieldVal::Float(10.0))],
-        });
-        rows1.insert(RowData {
-            ts: 1,
-            fields: vec![Some(FieldVal::Float(11.0))],
-        });
-        rows1.insert(RowData {
-            ts: 5,
-            fields: vec![None],
-        });
-
-        let row_datas = dedup_and_sort_row_data(&rows1);
-        let expect_row_datas = vec![
-            RowData {
-                ts: 1,
-                fields: vec![Some(FieldVal::Float(11.0))],
-            },
-            RowData {
-                ts: 3,
-                fields: vec![Some(FieldVal::Float(3.0))],
-            },
-            RowData {
-                ts: 5,
-                fields: vec![Some(FieldVal::Float(5.0))],
-            },
-            RowData {
-                ts: 7,
-                fields: vec![Some(FieldVal::Float(10.0))],
-            },
-            RowData {
-                ts: 9,
-                fields: vec![Some(FieldVal::Float(9.0))],
-            },
-        ];
-        assert_eq!(row_datas, expect_row_datas);
-    }
+    use super::MemCache;
+    use crate::mem_cache::row_data::{OrderedRowsData, RowData, RowDataRef};
+    use crate::mem_cache::series_data::{RowGroup, SeriesData, SeriesDedupMergeSortIterator};
 
     #[test]
     fn test_series_data_write_group() {
@@ -770,105 +660,6 @@ mod test_memcache {
     }
 
     #[test]
-    fn test_series_data_build_data_block() {
-        let sid: SeriesId = 1;
-        let mut series_data1 = SeriesData::new(sid, SeriesKey::default());
-        let dir = "/tmp/test/memcache/1";
-        let _ = std::fs::remove_dir_all(dir);
-        std::fs::create_dir_all(dir).unwrap();
-        let mut global_config = config::tskv::get_config_for_test();
-        global_config.storage.path = dir.to_string();
-        let opt = Arc::new(Options::from(&global_config));
-
-        let database = Arc::new("cnosdb.test".to_string());
-        #[rustfmt::skip]
-            let levels = [
-            LevelInfo::init(database.clone(), 0, 0, opt.storage.clone()),
-            LevelInfo::init(database.clone(), 1, 0, opt.storage.clone()),
-            LevelInfo::init(database.clone(), 2, 0, opt.storage.clone()),
-            LevelInfo::init(database.clone(), 3, 0, opt.storage.clone()),
-            LevelInfo::init(database.clone(), 4, 0, opt.storage.clone()),
-        ];
-        let tsm_reader_cache = Arc::new(ShardedAsyncCache::create_lru_sharded_cache(16));
-        let version = Version::new(
-            1,
-            database.clone(),
-            opt.storage.clone(),
-            1,
-            levels,
-            5,
-            tsm_reader_cache,
-        );
-
-        #[rustfmt::skip]
-            let mut schema_1 = TskvTableSchema::new(
-            "test_tenant".to_string(), "test_db".to_string(), "test_table".to_string(),
-            vec![
-                TableColumn::new_time_column(1, TimeUnit::Nanosecond),
-                TableColumn::new_tag_column(2, "tag_col_1".to_string()),
-                TableColumn::new_tag_column(3, "tag_col_2".to_string()),
-                TableColumn::new(4, "f_col_1".to_string(), ColumnType::Field(ValueType::Float), Default::default()),
-            ],
-        );
-        schema_1.schema_version = 1;
-        let mut rows1 = OrderedRowsData::new();
-
-        rows1.insert(RowData {
-            ts: 7,
-            fields: vec![Some(FieldVal::Float(10.0))],
-        });
-        rows1.insert(RowData {
-            ts: 1,
-            fields: vec![Some(FieldVal::Float(10.0))],
-        });
-
-        rows1.insert(RowData {
-            ts: 1,
-            fields: vec![Some(FieldVal::Float(1.0))],
-        });
-        rows1.insert(RowData {
-            ts: 3,
-            fields: vec![Some(FieldVal::Float(3.0))],
-        });
-        rows1.insert(RowData {
-            ts: 5,
-            fields: vec![Some(FieldVal::Float(5.0))],
-        });
-        rows1.insert(RowData {
-            ts: 7,
-            fields: vec![Some(FieldVal::Float(7.0))],
-        });
-        rows1.insert(RowData {
-            ts: 9,
-            fields: vec![Some(FieldVal::Float(9.0))],
-        });
-
-        #[rustfmt::skip]
-            let row_group_1 = RowGroup {
-            schema: Arc::new(schema_1),
-            range: TimeRange::new(1, 10),
-            rows:rows1,
-            size: 10,
-        };
-        series_data1.write(row_group_1.clone());
-        let result = series_data1.build_record_batch(version.max_level_ts());
-        match result {
-            Ok(opt_blocks) => {
-                if let Some((schema, main_block, delta_block)) = opt_blocks {
-                    assert_eq!("test_table".to_owned(), schema.name);
-                    assert_eq!(2, main_block.num_rows());
-                    assert_eq!(3, delta_block.num_rows());
-                } else {
-                    println!("No data blocks were built.");
-                }
-            }
-            Err(error) => {
-                eprintln!("Error building data block: {}", error);
-            }
-        }
-    }
-
-    #[test]
     fn test_mem_cache_write_group() {
         let sid: SeriesId = 1;
 
@@ -962,128 +753,6 @@ mod test_memcache {
             assert_eq!(2, series_data.groups.len());
             assert_eq!(row_group_2, series_data.groups.back().unwrap().clone());
         }
-    }
-
-    #[test]
-    fn test_mem_cache_to_chunk_group() {
-        let sid: SeriesId = 1;
-        let dir = "/tmp/test/memcache/2";
-        let _ = std::fs::remove_dir_all(dir);
-        std::fs::create_dir_all(dir).unwrap();
-        let mut global_config = config::tskv::get_config_for_test();
-        global_config.storage.path = dir.to_string();
-        let opt = Arc::new(Options::from(&global_config));
-
-        let owner = Arc::new("cnosdb.test".to_string());
-        let ts_family_id = 1;
-        let tsm_dir = opt.storage.tsm_dir(&owner, ts_family_id);
-        #[rustfmt::skip]
-            let levels = [
-            LevelInfo::init(owner.clone(), 0, 0, opt.storage.clone()),
-            LevelInfo {
-                files: vec![
-                    Arc::new(ColumnFile::new(3, 1, TimeRange::new(3001, 3100), 100, false, make_tsm_file(&tsm_dir, 3))),
-                ],
-                owner: owner.clone(),
-                tsf_id: 1,
-                storage_opt: opt.storage.clone(),
-                level: 1,
-                cur_size: 100,
-                max_size: 1000,
-                time_range: TimeRange::new(3001, 3100),
-            },
-            LevelInfo {
-                files: vec![
-                    Arc::new(ColumnFile::new(1, 2, TimeRange::new(1, 1000), 1000, false, make_tsm_file(&tsm_dir, 1))),
-                    Arc::new(ColumnFile::new(2, 2, TimeRange::new(1001, 2000), 1000, false, make_tsm_file(&tsm_dir, 2))),
-                ],
-                owner: owner.clone(),
-                tsf_id: 1,
-                storage_opt: opt.storage.clone(),
-                level: 2,
-                cur_size: 2000,
-                max_size: 10000,
-                time_range: TimeRange::new(1, 2000),
-            },
-            LevelInfo::init(owner.clone(), 3, 0, opt.storage.clone()),
-            LevelInfo::init(owner.clone(), 4, 0, opt.storage.clone()),
-        ];
-        let tsm_reader_cache = Arc::new(ShardedAsyncCache::create_lru_sharded_cache(16));
-        let version = Version::new(
-            1,
-            owner.clone(),
-            opt.storage.clone(),
-            1,
-            levels,
-            5,
-            tsm_reader_cache,
-        );
-        let memory_pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
-        let mem_cache = MemCache::new(1, 0, 1, 1000, 2, 1, &memory_pool);
-        {
-            let series_part = &mem_cache.partions[sid as usize].read();
-            let series_data = series_part.get(&sid);
-            assert!(series_data.is_none());
-        }
-
-        #[rustfmt::skip]
-            let mut schema_1 = TskvTableSchema::new(
-            "test_tenant".to_string(), "test_db".to_string(), "test_table".to_string(),
-            vec![
-                TableColumn::new_time_column(1, TimeUnit::Nanosecond),
-                TableColumn::new_tag_column(2, "tag_col_1".to_string()),
-                TableColumn::new_tag_column(3, "tag_col_2".to_string()),
-                TableColumn::new(4, "f_col_1".to_string(), ColumnType::Field(ValueType::Float), Default::default()),
-            ],
-        );
-        schema_1.schema_version = 1;
-        let mut rows = OrderedRowsData::new();
-        rows.insert(RowData {
-            ts: 1,
-            fields: vec![Some(FieldVal::Float(1.0))],
-        });
-        rows.insert(RowData {
-            ts: 3,
-            fields: vec![Some(FieldVal::Float(3.0))],
-        });
-        rows.insert(RowData {
-            ts: 6,
-            fields: vec![Some(FieldVal::Float(6.0))],
-        });
-        let schema = Arc::new(schema_1);
-        #[rustfmt::skip]
-            let row_group_1 = RowGroup {
-            schema: schema.clone(),
-            range: TimeRange::new(1, 3),
-            rows,
-            size: 10,
-        };
-        mem_cache
-            .write_group(sid, SeriesKey::default(), 1, row_group_1.clone())
-            .unwrap();
-        let (chunk_group, delta_chunk_group) =
-            mem_cache.to_chunk_group(version.max_level_ts()).unwrap();
-
-        assert_eq!(
-            1,
-            chunk_group
-                .get(&schema)
-                .unwrap()
-                .get(&1)
-                .unwrap()
-                .1
-                .num_rows()
-        );
-        assert_eq!(
-            2,
-            delta_chunk_group
-                .get(&schema)
-                .unwrap()
-                .get(&1)
-                .unwrap()
-                .1
-                .num_rows()
-        );
     }
 
     #[test]
@@ -1341,5 +1010,112 @@ mod test_memcache {
                 .unwrap()
                 .rows
         );
+    }
+
+    #[test]
+    fn test_iterator() {
+        //----------line 1-------------------------------------------------
+        let mut rows1 = OrderedRowsData::new();
+        #[rustfmt::skip]
+        rows1.insert(RowData {ts: 1,fields: vec![Some(FieldVal::Integer(11)), Some(FieldVal::Integer(12)),Some(FieldVal::Integer(13))]});
+        #[rustfmt::skip]
+        rows1.insert(RowData {ts: 2,fields: vec![Some(FieldVal::Integer(21)), Some(FieldVal::Integer(22)),Some(FieldVal::Integer(23))]});
+        #[rustfmt::skip]
+        rows1.insert(RowData {ts: 3,fields: vec![Some(FieldVal::Integer(31)), Some(FieldVal::Integer(32)),Some(FieldVal::Integer(33))]});
+
+        //----------line 2-------------------------------------------------
+        let mut rows2 = OrderedRowsData::new();
+        #[rustfmt::skip]
+        rows2.insert(RowData {ts: 2,fields: vec![Some(FieldVal::Integer(211)), None,Some(FieldVal::Integer(231))]});
+        #[rustfmt::skip]
+        rows2.insert(RowData {ts: 3,fields: vec![Some(FieldVal::Integer(321)), Some(FieldVal::Integer(322)),Some(FieldVal::Integer(323))]});
+        #[rustfmt::skip]
+        rows2.insert(RowData {ts: 3,fields: vec![None, Some(FieldVal::Integer(332)),Some(FieldVal::Integer(333))]});
+
+        let mut series_data = SeriesData::new(1000, SeriesKey::default());
+        #[rustfmt::skip]
+        let mut schema1 = TskvTableSchema::new(
+            "test_tenant".to_string(), "test_db".to_string(), "test_table".to_string(),
+            vec![
+                TableColumn::new_time_column(1, TimeUnit::Nanosecond),
+                TableColumn::new_tag_column(2, "tag_col_1".to_string()),
+                TableColumn::new(4, "f_col_4".to_string(), ColumnType::Field(ValueType::Integer), Default::default()),
+                TableColumn::new(5, "f_col_5".to_string(), ColumnType::Field(ValueType::Integer), Default::default()),
+                TableColumn::new(6, "f_col_6".to_string(), ColumnType::Field(ValueType::Integer), Default::default()), 
+            ],
+        );
+        schema1.schema_version = 10;
+        let row_group1 = RowGroup {
+            schema: Arc::new(schema1),
+            range: TimeRange::new(1, 3),
+            rows: rows1,
+            size: 10,
+        };
+        series_data.write(row_group1);
+
+        #[rustfmt::skip]
+        let mut schema2 = TskvTableSchema::new(
+            "test_tenant".to_string(), "test_db".to_string(), "test_table".to_string(),
+            vec![
+                TableColumn::new_time_column(1, TimeUnit::Nanosecond),
+                TableColumn::new_tag_column(2, "tag_col_1".to_string()),
+                TableColumn::new(4, "f_col_4".to_string(), ColumnType::Field(ValueType::Integer), Default::default()),
+                TableColumn::new(5, "f_col_5".to_string(), ColumnType::Field(ValueType::Integer), Default::default()),
+                TableColumn::new(7, "f_col_6".to_string(), ColumnType::Field(ValueType::Integer), Default::default()), 
+            ],
+        );
+        schema2.schema_version = 20;
+        let row_group2 = RowGroup {
+            schema: Arc::new(schema2.clone()),
+            range: TimeRange::new(1, 3),
+            rows: rows2,
+            size: 10,
+        };
+        series_data.write(row_group2);
+
+        let latest_schema = Arc::new(schema2);
+        let groups = series_data.flat_groups();
+        let mut iter = SeriesDedupMergeSortIterator::new(groups.clone(), latest_schema.clone());
+
+        let line1 = iter.next().unwrap();
+        assert_eq!(
+            line1,
+            RowDataRef {
+                ts: 1,
+                fields: vec![
+                    Some(&FieldVal::Integer(11)),
+                    Some(&FieldVal::Integer(12)),
+                    None
+                ]
+            }
+        );
+
+        let line2 = iter.next().unwrap();
+        assert_eq!(
+            line2,
+            RowDataRef {
+                ts: 2,
+                fields: vec![
+                    Some(&FieldVal::Integer(211)),
+                    Some(&FieldVal::Integer(22)),
+                    Some(&FieldVal::Integer(231)),
+                ]
+            }
+        );
+
+        let line3 = iter.next().unwrap();
+        assert_eq!(
+            line3,
+            RowDataRef {
+                ts: 3,
+                fields: vec![
+                    Some(&FieldVal::Integer(321)),
+                    Some(&FieldVal::Integer(332)),
+                    Some(&FieldVal::Integer(333)),
+                ]
+            }
+        );
+
+        assert_eq!(iter.next(), None);
     }
 }
