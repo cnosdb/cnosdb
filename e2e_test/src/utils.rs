@@ -1114,7 +1114,6 @@ pub fn build_data_node_config(test_dir: impl AsRef<Path>, data_dir_name: &str) -
     config.service.grpc_listen_port = Some(8903);
     config.service.flight_rpc_listen_port = Some(8904);
     config.service.tcp_listen_port = Some(8905);
-    config.service.vector_listen_port = Some(8906);
 
     config
 }

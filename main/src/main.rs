@@ -29,7 +29,6 @@ mod server;
 mod signal;
 mod spi;
 mod tcp;
-mod vector;
 
 /// cli examples is here
 /// <https://github.com/clap-rs/clap/blob/v3.1.3/examples/git-derive.rs>
