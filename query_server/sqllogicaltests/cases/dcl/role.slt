@@ -238,3 +238,6 @@ show tables;
 
 query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Insufficient privileges, expected \[Read on database db1 *
 describe database db1;
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: not supported keyword contains '/': r/1", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
+CREATE ROLE "r/1" INHERIT owner;
