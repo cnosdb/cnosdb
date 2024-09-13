@@ -149,3 +149,6 @@ drop user u11;
 
 statement ok
 drop user u12;
+
+statement error Arrow error: Io error: Can't handshake status: Unauthenticated, message: "Auth error: The user u12 not found", details: \[\], metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}
+create user "u/1";

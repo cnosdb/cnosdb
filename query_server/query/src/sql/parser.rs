@@ -1,5 +1,5 @@
 use std::collections::{HashMap, VecDeque};
-use std::fmt::{format, Display};
+use std::fmt::Display;
 use std::ops::Not;
 use std::str::FromStr;
 
@@ -28,7 +28,7 @@ use spi::query::ast::{
 use spi::query::logical_planner::{DatabaseObjectType, GlobalObjectType, TenantObjectType};
 use spi::query::parser::Parser as CnosdbParser;
 use spi::ParserSnafu;
-use trace::{debug, info};
+use trace::debug;
 
 use super::dialect::CnosDBDialect;
 
@@ -793,7 +793,7 @@ impl<'a> ExtParser<'a> {
             self.parser
                 .parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
         let table_name = self.parser.parse_object_name()?;
-        self.check_name_not_contain_slash_for_table(&table_name)?;
+        check_name_not_contain_slash(&table_name)?;
         let (columns, _) = self.parser.parse_columns()?;
 
         #[derive(Default)]
@@ -918,7 +918,7 @@ impl<'a> ExtParser<'a> {
             self.parser
                 .parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
         let table_name = self.parser.parse_object_name()?;
-        self.check_name_not_contain_slash_for_table(&table_name)?;
+        check_name_not_contain_slash(&table_name)?;
         let columns = self.parse_cnos_columns()?;
 
         let create = CreateTable {
@@ -1067,7 +1067,8 @@ impl<'a> ExtParser<'a> {
             self.parser
                 .parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
         let database_name = self.parser.parse_identifier()?;
-        self.check_name_not_contain_slash(&database_name.value)?;
+        let name_vec = ObjectName(vec![database_name.clone()]);
+        check_name_not_contain_slash(&name_vec)?;
         let (options, config) = self.parse_database_options_and_config()?;
         Ok(ExtStatement::CreateDatabase(
             CreateDatabase {
@@ -1145,7 +1146,8 @@ impl<'a> ExtParser<'a> {
                 .parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
 
         let name = self.parser.parse_identifier()?;
-        self.check_name_not_contain_slash(&name.value)?;
+        let name_vec = ObjectName(vec![name.clone()]);
+        check_name_not_contain_slash(&name_vec)?;
 
         let with_options = if self.parser.parse_keyword(Keyword::WITH) {
             self.parser
@@ -1167,7 +1169,8 @@ impl<'a> ExtParser<'a> {
                 .parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
 
         let name = self.parser.parse_identifier()?;
-        self.check_name_not_contain_slash(&name.value)?;
+        let name_vec = ObjectName(vec![name.clone()]);
+        check_name_not_contain_slash(&name_vec)?;
 
         let inherit = if self.parse_cnos_keyword(CnosKeyWord::INHERIT) {
             self.parser.parse_identifier().ok()
@@ -1188,7 +1191,8 @@ impl<'a> ExtParser<'a> {
                 .parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
 
         let name = self.parser.parse_identifier()?;
-        self.check_name_not_contain_slash(&name.value)?;
+        let name_vec = ObjectName(vec![name.clone()]);
+        check_name_not_contain_slash(&name_vec)?;
 
         let with_options = if self.parser.parse_keyword(Keyword::WITH) {
             self.parser
@@ -1287,33 +1291,6 @@ impl<'a> ExtParser<'a> {
             statement,
         }))
     }
-
-    fn check_name_not_contain_slash_for_table(&mut self, object_name: &ObjectName) -> Result<(), ParserError> {
-        let names: Vec<String> = object_name.0.iter()
-            .map(|ident| ident.value.clone())  
-            .collect();
-        
-        let name_str = names.join("."); 
-    
-        // Check if the combined string contains '/'
-        if name_str.contains('/') {
-            Err(ParserError::ParserError(
-                format!("not supported keyword contains '/': {}", name_str),
-            ))
-        } else {
-            Ok(())
-        }
-    }
-    fn check_name_not_contain_slash(&self, name: &str) -> Result<(), ParserError> {
-        if name.contains('/') {
-            Err(ParserError::ParserError(
-                format!("not supported keyword contains '/': {}", name),
-            ))
-        } else {
-            Ok(())
-        }
-    }
-    
 
     /// Parse a SQL CREATE statement
     fn parse_create(&mut self) -> Result<ExtStatement> {
@@ -1835,6 +1812,25 @@ impl<'a> ExtParser<'a> {
         let value = parser.parse_value()?;
         Ok(SqlOption { name, value })
     }
+}
+
+fn check_name_not_contain_slash(object_name: &ObjectName) -> Result<(), ParserError> {
+    let names: Vec<String> = object_name
+        .0
+        .iter()
+        .map(|ident| ident.value.clone())
+        .collect();
+
+    let name_str = names.join(".");
+
+    // 检查组合后的字符串是否包含 '/'
+    if name_str.contains('/') {
+        return Err(ParserError::ParserError(format!(
+            "not supported keyword contains '/': {}",
+            name_str
+        )));
+    }
+    Ok(())
 }
 
 /// This is a copy of the equivalent implementation in Datafusion.

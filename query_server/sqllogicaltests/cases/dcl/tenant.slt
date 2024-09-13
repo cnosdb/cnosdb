@@ -345,3 +345,6 @@ query I
 select count(*) from air;
 ----
 1
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: not supported keyword contains '/': t/1", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
+CREATE TENANT "t/1" WITH drop_after='1d';

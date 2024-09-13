@@ -42,3 +42,6 @@ CREATE TABLE test0(
 
 statement ok
 DROP DATABASE IF EXISTS createdatabase;
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: not supported keyword contains '/': db/1", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
+create database "db/1";
