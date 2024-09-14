@@ -23,7 +23,7 @@ use datafusion::logical_expr::expr::AggregateFunction;
 use datafusion::logical_expr::utils::{exprlist_to_columns, grouping_set_to_exprlist};
 use datafusion::logical_expr::{
     AggWithGrouping, Aggregate, AggregateFunction as AggregateFunctionName, LogicalPlan,
-    LogicalPlanBuilder, TableProviderAggregationPushDown, TableScan,
+    LogicalPlanBuilder, Projection, TableProviderAggregationPushDown, TableScan,
 };
 use datafusion::optimizer::{optimize_children, OptimizerConfig, OptimizerRule};
 use datafusion::prelude::Expr;
@@ -63,6 +63,12 @@ impl OptimizerRule for PushDownAggregation {
                 return Ok(None);
             }
 
+            let mut temp_input = input;
+
+            if let LogicalPlan::Projection(Projection { input, .. }) = temp_input.deref() {
+                temp_input = input;
+            }
+
             if let LogicalPlan::TableScan(TableScan {
                 table_name,
                 source,
@@ -71,7 +77,7 @@ impl OptimizerRule for PushDownAggregation {
                 filters,
                 agg_with_grouping,
                 fetch,
-            }) = input.deref()
+            }) = temp_input.deref()
             {
                 if agg_with_grouping.is_none() && filters.is_empty() {
                     let new_plan = match source
@@ -79,141 +85,117 @@ impl OptimizerRule for PushDownAggregation {
                     {
                         TableProviderAggregationPushDown::Unsupported => None,
                         TableProviderAggregationPushDown::Ungrouped => {
-                            if !group_expr.is_empty() {
-                                /* let new_table_scan = LogicalPlan::TableScan(TableScan {
-                                    table_name: table_name.clone(),
-                                    source: source.clone(),
-                                    projection: projection.clone(),
-                                    projected_schema: projected_schema.clone(),
-                                    filters: filters.clone(),
-                                    agg_with_grouping: Some(AggWithGrouping {
-                                        group_expr: group_expr.clone(),
-                                        agg_expr: aggr_expr.clone(),
-                                        schema: schema.clone(),
-                                    }),
-                                    fetch: *fetch,
-                                });
+                            // Save final agg node, can remove partial agg node
+                            // Change the optimized logical plan to reflect the pushed down aggregate
+                            //
+                            // e.g.
+                            //
+                            // Aggregate: groupBy=[[]], aggr=[[min(c1), max(c1)]]
+                            //   TableScan: t1 projection=[c1]
+                            // ->
+                            // == Optimized Logical Plan ==
+                            // Aggregate: groupBy=[[]], aggr=[[min(min(c1)) as min(c1), max(max(c1)) as max(c1)]]
+                            //   TableScan: t1 projection=[c1] groupBy=[[]], aggr=[[min(c1), max(c1)]]
+                            let new_agg_expr_with_alias = aggr_expr
+                            .iter()
+                            .map(|e| {
+                                let col_name = e.display_name()?;
+                                let column = Column::from_name(col_name.clone());
 
-                                let new_agg = LogicalPlanBuilder::from(new_table_scan).aggregate(
-                                    group_expr.clone(),
-                                    aggr_expr.clone(),
-                                )?.build()?;
-                                Some(new_agg) */
-                                Some(plan.clone())
-                            } else {
-                                // Save final agg node, can remove partial agg node
-                                // Change the optimized logical plan to reflect the pushed down aggregate
-                                //
-                                // e.g.
-                                //
-                                // Aggregate: groupBy=[[]], aggr=[[min(c1), max(c1)]]
-                                //   TableScan: t1 projection=[c1]
-                                // ->
-                                // == Optimized Logical Plan ==
-                                // Aggregate: groupBy=[[]], aggr=[[min(min(c1)) as min(c1), max(max(c1)) as max(c1)]]
-                                //   TableScan: t1 projection=[c1] groupBy=[[]], aggr=[[min(c1), max(c1)]]
-                                let new_agg_expr_with_alias = aggr_expr
-                                .iter()
-                                .map(|e| {
-                                    let col_name = e.display_name()?;
-                                    let column = Column::from_name(col_name.clone());
+                                let new_expr = match e {
+                                    Expr::AggregateFunction(AggregateFunction {
+                                        fun,
+                                        args: _,
+                                        distinct,
+                                        filter,
+                                        order_by,
+                                    }) => {
+                                        let new_agg_func = match fun {
+                                            /* AggregateFunctionName::Max => {
+                                                AggregateFunction {
+                                                    fun: AggregateFunctionName::Max,
+                                                    args: vec![Expr::Column(column)],
+                                                    distinct: *distinct,
+                                                    filter: filter.clone(),
+                                                    order_by: order_by.clone(),
+                                                }
+                                            },
+                                            AggregateFunctionName::Min => {
+                                                AggregateFunction {
+                                                    fun: AggregateFunctionName::Min,
+                                                    args: vec![Expr::Column(column)],
+                                                    distinct: *distinct,
+                                                    filter: filter.clone(),
+                                                    order_by: order_by.clone(),
+                                                }
+                                            },
+                                            AggregateFunctionName::Sum => {
+                                                AggregateFunction {
+                                                    fun: AggregateFunctionName::Sum,
+                                                    args: vec![Expr::Column(column)],
+                                                    distinct: *distinct,
+                                                    filter: filter.clone(),
+                                                    order_by: order_by.clone(),
+                                                }
+                                            }, */
+                                            AggregateFunctionName::Count => {
+                                                AggregateFunction {
+                                                    fun: AggregateFunctionName::Sum,
+                                                    args: vec![Expr::Column(column)],
+                                                    distinct: *distinct,
+                                                    filter: filter.clone(),
+                                                    order_by: order_by.clone(),
+                                                }
+                                            },
+                                            // not support other agg func
+                                            _ => return Err(DataFusionError::Internal(format!("Unreachable, not support {fun:?} push down."))),
+                                        };
 
-                                    let new_expr = match e {
-                                        Expr::AggregateFunction(AggregateFunction {
-                                            fun,
-                                            args: _,
-                                            distinct,
-                                            filter,
-                                            order_by,
-                                        }) => {
-                                            let new_agg_func = match fun {
-                                                /* AggregateFunctionName::Max => {
-                                                    AggregateFunction {
-                                                        fun: AggregateFunctionName::Max,
-                                                        args: vec![Expr::Column(column)],
-                                                        distinct: *distinct,
-                                                        filter: filter.clone(),
-                                                        order_by: order_by.clone(),
-                                                    }
-                                                },
-                                                AggregateFunctionName::Min => {
-                                                    AggregateFunction {
-                                                        fun: AggregateFunctionName::Min,
-                                                        args: vec![Expr::Column(column)],
-                                                        distinct: *distinct,
-                                                        filter: filter.clone(),
-                                                        order_by: order_by.clone(),
-                                                    }
-                                                },
-                                                AggregateFunctionName::Sum => {
-                                                    AggregateFunction {
-                                                        fun: AggregateFunctionName::Sum,
-                                                        args: vec![Expr::Column(column)],
-                                                        distinct: *distinct,
-                                                        filter: filter.clone(),
-                                                        order_by: order_by.clone(),
-                                                    }
-                                                }, */
-                                                AggregateFunctionName::Count => {
-                                                    AggregateFunction {
-                                                        fun: AggregateFunctionName::Sum,
-                                                        args: vec![Expr::Column(column)],
-                                                        distinct: *distinct,
-                                                        filter: filter.clone(),
-                                                        order_by: order_by.clone(),
-                                                    }
-                                                },
-                                                // not support other agg func
-                                                _ => return Err(DataFusionError::Internal(format!("Unreachable, not support {fun:?} push down."))),
-                                            };
+                                        Ok(Expr::AggregateFunction(new_agg_func))
+                                    },
+                                    _ => Err(DataFusionError::Internal("Invalid logical plan, Aggregate's aggr_expr contains non-aggregate expr.".to_string())),
+                                }?;
 
-                                            Ok(Expr::AggregateFunction(new_agg_func))
-                                        },
-                                        _ => Err(DataFusionError::Internal("Invalid logical plan, Aggregate's aggr_expr contains non-aggregate expr.".to_string())),
-                                    }?;
+                                let alias = Expr::Column(Column::from_name(new_expr.display_name()?)).alias(col_name);
 
-                                    let alias = Expr::Column(Column::from_name(new_expr.display_name()?)).alias(col_name);
+                                Ok((new_expr, alias))
+                            })
+                            .collect::<Result<Vec<_>>>()?;
 
-                                    Ok((new_expr, alias))
-                                })
-                                .collect::<Result<Vec<_>>>()?;
+                            let (new_agg_expr, projection_agg_expr): (Vec<_>, Vec<_>) =
+                                new_agg_expr_with_alias.into_iter().unzip();
 
-                                let (new_agg_expr, projection_agg_expr): (Vec<_>, Vec<_>) =
-                                    new_agg_expr_with_alias.into_iter().unzip();
+                            // Find distinct group by exprs in the case where we have a grouping set
+                            let mut new_required_columns = Default::default();
+                            let all_group_expr: Vec<Expr> = grouping_set_to_exprlist(group_expr)?;
+                            exprlist_to_columns(&all_group_expr, &mut new_required_columns)?;
 
-                                // Find distinct group by exprs in the case where we have a grouping set
-                                let mut new_required_columns = Default::default();
-                                let all_group_expr: Vec<Expr> =
-                                    grouping_set_to_exprlist(group_expr)?;
-                                exprlist_to_columns(&all_group_expr, &mut new_required_columns)?;
+                            let projection_expr = new_required_columns
+                                .into_iter()
+                                .map(Expr::Column)
+                                .chain(projection_agg_expr)
+                                .collect::<Vec<_>>();
 
-                                let projection_expr = new_required_columns
-                                    .into_iter()
-                                    .map(Expr::Column)
-                                    .chain(projection_agg_expr)
-                                    .collect::<Vec<_>>();
+                            let new_table_scan = LogicalPlan::TableScan(TableScan {
+                                table_name: table_name.clone(),
+                                source: source.clone(),
+                                projection: None,
+                                projected_schema: schema.clone(),
+                                filters: filters.clone(),
+                                fetch: *fetch,
+                                agg_with_grouping: Some(AggWithGrouping {
+                                    group_expr: group_expr.clone(),
+                                    agg_expr: aggr_expr.clone(),
+                                    schema: schema.clone(),
+                                }),
+                            });
 
-                                let new_table_scan = LogicalPlan::TableScan(TableScan {
-                                    table_name: table_name.clone(),
-                                    source: source.clone(),
-                                    projection: None,
-                                    projected_schema: schema.clone(),
-                                    filters: filters.clone(),
-                                    fetch: *fetch,
-                                    agg_with_grouping: Some(AggWithGrouping {
-                                        group_expr: group_expr.clone(),
-                                        agg_expr: aggr_expr.clone(),
-                                        schema: schema.clone(),
-                                    }),
-                                });
+                            let new_plan = LogicalPlanBuilder::from(new_table_scan)
+                                .aggregate(group_expr.clone(), new_agg_expr)?
+                                .project(projection_expr)?
+                                .build()?;
 
-                                let new_plan = LogicalPlanBuilder::from(new_table_scan)
-                                    .aggregate(group_expr.clone(), new_agg_expr)?
-                                    .project(projection_expr)?
-                                    .build()?;
-
-                                Some(new_plan)
-                            }
+                            Some(new_plan)
                         }
                         TableProviderAggregationPushDown::Grouped => {
                             // Remove `Aggregate` node
@@ -256,10 +238,10 @@ fn determine_whether_support_push_down(aggr_expr: &[Expr]) -> bool {
         Expr::AggregateFunction(AggregateFunction { fun, distinct, .. }) => {
             let support_agg_func = matches!(
                 fun,
-                AggregateFunctionName::Max
+                /* AggregateFunctionName::Max
                     | AggregateFunctionName::Min
                     | AggregateFunctionName::Sum
-                    | AggregateFunctionName::Count
+                    |  */AggregateFunctionName::Count
             );
 
             support_agg_func && !distinct
