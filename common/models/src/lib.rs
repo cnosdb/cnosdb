@@ -23,6 +23,7 @@ pub mod arrow_array;
 pub mod arrow;
 pub mod auth;
 pub mod column_data;
+pub mod column_data_ref;
 pub mod datafusion;
 pub mod duration;
 pub mod field_value;
