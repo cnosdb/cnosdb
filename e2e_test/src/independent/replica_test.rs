@@ -604,9 +604,7 @@ pub mod test {
         assert_eq!(resp.status(), status_code::OK);
         std::thread::sleep(std::time::Duration::from_secs(1));
 
-        let resp = client
-            .post(req_url, "select count(1,2) from ma")
-            .unwrap();
+        let resp = client.post(req_url, "select count(1,2) from ma").unwrap();
         assert_eq!(resp.status(), status_code::OK);
         let actual = resp.text().unwrap();
         assert_eq!(actual, "\"COUNT(Int64(1),Int64(2))\"\n0\n");

@@ -883,11 +883,11 @@ pub async fn execute(
     }
 
     if query_option.aggregates.is_some() {
-        return Ok(Box::pin(PushDownAggregateStream {
+        Ok(Box::pin(PushDownAggregateStream {
             schema: query_option.df_schema.clone(),
             num_count: 0,
             is_get: false,
-        }));
+        }))
     } else {
         Ok(Box::pin(EmptySchemableTskvRecordBatchStream::new(schema)))
     }
@@ -976,7 +976,7 @@ async fn build_stream(
         Ok(Box::pin(EmptySchemableTskvRecordBatchStream::new(
             factory.schema(),
         )))
-    }    
+    }
 }
 
 #[cfg(test)]
