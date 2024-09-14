@@ -287,21 +287,13 @@ impl Database {
             .await?;
             // every row produces a sid
             debug_assert_eq!(num_rows, sids.len());
-            self.build_row_data(
-                &fb_schema,
-                &columns,
-                schema.clone(),
-                &mut map,
-                precision,
-                &sids,
-            )?;
+            self.build_row_data(&columns, schema.clone(), &mut map, precision, &sids)?;
         }
         Ok(map)
     }
 
     fn build_row_data(
         &self,
-        fb_schema: &FbSchema<'_>,
         columns: &Vector<ForwardsUOffset<Column>>,
         table_schema: TskvTableSchemaRef,
         map: &mut HashMap<SeriesId, (SeriesKey, RowGroup)>,
@@ -317,13 +309,8 @@ impl Database {
             buf_and_row_idx.1.push(row_count);
         }
         for (sid, (series_key_buf, row_idx)) in sid_map.into_iter() {
-            let rows = RowData::point_to_row_data(
-                table_schema.as_ref(),
-                precision,
-                columns,
-                fb_schema,
-                row_idx,
-            )?;
+            let rows =
+                RowData::point_to_row_data(table_schema.as_ref(), precision, columns, row_idx)?;
             let mut row_group = RowGroup {
                 schema: table_schema.clone(),
                 rows: OrderedRowsData::new(),

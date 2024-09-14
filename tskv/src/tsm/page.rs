@@ -5,12 +5,13 @@ use arrow_array::{
 };
 use arrow_schema::{DataType, TimeUnit};
 use models::column_data::PrimaryColumnData;
+use models::column_data_ref::PrimaryColumnDataRef;
 use models::schema::tskv_table_schema::{ColumnType, TableColumn};
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 use utils::bitset::{BitSet, ImmutBitSet, NullBitset};
 
-use super::mutable_column_ref::{MutableColumnRef, PrimaryColumnDataRef};
+use super::mutable_column_ref::MutableColumnRef;
 use super::statistics::ValueStatistics;
 use crate::byte_utils::{decode_be_u32, decode_be_u64};
 use crate::error::{

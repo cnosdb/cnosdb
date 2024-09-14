@@ -6,7 +6,7 @@ use datafusion::arrow::array::{
 };
 use datafusion::arrow::datatypes::{SchemaRef, TimeUnit};
 use flatbuffers::{FlatBufferBuilder, WIPOffset};
-use models::column_data::PrimaryColumnData;
+use models::column_data_ref::PrimaryColumnDataRef;
 use models::mutable_batch::MutableBatch;
 use models::schema::tskv_table_schema::{PhysicalCType, TskvTableSchemaRef};
 use models::PhysicalDType as ValueType;
@@ -18,7 +18,7 @@ use utils::bitset::BitSet;
 
 use crate::{Error, FieldValue, Line, Result};
 
-pub fn line_to_batches(lines: &[Line]) -> Result<HashMap<String, MutableBatch>> {
+pub fn line_to_batches<'a>(lines: &'a [Line<'a>]) -> Result<HashMap<String, MutableBatch<'a>>> {
     let mut batches = HashMap::new();
     for line in lines.iter() {
         let batch = match batches.get_mut(line.table.as_ref()) {
@@ -35,9 +35,9 @@ pub fn line_to_batches(lines: &[Line]) -> Result<HashMap<String, MutableBatch>> 
                     content: format!("Error getting column: {}", e),
                 })?;
             match &mut col.column_data.primary_data {
-                PrimaryColumnData::String(data, ..) => {
-                    data.resize(row_count + 1, String::new());
-                    data[row_count] = tag_value.to_string();
+                PrimaryColumnDataRef::String(data, ..) => {
+                    data.resize(row_count + 1, "".as_bytes());
+                    data[row_count] = tag_value.as_bytes();
                     col.column_data
                         .valid
                         .append_unset(row_count - col.column_data.valid.len());
@@ -59,7 +59,7 @@ pub fn line_to_batches(lines: &[Line]) -> Result<HashMap<String, MutableBatch>> 
                             content: format!("Error getting column: {}", e),
                         })?;
                     match &mut col.column_data.primary_data {
-                        PrimaryColumnData::U64(data, ..) => {
+                        PrimaryColumnDataRef::U64(data, ..) => {
                             data.resize(row_count + 1, 0);
                             data[row_count] = *value;
                             col.column_data
@@ -81,7 +81,7 @@ pub fn line_to_batches(lines: &[Line]) -> Result<HashMap<String, MutableBatch>> 
                             content: format!("Error getting column: {}", e),
                         })?;
                     match &mut col.column_data.primary_data {
-                        PrimaryColumnData::I64(data, ..) => {
+                        PrimaryColumnDataRef::I64(data, ..) => {
                             data.resize(row_count + 1, 0);
                             data[row_count] = *value;
                             col.column_data
@@ -103,9 +103,9 @@ pub fn line_to_batches(lines: &[Line]) -> Result<HashMap<String, MutableBatch>> 
                             content: format!("Error getting column: {}", e),
                         })?;
                     match &mut col.column_data.primary_data {
-                        PrimaryColumnData::String(data, ..) => {
-                            data.resize(row_count + 1, String::new());
-                            data[row_count] = String::from_utf8(value.to_vec()).unwrap();
+                        PrimaryColumnDataRef::String(data, ..) => {
+                            data.resize(row_count + 1, "".as_bytes());
+                            data[row_count] = value;
                             col.column_data
                                 .valid
                                 .append_unset(row_count - col.column_data.valid.len());
@@ -125,7 +125,7 @@ pub fn line_to_batches(lines: &[Line]) -> Result<HashMap<String, MutableBatch>> 
                             content: format!("Error getting column: {}", e),
                         })?;
                     match &mut col.column_data.primary_data {
-                        PrimaryColumnData::F64(data, ..) => {
+                        PrimaryColumnDataRef::F64(data, ..) => {
                             data.resize(row_count + 1, 0.0);
                             data[row_count] = *value;
                             col.column_data
@@ -147,7 +147,7 @@ pub fn line_to_batches(lines: &[Line]) -> Result<HashMap<String, MutableBatch>> 
                             content: format!("Error getting column: {}", e),
                         })?;
                     match &mut col.column_data.primary_data {
-                        PrimaryColumnData::Bool(data, ..) => {
+                        PrimaryColumnDataRef::Bool(data, ..) => {
                             data.resize(row_count + 1, false);
                             data[row_count] = *value;
                             col.column_data
@@ -172,7 +172,7 @@ pub fn line_to_batches(lines: &[Line]) -> Result<HashMap<String, MutableBatch>> 
                 content: format!("Error getting column: {}", e),
             })?;
         match col.column_data.primary_data {
-            PrimaryColumnData::I64(ref mut data, ..) => {
+            PrimaryColumnDataRef::I64(ref mut data, ..) => {
                 data.resize(row_count + 1, 0);
                 data[row_count] = time;
                 col.column_data
@@ -188,6 +188,7 @@ pub fn line_to_batches(lines: &[Line]) -> Result<HashMap<String, MutableBatch>> 
         }
         batch.row_count += 1;
     }
+
     batches.iter_mut().for_each(|(_, batch)| {
         batch.finish();
     });
@@ -214,35 +215,35 @@ pub fn mutable_batches_to_point(db: &str, batches: HashMap<String, MutableBatch>
             };
 
             let (field_type, values) = match column.column_data.primary_data {
-                PrimaryColumnData::F64(ref values, ..) => {
+                PrimaryColumnDataRef::F64(ref values, ..) => {
                     let values = fbb.create_vector(values);
                     let mut values_builder = ValuesBuilder::new(fbb);
                     values_builder.add_float_value(values);
                     (FieldType::Float, values_builder.finish())
                 }
-                PrimaryColumnData::I64(ref values, ..) => {
+                PrimaryColumnDataRef::I64(ref values, ..) => {
                     let values = fbb.create_vector(values);
                     let mut values_builder = ValuesBuilder::new(fbb);
                     values_builder.add_int_value(values);
                     (FieldType::Integer, values_builder.finish())
                 }
-                PrimaryColumnData::U64(ref values, ..) => {
+                PrimaryColumnDataRef::U64(ref values, ..) => {
                     let values = fbb.create_vector(values);
                     let mut values_builder = ValuesBuilder::new(fbb);
                     values_builder.add_uint_value(values);
                     (FieldType::Unsigned, values_builder.finish())
                 }
-                PrimaryColumnData::String(ref values, ..) => {
+                PrimaryColumnDataRef::String(ref values, ..) => {
                     let values = values
                         .iter()
-                        .map(|s| fbb.create_string(s))
+                        .map(|s| fbb.create_string(std::str::from_utf8(s).unwrap()))
                         .collect::<Vec<_>>();
                     let values = fbb.create_vector(&values);
                     let mut values_builder = ValuesBuilder::new(fbb);
                     values_builder.add_string_value(values);
                     (FieldType::String, values_builder.finish())
                 }
-                PrimaryColumnData::Bool(ref values, ..) => {
+                PrimaryColumnDataRef::Bool(ref values, ..) => {
                     let values = fbb.create_vector(values);
                     let mut values_builder = ValuesBuilder::new(fbb);
                     values_builder.add_bool_value(values);
