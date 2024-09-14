@@ -27,7 +27,7 @@ use trace::{debug, Span, SpanContext};
 use super::display::DisplayableBatchReader;
 use super::memcache_reader::MemCacheReader;
 use super::merge::DataMerger;
-use super::pushdown_agg_reader::PushDownAggregateReader;
+use super::pushdown_agg_reader::{PushDownAggregateReader, PushDownAggregateStream};
 use super::series::SeriesReader;
 use super::trace::Recorder;
 use super::{
@@ -882,7 +882,15 @@ pub async fn execute(
         .await;
     }
 
-    Ok(Box::pin(EmptySchemableTskvRecordBatchStream::new(schema)))
+    if query_option.aggregates.is_some() {
+        return Ok(Box::pin(PushDownAggregateStream {
+            schema: query_option.df_schema.clone(),
+            num_count: 0,
+            is_get: false,
+        }));
+    } else {
+        Ok(Box::pin(EmptySchemableTskvRecordBatchStream::new(schema)))
+    }
 }
 
 async fn build_stream(
@@ -926,22 +934,22 @@ async fn build_stream(
     ));
 
     if series_ids.is_empty() {
-        return Ok(Box::pin(EmptySchemableTskvRecordBatchStream::new(
-            query_option.df_schema.clone(),
-        )));
-    }
-
-    /* if query_option.aggregates.is_some() {
-        // TODO: 重新实现聚合下推
-        return Err(CommonSnafu {
-            reason: "aggregates push down is not supported yet".to_string(),
+        if query_option.aggregates.is_some() {
+            return Ok(Box::pin(PushDownAggregateStream {
+                schema: query_option.df_schema.clone(),
+                num_count: 0,
+                is_get: false,
+            }));
+        } else {
+            return Ok(Box::pin(EmptySchemableTskvRecordBatchStream::new(
+                query_option.df_schema.clone(),
+            )));
         }
-        .build());
-    } */
+    }
 
     let factory = SeriesGroupBatchReaderFactory::new(
         engine,
-        query_option,
+        query_option.clone(),
         super_version,
         Span::enter_with_parent("SeriesGroupBatchReaderFactory", &span),
         ExecutionPlanMetricsSet::new(),
@@ -958,9 +966,17 @@ async fn build_stream(
         return Ok(Box::pin(reader.process()?));
     }
 
-    Ok(Box::pin(EmptySchemableTskvRecordBatchStream::new(
-        factory.schema(),
-    )))
+    if query_option.aggregates.is_some() {
+        Ok(Box::pin(PushDownAggregateStream {
+            schema: factory.schema(),
+            num_count: 0,
+            is_get: false,
+        }))
+    } else {
+        Ok(Box::pin(EmptySchemableTskvRecordBatchStream::new(
+            factory.schema(),
+        )))
+    }    
 }
 
 #[cfg(test)]

@@ -239,9 +239,10 @@ fn determine_whether_support_push_down(aggr_expr: &[Expr]) -> bool {
             let support_agg_func = matches!(
                 fun,
                 /* AggregateFunctionName::Max
-                    | AggregateFunctionName::Min
-                    | AggregateFunctionName::Sum
-                    |  */AggregateFunctionName::Count
+                | AggregateFunctionName::Min
+                | AggregateFunctionName::Sum
+                |  */
+                AggregateFunctionName::Count
             );
 
             support_agg_func && !distinct

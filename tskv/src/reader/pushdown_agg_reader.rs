@@ -105,10 +105,10 @@ impl BatchReader for PushDownAggregateReader {
     }
 }
 
-struct PushDownAggregateStream {
-    schema: SchemaRef,
-    num_count: i64,
-    is_get: bool,
+pub struct PushDownAggregateStream {
+    pub schema: SchemaRef,
+    pub num_count: i64,
+    pub is_get: bool,
 }
 
 impl SchemableTskvRecordBatchStream for PushDownAggregateStream {

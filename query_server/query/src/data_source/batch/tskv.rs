@@ -362,18 +362,22 @@ impl TableProvider for ClusterTable {
                             if let Some(col) = self.schema.column(&expr.name) {
                                 if col.column_type.is_tag() {
                                     return Ok(TableProviderAggregationPushDown::Unsupported);
+                                } else {
+                                    return Ok(TableProviderAggregationPushDown::Ungrouped);
                                 }
                             }
                         }
                         Expr::Literal(expr) => {
                             if expr.is_null() {
                                 return Ok(TableProviderAggregationPushDown::Unsupported);
+                            } else {
+                                return Ok(TableProviderAggregationPushDown::Ungrouped);
                             }
                         }
-                        _ => {}
+                        _ => {
+                            return Ok(TableProviderAggregationPushDown::Unsupported);
+                        }
                     }
-                    
-                    return Ok(TableProviderAggregationPushDown::Ungrouped);
                 }
             }
         }

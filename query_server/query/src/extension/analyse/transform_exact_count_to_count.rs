@@ -50,7 +50,7 @@ fn analyze_internal(plan: LogicalPlan) -> Result<Transformed<LogicalPlan>> {
                         })];
                         let new_group_expr = if group_expr.is_empty() {
                             // add a dummy group by for forbid pushdown
-                            vec![Expr::Literal(ScalarValue::Int64(Some(0)))]
+                            vec![Expr::Literal(ScalarValue::Boolean(None))]
                         } else {
                             group_expr.clone()
                         };
