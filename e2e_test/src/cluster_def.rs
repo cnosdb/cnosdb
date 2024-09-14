@@ -55,10 +55,6 @@ fn data_id_to_opentsdb_service_port(id: u8) -> u16 {
     8905 + (id - 1) as u16 * 10
 }
 
-fn data_id_to_vector_service_port(id: u8) -> u16 {
-    8906 + (id - 1) as u16 * 10
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MetaNodeDefinition {
     pub id: u8,
@@ -163,7 +159,6 @@ pub struct DataNodeDefinition {
     pub coord_service_port: Option<u16>,
     pub flight_service_port: Option<u16>,
     pub opentsdb_service_port: Option<u16>,
-    pub vector_service_port: Option<u16>,
     pub grpc_enable_gzip: bool,
 }
 
@@ -196,7 +191,6 @@ impl DataNodeDefinition {
             coord_service_port: Some(data_id_to_coord_service_port(id)),
             flight_service_port: Some(data_id_to_flight_service_port(id)),
             opentsdb_service_port: Some(data_id_to_opentsdb_service_port(id)),
-            vector_service_port: Some(data_id_to_vector_service_port(id)),
             heartbeat_interval: Duration::from_millis(100),
             grpc_enable_gzip: false,
         }
@@ -228,7 +222,6 @@ impl DataNodeDefinition {
         config.service.grpc_listen_port = self.coord_service_port;
         config.service.flight_rpc_listen_port = self.flight_service_port;
         config.service.tcp_listen_port = self.opentsdb_service_port;
-        config.service.vector_listen_port = self.vector_service_port;
         config.cluster.heartbeat_interval = self.heartbeat_interval;
         config.service.grpc_enable_gzip = self.grpc_enable_gzip;
     }
@@ -245,7 +238,6 @@ impl Default for DataNodeDefinition {
             coord_service_port: Some(8903),
             flight_service_port: Some(8904),
             opentsdb_service_port: Some(8905),
-            vector_service_port: Some(8906),
             heartbeat_interval: Duration::from_millis(100),
             grpc_enable_gzip: false,
         }
@@ -326,7 +318,6 @@ fn test_cnosdb_cluster_definition_factory() {
                 coord_service_port: Some(8903 + (data_id - 1) as u16 * 10),
                 flight_service_port: Some(8904 + (data_id - 1) as u16 * 10),
                 opentsdb_service_port: Some(8905 + (data_id - 1) as u16 * 10),
-                vector_service_port: Some(8906 + (data_id - 1) as u16 * 10),
                 heartbeat_interval: Duration::from_millis(100),
                 grpc_enable_gzip: false,
             }],
@@ -352,7 +343,6 @@ fn test_cnosdb_cluster_definition_factory() {
                     coord_service_port: Some(8913),
                     flight_service_port: Some(8914),
                     opentsdb_service_port: Some(8915),
-                    vector_service_port: Some(8916),
                     heartbeat_interval: Duration::from_millis(100),
                     grpc_enable_gzip: false,
                 },

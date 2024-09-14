@@ -45,7 +45,6 @@ fn main() -> Result<(), AnyError> {
         &rust_dir.join("generated").join("protobuf_generated"),
         vec![
             ("kv_service.proto", "kv_service"),
-            ("vector_event.proto", "vector"),
             ("raft_service.proto", "raft_service"),
             ("logproto.proto", "logproto"),
             ("jaeger_api_v2.proto", "jaeger_api_v2"),
