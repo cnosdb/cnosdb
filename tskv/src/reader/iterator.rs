@@ -884,7 +884,7 @@ pub async fn execute(
 
     if query_option.aggregates.is_some() {
         Ok(Box::pin(PushDownAggregateStream {
-            schema: query_option.df_schema.clone(),
+            schema,
             num_count: 0,
             is_get: false,
         }))

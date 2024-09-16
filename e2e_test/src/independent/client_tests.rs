@@ -623,7 +623,10 @@ fn explain_time_count_tests() {
         let expected_resp_lines_7 = replace_src_by_dst(
             expected_resp_lines[7].to_string(),
             resp_lines[7],
-            vec![(Some("input_partitions="), None)],
+            vec![
+                (Some("Hash([Boolean(NULL)@0], "), Some(")")),
+                (Some("input_partitions="), None),
+            ],
         );
         expected_resp_lines[7] = &expected_resp_lines_7;
 
