@@ -5,11 +5,12 @@ use arrow_array::{
 };
 use arrow_schema::{DataType, TimeUnit};
 use models::column_data::PrimaryColumnData;
-use models::schema::tskv_table_schema::TableColumn;
+use models::schema::tskv_table_schema::{ColumnType, TableColumn};
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 use utils::bitset::{BitSet, ImmutBitSet, NullBitset};
 
+use super::mutable_column_ref::{MutableColumnRef, PrimaryColumnDataRef};
 use super::statistics::ValueStatistics;
 use crate::byte_utils::{decode_be_u32, decode_be_u64};
 use crate::error::{
@@ -470,6 +471,98 @@ impl Page {
             statistics,
         };
         Ok(Page { bytes, meta })
+    }
+
+    pub fn colref_to_page(column: MutableColumnRef) -> TskvResult<Page> {
+        let table_column = column.column_desc;
+        let column_data_len = column.column_data.valid.len() as u64;
+
+        let mut buffer = vec![];
+        let statistics = match column.column_data.primary_data {
+            PrimaryColumnDataRef::Bool(values, min, max) => {
+                let encoder = get_bool_codec(table_column.encoding());
+                encoder.encode(&values, &mut buffer).context(EncodeSnafu)?;
+                PageStatistics::Bool(ValueStatistics::new(
+                    Some(min),
+                    Some(max),
+                    None,
+                    column_data_len - values.len() as u64,
+                ))
+            }
+
+            PrimaryColumnDataRef::F64(values, min, max) => {
+                let encoder = get_f64_codec(table_column.encoding());
+                encoder.encode(&values, &mut buffer).context(EncodeSnafu)?;
+                PageStatistics::F64(ValueStatistics::new(
+                    Some(min),
+                    Some(max),
+                    None,
+                    column_data_len - values.len() as u64,
+                ))
+            }
+
+            PrimaryColumnDataRef::I64(values, min, max) => {
+                match table_column.column_type {
+                    ColumnType::Time(_) => {
+                        let encoder = get_ts_codec(table_column.encoding());
+                        encoder.encode(&values, &mut buffer).context(EncodeSnafu)?;
+                    }
+                    _ => {
+                        let encoder = get_i64_codec(table_column.encoding());
+                        encoder.encode(&values, &mut buffer).context(EncodeSnafu)?;
+                    }
+                };
+                PageStatistics::I64(ValueStatistics::new(
+                    Some(min),
+                    Some(max),
+                    None,
+                    column_data_len - values.len() as u64,
+                ))
+            }
+
+            PrimaryColumnDataRef::U64(values, min, max) => {
+                let encoder = get_u64_codec(table_column.encoding());
+                encoder.encode(&values, &mut buffer).context(EncodeSnafu)?;
+                PageStatistics::U64(ValueStatistics::new(
+                    Some(min),
+                    Some(max),
+                    None,
+                    column_data_len - values.len() as u64,
+                ))
+            }
+
+            PrimaryColumnDataRef::String(values, min, max) => {
+                let encoder = get_str_codec(table_column.encoding());
+                encoder.encode(&values, &mut buffer).context(EncodeSnafu)?;
+                PageStatistics::Bytes(ValueStatistics::new(
+                    Some(min.to_vec()),
+                    Some(max.to_vec()),
+                    None,
+                    column_data_len - values.len() as u64,
+                ))
+            }
+        };
+
+        let mut hasher = crc32fast::Hasher::new();
+        hasher.update(&buffer);
+        let buf_crc32 = hasher.finalize().to_be_bytes();
+
+        let mut page_data = vec![];
+        let bit_set_buffer = column.column_data.valid.bytes();
+        page_data.extend_from_slice(&(bit_set_buffer.len() as u32).to_be_bytes());
+        page_data.extend_from_slice(&column_data_len.to_be_bytes());
+        page_data.extend_from_slice(&buf_crc32);
+        page_data.extend_from_slice(bit_set_buffer);
+        page_data.extend_from_slice(&buffer);
+
+        Ok(Page {
+            bytes: bytes::Bytes::from(page_data),
+            meta: PageMeta {
+                statistics,
+                column: table_column,
+                num_values: column_data_len as u32,
+            },
+        })
     }
 }
 

@@ -6,11 +6,6 @@ use snafu::Snafu;
 
 use crate::Line;
 
-pub struct Parser {
-    default_time: i64,
-    // TODO Some statistics here
-}
-
 #[derive(Debug, Snafu, PartialEq, Eq)]
 pub enum Error {
     #[snafu(display("invalid line protocol syntax"))]
@@ -18,6 +13,9 @@ pub enum Error {
 
     #[snafu(display("unexpect token '{}' at {}", token, pos))]
     UnexpectedToken { pos: usize, token: char },
+
+    #[snafu(display("unexpect end line start at '{}'", pos))]
+    UnexpectedEnd { pos: usize },
 
     #[snafu(display("invalid field value: '{}'", content))]
     FieldValue { content: String },
@@ -28,145 +26,286 @@ pub enum Error {
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
+#[derive(Debug)]
+enum ParseStatus {
+    LineBegin,
+    Table,
+    TagKey,
+    TagValue,
+    FieldKey,
+    FieldValue,
+    Timestamp,
+}
+
+pub struct Parser {
+    default_time: i64,
+}
+
 impl Parser {
     pub fn new(default_time: i64) -> Self {
         Self { default_time }
     }
 
-    pub fn parse<'a>(&self, lines: &'a str) -> Result<Vec<Line<'a>>> {
-        let lines = lines.as_bytes();
-        let mut res = vec![];
-        let mut spos = 0;
-        while let Some((line, newpos)) = self.parse_line(lines, spos)? {
-            res.push(line);
-            if newpos >= lines.len() {
-                break;
-            }
-            spos = newpos;
-        }
-        Ok(res)
-    }
+    pub fn parse<'a>(&self, data: &'a str) -> Result<Vec<Line<'a>>> {
+        let mut lines = vec![];
 
-    fn parse_line<'a>(&self, lines: &'a [u8], spos: usize) -> Result<Option<(Line<'a>, usize)>> {
-        let len = lines.len();
-        let mut spos = spos;
-        while spos < len && lines[spos].is_ascii_whitespace() {
-            spos += 1;
-        }
-        if spos == len {
-            return Ok(None);
-        }
+        let mut line = Line::default();
 
-        let (epos, need_unescape) = search_comma_space_in_measurement(lines, spos)?;
-        let measurement = get_unescaped_measurement(&lines[spos..epos], need_unescape)?;
-        spos = epos + 1;
+        let mut comment = false;
+        let mut skip_space = false;
+        let mut next_escape = false;
+        let mut key_idx = (0, 0, false);
+        let mut val_idx = (0, 0, false);
+        let mut status = ParseStatus::LineBegin;
+        let mut inside_quotes = false;
 
-        let mut tags = vec![];
-        while spos < len && lines[spos - 1] != b' ' {
-            let (epos, need_unescape) = search_equal(lines, spos)?;
-            let key = get_unescaped_common(&lines[spos..epos], need_unescape)?;
-            spos = epos + 1;
-            if spos >= len {
-                return Err(Error::InvaildSyntax);
-            }
+        let data_len = data.len();
+        let data_bytes = data.as_bytes();
+        for index in 0..data_len {
+            let char = data_bytes[index];
+            // println!("---char :{} [{}]", char, char as char);
+            match status {
+                ParseStatus::LineBegin => {
+                    if comment && (char == b'\r' || char == b'\n') {
+                        comment = false;
+                        continue;
+                    }
 
-            let (epos, need_unescape) = search_comma_space_in_common(lines, spos)?;
-            let value = get_unescaped_common(&lines[spos..epos], need_unescape)?;
-            spos = epos + 1;
+                    if comment || char.is_ascii_whitespace() {
+                        continue;
+                    }
 
-            tags.push((key, value));
-        }
+                    if char == b'#' {
+                        comment = true;
+                        continue;
+                    }
 
-        while spos < len && lines[spos] == b' ' {
-            spos += 1;
-        }
+                    key_idx = (index, 0, false);
+                    status = ParseStatus::Table;
+                }
 
-        if spos >= len {
-            return Err(Error::InvaildSyntax);
-        }
+                ParseStatus::Table => {
+                    if skip_space {
+                        if char != b' ' {
+                            skip_space = false;
+                            key_idx = (index, 0, false);
+                            status = ParseStatus::FieldKey;
+                        }
+                        continue;
+                    }
 
-        let mut fields = vec![];
-        loop {
-            let (epos, need_unescape) = search_equal(lines, spos)?;
-            let key = get_unescaped_common(&lines[spos..epos], need_unescape)?;
-            spos = epos + 1;
-            if spos >= len {
-                return Err(Error::InvaildSyntax);
-            }
+                    if next_escape {
+                        if !matches!(char, b',' | b' ' | b'\\' | b'\"' | b'\'') {
+                            return Err(Error::UnexpectedToken {
+                                pos: index,
+                                token: char as char,
+                            });
+                        }
+                        next_escape = false;
+                    } else if char == b'\\' {
+                        next_escape = true;
+                        key_idx.2 = true;
+                    } else if char == b',' {
+                        line.table = escape(&data_bytes[key_idx.0..index], key_idx.2)?;
 
-            let (epos, need_unescape) = search_filed_value_end(lines, spos);
-            let value = parse_field_value(&lines[spos..epos], need_unescape)?;
-            spos = epos + 1;
-            fields.push((key, value));
+                        key_idx = (index + 1, 0, false);
+                        status = ParseStatus::TagKey;
+                    } else if char == b' ' {
+                        line.table = escape(&data_bytes[key_idx.0..index], key_idx.2)?;
 
-            if spos >= len
-                || lines[spos - 1] == b' '
-                || lines[spos - 1] == b'\n'
-                || lines[spos - 1] == b'\r'
-            {
-                break;
-            }
-        }
+                        skip_space = true;
+                    }
+                }
 
-        if spos >= len {
-            let mut line = Line {
-                hash_id: 0,
-                table: measurement,
-                tags,
-                fields,
-                timestamp: self.default_time,
+                ParseStatus::TagKey => {
+                    if next_escape {
+                        if !matches!(char, b',' | b' ' | b'=' | b'\\' | b'\"' | b'\'') {
+                            return Err(Error::UnexpectedToken {
+                                pos: index,
+                                token: char as char,
+                            });
+                        }
+                        next_escape = false;
+                    } else if char == b'\\' {
+                        next_escape = true;
+                        key_idx.2 = true;
+                    } else if char == b'=' {
+                        key_idx.1 = index;
+                        val_idx = (index + 1, 0, false);
+                        status = ParseStatus::TagValue;
+                    }
+                }
+
+                ParseStatus::TagValue => {
+                    if skip_space {
+                        if char != b' ' {
+                            skip_space = false;
+                            key_idx = (index, 0, false);
+                            status = ParseStatus::FieldKey;
+                        }
+                        continue;
+                    }
+
+                    if next_escape {
+                        if !matches!(char, b',' | b' ' | b'=' | b'\\' | b'\"' | b'\'') {
+                            return Err(Error::UnexpectedToken {
+                                pos: index,
+                                token: char as char,
+                            });
+                        }
+                        next_escape = false;
+                    } else if char == b'\\' {
+                        next_escape = true;
+                        val_idx.2 = true;
+                    } else if char == b',' {
+                        let key = escape(&data_bytes[key_idx.0..key_idx.1], key_idx.2)?;
+                        let val = escape(&data_bytes[val_idx.0..index], val_idx.2)?;
+                        line.tags.push((key, val));
+
+                        key_idx = (index + 1, 0, false);
+                        status = ParseStatus::TagKey;
+                    } else if char == b' ' {
+                        let key = escape(&data_bytes[key_idx.0..key_idx.1], key_idx.2)?;
+                        let val = escape(&data_bytes[val_idx.0..index], val_idx.2)?;
+                        line.tags.push((key, val));
+
+                        skip_space = true;
+                    }
+                }
+
+                ParseStatus::FieldKey => {
+                    if next_escape {
+                        if !matches!(char, b',' | b' ' | b'=' | b'\\' | b'\"' | b'\'') {
+                            return Err(Error::UnexpectedToken {
+                                pos: index,
+                                token: char as char,
+                            });
+                        }
+                        next_escape = false;
+                    } else if char == b'\\' {
+                        next_escape = true;
+                        key_idx.2 = true;
+                    } else if char == b'=' {
+                        key_idx.1 = index;
+                        val_idx = (index + 1, 0, false);
+                        status = ParseStatus::FieldValue;
+                    }
+                }
+
+                ParseStatus::FieldValue => {
+                    if skip_space {
+                        if char != b' ' {
+                            skip_space = false;
+                            key_idx = (index, 0, false);
+                            status = ParseStatus::Timestamp;
+                        }
+                        continue;
+                    }
+
+                    if next_escape {
+                        if !matches!(char, b'\'' | b'\"' | b'\\') {
+                            return Err(Error::UnexpectedToken {
+                                pos: index,
+                                token: char as char,
+                            });
+                        }
+
+                        next_escape = false;
+                    } else if char == b'\"' {
+                        inside_quotes = !inside_quotes;
+                    } else if char == b'\\' {
+                        next_escape = true;
+                        val_idx.2 = true;
+                    } else if char == b',' && !inside_quotes {
+                        let key = escape(&data_bytes[key_idx.0..key_idx.1], key_idx.2)?;
+                        let val = parse_field_value(&data_bytes[val_idx.0..index], val_idx.2)?;
+                        line.fields.push((key, val));
+
+                        key_idx = (index + 1, 0, false);
+                        status = ParseStatus::FieldKey;
+                    } else if char == b' ' && !inside_quotes {
+                        let key = escape(&data_bytes[key_idx.0..key_idx.1], key_idx.2)?;
+                        let val = parse_field_value(&data_bytes[val_idx.0..index], val_idx.2)?;
+                        line.fields.push((key, val));
+
+                        key_idx = (index, 0, false);
+                        skip_space = true;
+                    } else if (char == b'\r' || char == b'\n') && !inside_quotes {
+                        let key = escape(&data_bytes[key_idx.0..key_idx.1], key_idx.2)?;
+                        let val = parse_field_value(&data_bytes[val_idx.0..index], val_idx.2)?;
+                        line.fields.push((key, val));
+
+                        line.timestamp = self.default_time;
+                        line.sort_dedup_and_hash();
+                        lines.push(line);
+
+                        line = Line::default();
+                        key_idx = (0, 0, false);
+                        status = ParseStatus::LineBegin;
+                    }
+                }
+
+                ParseStatus::Timestamp => {
+                    if char.is_ascii_whitespace() {
+                        let timestamp = if key_idx.0 == index {
+                            self.default_time
+                        } else {
+                            atoi_simd::parse(&data_bytes[key_idx.0..index])
+                                .map_err(|_| Error::Timestamp { pos: index })?
+                        };
+                        line.timestamp = timestamp;
+                        line.sort_dedup_and_hash();
+                        lines.push(line);
+
+                        line = Line::default();
+                        key_idx = (index + 1, 0, false);
+                        status = ParseStatus::LineBegin;
+                    }
+                }
             };
+        }
+
+        if let ParseStatus::Timestamp = status {
+            let timestamp = if key_idx.0 == 0 {
+                self.default_time
+            } else {
+                let (timestamp, _) = atoi_simd::parse_until_invalid(&data_bytes[key_idx.0..])
+                    .map_err(|_| Error::Timestamp { pos: key_idx.0 })?;
+                timestamp
+            };
+
+            line.timestamp = timestamp;
             line.sort_dedup_and_hash();
-            return Ok(Some((line, spos)));
-        }
+            lines.push(line);
 
-        if lines[spos - 1] == b' ' {
-            while spos < len && lines[spos] == b' ' {
-                spos += 1;
+            status = ParseStatus::LineBegin;
+        } else if let ParseStatus::FieldValue = status {
+            if inside_quotes {
+                return Err(Error::UnexpectedEnd { pos: val_idx.0 });
             }
-        }
-        let timestamp = if lines[spos - 1] == b' ' {
-            let res = atoi_simd::parse_until_invalid(&lines[spos..])
-                .map_err(|_| Error::Timestamp { pos: spos })?;
-            spos += res.1;
-            res.0
-        } else {
-            self.default_time
-        };
 
-        let mut line = Line {
-            hash_id: 0,
-            table: measurement,
-            tags,
-            fields,
-            timestamp,
-        };
-        line.sort_dedup_and_hash();
-        Ok(Some((line, spos)))
+            if key_idx.1 > key_idx.0 && data_bytes.len() > val_idx.0 {
+                let key = escape(&data_bytes[key_idx.0..key_idx.1], key_idx.2)?;
+                let val = parse_field_value(&data_bytes[val_idx.0..], val_idx.2)?;
+                line.fields.push((key, val));
+            }
+
+            line.timestamp = self.default_time;
+            line.sort_dedup_and_hash();
+            lines.push(line);
+
+            status = ParseStatus::LineBegin;
+        }
+
+        if let ParseStatus::LineBegin = status {
+            return Ok(lines);
+        }
+
+        Err(Error::UnexpectedEnd { pos: key_idx.0 })
     }
 }
 
-fn get_unescaped_measurement(s: &[u8], need_unescape: bool) -> Result<Cow<str>> {
-    if !need_unescape {
-        return Ok(Cow::Borrowed(u8_slice_to_str_unchecked(s)));
-    }
-    let mut ownd_bytes = Vec::with_capacity(s.len());
-    for (&v1, &v2) in s.iter().tuple_windows() {
-        if v2 == b',' || v2 == b' ' {
-            if v1 != b'\\' {
-                return Err(Error::InvaildSyntax);
-            }
-            continue;
-        }
-        ownd_bytes.push(v1);
-    }
-    ownd_bytes.push(s[s.len() - 1]);
-    Ok(Cow::Owned(unsafe {
-        String::from_utf8_unchecked(ownd_bytes)
-    }))
-}
-
-fn get_unescaped_common(s: &[u8], need_unescape: bool) -> Result<Cow<str>> {
+fn escape(s: &[u8], need_unescape: bool) -> Result<Cow<str>> {
     if !need_unescape {
         return Ok(Cow::Borrowed(u8_slice_to_str_unchecked(s)));
     }
@@ -184,79 +323,6 @@ fn get_unescaped_common(s: &[u8], need_unescape: bool) -> Result<Cow<str>> {
     Ok(Cow::Owned(unsafe {
         String::from_utf8_unchecked(ownd_bytes)
     }))
-}
-
-fn search_comma_space_in_measurement(lines: &[u8], spos: usize) -> Result<(usize, bool)> {
-    if lines[spos] == b',' {
-        return Err(Error::UnexpectedToken {
-            pos: spos,
-            token: lines[spos] as char,
-        });
-    }
-    let mut need_unescape = false;
-    for ((_, &v1), (i, &v2)) in lines[spos..].iter().enumerate().tuple_windows() {
-        if (v2 == b' ' || v2 == b',') && v1 != b'\\' {
-            return Ok((spos + i, need_unescape));
-        }
-        need_unescape |= v2 == b',' || v2 == b' ';
-    }
-    Err(Error::InvaildSyntax)
-}
-
-fn search_comma_space_in_common(lines: &[u8], spos: usize) -> Result<(usize, bool)> {
-    if lines[spos] == b' ' || lines[spos] == b',' || lines[spos] == b'=' {
-        return Err(Error::UnexpectedToken {
-            pos: spos,
-            token: lines[spos] as char,
-        });
-    }
-    let mut need_unescape = false;
-    for ((_, &v1), (i, &v2)) in lines[spos..].iter().enumerate().tuple_windows() {
-        if (v2 == b' ' || v2 == b',') && v1 != b'\\' {
-            return Ok((spos + i, need_unescape));
-        }
-        need_unescape |= v2 == b',' || v2 == b' ' || v2 == b'=';
-    }
-    Err(Error::InvaildSyntax)
-}
-
-fn search_filed_value_end(lines: &[u8], spos: usize) -> (usize, bool) {
-    let mut inside_quotes = lines[spos] == b'"';
-    let mut need_unescape = false;
-    let mut v1_unescaped = false;
-    for ((_, &v1), (i, &v2)) in lines[spos..].iter().enumerate().tuple_windows() {
-        if v2 == b'"' && (v1 != b'\\' || v1_unescaped) {
-            inside_quotes = !inside_quotes;
-            v1_unescaped = false;
-            continue;
-        }
-        if inside_quotes {
-            v1_unescaped = v1 == b'\\' && (v2 == b'"' || v2 == b'\\');
-            need_unescape |= v1_unescaped;
-            continue;
-        }
-        if v2 == b' ' || v2 == b',' || v2 == b'\n' || v2 == b'\r' {
-            return (spos + i, need_unescape);
-        }
-    }
-    (lines.len(), need_unescape)
-}
-
-fn search_equal(lines: &[u8], spos: usize) -> Result<(usize, bool)> {
-    if lines[spos] == b'=' || lines[spos] == b' ' || lines[spos] == b',' {
-        return Err(Error::UnexpectedToken {
-            pos: spos,
-            token: lines[spos] as char,
-        });
-    }
-    let mut need_unescape = false;
-    for ((_, &v1), (i, &v2)) in lines[spos..].iter().enumerate().tuple_windows() {
-        if v2 == b'=' && v1 != b'\\' {
-            return Ok((spos + i, need_unescape));
-        }
-        need_unescape |= v2 == b',' || v2 == b' ' || v2 == b'=';
-    }
-    Err(Error::InvaildSyntax)
 }
 
 fn parse_field_value(buf: &[u8], need_unescape: bool) -> Result<FieldValue> {
@@ -317,7 +383,7 @@ fn parse_string_field(buf: &[u8], need_unescape: bool) -> Result<FieldValue> {
         });
     }
     match (buf[0], buf[buf.len() - 1]) {
-        (b'"', b'"') => Ok(FieldValue::Str(get_unescaped_str(
+        (b'"', b'"') => Ok(FieldValue::Str(escaped_field_value(
             &buf[1..buf.len() - 1],
             need_unescape,
         )?)),
@@ -327,7 +393,7 @@ fn parse_string_field(buf: &[u8], need_unescape: bool) -> Result<FieldValue> {
     }
 }
 
-fn get_unescaped_str(buf: &[u8], need_unescape: bool) -> Result<Vec<u8>> {
+fn escaped_field_value(buf: &[u8], need_unescape: bool) -> Result<Vec<u8>> {
     if !need_unescape {
         return Ok(buf.to_owned());
     }
@@ -366,7 +432,6 @@ mod test {
 
     use crate::line_protocol::parser::Parser;
     use crate::line_protocol::Line;
-    use crate::LineProtocolError;
 
     // Some of the tests are from https://github.com/influxdata/line-protocol/blob/v2/lineprotocol/decoder_test.go
     #[test]
@@ -583,6 +648,17 @@ comma\,1,equals\==e\,x,two=val2 field\=x="fir\"
         let parser = Parser::new(-1);
         let line = "log,host=domain.1,service=service-1,a,b,c d=1";
         let res = parser.parse(line);
-        assert_eq!(res, Err(LineProtocolError::InvaildSyntax));
+        assert!(res.is_err())
+    }
+
+    #[test]
+    fn test_simple_parse() {
+        let parser = crate::line_protocol::parser::Parser::new(10000);
+        let data = r#"abc1,tag1=val1 x=12345
+                      abc2,foo=bar x="second" 200"#;
+        let lines = parser.parse(data).unwrap();
+        for line in lines {
+            println!("--- {:?}", line);
+        }
     }
 }

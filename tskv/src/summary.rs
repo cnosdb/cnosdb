@@ -31,13 +31,13 @@ use crate::tsfamily::level_info::LevelInfo;
 use crate::tsfamily::tseries_family::TseriesFamily;
 use crate::tsfamily::version::Version;
 use crate::version_set::VersionSet;
-use crate::{byte_utils, file_utils, ColumnFileId, LevelId, TseriesFamilyId};
+use crate::{byte_utils, file_utils, ColumnFileId, LevelId, VnodeId};
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct CompactMeta {
     pub file_id: ColumnFileId,
     pub file_size: u64,
-    pub tsf_id: TseriesFamilyId,
+    pub tsf_id: VnodeId,
     pub level: LevelId,
     pub min_ts: Timestamp,
     pub max_ts: Timestamp,
@@ -77,11 +77,30 @@ impl From<&ColumnFile> for CompactMeta {
 }
 
 impl CompactMeta {
+    pub fn new(
+        tsf_id: VnodeId,
+        file_id: u64,
+        file_size: u64,
+        level: LevelId,
+        min_ts: Timestamp,
+        max_ts: Timestamp,
+    ) -> CompactMeta {
+        CompactMeta {
+            file_id,
+            file_size,
+            tsf_id,
+            level,
+            min_ts,
+            max_ts,
+            is_delta: level == 0,
+        }
+    }
+
     pub fn file_path(
         &self,
         storage_opt: &StorageOptions,
         owner: &str,
-        ts_family_id: TseriesFamilyId,
+        ts_family_id: VnodeId,
     ) -> PathBuf {
         if self.is_delta {
             let base_dir = storage_opt.delta_dir(owner, ts_family_id);
@@ -128,35 +147,6 @@ impl CompactMeta {
     }
 }
 
-pub struct CompactMetaBuilder {
-    pub ts_family_id: TseriesFamilyId,
-}
-
-impl CompactMetaBuilder {
-    pub fn new(ts_family_id: TseriesFamilyId) -> Self {
-        Self { ts_family_id }
-    }
-
-    pub fn build(
-        &self,
-        file_id: ColumnFileId,
-        file_size: u64,
-        level: LevelId,
-        min_ts: Timestamp,
-        max_ts: Timestamp,
-    ) -> CompactMeta {
-        CompactMeta {
-            file_id,
-            file_size,
-            tsf_id: self.ts_family_id,
-            level,
-            min_ts,
-            max_ts,
-            is_delta: level == 0,
-        }
-    }
-}
-
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct VersionEdit {
     pub seq_no: u64,
@@ -166,7 +156,7 @@ pub struct VersionEdit {
     pub del_files: Vec<CompactMeta>,
 
     pub act_tsf: VnodeAction,
-    pub tsf_id: TseriesFamilyId,
+    pub tsf_id: VnodeId,
     pub tsf_name: String,
 }
 
@@ -428,9 +418,9 @@ impl Summary {
         memory_pool: MemoryPoolRef,
         metrics_register: Arc<MetricsRegister>,
     ) -> TskvResult<VersionSet> {
-        let mut tsf_edits_map: HashMap<TseriesFamilyId, Vec<VersionEdit>> = HashMap::new();
+        let mut tsf_edits_map: HashMap<VnodeId, Vec<VersionEdit>> = HashMap::new();
         let mut owner_map: HashMap<String, Arc<String>> = HashMap::new();
-        let mut tsf_owner_map: HashMap<TseriesFamilyId, Arc<String>> = HashMap::new();
+        let mut tsf_owner_map: HashMap<VnodeId, Arc<String>> = HashMap::new();
 
         loop {
             let res = reader.read_record().await;
@@ -715,7 +705,7 @@ mod test {
 
     use crate::kv_option::{self, Options};
     use crate::summary::{CompactMeta, Summary, SummaryTask, VersionEdit};
-    use crate::{Engine, TsKv, TseriesFamilyId};
+    use crate::{Engine, TsKv, VnodeId};
 
     #[test]
     fn test_version_edit() {
@@ -880,8 +870,7 @@ mod test {
             let all_db_names: Vec<String> = version_set.get_all_db().keys().cloned().collect();
             assert_eq!(all_db_names, vec!["cnosdb.hello".to_string()]);
             let db = version_set.get_all_db().get("cnosdb.hello").unwrap();
-            let vnode_ids: Vec<TseriesFamilyId> =
-                db.read().await.ts_families().keys().cloned().collect();
+            let vnode_ids: Vec<VnodeId> = db.read().await.ts_families().keys().cloned().collect();
             assert_eq!(vnode_ids, vec![100]);
         });
     }

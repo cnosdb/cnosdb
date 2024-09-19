@@ -34,7 +34,7 @@ use crate::tsfamily::level_info::LevelInfo;
 use crate::tsfamily::tseries_family::{TseriesFamily, TsfFactory};
 use crate::tsfamily::version::Version;
 use crate::tsm::reader::TsmReader;
-use crate::{TsKvContext, TseriesFamilyId};
+use crate::{TsKvContext, VnodeId};
 
 pub type FlatBufferTable<'a> = flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Table<'a>>>;
 
@@ -47,8 +47,8 @@ pub struct Database {
     db_name: Arc<String>,
 
     schemas: Arc<DBschemas>,
-    ts_indexes: HashMap<TseriesFamilyId, Arc<RwLock<TSIndex>>>,
-    ts_families: HashMap<TseriesFamilyId, Arc<RwLock<TseriesFamily>>>,
+    ts_indexes: HashMap<VnodeId, Arc<RwLock<TSIndex>>>,
+    ts_families: HashMap<VnodeId, Arc<RwLock<TseriesFamily>>>,
     tsf_factory: TsfFactory,
 }
 
@@ -136,7 +136,7 @@ impl Database {
 
     pub async fn create_tsfamily(
         &mut self,
-        tsf_id: TseriesFamilyId,
+        tsf_id: VnodeId,
         ctx: Arc<TsKvContext>,
     ) -> TskvResult<Arc<RwLock<TseriesFamily>>> {
         let tsm_reader_cache = Arc::new(cache::ShardedAsyncCache::create_lru_sharded_cache(
@@ -452,22 +452,22 @@ impl Database {
         None
     }
 
-    pub fn ts_families(&self) -> &HashMap<TseriesFamilyId, Arc<RwLock<TseriesFamily>>> {
+    pub fn ts_families(&self) -> &HashMap<VnodeId, Arc<RwLock<TseriesFamily>>> {
         &self.ts_families
     }
 
     pub fn for_each_ts_family<F>(&self, func: F)
     where
-        F: FnMut((&TseriesFamilyId, &Arc<RwLock<TseriesFamily>>)),
+        F: FnMut((&VnodeId, &Arc<RwLock<TseriesFamily>>)),
     {
         self.ts_families.iter().for_each(func);
     }
 
-    pub fn del_ts_index(&mut self, id: TseriesFamilyId) {
+    pub fn del_ts_index(&mut self, id: VnodeId) {
         self.ts_indexes.remove(&id);
     }
 
-    pub fn get_ts_index(&self, id: TseriesFamilyId) -> Option<Arc<RwLock<TSIndex>>> {
+    pub fn get_ts_index(&self, id: VnodeId) -> Option<Arc<RwLock<TSIndex>>> {
         if let Some(v) = self.ts_indexes.get(&id) {
             return Some(v.clone());
         }
@@ -475,7 +475,7 @@ impl Database {
         None
     }
 
-    pub fn ts_indexes(&self) -> HashMap<TseriesFamilyId, Arc<RwLock<TSIndex>>> {
+    pub fn ts_indexes(&self) -> HashMap<VnodeId, Arc<RwLock<TSIndex>>> {
         self.ts_indexes.clone()
     }
 

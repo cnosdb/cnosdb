@@ -21,6 +21,12 @@ pub struct RowData {
     pub fields: Vec<Option<FieldVal>>,
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct RowDataRef<'a> {
+    pub ts: i64,
+    pub fields: Vec<Option<&'a FieldVal>>,
+}
+
 impl RowData {
     pub fn point_to_row_data(
         schema: &TskvTableSchema,

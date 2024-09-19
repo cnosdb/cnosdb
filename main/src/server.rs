@@ -23,7 +23,6 @@ use crate::http::http_service::{HttpService, ServerMode};
 use crate::rpc::grpc_service::GrpcService;
 use crate::spi::service::ServiceRef;
 use crate::tcp::tcp_service::TcpService;
-use crate::vector::vector_grpc_service::VectorGrpcService;
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
@@ -165,12 +164,6 @@ impl ServiceBuilder {
             server.add_service(Box::new(tcp_service));
         }
 
-        if let Some(vector_service) =
-            self.create_vector_grpc_if_enabled(coord.clone(), dbms.clone())
-        {
-            server.add_service(Box::new(vector_service));
-        }
-
         (Some(kv_inst), coord)
     }
 
@@ -236,12 +229,6 @@ impl ServiceBuilder {
 
         if let Some(tcp_service) = self.create_tcp_if_enabled(coord.clone()) {
             server.add_service(Box::new(tcp_service));
-        }
-
-        if let Some(vector_service) =
-            self.create_vector_grpc_if_enabled(coord.clone(), dbms.clone())
-        {
-            server.add_service(Box::new(vector_service));
         }
 
         (Some(kv_inst), coord)
@@ -392,40 +379,6 @@ impl ServiceBuilder {
             self.metrics_register.clone(),
             self.config.trace.auto_generate_span,
             self.config.service.grpc_enable_gzip,
-        ))
-    }
-
-    fn create_vector_grpc_if_enabled(
-        &self,
-        coord: CoordinatorRef,
-        dbms: DBMSRef,
-    ) -> Option<VectorGrpcService> {
-        let default_vector_grpc_addr = match self.config.service.vector_listen_port {
-            Some(port) => build_default_address(port),
-            None => return None,
-        };
-
-        let addr = default_vector_grpc_addr
-            .to_socket_addrs()
-            .map_err(|e| {
-                format!(
-                    "Cannot resolve vector_grpc_listen_addr '{}': {}",
-                    default_vector_grpc_addr, e
-                )
-            })
-            .unwrap()
-            .collect::<Vec<SocketAddr>>()
-            .first()
-            .copied()
-            .expect("Config vector_grpc_listen_addr cannot be empty.");
-
-        Some(VectorGrpcService::new(
-            coord,
-            dbms,
-            addr,
-            None,
-            self.metrics_register.clone(),
-            self.config.trace.auto_generate_span,
         ))
     }
 

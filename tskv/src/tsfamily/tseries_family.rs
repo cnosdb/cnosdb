@@ -29,7 +29,7 @@ use crate::kv_option::StorageOptions;
 use crate::mem_cache::memcache::MemCache;
 use crate::mem_cache::series_data::RowGroup;
 use crate::summary::{CompactMeta, VersionEdit};
-use crate::{ColumnFileId, Options, TseriesFamilyId};
+use crate::{ColumnFileId, Options, VnodeId};
 
 #[derive(Debug)]
 pub struct TsfFactory {
@@ -62,7 +62,7 @@ impl TsfFactory {
 
     pub fn create_tsf(
         &self,
-        tf_id: TseriesFamilyId,
+        tf_id: VnodeId,
         version: Arc<Version>,
     ) -> Arc<TokioRwLock<TseriesFamily>> {
         let mut_cache = Arc::new(RwLock::new(MemCache::new(
@@ -115,7 +115,7 @@ impl TsfFactory {
 
 #[derive(Debug)]
 pub struct TseriesFamily {
-    tf_id: TseriesFamilyId,
+    tf_id: VnodeId,
     ctx: Arc<GlobalContext>,
     owner: Arc<String>,
     mut_cache: Arc<RwLock<MemCache>>,
@@ -134,7 +134,7 @@ impl TseriesFamily {
     #[allow(clippy::too_many_arguments)]
     #[cfg(test)]
     pub fn new(
-        tf_id: TseriesFamilyId,
+        tf_id: VnodeId,
         owner: Arc<String>,
         cache: MemCache,
         version: Arc<Version>,
@@ -392,7 +392,7 @@ impl TseriesFamily {
         Ok(index)
     }
 
-    pub fn tf_id(&self) -> TseriesFamilyId {
+    pub fn tf_id(&self) -> VnodeId {
         self.tf_id
     }
 
