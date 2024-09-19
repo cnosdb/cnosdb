@@ -213,6 +213,10 @@ impl TseriesFamily {
     }
 
     pub fn switch_to_immutable(&mut self) {
+        if self.mut_cache.read().is_empty() {
+            return;
+        }
+
         let seq_no = self.mut_cache.read().seq_no();
         self.immut_cache.push(self.mut_cache.clone());
 
