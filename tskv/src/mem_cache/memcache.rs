@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use memory_pool::{MemoryConsumer, MemoryPoolRef, MemoryReservation};
@@ -29,6 +29,8 @@ impl MemCacheStatistics {
 #[derive(Debug)]
 pub struct MemCache {
     tf_id: VnodeId,
+
+    flushing: AtomicBool,
 
     max_size: u64,
     min_seq_no: u64,
@@ -98,6 +100,8 @@ impl MemCache {
             tf_id,
             tsm_file_id,
             delta_file_id,
+
+            flushing: AtomicBool::new(false),
 
             max_size,
             min_seq_no: seq,
@@ -254,6 +258,22 @@ impl MemCache {
     pub fn read_series_data_by_id(&self, sid: SeriesId) -> Option<Arc<RwLock<SeriesData>>> {
         let index = (sid as usize) % self.part_count;
         self.partions[index].read().get(&sid).cloned()
+    }
+
+    pub fn mark_flushing(&self) -> bool {
+        self.flushing
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+    }
+
+    pub fn erase_flushing(&self) -> bool {
+        self.flushing
+            .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+    }
+
+    pub fn is_flushing(&self) -> bool {
+        self.flushing.load(Ordering::Relaxed)
     }
 
     pub fn is_full(&self) -> bool {

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::{atomic, Arc};
 use std::time::{Duration, Instant};
@@ -7,14 +7,16 @@ use metrics::metric_register::MetricsRegister;
 use snafu::ResultExt;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Receiver;
-use tokio::sync::{oneshot, Mutex, RwLock, RwLockWriteGuard, Semaphore};
-use trace::{error, info};
+use tokio::sync::oneshot::Receiver as OneshotReceiver;
+use tokio::sync::{oneshot, Mutex, Notify, RwLock, RwLockWriteGuard, Semaphore};
+use trace::{error, info, warn};
 
 use crate::compaction::metrics::{CompactionType, VnodeCompactionMetrics};
 use crate::compaction::{flush, CompactTask, FlushReq, LevelCompactionPicker, Picker};
 use crate::error::{CommonSnafu, IndexErrSnafu};
+use crate::mem_cache::memcache::MemCache;
 use crate::summary::SummaryTask;
-use crate::{TsKvContext, TskvResult, VnodeId};
+use crate::{TsKvContext, TskvResult, VersionEdit, VnodeId};
 
 const COMPACT_BATCH_CHECKING_SECONDS: u64 = 1;
 
@@ -303,49 +305,77 @@ impl<F: FnOnce()> Drop for DeferGuard<F> {
     }
 }
 
-#[derive(Clone)]
 pub struct FlushJob {
     ctx: Arc<TsKvContext>,
-    lock: Arc<RwLock<()>>,
+
+    notify: Arc<Notify>,
+    queue: Arc<RwLock<BTreeMap<u64, (FlushReq, SummaryTask)>>>,
 }
 
 impl FlushJob {
-    pub fn new(ctx: Arc<TsKvContext>) -> Self {
-        Self {
+    pub fn new(ctx: Arc<TsKvContext>) -> Arc<Self> {
+        let job = Self {
             ctx,
-            lock: Arc::new(RwLock::new(())),
+            notify: Arc::new(Notify::new()),
+            queue: Arc::new(RwLock::new(BTreeMap::new())),
+        };
+
+        let job = Arc::new(job);
+        job.ctx.runtime.spawn(Self::write_summary_job(job.clone()));
+
+        job
+    }
+
+    async fn write_summary_job(job: Arc<FlushJob>) {
+        loop {
+            job.notify.notified().await;
+            let mut queue_w = job.queue.write().await;
+            while let Some((key, (flush_req, summary_task))) = queue_w.pop_first() {
+                if !flush_req.completion {
+                    queue_w.insert(key, (flush_req, summary_task));
+                    break;
+                }
+
+                info!("Flush: completion request {} at {}", flush_req, key);
+                if let Err(e) = job.ctx.summary_task_sender.send(summary_task).await {
+                    warn!(
+                        "Flush: failed to send summary task for tsf_id: {}: {e}",
+                        flush_req.tf_id
+                    );
+                }
+
+                if flush_req.trigger_compact {
+                    let _ = job
+                        .ctx
+                        .compact_task_sender
+                        .send(CompactTask {
+                            tsf_id: flush_req.tf_id,
+                        })
+                        .await;
+                }
+            }
         }
     }
 
-    pub async fn run_block(&self, request: FlushReq) -> TskvResult<()> {
-        let ctx = self.ctx.clone();
-        let lock = self.lock.clone();
-
-        let result = Self::run(&request, ctx, lock).await;
-        info!("block flush memcaches {} result: {:?}", request, result);
+    pub async fn run_block(job: Arc<FlushJob>, request: FlushReq) -> TskvResult<()> {
+        let result = Self::run(job, &request).await;
+        info!("Flush: block flush  {} result: {:?}", request, result);
 
         result
     }
 
-    pub fn run_spawn(&self, request: FlushReq) -> TskvResult<()> {
-        let ctx = self.ctx.clone();
-        let lock = self.lock.clone();
-
-        self.ctx.runtime.spawn(async move {
-            let result = Self::run(&request, ctx, lock).await;
-            info!("spawn flush memcaches {} result: {:?}", request, result);
+    pub fn run_spawn(job: Arc<FlushJob>, request: FlushReq) -> TskvResult<()> {
+        let runtime = job.ctx.runtime.clone();
+        runtime.spawn(async move {
+            let result = Self::run(job, &request).await;
+            info!("Flush: spawn flush  {} result: {:?}", request, result);
         });
 
         Ok(())
     }
 
-    async fn run(
-        request: &FlushReq,
-        ctx: Arc<TsKvContext>,
-        lock: Arc<RwLock<()>>,
-    ) -> TskvResult<()> {
-        let _write_guard = lock.write().await;
-        info!("begin flush data {}", request);
+    async fn run(job: Arc<FlushJob>, request: &FlushReq) -> TskvResult<()> {
+        info!("Flush: begin flush data {}", request);
 
         // flush index
         request
@@ -356,20 +386,35 @@ impl FlushJob {
             .await
             .context(IndexErrSnafu)?;
 
-        // check memecaches is empty
-        let mut is_empty = true;
-        let mems = request.ts_family.read().await.im_cache().clone();
+        let ts_family_w = request.ts_family.write().await;
+        let mut mems = ts_family_w.im_cache().clone();
+        mems.retain(|x| x.read().mark_flushing());
+        let mut receivers = vec![];
         for mem in mems.iter() {
-            if !mem.read().is_empty() {
-                is_empty = false;
-            }
-        }
+            let flush_seq = mem.read().min_seq_no();
+            let (task_state_sender, task_state_receiver) = oneshot::channel();
+            receivers.push(task_state_receiver);
+            let summary_task = SummaryTask::new(
+                request.ts_family.clone(),
+                VersionEdit::default(),
+                None,
+                Some(vec![mem.clone()]),
+                task_state_sender,
+            );
 
-        // flush memecache
-        if !is_empty {
-            flush::flush_memtable(request, ctx, mems).await?;
-        } else {
-            info!("memcaches is empty exit flush {}", request);
+            job.queue
+                .write()
+                .await
+                .insert(flush_seq, (request.clone(), summary_task));
+        }
+        drop(ts_family_w);
+
+        if let Err(err) = Self::flush_memtables(job, request, mems.clone(), receivers).await {
+            for item in mems.iter_mut() {
+                item.read().erase_flushing();
+            }
+
+            return Err(err);
         }
 
         let _ = request
@@ -378,6 +423,59 @@ impl FlushJob {
             .await
             .clear_tombstone_series()
             .await;
+
+        Ok(())
+    }
+
+    async fn flush_memtables(
+        job: Arc<FlushJob>,
+        request: &FlushReq,
+        mems: Vec<Arc<parking_lot::RwLock<MemCache>>>,
+        receivers: Vec<OneshotReceiver<Result<(), crate::TskvError>>>,
+    ) -> TskvResult<()> {
+        for mem in mems {
+            let flush_seq = mem.read().min_seq_no();
+            match flush::flush_memtable(request, mem).await {
+                Ok((ve, files_meta)) => {
+                    if let Some(entry) = job.queue.write().await.get_mut(&flush_seq) {
+                        entry.0.completion = true;
+                        entry.1.request.version_edit = ve;
+                        entry.1.request.file_metas = Some(files_meta);
+                        job.notify.notify_one();
+                    }
+                }
+
+                Err(err) => {
+                    error!(
+                        "Flush: memcache failed for tsf_id: {}, because : {:?}",
+                        request.tf_id, err
+                    );
+                    return Err(err);
+                }
+            };
+        }
+
+        for task_state_receiver in receivers {
+            match task_state_receiver.await {
+                Ok(result) => {
+                    if let Err(err) = result {
+                        error!(
+                            "Flush: failed to apply summary task  for tsf_id: {}, because : {:?}",
+                            request.tf_id, err
+                        );
+
+                        return Err(err);
+                    }
+                }
+
+                Err(err) => {
+                    error!(
+                    "Flush: failed to receive summary task result for tsf_id: {}, because : {:?}",
+                    request.tf_id, err
+                );
+                }
+            }
+        }
 
         Ok(())
     }
