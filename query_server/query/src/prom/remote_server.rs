@@ -169,7 +169,7 @@ impl PromRemoteSqlServer {
                         .process_single_sql(
                             ctx,
                             sql,
-                            Span::enter_with_parent(idx.to_string(), &span),
+                            Span::enter_with_parent(format!("process_single_sql:{}", idx), &span),
                         )
                         .await?,
                 );
@@ -208,6 +208,7 @@ impl PromRemoteSqlServer {
             .execute(&inner_query, span.context().as_ref())
             .await?;
 
+        let _span = Span::enter_with_parent("transform_time_series".to_string(), &span);
         transform_time_series(result, tag_name_indices, sample_value_idx, sample_time_idx).await
     }
 
