@@ -134,8 +134,9 @@ impl FlushTask {
         for fv in field_values.iter() {
             if let Some(last_fid) = last_field_id {
                 if fv.field_id() != last_fid {
+                    // All cached series data of previous field_id has been iterated.
                     if !values.is_empty() {
-                        // Flush the values of last field.
+                        // Flush the values of last field to tsm file.
                         values.sort_by_key(|(ts, _)| *ts);
                         utils::dedup_front_by_key(&mut values, |(ts, _)| *ts);
                         let encoding = DataBlockEncoding::new(Encoding::Default, value_encoding);
@@ -146,15 +147,19 @@ impl FlushTask {
                     }
                     // Set current field_id and append the values for new field.
                     last_field_id = Some(fv.field_id());
-                    (value_type, value_encoding) = fv.get(&mut values);
-                } else {
-                    // Append the value of the same field.
-                    let _ = fv.get(&mut values);
                 }
             } else {
                 // First loop, set current field_id and append the values.
                 last_field_id = Some(fv.field_id());
-                (value_type, value_encoding) = fv.get(&mut values);
+            }
+            // Append the value of the same field.
+            let (vt, ve): (ValueType, Encoding) = fv.get(&mut values);
+            if vt != ValueType::Unknown {
+                // Sometimes data in a mem_cache is missing several columns, then fv.get() returns Unknown.
+                value_type = vt;
+            }
+            if ve != Encoding::Unknown {
+                value_encoding = ve;
             }
         }
         if !values.is_empty() {
@@ -412,7 +417,7 @@ pub mod flush_tests {
     use crate::compaction::flush::WriterWrapper;
     use crate::context::GlobalContext;
     use crate::file_utils;
-    use crate::memcache::test::put_rows_to_cache;
+    use crate::memcache::test::{put_rows_to_cache, PutNone};
     use crate::memcache::{FieldVal, MemCache};
     use crate::tsm::codec::DataBlockEncoding;
     use crate::tsm::test::read_and_check;
@@ -507,51 +512,16 @@ pub mod flush_tests {
 
     #[tokio::test]
     async fn test_flush() {
-        let mut config = config::get_config_for_test();
-        config.storage.path = "/tmp/test/flush/test_flush".to_string();
-        config.log.path = "/tmp/test/flush/test_flush/logs".to_string();
-        trace::init_default_global_tracing(&config.log.path, "tskv.log", "debug");
-
-        let dir: PathBuf = config.storage.path.clone().into();
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let delta_dir = dir.join("delta");
-        let memory_pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
-        let test_case = flush_test_case_1(&memory_pool, 10);
-
-        let global_context = Arc::new(GlobalContext::new());
-        let flush_task = FlushTask::new(test_case.caches(), 1, global_context, &delta_dir);
-        let mut version_edits = vec![];
-        let mut file_metas = HashMap::new();
-        flush_task
-            .run(&mut version_edits, &mut file_metas)
-            .await
-            .unwrap();
-
-        assert_eq!(version_edits.len(), 1);
-        let ve = version_edits.first().unwrap();
-        assert_eq!(ve.max_level_ts, test_case.max_level_ts_after);
-        assert_eq!(ve.add_files.len(), test_case.add_files_num());
-        assert!(ve.del_files.is_empty());
-
-        let (mut delta_i, mut tsm_i) = (0_usize, 0_usize);
-
-        for cm in ve.add_files.iter() {
-            let i = if cm.level == 0 {
-                let i = delta_i;
-                delta_i += 1;
-                i
-            } else {
-                let i = tsm_i;
-                tsm_i += 1;
-                i
-            };
-            assert_eq!(cm.file_size, test_case.expected_file_size[i]);
-            assert_eq!(cm.min_ts, test_case.expected_min_ts[i]);
-            assert_eq!(cm.max_ts, test_case.expected_max_ts[i]);
-            let file_path = file_utils::make_delta_file_name(&delta_dir, cm.file_id);
-            let tsm_reader = TsmReader::open(file_path).await.unwrap();
-            read_and_check(&tsm_reader, &test_case.expected_delta_data[i]).await;
+        trace::init_default_global_tracing("/tmp/test/flush/log", "tskv.log", "debug");
+        {
+            let case = flush_test_case_1(10);
+            case.run("case_1", "/tmp/test/flush/test_flush/1".into())
+                .await;
+        }
+        {
+            let case = flush_test_case_2(10);
+            case.run("case_2", "/tmp/test/flush/test_flush/2".into())
+                .await;
         }
     }
 
@@ -574,28 +544,168 @@ pub mod flush_tests {
         pub fn add_files_num(&self) -> usize {
             self.expected_file_size.len()
         }
+
+        pub async fn run(&self, case_name: &str, base_dir: PathBuf) {
+            let mut config = config::get_config_for_test();
+            config.storage.path = base_dir.to_str().unwrap().to_string();
+            config.log.path = base_dir.join("log").to_str().unwrap().to_string();
+
+            let _ = std::fs::remove_dir_all(&base_dir);
+            std::fs::create_dir_all(&base_dir).unwrap();
+            let delta_dir = base_dir.join("delta");
+
+            let global_context = Arc::new(GlobalContext::new());
+            let flush_task = FlushTask::new(self.caches(), 1, global_context, &delta_dir);
+            let mut version_edits = vec![];
+            let mut file_metas = HashMap::new();
+            flush_task
+                .run(&mut version_edits, &mut file_metas)
+                .await
+                .unwrap();
+
+            assert_eq!(version_edits.len(), 1, "In case {}", case_name);
+            let ve = version_edits.first().unwrap();
+            assert_eq!(
+                ve.max_level_ts, self.max_level_ts_after,
+                "In case {}",
+                case_name
+            );
+            assert_eq!(
+                ve.add_files.len(),
+                self.add_files_num(),
+                "In case {}",
+                case_name
+            );
+            assert!(ve.del_files.is_empty());
+
+            let (mut delta_i, mut tsm_i) = (0_usize, 0_usize);
+
+            for cm in ve.add_files.iter() {
+                let i = if cm.level == 0 {
+                    let i = delta_i;
+                    delta_i += 1;
+                    i
+                } else {
+                    let i = tsm_i;
+                    tsm_i += 1;
+                    i
+                };
+                assert_eq!(
+                    cm.file_size, self.expected_file_size[i],
+                    "In case {}",
+                    case_name
+                );
+                assert_eq!(cm.min_ts, self.expected_min_ts[i], "In case {}", case_name);
+                assert_eq!(cm.max_ts, self.expected_max_ts[i], "In case {}", case_name);
+                let file_path = file_utils::make_delta_file_name(&delta_dir, cm.file_id);
+                let tsm_reader = TsmReader::open(file_path).await.unwrap();
+                read_and_check(&tsm_reader, &self.expected_delta_data[i]).await;
+            }
+        }
     }
 
-    fn flush_test_case_1(memory_pool: &MemoryPoolRef, max_level_ts: Timestamp) -> FlushTestCase {
+    fn flush_test_case_1(max_level_ts: Timestamp) -> FlushTestCase {
+        let memory_pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::new(1024 * 1024));
         let caches = vec![
-            MemCache::new(1, 16, 2, 0, memory_pool),
-            MemCache::new(1, 16, 2, 0, memory_pool),
-            MemCache::new(1, 16, 2, 0, memory_pool),
+            MemCache::new(1, 16, 2, 0, &memory_pool),
+            MemCache::new(1, 16, 2, 0, &memory_pool),
+            MemCache::new(1, 16, 2, 0, &memory_pool),
         ];
+        // |     === Cache: 0 ===     |
+        // | ===== | = Series: 1 | = Series: 1
+        // | ===== | = Schema: 1 | = Schema: 1
+        // | Col_0 | 3, 4        | 1, 2, 3
+        // | Col_1 | 3, 4        | 1, 2, 3
+        // | Col_2 | 3, 4        | 1, 2, 4
+        // | Col_3 | _, _        | _, _, _
+        // |     === Cache: 1 ===     |
+        // | ===== | = Series: 1  | = Series: 1
+        // | ===== | = Schema: 2  | = Schema: 2
+        // | Col_0 | 5, 6         | 6, 7, 8
+        // | Col_1 | 5, 6         | 6, 7, 8
+        // | Col_2 | 5, 6         | 6, 7, 8
+        // | Col_3 | 5, 6         | 6, 7, 8
         #[rustfmt::skip]
         let _skip_fmt = {
-            put_rows_to_cache(&caches[0], 1, 1, default_table_schema(vec![0, 1, 2]), (3, 4), false);
-            put_rows_to_cache(&caches[0], 1, 2, default_table_schema(vec![0, 1, 3]), (1, 2), false);
-            put_rows_to_cache(&caches[0], 1, 3, default_table_schema(vec![0, 1, 2, 3]), (5, 5), true);
-            put_rows_to_cache(&caches[0], 1, 3, default_table_schema(vec![0, 1, 2, 3]), (5, 6), false);
-            put_rows_to_cache(&caches[1], 2, 1, default_table_schema(vec![0, 1, 2]), (9, 10), false);
-            put_rows_to_cache(&caches[1], 2, 2, default_table_schema(vec![0, 1, 3]), (7, 8), false);
-            put_rows_to_cache(&caches[1], 2, 3, default_table_schema(vec![0, 1, 2, 3]), (11, 11), true);
-            put_rows_to_cache(&caches[1], 2, 3, default_table_schema(vec![0, 1, 2, 3]), (11, 12), false);
-            put_rows_to_cache(&caches[2], 3, 1, default_table_schema(vec![0, 1, 2]), (15, 16), false);
-            put_rows_to_cache(&caches[2], 3, 2, default_table_schema(vec![0, 1, 3]), (13, 14), false);
-            put_rows_to_cache(&caches[2], 3, 3, default_table_schema(vec![0, 1, 2, 3]), (17, 17), true);
-            put_rows_to_cache(&caches[2], 3, 3, default_table_schema(vec![0, 1, 2, 3]), (17, 18), false);
+            put_rows_to_cache(&caches[0], 1, 1, default_table_schema(vec![0, 1, 2, 3]), (3, 4), PutNone::Some([3_usize].into()));
+            put_rows_to_cache(&caches[0], 1, 1, default_table_schema(vec![0, 1, 2, 3]), (1, 3), PutNone::Some([3_usize].into()));
+            put_rows_to_cache(&caches[1], 1, 1, default_table_schema(vec![0, 1, 2, 3]), (5, 6), PutNone::False);
+            put_rows_to_cache(&caches[1], 1, 1, default_table_schema(vec![0, 1, 2, 3]), (6, 8), PutNone::False);
+            "skip_fmt"
+        };
+        let caches = caches
+            .into_iter()
+            .map(|c| Arc::new(RwLock::new(c)))
+            .collect();
+
+        // | === SeriesId: 1 === |
+        // Ts:    1,    2,    3,    4,    5,    6,    7,    8
+        // Col_0: 1,    2,    3,    4,    5,    6,    7,    8
+        // Col_1: 1,    2,    3,    4,    5,    6,    7,    8
+        // Col_2: 1,    2,    3,    4,    5,    6,    7,    8
+        // Col_3: None, None, None, None, 5,    6,    7,    8
+        #[rustfmt::skip]
+        let mut expected_delta_data: Vec<(FieldId, Vec<DataBlock>)> = vec![
+            (model_utils::unite_id(0, 1), vec![DataBlock::F64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8], val: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], enc: DataBlockEncoding::default() }]),
+            (model_utils::unite_id(1, 1), vec![DataBlock::F64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8], val: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], enc: DataBlockEncoding::default() }]),
+            (model_utils::unite_id(2, 1), vec![DataBlock::F64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8], val: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], enc: DataBlockEncoding::default() }]),
+            (model_utils::unite_id(3, 1), vec![DataBlock::F64 { ts: vec![5, 6, 7, 8], val: vec![5.0, 6.0, 7.0, 8.0], enc: DataBlockEncoding::default() }]),
+        ];
+        expected_delta_data.sort_by_key(|a| a.0);
+
+        FlushTestCase {
+            caches,
+            max_level_ts_before: max_level_ts,
+            max_level_ts_after: 8,
+            expected_delta_data: vec![expected_delta_data],
+            expected_file_size: vec![131512],
+            expected_min_ts: vec![1],
+            expected_max_ts: vec![8],
+        }
+    }
+
+    fn flush_test_case_2(max_level_ts: Timestamp) -> FlushTestCase {
+        let memory_pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::new(1024 * 1024));
+        let caches = vec![
+            MemCache::new(1, 16, 2, 0, &memory_pool),
+            MemCache::new(1, 16, 2, 0, &memory_pool),
+            MemCache::new(1, 16, 2, 0, &memory_pool),
+        ];
+        // | === Cache: 0 === |
+        // | = | === Series: 1 | === Series: 1 | === Series: 1
+        // | = | === Schema: 1 | === Schema: 2 | === Schema: 3
+        // | = | Col_0: 3, 4   | Col_0: 1, 2   | Col_0: 5, 5, 6
+        // | = | Col_1: 3, 4   | Col_1: 1, 2   | Col_1: 5, 5, 6
+        // | = | Col_2: 3, 4   |               | Col_2: 5, 5, 6
+        // | = |                 Col_3: 1, 2   | Col_3: 5, 5, 6
+        // | === Cache: 1 === |
+        // | = | === Series: 2 | === Series: 2 | === Series: 2
+        // | = | === Schema: 1 | === Schema: 2 | === Schema: 3
+        // | = | Col_0: 9, 10  | Col_0: 7, 8   | Col_0: 11, 11, 12
+        // | = | Col_1: 9, 10  | Col_1: 7, 8   | Col_1: 11, 11, 12
+        // | = | Col_2: 9, 10  |               | Col_2: 11, 11, 12
+        // | = |                 Col_3: 7, 8   | Col_3: 11, 11, 12
+        // | === Cache: 2 === |
+        // | = | === Series: 3 | === Series: 3 | === Series: 3
+        // | = | === Schema: 1 | === Schema: 2 | === Schema: 3
+        // | = | Col_0: 15, 16 | Col_0: 13, 14 | Col_0: 17, 17, 18
+        // | = | Col_1: 15, 16 | Col_1: 13, 14 | Col_1: 17, 17, 18
+        // | = | Col_2: 15, 16 |               | Col_2: 17, 17, 18
+        // | = |                 Col_3: 13, 14 | Col_3: 17, 17, 18
+        #[rustfmt::skip]
+        let _skip_fmt = {
+            put_rows_to_cache(&caches[0], 1, 1, default_table_schema(vec![0, 1, 2]), (3, 4), PutNone::False);
+            put_rows_to_cache(&caches[0], 1, 2, default_table_schema(vec![0, 1, 3]), (1, 2), PutNone::False);
+            put_rows_to_cache(&caches[0], 1, 3, default_table_schema(vec![0, 1, 2, 3]), (5, 5), PutNone::True);
+            put_rows_to_cache(&caches[0], 1, 3, default_table_schema(vec![0, 1, 2, 3]), (5, 6), PutNone::False);
+            put_rows_to_cache(&caches[1], 2, 1, default_table_schema(vec![0, 1, 2]), (9, 10), PutNone::False);
+            put_rows_to_cache(&caches[1], 2, 2, default_table_schema(vec![0, 1, 3]), (7, 8), PutNone::False);
+            put_rows_to_cache(&caches[1], 2, 3, default_table_schema(vec![0, 1, 2, 3]), (11, 11), PutNone::True);
+            put_rows_to_cache(&caches[1], 2, 3, default_table_schema(vec![0, 1, 2, 3]), (11, 12), PutNone::False);
+            put_rows_to_cache(&caches[2], 3, 1, default_table_schema(vec![0, 1, 2]), (15, 16), PutNone::False);
+            put_rows_to_cache(&caches[2], 3, 2, default_table_schema(vec![0, 1, 3]), (13, 14), PutNone::False);
+            put_rows_to_cache(&caches[2], 3, 3, default_table_schema(vec![0, 1, 2, 3]), (17, 17), PutNone::True);
+            put_rows_to_cache(&caches[2], 3, 3, default_table_schema(vec![0, 1, 2, 3]), (17, 18), PutNone::False);
             "skip_fmt"
         };
         let caches = caches
