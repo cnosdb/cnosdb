@@ -6,6 +6,7 @@ use arrow::datatypes::{Schema, SchemaRef};
 use arrow_array::{Int64Array, RecordBatch};
 use futures::Stream;
 use models::predicate::domain::PushedAggregateFunction;
+use parking_lot::RwLock;
 use snafu::ResultExt;
 
 use super::{
@@ -13,6 +14,7 @@ use super::{
     SendableSchemableTskvRecordBatchStream,
 };
 use crate::error::ArrowSnafu;
+use crate::mem_cache::series_data::SeriesData;
 use crate::tsm::chunk::Chunk;
 use crate::TskvResult;
 
@@ -33,7 +35,8 @@ impl PushDownAggregateReader {
             chunk,
         })
     }
-    fn get_rows_number_by_column_name(&self, chunk: &Arc<Chunk>, col_name: &str) -> i64 {
+
+    fn get_rows_number_by_column_name_chunk(&self, chunk: &Arc<Chunk>, col_name: &str) -> i64 {
         let mut count: i64 = 0;
         for cg in chunk.column_group().values().collect::<Vec<_>>() {
             cg.pages().iter().for_each(|page| {
@@ -44,6 +47,31 @@ impl PushDownAggregateReader {
         }
         count
     }
+
+    fn get_rows_number_by_column_name_memcache(
+        &self,
+        series_data: &Arc<RwLock<SeriesData>>,
+        col_name: &str,
+    ) -> i64 {
+        let mut count: i64 = 0;
+        series_data.read().groups.iter().for_each(|group| {
+            if let Some(index) = group.schema.column_index(col_name) {
+                if index == 0 {
+                    count += group.rows.get_ref_rows().len() as i64;
+                } else {
+                    for row in group.rows.get_ref_rows() {
+                        if let Some(col_value) = row.fields.get(index - group.schema.tag_num() - 1)
+                        {
+                            if col_value.is_some() {
+                                count += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        count
+    }
 }
 
 impl BatchReader for PushDownAggregateReader {
@@ -52,14 +80,10 @@ impl BatchReader for PushDownAggregateReader {
             PushedAggregateFunction::Count(col_name) => {
                 let num_count = match &self.chunk {
                     DataReference::Chunk(chunk, ..) => {
-                        self.get_rows_number_by_column_name(chunk, col_name.as_str())
+                        self.get_rows_number_by_column_name_chunk(chunk, col_name.as_str())
                     }
                     DataReference::Memcache(series_data, ..) => {
-                        let mut num_count: i64 = 0;
-                        series_data.read().groups.iter().for_each(|group| {
-                            num_count += group.rows.get_ref_rows().len() as i64;
-                        });
-                        num_count
+                        self.get_rows_number_by_column_name_memcache(series_data, col_name)
                     }
                 };
 
@@ -81,10 +105,10 @@ impl BatchReader for PushDownAggregateReader {
     }
 }
 
-struct PushDownAggregateStream {
-    schema: SchemaRef,
-    num_count: i64,
-    is_get: bool,
+pub struct PushDownAggregateStream {
+    pub schema: SchemaRef,
+    pub num_count: i64,
+    pub is_get: bool,
 }
 
 impl SchemableTskvRecordBatchStream for PushDownAggregateStream {

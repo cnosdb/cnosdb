@@ -79,7 +79,7 @@ select count(f3) from func_tb2;
 8
 
 statement ok
-drop table air;
+drop table if exists air;
 
 statement ok
 CREATE TABLE air(visibility DOUBLE, temperature DOUBLE, pressure DOUBLE, TAGS(station));
@@ -97,6 +97,10 @@ INSERT INTO air (TIME, station, visibility, temperature, pressure) VALUES
                 ('2022-10-19 05:40:00', 'XiaoMaiDao', 55, 68, 79),
                 ('2022-10-19 05:40:00', 'XiaoMaiDao', 55, 68, 80);
 
+statement ok
+INSERT INTO air (TIME, station, visibility, temperature) VALUES
+                ('2022-10-19 06:40:00', 'XiaoMaiDao', 55, 68)
+
 query T
 select * from air;
 ----
@@ -105,13 +109,30 @@ select * from air;
 2022-10-19T03:40:00 "XiaoMaiDao" 55.0 68.0 76.0
 2022-10-19T04:40:00 "XiaoMaiDao" 55.0 68.0 78.0
 2022-10-19T05:40:00 "XiaoMaiDao" 55.0 68.0 80.0
+2022-10-19T06:40:00 "XiaoMaiDao" 55.0 68.0 NULL
 
 query
 select count(*) from air;
 ----
+11
+
+query
+select count(pressure) from air;
+----
 10
 
 query
-select exact_count_star(null) from air;
+select exact_count(*) from air;
+----
+6
+
+query
+select exact_count(pressure) from air;
 ----
 5
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Arrow: Invalid argument error: number of columns\(3\) must match number of fields\(2\) in schema", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
+select exact_count(temperature),max(pressure) from air;
+
+statement ok
+drop table if exists air;
