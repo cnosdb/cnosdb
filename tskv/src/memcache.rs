@@ -828,7 +828,7 @@ impl<'a> PartialEq for SeriesDataFieldValues<'a> {
 }
 
 pub(crate) mod test {
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
     use std::mem::size_of;
     use std::sync::Arc;
 
@@ -839,25 +839,51 @@ pub(crate) mod test {
 
     use super::{FieldVal, MemCache, RowData, RowGroup};
 
+    pub enum PutNone {
+        /// All fields are None.
+        True,
+        /// No fields are None.
+        False,
+        /// Only fields at selected index are None.
+        Some(HashSet<usize>),
+    }
+
     pub fn put_rows_to_cache(
         cache: &MemCache,
         series_id: SeriesId,
         schema_id: SchemaId,
         mut schema: TskvTableSchema,
         time_range: (Timestamp, Timestamp),
-        put_none: bool,
+        put_none: PutNone,
     ) {
         let mut rows = Vec::new();
         let mut size: usize = schema.size();
         for ts in time_range.0..=time_range.1 {
             let mut fields = Vec::new();
-            for _ in 0..schema.columns().len() {
-                size += size_of::<Option<FieldVal>>();
-                if put_none {
-                    fields.push(None);
-                } else {
-                    fields.push(Some(FieldVal::Float(ts as f64)));
-                    size += 8;
+            match &put_none {
+                PutNone::True => {
+                    for _ in 0..schema.columns().len() {
+                        size += size_of::<Option<FieldVal>>();
+                        fields.push(None);
+                    }
+                }
+                PutNone::False => {
+                    for _ in 0..schema.columns().len() {
+                        size += size_of::<Option<FieldVal>>();
+                        fields.push(Some(FieldVal::Float(ts as f64)));
+                        size += 8;
+                    }
+                }
+                PutNone::Some(idx_set) => {
+                    for i in 0..schema.columns().len() {
+                        size += size_of::<Option<FieldVal>>();
+                        if idx_set.contains(&i) {
+                            fields.push(None);
+                        } else {
+                            fields.push(Some(FieldVal::Float(ts as f64)));
+                            size += 8;
+                        }
+                    }
                 }
             }
             size += 8;
@@ -919,6 +945,7 @@ mod test_memcache {
 
     use super::{FieldVal, MemCache, RowData, RowGroup};
     use crate::compaction::test::default_table_schema;
+    use crate::memcache::test::PutNone;
     use crate::memcache::SeriesDataFieldValuesBuilder;
     use crate::test::put_rows_to_cache;
 
@@ -1017,15 +1044,15 @@ mod test_memcache {
         // 2, 2: 1.0, 2.0, 3.0, 5.0, 6.0, 7.0, 8.0
         // 2, 13: 1.0, 2.0, 3.0, 5.0, 6.0, 7.0, 8.0
         // 2, 14: 5.0, 6.0, 7.0, 8.0
-        let cache_data: Vec<(SeriesId, SchemaId, TskvTableSchema, (Timestamp, Timestamp), bool)> = vec![
-            (1, 1, default_table_schema(vec![0, 41, 13]), (3, 4), false), // 3.0, 4.0
-            (1, 1, default_table_schema(vec![0, 41, 13]), (4, 5), false), // 4.0, 5.0
-            (1, 2, default_table_schema(vec![0, 2, 41]), (1, 2), false), // 1.0, 2.0
-            (1, 3, default_table_schema(vec![0, 13, 41, 2]), (5, 6), false), // 5.0, 6.0
-            (2, 1, default_table_schema(vec![0, 1, 2, 13]), (1, 3), false), // 1.0, 2.0, 3.0
-            (2, 2, default_table_schema(vec![1, 0, 2, 13]), (4, 5), true), // 4_null, 5_null
-            (2, 3, default_table_schema(vec![1, 0, 14, 13]), (5, 6), false), // 5.0, 6.0
-            (2, 4, default_table_schema(vec![1, 13, 2, 14]), (5, 8), false), // 5.0, 6.0, 7.0, 8.0
+        let cache_data: Vec<(SeriesId, SchemaId, TskvTableSchema, (Timestamp, Timestamp), PutNone)> = vec![
+            (1, 1, default_table_schema(vec![0, 41, 13]), (3, 4), PutNone::False), // 3.0, 4.0
+            (1, 1, default_table_schema(vec![0, 41, 13]), (4, 5), PutNone::False), // 4.0, 5.0
+            (1, 2, default_table_schema(vec![0, 2, 41]), (1, 2), PutNone::False), // 1.0, 2.0
+            (1, 3, default_table_schema(vec![0, 13, 41, 2]), (5, 6), PutNone::False), // 5.0, 6.0
+            (2, 1, default_table_schema(vec![0, 1, 2, 13]), (1, 3), PutNone::False), // 1.0, 2.0, 3.0
+            (2, 2, default_table_schema(vec![1, 0, 2, 13]), (4, 5), PutNone::True), // 4_null, 5_null
+            (2, 3, default_table_schema(vec![1, 0, 14, 13]), (5, 6), PutNone::False), // 5.0, 6.0
+            (2, 4, default_table_schema(vec![1, 13, 2, 14]), (5, 8), PutNone::False), // 5.0, 6.0, 7.0, 8.0
         ];
         for (sid, sch_id, schema, time_range, put_none) in cache_data {
             put_rows_to_cache(&cache, sid, sch_id, schema, time_range, put_none);
