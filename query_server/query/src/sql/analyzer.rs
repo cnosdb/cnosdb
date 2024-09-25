@@ -6,6 +6,7 @@ use spi::query::analyzer::Analyzer;
 use spi::query::session::SessionCtx;
 use spi::QueryResult;
 
+use crate::extension::analyse::add_time_for_tsgenfunc::AddTimeForTSGenFunc;
 use crate::extension::analyse::initial_plan_checker::InitialPlanChecker;
 use crate::extension::analyse::transform_bottom_func_to_topk_node::TransformBottomFuncToTopkNodeRule;
 use crate::extension::analyse::transform_count_gen_time_col::TransformCountGenTimeColRule;
@@ -30,6 +31,7 @@ impl DefaultAnalyzer {
         rules.push(Arc::new(TransformTopkFuncToTopkNodeRule {}));
         rules.push(Arc::new(TransformTimeWindowRule {}));
         rules.push(Arc::new(TransformTSGenFunc));
+        rules.push(Arc::new(AddTimeForTSGenFunc {}));
         rules.push(Arc::new(TransformExactCountToCountRule {}));
         rules.push(Arc::new(TransformCountGenTimeColRule {}));
 
