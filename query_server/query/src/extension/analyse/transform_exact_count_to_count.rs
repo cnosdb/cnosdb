@@ -80,5 +80,5 @@ fn analyze_internal(plan: LogicalPlan) -> Result<Transformed<LogicalPlan>> {
         }
     }
 
-    Ok(Transformed::No(plan.clone()))
+    Ok(Transformed::No(plan))
 }
