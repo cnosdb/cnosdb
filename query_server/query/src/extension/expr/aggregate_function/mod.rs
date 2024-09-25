@@ -32,7 +32,7 @@ pub const COMPLETENESS_UDF_NAME: &str = "completeness";
 pub const CONSISTENCY_UDF_NAME: &str = "consistency";
 pub const TIMELINESS_UDF_NAME: &str = "timeliness";
 pub const VALIDITY_UDF_NAME: &str = "validity";
-pub const EXACT_COUNT_STAR_UDAF_NAME: &str = "exact_count_star";
+pub const EXACT_COUNT_UDAF_NAME: &str = "exact_count";
 pub use gauge::GaugeData;
 pub use state_agg::StateAggData;
 

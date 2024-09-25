@@ -19,7 +19,6 @@ use datafusion::physical_expr::PhysicalExpr;
 use datafusion::physical_plan::empty::EmptyExec;
 use datafusion::physical_plan::{project_schema, ExecutionPlan};
 use datafusion::prelude::Column;
-use datafusion::scalar::ScalarValue;
 use meta::error::MetaError;
 use meta::model::MetaClientRef;
 use models::predicate::domain::{Predicate, PredicateRef, PushedAggregateFunction};
@@ -337,9 +336,12 @@ impl TableProvider for ClusterTable {
 
     fn supports_aggregate_pushdown(
         &self,
-        _group_expr: &[Expr],
+        group_expr: &[Expr],
         aggr_expr: &[Expr],
     ) -> Result<TableProviderAggregationPushDown> {
+        if !group_expr.is_empty() {
+            return Ok(TableProviderAggregationPushDown::Unsupported);
+        }
         if aggr_expr.len() == 1 {
             if let Expr::AggregateFunction(AggregateFunction {
                 fun,
@@ -355,9 +357,25 @@ impl TableProvider for ClusterTable {
                     && filter.is_none()
                     && order_by.is_none()
                 {
-                    if let Expr::Literal(value) = &args[0] {
-                        if matches!(value, ScalarValue::UInt8(Some(1))) {
-                            return Ok(TableProviderAggregationPushDown::Ungrouped);
+                    match &args[0] {
+                        Expr::Column(expr) => {
+                            if let Some(col) = self.schema.column(&expr.name) {
+                                if col.column_type.is_tag() {
+                                    return Ok(TableProviderAggregationPushDown::Unsupported);
+                                } else {
+                                    return Ok(TableProviderAggregationPushDown::Ungrouped);
+                                }
+                            }
+                        }
+                        Expr::Literal(expr) => {
+                            if expr.is_null() {
+                                return Ok(TableProviderAggregationPushDown::Unsupported);
+                            } else {
+                                return Ok(TableProviderAggregationPushDown::Ungrouped);
+                            }
+                        }
+                        _ => {
+                            return Ok(TableProviderAggregationPushDown::Unsupported);
                         }
                     }
                 }
