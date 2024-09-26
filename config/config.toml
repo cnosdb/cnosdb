@@ -1,30 +1,70 @@
 [global]
-# node_id = 100
-host = "localhost"
+# node_id = 1001
+host = "127.0.0.1"
 cluster_name = 'cluster_xxx'
+
+# Whether to collect statistics on the usage of this node and store it in the usage_schema database.
 store_metrics = true
+
+# Whether to pre-create a bucket
 pre_create_bucket = false
 
 [deployment]
+## The deployment mode can be tskv, query, query_tskv, or singleton.
+## - tskv: Only the tskv engine is deployed and the Meta service address needs to be specified
+## - query: Only the query engine is deployed and the meta service address needs to be specified.
+## - query_tskv: Both the query and tskv engines are deployed, and the meta service address needs to be specified.
+## - singleton: Deploy the standalone version without specifying the meta service address.
 # mode = 'query_tskv'
+
+## Number of cpu cores used by the node
 # cpu = 8
+
+## The maximum memory used by the node to run, in units of: (G)
 # memory = 16
 
 [meta]
+# Addresses for the metadata service, including the port number
 service_addr = ["127.0.0.1:8901"]
+
+# Interval (unit: second) for reporting heartbeat and disk capacity information to the meta service.
 report_time_interval = "30s"
+
+# usage_schema Maximum memory cache.
 usage_schema_cache_size = "2MiB"
+
+# cluster_schema Maximum memory cache.
 cluster_schema_cache_size = "2MiB"
 
+# replica of the system database.
+system_database_replica = 3
+
 [query]
+# The maximum number of concurrent connection requests.
 max_server_connections = 10240
+
+# The maximum number of Bytes per SQL query request, in bytes
 query_sql_limit = "16M"  # 16,777,216 bytes
+
+# Line Protocol Maximum number of Bytes for each write request, in bytes
 write_sql_limit = "160M" # 167,772,160 bytes
+
+# Whether to check user authority
 auth_enabled = false
+
+# timeout period for query to access tskv, in milliseconds.
 read_timeout = "3000ms"
+
+# timeout period for writing data to tskv, in milliseconds.
 write_timeout = "3000ms"
+
+# Number of CPUs to prepare the stream computing task
 stream_trigger_cpu = 1
+
+# Number of cpus executing stream computing tasks
 stream_executor_cpu = 2
+
+# Minimum execution time for sql to be logged to the cluster_schema.sql_history table
 sql_record_timeout = "10s"
 
 [storage]
@@ -52,7 +92,7 @@ path = '/var/lib/cnosdb/data'
 ## The maximum level of a data file (from 0 to 4).
 # max_level = 4
 
-# Trigger of compaction using the number of level 0 files.
+## Trigger of compaction using the number of level 0 files.
 # compact_trigger_file_num = 4
 
 ## Duration since last write to trigger compaction.
@@ -88,7 +128,7 @@ path = '/var/lib/cnosdb/wal'
 # wal_req_channel_cap = 64
 
 ## The maximum size of a WAL.
-# max_file_size = '1G' # 1,073,741,824 bytes
+# max_file_size = '128MiB' # 1,073,741,824 bytes
 
 ## If true, fsync will be called after every WAL writes.
 # sync = false
@@ -105,7 +145,10 @@ path = '/var/lib/cnosdb/wal'
 # partition = 8
 
 [log]
+# log level can be debug, info, error, or warn.
 level = 'info'
+
+# The directory where log files stored.
 path = '/var/log/cnosdb'
 
 ## Keeps the last [max_file_count] log files on disk. When a new log file
@@ -127,19 +170,58 @@ path = '/var/log/cnosdb'
 # private_key = "/etc/config/tls/server.key"
 
 [service]
+# HTTP service listening port. Without this port configured, HTTP services are not enabled
 http_listen_port = 8902
+
+# grpc service listening port. Without this port configured, grpc services are not enabled
 grpc_listen_port = 8903
+
+# enable or disable compression for data transmission on the interface of the meta service
 grpc_enable_gzip = false
+
+# flight rpc service listening port. Without this port configured, flight rpc services are not enabled
 flight_rpc_listen_port = 8904
+
+# tcp service listening port. Without this port configured, tcp services are not enabled
 tcp_listen_port = 8905
+
+# Enable or disable CnosDB to report telemetry data automatically. Data is reported every 24 hours, each containing the following fields: instance runtime, operating system type, database version, and geographic location where the instance is running (only up to the provincial or state level).
 enable_report = true
 
 [cluster]
+## The number of entries retained in the Raft log, and every one of these times is written to make a snapshot.
 # raft_logs_to_keep = 5000
 
+## Raft Snapshot retention period.
+# snapshot_holding_time = "3600s"
+
+## The size of the stored Raft state data
+# lmdb_max_map_size = "1024000000B"
+
+## Heartbeat interval of the Raft replication algorithm.
+# heartbeat_interval = "300ms"
+
+## Raft Snapshot trigger interval.
+# trigger_snapshot_interval = "600s"
+
+## Raft Snapshot replication timeout period between nodes.
+# install_snapshot_timeout = "3600000ms"
+
+## The timeout period for raft sending logs between nodes.
+# send_append_entries_timeout = "5000ms"
+
 # [trace]
+## Enable or disable the automatic generation of root span, which is effective when the client does not carry a span context.
 # auto_generate_span = false
+
+## GRPC address of the OTLP collector
 # otlp_endpoint = 'http://localhost:4317'
+
+## Soft limit on the total span and event totals in trace
 # max_spans_per_trace = 100
+
+## The interval between two batch reports.
 # batch_report_interval = "500ms"
+
+## Soft limit on the maximum number of spans in a batch report.
 # batch_report_max_spans = 100

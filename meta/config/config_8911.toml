@@ -1,14 +1,19 @@
-id = 2
-host = "127.0.0.1"
-port = 8911
-data_path = "/tmp/cnosdb/meta"
+[global]
+node_id = 1
 cluster_name = "cluster_xxx"
+raft_node_host = "127.0.0.1"
+listen_port = 8911
 grpc_enable_gzip = false
+data_path = "/tmp/cnosdb/meta"
+
+[cluster]
 lmdb_max_map_size = 1024000000
 heartbeat_interval = 3000
 raft_logs_to_keep = 10000
 install_snapshot_timeout = 3600000
 send_append_entries_timeout = 5000
+
+[sys_config]
 usage_schema_cache_size = 2097152 # 2MiB
 cluster_schema_cache_size = 2097152 # 2MiB
 system_database_replica = 1
@@ -18,5 +23,5 @@ level = "info"
 path = "/tmp/cnosdb/logs"
 
 [heartbeat]
-heartbeat_recheck_interval = 300
-heartbeat_expired_interval = 600
+heartbeat_recheck_interval = 30
+heartbeat_expired_interval = 180

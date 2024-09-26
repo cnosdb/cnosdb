@@ -67,7 +67,7 @@ impl ClusterConfig {
     }
 
     fn default_heartbeat_interval() -> Duration {
-        Duration::from_millis(3_000)
+        Duration::from_millis(300)
     }
 
     fn default_send_append_entries_timeout() -> Duration {

@@ -1057,7 +1057,7 @@ fn kill_child_process(proc: Child, force: bool) {
 pub fn build_meta_node_config(test_dir: impl AsRef<Path>, meta_dir_name: &str) -> MetaStoreConfig {
     let mut config = MetaStoreConfig::default();
     let test_dir = test_dir.as_ref().display();
-    config.data_path = format!("{test_dir}/meta/{meta_dir_name}/meta");
+    config.global.data_path = format!("{test_dir}/meta/{meta_dir_name}/meta");
     config.log.level = "INFO".to_string();
     config.log.path = format!("{test_dir}/meta/{meta_dir_name}/log");
 

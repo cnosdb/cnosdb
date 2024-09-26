@@ -312,7 +312,7 @@ fn case3() {
                 sql: "DESC DATABASE oceanic_station",
                 resp: Ok(vec![
                     "ttl,shard,vnode_duration,replica,precision,max_memcache_size,memcache_partitions,wal_max_file_size,wal_sync,strict_write,max_cache_readers",
-                    "INF,1,2years 8months 25days 23h 31m 12s,1,NS,128 MiB,4,1 GiB,false,false,32"
+                    "INF,1,2years 8months 25days 23h 31m 12s,1,NS,128 MiB,8,128 MiB,false,false,32"
                 ]),
                 sorted: false,
                 regex: false,
