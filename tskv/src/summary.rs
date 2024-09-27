@@ -1,5 +1,5 @@
 use std::cmp::max;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -20,7 +20,8 @@ use utils::BloomFilter;
 
 use crate::context::GlobalContext;
 use crate::error::{
-    IOSnafu, MetaSnafu, RecordFileDecodeSnafu, RecordFileEncodeSnafu, TskvError, TskvResult,
+    IOSnafu, MetaSnafu, RecordFileDecodeSnafu, RecordFileEncodeSnafu, RecordFileIOSnafu, TskvError,
+    TskvResult,
 };
 use crate::file_system::async_filesystem::LocalFileSystem;
 use crate::kv_option::{Options, StorageOptions, DELTA_PATH, TSM_PATH};
@@ -96,6 +97,22 @@ impl CompactMeta {
         }
     }
 
+    pub fn new_del_file_part(
+        level: LevelId,
+        file_id: ColumnFileId,
+        min_ts: Timestamp,
+        max_ts: Timestamp,
+    ) -> Self {
+        CompactMeta {
+            file_id,
+            level,
+            is_delta: level == 0,
+            min_ts,
+            max_ts,
+            ..Default::default()
+        }
+    }
+
     pub fn file_path(
         &self,
         storage_opt: &StorageOptions,
@@ -155,6 +172,9 @@ pub struct VersionEdit {
     pub add_files: Vec<CompactMeta>,
     pub del_files: Vec<CompactMeta>,
 
+    #[serde(skip)]
+    pub partly_del_files: Vec<CompactMeta>,
+
     pub act_tsf: VnodeAction,
     pub tsf_id: VnodeId,
     pub tsf_name: String,
@@ -168,6 +188,7 @@ impl Default for VersionEdit {
             max_level_ts: i64::MIN,
             add_files: vec![],
             del_files: vec![],
+            partly_del_files: vec![],
             act_tsf: VnodeAction::Update,
             tsf_id: 0,
             tsf_name: String::from(""),
@@ -176,6 +197,13 @@ impl Default for VersionEdit {
 }
 
 impl VersionEdit {
+    pub fn new(vnode_id: VnodeId) -> Self {
+        Self {
+            tsf_id: vnode_id,
+            ..Default::default()
+        }
+    }
+
     pub fn new_update_vnode(vnode_id: u32, owner: String, seq_no: u64) -> Self {
         Self {
             seq_no,
@@ -275,6 +303,18 @@ impl VersionEdit {
             ..Default::default()
         });
     }
+
+    pub fn del_file_part(
+        &mut self,
+        level: LevelId,
+        file_id: ColumnFileId,
+        min_ts: Timestamp,
+        max_ts: Timestamp,
+    ) {
+        self.partly_del_files.push(CompactMeta::new_del_file_part(
+            level, file_id, min_ts, max_ts,
+        ));
+    }
 }
 
 impl Display for VersionEdit {
@@ -310,7 +350,7 @@ pub struct Summary {
     ctx: Arc<GlobalContext>,
     writer: Writer,
     opt: Arc<Options>,
-    _runtime: Arc<Runtime>,
+    runtime: Arc<Runtime>,
     _metrics_register: Arc<MetricsRegister>,
 }
 
@@ -325,9 +365,7 @@ impl Summary {
     ) -> TskvResult<Self> {
         let db = VersionEdit::default();
         let path = file_utils::make_summary_file(opt.storage.summary_dir(), 0);
-        let mut w = Writer::open(path, RecordDataType::Summary, SUMMARY_BUFFER_SIZE)
-            .await
-            .unwrap();
+        let mut w = Writer::open(path, SUMMARY_BUFFER_SIZE).await.unwrap();
         let buf = db.encode()?;
         let _ = w
             .write_record(
@@ -353,7 +391,7 @@ impl Summary {
             ctx,
             writer: w,
             opt,
-            _runtime: runtime,
+            runtime,
             _metrics_register: metrics_register,
         })
     }
@@ -372,9 +410,7 @@ impl Summary {
     ) -> TskvResult<Self> {
         let summary_path = opt.storage.summary_dir();
         let path = file_utils::make_summary_file(&summary_path, 0);
-        let writer = Writer::open(path, RecordDataType::Summary, SUMMARY_BUFFER_SIZE)
-            .await
-            .unwrap();
+        let writer = Writer::open(path, SUMMARY_BUFFER_SIZE).await.unwrap();
         let ctx = Arc::new(GlobalContext::default());
         let rd = Box::new(
             Reader::open(&file_utils::make_summary_file(&summary_path, 0))
@@ -399,7 +435,7 @@ impl Summary {
             ctx,
             writer,
             opt,
-            _runtime: runtime,
+            runtime,
             _metrics_register: metrics_register,
         })
     }
@@ -539,14 +575,38 @@ impl Summary {
             file_metas = tmp.clone();
         }
 
+        let mut partly_deleted_file_paths: Vec<PathBuf> = Vec::new();
+        let mut partly_deleted_files: HashSet<ColumnFileId> = HashSet::new();
+
+        for compact_meta in request.version_edit.partly_del_files.iter() {
+            partly_deleted_file_paths.push(compact_meta.file_path(
+                &self.opt.storage,
+                request.ts_family.read().await.owner().clone().as_str(),
+                request.ts_family.read().await.tf_id(),
+            ));
+            partly_deleted_files.insert(compact_meta.file_id);
+        }
+
         let new_version = request
             .ts_family
             .read()
             .await
             .version()
             .copy_apply_version_edits(request.version_edit.clone(), &mut file_metas);
-
         let new_version = Arc::new(new_version);
+
+        let _ = install_tombstones_for_tsm_readers(
+            self.runtime.clone(),
+            partly_deleted_file_paths.clone(),
+            new_version.clone(),
+        )
+        .await;
+
+        // Mark all partly deleted files as not-compacting after ombstones are replaced with compact_tmp.
+        new_version
+            .unmark_compacting_files(&partly_deleted_files)
+            .await;
+
         request
             .ts_family
             .write()
@@ -572,7 +632,7 @@ impl Summary {
             .await
             .ts_families_version_edit()
             .await?;
-        self.writer = Writer::open(&new_path, RecordDataType::Summary, SUMMARY_BUFFER_SIZE).await?;
+        self.writer = Writer::open(&new_path, SUMMARY_BUFFER_SIZE).await?;
 
         for request in requests.iter() {
             self.apply_version_edit(request).await?;
@@ -582,9 +642,7 @@ impl Summary {
         trace::info!("Remove summary file {:?} -> {:?}", new_path, old_path,);
         std::fs::rename(new_path, old_path).context(IOSnafu)?;
 
-        self.writer = Writer::open(old_path, RecordDataType::Summary, SUMMARY_BUFFER_SIZE)
-            .await
-            .unwrap();
+        self.writer = Writer::open(old_path, SUMMARY_BUFFER_SIZE).await.unwrap();
 
         Ok(())
     }
@@ -596,6 +654,64 @@ impl Summary {
     pub fn global_context(&self) -> Arc<GlobalContext> {
         self.ctx.clone()
     }
+}
+
+/// Replace tombstones with compact_tmp in parallel.
+async fn install_tombstones_for_tsm_readers(
+    runtime: Arc<Runtime>,
+    partly_deleted_file_paths: Vec<PathBuf>,
+    version: Arc<Version>,
+) -> TskvResult<()> {
+    let partly_deleted_files_num = partly_deleted_file_paths.len();
+    trace::debug!(
+        "Installing tombstones after delta-compaction of {partly_deleted_files_num} tomb files."
+    );
+    let mut replace_tombstone_compact_tmp_tasks =
+        Vec::with_capacity(partly_deleted_file_paths.len());
+    for tsm_path in partly_deleted_file_paths {
+        let cache_inner = version.clone();
+        let jh: tokio::task::JoinHandle<std::result::Result<(), TskvError>> = runtime.spawn(async move {
+            let path_display = tsm_path.display();
+            let path = path_display.to_string();
+            match cache_inner.get_tsm_reader(&path).await {
+                Ok(tsm_reader) => {
+                    tsm_reader.replace_tombstone_with_compact_tmp().await
+                }
+                Err(e) => {
+                    trace::error!(
+                        "Failed to get tsm_reader for file '{path_display}' when trying to replace tombstones generated in delta-compaction: {e}",
+                    );
+                    Ok(())
+                }
+            }
+        });
+        replace_tombstone_compact_tmp_tasks.push(jh);
+    }
+    let mut results = Vec::with_capacity(replace_tombstone_compact_tmp_tasks.len());
+    for jh in replace_tombstone_compact_tmp_tasks {
+        match jh.await {
+            Ok(Ok(_)) => {
+                results.push(Ok(()));
+            }
+            Ok(Err(e)) => {
+                // TODO: This delta-compaction should be failed.
+                trace::error!("Failed to replace tombstone with compact_tmp: {e}");
+                results.push(Err(e));
+            }
+            Err(e) => {
+                trace::error!("Maybe panicked replacing tombstone with compact_tmp: {e}");
+                results.push(Err(RecordFileIOSnafu {
+                    reason: "".to_string(),
+                }
+                .build()));
+            }
+        }
+    }
+    trace::debug!(
+        "Installed tombstones after delta-compaction of {partly_deleted_files_num} tomb files."
+    );
+
+    Ok(())
 }
 
 pub async fn print_summary_statistics(path: impl AsRef<Path>) {

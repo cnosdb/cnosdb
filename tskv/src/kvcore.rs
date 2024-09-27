@@ -20,7 +20,7 @@ use trace::{debug, error, info, warn};
 
 use crate::compaction::job::CompactJob;
 use crate::compaction::metrics::{CompactionType, VnodeCompactionMetrics};
-use crate::compaction::{self, check, LevelCompactionPicker, Picker};
+use crate::compaction::{self, check, pick_compaction, CompactTask};
 use crate::database::Database;
 use crate::error::{IndexErrSnafu, MetaSnafu, TskvResult};
 use crate::file_system::async_filesystem::LocalFileSystem;
@@ -437,13 +437,12 @@ impl Engine for TsKv {
                     error!("Failed to flush vnode {}: {:?}", vnode_id, e);
                 }
 
-                let picker = LevelCompactionPicker {};
                 let version = ts_family.read().await.version();
-                if let Some(req) = picker.pick_compaction(version) {
+                if let Some(req) = pick_compaction(CompactTask::Manual(vnode_id), version).await {
                     let vnode_compaction_metrics = VnodeCompactionMetrics::new(
                         &self.metrics,
                         self.ctx.options.storage.node_id,
-                        req.ts_family_id,
+                        vnode_id,
                         CompactionType::Manual,
                         self.ctx.options.storage.collect_compaction_metrics,
                     );

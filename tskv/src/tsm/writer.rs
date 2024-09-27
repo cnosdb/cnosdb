@@ -64,9 +64,9 @@ impl TsmWriter {
         path_buf: &impl AsRef<Path>,
         file_id: ColumnFileId,
         max_size: u64,
-        is_delta: bool,
+        id_delta: bool,
     ) -> TskvResult<Self> {
-        let file_path = if is_delta {
+        let file_path = if id_delta {
             make_delta_file(path_buf, file_id)
         } else {
             make_tsm_file(path_buf, file_id)
@@ -125,6 +125,10 @@ impl TsmWriter {
 
     pub fn series_bloom_filter(&self) -> &BloomFilter {
         &self.series_bloom_filter
+    }
+
+    pub fn into_series_bloom_filter(self) -> BloomFilter {
+        self.series_bloom_filter
     }
 
     pub fn is_finished(&self) -> bool {

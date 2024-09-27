@@ -211,46 +211,29 @@ impl SeriesData {
     }
 
     #[allow(clippy::type_complexity)]
-    pub fn convert_to_page(
-        &self,
-        max_level_ts: i64,
-    ) -> TskvResult<Option<(Arc<TskvTableSchema>, Vec<page::Page>, Vec<page::Page>)>> {
+    pub fn convert_to_page(&self) -> TskvResult<Option<(Arc<TskvTableSchema>, Vec<page::Page>)>> {
         let latest_schema = match self.get_schema() {
             Some(schema) => schema,
             None => return Ok(None),
         };
 
         let mut time_array = MutableColumnRef::empty(latest_schema.time_column())?;
-        let mut delta_time_array = time_array.clone();
 
         let fields_schema = latest_schema.fields_orderby_id();
         let mut fields_array = fields_schema
             .iter()
             .map(|col| MutableColumnRef::empty(col.clone()))
             .collect::<TskvResult<Vec<_>>>()?;
-        let mut delta_fields_array = fields_array.clone();
 
         let iter = SeriesDedupMergeSortIterator::new(self.flat_groups(), latest_schema.clone());
         for row_data in iter {
-            match row_data.ts.cmp(&max_level_ts) {
-                std::cmp::Ordering::Greater => {
-                    time_array.push_ts(row_data.ts)?;
-                    for (idx, field) in row_data.fields.iter().enumerate() {
-                        fields_array[idx].push(*field)?;
-                    }
-                }
-                _ => {
-                    delta_time_array.push_ts(row_data.ts)?;
-                    for (idx, field) in row_data.fields.iter().enumerate() {
-                        delta_fields_array[idx].push(*field)?;
-                    }
-                }
+            time_array.push_ts(row_data.ts)?;
+            for (idx, field) in row_data.fields.iter().enumerate() {
+                fields_array[idx].push(*field)?;
             }
         }
 
-        if !time_array.column_data.valid.is_all_set()
-            || !delta_time_array.column_data.valid.is_all_set()
-        {
+        if !time_array.column_data.valid.is_all_set() {
             return Err(CommonSnafu {
                 reason: "Invalid time array in DataBlock".to_string(),
             }
@@ -265,15 +248,7 @@ impl SeriesData {
             }
         }
 
-        let mut delta_pages_data = vec![];
-        if !delta_time_array.column_data.valid.is_empty() {
-            delta_pages_data.push(page::Page::colref_to_page(delta_time_array)?);
-            for field_array in delta_fields_array {
-                delta_pages_data.push(page::Page::colref_to_page(field_array)?);
-            }
-        }
-
-        Ok(Some((latest_schema, pages_data, delta_pages_data)))
+        Ok(Some((latest_schema, pages_data)))
     }
 }
 

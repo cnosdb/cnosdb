@@ -594,11 +594,16 @@ impl AdminMeta {
             if let Some(user) = cache {
                 user.clone()
             } else {
-                self.user(user_name)
+                let user = self
+                    .user(user_name)
                     .await?
                     .ok_or_else(|| MetaError::UserNotFound {
                         user: user_name.to_string(),
-                    })?
+                    })?;
+                self.users
+                    .write()
+                    .insert(user_name.to_string(), user.clone());
+                user
             }
         };
 

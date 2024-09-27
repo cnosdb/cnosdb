@@ -25,7 +25,7 @@ impl WalWriter {
         path: impl AsRef<Path>,
     ) -> TskvResult<Self> {
         let path = path.as_ref();
-        let writer = Writer::open(path, RecordDataType::Wal, WAL_BUFFER_SIZE).await?;
+        let writer = Writer::open(path, WAL_BUFFER_SIZE).await?;
         let size = writer.file_size();
 
         Ok(Self {

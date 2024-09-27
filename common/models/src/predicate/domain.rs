@@ -149,6 +149,40 @@ impl TimeRange {
         };
         (left, right)
     }
+
+    pub fn exclude_time_ranges(&self, time_ranges: &TimeRanges) -> Option<TimeRanges> {
+        if self.is_none() {
+            return None;
+        }
+        if time_ranges.is_empty() {
+            return Some(TimeRanges::new(vec![*self]));
+        }
+        let mut tmp_tr_min_ts = self.min_ts;
+        let mut remained_ranges: Vec<TimeRange> = Vec::new();
+        for (min_ts, max_ts) in time_ranges.ranges() {
+            if min_ts == i64::MIN && max_ts == i64::MAX {
+                return None;
+            }
+            if tmp_tr_min_ts > self.max_ts {
+                break;
+            } else if tmp_tr_min_ts <= max_ts && self.max_ts >= min_ts {
+                // Overlapped time range
+                if min_ts > tmp_tr_min_ts {
+                    remained_ranges.push((tmp_tr_min_ts, min_ts - 1).into());
+                }
+                tmp_tr_min_ts = max_ts.checked_add(1).unwrap_or(max_ts);
+            }
+        }
+        if tmp_tr_min_ts <= self.max_ts {
+            remained_ranges.push((tmp_tr_min_ts, self.max_ts).into());
+        }
+        if remained_ranges.is_empty() {
+            None
+        } else {
+            Some(TimeRanges::new(remained_ranges))
+        }
+    }
+
     pub fn is_none(&self) -> bool {
         self.min_ts > self.max_ts
     }
@@ -283,6 +317,10 @@ impl TimeRanges {
         self.inner
             .iter()
             .map(|(min, max)| TimeRange::new(*min, *max))
+    }
+
+    pub fn ranges(&self) -> impl Iterator<Item = (Timestamp, Timestamp)> + '_ {
+        self.inner.iter().map(|(min, max)| (*min, *max))
     }
 
     pub fn min_ts(&self) -> Timestamp {
