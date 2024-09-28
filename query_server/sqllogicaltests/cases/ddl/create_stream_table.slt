@@ -36,3 +36,7 @@ query
 select * from information_schema.tables where table_database = 'createstreamtable' order by table_name;
 ----
 "cnosdb" "createstreamtable" "test0" "TABLE" "TSKV" "TODO"
+
+
+statement ok
+DROP DATABASE IF EXISTS createstreamtable;

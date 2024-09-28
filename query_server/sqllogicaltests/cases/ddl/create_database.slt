@@ -45,3 +45,25 @@ DROP DATABASE IF EXISTS createdatabase;
 
 statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: not supported keyword contains '/': db/1", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
 create database "db/1";
+
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Name cannot be empty or contain only spaces", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
+create database '';
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Name cannot be empty or contain only spaces", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
+create database ' ';
+
+statement ok
+drop database if exists 'dd c';
+
+statement ok
+create database 'dd c';
+
+statement ok
+drop database 'dd c';
+
+statement ok
+create database 'dd c';
+
+statement ok
+drop database "dd c";

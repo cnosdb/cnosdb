@@ -18,7 +18,7 @@ m0,t0=t0 f0=false,f1=0.0 0
 statement ok
 --#DATABASE = usage_schema
 
-sleep 8000ms
+sleep 8s
 
 query 
 --#HTTP

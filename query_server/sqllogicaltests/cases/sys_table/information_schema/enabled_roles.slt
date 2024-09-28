@@ -93,3 +93,22 @@ query T rowsort
 select * from information_schema.ENABLED_ROLES;
 ----
 "test_ers_role1"
+
+statement ok
+--#USER_NAME=root
+
+statement ok
+--#TENANT=cnosdb
+
+statement ok
+drop tenant if exists test_ers_tenant1;
+
+statement ok
+drop user if exists test_ers_u1;
+
+statement ok
+drop user if exists test_ers_u2;
+
+
+statement ok
+drop user if exists test_ers_u3;

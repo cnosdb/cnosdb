@@ -67,8 +67,112 @@ STORED AS NDJSON
 LOCATION 'query_server/query/tests/data/json/basic.ndjson';
 
 query T rowsort
-SELECT * FROM basic;
+SELECT * FROM basic order by name;
 ----
 "Alice" 25 "Los Angeles"
 "Bob" 35 "Chicago"
 "John" 30 "New York"
+
+
+
+statement ok
+drop table basic;
+
+statement ok
+drop table cpu;
+
+
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Name cannot be empty or contain only spaces", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*"\} \}, source: None \}
+CREATE EXTERNAL TABLE
+    '' (
+        cpu_hz  DECIMAL(10,6) NOT NULL,
+        temp  DOUBLE NOT NULL,
+        version_num  BIGINT NOT NULL,
+        is_old  BOOLEAN NOT NULL,
+        weight  DECIMAL(12,7) NOT NULL
+    )
+    STORED AS CSV
+    WITH HEADER ROW
+    LOCATION 'query_server/query/tests/data/csv/decimal_data.csv';
+
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Name cannot be empty or contain only spaces", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*"\} \}, source: None \}
+CREATE EXTERNAL TABLE
+    "" (
+        cpu_hz  DECIMAL(10,6) NOT NULL,
+        temp  DOUBLE NOT NULL,
+        version_num  BIGINT NOT NULL,
+        is_old  BOOLEAN NOT NULL,
+        weight  DECIMAL(12,7) NOT NULL
+    )
+    STORED AS CSV
+    WITH HEADER ROW
+    LOCATION 'query_server/query/tests/data/csv/decimal_data.csv';
+
+
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Name cannot be empty or contain only spaces", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*"\} \}, source: None \}
+CREATE EXTERNAL TABLE
+    " " (
+        cpu_hz  DECIMAL(10,6) NOT NULL,
+        temp  DOUBLE NOT NULL,
+        version_num  BIGINT NOT NULL,
+        is_old  BOOLEAN NOT NULL,
+        weight  DECIMAL(12,7) NOT NULL
+    )
+    STORED AS CSV
+    WITH HEADER ROW
+    LOCATION 'query_server/query/tests/data/csv/decimal_data.csv';
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Unterminated string literal at Line: 7, Column 58", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*"\} \}, source: None \}
+CREATE EXTERNAL TABLE ba/sic' (
+     name  STRING NOT NULL,
+     age     INT NOT NULL,
+     city    STRING NOT NULL,
+)
+STORED AS NDJSON
+LOCATION 'query_server/query/tests/data/json/basic.ndjson';
+
+
+statement ok
+CREATE EXTERNAL TABLE "ba sic" (
+     name  STRING NOT NULL,
+     age     INT NOT NULL,
+     city    STRING NOT NULL,
+)
+STORED AS NDJSON
+LOCATION 'query_server/query/tests/data/json/basic.ndjson';
+
+query T rowsort
+SELECT * FROM "ba sic" order by name;
+----
+"Alice" 25 "Los Angeles"
+"Bob" 35 "Chicago"
+"John" 30 "New York"
+
+
+query TIT
+SELECT * FROM 'ba sic' order by name;
+----
+"Alice" 25 "Los Angeles"
+"Bob" 35 "Chicago"
+"John" 30 "New York"
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: not supported keyword contains '/': ba/sic", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*"\} \}, source: None \}
+CREATE EXTERNAL TABLE "ba/sic" (
+     name  STRING NOT NULL,
+     age     INT NOT NULL,
+     city    STRING NOT NULL,
+)
+STORED AS NDJSON
+LOCATION 'query_server/query/tests/data/json/basic.ndjson';
+
+
+statement ok
+drop table "ba sic";
+
+
+
+statement ok
+drop database create_external_table;

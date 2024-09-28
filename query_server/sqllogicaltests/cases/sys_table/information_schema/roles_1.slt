@@ -100,3 +100,14 @@ drop role owner;
 
 statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Couldn't drop system role member", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
 drop role member;
+
+
+
+statement ok
+drop tenant if exists test_rs_tenant1;
+
+statement ok
+drop user if exists test_rs_u1;
+
+statement ok
+drop user if exists test_rs_u2;

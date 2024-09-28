@@ -1,3 +1,23 @@
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Name cannot be empty or contain only spaces", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "([^"]+)", "content\-length": "0"\} \}, source: None \}
+create user '';
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Name cannot be empty or contain only spaces", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "([^"]+)", "content\-length": "0"\} \}, source: None \}
+create user ' ';
+
+statement ok
+drop user if exists 'd d';
+
+statement ok
+create user 'd d';
+
+statement ok
+drop user if exists 'd d';
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: not supported keyword contains '/': u/1", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "([^"]+)", "content\-length": "0"\} \}, source: None \}
+create user "u/1";
+
+
+
 statement ok
 drop user if exists u1;
 
@@ -115,40 +135,37 @@ statement error Arrow error: Io error: Status \{ code: Internal, message: "Build
 alter user root set granted_admin=false;
 
 statement ok
-drop user u1;
+drop user if exists u1;
 
 statement ok
-drop user u2;
+drop user if exists u2;
 
 statement ok
-drop user u3;
+drop user if exists u3;
 
 statement ok
-drop user u4;
+drop user if exists u4;
 
 statement ok
-drop user u5;
+drop user if exists u5;
 
 statement ok
-drop user u6;
-
-statement error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Meta: The user u7 not found", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
-drop user u7;
+drop user if exists u6;
 
 statement ok
-drop user u8;
+drop user if exists u7;
 
 statement ok
-drop user u9;
+drop user if exists u8;
 
 statement ok
-drop user u10;
+drop user if exists u9;
 
 statement ok
-drop user u11;
+drop user if exists u10;
 
 statement ok
-drop user u12;
+drop user if exists u11;
 
-statement error Arrow error: Io error: Can't handshake status: Unauthenticated, message: "Auth error: The user u12 not found", details: \[\], metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}
-create user "u/1";
+statement ok
+drop user if exists u12;
