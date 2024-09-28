@@ -20,7 +20,7 @@ ALTER DATABASE alter_database Set TTL '30d' SHARD 6;
 query 
 DESCRIBE DATABASE alter_database;
 ----
-"10days" 5 "3days" 1 "US" "512 MiB" 16 "1 GiB" false false 32
+"10days" 5 "3days" 1 "US" "512 MiB" 16 "128 MiB" false false 32
 
 
 statement ok
@@ -30,7 +30,7 @@ ALTER DATABASE alter_database Set TTL '30d';
 query 
 DESCRIBE DATABASE alter_database;
 ----
-"30days" 5 "3days" 1 "US" "512 MiB" 16 "1 GiB" false false 32
+"30days" 5 "3days" 1 "US" "512 MiB" 16 "128 MiB" false false 32
 
 
 statement ok
@@ -40,7 +40,7 @@ ALTER DATABASE alter_database Set SHARD 6;
 query 
 DESCRIBE DATABASE alter_database;
 ----
-"30days" 6 "3days" 1 "US" "512 MiB" 16 "1 GiB" false false 32
+"30days" 6 "3days" 1 "US" "512 MiB" 16 "128 MiB" false false 32
 
 statement ok
 ALTER DATABASE alter_database Set VNODE_DURATION '100d';
@@ -49,7 +49,7 @@ ALTER DATABASE alter_database Set VNODE_DURATION '100d';
 query 
 DESCRIBE DATABASE alter_database;
 ----
-"30days" 6 "3months 8days 16h 19m 12s" 1 "US" "512 MiB" 16 "1 GiB" false false 32
+"30days" 6 "3months 8days 16h 19m 12s" 1 "US" "512 MiB" 16 "128 MiB" false false 32
 
 statement ok
 ALTER DATABASE alter_database Set REPLICA 1;
@@ -58,7 +58,7 @@ ALTER DATABASE alter_database Set REPLICA 1;
 query 
 DESCRIBE DATABASE alter_database;
 ----
-"30days" 6 "3months 8days 16h 19m 12s" 1 "US" "512 MiB" 16 "1 GiB" false false 32
+"30days" 6 "3months 8days 16h 19m 12s" 1 "US" "512 MiB" 16 "128 MiB" false false 32
 
 statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: database config is unmodifiable, only can modify database option: TTL, SHARD, VNODE_DURATION, REPLICA", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
 ALTER DATABASE alter_database Set PRECision 'ms';
@@ -67,4 +67,4 @@ ALTER DATABASE alter_database Set PRECision 'ms';
 query 
 DESCRIBE DATABASE alter_database;
 ----
-"30days" 6 "3months 8days 16h 19m 12s" 1 "US" "512 MiB" 16 "1 GiB" false false 32
+"30days" 6 "3months 8days 16h 19m 12s" 1 "US" "512 MiB" 16 "128 MiB" false false 32

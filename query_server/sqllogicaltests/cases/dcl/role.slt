@@ -94,7 +94,7 @@ create database db2;
 query T
 select * from INFORMATION_SCHEMA.databases where database_name='db1'
 ----
-"cnosdb" "db1" "INF" 1 "1year" 1 "NS" "512 MiB" 16 "1 GiB" false false 32
+"cnosdb" "db1" "INF" 1 "1year" 1 "NS" "512 MiB" 16 "128 MiB" false false 32
 
 query T
 SELECT * FROM information_schema.roles;

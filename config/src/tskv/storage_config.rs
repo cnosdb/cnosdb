@@ -75,7 +75,7 @@ pub struct StorageConfig {
 
 impl StorageConfig {
     fn default_path() -> String {
-        let path = std::path::Path::new("cnosdb_data").join("data");
+        let path = std::path::Path::new("/tmp/cnosdb/cnosdb_data").join("data");
         path.to_string_lossy().to_string()
     }
 
