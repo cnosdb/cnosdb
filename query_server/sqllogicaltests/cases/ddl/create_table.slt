@@ -274,4 +274,13 @@ statement ok
 DROP DATABASE IF EXISTS createtable;
 
 statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: not supported keyword contains '/': tb/1", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
-create table "tb/1";
+create table "tb/1"(ma string);
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Name cannot be empty or contain only spaces", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+create table ''(ma string);
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Name cannot be empty or contain only spaces", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+create table ""(ma string);
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Name cannot be empty or contain only spaces", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+create table ' '(ma string);
