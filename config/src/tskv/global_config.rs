@@ -25,7 +25,7 @@ impl GlobalConfig {
     }
 
     fn default_host() -> String {
-        "localhost".to_string()
+        "127.0.0.1".to_string()
     }
 
     fn default_cluster_name() -> String {

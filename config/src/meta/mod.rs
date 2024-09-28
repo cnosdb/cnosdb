@@ -1,4 +1,7 @@
+mod cluster_config;
+mod global_config;
 mod heart_beat_config;
+mod sys_config;
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -11,57 +14,30 @@ use macros::EnvKeys;
 use serde::{Deserialize, Serialize};
 
 use crate::common::LogConfig;
-use crate::{tskv, EnvKeys as _};
+use crate::meta::cluster_config::MetaClusterConfig;
+use crate::meta::global_config::MetaGlobalConfig;
+use crate::meta::sys_config::SysConfig;
+use crate::EnvKeys as _;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, EnvKeys)]
 #[serde(default = "Default::default")]
+#[derive(Default)]
 pub struct Opt {
-    pub id: u64,
-    pub host: String,
-    pub port: u16,
-    pub data_path: String,
-    pub grpc_enable_gzip: bool,
-    pub lmdb_max_map_size: usize,
-    pub heartbeat_interval: u64,
-    pub raft_logs_to_keep: u64,
-    pub install_snapshot_timeout: u64,    //ms
-    pub send_append_entries_timeout: u64, //ms
-    pub cluster_name: String,
-    pub usage_schema_cache_size: u64,
-    pub cluster_schema_cache_size: u64,
-    pub system_database_replica: u64,
-
+    #[serde(default)]
+    pub global: MetaGlobalConfig,
+    #[serde(default)]
+    pub cluster: MetaClusterConfig,
+    #[serde(default)]
+    pub sys_config: SysConfig,
+    #[serde(default)]
     pub log: LogConfig,
+    #[serde(default)]
     pub heartbeat: HeartBeatConfig,
 }
 
 impl Opt {
     pub fn to_string_pretty(&self) -> String {
         toml::to_string_pretty(self).unwrap_or_else(|_| "Failed to stringify Config".to_string())
-    }
-}
-
-impl Default for Opt {
-    fn default() -> Self {
-        Self {
-            id: 1,
-            host: String::from("127.0.0.1"),
-            port: 8901,
-            data_path: String::from("/var/lib/cnosdb/meta"),
-            grpc_enable_gzip: false,
-            log: Default::default(),
-            cluster_name: String::from("cluster_xxx"),
-            heartbeat: Default::default(),
-
-            lmdb_max_map_size: 1024 * 1024 * 1024,
-            heartbeat_interval: 3 * 1000,
-            raft_logs_to_keep: 10000,
-            install_snapshot_timeout: 3600 * 1000,
-            send_append_entries_timeout: 5 * 1000,
-            usage_schema_cache_size: tskv::MetaConfig::default_cluster_schema_cache_size(),
-            cluster_schema_cache_size: tskv::MetaConfig::default_usage_schema_cache_size(),
-            system_database_replica: tskv::MetaConfig::default_system_database_replica(),
-        }
     }
 }
 
@@ -90,12 +66,25 @@ mod test {
     #[test]
     fn test() {
         let config_str = r#"
-id = 1
-host = "127.0.0.1"
-port = 8901
-data_path = "/tmp/cnosdb/meta"
+[global]
+node_id = 1
 cluster_name = "cluster_xxx"
+raft_node_host = "127.0.0.1"
+listen_port = 8901
 grpc_enable_gzip = false
+data_path = "/var/lib/cnosdb/meta"
+
+[cluster]
+lmdb_max_map_size = 10485760
+heartbeat_interval = 3000
+raft_logs_to_keep = 10000
+install_snapshot_timeout = 3600000
+send_append_entries_timeout = 5000
+
+[sys_config]
+usage_schema_cache_size = 2097152
+cluster_schema_cache_size = 2097152
+system_database_replica = 1
 
 [log]
 level = "warn"
@@ -103,8 +92,8 @@ path = "/tmp/cnosdb/logs"
 
 
 [heartbeat]
-heartbeat_recheck_interval = 300
-heartbeat_expired_interval = 600
+heartbeat_recheck_interval = 30
+heartbeat_expired_interval = 60
 "#;
 
         let config: Opt = toml::from_str(config_str).unwrap();

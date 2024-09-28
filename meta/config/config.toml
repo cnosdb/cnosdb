@@ -1,22 +1,53 @@
-id = 1
-host = "127.0.0.1"
-port = 8901
-data_path = "/var/lib/cnosdb/meta"
+[global]
+node_id = 1
 cluster_name = "cluster_xxx"
+raft_node_host = "127.0.0.1"
+
+# The port is used to handle Raft consensus communication in combination with HTTP and gRPC services, with 8901 enabled by default
+listen_port = 8901
+
+# enable or disable compression for data transmission on the interface of the meta service
 grpc_enable_gzip = false
+
+# The directory where meta data stored.
+data_path = "/var/lib/cnosdb/meta"
+
+[cluster]
+# The size of the stored Raft state data
 lmdb_max_map_size = 1024000000
-heartbeat_interval = 3000
+
+# Heartbeat interval of the Raft replication algorithm.
+heartbeat_interval = 300
+
+# The number of entries retained in the Raft log, and every one of these times is written to make a snapshot.
 raft_logs_to_keep = 10000
+
+# Raft Snapshot replication timeout period between nodes.
 install_snapshot_timeout = 3600000
+
+# The timeout period for raft sending logs between nodes.
 send_append_entries_timeout = 5000
+
+[sys_config]
+# usage_schema Maximum memory cache.
 usage_schema_cache_size = 2097152 # 2MiB
+
+# cluster_schema Maximum memory cache.
 cluster_schema_cache_size = 2097152 # 2MiB
-system_database_replica = 3
+
+# replica of the system database.
+system_database_replica = 1
 
 [log]
+# log level can be debug, info, error, or warn.
 level = "info"
+
+# The directory where log files stored.
 path = "/var/log/cnosdb"
 
 [heartbeat]
-heartbeat_recheck_interval = 300
-heartbeat_expired_interval = 600
+# The time interval for checking the status of CnosDB nodes, in seconds.
+heartbeat_recheck_interval = 30
+
+# The time inserval after which CnosDB node is considered abnormal if no heartbeat is reported.
+heartbeat_expired_interval = 180

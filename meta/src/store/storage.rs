@@ -19,6 +19,7 @@ use replication::{ApplyContext, ApplyStorage, EngineMetrics, Request, Response};
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 use trace::{debug, error, info};
+use tracing::warn;
 
 use super::command::*;
 use super::key_path;
@@ -1683,7 +1684,7 @@ async fn ping_servers(list: &[NodeInfo]) -> Vec<NodeInfo> {
     let results = futures::future::join_all(requests).await;
     for (node, result) in list.iter().zip(results.iter()) {
         if let Err(err) = result {
-            info!("ping server {:?} failed: {}", node, err);
+            warn!("ping server {:?} failed: {}", node, err);
         } else {
             alive_nodes.push(node.clone());
         }

@@ -26,7 +26,7 @@ pub struct WalConfig {
 
 impl WalConfig {
     fn default_path() -> String {
-        let path = std::path::Path::new("cnosdb_data").join("wal");
+        let path = std::path::Path::new("/tmp/cnosdb/cnosdb_data").join("wal");
         path.to_string_lossy().to_string()
     }
 
@@ -34,11 +34,11 @@ impl WalConfig {
         64
     }
 
-    fn default_max_file_size() -> u64 {
-        1024 * 1024 * 1024
+    pub fn default_max_file_size() -> u64 {
+        128 * 1024 * 1024
     }
 
-    fn default_sync() -> bool {
+    pub fn default_sync() -> bool {
         false
     }
 

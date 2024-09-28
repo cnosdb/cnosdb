@@ -1,6 +1,6 @@
 [global]
 node_id = 2001
-host = "localhost"
+host = "127.0.0.1"
 cluster_name = 'cluster_xxx'
 store_metrics = true
 pre_create_bucket = false
@@ -50,7 +50,7 @@ index_cache_capacity = 100000
 
 [wal]
 path = '/tmp/cnosdb/2001/wal'
-max_file_size = "1GiB"                 # 1073741824
+max_file_size = "128MiB"                 # 1073741824
 sync = false
 compress = "zstd"
 
@@ -82,7 +82,7 @@ enable_report = true
 raft_logs_to_keep = 5000
 snapshot_holding_time = "3600s"
 lmdb_max_map_size = "1024000000B"
-heartbeat_interval = "3000ms"
+heartbeat_interval = "300ms"
 trigger_snapshot_interval = "600s"
 install_snapshot_timeout = "3600000ms"
 send_append_entries_timeout = "5000ms"

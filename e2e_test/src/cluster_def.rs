@@ -93,11 +93,11 @@ impl MetaNodeDefinition {
     }
 
     pub fn update_config(&self, config: &mut MetaStoreConfig) {
-        config.id = self.id as u64;
+        config.global.node_id = self.id as u64;
         let (host, port) = self.to_host_port();
-        config.host = host;
-        config.port = port;
-        config.system_database_replica = 1;
+        config.global.raft_node_host = host;
+        config.global.listen_port = port;
+        config.sys_config.system_database_replica = 1;
     }
 }
 
