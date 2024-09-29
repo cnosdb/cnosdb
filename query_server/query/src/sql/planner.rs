@@ -1317,7 +1317,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         let (source_plan, _) = self.create_table_relation(table_ref, None, &Default::default())?;
 
         // build from
-        let mut plan_builder = LogicalPlanBuilder::from(source_plan);
+        let mut plan_builder = LogicalPlanBuilder::from(source_plan).distinct()?;
 
         // build where
         let selection = match selection {

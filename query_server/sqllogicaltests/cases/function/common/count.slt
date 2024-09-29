@@ -21,7 +21,7 @@ select count(time) from func_tbl;
 query 
 select count(t1) from func_tbl;
 ----
-4
+7
 
 query 
 select count(t0, t1) from func_tbl;
@@ -51,7 +51,7 @@ select count(NULL) from func_tbl;
 query 
 select count(t1) from func_tbl;
 ----
-4
+7
 
 query 
 select count(t2) from func_tbl;
