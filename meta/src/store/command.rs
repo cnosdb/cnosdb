@@ -349,6 +349,10 @@ impl Watch {
                 return true;
             }
 
+            if entry.key.starts_with(&KeyPath::users(cluster)) {
+                return true;
+            }
+
             if tenants.is_empty() {
                 return false;
             }
