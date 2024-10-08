@@ -360,7 +360,7 @@ mod test {
 
     use crate::compaction::test::{default_table_schema, write_data_blocks_to_column_file};
     use crate::compute::count::count_column_non_null_values;
-    use crate::memcache::test::put_rows_to_cache;
+    use crate::memcache::test::{put_rows_to_cache, PutNone};
     use crate::memcache::MemCache;
     use crate::tseries_family::test_tseries_family::build_version_by_column_files;
     use crate::tseries_family::{CacheGroup, SuperVersion};
@@ -482,17 +482,17 @@ mod test {
         let cache_group = {
             let caches = vec![MemCache::new(1, 16, 2, 0, &pool), MemCache::new(1, 16, 2, 0, &pool), MemCache::new(1, 16, 2, 0, &pool)];
             // cache, sid, schema_id, schema, time_range, put_none
-            put_rows_to_cache(&caches[0], 1, 1, default_table_schema(vec![1]), (1, 4), false);
-            put_rows_to_cache(&caches[0], 2, 1, default_table_schema(vec![1]), (101, 104), false);
-            put_rows_to_cache(&caches[1], 1, 1, default_table_schema(vec![1]), (4, 6), false);
-            put_rows_to_cache(&caches[1], 2, 1, default_table_schema(vec![1]), (104, 106), false);
-            put_rows_to_cache(&caches[2], 1, 1, default_table_schema(vec![1]), (7, 9), false);
-            put_rows_to_cache(&caches[2], 2, 1, default_table_schema(vec![1]), (107, 109), false);
-            put_rows_to_cache(&caches[2], 1, 1, default_table_schema(vec![1]), (11, 15), false);
-            put_rows_to_cache(&caches[2], 2, 1, default_table_schema(vec![1]), (111, 115), false);
+            put_rows_to_cache(&caches[0], 1, 1, default_table_schema(vec![1]), (1, 4), PutNone::False);
+            put_rows_to_cache(&caches[0], 2, 1, default_table_schema(vec![1]), (101, 104), PutNone::False);
+            put_rows_to_cache(&caches[1], 1, 1, default_table_schema(vec![1]), (4, 6), PutNone::False);
+            put_rows_to_cache(&caches[1], 2, 1, default_table_schema(vec![1]), (104, 106), PutNone::False);
+            put_rows_to_cache(&caches[2], 1, 1, default_table_schema(vec![1]), (7, 9), PutNone::False);
+            put_rows_to_cache(&caches[2], 2, 1, default_table_schema(vec![1]), (107, 109), PutNone::False);
+            put_rows_to_cache(&caches[2], 1, 1, default_table_schema(vec![1]), (11, 15), PutNone::False);
+            put_rows_to_cache(&caches[2], 2, 1, default_table_schema(vec![1]), (111, 115), PutNone::False);
             let cache = MemCache::new(1, 16, 2, 0, &pool);
-            put_rows_to_cache(&cache, 1, 1, default_table_schema(vec![1]), (11, 15), false);
-            put_rows_to_cache(&cache, 2, 1, default_table_schema(vec![1]), (111, 115), false);
+            put_rows_to_cache(&cache, 1, 1, default_table_schema(vec![1]), (11, 15), PutNone::False);
+            put_rows_to_cache(&cache, 2, 1, default_table_schema(vec![1]), (111, 115), PutNone::False);
             CacheGroup {
                 mut_cache: Arc::new(RwLock::new(cache)),
                 immut_cache: caches.into_iter().map(|c| Arc::new(RwLock::new(c))).collect(),
@@ -570,20 +570,20 @@ mod test {
         let cache_group = {
             let caches = vec![MemCache::new(1, 16, 2, 0, &pool), MemCache::new(1, 16, 2, 0, &pool), MemCache::new(1, 16, 2, 0, &pool)];
             // cache, sid, schema_id, schema, time_range, put_none
-            put_rows_to_cache(&caches[0], 1, 1, default_table_schema(vec![1]), (11, 15), false);
-            put_rows_to_cache(&caches[1], 1, 1, default_table_schema(vec![1]), (21, 25), false);
-            put_rows_to_cache(&caches[2], 1, 1, default_table_schema(vec![1]), (31, 35), false);
+            put_rows_to_cache(&caches[0], 1, 1, default_table_schema(vec![1]), (11, 15), PutNone::False);
+            put_rows_to_cache(&caches[1], 1, 1, default_table_schema(vec![1]), (21, 25), PutNone::False);
+            put_rows_to_cache(&caches[2], 1, 1, default_table_schema(vec![1]), (31, 35), PutNone::False);
 
-            put_rows_to_cache(&caches[0], 2, 1, default_table_schema(vec![1]), (12, 13), false);
-            put_rows_to_cache(&caches[0], 2, 1, default_table_schema(vec![1]), (111, 115), false);
-            put_rows_to_cache(&caches[1], 2, 1, default_table_schema(vec![1]), (22, 23), false);
-            put_rows_to_cache(&caches[1], 2, 1, default_table_schema(vec![1]), (121, 125), false);
-            put_rows_to_cache(&caches[2], 2, 1, default_table_schema(vec![1]), (32, 33), false);
-            put_rows_to_cache(&caches[2], 2, 1, default_table_schema(vec![1]), (131, 135), false);
+            put_rows_to_cache(&caches[0], 2, 1, default_table_schema(vec![1]), (12, 13), PutNone::False);
+            put_rows_to_cache(&caches[0], 2, 1, default_table_schema(vec![1]), (111, 115), PutNone::False);
+            put_rows_to_cache(&caches[1], 2, 1, default_table_schema(vec![1]), (22, 23), PutNone::False);
+            put_rows_to_cache(&caches[1], 2, 1, default_table_schema(vec![1]), (121, 125), PutNone::False);
+            put_rows_to_cache(&caches[2], 2, 1, default_table_schema(vec![1]), (32, 33), PutNone::False);
+            put_rows_to_cache(&caches[2], 2, 1, default_table_schema(vec![1]), (131, 135), PutNone::False);
             let mut_cache = MemCache::new(1, 16, 2, 0, &pool);
-            put_rows_to_cache(&mut_cache, 1, 1, default_table_schema(vec![1]), (31, 40), false);
-            put_rows_to_cache(&mut_cache, 2, 1, default_table_schema(vec![1]), (36, 37), false);
-            put_rows_to_cache(&mut_cache, 2, 1, default_table_schema(vec![1]), (131, 140), false);
+            put_rows_to_cache(&mut_cache, 1, 1, default_table_schema(vec![1]), (31, 40), PutNone::False);
+            put_rows_to_cache(&mut_cache, 2, 1, default_table_schema(vec![1]), (36, 37), PutNone::False);
+            put_rows_to_cache(&mut_cache, 2, 1, default_table_schema(vec![1]), (131, 140), PutNone::False);
             CacheGroup {
                 mut_cache: Arc::new(RwLock::new(mut_cache)),
                 immut_cache: caches.into_iter().map(|c| Arc::new(RwLock::new(c))).collect(),

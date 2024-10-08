@@ -907,7 +907,11 @@ pub mod test {
             }
         }
         if last_idx_i + 1 < expected_data.len() {
-            panic!("IndexMeta count is less than expected");
+            panic!(
+                "IndexMeta count {} is less than expected {}",
+                last_idx_i + 1,
+                expected_data.len()
+            );
         }
     }
 
