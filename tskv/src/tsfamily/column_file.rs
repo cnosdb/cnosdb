@@ -5,7 +5,7 @@ use std::sync::{Arc, Weak};
 use cache::{AsyncCache, ShardedAsyncCache};
 use models::predicate::domain::TimeRange;
 use models::{ColumnId, FieldId, SeriesId};
-use tokio::sync::RwLock as TokioRwLock;
+use tokio::sync::{RwLock as AsyncRwLock, RwLockWriteGuard as AsyncRwLockWriteGuard};
 use trace::{debug, error, info};
 use utils::BloomFilter;
 
@@ -21,12 +21,11 @@ use crate::{tsm, ColumnFileId, LevelId};
 pub struct ColumnFile {
     file_id: ColumnFileId,
     level: LevelId,
-    is_delta: bool,
     time_range: TimeRange,
     size: u64,
-    series_id_filter: TokioRwLock<Option<Arc<BloomFilter>>>,
+    series_id_filter: AsyncRwLock<Option<Arc<BloomFilter>>>,
     deleted: AtomicBool,
-    compacting: AtomicBool,
+    compacting: Arc<AsyncRwLock<bool>>,
 
     path: PathBuf,
     tsm_reader_cache: Weak<ShardedAsyncCache<String, Arc<TsmReader>>>,
@@ -36,18 +35,17 @@ impl ColumnFile {
     pub fn with_compact_data(
         meta: &CompactMeta,
         path: impl AsRef<Path>,
-        series_id_filter: TokioRwLock<Option<Arc<BloomFilter>>>,
+        series_id_filter: AsyncRwLock<Option<Arc<BloomFilter>>>,
         tsm_reader_cache: Weak<ShardedAsyncCache<String, Arc<TsmReader>>>,
     ) -> Self {
         Self {
             file_id: meta.file_id,
             level: meta.level,
-            is_delta: meta.is_delta,
             time_range: TimeRange::new(meta.min_ts, meta.max_ts),
             size: meta.file_size,
             series_id_filter,
             deleted: AtomicBool::new(false),
-            compacting: AtomicBool::new(false),
+            compacting: Arc::new(AsyncRwLock::new(false)),
             path: path.as_ref().into(),
             tsm_reader_cache,
         }
@@ -62,7 +60,7 @@ impl ColumnFile {
     }
 
     pub fn is_delta(&self) -> bool {
-        self.is_delta
+        self.level == 0
     }
 
     pub fn time_range(&self) -> &TimeRange {
@@ -154,8 +152,9 @@ impl ColumnFile {
         let dir = self.path.parent().expect("file has parent");
         // TODO flock tombstone file.
         let mut tombstone = TsmTombstone::open(dir, self.file_id).await?;
+        let bloom_filter = self.load_bloom_filter().await?;
         tombstone
-            .add_range(&[(series_id, column_id)], time_range)
+            .add_range(&[(series_id, column_id)], *time_range, Some(bloom_filter))
             .await?;
         tombstone.flush().await?;
         Ok(())
@@ -171,18 +170,22 @@ impl ColumnFile {
         self.deleted.store(true, Ordering::Release);
     }
 
-    pub fn is_compacting(&self) -> bool {
-        self.compacting.load(Ordering::Acquire)
+    pub async fn is_compacting(&self) -> bool {
+        *self.compacting.read().await
     }
 
-    pub fn mark_compacting(&self) -> bool {
-        self.compacting
-            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-            .is_ok()
+    pub async fn write_lock_compacting(&self) -> AsyncRwLockWriteGuard<'_, bool> {
+        self.compacting.write().await
     }
 
-    pub fn unmark_compacting(&self) {
-        self.compacting.store(false, Ordering::Release);
+    pub async fn mark_compacting(&self) -> bool {
+        let mut compacting = self.compacting.write().await;
+        if *compacting {
+            false
+        } else {
+            *compacting = true;
+            true
+        }
     }
 }
 
@@ -225,6 +228,16 @@ impl Drop for ColumnFile {
     }
 }
 
+impl std::fmt::Display for ColumnFile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{{ level:{}, file_id:{}, time_range:{}-{}, file size:{} }}",
+            self.level, self.file_id, self.time_range.min_ts, self.time_range.max_ts, self.size,
+        )
+    }
+}
+
 #[cfg(test)]
 impl ColumnFile {
     #[allow(clippy::too_many_arguments)]
@@ -233,18 +246,16 @@ impl ColumnFile {
         level: LevelId,
         time_range: TimeRange,
         size: u64,
-        is_delta: bool,
         path: impl AsRef<Path>,
     ) -> Self {
         Self {
             file_id,
             level,
-            is_delta,
             time_range,
             size,
-            series_id_filter: TokioRwLock::new(Some(Arc::new(BloomFilter::default()))),
+            series_id_filter: AsyncRwLock::new(Some(Arc::new(BloomFilter::default()))),
             deleted: AtomicBool::new(false),
-            compacting: AtomicBool::new(false),
+            compacting: Arc::new(AsyncRwLock::new(false)),
             path: path.as_ref().into(),
             tsm_reader_cache: Weak::new(),
         }
@@ -252,7 +263,7 @@ impl ColumnFile {
 
     pub fn set_series_id_filter(
         &mut self,
-        series_id_filter: TokioRwLock<Option<Arc<BloomFilter>>>,
+        series_id_filter: AsyncRwLock<Option<Arc<BloomFilter>>>,
     ) {
         self.series_id_filter = series_id_filter;
     }

@@ -200,6 +200,20 @@ impl Version {
         result
     }
 
+    pub async fn unmark_compacting_files(&self, files_ids: &HashSet<ColumnFileId>) {
+        if files_ids.is_empty() {
+            return;
+        }
+        for level in self.levels_info.iter() {
+            for file in level.files.iter() {
+                if files_ids.contains(&file.file_id()) {
+                    let mut compacting = file.write_lock_compacting().await;
+                    *compacting = false;
+                }
+            }
+        }
+    }
+
     #[cfg(test)]
     pub fn levels_info_mut(&mut self) -> &mut [LevelInfo; 5] {
         &mut self.levels_info

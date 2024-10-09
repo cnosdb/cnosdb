@@ -7,7 +7,7 @@ use arrow_array::{ArrayRef, RecordBatch};
 use arrow_schema::{Field, Schema};
 use bytes::Bytes;
 use models::column_data::PrimaryColumnData;
-use models::predicate::domain::TimeRange;
+use models::predicate::domain::{TimeRange, TimeRanges};
 use models::schema::tskv_table_schema::TskvTableSchemaRef;
 use models::SeriesId;
 use snafu::{OptionExt, ResultExt};
@@ -264,6 +264,20 @@ impl TsmReader {
         Ok(record_batch)
     }
 
+    pub async fn add_tombstone_and_compact_to_tmp(
+        &self,
+        time_range: TimeRange,
+    ) -> TskvResult<TimeRanges> {
+        self.tombstone
+            .add_range_and_compact_to_tmp(time_range)
+            .await
+    }
+
+    /// Replace current tombstone file with compact_tmp tombstone file.
+    pub async fn replace_tombstone_with_compact_tmp(&self) -> TskvResult<()> {
+        self.tombstone.replace_with_compact_tmp().await
+    }
+
     pub fn table_schema(&self, table_name: &str) -> Option<TskvTableSchemaRef> {
         self.tsm_meta.chunk_group_meta.table_schema(table_name)
     }
@@ -451,18 +465,19 @@ pub fn decode_pages(
             .collect::<Vec<_>>();
         let schema = Arc::new(Schema::new_with_metadata(fields, table_schema.meta()));
         for page in pages {
-            let null_bits = if tomb.overlaps(series_id, page.meta.column.id, &time_range) {
-                let null_bitset = update_nullbits_by_tombstone(
-                    &time_column,
-                    &tomb,
-                    series_id,
-                    &time_range,
-                    &page,
-                )?;
-                NullBitset::Own(null_bitset)
-            } else {
-                NullBitset::Ref(page.null_bitset())
-            };
+            let null_bits =
+                if tomb.overlaps_column_time_range(series_id, page.meta.column.id, &time_range) {
+                    let null_bitset = update_nullbits_by_tombstone(
+                        &time_column,
+                        &tomb,
+                        series_id,
+                        &time_range,
+                        &page,
+                    )?;
+                    NullBitset::Own(null_bitset)
+                } else {
+                    NullBitset::Ref(page.null_bitset())
+                };
             let array = data_buf_to_arrow_array(&page, null_bits)?;
             target_arrays.push(array);
         }
@@ -502,15 +517,16 @@ pub async fn page_to_arrow_array_with_tomb(
     time_range: TimeRange,
 ) -> TskvResult<ArrayRef> {
     let tombstone = reader.tombstone();
-    let null_bitset = if tombstone.overlaps(series_id, page.meta.column.id, &time_range) {
-        let time_page = reader.read_page(&time_page_meta).await?;
-        let column = time_page.to_column()?;
-        let null_bitset =
-            update_nullbits_by_tombstone(&column, &tombstone, series_id, &time_range, &page)?;
-        NullBitset::Own(null_bitset)
-    } else {
-        NullBitset::Ref(page.null_bitset())
-    };
+    let null_bitset =
+        if tombstone.overlaps_column_time_range(series_id, page.meta.column.id, &time_range) {
+            let time_page = reader.read_page(&time_page_meta).await?;
+            let column = time_page.to_column()?;
+            let null_bitset =
+                update_nullbits_by_tombstone(&column, &tombstone, series_id, &time_range, &page)?;
+            NullBitset::Own(null_bitset)
+        } else {
+            NullBitset::Ref(page.null_bitset())
+        };
 
     data_buf_to_arrow_array(&page, null_bitset)
 }

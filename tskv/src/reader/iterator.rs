@@ -333,7 +333,7 @@ impl SeriesGroupBatchReaderFactory {
                     rowgroups.push(DataReference::Memcache(
                         series.clone(),
                         Arc::new(new_time_ranges),
-                        cache.tsm_file_id(),
+                        cache.file_id(),
                     ))
                 }
             }
