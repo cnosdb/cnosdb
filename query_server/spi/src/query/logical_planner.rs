@@ -103,6 +103,7 @@ impl Plan {
 #[derive(Debug, Clone)]
 pub struct QueryPlan {
     pub df_plan: DFPlan,
+    pub is_tag_scan: bool,
 }
 
 impl QueryPlan {

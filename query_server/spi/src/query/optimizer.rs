@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use datafusion::logical_expr::LogicalPlan;
 use datafusion::physical_plan::ExecutionPlan;
 
+use super::logical_planner::QueryPlan;
 use super::session::SessionCtx;
 use crate::QueryResult;
 
@@ -13,7 +13,7 @@ pub type OptimizerRef = Arc<dyn Optimizer + Send + Sync>;
 pub trait Optimizer {
     async fn optimize(
         &self,
-        plan: &LogicalPlan,
+        plan: &QueryPlan,
         session: &SessionCtx,
     ) -> QueryResult<Arc<dyn ExecutionPlan>>;
 }

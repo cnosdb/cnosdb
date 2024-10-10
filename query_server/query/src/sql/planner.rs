@@ -22,7 +22,7 @@ use datafusion::datasource::file_format::FileFormat;
 use datafusion::datasource::listing::{
     ListingOptions, ListingTable, ListingTableConfig, ListingTableUrl,
 };
-use datafusion::error::DataFusionError;
+use datafusion::error::{DataFusionError, Result};
 use datafusion::execution::context::SessionState;
 use datafusion::execution::runtime_env::RuntimeEnv;
 use datafusion::logical_expr::expr::{ScalarFunction, Sort};
@@ -257,7 +257,10 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         match stmt {
             Statement::Query(_) => {
                 let df_plan = self.df_planner.sql_statement_to_plan(stmt)?;
-                let plan = Plan::Query(QueryPlan { df_plan });
+                let plan = Plan::Query(QueryPlan {
+                    df_plan,
+                    is_tag_scan: false,
+                });
 
                 // privileges
                 let access_databases = self.schema_provider.reset_access_databases();
@@ -398,7 +401,10 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             filter,
         )?);
         let df_plan = LogicalPlan::Extension(Extension { node: update_node });
-        let plan = Plan::Query(QueryPlan { df_plan });
+        let plan = Plan::Query(QueryPlan {
+            df_plan,
+            is_tag_scan: false,
+        });
 
         // privileges
         let write_privileges = databases_privileges(
@@ -425,8 +431,8 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             .statement_to_plan(statement, session, auth_enable)
             .await?;
 
-        let input_df_plan = match plan {
-            Plan::Query(query) => Arc::new(query.df_plan),
+        let (input_df_plan, is_tag_scan) = match plan {
+            Plan::Query(query) => (Arc::new(query.df_plan), query.is_tag_scan),
             _ => {
                 return Err(QueryError::NotImplemented {
                     err: "explain non-query statement.".to_string(),
@@ -454,7 +460,10 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             })
         };
 
-        let plan = Plan::Query(QueryPlan { df_plan });
+        let plan = Plan::Query(QueryPlan {
+            df_plan,
+            is_tag_scan,
+        });
 
         Ok(PlanWithPrivileges { plan, privileges })
     }
@@ -498,7 +507,10 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
 
         debug!("Insert plan:\n{}", df_plan.display_indent_schema());
 
-        let plan = Plan::Query(QueryPlan { df_plan });
+        let plan = Plan::Query(QueryPlan {
+            df_plan,
+            is_tag_scan: false,
+        });
 
         // privileges
         let mut write_privileges = databases_privileges(
@@ -1013,7 +1025,10 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             .project(projections)?
             .build()?;
 
-        let plan = Plan::Query(QueryPlan { df_plan });
+        let plan = Plan::Query(QueryPlan {
+            df_plan,
+            is_tag_scan: false,
+        });
 
         // privileges
         let tenant_id = *session.tenant_id();
@@ -1058,7 +1073,10 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             .project(projections)?
             .build()?;
 
-        let plan = Plan::Query(QueryPlan { df_plan });
+        let plan = Plan::Query(QueryPlan {
+            df_plan,
+            is_tag_scan: false,
+        });
 
         // privileges
         Ok(PlanWithPrivileges {
@@ -1235,7 +1253,10 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             .sort(sorts)?
             .build()?;
 
-        let plan = Plan::Query(QueryPlan { df_plan });
+        let plan = Plan::Query(QueryPlan {
+            df_plan,
+            is_tag_scan: false,
+        });
 
         // privileges
         let tenant_id = *session.tenant_id();
@@ -1276,7 +1297,10 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
 
         let df_plan = builder.project(projections)?.sort(sorts)?.build()?;
 
-        let plan = Plan::Query(QueryPlan { df_plan });
+        let plan = Plan::Query(QueryPlan {
+            df_plan,
+            is_tag_scan: false,
+        });
 
         // privileges
         Ok(PlanWithPrivileges {
@@ -1363,7 +1387,10 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         let db_name = &table_schema.db;
 
         Ok(PlanWithPrivileges {
-            plan: Plan::Query(QueryPlan { df_plan }),
+            plan: Plan::Query(QueryPlan {
+                df_plan,
+                is_tag_scan: true,
+            }),
             privileges: vec![Privilege::TenantObject(
                 TenantObjectPrivilege::Database(DatabasePrivilege::Read, Some(db_name.to_string())),
                 Some(*session.tenant_id()),
@@ -2074,7 +2101,10 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         let df_plan =
             LogicalPlanBuilder::scan(table_ref, table_source, Some(projections))?.build()?;
 
-        let plan = Plan::Query(QueryPlan { df_plan });
+        let plan = Plan::Query(QueryPlan {
+            df_plan,
+            is_tag_scan: false,
+        });
 
         // privileges
         let tenant_id = *session.tenant_id();
@@ -2484,7 +2514,10 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             .write(target_table, TEMP_LOCATION_TABLE_NAME, Default::default())?
             .build()?;
 
-        Ok(Plan::Query(QueryPlan { df_plan }))
+        Ok(Plan::Query(QueryPlan {
+            df_plan,
+            is_tag_scan: false,
+        }))
     }
 
     fn create_table_relation(
@@ -2589,7 +2622,10 @@ fn build_copy_into_table_plan(
 
     debug!("Copy into table plan:\n{}", df_plan.display_indent_schema());
 
-    Ok(Plan::Query(QueryPlan { df_plan }))
+    Ok(Plan::Query(QueryPlan {
+        df_plan,
+        is_tag_scan: false,
+    }))
 }
 
 fn build_and_register_object_store(
@@ -3498,6 +3534,7 @@ mod tests {
         match plan.plan {
             Plan::Query(QueryPlan {
                 df_plan: LogicalPlan::Extension(Extension { node }),
+                is_tag_scan: false,
             }) => match &node.inputs()[0] {
                 LogicalPlan::Extension(Extension { node }) => {
                     match node.as_any().downcast_ref::<TableWriterPlanNode>() {

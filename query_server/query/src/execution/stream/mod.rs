@@ -311,7 +311,6 @@ where
         let current_watermark_ns = self.watermark_tracker.current_watermark_ns();
         let available_offsets = self.offset_tracker.available_offsets();
         let id = self.query_state_machine.query_id;
-        let logical_plan = &self.plan.df_plan;
         trace::trace!(
             "query_id({}), current_batch_id({}), current_watermark_ns({}), available_offsets: {:?}",
             id,
@@ -321,7 +320,7 @@ where
         );
 
         let logical_optimizer = DefaultLogicalOptimizer::default();
-        let opt_plan = logical_optimizer.optimize(logical_plan, session)?;
+        let opt_plan = logical_optimizer.optimize(&self.plan, session)?;
         trace::debug!(
             "Final stream optimized logical plan:\n{}",
             opt_plan.display_indent_schema()

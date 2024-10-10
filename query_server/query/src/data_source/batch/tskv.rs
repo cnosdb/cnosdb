@@ -385,21 +385,18 @@ impl TableProvider for ClusterTable {
         Ok(TableProviderAggregationPushDown::Unsupported)
     }
 
-    fn push_down_projection(&self, proj: &[usize]) -> Option<Vec<usize>> {
+    fn push_down_projection(&self, proj: &[usize], is_tag_scan: bool) -> Option<Vec<usize>> {
         let mut contain_time = false;
-        let mut contain_field = false;
 
         proj.iter()
             .flat_map(|i| self.schema.column_by_index(*i))
             .for_each(|c| {
-                if c.column_type.is_field() {
-                    contain_field = true;
-                } else if c.column_type.is_time() {
+                if c.column_type.is_time() {
                     contain_time = true;
                 }
             });
 
-        if contain_field && !contain_time {
+        if !is_tag_scan && !contain_time {
             if let Some(idx) = self.schema.column_index(TIME_FIELD_NAME) {
                 let new_proj = std::iter::once(idx)
                     .chain(proj.iter().cloned())

@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use datafusion::config::ConfigOptions;
-use datafusion::logical_expr::LogicalPlan;
 use datafusion::physical_optimizer::PhysicalOptimizerRule;
 use datafusion::physical_plan::{displayable, ExecutionPlan};
+use spi::query::logical_planner::QueryPlan;
 use spi::query::optimizer::Optimizer;
 use spi::query::physical_planner::PhysicalPlanner;
 use spi::query::session::SessionCtx;
@@ -27,10 +27,13 @@ pub struct CascadeOptimizer {
 impl Optimizer for CascadeOptimizer {
     async fn optimize(
         &self,
-        plan: &LogicalPlan,
+        plan: &QueryPlan,
         session: &SessionCtx,
     ) -> QueryResult<Arc<dyn ExecutionPlan>> {
-        debug!("Original logical plan:\n{}\n", plan.display_indent_schema(),);
+        debug!(
+            "Original logical plan:\n{}\n",
+            plan.df_plan.display_indent_schema(),
+        );
 
         let optimized_logical_plan = self.logical_optimizer.optimize(plan, session)?;
 
