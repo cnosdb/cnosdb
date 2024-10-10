@@ -42,7 +42,7 @@ impl SqlQueryExecution {
         self.query_state_machine.begin_optimize();
         let physical_plan = self
             .optimizer
-            .optimize(&self.plan.df_plan, &self.query_state_machine.session)
+            .optimize(&self.plan, &self.query_state_machine.session)
             .await?;
         self.query_state_machine.end_optimize();
 

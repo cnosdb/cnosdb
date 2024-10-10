@@ -68,7 +68,9 @@ impl OptimizerRule for RewriteTagScan {
                                 fetch: *fetch,
                             }),
                         });
-                        return Ok(Some(LogicalPlanBuilder::from(tag_plan).build()?));
+                        return Ok(Some(
+                            LogicalPlanBuilder::from(tag_plan).distinct()?.build()?,
+                        ));
                     }
                 }
             }
