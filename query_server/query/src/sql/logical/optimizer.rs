@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use datafusion::logical_expr::LogicalPlan;
@@ -36,6 +35,8 @@ use crate::extension::logical::optimizer_rule::push_down_aggregation::PushDownAg
 use crate::extension::logical::optimizer_rule::rewrite_tag_scan::RewriteTagScan;
 use crate::sql::analyzer::DefaultAnalyzer;
 
+const PUSH_DOWN_PROJECTION_INDEX: usize = 24; // index of PushDownProjection in rules
+
 pub trait LogicalOptimizer: Send + Sync {
     fn optimize(&self, plan: &QueryPlan, session: &SessionCtx) -> QueryResult<LogicalPlan>;
 
@@ -46,16 +47,13 @@ pub struct DefaultLogicalOptimizer {
     // fit datafusion
     // TODO refactor
     analyzer: AnalyzerRef,
-    rules: HashMap<String, Arc<dyn OptimizerRule + Send + Sync>>,
+    rules: Vec<Arc<dyn OptimizerRule + Send + Sync>>,
 }
 
 impl DefaultLogicalOptimizer {
     #[allow(dead_code)]
     fn with_optimizer_rules(mut self, rules: Vec<Arc<dyn OptimizerRule + Send + Sync>>) -> Self {
-        self.rules.clear();
-        for rule in rules {
-            self.rules.insert(rule.name().to_string(), rule);
-        }
+        self.rules = rules;
         self
     }
 }
@@ -65,7 +63,7 @@ impl Default for DefaultLogicalOptimizer {
         let analyzer = Arc::new(DefaultAnalyzer::default());
 
         // additional optimizer rule
-        let rules_vec: Vec<Arc<dyn OptimizerRule + Send + Sync>> = vec![
+        let rules: Vec<Arc<dyn OptimizerRule + Send + Sync>> = vec![
             // df default rules start
             Arc::new(SimplifyExpressions::new()),
             Arc::new(UnwrapCastInComparison::new()),
@@ -107,11 +105,6 @@ impl Default for DefaultLogicalOptimizer {
             Arc::new(RewriteTagScan {}),
         ];
 
-        let mut rules = HashMap::new();
-        for rule in rules_vec {
-            rules.insert(rule.name().to_string(), rule);
-        }
-
         Self { analyzer, rules }
     }
 }
@@ -145,15 +138,11 @@ impl LogicalOptimizer for DefaultLogicalOptimizer {
         );
 
         let rules: Vec<Arc<dyn OptimizerRule + Send + Sync>> = if plan.is_tag_scan {
-            let new_pushdown_proj = PushDownProjection::new(plan.is_tag_scan);
             let mut rules = self.rules.clone();
-            rules.insert(
-                new_pushdown_proj.name().to_string(),
-                Arc::new(new_pushdown_proj),
-            );
-            rules.clone().into_values().collect()
+            rules[PUSH_DOWN_PROJECTION_INDEX] = Arc::new(PushDownProjection::new(plan.is_tag_scan));
+            rules
         } else {
-            self.rules.clone().into_values().collect()
+            self.rules.clone()
         };
 
         let optimizeed_plan = {
@@ -183,7 +172,6 @@ impl LogicalOptimizer for DefaultLogicalOptimizer {
     }
 
     fn inject_optimizer_rule(&mut self, optimizer_rule: Arc<dyn OptimizerRule + Send + Sync>) {
-        self.rules
-            .insert(optimizer_rule.name().to_string(), optimizer_rule);
+        self.rules.push(optimizer_rule);
     }
 }
