@@ -3330,6 +3330,7 @@ dependencies = [
  "http_protocol",
  "lazy_static",
  "libc",
+ "lru",
  "memory_pool",
  "meta",
  "metrics",
