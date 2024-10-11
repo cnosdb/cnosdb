@@ -6,7 +6,7 @@ use std::fmt;
 use std::fmt::Display;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use chrono::Local;
 use config::TLSConfig;
@@ -24,6 +24,7 @@ use metrics::gather_metrics;
 use metrics::metric_register::MetricsRegister;
 use metrics::prom_reporter::PromReporter;
 use models::auth::privilege::{DatabasePrivilege, Privilege, TenantObjectPrivilege};
+use models::auth::user::User;
 use models::consistency_level::ConsistencyLevel;
 use models::error_code::UnknownCodeWithMessage;
 use models::oid::{Identifier, Oid};
@@ -51,6 +52,7 @@ use warp::reject::{MethodNotAllowed, MissingHeader, PayloadTooLarge};
 use warp::reply::Response;
 use warp::{header, reject, Filter, Rejection, Reply};
 
+use super::auth_cache::AuthCache;
 use super::header::Header;
 use super::Error as HttpError;
 use crate::http::api_type::{metrics_record_db, HttpApiType};
@@ -98,6 +100,7 @@ pub struct HttpService {
     metrics_register: Arc<MetricsRegister>,
     http_metrics: Arc<HttpMetrics>,
     span_context_extractor: Arc<SpanContextExtractor>,
+    write_auth_cache: Arc<AuthCache<String, User>>,
 }
 
 impl HttpService {
@@ -129,6 +132,8 @@ impl HttpService {
             metrics_register,
             http_metrics,
             span_context_extractor,
+            // TODO(zipper): support the extension of the lease(ttl).
+            write_auth_cache: Arc::new(AuthCache::new(1024, Some(Duration::from_secs(60)))),
         }
     }
 
@@ -177,6 +182,13 @@ impl HttpService {
     fn with_dbms(&self) -> impl Filter<Extract = (DBMSRef,), Error = Infallible> + Clone {
         let dbms = self.dbms.clone();
         warp::any().map(move || dbms.clone())
+    }
+
+    fn with_write_auth_cache(
+        &self,
+    ) -> impl Filter<Extract = (Arc<AuthCache<String, User>>,), Error = Infallible> + Clone {
+        let write_auth_cache = self.write_auth_cache.clone();
+        warp::any().map(move || write_auth_cache.clone())
     }
 
     fn with_hostaddr(&self) -> impl Filter<Extract = (String,), Error = Infallible> + Clone {
@@ -388,6 +400,7 @@ impl HttpService {
             .and(self.with_http_metrics())
             .and(self.with_hostaddr())
             .and(self.handle_span_header())
+            .and(self.with_write_auth_cache())
             .and_then(
                 |mut req: Bytes,
                  header: Header,
@@ -396,7 +409,8 @@ impl HttpService {
                  coord: CoordinatorRef,
                  metrics: Arc<HttpMetrics>,
                  addr: String,
-                 parent_span_ctx: Option<SpanContext>| async move {
+                 parent_span_ctx: Option<SpanContext>,
+                 write_auth_cache: Arc<AuthCache<String, User>>| async move {
                     let start = Instant::now();
                     let span_recorder =
                         SpanRecorder::new(parent_span_ctx.child_span("rest line protocol write"));
@@ -419,6 +433,7 @@ impl HttpService {
                             param,
                             dbms,
                             coord.clone(),
+                            write_auth_cache,
                         )
                         .await
                         .map_err(reject::custom)?;
@@ -470,11 +485,13 @@ impl HttpService {
             .and(warp::query::query())
             .and(self.with_dbms())
             .and(self.with_coord())
+            .and(self.with_write_auth_cache())
             .and_then(
                 |req: Bytes,
                  mut query: HashMap<String, String>,
                  dbms: DBMSRef,
-                 coord: CoordinatorRef| async move {
+                 coord: CoordinatorRef,
+                 write_auth_cache: Arc<AuthCache<String, User>>| async move {
                     let db = query.remove("db").unwrap_or(DEFAULT_DATABASE.to_string());
                     let header = Header::with(
                         Some(APPLICATION_JSON.to_string()),
@@ -494,6 +511,7 @@ impl HttpService {
                         param,
                         dbms,
                         coord.clone(),
+                        write_auth_cache,
                     )
                     .await
                     .map_err(reject::custom)?;
@@ -531,6 +549,7 @@ impl HttpService {
             .and(self.with_http_metrics())
             .and(self.with_hostaddr())
             .and(self.handle_span_header())
+            .and(self.with_write_auth_cache())
             .and_then(
                 |mut req: Bytes,
                  header: Header,
@@ -539,7 +558,8 @@ impl HttpService {
                  coord: CoordinatorRef,
                  metrics: Arc<HttpMetrics>,
                  addr: String,
-                 parent_span_ctx: Option<SpanContext>| async move {
+                 parent_span_ctx: Option<SpanContext>,
+                 write_auth_cache: Arc<AuthCache<String, User>>| async move {
                     let start = Instant::now();
                     let span_recorder =
                         SpanRecorder::new(parent_span_ctx.child_span("rest open tsdb write"));
@@ -562,6 +582,7 @@ impl HttpService {
                             param,
                             dbms,
                             coord.clone(),
+                            write_auth_cache,
                         )
                         .await
                         .map_err(reject::custom)?;
@@ -618,6 +639,7 @@ impl HttpService {
             .and(self.with_http_metrics())
             .and(self.with_hostaddr())
             .and(self.handle_span_header())
+            .and(self.with_write_auth_cache())
             .and_then(
                 |mut req: Bytes,
                  header: Header,
@@ -626,7 +648,8 @@ impl HttpService {
                  coord: CoordinatorRef,
                  metrics: Arc<HttpMetrics>,
                  addr: String,
-                 parent_span_ctx: Option<SpanContext>| async move {
+                 parent_span_ctx: Option<SpanContext>,
+                 write_auth_cache: Arc<AuthCache<String, User>>| async move {
                     let start = Instant::now();
                     let span_recorder =
                         SpanRecorder::new(parent_span_ctx.child_span("rest open tsdb put"));
@@ -649,6 +672,7 @@ impl HttpService {
                             param,
                             dbms,
                             coord.clone(),
+                            write_auth_cache,
                         )
                         .await
                         .map_err(reject::custom)?;
@@ -877,6 +901,7 @@ impl HttpService {
             .and(self.with_http_metrics())
             .and(self.with_hostaddr())
             .and(self.handle_span_header())
+            .and(self.with_write_auth_cache())
             .and_then(
                 |req: Bytes,
                  header: Header,
@@ -886,7 +911,8 @@ impl HttpService {
                  prs: PromRemoteServerRef,
                  metrics: Arc<HttpMetrics>,
                  addr: String,
-                 parent_span_ctx: Option<SpanContext>| async move {
+                 parent_span_ctx: Option<SpanContext>,
+                 write_auth_cache: Arc<AuthCache<String, User>>| async move {
                     let start = Instant::now();
                     debug!(
                         "Receive rest prom remote write request, header: {:?}, param: {:?}",
@@ -906,6 +932,7 @@ impl HttpService {
                             param,
                             dbms,
                             coord.clone(),
+                            write_auth_cache,
                         )
                         .await
                         .map_err(reject::custom)?;
@@ -1125,18 +1152,32 @@ async fn construct_write_context(
     header: &Header,
     param: WriteParam,
     dbms: DBMSRef,
+    write_auth_cache: Arc<AuthCache<String, User>>,
 ) -> Result<Context, HttpError> {
-    let user_info = header.try_get_basic_auth()?;
-    let tenant = param.tenant;
-    let db = param.db;
-    let precision = param.precision;
+    let auth = header.try_get_raw_basic_auth()?;
+    let user_opt = write_auth_cache.get(auth);
+    let user = match user_opt {
+        Some(user) => user,
+        None => {
+            trace::warn!("user {auth} not found in cache, authenticate again");
+            let user_info = header.try_get_basic_auth()?;
+            let user = dbms
+                .authenticate(&user_info, param.tenant.as_deref())
+                .await?;
+            write_auth_cache.insert(auth.to_string(), user.clone());
+            user
+        }
+    };
 
-    let user = dbms.authenticate(&user_info, tenant.as_deref()).await?;
+    // let user_info = header.try_get_basic_auth()?;
+    // let user = dbms
+    //     .authenticate(&user_info, param.tenant.as_deref())
+    //     .await?;
 
     let context = ContextBuilder::new(user)
-        .with_tenant(tenant)
-        .with_database(db)
-        .with_precision(precision)
+        .with_tenant(param.tenant)
+        .with_database(param.db)
+        .with_precision(param.precision)
         .build();
 
     Ok(context)
@@ -1155,8 +1196,9 @@ async fn construct_write_context_and_check_privilege(
     param: WriteParam,
     dbms: DBMSRef,
     coord: CoordinatorRef,
+    write_auth_cache: Arc<AuthCache<String, User>>,
 ) -> Result<Context, HttpError> {
-    let context = construct_write_context(&header, param, dbms).await?;
+    let context = construct_write_context(&header, param, dbms, write_auth_cache).await?;
 
     let tenant_id = *coord
         .tenant_meta(context.tenant())

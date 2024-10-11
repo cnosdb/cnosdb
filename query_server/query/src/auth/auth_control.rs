@@ -26,6 +26,7 @@ impl AccessControl for AccessControlImpl {
         let user_options = user.desc().options();
         if let Some(password) = user_options.password() {
             if password.eq(user_info.password.as_str()) {
+                // If the stored password is not encrypted (the same as the input), update it.
                 let new_user_option = UserOptionsBuilder::default()
                     .password(bcrypt_hash(password)?)
                     .build()
@@ -59,6 +60,7 @@ impl AccessControl for AccessControlImpl {
     }
 }
 
+/// Get user info without checking authorization.
 #[derive(Clone)]
 pub struct AccessControlNoCheck {
     meta_manager: MetaRef,

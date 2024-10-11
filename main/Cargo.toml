@@ -46,6 +46,7 @@ fly-accept-encoding = { workspace = true }
 futures = { workspace = true, default-features = false, features = ["alloc"] }
 lazy_static = { workspace = true }
 libc = { workspace = true }
+lru = { workspace = true }
 moka = { workspace = true }
 num_cpus = { workspace = true }
 once_cell = { workspace = true, features = ["parking_lot"] }
