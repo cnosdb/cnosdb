@@ -82,22 +82,7 @@ impl Header {
         self.table.clone()
     }
 
-    pub fn try_get_basic_auth(&self) -> Result<UserInfo, HttpError> {
-        let private_key = self
-            .private_key
-            .as_ref()
-            .map(|e| {
-                let content = BASE64_STANDARD
-                    .decode(e)
-                    .map_err(|_| HttpError::InvalidHeader {
-                        reason: format!("Can not parse private_key with base64: {}", e),
-                    })?;
-                String::from_utf8(content).map_err(|err| HttpError::InvalidHeader {
-                    reason: err.to_string(),
-                })
-            })
-            .transpose()?;
-
+    pub fn try_get_raw_basic_auth(&self) -> Result<&str, HttpError> {
         let auth = &self.authorization;
 
         let get_err = || {
@@ -116,7 +101,26 @@ impl Header {
             return get_err();
         }
 
-        let content_in_auth = &auth[BASIC_PREFIX.len()..];
+        Ok(&auth[BASIC_PREFIX.len()..])
+    }
+
+    pub fn try_get_basic_auth(&self) -> Result<UserInfo, HttpError> {
+        let private_key = self
+            .private_key
+            .as_ref()
+            .map(|e| {
+                let content = BASE64_STANDARD
+                    .decode(e)
+                    .map_err(|_| HttpError::InvalidHeader {
+                        reason: format!("Can not parse private_key with base64: {}", e),
+                    })?;
+                String::from_utf8(content).map_err(|err| HttpError::InvalidHeader {
+                    reason: err.to_string(),
+                })
+            })
+            .transpose()?;
+
+        let content_in_auth = self.try_get_raw_basic_auth()?;
 
         if let Ok(content) = BASE64_STANDARD.decode(content_in_auth) {
             if let Ok(str) = String::from_utf8(content) {
@@ -130,7 +134,9 @@ impl Header {
             }
         }
 
-        get_err()
+        Err(HttpError::ParseAuth {
+            reason: self.authorization.to_string(),
+        })
     }
 }
 
