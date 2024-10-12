@@ -369,9 +369,9 @@ pub(crate) mod test {
     use crate::error::TskvError;
     use crate::record_file::writer::test::record_length;
     use crate::record_file::{
-        RecordDataType, Writer, FILE_FOOTER_LEN, FILE_MAGIC_NUMBER, FILE_MAGIC_NUMBER_LEN,
-        RECORD_CRC32_NUMBER_LEN, RECORD_DATA_SIZE_LEN, RECORD_DATA_TYPE_LEN,
-        RECORD_DATA_VERSION_LEN, RECORD_HEADER_LEN, RECORD_MAGIC_NUMBER, RECORD_MAGIC_NUMBER_LEN,
+        Writer, FILE_FOOTER_LEN, FILE_MAGIC_NUMBER, FILE_MAGIC_NUMBER_LEN, RECORD_CRC32_NUMBER_LEN,
+        RECORD_DATA_SIZE_LEN, RECORD_DATA_TYPE_LEN, RECORD_DATA_VERSION_LEN, RECORD_HEADER_LEN,
+        RECORD_MAGIC_NUMBER, RECORD_MAGIC_NUMBER_LEN,
     };
     const TEST_SUMMARY_BUFFER_SIZE: usize = 1024 * 1024;
     /// Read a record_file and see if records in file are the same as given records.
@@ -530,10 +530,7 @@ pub(crate) mod test {
             let data_type = 1_u8;
             let mut footer = [0_u8; FILE_FOOTER_LEN];
             {
-                let mut writer =
-                    Writer::open(&path, RecordDataType::Summary, TEST_SUMMARY_BUFFER_SIZE)
-                        .await
-                        .unwrap();
+                let mut writer = Writer::open(&path, TEST_SUMMARY_BUFFER_SIZE).await.unwrap();
                 let data_size = writer
                     .write_record(data_version, data_type, &[data])
                     .await
@@ -585,9 +582,7 @@ pub(crate) mod test {
             // - record(4-1804):
             //   14 bytes header: FlOg(4), version(1), type(1), size(4), crc(4)
             //   4 bytes data: 0000 - 0099
-            let mut writer = Writer::open(&path, RecordDataType::Summary, TEST_SUMMARY_BUFFER_SIZE)
-                .await
-                .unwrap();
+            let mut writer = Writer::open(&path, TEST_SUMMARY_BUFFER_SIZE).await.unwrap();
             for i in 0..100 {
                 let data = format!("{i:04}");
                 writer.write_record(1, 1, &[data]).await.unwrap();
