@@ -108,6 +108,10 @@ impl Writer<'_> {
     pub fn write(&mut self, batch: &RecordBatch) -> QueryResult<()> {
         debug_assert_eq!(self.schema.fields(), batch.schema().fields());
 
+        if batch.num_rows() == 0 {
+            return Ok(());
+        }
+
         let columns = batch.columns();
 
         let mut labels = Vec::with_capacity(self.tag_name_indices.len());
