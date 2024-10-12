@@ -81,7 +81,8 @@ pub enum RecordDataVersion {
 #[repr(u8)]
 pub enum RecordDataType {
     Summary = 1,
-    Tombstone = 4,
+    TombstoneV1 = 4,
+    TombstoneV2 = 5,
     Wal = 8,
     IndexLog = 16,
 }
@@ -89,8 +90,9 @@ pub enum RecordDataType {
 impl Display for RecordDataType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            RecordDataType::Summary => write!(f, "summary"),
-            RecordDataType::Tombstone => write!(f, "tombstone"),
+            RecordDataType::Summary => write!(f, "Summary"),
+            RecordDataType::TombstoneV1 => write!(f, "TombstoneV1"),
+            RecordDataType::TombstoneV2 => write!(f, "TombstoneV2"),
             RecordDataType::Wal => write!(f, "WAL"),
             RecordDataType::IndexLog => write!(f, "indexlog"),
         }
