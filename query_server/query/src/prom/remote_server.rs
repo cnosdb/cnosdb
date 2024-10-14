@@ -5,6 +5,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use coordinator::service::CoordinatorRef;
 use datafusion::arrow::datatypes::ToByteSlice;
+use futures::future::join_all;
 use meta::error::MetaError;
 use meta::model::MetaClientRef;
 use models::schema::tskv_table_schema::TskvTableSchemaRef;
@@ -24,6 +25,7 @@ use spi::server::dbms::DBMSRef;
 use spi::server::prom::PromRemoteServer;
 use spi::service::protocol::{Context, Query, QueryHandle};
 use spi::{MetaSnafu, QueryError, QueryResult, SnappySnafu};
+use tokio::task;
 use trace::span_ext::SpanExt;
 use trace::{debug, warn, Span, SpanContext};
 
@@ -162,17 +164,28 @@ impl PromRemoteSqlServer {
             let sqls = build_sql_with_table(ctx, &meta, q)?;
 
             debug!("Prepare to execute: {:?}", sqls);
+            let mut tasks = Vec::with_capacity(sqls.len());
 
             for (idx, sql) in sqls.into_iter().enumerate() {
-                timeseries.append(
-                    &mut self
-                        .process_single_sql(
-                            ctx,
-                            sql,
-                            Span::enter_with_parent(format!("process_single_sql:{}", idx), &span),
-                        )
-                        .await?,
-                );
+                let db = self.db.clone();
+                let ctx = ctx.clone();
+                let span = Span::enter_with_parent(format!("process_single_sql:{}", idx), &span);
+                let task =
+                    task::spawn(async move { Self::process_single_sql(db, ctx, sql, span).await });
+                tasks.push(task);
+            }
+
+            let task_results = join_all(tasks).await;
+            for result in task_results {
+                match result {
+                    Ok(Ok(mut ts)) => timeseries.append(&mut ts),
+                    Ok(Err(e)) => return Err(e),
+                    Err(e) => {
+                        return Err(QueryError::Internal {
+                            reason: e.to_string(),
+                        })
+                    }
+                }
             }
 
             results.push(PromQueryResult { timeseries });
@@ -182,8 +195,8 @@ impl PromRemoteSqlServer {
     }
 
     async fn process_single_sql(
-        &self,
-        ctx: &Context,
+        db: DBMSRef,
+        ctx: Context,
         sql: SqlWithTable,
         span: Span,
     ) -> QueryResult<Vec<TimeSeries>> {
@@ -203,10 +216,7 @@ impl PromRemoteSqlServer {
         })?;
 
         let inner_query = Query::new(ctx.clone(), sql.sql);
-        let result = self
-            .db
-            .execute(&inner_query, span.context().as_ref())
-            .await?;
+        let result = db.execute(&inner_query, span.context().as_ref()).await?;
 
         let _span = Span::enter_with_parent("transform_time_series".to_string(), &span);
         transform_time_series(result, tag_name_indices, sample_value_idx, sample_time_idx).await
