@@ -1,5 +1,12 @@
 use std::error::Error;
+use std::sync::Arc;
 
+use arrow::buffer::NullBuffer;
+use arrow_array::types::UInt64Type;
+use arrow_array::{Array, ArrayRef, Int64Array, PrimitiveArray, UInt64Array};
+use arrow_schema::DataType::UInt64;
+
+use crate::error::TsmPageSnafu;
 // note: encode/decode adapted from influxdb_iox
 // https://github.com/influxdata/influxdb_iox/tree/main/influxdb_tsm/src/encoders
 
@@ -32,47 +39,78 @@ pub fn u64_without_compress_encode(
 /// Decodes a slice of bytes into a destination vector of unsigned integers.
 pub fn u64_zigzag_simple8b_decode(
     src: &[u8],
-    dst: &mut Vec<u64>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+    bit_set: &NullBuffer,
+) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
     if src.is_empty() {
-        return Ok(());
+        let null_value: Vec<Option<u64>> = vec![None; bit_set.len()];
+        let array = UInt64Array::from(null_value);
+        return Ok(Arc::new(array));
     }
-    let mut signed_results = vec![];
-    super::integer::i64_zigzag_simple8b_decode(src, &mut signed_results)?;
-    dst.reserve_exact(signed_results.len() - dst.capacity());
-    for s in signed_results {
-        dst.push(s as u64);
-    }
-    Ok(())
+    let array_ref = super::integer::i64_zigzag_simple8b_decode_to_array(src, bit_set)?;
+    let i64_array = array_ref
+        .as_any()
+        .downcast_ref::<Int64Array>()
+        .ok_or_else(|| {
+            TsmPageSnafu {
+                reason: "Arrow array is not Int64Array".to_string(),
+            }
+            .build()
+        })?;
+    let builder = i64_array.to_data().into_builder().data_type(UInt64);
+    let u64_array: PrimitiveArray<UInt64Type> =
+        PrimitiveArray::from(unsafe { builder.build_unchecked() });
+    Ok(Arc::new(u64_array))
 }
 
-pub fn u64_pco_decode(src: &[u8], dst: &mut Vec<u64>) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn u64_pco_decode(
+    src: &[u8],
+    bit_set: &NullBuffer,
+) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
     if src.is_empty() {
-        return Ok(());
+        let null_value: Vec<Option<u64>> = vec![None; bit_set.len()];
+        let array = UInt64Array::from(null_value);
+        return Ok(Arc::new(array));
     }
-    let mut signed_results = vec![];
-    super::integer::i64_pco_decode(src, &mut signed_results)?;
-    dst.reserve_exact(signed_results.len() - dst.capacity());
-    for s in signed_results {
-        dst.push(s as u64);
-    }
-    Ok(())
+    let array_ref = super::integer::i64_pco_decode_to_array(src, bit_set)?;
+    let i64_array = array_ref
+        .as_any()
+        .downcast_ref::<Int64Array>()
+        .ok_or_else(|| {
+            TsmPageSnafu {
+                reason: "Arrow array is not Int64Array".to_string(),
+            }
+            .build()
+        })?;
+    let builder = i64_array.to_data().into_builder().data_type(UInt64);
+    let u64_array: PrimitiveArray<UInt64Type> =
+        PrimitiveArray::from(unsafe { builder.build_unchecked() });
+    Ok(Arc::new(u64_array))
 }
 
 pub fn u64_without_compress_decode(
     src: &[u8],
-    dst: &mut Vec<u64>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+    bit_set: &NullBuffer,
+) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
     if src.is_empty() {
-        return Ok(());
+        let null_value: Vec<Option<u64>> = vec![None; bit_set.len()];
+        let array = UInt64Array::from(null_value);
+        return Ok(Arc::new(array));
     }
-    let mut signed_results = vec![];
-    super::integer::i64_without_compress_decode(src, &mut signed_results)?;
-    dst.reserve_exact(signed_results.len() - dst.capacity());
-    for s in signed_results {
-        dst.push(s as u64);
-    }
-    Ok(())
+
+    let array_ref = super::integer::i64_without_compress_decode_to_array(src, bit_set)?;
+    let i64_array = array_ref
+        .as_any()
+        .downcast_ref::<Int64Array>()
+        .ok_or_else(|| {
+            TsmPageSnafu {
+                reason: "Arrow array is not Int64Array".to_string(),
+            }
+            .build()
+        })?;
+    let builder = i64_array.to_data().into_builder().data_type(UInt64);
+    let u64_array: PrimitiveArray<UInt64Type> =
+        PrimitiveArray::from(unsafe { builder.build_unchecked() });
+    Ok(Arc::new(u64_array))
 }
 
 // Converts a slice of `u64` values to a `Vec<i64>`.
@@ -85,6 +123,7 @@ fn u64_to_i64_vector(src: &[u64]) -> Vec<i64> {
 #[cfg(test)]
 #[allow(clippy::unreadable_literal)]
 mod tests {
+
     use super::super::integer::DeltaEncoding;
     use super::super::simple8b;
     use super::*;
@@ -107,43 +146,47 @@ mod tests {
         let src: Vec<u64> = vec![1000, 0, simple8b::MAX_VALUE, 213123421];
         let mut dst = vec![];
 
-        let exp = src.clone();
         u64_zigzag_simple8b_encode(&src, &mut dst).expect("failed to encode");
 
         // verify uncompressed encoding used
         assert_eq!(&dst[0] >> 4, DeltaEncoding::Uncompressed as u8);
-        let mut got = vec![];
-        u64_zigzag_simple8b_decode(&dst, &mut got).expect("failed to decode");
 
+        let null_bitset = NullBuffer::new_valid(src.len());
+        let array_ref = u64_zigzag_simple8b_decode(&dst, &null_bitset).expect("failed to decode");
+        let array = array_ref.as_any().downcast_ref::<UInt64Array>().unwrap();
+
+        let expected = UInt64Array::from_iter(src.iter().cloned());
         // verify got same values back
-        assert_eq!(got, exp);
+        assert_eq!(*array, expected);
     }
 
     #[test]
     fn encode_pco_and_uncompress() {
         let src: Vec<u64> = vec![1000, 0, simple8b::MAX_VALUE, 213123421];
         let mut dst = vec![];
-        let mut got = vec![];
-        let exp = src.clone();
 
         u64_pco_encode(&src, &mut dst).unwrap();
         let exp_code_type = Encoding::Quantile;
         let got_code_type = get_encoding(&dst);
         assert_eq!(exp_code_type, got_code_type);
 
-        u64_pco_decode(&dst, &mut got).unwrap();
-        assert_eq!(exp, got);
+        let null_bitset = NullBuffer::new_valid(src.len());
+        let array_ref = u64_pco_decode(&dst, &null_bitset).unwrap();
+        let array = array_ref.as_any().downcast_ref::<UInt64Array>().unwrap();
+
+        let expected = UInt64Array::from_iter(src.iter().cloned());
+        assert_eq!(*array, expected);
 
         dst.clear();
-        got.clear();
 
         u64_without_compress_encode(&src, &mut dst).unwrap();
         let exp_code_type = Encoding::Null;
         let got_code_type = get_encoding(&dst);
         assert_eq!(exp_code_type, got_code_type);
 
-        u64_without_compress_decode(&dst, &mut got).unwrap();
-        assert_eq!(exp, got);
+        let array_ref = u64_without_compress_decode(&dst, &null_bitset).unwrap();
+        let array = array_ref.as_any().downcast_ref::<UInt64Array>().unwrap();
+        assert_eq!(*array, expected);
     }
 
     struct Test {
@@ -171,7 +214,6 @@ mod tests {
         for test in tests {
             let mut dst = vec![];
             let src = test.input.clone();
-            let exp = test.input;
             u64_zigzag_simple8b_encode(&src, &mut dst).expect("failed to encode");
 
             // verify RLE encoding used
@@ -181,10 +223,14 @@ mod tests {
                 "didn't use rle on {:?}",
                 src
             );
-            let mut got = vec![];
-            u64_zigzag_simple8b_decode(&dst, &mut got).expect("failed to decode");
+            let null_bitset = NullBuffer::new_valid(src.len());
+            let array_ref =
+                u64_zigzag_simple8b_decode(&dst, &null_bitset).expect("failed to decode");
+            let array = array_ref.as_any().downcast_ref::<UInt64Array>().unwrap();
+
+            let expected = UInt64Array::from_iter(src.iter().cloned());
             // verify got same values back
-            assert_eq!(got, exp, "{}", test.name);
+            assert_eq!(*array, expected, "{}", test.name);
         }
     }
 
@@ -198,9 +244,13 @@ mod tests {
         assert_eq!(dst[1..], expected_encoded);
 
         assert_eq!(&dst[1] >> 4, DeltaEncoding::Rle as u8);
-        let mut got = vec![];
-        u64_zigzag_simple8b_decode(&dst, &mut got).expect("failed to decode");
-        assert_eq!(got, src);
+
+        let null_bitset = NullBuffer::new_valid(src.len());
+        let array_ref = u64_zigzag_simple8b_decode(&dst, &null_bitset).expect("failed to decode");
+        let array = array_ref.as_any().downcast_ref::<UInt64Array>().unwrap();
+
+        let expected = UInt64Array::from_iter(src.iter().cloned());
+        assert_eq!(*array, expected);
     }
 
     #[test]
@@ -213,15 +263,18 @@ mod tests {
         for test in tests {
             let mut dst = vec![];
             let src = test.input.clone();
-            let exp = test.input;
             u64_zigzag_simple8b_encode(&src, &mut dst).expect("failed to encode");
             // verify Simple8b encoding used
             assert_eq!(&dst[1] >> 4, DeltaEncoding::Simple8b as u8);
 
-            let mut got = vec![];
-            u64_zigzag_simple8b_decode(&dst, &mut got).expect("failed to decode");
+            let null_bitset = NullBuffer::new_valid(src.len());
+            let array_ref =
+                u64_zigzag_simple8b_decode(&dst, &null_bitset).expect("failed to decode");
+            let array = array_ref.as_any().downcast_ref::<UInt64Array>().unwrap();
+
+            let expected = UInt64Array::from_iter(src.iter().cloned());
             // verify got same values back
-            assert_eq!(got, exp, "{}", test.name);
+            assert_eq!(*array, expected, "{}", test.name);
         }
     }
 
@@ -239,10 +292,12 @@ mod tests {
         // ensure that encoder produces same bytes as InfluxDB encoder.
         assert_eq!(enc[1..], enc_influx);
 
-        let mut dec = vec![];
-        u64_zigzag_simple8b_decode(&enc, &mut dec).expect("failed to decode");
+        let null_bitset = NullBuffer::new_valid(values.len());
+        let array_ref = u64_zigzag_simple8b_decode(&enc, &null_bitset).expect("failed to decode");
+        let array = array_ref.as_any().downcast_ref::<UInt64Array>().unwrap();
 
-        assert_eq!(dec.len(), values.len());
-        assert_eq!(dec, values);
+        let expected = UInt64Array::from_iter(values.iter().cloned());
+        // verify got same values back
+        assert_eq!(*array, expected);
     }
 }

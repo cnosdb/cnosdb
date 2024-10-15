@@ -989,10 +989,10 @@ pub mod test {
     use std::sync::Arc;
 
     use arrow::datatypes::TimeUnit;
-    use arrow_array::{ArrayRef, RecordBatch};
+    use arrow_array::builder::{BooleanBuilder, Float64Builder, Int64Builder, UInt64Builder};
+    use arrow_array::{ArrayRef, Int64Array, RecordBatch, TimestampNanosecondArray};
     use cache::ShardedAsyncCache;
     use models::codec::Encoding;
-    use models::field_value::FieldVal;
     use models::predicate::domain::TimeRange;
     use models::schema::tskv_table_schema::{
         ColumnType, TableColumn, TskvTableSchema, TskvTableSchemaRef,
@@ -1010,7 +1010,6 @@ pub mod test {
     use crate::tsfamily::column_file::ColumnFile;
     use crate::tsfamily::level_info::LevelInfo;
     use crate::tsfamily::version::Version;
-    use crate::tsm::mutable_column::MutableColumn;
     use crate::tsm::reader::{decode_pages, TsmReader};
     use crate::tsm::writer::TsmWriter;
     use crate::tsm::TsmTombstone;
@@ -1076,20 +1075,20 @@ pub mod test {
         data
     }
 
-    fn i64_column(data: Vec<i64>, col: TableColumn) -> ArrayRef {
-        let mut col = MutableColumn::empty_with_cap(col, data.len()).unwrap();
-        for datum in data {
-            col.push(Some(FieldVal::Integer(datum))).unwrap()
-        }
-        col.to_arrow_array(None).unwrap()
+    fn timestamp_column(data: Vec<i64>) -> ArrayRef {
+        Arc::new(TimestampNanosecondArray::from(data))
     }
 
-    fn i64_some_column(data: Vec<Option<i64>>, col: TableColumn) -> ArrayRef {
-        let mut col = MutableColumn::empty_with_cap(col, data.len()).unwrap();
+    fn i64_column(data: Vec<i64>) -> ArrayRef {
+        Arc::new(Int64Array::from(data))
+    }
+
+    fn i64_some_column(data: Vec<Option<i64>>) -> ArrayRef {
+        let mut builder = Int64Builder::new();
         for datum in data {
-            col.push(datum.map(FieldVal::Integer)).unwrap()
+            builder.append_option(datum);
         }
-        col.to_arrow_array(None).unwrap()
+        Arc::new(builder.finish())
     }
 
     fn get_result_file_path(dir: impl AsRef<Path>, version_edit: VersionEdit) -> PathBuf {
@@ -1199,10 +1198,10 @@ pub mod test {
         let data1 = RecordBatch::try_new(
             schema.to_record_data_schema(),
             vec![
-                i64_column(vec![1, 2, 3], schema.time_column()),
-                i64_column(vec![1, 2, 3], schema.column("f1").cloned().unwrap()),
-                i64_column(vec![1, 2, 3], schema.column("f2").cloned().unwrap()),
-                i64_column(vec![1, 2, 3], schema.column("f3").cloned().unwrap()),
+                Arc::new(TimestampNanosecondArray::from(vec![1, 2, 3])) as ArrayRef,
+                Arc::new(Int64Array::from(vec![1, 2, 3])) as ArrayRef,
+                Arc::new(Int64Array::from(vec![1, 2, 3])) as ArrayRef,
+                Arc::new(Int64Array::from(vec![1, 2, 3])) as ArrayRef,
             ],
         )
         .unwrap();
@@ -1210,10 +1209,10 @@ pub mod test {
         let data2 = RecordBatch::try_new(
             schema.to_record_data_schema(),
             vec![
-                i64_column(vec![4, 5, 6], schema.time_column()),
-                i64_column(vec![4, 5, 6], schema.column("f1").cloned().unwrap()),
-                i64_column(vec![4, 5, 6], schema.column("f2").cloned().unwrap()),
-                i64_column(vec![4, 5, 6], schema.column("f3").cloned().unwrap()),
+                timestamp_column(vec![4, 5, 6]),
+                i64_column(vec![4, 5, 6]),
+                i64_column(vec![4, 5, 6]),
+                i64_column(vec![4, 5, 6]),
             ],
         )
         .unwrap();
@@ -1221,10 +1220,10 @@ pub mod test {
         let data3 = RecordBatch::try_new(
             schema.to_record_data_schema(),
             vec![
-                i64_column(vec![7, 8, 9], schema.time_column()),
-                i64_column(vec![7, 8, 9], schema.column("f1").cloned().unwrap()),
-                i64_column(vec![7, 8, 9], schema.column("f2").cloned().unwrap()),
-                i64_column(vec![7, 8, 9], schema.column("f3").cloned().unwrap()),
+                timestamp_column(vec![7, 8, 9]),
+                i64_column(vec![7, 8, 9]),
+                i64_column(vec![7, 8, 9]),
+                i64_column(vec![7, 8, 9]),
             ],
         )
         .unwrap();
@@ -1232,19 +1231,10 @@ pub mod test {
         let expected_data = RecordBatch::try_new(
             schema.to_record_data_schema(),
             vec![
-                i64_column(vec![1, 2, 3, 4, 5, 6, 7, 8, 9], schema.time_column()),
-                i64_column(
-                    vec![1, 2, 3, 4, 5, 6, 7, 8, 9],
-                    schema.column("f1").cloned().unwrap(),
-                ),
-                i64_column(
-                    vec![1, 2, 3, 4, 5, 6, 7, 8, 9],
-                    schema.column("f2").cloned().unwrap(),
-                ),
-                i64_column(
-                    vec![1, 2, 3, 4, 5, 6, 7, 8, 9],
-                    schema.column("f3").cloned().unwrap(),
-                ),
+                timestamp_column(vec![1, 2, 3, 4, 5, 6, 7, 8, 9]),
+                i64_column(vec![1, 2, 3, 4, 5, 6, 7, 8, 9]),
+                i64_column(vec![1, 2, 3, 4, 5, 6, 7, 8, 9]),
+                i64_column(vec![1, 2, 3, 4, 5, 6, 7, 8, 9]),
             ],
         )
         .unwrap();
@@ -1311,10 +1301,10 @@ pub mod test {
         let data1 = RecordBatch::try_new(
             schema.to_record_data_schema(),
             vec![
-                i64_column(vec![4, 5, 6], schema.time_column()),
-                i64_column(vec![4, 5, 6], schema.column("f1").cloned().unwrap()),
-                i64_column(vec![4, 5, 6], schema.column("f2").cloned().unwrap()),
-                i64_column(vec![4, 5, 6], schema.column("f3").cloned().unwrap()),
+                timestamp_column(vec![4, 5, 6]),
+                i64_column(vec![4, 5, 6]),
+                i64_column(vec![4, 5, 6]),
+                i64_column(vec![4, 5, 6]),
             ],
         )
         .unwrap();
@@ -1322,10 +1312,10 @@ pub mod test {
         let data2 = RecordBatch::try_new(
             schema.to_record_data_schema(),
             vec![
-                i64_column(vec![1, 2, 3], schema.time_column()),
-                i64_column(vec![1, 2, 3], schema.column("f1").cloned().unwrap()),
-                i64_column(vec![1, 2, 3], schema.column("f2").cloned().unwrap()),
-                i64_column(vec![1, 2, 3], schema.column("f3").cloned().unwrap()),
+                timestamp_column(vec![1, 2, 3]),
+                i64_column(vec![1, 2, 3]),
+                i64_column(vec![1, 2, 3]),
+                i64_column(vec![1, 2, 3]),
             ],
         )
         .unwrap();
@@ -1333,10 +1323,10 @@ pub mod test {
         let data3 = RecordBatch::try_new(
             schema.to_record_data_schema(),
             vec![
-                i64_column(vec![7, 8, 9], schema.time_column()),
-                i64_column(vec![7, 8, 9], schema.column("f1").cloned().unwrap()),
-                i64_column(vec![7, 8, 9], schema.column("f2").cloned().unwrap()),
-                i64_column(vec![7, 8, 9], schema.column("f3").cloned().unwrap()),
+                timestamp_column(vec![7, 8, 9]),
+                i64_column(vec![7, 8, 9]),
+                i64_column(vec![7, 8, 9]),
+                i64_column(vec![7, 8, 9]),
             ],
         )
         .unwrap();
@@ -1344,19 +1334,10 @@ pub mod test {
         let expected_data = RecordBatch::try_new(
             schema.to_record_data_schema(),
             vec![
-                i64_column(vec![1, 2, 3, 4, 5, 6, 7, 8, 9], schema.time_column()),
-                i64_column(
-                    vec![1, 2, 3, 4, 5, 6, 7, 8, 9],
-                    schema.column("f1").cloned().unwrap(),
-                ),
-                i64_column(
-                    vec![1, 2, 3, 4, 5, 6, 7, 8, 9],
-                    schema.column("f2").cloned().unwrap(),
-                ),
-                i64_column(
-                    vec![1, 2, 3, 4, 5, 6, 7, 8, 9],
-                    schema.column("f3").cloned().unwrap(),
-                ),
+                timestamp_column(vec![1, 2, 3, 4, 5, 6, 7, 8, 9]),
+                i64_column(vec![1, 2, 3, 4, 5, 6, 7, 8, 9]),
+                i64_column(vec![1, 2, 3, 4, 5, 6, 7, 8, 9]),
+                i64_column(vec![1, 2, 3, 4, 5, 6, 7, 8, 9]),
             ],
         )
         .unwrap();
@@ -1429,23 +1410,11 @@ pub mod test {
         let data1 = RecordBatch::try_new(
             schema.to_record_data_schema(),
             vec![
-                i64_column(vec![1, 2, 3, 4], schema.time_column()),
-                i64_some_column(
-                    vec![Some(1), Some(2), Some(3), Some(5)],
-                    schema.column("f1").cloned().unwrap(),
-                ),
-                i64_some_column(
-                    vec![None, None, None, None],
-                    schema.column("f2").cloned().unwrap(),
-                ),
-                i64_some_column(
-                    vec![Some(1), Some(2), Some(3), Some(5)],
-                    schema.column("f3").cloned().unwrap(),
-                ),
-                i64_some_column(
-                    vec![Some(1), Some(2), Some(3), None],
-                    schema.column("f4").cloned().unwrap(),
-                ),
+                timestamp_column(vec![1, 2, 3, 4]),
+                i64_some_column(vec![Some(1), Some(2), Some(3), Some(5)]),
+                i64_some_column(vec![None, None, None, None]),
+                i64_some_column(vec![Some(1), Some(2), Some(3), Some(5)]),
+                i64_some_column(vec![Some(1), Some(2), Some(3), None]),
             ],
         )
         .unwrap();
@@ -1453,23 +1422,11 @@ pub mod test {
         let data2 = RecordBatch::try_new(
             schema.to_record_data_schema(),
             vec![
-                i64_column(vec![4, 5, 6, 7], schema.time_column()),
-                i64_some_column(
-                    vec![Some(4), Some(5), Some(6), None],
-                    schema.column("f1").cloned().unwrap(),
-                ),
-                i64_some_column(
-                    vec![Some(4), Some(5), Some(6), None],
-                    schema.column("f2").cloned().unwrap(),
-                ),
-                i64_some_column(
-                    vec![Some(4), Some(5), Some(6), Some(8)],
-                    schema.column("f3").cloned().unwrap(),
-                ),
-                i64_some_column(
-                    vec![None, None, None, None],
-                    schema.column("f4").cloned().unwrap(),
-                ),
+                timestamp_column(vec![4, 5, 6, 7]),
+                i64_some_column(vec![Some(4), Some(5), Some(6), None]),
+                i64_some_column(vec![Some(4), Some(5), Some(6), None]),
+                i64_some_column(vec![Some(4), Some(5), Some(6), Some(8)]),
+                i64_some_column(vec![None, None, None, None]),
             ],
         )
         .unwrap();
@@ -1477,14 +1434,11 @@ pub mod test {
         let data3 = RecordBatch::try_new(
             schema.to_record_data_schema(),
             vec![
-                i64_column(vec![7, 8, 9], schema.time_column()),
-                i64_column(vec![7, 8, 9], schema.column("f1").cloned().unwrap()),
-                i64_column(vec![7, 8, 9], schema.column("f2").cloned().unwrap()),
-                i64_column(vec![7, 8, 9], schema.column("f3").cloned().unwrap()),
-                i64_some_column(
-                    vec![None, None, None],
-                    schema.column("f4").cloned().unwrap(),
-                ),
+                timestamp_column(vec![7, 8, 9]),
+                i64_column(vec![7, 8, 9]),
+                i64_column(vec![7, 8, 9]),
+                i64_column(vec![7, 8, 9]),
+                i64_some_column(vec![None, None, None]),
             ],
         )
         .unwrap();
@@ -1492,43 +1446,31 @@ pub mod test {
         let expected_data = RecordBatch::try_new(
             schema.to_record_data_schema(),
             vec![
-                i64_column(vec![1, 2, 3, 4, 5, 6, 7, 8, 9], schema.time_column()),
-                i64_column(
-                    vec![1, 2, 3, 4, 5, 6, 7, 8, 9],
-                    schema.column("f1").cloned().unwrap(),
-                ),
-                i64_some_column(
-                    vec![
-                        None,
-                        None,
-                        None,
-                        Some(4),
-                        Some(5),
-                        Some(6),
-                        Some(7),
-                        Some(8),
-                        Some(9),
-                    ],
-                    schema.column("f2").cloned().unwrap(),
-                ),
-                i64_column(
-                    vec![1, 2, 3, 4, 5, 6, 7, 8, 9],
-                    schema.column("f3").cloned().unwrap(),
-                ),
-                i64_some_column(
-                    vec![
-                        Some(1),
-                        Some(2),
-                        Some(3),
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                    ],
-                    schema.column("f4").cloned().unwrap(),
-                ),
+                timestamp_column(vec![1, 2, 3, 4, 5, 6, 7, 8, 9]),
+                i64_column(vec![1, 2, 3, 4, 5, 6, 7, 8, 9]),
+                i64_some_column(vec![
+                    None,
+                    None,
+                    None,
+                    Some(4),
+                    Some(5),
+                    Some(6),
+                    Some(7),
+                    Some(8),
+                    Some(9),
+                ]),
+                i64_column(vec![1, 2, 3, 4, 5, 6, 7, 8, 9]),
+                i64_some_column(vec![
+                    Some(1),
+                    Some(2),
+                    Some(3),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                ]),
             ],
         )
         .unwrap();
@@ -1558,76 +1500,56 @@ pub mod test {
         check_column_file(dir, version_edit, expected_data).await;
     }
 
-    fn generate_column_ts(min_ts: i64, max_ts: i64, col: TableColumn) -> ArrayRef {
-        let mut col = MutableColumn::empty_with_cap(col, (max_ts - min_ts + 1) as usize).unwrap();
-        for i in min_ts..max_ts + 1 {
-            col.push(Some(FieldVal::Integer(i))).unwrap();
-        }
-        col.to_arrow_array(None).unwrap()
+    fn generate_column_ts(min_ts: i64, max_ts: i64) -> ArrayRef {
+        Arc::new(TimestampNanosecondArray::from_iter_values(min_ts..=max_ts))
     }
 
-    fn generate_column_i64(
-        len: usize,
-        none_range: Vec<(usize, usize)>,
-        col: TableColumn,
-    ) -> ArrayRef {
-        let mut col = MutableColumn::empty_with_cap(col, len).unwrap();
+    fn generate_column_i64(len: usize, none_range: Vec<(usize, usize)>) -> ArrayRef {
+        let mut builder = Int64Builder::new();
         for i in 0..len {
             if none_range.iter().any(|(min, max)| i >= *min && i <= *max) {
-                col.push(None).unwrap();
+                builder.append_null();
             } else {
-                col.push(Some(FieldVal::Integer(i as i64))).unwrap();
+                builder.append_value(i as i64);
             }
         }
-        col.to_arrow_array(None).unwrap()
+        Arc::new(builder.finish())
     }
 
-    fn generate_column_u64(
-        len: usize,
-        none_range: Vec<(usize, usize)>,
-        col: TableColumn,
-    ) -> ArrayRef {
-        let mut col = MutableColumn::empty_with_cap(col, len).unwrap();
+    fn generate_column_u64(len: usize, none_range: Vec<(usize, usize)>) -> ArrayRef {
+        let mut builder = UInt64Builder::new();
         for i in 0..len {
             if none_range.iter().any(|(min, max)| i >= *min && i <= *max) {
-                col.push(None).unwrap();
+                builder.append_null();
             } else {
-                col.push(Some(FieldVal::Unsigned(i as u64))).unwrap();
+                builder.append_value(i as u64);
             }
         }
-        col.to_arrow_array(None).unwrap()
+        Arc::new(builder.finish())
     }
 
-    fn generate_column_f64(
-        len: usize,
-        none_range: Vec<(usize, usize)>,
-        col: TableColumn,
-    ) -> ArrayRef {
-        let mut col = MutableColumn::empty_with_cap(col, len).unwrap();
+    fn generate_column_f64(len: usize, none_range: Vec<(usize, usize)>) -> ArrayRef {
+        let mut builder = Float64Builder::new();
         for i in 0..len {
             if none_range.iter().any(|(min, max)| i >= *min && i <= *max) {
-                col.push(None).unwrap();
+                builder.append_null();
             } else {
-                col.push(Some(FieldVal::Float(i as f64))).unwrap();
+                builder.append_value(i as f64);
             }
         }
-        col.to_arrow_array(None).unwrap()
+        Arc::new(builder.finish())
     }
 
-    fn generate_column_bool(
-        len: usize,
-        none_range: Vec<(usize, usize)>,
-        col: TableColumn,
-    ) -> ArrayRef {
-        let mut col = MutableColumn::empty_with_cap(col, len).unwrap();
+    fn generate_column_bool(len: usize, none_range: Vec<(usize, usize)>) -> ArrayRef {
+        let mut builder = BooleanBuilder::new();
         for i in 0..len {
             if none_range.iter().any(|(min, max)| i >= *min && i <= *max) {
-                col.push(None).unwrap();
+                builder.append_null();
             } else {
-                col.push(Some(FieldVal::Boolean(true))).unwrap();
+                builder.append_value(true);
             }
         }
-        col.to_arrow_array(None).unwrap()
+        Arc::new(builder.finish())
     }
 
     #[tokio::test]
@@ -1682,22 +1604,10 @@ pub mod test {
                         RecordBatch::try_new(
                             schema1.to_record_data_schema(),
                             vec![
-                                generate_column_ts(1, 1000, schema1.time_column()),
-                                generate_column_u64(
-                                    1000,
-                                    vec![],
-                                    schema1.column("f1").cloned().unwrap(),
-                                ),
-                                generate_column_i64(
-                                    1000,
-                                    vec![],
-                                    schema1.column("f2").cloned().unwrap(),
-                                ),
-                                generate_column_bool(
-                                    1000,
-                                    vec![],
-                                    schema1.column("f3").cloned().unwrap(),
-                                ),
+                                generate_column_ts(1, 1000),
+                                generate_column_u64(1000, vec![]),
+                                generate_column_i64(1000, vec![]),
+                                generate_column_bool(1000, vec![]),
                             ],
                         )
                         .unwrap(),
@@ -1707,22 +1617,10 @@ pub mod test {
                         RecordBatch::try_new(
                             schema1.clone().to_record_data_schema(),
                             vec![
-                                generate_column_ts(1001, 2000, schema1.time_column()),
-                                generate_column_u64(
-                                    1000,
-                                    vec![],
-                                    schema1.column("f1").cloned().unwrap(),
-                                ),
-                                generate_column_i64(
-                                    1000,
-                                    vec![(500, 999)],
-                                    schema1.column("f2").cloned().unwrap(),
-                                ),
-                                generate_column_bool(
-                                    1000,
-                                    vec![(500, 999)],
-                                    schema1.column("f3").cloned().unwrap(),
-                                ),
+                                generate_column_ts(1001, 2000),
+                                generate_column_u64(1000, vec![]),
+                                generate_column_i64(1000, vec![(500, 999)]),
+                                generate_column_bool(1000, vec![(500, 999)]),
                             ],
                         )
                         .unwrap(),
@@ -1732,22 +1630,10 @@ pub mod test {
                         RecordBatch::try_new(
                             schema1.clone().to_record_data_schema(),
                             vec![
-                                generate_column_ts(2001, 2500, schema1.time_column()),
-                                generate_column_u64(
-                                    500,
-                                    vec![],
-                                    schema1.column("f1").cloned().unwrap(),
-                                ),
-                                generate_column_i64(
-                                    500,
-                                    vec![(0, 499)],
-                                    schema1.column("f2").cloned().unwrap(),
-                                ),
-                                generate_column_bool(
-                                    500,
-                                    vec![(0, 499)],
-                                    schema1.column("f3").cloned().unwrap(),
-                                ),
+                                generate_column_ts(2001, 2500),
+                                generate_column_u64(500, vec![]),
+                                generate_column_i64(500, vec![(0, 499)]),
+                                generate_column_bool(500, vec![(0, 499)]),
                             ],
                         )
                         .unwrap(),
@@ -1762,27 +1648,11 @@ pub mod test {
                         RecordBatch::try_new(
                             schema2.clone().to_record_data_schema(),
                             vec![
-                                generate_column_ts(1, 1000, schema2.time_column()),
-                                generate_column_u64(
-                                    1000,
-                                    vec![(0, 999)],
-                                    schema2.column("f1").cloned().unwrap(),
-                                ),
-                                generate_column_i64(
-                                    1000,
-                                    vec![(0, 999)],
-                                    schema2.column("f2").cloned().unwrap(),
-                                ),
-                                generate_column_bool(
-                                    1000,
-                                    vec![(0, 999)],
-                                    schema2.column("f3").cloned().unwrap(),
-                                ),
-                                generate_column_f64(
-                                    1000,
-                                    vec![],
-                                    schema2.column("f4").cloned().unwrap(),
-                                ),
+                                generate_column_ts(1, 1000),
+                                generate_column_u64(1000, vec![(0, 999)]),
+                                generate_column_i64(1000, vec![(0, 999)]),
+                                generate_column_bool(1000, vec![(0, 999)]),
+                                generate_column_f64(1000, vec![]),
                             ],
                         )
                         .unwrap(),
@@ -1792,27 +1662,11 @@ pub mod test {
                         RecordBatch::try_new(
                             schema2.clone().to_record_data_schema(),
                             vec![
-                                generate_column_ts(1001, 2000, schema2.time_column()),
-                                generate_column_u64(
-                                    1000,
-                                    vec![(0, 999)],
-                                    schema2.column("f1").cloned().unwrap(),
-                                ),
-                                generate_column_i64(
-                                    1000,
-                                    vec![],
-                                    schema2.column("f2").cloned().unwrap(),
-                                ),
-                                generate_column_bool(
-                                    1000,
-                                    vec![],
-                                    schema2.column("f3").cloned().unwrap(),
-                                ),
-                                generate_column_f64(
-                                    1000,
-                                    vec![(500, 999)],
-                                    schema2.column("f4").cloned().unwrap(),
-                                ),
+                                generate_column_ts(1001, 2000),
+                                generate_column_u64(1000, vec![(0, 999)]),
+                                generate_column_i64(1000, vec![]),
+                                generate_column_bool(1000, vec![]),
+                                generate_column_f64(1000, vec![(500, 999)]),
                             ],
                         )
                         .unwrap(),
@@ -1822,27 +1676,11 @@ pub mod test {
                         RecordBatch::try_new(
                             schema2.clone().to_record_data_schema(),
                             vec![
-                                generate_column_ts(2001, 3000, schema2.time_column()),
-                                generate_column_u64(
-                                    1000,
-                                    vec![],
-                                    schema2.column("f1").cloned().unwrap(),
-                                ),
-                                generate_column_i64(
-                                    1000,
-                                    vec![],
-                                    schema2.column("f2").cloned().unwrap(),
-                                ),
-                                generate_column_bool(
-                                    1000,
-                                    vec![(500, 999)],
-                                    schema2.column("f3").cloned().unwrap(),
-                                ),
-                                generate_column_f64(
-                                    1000,
-                                    vec![(0, 999)],
-                                    schema2.column("f4").cloned().unwrap(),
-                                ),
+                                generate_column_ts(2001, 3000),
+                                generate_column_u64(1000, vec![]),
+                                generate_column_i64(1000, vec![]),
+                                generate_column_bool(1000, vec![(500, 999)]),
+                                generate_column_f64(1000, vec![(0, 999)]),
                             ],
                         )
                         .unwrap(),
@@ -1852,27 +1690,11 @@ pub mod test {
                         RecordBatch::try_new(
                             schema2.clone().to_record_data_schema(),
                             vec![
-                                generate_column_ts(3001, 4000, schema2.time_column()),
-                                generate_column_u64(
-                                    1000,
-                                    vec![],
-                                    schema2.column("f1").cloned().unwrap(),
-                                ),
-                                generate_column_i64(
-                                    1000,
-                                    vec![(0, 999)],
-                                    schema2.column("f2").cloned().unwrap(),
-                                ),
-                                generate_column_bool(
-                                    1000,
-                                    vec![(0, 999)],
-                                    schema2.column("f3").cloned().unwrap(),
-                                ),
-                                generate_column_f64(
-                                    1000,
-                                    vec![(0, 999)],
-                                    schema2.column("f4").cloned().unwrap(),
-                                ),
+                                generate_column_ts(3001, 4000),
+                                generate_column_u64(1000, vec![]),
+                                generate_column_i64(1000, vec![(0, 999)]),
+                                generate_column_bool(1000, vec![(0, 999)]),
+                                generate_column_f64(1000, vec![(0, 999)]),
                             ],
                         )
                         .unwrap(),
@@ -1882,27 +1704,11 @@ pub mod test {
                         RecordBatch::try_new(
                             schema2.clone().to_record_data_schema(),
                             vec![
-                                generate_column_ts(4001, 4500, schema2.time_column()),
-                                generate_column_u64(
-                                    500,
-                                    vec![],
-                                    schema2.column("f1").cloned().unwrap(),
-                                ),
-                                generate_column_i64(
-                                    500,
-                                    vec![(0, 499)],
-                                    schema2.column("f2").cloned().unwrap(),
-                                ),
-                                generate_column_bool(
-                                    500,
-                                    vec![(0, 499)],
-                                    schema2.column("f3").cloned().unwrap(),
-                                ),
-                                generate_column_f64(
-                                    500,
-                                    vec![(0, 499)],
-                                    schema2.column("f4").cloned().unwrap(),
-                                ),
+                                generate_column_ts(4001, 4500),
+                                generate_column_u64(500, vec![]),
+                                generate_column_i64(500, vec![(0, 499)]),
+                                generate_column_bool(500, vec![(0, 499)]),
+                                generate_column_f64(500, vec![(0, 499)]),
                             ],
                         )
                         .unwrap(),
@@ -1917,27 +1723,11 @@ pub mod test {
                         RecordBatch::try_new(
                             schema2.clone().to_record_data_schema(),
                             vec![
-                                generate_column_ts(1001, 2000, schema2.time_column()),
-                                generate_column_u64(
-                                    1000,
-                                    vec![(0, 999)],
-                                    schema2.column("f1").cloned().unwrap(),
-                                ),
-                                generate_column_i64(
-                                    1000,
-                                    vec![(0, 999)],
-                                    schema2.column("f2").cloned().unwrap(),
-                                ),
-                                generate_column_bool(
-                                    1000,
-                                    vec![(0, 999)],
-                                    schema2.column("f3").cloned().unwrap(),
-                                ),
-                                generate_column_f64(
-                                    1000,
-                                    vec![],
-                                    schema2.column("f4").cloned().unwrap(),
-                                ),
+                                generate_column_ts(1001, 2000),
+                                generate_column_u64(1000, vec![(0, 999)]),
+                                generate_column_i64(1000, vec![(0, 999)]),
+                                generate_column_bool(1000, vec![(0, 999)]),
+                                generate_column_f64(1000, vec![]),
                             ],
                         )
                         .unwrap(),
@@ -1947,27 +1737,11 @@ pub mod test {
                         RecordBatch::try_new(
                             schema2.clone().to_record_data_schema(),
                             vec![
-                                generate_column_ts(2001, 3000, schema2.time_column()),
-                                generate_column_u64(
-                                    1000,
-                                    vec![(0, 999)],
-                                    schema2.column("f1").cloned().unwrap(),
-                                ),
-                                generate_column_i64(
-                                    1000,
-                                    vec![(0, 999)],
-                                    schema2.column("f2").cloned().unwrap(),
-                                ),
-                                generate_column_bool(
-                                    1000,
-                                    vec![],
-                                    schema2.column("f3").cloned().unwrap(),
-                                ),
-                                generate_column_f64(
-                                    1000,
-                                    vec![(500, 999)],
-                                    schema2.column("f4").cloned().unwrap(),
-                                ),
+                                generate_column_ts(2001, 3000),
+                                generate_column_u64(1000, vec![(0, 999)]),
+                                generate_column_i64(1000, vec![(0, 999)]),
+                                generate_column_bool(1000, vec![]),
+                                generate_column_f64(1000, vec![(500, 999)]),
                             ],
                         )
                         .unwrap(),
@@ -1977,27 +1751,11 @@ pub mod test {
                         RecordBatch::try_new(
                             schema2.clone().to_record_data_schema(),
                             vec![
-                                generate_column_ts(3001, 4000, schema2.time_column()),
-                                generate_column_u64(
-                                    1000,
-                                    vec![(0, 999)],
-                                    schema2.column("f1").cloned().unwrap(),
-                                ),
-                                generate_column_i64(
-                                    1000,
-                                    vec![],
-                                    schema2.column("f2").cloned().unwrap(),
-                                ),
-                                generate_column_bool(
-                                    1000,
-                                    vec![(500, 999)],
-                                    schema2.column("f3").cloned().unwrap(),
-                                ),
-                                generate_column_f64(
-                                    1000,
-                                    vec![(0, 999)],
-                                    schema2.column("f4").cloned().unwrap(),
-                                ),
+                                generate_column_ts(3001, 4000),
+                                generate_column_u64(1000, vec![(0, 999)]),
+                                generate_column_i64(1000, vec![]),
+                                generate_column_bool(1000, vec![(500, 999)]),
+                                generate_column_f64(1000, vec![(0, 999)]),
                             ],
                         )
                         .unwrap(),
@@ -2007,27 +1765,11 @@ pub mod test {
                         RecordBatch::try_new(
                             schema2.clone().to_record_data_schema(),
                             vec![
-                                generate_column_ts(4001, 5000, schema2.time_column()),
-                                generate_column_u64(
-                                    1000,
-                                    vec![],
-                                    schema2.column("f1").cloned().unwrap(),
-                                ),
-                                generate_column_i64(
-                                    1000,
-                                    vec![],
-                                    schema2.column("f2").cloned().unwrap(),
-                                ),
-                                generate_column_bool(
-                                    1000,
-                                    vec![(0, 999)],
-                                    schema2.column("f3").cloned().unwrap(),
-                                ),
-                                generate_column_f64(
-                                    1000,
-                                    vec![(0, 999)],
-                                    schema2.column("f4").cloned().unwrap(),
-                                ),
+                                generate_column_ts(4001, 5000),
+                                generate_column_u64(1000, vec![]),
+                                generate_column_i64(1000, vec![]),
+                                generate_column_bool(1000, vec![(0, 999)]),
+                                generate_column_f64(1000, vec![(0, 999)]),
                             ],
                         )
                         .unwrap(),
@@ -2037,27 +1779,11 @@ pub mod test {
                         RecordBatch::try_new(
                             schema2.clone().to_record_data_schema(),
                             vec![
-                                generate_column_ts(5001, 6000, schema2.time_column()),
-                                generate_column_u64(
-                                    1000,
-                                    vec![],
-                                    schema2.column("f1").cloned().unwrap(),
-                                ),
-                                generate_column_i64(
-                                    1000,
-                                    vec![(0, 999)],
-                                    schema2.column("f2").cloned().unwrap(),
-                                ),
-                                generate_column_bool(
-                                    1000,
-                                    vec![(0, 999)],
-                                    schema2.column("f3").cloned().unwrap(),
-                                ),
-                                generate_column_f64(
-                                    1000,
-                                    vec![(0, 999)],
-                                    schema2.column("f4").cloned().unwrap(),
-                                ),
+                                generate_column_ts(5001, 6000),
+                                generate_column_u64(1000, vec![]),
+                                generate_column_i64(1000, vec![(0, 999)]),
+                                generate_column_bool(1000, vec![(0, 999)]),
+                                generate_column_f64(1000, vec![(0, 999)]),
                             ],
                         )
                         .unwrap(),
@@ -2067,27 +1793,11 @@ pub mod test {
                         RecordBatch::try_new(
                             schema2.clone().to_record_data_schema(),
                             vec![
-                                generate_column_ts(6001, 6500, schema2.time_column()),
-                                generate_column_u64(
-                                    500,
-                                    vec![],
-                                    schema2.column("f1").cloned().unwrap(),
-                                ),
-                                generate_column_i64(
-                                    500,
-                                    vec![(0, 499)],
-                                    schema2.column("f2").cloned().unwrap(),
-                                ),
-                                generate_column_bool(
-                                    500,
-                                    vec![(0, 499)],
-                                    schema2.column("f3").cloned().unwrap(),
-                                ),
-                                generate_column_f64(
-                                    500,
-                                    vec![(0, 499)],
-                                    schema2.column("f4").cloned().unwrap(),
-                                ),
+                                generate_column_ts(6001, 6500),
+                                generate_column_u64(500, vec![]),
+                                generate_column_i64(500, vec![(0, 499)]),
+                                generate_column_bool(500, vec![(0, 499)]),
+                                generate_column_f64(500, vec![(0, 499)]),
                             ],
                         )
                         .unwrap(),
@@ -2100,121 +1810,77 @@ pub mod test {
             RecordBatch::try_new(
                 schema2.clone().to_record_data_schema(),
                 vec![
-                    generate_column_ts(1, 1000, schema2.time_column()),
-                    generate_column_u64(1000, vec![], schema2.column("f1").cloned().unwrap()),
-                    generate_column_i64(1000, vec![], schema2.column("f2").cloned().unwrap()),
-                    generate_column_bool(1000, vec![], schema2.column("f3").cloned().unwrap()),
-                    generate_column_f64(1000, vec![], schema2.column("f4").cloned().unwrap()),
+                    generate_column_ts(1, 1000),
+                    generate_column_u64(1000, vec![]),
+                    generate_column_i64(1000, vec![]),
+                    generate_column_bool(1000, vec![]),
+                    generate_column_f64(1000, vec![]),
                 ],
             )
             .unwrap(),
             RecordBatch::try_new(
                 schema2.clone().to_record_data_schema(),
                 vec![
-                    generate_column_ts(1001, 2000, schema2.time_column()),
-                    generate_column_u64(1000, vec![], schema2.column("f1").cloned().unwrap()),
-                    generate_column_i64(1000, vec![], schema2.column("f2").cloned().unwrap()),
-                    generate_column_bool(1000, vec![], schema2.column("f3").cloned().unwrap()),
-                    generate_column_f64(1000, vec![], schema2.column("f4").cloned().unwrap()),
+                    generate_column_ts(1001, 2000),
+                    generate_column_u64(1000, vec![]),
+                    generate_column_i64(1000, vec![]),
+                    generate_column_bool(1000, vec![]),
+                    generate_column_f64(1000, vec![]),
                 ],
             )
             .unwrap(),
             RecordBatch::try_new(
                 schema2.clone().to_record_data_schema(),
                 vec![
-                    generate_column_ts(2001, 3000, schema2.time_column()),
-                    generate_column_u64(1000, vec![], schema2.column("f1").cloned().unwrap()),
-                    generate_column_i64(1000, vec![], schema2.column("f2").cloned().unwrap()),
-                    generate_column_bool(1000, vec![], schema2.column("f3").cloned().unwrap()),
-                    generate_column_f64(
-                        1000,
-                        vec![(500, 999)],
-                        schema2.column("f4").cloned().unwrap(),
-                    ),
+                    generate_column_ts(2001, 3000),
+                    generate_column_u64(1000, vec![]),
+                    generate_column_i64(1000, vec![]),
+                    generate_column_bool(1000, vec![]),
+                    generate_column_f64(1000, vec![(500, 999)]),
                 ],
             )
             .unwrap(),
             RecordBatch::try_new(
                 schema2.clone().to_record_data_schema(),
                 vec![
-                    generate_column_ts(3001, 4000, schema2.time_column()),
-                    generate_column_u64(1000, vec![], schema2.column("f1").cloned().unwrap()),
-                    generate_column_i64(1000, vec![], schema2.column("f2").cloned().unwrap()),
-                    generate_column_bool(
-                        1000,
-                        vec![(500, 999)],
-                        schema2.column("f3").cloned().unwrap(),
-                    ),
-                    generate_column_f64(
-                        1000,
-                        vec![(0, 999)],
-                        schema2.column("f4").cloned().unwrap(),
-                    ),
+                    generate_column_ts(3001, 4000),
+                    generate_column_u64(1000, vec![]),
+                    generate_column_i64(1000, vec![]),
+                    generate_column_bool(1000, vec![(500, 999)]),
+                    generate_column_f64(1000, vec![(0, 999)]),
                 ],
             )
             .unwrap(),
             RecordBatch::try_new(
                 schema2.clone().to_record_data_schema(),
                 vec![
-                    generate_column_ts(4001, 5000, schema2.time_column()),
-                    generate_column_u64(1000, vec![], schema2.column("f1").cloned().unwrap()),
-                    generate_column_i64(1000, vec![], schema2.column("f2").cloned().unwrap()),
-                    generate_column_bool(
-                        1000,
-                        vec![(0, 999)],
-                        schema2.column("f3").cloned().unwrap(),
-                    ),
-                    generate_column_f64(
-                        1000,
-                        vec![(0, 999)],
-                        schema2.column("f4").cloned().unwrap(),
-                    ),
+                    generate_column_ts(4001, 5000),
+                    generate_column_u64(1000, vec![]),
+                    generate_column_i64(1000, vec![]),
+                    generate_column_bool(1000, vec![(0, 999)]),
+                    generate_column_f64(1000, vec![(0, 999)]),
                 ],
             )
             .unwrap(),
             RecordBatch::try_new(
                 schema2.clone().to_record_data_schema(),
                 vec![
-                    generate_column_ts(5001, 6000, schema2.time_column()),
-                    generate_column_u64(1000, vec![], schema2.column("f1").cloned().unwrap()),
-                    generate_column_i64(
-                        1000,
-                        vec![(0, 999)],
-                        schema2.column("f2").cloned().unwrap(),
-                    ),
-                    generate_column_bool(
-                        1000,
-                        vec![(0, 999)],
-                        schema2.column("f3").cloned().unwrap(),
-                    ),
-                    generate_column_f64(
-                        1000,
-                        vec![(0, 999)],
-                        schema2.column("f4").cloned().unwrap(),
-                    ),
+                    generate_column_ts(5001, 6000),
+                    generate_column_u64(1000, vec![]),
+                    generate_column_i64(1000, vec![(0, 999)]),
+                    generate_column_bool(1000, vec![(0, 999)]),
+                    generate_column_f64(1000, vec![(0, 999)]),
                 ],
             )
             .unwrap(),
             RecordBatch::try_new(
                 schema2.clone().to_record_data_schema(),
                 vec![
-                    generate_column_ts(6001, 6500, schema2.time_column()),
-                    generate_column_u64(500, vec![], schema2.column("f1").cloned().unwrap()),
-                    generate_column_i64(
-                        500,
-                        vec![(0, 499)],
-                        schema2.column("f2").cloned().unwrap(),
-                    ),
-                    generate_column_bool(
-                        500,
-                        vec![(0, 499)],
-                        schema2.column("f3").cloned().unwrap(),
-                    ),
-                    generate_column_f64(
-                        500,
-                        vec![(0, 499)],
-                        schema2.column("f4").cloned().unwrap(),
-                    ),
+                    generate_column_ts(6001, 6500),
+                    generate_column_u64(500, vec![]),
+                    generate_column_i64(500, vec![(0, 499)]),
+                    generate_column_bool(500, vec![(0, 499)]),
+                    generate_column_f64(500, vec![(0, 499)]),
                 ],
             )
             .unwrap(),
@@ -2316,22 +1982,10 @@ pub mod test {
                         RecordBatch::try_new(
                             schema1.to_record_data_schema(),
                             vec![
-                                generate_column_ts(1, 1000, schema1.time_column()),
-                                generate_column_u64(
-                                    1000,
-                                    vec![],
-                                    schema1.column("f1").cloned().unwrap(),
-                                ),
-                                generate_column_i64(
-                                    1000,
-                                    vec![],
-                                    schema1.column("f2").cloned().unwrap(),
-                                ),
-                                generate_column_bool(
-                                    1000,
-                                    vec![],
-                                    schema1.column("f3").cloned().unwrap(),
-                                ),
+                                generate_column_ts(1, 1000),
+                                generate_column_u64(1000, vec![]),
+                                generate_column_i64(1000, vec![]),
+                                generate_column_bool(1000, vec![]),
                             ],
                         )
                         .unwrap(),
@@ -2341,22 +1995,10 @@ pub mod test {
                         RecordBatch::try_new(
                             schema1.clone().to_record_data_schema(),
                             vec![
-                                generate_column_ts(1001, 2000, schema1.time_column()),
-                                generate_column_u64(
-                                    1000,
-                                    vec![],
-                                    schema1.column("f1").cloned().unwrap(),
-                                ),
-                                generate_column_i64(
-                                    1000,
-                                    vec![(500, 999)],
-                                    schema1.column("f2").cloned().unwrap(),
-                                ),
-                                generate_column_bool(
-                                    1000,
-                                    vec![(500, 999)],
-                                    schema1.column("f3").cloned().unwrap(),
-                                ),
+                                generate_column_ts(1001, 2000),
+                                generate_column_u64(1000, vec![]),
+                                generate_column_i64(1000, vec![(500, 999)]),
+                                generate_column_bool(1000, vec![(500, 999)]),
                             ],
                         )
                         .unwrap(),
@@ -2366,22 +2008,10 @@ pub mod test {
                         RecordBatch::try_new(
                             schema1.clone().to_record_data_schema(),
                             vec![
-                                generate_column_ts(2001, 2500, schema1.time_column()),
-                                generate_column_u64(
-                                    500,
-                                    vec![],
-                                    schema1.column("f1").cloned().unwrap(),
-                                ),
-                                generate_column_i64(
-                                    500,
-                                    vec![(0, 499)],
-                                    schema1.column("f2").cloned().unwrap(),
-                                ),
-                                generate_column_bool(
-                                    500,
-                                    vec![(0, 499)],
-                                    schema1.column("f3").cloned().unwrap(),
-                                ),
+                                generate_column_ts(2001, 2500),
+                                generate_column_u64(500, vec![]),
+                                generate_column_i64(500, vec![(0, 499)]),
+                                generate_column_bool(500, vec![(0, 499)]),
                             ],
                         )
                         .unwrap(),
@@ -2396,27 +2026,11 @@ pub mod test {
                         RecordBatch::try_new(
                             schema2.clone().to_record_data_schema(),
                             vec![
-                                generate_column_ts(1, 1000, schema2.time_column()),
-                                generate_column_u64(
-                                    1000,
-                                    vec![(0, 999)],
-                                    schema2.column("f1").cloned().unwrap(),
-                                ),
-                                generate_column_i64(
-                                    1000,
-                                    vec![(0, 999)],
-                                    schema2.column("f2").cloned().unwrap(),
-                                ),
-                                generate_column_bool(
-                                    1000,
-                                    vec![(0, 999)],
-                                    schema2.column("f3").cloned().unwrap(),
-                                ),
-                                generate_column_f64(
-                                    1000,
-                                    vec![],
-                                    schema2.column("f4").cloned().unwrap(),
-                                ),
+                                generate_column_ts(1, 1000),
+                                generate_column_u64(1000, vec![(0, 999)]),
+                                generate_column_i64(1000, vec![(0, 999)]),
+                                generate_column_bool(1000, vec![(0, 999)]),
+                                generate_column_f64(1000, vec![]),
                             ],
                         )
                         .unwrap(),
@@ -2426,27 +2040,11 @@ pub mod test {
                         RecordBatch::try_new(
                             schema2.clone().to_record_data_schema(),
                             vec![
-                                generate_column_ts(1001, 2000, schema2.time_column()),
-                                generate_column_u64(
-                                    1000,
-                                    vec![(0, 999)],
-                                    schema2.column("f1").cloned().unwrap(),
-                                ),
-                                generate_column_i64(
-                                    1000,
-                                    vec![],
-                                    schema2.column("f2").cloned().unwrap(),
-                                ),
-                                generate_column_bool(
-                                    1000,
-                                    vec![],
-                                    schema2.column("f3").cloned().unwrap(),
-                                ),
-                                generate_column_f64(
-                                    1000,
-                                    vec![(500, 999)],
-                                    schema2.column("f4").cloned().unwrap(),
-                                ),
+                                generate_column_ts(1001, 2000),
+                                generate_column_u64(1000, vec![(0, 999)]),
+                                generate_column_i64(1000, vec![]),
+                                generate_column_bool(1000, vec![]),
+                                generate_column_f64(1000, vec![(500, 999)]),
                             ],
                         )
                         .unwrap(),
@@ -2456,27 +2054,11 @@ pub mod test {
                         RecordBatch::try_new(
                             schema2.clone().to_record_data_schema(),
                             vec![
-                                generate_column_ts(2001, 3000, schema2.time_column()),
-                                generate_column_u64(
-                                    1000,
-                                    vec![],
-                                    schema2.column("f1").cloned().unwrap(),
-                                ),
-                                generate_column_i64(
-                                    1000,
-                                    vec![],
-                                    schema2.column("f2").cloned().unwrap(),
-                                ),
-                                generate_column_bool(
-                                    1000,
-                                    vec![(500, 999)],
-                                    schema2.column("f3").cloned().unwrap(),
-                                ),
-                                generate_column_f64(
-                                    1000,
-                                    vec![(0, 999)],
-                                    schema2.column("f4").cloned().unwrap(),
-                                ),
+                                generate_column_ts(2001, 3000),
+                                generate_column_u64(1000, vec![]),
+                                generate_column_i64(1000, vec![]),
+                                generate_column_bool(1000, vec![(500, 999)]),
+                                generate_column_f64(1000, vec![(0, 999)]),
                             ],
                         )
                         .unwrap(),
@@ -2486,27 +2068,11 @@ pub mod test {
                         RecordBatch::try_new(
                             schema2.clone().to_record_data_schema(),
                             vec![
-                                generate_column_ts(3001, 4000, schema2.time_column()),
-                                generate_column_u64(
-                                    1000,
-                                    vec![],
-                                    schema2.column("f1").cloned().unwrap(),
-                                ),
-                                generate_column_i64(
-                                    1000,
-                                    vec![(0, 999)],
-                                    schema2.column("f2").cloned().unwrap(),
-                                ),
-                                generate_column_bool(
-                                    1000,
-                                    vec![(0, 999)],
-                                    schema2.column("f3").cloned().unwrap(),
-                                ),
-                                generate_column_f64(
-                                    1000,
-                                    vec![(0, 999)],
-                                    schema2.column("f4").cloned().unwrap(),
-                                ),
+                                generate_column_ts(3001, 4000),
+                                generate_column_u64(1000, vec![]),
+                                generate_column_i64(1000, vec![(0, 999)]),
+                                generate_column_bool(1000, vec![(0, 999)]),
+                                generate_column_f64(1000, vec![(0, 999)]),
                             ],
                         )
                         .unwrap(),
@@ -2516,27 +2082,11 @@ pub mod test {
                         RecordBatch::try_new(
                             schema2.clone().to_record_data_schema(),
                             vec![
-                                generate_column_ts(4001, 4500, schema2.time_column()),
-                                generate_column_u64(
-                                    500,
-                                    vec![],
-                                    schema2.column("f1").cloned().unwrap(),
-                                ),
-                                generate_column_i64(
-                                    500,
-                                    vec![(0, 499)],
-                                    schema2.column("f2").cloned().unwrap(),
-                                ),
-                                generate_column_bool(
-                                    500,
-                                    vec![(0, 499)],
-                                    schema2.column("f3").cloned().unwrap(),
-                                ),
-                                generate_column_f64(
-                                    500,
-                                    vec![(0, 499)],
-                                    schema2.column("f4").cloned().unwrap(),
-                                ),
+                                generate_column_ts(4001, 4500),
+                                generate_column_u64(500, vec![]),
+                                generate_column_i64(500, vec![(0, 499)]),
+                                generate_column_bool(500, vec![(0, 499)]),
+                                generate_column_f64(500, vec![(0, 499)]),
                             ],
                         )
                         .unwrap(),
@@ -2551,27 +2101,11 @@ pub mod test {
                         RecordBatch::try_new(
                             schema2.clone().to_record_data_schema(),
                             vec![
-                                generate_column_ts(1001, 2000, schema2.time_column()),
-                                generate_column_u64(
-                                    1000,
-                                    vec![(0, 999)],
-                                    schema2.column("f1").cloned().unwrap(),
-                                ),
-                                generate_column_i64(
-                                    1000,
-                                    vec![(0, 999)],
-                                    schema2.column("f2").cloned().unwrap(),
-                                ),
-                                generate_column_bool(
-                                    1000,
-                                    vec![(0, 999)],
-                                    schema2.column("f3").cloned().unwrap(),
-                                ),
-                                generate_column_f64(
-                                    1000,
-                                    vec![],
-                                    schema2.column("f4").cloned().unwrap(),
-                                ),
+                                generate_column_ts(1001, 2000),
+                                generate_column_u64(1000, vec![(0, 999)]),
+                                generate_column_i64(1000, vec![(0, 999)]),
+                                generate_column_bool(1000, vec![(0, 999)]),
+                                generate_column_f64(1000, vec![]),
                             ],
                         )
                         .unwrap(),
@@ -2581,27 +2115,11 @@ pub mod test {
                         RecordBatch::try_new(
                             schema2.clone().to_record_data_schema(),
                             vec![
-                                generate_column_ts(2001, 3000, schema2.time_column()),
-                                generate_column_u64(
-                                    1000,
-                                    vec![(0, 999)],
-                                    schema2.column("f1").cloned().unwrap(),
-                                ),
-                                generate_column_i64(
-                                    1000,
-                                    vec![(0, 999)],
-                                    schema2.column("f2").cloned().unwrap(),
-                                ),
-                                generate_column_bool(
-                                    1000,
-                                    vec![],
-                                    schema2.column("f3").cloned().unwrap(),
-                                ),
-                                generate_column_f64(
-                                    1000,
-                                    vec![(500, 999)],
-                                    schema2.column("f4").cloned().unwrap(),
-                                ),
+                                generate_column_ts(2001, 3000),
+                                generate_column_u64(1000, vec![(0, 999)]),
+                                generate_column_i64(1000, vec![(0, 999)]),
+                                generate_column_bool(1000, vec![]),
+                                generate_column_f64(1000, vec![(500, 999)]),
                             ],
                         )
                         .unwrap(),
@@ -2611,27 +2129,11 @@ pub mod test {
                         RecordBatch::try_new(
                             schema2.clone().to_record_data_schema(),
                             vec![
-                                generate_column_ts(3001, 4000, schema2.time_column()),
-                                generate_column_u64(
-                                    1000,
-                                    vec![(0, 999)],
-                                    schema2.column("f1").cloned().unwrap(),
-                                ),
-                                generate_column_i64(
-                                    1000,
-                                    vec![],
-                                    schema2.column("f2").cloned().unwrap(),
-                                ),
-                                generate_column_bool(
-                                    1000,
-                                    vec![(500, 999)],
-                                    schema2.column("f3").cloned().unwrap(),
-                                ),
-                                generate_column_f64(
-                                    1000,
-                                    vec![(0, 999)],
-                                    schema2.column("f4").cloned().unwrap(),
-                                ),
+                                generate_column_ts(3001, 4000),
+                                generate_column_u64(1000, vec![(0, 999)]),
+                                generate_column_i64(1000, vec![]),
+                                generate_column_bool(1000, vec![(500, 999)]),
+                                generate_column_f64(1000, vec![(0, 999)]),
                             ],
                         )
                         .unwrap(),
@@ -2641,27 +2143,11 @@ pub mod test {
                         RecordBatch::try_new(
                             schema2.clone().to_record_data_schema(),
                             vec![
-                                generate_column_ts(4001, 5000, schema2.time_column()),
-                                generate_column_u64(
-                                    1000,
-                                    vec![],
-                                    schema2.column("f1").cloned().unwrap(),
-                                ),
-                                generate_column_i64(
-                                    1000,
-                                    vec![],
-                                    schema2.column("f2").cloned().unwrap(),
-                                ),
-                                generate_column_bool(
-                                    1000,
-                                    vec![(0, 999)],
-                                    schema2.column("f3").cloned().unwrap(),
-                                ),
-                                generate_column_f64(
-                                    1000,
-                                    vec![(0, 999)],
-                                    schema2.column("f4").cloned().unwrap(),
-                                ),
+                                generate_column_ts(4001, 5000),
+                                generate_column_u64(1000, vec![]),
+                                generate_column_i64(1000, vec![]),
+                                generate_column_bool(1000, vec![(0, 999)]),
+                                generate_column_f64(1000, vec![(0, 999)]),
                             ],
                         )
                         .unwrap(),
@@ -2671,27 +2157,11 @@ pub mod test {
                         RecordBatch::try_new(
                             schema2.clone().to_record_data_schema(),
                             vec![
-                                generate_column_ts(5001, 6000, schema2.time_column()),
-                                generate_column_u64(
-                                    1000,
-                                    vec![],
-                                    schema2.column("f1").cloned().unwrap(),
-                                ),
-                                generate_column_i64(
-                                    1000,
-                                    vec![(0, 999)],
-                                    schema2.column("f2").cloned().unwrap(),
-                                ),
-                                generate_column_bool(
-                                    1000,
-                                    vec![(0, 999)],
-                                    schema2.column("f3").cloned().unwrap(),
-                                ),
-                                generate_column_f64(
-                                    1000,
-                                    vec![(0, 999)],
-                                    schema2.column("f4").cloned().unwrap(),
-                                ),
+                                generate_column_ts(5001, 6000),
+                                generate_column_u64(1000, vec![]),
+                                generate_column_i64(1000, vec![(0, 999)]),
+                                generate_column_bool(1000, vec![(0, 999)]),
+                                generate_column_f64(1000, vec![(0, 999)]),
                             ],
                         )
                         .unwrap(),
@@ -2701,27 +2171,11 @@ pub mod test {
                         RecordBatch::try_new(
                             schema2.clone().to_record_data_schema(),
                             vec![
-                                generate_column_ts(6001, 6500, schema2.time_column()),
-                                generate_column_u64(
-                                    500,
-                                    vec![],
-                                    schema2.column("f1").cloned().unwrap(),
-                                ),
-                                generate_column_i64(
-                                    500,
-                                    vec![(0, 499)],
-                                    schema2.column("f2").cloned().unwrap(),
-                                ),
-                                generate_column_bool(
-                                    500,
-                                    vec![(0, 499)],
-                                    schema2.column("f3").cloned().unwrap(),
-                                ),
-                                generate_column_f64(
-                                    500,
-                                    vec![(0, 499)],
-                                    schema2.column("f4").cloned().unwrap(),
-                                ),
+                                generate_column_ts(6001, 6500),
+                                generate_column_u64(500, vec![]),
+                                generate_column_i64(500, vec![(0, 499)]),
+                                generate_column_bool(500, vec![(0, 499)]),
+                                generate_column_f64(500, vec![(0, 499)]),
                             ],
                         )
                         .unwrap(),
@@ -2734,129 +2188,77 @@ pub mod test {
             RecordBatch::try_new(
                 schema2.clone().to_record_data_schema(),
                 vec![
-                    generate_column_ts(1, 1000, schema2.time_column()),
-                    generate_column_u64(
-                        1000,
-                        vec![(0, 499)],
-                        schema2.column("f1").cloned().unwrap(),
-                    ),
-                    generate_column_i64(1000, vec![], schema2.column("f2").cloned().unwrap()),
-                    generate_column_bool(1000, vec![], schema2.column("f3").cloned().unwrap()),
-                    generate_column_f64(1000, vec![], schema2.column("f4").cloned().unwrap()),
+                    generate_column_ts(1, 1000),
+                    generate_column_u64(1000, vec![(0, 499)]),
+                    generate_column_i64(1000, vec![]),
+                    generate_column_bool(1000, vec![]),
+                    generate_column_f64(1000, vec![]),
                 ],
             )
             .unwrap(),
             RecordBatch::try_new(
                 schema2.clone().to_record_data_schema(),
                 vec![
-                    generate_column_ts(1001, 2000, schema2.time_column()),
-                    generate_column_u64(1000, vec![], schema2.column("f1").cloned().unwrap()),
-                    generate_column_i64(1000, vec![], schema2.column("f2").cloned().unwrap()),
-                    generate_column_bool(1000, vec![], schema2.column("f3").cloned().unwrap()),
-                    generate_column_f64(1000, vec![], schema2.column("f4").cloned().unwrap()),
+                    generate_column_ts(1001, 2000),
+                    generate_column_u64(1000, vec![]),
+                    generate_column_i64(1000, vec![]),
+                    generate_column_bool(1000, vec![]),
+                    generate_column_f64(1000, vec![]),
                 ],
             )
             .unwrap(),
             RecordBatch::try_new(
                 schema2.clone().to_record_data_schema(),
                 vec![
-                    generate_column_ts(2001, 3000, schema2.time_column()),
-                    generate_column_u64(1000, vec![], schema2.column("f1").cloned().unwrap()),
-                    generate_column_i64(1000, vec![], schema2.column("f2").cloned().unwrap()),
-                    generate_column_bool(
-                        1000,
-                        vec![(0, 699)],
-                        schema2.column("f3").cloned().unwrap(),
-                    ),
-                    generate_column_f64(
-                        1000,
-                        vec![(500, 999)],
-                        schema2.column("f4").cloned().unwrap(),
-                    ),
+                    generate_column_ts(2001, 3000),
+                    generate_column_u64(1000, vec![]),
+                    generate_column_i64(1000, vec![]),
+                    generate_column_bool(1000, vec![(0, 699)]),
+                    generate_column_f64(1000, vec![(500, 999)]),
                 ],
             )
             .unwrap(),
             RecordBatch::try_new(
                 schema2.clone().to_record_data_schema(),
                 vec![
-                    generate_column_ts(3001, 4000, schema2.time_column()),
-                    generate_column_u64(1000, vec![], schema2.column("f1").cloned().unwrap()),
-                    generate_column_i64(1000, vec![], schema2.column("f2").cloned().unwrap()),
-                    generate_column_bool(
-                        1000,
-                        vec![(500, 999)],
-                        schema2.column("f3").cloned().unwrap(),
-                    ),
-                    generate_column_f64(
-                        1000,
-                        vec![(0, 999)],
-                        schema2.column("f4").cloned().unwrap(),
-                    ),
+                    generate_column_ts(3001, 4000),
+                    generate_column_u64(1000, vec![]),
+                    generate_column_i64(1000, vec![]),
+                    generate_column_bool(1000, vec![(500, 999)]),
+                    generate_column_f64(1000, vec![(0, 999)]),
                 ],
             )
             .unwrap(),
             RecordBatch::try_new(
                 schema2.clone().to_record_data_schema(),
                 vec![
-                    generate_column_ts(4001, 5000, schema2.time_column()),
-                    generate_column_u64(1000, vec![], schema2.column("f1").cloned().unwrap()),
-                    generate_column_i64(1000, vec![], schema2.column("f2").cloned().unwrap()),
-                    generate_column_bool(
-                        1000,
-                        vec![(0, 999)],
-                        schema2.column("f3").cloned().unwrap(),
-                    ),
-                    generate_column_f64(
-                        1000,
-                        vec![(0, 999)],
-                        schema2.column("f4").cloned().unwrap(),
-                    ),
+                    generate_column_ts(4001, 5000),
+                    generate_column_u64(1000, vec![]),
+                    generate_column_i64(1000, vec![]),
+                    generate_column_bool(1000, vec![(0, 999)]),
+                    generate_column_f64(1000, vec![(0, 999)]),
                 ],
             )
             .unwrap(),
             RecordBatch::try_new(
                 schema2.clone().to_record_data_schema(),
                 vec![
-                    generate_column_ts(5001, 6000, schema2.time_column()),
-                    generate_column_u64(1000, vec![], schema2.column("f1").cloned().unwrap()),
-                    generate_column_i64(
-                        1000,
-                        vec![(0, 999)],
-                        schema2.column("f2").cloned().unwrap(),
-                    ),
-                    generate_column_bool(
-                        1000,
-                        vec![(0, 999)],
-                        schema2.column("f3").cloned().unwrap(),
-                    ),
-                    generate_column_f64(
-                        1000,
-                        vec![(0, 999)],
-                        schema2.column("f4").cloned().unwrap(),
-                    ),
+                    generate_column_ts(5001, 6000),
+                    generate_column_u64(1000, vec![]),
+                    generate_column_i64(1000, vec![(0, 999)]),
+                    generate_column_bool(1000, vec![(0, 999)]),
+                    generate_column_f64(1000, vec![(0, 999)]),
                 ],
             )
             .unwrap(),
             RecordBatch::try_new(
                 schema2.clone().to_record_data_schema(),
                 vec![
-                    generate_column_ts(6001, 6500, schema2.time_column()),
-                    generate_column_u64(500, vec![], schema2.column("f1").cloned().unwrap()),
-                    generate_column_i64(
-                        500,
-                        vec![(0, 499)],
-                        schema2.column("f2").cloned().unwrap(),
-                    ),
-                    generate_column_bool(
-                        500,
-                        vec![(0, 499)],
-                        schema2.column("f3").cloned().unwrap(),
-                    ),
-                    generate_column_f64(
-                        500,
-                        vec![(0, 499)],
-                        schema2.column("f4").cloned().unwrap(),
-                    ),
+                    generate_column_ts(6001, 6500),
+                    generate_column_u64(500, vec![]),
+                    generate_column_i64(500, vec![(0, 499)]),
+                    generate_column_bool(500, vec![(0, 499)]),
+                    generate_column_f64(500, vec![(0, 499)]),
                 ],
             )
             .unwrap(),
@@ -2960,46 +2362,22 @@ pub mod test {
         let data1 = RecordBatch::try_new(
             schema.clone().to_record_data_schema(),
             vec![
-                i64_column(vec![1, 2, 3, 4], schema.time_column()),
-                i64_some_column(
-                    vec![Some(1), Some(2), Some(3), Some(5)],
-                    schema.column("f1").cloned().unwrap(),
-                ),
-                i64_some_column(
-                    vec![Some(1), Some(2), Some(3), Some(5)],
-                    schema.column("f2").cloned().unwrap(),
-                ),
-                i64_some_column(
-                    vec![Some(1), Some(2), Some(3), Some(5)],
-                    schema.column("f3").cloned().unwrap(),
-                ),
-                i64_some_column(
-                    vec![Some(1), Some(2), Some(3), Some(5)],
-                    schema.column("f4").cloned().unwrap(),
-                ),
+                timestamp_column(vec![1, 2, 3, 4]),
+                i64_some_column(vec![Some(1), Some(2), Some(3), Some(5)]),
+                i64_some_column(vec![Some(1), Some(2), Some(3), Some(5)]),
+                i64_some_column(vec![Some(1), Some(2), Some(3), Some(5)]),
+                i64_some_column(vec![Some(1), Some(2), Some(3), Some(5)]),
             ],
         )
         .unwrap();
         let data2 = RecordBatch::try_new(
             schema.clone().to_record_data_schema(),
             vec![
-                i64_column(vec![4, 5, 6, 7], schema.time_column()),
-                i64_some_column(
-                    vec![Some(4), Some(5), Some(6), None],
-                    schema.column("f1").cloned().unwrap(),
-                ),
-                i64_some_column(
-                    vec![Some(4), Some(5), Some(6), None],
-                    schema.column("f2").cloned().unwrap(),
-                ),
-                i64_some_column(
-                    vec![Some(4), Some(5), Some(6), Some(8)],
-                    schema.column("f3").cloned().unwrap(),
-                ),
-                i64_some_column(
-                    vec![None, None, None, None],
-                    schema.column("f4").cloned().unwrap(),
-                ),
+                timestamp_column(vec![4, 5, 6, 7]),
+                i64_some_column(vec![Some(4), Some(5), Some(6), None]),
+                i64_some_column(vec![Some(4), Some(5), Some(6), None]),
+                i64_some_column(vec![Some(4), Some(5), Some(6), Some(8)]),
+                i64_some_column(vec![None, None, None, None]),
             ],
         )
         .unwrap();
@@ -3007,23 +2385,11 @@ pub mod test {
         let expected_data1 = RecordBatch::try_new(
             schema.clone().to_record_data_schema(),
             vec![
-                i64_column(vec![1, 2, 3, 4], schema.time_column()),
-                i64_some_column(
-                    vec![Some(1), Some(2), Some(3), Some(5)],
-                    schema.column("f1").cloned().unwrap(),
-                ),
-                i64_some_column(
-                    vec![Some(1), Some(2), Some(3), Some(5)],
-                    schema.column("f2").cloned().unwrap(),
-                ),
-                i64_some_column(
-                    vec![Some(1), Some(2), Some(3), Some(5)],
-                    schema.column("f3").cloned().unwrap(),
-                ),
-                i64_some_column(
-                    vec![Some(1), Some(2), Some(3), Some(5)],
-                    schema.column("f4").cloned().unwrap(),
-                ),
+                timestamp_column(vec![1, 2, 3, 4]),
+                i64_some_column(vec![Some(1), Some(2), Some(3), Some(5)]),
+                i64_some_column(vec![Some(1), Some(2), Some(3), Some(5)]),
+                i64_some_column(vec![Some(1), Some(2), Some(3), Some(5)]),
+                i64_some_column(vec![Some(1), Some(2), Some(3), Some(5)]),
             ],
         )
         .unwrap();
@@ -3031,23 +2397,11 @@ pub mod test {
         let expected_data2 = RecordBatch::try_new(
             schema.clone().to_record_data_schema(),
             vec![
-                i64_column(vec![4, 5, 6, 7], schema.time_column()),
-                i64_some_column(
-                    vec![Some(4), Some(5), Some(6), None],
-                    schema.column("f1").cloned().unwrap(),
-                ),
-                i64_some_column(
-                    vec![Some(4), Some(5), Some(6), None],
-                    schema.column("f2").cloned().unwrap(),
-                ),
-                i64_some_column(
-                    vec![Some(4), Some(5), Some(6), Some(8)],
-                    schema.column("f3").cloned().unwrap(),
-                ),
-                i64_some_column(
-                    vec![None, None, None, None],
-                    schema.column("f4").cloned().unwrap(),
-                ),
+                timestamp_column(vec![4, 5, 6, 7]),
+                i64_some_column(vec![Some(4), Some(5), Some(6), None]),
+                i64_some_column(vec![Some(4), Some(5), Some(6), None]),
+                i64_some_column(vec![Some(4), Some(5), Some(6), Some(8)]),
+                i64_some_column(vec![None, None, None, None]),
             ],
         )
         .unwrap();
@@ -3088,23 +2442,11 @@ pub mod test {
         let data3 = RecordBatch::try_new(
             schema.clone().to_record_data_schema(),
             vec![
-                i64_column(vec![1, 2, 3, 4], schema.time_column()),
-                i64_some_column(
-                    vec![Some(1), None, None, Some(0)],
-                    schema.column("f1").cloned().unwrap(),
-                ),
-                i64_some_column(
-                    vec![Some(1), None, None, Some(6)],
-                    schema.column("f2").cloned().unwrap(),
-                ),
-                i64_some_column(
-                    vec![Some(1), None, None, Some(6)],
-                    schema.column("f3").cloned().unwrap(),
-                ),
-                i64_some_column(
-                    vec![Some(1), None, None, Some(6)],
-                    schema.column("f4").cloned().unwrap(),
-                ),
+                timestamp_column(vec![1, 2, 3, 4]),
+                i64_some_column(vec![Some(1), None, None, Some(0)]),
+                i64_some_column(vec![Some(1), None, None, Some(6)]),
+                i64_some_column(vec![Some(1), None, None, Some(6)]),
+                i64_some_column(vec![Some(1), None, None, Some(6)]),
             ],
         )
         .unwrap();
@@ -3161,23 +2503,11 @@ pub mod test {
         let data4 = RecordBatch::try_new(
             schema.clone().to_record_data_schema(),
             vec![
-                i64_column(vec![1, 2, 3, 4], schema.time_column()),
-                i64_some_column(
-                    vec![Some(1), Some(2), Some(3), Some(0)],
-                    schema.column("f1").cloned().unwrap(),
-                ),
-                i64_some_column(
-                    vec![Some(1), Some(2), Some(3), Some(6)],
-                    schema.column("f2").cloned().unwrap(),
-                ),
-                i64_some_column(
-                    vec![Some(1), Some(2), Some(3), Some(6)],
-                    schema.column("f3").cloned().unwrap(),
-                ),
-                i64_some_column(
-                    vec![Some(1), Some(2), Some(3), Some(6)],
-                    schema.column("f4").cloned().unwrap(),
-                ),
+                timestamp_column(vec![1, 2, 3, 4]),
+                i64_some_column(vec![Some(1), Some(2), Some(3), Some(0)]),
+                i64_some_column(vec![Some(1), Some(2), Some(3), Some(6)]),
+                i64_some_column(vec![Some(1), Some(2), Some(3), Some(6)]),
+                i64_some_column(vec![Some(1), Some(2), Some(3), Some(6)]),
             ],
         )
         .unwrap();
