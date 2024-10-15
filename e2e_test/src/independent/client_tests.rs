@@ -603,16 +603,18 @@ fn explain_time_count_tests() {
 
         let mut expected_resp_lines = [
             "plan_type,plan",
-            "logical_plan,\"Projection: COUNT(UInt8(1))",
-            "  Aggregate: groupBy=[[Boolean(NULL)]], aggr=[[COUNT(UInt8(1))]]",
-            "    TableScan: m0 projection=[time]\"",
-            "physical_plan,\"ProjectionExec: expr=[COUNT(UInt8(1))@1 as COUNT(UInt8(1))]",
-            "  AggregateExec: mode=FinalPartitioned, gby=[Boolean(NULL)@0 as Boolean(NULL)], aggr=[COUNT(UInt8(1))]",
-            "    CoalesceBatchesExec: target_batch_size=8192",
-            "      RepartitionExec: partitioning=Hash([Boolean(NULL)@0], 8), input_partitions=8",
-            "        AggregateExec: mode=Partial, gby=[NULL as Boolean(NULL)], aggr=[COUNT(UInt8(1))]",
-            "          RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1",
-            "            TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=None, split_num=1, projection=[time]",
+            "logical_plan,\"Aggregate: groupBy=[[]], aggr=[[COUNT(UInt8(1))]]",
+            "  Aggregate: groupBy=[[m0.time, m0.t0, m0.f0]], aggr=[[]]",
+            "    TableScan: m0 projection=[time, t0, f0]\"",
+            "physical_plan,\"AggregateExec: mode=Final, gby=[], aggr=[COUNT(UInt8(1))]",
+            "  CoalescePartitionsExec",
+            "    AggregateExec: mode=Partial, gby=[], aggr=[COUNT(UInt8(1))]",
+            "      AggregateExec: mode=FinalPartitioned, gby=[time@0 as time, t0@1 as t0, f0@2 as f0], aggr=[]",
+            "        CoalesceBatchesExec: target_batch_size=8192",
+            "          RepartitionExec: partitioning=Hash([time@0, t0@1, f0@2], 8), input_partitions=8",
+            "            AggregateExec: mode=Partial, gby=[time@0 as time, t0@1 as t0, f0@2 as f0], aggr=[]",
+            "              RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1",
+            "                TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=None, split_num=1, projection=[time,t0,f0]",
             "\"",
             "",
         ];
@@ -620,32 +622,32 @@ fn explain_time_count_tests() {
         let resp_lines = resp_string.split('\n').collect::<Vec<&str>>();
         assert_eq!(resp_lines.len(), expected_resp_lines.len());
 
-        let expected_resp_lines_7 = replace_src_by_dst(
-            expected_resp_lines[7].to_string(),
-            resp_lines[7],
-            vec![
-                (Some("Hash([Boolean(NULL)@0], "), Some(")")),
-                (Some("input_partitions="), None),
-            ],
-        );
-        expected_resp_lines[7] = &expected_resp_lines_7;
-
         let expected_resp_lines_9 = replace_src_by_dst(
             expected_resp_lines[9].to_string(),
             resp_lines[9],
             vec![
-                (Some("RoundRobinBatch("), Some(")")),
+                (Some("Hash([time@0, t0@1, f0@2], "), Some(")")),
                 (Some("input_partitions="), None),
             ],
         );
         expected_resp_lines[9] = &expected_resp_lines_9;
 
-        let expected_resp_lines_10 = replace_src_by_dst(
-            expected_resp_lines[10].to_string(),
-            resp_lines[10],
+        let expected_resp_lines_11 = replace_src_by_dst(
+            expected_resp_lines[11].to_string(),
+            resp_lines[11],
+            vec![
+                (Some("RoundRobinBatch("), Some(")")),
+                (Some("input_partitions="), None),
+            ],
+        );
+        expected_resp_lines[11] = &expected_resp_lines_11;
+
+        let expected_resp_lines_12 = replace_src_by_dst(
+            expected_resp_lines[12].to_string(),
+            resp_lines[12],
             vec![(Some("split_num="), Some(","))],
         );
-        expected_resp_lines[10] = &expected_resp_lines_10;
+        expected_resp_lines[12] = &expected_resp_lines_12;
 
         let expected_resp_string = expected_resp_lines.join("\n");
         assert_eq!(resp_string, expected_resp_string);
