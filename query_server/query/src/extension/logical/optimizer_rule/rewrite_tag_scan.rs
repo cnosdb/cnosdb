@@ -68,7 +68,6 @@ impl OptimizerRule for RewriteTagScan {
                                 fetch: *fetch,
                             }),
                         });
-                        // The result of tag scan needs to be deduplicated
                         return Ok(Some(
                             LogicalPlanBuilder::from(tag_plan).distinct()?.build()?,
                         ));
