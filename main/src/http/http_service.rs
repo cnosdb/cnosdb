@@ -24,7 +24,7 @@ use metrics::gather_metrics;
 use metrics::metric_register::MetricsRegister;
 use metrics::prom_reporter::PromReporter;
 use models::auth::privilege::{DatabasePrivilege, Privilege, TenantObjectPrivilege};
-use models::auth::user::User;
+use models::auth::user::{User, ROOT};
 use models::consistency_level::ConsistencyLevel;
 use models::error_code::UnknownCodeWithMessage;
 use models::oid::{Identifier, Oid};
@@ -493,12 +493,12 @@ impl HttpService {
                  coord: CoordinatorRef,
                  write_auth_cache: Arc<AuthCache<String, User>>| async move {
                     let db = query.remove("db").unwrap_or(DEFAULT_DATABASE.to_string());
-                    let header = Header::with(
-                        Some(APPLICATION_JSON.to_string()),
-                        None,
-                        None,
-                        "Basic cm9vdDo=".to_string(),
-                    );
+                    let u = query.remove("u").unwrap_or_else(|| ROOT.to_string());
+                    let p = query.remove("p").unwrap_or_default();
+                    let auth = format!("{}:{}", u, p);
+                    let basic_auth = format!("Basic {}", base64::encode(auth));
+                    let header =
+                        Header::with(Some(APPLICATION_JSON.to_string()), None, None, basic_auth);
                     let param = WriteParam {
                         db: Some(db),
                         precision: None,
