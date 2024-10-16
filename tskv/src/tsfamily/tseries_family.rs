@@ -5,10 +5,12 @@ use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 use memory_pool::MemoryPoolRef;
+use metrics::gauge::U64Gauge;
+use metrics::metric;
 use metrics::metric_register::MetricsRegister;
 use models::meta_data::VnodeStatus;
 use models::predicate::domain::{TimeRange, TimeRanges};
-use models::schema::database_schema::DatabaseConfig;
+use models::schema::database_schema::{split_owner, DatabaseConfig};
 use models::schema::tskv_table_schema::TableColumn;
 use models::{ColumnId, SeriesId, SeriesKey};
 use parking_lot::RwLock;
@@ -22,6 +24,7 @@ use super::cache_group::CacheGroup;
 use super::super_version::SuperVersion;
 use super::tsf_metrics::TsfMetrics;
 use super::version::Version;
+use crate::compaction::metrics::FlushMetrics;
 use crate::context::GlobalContext;
 use crate::error::{CommonSnafu, IndexErrSnafu, TskvResult};
 use crate::index::ts_index::TSIndex;
@@ -74,8 +77,11 @@ impl TsfFactory {
             version.last_seq(),
             &self.memory_pool,
         )));
-        let tsf_metrics =
-            TsfMetrics::new(&self.metrics_register, self.owner.as_str(), tf_id as u64);
+        let tsf_metrics = TsfMetrics::new(
+            self.metrics_register.clone(),
+            self.owner.as_str(),
+            tf_id as u64,
+        );
         let super_version = Arc::new(SuperVersion::new(
             tf_id,
             CacheGroup {
@@ -165,7 +171,7 @@ impl TseriesFamily {
             storage_opt,
             last_modified: Arc::new(tokio::sync::RwLock::new(None)),
             memory_pool,
-            tsf_metrics: TsfMetrics::new(register, owner.as_str(), tf_id as u64),
+            tsf_metrics: TsfMetrics::new(register.clone(), owner.as_str(), tf_id as u64),
             status: VnodeStatus::Running,
         }
     }
@@ -450,6 +456,143 @@ impl TseriesFamily {
             .map(|c| c.read().cache_size())
             .sum::<u64>()
             + self.mut_cache.read().cache_size()
+    }
+
+    pub fn report_flush_metrics(&self, flush_metrics: &FlushMetrics) {
+        let (tenant, db) = split_owner(&self.owner);
+
+        let mut metrics: Vec<Box<dyn metrics::Measure>> = vec![];
+        let register = self.tsf_metrics.metrics_register.clone();
+
+        let metric: metric::Metric<U64Gauge> = metric::Metric::new_with_labels(
+            "flush_use_time",
+            "This flush takes time(ms)",
+            register.labels(),
+            (),
+        );
+        let value = metric.recorder([
+            ("tenant", tenant),
+            ("database", db),
+            ("vnode_id", self.tf_id.to_string().as_str()),
+            ("min_seq", flush_metrics.min_seq.to_string().as_str()),
+            ("max_seq", flush_metrics.max_seq.to_string().as_str()),
+        ]);
+        value.set(flush_metrics.flush_use_time);
+        metrics.push(Box::new(metric));
+
+        let metric: metric::Metric<U64Gauge> = metric::Metric::new_with_labels(
+            "flush_index_time",
+            "This flush sync index takes time(ms)",
+            register.labels(),
+            (),
+        );
+        let value = metric.recorder([
+            ("tenant", tenant),
+            ("database", db),
+            ("vnode_id", self.tf_id.to_string().as_str()),
+            ("min_seq", flush_metrics.min_seq.to_string().as_str()),
+            ("max_seq", flush_metrics.max_seq.to_string().as_str()),
+        ]);
+        value.set(flush_metrics.flush_index_time);
+        metrics.push(Box::new(metric));
+
+        let metric: metric::Metric<U64Gauge> = metric::Metric::new_with_labels(
+            "flush_series_count",
+            "This flush series count",
+            register.labels(),
+            (),
+        );
+        let value = metric.recorder([
+            ("tenant", tenant),
+            ("database", db),
+            ("vnode_id", self.tf_id.to_string().as_str()),
+            ("min_seq", flush_metrics.min_seq.to_string().as_str()),
+            ("max_seq", flush_metrics.max_seq.to_string().as_str()),
+        ]);
+        value.set(flush_metrics.flush_series_count);
+        metrics.push(Box::new(metric));
+
+        let metric: metric::Metric<U64Gauge> = metric::Metric::new_with_labels(
+            "flush_convert_to_page_time",
+            "This flush convert page use time(ms)",
+            register.labels(),
+            (),
+        );
+        let value = metric.recorder([
+            ("tenant", tenant),
+            ("database", db),
+            ("vnode_id", self.tf_id.to_string().as_str()),
+            ("min_seq", flush_metrics.min_seq.to_string().as_str()),
+            ("max_seq", flush_metrics.max_seq.to_string().as_str()),
+        ]);
+        value.set(flush_metrics.convert_to_page_time);
+        metrics.push(Box::new(metric));
+
+        let metric: metric::Metric<U64Gauge> = metric::Metric::new_with_labels(
+            "flush_writer_pages_time",
+            "This flush writer pages use time(ms)",
+            register.labels(),
+            (),
+        );
+        let value = metric.recorder([
+            ("tenant", tenant),
+            ("database", db),
+            ("vnode_id", self.tf_id.to_string().as_str()),
+            ("min_seq", flush_metrics.min_seq.to_string().as_str()),
+            ("max_seq", flush_metrics.max_seq.to_string().as_str()),
+        ]);
+        value.set(flush_metrics.writer_pages_time);
+        metrics.push(Box::new(metric));
+
+        let metric: metric::Metric<U64Gauge> = metric::Metric::new_with_labels(
+            "flush_writer_finish_time",
+            "This flush writer finish use time(ms)",
+            register.labels(),
+            (),
+        );
+        let value = metric.recorder([
+            ("tenant", tenant),
+            ("database", db),
+            ("vnode_id", self.tf_id.to_string().as_str()),
+            ("min_seq", flush_metrics.min_seq.to_string().as_str()),
+            ("max_seq", flush_metrics.max_seq.to_string().as_str()),
+        ]);
+        value.set(flush_metrics.writer_finish_time);
+        metrics.push(Box::new(metric));
+
+        let metric: metric::Metric<U64Gauge> = metric::Metric::new_with_labels(
+            "write_tsm_pages_size",
+            "This flush writer tsm file pages size",
+            register.labels(),
+            (),
+        );
+        let value = metric.recorder([
+            ("tenant", tenant),
+            ("database", db),
+            ("vnode_id", self.tf_id.to_string().as_str()),
+            ("min_seq", flush_metrics.min_seq.to_string().as_str()),
+            ("max_seq", flush_metrics.max_seq.to_string().as_str()),
+        ]);
+        value.set(flush_metrics.write_tsm_pages_size);
+        metrics.push(Box::new(metric));
+
+        let metric: metric::Metric<U64Gauge> = metric::Metric::new_with_labels(
+            "write_tsm_file_size",
+            "This flush writer tsm file size",
+            register.labels(),
+            (),
+        );
+        let value = metric.recorder([
+            ("tenant", tenant),
+            ("database", db),
+            ("vnode_id", self.tf_id.to_string().as_str()),
+            ("min_seq", flush_metrics.min_seq.to_string().as_str()),
+            ("max_seq", flush_metrics.max_seq.to_string().as_str()),
+        ]);
+        value.set(flush_metrics.write_tsm_file_size);
+        metrics.push(Box::new(metric));
+
+        register.append_onetime(metrics);
     }
 
     async fn update_vnode_metrics(tsfamily: Weak<TokioRwLock<TseriesFamily>>) {

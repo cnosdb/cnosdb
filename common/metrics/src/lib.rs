@@ -40,6 +40,7 @@
 //! }
 //! ```
 
+pub mod average;
 pub mod count;
 pub mod duration;
 pub mod gauge;

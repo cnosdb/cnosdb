@@ -7,6 +7,7 @@ use parking_lot::RwLock;
 use trace::info;
 use utils::BloomFilter;
 
+use super::metrics::FlushMetrics;
 use crate::compaction::FlushReq;
 use crate::error::TskvResult;
 use crate::file_system::async_filesystem::LocalFileSystem;
@@ -62,6 +63,7 @@ impl FlushTask {
         &mut self,
         max_level_ts: i64,
         high_seq_no: u64,
+        metrics: &mut FlushMetrics,
     ) -> TskvResult<(VersionEdit, HashMap<u64, Arc<BloomFilter>>)> {
         let owner = self.owner.clone();
         let mut version_edit = VersionEdit::new_update_vnode(self.tsf_id, owner, high_seq_no);
@@ -77,7 +79,9 @@ impl FlushTask {
         let mut tsm_writer_is_used = false;
         let mut delta_writer_is_used = false;
         let series_iter = MemCacheSeriesScanIterator::new(self.memcache.clone());
+        metrics.flush_series_count += series_iter.series_count();
         for series in series_iter {
+            let instant = std::time::Instant::now();
             let (series_id, series_key, time_range, convert_result) = {
                 let series = series.read();
                 (
@@ -87,6 +91,9 @@ impl FlushTask {
                     series.convert_to_page(max_level_ts)?,
                 )
             };
+            metrics.convert_to_page_time += instant.elapsed().as_millis() as u64;
+
+            let instant = std::time::Instant::now();
             if let Some((schema, pages, delta_pages)) = convert_result {
                 if !pages.is_empty() {
                     tsm_writer_is_used = true;
@@ -114,8 +121,11 @@ impl FlushTask {
                         .await?;
                 }
             }
+            metrics.writer_pages_time += instant.elapsed().as_millis() as u64;
         }
+        metrics.write_tsm_pages_size += tsm_writer.size() + delta_writer.size();
 
+        let finish_instant = std::time::Instant::now();
         let mut files_meta = HashMap::new();
         let mut max_level_ts = max_level_ts;
         if tsm_writer_is_used {
@@ -163,6 +173,8 @@ impl FlushTask {
             let result = LocalFileSystem::remove_if_exists(path);
             info!("Flush: remove unsed file: {:?}, {:?}", path, result);
         }
+        metrics.writer_finish_time += finish_instant.elapsed().as_millis() as u64;
+        metrics.write_tsm_file_size += tsm_writer.size() + delta_writer.size();
 
         Ok((version_edit, files_meta))
     }
@@ -174,6 +186,9 @@ pub async fn flush_memtable(
 ) -> TskvResult<(VersionEdit, HashMap<u64, Arc<BloomFilter>>)> {
     let high_seq_no = mem.read().seq_no();
     let low_seq_no = mem.read().min_seq_no();
+
+    req.flush_metrics.write().await.min_seq = low_seq_no;
+    req.flush_metrics.write().await.max_seq = high_seq_no;
 
     info!(
         "Flush: running  {} seq: [{}-{}]",
@@ -192,7 +207,10 @@ pub async fn flush_memtable(
     let path_delta = storage_opt.delta_dir(&req.owner, req.tf_id);
     let mut flush_task = FlushTask::new(owner, req.tf_id, mem, path_tsm, path_delta).await?;
 
-    let result = flush_task.run(max_level_ts, high_seq_no).await;
+    let mut metrics = req.flush_metrics.write().await;
+    let result = flush_task
+        .run(max_level_ts, high_seq_no, &mut metrics)
+        .await;
     let (version_edit, files_meta) = match result {
         Ok((ve, files_meta)) => (ve, files_meta),
         Err(err) => {
@@ -228,6 +246,7 @@ pub mod flush_tests {
     use utils::dedup_front_by_key;
 
     use crate::compaction::flush::FlushTask;
+    use crate::compaction::metrics::FlushMetrics;
     use crate::file_system::async_filesystem::LocalFileSystem;
     use crate::file_system::FileSystem;
     use crate::mem_cache::memcache::MemCache;
@@ -422,7 +441,11 @@ pub mod flush_tests {
         .await
         .unwrap();
 
-        let (edit, _) = flush_task.run(version.max_level_ts(), 100).await.unwrap();
+        let mut metrics = FlushMetrics::default();
+        let (edit, _) = flush_task
+            .run(version.max_level_ts(), 100, &mut metrics)
+            .await
+            .unwrap();
 
         let tsm_info = edit.add_files.first().unwrap();
         let delta_info = edit.add_files.get(1).unwrap();
@@ -571,6 +594,7 @@ pub mod flush_tests {
             .write_group(sid, SeriesKey::default(), 1, row_group_1.clone())
             .unwrap();
 
+        let mut metrics = FlushMetrics::default();
         let path_tsm = PathBuf::from("/tmp/test/flush2/tsm1");
         let path_delta = PathBuf::from("/tmp/test/flush2/tsm2");
         let mut flush_task1 = FlushTask::new(
@@ -582,7 +606,10 @@ pub mod flush_tests {
         )
         .await
         .unwrap();
-        let (edit, _) = flush_task1.run(version.max_level_ts(), 100).await.unwrap();
+        let (edit, _) = flush_task1
+            .run(version.max_level_ts(), 100, &mut metrics)
+            .await
+            .unwrap();
         assert_eq!(edit.add_files.len(), 2);
 
         let mut flush_task2 = FlushTask::new(
@@ -594,7 +621,10 @@ pub mod flush_tests {
         )
         .await
         .unwrap();
-        let (edit, _) = flush_task2.run(edit.max_level_ts, 100).await.unwrap();
+        let (edit, _) = flush_task2
+            .run(edit.max_level_ts, 100, &mut metrics)
+            .await
+            .unwrap();
 
         assert_eq!(edit.add_files.len(), 1);
         let tsm_files = LocalFileSystem::list_file_names(&path_tsm);

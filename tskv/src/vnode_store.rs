@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 
+use metrics::average::U64Average;
 use models::meta_data::VnodeId;
 use models::predicate::domain::{ResolvedPredicate, TimeRange, TimeRanges};
 use models::utils::now_timestamp_secs;
@@ -33,6 +34,10 @@ pub struct VnodeStorage {
     ts_family: Arc<RwLock<TseriesFamily>>,
 
     snapshots: Vec<VnodeSnapshot>,
+
+    write_apply_duration: U64Average,
+    write_build_group_duration: U64Average,
+    write_put_points_duration: U64Average,
 }
 
 impl VnodeStorage {
@@ -53,6 +58,9 @@ impl VnodeStorage {
             ts_index,
             ts_family,
             snapshots: vec![],
+            write_apply_duration: U64Average::default(),
+            write_build_group_duration: U64Average::default(),
+            write_put_points_duration: U64Average::default(),
         }
     }
 
@@ -212,6 +220,7 @@ impl VnodeStorage {
             ts_index: self.ts_index.clone(),
             ts_family: self.ts_family.clone(),
             trigger_compact: compact,
+            flush_metrics: Default::default(),
         };
 
         if block {
@@ -233,6 +242,9 @@ impl VnodeStorage {
             last_applied_id,
             flushed_apply_id,
             snapshot_apply_id,
+            write_apply_duration: self.write_apply_duration.average(),
+            write_build_group_duration: self.write_build_group_duration.average(),
+            write_put_points_duration: self.write_put_points_duration.average(),
         }
     }
 
@@ -243,6 +255,7 @@ impl VnodeStorage {
         precision: Precision,
         span_context: Option<&SpanContext>,
     ) -> TskvResult<WritePointsResponse> {
+        let write_start = std::time::Instant::now();
         let span = Span::from_context("tskv engine write cache", span_context);
         let fb_points = flatbuffers::root::<protos::models::Points>(&points)
             .context(crate::error::InvalidFlatbufferSnafu)?;
@@ -271,7 +284,10 @@ impl VnodeStorage {
                     err
                 })?
         };
+        self.write_build_group_duration
+            .add(write_start.elapsed().as_micros() as u64);
 
+        let write_mem_start = std::time::Instant::now();
         let res = {
             let span = Span::enter_with_parent("put points", &span);
             match self
@@ -287,6 +303,10 @@ impl VnodeStorage {
                 }
             }
         };
+        self.write_put_points_duration
+            .add(write_mem_start.elapsed().as_micros() as u64);
+        self.write_apply_duration
+            .add(write_start.elapsed().as_micros() as u64);
 
         // check to flush memecache to tsm files
         let _ = self.flush(false, false, true).await;

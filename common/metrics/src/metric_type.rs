@@ -6,5 +6,6 @@ pub enum MetricType {
     DurationCounter,
     DurationGauge,
     DurationHistogram,
+    U64Average,
     UnTyped,
 }

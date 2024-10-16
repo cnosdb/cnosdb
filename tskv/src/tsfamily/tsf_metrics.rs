@@ -1,24 +1,29 @@
+use std::sync::Arc;
+
 use metrics::gauge::U64Gauge;
 use metrics::metric_register::MetricsRegister;
 use models::schema::database_schema::split_owner;
 
 #[derive(Debug)]
 pub struct TsfMetrics {
-    vnode_disk_storage: U64Gauge,
-    vnode_cache_size: U64Gauge,
+    pub vnode_disk_storage: U64Gauge,
+    pub vnode_cache_size: U64Gauge,
+
+    pub metrics_register: Arc<MetricsRegister>,
 }
 
 impl TsfMetrics {
-    pub fn new(register: &MetricsRegister, owner: &str, vnode_id: u64) -> Self {
+    pub fn new(metrics_register: Arc<MetricsRegister>, owner: &str, vnode_id: u64) -> Self {
         let (tenant, db) = split_owner(owner);
-        let metric = register.metric::<U64Gauge>("vnode_disk_storage", "disk storage of vnode");
+        let metric =
+            metrics_register.metric::<U64Gauge>("vnode_disk_storage", "disk storage of vnode");
         let disk_storage_gauge = metric.recorder([
             ("tenant", tenant),
             ("database", db),
             ("vnode_id", vnode_id.to_string().as_str()),
         ]);
 
-        let metric = register.metric::<U64Gauge>("vnode_cache_size", "cache size of vnode");
+        let metric = metrics_register.metric::<U64Gauge>("vnode_cache_size", "cache size of vnode");
         let cache_gauge = metric.recorder([
             ("tenant", tenant),
             ("database", db),
@@ -26,6 +31,7 @@ impl TsfMetrics {
         ]);
 
         Self {
+            metrics_register,
             vnode_disk_storage: disk_storage_gauge,
             vnode_cache_size: cache_gauge,
         }
