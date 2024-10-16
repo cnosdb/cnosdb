@@ -1,7 +1,11 @@
 use std::convert::TryInto;
 use std::error::Error;
 use std::io::Write;
+use std::sync::Arc;
 
+use arrow::buffer::NullBuffer;
+use arrow_array::builder::StringBuilder;
+use arrow_array::{ArrayRef, StringArray};
 use bzip2::write::{BzDecoder, BzEncoder};
 use bzip2::Compression as CompressionBzip;
 use flate2::write::{GzDecoder, GzEncoder, ZlibDecoder, ZlibEncoder};
@@ -211,10 +215,6 @@ pub fn str_snappy_decode(
     // currently so ignore for now.
     let decoded_bytes = decoder.decompress_vec(&src[HEADER_LEN..])?;
 
-    if dst.capacity() == 0 {
-        dst.reserve_exact(64);
-    }
-
     let num_decoded_bytes = decoded_bytes.len();
     let mut i = 0;
 
@@ -242,6 +242,56 @@ pub fn str_snappy_decode(
     Ok(())
 }
 
+pub fn str_snappy_decode_to_array(
+    src: &[u8],
+    bit_set: &NullBuffer,
+) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
+    if src.is_empty() {
+        let null_value: Vec<Option<String>> = vec![None; bit_set.len()];
+        let array = StringArray::from(null_value);
+        return Ok(Arc::new(array));
+    }
+    let src = &src[1..];
+
+    let mut decoder = snap::raw::Decoder::new();
+    // First byte stores the encoding type, only have snappy format
+    // currently so ignore for now.
+    let decoded_bytes = decoder.decompress_vec(&src[HEADER_LEN..])?;
+
+    let num_decoded_bytes = decoded_bytes.len();
+    let mut i = 0;
+    let mut builder = StringBuilder::new();
+    for is_valid in bit_set.iter() {
+        if !is_valid {
+            builder.append_null();
+            continue;
+        }
+        if i < num_decoded_bytes {
+            let (length, num_bytes_read) =
+                u64::decode_var(&decoded_bytes[i..]).ok_or("invalid encoded string length")?;
+            let length: usize = length.try_into()?;
+
+            let lower = i + num_bytes_read;
+            let upper = lower + length;
+
+            if upper < lower {
+                return Err("length overflow".into());
+            }
+            if upper > num_decoded_bytes {
+                return Err("short buffer".into());
+            }
+
+            let str_slice = &decoded_bytes[lower..upper];
+            builder.append_value(String::from_utf8(str_slice.to_vec()).unwrap());
+
+            // The length of this string plus the length of the variable byte encoded length
+            i += length + num_bytes_read;
+        }
+    }
+    let array = builder.finish();
+    Ok(Arc::new(array))
+}
+
 fn split_stream(
     data: &[u8],
     dst: &mut Vec<MiniVec<u8>>,
@@ -259,6 +309,29 @@ fn split_stream(
     Ok(())
 }
 
+fn split_stream_to_array(
+    data: &[u8],
+    bit_set: &NullBuffer,
+) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
+    let mut i = 0;
+
+    let mut builder = StringBuilder::new();
+    for is_valid in bit_set.iter() {
+        if is_valid {
+            let str_len = decode_be_u64(&data[i..i + 8]);
+            i += 8;
+            let str_len: usize = str_len.try_into()?;
+            let str_slice = &data[i..i + str_len];
+            builder.append_value(String::from_utf8(str_slice.to_vec()).unwrap());
+            i += str_len;
+        } else {
+            builder.append_null();
+        }
+    }
+    let array = builder.finish();
+    Ok(Arc::new(array))
+}
+
 pub fn str_zstd_decode(
     src: &[u8],
     dst: &mut Vec<MiniVec<u8>>,
@@ -266,7 +339,6 @@ pub fn str_zstd_decode(
     if src.is_empty() {
         return Ok(());
     }
-
     let src = &src[1..];
     let mut data = vec![];
 
@@ -274,6 +346,23 @@ pub fn str_zstd_decode(
 
     split_stream(&data, dst)?;
     Ok(())
+}
+
+pub fn str_zstd_decode_to_array(
+    src: &[u8],
+    bit_set: &NullBuffer,
+) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
+    if src.is_empty() {
+        let null_value: Vec<Option<String>> = vec![None; bit_set.len()];
+        let array = StringArray::from(null_value);
+        return Ok(Arc::new(array));
+    }
+    let src = &src[1..];
+    let mut data = vec![];
+
+    zstd::stream::copy_decode(src, &mut data)?;
+    let array = split_stream_to_array(&data, bit_set)?;
+    Ok(array)
 }
 
 pub fn str_bzip_decode(
@@ -295,6 +384,26 @@ pub fn str_bzip_decode(
     Ok(())
 }
 
+pub fn str_bzip_decode_to_array(
+    src: &[u8],
+    bit_set: &NullBuffer,
+) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
+    if src.is_empty() {
+        let null_value: Vec<Option<String>> = vec![None; bit_set.len()];
+        let array = StringArray::from(null_value);
+        return Ok(Arc::new(array));
+    }
+
+    let src = &src[1..];
+
+    let mut decoder = BzDecoder::new(vec![]);
+    decoder.write_all(src).unwrap();
+    let data = decoder.finish()?;
+
+    let array = split_stream_to_array(&data, bit_set)?;
+    Ok(array)
+}
+
 pub fn str_gzip_decode(
     src: &[u8],
     dst: &mut Vec<MiniVec<u8>>,
@@ -312,6 +421,27 @@ pub fn str_gzip_decode(
     split_stream(&data, dst)?;
 
     Ok(())
+}
+
+pub fn str_gzip_decode_to_array(
+    src: &[u8],
+    bit_set: &NullBuffer,
+) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
+    if src.is_empty() {
+        let null_value: Vec<Option<String>> = vec![None; bit_set.len()];
+        let array = StringArray::from(null_value);
+        return Ok(Arc::new(array));
+    }
+
+    let src = &src[1..];
+
+    let mut decoder = GzDecoder::new(vec![]);
+    decoder.write_all(src).unwrap();
+    let data = decoder.finish()?;
+
+    let array = split_stream_to_array(&data, bit_set)?;
+
+    Ok(array)
 }
 
 pub fn str_zlib_decode(
@@ -333,6 +463,27 @@ pub fn str_zlib_decode(
     Ok(())
 }
 
+pub fn str_zlib_decode_to_array(
+    src: &[u8],
+    bit_set: &NullBuffer,
+) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
+    if src.is_empty() {
+        let null_value: Vec<Option<String>> = vec![None; bit_set.len()];
+        let array = StringArray::from(null_value);
+        return Ok(Arc::new(array));
+    }
+    let src = &src[1..];
+
+    let mut decoder = ZlibDecoder::new(vec![]);
+
+    decoder.write_all(src).unwrap();
+    let data = decoder.finish()?;
+
+    let array = split_stream_to_array(&data, bit_set)?;
+
+    Ok(array)
+}
+
 pub fn str_without_compress_decode(
     src: &[u8],
     dst: &mut Vec<MiniVec<u8>>,
@@ -346,8 +497,24 @@ pub fn str_without_compress_decode(
     Ok(())
 }
 
+pub fn str_without_compress_decode_to_array(
+    src: &[u8],
+    bit_set: &NullBuffer,
+) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
+    if src.is_empty() {
+        let null_value: Vec<Option<String>> = vec![None; bit_set.len()];
+        let array = StringArray::from(null_value);
+        return Ok(Arc::new(array));
+    }
+    let src = &src[1..];
+    let array = split_stream_to_array(src, bit_set)?;
+
+    Ok(array)
+}
+
 #[cfg(test)]
 mod tests {
+    use arrow::buffer::BooleanBuffer;
 
     use super::*;
 
@@ -435,6 +602,35 @@ mod tests {
         assert_eq!(dst.to_vec().len(), 0);
         str_without_compress_decode(&src, &mut dst).unwrap();
         assert_eq!(dst.to_vec().len(), 0);
+
+        let null_bitset = NullBuffer::new(BooleanBuffer::from(vec![]));
+        let array_ref =
+            str_snappy_decode_to_array(&src, &null_bitset).expect("failed to encode src");
+        let array = array_ref.as_any().downcast_ref::<StringArray>().unwrap();
+        let empty_vec: Vec<Option<&str>> = vec![];
+        let empty_string_array = StringArray::from(empty_vec);
+        assert_eq!(*array, empty_string_array);
+
+        let array_ref = str_zlib_decode_to_array(&src, &null_bitset).expect("failed to encode src");
+        let array = array_ref.as_any().downcast_ref::<StringArray>().unwrap();
+        assert_eq!(*array, empty_string_array);
+
+        let array_ref = str_gzip_decode_to_array(&src, &null_bitset).expect("failed to encode src");
+        let array = array_ref.as_any().downcast_ref::<StringArray>().unwrap();
+        assert_eq!(*array, empty_string_array);
+
+        let array_ref = str_zstd_decode_to_array(&src, &null_bitset).expect("failed to encode src");
+        let array = array_ref.as_any().downcast_ref::<StringArray>().unwrap();
+        assert_eq!(*array, empty_string_array);
+
+        let array_ref = str_bzip_decode_to_array(&src, &null_bitset).expect("failed to encode src");
+        let array = array_ref.as_any().downcast_ref::<StringArray>().unwrap();
+        assert_eq!(*array, empty_string_array);
+
+        let array_ref =
+            str_without_compress_decode_to_array(&src, &null_bitset).expect("failed to encode src");
+        let array = array_ref.as_any().downcast_ref::<StringArray>().unwrap();
+        assert_eq!(*array, empty_string_array);
     }
 
     #[test]
@@ -449,6 +645,13 @@ mod tests {
             .map(|s| std::str::from_utf8(s).unwrap())
             .collect();
         assert_eq!(dst_as_strings, vec!["v1"]);
+
+        let null_bitset = NullBuffer::new(BooleanBuffer::from(vec![true]));
+        let array_ref =
+            str_snappy_decode_to_array(&src, &null_bitset).expect("failed to encode src");
+        let array = array_ref.as_any().downcast_ref::<StringArray>().unwrap();
+        let expected = StringArray::from(vec!["v1"]);
+        assert_eq!(*array, expected);
     }
 
     #[test]
@@ -468,6 +671,13 @@ mod tests {
             .collect();
         let expected: Vec<_> = (0..10).map(|i| format!("value {}", i)).collect();
         assert_eq!(dst_as_strings, expected);
+
+        let null_bitset = NullBuffer::new(BooleanBuffer::from(vec![true; 10]));
+        let array_ref =
+            str_snappy_decode_to_array(&src, &null_bitset).expect("failed to encode src");
+        let array = array_ref.as_any().downcast_ref::<StringArray>().unwrap();
+        let expected = StringArray::from(expected);
+        assert_eq!(*array, expected);
     }
 
     #[test]
@@ -482,6 +692,13 @@ mod tests {
             .map(|s| std::str::from_utf8(s).unwrap())
             .collect();
         assert_eq!(dst_as_strings, vec!["☃"]);
+
+        let null_bitset = NullBuffer::new(BooleanBuffer::from(vec![true]));
+        let array_ref =
+            str_snappy_decode_to_array(&src, &null_bitset).expect("failed to encode src");
+        let array = array_ref.as_any().downcast_ref::<StringArray>().unwrap();
+        let expected = StringArray::from(vec!["☃"]);
+        assert_eq!(*array, expected);
     }
 
     #[test]
@@ -513,43 +730,67 @@ mod tests {
 
         let mut data = vec![];
         let mut data_exp: Vec<MiniVec<u8>> = vec![];
+        let mut expected_array = StringBuilder::new();
         for i in ALLSTR {
             data.push(i.as_bytes());
             data_exp.push(MiniVec::from(i.as_bytes()));
+            expected_array.append_value(i);
         }
+        let expected = expected_array.finish();
 
         str_snappy_encode(&data, &mut dst).unwrap();
         str_snappy_decode(&dst, &mut got).unwrap();
         assert_eq!(data_exp, got);
+        let null_bitset = NullBuffer::new_valid(data.len());
+        let array_ref =
+            str_snappy_decode_to_array(&dst, &null_bitset).expect("failed to encode src");
+        let array = array_ref.as_any().downcast_ref::<StringArray>().unwrap();
+        assert_eq!(*array, expected);
         dst.clear();
         got.clear();
 
         str_gzip_encode(&data, &mut dst).unwrap();
         str_gzip_decode(&dst, &mut got).unwrap();
         assert_eq!(data_exp, got);
+        let array_ref = str_gzip_decode_to_array(&dst, &null_bitset).expect("failed to encode src");
+        let array = array_ref.as_any().downcast_ref::<StringArray>().unwrap();
+        assert_eq!(*array, expected);
         dst.clear();
         got.clear();
 
         str_zstd_encode(&data, &mut dst).unwrap();
         str_zstd_decode(&dst, &mut got).unwrap();
         assert_eq!(data_exp, got);
+        let array_ref = str_zstd_decode_to_array(&dst, &null_bitset).expect("failed to encode src");
+        let array = array_ref.as_any().downcast_ref::<StringArray>().unwrap();
+        assert_eq!(*array, expected);
         dst.clear();
         got.clear();
 
         str_zlib_encode(&data, &mut dst).unwrap();
         str_zlib_decode(&dst, &mut got).unwrap();
         assert_eq!(data_exp, got);
+        let array_ref = str_zlib_decode_to_array(&dst, &null_bitset).expect("failed to encode src");
+        let array = array_ref.as_any().downcast_ref::<StringArray>().unwrap();
+        assert_eq!(*array, expected);
         dst.clear();
         got.clear();
 
         str_bzip_encode(&data, &mut dst).unwrap();
         str_bzip_decode(&dst, &mut got).unwrap();
         assert_eq!(data_exp, got);
+        let array_ref = str_bzip_decode_to_array(&dst, &null_bitset).expect("failed to encode src");
+        let array = array_ref.as_any().downcast_ref::<StringArray>().unwrap();
+        assert_eq!(*array, expected);
         dst.clear();
         got.clear();
 
         str_without_compress_encode(&data, &mut dst).unwrap();
         str_without_compress_decode(&dst, &mut got).unwrap();
         assert_eq!(data_exp, got);
+        let array_ref =
+            str_without_compress_decode_to_array(&dst, &null_bitset).expect("failed to encode src");
+        let array = array_ref.as_any().downcast_ref::<StringArray>().unwrap();
+        assert_eq!(*array, expected);
     }
 }

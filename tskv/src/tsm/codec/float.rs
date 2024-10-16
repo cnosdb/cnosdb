@@ -1,5 +1,9 @@
 use std::error::Error;
+use std::sync::Arc;
 
+use arrow::buffer::NullBuffer;
+use arrow_array::builder::Float64Builder;
+use arrow_array::{ArrayRef, Float64Array};
 use pco::standalone::{simple_decompress, simpler_compress};
 use pco::DEFAULT_COMPRESSION_LEVEL;
 
@@ -355,44 +359,72 @@ const BIT_MASK: [u64; 64] = [
 /// decode decodes the provided slice of bytes into a vector of f64 values.
 pub fn f64_gorilla_decode(
     src: &[u8],
-    dst: &mut Vec<f64>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+    bit_set: &NullBuffer,
+) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
     if src.is_empty() {
-        return Ok(());
+        let null_value: Vec<Option<f64>> = vec![None; bit_set.len()];
+        let array = Float64Array::from(null_value);
+        return Ok(Arc::new(array));
     }
     let src = &src[1..];
-    decode_with_sentinel(src, dst, SENTINEL)
+    decode_with_sentinel(src, bit_set, SENTINEL)
 }
 
-pub fn f64_pco_decode(src: &[u8], dst: &mut Vec<f64>) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn f64_pco_decode(
+    src: &[u8],
+    bit_set: &NullBuffer,
+) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
     if src.is_empty() {
-        return Ok(());
+        let null_value: Vec<Option<f64>> = vec![None; bit_set.len()];
+        let array = Float64Array::from(null_value);
+        return Ok(Arc::new(array));
     }
 
     let src = &src[1..];
     if src.is_empty() {
-        return Ok(());
+        return Ok(Arc::new(Float64Array::from(vec![] as Vec<f64>)));
     }
 
-    let mut decode: Vec<f64> = simple_decompress(src)?;
-    dst.append(&mut decode);
-    Ok(())
+    let decode: Vec<f64> = simple_decompress(src)?;
+
+    let mut builder = Float64Builder::with_capacity(bit_set.len());
+
+    let mut iter = decode.into_iter();
+
+    for is_valid in bit_set.iter() {
+        if is_valid {
+            builder.append_value(iter.next().unwrap());
+        } else {
+            builder.append_null();
+        }
+    }
+    let array = builder.finish();
+    Ok(Arc::new(array))
 }
 
 pub fn f64_without_compress_decode(
     src: &[u8],
-    dst: &mut Vec<f64>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+    bit_set: &NullBuffer,
+) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
     if src.is_empty() {
-        return Ok(());
+        let null_value: Vec<Option<f64>> = vec![None; bit_set.len()];
+        let array = Float64Array::from(null_value);
+        return Ok(Arc::new(array));
     }
 
+    let mut builder = Float64Builder::with_capacity(bit_set.len());
     let src = &src[1..];
-    let iter = src.chunks(8);
-    for i in iter {
-        dst.push(decode_be_f64(i))
+    let mut iter = src.chunks(8);
+
+    for is_valid in bit_set.iter() {
+        if is_valid {
+            builder.append_value(decode_be_f64(iter.next().unwrap()));
+        } else {
+            builder.append_null();
+        }
     }
-    Ok(())
+    let array = builder.finish();
+    Ok(Arc::new(array))
 }
 
 /// decode decodes a slice of bytes into a vector of floats.
@@ -400,12 +432,15 @@ pub fn f64_without_compress_decode(
 #[allow(clippy::useless_let_if_seq)]
 fn decode_with_sentinel(
     src: &[u8],
-    dst: &mut Vec<f64>,
+    bit_set: &NullBuffer,
     sentinel: u64,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
-    if src.len() < 9 {
-        return Ok(());
+) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
+    if src.is_empty() {
+        return Ok(Arc::new(Float64Array::from(vec![] as Vec<f64>)));
     }
+
+    let mut dst: Vec<f64> = Vec::new();
+    let mut builder = Float64Builder::with_capacity(bit_set.len());
 
     let mut i = 1; // skip first byte as it's the encoding, which is always gorilla
     let mut buf: [u8; 8] = [0; 8];
@@ -569,7 +604,17 @@ fn decode_with_sentinel(
         }
         dst.push(f64::from_bits(val));
     }
-    Ok(())
+
+    let mut iter = dst.into_iter();
+    for is_valid in bit_set.iter() {
+        if is_valid {
+            builder.append_value(iter.next().unwrap());
+        } else {
+            builder.append_null();
+        }
+    }
+    let array = builder.finish();
+    Ok(Arc::new(array))
 }
 
 #[cfg(test)]
@@ -577,6 +622,9 @@ fn decode_with_sentinel(
 #[allow(clippy::excessive_precision)] // TODO: Audit test values for truncation
 mod tests {
     // use test_helpers::approximately_equal;
+
+    use arrow::buffer::NullBuffer;
+    use arrow_array::{Array, Float64Array};
 
     use crate::tsm::codec::float::{
         f64_gorilla_decode, f64_gorilla_encode, f64_pco_decode, f64_pco_encode,
@@ -618,19 +666,14 @@ mod tests {
         // check for error
         f64_gorilla_encode(&src, &mut dst).expect("failed to encode src");
 
-        let mut got = vec![];
-        f64_gorilla_decode(&dst, &mut got).expect("failed to decode");
+        let null_bitset = NullBuffer::new_valid(src.len());
+        let array_ref = f64_gorilla_decode(&dst, &null_bitset).expect("failed to decode");
+        let array = array_ref.as_any().downcast_ref::<Float64Array>().unwrap();
+
+        let expected = Float64Array::from_iter(src.iter().cloned());
 
         // Verify decoded values.
-        assert_eq!(got.len(), src.len());
-
-        for (i, v) in got.iter().enumerate() {
-            if v.is_nan() || v.is_infinite() {
-                assert_eq!(src[i].to_bits(), v.to_bits());
-            } else {
-                // assert!(approximately_equal(src[i], *v));
-            }
-        }
+        assert_eq!(*array, expected);
     }
 
     #[test]
@@ -654,18 +697,13 @@ mod tests {
         let mut dst = vec![];
 
         f64_pco_encode(&src, &mut dst).expect("failed to encode src");
-        let mut got = vec![];
-        f64_pco_decode(&dst, &mut got).expect("failed to decode");
+        let null_bitset = NullBuffer::new_valid(src.len());
+        let array_ref = f64_pco_decode(&dst, &null_bitset).expect("failed to decode");
+        let array = array_ref.as_any().downcast_ref::<Float64Array>().unwrap();
 
-        assert_eq!(got.len(), src.len());
+        let expected = Float64Array::from_iter(src.iter().cloned());
 
-        for (i, v) in got.iter().enumerate() {
-            if v.is_nan() || v.is_infinite() {
-                assert_eq!(src[i].to_bits(), v.to_bits());
-            } else {
-                // assert!(approximately_equal(src[i], *v));
-            }
-        }
+        assert_eq!(*array, expected);
     }
 
     #[test]
@@ -1776,10 +1814,13 @@ mod tests {
 
             f64_gorilla_encode(&src, &mut dst).expect("failed to encode");
 
-            let mut got = vec![];
-            f64_gorilla_decode(&dst, &mut got).expect("failed to decode");
+            let null_bitset = NullBuffer::new_valid(src.len());
+            let array_ref = f64_gorilla_decode(&dst, &null_bitset).expect("failed to decode");
+            let array = array_ref.as_any().downcast_ref::<Float64Array>().unwrap();
             // verify got same values back
-            assert_eq!(got, src, "{}", test.name);
+            let expected = Float64Array::from_iter(src.iter().cloned());
+
+            assert_eq!(*array, expected, "{}", test.name);
         }
 
         for test in tests.iter() {
@@ -1788,10 +1829,13 @@ mod tests {
 
             f64_pco_encode(&src, &mut dst).expect("failed to encode");
 
-            let mut got = vec![];
-            f64_pco_decode(&dst, &mut got).expect("failed to decode");
+            let null_bitset = NullBuffer::new_valid(src.len());
+            let array_ref = f64_pco_decode(&dst, &null_bitset).expect("failed to decode");
+            let array = array_ref.as_any().downcast_ref::<Float64Array>().unwrap();
             // verify got same values back
-            assert_eq!(got, src, "{}", test.name);
+            let expected = Float64Array::from_iter(src.iter().cloned());
+
+            assert_eq!(*array, expected, "{}", test.name);
         }
     }
 }

@@ -88,14 +88,6 @@ impl Page {
         &self.bytes[16 + bitset_len..]
     }
 
-    pub fn to_column(&self) -> TskvResult<MutableColumn> {
-        MutableColumn::data_buf_to_column(
-            self.data_buffer(),
-            self.meta(),
-            &NullBitset::Ref(self.null_bitset()),
-        )
-    }
-
     pub fn to_arrow_array(&self) -> TskvResult<ArrayRef> {
         data_buf_to_arrow_array(self, NullBitset::Ref(self.null_bitset()))
     }

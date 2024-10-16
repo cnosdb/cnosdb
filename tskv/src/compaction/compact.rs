@@ -704,10 +704,10 @@ pub mod test {
     use std::path::{Path, PathBuf};
     use std::sync::Arc;
 
-    use arrow_array::{ArrayRef, RecordBatch};
-    use models::field_value::FieldVal;
+    use arrow_array::builder::{BooleanBuilder, Float64Builder, Int64Builder, UInt64Builder};
+    use arrow_array::{ArrayRef, Int64Array, RecordBatch, TimestampNanosecondArray};
     use models::predicate::domain::TimeRange;
-    use models::schema::tskv_table_schema::{TableColumn, TskvTableSchemaRef};
+    use models::schema::tskv_table_schema::TskvTableSchemaRef;
     use models::{SeriesId, SeriesKey};
     use tokio::sync::RwLock;
 
@@ -716,7 +716,6 @@ pub mod test {
     use crate::kv_option::Options;
     use crate::summary::VersionEdit;
     use crate::tsfamily::column_file::ColumnFile;
-    use crate::tsm::mutable_column::MutableColumn;
     use crate::tsm::reader::TsmReader;
     use crate::tsm::writer::TsmWriter;
     use crate::{file_utils, LevelId};
@@ -783,20 +782,20 @@ pub mod test {
         data
     }
 
-    pub(crate) fn i64_column(data: Vec<i64>, col: TableColumn) -> ArrayRef {
-        let mut col = MutableColumn::empty_with_cap(col, data.len()).unwrap();
-        for datum in data {
-            col.push(Some(FieldVal::Integer(datum))).unwrap()
-        }
-        col.to_arrow_array(None).unwrap()
+    pub(crate) fn timestamp_column(data: Vec<i64>) -> ArrayRef {
+        Arc::new(TimestampNanosecondArray::from(data))
     }
 
-    pub(crate) fn i64_some_column(data: Vec<Option<i64>>, col: TableColumn) -> ArrayRef {
-        let mut col = MutableColumn::empty_with_cap(col, data.len()).unwrap();
+    pub(crate) fn i64_column(data: Vec<i64>) -> ArrayRef {
+        Arc::new(Int64Array::from(data))
+    }
+
+    pub(crate) fn i64_some_column(data: Vec<Option<i64>>) -> ArrayRef {
+        let mut builder = Int64Builder::new();
         for datum in data {
-            col.push(datum.map(FieldVal::Integer)).unwrap()
+            builder.append_option(datum);
         }
-        col.to_arrow_array(None).unwrap()
+        Arc::new(builder.finish())
     }
 
     fn get_result_file_path(
@@ -855,75 +854,55 @@ pub mod test {
         Arc::new(opt)
     }
 
-    pub(crate) fn generate_column_ts(min_ts: i64, max_ts: i64, col: TableColumn) -> ArrayRef {
-        let mut col = MutableColumn::empty_with_cap(col, (max_ts - min_ts + 1) as usize).unwrap();
-        for i in min_ts..max_ts + 1 {
-            col.push(Some(FieldVal::Integer(i))).unwrap();
-        }
-        col.to_arrow_array(None).unwrap()
+    pub(crate) fn generate_column_ts(min_ts: i64, max_ts: i64) -> ArrayRef {
+        Arc::new(TimestampNanosecondArray::from_iter_values(min_ts..=max_ts))
     }
 
-    pub(crate) fn generate_column_i64(
-        len: usize,
-        none_range: Vec<(usize, usize)>,
-        col: TableColumn,
-    ) -> ArrayRef {
-        let mut col = MutableColumn::empty_with_cap(col, len).unwrap();
+    pub(crate) fn generate_column_i64(len: usize, none_range: Vec<(usize, usize)>) -> ArrayRef {
+        let mut builder = Int64Builder::new();
         for i in 0..len {
             if none_range.iter().any(|(min, max)| i >= *min && i <= *max) {
-                col.push(None).unwrap();
+                builder.append_null();
             } else {
-                col.push(Some(FieldVal::Integer(i as i64))).unwrap();
+                builder.append_value(i as i64);
             }
         }
-        col.to_arrow_array(None).unwrap()
+        Arc::new(builder.finish())
     }
 
-    pub(crate) fn generate_column_u64(
-        len: usize,
-        none_range: Vec<(usize, usize)>,
-        col: TableColumn,
-    ) -> ArrayRef {
-        let mut col = MutableColumn::empty_with_cap(col, len).unwrap();
+    pub(crate) fn generate_column_u64(len: usize, none_range: Vec<(usize, usize)>) -> ArrayRef {
+        let mut builder = UInt64Builder::new();
         for i in 0..len {
             if none_range.iter().any(|(min, max)| i >= *min && i <= *max) {
-                col.push(None).unwrap();
+                builder.append_null();
             } else {
-                col.push(Some(FieldVal::Unsigned(i as u64))).unwrap();
+                builder.append_value(i as u64);
             }
         }
-        col.to_arrow_array(None).unwrap()
+        Arc::new(builder.finish())
     }
 
-    pub(crate) fn generate_column_f64(
-        len: usize,
-        none_range: Vec<(usize, usize)>,
-        col: TableColumn,
-    ) -> ArrayRef {
-        let mut col = MutableColumn::empty_with_cap(col, len).unwrap();
+    pub(crate) fn generate_column_f64(len: usize, none_range: Vec<(usize, usize)>) -> ArrayRef {
+        let mut builder = Float64Builder::new();
         for i in 0..len {
             if none_range.iter().any(|(min, max)| i >= *min && i <= *max) {
-                col.push(None).unwrap();
+                builder.append_null();
             } else {
-                col.push(Some(FieldVal::Float(i as f64))).unwrap();
+                builder.append_value(i as f64);
             }
         }
-        col.to_arrow_array(None).unwrap()
+        Arc::new(builder.finish())
     }
 
-    pub(crate) fn generate_column_bool(
-        len: usize,
-        none_range: Vec<(usize, usize)>,
-        col: TableColumn,
-    ) -> ArrayRef {
-        let mut col = MutableColumn::empty_with_cap(col, len).unwrap();
+    pub(crate) fn generate_column_bool(len: usize, none_range: Vec<(usize, usize)>) -> ArrayRef {
+        let mut builder = BooleanBuilder::new();
         for i in 0..len {
             if none_range.iter().any(|(min, max)| i >= *min && i <= *max) {
-                col.push(None).unwrap();
+                builder.append_null();
             } else {
-                col.push(Some(FieldVal::Boolean(true))).unwrap();
+                builder.append_value(true);
             }
         }
-        col.to_arrow_array(None).unwrap()
+        Arc::new(builder.finish())
     }
 }

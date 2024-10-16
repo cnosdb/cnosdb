@@ -467,42 +467,20 @@ mod test {
     use std::sync::Arc;
 
     use arrow::datatypes::TimeUnit;
-    use arrow_array::{ArrayRef, RecordBatch};
+    use arrow_array::{ArrayRef, Int64Array, RecordBatch, TimestampNanosecondArray};
     use models::codec::Encoding;
-    use models::field_value::FieldVal;
     use models::schema::tskv_table_schema::{ColumnType, TableColumn, TskvTableSchema};
     use models::{SeriesKey, ValueType};
 
-    use crate::tsm::mutable_column::MutableColumn;
     use crate::tsm::reader::{decode_pages, TsmReader};
     use crate::tsm::writer::TsmWriter;
 
     fn i64_column(data: Vec<i64>) -> ArrayRef {
-        let mut col = MutableColumn::empty(TableColumn::new(
-            1,
-            "f1".to_string(),
-            ColumnType::Field(ValueType::Integer),
-            Encoding::default(),
-        ))
-        .unwrap();
-        for datum in data {
-            col.push(Some(FieldVal::Integer(datum))).unwrap()
-        }
-        col.to_arrow_array(None).unwrap()
+        Arc::new(Int64Array::from(data))
     }
 
     fn ts_column(data: Vec<i64>) -> ArrayRef {
-        let mut col = MutableColumn::empty(TableColumn::new(
-            0,
-            "time".to_string(),
-            ColumnType::Time(TimeUnit::Nanosecond),
-            Encoding::default(),
-        ))
-        .unwrap();
-        for datum in data {
-            col.push(Some(FieldVal::Integer(datum))).unwrap()
-        }
-        col.to_arrow_array(None).unwrap()
+        Arc::new(TimestampNanosecondArray::from(data))
     }
 
     #[tokio::test]

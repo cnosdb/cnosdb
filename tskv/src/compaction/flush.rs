@@ -161,7 +161,7 @@ pub mod flush_tests {
     use std::path::PathBuf;
     use std::sync::Arc;
 
-    use arrow_array::{ArrayRef, RecordBatch};
+    use arrow_array::{ArrayRef, Float64Array, RecordBatch, TimestampNanosecondArray};
     use arrow_schema::TimeUnit;
     use cache::ShardedAsyncCache;
     use memory_pool::{GreedyMemoryPool, MemoryPool};
@@ -182,37 +182,16 @@ pub mod flush_tests {
     use crate::mem_cache::series_data::RowGroup;
     use crate::tsfamily::level_info::LevelInfo;
     use crate::tsfamily::version::Version;
-    use crate::tsm::mutable_column::MutableColumn;
     use crate::tsm::reader::TsmReader;
     use crate::tsm::writer::TsmWriter;
     use crate::Options;
 
     fn f64_column(data: Vec<f64>) -> ArrayRef {
-        let mut col = MutableColumn::empty(TableColumn::new(
-            4,
-            "f_col_1".to_string(),
-            ColumnType::Field(ValueType::Float),
-            Encoding::default(),
-        ))
-        .unwrap();
-        for datum in data {
-            col.push(Some(FieldVal::Float(datum))).unwrap()
-        }
-        col.to_arrow_array(None).unwrap()
+        Arc::new(Float64Array::from(data))
     }
 
     fn ts_column(data: Vec<i64>) -> ArrayRef {
-        let mut col = MutableColumn::empty(TableColumn::new(
-            1,
-            "time".to_string(),
-            ColumnType::Time(TimeUnit::Nanosecond),
-            Encoding::default(),
-        ))
-        .unwrap();
-        for datum in data {
-            col.push(Some(FieldVal::Integer(datum))).unwrap()
-        }
-        col.to_arrow_array(None).unwrap()
+        Arc::new(TimestampNanosecondArray::from(data))
     }
 
     #[test]
