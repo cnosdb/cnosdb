@@ -3,7 +3,9 @@ use std::fmt::{Debug, Formatter};
 use std::path::Path;
 use std::sync::Arc;
 
-use arrow_array::{ArrayRef, RecordBatch};
+use arrow::buffer::{BooleanBuffer, Buffer};
+use arrow::compute::filter_record_batch;
+use arrow_array::{ArrayRef, BooleanArray, RecordBatch};
 use arrow_schema::{Field, Schema};
 use bytes::Bytes;
 use models::column_data::PrimaryColumnData;
@@ -464,6 +466,7 @@ pub fn decode_pages(
             .map(|page| Field::from(&page.meta.column))
             .collect::<Vec<_>>();
         let schema = Arc::new(Schema::new_with_metadata(fields, table_schema.meta()));
+        let mut time_have_null = None;
         for page in pages {
             let null_bits =
                 if tomb.overlaps_column_time_range(series_id, page.meta.column.id, &time_range) {
@@ -474,14 +477,27 @@ pub fn decode_pages(
                         &time_range,
                         &page,
                     )?;
-                    NullBitset::Own(null_bitset)
+                    if page.meta.column.column_type.is_time() && !null_bitset.is_all_set() {
+                        time_have_null = Some(null_bitset.clone());
+                        NullBitset::Ref(page.null_bitset())
+                    } else {
+                        NullBitset::Own(null_bitset)
+                    }
                 } else {
                     NullBitset::Ref(page.null_bitset())
                 };
             let array = data_buf_to_arrow_array(&page, null_bits)?;
             target_arrays.push(array);
         }
-        let record_batch = RecordBatch::try_new(schema, target_arrays).context(ArrowSnafu)?;
+        let mut record_batch = RecordBatch::try_new(schema, target_arrays).context(ArrowSnafu)?;
+        if let Some(time_column_have_null) = time_have_null {
+            let len = time_column_have_null.len();
+            let buffer = Buffer::from_vec(time_column_have_null.into_bytes());
+            let boolean_buffer = BooleanBuffer::new(buffer, 0, len);
+            let boolean_array = BooleanArray::new(boolean_buffer, None);
+            record_batch =
+                filter_record_batch(&record_batch, &boolean_array).context(ArrowSnafu)?;
+        }
         Ok(record_batch)
     } else {
         let fields = pages
@@ -517,16 +533,17 @@ pub async fn page_to_arrow_array_with_tomb(
     time_range: TimeRange,
 ) -> TskvResult<ArrayRef> {
     let tombstone = reader.tombstone();
-    let null_bitset =
-        if tombstone.overlaps_column_time_range(series_id, page.meta.column.id, &time_range) {
-            let time_page = reader.read_page(&time_page_meta).await?;
-            let column = time_page.to_column()?;
-            let null_bitset =
-                update_nullbits_by_tombstone(&column, &tombstone, series_id, &time_range, &page)?;
-            NullBitset::Own(null_bitset)
-        } else {
-            NullBitset::Ref(page.null_bitset())
-        };
+    let null_bitset = if !page.meta.column.column_type.is_time()
+        && tombstone.overlaps_column_time_range(series_id, page.meta.column.id, &time_range)
+    {
+        let time_page = reader.read_page(&time_page_meta).await?;
+        let column = time_page.to_column()?;
+        let null_bitset =
+            update_nullbits_by_tombstone(&column, &tombstone, series_id, &time_range, &page)?;
+        NullBitset::Own(null_bitset)
+    } else {
+        NullBitset::Ref(page.null_bitset())
+    };
 
     data_buf_to_arrow_array(&page, null_bitset)
 }
