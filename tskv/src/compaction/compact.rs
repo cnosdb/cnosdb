@@ -602,7 +602,7 @@ pub async fn run_delta_compaction_job(
         version_edit.del_files.push(f.as_ref().into());
     }
     // Level 0 files that partly deleted after compaction.
-    // version_edit.partly_del_files = l0_file_metas_will_partly_delete;
+    version_edit.partly_del_files = l0_file_metas_will_partly_delete;
 
     trace::info!("Compaction({compact_task}): Compact finished, version edits: {version_edit:?}");
     Ok(Some((version_edit, file_metas)))
