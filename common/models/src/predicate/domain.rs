@@ -238,9 +238,19 @@ impl TimeRanges {
         self.max_ts = max(self.max_ts, time_range.max_ts);
         let timestamps = self
             .inner
-            .range(..=time_range.max_ts)
+            .range(
+                ..=(time_range
+                    .max_ts
+                    .checked_add(1)
+                    .unwrap_or(time_range.max_ts)),
+            )
             .rev()
-            .take_while(|(_, &max)| max >= time_range.min_ts)
+            .take_while(|(_, &max)| {
+                max >= time_range
+                    .min_ts
+                    .checked_sub(1)
+                    .unwrap_or(time_range.min_ts)
+            })
             .map(|(&min, _)| min)
             .collect::<Vec<_>>();
         let mut new_range = (time_range.min_ts, time_range.max_ts);
@@ -2065,6 +2075,19 @@ mod tests {
         let exclude = tr.exclude(&TimeRange::new(3, 4));
         assert_eq!(exclude.0.unwrap(), TimeRange::new(1, 2));
         assert_eq!(exclude.1.unwrap(), TimeRange::new(5, 5));
+    }
+
+    #[test]
+    fn test_time_ranges_add_time_range() {
+        let trs = vec![
+            TimeRange::new(1, 2),
+            TimeRange::new(3, 4),
+            TimeRange::new(5, 6),
+        ];
+        let expect_trs = vec![TimeRange::new(1, 6)];
+        let trs = TimeRanges::new(trs);
+        let expect_trs = TimeRanges::new(expect_trs);
+        assert_eq!(trs, expect_trs);
     }
 
     #[test]
