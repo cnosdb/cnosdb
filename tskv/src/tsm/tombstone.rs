@@ -34,7 +34,7 @@ use std::sync::Arc;
 
 use models::predicate::domain::{TimeRange, TimeRanges};
 use models::{ColumnId, SeriesId};
-use parking_lot::Mutex;
+use parking_lot::RwLock;
 use tokio::sync::Mutex as AsyncMutex;
 use trace::{debug, error};
 use utils::BloomFilter;
@@ -71,7 +71,7 @@ pub struct Tombstone {
 
 pub struct TsmTombstone {
     /// Tombstone caches.
-    cache: Mutex<TsmTombstoneCache>,
+    cache: RwLock<TsmTombstoneCache>,
 
     path: PathBuf,
     /// Async record file writer.
@@ -99,7 +99,7 @@ impl TsmTombstone {
         };
 
         Ok(Self {
-            cache: Mutex::new(cache),
+            cache: RwLock::new(cache),
             path,
             writer: Arc::new(AsyncMutex::new(writer)),
         })
@@ -210,7 +210,7 @@ impl TsmTombstone {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.cache.lock().is_empty()
+        self.cache.read().is_empty()
     }
 
     pub async fn add_range(
@@ -252,7 +252,7 @@ impl TsmTombstone {
         if !write_buf.is_empty() {
             write_tombstone_record(writer, &write_buf).await?;
         }
-        self.cache.lock().insert_batch(tomb_tmp);
+        self.cache.write().insert_batch(tomb_tmp);
         Ok(())
     }
 
@@ -273,7 +273,7 @@ impl TsmTombstone {
         let mut write_buf = Vec::with_capacity(MAX_RECORD_LEN);
         Self::encode_field_time_ranges(&mut write_buf, &TombstoneField::All, &[time_range]);
         write_tombstone_record(writer, &write_buf).await.unwrap();
-        self.cache.lock().insert(TombstoneField::All, time_range);
+        self.cache.write().insert(TombstoneField::All, time_range);
     }
 
     /// Add a time range to `all_excluded` and then compact tombstones,
@@ -284,7 +284,7 @@ impl TsmTombstone {
     ) -> TskvResult<TimeRanges> {
         let tmp_path = tombstone_compact_tmp_path(&self.path)?;
         let mut writer = record_file::Writer::open(&tmp_path, TOMBSTONE_BUFFER_SIZE).await?;
-        let mut cache = self.cache.lock().clone();
+        let mut cache = self.cache.write().clone();
         cache.insert(TombstoneField::All, time_range);
         cache.compact();
         trace::info!(
@@ -317,7 +317,7 @@ impl TsmTombstone {
             file_utils::rename(tmp_path, &self.path).await?;
             let mut reader = record_file::Reader::open(&self.path).await?;
             let cache = TsmTombstoneCache::load_from(&mut reader, false).await?;
-            *self.cache.lock() = cache;
+            *self.cache.write() = cache;
         } else {
             debug!("No compact_tmp tombstone file to convert to real tombstone file");
         }
@@ -338,13 +338,13 @@ impl TsmTombstone {
         time_range: &TimeRange,
     ) -> bool {
         self.cache
-            .lock()
+            .read()
             .overlaps_field_time_range(series_id, column_id, time_range)
     }
 
     pub fn check_all_fields_excluded_time_range(&self, time_range: &TimeRange) -> bool {
         self.cache
-            .lock()
+            .read()
             .check_all_fields_excluded_time_range(time_range)
     }
 
@@ -357,7 +357,7 @@ impl TsmTombstone {
         time_range: &TimeRange,
     ) -> Vec<TimeRange> {
         self.cache
-            .lock()
+            .read()
             .get_overlapped_time_ranges(series_id, column_id, time_range)
     }
 }
