@@ -3,12 +3,9 @@ use std::fmt::{Debug, Formatter};
 use std::path::Path;
 use std::sync::Arc;
 
-use arrow::buffer::{BooleanBuffer, Buffer};
-use arrow::compute::filter_record_batch;
-use arrow_array::{ArrayRef, BooleanArray, RecordBatch};
-use arrow_schema::{Field, Schema};
 use arrow::array::ArrayData;
 use arrow::buffer::{BooleanBuffer, Buffer, NullBuffer};
+use arrow::compute::filter_record_batch;
 use arrow_array::types::{
     TimestampMicrosecondType, TimestampMillisecondType, TimestampNanosecondType,
     TimestampSecondType,
@@ -489,6 +486,7 @@ pub fn decode_pages(
             .map(|page| Field::from(&page.meta.column))
             .collect::<Vec<_>>();
         let schema = Arc::new(Schema::new_with_metadata(fields, table_schema.meta()));
+        let mut time_have_null = None;
         for page in pages {
             let null_bits =
                 if tomb.overlaps_column_time_range(series_id, page.meta.column.id, &time_range) {
