@@ -52,6 +52,7 @@ impl AccessControl for AccessControlImpl {
     }
 }
 
+/// Get user info without checking authorization.
 #[derive(Clone)]
 pub struct AccessControlNoCheck {
     meta_manager: MetaRef,
