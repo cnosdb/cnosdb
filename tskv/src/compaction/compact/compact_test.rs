@@ -120,10 +120,10 @@ async fn test_compaction_fast() {
     let data1 = RecordBatch::try_new(
         schema.to_record_data_schema(),
         vec![
-            i64_column(vec![1, 2, 3], schema.time_column()),
-            i64_column(vec![1, 2, 3], schema.column("f1").cloned().unwrap()),
-            i64_column(vec![1, 2, 3], schema.column("f2").cloned().unwrap()),
-            i64_column(vec![1, 2, 3], schema.column("f3").cloned().unwrap()),
+            timestamp_column(vec![1, 2, 3]),
+            i64_column(vec![1, 2, 3]),
+            i64_column(vec![1, 2, 3]),
+            i64_column(vec![1, 2, 3]),
         ],
     )
     .unwrap();
@@ -131,10 +131,10 @@ async fn test_compaction_fast() {
     let data2 = RecordBatch::try_new(
         schema.to_record_data_schema(),
         vec![
-            i64_column(vec![4, 5, 6], schema.time_column()),
-            i64_column(vec![4, 5, 6], schema.column("f1").cloned().unwrap()),
-            i64_column(vec![4, 5, 6], schema.column("f2").cloned().unwrap()),
-            i64_column(vec![4, 5, 6], schema.column("f3").cloned().unwrap()),
+            timestamp_column(vec![4, 5, 6]),
+            i64_column(vec![4, 5, 6]),
+            i64_column(vec![4, 5, 6]),
+            i64_column(vec![4, 5, 6]),
         ],
     )
     .unwrap();
@@ -142,10 +142,10 @@ async fn test_compaction_fast() {
     let data3 = RecordBatch::try_new(
         schema.to_record_data_schema(),
         vec![
-            i64_column(vec![7, 8, 9], schema.time_column()),
-            i64_column(vec![7, 8, 9], schema.column("f1").cloned().unwrap()),
-            i64_column(vec![7, 8, 9], schema.column("f2").cloned().unwrap()),
-            i64_column(vec![7, 8, 9], schema.column("f3").cloned().unwrap()),
+            timestamp_column(vec![7, 8, 9]),
+            i64_column(vec![7, 8, 9]),
+            i64_column(vec![7, 8, 9]),
+            i64_column(vec![7, 8, 9]),
         ],
     )
     .unwrap();
@@ -153,19 +153,10 @@ async fn test_compaction_fast() {
     let expected_data = RecordBatch::try_new(
         schema.to_record_data_schema(),
         vec![
-            i64_column(vec![1, 2, 3, 4, 5, 6, 7, 8, 9], schema.time_column()),
-            i64_column(
-                vec![1, 2, 3, 4, 5, 6, 7, 8, 9],
-                schema.column("f1").cloned().unwrap(),
-            ),
-            i64_column(
-                vec![1, 2, 3, 4, 5, 6, 7, 8, 9],
-                schema.column("f2").cloned().unwrap(),
-            ),
-            i64_column(
-                vec![1, 2, 3, 4, 5, 6, 7, 8, 9],
-                schema.column("f3").cloned().unwrap(),
-            ),
+            timestamp_column(vec![1, 2, 3, 4, 5, 6, 7, 8, 9]),
+            i64_column(vec![1, 2, 3, 4, 5, 6, 7, 8, 9]),
+            i64_column(vec![1, 2, 3, 4, 5, 6, 7, 8, 9]),
+            i64_column(vec![1, 2, 3, 4, 5, 6, 7, 8, 9]),
         ],
     )
     .unwrap();
@@ -234,10 +225,10 @@ async fn test_compaction_1() {
     let data1 = RecordBatch::try_new(
         schema.to_record_data_schema(),
         vec![
-            i64_column(vec![4, 5, 6], schema.time_column()),
-            i64_column(vec![114, 115, 116], schema.column("f1").cloned().unwrap()),
-            i64_column(vec![124, 125, 126], schema.column("f2").cloned().unwrap()),
-            i64_column(vec![134, 135, 136], schema.column("f3").cloned().unwrap()),
+            timestamp_column(vec![4, 5, 6]),
+            i64_column(vec![114, 115, 116]),
+            i64_column(vec![124, 125, 126]),
+            i64_column(vec![134, 135, 136]),
         ],
     )
     .unwrap();
@@ -245,10 +236,10 @@ async fn test_compaction_1() {
     let data2 = RecordBatch::try_new(
         schema.to_record_data_schema(),
         vec![
-            i64_column(vec![1, 2, 3], schema.time_column()),
-            i64_column(vec![211, 212, 213], schema.column("f1").cloned().unwrap()),
-            i64_column(vec![221, 222, 223], schema.column("f2").cloned().unwrap()),
-            i64_column(vec![231, 232, 233], schema.column("f3").cloned().unwrap()),
+            timestamp_column(vec![1, 2, 3]),
+            i64_column(vec![211, 212, 213]),
+            i64_column(vec![221, 222, 223]),
+            i64_column(vec![231, 232, 233]),
         ],
     )
     .unwrap();
@@ -256,10 +247,10 @@ async fn test_compaction_1() {
     let data3 = RecordBatch::try_new(
         schema.to_record_data_schema(),
         vec![
-            i64_column(vec![7, 8, 9], schema.time_column()),
-            i64_column(vec![317, 318, 319], schema.column("f1").cloned().unwrap()),
-            i64_column(vec![327, 328, 329], schema.column("f2").cloned().unwrap()),
-            i64_column(vec![337, 338, 339], schema.column("f3").cloned().unwrap()),
+            timestamp_column(vec![7, 8, 9]),
+            i64_column(vec![317, 318, 319]),
+            i64_column(vec![327, 328, 329]),
+            i64_column(vec![337, 338, 339]),
         ],
     )
     .unwrap();
@@ -267,19 +258,10 @@ async fn test_compaction_1() {
     let expected_data = RecordBatch::try_new(
         schema.to_record_data_schema(),
         vec![
-            i64_column(vec![1, 2, 3, 4, 5, 6, 7, 8, 9], schema.time_column()),
-            i64_column(
-                vec![211, 212, 213, 114, 115, 116, 317, 318, 319],
-                schema.column("f1").cloned().unwrap(),
-            ),
-            i64_column(
-                vec![221, 222, 223, 124, 125, 126, 327, 328, 329],
-                schema.column("f2").cloned().unwrap(),
-            ),
-            i64_column(
-                vec![231, 232, 233, 134, 135, 136, 337, 338, 339],
-                schema.column("f3").cloned().unwrap(),
-            ),
+            timestamp_column(vec![1, 2, 3, 4, 5, 6, 7, 8, 9]),
+            i64_column(vec![211, 212, 213, 114, 115, 116, 317, 318, 319]),
+            i64_column(vec![221, 222, 223, 124, 125, 126, 327, 328, 329]),
+            i64_column(vec![231, 232, 233, 134, 135, 136, 337, 338, 339]),
         ],
     )
     .unwrap();
@@ -355,23 +337,11 @@ async fn test_compaction_2() {
     let data1 = RecordBatch::try_new(
         schema.to_record_data_schema(),
         vec![
-            i64_column(vec![1, 2, 3, 4], schema.time_column()),
-            i64_some_column(
-                vec![Some(111), Some(112), Some(113), Some(114)],
-                schema.column("f1").cloned().unwrap(),
-            ),
-            i64_some_column(
-                vec![None, None, None, None],
-                schema.column("f2").cloned().unwrap(),
-            ),
-            i64_some_column(
-                vec![Some(131), Some(132), Some(133), Some(134)],
-                schema.column("f3").cloned().unwrap(),
-            ),
-            i64_some_column(
-                vec![Some(141), Some(142), Some(143), None],
-                schema.column("f4").cloned().unwrap(),
-            ),
+            timestamp_column(vec![1, 2, 3, 4]),
+            i64_some_column(vec![Some(111), Some(112), Some(113), Some(114)]),
+            i64_some_column(vec![None, None, None, None]),
+            i64_some_column(vec![Some(131), Some(132), Some(133), Some(134)]),
+            i64_some_column(vec![Some(141), Some(142), Some(143), None]),
         ],
     )
     .unwrap();
@@ -379,23 +349,11 @@ async fn test_compaction_2() {
     let data2 = RecordBatch::try_new(
         schema.to_record_data_schema(),
         vec![
-            i64_column(vec![4, 5, 6, 7], schema.time_column()),
-            i64_some_column(
-                vec![Some(214), Some(215), Some(216), None],
-                schema.column("f1").cloned().unwrap(),
-            ),
-            i64_some_column(
-                vec![Some(224), Some(225), Some(226), None],
-                schema.column("f2").cloned().unwrap(),
-            ),
-            i64_some_column(
-                vec![Some(234), Some(235), Some(236), Some(237)],
-                schema.column("f3").cloned().unwrap(),
-            ),
-            i64_some_column(
-                vec![None, None, None, None],
-                schema.column("f4").cloned().unwrap(),
-            ),
+            timestamp_column(vec![4, 5, 6, 7]),
+            i64_some_column(vec![Some(214), Some(215), Some(216), None]),
+            i64_some_column(vec![Some(224), Some(225), Some(226), None]),
+            i64_some_column(vec![Some(234), Some(235), Some(236), Some(237)]),
+            i64_some_column(vec![None, None, None, None]),
         ],
     )
     .unwrap();
@@ -403,14 +361,11 @@ async fn test_compaction_2() {
     let data3 = RecordBatch::try_new(
         schema.to_record_data_schema(),
         vec![
-            i64_column(vec![7, 8, 9], schema.time_column()),
-            i64_column(vec![317, 318, 319], schema.column("f1").cloned().unwrap()),
-            i64_column(vec![327, 328, 329], schema.column("f2").cloned().unwrap()),
-            i64_column(vec![337, 338, 339], schema.column("f3").cloned().unwrap()),
-            i64_some_column(
-                vec![None, None, None],
-                schema.column("f4").cloned().unwrap(),
-            ),
+            timestamp_column(vec![7, 8, 9]),
+            i64_column(vec![317, 318, 319]),
+            i64_column(vec![327, 328, 329]),
+            i64_column(vec![337, 338, 339]),
+            i64_some_column(vec![None, None, None]),
         ],
     )
     .unwrap();
@@ -418,43 +373,31 @@ async fn test_compaction_2() {
     let expected_data = RecordBatch::try_new(
         schema.to_record_data_schema(),
         vec![
-            i64_column(vec![1, 2, 3, 4, 5, 6, 7, 8, 9], schema.time_column()),
-            i64_column(
-                vec![111, 112, 113, 214, 215, 216, 317, 318, 319],
-                schema.column("f1").cloned().unwrap(),
-            ),
-            i64_some_column(
-                vec![
-                    None,
-                    None,
-                    None,
-                    Some(224),
-                    Some(225),
-                    Some(226),
-                    Some(327),
-                    Some(328),
-                    Some(329),
-                ],
-                schema.column("f2").cloned().unwrap(),
-            ),
-            i64_column(
-                vec![131, 132, 133, 234, 235, 236, 337, 338, 339],
-                schema.column("f3").cloned().unwrap(),
-            ),
-            i64_some_column(
-                vec![
-                    Some(141),
-                    Some(142),
-                    Some(143),
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                ],
-                schema.column("f4").cloned().unwrap(),
-            ),
+            timestamp_column(vec![1, 2, 3, 4, 5, 6, 7, 8, 9]),
+            i64_column(vec![111, 112, 113, 214, 215, 216, 317, 318, 319]),
+            i64_some_column(vec![
+                None,
+                None,
+                None,
+                Some(224),
+                Some(225),
+                Some(226),
+                Some(327),
+                Some(328),
+                Some(329),
+            ]),
+            i64_column(vec![131, 132, 133, 234, 235, 236, 337, 338, 339]),
+            i64_some_column(vec![
+                Some(141),
+                Some(142),
+                Some(143),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            ]),
         ],
     )
     .unwrap();
@@ -511,17 +454,14 @@ async fn test_compaction_3() {
     let schema = Arc::new(schema);
     let data1 = RecordBatch::try_new(
         schema.to_record_data_schema(),
-        vec![
-            i64_column(vec![1], schema.time_column()),
-            i64_column(vec![111], schema.column("f1").cloned().unwrap()),
-        ],
+        vec![timestamp_column(vec![1]), i64_column(vec![111])],
     )
     .unwrap();
     let data2 = RecordBatch::try_new(
         schema.to_record_data_schema(),
         vec![
-            i64_column(vec![2, 3, 4], schema.time_column()),
-            i64_column(vec![212, 213, 214], schema.column("f1").cloned().unwrap()),
+            timestamp_column(vec![2, 3, 4]),
+            i64_column(vec![212, 213, 214]),
         ],
     )
     .unwrap();
@@ -529,38 +469,32 @@ async fn test_compaction_3() {
     let data3 = RecordBatch::try_new(
         schema.to_record_data_schema(),
         vec![
-            i64_column(vec![4, 5, 6], schema.time_column()),
-            i64_column(vec![314, 315, 316], schema.column("f1").cloned().unwrap()),
+            timestamp_column(vec![4, 5, 6]),
+            i64_column(vec![314, 315, 316]),
         ],
     )
     .unwrap();
 
     let data4 = RecordBatch::try_new(
         schema.to_record_data_schema(),
-        vec![
-            i64_column(vec![8, 9], schema.time_column()),
-            i64_column(vec![418, 419], schema.column("f1").cloned().unwrap()),
-        ],
+        vec![timestamp_column(vec![8, 9]), i64_column(vec![418, 419])],
     )
     .unwrap();
 
     let expected_data = RecordBatch::try_new(
         schema.to_record_data_schema(),
         vec![
-            i64_column(vec![1, 2, 3, 4, 5, 6, 8, 9], schema.time_column()),
-            i64_some_column(
-                vec![
-                    Some(111),
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    Some(418),
-                    Some(419),
-                ],
-                schema.column("f1").cloned().unwrap(),
-            ),
+            timestamp_column(vec![1, 2, 3, 4, 5, 6, 8, 9]),
+            i64_some_column(vec![
+                Some(111),
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(418),
+                Some(419),
+            ]),
         ],
     )
     .unwrap();
@@ -654,22 +588,10 @@ async fn test_big_compaction_1() {
                     RecordBatch::try_new(
                         schema1.to_record_data_schema(),
                         vec![
-                            generate_column_ts(1, 1000, schema1.time_column()),
-                            generate_column_u64(
-                                1000,
-                                vec![],
-                                schema1.column("f1").cloned().unwrap(),
-                            ),
-                            generate_column_i64(
-                                1000,
-                                vec![],
-                                schema1.column("f2").cloned().unwrap(),
-                            ),
-                            generate_column_bool(
-                                1000,
-                                vec![],
-                                schema1.column("f3").cloned().unwrap(),
-                            ),
+                            generate_column_ts(1, 1000),
+                            generate_column_u64(1000, vec![]),
+                            generate_column_i64(1000, vec![]),
+                            generate_column_bool(1000, vec![]),
                         ],
                     )
                     .unwrap(),
@@ -679,22 +601,10 @@ async fn test_big_compaction_1() {
                     RecordBatch::try_new(
                         schema1.clone().to_record_data_schema(),
                         vec![
-                            generate_column_ts(1001, 2000, schema1.time_column()),
-                            generate_column_u64(
-                                1000,
-                                vec![],
-                                schema1.column("f1").cloned().unwrap(),
-                            ),
-                            generate_column_i64(
-                                1000,
-                                vec![(500, 999)],
-                                schema1.column("f2").cloned().unwrap(),
-                            ),
-                            generate_column_bool(
-                                1000,
-                                vec![(500, 999)],
-                                schema1.column("f3").cloned().unwrap(),
-                            ),
+                            generate_column_ts(1001, 2000),
+                            generate_column_u64(1000, vec![]),
+                            generate_column_i64(1000, vec![(500, 999)]),
+                            generate_column_bool(1000, vec![(500, 999)]),
                         ],
                     )
                     .unwrap(),
@@ -704,22 +614,10 @@ async fn test_big_compaction_1() {
                     RecordBatch::try_new(
                         schema1.clone().to_record_data_schema(),
                         vec![
-                            generate_column_ts(2001, 2500, schema1.time_column()),
-                            generate_column_u64(
-                                500,
-                                vec![],
-                                schema1.column("f1").cloned().unwrap(),
-                            ),
-                            generate_column_i64(
-                                500,
-                                vec![(0, 499)],
-                                schema1.column("f2").cloned().unwrap(),
-                            ),
-                            generate_column_bool(
-                                500,
-                                vec![(0, 499)],
-                                schema1.column("f3").cloned().unwrap(),
-                            ),
+                            generate_column_ts(2001, 2500),
+                            generate_column_u64(500, vec![]),
+                            generate_column_i64(500, vec![(0, 499)]),
+                            generate_column_bool(500, vec![(0, 499)]),
                         ],
                     )
                     .unwrap(),
@@ -734,27 +632,11 @@ async fn test_big_compaction_1() {
                     RecordBatch::try_new(
                         schema2.clone().to_record_data_schema(),
                         vec![
-                            generate_column_ts(1, 1000, schema2.time_column()),
-                            generate_column_u64(
-                                1000,
-                                vec![(0, 999)],
-                                schema2.column("f1").cloned().unwrap(),
-                            ),
-                            generate_column_i64(
-                                1000,
-                                vec![(0, 999)],
-                                schema2.column("f2").cloned().unwrap(),
-                            ),
-                            generate_column_bool(
-                                1000,
-                                vec![(0, 999)],
-                                schema2.column("f3").cloned().unwrap(),
-                            ),
-                            generate_column_f64(
-                                1000,
-                                vec![],
-                                schema2.column("f4").cloned().unwrap(),
-                            ),
+                            generate_column_ts(1, 1000),
+                            generate_column_u64(1000, vec![(0, 999)]),
+                            generate_column_i64(1000, vec![(0, 999)]),
+                            generate_column_bool(1000, vec![(0, 999)]),
+                            generate_column_f64(1000, vec![]),
                         ],
                     )
                     .unwrap(),
@@ -764,27 +646,11 @@ async fn test_big_compaction_1() {
                     RecordBatch::try_new(
                         schema2.clone().to_record_data_schema(),
                         vec![
-                            generate_column_ts(1001, 2000, schema2.time_column()),
-                            generate_column_u64(
-                                1000,
-                                vec![(0, 999)],
-                                schema2.column("f1").cloned().unwrap(),
-                            ),
-                            generate_column_i64(
-                                1000,
-                                vec![],
-                                schema2.column("f2").cloned().unwrap(),
-                            ),
-                            generate_column_bool(
-                                1000,
-                                vec![],
-                                schema2.column("f3").cloned().unwrap(),
-                            ),
-                            generate_column_f64(
-                                1000,
-                                vec![(500, 999)],
-                                schema2.column("f4").cloned().unwrap(),
-                            ),
+                            generate_column_ts(1001, 2000),
+                            generate_column_u64(1000, vec![(0, 999)]),
+                            generate_column_i64(1000, vec![]),
+                            generate_column_bool(1000, vec![]),
+                            generate_column_f64(1000, vec![(500, 999)]),
                         ],
                     )
                     .unwrap(),
@@ -794,27 +660,11 @@ async fn test_big_compaction_1() {
                     RecordBatch::try_new(
                         schema2.clone().to_record_data_schema(),
                         vec![
-                            generate_column_ts(2001, 3000, schema2.time_column()),
-                            generate_column_u64(
-                                1000,
-                                vec![],
-                                schema2.column("f1").cloned().unwrap(),
-                            ),
-                            generate_column_i64(
-                                1000,
-                                vec![],
-                                schema2.column("f2").cloned().unwrap(),
-                            ),
-                            generate_column_bool(
-                                1000,
-                                vec![(500, 999)],
-                                schema2.column("f3").cloned().unwrap(),
-                            ),
-                            generate_column_f64(
-                                1000,
-                                vec![(0, 999)],
-                                schema2.column("f4").cloned().unwrap(),
-                            ),
+                            generate_column_ts(2001, 3000),
+                            generate_column_u64(1000, vec![]),
+                            generate_column_i64(1000, vec![]),
+                            generate_column_bool(1000, vec![(500, 999)]),
+                            generate_column_f64(1000, vec![(0, 999)]),
                         ],
                     )
                     .unwrap(),
@@ -824,27 +674,11 @@ async fn test_big_compaction_1() {
                     RecordBatch::try_new(
                         schema2.clone().to_record_data_schema(),
                         vec![
-                            generate_column_ts(3001, 4000, schema2.time_column()),
-                            generate_column_u64(
-                                1000,
-                                vec![],
-                                schema2.column("f1").cloned().unwrap(),
-                            ),
-                            generate_column_i64(
-                                1000,
-                                vec![(0, 999)],
-                                schema2.column("f2").cloned().unwrap(),
-                            ),
-                            generate_column_bool(
-                                1000,
-                                vec![(0, 999)],
-                                schema2.column("f3").cloned().unwrap(),
-                            ),
-                            generate_column_f64(
-                                1000,
-                                vec![(0, 999)],
-                                schema2.column("f4").cloned().unwrap(),
-                            ),
+                            generate_column_ts(3001, 4000),
+                            generate_column_u64(1000, vec![]),
+                            generate_column_i64(1000, vec![(0, 999)]),
+                            generate_column_bool(1000, vec![(0, 999)]),
+                            generate_column_f64(1000, vec![(0, 999)]),
                         ],
                     )
                     .unwrap(),
@@ -854,27 +688,11 @@ async fn test_big_compaction_1() {
                     RecordBatch::try_new(
                         schema2.clone().to_record_data_schema(),
                         vec![
-                            generate_column_ts(4001, 4500, schema2.time_column()),
-                            generate_column_u64(
-                                500,
-                                vec![],
-                                schema2.column("f1").cloned().unwrap(),
-                            ),
-                            generate_column_i64(
-                                500,
-                                vec![(0, 499)],
-                                schema2.column("f2").cloned().unwrap(),
-                            ),
-                            generate_column_bool(
-                                500,
-                                vec![(0, 499)],
-                                schema2.column("f3").cloned().unwrap(),
-                            ),
-                            generate_column_f64(
-                                500,
-                                vec![(0, 499)],
-                                schema2.column("f4").cloned().unwrap(),
-                            ),
+                            generate_column_ts(4001, 4500),
+                            generate_column_u64(500, vec![]),
+                            generate_column_i64(500, vec![(0, 499)]),
+                            generate_column_bool(500, vec![(0, 499)]),
+                            generate_column_f64(500, vec![(0, 499)]),
                         ],
                     )
                     .unwrap(),
@@ -889,27 +707,11 @@ async fn test_big_compaction_1() {
                     RecordBatch::try_new(
                         schema2.clone().to_record_data_schema(),
                         vec![
-                            generate_column_ts(1001, 2000, schema2.time_column()),
-                            generate_column_u64(
-                                1000,
-                                vec![(0, 999)],
-                                schema2.column("f1").cloned().unwrap(),
-                            ),
-                            generate_column_i64(
-                                1000,
-                                vec![(0, 999)],
-                                schema2.column("f2").cloned().unwrap(),
-                            ),
-                            generate_column_bool(
-                                1000,
-                                vec![(0, 999)],
-                                schema2.column("f3").cloned().unwrap(),
-                            ),
-                            generate_column_f64(
-                                1000,
-                                vec![],
-                                schema2.column("f4").cloned().unwrap(),
-                            ),
+                            generate_column_ts(1001, 2000),
+                            generate_column_u64(1000, vec![(0, 999)]),
+                            generate_column_i64(1000, vec![(0, 999)]),
+                            generate_column_bool(1000, vec![(0, 999)]),
+                            generate_column_f64(1000, vec![]),
                         ],
                     )
                     .unwrap(),
@@ -919,27 +721,11 @@ async fn test_big_compaction_1() {
                     RecordBatch::try_new(
                         schema2.clone().to_record_data_schema(),
                         vec![
-                            generate_column_ts(2001, 3000, schema2.time_column()),
-                            generate_column_u64(
-                                1000,
-                                vec![(0, 999)],
-                                schema2.column("f1").cloned().unwrap(),
-                            ),
-                            generate_column_i64(
-                                1000,
-                                vec![(0, 999)],
-                                schema2.column("f2").cloned().unwrap(),
-                            ),
-                            generate_column_bool(
-                                1000,
-                                vec![],
-                                schema2.column("f3").cloned().unwrap(),
-                            ),
-                            generate_column_f64(
-                                1000,
-                                vec![(500, 999)],
-                                schema2.column("f4").cloned().unwrap(),
-                            ),
+                            generate_column_ts(2001, 3000),
+                            generate_column_u64(1000, vec![(0, 999)]),
+                            generate_column_i64(1000, vec![(0, 999)]),
+                            generate_column_bool(1000, vec![]),
+                            generate_column_f64(1000, vec![(500, 999)]),
                         ],
                     )
                     .unwrap(),
@@ -949,27 +735,11 @@ async fn test_big_compaction_1() {
                     RecordBatch::try_new(
                         schema2.clone().to_record_data_schema(),
                         vec![
-                            generate_column_ts(3001, 4000, schema2.time_column()),
-                            generate_column_u64(
-                                1000,
-                                vec![(0, 999)],
-                                schema2.column("f1").cloned().unwrap(),
-                            ),
-                            generate_column_i64(
-                                1000,
-                                vec![],
-                                schema2.column("f2").cloned().unwrap(),
-                            ),
-                            generate_column_bool(
-                                1000,
-                                vec![(500, 999)],
-                                schema2.column("f3").cloned().unwrap(),
-                            ),
-                            generate_column_f64(
-                                1000,
-                                vec![(0, 999)],
-                                schema2.column("f4").cloned().unwrap(),
-                            ),
+                            generate_column_ts(3001, 4000),
+                            generate_column_u64(1000, vec![(0, 999)]),
+                            generate_column_i64(1000, vec![]),
+                            generate_column_bool(1000, vec![(500, 999)]),
+                            generate_column_f64(1000, vec![(0, 999)]),
                         ],
                     )
                     .unwrap(),
@@ -979,27 +749,11 @@ async fn test_big_compaction_1() {
                     RecordBatch::try_new(
                         schema2.clone().to_record_data_schema(),
                         vec![
-                            generate_column_ts(4001, 5000, schema2.time_column()),
-                            generate_column_u64(
-                                1000,
-                                vec![],
-                                schema2.column("f1").cloned().unwrap(),
-                            ),
-                            generate_column_i64(
-                                1000,
-                                vec![],
-                                schema2.column("f2").cloned().unwrap(),
-                            ),
-                            generate_column_bool(
-                                1000,
-                                vec![(0, 999)],
-                                schema2.column("f3").cloned().unwrap(),
-                            ),
-                            generate_column_f64(
-                                1000,
-                                vec![(0, 999)],
-                                schema2.column("f4").cloned().unwrap(),
-                            ),
+                            generate_column_ts(4001, 5000),
+                            generate_column_u64(1000, vec![]),
+                            generate_column_i64(1000, vec![]),
+                            generate_column_bool(1000, vec![(0, 999)]),
+                            generate_column_f64(1000, vec![(0, 999)]),
                         ],
                     )
                     .unwrap(),
@@ -1009,27 +763,11 @@ async fn test_big_compaction_1() {
                     RecordBatch::try_new(
                         schema2.clone().to_record_data_schema(),
                         vec![
-                            generate_column_ts(5001, 6000, schema2.time_column()),
-                            generate_column_u64(
-                                1000,
-                                vec![],
-                                schema2.column("f1").cloned().unwrap(),
-                            ),
-                            generate_column_i64(
-                                1000,
-                                vec![(0, 999)],
-                                schema2.column("f2").cloned().unwrap(),
-                            ),
-                            generate_column_bool(
-                                1000,
-                                vec![(0, 999)],
-                                schema2.column("f3").cloned().unwrap(),
-                            ),
-                            generate_column_f64(
-                                1000,
-                                vec![(0, 999)],
-                                schema2.column("f4").cloned().unwrap(),
-                            ),
+                            generate_column_ts(5001, 6000),
+                            generate_column_u64(1000, vec![]),
+                            generate_column_i64(1000, vec![(0, 999)]),
+                            generate_column_bool(1000, vec![(0, 999)]),
+                            generate_column_f64(1000, vec![(0, 999)]),
                         ],
                     )
                     .unwrap(),
@@ -1039,27 +777,11 @@ async fn test_big_compaction_1() {
                     RecordBatch::try_new(
                         schema2.clone().to_record_data_schema(),
                         vec![
-                            generate_column_ts(6001, 6500, schema2.time_column()),
-                            generate_column_u64(
-                                500,
-                                vec![],
-                                schema2.column("f1").cloned().unwrap(),
-                            ),
-                            generate_column_i64(
-                                500,
-                                vec![(0, 499)],
-                                schema2.column("f2").cloned().unwrap(),
-                            ),
-                            generate_column_bool(
-                                500,
-                                vec![(0, 499)],
-                                schema2.column("f3").cloned().unwrap(),
-                            ),
-                            generate_column_f64(
-                                500,
-                                vec![(0, 499)],
-                                schema2.column("f4").cloned().unwrap(),
-                            ),
+                            generate_column_ts(6001, 6500),
+                            generate_column_u64(500, vec![]),
+                            generate_column_i64(500, vec![(0, 499)]),
+                            generate_column_bool(500, vec![(0, 499)]),
+                            generate_column_f64(500, vec![(0, 499)]),
                         ],
                     )
                     .unwrap(),
@@ -1072,85 +794,77 @@ async fn test_big_compaction_1() {
         RecordBatch::try_new(
             schema2.clone().to_record_data_schema(),
             vec![
-                generate_column_ts(1, 1000, schema2.time_column()),
-                generate_column_u64(1000, vec![], schema2.column("f1").cloned().unwrap()),
-                generate_column_i64(1000, vec![], schema2.column("f2").cloned().unwrap()),
-                generate_column_bool(1000, vec![], schema2.column("f3").cloned().unwrap()),
-                generate_column_f64(1000, vec![], schema2.column("f4").cloned().unwrap()),
+                generate_column_ts(1, 1000),
+                generate_column_u64(1000, vec![]),
+                generate_column_i64(1000, vec![]),
+                generate_column_bool(1000, vec![]),
+                generate_column_f64(1000, vec![]),
             ],
         )
         .unwrap(),
         RecordBatch::try_new(
             schema2.clone().to_record_data_schema(),
             vec![
-                generate_column_ts(1001, 2000, schema2.time_column()),
-                generate_column_u64(1000, vec![], schema2.column("f1").cloned().unwrap()),
-                generate_column_i64(1000, vec![], schema2.column("f2").cloned().unwrap()),
-                generate_column_bool(1000, vec![], schema2.column("f3").cloned().unwrap()),
-                generate_column_f64(1000, vec![], schema2.column("f4").cloned().unwrap()),
+                generate_column_ts(1001, 2000),
+                generate_column_u64(1000, vec![]),
+                generate_column_i64(1000, vec![]),
+                generate_column_bool(1000, vec![]),
+                generate_column_f64(1000, vec![]),
             ],
         )
         .unwrap(),
         RecordBatch::try_new(
             schema2.clone().to_record_data_schema(),
             vec![
-                generate_column_ts(2001, 3000, schema2.time_column()),
-                generate_column_u64(1000, vec![], schema2.column("f1").cloned().unwrap()),
-                generate_column_i64(1000, vec![], schema2.column("f2").cloned().unwrap()),
-                generate_column_bool(1000, vec![], schema2.column("f3").cloned().unwrap()),
-                generate_column_f64(
-                    1000,
-                    vec![(500, 999)],
-                    schema2.column("f4").cloned().unwrap(),
-                ),
+                generate_column_ts(2001, 3000),
+                generate_column_u64(1000, vec![]),
+                generate_column_i64(1000, vec![]),
+                generate_column_bool(1000, vec![]),
+                generate_column_f64(1000, vec![(500, 999)]),
             ],
         )
         .unwrap(),
         RecordBatch::try_new(
             schema2.clone().to_record_data_schema(),
             vec![
-                generate_column_ts(3001, 4000, schema2.time_column()),
-                generate_column_u64(1000, vec![], schema2.column("f1").cloned().unwrap()),
-                generate_column_i64(1000, vec![], schema2.column("f2").cloned().unwrap()),
-                generate_column_bool(
-                    1000,
-                    vec![(500, 999)],
-                    schema2.column("f3").cloned().unwrap(),
-                ),
-                generate_column_f64(1000, vec![(0, 999)], schema2.column("f4").cloned().unwrap()),
+                generate_column_ts(3001, 4000),
+                generate_column_u64(1000, vec![]),
+                generate_column_i64(1000, vec![]),
+                generate_column_bool(1000, vec![(500, 999)]),
+                generate_column_f64(1000, vec![(0, 999)]),
             ],
         )
         .unwrap(),
         RecordBatch::try_new(
             schema2.clone().to_record_data_schema(),
             vec![
-                generate_column_ts(4001, 5000, schema2.time_column()),
-                generate_column_u64(1000, vec![], schema2.column("f1").cloned().unwrap()),
-                generate_column_i64(1000, vec![], schema2.column("f2").cloned().unwrap()),
-                generate_column_bool(1000, vec![(0, 999)], schema2.column("f3").cloned().unwrap()),
-                generate_column_f64(1000, vec![(0, 999)], schema2.column("f4").cloned().unwrap()),
+                generate_column_ts(4001, 5000),
+                generate_column_u64(1000, vec![]),
+                generate_column_i64(1000, vec![]),
+                generate_column_bool(1000, vec![(0, 999)]),
+                generate_column_f64(1000, vec![(0, 999)]),
             ],
         )
         .unwrap(),
         RecordBatch::try_new(
             schema2.clone().to_record_data_schema(),
             vec![
-                generate_column_ts(5001, 6000, schema2.time_column()),
-                generate_column_u64(1000, vec![], schema2.column("f1").cloned().unwrap()),
-                generate_column_i64(1000, vec![(0, 999)], schema2.column("f2").cloned().unwrap()),
-                generate_column_bool(1000, vec![(0, 999)], schema2.column("f3").cloned().unwrap()),
-                generate_column_f64(1000, vec![(0, 999)], schema2.column("f4").cloned().unwrap()),
+                generate_column_ts(5001, 6000),
+                generate_column_u64(1000, vec![]),
+                generate_column_i64(1000, vec![(0, 999)]),
+                generate_column_bool(1000, vec![(0, 999)]),
+                generate_column_f64(1000, vec![(0, 999)]),
             ],
         )
         .unwrap(),
         RecordBatch::try_new(
             schema2.clone().to_record_data_schema(),
             vec![
-                generate_column_ts(6001, 6500, schema2.time_column()),
-                generate_column_u64(500, vec![], schema2.column("f1").cloned().unwrap()),
-                generate_column_i64(500, vec![(0, 499)], schema2.column("f2").cloned().unwrap()),
-                generate_column_bool(500, vec![(0, 499)], schema2.column("f3").cloned().unwrap()),
-                generate_column_f64(500, vec![(0, 499)], schema2.column("f4").cloned().unwrap()),
+                generate_column_ts(6001, 6500),
+                generate_column_u64(500, vec![]),
+                generate_column_i64(500, vec![(0, 499)]),
+                generate_column_bool(500, vec![(0, 499)]),
+                generate_column_f64(500, vec![(0, 499)]),
             ],
         )
         .unwrap(),
@@ -1258,22 +972,10 @@ async fn test_big_compaction_2() {
                     RecordBatch::try_new(
                         schema1.to_record_data_schema(),
                         vec![
-                            generate_column_ts(1, 1000, schema1.time_column()),
-                            generate_column_u64(
-                                1000,
-                                vec![],
-                                schema1.column("f1").cloned().unwrap(),
-                            ),
-                            generate_column_i64(
-                                1000,
-                                vec![],
-                                schema1.column("f2").cloned().unwrap(),
-                            ),
-                            generate_column_bool(
-                                1000,
-                                vec![],
-                                schema1.column("f3").cloned().unwrap(),
-                            ),
+                            generate_column_ts(1, 1000),
+                            generate_column_u64(1000, vec![]),
+                            generate_column_i64(1000, vec![]),
+                            generate_column_bool(1000, vec![]),
                         ],
                     )
                     .unwrap(),
@@ -1283,22 +985,10 @@ async fn test_big_compaction_2() {
                     RecordBatch::try_new(
                         schema1.clone().to_record_data_schema(),
                         vec![
-                            generate_column_ts(1001, 2000, schema1.time_column()),
-                            generate_column_u64(
-                                1000,
-                                vec![],
-                                schema1.column("f1").cloned().unwrap(),
-                            ),
-                            generate_column_i64(
-                                1000,
-                                vec![(500, 999)],
-                                schema1.column("f2").cloned().unwrap(),
-                            ),
-                            generate_column_bool(
-                                1000,
-                                vec![(500, 999)],
-                                schema1.column("f3").cloned().unwrap(),
-                            ),
+                            generate_column_ts(1001, 2000),
+                            generate_column_u64(1000, vec![]),
+                            generate_column_i64(1000, vec![(500, 999)]),
+                            generate_column_bool(1000, vec![(500, 999)]),
                         ],
                     )
                     .unwrap(),
@@ -1308,22 +998,10 @@ async fn test_big_compaction_2() {
                     RecordBatch::try_new(
                         schema1.clone().to_record_data_schema(),
                         vec![
-                            generate_column_ts(2001, 2500, schema1.time_column()),
-                            generate_column_u64(
-                                500,
-                                vec![],
-                                schema1.column("f1").cloned().unwrap(),
-                            ),
-                            generate_column_i64(
-                                500,
-                                vec![(0, 499)],
-                                schema1.column("f2").cloned().unwrap(),
-                            ),
-                            generate_column_bool(
-                                500,
-                                vec![(0, 499)],
-                                schema1.column("f3").cloned().unwrap(),
-                            ),
+                            generate_column_ts(2001, 2500),
+                            generate_column_u64(500, vec![]),
+                            generate_column_i64(500, vec![(0, 499)]),
+                            generate_column_bool(500, vec![(0, 499)]),
                         ],
                     )
                     .unwrap(),
@@ -1338,27 +1016,11 @@ async fn test_big_compaction_2() {
                     RecordBatch::try_new(
                         schema2.clone().to_record_data_schema(),
                         vec![
-                            generate_column_ts(1, 1000, schema2.time_column()),
-                            generate_column_u64(
-                                1000,
-                                vec![(0, 999)],
-                                schema2.column("f1").cloned().unwrap(),
-                            ),
-                            generate_column_i64(
-                                1000,
-                                vec![(0, 999)],
-                                schema2.column("f2").cloned().unwrap(),
-                            ),
-                            generate_column_bool(
-                                1000,
-                                vec![(0, 999)],
-                                schema2.column("f3").cloned().unwrap(),
-                            ),
-                            generate_column_f64(
-                                1000,
-                                vec![],
-                                schema2.column("f4").cloned().unwrap(),
-                            ),
+                            generate_column_ts(1, 1000),
+                            generate_column_u64(1000, vec![(0, 999)]),
+                            generate_column_i64(1000, vec![(0, 999)]),
+                            generate_column_bool(1000, vec![(0, 999)]),
+                            generate_column_f64(1000, vec![]),
                         ],
                     )
                     .unwrap(),
@@ -1368,27 +1030,11 @@ async fn test_big_compaction_2() {
                     RecordBatch::try_new(
                         schema2.clone().to_record_data_schema(),
                         vec![
-                            generate_column_ts(1001, 2000, schema2.time_column()),
-                            generate_column_u64(
-                                1000,
-                                vec![(0, 999)],
-                                schema2.column("f1").cloned().unwrap(),
-                            ),
-                            generate_column_i64(
-                                1000,
-                                vec![],
-                                schema2.column("f2").cloned().unwrap(),
-                            ),
-                            generate_column_bool(
-                                1000,
-                                vec![],
-                                schema2.column("f3").cloned().unwrap(),
-                            ),
-                            generate_column_f64(
-                                1000,
-                                vec![(500, 999)],
-                                schema2.column("f4").cloned().unwrap(),
-                            ),
+                            generate_column_ts(1001, 2000),
+                            generate_column_u64(1000, vec![(0, 999)]),
+                            generate_column_i64(1000, vec![]),
+                            generate_column_bool(1000, vec![]),
+                            generate_column_f64(1000, vec![(500, 999)]),
                         ],
                     )
                     .unwrap(),
@@ -1398,27 +1044,11 @@ async fn test_big_compaction_2() {
                     RecordBatch::try_new(
                         schema2.clone().to_record_data_schema(),
                         vec![
-                            generate_column_ts(2001, 3000, schema2.time_column()),
-                            generate_column_u64(
-                                1000,
-                                vec![],
-                                schema2.column("f1").cloned().unwrap(),
-                            ),
-                            generate_column_i64(
-                                1000,
-                                vec![],
-                                schema2.column("f2").cloned().unwrap(),
-                            ),
-                            generate_column_bool(
-                                1000,
-                                vec![(500, 999)],
-                                schema2.column("f3").cloned().unwrap(),
-                            ),
-                            generate_column_f64(
-                                1000,
-                                vec![(0, 999)],
-                                schema2.column("f4").cloned().unwrap(),
-                            ),
+                            generate_column_ts(2001, 3000),
+                            generate_column_u64(1000, vec![]),
+                            generate_column_i64(1000, vec![]),
+                            generate_column_bool(1000, vec![(500, 999)]),
+                            generate_column_f64(1000, vec![(0, 999)]),
                         ],
                     )
                     .unwrap(),
@@ -1428,27 +1058,11 @@ async fn test_big_compaction_2() {
                     RecordBatch::try_new(
                         schema2.clone().to_record_data_schema(),
                         vec![
-                            generate_column_ts(3001, 4000, schema2.time_column()),
-                            generate_column_u64(
-                                1000,
-                                vec![],
-                                schema2.column("f1").cloned().unwrap(),
-                            ),
-                            generate_column_i64(
-                                1000,
-                                vec![(0, 999)],
-                                schema2.column("f2").cloned().unwrap(),
-                            ),
-                            generate_column_bool(
-                                1000,
-                                vec![(0, 999)],
-                                schema2.column("f3").cloned().unwrap(),
-                            ),
-                            generate_column_f64(
-                                1000,
-                                vec![(0, 999)],
-                                schema2.column("f4").cloned().unwrap(),
-                            ),
+                            generate_column_ts(3001, 4000),
+                            generate_column_u64(1000, vec![]),
+                            generate_column_i64(1000, vec![(0, 999)]),
+                            generate_column_bool(1000, vec![(0, 999)]),
+                            generate_column_f64(1000, vec![(0, 999)]),
                         ],
                     )
                     .unwrap(),
@@ -1458,27 +1072,11 @@ async fn test_big_compaction_2() {
                     RecordBatch::try_new(
                         schema2.clone().to_record_data_schema(),
                         vec![
-                            generate_column_ts(4001, 4500, schema2.time_column()),
-                            generate_column_u64(
-                                500,
-                                vec![],
-                                schema2.column("f1").cloned().unwrap(),
-                            ),
-                            generate_column_i64(
-                                500,
-                                vec![(0, 499)],
-                                schema2.column("f2").cloned().unwrap(),
-                            ),
-                            generate_column_bool(
-                                500,
-                                vec![(0, 499)],
-                                schema2.column("f3").cloned().unwrap(),
-                            ),
-                            generate_column_f64(
-                                500,
-                                vec![(0, 499)],
-                                schema2.column("f4").cloned().unwrap(),
-                            ),
+                            generate_column_ts(4001, 4500),
+                            generate_column_u64(500, vec![]),
+                            generate_column_i64(500, vec![(0, 499)]),
+                            generate_column_bool(500, vec![(0, 499)]),
+                            generate_column_f64(500, vec![(0, 499)]),
                         ],
                     )
                     .unwrap(),
@@ -1493,27 +1091,11 @@ async fn test_big_compaction_2() {
                     RecordBatch::try_new(
                         schema2.clone().to_record_data_schema(),
                         vec![
-                            generate_column_ts(1001, 2000, schema2.time_column()),
-                            generate_column_u64(
-                                1000,
-                                vec![(0, 999)],
-                                schema2.column("f1").cloned().unwrap(),
-                            ),
-                            generate_column_i64(
-                                1000,
-                                vec![(0, 999)],
-                                schema2.column("f2").cloned().unwrap(),
-                            ),
-                            generate_column_bool(
-                                1000,
-                                vec![(0, 999)],
-                                schema2.column("f3").cloned().unwrap(),
-                            ),
-                            generate_column_f64(
-                                1000,
-                                vec![],
-                                schema2.column("f4").cloned().unwrap(),
-                            ),
+                            generate_column_ts(1001, 2000),
+                            generate_column_u64(1000, vec![(0, 999)]),
+                            generate_column_i64(1000, vec![(0, 999)]),
+                            generate_column_bool(1000, vec![(0, 999)]),
+                            generate_column_f64(1000, vec![]),
                         ],
                     )
                     .unwrap(),
@@ -1523,27 +1105,11 @@ async fn test_big_compaction_2() {
                     RecordBatch::try_new(
                         schema2.clone().to_record_data_schema(),
                         vec![
-                            generate_column_ts(2001, 3000, schema2.time_column()),
-                            generate_column_u64(
-                                1000,
-                                vec![(0, 999)],
-                                schema2.column("f1").cloned().unwrap(),
-                            ),
-                            generate_column_i64(
-                                1000,
-                                vec![(0, 999)],
-                                schema2.column("f2").cloned().unwrap(),
-                            ),
-                            generate_column_bool(
-                                1000,
-                                vec![],
-                                schema2.column("f3").cloned().unwrap(),
-                            ),
-                            generate_column_f64(
-                                1000,
-                                vec![(500, 999)],
-                                schema2.column("f4").cloned().unwrap(),
-                            ),
+                            generate_column_ts(2001, 3000),
+                            generate_column_u64(1000, vec![(0, 999)]),
+                            generate_column_i64(1000, vec![(0, 999)]),
+                            generate_column_bool(1000, vec![]),
+                            generate_column_f64(1000, vec![(500, 999)]),
                         ],
                     )
                     .unwrap(),
@@ -1553,27 +1119,11 @@ async fn test_big_compaction_2() {
                     RecordBatch::try_new(
                         schema2.clone().to_record_data_schema(),
                         vec![
-                            generate_column_ts(3001, 4000, schema2.time_column()),
-                            generate_column_u64(
-                                1000,
-                                vec![(0, 999)],
-                                schema2.column("f1").cloned().unwrap(),
-                            ),
-                            generate_column_i64(
-                                1000,
-                                vec![],
-                                schema2.column("f2").cloned().unwrap(),
-                            ),
-                            generate_column_bool(
-                                1000,
-                                vec![(500, 999)],
-                                schema2.column("f3").cloned().unwrap(),
-                            ),
-                            generate_column_f64(
-                                1000,
-                                vec![(0, 999)],
-                                schema2.column("f4").cloned().unwrap(),
-                            ),
+                            generate_column_ts(3001, 4000),
+                            generate_column_u64(1000, vec![(0, 999)]),
+                            generate_column_i64(1000, vec![]),
+                            generate_column_bool(1000, vec![(500, 999)]),
+                            generate_column_f64(1000, vec![(0, 999)]),
                         ],
                     )
                     .unwrap(),
@@ -1583,27 +1133,11 @@ async fn test_big_compaction_2() {
                     RecordBatch::try_new(
                         schema2.clone().to_record_data_schema(),
                         vec![
-                            generate_column_ts(4001, 5000, schema2.time_column()),
-                            generate_column_u64(
-                                1000,
-                                vec![],
-                                schema2.column("f1").cloned().unwrap(),
-                            ),
-                            generate_column_i64(
-                                1000,
-                                vec![],
-                                schema2.column("f2").cloned().unwrap(),
-                            ),
-                            generate_column_bool(
-                                1000,
-                                vec![(0, 999)],
-                                schema2.column("f3").cloned().unwrap(),
-                            ),
-                            generate_column_f64(
-                                1000,
-                                vec![(0, 999)],
-                                schema2.column("f4").cloned().unwrap(),
-                            ),
+                            generate_column_ts(4001, 5000),
+                            generate_column_u64(1000, vec![]),
+                            generate_column_i64(1000, vec![]),
+                            generate_column_bool(1000, vec![(0, 999)]),
+                            generate_column_f64(1000, vec![(0, 999)]),
                         ],
                     )
                     .unwrap(),
@@ -1613,27 +1147,11 @@ async fn test_big_compaction_2() {
                     RecordBatch::try_new(
                         schema2.clone().to_record_data_schema(),
                         vec![
-                            generate_column_ts(5001, 6000, schema2.time_column()),
-                            generate_column_u64(
-                                1000,
-                                vec![],
-                                schema2.column("f1").cloned().unwrap(),
-                            ),
-                            generate_column_i64(
-                                1000,
-                                vec![(0, 999)],
-                                schema2.column("f2").cloned().unwrap(),
-                            ),
-                            generate_column_bool(
-                                1000,
-                                vec![(0, 999)],
-                                schema2.column("f3").cloned().unwrap(),
-                            ),
-                            generate_column_f64(
-                                1000,
-                                vec![(0, 999)],
-                                schema2.column("f4").cloned().unwrap(),
-                            ),
+                            generate_column_ts(5001, 6000),
+                            generate_column_u64(1000, vec![]),
+                            generate_column_i64(1000, vec![(0, 999)]),
+                            generate_column_bool(1000, vec![(0, 999)]),
+                            generate_column_f64(1000, vec![(0, 999)]),
                         ],
                     )
                     .unwrap(),
@@ -1643,27 +1161,11 @@ async fn test_big_compaction_2() {
                     RecordBatch::try_new(
                         schema2.clone().to_record_data_schema(),
                         vec![
-                            generate_column_ts(6001, 6500, schema2.time_column()),
-                            generate_column_u64(
-                                500,
-                                vec![],
-                                schema2.column("f1").cloned().unwrap(),
-                            ),
-                            generate_column_i64(
-                                500,
-                                vec![(0, 499)],
-                                schema2.column("f2").cloned().unwrap(),
-                            ),
-                            generate_column_bool(
-                                500,
-                                vec![(0, 499)],
-                                schema2.column("f3").cloned().unwrap(),
-                            ),
-                            generate_column_f64(
-                                500,
-                                vec![(0, 499)],
-                                schema2.column("f4").cloned().unwrap(),
-                            ),
+                            generate_column_ts(6001, 6500),
+                            generate_column_u64(500, vec![]),
+                            generate_column_i64(500, vec![(0, 499)]),
+                            generate_column_bool(500, vec![(0, 499)]),
+                            generate_column_f64(500, vec![(0, 499)]),
                         ],
                     )
                     .unwrap(),
@@ -1676,85 +1178,77 @@ async fn test_big_compaction_2() {
         RecordBatch::try_new(
             schema2.clone().to_record_data_schema(),
             vec![
-                generate_column_ts(1, 1000, schema2.time_column()),
-                generate_column_u64(1000, vec![(0, 499)], schema2.column("f1").cloned().unwrap()),
-                generate_column_i64(1000, vec![], schema2.column("f2").cloned().unwrap()),
-                generate_column_bool(1000, vec![], schema2.column("f3").cloned().unwrap()),
-                generate_column_f64(1000, vec![], schema2.column("f4").cloned().unwrap()),
+                generate_column_ts(1, 1000),
+                generate_column_u64(1000, vec![(0, 499)]),
+                generate_column_i64(1000, vec![]),
+                generate_column_bool(1000, vec![]),
+                generate_column_f64(1000, vec![]),
             ],
         )
         .unwrap(),
         RecordBatch::try_new(
             schema2.clone().to_record_data_schema(),
             vec![
-                generate_column_ts(1001, 2000, schema2.time_column()),
-                generate_column_u64(1000, vec![], schema2.column("f1").cloned().unwrap()),
-                generate_column_i64(1000, vec![], schema2.column("f2").cloned().unwrap()),
-                generate_column_bool(1000, vec![], schema2.column("f3").cloned().unwrap()),
-                generate_column_f64(1000, vec![], schema2.column("f4").cloned().unwrap()),
+                generate_column_ts(1001, 2000),
+                generate_column_u64(1000, vec![]),
+                generate_column_i64(1000, vec![(0, 199)]),
+                generate_column_bool(1000, vec![]),
+                generate_column_f64(1000, vec![]),
             ],
         )
         .unwrap(),
         RecordBatch::try_new(
             schema2.clone().to_record_data_schema(),
             vec![
-                generate_column_ts(2001, 3000, schema2.time_column()),
-                generate_column_u64(1000, vec![], schema2.column("f1").cloned().unwrap()),
-                generate_column_i64(1000, vec![], schema2.column("f2").cloned().unwrap()),
-                generate_column_bool(1000, vec![(0, 699)], schema2.column("f3").cloned().unwrap()),
-                generate_column_f64(
-                    1000,
-                    vec![(500, 999)],
-                    schema2.column("f4").cloned().unwrap(),
-                ),
+                generate_column_ts(2001, 3000),
+                generate_column_u64(1000, vec![]),
+                generate_column_i64(1000, vec![]),
+                generate_column_bool(1000, vec![(0, 699)]),
+                generate_column_f64(1000, vec![(500, 999)]),
             ],
         )
         .unwrap(),
         RecordBatch::try_new(
             schema2.clone().to_record_data_schema(),
             vec![
-                generate_column_ts(3001, 4000, schema2.time_column()),
-                generate_column_u64(1000, vec![], schema2.column("f1").cloned().unwrap()),
-                generate_column_i64(1000, vec![], schema2.column("f2").cloned().unwrap()),
-                generate_column_bool(
-                    1000,
-                    vec![(500, 999)],
-                    schema2.column("f3").cloned().unwrap(),
-                ),
-                generate_column_f64(1000, vec![(0, 999)], schema2.column("f4").cloned().unwrap()),
+                generate_column_ts(3001, 4000),
+                generate_column_u64(1000, vec![]),
+                generate_column_i64(1000, vec![]),
+                generate_column_bool(1000, vec![(500, 999)]),
+                generate_column_f64(1000, vec![(0, 999)]),
             ],
         )
         .unwrap(),
         RecordBatch::try_new(
             schema2.clone().to_record_data_schema(),
             vec![
-                generate_column_ts(4001, 5000, schema2.time_column()),
-                generate_column_u64(1000, vec![], schema2.column("f1").cloned().unwrap()),
-                generate_column_i64(1000, vec![], schema2.column("f2").cloned().unwrap()),
-                generate_column_bool(1000, vec![(0, 999)], schema2.column("f3").cloned().unwrap()),
-                generate_column_f64(1000, vec![(0, 999)], schema2.column("f4").cloned().unwrap()),
+                generate_column_ts(4001, 5000),
+                generate_column_u64(1000, vec![]),
+                generate_column_i64(1000, vec![]),
+                generate_column_bool(1000, vec![(0, 999)]),
+                generate_column_f64(1000, vec![(0, 999)]),
             ],
         )
         .unwrap(),
         RecordBatch::try_new(
             schema2.clone().to_record_data_schema(),
             vec![
-                generate_column_ts(5001, 6000, schema2.time_column()),
-                generate_column_u64(1000, vec![], schema2.column("f1").cloned().unwrap()),
-                generate_column_i64(1000, vec![(0, 999)], schema2.column("f2").cloned().unwrap()),
-                generate_column_bool(1000, vec![(0, 999)], schema2.column("f3").cloned().unwrap()),
-                generate_column_f64(1000, vec![(0, 999)], schema2.column("f4").cloned().unwrap()),
+                generate_column_ts(5001, 6000),
+                generate_column_u64(1000, vec![]),
+                generate_column_i64(1000, vec![(0, 999)]),
+                generate_column_bool(1000, vec![(0, 999)]),
+                generate_column_f64(1000, vec![(0, 999)]),
             ],
         )
         .unwrap(),
         RecordBatch::try_new(
             schema2.clone().to_record_data_schema(),
             vec![
-                generate_column_ts(6001, 6500, schema2.time_column()),
-                generate_column_u64(500, vec![], schema2.column("f1").cloned().unwrap()),
-                generate_column_i64(500, vec![(0, 499)], schema2.column("f2").cloned().unwrap()),
-                generate_column_bool(500, vec![(0, 499)], schema2.column("f3").cloned().unwrap()),
-                generate_column_f64(500, vec![(0, 499)], schema2.column("f4").cloned().unwrap()),
+                generate_column_ts(6001, 6500),
+                generate_column_u64(500, vec![]),
+                generate_column_i64(500, vec![(0, 499)]),
+                generate_column_bool(500, vec![(0, 499)]),
+                generate_column_f64(500, vec![(0, 499)]),
             ],
         )
         .unwrap(),
@@ -1784,6 +1278,11 @@ async fn test_big_compaction_2() {
         let mut tsm_tombstone = TsmTombstone::open(&dir, tsm_sequence).await.unwrap();
         tsm_tombstone
             .add_range(&[(1, 1)], TimeRange::new(0, 500), None)
+            .await
+            .unwrap();
+
+        tsm_tombstone
+            .add_range(&[(1, 2)], TimeRange::new(1001, 1200), None)
             .await
             .unwrap();
 
