@@ -14,6 +14,7 @@ use crate::file_system::async_filesystem::LocalFileSystem;
 use crate::file_system::FileSystem;
 use crate::summary::CompactMeta;
 use crate::tsm::reader::TsmReader;
+use crate::tsm::tombstone::tombstone_compact_tmp_path;
 use crate::tsm::TsmTombstone;
 use crate::{tsm, ColumnFileId, LevelId};
 
@@ -223,6 +224,29 @@ impl Drop for ColumnFile {
                 } else {
                     info!("Removed tsm tombstone '{}", tombstone_path.display());
                 }
+            }
+
+            match tombstone_compact_tmp_path(&tombstone_path) {
+                Ok(path) => {
+                    info!(
+                        "Trying to remove tsm tombstone_compact_tmp: '{}'",
+                        path.display()
+                    );
+                    if LocalFileSystem::try_exists(&path) {
+                        if let Err(e) = std::fs::remove_file(&path) {
+                            error!(
+                                "Failed to remove tsm tombstone_compact_tmp '{}': {e}",
+                                path.display()
+                            );
+                        } else {
+                            info!("Removed tsm tombstone_compact_tmp '{}'", path.display());
+                        }
+                    }
+                }
+                Err(e) => error!(
+                    "Failed to remove tsm tombstone_compact_tmp '{}', path invalid: {e}",
+                    path.display()
+                ),
             }
         }
     }

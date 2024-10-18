@@ -355,6 +355,13 @@ impl NullBitset<'_> {
             NullBitset::Own(bitset) => bitset.is_empty(),
         }
     }
+
+    pub fn is_all_set(&self) -> bool {
+        match self {
+            NullBitset::Ref(bitset) => bitset.is_all_set(),
+            NullBitset::Own(bitset) => bitset.is_all_set(),
+        }
+    }
 }
 
 #[cfg(test)]
