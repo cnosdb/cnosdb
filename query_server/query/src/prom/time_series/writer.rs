@@ -27,35 +27,8 @@ pub struct Writer<'a> {
 }
 
 impl Writer<'_> {
-    fn get_labels(&self, batch: &[ArrayRef], row_index: usize) -> QueryResult<Vec<Label>> {
-        let mut labels = Vec::with_capacity(self.tag_name_indices.len());
-        for (tag_idx, tag_name) in self.tag_name_indices.iter().zip(&self.tag_names) {
-            let col = &batch[*tag_idx];
-            let tag_value = match col.data_type() {
-                DataType::Utf8 => col
-                    .as_any()
-                    .downcast_ref::<StringArray>()
-                    .expect("Invalid data, this maybe DataFusion's bug.")
-                    .value(row_index)
-                    .to_owned(),
-                _ => {
-                    return Err(CommonSnafu {
-                        msg: "Tag noly support string type".to_string(),
-                    }
-                    .build());
-                }
-            };
-
-            labels.push(Label {
-                name: tag_name.to_string(),
-                value: tag_value,
-            });
-        }
-
-        Ok(labels)
-    }
-
-    fn get_sample_value(&self, batch: &[ArrayRef], row_index: usize) -> QueryResult<f64> {
+    /// Convert a record to a metric
+    fn apply(&mut self, batch: &[ArrayRef], row_index: usize) -> QueryResult<Sample> {
         let col = &batch[self.sample_value_idx];
         let sample_value = unsafe {
             match col.data_type() {
@@ -85,10 +58,6 @@ impl Writer<'_> {
             }
         };
 
-        Ok(sample_value)
-    }
-
-    fn get_sample_time(&self, batch: &[ArrayRef], row_index: usize) -> QueryResult<i64> {
         let col = &batch[self.sample_time_idx];
         let sample_timestamp_ms = unsafe {
             match col.data_type() {
@@ -129,49 +98,59 @@ impl Writer<'_> {
             }
         };
 
-        Ok(sample_timestamp_ms)
-    }
-
-    /// Convert a record to a metric
-    fn apply(&mut self, batch: &[ArrayRef], row_index: usize) -> QueryResult<()> {
-        // get labels
-        let labels = self.get_labels(batch, row_index)?;
-        // get sample value
-        let sample_value = self.get_sample_value(batch, row_index)?;
-        // get sample time
-        let sample_timestamp_ms = self.get_sample_time(batch, row_index)?;
-        // construct sample
-        let sample = Sample {
+        Ok(Sample {
             value: sample_value,
             timestamp: sample_timestamp_ms,
-        };
-
-        // save Sample
-        let labels_str = concat_labels(&labels);
-        debug!(
-            "Metric labels str: {}, row_index: {}",
-            labels_str, row_index
-        );
-        self.labels_to_series
-            .entry(labels_str)
-            .or_insert_with(|| TimeSeries {
-                labels,
-                ..Default::default()
-            })
-            .samples
-            .push(sample);
-
-        Ok(())
+        })
     }
 
-    /// Write a vector of record batches to time series vec
+    /// Write recordbatch to timeseries
     pub fn write(&mut self, batch: &RecordBatch) -> QueryResult<()> {
         debug_assert_eq!(self.schema.fields(), batch.schema().fields());
 
+        if batch.num_rows() == 0 {
+            return Ok(());
+        }
+
         let columns = batch.columns();
 
+        let mut labels = Vec::with_capacity(self.tag_name_indices.len());
+        for (tag_idx, tag_name) in self.tag_name_indices.iter().zip(&self.tag_names) {
+            let col = &columns[*tag_idx];
+            let tag_value = match col.data_type() {
+                DataType::Utf8 => col
+                    .as_any()
+                    .downcast_ref::<StringArray>()
+                    .expect("Invalid data, this maybe DataFusion's bug.")
+                    .value(0)
+                    .to_owned(),
+                _ => {
+                    return Err(CommonSnafu {
+                        msg: "Tag noly support string type".to_string(),
+                    }
+                    .build());
+                }
+            };
+            labels.push(Label {
+                name: tag_name.to_owned(),
+                value: tag_value,
+            });
+        }
+
+        let labels_str = concat_labels(&labels);
+        debug!("Metric labels str: {}, row_index: {}", labels_str, 0);
+
         for row_index in 0..batch.num_rows() {
-            self.apply(columns, row_index)?;
+            let sample = self.apply(columns, row_index)?;
+
+            self.labels_to_series
+                .entry(labels_str.clone())
+                .or_insert_with(|| TimeSeries {
+                    labels: labels.clone(),
+                    ..Default::default()
+                })
+                .samples
+                .push(sample);
         }
 
         Ok(())
@@ -253,8 +232,7 @@ impl WriterBuilder {
 fn concat_labels(labels: &[Label]) -> String {
     labels
         .iter()
-        .flat_map(|e| [&e.name, &e.value])
-        .cloned()
+        .flat_map(|e| [e.name[..].as_ref(), e.value[..].as_ref()])
         .collect::<Vec<_>>()
         // 0x01 cannot occur in valid UTF-8 sequences, so use it
         // as a separator here.
