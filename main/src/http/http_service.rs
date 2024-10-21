@@ -9,6 +9,8 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Instant;
 
+use base64::engine::general_purpose;
+use base64::Engine;
 use config::tskv::TLSConfig;
 use coordinator::service::CoordinatorRef;
 use datafusion::arrow::array::{Array, StringArray};
@@ -29,6 +31,7 @@ use metrics::count::U64Counter;
 use metrics::metric_register::MetricsRegister;
 use metrics::prom_reporter::PromReporter;
 use models::auth::privilege::{DatabasePrivilege, Privilege, TenantObjectPrivilege};
+use models::auth::user::ROOT;
 use models::error_code::UnknownCodeWithMessage;
 use models::oid::{Identifier, Oid};
 use models::schema::{DEFAULT_CATALOG, DEFAULT_DATABASE};
@@ -607,12 +610,12 @@ impl HttpService {
                     let db = query
                         .remove("db")
                         .unwrap_or_else(|| DEFAULT_DATABASE.to_string());
-                    let header = Header::with(
-                        Some(APPLICATION_JSON.to_string()),
-                        None,
-                        None,
-                        "Basic cm9vdDo=".to_string(),
-                    );
+                    let u = query.remove("u").unwrap_or_else(|| ROOT.to_string());
+                    let p = query.remove("p").unwrap_or_default();
+                    let auth = format!("{}:{}", u, p);
+                    let basic_auth = format!("Basic {}", general_purpose::STANDARD.encode(auth));
+                    let header =
+                        Header::with(Some(APPLICATION_JSON.to_string()), None, None, basic_auth);
                     let param = WriteParam {
                         db: Some(db),
                         precision: None,
