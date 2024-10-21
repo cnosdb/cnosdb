@@ -163,6 +163,8 @@ impl TsKv {
     fn run_flush_cold_vnode_job(&self) {
         let tskv_ctx = self.ctx.clone();
         let compact_trigger_cold_duration = tskv_ctx.options.storage.compact_trigger_cold_duration;
+        let compact_trigger_file_num = tskv_ctx.options.storage.compact_trigger_file_num;
+        let compact_task_sender = tskv_ctx.compact_task_sender.clone();
         if compact_trigger_cold_duration == Duration::ZERO {
             return;
         }
@@ -189,6 +191,16 @@ impl TsKv {
                                     trace::error!("flush code vnode {} faild: {:?}", tf_id, e)
                                 }
                             }
+                        }
+                        let version = ts_family.read().await.super_version().version.clone();
+                        let levels = version.levels_info();
+                        let task = if levels[0].files.len() as u32 >= compact_trigger_file_num {
+                            CompactTask::Delta(tf_id)
+                        } else {
+                            CompactTask::Normal(tf_id)
+                        };
+                        if let Err(e) = compact_task_sender.send(task).await {
+                            warn!("Scheduler(vnode: {tf_id}): Failed to send compact task: {task}: {e}");
                         }
                     }
                 }
