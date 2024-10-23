@@ -353,7 +353,7 @@ fn build_sql_with_table(
         .into_iter()
         .map(|table| SqlWithTable {
             sql: format!(
-                "SELECT * FROM \"{}\" WHERE {}",
+                "SELECT * FROM \"{}\" WHERE {} order by time",
                 table.name,
                 filters.join(" AND ")
             ),

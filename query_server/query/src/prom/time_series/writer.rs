@@ -28,7 +28,30 @@ pub struct Writer<'a> {
 
 impl Writer<'_> {
     /// Convert a record to a metric
-    fn apply(&mut self, batch: &[ArrayRef], row_index: usize) -> QueryResult<Sample> {
+    fn apply(&mut self, batch: &[ArrayRef], row_index: usize) -> QueryResult<()> {
+        let mut labels = Vec::with_capacity(self.tag_name_indices.len());
+        for (tag_idx, tag_name) in self.tag_name_indices.iter().zip(&self.tag_names) {
+            let col = &batch[*tag_idx];
+            let tag_value = match col.data_type() {
+                DataType::Utf8 => col
+                    .as_any()
+                    .downcast_ref::<StringArray>()
+                    .expect("Invalid data, this maybe DataFusion's bug.")
+                    .value(row_index)
+                    .to_owned(),
+                _ => {
+                    return Err(CommonSnafu {
+                        msg: "Tag noly support string type".to_string(),
+                    }
+                    .build());
+                }
+            };
+            labels.push(Label {
+                name: tag_name.to_owned(),
+                value: tag_value,
+            });
+        }
+
         let col = &batch[self.sample_value_idx];
         let sample_value = unsafe {
             match col.data_type() {
@@ -98,59 +121,36 @@ impl Writer<'_> {
             }
         };
 
-        Ok(Sample {
+        // construct sample
+        let sample = Sample {
             value: sample_value,
             timestamp: sample_timestamp_ms,
-        })
+        };
+        // save Sample
+        let labels_str = concat_labels(&labels);
+        debug!(
+            "Metric labels str: {}, row_index: {}",
+            labels_str, row_index
+        );
+        self.labels_to_series
+            .entry(labels_str)
+            .or_insert_with(|| TimeSeries {
+                labels,
+                ..Default::default()
+            })
+            .samples
+            .push(sample);
+        Ok(())
     }
 
     /// Write recordbatch to timeseries
     pub fn write(&mut self, batch: &RecordBatch) -> QueryResult<()> {
         debug_assert_eq!(self.schema.fields(), batch.schema().fields());
 
-        if batch.num_rows() == 0 {
-            return Ok(());
-        }
-
         let columns = batch.columns();
 
-        let mut labels = Vec::with_capacity(self.tag_name_indices.len());
-        for (tag_idx, tag_name) in self.tag_name_indices.iter().zip(&self.tag_names) {
-            let col = &columns[*tag_idx];
-            let tag_value = match col.data_type() {
-                DataType::Utf8 => col
-                    .as_any()
-                    .downcast_ref::<StringArray>()
-                    .expect("Invalid data, this maybe DataFusion's bug.")
-                    .value(0)
-                    .to_owned(),
-                _ => {
-                    return Err(CommonSnafu {
-                        msg: "Tag noly support string type".to_string(),
-                    }
-                    .build());
-                }
-            };
-            labels.push(Label {
-                name: tag_name.to_owned(),
-                value: tag_value,
-            });
-        }
-
-        let labels_str = concat_labels(&labels);
-        debug!("Metric labels str: {}, row_index: {}", labels_str, 0);
-
         for row_index in 0..batch.num_rows() {
-            let sample = self.apply(columns, row_index)?;
-
-            self.labels_to_series
-                .entry(labels_str.clone())
-                .or_insert_with(|| TimeSeries {
-                    labels: labels.clone(),
-                    ..Default::default()
-                })
-                .samples
-                .push(sample);
+            self.apply(columns, row_index)?;
         }
 
         Ok(())
