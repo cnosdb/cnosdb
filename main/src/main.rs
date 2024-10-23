@@ -188,6 +188,10 @@ fn main() -> Result<(), std::io::Error> {
             )])),
         };
 
+        let mut server_test = server::Server::default();
+        server_test.add_service(Box::new(builder.create_http_test_if_enabled().unwrap()));
+        server_test.start().expect("CnosDB test server start.");
+
         let mut server = server::Server::default();
         if config.service.enable_report {
             server.add_service(Box::new(ReportService::new()));

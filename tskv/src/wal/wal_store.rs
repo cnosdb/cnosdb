@@ -428,6 +428,7 @@ impl RaftEntryStorageInner {
                 Err(_) => continue,
             };
             let path = self.wal.wal_dir().join(&file_name);
+            info!("recovering wal file: {}", path.display());
             if !LocalFileSystem::try_exists(&path) {
                 continue;
             }

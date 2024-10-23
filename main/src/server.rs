@@ -19,7 +19,7 @@ use trace::error;
 use tskv::{EngineRef, TsKv};
 
 use crate::flight_sql::FlightSqlServiceAdapter;
-use crate::http::http_service::{HttpService, ServerMode};
+use crate::http::http_service::{HttpService, HttpServiceTest, ServerMode};
 use crate::rpc::grpc_service::GrpcService;
 use crate::spi::service::ServiceRef;
 use crate::tcp::tcp_service::TcpService;
@@ -349,6 +349,32 @@ impl ServiceBuilder {
             self.config.trace.auto_generate_span,
         ))
     }
+
+    pub fn create_http_test_if_enabled(
+        &self,
+    ) -> Option<HttpServiceTest> {
+        let default_http_addr = "0.0.0.0:9999".to_string();
+
+        let addr = default_http_addr
+            .to_socket_addrs()
+            .map_err(|e| {
+                format!(
+                    "Cannot resolve http_listen_addr '{}': {}",
+                    default_http_addr, e
+                )
+            })
+            .unwrap()
+            .collect::<Vec<SocketAddr>>()
+            .first()
+            .copied()
+            .expect("Config http_listen_addr cannot be empty.");
+
+        Some(HttpServiceTest::new(
+            addr,
+            self.metrics_register.clone(),
+        ))
+    }
+
 
     fn create_grpc_if_enabled(&self, kv: EngineRef, coord: CoordinatorRef) -> Option<GrpcService> {
         let default_grpc_addr = match self.config.service.grpc_listen_port {

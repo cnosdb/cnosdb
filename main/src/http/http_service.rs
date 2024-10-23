@@ -102,6 +102,185 @@ impl Display for ServerMode {
     }
 }
 
+pub struct HttpServiceTest {
+    addr: SocketAddr,
+    http_metrics: Arc<HttpMetrics>,
+    handle: Option<ServiceHandle<()>>,
+
+
+}
+
+impl HttpServiceTest {
+    pub fn new(
+        addr: SocketAddr,
+        metrics_register: Arc<MetricsRegister>,
+    ) -> Self {
+        let http_metrics = Arc::new(HttpMetrics::new(&metrics_register));
+
+        Self {
+            http_metrics,
+            addr,
+            handle: None,
+        }
+    }
+
+    fn with_http_metrics(
+        &self,
+    ) -> impl Filter<Extract = (Arc<HttpMetrics>,), Error = Infallible> + Clone {
+        let metric = self.http_metrics.clone();
+        warp::any().map(move || metric.clone())
+    }
+
+    fn with_hostaddr(&self) -> impl Filter<Extract = (String,), Error = Infallible> + Clone {
+        let hostaddr = self.addr.clone().to_string();
+        warp::any().map(move || hostaddr.clone())
+    }
+
+    #[allow(unused_variables)]
+    fn debug_pprof(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        warp::path!("debug" / "pprof")
+            .and(self.with_http_metrics())
+            .and(self.with_hostaddr())
+            .and_then(|metrics: Arc<HttpMetrics>, addr: String| async move {
+                let start = Instant::now();
+                #[cfg(unix)]
+                {
+                    let res = utils::pprof_tools::gernate_pprof().await;
+                    info!("debug pprof: {:?}", res);
+                    let resp = match res {
+                        Ok(v) => Ok(v),
+                        Err(e) => Err(reject::custom(HttpError::PProf { reason: e })),
+                    };
+                    let result_size = size_of_val(&resp);
+                    let value_size = match &resp {
+                        Ok(value) => size_of_val(value),
+                        Err(error) => size_of_val(error),
+                    };
+
+                    let total_size = result_size + value_size;
+                    http_response_time_and_flow_metrics(
+                        &metrics,
+                        &addr,
+                        total_size,
+                        start,
+                        HttpApiType::DebugPprof,
+                    );
+                    resp
+                }
+                #[cfg(not(unix))]
+                {
+                    Err::<String, _>(reject::not_found())
+                }
+            })
+    }
+
+    #[allow(unused_variables)]
+    fn debug_jeprof(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        warp::path!("debug" / "jeprof")
+            .and(self.with_http_metrics())
+            .and(self.with_hostaddr())
+            .and_then(|metrics: Arc<HttpMetrics>, addr: String| async move {
+                let start = Instant::now();
+                #[cfg(unix)]
+                {
+                    let res = utils::pprof_tools::gernate_jeprof().await;
+                    info!("debug jeprof: {:?}", res);
+                    let resp = match res {
+                        Ok(v) => Ok(v),
+                        Err(e) => Err(reject::custom(HttpError::PProf { reason: e })),
+                    };
+                    let result_size = size_of_val(&resp);
+                    let value_size = match &resp {
+                        Ok(value) => size_of_val(value),
+                        Err(error) => size_of_val(error),
+                    };
+
+                    let total_size = result_size + value_size;
+                    http_response_time_and_flow_metrics(
+                        &metrics,
+                        &addr,
+                        total_size,
+                        start,
+                        HttpApiType::DebugJeprof,
+                    );
+                    resp
+                }
+                #[cfg(not(unix))]
+                {
+                    Err::<String, _>(reject::not_found())
+                }
+            })
+    }
+
+    fn ping(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        warp::path!("api" / "v1" / "ping")
+            .and(warp::get().or(warp::head()))
+            .and(self.with_http_metrics())
+            .and(self.with_hostaddr())
+            .map(|_, metrics: Arc<HttpMetrics>, addr: String| {
+                let start = Instant::now();
+                let mut resp = HashMap::new();
+                resp.insert("version", VERSION.as_str());
+                resp.insert("status", "healthy");
+                let keys_values_size: usize = resp
+                    .iter()
+                    .map(|(key, value)| size_of_val(*key) + size_of_val(*value))
+                    .sum();
+                http_response_time_and_flow_metrics(
+                    &metrics,
+                    &addr,
+                    keys_values_size,
+                    start,
+                    HttpApiType::ApiV1Ping,
+                );
+                warp::reply::json(&resp)
+            })
+    }
+
+    fn routes_store(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        self.ping()
+            .or(self.debug_pprof())
+            .or(self.debug_jeprof())
+    }
+}
+
+#[async_trait::async_trait]
+impl Service for HttpServiceTest {
+    fn start(&mut self) -> Result<(), server::Error> {
+        let (shutdown, rx) = oneshot::channel();
+        let signal = async {
+            rx.await.ok();
+            info!("http test server graceful shutdown!");
+        };
+        let join_handle =
+        {
+            let routes = self.routes_store().recover(handle_rejection);
+            let (addr, server) =
+                warp::serve(routes).bind_with_graceful_shutdown(self.addr, signal);
+            info!("http test server start addr: {}", addr);
+            tokio::spawn(server)
+        };
+        self.handle = Some(ServiceHandle::new(
+            "http service test".to_string(),
+            join_handle,
+            shutdown,
+        ));
+        Ok(())
+    }
+
+    async fn stop(&mut self, force: bool) {
+        if let Some(stop) = self.handle.take() {
+            stop.shutdown(force).await
+        };
+    }
+}
+
 pub struct HttpService {
     tls_config: Option<TLSConfig>,
     addr: SocketAddr,
