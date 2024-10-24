@@ -5318,6 +5318,11 @@ INSERT INTO air1 (TIME, station, visibility, temperature, pressure) VALUES
                 ('2022-10-19 05:42:00', 'XiaoMaiDao1', 55, 68, 76),
                 ('2022-10-19 05:43:00', 'XiaoMaiDao', 55, 68, 76);
 
+query T
+select count(*) as count from (select count(*) as c from air1);
+----
+1
+
 query T rowsort
 select count(*) from air1 group by station;
 ----
