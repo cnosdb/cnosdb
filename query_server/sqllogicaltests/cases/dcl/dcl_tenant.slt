@@ -171,14 +171,33 @@ CREATE TENANT t11 WITH comment='☀';
 statement ok
 DROP TENANT t11;
 
-statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Expected a value, found: ;", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Expected literal string, found: ;", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
 CREATE TENANT t12 WITH comment;
 
 statement ok
 drop tenant if exists t_001;
 
 statement ok
-create tenant t_001 with comment='t_001 first comment', _limiter='{ "object_config": { "max_users_number": 1, "max_databases": 3, "max_shard_number": 2, "max_replicate_number": 2, "max_retention_time": 30 }, "request_config": { "data_in": { "remote_bucket": { "max": 10000, "initial": 0, "refill": 10000, "interval": 100 }, "local_bucket": { "max": 10000, "initial": 0 } }, "data_out": { "remote_bucket": { "max": 100, "initial": 0, "refill": 100, "interval": 100 }, "local_bucket": { "max": 100, "initial": 0 } }, "queries": null, "writes": null } }',drop_after='7d';
+create tenant t_001 with comment='t_001 first comment',
+        object_config        MAX_users_number = 1
+                            max_databases = 3
+                            max_shard_number = 2
+                            max_replicate_number = 2
+                            max_retention_time = 30,
+        DATA_in              remote_max = 10000
+                            remote_initial = 0
+                            remote_refill = 10000
+                            remote_interval = 100
+                            local_max = 10000
+                            local_initial = 0,
+        data_out             remote_max = 100
+                            remote_initial = 0
+                            remote_refill = 100
+                            remote_interval = 100
+                            local_max = 100
+                            local_initial = 0,
+        MAX_queries = null, MAX_writes = null,
+        drop_after='7d';
 
 query T
 select * from cluster_schema.tenants where tenant_name='t_001';
