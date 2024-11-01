@@ -30,11 +30,12 @@ rand = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 snafu = { workspace = true }
-tokio = { workspace = true, features = ["full", "tracing"] }
+tokio = { workspace = true, features = ["full", "tracing", "parking_lot",] }
 tokio-stream = { workspace = true }
 tokio-util = { workspace = true }
 uuid = { workspace = true }
 snap = { workspace = true }
+lru = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true, features = ["Win32_Storage_FileSystem"] }

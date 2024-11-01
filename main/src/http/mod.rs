@@ -11,7 +11,6 @@ use warp::{reject, Rejection};
 use self::response::ResponseBuilder;
 
 mod api_type;
-mod auth_cache;
 mod encoding;
 pub mod header;
 pub mod http_service;

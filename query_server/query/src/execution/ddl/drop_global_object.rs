@@ -40,6 +40,8 @@ impl DDLDefinitionTask for DropGlobalObjectTask {
                 debug!("Drop user {}", name);
                 let success = meta.drop_user(name).await?;
 
+                query_state_machine.remove_user_from_cache(name);
+
                 if let (false, false) = (if_exist, success) {
                     return Err(QueryError::Meta {
                         source: MetaError::UserNotFound {

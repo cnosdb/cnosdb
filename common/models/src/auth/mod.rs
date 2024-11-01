@@ -6,6 +6,7 @@ use snafu::Snafu;
 use crate::auth::privilege::DatabasePrivilege;
 use crate::define_result;
 
+pub mod auth_cache;
 mod password;
 pub mod privilege;
 pub mod role;

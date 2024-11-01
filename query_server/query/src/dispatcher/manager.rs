@@ -5,7 +5,8 @@ use coordinator::service::CoordinatorRef;
 use memory_pool::MemoryPoolRef;
 use meta::error::MetaError;
 use meta::model::MetaClientRef;
-use models::auth::user::admin_user;
+use models::auth::auth_cache::AuthCache;
+use models::auth::user::{admin_user, User};
 use models::oid::Oid;
 use spi::query::ast::ExtStatement;
 use spi::query::datasource::stream::StreamProviderManagerRef;
@@ -45,6 +46,7 @@ pub struct SimpleQueryDispatcher {
     func_manager: FuncMetaManagerRef,
     stream_provider_manager: StreamProviderManagerRef,
     trace_collector: Option<Arc<dyn TraceExporter>>,
+    auth_cache: Arc<AuthCache<String, User>>,
 }
 
 #[async_trait]
@@ -184,6 +186,7 @@ impl QueryDispatcher for SimpleQueryDispatcher {
             query,
             session,
             self.coord.clone(),
+            self.auth_cache.clone(),
         ));
         Ok(query_state_machine)
     }
@@ -306,6 +309,7 @@ pub struct SimpleQueryDispatcherBuilder {
     func_manager: Option<FuncMetaManagerRef>,
     stream_provider_manager: Option<StreamProviderManagerRef>,
     trace_collector: Option<Arc<dyn TraceExporter>>,
+    auth_cache: Option<Arc<AuthCache<String, User>>>,
 }
 
 impl SimpleQueryDispatcherBuilder {
@@ -373,6 +377,11 @@ impl SimpleQueryDispatcherBuilder {
         self
     }
 
+    pub fn with_auth_cache(mut self, auth_cache: Arc<AuthCache<String, User>>) -> Self {
+        self.auth_cache = Some(auth_cache);
+        self
+    }
+
     pub fn build(self) -> Result<SimpleQueryDispatcher> {
         let coord = self.coord.ok_or_else(|| QueryError::BuildQueryDispatcher {
             err: "lost of coord".to_string(),
@@ -434,6 +443,12 @@ impl SimpleQueryDispatcherBuilder {
 
         let trace_collector = self.trace_collector;
 
+        let auth_cache = self
+            .auth_cache
+            .ok_or_else(|| QueryError::BuildQueryDispatcher {
+                err: "lost of auth_cache".to_string(),
+            })?;
+
         Ok(SimpleQueryDispatcher {
             coord,
             default_table_provider,
@@ -446,6 +461,7 @@ impl SimpleQueryDispatcherBuilder {
             func_manager,
             stream_provider_manager,
             trace_collector,
+            auth_cache,
         })
     }
 }
