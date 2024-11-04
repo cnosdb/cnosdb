@@ -5,6 +5,7 @@ use std::fmt::Debug;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
+use config::common::{RequestLimiterConfig, TenantLimiterConfig, TenantObjectLimiterConfig};
 use config::tskv::Config;
 use metrics::metric_register::MetricsRegister;
 use models::auth::user::{admin_user, User, UserDesc, UserOptions};
@@ -31,7 +32,6 @@ use crate::limiter::limiter_manager::{LimiterKey, LimiterManager};
 use crate::limiter::{LimiterConfig, LimiterType, RequestLimiter};
 use crate::store::command::{self, EntryLog};
 use crate::store::key_path;
-
 pub const USE_TENANT_ACTION_ADD: i32 = 1;
 pub const USE_TENANT_ACTION_DEL: i32 = 2;
 
@@ -696,15 +696,105 @@ impl AdminMeta {
     }
 
     pub async fn alter_tenant(&self, name: &str, options: TenantOptions) -> MetaResult<()> {
-        let req = command::WriteCommand::AlterTenant(self.cluster(), name.to_string(), options);
+        let req = command::ReadCommand::Tenant(self.cluster(), name.to_string(), true);
+        let old_tenant = self.client.read::<Option<Tenant>>(&req).await?;
 
+        // Step 2: 若 tenant 存在，则与新的 options 进行合并
+        let merged_options = if let Some(ref tenant) = old_tenant {
+            let old_options = tenant.options().clone();
+            TenantOptions {
+                comment: options.comment,
+                drop_after: options.drop_after,
+                tenant_is_hidden: options.tenant_is_hidden,
+                limiter_config: match options.limiter_config {
+                    Some(_) => Self::merge_limiter_config(
+                        old_options.limiter_config,
+                        options.limiter_config,
+                    ),
+                    None => options.limiter_config, // 如果新的 limiter_config 为 None，意味着unset limiter_config，改为新值
+                },
+            }
+        } else {
+            options // 如果 tenant 不存在则直接使用新的 options
+        };
+
+        let req =
+            command::WriteCommand::AlterTenant(self.cluster(), name.to_string(), merged_options);
         let tenant = self.client.write::<Tenant>(&req).await?;
-
         let tenant_meta = self.create_tenant_meta(tenant).await?;
-
         self.tenants.write().insert(name.to_string(), tenant_meta);
-
         Ok(())
+    }
+    // 合并 limiter_config 的辅助函数
+    fn merge_limiter_config(
+        old_config: Option<TenantLimiterConfig>,
+        new_config: Option<TenantLimiterConfig>,
+    ) -> Option<TenantLimiterConfig> {
+        match (old_config, new_config) {
+            (Some(old), Some(new)) => Some(TenantLimiterConfig {
+                object_config: Self::merge_object_config(old.object_config, new.object_config),
+                request_config: Self::merge_request_config(old.request_config, new.request_config),
+            }),
+            (Some(old), None) => Some(old),
+            (None, Some(new)) => Some(new),
+            (None, None) => None,
+        }
+    }
+    // 合并 object_config 的辅助函数
+    fn merge_object_config(
+        old: Option<TenantObjectLimiterConfig>,
+        new: Option<TenantObjectLimiterConfig>,
+    ) -> Option<TenantObjectLimiterConfig> {
+        Some(TenantObjectLimiterConfig {
+            max_users_number: new
+                .and_then(|n| n.max_users_number)
+                .or(old.and_then(|o| o.max_users_number)),
+            max_databases: new
+                .and_then(|n| n.max_databases)
+                .or(old.and_then(|o| o.max_databases)),
+            max_shard_number: new
+                .and_then(|n| n.max_shard_number)
+                .or(old.and_then(|o| o.max_shard_number)),
+            max_replicate_number: new
+                .and_then(|n| n.max_replicate_number)
+                .or(old.and_then(|o| o.max_replicate_number)),
+            max_retention_time: new
+                .and_then(|n| n.max_retention_time)
+                .or(old.and_then(|o| o.max_retention_time)),
+        })
+    }
+
+    // 合并 request_config 的辅助函数
+    fn merge_request_config(
+        old: Option<RequestLimiterConfig>,
+        new: Option<RequestLimiterConfig>,
+    ) -> Option<RequestLimiterConfig> {
+        Some(RequestLimiterConfig {
+            coord_data_in: new
+                .and_then(|n| n.coord_data_in)
+                .or_else(|| old.and_then(|o| o.coord_data_in)),
+            coord_data_out: new
+                .and_then(|n| n.coord_data_out)
+                .or_else(|| old.and_then(|o| o.coord_data_out)),
+            coord_queries: new
+                .and_then(|n| n.coord_queries)
+                .or_else(|| old.and_then(|o| o.coord_queries)),
+            coord_writes: new
+                .and_then(|n| n.coord_writes)
+                .or_else(|| old.and_then(|o| o.coord_writes)),
+            http_data_in: new
+                .and_then(|n| n.http_data_in)
+                .or_else(|| old.and_then(|o| o.http_data_in)),
+            http_data_out: new
+                .and_then(|n| n.http_data_out)
+                .or_else(|| old.and_then(|o| o.http_data_out)),
+            http_queries: new
+                .and_then(|n| n.http_queries)
+                .or_else(|| old.and_then(|o| o.http_queries)),
+            http_writes: new
+                .and_then(|n| n.http_writes)
+                .or_else(|| old.and_then(|o| o.http_writes)),
+        })
     }
 
     pub async fn set_tenant_is_hidden(&self, name: &str, tenant_is_hidden: bool) -> MetaResult<()> {
