@@ -6,7 +6,7 @@ use memory_pool::MemoryPoolRef;
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
 use models::predicate::domain::TimeRange;
-use models::schema::{DatabaseSchema, Precision, TskvTableSchema, TskvTableSchemaRef};
+use models::schema::{DatabaseSchema, Precision, TskvTableSchemaRef};
 use models::{SchemaId, SeriesId, SeriesKey};
 use protos::models::{FieldType, Point, Table};
 use snafu::ResultExt;
@@ -379,10 +379,9 @@ impl Database {
 
         let row =
             RowData::point_to_row_data(point, &table_schema, precision, field_names, field_type)?;
-        let schema_size = table_schema.size();
         let schema_id = table_schema.schema_id;
-        let entry = map.entry((sid, schema_id)).or_insert(RowGroup {
-            schema: Arc::new(TskvTableSchema::default()),
+        let entry = map.entry((sid, schema_id)).or_insert_with(|| RowGroup {
+            schema: table_schema,
             rows: vec![],
             range: TimeRange {
                 min_ts: i64::MAX,
@@ -390,8 +389,6 @@ impl Database {
             },
             size: size_of::<RowGroup>(),
         });
-        entry.schema = table_schema;
-        entry.size += schema_size;
         entry.range.merge(&TimeRange {
             min_ts: row.ts,
             max_ts: row.ts,
