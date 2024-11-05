@@ -1,4 +1,3 @@
-use std::error::Error;
 use std::sync::Arc;
 
 use arrow::buffer::NullBuffer;
@@ -6,7 +5,7 @@ use arrow_array::builder::Int64Builder;
 use arrow_array::{ArrayRef, Int64Array};
 use integer_encoding::*;
 
-use super::simple8b;
+use super::{simple8b, CodecError};
 use crate::tsm::codec::timestamp::{
     ts_pco_decode_to_array, ts_pco_encode, ts_without_compress_decode_to_array,
     ts_without_compress_encode,
@@ -24,14 +23,11 @@ pub enum DeltaEncoding {
     Rle = 2,
 }
 
-pub fn i64_pco_encode(src: &[i64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn i64_pco_encode(src: &[i64], dst: &mut Vec<u8>) -> Result<(), CodecError> {
     ts_pco_encode(src, dst)
 }
 
-pub fn i64_without_compress_encode(
-    src: &[i64],
-    dst: &mut Vec<u8>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn i64_without_compress_encode(src: &[i64], dst: &mut Vec<u8>) -> Result<(), CodecError> {
     ts_without_compress_encode(src, dst)
 }
 
@@ -41,10 +37,7 @@ pub fn i64_without_compress_encode(
 /// deltas are then zig-zag encoded. The resulting zig-zag encoded deltas are
 /// further compressed if possible, either via bit-packing using simple8b or by
 /// run-length encoding the deltas if they're all the same.
-pub fn i64_zigzag_simple8b_encode(
-    src: &[i64],
-    dst: &mut Vec<u8>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn i64_zigzag_simple8b_encode(src: &[i64], dst: &mut Vec<u8>) -> Result<(), CodecError> {
     if src.is_empty() {
         return Ok(());
     }
@@ -149,7 +142,7 @@ fn encode_rle(v: u64, delta: u64, count: u64, dst: &mut Vec<u8>) {
 pub fn i64_zigzag_simple8b_decode_to_array(
     src: &[u8],
     bit_set: &NullBuffer,
-) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
+) -> Result<ArrayRef, CodecError> {
     if src.is_empty() {
         let null_value: Vec<Option<i64>> = vec![None; bit_set.len()];
         let array = Int64Array::from(null_value);
@@ -169,10 +162,7 @@ pub fn i64_zigzag_simple8b_decode_to_array(
     }
 }
 
-fn decode_uncompressed_to_array(
-    src: &[u8],
-    bit_set: &NullBuffer,
-) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
+fn decode_uncompressed_to_array(src: &[u8], bit_set: &NullBuffer) -> Result<ArrayRef, CodecError> {
     if src.is_empty() || src.len() & 0x7 != 0 {
         return Err(From::from("invalid uncompressed block length"));
     }
@@ -193,10 +183,7 @@ fn decode_uncompressed_to_array(
     Ok(Arc::new(builder.finish()))
 }
 
-fn decode_rle_to_array(
-    src: &[u8],
-    bit_set: &NullBuffer,
-) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
+fn decode_rle_to_array(src: &[u8], bit_set: &NullBuffer) -> Result<ArrayRef, CodecError> {
     if src.len() < 8 {
         return Err(From::from("not enough data to decode using RLE"));
     }
@@ -226,10 +213,7 @@ fn decode_rle_to_array(
     Ok(Arc::new(builder.finish()))
 }
 
-fn decode_simple8b_to_array(
-    src: &[u8],
-    bit_set: &NullBuffer,
-) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
+fn decode_simple8b_to_array(src: &[u8], bit_set: &NullBuffer) -> Result<ArrayRef, CodecError> {
     if src.len() < 8 {
         return Err(From::from("not enough data to decode packed integer."));
     }
@@ -266,14 +250,11 @@ fn decode_simple8b_to_array(
 pub fn i64_without_compress_decode_to_array(
     src: &[u8],
     bit_set: &NullBuffer,
-) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
+) -> Result<ArrayRef, CodecError> {
     ts_without_compress_decode_to_array(src, bit_set)
 }
 
-pub fn i64_pco_decode_to_array(
-    src: &[u8],
-    bit_set: &NullBuffer,
-) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
+pub fn i64_pco_decode_to_array(src: &[u8], bit_set: &NullBuffer) -> Result<ArrayRef, CodecError> {
     ts_pco_decode_to_array(src, bit_set)
 }
 
