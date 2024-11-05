@@ -1,4 +1,3 @@
-use std::error::Error;
 use std::sync::Arc;
 
 use arrow::buffer::NullBuffer;
@@ -7,11 +6,9 @@ use arrow_array::{ArrayRef, Float64Array};
 use pco::standalone::{simple_decompress, simpler_compress};
 use pco::DEFAULT_COMPRESSION_LEVEL;
 
+use super::CodecError;
 use crate::byte_utils::decode_be_f64;
 use crate::tsm::codec::Encoding;
-
-// note: encode/decode adapted from influxdb_iox
-// https://github.com/influxdata/influxdb_iox/tree/main/influxdb_tsm/src/encoders
 
 // SENTINEL is used to terminate a float-encoded block. A sentinel marker value
 // is useful because blocks do not always end aligned to bytes, and spare empty
@@ -32,10 +29,7 @@ fn is_sentinel_u64(v: u64, sentinel: u64) -> bool {
 /// two is determined. Leading and trailing zero bits are then analysed and
 /// representations based on those are stored.
 #[allow(clippy::many_single_char_names)]
-pub fn f64_gorilla_encode(
-    src: &[f64],
-    dst: &mut Vec<u8>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn f64_gorilla_encode(src: &[f64], dst: &mut Vec<u8>) -> Result<(), CodecError> {
     if src.is_empty() {
         return Ok(());
     }
@@ -248,7 +242,7 @@ pub fn f64_gorilla_encode(
     Ok(())
 }
 
-pub fn f64_pco_encode(src: &[f64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn f64_pco_encode(src: &[f64], dst: &mut Vec<u8>) -> Result<(), CodecError> {
     if src.is_empty() {
         return Ok(());
     }
@@ -259,10 +253,7 @@ pub fn f64_pco_encode(src: &[f64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Erro
     Ok(())
 }
 
-pub fn f64_without_compress_encode(
-    src: &[f64],
-    dst: &mut Vec<u8>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn f64_without_compress_encode(src: &[f64], dst: &mut Vec<u8>) -> Result<(), CodecError> {
     if src.is_empty() {
         return Ok(());
     }
@@ -357,10 +348,7 @@ const BIT_MASK: [u64; 64] = [
 ];
 
 /// decode decodes the provided slice of bytes into a vector of f64 values.
-pub fn f64_gorilla_decode(
-    src: &[u8],
-    bit_set: &NullBuffer,
-) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
+pub fn f64_gorilla_decode(src: &[u8], bit_set: &NullBuffer) -> Result<ArrayRef, CodecError> {
     if src.is_empty() {
         let null_value: Vec<Option<f64>> = vec![None; bit_set.len()];
         let array = Float64Array::from(null_value);
@@ -370,10 +358,7 @@ pub fn f64_gorilla_decode(
     decode_with_sentinel(src, bit_set, SENTINEL)
 }
 
-pub fn f64_pco_decode(
-    src: &[u8],
-    bit_set: &NullBuffer,
-) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
+pub fn f64_pco_decode(src: &[u8], bit_set: &NullBuffer) -> Result<ArrayRef, CodecError> {
     if src.is_empty() || src.len() == 1 {
         let null_value: Vec<Option<f64>> = vec![None; bit_set.len()];
         let array = Float64Array::from(null_value);
@@ -402,7 +387,7 @@ pub fn f64_pco_decode(
 pub fn f64_without_compress_decode(
     src: &[u8],
     bit_set: &NullBuffer,
-) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
+) -> Result<ArrayRef, CodecError> {
     if src.is_empty() {
         let null_value: Vec<Option<f64>> = vec![None; bit_set.len()];
         let array = Float64Array::from(null_value);
@@ -434,7 +419,7 @@ fn decode_with_sentinel(
     src: &[u8],
     bit_set: &NullBuffer,
     sentinel: u64,
-) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
+) -> Result<ArrayRef, CodecError> {
     if src.is_empty() {
         return Ok(Arc::new(Float64Array::from(vec![] as Vec<f64>)));
     }
@@ -457,7 +442,7 @@ fn decode_with_sentinel(
 
     // Refill br_cached_value, reading up to 8 bytes from b, returning the new
     // values for the cached value, the valid bits and the number of bytes read.
-    let mut refill_cache = |i: usize| -> Result<(u64, u8, usize), Box<dyn Error + Send + Sync>> {
+    let mut refill_cache = |i: usize| -> Result<(u64, u8, usize), CodecError> {
         let remaining_bytes = src.len() - i;
         if remaining_bytes >= 8 {
             // read 8 bytes directly
