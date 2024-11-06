@@ -11,7 +11,7 @@ use super::metrics::FlushMetrics;
 use crate::compaction::FlushReq;
 use crate::error::TskvResult;
 use crate::file_system::async_filesystem::LocalFileSystem;
-use crate::file_utils::{make_delta_file, make_tsm_file};
+use crate::file_utils::make_delta_file;
 use crate::mem_cache::memcache::{MemCache, MemCacheSeriesScanIterator};
 use crate::summary::{CompactMeta, VersionEdit};
 use crate::tsm::writer::TsmWriter;
@@ -22,8 +22,6 @@ pub struct FlushTask {
     tsf_id: VnodeId,
     memcache: Arc<RwLock<MemCache>>,
 
-    path_tsm: PathBuf,
-    current_tsm_file_id: ColumnFileId,
     path_delta: PathBuf,
     current_delta_file_id: ColumnFileId,
 }
@@ -34,28 +32,20 @@ impl FlushTask {
         tsf_id: VnodeId,
         memcache: Arc<RwLock<MemCache>>,
         path_tsm: PathBuf,
-        path_delta: PathBuf,
     ) -> TskvResult<Self> {
         Ok(Self {
             owner,
             tsf_id,
             memcache,
-            path_tsm,
-            path_delta,
-            current_tsm_file_id: 0,
+            path_delta: path_tsm,
             current_delta_file_id: 0,
         })
     }
 
     pub fn clear_files(&mut self) {
-        let tsm_path = make_tsm_file(&self.path_tsm, self.current_tsm_file_id);
-        let delta_path = make_delta_file(&self.path_delta, self.current_delta_file_id);
+        let tsm_path = make_delta_file(&self.path_delta, self.current_delta_file_id);
         if let Err(err) = LocalFileSystem::remove_if_exists(&tsm_path) {
             info!("delete flush tsm file: {:?} failed: {}", tsm_path, err);
-        }
-
-        if let Err(err) = LocalFileSystem::remove_if_exists(&delta_path) {
-            info!("delete flush tsm file: {:?} failed: {}", delta_path, err);
         }
     }
 
@@ -68,16 +58,11 @@ impl FlushTask {
         let owner = self.owner.clone();
         let mut version_edit = VersionEdit::new_update_vnode(self.tsf_id, owner, high_seq_no);
 
-        let file_id = self.memcache.read().tsm_file_id();
-        self.current_tsm_file_id = file_id;
-        let mut tsm_writer = TsmWriter::open(&self.path_tsm, file_id, 0, false).await?;
-
-        let file_id = self.memcache.read().delta_file_id();
+        let file_id = self.memcache.read().file_id();
         self.current_delta_file_id = file_id;
-        let mut delta_writer = TsmWriter::open(&self.path_delta, file_id, 0, true).await?;
+        let mut tsm_writer = TsmWriter::open(&self.path_delta, file_id, 0, true).await?;
 
         let mut tsm_writer_is_used = false;
-        let mut delta_writer_is_used = false;
         let series_iter = MemCacheSeriesScanIterator::new(self.memcache.clone());
         metrics.flush_series_count += series_iter.series_count();
         for series in series_iter {
@@ -88,13 +73,13 @@ impl FlushTask {
                     series.series_id,
                     series.series_key.clone(),
                     series.range,
-                    series.convert_to_page(max_level_ts)?,
+                    series.convert_to_page()?,
                 )
             };
             metrics.convert_to_page_time += instant.elapsed().as_millis() as u64;
 
             let instant = std::time::Instant::now();
-            if let Some((schema, pages, delta_pages)) = convert_result {
+            if let Some((schema, pages)) = convert_result {
                 if !pages.is_empty() {
                     tsm_writer_is_used = true;
                     tsm_writer
@@ -107,23 +92,10 @@ impl FlushTask {
                         )
                         .await?;
                 }
-
-                if !delta_pages.is_empty() {
-                    delta_writer_is_used = true;
-                    delta_writer
-                        .write_pages(
-                            schema,
-                            series_id,
-                            series_key.clone(),
-                            delta_pages,
-                            time_range,
-                        )
-                        .await?;
-                }
             }
             metrics.writer_pages_time += instant.elapsed().as_millis() as u64;
         }
-        metrics.write_tsm_pages_size += tsm_writer.size() + delta_writer.size();
+        metrics.write_tsm_pages_size += tsm_writer.size();
 
         let finish_instant = std::time::Instant::now();
         let mut files_meta = HashMap::new();
@@ -138,7 +110,7 @@ impl FlushTask {
                 self.tsf_id,
                 tsm_writer.file_id(),
                 tsm_writer.size(),
-                1,
+                0,
                 tsm_writer.min_ts(),
                 tsm_writer.max_ts(),
             );
@@ -150,31 +122,8 @@ impl FlushTask {
             info!("Flush: remove unsed file: {:?}, {:?}", path, result);
         }
 
-        if delta_writer_is_used {
-            delta_writer.finish().await?;
-            files_meta.insert(
-                delta_writer.file_id(),
-                Arc::new(delta_writer.series_bloom_filter().clone()),
-            );
-
-            let delta_meta = CompactMeta::new(
-                self.tsf_id,
-                delta_writer.file_id(),
-                delta_writer.size(),
-                0,
-                delta_writer.min_ts(),
-                delta_writer.max_ts(),
-            );
-
-            max_level_ts = max(max_level_ts, delta_meta.max_ts);
-            version_edit.add_file(delta_meta, max_level_ts);
-        } else {
-            let path = delta_writer.path();
-            let result = LocalFileSystem::remove_if_exists(path);
-            info!("Flush: remove unsed file: {:?}, {:?}", path, result);
-        }
         metrics.writer_finish_time += finish_instant.elapsed().as_millis() as u64;
-        metrics.write_tsm_file_size += tsm_writer.size() + delta_writer.size();
+        metrics.write_tsm_file_size += tsm_writer.size();
 
         Ok((version_edit, files_meta))
     }
@@ -203,9 +152,8 @@ pub async fn flush_memtable(
     };
 
     let owner = req.owner.clone();
-    let path_tsm = storage_opt.tsm_dir(&req.owner, req.tf_id);
     let path_delta = storage_opt.delta_dir(&req.owner, req.tf_id);
-    let mut flush_task = FlushTask::new(owner, req.tf_id, mem, path_tsm, path_delta).await?;
+    let mut flush_task = FlushTask::new(owner, req.tf_id, mem, path_delta).await?;
 
     let mut metrics = req.flush_metrics.write().await;
     let result = flush_task
@@ -232,7 +180,7 @@ pub mod flush_tests {
     use std::path::PathBuf;
     use std::sync::Arc;
 
-    use arrow_array::{ArrayRef, RecordBatch};
+    use arrow_array::{ArrayRef, Float64Array, RecordBatch, TimestampNanosecondArray};
     use arrow_schema::TimeUnit;
     use cache::ShardedAsyncCache;
     use memory_pool::{GreedyMemoryPool, MemoryPool};
@@ -254,37 +202,16 @@ pub mod flush_tests {
     use crate::mem_cache::series_data::RowGroup;
     use crate::tsfamily::level_info::LevelInfo;
     use crate::tsfamily::version::Version;
-    use crate::tsm::mutable_column::MutableColumn;
     use crate::tsm::reader::TsmReader;
     use crate::tsm::writer::TsmWriter;
     use crate::Options;
 
     fn f64_column(data: Vec<f64>) -> ArrayRef {
-        let mut col = MutableColumn::empty(TableColumn::new(
-            4,
-            "f_col_1".to_string(),
-            ColumnType::Field(ValueType::Float),
-            Encoding::default(),
-        ))
-        .unwrap();
-        for datum in data {
-            col.push(Some(FieldVal::Float(datum))).unwrap()
-        }
-        col.to_arrow_array(None).unwrap()
+        Arc::new(Float64Array::from(data))
     }
 
     fn ts_column(data: Vec<i64>) -> ArrayRef {
-        let mut col = MutableColumn::empty(TableColumn::new(
-            1,
-            "time".to_string(),
-            ColumnType::Time(TimeUnit::Nanosecond),
-            Encoding::default(),
-        ))
-        .unwrap();
-        for datum in data {
-            col.push(Some(FieldVal::Integer(datum))).unwrap()
-        }
-        col.to_arrow_array(None).unwrap()
+        Arc::new(TimestampNanosecondArray::from(data))
     }
 
     #[test]
@@ -367,7 +294,7 @@ pub mod flush_tests {
         let database = Arc::new("cnosdb.test".to_string());
 
         #[rustfmt::skip]
-            let levels = [
+        let levels = [
             LevelInfo::init(database.clone(), 0, 0, opt.storage.clone()),
             LevelInfo::init(database.clone(), 1, 0, opt.storage.clone()),
             LevelInfo::init(database.clone(), 2, 0, opt.storage.clone()),
@@ -387,9 +314,9 @@ pub mod flush_tests {
         );
         let sid = 1;
         let memory_pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
-        let mem_cache = MemCache::new(1, 0, 1, 1000, 2, 1, &memory_pool);
+        let mem_cache = MemCache::new(1, 0, 1000, 2, 1, &memory_pool);
         #[rustfmt::skip]
-            let mut schema_1 = TskvTableSchema::new(
+        let mut schema_1 = TskvTableSchema::new(
             "test_tenant".to_string(), "test_db".to_string(), "test_table".to_string(),
             vec![
                 TableColumn::new_time_column(1, TimeUnit::Nanosecond),
@@ -430,16 +357,9 @@ pub mod flush_tests {
 
         let memcache = Arc::new(RwLock::new(mem_cache));
         let path_tsm = PathBuf::from("/tmp/test/flush/tsm1");
-        let path_delta = PathBuf::from("/tmp/test/flush/tsm2");
-        let mut flush_task = FlushTask::new(
-            database.to_string(),
-            1,
-            memcache,
-            path_tsm.clone(),
-            path_delta.clone(),
-        )
-        .await
-        .unwrap();
+        let mut flush_task = FlushTask::new(database.to_string(), 1, memcache, path_tsm.clone())
+            .await
+            .unwrap();
 
         let mut metrics = FlushMetrics::default();
         let (edit, _) = flush_task
@@ -447,8 +367,7 @@ pub mod flush_tests {
             .await
             .unwrap();
 
-        let tsm_info = edit.add_files.first().unwrap();
-        let delta_info = edit.add_files.get(1).unwrap();
+        let delta_info = edit.add_files.first().unwrap();
 
         let mut schema = TskvTableSchema::new(
             "test_tenant".to_string(),
@@ -484,34 +403,22 @@ pub mod flush_tests {
 
         schema.schema_version = 1;
         let schema = Arc::new(schema);
-        let data1 = RecordBatch::try_new(
+        let data = RecordBatch::try_new(
             schema.to_record_data_schema(),
-            vec![ts_column(vec![6, 9]), f64_column(vec![6.0, 9.0])],
-        )
-        .unwrap();
-
-        let data2 = RecordBatch::try_new(
-            schema.to_record_data_schema(),
-            vec![ts_column(vec![1, 3]), f64_column(vec![1.0, 3.0])],
+            vec![
+                ts_column(vec![1, 3, 6, 9]),
+                f64_column(vec![1.0, 3.0, 6.0, 9.0]),
+            ],
         )
         .unwrap();
 
         {
-            let tsm_writer = TsmWriter::open(&path_tsm, tsm_info.file_id, 100, false)
-                .await
-                .unwrap();
-            let tsm_reader = TsmReader::open(tsm_writer.path()).await.unwrap();
-            let tsm_data = tsm_reader.read_record_batch(1, 0).await.unwrap();
-            assert_eq!(tsm_data, data1);
-        }
-
-        {
-            let delta_writer = TsmWriter::open(&path_delta, delta_info.file_id, 100, true)
+            let delta_writer = TsmWriter::open(&path_tsm, delta_info.file_id, 100, true)
                 .await
                 .unwrap();
             let delta_reader = TsmReader::open(delta_writer.path()).await.unwrap();
             let delta_data = delta_reader.read_record_batch(1, 0).await.unwrap();
-            assert_eq!(delta_data, data2);
+            assert_eq!(delta_data, data);
         }
     }
 
@@ -527,7 +434,7 @@ pub mod flush_tests {
         let database = Arc::new("cnosdb.test".to_string());
 
         #[rustfmt::skip]
-            let levels = [
+        let levels = [
             LevelInfo::init(database.clone(), 0, 0, opt.storage.clone()),
             LevelInfo::init(database.clone(), 1, 0, opt.storage.clone()),
             LevelInfo::init(database.clone(), 2, 0, opt.storage.clone()),
@@ -547,11 +454,11 @@ pub mod flush_tests {
         );
         let sid = 1;
         let memory_pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
-        let mem_cache1 = MemCache::new(1, 0, 1, 1000, 2, 1, &memory_pool);
-        let mem_cache2 = MemCache::new(1, 2, 3, 1000, 2, 1, &memory_pool);
+        let mem_cache1 = MemCache::new(1, 0, 1000, 2, 1, &memory_pool);
+        let mem_cache2 = MemCache::new(1, 1, 1000, 2, 1, &memory_pool);
 
         #[rustfmt::skip]
-            let mut schema_1 = TskvTableSchema::new(
+        let mut schema_1 = TskvTableSchema::new(
             "test_tenant".to_string(), "test_db".to_string(), "test_table".to_string(),
             vec![
                 TableColumn::new_time_column(1, TimeUnit::Nanosecond),
@@ -579,7 +486,7 @@ pub mod flush_tests {
             fields: vec![Some(FieldVal::Float(9.0))],
         });
         #[rustfmt::skip]
-            let row_group_1 = RowGroup {
+        let row_group_1 = RowGroup {
             schema: Arc::new(schema_1),
             range: TimeRange::new(1, 9),
             rows,
@@ -596,13 +503,11 @@ pub mod flush_tests {
 
         let mut metrics = FlushMetrics::default();
         let path_tsm = PathBuf::from("/tmp/test/flush2/tsm1");
-        let path_delta = PathBuf::from("/tmp/test/flush2/tsm2");
         let mut flush_task1 = FlushTask::new(
             database.as_str().to_string(),
             1,
             Arc::new(RwLock::new(mem_cache1)),
             path_tsm.clone(),
-            path_delta.clone(),
         )
         .await
         .unwrap();
@@ -610,14 +515,13 @@ pub mod flush_tests {
             .run(version.max_level_ts(), 100, &mut metrics)
             .await
             .unwrap();
-        assert_eq!(edit.add_files.len(), 2);
+        assert_eq!(edit.add_files.len(), 1);
 
         let mut flush_task2 = FlushTask::new(
             database.as_str().to_string(),
             1,
             Arc::new(RwLock::new(mem_cache2)),
             path_tsm.clone(),
-            path_delta.clone(),
         )
         .await
         .unwrap();
@@ -628,8 +532,6 @@ pub mod flush_tests {
 
         assert_eq!(edit.add_files.len(), 1);
         let tsm_files = LocalFileSystem::list_file_names(&path_tsm);
-        let delta_files = LocalFileSystem::list_file_names(&path_delta);
-        assert_eq!(tsm_files.len(), 1);
-        assert_eq!(delta_files.len(), 2);
+        assert_eq!(tsm_files.len(), 2);
     }
 }

@@ -5,10 +5,9 @@ use datafusion::common::Column;
 use datafusion::config::ConfigOptions;
 use datafusion::error::Result;
 use datafusion::logical_expr::expr::{AggregateFunction, AggregateUDF};
-use datafusion::logical_expr::{aggregate_function, Aggregate, LogicalPlan, Projection};
+use datafusion::logical_expr::{aggregate_function, Aggregate, Distinct, LogicalPlan, Projection};
 use datafusion::optimizer::analyzer::AnalyzerRule;
 use datafusion::prelude::Expr;
-use datafusion::scalar::ScalarValue;
 
 /// convert exact_count to count, but unsupported pushdown
 pub struct TransformExactCountToCountRule {}
@@ -48,17 +47,15 @@ fn analyze_internal(plan: LogicalPlan) -> Result<Transformed<LogicalPlan>> {
                             filter: filter.clone(),
                             order_by: order_by.clone(),
                         })];
-                        let new_group_expr = if group_expr.is_empty() {
-                            // add a dummy group by for forbid pushdown
-                            vec![Expr::Literal(ScalarValue::Boolean(None))]
-                        } else {
-                            group_expr.clone()
-                        };
+
                         let new_aggr_plan = Arc::new(LogicalPlan::Aggregate(Aggregate::try_new(
-                            input.clone(),
-                            new_group_expr,
+                            Arc::new(LogicalPlan::Distinct(Distinct {
+                                input: input.clone(),
+                            })),
+                            group_expr.clone(),
                             new_aggr_expr,
                         )?));
+
                         let mut new_proj_expr = expr.clone();
                         for e in &mut new_proj_expr {
                             if let Expr::Column(Column { name, .. }) = e {

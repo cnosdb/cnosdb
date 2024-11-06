@@ -311,11 +311,9 @@ impl Ord for DataReference {
         match (self, other) {
             (DataReference::Chunk(_, _, _), DataReference::Memcache(_, _, _)) => Ordering::Less,
             (DataReference::Memcache(_, _, _), DataReference::Chunk(_, _, _)) => Ordering::Greater,
-            (DataReference::Chunk(_, _, f1), DataReference::Chunk(_, _, f2)) => f1
-                .level()
-                .cmp(&f2.level())
-                .reverse()
-                .then(f1.file_id().cmp(&f2.file_id())),
+            (DataReference::Chunk(_, _, f1), DataReference::Chunk(_, _, f2)) => {
+                f1.file_id().cmp(&f2.file_id())
+            }
             (DataReference::Memcache(_, _, c1), DataReference::Memcache(_, _, c2)) => c1.cmp(c2),
         }
     }

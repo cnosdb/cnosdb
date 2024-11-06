@@ -203,7 +203,7 @@ statement ok
 compact database file_query;
 
 query 
-select * from air;
+select * from air order by time, loaction;
 ----
 2022-10-19T07:40:00.290401 "XiaoMaiDao" 1.0 1.0 1.0 "Nexus Center"
 2022-10-19T07:40:00.290401 "XiaoMaiDao" 1.0 1.0 1.0 "NULL"
@@ -212,7 +212,7 @@ statement ok
 INSERT INTO air (TIME, station, loaction, visibility, pressure, humidity) VALUES (1666165201290401000, 'XiaoMaiDao', 'Nexus Center', 1, 1, 1),(1666165202290401000, 'XiaoMaiDao', 'Nexus Center', 1, 1, 1);
 
 query 
-select * from air order by time;
+select * from air order by time, loaction;
 ----
 2022-10-19T07:40:00.290401 "XiaoMaiDao" 1.0 1.0 1.0 "Nexus Center"
 2022-10-19T07:40:00.290401 "XiaoMaiDao" 1.0 1.0 1.0 "NULL"
@@ -223,7 +223,7 @@ statement ok
 compact database file_query;
 
 query 
-select * from air order by time;
+select * from air order by time, loaction;
 ----
 2022-10-19T07:40:00.290401 "XiaoMaiDao" 1.0 1.0 1.0 "Nexus Center"
 2022-10-19T07:40:00.290401 "XiaoMaiDao" 1.0 1.0 1.0 "NULL"
@@ -234,7 +234,7 @@ statement ok
 INSERT INTO air (TIME, station, loaction, visibility, pressure, humidity) VALUES (1666165201290401000, 'XiaoMaiDao', 'Nexus Center', 11, 12, 13),(1666165202290401000, 'XiaoMaiDao', 'Nexus Center', 16, 15, 14);
 
 query
-select * from air order by time;
+select * from air order by time, loaction;
 ----
 2022-10-19T07:40:00.290401 "XiaoMaiDao" 1.0 1.0 1.0 "Nexus Center"
 2022-10-19T07:40:00.290401 "XiaoMaiDao" 1.0 1.0 1.0 "NULL"
@@ -245,7 +245,7 @@ statement ok
 compact database file_query;
 
 query
-select * from air order by time;
+select * from air order by time, loaction;
 ----
 2022-10-19T07:40:00.290401 "XiaoMaiDao" 1.0 1.0 1.0 "Nexus Center"
 2022-10-19T07:40:00.290401 "XiaoMaiDao" 1.0 1.0 1.0 "NULL"

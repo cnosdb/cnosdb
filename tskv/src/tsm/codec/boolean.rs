@@ -1,7 +1,10 @@
-use std::cmp;
 use std::convert::TryInto;
 use std::error::Error;
+use std::sync::Arc;
 
+use arrow::buffer::NullBuffer;
+use arrow_array::builder::BooleanBuilder;
+use arrow_array::{ArrayRef, BooleanArray};
 use integer_encoding::VarInt;
 
 use crate::tsm::codec::Encoding;
@@ -83,69 +86,71 @@ pub fn bool_without_compress_encode(
 /// Decodes a slice of bytes into a destination vector of `bool`s.
 pub fn bool_bitpack_decode(
     src: &[u8],
-    dst: &mut Vec<bool>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+    bit_set: &NullBuffer,
+) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
     if src.is_empty() {
-        return Ok(());
+        return Ok(Arc::new(BooleanArray::from(vec![None; bit_set.len()])));
     }
 
-    let src = &src[1..];
-
-    // First byte stores the encoding type, only have the bit packed format
-    // currently so ignore for now.
+    let src = &src[1..]; // 跳过第一个字节（编码类型）
     assert_eq!(src[0], BOOLEAN_COMPRESSED_BIT_PACKED << 4);
     let src = &src[HEADER_LEN..];
 
     let (count, num_bytes_read) = u64::decode_var(src).ok_or("boolean decoder: invalid count")?;
-
-    let mut count: usize = count.try_into()?;
+    let count: usize = count.try_into()?;
     let src = &src[num_bytes_read..];
 
-    let min = src.len() * 8;
+    let mut builder = BooleanBuilder::with_capacity(bit_set.len());
+    let mut bit_index = 0;
 
-    // Shouldn't happen - TSM file was truncated/corrupted. This is what the Go code
-    // does
-    count = cmp::min(min, count);
-
-    if dst.capacity() < count {
-        dst.reserve_exact(count - dst.capacity());
-    }
-
-    let mut j = 0;
-    for &v in src {
-        let mut i = 128;
-        while i > 0 && j < count {
-            dst.push(v & i != 0);
-            i >>= 1;
-            j += 1;
+    for is_valid in bit_set.iter() {
+        if is_valid {
+            if bit_index >= count {
+                return Err("Insufficient data for decoding".into());
+            }
+            let byte = src[bit_index / 8];
+            let bit = (byte >> (7 - (bit_index % 8))) & 1;
+            builder.append_value(bit == 1);
+            bit_index += 1;
+        } else {
+            builder.append_null();
         }
     }
-    Ok(())
-}
 
+    Ok(Arc::new(builder.finish()))
+}
 pub fn bool_without_compress_decode(
     src: &[u8],
-    dst: &mut Vec<bool>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+    bit_set: &NullBuffer,
+) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
     if src.is_empty() {
-        return Ok(());
+        return Ok(Arc::new(BooleanArray::from(vec![] as Vec<bool>)));
     }
 
     let src = &src[1..];
-
-    for i in src {
-        if *i == 1 {
-            dst.push(true);
+    let mut iter = src.iter();
+    let mut builder = BooleanBuilder::with_capacity(bit_set.len());
+    for is_valid in bit_set.iter() {
+        if is_valid {
+            if let Some(v) = iter.next() {
+                if *v == 1 {
+                    builder.append_value(true);
+                } else {
+                    builder.append_value(false);
+                }
+            }
         } else {
-            dst.push(false);
+            builder.append_null();
         }
     }
-
-    Ok(())
+    Ok(Arc::new(builder.finish()))
 }
 
 #[cfg(test)]
 mod tests {
+    use arrow::buffer::BooleanBuffer;
+    use arrow_array::Array;
+
     use super::*;
 
     #[test]
@@ -190,42 +195,45 @@ mod tests {
     #[test]
     fn decode_no_values() {
         let src: Vec<u8> = vec![];
-        let mut dst = vec![];
+        let null_bitset = NullBuffer::new(BooleanBuffer::from(vec![]));
 
-        // check for error
-        bool_bitpack_decode(&src, &mut dst).expect("failed to decode src");
+        let array = bool_bitpack_decode(&src, &null_bitset).unwrap();
 
-        // verify decoded no values.
-        assert_eq!(dst.len(), 0);
+        assert_eq!(array.len(), 0);
     }
 
     #[test]
     fn decode_single_true() {
         let src = vec![0, 16, 1, 128];
-        let mut dst = vec![];
+        let null_bitset = NullBuffer::new_valid(1);
 
-        bool_bitpack_decode(&src, &mut dst).expect("failed to decode src");
-        assert_eq!(dst, vec![true]);
+        let array_ref = bool_bitpack_decode(&src, &null_bitset).expect("failed to decode src");
+        let array = array_ref.as_any().downcast_ref::<BooleanArray>().unwrap();
+        let expected = BooleanArray::new(BooleanBuffer::from(vec![true]), Some(null_bitset));
+        assert_eq!(*array, expected);
     }
 
     #[test]
     fn decode_single_false() {
         let src = vec![0, 16, 1, 0];
-        let mut dst = vec![];
+        let null_bitset = NullBuffer::new(BooleanBuffer::from(vec![true]));
 
-        bool_bitpack_decode(&src, &mut dst).expect("failed to decode src");
-        assert_eq!(dst, vec![false]);
+        let array_ref = bool_bitpack_decode(&src, &null_bitset).expect("failed to decode src");
+        let array = array_ref.as_any().downcast_ref::<BooleanArray>().unwrap();
+        let expected = BooleanArray::new(BooleanBuffer::from(vec![false]), Some(null_bitset));
+        assert_eq!(*array, expected);
     }
 
     #[test]
     fn decode_multi_compressed() {
         let src = vec![0, 16, 10, 170, 128];
-        let mut dst = vec![];
+        let null_bitset = NullBuffer::new(BooleanBuffer::from(vec![true; 10]));
 
-        bool_bitpack_decode(&src, &mut dst).expect("failed to decode src");
-
+        let array_ref = bool_bitpack_decode(&src, &null_bitset).expect("failed to decode src");
+        let array = array_ref.as_any().downcast_ref::<BooleanArray>().unwrap();
         let expected: Vec<_> = (0..10).map(|i| i % 2 == 0).collect();
-        assert_eq!(dst, expected);
+        let expected_array = BooleanArray::new(BooleanBuffer::from(expected), Some(null_bitset));
+        assert_eq!(*array, expected_array);
     }
 
     #[test]
@@ -236,18 +244,25 @@ mod tests {
         }
 
         let mut dst = vec![];
-        let mut got = vec![];
+
+        let null_bitset = NullBuffer::new(BooleanBuffer::from(vec![true; 100]));
 
         bool_bitpack_encode(&data, &mut dst).unwrap();
-        bool_bitpack_decode(&dst, &mut got).unwrap();
+        let array_ref = bool_bitpack_decode(&dst, &null_bitset).unwrap();
+        let array = array_ref.as_any().downcast_ref::<BooleanArray>().unwrap();
 
-        assert_eq!(data, got);
+        let expected = BooleanArray::new(
+            BooleanBuffer::from_iter(data.iter().cloned()),
+            Some(null_bitset.clone()),
+        );
+
+        assert_eq!(*array, expected);
         dst.clear();
-        got.clear();
 
         bool_without_compress_encode(&data, &mut dst).unwrap();
-        bool_without_compress_decode(&dst, &mut got).unwrap();
+        let array_ref = bool_without_compress_decode(&dst, &null_bitset).unwrap();
+        let array = array_ref.as_any().downcast_ref::<BooleanArray>().unwrap();
 
-        assert_eq!(data, got);
+        assert_eq!(*array, expected);
     }
 }

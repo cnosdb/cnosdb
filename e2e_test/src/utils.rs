@@ -129,6 +129,21 @@ impl Client {
         }
     }
 
+    pub fn with_auth_no_timeout(user: String, password: Option<String>) -> Self {
+        let inner = ClientBuilder::new()
+            .no_proxy()
+            .timeout(None)
+            .build()
+            .unwrap_or_else(|e| {
+                panic!("Failed to build http client: {}", e);
+            });
+        Self {
+            inner,
+            user,
+            password,
+        }
+    }
+
     pub fn with_auth_and_tls(
         user: String,
         password: Option<String>,

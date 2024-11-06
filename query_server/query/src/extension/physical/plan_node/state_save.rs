@@ -26,7 +26,6 @@ use trace::debug;
 
 use crate::extension::expr::WINDOW_END;
 use crate::extension::utils::batch_filter;
-use crate::extension::WATERMARK_DELAY_MS;
 use crate::stream::state_store::{StateStore, StateStoreFactory};
 
 /// Execution plan for a StateSaveExec
@@ -326,7 +325,12 @@ fn create_watermark_predicate(
         .fields()
         .iter()
         .enumerate()
-        .filter(|(_, f)| f.metadata().contains_key(WATERMARK_DELAY_MS))
+        .filter(|(_, f)| {
+            f.data_type().eq(&DataType::Timestamp(
+                models::arrow::TimeUnit::Nanosecond,
+                None,
+            ))
+        })
         .map(|(idx, f)| {
             let lhs: Arc<dyn PhysicalExpr> = match f.data_type() {
                 DataType::Struct(fields) => {

@@ -20,7 +20,7 @@ use trace::{debug, error, info, warn};
 
 use crate::compaction::job::CompactJob;
 use crate::compaction::metrics::{CompactionType, VnodeCompactionMetrics};
-use crate::compaction::{self, check, LevelCompactionPicker, Picker};
+use crate::compaction::{self, check, pick_compaction, CompactTask};
 use crate::database::Database;
 use crate::error::{IndexErrSnafu, MetaSnafu, TskvResult};
 use crate::file_system::async_filesystem::LocalFileSystem;
@@ -163,6 +163,8 @@ impl TsKv {
     fn run_flush_cold_vnode_job(&self) {
         let tskv_ctx = self.ctx.clone();
         let compact_trigger_cold_duration = tskv_ctx.options.storage.compact_trigger_cold_duration;
+        let compact_trigger_file_num = tskv_ctx.options.storage.compact_trigger_file_num;
+        let compact_task_sender = tskv_ctx.compact_task_sender.clone();
         if compact_trigger_cold_duration == Duration::ZERO {
             return;
         }
@@ -189,6 +191,16 @@ impl TsKv {
                                     trace::error!("flush code vnode {} faild: {:?}", tf_id, e)
                                 }
                             }
+                        }
+                        let version = ts_family.read().await.super_version().version.clone();
+                        let levels = version.levels_info();
+                        let task = if levels[0].files.len() as u32 >= compact_trigger_file_num {
+                            CompactTask::Delta(tf_id)
+                        } else {
+                            CompactTask::Normal(tf_id)
+                        };
+                        if let Err(e) = compact_task_sender.send(task).await {
+                            warn!("Scheduler(vnode: {tf_id}): Failed to send compact task: {task}: {e}");
                         }
                     }
                 }
@@ -437,13 +449,12 @@ impl Engine for TsKv {
                     error!("Failed to flush vnode {}: {:?}", vnode_id, e);
                 }
 
-                let picker = LevelCompactionPicker {};
                 let version = ts_family.read().await.version();
-                if let Some(req) = picker.pick_compaction(version) {
+                if let Some(req) = pick_compaction(CompactTask::Manual(vnode_id), version).await {
                     let vnode_compaction_metrics = VnodeCompactionMetrics::new(
                         &self.metrics,
                         self.ctx.options.storage.node_id,
-                        req.ts_family_id,
+                        vnode_id,
                         CompactionType::Manual,
                         self.ctx.options.storage.collect_compaction_metrics,
                     );

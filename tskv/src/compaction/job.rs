@@ -12,7 +12,7 @@ use tokio::sync::{oneshot, Mutex, Notify, RwLock, RwLockWriteGuard, Semaphore};
 use trace::{error, info, warn};
 
 use crate::compaction::metrics::{CompactionType, VnodeCompactionMetrics};
-use crate::compaction::{flush, CompactTask, FlushReq, LevelCompactionPicker, Picker};
+use crate::compaction::{flush, pick_compaction, CompactTask, FlushReq};
 use crate::error::{CommonSnafu, IndexErrSnafu};
 use crate::mem_cache::memcache::MemCache;
 use crate::summary::SummaryTask;
@@ -21,14 +21,15 @@ use crate::{TsKvContext, TskvResult, VersionEdit, VnodeId};
 const COMPACT_BATCH_CHECKING_SECONDS: u64 = 1;
 
 struct CompactProcessor {
-    vnode_ids: Vec<VnodeId>,
+    compact_tasks: Vec<CompactTask>,
     vnode_compaction_limit: HashMap<VnodeId, Arc<Mutex<()>>>,
 }
 
 impl CompactProcessor {
-    fn insert(&mut self, vnode_id: VnodeId) {
-        if !self.vnode_ids.contains(&vnode_id) {
-            self.vnode_ids.push(vnode_id);
+    fn insert(&mut self, task: CompactTask) {
+        let vnode_id = task.vnode_id();
+        if !self.compact_tasks.contains(&task) {
+            self.compact_tasks.push(task);
             if self.vnode_compaction_limit.get(&vnode_id).is_none() {
                 self.vnode_compaction_limit
                     .insert(vnode_id, Arc::new(Mutex::new(())));
@@ -36,15 +37,16 @@ impl CompactProcessor {
         }
     }
 
-    fn take(&mut self) -> TskvResult<Vec<(VnodeId, Arc<Mutex<()>>)>> {
-        let vnode_ids: Vec<VnodeId> =
-            std::mem::replace(&mut self.vnode_ids, Vec::with_capacity(32));
+    fn take(&mut self) -> TskvResult<Vec<(CompactTask, Arc<Mutex<()>>)>> {
+        let compact_tasks: Vec<CompactTask> =
+            std::mem::replace(&mut self.compact_tasks, Vec::with_capacity(32));
 
-        vnode_ids
+        compact_tasks
             .into_iter()
-            .map(|vnode_id| {
+            .map(|task| {
+                let vnode_id = task.vnode_id();
                 Ok((
-                    vnode_id,
+                    task,
                     self.vnode_compaction_limit
                         .get(&vnode_id)
                         .ok_or_else(|| {
@@ -59,14 +61,14 @@ impl CompactProcessor {
                         .clone(),
                 ))
             })
-            .collect::<TskvResult<Vec<(VnodeId, Arc<Mutex<()>>)>>>()
+            .collect::<TskvResult<Vec<(CompactTask, Arc<Mutex<()>>)>>>()
     }
 }
 
 impl Default for CompactProcessor {
     fn default() -> Self {
         Self {
-            vnode_ids: Vec::with_capacity(32),
+            compact_tasks: Vec::with_capacity(32),
             vnode_compaction_limit: HashMap::with_capacity(32),
         }
     }
@@ -141,7 +143,7 @@ impl CompactJobInner {
         let compact_processor = self.compact_processor.clone();
         self.runtime.spawn(async move {
             while let Some(compact_task) = compact_task_receiver.recv().await {
-                compact_processor.write().await.insert(compact_task.tsf_id);
+                compact_processor.write().await.insert(compact_task);
             }
         });
     }
@@ -182,7 +184,7 @@ impl CompactJobInner {
                 if !enable_compaction.load(atomic::Ordering::SeqCst) {
                     break;
                 }
-                if compact_processor.read().await.vnode_ids.is_empty() {
+                if compact_processor.read().await.compact_tasks.is_empty() {
                     continue;
                 }
                 let vnode_ids = match compact_processor.write().await.take() {
@@ -195,7 +197,8 @@ impl CompactJobInner {
                 let vnode_ids_for_debug = vnode_ids.clone();
                 let now = Instant::now();
                 info!("Compacting on vnode(job start): {:?}", &vnode_ids_for_debug);
-                for (vnode_id, limit) in vnode_ids {
+                for (task, limit) in vnode_ids {
+                    let vnode_id = task.vnode_id();
                     let ts_family = ctx
                         .version_set
                         .read()
@@ -208,9 +211,8 @@ impl CompactJobInner {
                             info!("forbidden compaction on moving vnode {}", vnode_id);
                             return;
                         }
-                        let picker = LevelCompactionPicker {};
                         let version = tsf.read().await.version();
-                        let compact_req = picker.pick_compaction(version);
+                        let compact_req = pick_compaction(task, version).await;
                         if let Some(req) = compact_req {
                             // Method acquire_owned() will return AcquireError if the semaphore has been closed.
                             let permit = compaction_limit.clone().acquire_owned().await.unwrap();
@@ -234,7 +236,7 @@ impl CompactJobInner {
                                 let vnode_compaction_metrics = VnodeCompactionMetrics::new(
                                     &metrics_registry,
                                     ctx.options.storage.node_id,
-                                    req.ts_family_id,
+                                    vnode_id,
                                     CompactionType::Normal,
                                     ctx.options.storage.collect_compaction_metrics,
                                 );
@@ -348,9 +350,7 @@ impl FlushJob {
                     let _ = job
                         .ctx
                         .compact_task_sender
-                        .send(CompactTask {
-                            tsf_id: flush_req.tf_id,
-                        })
+                        .send(CompactTask::Delta(flush_req.tf_id))
                         .await;
                 }
             }
@@ -505,18 +505,23 @@ mod test {
 
     use super::DeferGuard;
     use crate::compaction::job::CompactProcessor;
+    use crate::compaction::CompactTask;
     use crate::VnodeId;
 
     #[test]
     fn test_build_compact_batch() {
         let mut compact_batch_builder = CompactProcessor::default();
-        compact_batch_builder.insert(1);
-        compact_batch_builder.insert(2);
-        compact_batch_builder.insert(1);
-        compact_batch_builder.insert(3);
-        assert_eq!(compact_batch_builder.vnode_ids.len(), 3);
+        compact_batch_builder.insert(CompactTask::Normal(1));
+        compact_batch_builder.insert(CompactTask::Normal(2));
+        compact_batch_builder.insert(CompactTask::Normal(1));
+        compact_batch_builder.insert(CompactTask::Normal(3));
+        assert_eq!(compact_batch_builder.compact_tasks.len(), 3);
 
-        let mut keys: Vec<VnodeId> = compact_batch_builder.vnode_ids.clone();
+        let mut keys: Vec<VnodeId> = compact_batch_builder
+            .compact_tasks
+            .iter()
+            .map(|task| task.vnode_id())
+            .collect();
         keys.sort();
         assert_eq!(keys, vec![1, 2, 3]);
 
@@ -524,7 +529,7 @@ mod test {
             .take()
             .unwrap()
             .into_iter()
-            .map(|(vnode_id, _)| vnode_id)
+            .map(|(task, _)| task.vnode_id())
             .collect::<Vec<VnodeId>>();
         assert_eq!(vnode_ids, vec![1, 2, 3]);
     }

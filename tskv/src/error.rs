@@ -355,6 +355,22 @@ pub enum TskvError {
         backtrace: Backtrace,
     },
 
+    #[error_code(code = 41)]
+    #[snafu(display("{}", message))]
+    Tombstone {
+        message: String,
+        location: Location,
+        backtrace: Backtrace,
+    },
+
+    #[error_code(code = 42)]
+    #[snafu(display("{}", reason))]
+    RecordFileIO {
+        reason: String,
+        location: Location,
+        backtrace: Backtrace,
+    },
+
     #[snafu(display("Table name can't be empty"))]
     #[error_code(code = 53)]
     InvalidPointTable {
