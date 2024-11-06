@@ -10,8 +10,8 @@ pub struct HeartBeatConfig {
 impl Default for HeartBeatConfig {
     fn default() -> Self {
         Self {
-            heartbeat_recheck_interval: 300,
-            heartbeat_expired_interval: 600,
+            heartbeat_recheck_interval: 30,
+            heartbeat_expired_interval: 180,
         }
     }
 }

@@ -1,24 +1,24 @@
 use std::collections::HashMap;
 
-use crate::column_data::{ColumnData, PrimaryColumnData};
+use crate::column_data_ref::{ColumnDataRef, PrimaryColumnDataRef};
 use crate::errors::CommonSnafu;
 use crate::field_value::FieldVal;
 use crate::schema::tskv_table_schema::PhysicalCType;
 use crate::ModelResult;
 
 #[derive(Debug, Default, Clone)]
-pub struct MutableBatch {
+pub struct MutableBatch<'a> {
     /// Map of column name to index in `MutableBatch::columns`
     pub column_names: HashMap<String, usize>,
 
     /// Columns contained within this MutableBatch
-    pub columns: Vec<Column>,
+    pub columns: Vec<Column<'a>>,
 
     /// The number of rows in this MutableBatch
     pub row_count: usize,
 }
 
-impl MutableBatch {
+impl<'a> MutableBatch<'a> {
     pub fn new() -> Self {
         Self {
             column_names: Default::default(),
@@ -27,7 +27,11 @@ impl MutableBatch {
         }
     }
 
-    pub fn column_mut(&mut self, name: &str, col_type: PhysicalCType) -> ModelResult<&mut Column> {
+    pub fn column_mut(
+        &mut self,
+        name: &str,
+        col_type: PhysicalCType,
+    ) -> ModelResult<&mut Column<'a>> {
         let column_idx = match self.column_names.get(name) {
             Some(column_idx) => *column_idx,
             None => {
@@ -49,27 +53,27 @@ impl MutableBatch {
                     .valid
                     .append_unset(self.row_count - column.column_data.valid.len());
                 match column.column_data.primary_data {
-                    PrimaryColumnData::F64(ref mut value, ..) => {
+                    PrimaryColumnDataRef::F64(ref mut value, ..) => {
                         if !value.is_empty() {
                             value.append(&mut vec![0.0; self.row_count - value.len()]);
                         }
                     }
-                    PrimaryColumnData::I64(ref mut value, ..) => {
+                    PrimaryColumnDataRef::I64(ref mut value, ..) => {
                         if !value.is_empty() {
                             value.append(&mut vec![0; self.row_count - value.len()]);
                         }
                     }
-                    PrimaryColumnData::U64(ref mut value, ..) => {
+                    PrimaryColumnDataRef::U64(ref mut value, ..) => {
                         if !value.is_empty() {
                             value.append(&mut vec![0; self.row_count - value.len()]);
                         }
                     }
-                    PrimaryColumnData::String(ref mut value, ..) => {
+                    PrimaryColumnDataRef::String(ref mut value, ..) => {
                         if !value.is_empty() {
-                            value.append(&mut vec![String::new(); self.row_count - value.len()]);
+                            value.append(&mut vec!["".as_bytes(); self.row_count - value.len()]);
                         }
                     }
-                    PrimaryColumnData::Bool(ref mut value, ..) => {
+                    PrimaryColumnDataRef::Bool(ref mut value, ..) => {
                         if !value.is_empty() {
                             value.append(&mut vec![false; self.row_count - value.len()]);
                         }
@@ -81,21 +85,21 @@ impl MutableBatch {
 }
 
 #[derive(Debug, Clone)]
-pub struct Column {
+pub struct Column<'a> {
     pub column_type: PhysicalCType,
-    pub column_data: ColumnData,
+    pub column_data: ColumnDataRef<'a>,
 }
 
-impl Column {
-    pub fn new(row_count: usize, column_type: PhysicalCType) -> ModelResult<Column> {
-        let data = ColumnData::with_empty_value(column_type.to_physical_data_type(), row_count)
+impl<'a> Column<'a> {
+    pub fn new(row_count: usize, column_type: PhysicalCType) -> ModelResult<Column<'a>> {
+        let data = ColumnDataRef::new(column_type.to_physical_data_type(), row_count)
             .map_err(|e| CommonSnafu { msg: e.to_string() }.build())?;
         Ok(Self {
             column_type,
             column_data: data,
         })
     }
-    pub fn push(&mut self, value: Option<FieldVal>) -> ModelResult<()> {
+    pub fn push(&mut self, value: Option<&'a FieldVal>) -> ModelResult<()> {
         self.column_data
             .push(value)
             .map_err(|e| CommonSnafu { msg: e.to_string() }.build())

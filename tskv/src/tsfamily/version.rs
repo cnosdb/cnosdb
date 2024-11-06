@@ -1,3 +1,4 @@
+use std::cmp::max;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
@@ -102,7 +103,7 @@ impl Version {
         }
 
         let mut new_version = Self {
-            last_seq: ve.seq_no,
+            last_seq: max(self.last_seq, ve.seq_no),
             ts_family_id: self.ts_family_id,
             owner: self.owner.clone(),
             storage_opt: self.storage_opt.clone(),
@@ -198,6 +199,20 @@ impl Version {
             }
         }
         result
+    }
+
+    pub async fn unmark_compacting_files(&self, files_ids: &HashSet<ColumnFileId>) {
+        if files_ids.is_empty() {
+            return;
+        }
+        for level in self.levels_info.iter() {
+            for file in level.files.iter() {
+                if files_ids.contains(&file.file_id()) {
+                    let mut compacting = file.write_lock_compacting().await;
+                    *compacting = false;
+                }
+            }
+        }
     }
 
     #[cfg(test)]

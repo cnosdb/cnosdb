@@ -28,7 +28,7 @@ pub struct VnodeStorage {
     id: VnodeId,
     ctx: Arc<TsKvContext>,
     db: Arc<RwLock<Database>>,
-    flush_job: FlushJob,
+    flush_job: Arc<FlushJob>,
     ts_index: Arc<RwLock<TSIndex>>,
     ts_family: Arc<RwLock<TseriesFamily>>,
 
@@ -207,6 +207,7 @@ impl VnodeStorage {
         let owner = self.ts_family.read().await.owner();
         let request = FlushReq {
             tf_id: self.id,
+            completion: false,
             owner: owner.to_string(),
             ts_index: self.ts_index.clone(),
             ts_family: self.ts_family.clone(),
@@ -214,9 +215,9 @@ impl VnodeStorage {
         };
 
         if block {
-            self.flush_job.run_block(request).await
+            FlushJob::run_block(self.flush_job.clone(), request).await
         } else {
-            self.flush_job.run_spawn(request)
+            FlushJob::run_spawn(self.flush_job.clone(), request)
         }
     }
 

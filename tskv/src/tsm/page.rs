@@ -5,12 +5,13 @@ use arrow_array::{
 };
 use arrow_schema::{DataType, TimeUnit};
 use models::column_data::PrimaryColumnData;
+use models::column_data_ref::PrimaryColumnDataRef;
 use models::schema::tskv_table_schema::{ColumnType, TableColumn};
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 use utils::bitset::{BitSet, ImmutBitSet, NullBitset};
 
-use super::mutable_column_ref::{MutableColumnRef, PrimaryColumnDataRef};
+use super::mutable_column_ref::MutableColumnRef;
 use super::statistics::ValueStatistics;
 use crate::byte_utils::{decode_be_u32, decode_be_u64};
 use crate::error::{
@@ -85,14 +86,6 @@ impl Page {
     pub fn data_buffer(&self) -> &[u8] {
         let bitset_len = decode_be_u32(&self.bytes[0..4]) as usize;
         &self.bytes[16 + bitset_len..]
-    }
-
-    pub fn to_column(&self) -> TskvResult<MutableColumn> {
-        MutableColumn::data_buf_to_column(
-            self.data_buffer(),
-            self.meta(),
-            &NullBitset::Ref(self.null_bitset()),
-        )
     }
 
     pub fn to_arrow_array(&self) -> TskvResult<ArrayRef> {

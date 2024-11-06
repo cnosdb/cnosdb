@@ -5,8 +5,8 @@ use num_traits::ToPrimitive;
 use snafu::ResultExt;
 
 use super::{
-    file_crc_source_len, reader, RecordDataType, FILE_FOOTER_LEN, FILE_MAGIC_NUMBER,
-    FILE_MAGIC_NUMBER_LEN, RECORD_MAGIC_NUMBER,
+    file_crc_source_len, reader, FILE_FOOTER_LEN, FILE_MAGIC_NUMBER, FILE_MAGIC_NUMBER_LEN,
+    RECORD_MAGIC_NUMBER,
 };
 use crate::error::{
     self, IOSnafu, InvalidParamSnafu, ReadFileSnafu, TskvError, TskvResult, WriteFileSnafu,
@@ -22,11 +22,7 @@ pub struct Writer {
 }
 
 impl Writer {
-    pub async fn open(
-        path: impl AsRef<Path>,
-        _data_type: RecordDataType,
-        buf_size: usize,
-    ) -> TskvResult<Self> {
+    pub async fn open(path: impl AsRef<Path>, buf_size: usize) -> TskvResult<Self> {
         let path = path.as_ref();
         let file_system = LocalFileSystem::new(LocalFileType::ThreadPool);
         let mut file = file_system
@@ -214,8 +210,8 @@ pub(crate) mod test {
     use super::Writer;
     use crate::record_file::reader::test::assert_record_file_data_eq;
     use crate::record_file::{
-        RecordDataType, FILE_FOOTER_LEN, RECORD_CRC32_NUMBER_LEN, RECORD_DATA_SIZE_LEN,
-        RECORD_DATA_TYPE_LEN, RECORD_DATA_VERSION_LEN, RECORD_MAGIC_NUMBER_LEN,
+        FILE_FOOTER_LEN, RECORD_CRC32_NUMBER_LEN, RECORD_DATA_SIZE_LEN, RECORD_DATA_TYPE_LEN,
+        RECORD_DATA_VERSION_LEN, RECORD_MAGIC_NUMBER_LEN,
     };
 
     const TEST_SUMMARY_BUFFER_SIZE: usize = 1024 * 1024;
@@ -241,9 +237,7 @@ pub(crate) mod test {
             // Test write a record file with footer.
             let path = dir.join("has_footer.log");
 
-            let mut writer = Writer::open(&path, RecordDataType::Summary, TEST_SUMMARY_BUFFER_SIZE)
-                .await
-                .unwrap();
+            let mut writer = Writer::open(&path, TEST_SUMMARY_BUFFER_SIZE).await.unwrap();
             for data in records.iter() {
                 let data_size = writer.write_record(1, 1, data).await.unwrap();
                 assert_eq!(data_size, record_length(11));
@@ -257,9 +251,7 @@ pub(crate) mod test {
             // Test write a record file that has no footer.
             let path = dir.join("no_footer.log");
 
-            let mut writer = Writer::open(&path, RecordDataType::Summary, TEST_SUMMARY_BUFFER_SIZE)
-                .await
-                .unwrap();
+            let mut writer = Writer::open(&path, TEST_SUMMARY_BUFFER_SIZE).await.unwrap();
             for data in records.iter() {
                 let data_size = writer.write_record(1, 1, data).await.unwrap();
                 assert_eq!(data_size, record_length(11));

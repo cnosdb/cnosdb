@@ -316,7 +316,7 @@ pub async fn tskv_service_ping(addr: &str) -> Result<(), String> {
         tskv_service_time_out_client(channel, time::Duration::from_secs(3), 1024 * 1024, false);
 
     let mut fbb = flatbuffers::FlatBufferBuilder::new();
-    let payload = fbb.create_vector(b"hello world");
+    let payload = fbb.create_vector(b"");
     let mut builder = models::PingBodyBuilder::new(&mut fbb);
     builder.add_payload(payload);
     let root = builder.finish();

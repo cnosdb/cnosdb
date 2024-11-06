@@ -1,5 +1,5 @@
-use std::cmp;
 use std::mem::size_of_val;
+use std::{cmp, usize};
 
 use flatbuffers::{ForwardsUOffset, Vector};
 use minivec::MiniVec;
@@ -12,7 +12,6 @@ use trace::error;
 use utils::bitset::ImmutBitSet;
 use utils::precision::{timestamp_convert, Precision};
 
-use crate::database::FbSchema;
 use crate::error::{CommonSnafu, FieldsIsEmptySnafu, TskvResult};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -32,7 +31,6 @@ impl RowData {
         schema: &TskvTableSchema,
         from_precision: Precision,
         columns: &Vector<ForwardsUOffset<Column>>,
-        fb_schema: &FbSchema,
         row_idx: Vec<usize>,
     ) -> TskvResult<Vec<RowData>> {
         let fields_id = schema.fields_id();
@@ -40,115 +38,120 @@ impl RowData {
         for row_count in row_idx.into_iter() {
             let mut fields = vec![None; fields_id.len()];
             let mut has_fields = false;
-            for field_id in fb_schema.field_indexes.iter() {
-                let column = columns.get(*field_id);
+            let mut time_column = None;
+            for column in columns {
                 let column_name = column.name_ext()?;
                 let column_nullbit = column.nullbit_ext()?;
-                match column.field_type() {
-                    FieldType::Integer => {
-                        let len = column.int_values_len()?;
-                        let column_nullbits =
-                            ImmutBitSet::new_without_check(len, column_nullbit.bytes());
-                        if !column_nullbits.get(row_count) {
-                            continue;
+                let column_type = column.column_type();
+                if let protos::models::ColumnType::Field = column_type {
+                    match column.field_type() {
+                        FieldType::Integer => {
+                            let len = column.int_values_len()?;
+                            let column_nullbits =
+                                ImmutBitSet::new_without_check(len, column_nullbit.bytes());
+                            if !column_nullbits.get(row_count) {
+                                continue;
+                            }
+                            let val = column.int_values()?.get(row_count);
+                            match schema.column(column_name) {
+                                None => {
+                                    error!("column {} not found in schema", column_name);
+                                }
+                                Some(column) => {
+                                    let field_id = column.id;
+                                    let field_idx = fields_id.get(&field_id).unwrap();
+                                    fields[*field_idx] = Some(FieldVal::Integer(val));
+                                    has_fields = true;
+                                }
+                            }
                         }
-                        let val = column.int_values()?.get(row_count);
-                        match schema.column(column_name) {
-                            None => {
-                                error!("column {} not found in schema", column_name);
+                        FieldType::Float => {
+                            let len = column.float_values_len()?;
+                            let column_nullbits =
+                                ImmutBitSet::new_without_check(len, column_nullbit.bytes());
+                            if !column_nullbits.get(row_count) {
+                                continue;
                             }
-                            Some(column) => {
-                                let field_id = column.id;
-                                let field_idx = fields_id.get(&field_id).unwrap();
-                                fields[*field_idx] = Some(FieldVal::Integer(val));
-                                has_fields = true;
+                            let val = column.float_values()?.get(row_count);
+                            match schema.column(column_name) {
+                                None => {
+                                    error!("column {} not found in schema", column_name);
+                                }
+                                Some(column) => {
+                                    let field_id = column.id;
+                                    let field_idx = fields_id.get(&field_id).unwrap();
+                                    fields[*field_idx] = Some(FieldVal::Float(val));
+                                    has_fields = true;
+                                }
                             }
+                        }
+                        FieldType::Unsigned => {
+                            let len = column.uint_values_len()?;
+                            let column_nullbits =
+                                ImmutBitSet::new_without_check(len, column_nullbit.bytes());
+                            if !column_nullbits.get(row_count) {
+                                continue;
+                            }
+                            let val = column.uint_values()?.get(row_count);
+                            match schema.column(column_name) {
+                                None => {
+                                    error!("column {} not found in schema", column_name);
+                                }
+                                Some(column) => {
+                                    let field_id = column.id;
+                                    let field_idx = fields_id.get(&field_id).unwrap();
+                                    fields[*field_idx] = Some(FieldVal::Unsigned(val));
+                                    has_fields = true;
+                                }
+                            }
+                        }
+                        FieldType::Boolean => {
+                            let len = column.bool_values_len()?;
+                            let column_nullbits =
+                                ImmutBitSet::new_without_check(len, column_nullbit.bytes());
+                            if !column_nullbits.get(row_count) {
+                                continue;
+                            }
+                            let val = column.bool_values()?.get(row_count);
+                            match schema.column(column_name) {
+                                None => {
+                                    error!("column {} not found in schema", column_name);
+                                }
+                                Some(column) => {
+                                    let field_id = column.id;
+                                    let field_idx = fields_id.get(&field_id).unwrap();
+                                    fields[*field_idx] = Some(FieldVal::Boolean(val));
+                                    has_fields = true;
+                                }
+                            }
+                        }
+                        FieldType::String => {
+                            let len = column.string_values_len()?;
+                            let column_nullbits =
+                                ImmutBitSet::new_without_check(len, column_nullbit.bytes());
+                            if !column_nullbits.get(row_count) {
+                                continue;
+                            }
+                            let val = column.string_values()?.get(row_count);
+                            match schema.column(column_name) {
+                                None => {
+                                    error!("column {} not found in schema", column_name);
+                                }
+                                Some(column) => {
+                                    let field_id = column.id;
+                                    let field_idx = fields_id.get(&field_id).unwrap();
+                                    fields[*field_idx] =
+                                        Some(FieldVal::Bytes(MiniVec::from(val.as_bytes())));
+                                    has_fields = true;
+                                }
+                            }
+                        }
+                        _ => {
+                            error!("unsupported field type");
                         }
                     }
-                    FieldType::Float => {
-                        let len = column.float_values_len()?;
-                        let column_nullbits =
-                            ImmutBitSet::new_without_check(len, column_nullbit.bytes());
-                        if !column_nullbits.get(row_count) {
-                            continue;
-                        }
-                        let val = column.float_values()?.get(row_count);
-                        match schema.column(column_name) {
-                            None => {
-                                error!("column {} not found in schema", column_name);
-                            }
-                            Some(column) => {
-                                let field_id = column.id;
-                                let field_idx = fields_id.get(&field_id).unwrap();
-                                fields[*field_idx] = Some(FieldVal::Float(val));
-                                has_fields = true;
-                            }
-                        }
-                    }
-                    FieldType::Unsigned => {
-                        let len = column.uint_values_len()?;
-                        let column_nullbits =
-                            ImmutBitSet::new_without_check(len, column_nullbit.bytes());
-                        if !column_nullbits.get(row_count) {
-                            continue;
-                        }
-                        let val = column.uint_values()?.get(row_count);
-                        match schema.column(column_name) {
-                            None => {
-                                error!("column {} not found in schema", column_name);
-                            }
-                            Some(column) => {
-                                let field_id = column.id;
-                                let field_idx = fields_id.get(&field_id).unwrap();
-                                fields[*field_idx] = Some(FieldVal::Unsigned(val));
-                                has_fields = true;
-                            }
-                        }
-                    }
-                    FieldType::Boolean => {
-                        let len = column.bool_values_len()?;
-                        let column_nullbits =
-                            ImmutBitSet::new_without_check(len, column_nullbit.bytes());
-                        if !column_nullbits.get(row_count) {
-                            continue;
-                        }
-                        let val = column.bool_values()?.get(row_count);
-                        match schema.column(column_name) {
-                            None => {
-                                error!("column {} not found in schema", column_name);
-                            }
-                            Some(column) => {
-                                let field_id = column.id;
-                                let field_idx = fields_id.get(&field_id).unwrap();
-                                fields[*field_idx] = Some(FieldVal::Boolean(val));
-                                has_fields = true;
-                            }
-                        }
-                    }
-                    FieldType::String => {
-                        let len = column.string_values_len()?;
-                        let column_nullbits =
-                            ImmutBitSet::new_without_check(len, column_nullbit.bytes());
-                        if !column_nullbits.get(row_count) {
-                            continue;
-                        }
-                        let val = column.string_values()?.get(row_count);
-                        match schema.column(column_name) {
-                            None => {
-                                error!("column {} not found in schema", column_name);
-                            }
-                            Some(column) => {
-                                let field_id = column.id;
-                                let field_idx = fields_id.get(&field_id).unwrap();
-                                fields[*field_idx] =
-                                    Some(FieldVal::Bytes(MiniVec::from(val.as_bytes())));
-                                has_fields = true;
-                            }
-                        }
-                    }
-                    _ => {
-                        error!("unsupported field type");
-                    }
+                } else if let protos::models::ColumnType::Time = column_type {
+                    time_column = Some(column);
                 }
             }
 
@@ -156,13 +159,20 @@ impl RowData {
                 return Err(FieldsIsEmptySnafu.build());
             }
 
-            let ts_column = columns.get(fb_schema.time_index);
-            let ts = ts_column.int_values()?.get(row_count);
-            let to_precision = schema.time_column_precision();
-            let ts = timestamp_convert(from_precision, to_precision, ts).context(CommonSnafu {
-                reason: "timestamp overflow".to_string(),
-            })?;
-            res.push(RowData { ts, fields });
+            if let Some(time_column) = time_column {
+                let ts = time_column.int_values()?.get(row_count);
+                let to_precision = schema.time_column_precision();
+                let ts =
+                    timestamp_convert(from_precision, to_precision, ts).context(CommonSnafu {
+                        reason: "timestamp overflow".to_string(),
+                    })?;
+                res.push(RowData { ts, fields });
+            } else {
+                return Err(CommonSnafu {
+                    reason: "Time column not found in flatbuffer columns".to_string(),
+                }
+                .build());
+            }
         }
         Ok(res)
     }

@@ -8,7 +8,7 @@ pub mod mutable_column_ref;
 pub mod page;
 pub mod reader;
 pub mod statistics;
-mod tombstone;
+pub mod tombstone;
 mod types;
 pub mod writer;
 

@@ -258,7 +258,12 @@ fn parse_use_database(sql: &str) -> Option<String> {
 
     if database.starts_with('"') && database.ends_with('"') {
         Some(database.trim_matches('"').to_string())
+    } else if database.starts_with('\'') && database.ends_with('\'') {
+        Some(database.trim_matches('\'').to_string())
     } else {
+        if database.contains(' ') {
+            return None;
+        }
         // normalize ident
         Some(database.to_ascii_lowercase())
     }

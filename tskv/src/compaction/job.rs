@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::{atomic, Arc};
 use std::time::{Duration, Instant};
@@ -7,26 +7,29 @@ use metrics::metric_register::MetricsRegister;
 use snafu::ResultExt;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Receiver;
-use tokio::sync::{oneshot, Mutex, RwLock, RwLockWriteGuard, Semaphore};
-use trace::{error, info};
+use tokio::sync::oneshot::Receiver as OneshotReceiver;
+use tokio::sync::{oneshot, Mutex, Notify, RwLock, RwLockWriteGuard, Semaphore};
+use trace::{error, info, warn};
 
 use crate::compaction::metrics::{CompactionType, VnodeCompactionMetrics};
-use crate::compaction::{flush, CompactTask, FlushReq, LevelCompactionPicker, Picker};
+use crate::compaction::{flush, pick_compaction, CompactTask, FlushReq};
 use crate::error::{CommonSnafu, IndexErrSnafu};
+use crate::mem_cache::memcache::MemCache;
 use crate::summary::SummaryTask;
-use crate::{TsKvContext, TskvResult, VnodeId};
+use crate::{TsKvContext, TskvResult, VersionEdit, VnodeId};
 
 const COMPACT_BATCH_CHECKING_SECONDS: u64 = 1;
 
 struct CompactProcessor {
-    vnode_ids: Vec<VnodeId>,
+    compact_tasks: Vec<CompactTask>,
     vnode_compaction_limit: HashMap<VnodeId, Arc<Mutex<()>>>,
 }
 
 impl CompactProcessor {
-    fn insert(&mut self, vnode_id: VnodeId) {
-        if !self.vnode_ids.contains(&vnode_id) {
-            self.vnode_ids.push(vnode_id);
+    fn insert(&mut self, task: CompactTask) {
+        let vnode_id = task.vnode_id();
+        if !self.compact_tasks.contains(&task) {
+            self.compact_tasks.push(task);
             if self.vnode_compaction_limit.get(&vnode_id).is_none() {
                 self.vnode_compaction_limit
                     .insert(vnode_id, Arc::new(Mutex::new(())));
@@ -34,15 +37,16 @@ impl CompactProcessor {
         }
     }
 
-    fn take(&mut self) -> TskvResult<Vec<(VnodeId, Arc<Mutex<()>>)>> {
-        let vnode_ids: Vec<VnodeId> =
-            std::mem::replace(&mut self.vnode_ids, Vec::with_capacity(32));
+    fn take(&mut self) -> TskvResult<Vec<(CompactTask, Arc<Mutex<()>>)>> {
+        let compact_tasks: Vec<CompactTask> =
+            std::mem::replace(&mut self.compact_tasks, Vec::with_capacity(32));
 
-        vnode_ids
+        compact_tasks
             .into_iter()
-            .map(|vnode_id| {
+            .map(|task| {
+                let vnode_id = task.vnode_id();
                 Ok((
-                    vnode_id,
+                    task,
                     self.vnode_compaction_limit
                         .get(&vnode_id)
                         .ok_or_else(|| {
@@ -57,14 +61,14 @@ impl CompactProcessor {
                         .clone(),
                 ))
             })
-            .collect::<TskvResult<Vec<(VnodeId, Arc<Mutex<()>>)>>>()
+            .collect::<TskvResult<Vec<(CompactTask, Arc<Mutex<()>>)>>>()
     }
 }
 
 impl Default for CompactProcessor {
     fn default() -> Self {
         Self {
-            vnode_ids: Vec::with_capacity(32),
+            compact_tasks: Vec::with_capacity(32),
             vnode_compaction_limit: HashMap::with_capacity(32),
         }
     }
@@ -139,7 +143,7 @@ impl CompactJobInner {
         let compact_processor = self.compact_processor.clone();
         self.runtime.spawn(async move {
             while let Some(compact_task) = compact_task_receiver.recv().await {
-                compact_processor.write().await.insert(compact_task.tsf_id);
+                compact_processor.write().await.insert(compact_task);
             }
         });
     }
@@ -180,7 +184,7 @@ impl CompactJobInner {
                 if !enable_compaction.load(atomic::Ordering::SeqCst) {
                     break;
                 }
-                if compact_processor.read().await.vnode_ids.is_empty() {
+                if compact_processor.read().await.compact_tasks.is_empty() {
                     continue;
                 }
                 let vnode_ids = match compact_processor.write().await.take() {
@@ -193,7 +197,8 @@ impl CompactJobInner {
                 let vnode_ids_for_debug = vnode_ids.clone();
                 let now = Instant::now();
                 info!("Compacting on vnode(job start): {:?}", &vnode_ids_for_debug);
-                for (vnode_id, limit) in vnode_ids {
+                for (task, limit) in vnode_ids {
+                    let vnode_id = task.vnode_id();
                     let ts_family = ctx
                         .version_set
                         .read()
@@ -206,9 +211,8 @@ impl CompactJobInner {
                             info!("forbidden compaction on moving vnode {}", vnode_id);
                             return;
                         }
-                        let picker = LevelCompactionPicker {};
                         let version = tsf.read().await.version();
-                        let compact_req = picker.pick_compaction(version);
+                        let compact_req = pick_compaction(task, version).await;
                         if let Some(req) = compact_req {
                             // Method acquire_owned() will return AcquireError if the semaphore has been closed.
                             let permit = compaction_limit.clone().acquire_owned().await.unwrap();
@@ -232,7 +236,7 @@ impl CompactJobInner {
                                 let vnode_compaction_metrics = VnodeCompactionMetrics::new(
                                     &metrics_registry,
                                     ctx.options.storage.node_id,
-                                    req.ts_family_id,
+                                    vnode_id,
                                     CompactionType::Normal,
                                     ctx.options.storage.collect_compaction_metrics,
                                 );
@@ -303,49 +307,75 @@ impl<F: FnOnce()> Drop for DeferGuard<F> {
     }
 }
 
-#[derive(Clone)]
 pub struct FlushJob {
     ctx: Arc<TsKvContext>,
-    lock: Arc<RwLock<()>>,
+
+    notify: Arc<Notify>,
+    queue: Arc<RwLock<BTreeMap<u64, (FlushReq, SummaryTask)>>>,
 }
 
 impl FlushJob {
-    pub fn new(ctx: Arc<TsKvContext>) -> Self {
-        Self {
+    pub fn new(ctx: Arc<TsKvContext>) -> Arc<Self> {
+        let job = Self {
             ctx,
-            lock: Arc::new(RwLock::new(())),
+            notify: Arc::new(Notify::new()),
+            queue: Arc::new(RwLock::new(BTreeMap::new())),
+        };
+
+        let job = Arc::new(job);
+        job.ctx.runtime.spawn(Self::write_summary_job(job.clone()));
+
+        job
+    }
+
+    async fn write_summary_job(job: Arc<FlushJob>) {
+        loop {
+            job.notify.notified().await;
+            let mut queue_w = job.queue.write().await;
+            while let Some((key, (flush_req, summary_task))) = queue_w.pop_first() {
+                if !flush_req.completion {
+                    queue_w.insert(key, (flush_req, summary_task));
+                    break;
+                }
+
+                info!("Flush: completion request {} at {}", flush_req, key);
+                if let Err(e) = job.ctx.summary_task_sender.send(summary_task).await {
+                    warn!(
+                        "Flush: failed to send summary task for tsf_id: {}: {e}",
+                        flush_req.tf_id
+                    );
+                }
+
+                if flush_req.trigger_compact {
+                    let _ = job
+                        .ctx
+                        .compact_task_sender
+                        .send(CompactTask::Delta(flush_req.tf_id))
+                        .await;
+                }
+            }
         }
     }
 
-    pub async fn run_block(&self, request: FlushReq) -> TskvResult<()> {
-        let ctx = self.ctx.clone();
-        let lock = self.lock.clone();
-
-        let result = Self::run(&request, ctx, lock).await;
-        info!("block flush memcaches {} result: {:?}", request, result);
+    pub async fn run_block(job: Arc<FlushJob>, request: FlushReq) -> TskvResult<()> {
+        let result = Self::run(job, &request).await;
+        info!("Flush: block flush  {} result: {:?}", request, result);
 
         result
     }
 
-    pub fn run_spawn(&self, request: FlushReq) -> TskvResult<()> {
-        let ctx = self.ctx.clone();
-        let lock = self.lock.clone();
-
-        self.ctx.runtime.spawn(async move {
-            let result = Self::run(&request, ctx, lock).await;
-            info!("spawn flush memcaches {} result: {:?}", request, result);
+    pub fn run_spawn(job: Arc<FlushJob>, request: FlushReq) -> TskvResult<()> {
+        let runtime = job.ctx.runtime.clone();
+        runtime.spawn(async move {
+            let result = Self::run(job, &request).await;
+            info!("Flush: spawn flush  {} result: {:?}", request, result);
         });
 
         Ok(())
     }
 
-    async fn run(
-        request: &FlushReq,
-        ctx: Arc<TsKvContext>,
-        lock: Arc<RwLock<()>>,
-    ) -> TskvResult<()> {
-        let _write_guard = lock.write().await;
-        info!("begin flush data {}", request);
+    async fn run(job: Arc<FlushJob>, request: &FlushReq) -> TskvResult<()> {
+        info!("Flush: begin flush data {}", request);
 
         // flush index
         request
@@ -356,20 +386,35 @@ impl FlushJob {
             .await
             .context(IndexErrSnafu)?;
 
-        // check memecaches is empty
-        let mut is_empty = true;
-        let mems = request.ts_family.read().await.im_cache().clone();
+        let ts_family_w = request.ts_family.write().await;
+        let mut mems = ts_family_w.im_cache().clone();
+        mems.retain(|x| x.read().mark_flushing());
+        let mut receivers = vec![];
         for mem in mems.iter() {
-            if !mem.read().is_empty() {
-                is_empty = false;
-            }
-        }
+            let flush_seq = mem.read().min_seq_no();
+            let (task_state_sender, task_state_receiver) = oneshot::channel();
+            receivers.push(task_state_receiver);
+            let summary_task = SummaryTask::new(
+                request.ts_family.clone(),
+                VersionEdit::default(),
+                None,
+                Some(vec![mem.clone()]),
+                task_state_sender,
+            );
 
-        // flush memecache
-        if !is_empty {
-            flush::flush_memtable(request, ctx, mems).await?;
-        } else {
-            info!("memcaches is empty exit flush {}", request);
+            job.queue
+                .write()
+                .await
+                .insert(flush_seq, (request.clone(), summary_task));
+        }
+        drop(ts_family_w);
+
+        if let Err(err) = Self::flush_memtables(job, request, mems.clone(), receivers).await {
+            for item in mems.iter_mut() {
+                item.read().erase_flushing();
+            }
+
+            return Err(err);
         }
 
         let _ = request
@@ -378,6 +423,59 @@ impl FlushJob {
             .await
             .clear_tombstone_series()
             .await;
+
+        Ok(())
+    }
+
+    async fn flush_memtables(
+        job: Arc<FlushJob>,
+        request: &FlushReq,
+        mems: Vec<Arc<parking_lot::RwLock<MemCache>>>,
+        receivers: Vec<OneshotReceiver<Result<(), crate::TskvError>>>,
+    ) -> TskvResult<()> {
+        for mem in mems {
+            let flush_seq = mem.read().min_seq_no();
+            match flush::flush_memtable(request, mem).await {
+                Ok((ve, files_meta)) => {
+                    if let Some(entry) = job.queue.write().await.get_mut(&flush_seq) {
+                        entry.0.completion = true;
+                        entry.1.request.version_edit = ve;
+                        entry.1.request.file_metas = Some(files_meta);
+                        job.notify.notify_one();
+                    }
+                }
+
+                Err(err) => {
+                    error!(
+                        "Flush: memcache failed for tsf_id: {}, because : {:?}",
+                        request.tf_id, err
+                    );
+                    return Err(err);
+                }
+            };
+        }
+
+        for task_state_receiver in receivers {
+            match task_state_receiver.await {
+                Ok(result) => {
+                    if let Err(err) = result {
+                        error!(
+                            "Flush: failed to apply summary task  for tsf_id: {}, because : {:?}",
+                            request.tf_id, err
+                        );
+
+                        return Err(err);
+                    }
+                }
+
+                Err(err) => {
+                    error!(
+                    "Flush: failed to receive summary task result for tsf_id: {}, because : {:?}",
+                    request.tf_id, err
+                );
+                }
+            }
+        }
 
         Ok(())
     }
@@ -390,18 +488,23 @@ mod test {
 
     use super::DeferGuard;
     use crate::compaction::job::CompactProcessor;
+    use crate::compaction::CompactTask;
     use crate::VnodeId;
 
     #[test]
     fn test_build_compact_batch() {
         let mut compact_batch_builder = CompactProcessor::default();
-        compact_batch_builder.insert(1);
-        compact_batch_builder.insert(2);
-        compact_batch_builder.insert(1);
-        compact_batch_builder.insert(3);
-        assert_eq!(compact_batch_builder.vnode_ids.len(), 3);
+        compact_batch_builder.insert(CompactTask::Normal(1));
+        compact_batch_builder.insert(CompactTask::Normal(2));
+        compact_batch_builder.insert(CompactTask::Normal(1));
+        compact_batch_builder.insert(CompactTask::Normal(3));
+        assert_eq!(compact_batch_builder.compact_tasks.len(), 3);
 
-        let mut keys: Vec<VnodeId> = compact_batch_builder.vnode_ids.clone();
+        let mut keys: Vec<VnodeId> = compact_batch_builder
+            .compact_tasks
+            .iter()
+            .map(|task| task.vnode_id())
+            .collect();
         keys.sort();
         assert_eq!(keys, vec![1, 2, 3]);
 
@@ -409,7 +512,7 @@ mod test {
             .take()
             .unwrap()
             .into_iter()
-            .map(|(vnode_id, _)| vnode_id)
+            .map(|(task, _)| task.vnode_id())
             .collect::<Vec<VnodeId>>();
         assert_eq!(vnode_ids, vec![1, 2, 3]);
     }

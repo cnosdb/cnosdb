@@ -68,7 +68,6 @@ impl TsfFactory {
         let mut_cache = Arc::new(RwLock::new(MemCache::new(
             tf_id,
             self.ctx.file_id_next(),
-            self.ctx.file_id_next(),
             self.db_config.max_memcache_size(),
             self.db_config.memcache_partitions() as usize,
             version.last_seq(),
@@ -213,12 +212,15 @@ impl TseriesFamily {
     }
 
     pub fn switch_to_immutable(&mut self) {
+        if self.mut_cache.read().is_empty() {
+            return;
+        }
+
         let seq_no = self.mut_cache.read().seq_no();
         self.immut_cache.push(self.mut_cache.clone());
 
         self.mut_cache = Arc::from(RwLock::new(MemCache::new(
             self.tf_id,
-            self.ctx.file_id_next(),
             self.ctx.file_id_next(),
             self.db_config.max_memcache_size(),
             self.db_config.memcache_partitions() as usize,
@@ -526,7 +528,7 @@ pub mod test_tseries_family {
             LevelInfo::init(database.clone(), 0, 0, opt.storage.clone()),
             LevelInfo {
                 files: vec![
-                    Arc::new(ColumnFile::new(3, 1, TimeRange::new(3001, 3100), 100, false, make_tsm_file(&tsm_dir, 3))),
+                    Arc::new(ColumnFile::new(3, 1, TimeRange::new(3001, 3100), 100, make_tsm_file(&tsm_dir, 3))),
                 ],
                 owner: database.clone(),
                 tsf_id: 1,
@@ -538,8 +540,8 @@ pub mod test_tseries_family {
             },
             LevelInfo {
                 files: vec![
-                    Arc::new(ColumnFile::new(1, 2, TimeRange::new(1, 1000), 1000, false, make_tsm_file(&tsm_dir, 1))),
-                    Arc::new(ColumnFile::new(2, 2, TimeRange::new(1001, 2000), 1000, false, make_tsm_file(&tsm_dir, 2))),
+                    Arc::new(ColumnFile::new(1, 2, TimeRange::new(1, 1000), 1000, make_tsm_file(&tsm_dir, 1))),
+                    Arc::new(ColumnFile::new(2, 2, TimeRange::new(1001, 2000), 1000, make_tsm_file(&tsm_dir, 2))),
                 ],
                 owner: database.clone(),
                 tsf_id: 1,
@@ -625,8 +627,8 @@ pub mod test_tseries_family {
             LevelInfo::init(database.clone(), 0, 1, opt.storage.clone()),
             LevelInfo {
                 files: vec![
-                    Arc::new(ColumnFile::new(3, 1, TimeRange::new(3001, 3100), 100, false, make_tsm_file(&tsm_dir, 3))),
-                    Arc::new(ColumnFile::new(4, 1, TimeRange::new(3051, 3150), 100, false, make_tsm_file(&tsm_dir, 4))),
+                    Arc::new(ColumnFile::new(3, 1, TimeRange::new(3001, 3100), 100, make_tsm_file(&tsm_dir, 3))),
+                    Arc::new(ColumnFile::new(4, 1, TimeRange::new(3051, 3150), 100, make_tsm_file(&tsm_dir, 4))),
                 ],
                 owner: database.clone(),
                 tsf_id: 1,
@@ -638,8 +640,8 @@ pub mod test_tseries_family {
             },
             LevelInfo {
                 files: vec![
-                    Arc::new(ColumnFile::new(1, 2, TimeRange::new(1, 1000), 1000, false, make_tsm_file(&tsm_dir, 1))),
-                    Arc::new(ColumnFile::new(2, 2, TimeRange::new(1001, 2000), 1000, false, make_tsm_file(&tsm_dir, 2))),
+                    Arc::new(ColumnFile::new(1, 2, TimeRange::new(1, 1000), 1000, make_tsm_file(&tsm_dir, 1))),
+                    Arc::new(ColumnFile::new(2, 2, TimeRange::new(1001, 2000), 1000, make_tsm_file(&tsm_dir, 2))),
                 ],
                 owner: database.clone(),
                 tsf_id: 1,

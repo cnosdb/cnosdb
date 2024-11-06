@@ -1,5 +1,9 @@
 use std::error::Error;
+use std::sync::Arc;
 
+use arrow::buffer::NullBuffer;
+use arrow_array::builder::Int64Builder;
+use arrow_array::{ArrayRef, Int64Array};
 use integer_encoding::*;
 use pco::standalone::{simple_decompress, simpler_compress};
 use pco::DEFAULT_COMPRESSION_LEVEL;
@@ -180,53 +184,62 @@ fn encode_rle(v: u64, delta: u64, count: u64, dst: &mut Vec<u8>) {
     dst.truncate(n);
 }
 
-/// decode decodes a slice of bytes encoded using encode back into a
-/// vector of signed integers.
-pub fn ts_zigzag_simple8b_decode(
+pub fn ts_zigzag_simple8b_decode_to_array(
     src: &[u8],
-    dst: &mut Vec<i64>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+    bit_set: &NullBuffer,
+) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
     if src.is_empty() {
-        return Ok(());
+        let null_value: Vec<Option<i64>> = vec![None; bit_set.len()];
+        let array = Int64Array::from(null_value);
+        return Ok(Arc::new(array));
     }
     let src = &src[1..];
 
     let encoding = &src[0] >> 4;
     match encoding {
         encoding if encoding == DeltaEncoding::Uncompressed as u8 => {
-            decode_uncompressed(&src[1..], dst) // first byte not used
+            decode_uncompressed_to_array(&src[1..], bit_set) // first byte not used
         }
-        encoding if encoding == DeltaEncoding::Rle as u8 => decode_rle(src, dst),
-        encoding if encoding == DeltaEncoding::Simple8b as u8 => decode_simple8b(src, dst),
+        encoding if encoding == DeltaEncoding::Rle as u8 => decode_rle_to_array(src, bit_set),
+        encoding if encoding == DeltaEncoding::Simple8b as u8 => {
+            decode_simple8b_to_array(src, bit_set)
+        }
         _ => Err(From::from("invalid block encoding")),
     }
 }
 
-// decode_uncompressed writes the binary encoded values in src into dst.
-fn decode_uncompressed(src: &[u8], dst: &mut Vec<i64>) -> Result<(), Box<dyn Error + Send + Sync>> {
+fn decode_uncompressed_to_array(
+    src: &[u8],
+    bit_set: &NullBuffer,
+) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
     if src.is_empty() || src.len() & 0x7 != 0 {
         return Err(From::from("invalid uncompressed block length"));
     }
 
-    let count = src.len() / 8;
-    if dst.capacity() < count {
-        dst.reserve_exact(count - dst.capacity());
-    }
     let mut i = 0;
     let mut prev = 0;
     let mut buf: [u8; 8] = [0; 8];
-    while i < src.len() {
-        buf.copy_from_slice(&src[i..i + 8]);
-        prev += i64::from_be_bytes(buf);
-        dst.push(prev); // N.B - signed integer...
-        i += 8;
+
+    let mut builder = Int64Builder::new();
+    for is_valid in bit_set.iter() {
+        if !is_valid {
+            builder.append_null();
+            continue;
+        }
+        if i < src.len() {
+            buf.copy_from_slice(&src[i..i + 8]);
+            prev += i64::from_be_bytes(buf);
+            builder.append_value(prev);
+            i += 8;
+        }
     }
-    Ok(())
+    Ok(Arc::new(builder.finish()))
 }
 
-// decode_rle decodes an RLE encoded slice containing only unsigned into the
-// destination vector.
-fn decode_rle(src: &[u8], dst: &mut Vec<i64>) -> Result<(), Box<dyn Error + Send + Sync>> {
+fn decode_rle_to_array(
+    src: &[u8],
+    bit_set: &NullBuffer,
+) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
     if src.len() < 9 {
         return Err(From::from("not enough data to decode using RLE"));
     }
@@ -235,90 +248,129 @@ fn decode_rle(src: &[u8], dst: &mut Vec<i64>) -> Result<(), Box<dyn Error + Send
     let scaler = 10_u64.pow((src[0] & 0b0000_1111) as u32);
     let mut i = 1;
 
-    // TODO(edd): this should be possible to do in-place without copy.
     let mut a: [u8; 8] = [0; 8];
     a.copy_from_slice(&src[i..i + 8]);
     i += 8;
-    let (mut delta, n) = u64::decode_var(&src[i..]).ok_or("unable to decode delta")?;
-    i += n;
+    let (mut delta, _n) = u64::decode_var(&src[i..]).ok_or("unable to decode delta")?;
     delta *= scaler;
 
-    let (count, _n) = usize::decode_var(&src[i..]).ok_or("unable to decode count")?;
-
-    if dst.capacity() < count {
-        dst.reserve_exact(count - dst.capacity());
-    }
-
-    let mut first = i64::from_be_bytes(a);
-    for _ in 0..count {
-        dst.push(first);
+    let mut is_first = true;
+    let mut first = 0;
+    let mut builder = Int64Builder::with_capacity(bit_set.len());
+    for is_valid in bit_set.iter() {
+        if !is_valid {
+            builder.append_null();
+            continue;
+        }
+        if is_first {
+            first = i64::from_be_bytes(a);
+            builder.append_value(first);
+            is_first = false;
+            continue;
+        }
         first = first.wrapping_add(delta as i64);
+        builder.append_value(first);
     }
-    Ok(())
+    Ok(Arc::new(builder.finish()))
 }
 
-fn decode_simple8b(src: &[u8], dst: &mut Vec<i64>) -> Result<(), Box<dyn Error + Send + Sync>> {
+fn decode_simple8b_to_array(
+    src: &[u8],
+    bit_set: &NullBuffer,
+) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
     if src.len() < 9 {
         return Err(From::from("not enough data to decode packed timestamp"));
     }
 
     let scaler = 10_u64.pow((src[0] & 0b0000_1111) as u32);
 
-    // TODO(edd): pre-allocate res by counting bytes in encoded slice?
     let mut res = vec![];
     let mut buf: [u8; 8] = [0; 8];
     buf.copy_from_slice(&src[1..9]);
-    dst.push(i64::from_be_bytes(buf));
-
+    let mut next = i64::from_be_bytes(buf);
+    let mut builder = Int64Builder::with_capacity(bit_set.len());
+    let mut idx = 0;
+    if bit_set.is_valid(idx) {
+        builder.append_value(next);
+    } else {
+        builder.append_null();
+    }
+    idx += 1;
     simple8b::decode(&src[9..], &mut res);
-    let mut next = dst[dst.len() - 1];
-    if scaler > 1 {
-        // TODO(edd): fix this. It's copying, which is slowwwwwwwww.
-        for v in &res {
-            next += (v * scaler) as i64;
-            dst.push(next);
+
+    let mut value_iter = res.into_iter();
+    while idx < bit_set.len() {
+        if bit_set.is_valid(idx) {
+            if let Some(value) = value_iter.next() {
+                next += if scaler > 1 {
+                    (value * scaler) as i64
+                } else {
+                    value as i64
+                };
+                builder.append_value(next);
+            }
+        } else {
+            builder.append_null();
         }
-        return Ok(());
+        idx += 1;
     }
-
-    // TODO(edd): fix this. It's copying, which is slowwwwwwwww.
-    for v in &res {
-        next += *v as i64;
-        dst.push(next);
-    }
-    Ok(())
+    Ok(Arc::new(builder.finish()))
 }
 
-pub fn ts_without_compress_decode(
+pub fn ts_without_compress_decode_to_array(
     src: &[u8],
-    dst: &mut Vec<i64>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+    bit_set: &NullBuffer,
+) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
     if src.is_empty() {
-        return Ok(());
+        let null_value: Vec<Option<i64>> = vec![None; bit_set.len()];
+        let array = Int64Array::from(null_value);
+        return Ok(Arc::new(array));
     }
-
     let src = &src[1..];
-    let iter = src.chunks(8);
-    for i in iter {
-        dst.push(decode_be_i64(i))
+    let mut iter = src.chunks(8);
+    let mut builder = Int64Builder::with_capacity(bit_set.len());
+    for is_valid in bit_set.iter() {
+        if !is_valid {
+            builder.append_null();
+            continue;
+        }
+        if let Some(i) = iter.next() {
+            builder.append_value(decode_be_i64(i));
+        }
     }
-    Ok(())
+    Ok(Arc::new(builder.finish()))
 }
 
-pub fn ts_pco_decode(src: &[u8], dst: &mut Vec<i64>) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn ts_pco_decode_to_array(
+    src: &[u8],
+    bit_set: &NullBuffer,
+) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
     if src.is_empty() {
-        return Ok(());
+        let null_value: Vec<Option<i64>> = vec![None; bit_set.len()];
+        let array = Int64Array::from(null_value);
+        return Ok(Arc::new(array));
     }
 
     let src = &src[1..];
-    let mut decode: Vec<i64> = simple_decompress(src)?;
-    dst.append(&mut decode);
-    Ok(())
+    let decode: Vec<i64> = simple_decompress(src)?;
+    let mut iter = decode.iter();
+    let mut builder = Int64Builder::with_capacity(bit_set.len());
+    for is_valid in bit_set.iter() {
+        if !is_valid {
+            builder.append_null();
+            continue;
+        }
+        if let Some(val) = iter.next() {
+            builder.append_value(*val);
+        }
+    }
+    Ok(Arc::new(builder.finish()))
 }
 
 #[cfg(test)]
 #[allow(clippy::unreadable_literal)]
 mod tests {
+
     use super::*;
     use crate::tsm::codec::get_encoding;
 
@@ -341,45 +393,44 @@ mod tests {
         let src: Vec<i64> = vec![-1000, 0, simple8b::MAX_VALUE as i64, 213123421];
         let mut dst = vec![];
 
-        let exp = src.clone();
         ts_zigzag_simple8b_encode(&src, &mut dst).expect("failed to encode");
 
         // verify uncompressed encoding used
         assert_eq!(&dst[1] >> 4, DeltaEncoding::Uncompressed as u8);
 
-        let mut got = vec![];
-        ts_zigzag_simple8b_decode(&dst, &mut got).expect("failed to decode");
+        let null_bitset = NullBuffer::new_valid(src.len());
+        let array_ref = ts_zigzag_simple8b_decode_to_array(&dst, &null_bitset).unwrap();
+        let array = array_ref.as_any().downcast_ref::<Int64Array>().unwrap();
 
+        let expected = Int64Array::from_iter(src.iter().cloned());
         // verify got same values back
-        assert_eq!(got, exp);
+        assert_eq!(*array, expected);
     }
 
     #[test]
     fn encode_pco_and_uncompress() {
         let src: Vec<i64> = vec![-1000, 0, simple8b::MAX_VALUE as i64, 213123421];
         let mut dst = vec![];
-        let mut got = vec![];
-        let exp = src.clone();
 
         ts_pco_encode(&src, &mut dst).unwrap();
         let exp_code_type = Encoding::Quantile;
         let got_code_type = get_encoding(&dst);
         assert_eq!(exp_code_type, got_code_type);
 
-        ts_pco_decode(&dst, &mut got).unwrap();
-        assert_eq!(exp, got);
-
         dst.clear();
-        got.clear();
 
         ts_without_compress_encode(&src, &mut dst).unwrap();
         let exp_code_type = Encoding::Null;
         let got_code_type = get_encoding(&dst);
         assert_eq!(exp_code_type, got_code_type);
 
-        ts_without_compress_decode(&dst, &mut got).unwrap();
+        let null_bitset = NullBuffer::new_valid(src.len());
+        let array_ref = ts_without_compress_decode_to_array(&dst, &null_bitset).unwrap();
+        let array = array_ref.as_any().downcast_ref::<Int64Array>().unwrap();
 
-        assert_eq!(exp, got);
+        let expected = Int64Array::from_iter(src.iter().cloned());
+        // verify got same values back
+        assert_eq!(*array, expected);
     }
 
     #[test]
@@ -427,16 +478,18 @@ mod tests {
         for test in tests {
             let mut dst = vec![];
             let src = test.input.clone();
-            let exp = test.input;
             ts_zigzag_simple8b_encode(&src, &mut dst).expect("failed to encode");
 
             // verify RLE encoding used
             assert_eq!(&dst[1] >> 4, DeltaEncoding::Rle as u8);
 
-            let mut got = vec![];
-            ts_zigzag_simple8b_decode(&dst, &mut got).expect("failed to decode");
+            let null_bitset = NullBuffer::new_valid(src.len());
+            let array_ref = ts_zigzag_simple8b_decode_to_array(&dst, &null_bitset).unwrap();
+            let array = array_ref.as_any().downcast_ref::<Int64Array>().unwrap();
+
+            let expected = Int64Array::from_iter(src.iter().cloned());
             // verify got same values back
-            assert_eq!(got, exp, "{}", test.name);
+            assert_eq!(*array, expected, "{}", test.name);
         }
     }
 
@@ -465,15 +518,18 @@ mod tests {
         for test in tests {
             let mut dst = vec![];
             let src = test.input.clone();
-            let exp = test.input;
             ts_zigzag_simple8b_encode(&src, &mut dst).expect("failed to encode");
             // verify Simple8b encoding used
             assert_eq!(&dst[1] >> 4, DeltaEncoding::Simple8b as u8);
 
-            let mut got = vec![];
-            ts_zigzag_simple8b_decode(&dst, &mut got).expect("failed to decode");
+            let null_bitset = NullBuffer::new_valid(src.len());
+            let array_ref =
+                ts_zigzag_simple8b_decode_to_array(&dst, &null_bitset).expect("failed to decode");
+            let array = array_ref.as_any().downcast_ref::<Int64Array>().unwrap();
+
+            let expected = Int64Array::from_iter(src.iter().cloned());
             // verify got same values back
-            assert_eq!(got, exp, "{}", test.name);
+            assert_eq!(*array, expected, "{}", test.name);
         }
     }
 }

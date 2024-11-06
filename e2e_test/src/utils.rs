@@ -129,6 +129,21 @@ impl Client {
         }
     }
 
+    pub fn with_auth_no_timeout(user: String, password: Option<String>) -> Self {
+        let inner = ClientBuilder::new()
+            .no_proxy()
+            .timeout(None)
+            .build()
+            .unwrap_or_else(|e| {
+                panic!("Failed to build http client: {}", e);
+            });
+        Self {
+            inner,
+            user,
+            password,
+        }
+    }
+
     pub fn with_auth_and_tls(
         user: String,
         password: Option<String>,
@@ -1057,7 +1072,7 @@ fn kill_child_process(proc: Child, force: bool) {
 pub fn build_meta_node_config(test_dir: impl AsRef<Path>, meta_dir_name: &str) -> MetaStoreConfig {
     let mut config = MetaStoreConfig::default();
     let test_dir = test_dir.as_ref().display();
-    config.data_path = format!("{test_dir}/meta/{meta_dir_name}/meta");
+    config.global.data_path = format!("{test_dir}/meta/{meta_dir_name}/meta");
     config.log.level = "INFO".to_string();
     config.log.path = format!("{test_dir}/meta/{meta_dir_name}/log");
 

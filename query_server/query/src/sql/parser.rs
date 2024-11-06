@@ -793,7 +793,7 @@ impl<'a> ExtParser<'a> {
             self.parser
                 .parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
         let table_name = self.parser.parse_object_name()?;
-        check_name_not_contain_slash(&table_name)?;
+        check_name_not_contain_illegal_character(&table_name)?;
         let (columns, _) = self.parser.parse_columns()?;
 
         #[derive(Default)]
@@ -918,9 +918,8 @@ impl<'a> ExtParser<'a> {
             self.parser
                 .parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
         let table_name = self.parser.parse_object_name()?;
-        check_name_not_contain_slash(&table_name)?;
+        check_name_not_contain_illegal_character(&table_name)?;
         let columns = self.parse_cnos_columns()?;
-
         let create = CreateTable {
             name: table_name,
             if_not_exists,
@@ -1068,7 +1067,7 @@ impl<'a> ExtParser<'a> {
                 .parse_keywords(&[Keyword::IF, Keyword::NOT, Keyword::EXISTS]);
         let database_name = self.parser.parse_identifier()?;
         let name_vec = ObjectName(vec![database_name.clone()]);
-        check_name_not_contain_slash(&name_vec)?;
+        check_name_not_contain_illegal_character(&name_vec)?;
         let (options, config) = self.parse_database_options_and_config()?;
         Ok(ExtStatement::CreateDatabase(
             CreateDatabase {
@@ -1147,7 +1146,7 @@ impl<'a> ExtParser<'a> {
 
         let name = self.parser.parse_identifier()?;
         let name_vec = ObjectName(vec![name.clone()]);
-        check_name_not_contain_slash(&name_vec)?;
+        check_name_not_contain_illegal_character(&name_vec)?;
 
         let with_options = if self.parser.parse_keyword(Keyword::WITH) {
             self.parser
@@ -1170,7 +1169,7 @@ impl<'a> ExtParser<'a> {
 
         let name = self.parser.parse_identifier()?;
         let name_vec = ObjectName(vec![name.clone()]);
-        check_name_not_contain_slash(&name_vec)?;
+        check_name_not_contain_illegal_character(&name_vec)?;
 
         let inherit = if self.parse_cnos_keyword(CnosKeyWord::INHERIT) {
             self.parser.parse_identifier().ok()
@@ -1192,7 +1191,7 @@ impl<'a> ExtParser<'a> {
 
         let name = self.parser.parse_identifier()?;
         let name_vec = ObjectName(vec![name.clone()]);
-        check_name_not_contain_slash(&name_vec)?;
+        check_name_not_contain_illegal_character(&name_vec)?;
 
         let with_options = if self.parser.parse_keyword(Keyword::WITH) {
             self.parser
@@ -1814,7 +1813,7 @@ impl<'a> ExtParser<'a> {
     }
 }
 
-fn check_name_not_contain_slash(object_name: &ObjectName) -> Result<(), ParserError> {
+fn check_name_not_contain_illegal_character(object_name: &ObjectName) -> Result<(), ParserError> {
     let names: Vec<String> = object_name
         .0
         .iter()
@@ -1830,6 +1829,12 @@ fn check_name_not_contain_slash(object_name: &ObjectName) -> Result<(), ParserEr
             name_str
         )));
     }
+    if name_str.trim().is_empty() {
+        return Err(ParserError::ParserError(
+            "Name cannot be empty or contain only spaces".to_string(),
+        ));
+    }
+
     Ok(())
 }
 

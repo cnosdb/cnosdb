@@ -4,7 +4,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use coordinator::service::CoordinatorRef;
+use datafusion::arrow::array::Int64Array;
 use datafusion::arrow::datatypes::SchemaRef;
+use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::common::DFSchema;
 use datafusion::datasource::{TableProvider, TableType};
 use datafusion::error::{DataFusionError, Result};
@@ -17,11 +19,12 @@ use datafusion::logical_expr::{
 use datafusion::optimizer::utils::{conjunction, split_conjunction};
 use datafusion::physical_expr::PhysicalExpr;
 use datafusion::physical_plan::empty::EmptyExec;
+use datafusion::physical_plan::memory::MemoryExec;
 use datafusion::physical_plan::{project_schema, ExecutionPlan};
 use datafusion::prelude::Column;
-use datafusion::scalar::ScalarValue;
 use meta::error::MetaError;
 use meta::model::MetaClientRef;
+use models::arrow::{DataType, Field, Schema};
 use models::predicate::domain::{Predicate, PredicateRef, PushedAggregateFunction};
 use models::schema::tskv_table_schema::{TskvTableSchema, TskvTableSchemaRef};
 use models::schema::TIME_FIELD_NAME;
@@ -102,8 +105,40 @@ impl ClusterTable {
             .splits(ctx, table_layout)
             .await
             .map_err(|err| DataFusionError::External(Box::new(err)))?;
+
+        // Parsing Aggregate Functions
+        let aggs = agg_expr
+            .iter()
+            .map(|e| match e {
+                Expr::AggregateFunction(agg) => Ok(agg),
+                _ => Err(DataFusionError::Plan(
+                    "Invalid plan, pushed aggregate functions contains unsupported".to_string(),
+                )),
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        // Check if all aggregate functions are Count
+        let all_are_count = aggs
+            .iter()
+            .any(|agg| matches!(agg.fun, aggregate_function::AggregateFunction::Count));
+
+        // Handling the empty shard
         if splits.is_empty() {
-            return Ok(Arc::new(EmptyExec::new(false, proj_schema)));
+            if all_are_count {
+                // If there are no shards, return a batch containing 0
+                let field = Field::new("COUNT(Int64(1))", DataType::Int64, true);
+                let schema = Arc::new(Schema::new(vec![field]));
+                let num_count = Int64Array::from(vec![0]);
+                let batch = RecordBatch::try_new(schema.clone(), vec![Arc::new(num_count)])
+                    .map_err(DataFusionError::ArrowError)?;
+                return Ok(Arc::new(MemoryExec::try_new(
+                    &[vec![batch]],
+                    proj_schema,
+                    None,
+                )?));
+            } else {
+                return Ok(Arc::new(EmptyExec::new(false, proj_schema)));
+            }
         }
 
         let time_col = unsafe {
@@ -337,9 +372,12 @@ impl TableProvider for ClusterTable {
 
     fn supports_aggregate_pushdown(
         &self,
-        _group_expr: &[Expr],
+        group_expr: &[Expr],
         aggr_expr: &[Expr],
     ) -> Result<TableProviderAggregationPushDown> {
+        if !group_expr.is_empty() {
+            return Ok(TableProviderAggregationPushDown::Unsupported);
+        }
         if aggr_expr.len() == 1 {
             if let Expr::AggregateFunction(AggregateFunction {
                 fun,
@@ -355,9 +393,25 @@ impl TableProvider for ClusterTable {
                     && filter.is_none()
                     && order_by.is_none()
                 {
-                    if let Expr::Literal(value) = &args[0] {
-                        if matches!(value, ScalarValue::UInt8(Some(1))) {
-                            return Ok(TableProviderAggregationPushDown::Ungrouped);
+                    match &args[0] {
+                        Expr::Column(expr) => {
+                            if let Some(col) = self.schema.column(&expr.name) {
+                                if col.column_type.is_tag() {
+                                    return Ok(TableProviderAggregationPushDown::Unsupported);
+                                } else {
+                                    return Ok(TableProviderAggregationPushDown::Ungrouped);
+                                }
+                            }
+                        }
+                        Expr::Literal(expr) => {
+                            if expr.is_null() {
+                                return Ok(TableProviderAggregationPushDown::Unsupported);
+                            } else {
+                                return Ok(TableProviderAggregationPushDown::Ungrouped);
+                            }
+                        }
+                        _ => {
+                            return Ok(TableProviderAggregationPushDown::Unsupported);
                         }
                     }
                 }
@@ -367,21 +421,18 @@ impl TableProvider for ClusterTable {
         Ok(TableProviderAggregationPushDown::Unsupported)
     }
 
-    fn push_down_projection(&self, proj: &[usize]) -> Option<Vec<usize>> {
+    fn push_down_projection(&self, proj: &[usize], is_tag_scan: bool) -> Option<Vec<usize>> {
         let mut contain_time = false;
-        let mut contain_field = false;
 
         proj.iter()
             .flat_map(|i| self.schema.column_by_index(*i))
             .for_each(|c| {
-                if c.column_type.is_field() {
-                    contain_field = true;
-                } else if c.column_type.is_time() {
+                if c.column_type.is_time() {
                     contain_time = true;
                 }
             });
 
-        if contain_field && !contain_time {
+        if !is_tag_scan && !contain_time {
             if let Some(idx) = self.schema.column_index(TIME_FIELD_NAME) {
                 let new_proj = std::iter::once(idx)
                     .chain(proj.iter().cloned())

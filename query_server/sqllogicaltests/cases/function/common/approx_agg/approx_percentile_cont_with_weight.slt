@@ -71,3 +71,24 @@ SELECT approx_percentile_cont_with_weight(temperature, -1.0, 0.5) AS approx_inva
 
 query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function ApproxPercentileContWithWeight does not accept 1 function arguments\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
 select approx_percentile_cont_with_weight(null);
+
+statement ok
+drop table if exists air;
+
+statement ok
+CREATE TABLE air (
+id bigint,
+temperature double
+);
+
+statement ok
+INSERT INTO air (TIME, id, temperature) VALUES
+('1999-12-31 00:00:00.005', 6, NULL),
+('1999-12-31 00:00:00.006', 7, -5.0),
+('1999-12-31 00:00:00.007', 8, -10.0),
+('1999-12-31 00:00:00.008', 9, -2.5);
+
+query R
+SELECT approx_percentile_cont(temperature, 0.1, 100) AS approx_10th_percentile FROM air;
+----
+-10.0

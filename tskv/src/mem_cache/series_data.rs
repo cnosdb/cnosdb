@@ -1,5 +1,4 @@
 use std::collections::{HashMap, LinkedList};
-use std::ops::Bound::Included;
 use std::sync::Arc;
 
 use models::predicate::domain::{TimeRange, TimeRanges};
@@ -17,7 +16,6 @@ pub struct RowGroup {
     pub schema: Arc<TskvTableSchema>,
     pub range: TimeRange,
     pub rows: OrderedRowsData,
-    /// total size in stack and heap
     pub size: usize,
 }
 
@@ -117,77 +115,38 @@ impl SeriesData {
         &self,
         column_ids: &[ColumnId],
         time_ranges: &TimeRanges,
-        mut handle_data: impl FnMut(RowData),
+        mut handle_data: impl FnMut(&RowData),
     ) {
-        match (time_ranges.is_boundless(), time_ranges.is_empty()) {
-            (_, false) => {
-                for group in self.groups.iter() {
-                    let field_index = group.schema.fields_id();
-                    for range in time_ranges.time_ranges() {
-                        for row in group.rows.get_ref_rows().range(
-                            Included(&RowData {
-                                ts: range.min_ts,
-                                fields: vec![],
-                            }),
-                            Included(&RowData {
-                                ts: range.max_ts,
-                                fields: vec![],
-                            }),
-                        ) {
-                            let mut fields = vec![None; column_ids.len()];
-                            column_ids.iter().enumerate().for_each(|(i, column_id)| {
-                                if let Some(index) = field_index.get(column_id) {
-                                    if let Some(Some(field)) = row.fields.get(*index) {
-                                        fields[i] = Some(field.clone());
-                                    }
-                                }
-                            });
-                            handle_data(RowData { ts: row.ts, fields });
-                        }
+        let groups = self.flat_groups();
+        let latest_schema = match self.get_schema() {
+            Some(schema) => schema,
+            None => return,
+        };
+
+        let iter = SeriesDedupMergeSortIterator::new(groups, latest_schema.clone());
+
+        for row_data in iter {
+            if !time_ranges.contains(row_data.ts) {
+                continue;
+            }
+
+            let field_index = latest_schema.fields_id();
+            let mut fields = vec![None; column_ids.len()];
+
+            // 遍历所有的 column_ids，按照对应的索引更新字段
+            column_ids.iter().enumerate().for_each(|(i, column_id)| {
+                if let Some(index) = field_index.get(column_id) {
+                    if let Some(Some(field)) = row_data.fields.get(*index) {
+                        // 这里将 &FieldVal 转换为 FieldVal 进行存储
+                        fields[i] = Some((*field).clone());
                     }
                 }
-            }
-            (false, true) => {
-                for group in self.groups.iter() {
-                    let field_index = group.schema.fields_id();
-                    for row in group.rows.get_ref_rows().range(
-                        Included(&RowData {
-                            ts: time_ranges.min_ts(),
-                            fields: vec![],
-                        }),
-                        Included(&RowData {
-                            ts: time_ranges.max_ts(),
-                            fields: vec![],
-                        }),
-                    ) {
-                        let mut fields = vec![None; column_ids.len()];
-                        column_ids.iter().enumerate().for_each(|(i, column_id)| {
-                            if let Some(index) = field_index.get(column_id) {
-                                if let Some(Some(field)) = row.fields.get(*index) {
-                                    fields[i] = Some(field.clone());
-                                }
-                            }
-                        });
-                        handle_data(RowData { ts: row.ts, fields });
-                    }
-                }
-            }
-            (true, true) => {
-                for group in self.groups.iter() {
-                    let field_index = group.schema.fields_id();
-                    for row in group.rows.get_ref_rows() {
-                        let mut fields = vec![None; column_ids.len()];
-                        column_ids.iter().enumerate().for_each(|(i, column_id)| {
-                            if let Some(index) = field_index.get(column_id) {
-                                if let Some(Some(field)) = row.fields.get(*index) {
-                                    fields[i] = Some(field.clone());
-                                }
-                            }
-                        });
-                        handle_data(RowData { ts: row.ts, fields });
-                    }
-                }
-            }
+            });
+
+            handle_data(&RowData {
+                ts: row_data.ts,
+                fields,
+            });
         }
     }
 
@@ -217,51 +176,20 @@ impl SeriesData {
         time_ranges: &TimeRanges,
         mut handle_data: impl FnMut(Timestamp),
     ) {
-        match (time_ranges.is_boundless(), time_ranges.is_empty()) {
-            (_, false) => {
-                for group in self.groups.iter() {
-                    for range in time_ranges.time_ranges() {
-                        for row in group.rows.get_ref_rows().range(
-                            Included(&RowData {
-                                ts: range.min_ts,
-                                fields: vec![],
-                            }),
-                            Included(&RowData {
-                                ts: range.max_ts,
-                                fields: vec![],
-                            }),
-                        ) {
-                            handle_data(row.ts);
-                        }
-                    }
-                }
-            }
-            (false, true) => {
-                for group in self.groups.iter() {
-                    for row in group.rows.get_ref_rows().range(
-                        Included(&RowData {
-                            ts: time_ranges.min_ts(),
-                            fields: vec![],
-                        }),
-                        Included(&RowData {
-                            ts: time_ranges.max_ts(),
-                            fields: vec![],
-                        }),
-                    ) {
-                        handle_data(row.ts);
-                    }
-                }
-            }
-            (true, true) => {
-                for group in self.groups.iter() {
-                    for row in group.rows.get_ref_rows() {
-                        handle_data(row.ts);
-                    }
-                }
+        let groups = self.flat_groups();
+        let latest_schema = match self.get_schema() {
+            Some(schema) => schema,
+            None => return,
+        };
+
+        let iter = SeriesDedupMergeSortIterator::new(groups, latest_schema.clone());
+
+        for row_data in iter {
+            if time_ranges.contains(row_data.ts) {
+                handle_data(row_data.ts);
             }
         }
     }
-
     pub fn flat_groups(
         &self,
     ) -> Vec<(
@@ -283,46 +211,29 @@ impl SeriesData {
     }
 
     #[allow(clippy::type_complexity)]
-    pub fn convert_to_page(
-        &self,
-        max_level_ts: i64,
-    ) -> TskvResult<Option<(Arc<TskvTableSchema>, Vec<page::Page>, Vec<page::Page>)>> {
+    pub fn convert_to_page(&self) -> TskvResult<Option<(Arc<TskvTableSchema>, Vec<page::Page>)>> {
         let latest_schema = match self.get_schema() {
             Some(schema) => schema,
             None => return Ok(None),
         };
 
         let mut time_array = MutableColumnRef::empty(latest_schema.time_column())?;
-        let mut delta_time_array = time_array.clone();
 
         let fields_schema = latest_schema.fields_orderby_id();
         let mut fields_array = fields_schema
             .iter()
             .map(|col| MutableColumnRef::empty(col.clone()))
             .collect::<TskvResult<Vec<_>>>()?;
-        let mut delta_fields_array = fields_array.clone();
 
         let iter = SeriesDedupMergeSortIterator::new(self.flat_groups(), latest_schema.clone());
         for row_data in iter {
-            match row_data.ts.cmp(&max_level_ts) {
-                std::cmp::Ordering::Greater => {
-                    time_array.push_ts(row_data.ts)?;
-                    for (idx, field) in row_data.fields.iter().enumerate() {
-                        fields_array[idx].push(*field)?;
-                    }
-                }
-                _ => {
-                    delta_time_array.push_ts(row_data.ts)?;
-                    for (idx, field) in row_data.fields.iter().enumerate() {
-                        delta_fields_array[idx].push(*field)?;
-                    }
-                }
+            time_array.push_ts(row_data.ts)?;
+            for (idx, field) in row_data.fields.iter().enumerate() {
+                fields_array[idx].push(*field)?;
             }
         }
 
-        if !time_array.column_data.valid.is_all_set()
-            || !delta_time_array.column_data.valid.is_all_set()
-        {
+        if !time_array.column_data.valid.is_all_set() {
             return Err(CommonSnafu {
                 reason: "Invalid time array in DataBlock".to_string(),
             }
@@ -337,15 +248,7 @@ impl SeriesData {
             }
         }
 
-        let mut delta_pages_data = vec![];
-        if !delta_time_array.column_data.valid.is_empty() {
-            delta_pages_data.push(page::Page::colref_to_page(delta_time_array)?);
-            for field_array in delta_fields_array {
-                delta_pages_data.push(page::Page::colref_to_page(field_array)?);
-            }
-        }
-
-        Ok(Some((latest_schema, pages_data, delta_pages_data)))
+        Ok(Some((latest_schema, pages_data)))
     }
 }
 

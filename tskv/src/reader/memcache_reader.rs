@@ -10,9 +10,8 @@ use arrow_schema::SchemaRef;
 use futures::Stream;
 use models::predicate::domain::{TimeRange, TimeRanges};
 use models::schema::tskv_table_schema::{ColumnType, TableColumn};
-use models::{ColumnId, Timestamp};
+use models::ColumnId;
 use parking_lot::RwLock;
-use skiplist::OrderedSkipList;
 use snafu::ResultExt;
 
 use super::{
@@ -25,7 +24,7 @@ use crate::mem_cache::series_data::SeriesData;
 use crate::reader::array_builder::ArrayBuilderPtr;
 use crate::reader::iterator::RowIterator;
 use crate::reader::utils::TimeRangeProvider;
-use crate::TskvResult;
+use crate::{TskvError, TskvResult};
 
 enum MemcacheReadMode {
     FieldScan,
@@ -89,85 +88,73 @@ impl MemCacheReader {
 
     fn read_data_and_build_array(&self) -> TskvResult<Vec<ArrayBuilderPtr>> {
         let mut builders = Vec::with_capacity(self.columns.len());
-        // build builders to RecordBatch
+
+        // Initialize builders for each column
         for item in self.columns.iter() {
             let kv_dt = item.column_type.to_physical_type();
             let builder_item = RowIterator::new_column_builder(&kv_dt, self.batch_size)?;
-            builders.push(ArrayBuilderPtr::new(builder_item, kv_dt))
+            builders.push(ArrayBuilderPtr::new(builder_item, kv_dt));
         }
 
         match self.read_mode {
             MemcacheReadMode::FieldScan => {
-                // 1.read all columns data to Vec<RowData>
-                let mut row_data_vec: OrderedSkipList<RowData> = OrderedSkipList::new();
+                // Define column ids for all except the first column (assumed to be timestamps)
                 let column_ids: Vec<u32> = self.columns.iter().map(|c| c.id).collect();
-                self.series_data
-                    .read()
-                    .read_data(&column_ids[1..], &self.time_ranges, |d| {
-                        row_data_vec.insert(d)
-                    });
 
-                // 2.merge RowData by ts
-                let mut merge_row_data_vec: Vec<RowData> = Vec::with_capacity(row_data_vec.len());
-                for row_data in row_data_vec {
-                    if let Some(existing_row) = merge_row_data_vec.last_mut() {
-                        if existing_row.ts == row_data.ts {
-                            for (index, field) in row_data.fields.iter().enumerate() {
-                                if let Some(field) = field {
-                                    existing_row.fields[index] = Some(field.clone());
-                                }
-                            }
-                        } else {
-                            merge_row_data_vec.push(row_data.clone());
+                // Read data using the optimized `read_data` function and process it directly
+                let mut result: Result<(), TskvError> = Ok(());
+                self.series_data.read().read_data(
+                    &column_ids[1..],
+                    &self.time_ranges,
+                    |row_data: &RowData| {
+                        let mut offset = 0;
+
+                        // Append timestamp for the first column
+                        if let ColumnType::Time(unit) = &self.columns[0].column_type {
+                            builders[offset].append_timestamp(unit, row_data.ts);
+                            offset += 1;
                         }
-                    } else {
-                        merge_row_data_vec.push(row_data.clone());
-                    }
-                }
 
-                // 3.by Vec<RowData>, build multi ArrayBuilderPtr
-                for row_data in merge_row_data_vec {
-                    let mut offset = 0;
-                    if let ColumnType::Time(unit) = &self.columns[0].column_type {
-                        builders[offset].append_timestamp(unit, row_data.ts);
-                        offset += 1;
-                    }
-                    for (index, field) in row_data.fields.iter().enumerate() {
-                        if let Some(field) = field {
-                            builders[index + offset].append_value(
-                                self.columns[index + offset]
-                                    .column_type
-                                    .to_physical_data_type(),
-                                Some(field.data_value(row_data.ts)),
-                                &self.columns[index + offset].name,
-                            )?;
-                        } else {
-                            builders[index + offset].append_value(
+                        // Append values for other columns
+                        for (index, field) in row_data.fields.iter().enumerate() {
+                            if let Some(field) = field {
+                                if let Err(e) = builders[index + offset].append_value(
+                                    self.columns[index + offset]
+                                        .column_type
+                                        .to_physical_data_type(),
+                                    Some(field.data_value(row_data.ts)),
+                                    &self.columns[index + offset].name,
+                                ) {
+                                    result = Err(e);
+                                    return;
+                                }
+                            } else if let Err(e) = builders[index + offset].append_value(
                                 self.columns[index + offset]
                                     .column_type
                                     .to_physical_data_type(),
                                 None,
                                 &self.columns[index + offset].name,
-                            )?;
+                            ) {
+                                result = Err(e);
+                                return;
+                            }
                         }
-                    }
-                }
+                    },
+                );
+
+                // Handle the result of the closure
+                result?;
             }
+
             MemcacheReadMode::TimeScan => {
-                // 1.read all columns data to Vec<Rev<IntoIter<DataType>>>
-                let mut columns_data: Vec<Timestamp> = Vec::new();
+                // 使用 read_timestamps 收集去重后的时间戳并直接写入 builders
                 self.series_data
                     .read()
-                    .read_timestamps(&self.time_ranges, |d| columns_data.push(d));
-                columns_data.sort_by_key(|data| *data);
-                columns_data.dedup_by_key(|data| *data);
-
-                // 2.by Vec<Vec<Timestamp>>, build multi ArrayBuilderPtr
-                if let ColumnType::Time(unit) = &self.columns[0].column_type {
-                    for ts in columns_data {
-                        builders[0].append_timestamp(unit, ts);
-                    }
-                }
+                    .read_timestamps(&self.time_ranges, |ts| {
+                        if let ColumnType::Time(unit) = &self.columns[0].column_type {
+                            builders[0].append_timestamp(unit, ts);
+                        }
+                    });
             }
         }
 
@@ -280,7 +267,7 @@ mod tests {
     #[tokio::test]
     async fn test_memcache_reader() {
         let memory_pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
-        let mem_cache = MemCache::new(1, 0, 1, 1000, 2, 1, &memory_pool);
+        let mem_cache = MemCache::new(1, 0, 1000, 2, 1, &memory_pool);
 
         let mut schema_1 = TskvTableSchema::new(
             "test_tenant".to_string(),

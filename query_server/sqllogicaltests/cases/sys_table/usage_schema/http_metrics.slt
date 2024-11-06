@@ -18,14 +18,14 @@ m0,t0=t0 f0=false,f1=0.0 0
 statement ok
 --#DATABASE = usage_schema
 
-sleep 8000ms
+sleep 8s
 
 query 
 --#HTTP
 DESCRIBE DATABASE usage_schema;
 ----
 "ttl" "shard" "vnode_duration" "replica" "precision" "max_memcache_size" "memcache_partitions" "wal_max_file_size" "wal_sync" "strict_write" "max_cache_readers"
-"INF" "1" "1year" "1" "NS" "2 MiB" "16" "1 GiB" "false" "false" "32"
+"INF" "1" "1year" "1" "NS" "2 MiB" "16" "128 MiB" "false" "false" "32"
 
 sleep 10s
 

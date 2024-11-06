@@ -5,6 +5,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use coordinator::service::CoordinatorRef;
 use datafusion::arrow::datatypes::ToByteSlice;
+use futures::future::join_all;
 use meta::error::MetaError;
 use meta::model::MetaClientRef;
 use models::schema::tskv_table_schema::TskvTableSchemaRef;
@@ -24,6 +25,7 @@ use spi::server::dbms::DBMSRef;
 use spi::server::prom::PromRemoteServer;
 use spi::service::protocol::{Context, Query, QueryHandle};
 use spi::{MetaSnafu, QueryError, QueryResult, SnappySnafu};
+use tokio::task;
 use trace::span_ext::SpanExt;
 use trace::{debug, warn, Span, SpanContext};
 
@@ -61,7 +63,7 @@ impl PromRemoteServer for PromRemoteSqlServer {
 
         let span = Span::from_context("process read request", span_ctx);
         let read_response = self
-            .process_read_request(ctx, meta, read_request, span)
+            .process_read_requests(ctx, meta, read_request, span)
             .await?;
 
         debug!("Return remote read response: {:?}", read_response);
@@ -149,41 +151,85 @@ impl PromRemoteSqlServer {
         })
     }
 
-    async fn process_read_request(
+    async fn process_read_requests(
         &self,
         ctx: &Context,
         meta: MetaClientRef,
         read_request: ReadRequest,
         span: Span,
     ) -> QueryResult<ReadResponse> {
-        let mut results = Vec::with_capacity(read_request.queries.len());
-        for q in read_request.queries {
-            let mut timeseries: Vec<TimeSeries> = Vec::new();
-            let sqls = build_sql_with_table(ctx, &meta, q)?;
-
-            debug!("Prepare to execute: {:?}", sqls);
-
-            for (idx, sql) in sqls.into_iter().enumerate() {
-                timeseries.append(
-                    &mut self
-                        .process_single_sql(
-                            ctx,
-                            sql,
-                            Span::enter_with_parent(idx.to_string(), &span),
-                        )
-                        .await?,
+        let len = read_request.queries.len();
+        let mut tasks = Vec::with_capacity(len);
+        for (idx, q) in read_request.queries.into_iter().enumerate() {
+            let db = self.db.clone();
+            let ctx = ctx.clone();
+            let meta = meta.clone();
+            let span = Span::enter_with_parent(format!("process_read_request:{}", idx), &span);
+            let task =
+                task::spawn(
+                    async move { Self::process_read_request(q, db, ctx, meta, span).await },
                 );
-            }
+            tasks.push(task);
+        }
 
-            results.push(PromQueryResult { timeseries });
+        let task_results = join_all(tasks).await;
+        let mut results = Vec::with_capacity(len);
+        for result in task_results {
+            match result {
+                Ok(Ok(timeseries)) => results.push(PromQueryResult { timeseries }),
+                Ok(Err(e)) => return Err(e),
+                Err(e) => {
+                    return Err(QueryError::Internal {
+                        reason: e.to_string(),
+                    })
+                }
+            }
         }
 
         Ok(ReadResponse { results })
     }
 
+    async fn process_read_request(
+        q: protos::prompb::prometheus::Query,
+        db: DBMSRef,
+        ctx: Context,
+        meta: MetaClientRef,
+        span: Span,
+    ) -> QueryResult<Vec<TimeSeries>> {
+        let sqls = build_sql_with_table(&ctx, &meta, q)?;
+        let len = sqls.len();
+        debug!("Prepare to execute: {:?}", sqls);
+
+        let mut tasks = Vec::with_capacity(len);
+        for (idx, sql) in sqls.into_iter().enumerate() {
+            let db = db.clone();
+            let ctx = ctx.clone();
+            let span = Span::enter_with_parent(format!("process_single_sql:{}", idx), &span);
+            let task =
+                task::spawn(async move { Self::process_single_sql(db, ctx, sql, span).await });
+            tasks.push(task);
+        }
+
+        let task_results = join_all(tasks).await;
+        let mut timeseries = Vec::with_capacity(len);
+        for result in task_results {
+            match result {
+                Ok(Ok(mut ts)) => timeseries.append(&mut ts),
+                Ok(Err(e)) => return Err(e),
+                Err(e) => {
+                    return Err(QueryError::Internal {
+                        reason: e.to_string(),
+                    })
+                }
+            }
+        }
+
+        Ok(timeseries)
+    }
+
     async fn process_single_sql(
-        &self,
-        ctx: &Context,
+        db: DBMSRef,
+        ctx: Context,
         sql: SqlWithTable,
         span: Span,
     ) -> QueryResult<Vec<TimeSeries>> {
@@ -203,11 +249,9 @@ impl PromRemoteSqlServer {
         })?;
 
         let inner_query = Query::new(ctx.clone(), sql.sql);
-        let result = self
-            .db
-            .execute(&inner_query, span.context().as_ref())
-            .await?;
+        let result = db.execute(&inner_query, span.context().as_ref()).await?;
 
+        let _span = Span::enter_with_parent("transform_time_series".to_string(), &span);
         transform_time_series(result, tag_name_indices, sample_value_idx, sample_time_idx).await
     }
 
@@ -309,7 +353,7 @@ fn build_sql_with_table(
         .into_iter()
         .map(|table| SqlWithTable {
             sql: format!(
-                "SELECT * FROM {} WHERE {}",
+                "SELECT * FROM \"{}\" WHERE {} order by time",
                 table.name,
                 filters.join(" AND ")
             ),

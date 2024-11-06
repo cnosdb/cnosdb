@@ -598,18 +598,23 @@ fn explain_time_count_tests() {
     {
         let resp = server
             .client
-            .post(url, "explain select exact_count_star(null) from m0;")
+            .post(url, "explain select exact_count(*) from m0;")
             .unwrap();
 
         let mut expected_resp_lines = [
             "plan_type,plan",
-            "logical_plan,\"Aggregate: groupBy=[[]], aggr=[[COUNT(UInt8(0))]]",
-            "  TableScan: m0 projection=[time]\"",
-            "physical_plan,\"AggregateExec: mode=Final, gby=[], aggr=[COUNT(UInt8(0))]",
+            "logical_plan,\"Aggregate: groupBy=[[]], aggr=[[COUNT(UInt8(1))]]",
+            "  Aggregate: groupBy=[[m0.time, m0.t0, m0.f0]], aggr=[[]]",
+            "    TableScan: m0 projection=[time, t0, f0]\"",
+            "physical_plan,\"AggregateExec: mode=Final, gby=[], aggr=[COUNT(UInt8(1))]",
             "  CoalescePartitionsExec",
-            "    AggregateExec: mode=Partial, gby=[], aggr=[COUNT(UInt8(0))]",
-            "      RepartitionExec: partitioning=RoundRobinBatch(1), input_partitions=7",
-            "        TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=None, split_num=3, projection=[time]",
+            "    AggregateExec: mode=Partial, gby=[], aggr=[COUNT(UInt8(1))]",
+            "      AggregateExec: mode=FinalPartitioned, gby=[time@0 as time, t0@1 as t0, f0@2 as f0], aggr=[]",
+            "        CoalesceBatchesExec: target_batch_size=8192",
+            "          RepartitionExec: partitioning=Hash([time@0, t0@1, f0@2], 8), input_partitions=8",
+            "            AggregateExec: mode=Partial, gby=[time@0 as time, t0@1 as t0, f0@2 as f0], aggr=[]",
+            "              RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=1",
+            "                TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=None, split_num=1, projection=[time,t0,f0]",
             "\"",
             "",
         ];
@@ -617,21 +622,32 @@ fn explain_time_count_tests() {
         let resp_lines = resp_string.split('\n').collect::<Vec<&str>>();
         assert_eq!(resp_lines.len(), expected_resp_lines.len());
 
-        let expected_resp_lines_6 = replace_src_by_dst(
-            expected_resp_lines[6].to_string(),
-            resp_lines[6],
+        let expected_resp_lines_9 = replace_src_by_dst(
+            expected_resp_lines[9].to_string(),
+            resp_lines[9],
+            vec![
+                (Some("Hash([time@0, t0@1, f0@2], "), Some(")")),
+                (Some("input_partitions="), None),
+            ],
+        );
+        expected_resp_lines[9] = &expected_resp_lines_9;
+
+        let expected_resp_lines_11 = replace_src_by_dst(
+            expected_resp_lines[11].to_string(),
+            resp_lines[11],
             vec![
                 (Some("RoundRobinBatch("), Some(")")),
                 (Some("input_partitions="), None),
             ],
         );
-        expected_resp_lines[6] = &expected_resp_lines_6;
-        let expected_resp_lines_7 = replace_src_by_dst(
-            expected_resp_lines[7].to_string(),
-            resp_lines[7],
+        expected_resp_lines[11] = &expected_resp_lines_11;
+
+        let expected_resp_lines_12 = replace_src_by_dst(
+            expected_resp_lines[12].to_string(),
+            resp_lines[12],
             vec![(Some("split_num="), Some(","))],
         );
-        expected_resp_lines[7] = &expected_resp_lines_7;
+        expected_resp_lines[12] = &expected_resp_lines_12;
 
         let expected_resp_string = expected_resp_lines.join("\n");
         assert_eq!(resp_string, expected_resp_string);

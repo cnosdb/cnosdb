@@ -38,6 +38,9 @@ statement ok
 DROP TENANT if exists t_001;
 
 statement ok
+DROP TENANT if exists 'd  d';
+
+statement ok
 CREATE TENANT t1 WITH drop_after='1h';
 
 statement ok
@@ -348,3 +351,33 @@ select count(*) from air;
 
 statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: not supported keyword contains '/': t/1", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
 CREATE TENANT "t/1" WITH drop_after='1d';
+
+statement ok
+--#TENANT=cnosdb
+--#USER_NAME=root
+
+statement ok
+drop tenant if exists "tenant001";
+
+
+statement ok
+drop tenant if exists 'd  d';
+
+query TT
+select * from cluster_schema.tenants where tenant_name='d  d';
+----
+
+statement ok
+create tenant 'd  d';
+
+statement ok
+drop tenant if exists 'd  d';
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Name cannot be empty or contain only spaces", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "([^"]+)", "content\-length": "0"\} \}, source: None \}
+create tenant '';
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Name cannot be empty or contain only spaces", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "([^"]+)", "content\-length": "0"\} \}, source: None \}
+create tenant ' ';
+
+statement ok
+drop tenant if exists t_001;

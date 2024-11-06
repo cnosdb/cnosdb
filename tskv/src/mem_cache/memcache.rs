@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use memory_pool::{MemoryConsumer, MemoryPoolRef, MemoryReservation};
@@ -30,10 +30,11 @@ impl MemCacheStatistics {
 pub struct MemCache {
     tf_id: VnodeId,
 
+    flushing: AtomicBool,
+
     max_size: u64,
     min_seq_no: u64,
-    delta_file_id: ColumnFileId,
-    tsm_file_id: ColumnFileId,
+    file_id: ColumnFileId,
 
     // wal seq number
     seq_no: AtomicU64,
@@ -81,8 +82,7 @@ impl Iterator for MemCacheSeriesScanIterator {
 impl MemCache {
     pub fn new(
         tf_id: VnodeId,
-        tsm_file_id: ColumnFileId,
-        delta_file_id: ColumnFileId,
+        file_id: ColumnFileId,
         max_size: u64,
         part_count: usize,
         seq: u64,
@@ -96,8 +96,9 @@ impl MemCache {
             RwLock::new(MemoryConsumer::new(format!("memcache-{}-{}", tf_id, seq)).register(pool));
         Self {
             tf_id,
-            tsm_file_id,
-            delta_file_id,
+            file_id,
+
+            flushing: AtomicBool::new(false),
 
             max_size,
             min_seq_no: seq,
@@ -256,6 +257,22 @@ impl MemCache {
         self.partions[index].read().get(&sid).cloned()
     }
 
+    pub fn mark_flushing(&self) -> bool {
+        self.flushing
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+    }
+
+    pub fn erase_flushing(&self) -> bool {
+        self.flushing
+            .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+    }
+
+    pub fn is_flushing(&self) -> bool {
+        self.flushing.load(Ordering::Relaxed)
+    }
+
     pub fn is_full(&self) -> bool {
         self.memory.read().size() >= self.max_size as usize
     }
@@ -264,12 +281,8 @@ impl MemCache {
         self.tf_id
     }
 
-    pub fn tsm_file_id(&self) -> u64 {
-        self.tsm_file_id
-    }
-
-    pub fn delta_file_id(&self) -> u64 {
-        self.delta_file_id
+    pub fn file_id(&self) -> u64 {
+        self.file_id
     }
 
     pub fn seq_no(&self) -> u64 {
@@ -664,7 +677,7 @@ mod test_memcache {
         let sid: SeriesId = 1;
 
         let memory_pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
-        let mem_cache = MemCache::new(1, 0, 1, 1000, 2, 1, &memory_pool);
+        let mem_cache = MemCache::new(1, 0, 1000, 2, 1, &memory_pool);
         {
             let series_part = &mem_cache.partions[sid as usize].read();
             let series_data = series_part.get(&sid);
@@ -759,7 +772,7 @@ mod test_memcache {
     fn test_mem_cache_columns_modify() {
         let sid: SeriesId = 1;
         let memory_pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
-        let mem_cache = MemCache::new(1, 0, 1, 1000, 2, 1, &memory_pool);
+        let mem_cache = MemCache::new(1, 0, 1000, 2, 1, &memory_pool);
         {
             let series_part = &mem_cache.partions[sid as usize].read();
             let series_data = series_part.get(&sid);
@@ -860,7 +873,7 @@ mod test_memcache {
     fn test_mem_cache_read_series_data() {
         let sid: SeriesId = 1;
         let memory_pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
-        let mem_cache = MemCache::new(1, 0, 1, 1000, 2, 1, &memory_pool);
+        let mem_cache = MemCache::new(1, 0, 1000, 2, 1, &memory_pool);
         {
             let series_part = &mem_cache.partions[sid as usize].read();
             let series_data = series_part.get(&sid);
@@ -925,7 +938,7 @@ mod test_memcache {
     fn test_mem_cache_delete_time_ranges() {
         let sid: SeriesId = 1;
         let memory_pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
-        let mem_cache = MemCache::new(1, 0, 1, 1000, 2, 1, &memory_pool);
+        let mem_cache = MemCache::new(1, 0, 1000, 2, 1, &memory_pool);
         {
             let series_part = &mem_cache.partions[sid as usize].read();
             let series_data = series_part.get(&sid);

@@ -5,15 +5,11 @@ use datafusion::common::Column;
 use datafusion::config::ConfigOptions;
 use datafusion::error::Result;
 use datafusion::logical_expr::expr::{AggregateFunction, AggregateUDF};
-use datafusion::logical_expr::{aggregate_function, Aggregate, LogicalPlan, Projection};
+use datafusion::logical_expr::{aggregate_function, Aggregate, Distinct, LogicalPlan, Projection};
 use datafusion::optimizer::analyzer::AnalyzerRule;
 use datafusion::prelude::Expr;
-use datafusion::scalar::ScalarValue;
 
-/// Convert query statement to query tag operation
-///
-/// Triggering conditions:
-/// 1. convert exact_count to count
+/// convert exact_count to count, but unsupported pushdown
 pub struct TransformExactCountToCountRule {}
 
 impl AnalyzerRule for TransformExactCountToCountRule {
@@ -27,7 +23,7 @@ impl AnalyzerRule for TransformExactCountToCountRule {
 }
 
 fn analyze_internal(plan: LogicalPlan) -> Result<Transformed<LogicalPlan>> {
-    if let LogicalPlan::Projection(Projection { input, .. }) = &plan {
+    if let LogicalPlan::Projection(Projection { expr, input, .. }) = &plan {
         if let LogicalPlan::Aggregate(Aggregate {
             input,
             group_expr,
@@ -38,28 +34,38 @@ fn analyze_internal(plan: LogicalPlan) -> Result<Transformed<LogicalPlan>> {
             if aggr_expr.len() == 1 {
                 if let Expr::AggregateUDF(AggregateUDF {
                     fun,
+                    args,
                     filter,
                     order_by,
-                    ..
                 }) = &aggr_expr[0]
                 {
-                    if fun.name == "exact_count_star" {
+                    if fun.name == "exact_count" {
                         let new_aggr_expr = vec![Expr::AggregateFunction(AggregateFunction {
                             fun: aggregate_function::AggregateFunction::Count,
-                            args: vec![Expr::Literal(ScalarValue::UInt8(Some(0)))],
+                            args: args.clone(),
                             distinct: false,
                             filter: filter.clone(),
                             order_by: order_by.clone(),
                         })];
+
                         let new_aggr_plan = Arc::new(LogicalPlan::Aggregate(Aggregate::try_new(
-                            input.clone(),
+                            Arc::new(LogicalPlan::Distinct(Distinct {
+                                input: input.clone(),
+                            })),
                             group_expr.clone(),
                             new_aggr_expr,
                         )?));
-                        let new_proj_expr = vec![Expr::Column(Column {
-                            relation: None,
-                            name: "COUNT(UInt8(0))".to_string(),
-                        })];
+
+                        let mut new_proj_expr = expr.clone();
+                        for e in &mut new_proj_expr {
+                            if let Expr::Column(Column { name, .. }) = e {
+                                if let Some(new_name) =
+                                    name.replacen("exact_count", "COUNT", 1).into()
+                                {
+                                    *name = new_name;
+                                }
+                            }
+                        }
                         let new_proj_plan = LogicalPlan::Projection(Projection::try_new(
                             new_proj_expr,
                             new_aggr_plan,
@@ -71,5 +77,5 @@ fn analyze_internal(plan: LogicalPlan) -> Result<Transformed<LogicalPlan>> {
         }
     }
 
-    Ok(Transformed::No(plan.clone()))
+    Ok(Transformed::No(plan))
 }

@@ -32,11 +32,12 @@ use crate::store::key_path::KeyPath;
 use crate::store::storage::StateMachine;
 
 pub async fn start_raft_node(opt: config::meta::Opt) -> MetaResult<()> {
-    let id = opt.id;
-    let path = std::path::Path::new(&opt.data_path);
-    let http_addr = models::utils::build_address(&opt.host, opt.port);
+    let id = opt.global.node_id;
+    let path = std::path::Path::new(&opt.global.data_path);
+    let http_addr =
+        models::utils::build_address(&opt.global.raft_node_host, opt.global.listen_port);
 
-    let max_size = opt.lmdb_max_map_size;
+    let max_size = opt.cluster.lmdb_max_map_size;
     let state = StateStorage::open(path.join(format!("{}_state", id)), max_size)?;
     let entry = HeedEntryStorage::open(path.join(format!("{}_entry", id)), max_size)?;
     let engine = StateMachine::open(path.join(format!("{}_data", id)), max_size)?;
@@ -52,24 +53,24 @@ pub async fn start_raft_node(opt: config::meta::Opt) -> MetaResult<()> {
 
     let storage = NodeStorage::open(id, info.clone(), state, engine.clone(), entry).await?;
     let config = ReplicationConfig {
-        cluster_name: opt.cluster_name.clone(),
-        lmdb_max_map_size: opt.lmdb_max_map_size,
-        grpc_enable_gzip: opt.grpc_enable_gzip,
-        heartbeat_interval: opt.heartbeat_interval,
-        raft_logs_to_keep: opt.raft_logs_to_keep,
-        send_append_entries_timeout: opt.send_append_entries_timeout,
-        install_snapshot_timeout: opt.install_snapshot_timeout,
-        snapshot_policy: SnapshotPolicy::LogsSinceLast(opt.raft_logs_to_keep),
+        cluster_name: opt.global.cluster_name.clone(),
+        lmdb_max_map_size: opt.cluster.lmdb_max_map_size,
+        grpc_enable_gzip: opt.global.grpc_enable_gzip,
+        heartbeat_interval: opt.cluster.heartbeat_interval,
+        raft_logs_to_keep: opt.cluster.raft_logs_to_keep,
+        send_append_entries_timeout: opt.cluster.send_append_entries_timeout,
+        install_snapshot_timeout: opt.cluster.install_snapshot_timeout,
+        snapshot_policy: SnapshotPolicy::LogsSinceLast(opt.cluster.raft_logs_to_keep),
     };
 
     let mut db_opt = DatabaseOptions::default();
-    db_opt.set_replica(opt.system_database_replica);
+    db_opt.set_replica(opt.sys_config.system_database_replica);
 
     let mut usage_schema_config = DatabaseConfig::default();
-    usage_schema_config.set_max_memcache_size(opt.usage_schema_cache_size);
+    usage_schema_config.set_max_memcache_size(opt.sys_config.usage_schema_cache_size);
 
     let mut cluster_schema_config = DatabaseConfig::default();
-    cluster_schema_config.set_max_memcache_size(opt.cluster_schema_cache_size);
+    cluster_schema_config.set_max_memcache_size(opt.sys_config.cluster_schema_cache_size);
 
     let default_database = vec![
         (
@@ -89,7 +90,7 @@ pub async fn start_raft_node(opt: config::meta::Opt) -> MetaResult<()> {
         ),
     ];
     let meta_init = MetaInit::new(
-        opt.cluster_name.clone(),
+        opt.global.cluster_name.clone(),
         models::auth::user::ROOT.to_string(),
         models::auth::user::ROOT_PWD.to_string(),
         models::schema::DEFAULT_CATALOG.to_string(),
@@ -103,7 +104,7 @@ pub async fn start_raft_node(opt: config::meta::Opt) -> MetaResult<()> {
         meta_init.init_meta(&mut engine_w).await;
     }
 
-    let cluster_name = opt.cluster_name.clone();
+    let cluster_name = opt.global.cluster_name.clone();
     tokio::spawn(detect_node_heartbeat(
         node.clone(),
         engine.clone(),
@@ -111,7 +112,7 @@ pub async fn start_raft_node(opt: config::meta::Opt) -> MetaResult<()> {
         opt.heartbeat.clone(),
     ));
 
-    let bind_addr = models::utils::build_address("0.0.0.0", opt.port);
+    let bind_addr = models::utils::build_address("0.0.0.0", opt.global.listen_port);
     tokio::spawn(start_warp_grpc_server(bind_addr, node, engine));
 
     Ok(())
