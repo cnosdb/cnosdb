@@ -104,7 +104,7 @@ pub(crate) mod tests {
     use super::PageReader;
     use crate::tsm::mutable_column::MutableColumn;
     use crate::tsm::page::Page;
-    use crate::tsm::reader::data_buf_to_arrow_array;
+    use crate::tsm::reader::{data_buf_to_arrow_array, updated_nullbuffer};
     use crate::TskvResult;
 
     pub struct TestPageReader<T> {
@@ -231,70 +231,49 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn test_time_col() {
         let page = page(11, ColumnType::Time(TimeUnit::Second));
-        let _meta = page.meta();
-        let _data_buffer = page.data_buffer();
-        let page_null_bits = page.null_bitset();
-        let array = data_buf_to_arrow_array(&page, NullBitset::Ref(page_null_bits)).unwrap();
+        let array = data_buf_to_arrow_array(&page).unwrap();
         assert_eq!(format!("{array:?}"), "PrimitiveArray<Timestamp(Second, None)>\n[\n  null,\n  1970-01-01T00:00:01,\n  null,\n  1970-01-01T00:00:03,\n  null,\n  1970-01-01T00:00:05,\n  null,\n  1970-01-01T00:00:07,\n  null,\n  1970-01-01T00:00:09,\n  null,\n]");
     }
 
     #[tokio::test]
     async fn test_tag_col() {
         let page = page(11, ColumnType::Tag);
-        let _meta = page.meta();
-        let _data_buffer = page.data_buffer();
-        let page_null_bits = page.null_bitset();
-        let array = data_buf_to_arrow_array(&page, NullBitset::Ref(page_null_bits)).unwrap();
+        let array = data_buf_to_arrow_array(&page).unwrap();
         assert_eq!(format!("{array:?}"), "StringArray\n[\n  null,\n  \"str_1\",\n  null,\n  \"str_3\",\n  null,\n  \"str_5\",\n  null,\n  \"str_7\",\n  null,\n  \"str_9\",\n  null,\n]");
     }
 
     #[tokio::test]
     async fn test_field_bool_col() {
         let page = page(11, ColumnType::Field(ValueType::Boolean));
-        let _meta = page.meta();
-        let _data_buffer = page.data_buffer();
-        let page_null_bits = page.null_bitset();
-        let array = data_buf_to_arrow_array(&page, NullBitset::Ref(page_null_bits)).unwrap();
+        let array = data_buf_to_arrow_array(&page).unwrap();
         assert_eq!(format!("{array:?}"), "BooleanArray\n[\n  null,\n  true,\n  null,\n  true,\n  null,\n  true,\n  null,\n  true,\n  null,\n  true,\n  null,\n]");
     }
 
     #[tokio::test]
     async fn test_field_float_col() {
         let page = page(11, ColumnType::Field(ValueType::Float));
-        let _meta = page.meta();
-        let _data_buffer = page.data_buffer();
-        let page_null_bits = page.null_bitset();
-        let array = data_buf_to_arrow_array(&page, NullBitset::Ref(page_null_bits)).unwrap();
+        let array = data_buf_to_arrow_array(&page).unwrap();
         assert_eq!(format!("{array:?}"), "PrimitiveArray<Float64>\n[\n  null,\n  1.0,\n  null,\n  3.0,\n  null,\n  5.0,\n  null,\n  7.0,\n  null,\n  9.0,\n  null,\n]");
     }
 
     #[tokio::test]
     async fn test_field_int_col() {
         let page = page(11, ColumnType::Field(ValueType::Integer));
-        let _meta = page.meta();
-        let _data_buffer = page.data_buffer();
-        let page_null_bits = page.null_bitset();
-        let array = data_buf_to_arrow_array(&page, NullBitset::Ref(page_null_bits)).unwrap();
+        let array = data_buf_to_arrow_array(&page).unwrap();
         assert_eq!(format!("{array:?}"), "PrimitiveArray<Int64>\n[\n  null,\n  1,\n  null,\n  3,\n  null,\n  5,\n  null,\n  7,\n  null,\n  9,\n  null,\n]");
     }
 
     #[tokio::test]
     async fn test_field_uint_col() {
         let page = page(11, ColumnType::Field(ValueType::Unsigned));
-        let _meta = page.meta();
-        let _data_buffer = page.data_buffer();
-        let page_null_bits = page.null_bitset();
-        let array = data_buf_to_arrow_array(&page, NullBitset::Ref(page_null_bits)).unwrap();
+        let array = data_buf_to_arrow_array(&page).unwrap();
         assert_eq!(format!("{array:?}"), "PrimitiveArray<UInt64>\n[\n  null,\n  1,\n  null,\n  3,\n  null,\n  5,\n  null,\n  7,\n  null,\n  9,\n  null,\n]");
     }
 
     #[tokio::test]
     async fn test_field_string_col() {
         let page = page(11, ColumnType::Field(ValueType::String));
-        let _meta = page.meta();
-        let _data_buffer = page.data_buffer();
-        let page_null_bits = page.null_bitset();
-        let array = data_buf_to_arrow_array(&page, NullBitset::Ref(page_null_bits)).unwrap();
+        let array = data_buf_to_arrow_array(&page).unwrap();
         assert_eq!(format!("{array:?}"), "StringArray\n[\n  null,\n  \"str_1\",\n  null,\n  \"str_3\",\n  null,\n  \"str_5\",\n  null,\n  \"str_7\",\n  null,\n  \"str_9\",\n  null,\n]");
     }
 
@@ -307,10 +286,7 @@ pub(crate) mod tests {
                 0,
             ))),
         );
-        let _meta = page.meta();
-        let _data_buffer = page.data_buffer();
-        let page_null_bits = page.null_bitset();
-        let array = data_buf_to_arrow_array(&page, NullBitset::Ref(page_null_bits)).unwrap();
+        let array = data_buf_to_arrow_array(&page).unwrap();
         assert_eq!(format!("{array:?}"), "StringArray\n[\n  null,\n  \"str_1\",\n  null,\n  \"str_3\",\n  null,\n  \"str_5\",\n  null,\n  \"str_7\",\n  null,\n  \"str_9\",\n  null,\n]");
     }
 
@@ -328,7 +304,8 @@ pub(crate) mod tests {
             Page::col_to_page(&col).unwrap()
         };
         let page_null_bits = BitSet::with_size(10);
-        let array = data_buf_to_arrow_array(&page, NullBitset::Own(page_null_bits)).unwrap();
+        let array = data_buf_to_arrow_array(&page).unwrap();
+        let array = updated_nullbuffer(array, NullBitset::Own(page_null_bits)).unwrap();
         assert_eq!(format!("{array:?}"), "PrimitiveArray<Int64>\n[\n  null,\n  null,\n  null,\n  null,\n  null,\n  null,\n  null,\n  null,\n  null,\n  null,\n]");
     }
 }
