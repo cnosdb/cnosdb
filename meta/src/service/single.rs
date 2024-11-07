@@ -24,6 +24,7 @@ pub async fn start_singe_meta_server(
     config: &MetaConfig,
     size: usize,
 ) {
+    info!("CnosDB meta config: {:?}", config);
     let addr = config.service_addr[0].clone();
     let db_path = format!("{}/meta/{}.data", path, 0);
     let mut storage = StateMachine::open(db_path, size).unwrap();
@@ -57,7 +58,6 @@ pub async fn start_singe_meta_server(
         models::schema::DEFAULT_CATALOG.to_string(),
         default_database,
     );
-
     meta_init.init_meta(&mut storage).await;
 
     info!("single meta http server start addr: {}", addr);
