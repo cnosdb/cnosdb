@@ -5,6 +5,7 @@ use coordinator::service::CoordinatorRef;
 use derive_builder::Builder;
 use memory_pool::MemoryPoolRef;
 use meta::error::MetaError;
+use models::auth::auth_cache::AuthCache;
 use models::auth::user::{User, UserInfo};
 use models::auth::AuthError;
 use models::oid::Oid;
@@ -159,6 +160,7 @@ pub async fn make_cnosdbms(
     coord: CoordinatorRef,
     options: Options,
     memory_pool: MemoryPoolRef,
+    auth_cache: Arc<AuthCache<String, User>>,
 ) -> Result<impl DatabaseManagerSystem> {
     let query_dedicated_hidden_dir = dirs::home_dir()
         .expect("Could not find user's home directory")
@@ -241,6 +243,7 @@ pub async fn make_cnosdbms(
         .with_query_tracker(query_tracker)
         .with_func_manager(Arc::new(func_manager))
         .with_stream_provider_manager(stream_provider_manager)
+        .with_auth_cache(auth_cache)
         .build()?;
 
     let mut builder = CnosdbmsBuilder::default();
@@ -267,6 +270,7 @@ pub async fn make_cnosdbms(
 #[cfg(test)]
 mod tests {
     use std::ops::DerefMut;
+    use std::time::Duration;
 
     use chrono::Utc;
     use config::get_config_for_test;
@@ -323,9 +327,15 @@ mod tests {
         let config = get_config_for_test();
         let opt = Options::from(&config);
         let memory = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
-        let db = make_cnosdbms(Arc::new(MockCoordinator::default()), opt, memory)
-            .await
-            .unwrap();
+        let auth_cache = Arc::new(AuthCache::new(1024, Some(Duration::from_secs(60))));
+        let db = make_cnosdbms(
+            Arc::new(MockCoordinator::default()),
+            opt,
+            memory,
+            auth_cache,
+        )
+        .await
+        .unwrap();
 
         let mut result = exec_sql(&db, "SELECT * FROM (VALUES (1, 'one'), (2, 'two'), (3, 'three')) AS t (num,letter) order by num").await;
 
@@ -380,9 +390,15 @@ mod tests {
         let config = get_config_for_test();
         let opt = Options::from(&config);
         let memory = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
-        let db = make_cnosdbms(Arc::new(MockCoordinator::default()), opt, memory)
-            .await
-            .unwrap();
+        let auth_cache = Arc::new(AuthCache::new(1024, Some(Duration::from_secs(60))));
+        let db = make_cnosdbms(
+            Arc::new(MockCoordinator::default()),
+            opt,
+            memory,
+            auth_cache,
+        )
+        .await
+        .unwrap();
 
         let sql = format!(
             "SELECT * FROM
@@ -418,9 +434,15 @@ mod tests {
         let config = get_config_for_test();
         let opt = Options::from(&config);
         let memory = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
-        let db = make_cnosdbms(Arc::new(MockCoordinator::default()), opt, memory)
-            .await
-            .unwrap();
+        let auth_cache = Arc::new(AuthCache::new(1024, Some(Duration::from_secs(60))));
+        let db = make_cnosdbms(
+            Arc::new(MockCoordinator::default()),
+            opt,
+            memory,
+            auth_cache,
+        )
+        .await
+        .unwrap();
 
         let mut result = exec_sql(
             &db,
@@ -455,9 +477,15 @@ mod tests {
         let config = get_config_for_test();
         let opt = Options::from(&config);
         let memory = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
-        let db = make_cnosdbms(Arc::new(MockCoordinator::default()), opt, memory)
-            .await
-            .unwrap();
+        let auth_cache = Arc::new(AuthCache::new(1024, Some(Duration::from_secs(60))));
+        let db = make_cnosdbms(
+            Arc::new(MockCoordinator::default()),
+            opt,
+            memory,
+            auth_cache,
+        )
+        .await
+        .unwrap();
 
         assert_batches_eq!(
             ["++", "++", "++"],
@@ -512,9 +540,15 @@ mod tests {
         let config = get_config_for_test();
         let opt = Options::from(&config);
         let memory = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
-        let db = make_cnosdbms(Arc::new(MockCoordinator::default()), opt, memory)
-            .await
-            .unwrap();
+        let auth_cache = Arc::new(AuthCache::new(1024, Some(Duration::from_secs(60))));
+        let db = make_cnosdbms(
+            Arc::new(MockCoordinator::default()),
+            opt,
+            memory,
+            auth_cache,
+        )
+        .await
+        .unwrap();
 
         assert_batches_eq!(
             ["++", "++", "++"],
@@ -561,9 +595,15 @@ mod tests {
         let config = get_config_for_test();
         let opt = Options::from(&config);
         let memory = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
-        let db = make_cnosdbms(Arc::new(MockCoordinator::default()), opt, memory)
-            .await
-            .unwrap();
+        let auth_cache = Arc::new(AuthCache::new(1024, Some(Duration::from_secs(60))));
+        let db = make_cnosdbms(
+            Arc::new(MockCoordinator::default()),
+            opt,
+            memory,
+            auth_cache,
+        )
+        .await
+        .unwrap();
 
         assert_batches_eq!(
             ["++", "++", "++"],

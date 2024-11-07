@@ -12,6 +12,8 @@ use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::physical_plan::SendableRecordBatchStream;
 use futures::{Stream, StreamExt, TryStreamExt};
 use meta::model::MetaRef;
+use models::auth::auth_cache::AuthCache;
+use models::auth::user::User;
 use trace::SpanContext;
 
 use super::dispatcher::{QueryInfo, QueryStatus};
@@ -189,6 +191,7 @@ pub struct QueryStateMachine {
     pub query: Query,
     pub meta: MetaRef,
     pub coord: CoordinatorRef,
+    pub auth_cache: Arc<AuthCache<String, User>>,
 
     state: AtomicPtr<QueryState>,
     start: Instant,
@@ -218,6 +221,7 @@ impl QueryStateMachine {
                 )
                 .expect("create test session ctx"),
             Arc::new(MockCoordinator {}),
+            Arc::new(AuthCache::new(1024, Some(Duration::from_secs(60)))),
         )
     }
 
@@ -226,6 +230,7 @@ impl QueryStateMachine {
         query: Query,
         session: SessionCtx,
         coord: CoordinatorRef,
+        auth_cache: Arc<AuthCache<String, User>>,
     ) -> Self {
         let meta = coord.meta_manager();
 
@@ -235,6 +240,7 @@ impl QueryStateMachine {
             query,
             meta,
             coord,
+            auth_cache,
             state: AtomicPtr::new(Box::into_raw(Box::new(QueryState::ACCEPTING))),
             start: Instant::now(),
         }
@@ -302,9 +308,18 @@ impl QueryStateMachine {
             query: self.query.clone(),
             meta: self.meta.clone(),
             coord: self.coord.clone(),
+            auth_cache: self.auth_cache.clone(),
             state,
             start: self.start,
         }
+    }
+
+    pub fn remove_user_from_cache(&self, username: &str) {
+        self.auth_cache.remove(username);
+    }
+
+    pub fn clear_auth_cache(&self) {
+        self.auth_cache.clear();
     }
 }
 

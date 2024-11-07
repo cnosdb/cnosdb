@@ -3,6 +3,8 @@ use std::sync::Arc;
 
 use arrow_flight::flight_service_server::FlightServiceServer;
 use config::TLSConfig;
+use models::auth::auth_cache::AuthCache;
+use models::auth::user::User;
 use spi::server::dbms::DBMSRef;
 use tokio::sync::oneshot;
 use tonic::transport::{Identity, Server, ServerTlsConfig};
@@ -27,6 +29,7 @@ pub struct FlightSqlServiceAdapter {
     tls_config: Option<TLSConfig>,
     span_context_extractor: Arc<SpanContextExtractor>,
     handle: Option<ServiceHandle<Result<(), tonic::transport::Error>>>,
+    auth_cache: Arc<AuthCache<String, User>>,
 }
 
 impl FlightSqlServiceAdapter {
@@ -35,6 +38,7 @@ impl FlightSqlServiceAdapter {
         addr: SocketAddr,
         tls_config: Option<TLSConfig>,
         span_context_extractor: Arc<SpanContextExtractor>,
+        auth_cache: Arc<AuthCache<String, User>>,
     ) -> Self {
         Self {
             dbms,
@@ -42,6 +46,7 @@ impl FlightSqlServiceAdapter {
             tls_config,
             span_context_extractor,
             handle: None,
+            auth_cache,
         }
     }
 }

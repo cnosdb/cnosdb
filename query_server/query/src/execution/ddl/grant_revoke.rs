@@ -72,6 +72,7 @@ impl DDLDefinitionTask for GrantRevokeTask {
 
             meta.revoke_privilege_from_custom_role(database_privileges.clone(), role_name)
                 .await?;
+            query_state_machine.clear_auth_cache();
         }
 
         return Ok(Output::Nil(()));

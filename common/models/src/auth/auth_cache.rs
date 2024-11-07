@@ -23,6 +23,7 @@ impl<V> CacheEntry<V> {
     }
 }
 
+#[derive(Clone)]
 pub struct AuthCache<K, V> {
     ttl: Option<Duration>,
     cache: Arc<Mutex<lru::LruCache<K, CacheEntry<V>>>>,

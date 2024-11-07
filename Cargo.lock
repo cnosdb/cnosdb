@@ -3235,6 +3235,7 @@ dependencies = [
  "flatbuffers 24.3.25",
  "futures",
  "libc",
+ "lru",
  "openssl",
  "parking_lot 0.12.1",
  "pin-project",
