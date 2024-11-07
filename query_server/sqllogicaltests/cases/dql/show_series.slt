@@ -154,7 +154,7 @@ select station from air;
 "XiaoMaiDao"
 "XiaoMaiDao1"
 
-query
+query 
 select count(station) from air;
 ----
 3

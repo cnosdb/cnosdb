@@ -76,7 +76,7 @@ select ALL * from test0;
 1970-01-01T00:00:00.000000103 "beijing" "shanghai" -1234 "hello" 1234 false 1.2
 1970-01-01T00:00:00.000000104 "beijing" "shanghai" -1234 "hello" 1234 false 1.2
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Table not found, tenant: cnosdb db: public, table: test0", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Meta: Table not found: \\"cnosdb\.public\.test0\\"", *
 select ALL * from public.test0;
 
 
@@ -232,7 +232,7 @@ statement ok
 DROP TABLE test0;
 
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Table not found, tenant: cnosdb db: createtable, table: test0", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Meta: Table not found: \\"cnosdb\.createtable\.test0\\"", metadata: *
 SELECT ALL * FROM test0;
 
 
