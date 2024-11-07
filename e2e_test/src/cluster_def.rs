@@ -97,7 +97,6 @@ impl MetaNodeDefinition {
         let (host, port) = self.to_host_port();
         config.global.raft_node_host = host;
         config.global.listen_port = port;
-        config.sys_config.system_database_replica = 1;
     }
 }
 
