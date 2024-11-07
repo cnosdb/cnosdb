@@ -77,7 +77,7 @@ statement ok
 --#TENANT=tenant_b
 --#USER_NAME=user_b
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Table not found, tenant: tenant_b db: db_a, table: air_a", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Meta: Table not found: \\"tenant_b\.db_a\.air_a\\"", metadata: *
 SELECT * FROM air_a;
 
 statement ok
@@ -118,7 +118,7 @@ GRANT READ ON DATABASE db_a TO ROLE role_a;
 statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Meta: Database not found: \\"db_b\\"", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
 CREATE TABLE t1(id BIGINT);
 
-statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Table not found, tenant: tenant_a db: db_b, table: t1", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Meta: Table not found: \\"tenant_a\.db_b\.t1\\"", *
 INSERT t1 VALUES (1, 1);
 
 

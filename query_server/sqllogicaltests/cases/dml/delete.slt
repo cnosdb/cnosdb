@@ -128,7 +128,7 @@ desc table dml_tbl;
 "f0" "BIGINT" "FIELD" "DEFAULT"
 "f1" "BIGINT" "FIELD" "DEFAULT"
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Table not found, tenant: cnosdb db: public, table: dml_not_exist", *
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Meta: Table not found: \\"cnosdb\.public\.dml_not_exist\\"", *
 delete from dml_not_exist;
 
 query 
