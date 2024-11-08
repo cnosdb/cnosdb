@@ -9,7 +9,7 @@ use models::column_data_ref::PrimaryColumnDataRef;
 use models::schema::tskv_table_schema::{ColumnType, TableColumn};
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
-use utils::bitset::{BitSet, ImmutBitSet, NullBitset};
+use utils::bitset::{BitSet, ImmutBitSet};
 
 use super::mutable_column_ref::MutableColumnRef;
 use super::statistics::ValueStatistics;
@@ -89,7 +89,7 @@ impl Page {
     }
 
     pub fn to_arrow_array(&self) -> TskvResult<ArrayRef> {
-        data_buf_to_arrow_array(self, NullBitset::Ref(self.null_bitset()))
+        data_buf_to_arrow_array(self)
     }
 
     pub fn arrow_array_to_page(array: ArrayRef, table_column: TableColumn) -> TskvResult<Page> {

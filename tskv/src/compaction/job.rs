@@ -377,6 +377,8 @@ impl FlushJob {
     async fn run(job: Arc<FlushJob>, request: &FlushReq) -> TskvResult<()> {
         info!("Flush: begin flush data {}", request);
 
+        let instant = std::time::Instant::now();
+
         // flush index
         request
             .ts_index
@@ -385,11 +387,17 @@ impl FlushJob {
             .flush()
             .await
             .context(IndexErrSnafu)?;
+        request.flush_metrics.write().await.flush_index_time = instant.elapsed().as_millis() as u64;
 
         let ts_family_w = request.ts_family.write().await;
         let mut mems = ts_family_w.im_cache().clone();
         mems.retain(|x| x.read().mark_flushing());
         let mut receivers = vec![];
+        if mems.is_empty() {
+            info!("Flush: flush data {} memcache is empty", request);
+            return Ok(());
+        }
+
         for mem in mems.iter() {
             let flush_seq = mem.read().min_seq_no();
             let (task_state_sender, task_state_receiver) = oneshot::channel();
@@ -423,6 +431,15 @@ impl FlushJob {
             .await
             .clear_tombstone_series()
             .await;
+
+        request.flush_metrics.write().await.flush_use_time = instant.elapsed().as_millis() as u64;
+
+        let flush_metrics = request.flush_metrics.read().await;
+        request
+            .ts_family
+            .read()
+            .await
+            .report_flush_metrics(&flush_metrics);
 
         Ok(())
     }

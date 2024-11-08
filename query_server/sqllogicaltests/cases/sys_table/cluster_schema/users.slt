@@ -76,7 +76,7 @@ statement ok
 --#TENANT=test_us_tenant1
 --#USER_NAME=root
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Table not found, tenant: test_us_tenant1 db: cluster_schema, table: users", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Meta: Table not found: \\"test_us_tenant1\.cluster_schema\.users\\"", *
 select * from cluster_schema.users where user_name in ('root', 'test_us_u1', 'test_us_u2');
 
 
@@ -84,7 +84,7 @@ statement ok
 --#TENANT=test_us_tenant1
 --#USER_NAME=test_us_u1
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Table not found, tenant: test_us_tenant1 db: cluster_schema, table: users", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Meta: Table not found: \\"test_us_tenant1\.cluster_schema\.users\\"", *
 select * from cluster_schema.users where user_name in ('root', 'test_us_u1', 'test_us_u2');
 
 
@@ -92,5 +92,5 @@ statement ok
 --#TENANT=test_us_tenant1
 --#USER_NAME=test_us_u2
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Table not found, tenant: test_us_tenant1 db: cluster_schema, table: users", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Meta: Table not found: \\"test_us_tenant1\.cluster_schema\.users\\"", *
 select * from cluster_schema.users where user_name in ('root', 'test_us_u1', 'test_us_u2');
