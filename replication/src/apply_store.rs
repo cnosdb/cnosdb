@@ -139,13 +139,12 @@ impl ApplyStorage for HeedApplyStorage {
                 last_applied_id: 0,
                 flushed_apply_id: 0,
                 snapshot_apply_id: snapshot.1,
+                write_apply_duration: 0,
+                write_build_group_duration: 0,
+                write_put_points_duration: 0,
             })
         } else {
-            Ok(EngineMetrics {
-                last_applied_id: 0,
-                flushed_apply_id: 0,
-                snapshot_apply_id: 0,
-            })
+            Ok(EngineMetrics::default())
         }
     }
 }

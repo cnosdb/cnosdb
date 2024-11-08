@@ -39,6 +39,7 @@ impl<'a> Reporter for PromReporter<'a> {
                 prometheus::proto::MetricType::GAUGE,
             ),
             MetricType::U64Counter => (name.to_string(), prometheus::proto::MetricType::COUNTER),
+            MetricType::U64Average => (name.to_string(), prometheus::proto::MetricType::COUNTER),
             MetricType::U64Histogram => {
                 (name.to_string(), prometheus::proto::MetricType::HISTOGRAM)
             }
@@ -89,6 +90,12 @@ impl<'a> Reporter for PromReporter<'a> {
 
         match metrics_value {
             MetricValue::U64Counter(v) => {
+                let mut counter = Counter::default();
+                counter.set_value(v as f64);
+                metric.set_counter(counter)
+            }
+
+            MetricValue::U64Average(v) => {
                 let mut counter = Counter::default();
                 counter.set_value(v as f64);
                 metric.set_counter(counter)

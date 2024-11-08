@@ -536,6 +536,7 @@ impl HttpService {
 
                     let precision = Precision::new(ctx.precision()).unwrap_or(Precision::NS);
 
+                    let parse_start = std::time::Instant::now();
                     let write_points_lines = {
                         let mut span = Span::enter_with_parent("try parse req to lines", &span);
                         span.add_property(|| ("bytes", req.len().to_string()));
@@ -544,6 +545,21 @@ impl HttpService {
                             reject::custom(e)
                         })?
                     };
+
+                    {
+                        let api_type = HttpApiType::ApiV1Write;
+                        let (tenant, user, db) =
+                            (ctx.tenant(), ctx.user().desc().name(), ctx.database());
+                        let db = if metrics_record_db(&api_type) {
+                            Some(db)
+                        } else {
+                            None
+                        };
+
+                        metrics
+                            .write_parse_lp_duration(tenant, user, db, &addr, api_type)
+                            .record(parse_start.elapsed());
+                    }
 
                     let resp = coord_write_points_with_span_recorder(
                         &coord,

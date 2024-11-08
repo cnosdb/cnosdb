@@ -18,6 +18,8 @@ pub struct HttpMetrics {
 
     http_response_time: Metric<DurationHistogram>,
     http_flow: Metric<U64Counter>,
+
+    write_parse_lp_duration: Metric<DurationHistogram>,
 }
 
 unsafe impl Send for HttpMetrics {}
@@ -67,6 +69,7 @@ generate_gets!(http_data_in, U64Counter);
 generate_gets!(http_data_out, U64Counter);
 generate_gets!(http_query_duration, DurationHistogram);
 generate_gets!(http_write_duration, DurationHistogram);
+generate_gets!(write_parse_lp_duration, DurationHistogram);
 generate_gets_other!(http_flow, U64Counter);
 generate_gets_other!(http_response_time, DurationHistogram);
 
@@ -97,6 +100,12 @@ impl HttpMetrics {
             DurationHistogramOptions::default(),
         );
 
+        let write_parse_lp_duration: Metric<DurationHistogram> = register.register_metric(
+            "write_parse_lp_duration",
+            "Duration of the parse line protocol handle",
+            DurationHistogramOptions::default(),
+        );
+
         let http_flow = register.metric(
             "http_flow",
             "Count the sum of request body len and response body len",
@@ -115,6 +124,7 @@ impl HttpMetrics {
             http_writes,
             http_query_duration,
             http_write_duration,
+            write_parse_lp_duration,
             http_response_time,
             http_flow,
         }

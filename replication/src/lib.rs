@@ -79,12 +79,17 @@ pub struct EngineMetrics {
     pub last_applied_id: u64,
     pub flushed_apply_id: u64,
     pub snapshot_apply_id: u64,
+
+    pub write_apply_duration: u64,
+    pub write_build_group_duration: u64,
+    pub write_put_points_duration: u64,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 pub struct EntriesMetrics {
     pub min_seq: u64,
     pub max_seq: u64,
+    pub avg_write_time: u64,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq, Default)]
