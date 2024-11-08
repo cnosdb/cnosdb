@@ -91,7 +91,7 @@ impl StorageConfig {
         16
     }
 
-    fn default_max_cached_readers() -> usize {
+    pub fn default_max_cached_readers() -> usize {
         32
     }
 
@@ -123,7 +123,7 @@ impl StorageConfig {
         false
     }
 
-    fn default_strict_write() -> bool {
+    pub fn default_strict_write() -> bool {
         false
     }
 
