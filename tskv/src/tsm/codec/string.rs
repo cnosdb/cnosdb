@@ -1,5 +1,4 @@
 use std::convert::TryInto;
-use std::error::Error;
 use std::io::Write;
 use std::sync::Arc;
 
@@ -13,10 +12,9 @@ use flate2::Compression as CompressionFlate;
 use integer_encoding::VarInt;
 use minivec::MiniVec;
 
+use super::CodecError;
 use crate::byte_utils::decode_be_u64;
 use crate::tsm::codec::Encoding;
-// note: encode/decode adapted from influxdb_iox
-// https://github.com/influxdata/influxdb_iox/tree/main/influxdb_tsm/src/encoders
 
 /// A compressed encoding using Snappy compression. Snappy is the only available
 /// string compression format at this time.
@@ -31,10 +29,7 @@ const ZSTD_COMPRESS_LEVEL: i32 = 3;
 
 /// Encodes a slice of byte slices representing string data into a vector of
 /// bytes. Currently uses Snappy compression.
-pub fn str_snappy_encode(
-    src: &[&[u8]],
-    dst: &mut Vec<u8>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn str_snappy_encode(src: &[&[u8]], dst: &mut Vec<u8>) -> Result<(), CodecError> {
     if src.is_empty() {
         return Ok(());
     }
@@ -92,10 +87,7 @@ pub fn str_snappy_encode(
     Ok(())
 }
 
-pub fn str_zstd_encode(
-    src: &[&[u8]],
-    dst: &mut Vec<u8>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn str_zstd_encode(src: &[&[u8]], dst: &mut Vec<u8>) -> Result<(), CodecError> {
     if src.is_empty() {
         return Ok(());
     }
@@ -112,10 +104,7 @@ pub fn str_zstd_encode(
     Ok(())
 }
 
-pub fn str_gzip_encode(
-    src: &[&[u8]],
-    dst: &mut Vec<u8>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn str_gzip_encode(src: &[&[u8]], dst: &mut Vec<u8>) -> Result<(), CodecError> {
     if src.is_empty() {
         return Ok(());
     }
@@ -135,10 +124,7 @@ pub fn str_gzip_encode(
     Ok(())
 }
 
-pub fn str_bzip_encode(
-    src: &[&[u8]],
-    dst: &mut Vec<u8>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn str_bzip_encode(src: &[&[u8]], dst: &mut Vec<u8>) -> Result<(), CodecError> {
     if src.is_empty() {
         return Ok(());
     }
@@ -153,17 +139,14 @@ pub fn str_bzip_encode(
     let mut encoder = BzEncoder::new(vec![], CompressionBzip::default());
     encoder
         .write_all(&data)
-        .map_err(|e| Box::new(e) as Box<dyn Error + Send + Sync>)?;
+        .map_err(|e| Box::new(e) as CodecError)?;
 
     dst.push(Encoding::Bzip as u8);
     dst.append(&mut encoder.finish()?);
     Ok(())
 }
 
-pub fn str_zlib_encode(
-    src: &[&[u8]],
-    dst: &mut Vec<u8>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn str_zlib_encode(src: &[&[u8]], dst: &mut Vec<u8>) -> Result<(), CodecError> {
     if src.is_empty() {
         return Ok(());
     }
@@ -177,16 +160,13 @@ pub fn str_zlib_encode(
     let mut encoder = ZlibEncoder::new(vec![], CompressionFlate::default());
     encoder
         .write_all(&data)
-        .map_err(|e| Box::new(e) as Box<dyn Error + Send + Sync>)?;
+        .map_err(|e| Box::new(e) as CodecError)?;
     dst.push(Encoding::Zlib as u8);
     dst.append(&mut encoder.finish()?);
     Ok(())
 }
 
-pub fn str_without_compress_encode(
-    src: &[&[u8]],
-    dst: &mut Vec<u8>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn str_without_compress_encode(src: &[&[u8]], dst: &mut Vec<u8>) -> Result<(), CodecError> {
     if src.is_empty() {
         return Ok(());
     }
@@ -205,10 +185,7 @@ pub fn str_without_compress_encode(
 /// Decodes a slice of bytes representing Snappy-compressed data into a vector
 /// of vectors of bytes representing string data, which may or may not be valid
 /// UTF-8.
-pub fn str_snappy_decode(
-    src: &[u8],
-    dst: &mut Vec<MiniVec<u8>>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn str_snappy_decode(src: &[u8], dst: &mut Vec<MiniVec<u8>>) -> Result<(), CodecError> {
     if src.is_empty() {
         return Ok(());
     }
@@ -249,7 +226,7 @@ pub fn str_snappy_decode(
 pub fn str_snappy_decode_to_array(
     src: &[u8],
     bit_set: &NullBuffer,
-) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
+) -> Result<ArrayRef, CodecError> {
     if src.is_empty() {
         let null_value: Vec<Option<String>> = vec![None; bit_set.len()];
         let array = StringArray::from(null_value);
@@ -288,7 +265,7 @@ pub fn str_snappy_decode_to_array(
             let str_slice = &decoded_bytes[lower..upper];
             match String::from_utf8(str_slice.to_vec()) {
                 Ok(s) => builder.append_value(s),
-                Err(e) => return Err(Box::new(e) as Box<dyn Error + Send + Sync>),
+                Err(e) => return Err(Box::new(e) as CodecError),
             }
 
             // The length of this string plus the length of the variable byte encoded length
@@ -298,10 +275,7 @@ pub fn str_snappy_decode_to_array(
     Ok(Arc::new(builder.finish()))
 }
 
-fn split_stream(
-    data: &[u8],
-    dst: &mut Vec<MiniVec<u8>>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+fn split_stream(data: &[u8], dst: &mut Vec<MiniVec<u8>>) -> Result<(), CodecError> {
     let len = data.len();
     let mut i = 0;
 
@@ -315,10 +289,7 @@ fn split_stream(
     Ok(())
 }
 
-fn split_stream_to_array(
-    data: &[u8],
-    bit_set: &NullBuffer,
-) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
+fn split_stream_to_array(data: &[u8], bit_set: &NullBuffer) -> Result<ArrayRef, CodecError> {
     let mut i = 0;
 
     let mut builder = StringBuilder::new();
@@ -330,7 +301,7 @@ fn split_stream_to_array(
             let str_slice = &data[i..i + str_len];
             match String::from_utf8(str_slice.to_vec()) {
                 Ok(s) => builder.append_value(s),
-                Err(e) => return Err(Box::new(e) as Box<dyn Error + Send + Sync>),
+                Err(e) => return Err(Box::new(e) as CodecError),
             }
             i += str_len;
         } else {
@@ -340,10 +311,7 @@ fn split_stream_to_array(
     Ok(Arc::new(builder.finish()))
 }
 
-pub fn str_zstd_decode(
-    src: &[u8],
-    dst: &mut Vec<MiniVec<u8>>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn str_zstd_decode(src: &[u8], dst: &mut Vec<MiniVec<u8>>) -> Result<(), CodecError> {
     if src.is_empty() {
         return Ok(());
     }
@@ -356,10 +324,7 @@ pub fn str_zstd_decode(
     Ok(())
 }
 
-pub fn str_zstd_decode_to_array(
-    src: &[u8],
-    bit_set: &NullBuffer,
-) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
+pub fn str_zstd_decode_to_array(src: &[u8], bit_set: &NullBuffer) -> Result<ArrayRef, CodecError> {
     if src.is_empty() {
         let null_value: Vec<Option<String>> = vec![None; bit_set.len()];
         let array = StringArray::from(null_value);
@@ -372,10 +337,7 @@ pub fn str_zstd_decode_to_array(
     split_stream_to_array(&data, bit_set)
 }
 
-pub fn str_bzip_decode(
-    src: &[u8],
-    dst: &mut Vec<MiniVec<u8>>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn str_bzip_decode(src: &[u8], dst: &mut Vec<MiniVec<u8>>) -> Result<(), CodecError> {
     if src.is_empty() {
         return Ok(());
     }
@@ -385,7 +347,7 @@ pub fn str_bzip_decode(
     let mut decoder = BzDecoder::new(vec![]);
     decoder
         .write_all(src)
-        .map_err(|e| Box::new(e) as Box<dyn Error + Send + Sync>)?;
+        .map_err(|e| Box::new(e) as CodecError)?;
     let data = decoder.finish()?;
 
     split_stream(&data, dst)?;
@@ -393,10 +355,7 @@ pub fn str_bzip_decode(
     Ok(())
 }
 
-pub fn str_bzip_decode_to_array(
-    src: &[u8],
-    bit_set: &NullBuffer,
-) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
+pub fn str_bzip_decode_to_array(src: &[u8], bit_set: &NullBuffer) -> Result<ArrayRef, CodecError> {
     if src.is_empty() {
         let null_value: Vec<Option<String>> = vec![None; bit_set.len()];
         let array = StringArray::from(null_value);
@@ -408,16 +367,13 @@ pub fn str_bzip_decode_to_array(
     let mut decoder = BzDecoder::new(vec![]);
     decoder
         .write_all(src)
-        .map_err(|e| Box::new(e) as Box<dyn Error + Send + Sync>)?;
+        .map_err(|e| Box::new(e) as CodecError)?;
     let data = decoder.finish()?;
 
     split_stream_to_array(&data, bit_set)
 }
 
-pub fn str_gzip_decode(
-    src: &[u8],
-    dst: &mut Vec<MiniVec<u8>>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn str_gzip_decode(src: &[u8], dst: &mut Vec<MiniVec<u8>>) -> Result<(), CodecError> {
     if src.is_empty() {
         return Ok(());
     }
@@ -427,7 +383,7 @@ pub fn str_gzip_decode(
     let mut decoder = GzDecoder::new(vec![]);
     decoder
         .write_all(src)
-        .map_err(|e| Box::new(e) as Box<dyn Error + Send + Sync>)?;
+        .map_err(|e| Box::new(e) as CodecError)?;
     let data = decoder.finish()?;
 
     split_stream(&data, dst)?;
@@ -435,10 +391,7 @@ pub fn str_gzip_decode(
     Ok(())
 }
 
-pub fn str_gzip_decode_to_array(
-    src: &[u8],
-    bit_set: &NullBuffer,
-) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
+pub fn str_gzip_decode_to_array(src: &[u8], bit_set: &NullBuffer) -> Result<ArrayRef, CodecError> {
     if src.is_empty() {
         let null_value: Vec<Option<String>> = vec![None; bit_set.len()];
         let array = StringArray::from(null_value);
@@ -450,16 +403,13 @@ pub fn str_gzip_decode_to_array(
     let mut decoder = GzDecoder::new(vec![]);
     decoder
         .write_all(src)
-        .map_err(|e| Box::new(e) as Box<dyn Error + Send + Sync>)?;
+        .map_err(|e| Box::new(e) as CodecError)?;
     let data = decoder.finish()?;
 
     split_stream_to_array(&data, bit_set)
 }
 
-pub fn str_zlib_decode(
-    src: &[u8],
-    dst: &mut Vec<MiniVec<u8>>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn str_zlib_decode(src: &[u8], dst: &mut Vec<MiniVec<u8>>) -> Result<(), CodecError> {
     if src.is_empty() {
         return Ok(());
     }
@@ -469,7 +419,7 @@ pub fn str_zlib_decode(
 
     decoder
         .write_all(src)
-        .map_err(|e| Box::new(e) as Box<dyn Error + Send + Sync>)?;
+        .map_err(|e| Box::new(e) as CodecError)?;
     let data = decoder.finish()?;
 
     split_stream(&data, dst)?;
@@ -477,10 +427,7 @@ pub fn str_zlib_decode(
     Ok(())
 }
 
-pub fn str_zlib_decode_to_array(
-    src: &[u8],
-    bit_set: &NullBuffer,
-) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
+pub fn str_zlib_decode_to_array(src: &[u8], bit_set: &NullBuffer) -> Result<ArrayRef, CodecError> {
     if src.is_empty() {
         let null_value: Vec<Option<String>> = vec![None; bit_set.len()];
         let array = StringArray::from(null_value);
@@ -492,7 +439,7 @@ pub fn str_zlib_decode_to_array(
 
     decoder
         .write_all(src)
-        .map_err(|e| Box::new(e) as Box<dyn Error + Send + Sync>)?;
+        .map_err(|e| Box::new(e) as CodecError)?;
     let data = decoder.finish()?;
 
     split_stream_to_array(&data, bit_set)
@@ -501,7 +448,7 @@ pub fn str_zlib_decode_to_array(
 pub fn str_without_compress_decode(
     src: &[u8],
     dst: &mut Vec<MiniVec<u8>>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+) -> Result<(), CodecError> {
     if src.is_empty() {
         return Ok(());
     }
@@ -514,7 +461,7 @@ pub fn str_without_compress_decode(
 pub fn str_without_compress_decode_to_array(
     src: &[u8],
     bit_set: &NullBuffer,
-) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
+) -> Result<ArrayRef, CodecError> {
     if src.is_empty() {
         let null_value: Vec<Option<String>> = vec![None; bit_set.len()];
         let array = StringArray::from(null_value);

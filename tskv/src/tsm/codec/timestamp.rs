@@ -1,4 +1,3 @@
-use std::error::Error;
 use std::sync::Arc;
 
 use arrow::buffer::NullBuffer;
@@ -8,12 +7,9 @@ use integer_encoding::*;
 use pco::standalone::{simple_decompress, simpler_compress};
 use pco::DEFAULT_COMPRESSION_LEVEL;
 
-use super::simple8b;
+use super::{simple8b, CodecError};
 use crate::byte_utils::decode_be_i64;
 use crate::tsm::codec::Encoding;
-
-// note: encode/decode adapted from influxdb_iox
-// https://github.com/influxdata/influxdb_iox/tree/main/influxdb_tsm/src/encoders
 
 // Encoding describes the type of encoding used by an encoded timestamp block.
 enum DeltaEncoding {
@@ -22,10 +18,7 @@ enum DeltaEncoding {
     Rle = 2,
 }
 
-pub fn ts_without_compress_encode(
-    src: &[i64],
-    dst: &mut Vec<u8>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn ts_without_compress_encode(src: &[i64], dst: &mut Vec<u8>) -> Result<(), CodecError> {
     if src.is_empty() {
         return Ok(());
     }
@@ -37,7 +30,7 @@ pub fn ts_without_compress_encode(
     Ok(())
 }
 
-pub fn ts_pco_encode(src: &[i64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn ts_pco_encode(src: &[i64], dst: &mut Vec<u8>) -> Result<(), CodecError> {
     if src.is_empty() {
         return Ok(());
     }
@@ -55,10 +48,7 @@ pub fn ts_pco_encode(src: &[i64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error
 /// encoding is potentially carried out. If all the deltas are the same the
 /// block can be encoded using RLE. If not, as long as the deltas are not bigger
 /// than simple8b::MAX_VALUE they can be encoded using simple8b.
-pub fn ts_zigzag_simple8b_encode(
-    src: &[i64],
-    dst: &mut Vec<u8>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn ts_zigzag_simple8b_encode(src: &[i64], dst: &mut Vec<u8>) -> Result<(), CodecError> {
     if src.is_empty() {
         return Ok(());
     }
@@ -187,7 +177,7 @@ fn encode_rle(v: u64, delta: u64, count: u64, dst: &mut Vec<u8>) {
 pub fn ts_zigzag_simple8b_decode_to_array(
     src: &[u8],
     bit_set: &NullBuffer,
-) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
+) -> Result<ArrayRef, CodecError> {
     if src.is_empty() {
         let null_value: Vec<Option<i64>> = vec![None; bit_set.len()];
         let array = Int64Array::from(null_value);
@@ -208,10 +198,7 @@ pub fn ts_zigzag_simple8b_decode_to_array(
     }
 }
 
-fn decode_uncompressed_to_array(
-    src: &[u8],
-    bit_set: &NullBuffer,
-) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
+fn decode_uncompressed_to_array(src: &[u8], bit_set: &NullBuffer) -> Result<ArrayRef, CodecError> {
     if src.is_empty() || src.len() & 0x7 != 0 {
         return Err(From::from("invalid uncompressed block length"));
     }
@@ -236,10 +223,7 @@ fn decode_uncompressed_to_array(
     Ok(Arc::new(builder.finish()))
 }
 
-fn decode_rle_to_array(
-    src: &[u8],
-    bit_set: &NullBuffer,
-) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
+fn decode_rle_to_array(src: &[u8], bit_set: &NullBuffer) -> Result<ArrayRef, CodecError> {
     if src.len() < 9 {
         return Err(From::from("not enough data to decode using RLE"));
     }
@@ -274,10 +258,7 @@ fn decode_rle_to_array(
     Ok(Arc::new(builder.finish()))
 }
 
-fn decode_simple8b_to_array(
-    src: &[u8],
-    bit_set: &NullBuffer,
-) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
+fn decode_simple8b_to_array(src: &[u8], bit_set: &NullBuffer) -> Result<ArrayRef, CodecError> {
     if src.len() < 9 {
         return Err(From::from("not enough data to decode packed timestamp"));
     }
@@ -320,7 +301,7 @@ fn decode_simple8b_to_array(
 pub fn ts_without_compress_decode_to_array(
     src: &[u8],
     bit_set: &NullBuffer,
-) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
+) -> Result<ArrayRef, CodecError> {
     if src.is_empty() {
         let null_value: Vec<Option<i64>> = vec![None; bit_set.len()];
         let array = Int64Array::from(null_value);
@@ -341,10 +322,7 @@ pub fn ts_without_compress_decode_to_array(
     Ok(Arc::new(builder.finish()))
 }
 
-pub fn ts_pco_decode_to_array(
-    src: &[u8],
-    bit_set: &NullBuffer,
-) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
+pub fn ts_pco_decode_to_array(src: &[u8], bit_set: &NullBuffer) -> Result<ArrayRef, CodecError> {
     if src.is_empty() {
         let null_value: Vec<Option<i64>> = vec![None; bit_set.len()];
         let array = Int64Array::from(null_value);
