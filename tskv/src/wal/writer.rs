@@ -48,7 +48,7 @@ impl WalWriter {
         };
 
         let seq = raft_entry.log_id.index;
-        let data = super::encode_wal_raft_entry(raft_entry, &self.config.compress)?;
+        let data = super::encode_wal_raft_entry(raft_entry, self.config.compress)?;
         let written_size = self
             .inner
             .write_record(
@@ -78,7 +78,7 @@ impl WalWriter {
 
     pub async fn new_reader(&mut self) -> TskvResult<WalReader> {
         let record_reader = self.inner.new_reader().await?;
-        Ok(WalReader::new(record_reader, self.config.compress.clone()))
+        Ok(WalReader::new(record_reader, self.config.compress))
     }
 
     pub async fn truncate(&mut self, size: u64) {

@@ -539,7 +539,7 @@ mod test {
         let wal_option = crate::kv_option::WalOptions {
             path: dir.to_path_buf(),
             wal_max_file_size: 1024 * 1024 * 1024,
-            compress: "zstd".to_string(),
+            compress: 8.into(),
             wal_sync: false,
         };
 
@@ -599,7 +599,7 @@ mod test {
                     continue;
                 }
 
-                let wal_reocrd = WalRecordData::new(record.data, record.pos, "zstd").unwrap();
+                let wal_reocrd = WalRecordData::new(record.data, record.pos, 8.into()).unwrap();
                 let entry = wal_reocrd.block;
                 storage
                     .inner
