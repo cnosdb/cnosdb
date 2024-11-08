@@ -22,7 +22,7 @@ use snafu::ResultExt;
 use tokio::runtime::Runtime;
 use tokio_util::sync::CancellationToken;
 use trace::span_ext::SpanExt;
-use trace::{debug, Span, SpanContext};
+use trace::{debug, error, Span, SpanContext};
 
 use super::display::DisplayableBatchReader;
 use super::memcache_reader::MemCacheReader;
@@ -430,7 +430,17 @@ impl SeriesGroupBatchReaderFactory {
         };
 
         let mut chunk_readers = Vec::new();
+        let mut only_tsm = true;
         for data_reference in chunks.into_iter() {
+            match data_reference {
+                DataReference::Memcache(_, _, _) => {
+                    only_tsm = false;
+                }
+                DataReference::Chunk(_, _, ref file) if file.is_delta() => {
+                    only_tsm = false;
+                }
+                _ => {}
+            }
             let chunk_reader = self.build_chunk_reader(
                 data_reference,
                 batch_size,
@@ -443,7 +453,9 @@ impl SeriesGroupBatchReaderFactory {
                 chunk_readers.push(chunk_reader);
             }
         }
-
+        if only_tsm && chunk_readers.len() > 1 {
+            error!("Tsm files have data overlap, please check the compaction process");
+        }
         Ok(chunk_readers)
     }
 
