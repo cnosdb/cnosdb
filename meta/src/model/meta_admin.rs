@@ -715,7 +715,9 @@ impl AdminMeta {
                 },
             }
         } else {
-            options // 如果 tenant 不存在则直接使用新的 options
+            return Err(MetaError::TenantNotFound {
+                tenant: name.to_string(),
+            });
         };
 
         let req =
@@ -772,28 +774,28 @@ impl AdminMeta {
         Some(RequestLimiterConfig {
             coord_data_in: new
                 .and_then(|n| n.coord_data_in)
-                .or_else(|| old.and_then(|o| o.coord_data_in)),
+                .or(old.and_then(|o| o.coord_data_in)),
             coord_data_out: new
                 .and_then(|n| n.coord_data_out)
-                .or_else(|| old.and_then(|o| o.coord_data_out)),
+                .or(old.and_then(|o| o.coord_data_out)),
             coord_queries: new
                 .and_then(|n| n.coord_queries)
-                .or_else(|| old.and_then(|o| o.coord_queries)),
+                .or(old.and_then(|o| o.coord_queries)),
             coord_writes: new
                 .and_then(|n| n.coord_writes)
-                .or_else(|| old.and_then(|o| o.coord_writes)),
+                .or(old.and_then(|o| o.coord_writes)),
             http_data_in: new
                 .and_then(|n| n.http_data_in)
-                .or_else(|| old.and_then(|o| o.http_data_in)),
+                .or(old.and_then(|o| o.http_data_in)),
             http_data_out: new
                 .and_then(|n| n.http_data_out)
-                .or_else(|| old.and_then(|o| o.http_data_out)),
+                .or(old.and_then(|o| o.http_data_out)),
             http_queries: new
                 .and_then(|n| n.http_queries)
-                .or_else(|| old.and_then(|o| o.http_queries)),
+                .or(old.and_then(|o| o.http_queries)),
             http_writes: new
                 .and_then(|n| n.http_writes)
-                .or_else(|| old.and_then(|o| o.http_writes)),
+                .or(old.and_then(|o| o.http_writes)),
         })
     }
 

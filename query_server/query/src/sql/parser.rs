@@ -32,7 +32,6 @@ use spi::ParserSnafu;
 use trace::debug;
 
 use super::dialect::CnosDBDialect;
-// use serde_json::Map;
 
 // support tag token
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -767,10 +766,6 @@ impl<'a> ExtParser<'a> {
                     has_limiter_option = true; // 记录有有效的选项
                 }
                 _ => {
-                    // limiter_options.insert(
-                    //     name.value.to_lowercase(),
-                    //     ExtParser::sql_value_to_json_value(self.parser.parse_value()?)?,
-                    // );
                     return Err(ParserError::ParserError(format!(
                         "Unknown tenant option: {}",
                         name.value
@@ -1373,10 +1368,6 @@ impl<'a> ExtParser<'a> {
                     has_limiter_option = true; // 记录有有效的选项
                 }
                 _ => {
-                    // with_options.push(SqlOption {
-                    //     name,
-                    //     value: self.parser.parse_value()?,
-                    // });
                     return Err(ParserError::ParserError(format!(
                         "Unknown tenant option: {}",
                         name.value
@@ -1469,7 +1460,27 @@ impl<'a> ExtParser<'a> {
             }
 
             self.parser.expect_token(&Token::Eq)?;
+
+            // 处理负数
+            let mut is_negative = false;
+            if self.parser.peek_token().token == Token::Minus {
+                self.parser.next_token();
+                is_negative = true;
+            }
+
             let val = self.parser.parse_value()?;
+            // 检查值是否为非负数
+            if let Value::Number(num, _) = &val {
+                let parsed_num = num
+                    .parse::<f64>()
+                    .map_err(|_| ParserError::ParserError(key.value.clone()))?;
+                if is_negative && parsed_num > 0.0 {
+                    return Err(ParserError::ParserError(format!(
+                        "{} cannot be negative",
+                        key.value
+                    )));
+                }
+            }
             map.insert(
                 key.value.to_lowercase(),
                 ExtParser::sql_value_to_json_value(val)?,
@@ -1503,7 +1514,25 @@ impl<'a> ExtParser<'a> {
             }
 
             self.parser.expect_token(&Token::Eq)?;
+            // 处理负数
+            let mut is_negative = false;
+            if self.parser.peek_token().token == Token::Minus {
+                self.parser.next_token();
+                is_negative = true;
+            }
             let val = self.parser.parse_value()?;
+            // 检查值是否为非负数
+            if let Value::Number(num, _) = &val {
+                let parsed_num = num
+                    .parse::<f64>()
+                    .map_err(|_| ParserError::ParserError(key.value.clone()))?;
+                if is_negative && parsed_num > 0.0 {
+                    return Err(ParserError::ParserError(format!(
+                        "{} cannot be negative",
+                        key.value
+                    )));
+                }
+            }
             let json_val = ExtParser::sql_value_to_json_value(val)?;
 
             // 将键值对添加到相应的桶中
