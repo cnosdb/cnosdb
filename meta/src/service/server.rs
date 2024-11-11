@@ -22,7 +22,7 @@ use replication::state_store::StateStorage;
 use replication::{RaftNodeInfo, ReplicationConfig};
 use tokio::sync::RwLock;
 use tower::Service;
-use tracing::warn;
+use tracing::{info, warn};
 use warp::hyper;
 
 use super::init::MetaInit;
@@ -32,6 +32,7 @@ use crate::store::key_path::KeyPath;
 use crate::store::storage::StateMachine;
 
 pub async fn start_raft_node(opt: config::meta::Opt) -> MetaResult<()> {
+    info!("CnosDB meta config: {:?}", opt);
     let id = opt.global.node_id;
     let path = std::path::Path::new(&opt.global.data_path);
     let http_addr =

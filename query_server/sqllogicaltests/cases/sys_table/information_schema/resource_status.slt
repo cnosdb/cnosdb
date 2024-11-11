@@ -28,7 +28,6 @@ select name, action from information_schema.resource_status where name = 't001-d
 ----
 "t001-db001" "DropDatabase"
 
- 
 statement ok
 --#USER_NAME=u001
 

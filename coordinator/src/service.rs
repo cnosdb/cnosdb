@@ -20,6 +20,7 @@ use datafusion::arrow::record_batch::RecordBatch;
 use memory_pool::MemoryPoolRef;
 use meta::error::MetaError;
 use meta::model::{MetaClientRef, MetaRef};
+use metrics::average::U64Average;
 use metrics::count::U64Counter;
 use metrics::label::Labels;
 use metrics::metric::Metric;
@@ -93,24 +94,31 @@ pub struct CoordServiceMetrics {
     sql_data_in: Metric<U64Counter>,
     sql_write_row: Metric<U64Counter>,
     sql_points_data_in: Metric<U64Counter>,
+
+    write_lines_prepare: Metric<U64Average>,
+    write_batch_prepare: Metric<U64Average>,
+    write_replica_duration: Metric<U64Average>,
 }
 
 macro_rules! generate_coord_metrics_gets {
-    ($IDENT: ident) => {
+    ($IDENT: ident, $metrics_type: ty) => {
         impl CoordServiceMetrics {
-            pub fn $IDENT(&self, tenant: &str, db: &str) -> U64Counter {
+            pub fn $IDENT(&self, tenant: &str, db: &str) -> $metrics_type {
                 self.$IDENT.recorder(Self::tenant_db_labels(tenant, db))
             }
         }
     };
 }
-generate_coord_metrics_gets!(coord_data_in);
-generate_coord_metrics_gets!(coord_data_out);
-generate_coord_metrics_gets!(coord_queries);
-generate_coord_metrics_gets!(coord_writes);
-generate_coord_metrics_gets!(sql_data_in);
-generate_coord_metrics_gets!(sql_write_row);
-generate_coord_metrics_gets!(sql_points_data_in);
+generate_coord_metrics_gets!(coord_data_in, U64Counter);
+generate_coord_metrics_gets!(coord_data_out, U64Counter);
+generate_coord_metrics_gets!(coord_queries, U64Counter);
+generate_coord_metrics_gets!(coord_writes, U64Counter);
+generate_coord_metrics_gets!(sql_data_in, U64Counter);
+generate_coord_metrics_gets!(sql_write_row, U64Counter);
+generate_coord_metrics_gets!(sql_points_data_in, U64Counter);
+generate_coord_metrics_gets!(write_lines_prepare, U64Average);
+generate_coord_metrics_gets!(write_batch_prepare, U64Average);
+generate_coord_metrics_gets!(write_replica_duration, U64Average);
 
 impl CoordServiceMetrics {
     pub fn new(register: &MetricsRegister) -> Self {
@@ -123,6 +131,11 @@ impl CoordServiceMetrics {
         let sql_write_row = register.metric("sql_write_row", "sql write row");
         let sql_points_data_in = register.metric("sql_points_data_in", "sql points data in");
 
+        let write_lines_prepare = register.metric("write_lines_prepare", "write lines prepare");
+        let write_batch_prepare = register.metric("write_batch_prepare", "write batch prepare");
+        let write_replica_duration =
+            register.metric("write_replica_duration", "write replica duration");
+
         Self {
             coord_data_in,
             coord_data_out,
@@ -132,6 +145,9 @@ impl CoordServiceMetrics {
             sql_data_in,
             sql_write_row,
             sql_points_data_in,
+            write_lines_prepare,
+            write_batch_prepare,
+            write_replica_duration,
         }
     }
 
@@ -558,6 +574,7 @@ impl Coordinator for CoordService {
         lines: Vec<Line<'a>>,
         span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<usize> {
+        let pre_write_start = std::time::Instant::now();
         let mut write_bytes: usize = 0;
         let meta_client = self.meta.tenant_meta(tenant).await.ok_or_else(|| {
             CoordinatorError::TenantNotFound {
@@ -612,6 +629,11 @@ impl Coordinator for CoordService {
                     .await?,
             );
         }
+
+        self.metrics
+            .write_lines_prepare(tenant, db)
+            .add(pre_write_start.elapsed().as_millis() as u64);
+
         let now = tokio::time::Instant::now();
         for res in futures::future::join_all(requests).await {
             debug!(
@@ -622,6 +644,10 @@ impl Coordinator for CoordService {
             );
             res?
         }
+        self.metrics
+            .write_replica_duration(tenant, db)
+            .add(now.elapsed().as_millis() as u64);
+
         Ok(write_bytes)
     }
 
@@ -632,6 +658,8 @@ impl Coordinator for CoordService {
         db_precision: Precision,
         span_ctx: Option<&SpanContext>,
     ) -> CoordinatorResult<usize> {
+        let pre_write_start = std::time::Instant::now();
+
         let mut write_bytes: usize = 0;
         let mut precision = Precision::NS;
         let tenant = table_schema.tenant.as_str();
@@ -748,6 +776,10 @@ impl Coordinator for CoordService {
                     .await?,
             );
         }
+        self.metrics
+            .write_lines_prepare(tenant, db)
+            .add(pre_write_start.elapsed().as_millis() as u64);
+
         let now = tokio::time::Instant::now();
         for res in futures::future::join_all(requests).await {
             debug!(
@@ -758,6 +790,10 @@ impl Coordinator for CoordService {
             );
             res?
         }
+        self.metrics
+            .write_replica_duration(tenant, db)
+            .add(now.elapsed().as_millis() as u64);
+
         Ok(write_bytes)
     }
 

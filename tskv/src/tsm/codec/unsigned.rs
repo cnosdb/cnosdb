@@ -1,4 +1,3 @@
-use std::error::Error;
 use std::sync::Arc;
 
 use arrow::buffer::NullBuffer;
@@ -6,31 +5,24 @@ use arrow_array::types::UInt64Type;
 use arrow_array::{Array, ArrayRef, PrimitiveArray, UInt64Array};
 use arrow_schema::DataType::UInt64;
 
-// note: encode/decode adapted from influxdb_iox
-// https://github.com/influxdata/influxdb_iox/tree/main/influxdb_tsm/src/encoders
+use super::CodecError;
 
 /// Encodes a slice of unsigned 64-bit integers into `dst`.
 ///
 /// Deltas between the integers in the input are first calculated, then the
 /// deltas are further compressed if possible, either via bit-packing using
 /// simple8b or by run-length encoding the deltas if they're all the same.
-pub fn u64_zigzag_simple8b_encode(
-    src: &[u64],
-    dst: &mut Vec<u8>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn u64_zigzag_simple8b_encode(src: &[u64], dst: &mut Vec<u8>) -> Result<(), CodecError> {
     let signed = u64_to_i64_vector(src);
     super::integer::i64_zigzag_simple8b_encode(&signed, dst)
 }
 
-pub fn u64_pco_encode(src: &[u64], dst: &mut Vec<u8>) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn u64_pco_encode(src: &[u64], dst: &mut Vec<u8>) -> Result<(), CodecError> {
     let signed = u64_to_i64_vector(src);
     super::integer::i64_pco_encode(&signed, dst)
 }
 
-pub fn u64_without_compress_encode(
-    src: &[u64],
-    dst: &mut Vec<u8>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn u64_without_compress_encode(src: &[u64], dst: &mut Vec<u8>) -> Result<(), CodecError> {
     let signed = u64_to_i64_vector(src);
     super::integer::i64_without_compress_encode(&signed, dst)
 }
@@ -39,7 +31,7 @@ pub fn u64_without_compress_encode(
 pub fn u64_zigzag_simple8b_decode(
     src: &[u8],
     bit_set: &NullBuffer,
-) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
+) -> Result<ArrayRef, CodecError> {
     if src.is_empty() {
         let null_value: Vec<Option<u64>> = vec![None; bit_set.len()];
         let array = UInt64Array::from(null_value);
@@ -52,10 +44,7 @@ pub fn u64_zigzag_simple8b_decode(
     Ok(Arc::new(u64_array))
 }
 
-pub fn u64_pco_decode(
-    src: &[u8],
-    bit_set: &NullBuffer,
-) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
+pub fn u64_pco_decode(src: &[u8], bit_set: &NullBuffer) -> Result<ArrayRef, CodecError> {
     if src.is_empty() {
         let null_value: Vec<Option<u64>> = vec![None; bit_set.len()];
         let array = UInt64Array::from(null_value);
@@ -71,7 +60,7 @@ pub fn u64_pco_decode(
 pub fn u64_without_compress_decode(
     src: &[u8],
     bit_set: &NullBuffer,
-) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
+) -> Result<ArrayRef, CodecError> {
     if src.is_empty() {
         let null_value: Vec<Option<u64>> = vec![None; bit_set.len()];
         let array = UInt64Array::from(null_value);

@@ -16,6 +16,7 @@ use ::utils::BloomFilter;
 #[cfg(test)]
 pub use compact::test::create_options;
 pub use compact::*;
+use metrics::FlushMetrics;
 use models::predicate::domain::TimeRange;
 pub use picker::*;
 use tokio::sync::RwLock;
@@ -156,9 +157,11 @@ pub struct FlushReq {
     pub tf_id: VnodeId,
     pub owner: String,
     pub completion: bool,
+    pub trigger_compact: bool,
     pub ts_index: Arc<RwLock<TSIndex>>,
     pub ts_family: Arc<RwLock<TseriesFamily>>,
-    pub trigger_compact: bool,
+
+    pub flush_metrics: Arc<RwLock<FlushMetrics>>,
 }
 
 impl std::fmt::Display for FlushReq {

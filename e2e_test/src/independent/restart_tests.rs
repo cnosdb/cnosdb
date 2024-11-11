@@ -128,7 +128,7 @@ fn case1() {
                 status: StatusCode::UNPROCESSABLE_ENTITY,
                 url: None,
                 req: None,
-                resp: Some(r#"{"error_code":"010001","error_message":"Datafusion: Error during planning: Table not found, tenant: cnosdb db: public, table: air"}"#.to_string()),
+                resp: Some(r#"{"error_code":"030019","error_message":"Table not found: \"cnosdb.public.air\""}"#.to_string()),
             }), },
             auth: None,
         },

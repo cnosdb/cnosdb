@@ -162,10 +162,7 @@ impl BitSet {
         if end_byte_idx < self.buffer.len() {
             self.buffer[end_byte_idx] &= !end_mask;
         }
-
-        for i in start_byte_idx + 1..end_byte_idx {
-            self.buffer[i] = 0;
-        }
+        self.buffer[start_byte_idx + 1..end_byte_idx].fill(0)
     }
 
     pub fn append_unset_and_set(&mut self, idx: usize) {

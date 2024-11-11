@@ -621,6 +621,20 @@ fn write_duration_buckets() -> DurationHistogramOptions {
     ])
 }
 
+#[derive(Clone, Default)]
+pub struct FlushMetrics {
+    pub min_seq: u64,
+    pub max_seq: u64,
+    pub flush_use_time: u64,
+    pub flush_index_time: u64,
+    pub flush_series_count: u64,
+    pub convert_to_page_time: u64,
+    pub writer_pages_time: u64,
+    pub writer_finish_time: u64,
+    pub write_tsm_pages_size: u64,
+    pub write_tsm_file_size: u64,
+}
+
 #[cfg(test)]
 mod tests {
     use std::thread::sleep;

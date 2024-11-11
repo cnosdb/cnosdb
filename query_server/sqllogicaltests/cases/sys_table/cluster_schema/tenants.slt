@@ -184,7 +184,7 @@ statement ok
 --#TENANT=test_ts_tenant1
 --#USER_NAME=root
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Table not found, tenant: test_ts_tenant1 db: cluster_schema, table: tenants", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Meta: Table not found: \\"test_ts_tenant1\.cluster_schema\.tenants\\"", *
 select * from cluster_schema.tenants where tenant_name in ('test_ts_tenant1');
 
 
@@ -192,7 +192,7 @@ statement ok
 --#TENANT=test_ts_tenant1
 --#USER_NAME=test_ts_u1
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Table not found, tenant: test_ts_tenant1 db: cluster_schema, table: tenants", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Meta: Table not found: \\"test_ts_tenant1\.cluster_schema\.tenants\\"", *
 select * from cluster_schema.tenants where tenant_name in ('test_ts_tenant1');
 
 
@@ -200,7 +200,7 @@ statement ok
 --#TENANT=test_ts_tenant1
 --#USER_NAME=test_ts_u2
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Table not found, tenant: test_ts_tenant1 db: cluster_schema, table: tenants", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Meta: Table not found: \\"test_ts_tenant1\.cluster_schema\.tenants\\"", *
 select * from cluster_schema.tenants where tenant_name in ('test_ts_tenant1');
 
 

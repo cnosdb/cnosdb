@@ -16,7 +16,11 @@ pub struct ReplicationMetrics {
     pub flushed_id: U64Gauge,
     pub wal_index_min: U64Gauge,
     pub wal_index_max: U64Gauge,
+    pub wal_avg_write_time: U64Gauge,
     pub repication_delay: HashMap<RaftNodeId, U64Gauge>,
+    pub write_apply_duration: U64Gauge,
+    pub write_build_group_duration: U64Gauge,
+    pub write_put_points_duration: U64Gauge,
 
     id: RaftNodeId,
     tenant: String,
@@ -57,12 +61,31 @@ impl ReplicationMetrics {
         let metric = register.metric::<U64Gauge>("raft_wal_index_max", "raft wal max index");
         let wal_index_max = metric.recorder(lables);
 
+        let metric = register.metric::<U64Gauge>("write_apply_duration", "write apply duration");
+        let write_apply_duration = metric.recorder(lables);
+
+        let metric =
+            register.metric::<U64Gauge>("write_build_group_duration", "write build group duration");
+        let write_build_group_duration = metric.recorder(lables);
+
+        let metric =
+            register.metric::<U64Gauge>("write_put_points_duration", "write put points duration");
+        let write_put_points_duration = metric.recorder(lables);
+
+        let metric = register
+            .metric::<U64Gauge>("raft_wal_avg_write_time", "raft wal average write time(ms)");
+        let wal_avg_write_time = metric.recorder(lables);
+
         Self {
             applied_id,
             snapshot_id,
             flushed_id,
             wal_index_min,
             wal_index_max,
+            wal_avg_write_time,
+            write_apply_duration,
+            write_build_group_duration,
+            write_put_points_duration,
             repication_delay: hashmap! {},
 
             id: vnode_id,
@@ -79,6 +102,13 @@ impl ReplicationMetrics {
         self.snapshot_id.set(metrics.engine.snapshot_apply_id);
         self.wal_index_min.set(metrics.entries.min_seq);
         self.wal_index_max.set(metrics.entries.max_seq);
+        self.wal_avg_write_time.set(metrics.entries.avg_write_time);
+        self.write_apply_duration
+            .set(metrics.engine.write_apply_duration);
+        self.write_build_group_duration
+            .set(metrics.engine.write_build_group_duration);
+        self.write_put_points_duration
+            .set(metrics.engine.write_put_points_duration);
 
         let mut clears: Vec<RaftNodeId> = self.repication_delay.keys().cloned().collect();
         if metrics.raft.state == openraft::ServerState::Leader {

@@ -458,8 +458,7 @@ pub fn decode_pages(
             .context(CommonSnafu {
                 reason: "time field not found".to_string(),
             })?;
-        let time_array_ref =
-            data_buf_to_arrow_array(time_page, NullBitset::Ref(time_page.null_bitset()))?;
+        let time_array_ref = data_buf_to_arrow_array(time_page)?;
         let time_range = match time_page.meta.statistics {
             PageStatistics::I64(ref stats) => {
                 let min = stats.min().ok_or_else(|| {
@@ -508,7 +507,8 @@ pub fn decode_pages(
                 } else {
                     NullBitset::Ref(page.null_bitset())
                 };
-            let array = data_buf_to_arrow_array(&page, null_bits)?;
+            let array = data_buf_to_arrow_array(&page)?;
+            let array = updated_nullbuffer(array, null_bits)?;
             target_arrays.push(array);
         }
         let mut record_batch = RecordBatch::try_new(schema, target_arrays).context(ArrowSnafu)?;
@@ -559,21 +559,16 @@ pub async fn page_to_arrow_array_with_tomb(
         && tombstone.overlaps_column_time_range(series_id, page.meta.column.id, &time_range)
     {
         let time_page = reader.read_page(&time_page_meta).await?;
-        let time_array_ref =
-            data_buf_to_arrow_array(&time_page, NullBitset::Ref(time_page.null_bitset()))?;
-        let null_bitset = update_nullbits_by_tombstone(
-            &time_array_ref,
-            &tombstone,
-            series_id,
-            &time_range,
-            &page,
-        )?;
+        let time = data_buf_to_arrow_array(&time_page)?;
+        let null_bitset =
+            update_nullbits_by_tombstone(&time, &tombstone, series_id, &time_range, &page)?;
         NullBitset::Own(null_bitset)
     } else {
         NullBitset::Ref(page.null_bitset())
     };
 
-    data_buf_to_arrow_array(&page, null_bitset)
+    let array = data_buf_to_arrow_array(&page)?;
+    updated_nullbuffer(array, null_bitset)
 }
 
 fn update_nullbits_by_tombstone(
@@ -622,7 +617,6 @@ fn update_nullbits_by_tombstone(
             .values()
             .binary_search(&time_range.min_ts)
             .unwrap_or_else(|x| x);
-        // int64_array_binary_search(&time_array, time_range.min_ts).unwrap_or_else(|x| x);
         let end_index = time_array
             .values()
             .binary_search(&time_range.max_ts)
@@ -633,13 +627,10 @@ fn update_nullbits_by_tombstone(
     Ok(null_bitset)
 }
 
-pub fn data_buf_to_arrow_array(page: &Page, null_bitset: NullBitset) -> TskvResult<ArrayRef> {
+pub fn data_buf_to_arrow_array(page: &Page) -> TskvResult<ArrayRef> {
     let data_buffer = page.data_buffer();
     let num_values = page.meta.num_values as usize;
     let encoding = get_encoding(data_buffer);
-
-    let buffer = Buffer::from_vec(null_bitset.null_bitset_slice());
-    let null_buffer = NullBuffer::new(BooleanBuffer::new(buffer, 0, num_values));
 
     let page_buffer = Buffer::from_vec(page.null_bitset().bytes().to_vec());
     let page_null_buffer = NullBuffer::new(BooleanBuffer::new(page_buffer, 0, num_values));
@@ -711,7 +702,7 @@ pub fn data_buf_to_arrow_array(page: &Page, null_bitset: NullBitset) -> TskvResu
             })
         }
     };
-    updated_nullbuffer(array, &page_null_buffer, &null_buffer)
+    Ok(array)
 }
 
 fn decode_to_arrow_timestamp(
@@ -744,72 +735,77 @@ fn decode_to_arrow_timestamp(
     Ok(timestamp_array)
 }
 
-fn updated_nullbuffer(
+pub(crate) fn updated_nullbuffer(
     array_ref: ArrayRef,
-    page_nulls: &NullBuffer,
-    updated_nulls: &NullBuffer,
+    updated_nulls: NullBitset,
 ) -> TskvResult<ArrayRef> {
-    if page_nulls.eq(updated_nulls) {
-        return Ok(array_ref);
-    }
-
-    let data_type = array_ref.data_type();
-    let data = array_ref.to_data();
-    let nulls = updated_nulls.buffer().clone();
-
-    let new_data = match data_type {
-        DataType::UInt64 => ArrayData::builder(data_type.clone())
-            .len(data.len())
-            .buffers(data.buffers().to_vec())
-            .null_bit_buffer(Some(nulls))
-            .build()
-            .map(|d| Arc::new(UInt64Array::from(d)) as ArrayRef),
-        DataType::Int64 => ArrayData::builder(data_type.clone())
-            .len(data.len())
-            .buffers(data.buffers().to_vec())
-            .null_bit_buffer(Some(nulls))
-            .build()
-            .map(|d| Arc::new(Int64Array::from(d)) as ArrayRef),
-        DataType::Float64 => ArrayData::builder(data_type.clone())
-            .len(data.len())
-            .buffers(data.buffers().to_vec())
-            .null_bit_buffer(Some(nulls))
-            .build()
-            .map(|d| Arc::new(Float64Array::from(d)) as ArrayRef),
-        DataType::Boolean => ArrayData::builder(data_type.clone())
-            .len(data.len())
-            .buffers(data.buffers().to_vec())
-            .null_bit_buffer(Some(nulls))
-            .build()
-            .map(|d| Arc::new(BooleanArray::from(d)) as ArrayRef),
-        DataType::Utf8 => ArrayData::builder(data_type.clone())
-            .len(data.len())
-            .buffers(data.buffers().to_vec())
-            .null_bit_buffer(Some(nulls))
-            .build()
-            .map(|d| Arc::new(StringArray::from(d)) as ArrayRef),
-        DataType::Timestamp(time_unit, _) => ArrayData::builder(data_type.clone())
-            .len(data.len())
-            .buffers(data.buffers().to_vec())
-            .null_bit_buffer(Some(nulls))
-            .build()
-            .map(|d| match time_unit {
-                TimeUnit::Second => Arc::new(TimestampSecondArray::from(d)) as ArrayRef,
-                TimeUnit::Millisecond => Arc::new(TimestampMillisecondArray::from(d)) as ArrayRef,
-                TimeUnit::Microsecond => Arc::new(TimestampMicrosecondArray::from(d)) as ArrayRef,
-                TimeUnit::Nanosecond => Arc::new(TimestampNanosecondArray::from(d)) as ArrayRef,
-            }),
-        _ => {
-            return Err(TskvError::UnsupportedDataType {
-                dt: data_type.to_string(),
+    match updated_nulls {
+        NullBitset::Ref(_) => Ok(array_ref),
+        NullBitset::Own(null_bitset) => {
+            let data_type = array_ref.data_type();
+            let data = array_ref.to_data();
+            let nulls = Buffer::from(null_bitset.bytes());
+            let new_data = match data_type {
+                DataType::UInt64 => ArrayData::builder(data_type.clone())
+                    .len(data.len())
+                    .buffers(data.buffers().to_vec())
+                    .null_bit_buffer(Some(nulls))
+                    .build()
+                    .map(|d| Arc::new(UInt64Array::from(d)) as ArrayRef),
+                DataType::Int64 => ArrayData::builder(data_type.clone())
+                    .len(data.len())
+                    .buffers(data.buffers().to_vec())
+                    .null_bit_buffer(Some(nulls))
+                    .build()
+                    .map(|d| Arc::new(Int64Array::from(d)) as ArrayRef),
+                DataType::Float64 => ArrayData::builder(data_type.clone())
+                    .len(data.len())
+                    .buffers(data.buffers().to_vec())
+                    .null_bit_buffer(Some(nulls))
+                    .build()
+                    .map(|d| Arc::new(Float64Array::from(d)) as ArrayRef),
+                DataType::Boolean => ArrayData::builder(data_type.clone())
+                    .len(data.len())
+                    .buffers(data.buffers().to_vec())
+                    .null_bit_buffer(Some(nulls))
+                    .build()
+                    .map(|d| Arc::new(BooleanArray::from(d)) as ArrayRef),
+                DataType::Utf8 => ArrayData::builder(data_type.clone())
+                    .len(data.len())
+                    .buffers(data.buffers().to_vec())
+                    .null_bit_buffer(Some(nulls))
+                    .build()
+                    .map(|d| Arc::new(StringArray::from(d)) as ArrayRef),
+                DataType::Timestamp(time_unit, _) => ArrayData::builder(data_type.clone())
+                    .len(data.len())
+                    .buffers(data.buffers().to_vec())
+                    .null_bit_buffer(Some(nulls))
+                    .build()
+                    .map(|d| match time_unit {
+                        TimeUnit::Second => Arc::new(TimestampSecondArray::from(d)) as ArrayRef,
+                        TimeUnit::Millisecond => {
+                            Arc::new(TimestampMillisecondArray::from(d)) as ArrayRef
+                        }
+                        TimeUnit::Microsecond => {
+                            Arc::new(TimestampMicrosecondArray::from(d)) as ArrayRef
+                        }
+                        TimeUnit::Nanosecond => {
+                            Arc::new(TimestampNanosecondArray::from(d)) as ArrayRef
+                        }
+                    }),
+                _ => {
+                    return Err(TskvError::UnsupportedDataType {
+                        dt: data_type.to_string(),
+                        location: location!(),
+                        backtrace: Backtrace::generate(),
+                    })
+                }
+            };
+            new_data.map_err(|e| TskvError::Arrow {
+                source: e,
                 location: location!(),
                 backtrace: Backtrace::generate(),
             })
         }
-    };
-    new_data.map_err(|e| TskvError::Arrow {
-        source: e,
-        location: location!(),
-        backtrace: Backtrace::generate(),
-    })
+    }
 }

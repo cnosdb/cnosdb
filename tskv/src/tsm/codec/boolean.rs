@@ -1,5 +1,4 @@
 use std::convert::TryInto;
-use std::error::Error;
 use std::sync::Arc;
 
 use arrow::buffer::NullBuffer;
@@ -7,9 +6,8 @@ use arrow_array::builder::BooleanBuilder;
 use arrow_array::{ArrayRef, BooleanArray};
 use integer_encoding::VarInt;
 
+use super::CodecError;
 use crate::tsm::codec::Encoding;
-// note: encode/decode adapted from influxdb_iox
-// https://github.com/influxdata/influxdb_iox/tree/main/influxdb_tsm/src/encoders
 
 /// The header consists of one byte indicating the compression type.
 const HEADER_LEN: usize = 1;
@@ -23,10 +21,7 @@ const BOOLEAN_COMPRESSED_BIT_PACKED: u8 = 1;
 /// 1 byte header indicating the compression type, followed by a variable byte
 /// encoded length indicating how many booleans are packed in the slice. The
 /// remaining bytes contain 1 byte for every 8 boolean values encoded.
-pub fn bool_bitpack_encode(
-    src: &[bool],
-    dst: &mut Vec<u8>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn bool_bitpack_encode(src: &[bool], dst: &mut Vec<u8>) -> Result<(), CodecError> {
     if src.is_empty() {
         return Ok(());
     }
@@ -68,10 +63,7 @@ pub fn bool_bitpack_encode(
     Ok(())
 }
 
-pub fn bool_without_compress_encode(
-    src: &[bool],
-    dst: &mut Vec<u8>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub fn bool_without_compress_encode(src: &[bool], dst: &mut Vec<u8>) -> Result<(), CodecError> {
     dst.push(Encoding::Null as u8);
     for i in src {
         if *i {
@@ -84,10 +76,7 @@ pub fn bool_without_compress_encode(
 }
 
 /// Decodes a slice of bytes into a destination vector of `bool`s.
-pub fn bool_bitpack_decode(
-    src: &[u8],
-    bit_set: &NullBuffer,
-) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
+pub fn bool_bitpack_decode(src: &[u8], bit_set: &NullBuffer) -> Result<ArrayRef, CodecError> {
     if src.is_empty() {
         return Ok(Arc::new(BooleanArray::from(vec![None; bit_set.len()])));
     }
@@ -122,7 +111,7 @@ pub fn bool_bitpack_decode(
 pub fn bool_without_compress_decode(
     src: &[u8],
     bit_set: &NullBuffer,
-) -> Result<ArrayRef, Box<dyn Error + Send + Sync>> {
+) -> Result<ArrayRef, CodecError> {
     if src.is_empty() {
         return Ok(Arc::new(BooleanArray::from(vec![] as Vec<bool>)));
     }
@@ -149,7 +138,6 @@ pub fn bool_without_compress_decode(
 #[cfg(test)]
 mod tests {
     use arrow::buffer::BooleanBuffer;
-    use arrow_array::Array;
 
     use super::*;
 

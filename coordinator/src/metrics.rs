@@ -87,6 +87,11 @@ impl<'a> Reporter for LPReporter<'a> {
                 self.lines_buffer
                     .push(LPLine::new(name.clone(), labels.clone(), value));
             }
+            MetricValue::U64Average(c) => {
+                let value = FieldValue::U64(c);
+                self.lines_buffer
+                    .push(LPLine::new(name.clone(), labels.clone(), value));
+            }
             MetricValue::U64Gauge(g) => {
                 let value = FieldValue::U64(g);
                 self.lines_buffer

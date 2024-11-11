@@ -111,22 +111,22 @@ select * from air;
 2022-10-19T05:40:00 "XiaoMaiDao" 55.0 68.0 80.0
 2022-10-19T06:40:00 "XiaoMaiDao" 55.0 68.0 NULL
 
-query
+query 
 select count(*) from air;
 ----
 11
 
-query
+query 
 select count(pressure) from air;
 ----
 10
 
-query
+query 
 select exact_count(*) from air;
 ----
 6
 
-query
+query 
 select exact_count(pressure) from air;
 ----
 5

@@ -169,6 +169,7 @@ fn main() -> Result<(), std::io::Error> {
     let deployment_mode = get_deployment_mode(&config.deployment.mode)?;
 
     init_global_logging(&config.log, "tsdb.log");
+    info!("CnosDB init config: {:?}", config);
 
     let runtime = Arc::new(init_runtime(Some(config.deployment.cpu))?);
     let mem_bytes = run_args.memory.unwrap_or(config.deployment.memory) * 1024 * 1024 * 1024;
