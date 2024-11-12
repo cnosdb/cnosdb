@@ -89,7 +89,7 @@ GROUP BY date_bin(INTERVAL '1' HOUR, time), device_version, driver, fleet, model
             auth: None,
         },
         Step::StopDataNode(0),
-        Step::Sleep(30),
+        Step::Sleep(26),
         Step::CnosdbRequest {
             req: CnosdbRequest::Query {
                 url: "http://127.0.0.1:8912/api/v1/sql?tenant=cnosdb&db=test_stream_migrate",
@@ -204,6 +204,26 @@ GROUP BY date_bin(INTERVAL '1' HOUR, time), device_version, driver, fleet, model
                 url,
                 sql: "select * from readings_down_sampling_1hour;",
                 resp: Ok(vec!["time,device_version,driver,fleet,model,name,max_latitude,avg_longitude,sum_elevation,count_velocity,mean_heading,median_grade,min_fuel_consumption,first_load_capacity,last_fuel_capacity,mode_nominal_fuel_consumption", "2021-01-01T00:00:00.000000000,v1,Driver,fl,m1,n1,0.1,0.38,100.0,1,90.0,0.1,100.0,100.0,0.1,3.14"]),
+                sorted: false,
+                regex: true, },
+            auth: None,
+        },
+        Step::Sleep(6),
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Query {
+                url,
+                sql: "select count(*) from readings_down_sampling_1hour;",
+                resp: Ok(vec![r"count\(\)", "1"]),
+                sorted: false,
+                regex: true, },
+            auth: None,
+        },
+        Step::Sleep(6),
+        Step::CnosdbRequest {
+            req: CnosdbRequest::Query {
+                url,
+                sql: "select count(*) from readings_down_sampling_1hour;",
+                resp: Ok(vec![r"count\(\)", "1"]),
                 sorted: false,
                 regex: true, },
             auth: None,
