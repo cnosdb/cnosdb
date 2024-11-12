@@ -15,7 +15,5 @@ mod auth_tests;
 mod client_tests;
 mod computing_storage_tests;
 mod flush_tests;
-#[cfg(test)]
-mod pre_create_bucket_test;
 mod replica_test;
 mod stream_computing;
