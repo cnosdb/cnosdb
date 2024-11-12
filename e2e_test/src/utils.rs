@@ -118,6 +118,63 @@ impl Client {
         }
     }
 
+    fn split_csv_into_vec(csv: &str) -> Vec<String> {
+        let mut results = Vec::new();
+        let mut buf = String::new();
+        let mut inside_double_quotes = false;
+        for c in csv.chars() {
+            match c {
+                '"' => {
+                    inside_double_quotes = !inside_double_quotes;
+                    buf.push(c);
+                }
+                '\n' if !inside_double_quotes => {
+                    results.push(buf.clone());
+                    buf.clear();
+                }
+                _ => {
+                    buf.push(c);
+                }
+            }
+        }
+        if !buf.is_empty() {
+            results.push(buf);
+        }
+        results
+    }
+
+    // fn split_csv_into_vec(csv: &str) -> Vec<String> {
+    //     let mut results = Vec::new();
+    //     let mut buf = String::new();
+    //     let mut is_escaped = false;
+    //     let mut inside_double_quotes = false;
+    //     for c in csv.chars() {
+    //         match c {
+    //             '\\' => {
+    //                 is_escaped = !is_escaped;
+    //                 buf.push(c);
+    //             }
+    //             '"' => {
+    //                 if !is_escaped {
+    //                     inside_double_quotes = !inside_double_quotes;
+    //                 }
+    //                 buf.push(c);
+    //             }
+    //             '\n' if !inside_double_quotes => {
+    //                 results.push(buf.clone());
+    //                 buf.clear();
+    //             }
+    //             _ => {
+    //                 buf.push(c);
+    //             }
+    //         }
+    //     }
+    //     if !buf.is_empty() {
+    //         results.push(buf);
+    //     }
+    //     results
+    // }
+
     pub fn with_auth(user: String, password: Option<String>) -> Self {
         let inner = ClientBuilder::new().no_proxy().build().unwrap_or_else(|e| {
             panic!("Failed to build http client: {}", e);
@@ -312,13 +369,11 @@ impl Client {
         if resp.status() != StatusCode::OK {
             return Err(Client::map_reqwest_resp_err(resp, &url_str, sql));
         }
-        Ok(resp
+        let resp_csv_str = resp
             .text()
-            .map_err(|e| Client::map_reqwest_err(e, &url_str, sql))?
-            .trim()
-            .split_terminator('\n')
-            .map(|s| s.to_owned())
-            .collect::<Vec<_>>())
+            .map_err(|e| Client::map_reqwest_err(e, &url_str, sql))?;
+        let resp_lines = Self::split_csv_into_vec(resp_csv_str.trim());
+        Ok(resp_lines)
     }
 
     pub fn api_v1_write<U: IntoUrl + std::fmt::Display>(
@@ -1353,4 +1408,41 @@ pub async fn flight_fetch_result_and_print(
     }
 
     batches
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    #[test]
+    fn test_split_csv_into_vec() {
+        assert_eq!(vec!["a", "b", "c"], Client::split_csv_into_vec("a\nb\nc"));
+        assert_eq!(
+            vec!["\"a\nb\"", "c"],
+            Client::split_csv_into_vec("\"a\nb\"\nc")
+        );
+        assert_eq!(
+            vec![
+                "hello world,\"this is\n    one sentence\n    with multiple lines\"",
+                "hello everyone,c"
+            ],
+            Client::split_csv_into_vec(
+                r#"hello world,"this is
+    one sentence
+    with multiple lines"
+hello everyone,c"#
+            )
+        );
+        assert_eq!(
+            vec![
+                "hello world,\"this is\n    one \"\"sentence\n\"\"    with multiple lines\"",
+                "hello everyone,c"
+            ],
+            Client::split_csv_into_vec(
+                r#"hello world,"this is
+    one ""sentence
+""    with multiple lines"
+hello everyone,c"#
+            )
+        );
+    }
 }
