@@ -433,10 +433,10 @@ impl SeriesGroupBatchReaderFactory {
         let mut only_tsm = true;
         for data_reference in chunks.into_iter() {
             match data_reference {
-                DataReference::Memcache(_, _, _) => {
+                DataReference::Memcache(..) => {
                     only_tsm = false;
                 }
-                DataReference::Chunk(_, _, ref file) if file.is_delta() => {
+                DataReference::Chunk(.., ref file) if file.is_delta() => {
                     only_tsm = false;
                 }
                 _ => {}
