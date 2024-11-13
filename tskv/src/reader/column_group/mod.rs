@@ -5,31 +5,28 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use arrow::compute::kernels::cast;
-use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
-use arrow_array::{ArrayRef, RecordBatch};
+use arrow::datatypes::{Field, Schema, SchemaRef};
+use arrow_array::RecordBatch;
 use datafusion::physical_plan::metrics::{Count, ExecutionPlanMetricsSet, MetricBuilder, Time};
 use futures::{ready, Stream, StreamExt};
 use models::arrow::stream::BoxStream;
-use models::predicate::domain::TimeRange;
 use models::{ColumnId, SeriesId};
-use snafu::ResultExt;
 
 use super::metrics::BaselineMetrics;
-use super::page::{PageReaderRef, PrimitiveArrayReader};
 use super::{
     BatchReader, BatchReaderRef, SchemableTskvRecordBatchStream,
     SendableSchemableTskvRecordBatchStream,
 };
-use crate::error::ArrowSnafu;
 use crate::tsm::column_group::ColumnGroup;
 use crate::tsm::page::PageWriteSpec;
-use crate::tsm::reader::TsmReader;
+use crate::tsm::reader::{decode_pages, TsmReader};
 use crate::TskvResult;
 
 pub struct ColumnGroupReader {
     column_group: Arc<ColumnGroup>,
-    page_readers: Vec<PageReaderRef>,
+    reader: Arc<TsmReader>,
+    series_id: SeriesId,
+    pages_meta: Vec<PageWriteSpec>,
     schema: SchemaRef,
     metrics: Arc<ExecutionPlanMetricsSet>,
 }
@@ -43,28 +40,19 @@ impl ColumnGroupReader {
         _batch_size: usize,
         metrics: Arc<ExecutionPlanMetricsSet>,
     ) -> TskvResult<Self> {
-        let columns = projection.iter().filter_map(|e| {
-            column_group
-                .pages()
-                .iter()
-                .find(|e2| e2.meta().column.id == *e)
-        });
+        let pages_meta = projection
+            .iter()
+            .filter_map(|e| {
+                column_group
+                    .pages()
+                    .iter()
+                    .find(|e2| e2.meta().column.id == *e)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
 
-        let time_page = Arc::new(column_group.time_page_write_spec()?);
-        let reader_builder = ReaderBuilder::new(
-            reader,
-            series_id,
-            time_page,
-            *column_group.time_range(),
-            metrics.clone(),
-        );
-
-        let page_readers = columns
-            .clone()
-            .map(|e| reader_builder.build(e))
-            .collect::<TskvResult<Vec<_>>>()?;
-
-        let fields = columns
+        let fields = pages_meta
+            .iter()
             .map(|e| &e.meta().column)
             .map(Field::from)
             .collect::<Vec<_>>();
@@ -73,7 +61,9 @@ impl ColumnGroupReader {
 
         Ok(Self {
             column_group,
-            page_readers,
+            reader,
+            series_id,
+            pages_meta,
             schema,
             metrics,
         })
@@ -82,16 +72,17 @@ impl ColumnGroupReader {
 
 impl BatchReader for ColumnGroupReader {
     fn process(&self) -> TskvResult<SendableSchemableTskvRecordBatchStream> {
-        let streams = self
-            .page_readers
-            .iter()
-            .map(|r| r.process())
-            .collect::<TskvResult<Vec<_>>>()?;
+        let stream = Box::pin(futures::stream::once(read(
+            self.reader.clone(),
+            self.series_id,
+            self.pages_meta.clone(),
+            self.schema.metadata().clone(),
+            ColumnGroupReaderMetrics::new(self.metrics.as_ref()),
+        )));
 
         Ok(Box::pin(ColumnGroupRecordBatchStream {
             schema: self.schema.clone(),
-            column_arrays: Vec::with_capacity(self.schema.fields().len()),
-            streams,
+            stream,
             metrics: ColumnGroupReaderMetrics::new(self.metrics.as_ref()),
         }))
     }
@@ -117,8 +108,7 @@ struct ColumnGroupRecordBatchStream {
     schema: SchemaRef,
 
     /// Stream entries
-    column_arrays: Vec<ArrayRef>,
-    streams: Vec<BoxStream<TskvResult<ArrayRef>>>,
+    stream: BoxStream<TskvResult<RecordBatch>>,
 
     metrics: ColumnGroupReaderMetrics,
 }
@@ -131,43 +121,10 @@ impl SchemableTskvRecordBatchStream for ColumnGroupRecordBatchStream {
 
 impl ColumnGroupRecordBatchStream {
     fn poll_inner(&mut self, cx: &mut Context<'_>) -> Poll<Option<TskvResult<RecordBatch>>> {
-        let schema = self.schema.clone();
-        let column_nums = self.streams.len();
-
-        loop {
-            let next_column_idx = self.column_arrays.len();
-            let target_type = self.schema.field(next_column_idx).data_type().clone();
-
-            match ready!(self.streams[next_column_idx].poll_next_unpin(cx)) {
-                Some(Ok(array)) => {
-                    let arrays = &mut self.column_arrays;
-
-                    // 如果类型不匹配，需要进行类型转换
-                    match convert_data_type_if_necessary(array, &target_type) {
-                        Ok(array) => {
-                            arrays.push(array);
-                        }
-                        Err(e) => {
-                            return Poll::Ready(Some(Err(e)));
-                        }
-                    }
-
-                    if arrays.len() == column_nums {
-                        // 可以构造 RecordBatch
-                        let arrays = std::mem::take(arrays);
-                        return Poll::Ready(Some(
-                            RecordBatch::try_new(schema, arrays).context(ArrowSnafu),
-                        ));
-                    }
-                    continue;
-                }
-                Some(Err(e)) => {
-                    return Poll::Ready(Some(Err(e)));
-                }
-                None => {
-                    return Poll::Ready(None);
-                }
-            }
+        match ready!(self.stream.poll_next_unpin(cx)) {
+            Some(Ok(record_batch)) => Poll::Ready(Some(Ok(record_batch))),
+            Some(Err(e)) => Poll::Ready(Some(Err(e))),
+            None => Poll::Ready(None),
         }
     }
 }
@@ -184,7 +141,7 @@ impl Stream for ColumnGroupRecordBatchStream {
 #[derive(Debug, Clone)]
 pub struct ColumnGroupReaderMetrics {
     elapsed_page_scan_time: Time,
-    elapsed_page_to_array_time: Time,
+    elapsed_pages_to_record_batch_time: Time,
     page_read_count: Count,
     page_read_bytes: Count,
     inner: BaselineMetrics,
@@ -195,7 +152,7 @@ impl ColumnGroupReaderMetrics {
     pub fn new(metrics: &ExecutionPlanMetricsSet) -> Self {
         let elapsed_page_scan_time =
             MetricBuilder::new(metrics).subset_time("elapsed_page_scan_time", 0);
-        let elapsed_page_to_array_time =
+        let elapsed_pages_to_record_batch_time =
             MetricBuilder::new(metrics).subset_time("elapsed_page_to_array_time", 0);
         let page_read_count = MetricBuilder::new(metrics).counter("page_read_count", 0);
         let page_read_bytes = MetricBuilder::new(metrics).counter("page_read_bytes", 0);
@@ -204,7 +161,7 @@ impl ColumnGroupReaderMetrics {
 
         Self {
             elapsed_page_scan_time,
-            elapsed_page_to_array_time,
+            elapsed_pages_to_record_batch_time,
             page_read_count,
             page_read_bytes,
             inner,
@@ -215,8 +172,8 @@ impl ColumnGroupReaderMetrics {
         &self.elapsed_page_scan_time
     }
 
-    pub fn elapsed_page_to_array_time(&self) -> &Time {
-        &self.elapsed_page_to_array_time
+    pub fn elapsed_pages_to_record_batch_time(&self) -> &Time {
+        &self.elapsed_pages_to_record_batch_time
     }
 
     pub fn page_read_count(&self) -> &Count {
@@ -235,88 +192,131 @@ impl ColumnGroupReaderMetrics {
     }
 }
 
-fn convert_data_type_if_necessary(array: ArrayRef, target_type: &DataType) -> TskvResult<ArrayRef> {
-    if array.data_type() != target_type {
-        cast::cast(&array, target_type).context(ArrowSnafu)
-    } else {
-        Ok(array)
-    }
-}
-
-pub struct ReaderBuilder {
+async fn read(
     reader: Arc<TsmReader>,
     series_id: SeriesId,
-    time_page_meta: Arc<PageWriteSpec>,
-    time_range: TimeRange,
-    metrics: Arc<ExecutionPlanMetricsSet>,
-}
-
-impl ReaderBuilder {
-    pub fn new(
-        reader: Arc<TsmReader>,
-        series_id: SeriesId,
-        time_page_meta: Arc<PageWriteSpec>,
-        time_range: TimeRange,
-        metrics: Arc<ExecutionPlanMetricsSet>,
-    ) -> Self {
-        Self {
-            reader,
-            series_id,
-            time_page_meta,
-            time_range,
-            metrics,
-        }
+    pages_meta: Vec<PageWriteSpec>,
+    schema_meta: HashMap<String, String>,
+    metrics: ColumnGroupReaderMetrics,
+) -> TskvResult<RecordBatch> {
+    let mut pages = Vec::with_capacity(pages_meta.len());
+    // todo: 一次性读取所有相邻的page，减少io次数
+    for page_meta in pages_meta.iter() {
+        let _timer = metrics.elapsed_page_scan_time().timer();
+        metrics.page_read_count().add(1);
+        metrics.page_read_bytes().add(page_meta.size() as usize);
+        let page = reader.read_page(page_meta).await?;
+        pages.push(page);
     }
-
-    pub fn build(&self, page_meta: &PageWriteSpec) -> TskvResult<PageReaderRef> {
-        Ok(Arc::new(PrimitiveArrayReader::new(
-            self.reader.clone(),
-            page_meta,
-            self.series_id,
-            self.time_page_meta.clone(),
-            self.time_range,
-            self.metrics.clone(),
-        )))
-    }
+    let _timer = metrics.elapsed_pages_to_record_batch_time().timer();
+    let record_batch = decode_pages(pages, schema_meta, Some((reader.tombstone(), series_id)))?;
+    Ok(record_batch)
 }
 
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
-    use arrow::datatypes::{DataType, Field, Schema};
+    use arrow_array::{
+        ArrayRef, BooleanArray, Float64Array, RecordBatch, StringArray, TimestampNanosecondArray,
+        UInt64Array,
+    };
+    use arrow_schema::TimeUnit;
     use datafusion::assert_batches_eq;
     use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
     use futures::TryStreamExt;
+    use models::codec::Encoding;
+    use models::schema::tskv_table_schema::{ColumnType, TableColumn, TskvTableSchema};
+    use models::{SeriesKey, ValueType};
 
     use crate::reader::column_group::ColumnGroupReader;
-    use crate::reader::page::tests::TestPageReader;
-    use crate::reader::page::PageReaderRef;
     use crate::reader::BatchReader;
-    use crate::tsm::column_group::ColumnGroup;
+    use crate::tsm::reader::TsmReader;
+    use crate::tsm::writer::TsmWriter;
 
     #[tokio::test]
     async fn test_column_group_reader() {
-        let page_readers: Vec<PageReaderRef> = vec![
-            Arc::new(TestPageReader::<i64>::new(9)),
-            Arc::new(TestPageReader::<u64>::new(9)),
-            Arc::new(TestPageReader::<f64>::new(9)),
-            Arc::new(TestPageReader::<String>::new(9)),
-            Arc::new(TestPageReader::<bool>::new(9)),
-        ];
+        let path = "/tmp/test/tskv/reader/column_group/mod/test_column_group_reader".to_string();
 
-        let schema = Arc::new(Schema::new(vec![
-            Field::new("time", DataType::Int64, true),
-            Field::new("c1", DataType::UInt64, true),
-            Field::new("c2", DataType::Float64, true),
-            Field::new("c3", DataType::Utf8, true),
-            Field::new("c4", DataType::Boolean, true),
-        ]));
+        let schema = TskvTableSchema::new(
+            "cnosdb".to_string(),
+            "public".to_string(),
+            "test0".to_string(),
+            vec![
+                TableColumn::new(
+                    0,
+                    "time".to_string(),
+                    ColumnType::Time(TimeUnit::Nanosecond),
+                    Encoding::default(),
+                ),
+                TableColumn::new(
+                    1,
+                    "c1".to_string(),
+                    ColumnType::Field(ValueType::Unsigned),
+                    Encoding::default(),
+                ),
+                TableColumn::new(
+                    2,
+                    "c2".to_string(),
+                    ColumnType::Field(ValueType::Float),
+                    Encoding::default(),
+                ),
+                TableColumn::new(
+                    3,
+                    "c3".to_string(),
+                    ColumnType::Field(ValueType::String),
+                    Encoding::default(),
+                ),
+                TableColumn::new(
+                    4,
+                    "c4".to_string(),
+                    ColumnType::Field(ValueType::Boolean),
+                    Encoding::default(),
+                ),
+            ],
+        );
+        let schema = Arc::new(schema);
+        let mut tsm_writer = TsmWriter::open(&path, 0, 0, false)
+            .await
+            .expect("tsm_writer");
+        let df_schema = schema.to_arrow_schema();
+        let data1 = RecordBatch::try_new(
+            df_schema.clone(),
+            vec![
+                Arc::new(TimestampNanosecondArray::from(vec![1, 3, 5, 7])) as ArrayRef,
+                Arc::new(UInt64Array::from(vec![1, 3, 5, 7])) as ArrayRef,
+                Arc::new(Float64Array::from(vec![1.0, 3.0, 5.0, 7.0])) as ArrayRef,
+                Arc::new(StringArray::from(vec!["str_1", "str_3", "str_5", "str_7"])) as ArrayRef,
+                Arc::new(BooleanArray::from(vec![false, true, false, false])) as ArrayRef,
+            ],
+        )
+        .unwrap();
+        tsm_writer
+            .write_record_batch(1, SeriesKey::default(), schema, data1)
+            .await
+            .expect("write_record_batch");
+        tsm_writer.finish().await.expect("finish");
+        let path = tsm_writer.path().to_path_buf();
+        drop(tsm_writer);
+
+        let tsm_reader = TsmReader::open(path).await.expect("tsm_reader");
+        let column_group = tsm_reader
+            .chunk()
+            .get(&1)
+            .expect("column_group")
+            .clone()
+            .column_group()
+            .get(&0)
+            .expect("column_group")
+            .clone();
+        let pages_meta = column_group.pages().to_vec();
 
         let column_group_reader = ColumnGroupReader {
-            column_group: Arc::new(ColumnGroup::new(0)),
-            page_readers,
-            schema,
+            column_group,
+            reader: Arc::new(tsm_reader),
+            series_id: 0,
+            pages_meta,
+            schema: df_schema,
             metrics: Arc::new(ExecutionPlanMetricsSet::new()),
         };
 
@@ -325,19 +325,14 @@ mod tests {
         let result = stream.try_collect::<Vec<_>>().await.unwrap();
 
         let expected = [
-            "+------+----+-----+-------+-------+",
-            "| time | c1 | c2  | c3    | c4    |",
-            "+------+----+-----+-------+-------+",
-            "|      |    |     |       |       |",
-            "| 1    | 1  | 1.0 | str_1 | false |",
-            "|      |    |     |       |       |",
-            "| 3    | 3  | 3.0 | str_3 | true  |",
-            "|      |    |     |       |       |",
-            "| 5    | 5  | 5.0 | str_5 | false |",
-            "|      |    |     |       |       |",
-            "| 7    | 7  | 7.0 | str_7 | false |",
-            "|      |    |     |       |       |",
-            "+------+----+-----+-------+-------+",
+            "+-------------------------------+----+-----+-------+-------+",
+            "| time                          | c1 | c2  | c3    | c4    |",
+            "+-------------------------------+----+-----+-------+-------+",
+            "| 1970-01-01T00:00:00.000000001 | 1  | 1.0 | str_1 | false |",
+            "| 1970-01-01T00:00:00.000000003 | 3  | 3.0 | str_3 | true  |",
+            "| 1970-01-01T00:00:00.000000005 | 5  | 5.0 | str_5 | false |",
+            "| 1970-01-01T00:00:00.000000007 | 7  | 7.0 | str_7 | false |",
+            "+-------------------------------+----+-----+-------+-------+",
         ];
 
         assert_batches_eq!(expected, &result);
