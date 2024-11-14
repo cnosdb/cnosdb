@@ -483,7 +483,7 @@ pub fn decode_pages(
                 } else {
                     NullBitset::Ref(page.null_bitset())
                 };
-            let array = data_buf_to_arrow_array(&page)?;
+            let array = page.to_arrow_array()?;
             let array = updated_nullbuffer(array, null_bits)?;
             target_arrays.push(array);
         }

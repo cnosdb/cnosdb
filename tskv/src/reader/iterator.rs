@@ -978,17 +978,9 @@ async fn build_stream(
         return Ok(Box::pin(reader.process()?));
     }
 
-    if query_option.aggregates.is_some() {
-        Ok(Box::pin(PushDownAggregateStream {
-            schema: factory.schema(),
-            num_count: 0,
-            is_get: false,
-        }))
-    } else {
-        Ok(Box::pin(EmptySchemableTskvRecordBatchStream::new(
-            factory.schema(),
-        )))
-    }
+    Ok(Box::pin(EmptySchemableTskvRecordBatchStream::new(
+        factory.schema(),
+    )))
 }
 
 #[cfg(test)]
