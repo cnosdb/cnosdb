@@ -110,7 +110,7 @@ pub struct TsmReader {
 impl TsmReader {
     pub async fn open(tsm_path: impl AsRef<Path>) -> TskvResult<Self> {
         let path = tsm_path.as_ref().to_path_buf();
-        let file_system = LocalFileSystem::new(LocalFileType::ThreadPool);
+        let file_system = LocalFileSystem::new(LocalFileType::Mmap);
         let reader = file_system
             .open_file_reader(&path)
             .await
