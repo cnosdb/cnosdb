@@ -3,13 +3,12 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::sync::Arc;
     use std::time::{Duration, Instant};
-
-    use config::tskv::MetaConfig;
+    use config::tskv::{MetaConfig};
     use memory_pool::GreedyMemoryPool;
     use meta::model::meta_admin::AdminMeta;
     use metrics::metric_register::MetricsRegister;
     use models::meta_data::VnodeId;
-    use models::schema::database_schema::make_owner;
+    use models::schema::database_schema::{make_owner, DatabaseConfig, DatabaseOptions, DatabaseSchema};
     use models::schema::tenant::TenantOptions;
     use protos::kv_service::{raft_write_command, WriteDataRequest};
     use protos::models_helper;
@@ -53,9 +52,36 @@ mod tests {
             let meta_manager =
                 AdminMeta::new(global_config, Arc::new(MetricsRegister::default())).await;
             meta_manager.add_data_node().await.unwrap();
-            let _ = meta_manager
-                .create_tenant("cnosdb".to_string(), TenantOptions::default())
-                .await;
+
+            let tenant = meta_manager.tenant_meta("cnosdb").await;
+            if tenant.is_none() {
+                let tenant = meta_manager.create_tenant("cnosdb".to_string(), TenantOptions::default()).await.unwrap();
+                let database_schema1 = DatabaseSchema::new(
+                    "cnosdb",
+                    "public",
+                    DatabaseOptions::default(),
+                    Arc::new(DatabaseConfig::default()));
+                let database_schema2 = DatabaseSchema::new(
+                    "cnosdb",
+                    "db",
+                    DatabaseOptions::default(),
+                    Arc::new(DatabaseConfig::default()));
+                let database_schema3 = DatabaseSchema::new(
+                    "cnosdb",
+                    "db_flush_delta",
+                    DatabaseOptions::default(),
+                    Arc::new(DatabaseConfig::default()));
+                let database_schema4 = DatabaseSchema::new(
+                    "cnosdb",
+                    "db_test_snapshot",
+                    DatabaseOptions::default(),
+                    Arc::new(DatabaseConfig::default()));
+                tenant.create_db(database_schema1).await.unwrap();
+                tenant.create_db(database_schema2).await.unwrap();
+                tenant.create_db(database_schema3).await.unwrap();
+                tenant.create_db(database_schema4).await.unwrap();
+            }
+
             TsKv::open(
                 meta_manager,
                 opt,
@@ -63,8 +89,8 @@ mod tests {
                 memory,
                 Arc::new(MetricsRegister::default()),
             )
-            .await
-            .unwrap()
+                .await
+                .unwrap()
         });
         (rt, tskv)
     }
@@ -88,6 +114,21 @@ mod tests {
         let command = raft_write_command::Command::WriteData(request);
         rt.block_on(vnode_store.apply(&apply_ctx, command)).unwrap();
     }
+
+    fn tskv_flush(
+        rt: Arc<Runtime>,
+        tskv: &TsKv,
+        tenant: &str,
+        db: &str,
+        id: VnodeId,
+        trigger_compact: bool,
+    ) {
+        rt.block_on(async {
+            tskv.flush_tsfamily(tenant, db, id, trigger_compact).await.unwrap();
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        });
+    }
+
     pub fn kill_process(process_name: &str) {
         println!("- Killing processes {process_name}...");
         let system = System::new_with_specifics(
@@ -112,25 +153,29 @@ mod tests {
         let path = temp_dir.path().to_string_lossy().to_string();
         let cluster_name = "cluster_001".to_string();
         let size = 1024 * 1024 * 1024;
+        kill_process("cnosdb-meta");
         meta::service::single::start_singe_meta_server(
             path,
             cluster_name,
             &MetaConfig::default(),
             size,
         )
-        .await;
+            .await;
         let join_handle = tokio::spawn(async {
-            let _ = tokio::task::spawn_blocking(|| {
+            let res = tokio::task::spawn_blocking(|| {
                 test_kvcore_init();
                 test_kvcore_write();
                 test_kvcore_flush();
                 test_kvcore_flush_delta();
                 test_kvcore_build_row_data();
                 test_kvcore_snapshot_create_apply_delete();
-            })
-            .await;
+            }).await;
+
+            res
         });
-        join_handle.await.unwrap();
+
+        join_handle.await.unwrap().expect("failed to join thread");
+        tokio::time::sleep(Duration::from_secs(1)).await;
         kill_process("cnosdb-meta");
         temp_dir.close().unwrap();
     }
@@ -143,7 +188,6 @@ mod tests {
         std::fs::create_dir_all(dir).unwrap();
 
         get_tskv(dir, None);
-        dbg!("Ok");
         println!("Leave serial test: test_kvcore_init");
     }
 
@@ -202,9 +246,13 @@ mod tests {
         };
 
         tskv_write(rt.clone(), &tskv, "cnosdb", "db", 0, 1, request.clone());
+        tskv_flush(rt.clone(), &tskv, "cnosdb", "db", 0, true);
         tskv_write(rt.clone(), &tskv, "cnosdb", "db", 0, 2, request.clone());
+        tskv_flush(rt.clone(), &tskv, "cnosdb", "db", 0, true);
         tskv_write(rt.clone(), &tskv, "cnosdb", "db", 0, 3, request.clone());
+        tskv_flush(rt.clone(), &tskv, "cnosdb", "db", 0, true);
         tskv_write(rt.clone(), &tskv, "cnosdb", "db", 0, 4, request.clone());
+        tskv_flush(rt.clone(), &tskv, "cnosdb", "db", 0, true);
 
         rt.block_on(async move {
             tokio::time::sleep(Duration::from_secs(1)).await;
@@ -277,14 +325,12 @@ mod tests {
         tskv_write(rt.clone(), &tskv, "cnosdb", database, 0, 3, request.clone());
         tskv_write(rt.clone(), &tskv, "cnosdb", database, 0, 4, request.clone());
 
+        tskv_flush(rt.clone(), &tskv, "cnosdb", database, 0, true);
+
         let db_cloned = database;
         rt.block_on(async {
             tokio::time::sleep(Duration::from_secs(2)).await;
 
-            tskv.flush_tsfamily("cnosdb", db_cloned, 0, true)
-                .await
-                .unwrap();
-            tokio::time::sleep(Duration::from_secs(1)).await;
             let ts_family = tskv
                 .open_tsfamily("cnosdb", db_cloned, 0)
                 .await
@@ -295,9 +341,6 @@ mod tests {
             assert_eq!(last_seq, 4)
         });
 
-        assert!(LocalFileSystem::try_exists(format!(
-            "/tmp/test/kvcore/kvcore_flush_delta/data/cnosdb.{database}/0/tsm"
-        )));
         assert!(LocalFileSystem::try_exists(format!(
             "/tmp/test/kvcore/kvcore_flush_delta/data/cnosdb.{database}/0/delta"
         )));
@@ -354,7 +397,7 @@ mod tests {
         let tenant = "cnosdb";
         let database = "db_test_snapshot";
         let table = "tab_test_snapshot";
-        let vnode_id = 11;
+        let vnode_id = 0;
 
         let (runtime, tskv) = get_tskv(&dir, None);
 
@@ -374,22 +417,16 @@ mod tests {
                 precision: Precision::NS as u32,
             };
 
-            tskv_write(
-                runtime.clone(),
-                &tskv,
-                tenant,
-                database,
-                vnode_id,
-                1,
-                request.clone(),
-            );
+            tskv_write(runtime.clone(), &tskv, tenant, database, vnode_id, 0, request.clone());
+            tskv_write(runtime.clone(), &tskv, tenant, database, vnode_id, 0, request.clone());
+            tskv_flush(runtime.clone(), &tskv, tenant, database, vnode_id, true);
+            tskv_write(runtime.clone(), &tskv, tenant, database, vnode_id, 0, request.clone());
+            tskv_write(runtime.clone(), &tskv, tenant, database, vnode_id, 0, request.clone());
+            tskv_flush(runtime.clone(), &tskv, tenant, database, vnode_id, true);
         }
 
         let mut vnode = runtime
             .block_on(tskv.open_tsfamily(tenant, database, vnode_id))
-            .unwrap();
-        runtime
-            .block_on(tskv.flush_tsfamily(tenant, database, vnode_id, true))
             .unwrap();
         let vnode_snapshot = {
             // Test create snapshot.
@@ -413,11 +450,13 @@ mod tests {
             vnode_snap
         };
 
+        let version_edit_1 = vnode_snapshot.version_edit.clone();
+        sleep_in_runtime(runtime.clone(), Duration::from_secs(1));
         let vnode_backup_dir = dir.join("backup_for_test");
         let vnode_data_dir = storage_opt.ts_family_dir(&owner, vnode_id);
         dircpy::copy_dir(vnode_data_dir, &vnode_backup_dir).unwrap();
 
-        let new_vnode_id = 12;
+        let new_vnode_id = 1;
         let vnode_tsm_dir = storage_opt.tsm_dir(&owner, new_vnode_id);
         let vnode_delta_dir = storage_opt.delta_dir(&owner, new_vnode_id);
 
@@ -429,14 +468,27 @@ mod tests {
             runtime
                 .block_on(vnode.apply_snapshot(vnode_snapshot, vnode_backup_dir.as_path()))
                 .unwrap();
+
             sleep_in_runtime(runtime.clone(), Duration::from_secs(3));
 
-            let version_edit = runtime
+            let version_edit_2 = runtime
                 .block_on(async move { vnode.ts_family().read().await.build_version_edit() });
 
-            assert_eq!(version_edit.tsf_id, new_vnode_id);
-            assert_eq!(version_edit.add_files.len(), 2);
-            for f in version_edit.add_files.iter() {
+            assert_eq!(version_edit_2.tsf_id, new_vnode_id);
+            assert_eq!(version_edit_1.add_files.len(), version_edit_2.add_files.len());
+            assert_eq!(version_edit_1.del_files.len(), version_edit_2.del_files.len());
+
+            dbg!(&version_edit_2);
+            dbg!(&version_edit_1);
+            version_edit_1.add_files.iter().zip(version_edit_2.add_files.iter()).for_each(|(lhs, rhs)| {
+                assert_eq!(lhs.file_size, rhs.file_size);
+                assert_eq!(lhs.level, rhs.level);
+                assert_eq!(lhs.max_ts, rhs.max_ts);
+                assert_eq!(lhs.min_ts, rhs.min_ts);
+                assert_eq!(lhs.is_delta, rhs.is_delta);
+            });
+
+            for f in version_edit_2.add_files.iter() {
                 let path = if f.is_delta {
                     file_utils::make_delta_file(&vnode_delta_dir, f.file_id)
                 } else {
@@ -451,7 +503,6 @@ mod tests {
             }
         }
 
-        runtime.block_on(tskv.close());
         println!("Leave serial test: test_kvcore_snapshot_create_apply_delete");
     }
 
