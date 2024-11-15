@@ -1,6 +1,3 @@
-#![allow(dead_code)]
-#![cfg(test)]
-
 use std::collections::HashMap;
 use std::ops::Sub;
 use std::path::PathBuf;
@@ -15,13 +12,15 @@ use models::meta_data::TenantMetaData;
 use models::oid::UuidGenerator;
 use models::schema::database_schema::{DatabaseConfig, DatabaseOptions, DatabaseSchema};
 use models::schema::tenant::{Tenant, TenantOptions};
+use reqwest::{IntoUrl, StatusCode};
 use serial_test::serial;
 use sysinfo::System;
 use utils::duration::CnosDuration;
 use utils::precision::Precision;
 use walkdir::WalkDir;
 
-use crate::utils::{run_cluster, CnosdbDataTestHelper, CnosdbMetaTestHelper};
+use crate::utils::global::E2eContext;
+use crate::utils::{CnosdbDataTestHelper, CnosdbMetaTestHelper};
 use crate::{cluster_def, E2eError, E2eResult};
 
 const DEFAULT_CLUSTER: &str = "cluster_xxx";
@@ -78,15 +77,17 @@ impl CnosdbDataTestHelper {
     fn prepare_test_data(&self) -> E2eResult<()> {
         let mut handles: Vec<thread::JoinHandle<()>> = vec![];
         let has_failed = Arc::new(AtomicBool::new(false));
+        let host_port = self.data_node_definitions[0].http_host_port;
         for i in 0..5 {
             let tenant = tenant_name(i);
             let database = database_name(i);
-            let url = format!("http://127.0.0.1:8902/api/v1/write?tenant={tenant}&db={database}");
+
+            let url = format!("http://{host_port}/api/v1/write?tenant={tenant}&db={database}");
             // let curl_write = format!(
-            //     "curl -u root: -XPOST -w %{{http_code}} -s -o /dev/null http://127.0.0.1:8902/api/v1/write?tenant={tenant}&db={database}",
+            //     "curl -u root: -XPOST -w %{{http_code}} -s -o /dev/null http://{host_port}/api/v1/write?tenant={tenant}&db={database}",
             // );
             let has_failed = has_failed.clone();
-            let client = self.client.clone();
+            let client = self.data_node_clients[0].clone();
             let handle: thread::JoinHandle<()> = thread::spawn(move || {
                 println!("Write data thread-{i} started");
                 for j in 0..100 {
@@ -136,34 +137,21 @@ impl CnosdbDataTestHelper {
     }
 }
 
-/// Clean test environment.
-///
-/// 1. Kill all 'cnosdb' and 'cnosdb-meta' process,
-/// 2. Remove directory '/tmp/cnosdb'.
-fn clean_env() {
-    println!("Cleaning environment...");
-    kill_process("cnosdb");
-    kill_process("cnosdb-meta");
-    println!(" - Removing directory '/tmp/cnosdb'");
-    let _ = std::fs::remove_dir_all("/tmp/cnosdb");
-    println!("Clean environment completed.");
-}
-
-/// Kill all processes with specified process name.
-fn kill_process(process_name: &str) {
-    println!("- Killing processes {process_name}...");
-    let system = System::new_all();
-    for (pid, process) in system.processes() {
-        if process.name() == process_name {
-            let output = Command::new("kill")
-                .args(["-9", &(pid.to_string())])
-                .output()
-                .expect("failed to execute kill");
-            if !output.status.success() {
-                println!(" - failed killing process {} ('{}')", pid, process.name());
-            }
-            println!(" - killed process {pid} ('{}')", process.name());
+impl crate::utils::Client {
+    pub fn debug<U: IntoUrl + std::fmt::Display>(&self, url: U) -> E2eResult<Vec<String>> {
+        let url_str = format!("{url}");
+        let req = "";
+        let resp = self.get(url, req)?;
+        if resp.status() != StatusCode::OK {
+            return Err(Self::map_reqwest_resp_err(resp, &url_str, req));
         }
+        Ok(resp
+            .text()
+            .map_err(|e| Self::map_reqwest_err(e, &url_str, req))?
+            .trim()
+            .split_terminator('\n')
+            .map(|s| s.to_owned())
+            .collect::<Vec<_>>())
     }
 }
 
@@ -171,6 +159,53 @@ mod self_tests {
     use super::*;
     use crate::cluster_def;
     use crate::utils::run_cluster;
+
+    /// Kill all processes with specified process name.
+    fn kill_process(process_name: &str) {
+        println!("- Killing processes {process_name}...");
+        let system = System::new_all();
+        for (pid, process) in system.processes() {
+            if process.name() == process_name {
+                let output = Command::new("kill")
+                    .args(["-9", &(pid.to_string())])
+                    .output()
+                    .expect("failed to execute kill");
+                if !output.status.success() {
+                    println!(" - failed killing process {} ('{}')", pid, process.name());
+                }
+                println!(" - killed process {pid} ('{}')", process.name());
+            }
+        }
+    }
+
+    /// Clean test environment.
+    ///
+    /// 1. Kill all 'cnosdb' and 'cnosdb-meta' process,
+    /// 2. Remove directory '/tmp/cnosdb'.
+    fn clean_env() {
+        println!("Cleaning environment...");
+        kill_process("cnosdb");
+        kill_process("cnosdb-meta");
+        println!(" - Removing directory '/tmp/cnosdb'");
+        let _ = std::fs::remove_dir_all("/tmp/cnosdb");
+        println!("Clean environment completed.");
+    }
+
+    /// Execute curl command
+    fn exec_curl(cmd: &str, body: &str) -> io::Result<Output> {
+        let cmd_args = cmd
+            .split(&[' ', '\n', '\r'])
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<&str>>();
+        let mut command = Command::new(cmd_args[0]);
+        if body.is_empty() {
+            command.args(cmd_args[1..].iter());
+        } else {
+            command.args(cmd_args[1..].iter().chain(["-d", body].iter()));
+        }
+        println!("Executing command 'curl': {:?}", command);
+        command.output()
+    }
 
     #[test]
     #[ignore = "run this test when developing"]
@@ -212,8 +247,7 @@ mod self_tests {
             let tenant = tenant_name(1);
             let database = database_name(1);
 
-            let res = data
-                .client
+            let res = data.data_node_clients[0]
                 .post(
                     format!("http://127.0.0.1:8902/api/v1/write?tenant={tenant}&db={database}"),
                     "tb1,ta=a1,tb=b1 fa=1",
@@ -229,45 +263,34 @@ mod self_tests {
 #[serial]
 fn test_multi_tenants_write_data() {
     println!("Test begin 'test_multi_tenants_write_data'");
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .worker_threads(4)
-        .build()
-        .unwrap();
-    let runtime = Arc::new(runtime);
 
-    clean_env();
-    {
-        let (meta, data) = run_cluster(
-            "",
-            runtime,
-            &cluster_def::three_meta_two_data_bundled(),
-            true,
-            true,
-        );
-        let meta = meta.unwrap();
-        let data = data.unwrap();
-        meta.prepare_test_data();
-        data.prepare_test_data().unwrap();
+    let mut ctx = E2eContext::new("coordinator_tests", "test_multi_tenants_write_data");
+    let mut executor = ctx.build_executor(cluster_def::three_meta_two_data_bundled());
+    let host_port = executor.cluster_definition().data_cluster_def[0].http_host_port;
 
-        for i in 0..5 {
-            let tenant = tenant_name(i);
-            let db = database_name(i);
-            let result_csv = match data.client.post(
-                format!("http://127.0.0.1:8902/api/v1/sql?tenant={tenant}&db={db}"),
-                format!("select count(*) from {DEFAULT_TABLE}").as_str(),
-            ) {
-                Ok(r) => r.text().unwrap(),
-                Err(e) => {
-                    panic!("Failed to do query: {e}");
-                }
-            };
-            println!("- Result text: {}", &result_csv);
-            let line_10 = result_csv.lines().nth(1);
-            assert_eq!(line_10, Some("100"));
-        }
+    executor.startup();
+
+    executor.case_context().meta().prepare_test_data();
+    executor.case_context().data().prepare_test_data().unwrap();
+
+    let data_client = executor.case_context().data().data_node_clients[0].clone();
+    for i in 0..5 {
+        let tenant = tenant_name(i);
+        let db = database_name(i);
+        let result_csv = match data_client.post(
+            format!("http://{host_port}/api/v1/sql?tenant={tenant}&db={db}"),
+            format!("select count(*) from {DEFAULT_TABLE}").as_str(),
+        ) {
+            Ok(r) => r.text().unwrap(),
+            Err(e) => {
+                panic!("Failed to do query: {e}");
+            }
+        };
+        println!("- Result text: {}", &result_csv);
+        let line_10 = result_csv.lines().nth(1);
+        assert_eq!(line_10, Some("100"));
     }
-    clean_env();
+
     println!("Test complete 'test_multi_tenants_write_data'");
 }
 
@@ -275,23 +298,15 @@ fn test_multi_tenants_write_data() {
 #[serial]
 fn test_replica() {
     println!("Test begin 'test_replica'");
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .worker_threads(4)
-        .build()
-        .unwrap();
-    let runtime = Arc::new(runtime);
 
-    clean_env();
+    let mut ctx = E2eContext::new("coordinator_tests", "test_replica");
+    let mut executor = ctx.build_executor(cluster_def::three_meta_two_data_bundled());
+    let meta_host_port = executor.cluster_definition().meta_cluster_def[0].host_port;
+
+    let runtime = ctx.runtime();
+    executor.startup();
     {
-        let (meta, _data) = run_cluster(
-            "",
-            runtime.clone(),
-            &cluster_def::three_meta_two_data_bundled(),
-            true,
-            true,
-        );
-        let meta = meta.unwrap();
+        let meta = executor.case_context().meta();
 
         let tenant_name = "cnosdb";
         let database_name = "db_test_replica";
@@ -319,12 +334,15 @@ fn test_replica() {
         create_db_res.unwrap();
 
         // Get meta data from debug API.
-        let meta_data = meta.query();
+        let meta_data = meta
+            .client
+            .debug(format!("http://{meta_host_port}/debug"))
+            .unwrap();
         let meta_key = format!("* /{DEFAULT_CLUSTER}/tenants/{tenant_name}/dbs/{database_name}: ");
-        let mut meta_value = &meta_data[..0];
+        let mut meta_value = "";
         let expected_meta = format!("\"replica\":{replica}");
         let mut ok = false;
-        for l in meta_data.lines() {
+        for l in meta_data.iter() {
             if l.starts_with(&meta_key) {
                 meta_value = &l[meta_key.len()..];
                 ok = meta_value.contains(&expected_meta);
@@ -336,7 +354,7 @@ fn test_replica() {
             "{meta_key} {meta_value} does not contains {expected_meta}"
         );
     }
-    clean_env();
+
     println!("Test complete 'test_replica'");
 }
 
@@ -344,23 +362,15 @@ fn test_replica() {
 #[serial]
 fn test_shard() {
     println!("Test begin 'test_shard'");
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .worker_threads(4)
-        .build()
-        .unwrap();
-    let runtime = Arc::new(runtime);
 
-    clean_env();
+    let mut ctx = E2eContext::new("coordinator_tests", "test_shard");
+    let mut executor = ctx.build_executor(cluster_def::three_meta_two_data_bundled());
+    let meta_host_port = executor.cluster_definition().meta_cluster_def[0].host_port;
+
+    let runtime = ctx.runtime();
+    executor.startup();
     {
-        let (meta, _data) = run_cluster(
-            "",
-            runtime.clone(),
-            &cluster_def::three_meta_two_data_bundled(),
-            true,
-            true,
-        );
-        let meta = meta.unwrap();
+        let meta = executor.case_context().meta();
 
         let tenant_name = "cnosdb";
         let database_name = "db_test_shard";
@@ -388,12 +398,15 @@ fn test_shard() {
         create_db_res.unwrap();
 
         // Get meta data from debug API.
-        let meta_data = meta.query();
+        let meta_data = meta
+            .client
+            .debug(format!("http://{meta_host_port}/debug"))
+            .unwrap();
         let meta_key = format!("* /{DEFAULT_CLUSTER}/tenants/{tenant_name}/dbs/{database_name}: ");
-        let mut meta_value = &meta_data[..0];
+        let mut meta_value = "";
         let expected_meta = format!("\"shard_num\":{shard_num}");
         let mut ok = false;
-        for l in meta_data.lines() {
+        for l in meta_data.iter() {
             if l.starts_with(&meta_key) {
                 meta_value = &l[meta_key.len()..];
                 ok = meta_value.contains(&expected_meta);
@@ -405,7 +418,7 @@ fn test_shard() {
             "{meta_key} {meta_value} does not contains {expected_meta}"
         );
     }
-    clean_env();
+
     println!("Test complete 'test_shard'");
 }
 
@@ -413,24 +426,17 @@ fn test_shard() {
 #[serial]
 fn test_ttl() {
     println!("Test begin 'test_ttl'");
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .worker_threads(4)
-        .build()
-        .unwrap();
-    let runtime = Arc::new(runtime);
 
-    clean_env();
+    let mut ctx = E2eContext::new("coordinator_tests", "test_ttl");
+    let mut executor = ctx.build_executor(cluster_def::three_meta_two_data_bundled());
+    let meta_host_port = executor.cluster_definition().meta_cluster_def[0].host_port;
+    let data_host_port = executor.cluster_definition().data_cluster_def[0].http_host_port;
+
+    let runtime = ctx.runtime();
+    executor.startup();
     {
-        let (meta, data) = run_cluster(
-            "",
-            runtime.clone(),
-            &cluster_def::three_meta_two_data_bundled(),
-            true,
-            true,
-        );
-        let meta = meta.unwrap();
-        let data = data.unwrap();
+        let meta = executor.case_context().meta();
+        let data = executor.case_context().data();
 
         let tenant_name = "cnosdb";
         let database_name = "db_test_ttl";
@@ -460,15 +466,18 @@ fn test_ttl() {
         create_db_res.unwrap();
 
         // Get meta data from debug API.
-        let meta_data = meta.query();
+        let meta_data = meta
+            .client
+            .debug(format!("http://{meta_host_port}/debug"))
+            .unwrap();
         let meta_key = format!("* /{DEFAULT_CLUSTER}/tenants/{tenant_name}/dbs/{database_name}: ");
-        let mut meta_value = &meta_data[..0];
-        let expected_meta = [
-            format!("\"time_num\":{}", duration),
-            String::from("\"unit\":\"Day\""),
-        ];
+        let mut meta_value = "";
+        let expected_meta = [format!(
+            "\"duration\":{{\"secs\":{}",
+            duration.to_millisecond() / 1000
+        )];
         let mut ok_num = 0_usize;
-        for l in meta_data.lines() {
+        for l in meta_data.iter() {
             if l.starts_with(&meta_key) {
                 meta_value = &l[meta_key.len()..];
                 for m in expected_meta.iter() {
@@ -486,13 +495,13 @@ fn test_ttl() {
             expected_meta
         );
 
-        let url =
-            format!("http://127.0.0.1:8902/api/v1/write?&tenant={tenant_name}&db={database_name}");
+        let url = format!(
+            "http://{data_host_port}/api/v1/write?&tenant={tenant_name}&db={database_name}"
+        );
 
         // Insert the valid data.
         let now = chrono_now.timestamp_nanos_opt().unwrap();
-        let resp = data
-            .client
+        let resp = data.data_node_clients[0]
             .post(&url, format!("tab_1,ta=a1 fa=1 {now}").as_str())
             .unwrap();
         assert!(resp.status().is_success());
@@ -502,17 +511,18 @@ fn test_ttl() {
             .sub(chrono_duration)
             .timestamp_nanos_opt()
             .unwrap();
-        let resp = data
-            .client
+        let resp = data.data_node_clients[0]
             .post(&url, format!("tab_1,ta=a2 fa=2 {past}").as_str())
             .unwrap();
         assert_eq!(resp.status().as_u16(), 422);
-        assert!(resp
-            .text()
-            .unwrap()
-            .contains("write expired time data not permit"));
+        let resp_text = resp.text().unwrap();
+        let exp_resp_text = "Operation not support: create expired bucket";
+        assert!(
+            resp_text.contains(exp_resp_text),
+            "Response {resp_text} does not contains {exp_resp_text}"
+        );
     }
-    clean_env();
+
     println!("Test complete 'test_ttl'");
 }
 
@@ -520,24 +530,17 @@ fn test_ttl() {
 #[serial]
 fn test_balance() {
     println!("Test begin 'test_balance'");
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .worker_threads(4)
-        .build()
-        .unwrap();
-    let runtime = Arc::new(runtime);
 
-    clean_env();
+    let mut ctx = E2eContext::new("coordinator_tests", "test_balance");
+    let mut executor = ctx.build_executor(cluster_def::three_meta_two_data_bundled());
+    let meta_host_port = executor.cluster_definition().meta_cluster_def[0].host_port;
+    let data_host_port = executor.cluster_definition().data_cluster_def[0].http_host_port;
+
+    let runtime = ctx.runtime();
+    executor.startup();
     {
-        let (meta, data) = run_cluster(
-            "",
-            runtime.clone(),
-            &cluster_def::three_meta_two_data_bundled(),
-            true,
-            true,
-        );
-        let meta = meta.unwrap();
-        let data = data.unwrap();
+        let meta = executor.case_context().meta();
+        let data = executor.case_context().data();
 
         let tenant_name = "cnosdb";
         let database_name = "db_test_balance";
@@ -565,12 +568,13 @@ fn test_balance() {
         create_db_res.unwrap();
 
         // Write some data.
-        let url =
-            format!("http://127.0.0.1:8902/api/v1/write?&tenant={tenant_name}&db={database_name}");
+        let url = format!(
+            "http://{data_host_port}/api/v1/write?&tenant={tenant_name}&db={database_name}"
+        );
         println!("- Writing data.");
         for j in 0..10 {
             let body = format!("tab_1,ta=a1,tb=b1 value={}", j);
-            data.client.post(&url, &body).unwrap();
+            data.data_node_clients[0].post(&url, &body).unwrap();
         }
         println!("- Write data completed.");
 
@@ -578,11 +582,14 @@ fn test_balance() {
         println!("Getting meta...");
         thread::sleep(Duration::from_secs(3));
         let mut shard_vnode_node_ids: Vec<Vec<(u32, u64)>> = Vec::new();
-        let meta_data = meta.query();
+        let meta_data = meta
+            .client
+            .debug(format!("http://{meta_host_port}/debug"))
+            .unwrap();
         let meta_key =
             format!("* /{DEFAULT_CLUSTER}/tenants/{tenant_name}/dbs/{database_name}/buckets/");
         let mut ok = false;
-        for l in meta_data.lines() {
+        for l in meta_data.iter() {
             if l.starts_with(&meta_key) {
                 ok = true;
                 let mut i = 0;
@@ -636,19 +643,18 @@ fn test_balance() {
             }
         }
         println!("- Shard - vnode - node IDs: {:?}", shard_vnode_node_ids);
-        assert!(ok, "{meta_data} does not contains {meta_key}");
+        assert!(ok, "{meta_data:?} does not contains {meta_key}");
 
         println!("Checking balance...");
         let url =
-            format!("http://127.0.0.1:8902/api/v1/sql?&tenant={tenant_name}&db={database_name}");
+            format!("http://{data_host_port}/api/v1/sql?&tenant={tenant_name}&db={database_name}");
         // Shards loop
         for vnode_node_ids in shard_vnode_node_ids.iter() {
             // Replications loop
             let mut vnode_sizes: HashMap<u32, u64> = HashMap::new();
             for (vnode_id, node_id) in vnode_node_ids.iter() {
                 println!("- Flush & compaction vnode {vnode_id}");
-                let resp = data
-                    .client
+                let resp = data.data_node_clients[0]
                     .post(&url, format!("compact vnode {vnode_id};").as_str())
                     .unwrap();
                 assert!(
@@ -683,22 +689,6 @@ fn test_balance() {
             // TODO: check if balanced by comparing vnode_sizes.
         }
     }
-    clean_env();
-    println!("Test complete 'test_balance'");
-}
 
-/// Execute curl command
-fn exec_curl(cmd: &str, body: &str) -> io::Result<Output> {
-    let cmd_args = cmd
-        .split(&[' ', '\n', '\r'])
-        .filter(|s| !s.is_empty())
-        .collect::<Vec<&str>>();
-    let mut command = Command::new(cmd_args[0]);
-    if body.is_empty() {
-        command.args(cmd_args[1..].iter());
-    } else {
-        command.args(cmd_args[1..].iter().chain(["-d", body].iter()));
-    }
-    println!("Executing command 'curl': {:?}", command);
-    command.output()
+    println!("Test complete 'test_balance'");
 }

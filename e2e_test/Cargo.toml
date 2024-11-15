@@ -16,11 +16,13 @@ utils = { path = "../common/utils" }
 
 arrow-flight = { workspace = true, features = ["flight-sql-experimental"] }
 arrow-schema = { workspace = true, optional = false }
+backtrace = { workspace = true }
 chrono = { workspace = true }
 datafusion = { workspace = true }
 diff = { workspace = true }
 flatbuffers = { workspace = true }
 futures = { workspace = true, default-features = false, features = ["alloc"] }
+parking_lot = { workspace = true }
 prost = { workspace = true }
 rand = { workspace = true }
 regex = { workspace = true }
@@ -35,5 +37,6 @@ walkdir = { workspace = true }
 [features]
 default = []
 coordinator_e2e_test = []
+debug_mode = []                 # Run cnosdb and cnosdb-meta in debug mode, make the compilation faster.
 not_passed = []
-debug = []
+startup_in_serial = []          # Make sure data node register in meta server in the order they defined.
