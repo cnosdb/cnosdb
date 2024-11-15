@@ -1,61 +1,49 @@
-#![cfg(test)]
-
-use std::sync::Arc;
-
 use datafusion::{arrow, assert_batches_eq};
-use serial_test::serial;
 
-use crate::utils::{flight_authed_client, flight_fetch_result_and_print, kill_all, run_cluster};
+use crate::utils::global::E2eContext;
+use crate::utils::{flight_authed_client, flight_fetch_result_and_print};
 use crate::{check_response, cluster_def};
 
 #[test]
-#[serial]
 fn grpc_gzip_test() {
     println!("Test begin auth_test");
 
-    let test_dir = "/tmp/e2e_test/grpc_gzip_test";
-    let _ = std::fs::remove_dir_all(test_dir);
-    std::fs::create_dir_all(test_dir).unwrap();
+    let mut ctx = E2eContext::new("grpc_gzip_test", "grpc_gzip_test");
+    let mut executor = ctx.build_executor(cluster_def::one_meta_three_data());
+    let data_node_def = &executor.cluster_definition().data_cluster_def[0];
+    let http_host_port = data_node_def.http_host_port;
+    let flight_port = data_node_def.flight_service_port.unwrap_or(8904);
 
-    kill_all();
+    executor.set_update_data_config_fn_vec(vec![
+        Some(Box::new(|config| {
+            config.service.grpc_enable_gzip = true;
+        })),
+        Some(Box::new(|config| {
+            config.service.grpc_enable_gzip = true;
+        })),
+        Some(Box::new(|config| {
+            config.service.grpc_enable_gzip = true;
+        })),
+    ]);
+    executor.startup();
 
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .worker_threads(4)
-        .build()
-        .unwrap();
-    let runtime = Arc::new(runtime);
-
-    let mut data_node_def = cluster_def::one_meta_three_data();
-
-    for node in data_node_def.data_cluster_def.iter_mut() {
-        node.grpc_enable_gzip = true;
-    }
-
-    let (_meta_server, data_server) =
-        run_cluster(test_dir, runtime.clone(), &data_node_def, true, true);
-
-    let server = data_server.unwrap();
-
-    check_response!(server.client.post(
-        "http://127.0.0.1:8902/api/v1/sql?db=public",
+    let client = executor.case_context().data_client(0);
+    check_response!(client.post(
+        format!("http://{http_host_port}/api/v1/sql?db=public"),
         "create database db1 with replica 3",
     ));
-
-    check_response!(server.client.post(
-        "http://127.0.0.1:8902/api/v1/sql?db=db1",
+    check_response!(client.post(
+        format!("http://{http_host_port}/api/v1/sql?db=db1"),
         "create table tb1 (v bigint)",
     ));
-
-    check_response!(server
-        .client
+    check_response!(client
         .post(
-            "http://127.0.0.1:8902/api/v1/sql?db=db1",
+            format!("http://{http_host_port}/api/v1/sql?db=db1"),
             "insert tb1 values (1, 1), (2, 2), (3, 3), (4, 4), (5, 5), (6, 6), (7, 7), (8, 8), (9, 9), (10, 10)",
         ));
 
-    runtime.block_on(async {
-        let mut client = flight_authed_client().await;
+    ctx.runtime().block_on(async {
+        let mut client = flight_authed_client(flight_port).await;
         client.set_header("db", "db1");
         let flight_info = client
             .execute("select * from tb1;".to_string(), None)

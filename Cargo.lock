@@ -2035,6 +2035,7 @@ version = "2.4.3"
 dependencies = [
  "arrow-flight",
  "arrow-schema",
+ "backtrace",
  "chrono",
  "config",
  "datafusion",
@@ -2045,6 +2046,7 @@ dependencies = [
  "meta",
  "metrics",
  "models",
+ "parking_lot 0.12.1",
  "prost 0.11.9",
  "protos",
  "rand",

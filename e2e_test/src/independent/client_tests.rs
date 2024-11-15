@@ -1,20 +1,14 @@
-#![cfg(test)]
-
 use std::io::{self, BufRead, BufReader, Write};
-use std::path::Path;
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::{Arc, Mutex, RwLock};
 use std::thread::{sleep, JoinHandle};
 use std::time::{Duration, Instant};
 
-use serial_test::serial;
-
-use crate::utils::{
-    execute_command, get_workspace_dir, kill_all, run_singleton, Client, CnosdbDataTestHelper,
-};
+use crate::utils::global::E2eContext;
+use crate::utils::{execute_command, get_workspace_dir, Client};
 use crate::{check_response, cluster_def};
 
-// use for cnosdb-cli
+/// Helper for running the `cnosdb-cli` command line interface.
 pub struct CnosdbCliDef {
     args: Vec<String>,
 }
@@ -23,6 +17,7 @@ impl CnosdbCliDef {
     pub fn new() -> Self {
         Self { args: vec![] }
     }
+
     pub fn with_args<S: ToString>(args: &[S]) -> Self {
         Self {
             args: args.iter().map(|s| s.to_string()).collect(),
@@ -55,14 +50,14 @@ impl CnosdbCliDef {
             .join("target")
             .join("debug")
             .join("cnosdb-cli");
-        Command::new(exe_path)
+        Command::new(&exe_path)
             .current_dir(workspace_dir)
             .args(&self.args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .expect("fail to start 'cnosdb-cli [args]'")
+            .unwrap_or_else(|e| panic!("fail to start '{} [args]': {e}", exe_path.display()))
     }
 }
 
@@ -108,7 +103,7 @@ impl CnosdbCommandLineInterfaceHelper {
                             *instant_inner.lock().unwrap() = Instant::now();
                             break;
                         }
-                        println!("{thread_name}>>{buf}");
+                        print!("{thread_name}>>{buf}");
                         contents_inner.write().unwrap().push_str(&buf);
                         *instant_inner.lock().unwrap() = Instant::now();
                     }
@@ -135,10 +130,14 @@ impl CnosdbCommandLineInterfaceHelper {
         }
     }
 
-    pub fn write(&mut self, inputs: &[&str]) -> io::Result<()> {
+    pub fn write<B: AsRef<[u8]>>(&mut self, inputs: &[B]) -> io::Result<()> {
         for input in inputs {
-            println!("stdin<<{input}");
-            self.stdin.write_all(input.as_bytes())?;
+            let input_bytes = input.as_ref();
+            println!(
+                "stdin<<{}",
+                std::str::from_utf8(input_bytes).expect("utf8 bytes"),
+            );
+            self.stdin.write_all(input_bytes)?;
         }
         self.stdin_last_write = Instant::now();
         Ok(())
@@ -156,6 +155,7 @@ impl CnosdbCommandLineInterfaceHelper {
         ))
     }
 
+    /// Get the content of stdout and stderr after the given duration of the last write to stdout and stderr.
     pub fn read_after_write(&self, duration: Duration) -> io::Result<(String, String)> {
         fn wait(tick_prev: Instant, tick_next: Arc<Mutex<Instant>>, duration: Duration) {
             let now = Instant::now();
@@ -203,210 +203,163 @@ impl Drop for CnosdbCommandLineInterfaceHelper {
     }
 }
 
-fn new_server(test_dir: &str) -> CnosdbDataTestHelper {
-    kill_all();
-    let test_dir = Path::new(test_dir);
-    let data_node_def = &cluster_def::one_data(1);
-
-    let _ = std::fs::remove_dir_all(test_dir);
-    std::fs::create_dir_all(test_dir).unwrap();
-
-    let data: CnosdbDataTestHelper = run_singleton(test_dir, data_node_def, false, true);
-    data
-}
-
 #[test]
-#[serial]
 fn simple_test() {
-    let test_dir = "/tmp/e2e_test/client_tests/simple_test";
-    // just open the server
-    let server = new_server(test_dir);
+    let mut ctx = E2eContext::new("client_tests", "simple_test");
+    let mut executor = ctx.build_executor(cluster_def::one_data(1));
+    let host_port = executor.cluster_definition().data_cluster_def[0].http_host_port;
+    let api_v1_sql_url = &format!("http://{host_port}/api/v1/sql?db=public");
+    let api_v1_write_url = &format!("http://{host_port}/api/v1/write?db=public");
+    let api_v1_sql_url_tenant_a =
+        &format!("http://{host_port}/api/v1/sql?tenant=tenant_a&db=public");
+
+    executor.startup();
+
+    let client = executor.case_context().data_client(0);
+    let client_user_a = Client::with_auth("user_a".to_string(), None);
 
     //bug test for 1533
     {
         // data prepare
-        let url = "http://127.0.0.1:8902/api/v1/sql?db=public";
-        server
-            .client
-            .post(url, "create table test(f1 bigint, tags(t1));")
-            .unwrap();
+        check_response!(client.post(api_v1_sql_url, "create table test(f1 bigint, tags(t1));"));
+        check_response!(client.post(
+            api_v1_sql_url,
+            "insert into test(time,t1,f1)values(now(),'t11',1);",
+        ));
 
-        server
-            .client
-            .post(url, "insert into test(time,t1,f1)values(now(),'t11',1);")
-            .unwrap();
-
-        let resp = server.client.post(url, "select t1,f1 from test;").unwrap();
-
-        println!("test");
+        let resp = check_response!(client.post(api_v1_sql_url, "select t1,f1 from test;"));
         assert_eq!(resp.text().unwrap(), "t1,f1\nt11,1\n");
 
-        let resp = server
-            .client
-            .post(
-                "http://127.0.0.1:8902/api/v1/write?db=public",
-                "test,t2=t22,f2=2 1642176000000000000",
-            )
+        let resp = client
+            .post(api_v1_write_url, "test,t2=t22,f2=2 1642176000000000000")
             .unwrap();
+        assert_eq!(
+            resp.text().unwrap(),
+            r#"{"error_code":"040004","error_message":"Error parsing message: unexpect end line start at '17'"}"#
+        );
 
-        println!("{:?}", resp.text().unwrap());
-
-        let resp = server.client.post(url, "select t1,f1 from test;").unwrap();
-
+        let resp = check_response!(client.post(api_v1_sql_url, "select t1,f1 from test;"));
         assert_eq!(resp.text().unwrap(), "t1,f1\nt11,1\n");
     }
 
     //bug test for 1387
     {
-        let url = "http://127.0.0.1:8902/api/v1/write?db=public";
+        check_response!(client.post(api_v1_write_url, "ma,ta=a1 fa=1 1690510331000000000"));
+        check_response!(client.post(api_v1_write_url, "ma,ta=a1 fb=2 1690510331000000000"));
 
-        check_response!(server.client.post(url, "ma,ta=a1 fa=1 1690510331000000000"));
-
-        check_response!(server.client.post(url, "ma,ta=a1 fb=2 1690510331000000000"));
-
-        let url = "http://127.0.0.1:8902/api/v1/sql?db=public";
-        let resp = server.client.post(url, "select * from ma").unwrap();
-
+        let resp = check_response!(client.post(api_v1_sql_url, "select * from ma"));
         assert_eq!(
             resp.text().unwrap(),
-            "time,ta,fa,fb\n2023-07-28T02:12:11.000000000,a1,1.0,2.0\n"
+            "time,ta,fa,fb\n2023-07-28T02:12:11.000000000,a1,1.0,2.0\n",
         );
     }
 
     // bug test for #1311 #1459
     {
-        let url = "http://127.0.0.1:8902/api/v1/sql?db=public";
-        check_response!(server.client.post(url, "CREATE TENANT tenant_a;"));
-
-        check_response!(server.client.post(url, "CREATE USER user_a;"));
-
-        check_response!(server
-            .client
-            .post(url, "ALTER TENANT tenant_a ADD USER user_a AS owner;"));
+        check_response!(client.post(api_v1_sql_url, "CREATE TENANT tenant_a;"));
+        check_response!(client.post(api_v1_sql_url, "CREATE USER user_a;"));
+        check_response!(client.post(
+            api_v1_sql_url,
+            "ALTER TENANT tenant_a ADD USER user_a AS owner;",
+        ));
     }
     {
-        let url = "http://127.0.0.1:8902/api/v1/sql?tenant=tenant_a&db=public";
-
-        let client = Client::with_auth("user_a".to_string(), None);
-
-        check_response!(client.post(url, "create database db1;"));
-
-        check_response!(client
-            .post(url, "CREATE TABLE db1.air_a (visibility DOUBLE,temperature DOUBLE,pressure DOUBLE,TAGS(station));"));
-
-        check_response!( client
-            .post(url, "INSERT INTO db1.air_a (TIME, station, visibility, temperature, pressure) VALUES(1666165200290401000, 'XiaoMaiDao', 56, 69, 77);"));
+        check_response!(client_user_a.post(api_v1_sql_url_tenant_a, "create database db1;"));
+        check_response!(client_user_a.post(
+            api_v1_sql_url_tenant_a,
+            "CREATE TABLE db1.air_a (visibility DOUBLE,temperature DOUBLE,pressure DOUBLE,TAGS(station));",
+        ));
+        check_response!(client_user_a.post(
+            api_v1_sql_url_tenant_a,
+            "INSERT INTO db1.air_a (TIME, station, visibility, temperature, pressure) VALUES(1666165200290401000, 'XiaoMaiDao', 56, 69, 77);"
+        ));
     }
     {
-        let url = "http://127.0.0.1:8902/api/v1/sql?db=public";
-
-        check_response!(server.client.post(url, "drop tenant tenant_a;"));
-
-        check_response!(server.client.post(url, "drop user user_a;"));
-
-        check_response!(server.client.post(url, "CREATE TENANT tenant_a;"));
-
-        check_response!(server.client.post(url, "CREATE USER user_a;"));
-
-        check_response!(server
-            .client
-            .post(url, "ALTER TENANT tenant_a ADD USER user_a AS owner;"));
+        check_response!(client.post(api_v1_sql_url, "drop tenant tenant_a;"));
+        check_response!(client.post(api_v1_sql_url, "drop user user_a;"));
+        check_response!(client.post(api_v1_sql_url, "CREATE TENANT tenant_a;"));
+        check_response!(client.post(api_v1_sql_url, "CREATE USER user_a;"));
+        check_response!(client.post(
+            api_v1_sql_url,
+            "ALTER TENANT tenant_a ADD USER user_a AS owner;",
+        ));
     }
     {
-        let url = "http://127.0.0.1:8902/api/v1/sql?tenant=tenant_a&db=public";
-
-        let client = Client::with_auth("user_a".to_string(), None);
-
-        let resp = client.post(url, "select * from db1.air_a;").unwrap();
-
+        let resp = client_user_a
+            .post(api_v1_sql_url_tenant_a, "select * from db1.air_a;")
+            .unwrap();
         assert_eq!(
             resp.text().unwrap(),
-            "{\"error_code\":\"030019\",\"error_message\":\"Table not found: \\\"tenant_a.db1.air_a\\\"\"}",
+            r#"{"error_code":"030019","error_message":"Table not found: \"tenant_a.db1.air_a\""}"#,
         );
 
-        check_response!(client.post(url, "CREATE DATABASE db1;;"));
-
-        check_response!(client
-            .post(url, "CREATE TABLE db1.air_a (visibility DOUBLE,temperature DOUBLE,pressure DOUBLE,TAGS(station));"));
-
-        check_response!(client
-            .post(url, "INSERT INTO db1.air_a (TIME, station, visibility, temperature, pressure) VALUES(1666165200290401000, 'XiaoMaiDao', 56, 69, 77);"));
+        check_response!(client_user_a.post(api_v1_sql_url_tenant_a, "CREATE DATABASE db1;;"));
+        check_response!(client_user_a.post(
+            api_v1_sql_url_tenant_a,
+            "CREATE TABLE db1.air_a (visibility DOUBLE,temperature DOUBLE,pressure DOUBLE,TAGS(station));"
+        ));
+        check_response!(client_user_a.post(
+            api_v1_sql_url_tenant_a,
+            "INSERT INTO db1.air_a (TIME, station, visibility, temperature, pressure) VALUES(1666165200290401000, 'XiaoMaiDao', 56, 69, 77);"
+        ));
     }
 }
 
 #[test]
-#[serial]
 fn test_cnosdb_cli_start() {
-    let test_dir = "/tmp/e2e_test/client_tests/client_start_test";
-    let _server = new_server(test_dir);
+    let mut ctx = E2eContext::new("client_tests", "client_start_test");
+    let mut executor = ctx.build_executor(cluster_def::one_data(1));
+    let host_port = executor.cluster_definition().data_cluster_def[0].http_host_port;
+    let port = host_port.port().to_string();
+    let api_v1_sql_url = &format!("http://{host_port}/api/v1/sql?db=public");
+
+    executor.startup();
 
     //
     {
-        let mut cli = CnosdbCliDef::new().run();
+        let mut cli = CnosdbCliDef::with_args(&["--port", port.as_str()]).run();
         cli.write(&["1;\n"]).unwrap();
         let (stdout, stderr) = cli.read_after_write(Duration::from_secs(1)).unwrap();
         assert_eq!(
             stderr.lines().next().unwrap(),
-            "422 Unprocessable Entity, details: {\"error_code\":\"010009\",\"error_message\":\"sql parser error: Expected an SQL statement, found: 1\"}",
+            r#"422 Unprocessable Entity, details: {"error_code":"010009","error_message":"sql parser error: Expected an SQL statement, found: 1"}"#,
             "stdout: '{stdout}', stderr: '{stderr}'",
         );
     }
 
+    let client = executor.case_context().data_client(0);
+
     //bug test for #1703
     {
         // Start cnosdb singleton with `auth_enabled = false`, alter password for root.
-        _server
-            .client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "drop user if exists user001",
-            )
-            .unwrap();
-
-        sleep(Duration::from_secs(1));
-        _server
-            .client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "drop tenant if exists tenant001",
-            )
-            .unwrap();
+        check_response!(client.post(api_v1_sql_url, "drop user if exists user001",));
         sleep(Duration::from_secs(1));
 
-        _server
-            .client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "create user user001",
-            )
-            .unwrap();
+        check_response!(client.post(api_v1_sql_url, "drop tenant if exists tenant001",));
         sleep(Duration::from_secs(1));
 
-        _server
-            .client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
-                "create tenant tenant001",
-            )
-            .unwrap();
+        check_response!(client.post(api_v1_sql_url, "create user user001",));
         sleep(Duration::from_secs(1));
 
-        check_response!(_server.client.post(
-            "http://127.0.0.1:8902/api/v1/sql?db=public",
+        check_response!(client.post(api_v1_sql_url, "create tenant tenant001",));
+        sleep(Duration::from_secs(1));
+
+        check_response!(client.post(
+            api_v1_sql_url,
             "alter tenant tenant001 add user user001 as owner",
         ));
         sleep(Duration::from_secs(1));
 
-        let mut cli = CnosdbCliDef::with_args(&["-u", "user001", "-t", "tenant001"]).run();
-        cli.write(&[&format!(
-            "\\w {}/e2e_test/test_data/oceanic_station.txt\n",
-            get_workspace_dir().as_os_str().to_str().unwrap()
-        )])
-        .unwrap();
+        let mut cli =
+            CnosdbCliDef::with_args(&["-u", "user001", "-t", "tenant001", "--port", port.as_str()])
+                .run();
+        let test_data = get_workspace_dir().join("e2e_test/test_data/oceanic_station.txt");
+        cli.write(&[format!("\\w {}\n", test_data.display())])
+            .unwrap();
         let (stdout, stderr) = cli.read_after_write(Duration::from_secs(1)).unwrap();
         assert_eq!(
             stderr.lines().next().unwrap(),
-            "422 Unprocessable Entity, body: {\"error_code\":\"030017\",\"error_message\":\"Database not found: \\\"public\\\"\"}",
+            r#"422 Unprocessable Entity, body: {"error_code":"030017","error_message":"Database not found: \"public\""}"#,
             "stdout: '{stdout}', stderr: '{stderr}'",
         );
     }
@@ -414,11 +367,11 @@ fn test_cnosdb_cli_start() {
 
 //auto test about issue 1867
 #[test]
-#[serial]
 fn test_cnosdb_cli_password_leak() {
-    let test_dir = "/tmp/e2e_test/client_tests/test_cnosdb_cli_password_leak";
+    let mut ctx = E2eContext::new("client_tests", "test_cnosdb_cli_password_leak");
+
     {
-        // cnosdb-cli does not support clear-text passwords。
+        // cnosdb-cli does not support clear-text passwords in design。
         let cli = CnosdbCliDef::with_args(&["-p", "123"]).run();
         sleep(Duration::from_secs(1));
         let (stdout, stderr) = cli.read().unwrap();
@@ -429,8 +382,15 @@ fn test_cnosdb_cli_password_leak() {
         );
     }
     {
-        let _server = new_server(test_dir);
-        let mut cli = CnosdbCliDef::new().run();
+        let mut executor = ctx.build_executor(cluster_def::one_data(1));
+        let port = executor.cluster_definition().data_cluster_def[0]
+            .http_host_port
+            .port()
+            .to_string();
+
+        executor.startup();
+
+        let mut cli = CnosdbCliDef::with_args(&["--port", port.as_str()]).run();
         // Ignore cnosdb-cli startup messages.
         cli.skip();
         cli.write(&["show tables;\n"]).unwrap();
@@ -499,18 +459,21 @@ fn replace_src_by_dst(
 
 //auto test about issue 784
 #[test]
-#[serial]
 fn client_join_generate_physical() {
-    let test_dir = "/tmp/e2e_test/client_tests/client_join_generate_physical";
-    let _server = new_server(test_dir);
-    let mut cli = CnosdbCliDef::new().run();
+    let mut ctx = E2eContext::new("client_tests", "client_join_generate_physical");
+    let mut executor = ctx.build_executor(cluster_def::one_data(1));
+    let host_port = executor.cluster_definition().data_cluster_def[0].http_host_port;
+    let port = host_port.port().to_string();
+    let api_v1_sql_url = &format!("http://{host_port}/api/v1/sql?db=public");
+    let test_data_path = get_workspace_dir().join("e2e_test/test_data/oceanic_station.txt");
+
+    executor.startup();
+
+    let mut cli = CnosdbCliDef::with_args(&["--port", port.as_str()]).run();
     // Ignore cnosdb-cli startup messages.
     cli.skip();
-    cli.write(&[&format!(
-        "\\w {}/e2e_test/test_data/oceanic_station.txt\n",
-        get_workspace_dir().as_os_str().to_str().unwrap()
-    )])
-    .unwrap();
+    cli.write(&[&format!("\\w {}\n", test_data_path.display())])
+        .unwrap();
     let (stdout, stderr) = cli.read_after_write(Duration::from_secs(1)).unwrap();
     assert!(
         stdout.starts_with("Query took"),
@@ -518,66 +481,71 @@ fn client_join_generate_physical() {
     );
 
     sleep(Duration::from_secs(1));
-    let resp = _server
-        .client
-        .post("http://127.0.0.1:8902/api/v1/sql?db=public", "WITH l as (SELECT date_trunc('day', time) AS day, avg (temperature) AS day_temperature, station
-        FROM sea
-        WHERE station = 'LianYunGang'
-        AND time >= '2022-01-15T00:00:00'
-        AND time
-        < '2022-02-16T00:00:00'
-        GROUP BY station, day),
-        x as
-        (
-        SELECT date_trunc('day', time) AS day, avg (speed) AS day_speed, station
-        FROM wind
-        WHERE station = 'XiaoMaiDao'
-        AND time >= '2022-01-15T00:00:00'
-        AND time
-        < '2022-02-16T00:00:00'
-        GROUP BY station, day)
-        SELECT * FROM l JOIN x ON x.day= l.day")
-        .unwrap();
+
+    let client = executor.case_context().data_client(0);
+    let resp = check_response!(client.post(
+        api_v1_sql_url,
+        "WITH l as (
+            SELECT date_trunc('day', time) AS day, avg (temperature) AS day_temperature, station
+            FROM sea
+            WHERE station = 'LianYunGang'
+                AND time >= '2022-01-15T00:00:00'
+                AND time < '2022-02-16T00:00:00'
+            GROUP BY station, day
+        ), x as (
+            SELECT date_trunc('day', time) AS day, avg (speed) AS day_speed, station
+            FROM wind
+            WHERE station = 'XiaoMaiDao'
+                AND time >= '2022-01-15T00:00:00'
+                AND time < '2022-02-16T00:00:00'
+            GROUP BY station, day
+        )
+        SELECT * FROM l JOIN x ON x.day= l.day"
+    ));
 
     assert_eq!(
         resp.text().unwrap(),
-        "day,day_temperature,station,day,day_speed,station\n2022-02-06T00:00:00.000000000,66.94915254237289,LianYunGang,2022-02-06T00:00:00.000000000,65.55,XiaoMaiDao\n"
+        [
+            "day,day_temperature,station,day,day_speed,station",
+            "2022-02-06T00:00:00.000000000,66.94915254237289,LianYunGang,2022-02-06T00:00:00.000000000,65.55,XiaoMaiDao",
+            "",
+        ].join("\n"),
     );
 }
 
 #[test]
-#[serial]
 fn explain_time_count_tests() {
-    let test_dir = "/tmp/e2e_test/client_tests/explain_time_count_tests";
-    let server = new_server(test_dir);
+    let mut ctx = E2eContext::new("client_tests", "explain_time_count_tests");
+    let mut executor = ctx.build_executor(cluster_def::one_data(1));
+    let host_port = executor.cluster_definition().data_cluster_def[0].http_host_port;
+    let api_v1_sql_url = &format!("http://{host_port}/api/v1/sql?db=public");
 
-    let url = "http://127.0.0.1:8902/api/v1/sql?db=public";
-    server
-        .client
-        .post(url, "CREATE TABLE IF NOT EXISTS m0(f0 STRING , TAGS(t0) );")
-        .unwrap();
+    executor.startup();
 
-    server
-        .client
-        .post(
-            url,
-            "INSERT m0(TIME, f0, t0) VALUES(30737363596320556,'2001-10-10','sd');",
-        )
-        .unwrap();
+    let client = executor.case_context().data_client(0);
+    check_response!(client.post(
+        api_v1_sql_url,
+        "CREATE TABLE IF NOT EXISTS m0(f0 STRING , TAGS(t0) );"
+    ));
+
+    check_response!(client.post(
+        api_v1_sql_url,
+        "INSERT m0(TIME, f0, t0) VALUES(30737363596320556,'2001-10-10','sd');",
+    ));
 
     {
-        let resp = server
-            .client
-            .post(url, "explain select time from m0 where f0 >= '1997-01-31';")
-            .unwrap();
+        let resp = check_response!(client.post(
+            api_v1_sql_url,
+            "explain select time from m0 where f0 >= '1997-01-31';"
+        ));
 
         let mut expected_resp_lines = [
-            "plan_type,plan",
-            "logical_plan,\"Projection: m0.time",
-            "  TableScan: m0 projection=[time, f0], full_filters=[m0.f0 >= Utf8(\"\"1997-01-31\"\")]\"",
-            "physical_plan,\"ProjectionExec: expr=[time@0 as time]",
-            "  TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: \"\"f0\"\" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Utf8, value: Some(Utf8(\"\"1997-01-31\"\")), bound: Exactly }: Range { low: Marker { data_type: Utf8, value: Some(Utf8(\"\"1997-01-31\"\")), bound: Exactly }, high: Marker { data_type: Utf8, value: None, bound: Below } }} })}) }, filter=Some(\"\"f0@1 >= 1997-01-31\"\"), split_num=1, projection=[time,f0]",
-            "\"",
+            r#"plan_type,plan"#,
+            r#"logical_plan,"Projection: m0.time"#,
+            r#"  TableScan: m0 projection=[time, f0], full_filters=[m0.f0 >= Utf8(""1997-01-31"")]""#,
+            r#"physical_plan,"ProjectionExec: expr=[time@0 as time]"#,
+            r#"  TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: ""f0"" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Utf8, value: Some(Utf8(""1997-01-31"")), bound: Exactly }: Range { low: Marker { data_type: Utf8, value: Some(Utf8(""1997-01-31"")), bound: Exactly }, high: Marker { data_type: Utf8, value: None, bound: Below } }} })}) }, filter=Some(""f0@1 >= 1997-01-31""), split_num=1, projection=[time,f0]"#,
+            r#"""#,
             "",
         ];
         let resp_string = resp.text().unwrap();
@@ -596,10 +564,8 @@ fn explain_time_count_tests() {
     }
 
     {
-        let resp = server
-            .client
-            .post(url, "explain select exact_count(*) from m0;")
-            .unwrap();
+        let resp =
+            check_response!(client.post(api_v1_sql_url, "explain select exact_count(*) from m0;"));
 
         let mut expected_resp_lines = [
             "plan_type,plan",
@@ -655,23 +621,28 @@ fn explain_time_count_tests() {
 }
 
 #[test]
-#[serial]
 fn test_cnosdb_cli_and_client() {
+    let mut ctx = E2eContext::new("client_tests", "cnosdb_cli_and_client");
+    let mut executor = ctx.build_executor(cluster_def::one_data(1));
+    let host_port = executor.cluster_definition().data_cluster_def[0].http_host_port;
+    let port = host_port.port().to_string();
+    let api_v1_sql_url = &format!("http://{host_port}/api/v1/sql?db=public");
+
+    executor.startup();
+
     // test for issue2019
-    let test_dir = "/tmp/e2e_test/client_tests/cnosdb_cli_and_client";
-    // just open the server
-    let server = new_server(test_dir);
-    let mut cnosdb_cli = CnosdbCliDef::new().run();
+    let mut cnosdb_cli: CnosdbCommandLineInterfaceHelper =
+        CnosdbCliDef::with_args(&["--port", port.as_str()]).run();
     // Ignore cnosdb-cli startup messages.
     cnosdb_cli.skip();
 
+    let client = executor.case_context().data_client(0);
     {
         // data prepare
-        let url = "http://127.0.0.1:8902/api/v1/sql?db=public";
-        server
-            .client
-            .post(url, "create table test(str_col string, tags(ta));")
-            .unwrap();
+        check_response!(client.post(
+            api_v1_sql_url,
+            "create table test(str_col string, tags(ta));"
+        ));
         sleep(Duration::from_secs(1));
     }
     {
@@ -681,19 +652,18 @@ fn test_cnosdb_cli_and_client() {
         sleep(Duration::from_secs(1));
     }
     {
-        let url = "http://127.0.0.1:8902/api/v1/sql?db=public";
-        check_response!(server
-            .client
-            .post(url, "insert into test(str_col,ta)values('a2',';str');"));
+        check_response!(client.post(
+            api_v1_sql_url,
+            "insert into test(str_col,ta)values('a2',';str');"
+        ));
         sleep(Duration::from_secs(1));
 
-        let resp = server
-            .client
-            .post(url, "select str_col,ta from test order by str_col;")
-            .unwrap();
-        sleep(Duration::from_secs(1));
-
+        let resp = check_response!(client.post(
+            api_v1_sql_url,
+            "select str_col,ta from test order by str_col;"
+        ));
         assert_eq!(resp.text().unwrap(), "str_col,ta\na1,str;str\na2,;str\n");
+        sleep(Duration::from_secs(1));
     }
     {
         cnosdb_cli.skip();
@@ -718,7 +688,6 @@ fn test_cnosdb_cli_and_client() {
     }
 }
 
-#[serial]
 #[test]
 fn test_cnosdb_cli_trim_cmd() {
     {
@@ -732,7 +701,6 @@ fn test_cnosdb_cli_trim_cmd() {
     }
 }
 
-#[serial]
 #[test]
 fn cnosdb_cli_help_test() {
     {

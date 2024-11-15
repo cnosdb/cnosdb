@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 mod api_router_tests;
 mod dump;
 mod grpc_gzip_test;
@@ -8,7 +10,6 @@ mod version_check;
 #[cfg(feature = "coordinator_e2e_test")]
 mod coordinator_tests;
 
-//#[cfg(feature = "not_passed")]
 mod chaos_tests;
 
 mod auth_tests;
