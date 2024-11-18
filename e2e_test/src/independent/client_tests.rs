@@ -321,7 +321,7 @@ fn simple_test() {
 
         assert_eq!(
             resp.text().unwrap(),
-            "{\"error_code\":\"010001\",\"error_message\":\"Datafusion: Error during planning: Table not found, tenant: tenant_a db: db1, table: air_a\"}",
+            "{\"error_code\":\"030019\",\"error_message\":\"Table not found: \\\"tenant_a.db1.air_a\\\"\"}",
         );
 
         check_response!(client.post(url, "CREATE DATABASE db1;;"));

@@ -16,3 +16,4 @@ mod client_tests;
 mod computing_storage_tests;
 mod flush_tests;
 mod replica_test;
+mod stream_computing;

@@ -17,6 +17,9 @@ pub struct MetricsRegister {
     /// Metrics and sub-registers in this register will inherit these labels.
     labels: Labels,
 
+    /// Just report one time
+    one_time: Mutex<Vec<Box<dyn Measure>>>,
+
     /// The metrics registered in this register.
     measures: Mutex<BTreeMap<Cow<'static, str>, Box<dyn Measure>>>,
 
@@ -40,7 +43,12 @@ impl MetricsRegister {
             labels: labels.into(),
             measures: Default::default(),
             sub_register: Default::default(),
+            one_time: Default::default(),
         }
+    }
+
+    pub fn labels(&self) -> Labels {
+        self.labels.clone()
     }
 
     /// Create a sub-register with the given labels and the external labels.
@@ -96,6 +104,11 @@ impl MetricsRegister {
         }
     }
 
+    pub fn append_onetime(&self, mut metrics: Vec<Box<dyn Measure>>) {
+        let mut one_time = self.one_time.lock();
+        one_time.append(&mut metrics);
+    }
+
     /// Register a metric with the manual implementation of CreateMetricRecorder and return Metric<I>,
     /// type `<I>` could be `U64Counter`, `U64Gauge`, `DurationGauge`, `DurationCounter`, `U64Histogram`, `DurationHistogram`.
     ///
@@ -135,6 +148,14 @@ impl MetricsRegister {
             measure.report(reporter)
         }
         drop(measures);
+
+        let mut one_time = self.one_time.lock();
+        for measure in one_time.iter() {
+            measure.report(reporter)
+        }
+        one_time.clear();
+        drop(one_time);
+
         self.sub_register
             .lock()
             .iter()

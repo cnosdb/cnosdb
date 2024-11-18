@@ -43,7 +43,7 @@ select * from test;
 2022-11-03T06:20:11.001 10
 
 
-statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan:  sql parser error: database config is unmodifiable, only can modify database option: TTL, SHARD, VNODE_DURATION, REPLICA", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: database config is unmodifiable, only can modify database option: TTL, SHARD, VNODE_DURATION, REPLICA", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
 alter database db_precision set precision 'us';
 
 

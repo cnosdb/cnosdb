@@ -147,6 +147,7 @@ impl EntryStorage for HeedEntryStorage {
         Ok(EntriesMetrics {
             min_seq: first.log_id.index,
             max_seq: last.log_id.index,
+            avg_write_time: 0,
         })
     }
 

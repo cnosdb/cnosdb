@@ -65,7 +65,7 @@ SELECT approx_distinct(u_val) FROM tbl_with_nulls;
 
 
 # Test approx_distinct with invalid syntax
-query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Table not found, tenant: cnosdb db: public, table: tbl", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Meta: Table not found: \\"cnosdb\.public\.tbl\\"", *
 SELECT approx_distinct FROM tbl;
 
 query 

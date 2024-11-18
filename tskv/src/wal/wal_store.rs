@@ -1,3 +1,4 @@
+use metrics::average::U64Average;
 use openraft::{EntryPayload, LogId};
 use protos::kv_service::RaftWriteCommand;
 use protos::models_helper::parse_prost_bytes;
@@ -20,6 +21,7 @@ pub type RaftLogMembership = openraft::Membership<RaftNodeId, RaftNodeInfo>;
 
 pub struct RaftEntryStorage {
     inner: RaftEntryStorageInner,
+    write_duration: U64Average,
 }
 
 impl RaftEntryStorage {
@@ -30,6 +32,8 @@ impl RaftEntryStorage {
                 files_meta: vec![],
                 entry_cache: cache::CircularKVCache::new(256),
             },
+
+            write_duration: U64Average::default(),
         }
     }
 
@@ -73,6 +77,7 @@ impl EntryStorage for RaftEntryStorage {
             return Ok(());
         }
 
+        let start_time = std::time::Instant::now();
         for ent in entries {
             let (wal_id, pos) = self
                 .inner
@@ -86,6 +91,9 @@ impl EntryStorage for RaftEntryStorage {
                 .await
                 .map_err(|e| ReplicationError::RaftInternalErr { msg: e.to_string() })?;
         }
+
+        self.write_duration
+            .add(start_time.elapsed().as_micros() as u64);
         Ok(())
     }
 
@@ -124,10 +132,13 @@ impl EntryStorage for RaftEntryStorage {
     }
 
     async fn metrics(&mut self) -> ReplicationResult<EntriesMetrics> {
-        Ok(EntriesMetrics {
+        let metrics = EntriesMetrics {
             min_seq: self.inner.min_sequence(),
             max_seq: self.inner.max_sequence(),
-        })
+            avg_write_time: self.write_duration.average(),
+        };
+
+        Ok(metrics)
     }
     async fn sync(&mut self) -> ReplicationResult<()> {
         let _ = self.inner.wal.sync().await;
@@ -539,7 +550,7 @@ mod test {
         let wal_option = crate::kv_option::WalOptions {
             path: dir.to_path_buf(),
             wal_max_file_size: 1024 * 1024 * 1024,
-            compress: "zstd".to_string(),
+            compress: 8.into(),
             wal_sync: false,
         };
 
@@ -599,7 +610,7 @@ mod test {
                     continue;
                 }
 
-                let wal_reocrd = WalRecordData::new(record.data, record.pos, "zstd").unwrap();
+                let wal_reocrd = WalRecordData::new(record.data, record.pos, 8.into()).unwrap();
                 let entry = wal_reocrd.block;
                 storage
                     .inner

@@ -6,6 +6,7 @@ use crate::metric_type::MetricType;
 pub enum MetricValue {
     U64Counter(u64),
     U64Gauge(u64),
+    U64Average(u64),
     DurationCounter(Duration),
     DurationGauge(Duration),
     U64Histogram(HistogramValue<u64>),
@@ -18,6 +19,7 @@ impl MetricValue {
         match self {
             Self::U64Gauge(_) => MetricType::U64Gauge,
             Self::U64Counter(_) => MetricType::U64Counter,
+            Self::U64Average(_) => MetricType::U64Average,
             Self::DurationCounter(_) => MetricType::DurationCounter,
             Self::DurationGauge(_) => MetricType::DurationGauge,
             Self::U64Histogram(_) => MetricType::U64Histogram,

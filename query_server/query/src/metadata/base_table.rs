@@ -4,6 +4,7 @@ use coordinator::service::CoordinatorRef;
 use datafusion::common::Result as DFResult;
 use datafusion::datasource::listing::{ListingTable, ListingTableConfig, ListingTableUrl};
 use datafusion::error::DataFusionError;
+use meta::error::MetaError;
 use meta::model::MetaClientRef;
 use models::schema::table_schema::TableSchema;
 use spi::query::datasource::stream::StreamProviderManagerRef;
@@ -43,20 +44,26 @@ impl TableHandleProvider for BaseTableProvider {
             .get_db_schema(database_name)
             .map_err(|e| DataFusionError::External(Box::new(e)))?
             .ok_or_else(|| {
-                DataFusionError::Plan(format!(
-                    "Table not found, tenant: {} db: {}, table: {}",
-                    self.meta_client.tenant_name(),
-                    database_name,
-                    table_name,
-                ))
+                DataFusionError::External(Box::new(MetaError::TableNotFound {
+                    table: format!(
+                        "{}.{}.{}",
+                        self.meta_client.tenant_name(),
+                        database_name,
+                        table_name
+                    ),
+                }))
             })?;
 
         if db_schema.is_hidden() {
-            return Err(DataFusionError::Plan(format!(
-                "Table not found, tenant: {} db: {}, table: {}",
-                self.meta_client.tenant_name(),
-                database_name,
-                table_name,
+            return Err(DataFusionError::External(Box::new(
+                MetaError::TableNotFound {
+                    table: format!(
+                        "{}.{}.{}",
+                        self.meta_client.tenant_name(),
+                        database_name,
+                        table_name
+                    ),
+                },
             )));
         }
 
@@ -88,11 +95,15 @@ impl TableHandleProvider for BaseTableProvider {
                     .into(),
             },
             None => {
-                return Err(DataFusionError::Plan(format!(
-                    "Table not found, tenant: {} db: {}, table: {}",
-                    self.meta_client.tenant_name(),
-                    database_name,
-                    table_name,
+                return Err(DataFusionError::External(Box::new(
+                    MetaError::TableNotFound {
+                        table: format!(
+                            "{}.{}.{}",
+                            self.meta_client.tenant_name(),
+                            database_name,
+                            table_name
+                        ),
+                    },
                 )));
             }
         };

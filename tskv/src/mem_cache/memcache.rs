@@ -63,6 +63,10 @@ impl MemCacheSeriesScanIterator {
 
         Self { index: 0, serieses }
     }
+
+    pub fn series_count(&self) -> u64 {
+        self.serieses.len() as u64
+    }
 }
 
 impl Iterator for MemCacheSeriesScanIterator {

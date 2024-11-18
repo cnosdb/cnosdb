@@ -76,10 +76,10 @@ DROP TENANT t2;
 statement ok
 CREATE TENANT t3 WITH drop_after='1d';
 
-statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Expected option \[comment\], \[_limiter\], \[drop_after\] found \[tenant_is_hidden\]", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Unknown tenant option: tenant_is_hidden", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
 ALTER TENANT t3 SET tenant_is_hidden=true;
 
-statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Expected option \[comment\], \[_limiter\], \[drop_after\] found \[tenant_is_hidden\]", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Unknown tenant option: tenant_is_hidden", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
 ALTER TENANT t3 SET tenant_is_hidden=false;
 
 statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Expected option \[comment\], \[_limiter\], \[drop_after\] found \[tenant_is_hidden\]", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
@@ -171,19 +171,37 @@ CREATE TENANT t11 WITH comment='☀';
 statement ok
 DROP TENANT t11;
 
-statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Expected a value, found: ;", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Expected literal string, found: ;", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
 CREATE TENANT t12 WITH comment;
 
 statement ok
 drop tenant if exists t_001;
 
 statement ok
-create tenant t_001 with comment='t_001 first comment', _limiter='{ "object_config": { "max_users_number": 1, "max_databases": 3, "max_shard_number": 2, "max_replicate_number": 2, "max_retention_time": 30 }, "request_config": { "data_in": { "remote_bucket": { "max": 10000, "initial": 0, "refill": 10000, "interval": 100 }, "local_bucket": { "max": 10000, "initial": 0 } }, "data_out": { "remote_bucket": { "max": 100, "initial": 0, "refill": 100, "interval": 100 }, "local_bucket": { "max": 100, "initial": 0 } }, "queries": null, "writes": null } }',drop_after='7d';
+create tenant t_001 with comment='t_001 first comment',
+object_config max_users_number= 1
+ max_databases= 3
+  max_shard_number= 2
+  max_replicate_number= 2
+ max_retention_time= 30 ,
+ coord_data_in              remote_max = 10000
+                            remote_initial = 0
+                            remote_refill = 10000
+                            remote_interval = 100
+                            local_max = 10000
+                            local_initial = 0,
+        coord_data_out             remote_max = 100
+                            remote_initial = 0
+                            remote_refill = 100
+                            remote_interval = 100
+                            local_max = 100
+                            local_initial = 0,
+        drop_after='7d';
 
 query T
 select * from cluster_schema.tenants where tenant_name='t_001';
 ----
-"t_001" "{\"comment\":\"t_001 first comment\",\"limiter_config\":{\"object_config\":{\"max_users_number\":1,\"max_databases\":3,\"max_shard_number\":2,\"max_replicate_number\":2,\"max_retention_time\":30},\"request_config\":{\"coord_data_in\":null,\"coord_data_out\":null,\"coord_queries\":null,\"coord_writes\":null,\"http_data_in\":null,\"http_data_out\":null,\"http_queries\":null,\"http_writes\":null}},\"drop_after\":{\"duration\":{\"secs\":604800,\"nanos\":0},\"is_inf\":false},\"tenant_is_hidden\":false}"
+"t_001" "{\"comment\":\"t_001 first comment\",\"limiter_config\":{\"object_config\":{\"max_users_number\":1,\"max_databases\":3,\"max_shard_number\":2,\"max_replicate_number\":2,\"max_retention_time\":30},\"request_config\":{\"coord_data_in\":{\"remote_bucket\":{\"max\":10000,\"initial\":0,\"refill\":10000,\"interval\":100},\"local_bucket\":{\"max\":10000,\"initial\":0}},\"coord_data_out\":{\"remote_bucket\":{\"max\":100,\"initial\":0,\"refill\":100,\"interval\":100},\"local_bucket\":{\"max\":100,\"initial\":0}},\"coord_queries\":null,\"coord_writes\":null,\"http_data_in\":null,\"http_data_out\":null,\"http_queries\":null,\"http_writes\":null}},\"drop_after\":{\"duration\":{\"secs\":604800,\"nanos\":0},\"is_inf\":false},\"tenant_is_hidden\":false}"
 
 statement ok
 alter tenant t_001 set comment='  ';
@@ -191,7 +209,7 @@ alter tenant t_001 set comment='  ';
 query T
 select * from cluster_schema.tenants where tenant_name='t_001';
 ----
-"t_001" "{\"comment\":\"  \",\"limiter_config\":{\"object_config\":{\"max_users_number\":1,\"max_databases\":3,\"max_shard_number\":2,\"max_replicate_number\":2,\"max_retention_time\":30},\"request_config\":{\"coord_data_in\":null,\"coord_data_out\":null,\"coord_queries\":null,\"coord_writes\":null,\"http_data_in\":null,\"http_data_out\":null,\"http_queries\":null,\"http_writes\":null}},\"drop_after\":{\"duration\":{\"secs\":604800,\"nanos\":0},\"is_inf\":false},\"tenant_is_hidden\":false}"
+"t_001" "{\"comment\":\"  \",\"limiter_config\":{\"object_config\":{\"max_users_number\":1,\"max_databases\":3,\"max_shard_number\":2,\"max_replicate_number\":2,\"max_retention_time\":30},\"request_config\":{\"coord_data_in\":{\"remote_bucket\":{\"max\":10000,\"initial\":0,\"refill\":10000,\"interval\":100},\"local_bucket\":{\"max\":10000,\"initial\":0}},\"coord_data_out\":{\"remote_bucket\":{\"max\":100,\"initial\":0,\"refill\":100,\"interval\":100},\"local_bucket\":{\"max\":100,\"initial\":0}},\"coord_queries\":null,\"coord_writes\":null,\"http_data_in\":null,\"http_data_out\":null,\"http_queries\":null,\"http_writes\":null}},\"drop_after\":{\"duration\":{\"secs\":604800,\"nanos\":0},\"is_inf\":false},\"tenant_is_hidden\":false}"
 
 statement ok
 alter tenant t_001 set comment='数据库是一种用于存储和管理数据的软件系统，它可以帮助组织和个人有效地管理和检索大量数据。数据库通常由一个或多个表组成，每个表包含一组相关的数据字段和记录。数据库系统的主要功能包括：\
@@ -205,7 +223,7 @@ alter tenant t_001 set comment='数据库是一种用于存储和管理数据的
 query T
 select * from cluster_schema.tenants where tenant_name='t_001';
 ----
-"t_001" "{\"comment\":\"数据库是一种用于存储和管理数据的软件系统，它可以帮助组织和个人有效地管理和检索大量数据。数据库通常由一个或多个表组成，每个表包含一组相关的数据字段和记录。数据库系统的主要功能包括：\\\n1. 数据存储：数据库可以存储大量的数据，包括文本、图像、音频、视频等各种类型的数据。\\\n2. 数据管理：数据库可以对数据进行管理，包括添加、修改、删除、查询等操作。\\\n3. 数据检索：数据库可以根据用户的需求快速检索数据，提供高效的数据查询和检索服务。\\\n4. 数据安全：数据库可以提供数据安全保护，包括数据加密、用户认证、访问控制等措施，确保数据的安全性和完整性。\\\n5. 数据共享：数据库可以实现数据共享，允许多个用户同时访问和操作数据，提高数据的利用率和工作效率。\\\n常见的数据库管理系统包括关系型数据库管理系统（如 MySQL、Oracle、SQL Server 等）、非关系型数据库管理系统（如 MongoDB、Cassandra、Redis 等）、分布式数据库管理系统（如 Hadoop、Spark 等）等。不同类型的数据库管理系统适用于不同的应用场景和数据规模。\",\"limiter_config\":{\"object_config\":{\"max_users_number\":1,\"max_databases\":3,\"max_shard_number\":2,\"max_replicate_number\":2,\"max_retention_time\":30},\"request_config\":{\"coord_data_in\":null,\"coord_data_out\":null,\"coord_queries\":null,\"coord_writes\":null,\"http_data_in\":null,\"http_data_out\":null,\"http_queries\":null,\"http_writes\":null}},\"drop_after\":{\"duration\":{\"secs\":604800,\"nanos\":0},\"is_inf\":false},\"tenant_is_hidden\":false}"
+"t_001" "{\"comment\":\"数据库是一种用于存储和管理数据的软件系统，它可以帮助组织和个人有效地管理和检索大量数据。数据库通常由一个或多个表组成，每个表包含一组相关的数据字段和记录。数据库系统的主要功能包括：\\\n1. 数据存储：数据库可以存储大量的数据，包括文本、图像、音频、视频等各种类型的数据。\\\n2. 数据管理：数据库可以对数据进行管理，包括添加、修改、删除、查询等操作。\\\n3. 数据检索：数据库可以根据用户的需求快速检索数据，提供高效的数据查询和检索服务。\\\n4. 数据安全：数据库可以提供数据安全保护，包括数据加密、用户认证、访问控制等措施，确保数据的安全性和完整性。\\\n5. 数据共享：数据库可以实现数据共享，允许多个用户同时访问和操作数据，提高数据的利用率和工作效率。\\\n常见的数据库管理系统包括关系型数据库管理系统（如 MySQL、Oracle、SQL Server 等）、非关系型数据库管理系统（如 MongoDB、Cassandra、Redis 等）、分布式数据库管理系统（如 Hadoop、Spark 等）等。不同类型的数据库管理系统适用于不同的应用场景和数据规模。\",\"limiter_config\":{\"object_config\":{\"max_users_number\":1,\"max_databases\":3,\"max_shard_number\":2,\"max_replicate_number\":2,\"max_retention_time\":30},\"request_config\":{\"coord_data_in\":{\"remote_bucket\":{\"max\":10000,\"initial\":0,\"refill\":10000,\"interval\":100},\"local_bucket\":{\"max\":10000,\"initial\":0}},\"coord_data_out\":{\"remote_bucket\":{\"max\":100,\"initial\":0,\"refill\":100,\"interval\":100},\"local_bucket\":{\"max\":100,\"initial\":0}},\"coord_queries\":null,\"coord_writes\":null,\"http_data_in\":null,\"http_data_out\":null,\"http_queries\":null,\"http_writes\":null}},\"drop_after\":{\"duration\":{\"secs\":604800,\"nanos\":0},\"is_inf\":false},\"tenant_is_hidden\":false}"
 
 statement ok
 alter tenant t_001 set comment='X~As&]n@]1IPRh8B|LSE^z?x0gJ?MY<[UBR[}K\dzWAp*K&,>N';
@@ -213,7 +231,7 @@ alter tenant t_001 set comment='X~As&]n@]1IPRh8B|LSE^z?x0gJ?MY<[UBR[}K\dzWAp*K&,
 query T
 select * from cluster_schema.tenants where tenant_name='t_001';
 ----
-"t_001" "{\"comment\":\"X~As&]n@]1IPRh8B|LSE^z?x0gJ?MY<[UBR[}K\\dzWAp*K&,>N\",\"limiter_config\":{\"object_config\":{\"max_users_number\":1,\"max_databases\":3,\"max_shard_number\":2,\"max_replicate_number\":2,\"max_retention_time\":30},\"request_config\":{\"coord_data_in\":null,\"coord_data_out\":null,\"coord_queries\":null,\"coord_writes\":null,\"http_data_in\":null,\"http_data_out\":null,\"http_queries\":null,\"http_writes\":null}},\"drop_after\":{\"duration\":{\"secs\":604800,\"nanos\":0},\"is_inf\":false},\"tenant_is_hidden\":false}"
+"t_001" "{\"comment\":\"X~As&]n@]1IPRh8B|LSE^z?x0gJ?MY<[UBR[}K\\dzWAp*K&,>N\",\"limiter_config\":{\"object_config\":{\"max_users_number\":1,\"max_databases\":3,\"max_shard_number\":2,\"max_replicate_number\":2,\"max_retention_time\":30},\"request_config\":{\"coord_data_in\":{\"remote_bucket\":{\"max\":10000,\"initial\":0,\"refill\":10000,\"interval\":100},\"local_bucket\":{\"max\":10000,\"initial\":0}},\"coord_data_out\":{\"remote_bucket\":{\"max\":100,\"initial\":0,\"refill\":100,\"interval\":100},\"local_bucket\":{\"max\":100,\"initial\":0}},\"coord_queries\":null,\"coord_writes\":null,\"http_data_in\":null,\"http_data_out\":null,\"http_queries\":null,\"http_writes\":null}},\"drop_after\":{\"duration\":{\"secs\":604800,\"nanos\":0},\"is_inf\":false},\"tenant_is_hidden\":false}"
 
 statement ok
 alter tenant t_001 set comment='こんにちは、世界！,Bonjour, le monde!,Здравствуйте, мир!, Hola, mundo!, Guten Tag, die Welt!,Ciao, mondo!,Merhaba, dünya!,안녕하세요, 세계!';
@@ -221,7 +239,7 @@ alter tenant t_001 set comment='こんにちは、世界！,Bonjour, le monde!,�
 query T
 select * from cluster_schema.tenants where tenant_name='t_001';
 ----
-"t_001" "{\"comment\":\"こんにちは、世界！,Bonjour, le monde!,Здравствуйте, мир!, Hola, mundo!, Guten Tag, die Welt!,Ciao, mondo!,Merhaba, dünya!,안녕하세요, 세계!\",\"limiter_config\":{\"object_config\":{\"max_users_number\":1,\"max_databases\":3,\"max_shard_number\":2,\"max_replicate_number\":2,\"max_retention_time\":30},\"request_config\":{\"coord_data_in\":null,\"coord_data_out\":null,\"coord_queries\":null,\"coord_writes\":null,\"http_data_in\":null,\"http_data_out\":null,\"http_queries\":null,\"http_writes\":null}},\"drop_after\":{\"duration\":{\"secs\":604800,\"nanos\":0},\"is_inf\":false},\"tenant_is_hidden\":false}"
+"t_001" "{\"comment\":\"こんにちは、世界！,Bonjour, le monde!,Здравствуйте, мир!, Hola, mundo!, Guten Tag, die Welt!,Ciao, mondo!,Merhaba, dünya!,안녕하세요, 세계!\",\"limiter_config\":{\"object_config\":{\"max_users_number\":1,\"max_databases\":3,\"max_shard_number\":2,\"max_replicate_number\":2,\"max_retention_time\":30},\"request_config\":{\"coord_data_in\":{\"remote_bucket\":{\"max\":10000,\"initial\":0,\"refill\":10000,\"interval\":100},\"local_bucket\":{\"max\":10000,\"initial\":0}},\"coord_data_out\":{\"remote_bucket\":{\"max\":100,\"initial\":0,\"refill\":100,\"interval\":100},\"local_bucket\":{\"max\":100,\"initial\":0}},\"coord_queries\":null,\"coord_writes\":null,\"http_data_in\":null,\"http_data_out\":null,\"http_queries\":null,\"http_writes\":null}},\"drop_after\":{\"duration\":{\"secs\":604800,\"nanos\":0},\"is_inf\":false},\"tenant_is_hidden\":false}"
 
 statement ok
 alter tenant t_001 set drop_after = '7m';
@@ -229,7 +247,7 @@ alter tenant t_001 set drop_after = '7m';
 query T
 select * from cluster_schema.tenants where tenant_name='t_001';
 ----
-"t_001" "{\"comment\":\"こんにちは、世界！,Bonjour, le monde!,Здравствуйте, мир!, Hola, mundo!, Guten Tag, die Welt!,Ciao, mondo!,Merhaba, dünya!,안녕하세요, 세계!\",\"limiter_config\":{\"object_config\":{\"max_users_number\":1,\"max_databases\":3,\"max_shard_number\":2,\"max_replicate_number\":2,\"max_retention_time\":30},\"request_config\":{\"coord_data_in\":null,\"coord_data_out\":null,\"coord_queries\":null,\"coord_writes\":null,\"http_data_in\":null,\"http_data_out\":null,\"http_queries\":null,\"http_writes\":null}},\"drop_after\":{\"duration\":{\"secs\":420,\"nanos\":0},\"is_inf\":false},\"tenant_is_hidden\":false}"
+"t_001" "{\"comment\":\"こんにちは、世界！,Bonjour, le monde!,Здравствуйте, мир!, Hola, mundo!, Guten Tag, die Welt!,Ciao, mondo!,Merhaba, dünya!,안녕하세요, 세계!\",\"limiter_config\":{\"object_config\":{\"max_users_number\":1,\"max_databases\":3,\"max_shard_number\":2,\"max_replicate_number\":2,\"max_retention_time\":30},\"request_config\":{\"coord_data_in\":{\"remote_bucket\":{\"max\":10000,\"initial\":0,\"refill\":10000,\"interval\":100},\"local_bucket\":{\"max\":10000,\"initial\":0}},\"coord_data_out\":{\"remote_bucket\":{\"max\":100,\"initial\":0,\"refill\":100,\"interval\":100},\"local_bucket\":{\"max\":100,\"initial\":0}},\"coord_queries\":null,\"coord_writes\":null,\"http_data_in\":null,\"http_data_out\":null,\"http_queries\":null,\"http_writes\":null}},\"drop_after\":{\"duration\":{\"secs\":420,\"nanos\":0},\"is_inf\":false},\"tenant_is_hidden\":false}"
 
 statement ok
 alter tenant t_001 set drop_after = '7h';
@@ -237,7 +255,7 @@ alter tenant t_001 set drop_after = '7h';
 query T
 select * from cluster_schema.tenants where tenant_name='t_001';
 ----
-"t_001" "{\"comment\":\"こんにちは、世界！,Bonjour, le monde!,Здравствуйте, мир!, Hola, mundo!, Guten Tag, die Welt!,Ciao, mondo!,Merhaba, dünya!,안녕하세요, 세계!\",\"limiter_config\":{\"object_config\":{\"max_users_number\":1,\"max_databases\":3,\"max_shard_number\":2,\"max_replicate_number\":2,\"max_retention_time\":30},\"request_config\":{\"coord_data_in\":null,\"coord_data_out\":null,\"coord_queries\":null,\"coord_writes\":null,\"http_data_in\":null,\"http_data_out\":null,\"http_queries\":null,\"http_writes\":null}},\"drop_after\":{\"duration\":{\"secs\":25200,\"nanos\":0},\"is_inf\":false},\"tenant_is_hidden\":false}"
+"t_001" "{\"comment\":\"こんにちは、世界！,Bonjour, le monde!,Здравствуйте, мир!, Hola, mundo!, Guten Tag, die Welt!,Ciao, mondo!,Merhaba, dünya!,안녕하세요, 세계!\",\"limiter_config\":{\"object_config\":{\"max_users_number\":1,\"max_databases\":3,\"max_shard_number\":2,\"max_replicate_number\":2,\"max_retention_time\":30},\"request_config\":{\"coord_data_in\":{\"remote_bucket\":{\"max\":10000,\"initial\":0,\"refill\":10000,\"interval\":100},\"local_bucket\":{\"max\":10000,\"initial\":0}},\"coord_data_out\":{\"remote_bucket\":{\"max\":100,\"initial\":0,\"refill\":100,\"interval\":100},\"local_bucket\":{\"max\":100,\"initial\":0}},\"coord_queries\":null,\"coord_writes\":null,\"http_data_in\":null,\"http_data_out\":null,\"http_queries\":null,\"http_writes\":null}},\"drop_after\":{\"duration\":{\"secs\":25200,\"nanos\":0},\"is_inf\":false},\"tenant_is_hidden\":false}"
 
 statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: 7Y is not a valid duration or duration overflow", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
 alter tenant t_001 set drop_after = '7Y';
@@ -245,7 +263,7 @@ alter tenant t_001 set drop_after = '7Y';
 query T
 select * from cluster_schema.tenants where tenant_name='t_001';
 ----
-"t_001" "{\"comment\":\"こんにちは、世界！,Bonjour, le monde!,Здравствуйте, мир!, Hola, mundo!, Guten Tag, die Welt!,Ciao, mondo!,Merhaba, dünya!,안녕하세요, 세계!\",\"limiter_config\":{\"object_config\":{\"max_users_number\":1,\"max_databases\":3,\"max_shard_number\":2,\"max_replicate_number\":2,\"max_retention_time\":30},\"request_config\":{\"coord_data_in\":null,\"coord_data_out\":null,\"coord_queries\":null,\"coord_writes\":null,\"http_data_in\":null,\"http_data_out\":null,\"http_queries\":null,\"http_writes\":null}},\"drop_after\":{\"duration\":{\"secs\":25200,\"nanos\":0},\"is_inf\":false},\"tenant_is_hidden\":false}"
+"t_001" "{\"comment\":\"こんにちは、世界！,Bonjour, le monde!,Здравствуйте, мир!, Hola, mundo!, Guten Tag, die Welt!,Ciao, mondo!,Merhaba, dünya!,안녕하세요, 세계!\",\"limiter_config\":{\"object_config\":{\"max_users_number\":1,\"max_databases\":3,\"max_shard_number\":2,\"max_replicate_number\":2,\"max_retention_time\":30},\"request_config\":{\"coord_data_in\":{\"remote_bucket\":{\"max\":10000,\"initial\":0,\"refill\":10000,\"interval\":100},\"local_bucket\":{\"max\":10000,\"initial\":0}},\"coord_data_out\":{\"remote_bucket\":{\"max\":100,\"initial\":0,\"refill\":100,\"interval\":100},\"local_bucket\":{\"max\":100,\"initial\":0}},\"coord_queries\":null,\"coord_writes\":null,\"http_data_in\":null,\"http_data_out\":null,\"http_queries\":null,\"http_writes\":null}},\"drop_after\":{\"duration\":{\"secs\":25200,\"nanos\":0},\"is_inf\":false},\"tenant_is_hidden\":false}"
 
 statement ok
 alter tenant t_001 set drop_after = '7';
@@ -253,7 +271,7 @@ alter tenant t_001 set drop_after = '7';
 query T
 select * from cluster_schema.tenants where tenant_name='t_001';
 ----
-"t_001" "{\"comment\":\"こんにちは、世界！,Bonjour, le monde!,Здравствуйте, мир!, Hola, mundo!, Guten Tag, die Welt!,Ciao, mondo!,Merhaba, dünya!,안녕하세요, 세계!\",\"limiter_config\":{\"object_config\":{\"max_users_number\":1,\"max_databases\":3,\"max_shard_number\":2,\"max_replicate_number\":2,\"max_retention_time\":30},\"request_config\":{\"coord_data_in\":null,\"coord_data_out\":null,\"coord_queries\":null,\"coord_writes\":null,\"http_data_in\":null,\"http_data_out\":null,\"http_queries\":null,\"http_writes\":null}},\"drop_after\":{\"duration\":{\"secs\":604800,\"nanos\":0},\"is_inf\":false},\"tenant_is_hidden\":false}"
+"t_001" "{\"comment\":\"こんにちは、世界！,Bonjour, le monde!,Здравствуйте, мир!, Hola, mundo!, Guten Tag, die Welt!,Ciao, mondo!,Merhaba, dünya!,안녕하세요, 세계!\",\"limiter_config\":{\"object_config\":{\"max_users_number\":1,\"max_databases\":3,\"max_shard_number\":2,\"max_replicate_number\":2,\"max_retention_time\":30},\"request_config\":{\"coord_data_in\":{\"remote_bucket\":{\"max\":10000,\"initial\":0,\"refill\":10000,\"interval\":100},\"local_bucket\":{\"max\":10000,\"initial\":0}},\"coord_data_out\":{\"remote_bucket\":{\"max\":100,\"initial\":0,\"refill\":100,\"interval\":100},\"local_bucket\":{\"max\":100,\"initial\":0}},\"coord_queries\":null,\"coord_writes\":null,\"http_data_in\":null,\"http_data_out\":null,\"http_queries\":null,\"http_writes\":null}},\"drop_after\":{\"duration\":{\"secs\":604800,\"nanos\":0},\"is_inf\":false},\"tenant_is_hidden\":false}"
 
 statement ok
 alter tenant t_001 set drop_after = '0';
@@ -261,7 +279,7 @@ alter tenant t_001 set drop_after = '0';
 query T
 select * from cluster_schema.tenants where tenant_name='t_001';
 ----
-"t_001" "{\"comment\":\"こんにちは、世界！,Bonjour, le monde!,Здравствуйте, мир!, Hola, mundo!, Guten Tag, die Welt!,Ciao, mondo!,Merhaba, dünya!,안녕하세요, 세계!\",\"limiter_config\":{\"object_config\":{\"max_users_number\":1,\"max_databases\":3,\"max_shard_number\":2,\"max_replicate_number\":2,\"max_retention_time\":30},\"request_config\":{\"coord_data_in\":null,\"coord_data_out\":null,\"coord_queries\":null,\"coord_writes\":null,\"http_data_in\":null,\"http_data_out\":null,\"http_queries\":null,\"http_writes\":null}},\"drop_after\":{\"duration\":{\"secs\":0,\"nanos\":0},\"is_inf\":false},\"tenant_is_hidden\":false}"
+"t_001" "{\"comment\":\"こんにちは、世界！,Bonjour, le monde!,Здравствуйте, мир!, Hola, mundo!, Guten Tag, die Welt!,Ciao, mondo!,Merhaba, dünya!,안녕하세요, 세계!\",\"limiter_config\":{\"object_config\":{\"max_users_number\":1,\"max_databases\":3,\"max_shard_number\":2,\"max_replicate_number\":2,\"max_retention_time\":30},\"request_config\":{\"coord_data_in\":{\"remote_bucket\":{\"max\":10000,\"initial\":0,\"refill\":10000,\"interval\":100},\"local_bucket\":{\"max\":10000,\"initial\":0}},\"coord_data_out\":{\"remote_bucket\":{\"max\":100,\"initial\":0,\"refill\":100,\"interval\":100},\"local_bucket\":{\"max\":100,\"initial\":0}},\"coord_queries\":null,\"coord_writes\":null,\"http_data_in\":null,\"http_data_out\":null,\"http_queries\":null,\"http_writes\":null}},\"drop_after\":{\"duration\":{\"secs\":0,\"nanos\":0},\"is_inf\":false},\"tenant_is_hidden\":false}"
 
 statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: \-1d is not a valid duration or duration overflow", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
 alter tenant t_001 set drop_after = '-1d';
@@ -269,7 +287,7 @@ alter tenant t_001 set drop_after = '-1d';
 query T
 select * from cluster_schema.tenants where tenant_name='t_001';
 ----
-"t_001" "{\"comment\":\"こんにちは、世界！,Bonjour, le monde!,Здравствуйте, мир!, Hola, mundo!, Guten Tag, die Welt!,Ciao, mondo!,Merhaba, dünya!,안녕하세요, 세계!\",\"limiter_config\":{\"object_config\":{\"max_users_number\":1,\"max_databases\":3,\"max_shard_number\":2,\"max_replicate_number\":2,\"max_retention_time\":30},\"request_config\":{\"coord_data_in\":null,\"coord_data_out\":null,\"coord_queries\":null,\"coord_writes\":null,\"http_data_in\":null,\"http_data_out\":null,\"http_queries\":null,\"http_writes\":null}},\"drop_after\":{\"duration\":{\"secs\":0,\"nanos\":0},\"is_inf\":false},\"tenant_is_hidden\":false}"
+"t_001" "{\"comment\":\"こんにちは、世界！,Bonjour, le monde!,Здравствуйте, мир!, Hola, mundo!, Guten Tag, die Welt!,Ciao, mondo!,Merhaba, dünya!,안녕하세요, 세계!\",\"limiter_config\":{\"object_config\":{\"max_users_number\":1,\"max_databases\":3,\"max_shard_number\":2,\"max_replicate_number\":2,\"max_retention_time\":30},\"request_config\":{\"coord_data_in\":{\"remote_bucket\":{\"max\":10000,\"initial\":0,\"refill\":10000,\"interval\":100},\"local_bucket\":{\"max\":10000,\"initial\":0}},\"coord_data_out\":{\"remote_bucket\":{\"max\":100,\"initial\":0,\"refill\":100,\"interval\":100},\"local_bucket\":{\"max\":100,\"initial\":0}},\"coord_queries\":null,\"coord_writes\":null,\"http_data_in\":null,\"http_data_out\":null,\"http_queries\":null,\"http_writes\":null}},\"drop_after\":{\"duration\":{\"secs\":0,\"nanos\":0},\"is_inf\":false},\"tenant_is_hidden\":false}"
 
 statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: 18446744073709551615d is not a valid duration or duration overflow", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
 alter tenant t_001 set drop_after = '18446744073709551615d';
@@ -277,7 +295,7 @@ alter tenant t_001 set drop_after = '18446744073709551615d';
 query T
 select * from cluster_schema.tenants where tenant_name='t_001';
 ----
-"t_001" "{\"comment\":\"こんにちは、世界！,Bonjour, le monde!,Здравствуйте, мир!, Hola, mundo!, Guten Tag, die Welt!,Ciao, mondo!,Merhaba, dünya!,안녕하세요, 세계!\",\"limiter_config\":{\"object_config\":{\"max_users_number\":1,\"max_databases\":3,\"max_shard_number\":2,\"max_replicate_number\":2,\"max_retention_time\":30},\"request_config\":{\"coord_data_in\":null,\"coord_data_out\":null,\"coord_queries\":null,\"coord_writes\":null,\"http_data_in\":null,\"http_data_out\":null,\"http_queries\":null,\"http_writes\":null}},\"drop_after\":{\"duration\":{\"secs\":0,\"nanos\":0},\"is_inf\":false},\"tenant_is_hidden\":false}"
+"t_001" "{\"comment\":\"こんにちは、世界！,Bonjour, le monde!,Здравствуйте, мир!, Hola, mundo!, Guten Tag, die Welt!,Ciao, mondo!,Merhaba, dünya!,안녕하세요, 세계!\",\"limiter_config\":{\"object_config\":{\"max_users_number\":1,\"max_databases\":3,\"max_shard_number\":2,\"max_replicate_number\":2,\"max_retention_time\":30},\"request_config\":{\"coord_data_in\":{\"remote_bucket\":{\"max\":10000,\"initial\":0,\"refill\":10000,\"interval\":100},\"local_bucket\":{\"max\":10000,\"initial\":0}},\"coord_data_out\":{\"remote_bucket\":{\"max\":100,\"initial\":0,\"refill\":100,\"interval\":100},\"local_bucket\":{\"max\":100,\"initial\":0}},\"coord_queries\":null,\"coord_writes\":null,\"http_data_in\":null,\"http_data_out\":null,\"http_queries\":null,\"http_writes\":null}},\"drop_after\":{\"duration\":{\"secs\":0,\"nanos\":0},\"is_inf\":false},\"tenant_is_hidden\":false}"
 
 statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: 18446744073709551616d is not a valid duration or duration overflow", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
 alter tenant t_001 set drop_after = '18446744073709551616d';
@@ -285,7 +303,7 @@ alter tenant t_001 set drop_after = '18446744073709551616d';
 query T
 select * from cluster_schema.tenants where tenant_name='t_001';
 ----
-"t_001" "{\"comment\":\"こんにちは、世界！,Bonjour, le monde!,Здравствуйте, мир!, Hola, mundo!, Guten Tag, die Welt!,Ciao, mondo!,Merhaba, dünya!,안녕하세요, 세계!\",\"limiter_config\":{\"object_config\":{\"max_users_number\":1,\"max_databases\":3,\"max_shard_number\":2,\"max_replicate_number\":2,\"max_retention_time\":30},\"request_config\":{\"coord_data_in\":null,\"coord_data_out\":null,\"coord_queries\":null,\"coord_writes\":null,\"http_data_in\":null,\"http_data_out\":null,\"http_queries\":null,\"http_writes\":null}},\"drop_after\":{\"duration\":{\"secs\":0,\"nanos\":0},\"is_inf\":false},\"tenant_is_hidden\":false}"
+"t_001" "{\"comment\":\"こんにちは、世界！,Bonjour, le monde!,Здравствуйте, мир!, Hola, mundo!, Guten Tag, die Welt!,Ciao, mondo!,Merhaba, dünya!,안녕하세요, 세계!\",\"limiter_config\":{\"object_config\":{\"max_users_number\":1,\"max_databases\":3,\"max_shard_number\":2,\"max_replicate_number\":2,\"max_retention_time\":30},\"request_config\":{\"coord_data_in\":{\"remote_bucket\":{\"max\":10000,\"initial\":0,\"refill\":10000,\"interval\":100},\"local_bucket\":{\"max\":10000,\"initial\":0}},\"coord_data_out\":{\"remote_bucket\":{\"max\":100,\"initial\":0,\"refill\":100,\"interval\":100},\"local_bucket\":{\"max\":100,\"initial\":0}},\"coord_queries\":null,\"coord_writes\":null,\"http_data_in\":null,\"http_data_out\":null,\"http_queries\":null,\"http_writes\":null}},\"drop_after\":{\"duration\":{\"secs\":0,\"nanos\":0},\"is_inf\":false},\"tenant_is_hidden\":false}"
 
 statement ok
 alter tenant t_001 unset comment;
@@ -293,7 +311,7 @@ alter tenant t_001 unset comment;
 query T
 select * from cluster_schema.tenants where tenant_name='t_001';
 ----
-"t_001" "{\"comment\":null,\"limiter_config\":{\"object_config\":{\"max_users_number\":1,\"max_databases\":3,\"max_shard_number\":2,\"max_replicate_number\":2,\"max_retention_time\":30},\"request_config\":{\"coord_data_in\":null,\"coord_data_out\":null,\"coord_queries\":null,\"coord_writes\":null,\"http_data_in\":null,\"http_data_out\":null,\"http_queries\":null,\"http_writes\":null}},\"drop_after\":{\"duration\":{\"secs\":0,\"nanos\":0},\"is_inf\":false},\"tenant_is_hidden\":false}"
+"t_001" "{\"comment\":null,\"limiter_config\":{\"object_config\":{\"max_users_number\":1,\"max_databases\":3,\"max_shard_number\":2,\"max_replicate_number\":2,\"max_retention_time\":30},\"request_config\":{\"coord_data_in\":{\"remote_bucket\":{\"max\":10000,\"initial\":0,\"refill\":10000,\"interval\":100},\"local_bucket\":{\"max\":10000,\"initial\":0}},\"coord_data_out\":{\"remote_bucket\":{\"max\":100,\"initial\":0,\"refill\":100,\"interval\":100},\"local_bucket\":{\"max\":100,\"initial\":0}},\"coord_queries\":null,\"coord_writes\":null,\"http_data_in\":null,\"http_data_out\":null,\"http_queries\":null,\"http_writes\":null}},\"drop_after\":{\"duration\":{\"secs\":0,\"nanos\":0},\"is_inf\":false},\"tenant_is_hidden\":false}"
 
 statement ok
 alter tenant t_001 unset _limiter;
@@ -381,3 +399,140 @@ create tenant ' ';
 
 statement ok
 drop tenant if exists t_001;
+
+statement ok
+drop tenant if exists t_alter;
+
+statement ok
+create tenant t_alter with comment 'create and alter tenant',
+object_config 
+    max_users_number = 1
+    max_databases = 3
+    max_shard_number = 2
+    max_replicate_number = 2
+    max_retention_time = 30,
+coord_data_in   remote_max = 10000
+                remote_initial = 0
+                remote_refill = 10000
+                remote_interval = 100
+                local_max = 10000
+                local_initial = 0,
+coord_data_out  remote_max = 10000
+                remote_initial = 0
+                remote_refill = 10000
+                remote_interval = 100
+                local_max = 10000
+                local_initial = 0,
+coord_queries   remote_max = 10000
+                remote_initial = 0
+                remote_refill = 10000
+                remote_interval = 100
+                local_max = 10000
+                local_initial = 0,    
+coord_writes    remote_max = 10000
+                remote_initial = 0
+                remote_refill = 10000
+                remote_interval = 100
+                local_max = 10000
+                local_initial = 0,
+http_data_in   remote_max = 10000
+                remote_initial = 0
+                remote_refill = 10000
+                remote_interval = 100
+                local_max = 10000
+                local_initial = 0,
+http_data_out  remote_max = 10000
+                remote_initial = 0
+                remote_refill = 10000
+                remote_interval = 100
+                local_max = 10000
+                local_initial = 0,
+http_queries   remote_max = 10000
+                remote_initial = 0
+                remote_refill = 10000
+                remote_interval = 100
+                local_max = 10000
+                local_initial = 0,    
+http_writes    remote_max = 10000
+                remote_initial = 0
+                remote_refill = 10000
+                remote_interval = 100
+                local_max = 10000
+                local_initial = 0
+;
+
+
+
+query 
+select * from cluster_schema.tenants where tenant_name='t_alter';
+----
+"t_alter" "{\"comment\":\"create and alter tenant\",\"limiter_config\":{\"object_config\":{\"max_users_number\":1,\"max_databases\":3,\"max_shard_number\":2,\"max_replicate_number\":2,\"max_retention_time\":30},\"request_config\":{\"coord_data_in\":{\"remote_bucket\":{\"max\":10000,\"initial\":0,\"refill\":10000,\"interval\":100},\"local_bucket\":{\"max\":10000,\"initial\":0}},\"coord_data_out\":{\"remote_bucket\":{\"max\":10000,\"initial\":0,\"refill\":10000,\"interval\":100},\"local_bucket\":{\"max\":10000,\"initial\":0}},\"coord_queries\":{\"remote_bucket\":{\"max\":10000,\"initial\":0,\"refill\":10000,\"interval\":100},\"local_bucket\":{\"max\":10000,\"initial\":0}},\"coord_writes\":{\"remote_bucket\":{\"max\":10000,\"initial\":0,\"refill\":10000,\"interval\":100},\"local_bucket\":{\"max\":10000,\"initial\":0}},\"http_data_in\":{\"remote_bucket\":{\"max\":10000,\"initial\":0,\"refill\":10000,\"interval\":100},\"local_bucket\":{\"max\":10000,\"initial\":0}},\"http_data_out\":{\"remote_bucket\":{\"max\":10000,\"initial\":0,\"refill\":10000,\"interval\":100},\"local_bucket\":{\"max\":10000,\"initial\":0}},\"http_queries\":{\"remote_bucket\":{\"max\":10000,\"initial\":0,\"refill\":10000,\"interval\":100},\"local_bucket\":{\"max\":10000,\"initial\":0}},\"http_writes\":{\"remote_bucket\":{\"max\":10000,\"initial\":0,\"refill\":10000,\"interval\":100},\"local_bucket\":{\"max\":10000,\"initial\":0}}}},\"drop_after\":null,\"tenant_is_hidden\":false}"
+
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: Cannot set multiple options \(comment, drop_after, _limiter\) at the same time", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
+alter tenant t_alter set comment 'alter tenant',
+object_config 
+    max_users_number = 2
+    max_databases = 5
+    max_retention_time = 60,
+coord_data_in   remote_max = 20000
+                remote_initial = 0
+                remote_refill = 20000
+                remote_interval = 200
+                local_max = 20000
+                local_initial = 0,
+coord_data_out  remote_max = 20000
+                remote_initial = 0
+                
+                remote_interval = 200
+                local_max = 20000
+                local_initial = 0;
+
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: sql parser error: limiter format error:remote_initial,remote_refill,remote_interval,local_initial can't be empty", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
+alter tenant t_alter set
+object_config 
+    max_users_number = 2
+    max_databases = 5
+    max_retention_time = 60,
+coord_data_in   remote_max = 20000
+                remote_initial = 0
+                remote_refill = 20000
+                remote_interval = 200
+                local_max = 20000
+                local_initial = 0,
+coord_data_out  remote_max = 20000
+                remote_initial = 0
+                
+                remote_interval = 200
+                local_max = 20000
+                local_initial = 0;
+
+statement ok
+alter tenant t_alter set
+object_config 
+    max_users_number = 2
+    max_databases = 5
+    max_retention_time = 60,
+coord_data_in   remote_max = 20000
+                remote_initial = 0
+                remote_refill = 20000
+                remote_interval = 200
+                local_max = 20000
+                local_initial = 0,
+coord_data_out  remote_max = 20000
+                remote_initial = 0
+                remote_refill = 20000
+                remote_interval = 200
+                local_max = 20000
+                local_initial = 0;
+
+
+query 
+select * from cluster_schema.tenants where tenant_name='t_alter';
+----
+"t_alter" "{\"comment\":\"create and alter tenant\",\"limiter_config\":{\"object_config\":{\"max_users_number\":2,\"max_databases\":5,\"max_shard_number\":2,\"max_replicate_number\":2,\"max_retention_time\":60},\"request_config\":{\"coord_data_in\":{\"remote_bucket\":{\"max\":20000,\"initial\":0,\"refill\":20000,\"interval\":200},\"local_bucket\":{\"max\":20000,\"initial\":0}},\"coord_data_out\":{\"remote_bucket\":{\"max\":20000,\"initial\":0,\"refill\":20000,\"interval\":200},\"local_bucket\":{\"max\":20000,\"initial\":0}},\"coord_queries\":{\"remote_bucket\":{\"max\":10000,\"initial\":0,\"refill\":10000,\"interval\":100},\"local_bucket\":{\"max\":10000,\"initial\":0}},\"coord_writes\":{\"remote_bucket\":{\"max\":10000,\"initial\":0,\"refill\":10000,\"interval\":100},\"local_bucket\":{\"max\":10000,\"initial\":0}},\"http_data_in\":{\"remote_bucket\":{\"max\":10000,\"initial\":0,\"refill\":10000,\"interval\":100},\"local_bucket\":{\"max\":10000,\"initial\":0}},\"http_data_out\":{\"remote_bucket\":{\"max\":10000,\"initial\":0,\"refill\":10000,\"interval\":100},\"local_bucket\":{\"max\":10000,\"initial\":0}},\"http_queries\":{\"remote_bucket\":{\"max\":10000,\"initial\":0,\"refill\":10000,\"interval\":100},\"local_bucket\":{\"max\":10000,\"initial\":0}},\"http_writes\":{\"remote_bucket\":{\"max\":10000,\"initial\":0,\"refill\":10000,\"interval\":100},\"local_bucket\":{\"max\":10000,\"initial\":0}}}},\"drop_after\":null,\"tenant_is_hidden\":false}"
+
+
+statement ok
+drop tenant t_alter;

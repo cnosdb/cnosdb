@@ -39,7 +39,6 @@ mod iterator;
 mod memcache_reader;
 mod merge;
 mod metrics;
-mod page;
 mod paralle_merge;
 mod partitioned_stream;
 mod pushdown_agg_reader;
@@ -308,14 +307,7 @@ impl PartialOrd<Self> for DataReference {
 
 impl Ord for DataReference {
     fn cmp(&self, other: &Self) -> Ordering {
-        match (self, other) {
-            (DataReference::Chunk(_, _, _), DataReference::Memcache(_, _, _)) => Ordering::Less,
-            (DataReference::Memcache(_, _, _), DataReference::Chunk(_, _, _)) => Ordering::Greater,
-            (DataReference::Chunk(_, _, f1), DataReference::Chunk(_, _, f2)) => {
-                f1.file_id().cmp(&f2.file_id())
-            }
-            (DataReference::Memcache(_, _, c1), DataReference::Memcache(_, _, c2)) => c1.cmp(c2),
-        }
+        self.file_id().cmp(&other.file_id())
     }
 }
 
@@ -324,6 +316,13 @@ impl DataReference {
         match self {
             DataReference::Chunk(chunk, ..) => *chunk.time_range(),
             DataReference::Memcache(_, trs, ..) => trs.max_time_range(),
+        }
+    }
+
+    pub fn file_id(&self) -> ColumnFileId {
+        match self {
+            DataReference::Chunk(_, _, cf) => cf.file_id(),
+            DataReference::Memcache(_, _, cf_id) => *cf_id,
         }
     }
 }

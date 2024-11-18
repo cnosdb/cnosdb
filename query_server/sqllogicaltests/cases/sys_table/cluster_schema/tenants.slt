@@ -100,11 +100,48 @@ statement ok
 alter tenant test_ts_tenant1 set comment = 'hello world';
 
 statement ok
-alter tenant test_ts_tenant1 set _limiter = '{"object_config":{"max_users_number":1,"max_databases":3,"max_shard_number":2,"max_replicate_number":2,"max_retention_time":30},"request_config":{"coord_data_in":{"remote_bucket":{"max":100,"initial":0,"refill":100,"interval":100},"local_bucket":{"max":100,"initial":0}},"coord_data_out":{"remote_bucket":{"max":100,"initial":0,"refill":100,"interval":100},"local_bucket":{"max":100,"initial":0}},"coord_queries":null,"coord_writes":null}}';
+alter tenant test_ts_tenant1 set
+object_config max_users_number= 1
+ max_databases= 3
+  max_shard_number= 2
+  max_replicate_number= 2
+ max_retention_time= 30 ,
+ coord_data_in              remote_max = 100
+                            remote_initial = 0
+                            remote_refill = 100
+                            remote_interval = 100
+                            local_max = 100
+                            local_initial = 0,
+        coord_data_out             remote_max = 100
+                            remote_initial = 0
+                            remote_refill = 100
+                            remote_interval = 100
+                            local_max = 100
+                            local_initial = 0;
+
 
 
 statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Tenant cnosdb cannot be restricted", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
-alter tenant cnosdb set _limiter = '{"object_config":{"max_users_number":1,"max_databases":3,"max_shard_number":2,"max_replicate_number":2,"max_retention_time":30},"request_config":{"coord_data_in":{"remote_bucket":{"max":100,"initial":0,"refill":100,"interval":100},"local_bucket":{"max":100,"initial":0}},"coord_data_out":{"remote_bucket":{"max":100,"initial":0,"refill":100,"interval":100},"local_bucket":{"max":100,"initial":0}},"coord_queries":null,"coord_writes":null}}';
+alter tenant cnosdb set
+object_config 
+                            max_users_number= 1
+                            max_databases= 3
+                            max_shard_number= 2
+                            max_replicate_number= 2
+                            max_retention_time= 30 ,
+coord_data_in               remote_max = 100
+                            remote_initial = 0
+                            remote_refill = 100
+                            remote_interval = 100
+                            local_max = 100
+                            local_initial = 0,
+coord_data_out              remote_max = 100
+                            remote_initial = 0
+                            remote_refill = 100
+                            remote_interval = 100
+                            local_max = 100
+                            local_initial = 0;
+  
 
 
 query T rowsort
@@ -147,7 +184,7 @@ statement ok
 --#TENANT=test_ts_tenant1
 --#USER_NAME=root
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Table not found, tenant: test_ts_tenant1 db: cluster_schema, table: tenants", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Meta: Table not found: \\"test_ts_tenant1\.cluster_schema\.tenants\\"", *
 select * from cluster_schema.tenants where tenant_name in ('test_ts_tenant1');
 
 
@@ -155,7 +192,7 @@ statement ok
 --#TENANT=test_ts_tenant1
 --#USER_NAME=test_ts_u1
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Table not found, tenant: test_ts_tenant1 db: cluster_schema, table: tenants", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Meta: Table not found: \\"test_ts_tenant1\.cluster_schema\.tenants\\"", *
 select * from cluster_schema.tenants where tenant_name in ('test_ts_tenant1');
 
 
@@ -163,7 +200,7 @@ statement ok
 --#TENANT=test_ts_tenant1
 --#USER_NAME=test_ts_u2
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Table not found, tenant: test_ts_tenant1 db: cluster_schema, table: tenants", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Meta: Table not found: \\"test_ts_tenant1\.cluster_schema\.tenants\\"", *
 select * from cluster_schema.tenants where tenant_name in ('test_ts_tenant1');
 
 
