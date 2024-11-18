@@ -43,8 +43,8 @@ impl Tenant {
 pub struct TenantOptions {
     pub comment: Option<String>,
     pub limiter_config: Option<TenantLimiterConfig>,
-    drop_after: Option<CnosDuration>,
-    tenant_is_hidden: bool,
+    pub drop_after: Option<CnosDuration>,
+    pub tenant_is_hidden: bool,
 }
 
 impl From<TenantOptions> for TenantOptionsBuilder {

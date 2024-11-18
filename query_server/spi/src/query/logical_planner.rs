@@ -429,7 +429,7 @@ pub fn sql_option_to_alter_tenant_action(
         TENANT_OPTION_LIMITER => {
             let config =
                 serde_json::from_str::<TenantLimiterConfig>(parse_string_value(value).context(ParserSnafu)?.as_str())
-                    .map_err(|_| ParserError::ParserError("limiter format error".to_string())).context(ParserSnafu)?;
+                    .map_err(|_| ParserError::ParserError("limiter format error:remote_initial,remote_refill,remote_interval,local_initial can't be empty".to_string())).context(ParserSnafu)?;
             tenant_options_builder.limiter_config(config);
             Privilege::Global(GlobalPrivilege::System)
         }
