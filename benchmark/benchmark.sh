@@ -27,6 +27,7 @@ mkdir -p ${RESULT_DIR}
 source ${current_dir}/${BENCHMARK_DATASET}/shell_env.sh
 
 ################# Prepare data #################
+sleep 60s
 echo "Loading data..."
 RES_METRICS_AND_TIME=$(${current_dir}/${BENCHMARK_DATASET}/prepare_data.sh)
 data_size=$(echo ${RES_METRICS_AND_TIME} | awk '{print $1}' | bc -l)
