@@ -22,7 +22,7 @@ jobs:
         echo "source_repo: $source_repo"
         echo "source_repo1=$source_repo" >> $GITHUB_OUTPUT
 
-        source_repo_commit_id="$(curl -s https://api.github.com/repos/cnosdb/cnosdb/pulls/$PR_NUMBER|jq -r .head.sha|cut -c 1-7)"
+        source_repo_commit_id="$(curl -s https://api.github.com/repos/cnosdb/cnosdb/pulls/$PR_NUMBER|jq -r .head.sha|cut -c 1-8)"
         echo "source repo commit id: $source_repo_commit_id"
         echo "source_repo_commit_id1=$source_repo_commit_id" >> $GITHUB_OUTPUT
 
