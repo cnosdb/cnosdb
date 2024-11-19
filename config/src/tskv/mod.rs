@@ -94,16 +94,34 @@ pub fn get_config(path: impl AsRef<Path>) -> Result<Config, figment::Error> {
     let env_keys = Config::env_keys();
     let env_key_map = env_keys
         .into_iter()
-        .map(|key| (key.replace('.', "_"), key))
+        .map(|key| (format!("CNOSDB_{}", key.replace('.', "_")), key))
         .collect::<HashMap<String, String>>();
-    let figment =
-        Figment::new()
-            .merge(Toml::file(path.as_ref()))
-            .merge(Env::prefixed("CNOSDB_").filter_map(move |env| {
-                env_key_map
-                    .get(env.as_str())
-                    .map(|key| Uncased::from_owned(key.clone()))
-            }));
+
+    // 打印映射表（用于调试）
+    // println!("Environment Variable to Field Mapping:");
+    // for (env_var, field_name) in &env_key_map {
+    //     let value = std::env::var(env_var).unwrap_or_else(|_| "Not Set".to_string());
+    //     println!(
+    //         "Environment Variable: {}, Field Name: {}, Value: {}",
+    //         env_var, field_name, value
+    //     );
+    // }
+
+    // 使用 Figment 合并配置
+    let figment = Figment::new()
+        .merge(Toml::file(path.as_ref())) // 合并 TOML 文件内容
+        .merge(Env::prefixed("CNOSDB_").map(move |env| {
+            let env_str = env.to_string(); // 将环境变量名转为字符串
+                                           // 在映射表中查找对应的配置字段
+            match env_key_map.get(&format!("CNOSDB_{}", env_str)) {
+                Some(key) => {
+                    Uncased::from_owned(key.clone()) // 返回 Uncased 类型
+                }
+                None => {
+                    Uncased::new(env_str.clone()) // 返回默认值
+                }
+            }
+        }));
     let config: Config = figment.extract()?;
     Ok(config)
 }
