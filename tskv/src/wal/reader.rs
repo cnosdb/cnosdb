@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use models::codec;
 use openraft::EntryPayload;
 use trace::error;
 
@@ -9,12 +10,12 @@ use crate::error::{CommonSnafu, WalTruncatedSnafu};
 use crate::{record_file, TskvError, TskvResult};
 
 pub struct WalReader {
-    compress: String,
+    compress: codec::Encoding,
     inner: record_file::Reader,
 }
 
 impl WalReader {
-    pub async fn open(path: impl AsRef<Path>, compress: String) -> TskvResult<Self> {
+    pub async fn open(path: impl AsRef<Path>, compress: codec::Encoding) -> TskvResult<Self> {
         let reader = record_file::Reader::open(&path).await?;
 
         Ok(Self {
@@ -23,7 +24,7 @@ impl WalReader {
         })
     }
 
-    pub(super) fn new(record_reader: record_file::Reader, compress: String) -> Self {
+    pub(super) fn new(record_reader: record_file::Reader, compress: codec::Encoding) -> Self {
         Self {
             compress,
             inner: record_reader,
@@ -34,7 +35,7 @@ impl WalReader {
         loop {
             match self.inner.read_record().await {
                 Ok(r) => {
-                    let record = WalRecordData::new(r.data, r.pos, &self.compress)?;
+                    let record = WalRecordData::new(r.data, r.pos, self.compress)?;
                     return Ok(Some(record));
                 }
                 Err(TskvError::Eof) => return Ok(None),
@@ -54,7 +55,7 @@ impl WalReader {
         self.inner.reload_metadata().await?;
         match self.inner.read_record_at(pos).await {
             Ok(r) => {
-                let data = WalRecordData::new(r.data, pos, &self.compress)?;
+                let data = WalRecordData::new(r.data, pos, self.compress)?;
                 Ok(Some(data))
             }
             Err(TskvError::Eof) => Ok(None),
@@ -96,7 +97,7 @@ pub struct WalRecordData {
 }
 
 impl WalRecordData {
-    pub fn new(buf: Vec<u8>, pos: u64, encode: &str) -> TskvResult<WalRecordData> {
+    pub fn new(buf: Vec<u8>, pos: u64, encode: codec::Encoding) -> TskvResult<WalRecordData> {
         if buf.len() < WAL_HEADER_LEN {
             return Err(CommonSnafu {
                 reason: format!("Decode wal record data to short: {}", buf.len()),
@@ -116,7 +117,7 @@ impl WalRecordData {
     }
 }
 
-pub async fn print_wal_statistics(path: impl AsRef<Path>, compress: String) {
+pub async fn print_wal_statistics(path: impl AsRef<Path>, compress: codec::Encoding) {
     let mut reader = WalReader::open(path, compress).await.unwrap();
     loop {
         let pos = reader.pos();

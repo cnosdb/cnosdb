@@ -41,7 +41,6 @@ pub mod writer;
 
 use std::fmt::Display;
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 use std::sync::Arc;
 
 use minivec::MiniVec;
@@ -201,7 +200,7 @@ impl VnodeWal {
         } else {
             let wal_dir = self.config.wal_dir(&self.owner, self.vnode_id);
             let wal_path = file_utils::make_wal_file(wal_dir, wal_id);
-            let reader = WalReader::open(wal_path, self.config.compress.clone()).await?;
+            let reader = WalReader::open(wal_path, self.config.compress).await?;
             Ok(reader)
         }
     }
@@ -263,8 +262,7 @@ impl WalEntryCodec {
     }
 }
 
-fn decode_wal_raft_entry(buf: &[u8], encode: &str) -> TskvResult<wal_store::RaftEntry> {
-    let encode = Encoding::from_str(encode).map_err(|e| EncodeSnafu.into_error(e.into()))?;
+fn decode_wal_raft_entry(buf: &[u8], encode: Encoding) -> TskvResult<wal_store::RaftEntry> {
     let mut decoder = WalEntryCodec::new(encode);
     let dec_data = decoder.decode(buf)?.context(CommonSnafu {
         reason: format!("raft entry decode is none, len: {}", buf.len()),
@@ -273,10 +271,8 @@ fn decode_wal_raft_entry(buf: &[u8], encode: &str) -> TskvResult<wal_store::Raft
     bincode::deserialize(&dec_data).map_err(|e| DecodeSnafu.into_error(e))
 }
 
-fn encode_wal_raft_entry(entry: &wal_store::RaftEntry, encode: &str) -> TskvResult<Vec<u8>> {
+fn encode_wal_raft_entry(entry: &wal_store::RaftEntry, encode: Encoding) -> TskvResult<Vec<u8>> {
     let bytes = bincode::serialize(entry).map_err(|e| EncodeSnafu.into_error(e))?;
-
-    let encode = Encoding::from_str(encode).map_err(|e| EncodeSnafu.into_error(e.into()))?;
     let encoder = WalEntryCodec::new(encode);
     encoder.encode(&bytes)
 }

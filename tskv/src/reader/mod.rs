@@ -39,7 +39,6 @@ mod iterator;
 mod memcache_reader;
 mod merge;
 mod metrics;
-mod page;
 mod paralle_merge;
 mod partitioned_stream;
 mod pushdown_agg_reader;

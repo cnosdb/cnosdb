@@ -1,10 +1,12 @@
 #![allow(dead_code)]
 
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
 use config::tskv::Config;
+use models::codec::Encoding;
 use models::meta_data::{NodeId, VnodeId};
 
 const SUMMARY_PATH: &str = "summary";
@@ -138,16 +140,22 @@ impl From<&Config> for QueryOptions {
 pub struct WalOptions {
     pub path: PathBuf,
     pub wal_max_file_size: u64,
-    pub compress: String,
+    pub compress: Encoding,
     pub wal_sync: bool,
 }
 
 impl From<&Config> for WalOptions {
     fn from(config: &Config) -> Self {
+        let compress = match Encoding::from_str(&config.wal.compress) {
+            Ok(enc) => enc,
+            Err(e) => {
+                panic!("invalid wal.compress: {e}");
+            }
+        };
         Self {
             path: PathBuf::from(config.wal.path.clone()),
             wal_max_file_size: config.wal.max_file_size,
-            compress: config.wal.compress.clone(),
+            compress,
             wal_sync: config.wal.sync,
         }
     }

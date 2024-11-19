@@ -1,4 +1,7 @@
 use std::env;
+use std::str::FromStr;
+
+use models::codec::Encoding;
 
 const ARG_PRINT: &str = "print"; // To print something
 const ARG_TSM: &str = "--tsm"; // To print a .tsm file
@@ -84,6 +87,12 @@ async fn main() {
     if show_wal {
         if let Some(p) = wal_path {
             println!("Wal Path: {}", p);
+            let wal_compress = match Encoding::from_str(wal_compress.as_str()) {
+                Ok(enc) => enc,
+                Err(e) => {
+                    panic!("invalid wal.compress: {e}");
+                }
+            };
             tskv::print_wal_statistics(p, wal_compress).await;
         }
     }
