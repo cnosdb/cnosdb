@@ -36,6 +36,17 @@ impl Chunk {
         }
     }
 
+    pub fn update_series(&self, series_key: SeriesKey) -> Self {
+        Self {
+            time_range: self.time_range,
+            table_name: self.table_name.clone(),
+            series_id: self.series_id,
+            series_key,
+            next_column_group_id: self.next_column_group_id,
+            column_groups: self.column_groups.clone(),
+        }
+    }
+
     pub fn min_ts(&self) -> i64 {
         self.time_range.min_ts
     }

@@ -30,7 +30,8 @@ impl WritableFile for AsyncFile {
         self.inner.sync_all().await
     }
 
-    async fn truncate(&self, size: u64) -> Result<()> {
+    async fn truncate(&mut self, size: u64) -> Result<()> {
+        self.size = size as usize;
         self.inner.truncate(size).await
     }
 

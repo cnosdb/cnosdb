@@ -201,6 +201,11 @@ impl Version {
         result
     }
 
+    pub async fn remove_tsm_reader_cache(&self, path: impl AsRef<Path>) {
+        let path = path.as_ref().display().to_string();
+        self.tsm_reader_cache.remove(&path).await;
+    }
+
     pub async fn unmark_compacting_files(&self, files_ids: &HashSet<ColumnFileId>) {
         if files_ids.is_empty() {
             return;

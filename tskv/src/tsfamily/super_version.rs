@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use cache::AsyncCache;
 use models::predicate::domain::{TimeRange, TimeRanges};
 use models::{ColumnId, SeriesId};
 
@@ -104,8 +103,7 @@ impl SuperVersion {
                 if column_file.maybe_contains_series_id(*sid).await? {
                     for column_id in column_ids {
                         self.version
-                            .tsm_reader_cache()
-                            .remove(&column_file.file_path().display().to_string())
+                            .remove_tsm_reader_cache(column_file.file_path())
                             .await;
                         column_file
                             .add_tombstone(*sid, *column_id, time_range)

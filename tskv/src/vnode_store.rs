@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -467,6 +467,12 @@ impl VnodeStorage {
             return Ok(());
         }
 
+        let series = sids
+            .iter()
+            .copied()
+            .zip(new_series_keys.iter().cloned())
+            .collect::<HashMap<_, _>>();
+
         // 更新索引
         if let Err(err) = self
             .ts_index
@@ -479,6 +485,8 @@ impl VnodeStorage {
 
             return Err(crate::error::TskvError::IndexErr { source: err });
         }
+
+        self.ts_family.read().await.update_tag_value(series).await?;
 
         Ok(())
     }

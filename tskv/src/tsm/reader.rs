@@ -20,7 +20,7 @@ use bytes::Bytes;
 use models::codec::Encoding;
 use models::predicate::domain::{TimeRange, TimeRanges};
 use models::schema::tskv_table_schema::{PhysicalCType, TskvTableSchemaRef};
-use models::{PhysicalDType, SeriesId};
+use models::{PhysicalDType, SeriesId, SeriesKey};
 use snafu::{location, Backtrace, GenerateImplicitData, Location, OptionExt, ResultExt};
 use utils::bitset::{BitSet, NullBitset};
 
@@ -39,6 +39,7 @@ use crate::tsm::page::{Page, PageMeta, PageStatistics, PageWriteSpec};
 use crate::tsm::{ColumnGroupID, TsmTombstone, FOOTER_SIZE};
 use crate::{file_utils, ColumnFileId, TskvError};
 
+#[derive(Clone)]
 pub struct TsmMetaData {
     footer: Arc<Footer>,
     chunk_group_meta: Arc<ChunkGroupMeta>,
@@ -97,6 +98,16 @@ impl TsmMetaData {
             }
         }
         None
+    }
+
+    pub fn update_tag_value(&mut self, series: &HashMap<SeriesId, SeriesKey>) -> TskvResult<()> {
+        for (series_id, key) in series.iter() {
+            if let Some(chunk) = self.chunk.get(series_id) {
+                let new_chunk = chunk.update_series(key.clone());
+                self.chunk.insert(*series_id, Arc::new(new_chunk));
+            }
+        }
+        Ok(())
     }
 }
 

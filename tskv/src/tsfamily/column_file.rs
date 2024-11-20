@@ -1,20 +1,23 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 
 use cache::{AsyncCache, ShardedAsyncCache};
 use models::predicate::domain::TimeRange;
-use models::{ColumnId, FieldId, SeriesId};
+use models::{ColumnId, FieldId, SeriesId, SeriesKey};
+use snafu::ResultExt;
 use tokio::sync::{RwLock as AsyncRwLock, RwLockWriteGuard as AsyncRwLockWriteGuard};
 use trace::{debug, error, info};
 use utils::BloomFilter;
 
-use crate::error::TskvResult;
-use crate::file_system::async_filesystem::LocalFileSystem;
+use crate::error::{FileSystemSnafu, TskvResult};
+use crate::file_system::async_filesystem::{LocalFileSystem, LocalFileType};
 use crate::file_system::FileSystem;
 use crate::summary::CompactMeta;
 use crate::tsm::reader::TsmReader;
 use crate::tsm::tombstone::tombstone_compact_tmp_path;
+use crate::tsm::writer::TsmWriter;
 use crate::tsm::TsmTombstone;
 use crate::{tsm, ColumnFileId, LevelId};
 
@@ -160,6 +163,32 @@ impl ColumnFile {
         tombstone.flush().await?;
         Ok(())
     }
+
+    pub async fn update_tag_value(
+        &self,
+        series: &HashMap<SeriesId, SeriesKey>,
+    ) -> TskvResult<Option<PathBuf>> {
+        let mut meta = if self
+            .contains_any_series_id(&series.keys().copied().collect::<Vec<_>>())
+            .await?
+        {
+            TsmReader::open(&self.path)
+                .await?
+                .tsm_meta_data()
+                .as_ref()
+                .clone()
+        } else {
+            return Ok(None);
+        };
+        meta.update_tag_value(series)?;
+        let local_file_system = LocalFileSystem::new(LocalFileType::ThreadPool);
+        let writer = local_file_system
+            .open_file_writer(&self.path, 1024)
+            .await
+            .context(FileSystemSnafu)?;
+        TsmWriter::update_file_meta_data(self.file_id, self.path.clone(), writer, meta).await?;
+        Ok(Some(self.path.clone()))
+    }
 }
 
 impl ColumnFile {
@@ -277,7 +306,7 @@ impl ColumnFile {
             level,
             time_range,
             size,
-            series_id_filter: AsyncRwLock::new(Some(Arc::new(BloomFilter::default()))),
+            series_id_filter: AsyncRwLock::new(None),
             deleted: AtomicBool::new(false),
             compacting: Arc::new(AsyncRwLock::new(false)),
             path: path.as_ref().into(),
@@ -290,5 +319,87 @@ impl ColumnFile {
         series_id_filter: AsyncRwLock<Option<Arc<BloomFilter>>>,
     ) {
         self.series_id_filter = series_id_filter;
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    use arrow_array::RecordBatch;
+    use arrow_schema::TimeUnit;
+    use models::codec::Encoding;
+    use models::predicate::domain::TimeRange;
+    use models::schema::tskv_table_schema::{ColumnType, TableColumn, TskvTableSchema};
+    use models::{SeriesKey, Tag, ValueType};
+
+    use crate::tsfamily::column_file::ColumnFile;
+    use crate::tsm::reader::TsmReader;
+    use crate::tsm::writer::test::{i64_column, ts_column};
+    use crate::tsm::writer::TsmWriter;
+
+    #[tokio::test]
+    async fn test_update_tag() {
+        let path = "/tmp/test/tskv/tsfamily/columnfile/test_update_tag".to_string();
+        let mut writer = TsmWriter::open(&path, 1, 0, true).await.unwrap();
+
+        let tsm_file_path = writer.path().to_path_buf();
+        let schema = TskvTableSchema::new(
+            "cnosdb".to_string(),
+            "public".to_string(),
+            "test0".to_string(),
+            vec![
+                TableColumn::new(
+                    0,
+                    "time".to_string(),
+                    ColumnType::Time(TimeUnit::Nanosecond),
+                    Encoding::default(),
+                ),
+                TableColumn::new(1, "t1".to_string(), ColumnType::Tag, Encoding::default()),
+                TableColumn::new(
+                    2,
+                    "f1".to_string(),
+                    ColumnType::Field(ValueType::Integer),
+                    Encoding::default(),
+                ),
+            ],
+        );
+        let schema = Arc::new(schema);
+        let data1 = RecordBatch::try_new(
+            schema.to_record_data_schema(),
+            vec![ts_column(vec![1, 2, 3]), i64_column(vec![1, 2, 3])],
+        )
+        .unwrap();
+
+        let series1 = SeriesKey::default();
+        let series_update = SeriesKey {
+            tags: vec![Tag::new(vec![1], vec![2])],
+            table: "test0".to_string(),
+        };
+
+        writer
+            .write_record_batch(1, series1.clone(), schema.clone(), data1)
+            .await
+            .unwrap();
+        writer.finish().await.unwrap();
+
+        let column_file = ColumnFile::new(1, 0, TimeRange::new(1, 3), 0, tsm_file_path);
+        let path = column_file
+            .update_tag_value(&HashMap::from([(1, series_update.clone())]))
+            .await
+            .unwrap();
+
+        let reader = TsmReader::open(&path.unwrap()).await.unwrap();
+        let series_read = reader
+            .tsm_meta_data()
+            .chunk()
+            .get(&1)
+            .unwrap()
+            .series_key()
+            .clone();
+
+        assert_ne!(series_read, series1);
+        assert_eq!(series_read, series_update);
     }
 }
