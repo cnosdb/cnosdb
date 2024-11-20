@@ -111,6 +111,10 @@ impl SeriesData {
         }
     }
 
+    pub fn update_tag_value(&mut self, series_key: SeriesKey) {
+        self.series_key = series_key
+    }
+
     pub fn read_data(
         &self,
         column_ids: &[ColumnId],
