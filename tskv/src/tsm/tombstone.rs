@@ -331,6 +331,7 @@ impl TsmTombstone {
         Ok(())
     }
 
+    #[cfg(test)]
     pub fn overlaps_column_time_range(
         &self,
         series_id: SeriesId,
@@ -341,7 +342,7 @@ impl TsmTombstone {
             .read()
             .overlaps_field_time_range(series_id, column_id, time_range)
     }
-
+    #[cfg(test)]
     pub fn check_all_fields_excluded_time_range(&self, time_range: &TimeRange) -> bool {
         self.cache
             .read()
@@ -350,7 +351,7 @@ impl TsmTombstone {
 
     /// Returns all tombstone `TimeRange`s that overlaps the given `TimeRange`.
     /// Returns None if there is nothing to return, or `TimeRange`s is empty.
-    pub fn get_overlapped_time_ranges(
+    pub fn get_column_overlapped_time_ranges(
         &self,
         series_id: SeriesId,
         column_id: ColumnId,
@@ -358,7 +359,13 @@ impl TsmTombstone {
     ) -> Vec<TimeRange> {
         self.cache
             .read()
-            .get_overlapped_time_ranges(series_id, column_id, time_range)
+            .get_column_overlapped_time_ranges(series_id, column_id, time_range)
+    }
+
+    pub fn get_all_fields_excluded_time_range(&self, time_range: &TimeRange) -> Vec<TimeRange> {
+        self.cache
+            .read()
+            .get_all_fields_excluded_time_range(time_range)
     }
 }
 
@@ -500,9 +507,6 @@ impl TsmTombstoneCache {
         column_id: ColumnId,
         time_range: &TimeRange,
     ) -> bool {
-        if self.all_excluded.includes(time_range) {
-            return true;
-        }
         if let Some(time_ranges) = self.column_excluded.get(&(series_id, column_id)) {
             for t in time_ranges.time_ranges() {
                 if t.overlaps(time_range) {
@@ -513,7 +517,7 @@ impl TsmTombstoneCache {
         false
     }
 
-    pub fn get_overlapped_time_ranges(
+    pub fn get_column_overlapped_time_ranges(
         &self,
         series_id: SeriesId,
         column_id: ColumnId,
@@ -527,16 +531,22 @@ impl TsmTombstoneCache {
                 }
             }
         }
+
+        trs
+    }
+
+    pub fn check_all_fields_excluded_time_range(&self, time_range: &TimeRange) -> bool {
+        self.all_excluded.includes(time_range)
+    }
+
+    pub fn get_all_fields_excluded_time_range(&self, time_range: &TimeRange) -> Vec<TimeRange> {
+        let mut trs = Vec::new();
         for all in self.all_excluded.time_ranges() {
             if all.overlaps(time_range) {
                 trs.push(all);
             }
         }
         trs
-    }
-
-    pub fn check_all_fields_excluded_time_range(&self, time_range: &TimeRange) -> bool {
-        self.all_excluded.includes(time_range)
     }
 
     pub async fn load(path: impl AsRef<Path>) -> TskvResult<Option<Self>> {

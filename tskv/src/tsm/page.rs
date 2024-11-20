@@ -1,3 +1,6 @@
+use std::mem::size_of;
+use std::u64;
+
 use arrow_array::{
     Array, ArrayRef, BooleanArray, Float64Array, Int64Array, StringArray,
     TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray,
@@ -129,16 +132,25 @@ impl Page {
                     }
                     .build()
                 })?;
-                let target_column = column.iter().flatten().collect::<Vec<_>>();
-                let max = target_column.iter().max().copied();
-                let min = target_column.iter().min().copied();
+                let mut max = i64::MIN;
+                let mut min = i64::MAX;
+                let mut target_column = Vec::with_capacity(column.len());
+                for val in column.iter().flatten() {
+                    target_column.push(val);
+                    if val > max {
+                        max = val;
+                    }
+                    if val < min {
+                        min = val;
+                    }
+                }
                 let encoder = get_i64_codec(table_column.encoding());
                 encoder
                     .encode(&target_column, &mut buf)
                     .context(EncodeSnafu)?;
                 PageStatistics::I64(ValueStatistics::new(
-                    min,
-                    max,
+                    Some(min),
+                    Some(max),
                     None,
                     (array.len() - target_column.len()) as u64,
                 ))
@@ -194,15 +206,24 @@ impl Page {
                         column.iter().flatten().collect::<Vec<_>>()
                     }
                 };
-                let max = target_column.iter().max().copied();
-                let min = target_column.iter().min().copied();
+
+                let mut max = i64::MIN;
+                let mut min = i64::MAX;
+                for val in target_column.iter() {
+                    if *val > max {
+                        max = *val;
+                    }
+                    if *val < min {
+                        min = *val;
+                    }
+                }
                 let encoder = get_ts_codec(table_column.encoding());
                 encoder
                     .encode(&target_column, &mut buf)
                     .context(EncodeSnafu)?;
                 PageStatistics::I64(ValueStatistics::new(
-                    min,
-                    max,
+                    Some(min),
+                    Some(max),
                     None,
                     (array.len() - target_column.len()) as u64,
                 ))
@@ -217,16 +238,25 @@ impl Page {
                         }
                         .build()
                     })?;
-                let target_column = column.iter().flatten().collect::<Vec<_>>();
-                let max = target_column.iter().max().copied();
-                let min = target_column.iter().min().copied();
+                let mut target_column = Vec::with_capacity(column.len());
+                let mut max = u64::MIN;
+                let mut min = u64::MAX;
+                for val in column.iter().flatten() {
+                    target_column.push(val);
+                    if val > max {
+                        max = val;
+                    }
+                    if val < min {
+                        min = val;
+                    }
+                }
                 let encoder = get_u64_codec(table_column.encoding());
                 encoder
                     .encode(&target_column, &mut buf)
                     .context(EncodeSnafu)?;
                 PageStatistics::U64(ValueStatistics::new(
-                    min,
-                    max,
+                    Some(min),
+                    Some(max),
                     None,
                     (array.len() - target_column.len()) as u64,
                 ))
@@ -241,15 +271,16 @@ impl Page {
                         }
                         .build()
                     })?;
-                let target_column = column.iter().flatten().collect::<Vec<_>>();
+                let mut target_column = Vec::with_capacity(column.len());
                 let mut max = f64::MIN;
                 let mut min = f64::MAX;
-                for v in target_column.iter() {
-                    if *v > max {
-                        max = *v;
+                for val in column.iter().flatten() {
+                    target_column.push(val);
+                    if val > max {
+                        max = val;
                     }
-                    if *v < min {
-                        min = *v;
+                    if val < min {
+                        min = val;
                     }
                 }
                 let encoder = get_f64_codec(table_column.encoding());
@@ -297,10 +328,14 @@ impl Page {
                 .build());
             }
         };
-        let mut data = vec![];
+
         let mut hasher = crc32fast::Hasher::new();
         hasher.update(&buf);
         let data_crc = hasher.finalize().to_be_bytes();
+
+        let mut data = Vec::with_capacity(
+            size_of::<u32>() + size_of::<u64>() + data_crc.len() + bit_set_buffer.len() + buf.len(),
+        );
         data.extend_from_slice(&(bit_set_buffer.len() as u32).to_be_bytes());
         data.extend_from_slice(&data_len.to_be_bytes());
         data.extend_from_slice(&data_crc);
