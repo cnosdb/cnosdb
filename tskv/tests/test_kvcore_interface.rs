@@ -174,7 +174,7 @@ mod tests {
         )
         .await;
         let join_handle = tokio::spawn(async {
-            let res = tokio::task::spawn_blocking(|| {
+            tokio::task::spawn_blocking(|| {
                 test_kvcore_init();
                 test_kvcore_write();
                 test_kvcore_flush();
@@ -182,9 +182,7 @@ mod tests {
                 test_kvcore_build_row_data();
                 test_kvcore_snapshot_create_apply_delete();
             })
-            .await;
-
-            res
+            .await
         });
 
         join_handle.await.unwrap().expect("failed to join thread");
