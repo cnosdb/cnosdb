@@ -16,7 +16,7 @@ use datafusion::scalar::ScalarValue;
 use datafusion_proto::protobuf;
 use datafusion_proto::protobuf::PhysicalExprNode;
 use prost::Message;
-use protos::models_helper::to_prost_bytes;
+use protos::models_helper::{parse_prost_bytes, to_prost_bytes};
 use serde::de::Visitor;
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -421,7 +421,7 @@ impl Display for TimeRanges {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq)]
 enum Bound {
     /// lower than the value, but infinitesimally close to the value.
     Below,
@@ -444,7 +444,7 @@ impl Display for Bound {
 /// A point on the continuous space defined by the specified type.
 ///
 /// Each point may be just below, exact, or just above the specified value according to the Bound.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq)]
 pub struct Marker {
     data_type: DataType,
     value: Option<ScalarValue>,
@@ -456,13 +456,19 @@ impl Serialize for Marker {
     where
         S: serde::Serializer,
     {
-        let value: Option<ScalarValue> = self.value.clone();
-
-        let mut ve = serializer.serialize_struct("Marker", 3)?;
-        ve.serialize_field("data_type", &self.data_type)?;
-        ve.serialize_field("value", &value)?;
-        ve.serialize_field("bound", &self.bound)?;
-        ve.end()
+        {
+            let mut ve = serializer.serialize_struct("Marker", 3)?;
+            ve.serialize_field("data_type", &self.data_type)?;
+            if let Some(vv) = &self.value {
+                let v: protobuf::ScalarValue = vv.try_into().map_err(serde::ser::Error::custom)?;
+                let scalar_value_buf = to_prost_bytes(&v);
+                ve.serialize_field("value", &Some(scalar_value_buf))?;
+            } else {
+                ve.serialize_field("value", &Option::<Vec<u8>>::None)?
+            }
+            ve.serialize_field("bound", &self.bound)?;
+            ve.end()
+        }
     }
 }
 
@@ -471,41 +477,34 @@ impl<'a> Deserialize<'a> for Marker {
     where
         D: serde::Deserializer<'a>,
     {
-        let mark = MarkerSerialize::deserialize(deserializer)?;
+        #[derive(Serialize, Deserialize)]
+        struct MarkerSerialize {
+            data_type: DataType,
+            value: Option<Vec<u8>>,
+            bound: Bound,
+        }
 
-        Ok(mark.into())
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-struct MarkerSerialize {
-    data_type: DataType,
-    value: Option<ScalarValue>,
-    bound: Bound,
-}
-
-impl From<MarkerSerialize> for Marker {
-    fn from(mark: MarkerSerialize) -> Self {
         let MarkerSerialize {
             data_type,
             value,
             bound,
-        } = mark;
-        Self {
+        } = MarkerSerialize::deserialize(deserializer)?;
+
+        let scalar_value = if let Some(vec) = value {
+            let proto_value: protobuf::ScalarValue =
+                parse_prost_bytes(&vec).map_err(serde::de::Error::custom)?;
+            let scalar_value =
+                ScalarValue::try_from(&proto_value).map_err(serde::de::Error::custom)?;
+            Some(scalar_value)
+        } else {
+            None
+        };
+
+        Ok(Marker {
             data_type,
-            value,
+            value: scalar_value,
             bound,
-        }
-    }
-}
-
-struct MarkerVisitor;
-
-impl<'de> Visitor<'de> for MarkerVisitor {
-    type Value = MarkerSerialize;
-
-    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("This Visitor expects to receive Marker")
+        })
     }
 }
 
@@ -616,10 +615,11 @@ impl PartialEq for Marker {
             return false;
         }
         // value and other.value are present
-        self.value
-            .as_ref()
-            .unwrap()
-            .eq(other.value.as_ref().unwrap())
+        if self.value != other.value {
+            return false;
+        }
+
+        true
     }
 }
 impl Ord for Marker {
@@ -672,8 +672,6 @@ impl PartialOrd for Marker {
         Some(self.cmp(other))
     }
 }
-
-impl Eq for Marker {}
 
 impl Display for Marker {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -2183,5 +2181,31 @@ mod tests {
         let wrap1 = bincode::deserialize::<PhysicalExprNodeWrap>(&data).unwrap();
 
         assert_eq!(wrap.0.expr_type, wrap1.0.expr_type);
+    }
+
+    #[test]
+    fn test_marker_serialization() {
+        let marker = Marker {
+            data_type: DataType::Boolean,
+            value: Some(ScalarValue::Boolean(Some(true))),
+            bound: Bound::Exactly,
+        };
+
+        let serialized_marker = bincode::serialize(&marker).unwrap();
+        let deserialized_marker: Marker = bincode::deserialize(&serialized_marker).unwrap();
+        assert_eq!(marker, deserialized_marker);
+    }
+
+    #[test]
+    fn test_marker_serialization_with_none_value() {
+        let marker = Marker {
+            data_type: DataType::Boolean,
+            value: None,
+            bound: Bound::Exactly,
+        };
+
+        let serialized_marker = bincode::serialize(&marker).unwrap();
+        let deserialized_marker: Marker = bincode::deserialize(&serialized_marker).unwrap();
+        assert_eq!(marker, deserialized_marker);
     }
 }
