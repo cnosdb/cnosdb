@@ -3,12 +3,15 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::sync::Arc;
     use std::time::{Duration, Instant};
-    use config::tskv::{MetaConfig};
+
+    use config::tskv::MetaConfig;
     use memory_pool::GreedyMemoryPool;
     use meta::model::meta_admin::AdminMeta;
     use metrics::metric_register::MetricsRegister;
     use models::meta_data::VnodeId;
-    use models::schema::database_schema::{make_owner, DatabaseConfig, DatabaseOptions, DatabaseSchema};
+    use models::schema::database_schema::{
+        make_owner, DatabaseConfig, DatabaseOptions, DatabaseSchema,
+    };
     use models::schema::tenant::TenantOptions;
     use protos::kv_service::{raft_write_command, WriteDataRequest};
     use protos::models_helper;
@@ -55,27 +58,34 @@ mod tests {
 
             let tenant = meta_manager.tenant_meta("cnosdb").await;
             if tenant.is_none() {
-                let tenant = meta_manager.create_tenant("cnosdb".to_string(), TenantOptions::default()).await.unwrap();
+                let tenant = meta_manager
+                    .create_tenant("cnosdb".to_string(), TenantOptions::default())
+                    .await
+                    .unwrap();
                 let database_schema1 = DatabaseSchema::new(
                     "cnosdb",
                     "public",
                     DatabaseOptions::default(),
-                    Arc::new(DatabaseConfig::default()));
+                    Arc::new(DatabaseConfig::default()),
+                );
                 let database_schema2 = DatabaseSchema::new(
                     "cnosdb",
                     "db",
                     DatabaseOptions::default(),
-                    Arc::new(DatabaseConfig::default()));
+                    Arc::new(DatabaseConfig::default()),
+                );
                 let database_schema3 = DatabaseSchema::new(
                     "cnosdb",
                     "db_flush_delta",
                     DatabaseOptions::default(),
-                    Arc::new(DatabaseConfig::default()));
+                    Arc::new(DatabaseConfig::default()),
+                );
                 let database_schema4 = DatabaseSchema::new(
                     "cnosdb",
                     "db_test_snapshot",
                     DatabaseOptions::default(),
-                    Arc::new(DatabaseConfig::default()));
+                    Arc::new(DatabaseConfig::default()),
+                );
                 tenant.create_db(database_schema1).await.unwrap();
                 tenant.create_db(database_schema2).await.unwrap();
                 tenant.create_db(database_schema3).await.unwrap();
@@ -89,8 +99,8 @@ mod tests {
                 memory,
                 Arc::new(MetricsRegister::default()),
             )
-                .await
-                .unwrap()
+            .await
+            .unwrap()
         });
         (rt, tskv)
     }
@@ -124,7 +134,9 @@ mod tests {
         trigger_compact: bool,
     ) {
         rt.block_on(async {
-            tskv.flush_tsfamily(tenant, db, id, trigger_compact).await.unwrap();
+            tskv.flush_tsfamily(tenant, db, id, trigger_compact)
+                .await
+                .unwrap();
             tokio::time::sleep(Duration::from_secs(1)).await;
         });
     }
@@ -160,7 +172,7 @@ mod tests {
             &MetaConfig::default(),
             size,
         )
-            .await;
+        .await;
         let join_handle = tokio::spawn(async {
             let res = tokio::task::spawn_blocking(|| {
                 test_kvcore_init();
@@ -169,7 +181,8 @@ mod tests {
                 test_kvcore_flush_delta();
                 test_kvcore_build_row_data();
                 test_kvcore_snapshot_create_apply_delete();
-            }).await;
+            })
+            .await;
 
             res
         });
@@ -417,11 +430,43 @@ mod tests {
                 precision: Precision::NS as u32,
             };
 
-            tskv_write(runtime.clone(), &tskv, tenant, database, vnode_id, 0, request.clone());
-            tskv_write(runtime.clone(), &tskv, tenant, database, vnode_id, 0, request.clone());
+            tskv_write(
+                runtime.clone(),
+                &tskv,
+                tenant,
+                database,
+                vnode_id,
+                0,
+                request.clone(),
+            );
+            tskv_write(
+                runtime.clone(),
+                &tskv,
+                tenant,
+                database,
+                vnode_id,
+                0,
+                request.clone(),
+            );
             tskv_flush(runtime.clone(), &tskv, tenant, database, vnode_id, true);
-            tskv_write(runtime.clone(), &tskv, tenant, database, vnode_id, 0, request.clone());
-            tskv_write(runtime.clone(), &tskv, tenant, database, vnode_id, 0, request.clone());
+            tskv_write(
+                runtime.clone(),
+                &tskv,
+                tenant,
+                database,
+                vnode_id,
+                0,
+                request.clone(),
+            );
+            tskv_write(
+                runtime.clone(),
+                &tskv,
+                tenant,
+                database,
+                vnode_id,
+                0,
+                request.clone(),
+            );
             tskv_flush(runtime.clone(), &tskv, tenant, database, vnode_id, true);
         }
 
@@ -475,18 +520,28 @@ mod tests {
                 .block_on(async move { vnode.ts_family().read().await.build_version_edit() });
 
             assert_eq!(version_edit_2.tsf_id, new_vnode_id);
-            assert_eq!(version_edit_1.add_files.len(), version_edit_2.add_files.len());
-            assert_eq!(version_edit_1.del_files.len(), version_edit_2.del_files.len());
+            assert_eq!(
+                version_edit_1.add_files.len(),
+                version_edit_2.add_files.len()
+            );
+            assert_eq!(
+                version_edit_1.del_files.len(),
+                version_edit_2.del_files.len()
+            );
 
             dbg!(&version_edit_2);
             dbg!(&version_edit_1);
-            version_edit_1.add_files.iter().zip(version_edit_2.add_files.iter()).for_each(|(lhs, rhs)| {
-                assert_eq!(lhs.file_size, rhs.file_size);
-                assert_eq!(lhs.level, rhs.level);
-                assert_eq!(lhs.max_ts, rhs.max_ts);
-                assert_eq!(lhs.min_ts, rhs.min_ts);
-                assert_eq!(lhs.is_delta, rhs.is_delta);
-            });
+            version_edit_1
+                .add_files
+                .iter()
+                .zip(version_edit_2.add_files.iter())
+                .for_each(|(lhs, rhs)| {
+                    assert_eq!(lhs.file_size, rhs.file_size);
+                    assert_eq!(lhs.level, rhs.level);
+                    assert_eq!(lhs.max_ts, rhs.max_ts);
+                    assert_eq!(lhs.min_ts, rhs.min_ts);
+                    assert_eq!(lhs.is_delta, rhs.is_delta);
+                });
 
             for f in version_edit_2.add_files.iter() {
                 let path = if f.is_delta {
