@@ -536,3 +536,122 @@ select * from cluster_schema.tenants where tenant_name='t_alter';
 
 statement ok
 drop tenant t_alter;
+
+statement ok
+DROP TENANT if exists t_a;
+
+statement ok
+DROP TENANT if exists t_b;
+
+statement ok
+DROP USER if exists u_a;
+
+statement ok
+DROP USER if exists u_b;
+
+statement ok
+create tenant t_a;
+
+statement ok
+create tenant t_b;
+
+statement ok
+create user u_a;
+
+statement ok
+create user u_b;
+
+statement ok
+alter tenant t_a add user u_a as owner;
+
+statement ok
+alter tenant t_a add user u_b as member;
+
+statement ok
+alter tenant t_b add user u_a as owner;
+
+statement ok
+--#TENANT=t_a
+--#USER_NAME=u_a
+
+statement ok
+create database db_a;
+
+statement ok
+create table db_a.test(col bigint);
+
+statement ok
+insert into db_a.test(time, col) values (111111111, 1);
+
+query PI
+select * from db_a.test;
+----
+1970-01-01T00:00:00.111111111 1
+
+statement ok
+--#USER_NAME=u_b
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Insufficient privileges, expected \[Full on database db_a of tenant .*?\]", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "([^"]+)", "content\-length": "0"\} \}, source: None \}
+drop table db_a.test;
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Insufficient privileges, expected \[Full on database db_a of tenant .*?\]", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "([^"]+)", "content\-length": "0"\} \}, source: None \}
+create table db_a.test(col bigint);
+
+
+statement ok
+--#TENANT=t_b
+--#USER_NAME=u_a
+
+statement ok
+create database db_a;
+
+statement ok
+create table db_a.test(col bigint);
+
+statement ok
+insert into db_a.test(time, col) values (111111111, 2);
+
+query PI
+select * from db_a.test;
+----
+1970-01-01T00:00:00.111111111 2
+
+
+statement ok
+--#TENANT=cnosdb
+--#USER_NAME=root
+
+statement ok
+alter tenant t_a set user u_a as member;
+
+statement ok
+--#TENANT=t_a
+--#USER_NAME=u_a
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Insufficient privileges, expected \[Full on database db_a of tenant .*?\]", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "([^"]+)", "content\-length": "0"\} \}, source: None \}
+drop table db_a.test;
+
+statement error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Insufficient privileges, expected \[Full on database db_a of tenant .*?\]", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "([^"]+)", "content\-length": "0"\} \}, source: None \}
+create table db_a.test(col bigint);
+
+statement ok
+--#TENANT=cnosdb
+--#USER_NAME=root
+
+statement ok
+alter tenant t_a remove user u_a;
+
+statement ok
+--#TENANT=t_a
+--#USER_NAME=u_a
+
+query error Arrow error: Io error: Can't handshake status: Unauthenticated, message: "Auth error: The member u_a of tenant t_a not found", details: \[\], metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "([^"]+)", "content\-length": "0"\} \}
+show databases;
+
+statement ok
+--#USER_NAME=u_b
+
+query 
+show databases;
+----
+"db_a"
