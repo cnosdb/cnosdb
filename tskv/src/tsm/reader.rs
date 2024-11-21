@@ -20,7 +20,7 @@ use bytes::Bytes;
 use models::codec::Encoding;
 use models::predicate::domain::{TimeRange, TimeRanges};
 use models::schema::tskv_table_schema::{PhysicalCType, TskvTableSchemaRef};
-use models::{PhysicalDType, SeriesId};
+use models::{PhysicalDType, SeriesId, SeriesKey};
 use snafu::{location, Backtrace, GenerateImplicitData, Location, OptionExt, ResultExt};
 use utils::bitset::{BitSet, NullBitset};
 
@@ -39,6 +39,7 @@ use crate::tsm::page::{Page, PageMeta, PageStatistics, PageWriteSpec};
 use crate::tsm::{ColumnGroupID, TsmTombstone, FOOTER_SIZE};
 use crate::{file_utils, ColumnFileId, TskvError};
 
+#[derive(Clone)]
 pub struct TsmMetaData {
     footer: Arc<Footer>,
     chunk_group_meta: Arc<ChunkGroupMeta>,
@@ -97,6 +98,16 @@ impl TsmMetaData {
             }
         }
         None
+    }
+
+    pub fn update_tag_value(&mut self, series: &HashMap<SeriesId, SeriesKey>) -> TskvResult<()> {
+        for (series_id, key) in series.iter() {
+            if let Some(chunk) = self.chunk.get(series_id) {
+                let new_chunk = chunk.update_series(key.clone());
+                self.chunk.insert(*series_id, Arc::new(new_chunk));
+            }
+        }
+        Ok(())
     }
 }
 
@@ -450,45 +461,58 @@ pub fn decode_pages(
     tomb: Option<(Arc<TsmTombstone>, SeriesId)>,
 ) -> TskvResult<RecordBatch> {
     let mut target_arrays = Vec::with_capacity(pages.len());
+
+    let fields = pages
+        .iter()
+        .map(|page| Field::from(&page.meta.column))
+        .collect::<Vec<_>>();
+    let schema = Arc::new(Schema::new_with_metadata(fields, schema_meta));
+
     if let Some((tomb, series_id)) = tomb {
+        // deal time page
         let time_page = pages
             .iter()
             .find(|f| f.meta.column.column_type.is_time())
             .context(CommonSnafu {
                 reason: "time field not found".to_string(),
             })?;
-        let (time_array, time_range) = get_time_page_meta(time_page)?;
-        let fields = pages
+        let (time_array, time_range, time) = get_time_page_meta(time_page)?;
+        let filters = tomb.get_all_fields_excluded_time_range(&time_range);
+        let time_null_bits = {
+            if filters.is_empty() {
+                None
+            } else {
+                let null_bitset = update_nullbits_by_time_range(&time_array, &filters, time_page)?;
+                Some(null_bitset)
+            }
+        };
+
+        target_arrays.push(time);
+
+        // deal field page
+        for page in pages
             .iter()
-            .map(|page| Field::from(&page.meta.column))
-            .collect::<Vec<_>>();
-        let schema = Arc::new(Schema::new_with_metadata(fields, schema_meta));
-        let mut time_have_null = None;
-        for page in pages {
-            let null_bits =
-                if tomb.overlaps_column_time_range(series_id, page.meta.column.id, &time_range) {
-                    let null_bitset = update_nullbits_by_tombstone(
-                        &time_array,
-                        &tomb,
-                        series_id,
-                        &time_range,
-                        &page,
-                    )?;
-                    if page.meta.column.column_type.is_time() && !null_bitset.is_all_set() {
-                        time_have_null = Some(null_bitset.clone());
-                        NullBitset::Ref(page.null_bitset())
-                    } else {
-                        NullBitset::Own(null_bitset)
-                    }
-                } else {
+            .filter(|p| p.meta.column.column_type.is_field())
+        {
+            let null_bits = {
+                let filters = tomb.get_column_overlapped_time_ranges(
+                    series_id,
+                    page.meta.column.id,
+                    &time_range,
+                );
+                if filters.is_empty() {
                     NullBitset::Ref(page.null_bitset())
-                };
-            let array = data_buf_to_arrow_array(&page)?;
+                } else {
+                    let null_bitset = update_nullbits_by_time_range(&time_array, &filters, page)?;
+                    NullBitset::Own(null_bitset)
+                }
+            };
+            let array = page.to_arrow_array()?;
             let array = updated_nullbuffer(array, null_bits)?;
             target_arrays.push(array);
         }
         let mut record_batch = RecordBatch::try_new(schema, target_arrays).context(ArrowSnafu)?;
-        if let Some(time_column_have_null) = time_have_null {
+        if let Some(time_column_have_null) = time_null_bits {
             let len = time_column_have_null.len();
             let buffer = Buffer::from_vec(time_column_have_null.into_bytes());
             let boolean_buffer = BooleanBuffer::new(buffer, 0, len);
@@ -498,11 +522,6 @@ pub fn decode_pages(
         }
         Ok(record_batch)
     } else {
-        let fields = pages
-            .iter()
-            .map(|page| Field::from(&page.meta.column))
-            .collect::<Vec<_>>();
-        let schema = Arc::new(Schema::new_with_metadata(fields, schema_meta));
         for page in pages {
             let array = page.to_arrow_array()?;
             target_arrays.push(array);
@@ -512,8 +531,10 @@ pub fn decode_pages(
     }
 }
 
-pub fn get_time_page_meta(time_page: &Page) -> TskvResult<(PrimitiveArray<Int64Type>, TimeRange)> {
-    let time_array_ref = data_buf_to_arrow_array(time_page)?;
+pub fn get_time_page_meta(
+    time_page: &Page,
+) -> TskvResult<(PrimitiveArray<Int64Type>, TimeRange, ArrayRef)> {
+    let time_array_ref = time_page.to_arrow_array()?;
     let time_array = match time_array_ref.data_type() {
         DataType::Timestamp(_time_unit, _) => {
             let array_data = time_array_ref.to_data();
@@ -568,7 +589,7 @@ pub fn get_time_page_meta(time_page: &Page) -> TskvResult<(PrimitiveArray<Int64T
             .build())
         }
     };
-    Ok((time_array, time_range))
+    Ok((time_array, time_range, time_array_ref))
 }
 
 pub fn decode_pages_buf(
@@ -582,14 +603,11 @@ pub fn decode_pages_buf(
     Ok(data_block)
 }
 
-fn update_nullbits_by_tombstone(
+fn update_nullbits_by_time_range(
     time_array_ref: &PrimitiveArray<Int64Type>,
-    tomb: &TsmTombstone,
-    series_id: SeriesId,
-    time_range: &TimeRange,
+    time_ranges: &Vec<TimeRange>,
     page: &Page,
 ) -> TskvResult<BitSet> {
-    let time_ranges = tomb.get_overlapped_time_ranges(series_id, page.meta.column.id, time_range);
     let mut null_bitset = page.null_bitset().to_bitset();
 
     for time_range in time_ranges {

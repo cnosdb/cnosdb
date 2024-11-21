@@ -107,7 +107,8 @@ jobs:
         shell: bash
         run: |
           cargo build --package client --bin cnosdb-cli
-          cargo test --package e2e_test --lib -- independent:: --test-threads=1 --nocapture
+          # cargo test --package e2e_test --lib -- independent:: --test-threads=1 --nocapture
+          cargo test --package e2e_test --lib --features startup_in_serial -- independent:: --test-threads=4 --nocapture
   windows-compatibility:
     name: "Windows Compatibility"
     runs-on: windows-latest

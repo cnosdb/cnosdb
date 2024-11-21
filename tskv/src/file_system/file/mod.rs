@@ -32,7 +32,7 @@ pub trait WritableFile: Send + Sync {
     async fn write_at(&mut self, pos: usize, data: &[u8]) -> Result<usize>;
     async fn sync_data(&self) -> Result<()>;
     async fn sync_all(&self) -> Result<()>;
-    async fn truncate(&self, size: u64) -> Result<()>;
+    async fn truncate(&mut self, size: u64) -> Result<()>;
     // async fn allocate(&self, offset: u64, len: u64) -> Result<()>;
     fn file_size(&self) -> usize;
     fn is_empty(&self) -> bool;

@@ -36,7 +36,7 @@ bench-job:
     - commit_id=${commit_id:-$(git log -1 --pretty=%h)}
     - cd benchmark
     - export HITS_DATA_URL="/home/cnosdb_dev/hits.parquet"
-    - export TSBS_DATA_URL="/home/cnosdb_dev/cnosdb_iot_123_500000.gz"
+    - export TSBS_DATA_URL="/home/cnosdb_dev/cnosdb_iot_123_2022.gz"
     - export TSBS_QUERY_DIR="/home/cnosdb_dev/queries"
     - sudo mv ../target/release/cnosdb-cli /bin/
     - ./benchmark.sh hits
