@@ -45,17 +45,39 @@ pub fn get_opt(path: Option<impl AsRef<Path>>) -> Opt {
     let env_keys = Opt::env_keys();
     let env_key_map = env_keys
         .into_iter()
-        .map(|key| (key.replace('.', "_"), key))
+        .map(|key| (format!("CNOSDB_META_{}", key.replace('.', "_")), key))
         .collect::<HashMap<String, String>>();
+
+    // 打印映射表（用于调试）
+    // println!(
+    //     "-----------------------------------------meta:Environment Variable to Field Mapping:"
+    // );
+    // for (env_var, field_name) in &env_key_map {
+    //     let value = std::env::var(env_var).unwrap_or_else(|_| "Not Set".to_string());
+    //     println!(
+    //         "Environment Variable: {}, Field Name: {}, Value: {}",
+    //         env_var, field_name, value
+    //     );
+    // }
+
     let mut figment = Figment::new();
     if let Some(path) = path.as_ref() {
         figment = figment.merge(Toml::file(path.as_ref()));
     }
-    figment = figment.merge(Env::prefixed("CNOSDB_META_").filter_map(move |env| {
-        env_key_map
-            .get(env.as_str())
-            .map(|key| Uncased::from_owned(key.clone()))
+
+    figment = figment.merge(Env::prefixed("CNOSDB_META_").map(move |env| {
+        let env_str = env.to_string(); // 将环境变量名转为字符串
+                                       // 在映射表中查找对应的配置字段
+        match env_key_map.get(&format!("CNOSDB_META_{}", env_str)) {
+            Some(key) => {
+                Uncased::from_owned(key.clone()) // 返回 Uncased 类型
+            }
+            None => {
+                Uncased::new(env_str.clone()) // 返回默认值
+            }
+        }
     }));
+
     figment.extract().unwrap()
 }
 
