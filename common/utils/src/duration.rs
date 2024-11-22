@@ -11,7 +11,7 @@ pub const YEAR_SECOND: u64 = 31557600; // 356.25 day
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CnosDuration {
-    duration: Duration,
+    pub duration: Duration,
     is_inf: bool,
 }
 

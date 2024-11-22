@@ -5,7 +5,7 @@ use models::auth::user::ROOT;
 use models::oid::Identifier;
 use models::schema::resource_info::{ResourceInfo, ResourceOperator};
 use snafu::ResultExt;
-use spi::query::execution::{Output, QueryStateMachineRef};
+use spi::query::execution::{create_single_message_stream, Output, QueryStateMachineRef};
 use spi::query::logical_planner::{DropGlobalObject, GlobalObjectType};
 use spi::{CoordinatorSnafu, MetaSnafu, QueryError, QueryResult};
 use trace::debug;
@@ -60,7 +60,6 @@ impl DDLDefinitionTask for DropGlobalObjectTask {
                         },
                     });
                 }
-
                 Ok(Output::Nil(()))
             }
             GlobalObjectType::Tenant => {
@@ -96,6 +95,13 @@ impl DDLDefinitionTask for DropGlobalObjectTask {
                         )
                         .await
                         .context(CoordinatorSnafu)?;
+
+                        if let Some(drop_after) = after {
+                            let message = format!("This tenant will drop after {:?}\nIf you want to delete this tenant immediately, you need to do something extra:\n1)recover tenant {:?};\n2)alter tenant {:?} unset drop_after;\n3)drop tenant {:?};", drop_after.duration,name,name,name);
+                            let stream = create_single_message_stream(message);
+                            return Ok(Output::StreamData(stream));
+                        }
+
                         Ok(Output::Nil(()))
                     }
                     Ok(None) => {
