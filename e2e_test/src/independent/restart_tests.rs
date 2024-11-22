@@ -823,3 +823,84 @@ fn case8_count_after_restart_cluster() {
     ];
     executor.execute_steps(&steps);
 }
+
+#[test]
+fn case9_drop_after_tenant() {
+    let mut ctx = E2eContext::new("restart_tests", "case9_drop_after_tenant");
+    let mut executor = ctx.build_executor(cluster_def::one_data(1));
+
+    let http_service_addr = executor.cluster_definition().data_cluster_def[0].http_host_port;
+    let url_cnosdb_public =
+        &format!("http://{http_service_addr}/api/v1/sql?tenant=cnosdb&db=public");
+
+    let steps: Vec<StepPtr> = vec![
+        RequestStep::new_boxed(
+            "create tenant",
+            SqlNoResult::build_request_with_str(
+                url_cnosdb_public,
+                "CREATE TENANT test with drop_after='1h'",
+                Ok(()),
+            ),
+            None,
+            None,
+        ),
+        ControlStep::new_boxed_restart_data_node("restart", 0),
+        RequestStep::new_boxed(
+            "select tenant after restart",
+            Sql::build_request_with_str(
+                url_cnosdb_public,
+                "SELECT * FROM cluster_schema.tenants WHERE tenant_name = 'test'",
+                Ok(vec![
+                    "tenant_name,tenant_options",
+                    r#"test,"{""comment"":null,""limiter_config"":null,""drop_after"":{""duration"":{""secs"":3600,""nanos"":0},""is_inf"":false},""tenant_is_hidden"":false}""#,
+                ]),
+                false,
+                false,
+            ),
+            None,
+            None,
+        ),
+        RequestStep::new_boxed(
+            "drop tenant",
+            Sql::build_request_with_str(
+                url_cnosdb_public,
+                "drop tenant test",
+                Ok(vec![
+                    "tips",
+                    r#""This tenant will drop after 3600s
+If you want to delete this tenant immediately, you need to do something extra:
+1)recover tenant ""test"";
+2)alter tenant ""test"" unset drop_after;
+3)drop tenant ""test"";""#,
+                ]),
+                false,
+                false,
+            ),
+            None,
+            None,
+        ),
+        RequestStep::new_boxed(
+            "recover tenant test",
+            SqlNoResult::build_request_with_str(url_cnosdb_public, "recover tenant test", Ok(())),
+            None,
+            None,
+        ),
+        RequestStep::new_boxed(
+            "unset tenant drop_after",
+            SqlNoResult::build_request_with_str(
+                url_cnosdb_public,
+                "alter tenant test unset drop_after",
+                Ok(()),
+            ),
+            None,
+            None,
+        ),
+        RequestStep::new_boxed(
+            "drop tenant test",
+            SqlNoResult::build_request_with_str(url_cnosdb_public, "drop tenant test", Ok(())),
+            None,
+            None,
+        ),
+    ];
+    executor.execute_steps(&steps);
+}

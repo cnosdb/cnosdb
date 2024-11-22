@@ -339,6 +339,9 @@ select * from cluster_schema.tenants where tenant_name='t_001';
 statement ok
 recover tenant t_001;
 
+statement ok
+alter tenant t_001 unset drop_after;
+
 
 statement ok
 drop tenant if exists tenant001;

@@ -8,19 +8,22 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use config::tskv::Config;
 use coordinator::service::CoordinatorRef;
+use datafusion::arrow::array::{ArrayRef, StringArray};
 use datafusion::arrow::datatypes::{Schema, SchemaRef};
 use datafusion::arrow::record_batch::RecordBatch;
-use datafusion::physical_plan::SendableRecordBatchStream;
+use datafusion::physical_plan::{RecordBatchStream, SendableRecordBatchStream};
 use futures::{Stream, StreamExt, TryStreamExt};
 use meta::model::MetaRef;
+use models::arrow::Field;
 use models::schema::query_info::{QueryId, QueryInfo};
 use trace::SpanContext;
 
 use super::dispatcher::QueryStatus;
 use super::logical_planner::Plan;
 use super::session::SessionCtx;
+use crate::query::DataType;
 use crate::service::protocol::Query;
-use crate::{QueryError, QueryResult};
+use crate::{DataFusionError, QueryError, QueryResult};
 
 pub type QueryExecutionRef = Arc<dyn QueryExecution>;
 
@@ -370,4 +373,49 @@ impl AsRef<str> for DONE {
             Self::CANCELLED => "CANCELLED",
         }
     }
+}
+
+pub struct SingleMessageStream {
+    schema: SchemaRef,
+    message: String,
+    sent: bool,
+}
+
+impl SingleMessageStream {
+    pub fn new(message: String) -> Self {
+        let schema = Arc::new(Schema::new(vec![Field::new("tips", DataType::Utf8, false)]));
+        Self {
+            schema,
+            message,
+            sent: false,
+        }
+    }
+}
+
+impl Stream for SingleMessageStream {
+    type Item = std::result::Result<RecordBatch, DataFusionError>;
+
+    fn poll_next(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        if self.sent {
+            Poll::Ready(None)
+        } else {
+            let batch = RecordBatch::try_new(
+                self.schema.clone(),
+                vec![Arc::new(StringArray::from(vec![self.message.clone()])) as ArrayRef],
+            )
+            .map_err(DataFusionError::ArrowError)?;
+            self.sent = true;
+            Poll::Ready(Some(Ok(batch)))
+        }
+    }
+}
+
+impl RecordBatchStream for SingleMessageStream {
+    fn schema(&self) -> SchemaRef {
+        self.schema.clone()
+    }
+}
+
+pub fn create_single_message_stream(message: String) -> SendableRecordBatchStream {
+    Box::pin(SingleMessageStream::new(message))
 }

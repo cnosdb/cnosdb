@@ -48,7 +48,7 @@ pub fn get_opt(path: Option<impl AsRef<Path>>) -> Opt {
         .map(|key| (format!("CNOSDB_META_{}", key.replace('.', "_")), key))
         .collect::<HashMap<String, String>>();
 
-    // 打印映射表（用于调试）
+    // debug
     // println!(
     //     "-----------------------------------------meta:Environment Variable to Field Mapping:"
     // );
@@ -66,15 +66,10 @@ pub fn get_opt(path: Option<impl AsRef<Path>>) -> Opt {
     }
 
     figment = figment.merge(Env::prefixed("CNOSDB_META_").map(move |env| {
-        let env_str = env.to_string(); // 将环境变量名转为字符串
-                                       // 在映射表中查找对应的配置字段
+        let env_str = env.to_string();
         match env_key_map.get(&format!("CNOSDB_META_{}", env_str)) {
-            Some(key) => {
-                Uncased::from_owned(key.clone()) // 返回 Uncased 类型
-            }
-            None => {
-                Uncased::new(env_str.clone()) // 返回默认值
-            }
+            Some(key) => Uncased::from_owned(key.clone()),
+            None => Uncased::new(env_str.clone()),
         }
     }));
 
