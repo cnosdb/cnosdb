@@ -5,6 +5,7 @@ use snafu::{Backtrace, Location, Snafu};
 
 use crate::auth::privilege::DatabasePrivilege;
 
+pub mod auth_cache;
 mod password;
 pub mod privilege;
 pub mod role;

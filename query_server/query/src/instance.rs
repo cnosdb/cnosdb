@@ -1,10 +1,12 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use coordinator::service::CoordinatorRef;
 use derive_builder::Builder;
 use memory_pool::MemoryPoolRef;
 use meta::error::MetaError;
+use models::auth::auth_cache::{AuthCache, AuthCacheKey};
 use models::auth::user::{User, UserInfo};
 use models::auth::AuthError;
 use models::oid::Oid;
@@ -49,6 +51,7 @@ pub struct Cnosdbms<D: QueryDispatcher> {
     access_control: AccessControlRef,
     // query dispatcher & query execution
     query_dispatcher: Arc<D>,
+    auth_cache: Arc<AuthCache<AuthCacheKey, User>>,
 }
 
 #[async_trait]
@@ -61,10 +64,19 @@ where
     }
 
     async fn authenticate(&self, user_info: &UserInfo, tenant_name: &str) -> QueryResult<User> {
-        self.access_control
+        let auth_cache_key = AuthCacheKey::new(user_info, tenant_name);
+        if let Some(user) = self.auth_cache.get(&auth_cache_key) {
+            debug!("Hit auth cache for user: {}", user.desc().name());
+            return Ok(user);
+        }
+
+        let user = self
+            .access_control
             .access_check(user_info, tenant_name)
             .await
-            .context(AuthSnafu)
+            .context(AuthSnafu)?;
+        self.auth_cache.insert(auth_cache_key, user.clone());
+        Ok(user)
     }
 
     async fn execute(
@@ -99,7 +111,13 @@ where
 
         let query_state_machine = self
             .query_dispatcher
-            .build_query_state_machine(tenant_id, query_id, query, span_context)
+            .build_query_state_machine(
+                tenant_id,
+                query_id,
+                query,
+                span_context,
+                self.auth_cache.clone(),
+            )
             .await?;
 
         Ok(query_state_machine)
@@ -245,6 +263,9 @@ pub async fn make_cnosdbms(
         stream_provider_manager.clone(),
     ));
 
+    let auth_cache: Arc<AuthCache<AuthCacheKey, User>> =
+        Arc::new(AuthCache::new(1024, Some(Duration::from_secs(60 * 60))));
+
     let query_dispatcher = SimpleQueryDispatcherBuilder::default()
         .with_coord(coord)
         .with_default_table_provider(default_table_provider)
@@ -256,6 +277,7 @@ pub async fn make_cnosdbms(
         .with_query_tracker(query_tracker)
         .with_func_manager(Arc::new(func_manager))
         .with_stream_provider_manager(stream_provider_manager)
+        .with_auth_cache(auth_cache.clone())
         .build()?;
 
     let mut builder = CnosdbmsBuilder::default();
@@ -271,6 +293,7 @@ pub async fn make_cnosdbms(
 
     let db_server = builder
         .query_dispatcher(query_dispatcher)
+        .auth_cache(auth_cache.clone())
         .build()
         .expect("build db server");
 
