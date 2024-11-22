@@ -43,6 +43,8 @@ tokio = { workspace = true, features = ["full", "tracing"] }
 tokio-stream = { workspace = true }
 tokio-util = { workspace = true }
 uuid = { workspace = true }
+base64 = { workspace = true }
+lru = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true, features = ["Win32_Storage_FileSystem"] }

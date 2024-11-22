@@ -15,8 +15,11 @@ use datafusion::physical_plan::{RecordBatchStream, SendableRecordBatchStream};
 use futures::{Stream, StreamExt, TryStreamExt};
 use meta::model::MetaRef;
 use models::arrow::Field;
+use models::auth::auth_cache::{AuthCache, AuthCacheKey};
+use models::auth::user::User;
+use models::oid::{Identifier, Oid};
 use models::schema::query_info::{QueryId, QueryInfo};
-use trace::SpanContext;
+use trace::{debug, warn, SpanContext};
 
 use super::dispatcher::QueryStatus;
 use super::logical_planner::Plan;
@@ -199,6 +202,7 @@ pub struct QueryStateMachine {
     pub query: Query,
     pub meta: MetaRef,
     pub coord: CoordinatorRef,
+    pub auth_cache: Arc<AuthCache<AuthCacheKey, User>>,
 
     state: AtomicPtr<QueryState>,
     start: Instant,
@@ -228,6 +232,7 @@ impl QueryStateMachine {
                 )
                 .expect("create test session ctx"),
             Arc::new(MockCoordinator {}),
+            Arc::new(AuthCache::new(1024, Some(Duration::from_secs(60)))),
         )
     }
 
@@ -236,6 +241,7 @@ impl QueryStateMachine {
         query: Query,
         session: SessionCtx,
         coord: CoordinatorRef,
+        auth_cache: Arc<AuthCache<AuthCacheKey, User>>,
     ) -> Self {
         let meta = coord.meta_manager();
 
@@ -245,6 +251,7 @@ impl QueryStateMachine {
             query,
             meta,
             coord,
+            auth_cache,
             state: AtomicPtr::new(Box::into_raw(Box::new(QueryState::ACCEPTING))),
             start: Instant::now(),
         }
@@ -312,9 +319,46 @@ impl QueryStateMachine {
             query: self.query.clone(),
             meta: self.meta.clone(),
             coord: self.coord.clone(),
+            auth_cache: self.auth_cache.clone(),
             state,
             start: self.start,
         }
+    }
+
+    pub fn remove_user_from_cache_by_user_name(&self, username: &str) {
+        let auths: Vec<AuthCacheKey> = self
+            .auth_cache
+            .iter()
+            .filter(|(_, user)| user.desc().name() == username)
+            .map(|(auth, _)| auth)
+            .collect();
+
+        for auth in auths {
+            match self.auth_cache.remove(&auth) {
+                true => debug!("Successfully removed auth cache for user {}", username),
+                false => warn!("Failed to remove auth cache for user {}", username),
+            }
+        }
+    }
+
+    pub fn remove_user_from_cache_by_user_id(&self, user_id: &Oid) {
+        let auths: Vec<AuthCacheKey> = self
+            .auth_cache
+            .iter()
+            .filter(|(_, user)| user.desc().id() == user_id)
+            .map(|(auth, _)| auth)
+            .collect();
+
+        for auth in auths {
+            match self.auth_cache.remove(&auth) {
+                true => debug!("Successfully removed auth cache for user {}", user_id),
+                false => warn!("Failed to remove auth cache for user {}", user_id),
+            }
+        }
+    }
+
+    pub fn clear_auth_cache(&self) {
+        self.auth_cache.clear();
     }
 
     pub fn config(&self) -> Config {

@@ -8,6 +8,8 @@ use coordinator::service::CoordinatorRef;
 use memory_pool::MemoryPoolRef;
 use meta::error::MetaError;
 use meta::model::MetaClientRef;
+use models::auth::auth_cache::{AuthCache, AuthCacheKey};
+use models::auth::user::User;
 use models::meta_data::{MetaModifyType, NodeId};
 use models::oid::Oid;
 use models::schema::query_info::{QueryId, QueryInfo};
@@ -61,6 +63,7 @@ pub struct SimpleQueryDispatcher {
 
     async_task_joinhandle: Arc<Mutex<HashMap<String, JoinHandle<()>>>>,
     failed_task_joinhandle: Arc<Mutex<HashMap<String, JoinHandle<()>>>>,
+    auth_cache: Arc<AuthCache<AuthCacheKey, User>>,
 }
 
 #[async_trait]
@@ -90,8 +93,14 @@ impl QueryDispatcher for SimpleQueryDispatcher {
     ) -> QueryResult<Output> {
         let query_state_machine = {
             let _span = Span::from_context("init session ctx", span_ctx);
-            self.build_query_state_machine(tenant_id, query_id, query.clone(), span_ctx)
-                .await?
+            self.build_query_state_machine(
+                tenant_id,
+                query_id,
+                query.clone(),
+                span_ctx,
+                self.auth_cache.clone(),
+            )
+            .await?
         };
 
         let logical_plan = self.build_logical_plan(query_state_machine.clone()).await?;
@@ -155,6 +164,7 @@ impl QueryDispatcher for SimpleQueryDispatcher {
         query_id: QueryId,
         query: Query,
         span_ctx: Option<&SpanContext>,
+        auth_cache: Arc<AuthCache<AuthCacheKey, User>>,
     ) -> QueryResult<Arc<QueryStateMachine>> {
         let session = self.session_factory.create_session_ctx(
             query_id.to_string(),
@@ -170,6 +180,7 @@ impl QueryDispatcher for SimpleQueryDispatcher {
             query,
             session,
             self.coord.clone(),
+            auth_cache,
         ));
         Ok(query_state_machine)
     }
@@ -563,6 +574,7 @@ pub struct SimpleQueryDispatcherBuilder {
     func_manager: Option<FuncMetaManagerRef>,
     stream_provider_manager: Option<StreamProviderManagerRef>,
     span_ctx: Option<SpanContext>,
+    auth_cache: Option<Arc<AuthCache<AuthCacheKey, User>>>,
 }
 
 impl SimpleQueryDispatcherBuilder {
@@ -630,6 +642,11 @@ impl SimpleQueryDispatcherBuilder {
         self
     }
 
+    pub fn with_auth_cache(mut self, auth_cache: Arc<AuthCache<AuthCacheKey, User>>) -> Self {
+        self.auth_cache = Some(auth_cache);
+        self
+    }
+
     pub fn build(self) -> QueryResult<Arc<SimpleQueryDispatcher>> {
         let coord = self.coord.ok_or_else(|| QueryError::BuildQueryDispatcher {
             err: "lost of coord".to_string(),
@@ -691,6 +708,12 @@ impl SimpleQueryDispatcherBuilder {
 
         let span_ctx = self.span_ctx;
 
+        let auth_cache = self
+            .auth_cache
+            .ok_or_else(|| QueryError::BuildQueryDispatcher {
+                err: "lost of auth_cache".to_string(),
+            })?;
+
         let dispatcher = Arc::new(SimpleQueryDispatcher {
             coord,
             default_table_provider,
@@ -705,6 +728,7 @@ impl SimpleQueryDispatcherBuilder {
             span_ctx,
             async_task_joinhandle: Arc::new(Mutex::new(HashMap::new())),
             failed_task_joinhandle: Arc::new(Mutex::new(HashMap::new())),
+            auth_cache,
         });
 
         let meta_task_receiver = dispatcher
