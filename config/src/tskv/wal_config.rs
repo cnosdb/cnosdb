@@ -79,6 +79,19 @@ impl CheckConfig for WalConfig {
             });
         }
 
+        if self.compress != "zstd"
+            && self.compress != "snappy"
+            && self.compress != "gzip"
+            && self.compress != "bzip"
+            && self.compress != "zlib"
+        {
+            ret.add_error(CheckConfigItemResult {
+                config: config_name.clone(),
+                item: "compress".to_string(),
+                message: "'compress' must be 'zstd', 'snappy', 'gzip', 'bzip', 'zlib'".to_string(),
+            });
+        }
+
         if ret.is_empty() {
             None
         } else {

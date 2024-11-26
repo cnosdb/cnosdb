@@ -119,6 +119,9 @@ index_cache_capacity = 100000
 ## reserve space for data stroage
 reserve_space = '0G'
 
+# the algorithm of compress tsm meta, only support zstd, snappy
+tsm_meta_compress = 'null'
+
 [wal]
 
 ## The directory where write ahead logs stored.

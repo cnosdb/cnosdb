@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use models::codec::Encoding;
 use parking_lot::RwLock;
 use trace::info;
 use utils::BloomFilter;
@@ -21,6 +22,7 @@ pub struct FlushTask {
     owner: String,
     tsf_id: VnodeId,
     memcache: Arc<RwLock<MemCache>>,
+    tsm_meta_compress: Encoding,
 
     path_delta: PathBuf,
     current_delta_file_id: ColumnFileId,
@@ -32,11 +34,13 @@ impl FlushTask {
         tsf_id: VnodeId,
         memcache: Arc<RwLock<MemCache>>,
         path_tsm: PathBuf,
+        tsm_meta_compress: Encoding,
     ) -> TskvResult<Self> {
         Ok(Self {
             owner,
             tsf_id,
             memcache,
+            tsm_meta_compress,
             path_delta: path_tsm,
             current_delta_file_id: 0,
         })
@@ -60,7 +64,8 @@ impl FlushTask {
 
         let file_id = self.memcache.read().file_id();
         self.current_delta_file_id = file_id;
-        let mut tsm_writer = TsmWriter::open(&self.path_delta, file_id, 0, true).await?;
+        let mut tsm_writer =
+            TsmWriter::open(&self.path_delta, file_id, 0, true, self.tsm_meta_compress).await?;
 
         let mut tsm_writer_is_used = false;
         let series_iter = MemCacheSeriesScanIterator::new(self.memcache.clone());
@@ -153,7 +158,8 @@ pub async fn flush_memtable(
 
     let owner = req.owner.clone();
     let path_delta = storage_opt.delta_dir(&req.owner, req.tf_id);
-    let mut flush_task = FlushTask::new(owner, req.tf_id, mem, path_delta).await?;
+    let encoding = storage_opt.tsm_meta_compress;
+    let mut flush_task = FlushTask::new(owner, req.tf_id, mem, path_delta, encoding).await?;
 
     let mut metrics = req.flush_metrics.write().await;
     let result = flush_task
@@ -357,9 +363,15 @@ pub mod flush_tests {
 
         let memcache = Arc::new(RwLock::new(mem_cache));
         let path_tsm = PathBuf::from("/tmp/test/flush/tsm1");
-        let mut flush_task = FlushTask::new(database.to_string(), 1, memcache, path_tsm.clone())
-            .await
-            .unwrap();
+        let mut flush_task = FlushTask::new(
+            database.to_string(),
+            1,
+            memcache,
+            path_tsm.clone(),
+            Encoding::Snappy,
+        )
+        .await
+        .unwrap();
 
         let mut metrics = FlushMetrics::default();
         let (edit, _) = flush_task
@@ -413,9 +425,10 @@ pub mod flush_tests {
         .unwrap();
 
         {
-            let delta_writer = TsmWriter::open(&path_tsm, delta_info.file_id, 100, true)
-                .await
-                .unwrap();
+            let delta_writer =
+                TsmWriter::open(&path_tsm, delta_info.file_id, 100, true, Encoding::Zstd)
+                    .await
+                    .unwrap();
             let delta_reader = TsmReader::open(delta_writer.path()).await.unwrap();
             let delta_data = delta_reader.read_record_batch(1, 0).await.unwrap();
             assert_eq!(delta_data, data);
@@ -508,6 +521,7 @@ pub mod flush_tests {
             1,
             Arc::new(RwLock::new(mem_cache1)),
             path_tsm.clone(),
+            Encoding::Snappy,
         )
         .await
         .unwrap();
@@ -522,6 +536,7 @@ pub mod flush_tests {
             1,
             Arc::new(RwLock::new(mem_cache2)),
             path_tsm.clone(),
+            Encoding::Zstd,
         )
         .await
         .unwrap();

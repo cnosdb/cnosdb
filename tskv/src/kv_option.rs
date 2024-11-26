@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -48,6 +46,7 @@ pub struct StorageOptions {
     pub snapshot_holding_time: i64,
     pub max_datablock_size: u64,
     pub index_cache_capacity: u64,
+    pub tsm_meta_compress: Encoding,
 }
 
 // database/data/ts_family_id/tsm
@@ -90,6 +89,12 @@ impl StorageOptions {
 
 impl From<&Config> for StorageOptions {
     fn from(config: &Config) -> Self {
+        let tsm_meta_compress = match Encoding::from_str(&config.storage.tsm_meta_compress) {
+            Ok(enc) => enc,
+            Err(e) => {
+                panic!("invalid wal.compress: {e}");
+            }
+        };
         Self {
             node_id: config.global.node_id,
             path: PathBuf::from(config.storage.path.clone()),
@@ -105,6 +110,7 @@ impl From<&Config> for StorageOptions {
             snapshot_holding_time: config.cluster.snapshot_holding_time.as_secs() as i64,
             max_datablock_size: config.storage.max_datablock_size,
             index_cache_capacity: config.storage.index_cache_capacity,
+            tsm_meta_compress,
         }
     }
 }

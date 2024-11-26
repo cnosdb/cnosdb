@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use models::codec::Encoding;
 use utils::BloomFilter;
 
 use crate::compaction::{CompactReq, CompactTask, CompactingBlock};
@@ -21,6 +22,7 @@ pub struct WriterWrapper {
 
     // Temporary values.
     tsm_writer: Option<TsmWriter>,
+    tsm_meta_compress: Encoding,
 
     // Result values.
     version_edit: VersionEdit,
@@ -32,6 +34,7 @@ impl WriterWrapper {
         let vnode_id = request.compact_task.vnode_id();
         let storage_opt = request.version.storage_opt();
         let tsm_dir = storage_opt.tsm_dir(request.version.owner().as_str(), vnode_id);
+        let tsm_meta_compress = storage_opt.tsm_meta_compress;
         Ok(Self {
             context,
             compact_task: request.compact_task,
@@ -40,6 +43,7 @@ impl WriterWrapper {
             max_level_ts: request.version.max_level_ts(),
 
             tsm_writer: None,
+            tsm_meta_compress,
 
             version_edit: VersionEdit::new(vnode_id),
             file_metas: HashMap::new(),
@@ -81,7 +85,8 @@ impl WriterWrapper {
     pub async fn writer(&mut self) -> TskvResult<&mut TsmWriter> {
         if self.tsm_writer.is_none() {
             let file_id = self.context.file_id_next();
-            let tsm_writer = TsmWriter::open(&self.tsm_dir, file_id, 0, false).await?;
+            let tsm_writer =
+                TsmWriter::open(&self.tsm_dir, file_id, 0, false, self.tsm_meta_compress).await?;
             trace::info!(
                 "Compaction({}): File: {file_id} been created (level: {}).",
                 self.compact_task,

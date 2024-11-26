@@ -706,6 +706,7 @@ pub mod test {
 
     use arrow_array::builder::{BooleanBuilder, Float64Builder, Int64Builder, UInt64Builder};
     use arrow_array::{ArrayRef, Int64Array, RecordBatch, TimestampNanosecondArray};
+    use models::codec::Encoding;
     use models::predicate::domain::TimeRange;
     use models::schema::tskv_table_schema::TskvTableSchemaRef;
     use models::{SeriesId, SeriesKey};
@@ -733,7 +734,7 @@ pub mod test {
         let mut file_seq = 0;
         for (i, d) in data.iter().enumerate() {
             file_seq = i as u64 + 1;
-            let mut writer = TsmWriter::open(&dir, file_seq, 0, level_id == 0)
+            let mut writer = TsmWriter::open(&dir, file_seq, 0, level_id == 0, Encoding::Null)
                 .await
                 .unwrap();
             for (sid, data_blks) in d.iter() {

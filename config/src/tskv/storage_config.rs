@@ -71,6 +71,9 @@ pub struct StorageConfig {
 
     #[serde(default = "StorageConfig::default_index_cache_capacity")]
     pub index_cache_capacity: u64,
+
+    #[serde(default = "StorageConfig::default_tsm_meta_compress")]
+    pub tsm_meta_compress: String,
 }
 
 impl StorageConfig {
@@ -139,6 +142,10 @@ impl StorageConfig {
         100_000
     }
 
+    fn default_tsm_meta_compress() -> String {
+        "null".to_string()
+    }
+
     pub fn introspect(&mut self) {
         // Unit of storage.compact_trigger_cold_duration is seconds
         self.compact_trigger_cold_duration =
@@ -165,6 +172,7 @@ impl Default for StorageConfig {
             copyinto_trigger_flush_size: Self::default_copyinto_trigger_flush_size(),
             max_datablock_size: Self::default_max_datablock_size(),
             index_cache_capacity: Self::default_index_cache_capacity(),
+            tsm_meta_compress: Self::default_tsm_meta_compress(),
         }
     }
 }
@@ -219,9 +227,22 @@ impl CheckConfig for StorageConfig {
         }
         if self.max_compact_size < 1024 * 1024 {
             ret.add_warn(CheckConfigItemResult {
-                config: config_name,
+                config: config_name.clone(),
                 item: "max_compact_size".to_string(),
                 message: "'max_compact_size' maybe too small(less than 1M)".to_string(),
+            });
+        }
+
+        if self.tsm_meta_compress != "zstd"
+            || self.tsm_meta_compress != "snappy"
+            || self.tsm_meta_compress != "null"
+        {
+            ret.add_error(CheckConfigItemResult {
+                config: config_name,
+                item: "compress_tsm_meta_algo".to_string(),
+                message:
+                    "Only 'null', 'zstd' and 'snappy' is supported for 'compress_tsm_meta_algo'"
+                        .to_string(),
             });
         }
 
