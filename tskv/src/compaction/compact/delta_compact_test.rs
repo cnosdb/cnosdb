@@ -491,7 +491,7 @@ async fn test_delta_compaction(
 
     let mut tsm_files = Vec::new();
     for (tsm_sequence, args) in tsm_files_desc.into_iter() {
-        let mut tsm_writer = TsmWriter::open(&tsm_dir, tsm_sequence, 0, false)
+        let mut tsm_writer = TsmWriter::open(&tsm_dir, tsm_sequence, 0, false, Encoding::Null)
             .await
             .unwrap();
         for (record_batch, schema) in args.into_iter() {
@@ -512,7 +512,7 @@ async fn test_delta_compaction(
 
     let mut delta_files = Vec::new();
     for (tsm_sequence, args) in delta_files_desc.into_iter() {
-        let mut tsm_writer = TsmWriter::open(&delta_dir, tsm_sequence, 0, true)
+        let mut tsm_writer = TsmWriter::open(&delta_dir, tsm_sequence, 0, true, Encoding::Null)
             .await
             .unwrap();
         for (record_batch, schema) in args.into_iter() {

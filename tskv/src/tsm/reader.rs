@@ -34,7 +34,7 @@ use crate::tsm::codec::{
     get_bool_codec, get_encoding, get_f64_codec, get_i64_codec, get_str_codec, get_ts_codec,
     get_u64_codec,
 };
-use crate::tsm::footer::Footer;
+use crate::tsm::footer::{Footer, TsmVersion};
 use crate::tsm::page::{Page, PageMeta, PageStatistics, PageWriteSpec};
 use crate::tsm::{ColumnGroupID, TsmTombstone, FOOTER_SIZE};
 use crate::{file_utils, ColumnFileId, TskvError};
@@ -130,9 +130,24 @@ impl TsmReader {
         let file_id = file_utils::get_tsm_file_id_by_path(&path)?;
 
         let footer = Arc::new(read_footer(&reader).await?);
-        let chunk_group_meta = Arc::new(read_chunk_group_meta(&reader, &footer).await?);
-        let chunk_group = read_chunk_groups(&reader, &chunk_group_meta).await?;
-        let chunk = read_chunk(&reader, &chunk_group).await?;
+        let mut target = Vec::new();
+        let buffer = read_tsm_meta_buffer(&reader, &footer).await?;
+        let tsm_meta_buffer = {
+            match footer.version() {
+                TsmVersion::V1 => buffer.as_slice(),
+                TsmVersion::V2 => {
+                    let encoding = get_encoding(&buffer);
+                    let codec = get_str_codec(encoding);
+                    codec.decode(&buffer, &mut target).context(DecodeSnafu)?;
+                    assert_eq!(target.len(), 1);
+                    target[0].as_slice()
+                }
+            }
+        };
+
+        let chunk_group_meta = read_chunk_group_meta(tsm_meta_buffer, &footer).await?;
+        let chunk_group = read_chunk_groups(tsm_meta_buffer, &chunk_group_meta).await?;
+        let chunk = read_chunk(tsm_meta_buffer, &chunk_group).await?;
 
         let tombstone_path = path.parent().unwrap_or_else(|| Path::new("/"));
         let tombstone = Arc::new(TsmTombstone::open(tombstone_path, file_id).await?);
@@ -400,67 +415,59 @@ pub async fn read_footer(reader: &FileStreamReader) -> TskvResult<Footer> {
     Footer::deserialize(&buffer)
 }
 
-pub async fn read_chunk_group_meta(
+pub async fn read_tsm_meta_buffer(
     reader: &FileStreamReader,
     footer: &Footer,
-) -> TskvResult<ChunkGroupMeta> {
-    let pos = footer.table().chunk_group_offset();
-    let mut buffer = vec![0u8; footer.table().chunk_group_size() as usize];
-    reader
-        .read_at(pos as usize, &mut buffer)
-        .await
-        .map_err(|e| {
-            ReadTsmSnafu {
-                reason: e.to_string(),
-            }
-            .build()
-        })?; // read chunk group meta
-    let specs = ChunkGroupMeta::deserialize(&buffer)?;
-    Ok(specs)
+) -> TskvResult<Vec<u8>> {
+    let pos = footer.series().chunk_offset() as usize;
+    let size = reader.len() - FOOTER_SIZE - pos;
+    let mut buffer = vec![0u8; size];
+    reader.read_at(pos, &mut buffer).await.map_err(|e| {
+        ReadTsmSnafu {
+            reason: e.to_string(),
+        }
+        .build()
+    })?;
+    Ok(buffer)
+}
+
+pub async fn read_chunk_group_meta(
+    buffer: &[u8],
+    footer: &Footer,
+) -> TskvResult<Arc<ChunkGroupMeta>> {
+    let pos = footer.table().chunk_group_offset() as usize;
+    let size = footer.table().chunk_group_size() as usize;
+    let serialize_buffer = &buffer[pos..pos + size];
+    let specs = ChunkGroupMeta::deserialize(serialize_buffer)?;
+    Ok(Arc::new(specs))
 }
 
 pub async fn read_chunk_groups(
-    reader: &FileStreamReader,
+    buffer: &[u8],
     chunk_group_meta: &ChunkGroupMeta,
 ) -> TskvResult<BTreeMap<String, Arc<ChunkGroup>>> {
     let mut specs = BTreeMap::new();
     for chunk in chunk_group_meta.tables().values() {
-        let pos = chunk.chunk_group_offset();
-        let mut buffer = vec![0u8; chunk.chunk_group_size() as usize];
-        reader
-            .read_at(pos as usize, &mut buffer)
-            .await
-            .map_err(|e| {
-                ReadTsmSnafu {
-                    reason: e.to_string(),
-                }
-                .build()
-            })?; // read chunk group meta
-        let group = Arc::new(ChunkGroup::deserialize(&buffer)?);
+        let pos = chunk.chunk_group_offset() as usize;
+        let size = chunk.chunk_group_size() as usize;
+        let serialize_buffer = &buffer[pos..pos + size];
+        let group = Arc::new(ChunkGroup::deserialize(serialize_buffer)?);
         specs.insert(chunk.name().to_string(), group);
     }
     Ok(specs)
 }
 
 pub async fn read_chunk(
-    reader: &FileStreamReader,
+    buffer: &[u8],
     chunk_group: &BTreeMap<String, Arc<ChunkGroup>>,
 ) -> TskvResult<BTreeMap<SeriesId, Arc<Chunk>>> {
     let mut chunks = BTreeMap::new();
     for group in chunk_group.values() {
         for chunk_spec in group.chunks() {
-            let pos = chunk_spec.chunk_offset();
-            let mut buffer = vec![0u8; chunk_spec.chunk_size() as usize];
-            reader
-                .read_at(pos as usize, &mut buffer)
-                .await
-                .map_err(|e| {
-                    ReadTsmSnafu {
-                        reason: e.to_string(),
-                    }
-                    .build()
-                })?;
-            let chunk = Arc::new(Chunk::deserialize(&buffer)?);
+            let pos = chunk_spec.chunk_offset() as usize;
+            let size = chunk_spec.chunk_size() as usize;
+            let serialize_buffer = &buffer[pos..pos + size];
+            let chunk = Arc::new(Chunk::deserialize(serialize_buffer)?);
             chunks.insert(chunk_spec.series_id(), chunk);
         }
     }

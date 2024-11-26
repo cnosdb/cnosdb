@@ -181,6 +181,7 @@ pub mod test {
     use std::sync::Arc;
 
     use cache::ShardedAsyncCache;
+    use models::codec::Encoding;
     use models::predicate::domain::TimeRange;
 
     use crate::compaction::compact::test::create_options;
@@ -314,10 +315,15 @@ pub mod test {
                     } else {
                         make_tsm_file(&tsm_dir, file_sketch.0)
                     };
-                    let mut writer =
-                        TsmWriter::open(&tsm_dir, file_sketch.0, 0, level_sketch.0 == 0)
-                            .await
-                            .unwrap();
+                    let mut writer = TsmWriter::open(
+                        &tsm_dir,
+                        file_sketch.0,
+                        0,
+                        level_sketch.0 == 0,
+                        Encoding::Zstd,
+                    )
+                    .await
+                    .unwrap();
                     writer.finish().await.unwrap();
 
                     if let Some(tr) = self.tombstone_map.get(&file_sketch.0) {

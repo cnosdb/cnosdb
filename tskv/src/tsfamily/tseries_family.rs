@@ -319,8 +319,9 @@ impl TseriesFamily {
             .iter()
             .flat_map(|level| level.files.clone())
             .collect::<Vec<_>>();
+        let encode_tsm_meta = self.storage_opt.tsm_meta_compress;
         for file in files {
-            if let Some(path) = file.update_tag_value(&series).await? {
+            if let Some(path) = file.update_tag_value(&series, encode_tsm_meta).await? {
                 self.version().remove_tsm_reader_cache(path).await;
             }
         }

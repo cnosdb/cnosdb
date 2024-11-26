@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use arrow_array::RecordBatch;
+use models::codec::Encoding;
 use models::predicate::domain::TimeRange;
 use models::schema::tskv_table_schema::{TableColumn, TskvTableSchemaRef};
 use models::{SeriesId, SeriesKey};
@@ -12,13 +13,14 @@ use snafu::{OptionExt, ResultExt};
 use utils::BloomFilter;
 
 use crate::compaction::CompactingBlock;
-use crate::error::{CommonSnafu, IOSnafu, ModelSnafu};
+use crate::error::{CommonSnafu, DecodeSnafu, IOSnafu, ModelSnafu};
 use crate::file_system::async_filesystem::{LocalFileSystem, LocalFileType};
 use crate::file_system::file::stream_writer::FileStreamWriter;
 use crate::file_system::FileSystem;
 use crate::file_utils::{make_delta_file, make_tsm_file};
 use crate::tsm::chunk::{Chunk, ChunkStatics, ChunkWriteSpec};
 use crate::tsm::chunk_group::{ChunkGroup, ChunkGroupMeta, ChunkGroupWriteSpec};
+use crate::tsm::codec::get_str_codec;
 use crate::tsm::column_group::ColumnGroup;
 use crate::tsm::footer::{Footer, SeriesMeta, TableMeta, TsmVersion};
 use crate::tsm::page::{Page, PageStatistics, PageWriteSpec};
@@ -39,7 +41,6 @@ pub struct TsmWriter {
     file_id: ColumnFileId,
     min_ts: i64,
     max_ts: i64,
-    size: u64,
     max_size: u64,
     path: PathBuf,
 
@@ -57,6 +58,8 @@ pub struct TsmWriter {
     chunk_group_specs: ChunkGroupMeta,
     footer: Footer,
     state: State,
+
+    tsm_meta_encode: Encoding,
 }
 
 //MutableRecordBatch
@@ -66,6 +69,7 @@ impl TsmWriter {
         file_id: ColumnFileId,
         max_size: u64,
         id_delta: bool,
+        encoding: Encoding,
     ) -> TskvResult<Self> {
         let file_path = if id_delta {
             make_delta_file(path_buf, file_id)
@@ -77,7 +81,7 @@ impl TsmWriter {
             .open_file_writer(&file_path, TSM_BUFFER_SIZE)
             .await
             .map_err(|e| TskvError::FileSystemError { source: e })?;
-        let writer = Self::new(file_path, file, file_id, max_size);
+        let writer = Self::new(file_path, file, file_id, max_size, encoding);
         Ok(writer)
     }
     fn new(
@@ -85,12 +89,16 @@ impl TsmWriter {
         writer: Box<FileStreamWriter>,
         file_id: ColumnFileId,
         max_size: u64,
+        encoding: Encoding,
     ) -> Self {
+        let mut tsm_v = TsmVersion::V1;
+        if encoding != Encoding::Null {
+            tsm_v = TsmVersion::V2;
+        }
         Self {
             file_id,
             max_ts: i64::MIN,
             min_ts: i64::MAX,
-            size: 0,
             max_size,
             path,
             series_bloom_filter: BloomFilter::new(BLOOM_FILTER_BITS),
@@ -99,8 +107,9 @@ impl TsmWriter {
             page_specs: Default::default(),
             chunk_specs: Default::default(),
             chunk_group_specs: Default::default(),
-            footer: Footer::empty(TsmVersion::V1),
+            footer: Footer::empty(tsm_v),
             state: State::Initialised,
+            tsm_meta_encode: encoding,
         }
     }
 
@@ -117,7 +126,7 @@ impl TsmWriter {
     }
 
     pub fn size(&self) -> u64 {
-        self.size
+        self.writer.len() as u64
     }
 
     pub fn path(&self) -> &Path {
@@ -143,28 +152,25 @@ impl TsmWriter {
             .await
             .context(IOSnafu)?;
         self.state = State::Started;
-        self.size += size as u64;
         Ok(size)
     }
 
     /// todo: write footer
-    pub async fn write_footer(&mut self) -> TskvResult<usize> {
-        let buf = self.footer.serialize()?;
-        let size = self.writer.write(&buf).await.context(IOSnafu)?;
-        self.size += size as u64;
-        Ok(size)
+    pub async fn write_footer(&mut self, buffer: &mut Vec<u8>) -> TskvResult<usize> {
+        let serialize_buf = self.footer.serialize()?;
+        buffer.extend_from_slice(&serialize_buf);
+        Ok(serialize_buf.len())
     }
 
-    pub async fn write_chunk_group(&mut self) -> TskvResult<()> {
+    pub async fn write_chunk_group(&mut self, buffer: &mut Vec<u8>) -> TskvResult<()> {
         for (table, group) in &self.chunk_specs {
-            let chunk_group_offset = self.writer.len() as u64;
-            let buf = group.serialize()?;
-            let chunk_group_size = self.writer.write(&buf).await.context(IOSnafu)? as u64;
-            self.size += chunk_group_size;
+            let chunk_group_offset = buffer.len() as u64;
+            let serialize_buf = group.serialize()?;
+            buffer.extend_from_slice(&serialize_buf);
             let chunk_group_spec = ChunkGroupWriteSpec {
                 table_schema: self.table_schemas.get(table).unwrap().clone(),
                 chunk_group_offset,
-                chunk_group_size,
+                chunk_group_size: serialize_buf.len() as u64,
                 time_range: group.time_range(),
                 // The number of chunks in the group.
                 count: 0,
@@ -174,36 +180,38 @@ impl TsmWriter {
         Ok(())
     }
 
-    pub async fn write_chunk_group_specs(&mut self, series: SeriesMeta) -> TskvResult<()> {
-        let chunk_group_specs_offset = self.writer.len() as u64;
-        let buf = self.chunk_group_specs.serialize()?;
-        let chunk_group_specs_size = self.writer.write(&buf).await.context(IOSnafu)?;
-        self.size += chunk_group_specs_size as u64;
+    pub async fn write_chunk_group_specs(
+        &mut self,
+        series: SeriesMeta,
+        buffer: &mut Vec<u8>,
+    ) -> TskvResult<()> {
+        let chunk_group_specs_offset = buffer.len() as u64;
+        let serialize_buf = self.chunk_group_specs.serialize()?;
+        buffer.extend_from_slice(&serialize_buf);
         let time_range = self.chunk_group_specs.time_range();
         self.footer.set_time_range(time_range);
         self.footer.set_table_meta(TableMeta::new(
             chunk_group_specs_offset,
-            chunk_group_specs_size as u64,
+            serialize_buf.len() as u64,
         ));
         self.footer.set_series(series);
         Ok(())
     }
 
-    pub async fn write_chunk(&mut self) -> TskvResult<SeriesMeta> {
+    pub async fn write_chunk(&mut self, buffer: &mut Vec<u8>) -> TskvResult<SeriesMeta> {
         let chunk_offset = self.writer.len() as u64;
         for (table, group) in &self.page_specs {
             for (series, chunk) in group {
-                let chunk_offset = self.writer.len() as u64;
-                let buf = chunk.serialize()?;
-                let chunk_size = self.writer.write(&buf).await.context(IOSnafu)? as u64;
-                self.size += chunk_size;
+                let chunk_offset = buffer.len() as u64;
+                let serialize_buf = chunk.serialize()?;
+                buffer.extend_from_slice(&serialize_buf);
                 let time_range = chunk.time_range();
                 self.min_ts = min(self.min_ts, time_range.min_ts);
                 self.max_ts = max(self.max_ts, time_range.max_ts);
                 let chunk_spec = ChunkWriteSpec::new(
                     *series,
                     chunk_offset,
-                    chunk_size,
+                    serialize_buf.len() as u64,
                     ChunkStatics::new(*time_range),
                 );
                 self.chunk_specs
@@ -213,7 +221,7 @@ impl TsmWriter {
                 self.series_bloom_filter.insert(&series.to_be_bytes());
             }
         }
-        let chunk_size = self.writer.len() as u64 - chunk_offset;
+        let chunk_size = buffer.len() as u64;
         let series = SeriesMeta::new(
             self.series_bloom_filter.bytes().to_vec(),
             chunk_offset,
@@ -323,7 +331,6 @@ impl TsmWriter {
         for page in pages {
             let offset = self.writer.len() as u64;
             let size = self.writer.write(&page.bytes).await.context(IOSnafu)?;
-            self.size += size as u64;
             let spec = PageWriteSpec {
                 offset,
                 size: size as u64,
@@ -357,8 +364,7 @@ impl TsmWriter {
             self.create_column_group(schema.clone(), meta.series_id(), meta.series_key());
 
         let mut offset = self.writer.len() as u64;
-        let size = self.writer.write(&raw).await.context(IOSnafu)?;
-        self.size += size as u64;
+        self.writer.write(&raw).await.context(IOSnafu)?;
 
         let column_group = meta
             .column_group()
@@ -444,7 +450,7 @@ impl TsmWriter {
             }
         }
 
-        if self.max_size != 0 && self.size > self.max_size {
+        if self.max_size != 0 && self.writer.len() > self.max_size as usize {
             self.finish().await?;
         }
 
@@ -456,6 +462,7 @@ impl TsmWriter {
         path: PathBuf,
         mut writer: Box<FileStreamWriter>,
         meta: TsmMetaData,
+        tsm_meta_encode: Encoding,
     ) -> TskvResult<Self> {
         writer
             .truncate(meta.footer().series().chunk_offset() as usize)
@@ -465,7 +472,6 @@ impl TsmWriter {
             file_id,
             max_ts: i64::MIN,
             min_ts: i64::MAX,
-            size: writer.len() as u64,
             max_size: 0,
             path,
             series_bloom_filter: BloomFilter::new(BLOOM_FILTER_BITS),
@@ -476,6 +482,7 @@ impl TsmWriter {
             chunk_group_specs: Default::default(),
             footer: Footer::empty(TsmVersion::V1),
             state: State::Initialised,
+            tsm_meta_encode,
         };
         let mut page_specs = BTreeMap::new();
         meta.chunk_group_meta().tables().values().for_each(|v| {
@@ -494,10 +501,24 @@ impl TsmWriter {
     }
 
     pub async fn finish(&mut self) -> TskvResult<()> {
-        let series_meta = self.write_chunk().await?;
-        self.write_chunk_group().await?;
-        self.write_chunk_group_specs(series_meta).await?;
-        self.write_footer().await?;
+        let mut buffer = vec![];
+        let series_meta = self.write_chunk(&mut buffer).await?;
+        self.write_chunk_group(&mut buffer).await?;
+        self.write_chunk_group_specs(series_meta, &mut buffer)
+            .await?;
+        let mut buffer = match self.tsm_meta_encode {
+            Encoding::Null => buffer,
+            _ => {
+                let mut buffer_encode = vec![];
+                let codec = get_str_codec(self.tsm_meta_encode);
+                codec
+                    .encode(&[&buffer], &mut buffer_encode)
+                    .context(DecodeSnafu)?;
+                buffer_encode
+            }
+        };
+        self.write_footer(&mut buffer).await?;
+        self.writer.write(&buffer).await.context(IOSnafu)?;
         self.writer.flush().await.context(IOSnafu)?;
         self.state = State::Finished;
         Ok(())
@@ -572,7 +593,7 @@ pub mod test {
         .unwrap();
 
         let path = "/tmp/test/tsm";
-        let mut tsm_writer = TsmWriter::open(&PathBuf::from(path), 1, 0, false)
+        let mut tsm_writer = TsmWriter::open(&PathBuf::from(path), 1, 0, false, Encoding::Null)
             .await
             .unwrap();
         tsm_writer
@@ -632,7 +653,7 @@ pub mod test {
         .unwrap();
 
         let path = "/tmp/test/tsm2";
-        let mut tsm_writer = TsmWriter::open(&PathBuf::from(path), 1, 0, false)
+        let mut tsm_writer = TsmWriter::open(&PathBuf::from(path), 1, 0, false, Encoding::Null)
             .await
             .unwrap();
         tsm_writer
@@ -692,7 +713,7 @@ pub mod test {
         .unwrap();
 
         let path = "/tmp/test/tsm3";
-        let mut tsm_writer = TsmWriter::open(&PathBuf::from(path), 1, 0, false)
+        let mut tsm_writer = TsmWriter::open(&PathBuf::from(path), 1, 0, false, Encoding::Null)
             .await
             .unwrap();
         tsm_writer
@@ -706,9 +727,10 @@ pub mod test {
         //println!("{:?}", chunk);
         if let Some(meta) = chunk.get(&(1_u32)) {
             let path2 = "/tmp/test/tsm4";
-            let mut tsm_writer2 = TsmWriter::open(&PathBuf::from(path2), 1, 0, false)
-                .await
-                .unwrap();
+            let mut tsm_writer2 =
+                TsmWriter::open(&PathBuf::from(path2), 1, 0, false, Encoding::Null)
+                    .await
+                    .unwrap();
             tsm_writer2
                 .write_raw(schema, meta.clone(), 0, raw2.clone())
                 .await

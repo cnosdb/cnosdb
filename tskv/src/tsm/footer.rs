@@ -12,6 +12,8 @@ use crate::TskvResult;
 #[repr(u8)]
 pub enum TsmVersion {
     V1 = 1,
+    // compress the tsm meta data
+    V2 = 2,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]

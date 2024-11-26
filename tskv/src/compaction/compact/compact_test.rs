@@ -883,7 +883,9 @@ async fn test_big_compaction_1() {
 
     let mut column_files = Vec::new();
     for (tsm_sequence, args) in data_desc.into_iter() {
-        let mut tsm_writer = TsmWriter::open(&dir, tsm_sequence, 0, false).await.unwrap();
+        let mut tsm_writer = TsmWriter::open(&dir, tsm_sequence, 0, false, Encoding::Snappy)
+            .await
+            .unwrap();
         for (record_batch, schema) in args.into_iter() {
             tsm_writer
                 .write_record_batch(1, SeriesKey::default(), schema, record_batch)
@@ -1267,7 +1269,9 @@ async fn test_big_compaction_2() {
 
     let mut column_files = Vec::new();
     for (tsm_sequence, args) in data_desc.into_iter() {
-        let mut tsm_writer = TsmWriter::open(&dir, tsm_sequence, 0, false).await.unwrap();
+        let mut tsm_writer = TsmWriter::open(&dir, tsm_sequence, 0, false, Encoding::Zstd)
+            .await
+            .unwrap();
         for (record_batch, schema) in args.into_iter() {
             tsm_writer
                 .write_record_batch(1, SeriesKey::default(), schema, record_batch)

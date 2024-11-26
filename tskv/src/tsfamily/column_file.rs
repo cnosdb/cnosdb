@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 
 use cache::{AsyncCache, ShardedAsyncCache};
+use models::codec::Encoding;
 use models::predicate::domain::TimeRange;
 use models::{ColumnId, FieldId, SeriesId, SeriesKey};
 use snafu::ResultExt;
@@ -167,6 +168,7 @@ impl ColumnFile {
     pub async fn update_tag_value(
         &self,
         series: &HashMap<SeriesId, SeriesKey>,
+        encode_tsm_meta: Encoding,
     ) -> TskvResult<Option<PathBuf>> {
         let mut meta = if self
             .contains_any_series_id(&series.keys().copied().collect::<Vec<_>>())
@@ -186,7 +188,14 @@ impl ColumnFile {
             .open_file_writer(&self.path, 1024)
             .await
             .context(FileSystemSnafu)?;
-        TsmWriter::update_file_meta_data(self.file_id, self.path.clone(), writer, meta).await?;
+        TsmWriter::update_file_meta_data(
+            self.file_id,
+            self.path.clone(),
+            writer,
+            meta,
+            encode_tsm_meta,
+        )
+        .await?;
         Ok(Some(self.path.clone()))
     }
 }
@@ -342,7 +351,9 @@ mod test {
     #[tokio::test]
     async fn test_update_tag() {
         let path = "/tmp/test/tskv/tsfamily/columnfile/test_update_tag".to_string();
-        let mut writer = TsmWriter::open(&path, 1, 0, true).await.unwrap();
+        let mut writer = TsmWriter::open(&path, 1, 0, true, Encoding::Null)
+            .await
+            .unwrap();
 
         let tsm_file_path = writer.path().to_path_buf();
         let schema = TskvTableSchema::new(
@@ -386,7 +397,7 @@ mod test {
 
         let column_file = ColumnFile::new(1, 0, TimeRange::new(1, 3), 0, tsm_file_path);
         let path = column_file
-            .update_tag_value(&HashMap::from([(1, series_update.clone())]))
+            .update_tag_value(&HashMap::from([(1, series_update.clone())]), Encoding::Null)
             .await
             .unwrap();
 

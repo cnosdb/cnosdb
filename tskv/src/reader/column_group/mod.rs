@@ -305,7 +305,7 @@ mod tests {
             ],
         );
         let schema = Arc::new(schema);
-        let mut tsm_writer = TsmWriter::open(&path, 0, 0, false)
+        let mut tsm_writer = TsmWriter::open(&path, 0, 0, false, Encoding::Snappy)
             .await
             .expect("tsm_writer");
         let df_schema = schema.to_arrow_schema();
