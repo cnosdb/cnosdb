@@ -219,6 +219,36 @@ impl TsmReader {
         read_page(&self.reader, page_spec).await
     }
 
+    pub async fn read_adjacent_pages(
+        &self,
+        pages_specs: &[PageWriteSpec],
+    ) -> TskvResult<Vec<Page>> {
+        let pos = pages_specs[0].offset() as usize;
+        let total_size: usize = pages_specs.iter().map(|p| p.size() as usize).sum();
+        let mut buffer = vec![0u8; total_size];
+        self.reader.read_at(pos, &mut buffer).await.map_err(|e| {
+            ReadTsmSnafu {
+                reason: e.to_string(),
+            }
+            .build()
+        })?;
+
+        let bytes = Bytes::from(buffer);
+        let mut pages = Vec::with_capacity(pages_specs.len());
+        let mut offset = 0;
+        for page_spec in pages_specs {
+            let size = page_spec.size() as usize;
+            let page = Page {
+                meta: page_spec.meta().clone(),
+                bytes: bytes.slice(offset..offset + size),
+            };
+            page.crc_validation()?;
+            pages.push(page);
+            offset += size;
+        }
+        Ok(pages)
+    }
+
     pub async fn read_series_pages(
         &self,
         series_id: SeriesId,

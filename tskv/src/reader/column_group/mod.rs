@@ -199,18 +199,47 @@ async fn read(
     schema_meta: HashMap<String, String>,
     metrics: ColumnGroupReaderMetrics,
 ) -> TskvResult<RecordBatch> {
+    let mut sorted_pages = pages_meta.clone();
+    sorted_pages.sort_by_key(|p| p.offset());
+
+    let merged_reads = merge_adjacent_pages(&sorted_pages);
+
     let mut pages = Vec::with_capacity(pages_meta.len());
-    // todo: 一次性读取所有相邻的page，减少io次数
-    for page_meta in pages_meta.iter() {
+    for batch in merged_reads {
         let _timer = metrics.elapsed_page_scan_time().timer();
-        metrics.page_read_count().add(1);
-        metrics.page_read_bytes().add(page_meta.size() as usize);
-        let page = reader.read_page(page_meta).await?;
-        pages.push(page);
+        metrics.page_read_count().add(batch.len());
+        let total_size: usize = batch.iter().map(|p| p.size() as usize).sum();
+        metrics.page_read_bytes().add(total_size);
+        let batch_pages = reader.read_adjacent_pages(&batch).await?;
+        pages.extend(batch_pages);
     }
+
     let _timer = metrics.elapsed_pages_to_record_batch_time().timer();
     let record_batch = decode_pages(pages, schema_meta, Some((reader.tombstone(), series_id)))?;
     Ok(record_batch)
+}
+
+fn merge_adjacent_pages(pages: &[PageWriteSpec]) -> Vec<Vec<PageWriteSpec>> {
+    let mut result = Vec::new();
+    let mut current_batch = Vec::new();
+    let mut last_end = 0;
+
+    for page in pages {
+        if current_batch.is_empty() || page.offset() == last_end {
+            current_batch.push(page.clone());
+            last_end = page.offset() + page.size();
+        } else {
+            result.push(std::mem::take(&mut current_batch));
+            current_batch.push(page.clone());
+            last_end = page.offset() + page.size();
+        }
+    }
+
+    if !current_batch.is_empty() {
+        result.push(current_batch);
+    }
+
+    result
 }
 
 #[cfg(test)]
