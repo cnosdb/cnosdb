@@ -194,9 +194,7 @@ impl CompactJobInner {
                         break;
                     }
                 };
-                let vnode_ids_for_debug = vnode_ids.clone();
                 let now = Instant::now();
-                info!("Compacting on vnode(job start): {:?}", &vnode_ids_for_debug);
                 for (task, limit) in vnode_ids {
                     let vnode_id = task.vnode_id();
                     let ts_family = ctx
@@ -277,8 +275,7 @@ impl CompactJobInner {
                     }
                 }
                 info!(
-                    "Compacting on vnode(job start): {:?} costs {} sec",
-                    vnode_ids_for_debug,
+                    "Compacting on vnode(job start): costs {} sec",
                     now.elapsed().as_secs()
                 );
             }
