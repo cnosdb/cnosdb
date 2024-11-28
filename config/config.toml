@@ -217,6 +217,9 @@ enable_report = true
 ## GRPC address of the OTLP collector
 # otlp_endpoint = 'http://localhost:4317'
 
+## The Path to the trace log.
+# trace_log_path = '/var/log/cnosdb/trace.log'
+
 ## Soft limit on the total span and event totals in trace
 # max_spans_per_trace = 100
 
