@@ -1,8 +1,6 @@
 name: Mirror and run GitLab CI
 
 on:
-  schedule:
-    - cron: "00 13 * * 1"
   workflow_dispatch:
 
 jobs:
@@ -25,10 +23,3 @@ jobs:
         GITLAB_PASSWORD: ${{ secrets.GITLAB_PASSWORD }}
         GITLAB_PROJECT_ID: "5"
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    - name: send info to dingding
-      run: |
-        current_date=$(date +"%Y-%m-%d")
-        echo "current_date: $current_date"
-        commit_id="$(echo "${{ github.sha }}"|cut -c 1-8)"
-        echo "commit_id: $commit_id"
-        curl -X POST "https://oapi.dingtalk.com/robot/send?access_token=${{ secrets.DINGDING_TOKEN }}" -H "Content-Type: application/json" -d '{"msgtype":"text","text": {"content": "'${current_date}' 性能测试(visible in an hour😊)\nhttps://benchmark-result.cnosdb.com/benchmark-hits/hits_'${commit_id}'.html\nhttps://benchmark-result.cnosdb.com/benchmark-tsbs/tsbs_'${commit_id}'.html"}}'
