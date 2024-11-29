@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use models::predicate::domain::{TimeRange, TimeRanges};
@@ -98,18 +98,34 @@ impl SuperVersion {
         let column_files = self
             .column_files_by_sid_and_time(series_ids, &TimeRanges::new(vec![*time_range]))
             .await?;
-        for sid in series_ids {
-            for column_file in column_files.iter() {
+
+        let mut file_series_map = HashMap::new();
+        for column_file in column_files.iter() {
+            let mut valid_series = Vec::new();
+            for sid in series_ids {
                 if column_file.maybe_contains_series_id(*sid).await? {
-                    for column_id in column_ids {
-                        self.version
-                            .remove_tsm_reader_cache(column_file.file_path())
-                            .await;
-                        column_file
-                            .add_tombstone(*sid, *column_id, time_range)
-                            .await?;
-                    }
+                    valid_series.push(*sid);
                 }
+            }
+            if !valid_series.is_empty() {
+                file_series_map.insert(column_file.file_id(), (column_file.clone(), valid_series));
+            }
+        }
+
+        for (_, (column_file, valid_series)) in file_series_map {
+            self.version
+                .remove_tsm_reader_cache(column_file.file_path())
+                .await;
+
+            let mut columns = Vec::new();
+            for sid in valid_series {
+                for column_id in column_ids {
+                    columns.push((sid, *column_id));
+                }
+            }
+
+            if !columns.is_empty() {
+                column_file.add_tombstone(&columns, time_range).await?;
             }
         }
         Ok(())

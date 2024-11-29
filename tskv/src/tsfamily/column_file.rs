@@ -150,8 +150,7 @@ impl ColumnFile {
 
     pub async fn add_tombstone(
         &self,
-        series_id: SeriesId,
-        column_id: ColumnId,
+        columns: &[(SeriesId, ColumnId)],
         time_range: &TimeRange,
     ) -> TskvResult<()> {
         let dir = self.path.parent().expect("file has parent");
@@ -159,8 +158,9 @@ impl ColumnFile {
         let mut tombstone = TsmTombstone::open(dir, self.file_id).await?;
         let bloom_filter = self.load_bloom_filter().await?;
         tombstone
-            .add_range(&[(series_id, column_id)], *time_range, Some(bloom_filter))
+            .add_range(columns, *time_range, Some(bloom_filter))
             .await?;
+
         tombstone.flush().await?;
         Ok(())
     }
