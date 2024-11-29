@@ -58,8 +58,8 @@ criterion = { version = "0.5.1" }
 crossbeam-channel = "0.5.11"
 ctrlc = "3.4"
 dashmap = "5.5.3"
-datafusion = { git = "https://github.com/cnosdb/arrow-datafusion.git", branch = "27.0.0" }
-datafusion-proto = { git = "https://github.com/cnosdb/arrow-datafusion.git", branch = "27.0.0" }
+datafusion = { git = "https://github.com/lutengda/arrow-datafusion.git", branch = "cnosdbdf_27_exactcountoom" }
+datafusion-proto = { git = "https://github.com/lutengda/arrow-datafusion.git", branch = "cnosdbdf_27_exactcountoom" }
 dateparser = "0.2.1"
 derive_builder = "0.13.0"
 diff = "0.1.13"
