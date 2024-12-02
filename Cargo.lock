@@ -35,7 +35,7 @@ dependencies = [
  "brotli",
  "bytes",
  "bytestring",
- "derive_more",
+ "derive_more 0.99.17",
  "encoding_rs",
  "flate2",
  "futures-core",
@@ -149,7 +149,7 @@ dependencies = [
  "bytestring",
  "cfg-if",
  "cookie",
- "derive_more",
+ "derive_more 0.99.17",
  "encoding_rs",
  "futures-core",
  "futures-util",
@@ -936,16 +936,6 @@ checksum = "7f30e7476521f6f8af1a1c4c0b8cc94f0bee37d91763d0ca2665f299b6cd8aec"
 
 [[package]]
 name = "byte-unit"
-version = "4.0.19"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da78b32057b8fdfc352504708feeba7216dcd65a2c9ab02978cbd288d1279b6c"
-dependencies = [
- "serde",
- "utf8-width",
-]
-
-[[package]]
-name = "byte-unit"
 version = "5.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "33ac19bdf0b2665407c39d82dbc937e951e7e2001609f0fb32edd0af45a2d63e"
@@ -1278,7 +1268,7 @@ name = "config"
 version = "2.4.3"
 dependencies = [
  "async-backtrace",
- "byte-unit 5.1.4",
+ "byte-unit",
  "figment",
  "humantime",
  "macros",
@@ -1958,6 +1948,27 @@ dependencies = [
  "quote",
  "rustc_version",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "derive_more"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4a9b99b9cbbe49445b21764dc0625032a89b145a2642e67603e1c936f5458d05"
+dependencies = [
+ "derive_more-impl",
+]
+
+[[package]]
+name = "derive_more-impl"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb7330aeadfbe296029522e6c40f315320aba36fc43a5b3632f3795348f3bd22"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.66",
+ "unicode-xid",
 ]
 
 [[package]]
@@ -3604,7 +3615,7 @@ dependencies = [
  "async-trait",
  "bcrypt",
  "bincode",
- "byte-unit 5.1.4",
+ "byte-unit",
  "byteorder",
  "chrono",
  "config",
@@ -3945,14 +3956,15 @@ checksum = "0ab1bc2a289d34bd04a330323ac98a1b4bc82c9d9fcb1e66b63caa84da26b575"
 
 [[package]]
 name = "openraft"
-version = "0.9.5"
+version = "0.9.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aea4c15625735c6f4693c84046022081f9d54b2e376da699cd059161ef771b5f"
+checksum = "c99ea08834a7786c6b19a6a40163291d55933889079af2caed24230358d4467a"
 dependencies = [
  "anyerror",
- "byte-unit 4.0.19",
+ "byte-unit",
+ "chrono",
  "clap",
- "derive_more",
+ "derive_more 1.0.0",
  "futures",
  "maplit",
  "openraft-macros",
@@ -3967,12 +3979,14 @@ dependencies = [
 
 [[package]]
 name = "openraft-macros"
-version = "0.9.5"
+version = "0.9.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d8514e44dab27259559f6594ff08ce0b7db2d850d9af304109867cce57d345d3"
+checksum = "226ce477d851088815fdbd05a35921960edeb8767427b2369b424fa57e303ae5"
 dependencies = [
+ "chrono",
  "proc-macro2",
  "quote",
+ "semver",
  "syn 2.0.66",
 ]
 
@@ -4713,7 +4727,7 @@ checksum = "5e617cc9058daa5e1fe5a0d23ed745773a5ee354111dad1ec0235b0cc16b6730"
 dependencies = [
  "cfg-if",
  "darwin-libproc",
- "derive_more",
+ "derive_more 0.99.17",
  "glob",
  "mach2",
  "nix 0.24.3",
@@ -6765,6 +6779,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e51733f11c9c4f72aa0c160008246859e340b00807569a0da0e7a1079b27ba85"
 
 [[package]]
+name = "unicode-xid"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
+
+[[package]]
 name = "untrusted"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6816,7 +6836,7 @@ name = "utils"
 version = "2.4.3"
 dependencies = [
  "async-backtrace",
- "byte-unit 5.1.4",
+ "byte-unit",
  "datafusion",
  "fnv",
  "futures",
