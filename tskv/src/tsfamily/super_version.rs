@@ -112,21 +112,21 @@ impl SuperVersion {
             }
         }
 
-        for (_, (column_file, valid_series)) in file_series_map {
-            self.version
-                .remove_tsm_reader_cache(column_file.file_path())
-                .await;
-
+        for (column_file, valid_series) in file_series_map.into_values() {
+            let path = column_file.file_path().as_path().display().to_string();
+            let reader = self.version.get_tsm_reader(&path).await?;
+            let bloom_filter = column_file.load_bloom_filter().await?;
             let mut columns = Vec::new();
             for sid in valid_series {
                 for column_id in column_ids {
                     columns.push((sid, *column_id));
                 }
             }
-
-            if !columns.is_empty() {
-                column_file.add_tombstone(&columns, time_range).await?;
-            }
+            reader
+                .tombstone()
+                .add_range(&columns, *time_range, Some(bloom_filter))
+                .await?;
+            reader.tombstone().flush().await?;
         }
         Ok(())
     }
