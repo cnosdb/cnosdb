@@ -6,13 +6,14 @@ use arrow_array::{
     TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray,
     TimestampSecondArray, UInt64Array,
 };
+use arrow_buffer::buffer::BooleanBuffer;
+use arrow_buffer::builder::BooleanBufferBuilder;
 use arrow_schema::{DataType, TimeUnit};
 use models::column_data::PrimaryColumnData;
 use models::column_data_ref::PrimaryColumnDataRef;
 use models::schema::tskv_table_schema::{ColumnType, TableColumn};
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
-use utils::bitset::{BitSet, ImmutBitSet};
 
 use super::mutable_column_ref::MutableColumnRef;
 use super::statistics::ValueStatistics;
@@ -75,10 +76,12 @@ impl Page {
         Ok(Page { bytes, meta })
     }
 
-    pub fn null_bitset(&self) -> ImmutBitSet<'_> {
+    pub fn null_bitset(&self) -> BooleanBufferBuilder {
         let data_len = decode_be_u64(&self.bytes[4..12]) as usize;
         let bitset_buffer = self.null_bitset_slice();
-        ImmutBitSet::new_without_check(data_len, bitset_buffer)
+        let mut builder = BooleanBufferBuilder::new(data_len);
+        builder.append_packed_range(0..data_len, bitset_buffer);
+        builder
     }
 
     pub fn null_bitset_slice(&self) -> &[u8] {
@@ -98,7 +101,7 @@ impl Page {
     pub fn arrow_array_to_page(array: ArrayRef, table_column: TableColumn) -> TskvResult<Page> {
         let data_len = array.len() as u64;
         let bit_set_buffer = match array.nulls() {
-            None => BitSet::with_size_all_set(data_len as usize).into_bytes(),
+            None => BooleanBuffer::new_set(data_len as usize).values().to_vec(),
             Some(nulls) => nulls.buffer().to_vec(),
         };
         let mut buf = vec![];
@@ -352,7 +355,7 @@ impl Page {
 
     pub fn col_to_page(column: &MutableColumn) -> TskvResult<Page> {
         let null_count = 1;
-        let len_bitset = column.valid().byte_len() as u32;
+        let len_bitset = ((column.valid().len() + 7) >> 3) as u32;
         let data_len = column.valid().len() as u64;
         let mut buf = vec![];
         let statistics = match column.data() {
@@ -361,7 +364,7 @@ impl Page {
                     .iter()
                     .enumerate()
                     .filter_map(|(idx, val)| {
-                        if column.valid().get(idx) {
+                        if column.valid().get_bit(idx) {
                             Some(*val)
                         } else {
                             None
@@ -385,7 +388,7 @@ impl Page {
                     .iter()
                     .enumerate()
                     .filter_map(|(idx, val)| {
-                        if column.valid().get(idx) {
+                        if column.valid().get_bit(idx) {
                             Some(*val)
                         } else {
                             None
@@ -415,7 +418,7 @@ impl Page {
                     .iter()
                     .enumerate()
                     .filter_map(|(idx, val)| {
-                        if column.valid().get(idx) {
+                        if column.valid().get_bit(idx) {
                             Some(*val)
                         } else {
                             None
@@ -439,7 +442,7 @@ impl Page {
                     .iter()
                     .enumerate()
                     .filter_map(|(idx, val)| {
-                        if column.valid().get(idx) {
+                        if column.valid().get_bit(idx) {
                             Some(val.as_bytes())
                         } else {
                             None
@@ -463,7 +466,7 @@ impl Page {
                     .iter()
                     .enumerate()
                     .filter_map(|(idx, val)| {
-                        if column.valid().get(idx) {
+                        if column.valid().get_bit(idx) {
                             Some(*val)
                         } else {
                             None
@@ -490,7 +493,7 @@ impl Page {
         data.extend_from_slice(&len_bitset.to_be_bytes());
         data.extend_from_slice(&data_len.to_be_bytes());
         data.extend_from_slice(&data_crc);
-        data.extend_from_slice(column.valid().bytes());
+        data.extend_from_slice(column.valid().as_slice());
         data.extend_from_slice(&buf);
         let bytes = bytes::Bytes::from(data);
         let meta = PageMeta {
@@ -503,6 +506,7 @@ impl Page {
 
     pub fn colref_to_page(column: MutableColumnRef) -> TskvResult<Page> {
         let table_column = column.column_desc;
+        let len_bitset = ((column.column_data.valid.len() + 7) >> 3) as u32;
         let column_data_len = column.column_data.valid.len() as u64;
 
         let mut buffer = vec![];
@@ -576,11 +580,10 @@ impl Page {
         let buf_crc32 = hasher.finalize().to_be_bytes();
 
         let mut page_data = vec![];
-        let bit_set_buffer = column.column_data.valid.bytes();
-        page_data.extend_from_slice(&(bit_set_buffer.len() as u32).to_be_bytes());
+        page_data.extend_from_slice(&len_bitset.to_be_bytes());
         page_data.extend_from_slice(&column_data_len.to_be_bytes());
         page_data.extend_from_slice(&buf_crc32);
-        page_data.extend_from_slice(bit_set_buffer);
+        page_data.extend_from_slice(column.column_data.valid.as_slice());
         page_data.extend_from_slice(&buffer);
 
         Ok(Page {
@@ -639,9 +642,9 @@ impl PageWriteSpec {
 #[cfg(test)]
 mod test {
     use arrow::datatypes::ToByteSlice;
+    use arrow_buffer::BooleanBufferBuilder;
     use models::schema::tskv_table_schema::{ColumnType, TableColumn};
     use models::ValueType;
-    use utils::bitset::BitSet;
 
     use crate::tsm::page::{Page, PageMeta, PageStatistics};
     use crate::tsm::statistics::ValueStatistics;
@@ -662,8 +665,8 @@ mod test {
 
         let buf = b"hello world".to_byte_slice();
         let data_len = 1_u64;
-        let valid = BitSet::new();
-        let len_bitset = valid.byte_len() as u32;
+        let valid = BooleanBufferBuilder::new(0);
+        let len_bitset = ((valid.len() + 7) / 8) as u32;
 
         let mut hasher = crc32fast::Hasher::new();
         hasher.update(buf);
@@ -673,7 +676,7 @@ mod test {
         data.extend_from_slice(&len_bitset.to_be_bytes());
         data.extend_from_slice(&data_len.to_be_bytes());
         data.extend_from_slice(&data_crc);
-        data.extend_from_slice(valid.bytes());
+        data.extend_from_slice(valid.as_slice());
         data.extend_from_slice(buf);
 
         let bytes = bytes::Bytes::from(data);

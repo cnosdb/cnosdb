@@ -1,8 +1,8 @@
+use arrow_buffer::buffer::{BooleanBuffer, Buffer};
 use flatbuffers::{ForwardsUOffset, Vector};
 use protos::models::Column;
 use serde::{Deserialize, Serialize};
 use snafu::{OptionExt, ResultExt};
-use utils::bitset::ImmutBitSet;
 use utils::BkdrHasher;
 
 use crate::errors::{
@@ -99,8 +99,9 @@ impl SeriesKey {
                 err: "missing column null bit".to_string(),
             })?;
             let len = column.string_values_len().context(InvalidPointSnafu)?;
-            let column_nullbit = ImmutBitSet::new_without_check(len, tag_nullbit_buffer.bytes());
-            if !column_nullbit.get(row_count) {
+            let column_nullbit =
+                BooleanBuffer::new(Buffer::from_slice_ref(tag_nullbit_buffer.bytes()), 0, len);
+            if !column_nullbit.value(row_count) {
                 continue;
             }
 

@@ -16,6 +16,7 @@ snafu = { workspace = true }
 tokio = { workspace = true }
 tonic = { workspace = true, features = ["transport", "tls"] }
 tower = { workspace = true }
+arrow-buffer = { workspace = true }
 
 [features]
 default = []

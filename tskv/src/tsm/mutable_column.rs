@@ -1,7 +1,7 @@
+use arrow_buffer::builder::BooleanBufferBuilder;
 use models::column_data::{ColumnData, PrimaryColumnData};
 use models::field_value::FieldVal;
 use models::schema::tskv_table_schema::TableColumn;
-use utils::bitset::BitSet;
 
 use crate::{TskvError, TskvResult};
 
@@ -45,11 +45,11 @@ impl MutableColumn {
         })
     }
 
-    pub fn valid(&self) -> &BitSet {
+    pub fn valid(&self) -> &BooleanBufferBuilder {
         &self.column_data.valid
     }
 
-    pub fn mut_valid(&mut self) -> &mut BitSet {
+    pub fn mut_valid(&mut self) -> &mut BooleanBufferBuilder {
         &mut self.column_data.valid
     }
 

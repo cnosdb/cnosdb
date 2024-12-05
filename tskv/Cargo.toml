@@ -19,6 +19,7 @@ utils = { path = "../common/utils" }
 
 arrow = { workspace = true, features = ["test_utils"] }
 arrow-array = { workspace = true }
+arrow-buffer = { workspace = true }
 arrow-schema = { workspace = true }
 async-backtrace = { workspace = true, optional = true }
 async-recursion = { workspace = true }

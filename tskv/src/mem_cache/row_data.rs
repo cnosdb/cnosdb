@@ -1,6 +1,7 @@
 use std::mem::size_of_val;
 use std::{cmp, usize};
 
+use arrow_buffer::{BooleanBuffer, Buffer};
 use flatbuffers::{ForwardsUOffset, Vector};
 use minivec::MiniVec;
 use models::field_value::FieldVal;
@@ -9,7 +10,6 @@ use protos::models::{Column, FieldType};
 use skiplist::OrderedSkipList;
 use snafu::OptionExt;
 use trace::error;
-use utils::bitset::ImmutBitSet;
 use utils::precision::{timestamp_convert, Precision};
 
 use crate::error::{CommonSnafu, FieldsIsEmptySnafu, TskvResult};
@@ -47,9 +47,12 @@ impl RowData {
                     match column.field_type() {
                         FieldType::Integer => {
                             let len = column.int_values_len()?;
-                            let column_nullbits =
-                                ImmutBitSet::new_without_check(len, column_nullbit.bytes());
-                            if !column_nullbits.get(row_count) {
+                            let column_nullbits = BooleanBuffer::new(
+                                Buffer::from_slice_ref(column_nullbit.bytes()),
+                                0,
+                                len,
+                            );
+                            if !column_nullbits.value(row_count) {
                                 continue;
                             }
                             let val = column.int_values()?.get(row_count);
@@ -67,9 +70,12 @@ impl RowData {
                         }
                         FieldType::Float => {
                             let len = column.float_values_len()?;
-                            let column_nullbits =
-                                ImmutBitSet::new_without_check(len, column_nullbit.bytes());
-                            if !column_nullbits.get(row_count) {
+                            let column_nullbits = BooleanBuffer::new(
+                                Buffer::from_slice_ref(column_nullbit.bytes()),
+                                0,
+                                len,
+                            );
+                            if !column_nullbits.value(row_count) {
                                 continue;
                             }
                             let val = column.float_values()?.get(row_count);
@@ -87,9 +93,12 @@ impl RowData {
                         }
                         FieldType::Unsigned => {
                             let len = column.uint_values_len()?;
-                            let column_nullbits =
-                                ImmutBitSet::new_without_check(len, column_nullbit.bytes());
-                            if !column_nullbits.get(row_count) {
+                            let column_nullbits = BooleanBuffer::new(
+                                Buffer::from_slice_ref(column_nullbit.bytes()),
+                                0,
+                                len,
+                            );
+                            if !column_nullbits.value(row_count) {
                                 continue;
                             }
                             let val = column.uint_values()?.get(row_count);
@@ -107,9 +116,12 @@ impl RowData {
                         }
                         FieldType::Boolean => {
                             let len = column.bool_values_len()?;
-                            let column_nullbits =
-                                ImmutBitSet::new_without_check(len, column_nullbit.bytes());
-                            if !column_nullbits.get(row_count) {
+                            let column_nullbits = BooleanBuffer::new(
+                                Buffer::from_slice_ref(column_nullbit.bytes()),
+                                0,
+                                len,
+                            );
+                            if !column_nullbits.value(row_count) {
                                 continue;
                             }
                             let val = column.bool_values()?.get(row_count);
@@ -127,9 +139,12 @@ impl RowData {
                         }
                         FieldType::String => {
                             let len = column.string_values_len()?;
-                            let column_nullbits =
-                                ImmutBitSet::new_without_check(len, column_nullbit.bytes());
-                            if !column_nullbits.get(row_count) {
+                            let column_nullbits = BooleanBuffer::new(
+                                Buffer::from_slice_ref(column_nullbit.bytes()),
+                                0,
+                                len,
+                            );
+                            if !column_nullbits.value(row_count) {
                                 continue;
                             }
                             let val = column.string_values()?.get(row_count);

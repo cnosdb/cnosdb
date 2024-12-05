@@ -3610,6 +3610,7 @@ version = "2.4.3"
 dependencies = [
  "arrow",
  "arrow-array",
+ "arrow-buffer",
  "arrow-schema",
  "async-backtrace",
  "async-trait",
@@ -4706,6 +4707,7 @@ dependencies = [
 name = "protos"
 version = "2.4.3"
 dependencies = [
+ "arrow-buffer",
  "async-backtrace",
  "chrono",
  "flatbuffers 24.3.25",
@@ -6614,6 +6616,7 @@ version = "2.4.3"
 dependencies = [
  "arrow",
  "arrow-array",
+ "arrow-buffer",
  "arrow-schema",
  "assert_float_eq",
  "async-backtrace",
