@@ -237,7 +237,13 @@ impl SeriesData {
             }
         }
 
-        if !time_array.column_data.valid.is_all_set() {
+        if time_array
+            .column_data
+            .valid
+            .finish_cloned()
+            .count_set_bits()
+            != time_array.column_data.valid.len()
+        {
             return Err(CommonSnafu {
                 reason: "Invalid time array in DataBlock".to_string(),
             }

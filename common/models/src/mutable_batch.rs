@@ -51,7 +51,7 @@ impl<'a> MutableBatch<'a> {
                 column
                     .column_data
                     .valid
-                    .append_unset(self.row_count - column.column_data.valid.len());
+                    .append_n(self.row_count - column.column_data.valid.len(), false);
                 match column.column_data.primary_data {
                     PrimaryColumnDataRef::F64(ref mut value, ..) => {
                         if !value.is_empty() {

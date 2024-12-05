@@ -1,6 +1,6 @@
+use arrow_buffer::builder::BooleanBufferBuilder;
 use minivec::MiniVec;
 use snafu::{Backtrace, Location, Snafu};
-use utils::bitset::BitSet;
 
 use crate::field_value::FieldVal;
 use crate::PhysicalDType;
@@ -37,15 +37,37 @@ pub enum ColumnDataError {
     },
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug)]
 pub struct ColumnData {
-    pub valid: BitSet,
+    pub valid: BooleanBufferBuilder,
     pub primary_data: PrimaryColumnData,
+}
+
+impl Clone for ColumnData {
+    fn clone(&self) -> Self {
+        let values = self.valid.as_slice();
+        let len = self.valid.len();
+        let mut new_valid = BooleanBufferBuilder::new(len);
+        new_valid.append_packed_range(0..len, values);
+
+        ColumnData {
+            valid: new_valid,
+            primary_data: self.primary_data.clone(),
+        }
+    }
+}
+
+impl PartialEq for ColumnData {
+    fn eq(&self, other: &Self) -> bool {
+        self.valid.as_slice() == other.valid.as_slice()
+            && self.valid.len() == other.valid.len()
+            && self.primary_data == other.primary_data
+    }
 }
 
 impl ColumnData {
     pub fn new(column_type: PhysicalDType) -> ColumnDataResult<ColumnData> {
-        let valid = BitSet::new();
+        let valid = BooleanBufferBuilder::new(0);
         let primary_data = match column_type {
             PhysicalDType::Float => PrimaryColumnData::F64(vec![], f64::MAX, f64::MIN),
             PhysicalDType::Integer => PrimaryColumnData::I64(vec![], i64::MAX, i64::MIN),
@@ -69,7 +91,7 @@ impl ColumnData {
     }
 
     pub fn with_cap(column_type: PhysicalDType, cap: usize) -> ColumnDataResult<ColumnData> {
-        let valid = BitSet::with_size(cap);
+        let valid = BooleanBufferBuilder::new(cap);
         let primary_data = match column_type {
             PhysicalDType::Float => {
                 PrimaryColumnData::F64(Vec::with_capacity(cap), f64::MAX, f64::MIN)
@@ -102,7 +124,7 @@ impl ColumnData {
         column_type: PhysicalDType,
         len: usize,
     ) -> ColumnDataResult<ColumnData> {
-        let valid = BitSet::with_size(len);
+        let valid = BooleanBufferBuilder::new(len);
         let primary_data = match column_type {
             PhysicalDType::Float => PrimaryColumnData::F64(vec![0.0; len], f64::MAX, f64::MIN),
             PhysicalDType::Integer => PrimaryColumnData::I64(vec![0; len], i64::MAX, i64::MIN),
@@ -129,7 +151,7 @@ impl ColumnData {
         if self.valid.len() <= index || self.primary_data.len() <= index {
             return None;
         }
-        if self.valid.get(index) {
+        if self.valid.get_bit(index) {
             self.primary_data.get(index)
         } else {
             None
@@ -154,14 +176,11 @@ impl ColumnData {
                     *min = *val;
                 }
                 value.push(*val);
-                let idx = value.len() - 1;
-                self.valid.append_unset_and_set(idx);
+                self.valid.append(true);
             }
             (PrimaryColumnData::F64(ref mut value, ..), None) => {
                 value.push(0.0);
-                if self.valid.len() < value.len() {
-                    self.valid.append_unset(1);
-                }
+                self.valid.append(false);
             }
             (PrimaryColumnData::I64(ref mut value, min, max), Some(FieldVal::Integer(val))) => {
                 if *max < *val {
@@ -171,14 +190,11 @@ impl ColumnData {
                     *min = *val;
                 }
                 value.push(*val);
-                let idx = value.len() - 1;
-                self.valid.append_unset_and_set(idx);
+                self.valid.append(true);
             }
             (PrimaryColumnData::I64(ref mut value, ..), None) => {
                 value.push(0);
-                if self.valid.len() < value.len() {
-                    self.valid.append_unset(1);
-                }
+                self.valid.append(false);
             }
             (PrimaryColumnData::U64(ref mut value, min, max), Some(FieldVal::Unsigned(val))) => {
                 if *max < *val {
@@ -188,14 +204,11 @@ impl ColumnData {
                     *min = *val;
                 }
                 value.push(*val);
-                let idx = value.len() - 1;
-                self.valid.append_unset_and_set(idx);
+                self.valid.append(true);
             }
             (PrimaryColumnData::U64(ref mut value, ..), None) => {
                 value.push(0);
-                if self.valid.len() < value.len() {
-                    self.valid.append_unset(1);
-                }
+                self.valid.append(false);
             }
             //todo: need to change string to Bytes type in ColumnData
             (PrimaryColumnData::String(ref mut value, min, max), Some(FieldVal::Bytes(val))) => {
@@ -207,14 +220,11 @@ impl ColumnData {
                     *min = val.clone();
                 }
                 value.push(val);
-                let idx = value.len() - 1;
-                self.valid.append_unset_and_set(idx);
+                self.valid.append(true);
             }
             (PrimaryColumnData::String(ref mut value, ..), None) => {
                 value.push(String::new());
-                if self.valid.len() < value.len() {
-                    self.valid.append_unset(1);
-                }
+                self.valid.append(false);
             }
             (PrimaryColumnData::Bool(ref mut value, min, max), Some(FieldVal::Boolean(val))) => {
                 if !(*max) & val {
@@ -224,14 +234,11 @@ impl ColumnData {
                     *min = *val;
                 }
                 value.push(*val);
-                let idx = value.len() - 1;
-                self.valid.append_unset_and_set(idx);
+                self.valid.append(true);
             }
             (PrimaryColumnData::Bool(ref mut value, ..), None) => {
                 value.push(false);
-                if self.valid.len() < value.len() {
-                    self.valid.append_unset(1);
-                }
+                self.valid.append(false);
             }
             _ => {
                 return Err(DataTypeMissMatchSnafu {

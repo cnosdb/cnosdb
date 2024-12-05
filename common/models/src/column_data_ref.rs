@@ -1,18 +1,40 @@
-use utils::bitset::BitSet;
+use arrow_buffer::builder::BooleanBufferBuilder;
 
 use crate::column_data::{ColumnDataResult, DataTypeMissMatchSnafu, UnsupportedDataTypeSnafu};
 use crate::field_value::FieldVal;
 use crate::PhysicalDType;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug)]
 pub struct ColumnDataRef<'a> {
-    pub valid: BitSet,
+    pub valid: BooleanBufferBuilder,
     pub primary_data: PrimaryColumnDataRef<'a>,
+}
+
+impl<'a> Clone for ColumnDataRef<'a> {
+    fn clone(&self) -> Self {
+        let values = self.valid.as_slice();
+        let len = self.valid.len();
+        let mut new_valid = BooleanBufferBuilder::new(len);
+        new_valid.append_packed_range(0..len, values);
+
+        ColumnDataRef {
+            valid: new_valid,
+            primary_data: self.primary_data.clone(),
+        }
+    }
+}
+
+impl<'a> PartialEq for ColumnDataRef<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        self.valid.as_slice() == other.valid.as_slice()
+            && self.valid.len() == other.valid.len()
+            && self.primary_data == other.primary_data
+    }
 }
 
 impl<'a> ColumnDataRef<'a> {
     pub fn new(column_type: PhysicalDType, len: usize) -> ColumnDataResult<ColumnDataRef<'a>> {
-        let valid = BitSet::with_size(len);
+        let valid = BooleanBufferBuilder::new(len);
         let primary_data = match column_type {
             PhysicalDType::Float => PrimaryColumnDataRef::F64(vec![0.0; len], f64::MAX, f64::MIN),
             PhysicalDType::Integer => PrimaryColumnDataRef::I64(vec![0; len], i64::MAX, i64::MIN),
@@ -36,7 +58,6 @@ impl<'a> ColumnDataRef<'a> {
     }
 
     pub fn push_ts(&mut self, val: i64) -> ColumnDataResult<()> {
-        let data_len = self.valid.len();
         match &mut self.primary_data {
             PrimaryColumnDataRef::I64(ref mut values, min, max) => {
                 if *max < val {
@@ -46,7 +67,7 @@ impl<'a> ColumnDataRef<'a> {
                     *min = val;
                 }
                 values.push(val);
-                self.valid.append_unset_and_set(data_len);
+                self.valid.append(true);
             }
 
             _ => {
@@ -61,7 +82,6 @@ impl<'a> ColumnDataRef<'a> {
     }
 
     pub fn push(&mut self, value: Option<&'a FieldVal>) -> ColumnDataResult<()> {
-        let data_len = self.valid.len();
         match (&mut self.primary_data, value) {
             (PrimaryColumnDataRef::F64(ref mut values, min, max), Some(FieldVal::Float(val))) => {
                 if *max < *val {
@@ -71,10 +91,10 @@ impl<'a> ColumnDataRef<'a> {
                     *min = *val;
                 }
                 values.push(*val);
-                self.valid.append_unset_and_set(data_len);
+                self.valid.append(true);
             }
             (PrimaryColumnDataRef::F64(..), None) => {
-                self.valid.append_unset(1);
+                self.valid.append(false);
             }
 
             (PrimaryColumnDataRef::I64(ref mut values, min, max), Some(FieldVal::Integer(val))) => {
@@ -85,10 +105,10 @@ impl<'a> ColumnDataRef<'a> {
                     *min = *val;
                 }
                 values.push(*val);
-                self.valid.append_unset_and_set(data_len);
+                self.valid.append(true);
             }
             (PrimaryColumnDataRef::I64(..), None) => {
-                self.valid.append_unset(1);
+                self.valid.append(false);
             }
 
             (
@@ -102,10 +122,10 @@ impl<'a> ColumnDataRef<'a> {
                     *min = *val;
                 }
                 values.push(*val);
-                self.valid.append_unset_and_set(data_len);
+                self.valid.append(true);
             }
             (PrimaryColumnDataRef::U64(..), None) => {
-                self.valid.append_unset(1);
+                self.valid.append(false);
             }
 
             (
@@ -120,10 +140,10 @@ impl<'a> ColumnDataRef<'a> {
                     *min = val;
                 }
                 values.push(val);
-                self.valid.append_unset_and_set(data_len);
+                self.valid.append(true);
             }
             (PrimaryColumnDataRef::String(..), None) => {
-                self.valid.append_unset(1);
+                self.valid.append(false);
             }
 
             (
@@ -137,10 +157,10 @@ impl<'a> ColumnDataRef<'a> {
                     *min = *val;
                 }
                 values.push(*val);
-                self.valid.append_unset_and_set(data_len);
+                self.valid.append(true);
             }
             (PrimaryColumnDataRef::Bool(..), None) => {
-                self.valid.append_unset(1);
+                self.valid.append(false);
             }
 
             _ => {
