@@ -6640,6 +6640,8 @@ dependencies = [
  "flatbuffers 24.3.25",
  "flate2",
  "futures",
+ "heed",
+ "heed-traits",
  "hex",
  "http_protocol",
  "integer-encoding 4.0.0",

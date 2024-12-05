@@ -11,11 +11,13 @@ use models::schema::tskv_table_schema::TskvTableSchema;
 use models::{tag, SeriesId, SeriesKey, Tag, TagKey, TagValue};
 use snafu::{OptionExt, ResultExt};
 use tokio::sync::RwLock;
+use trace::info;
 
 use super::cache::IndexCache;
-use super::{DecodeSeriesKeySnafu, IndexEngine, IndexResult};
+use super::engine2::IndexEngine2;
+use super::{DecodeSeriesKeySnafu, IndexResult};
 use crate::error::{ColumnNotFoundSnafu, IndexErrSnafu};
-use crate::index::SeriesAlreadyExistsSnafu;
+use crate::index::{IndexEngine, SeriesAlreadyExistsSnafu};
 use crate::{byte_utils, TskvError, UpdateSetValue};
 
 const SERIES_ID_PREFIX: &str = "_id_";
@@ -83,14 +85,26 @@ pub struct TSIndex {
     incr_id: AtomicU32,
     write_count: AtomicU32,
 
-    storage: IndexEngine,
     cache: IndexCache,
+    storage: IndexEngine2,
 }
 
 impl TSIndex {
     pub async fn new(path: impl AsRef<Path>, cap: u64) -> IndexResult<Arc<RwLock<Self>>> {
         let path = path.as_ref();
-        let storage = IndexEngine::new(path)?;
+        let storage = IndexEngine2::new(path)?;
+
+        // update index engine
+        let tmp_path = path.join("index.db");
+        if std::fs::metadata(&tmp_path).is_ok() {
+            let engine1 = IndexEngine::new(path)?;
+            let count = engine1.copy_to_engine2(&storage)?;
+            let result = std::fs::remove_file(tmp_path);
+            info!(
+                "Update index engine: {:?}, key count: {:?}, remove old index: {:?}",
+                path, count, result
+            );
+        }
 
         let incr_id = match storage.get(AUTO_INCR_ID_KEY.as_bytes())? {
             Some(data) => byte_utils::decode_be_u32(&data),
@@ -285,8 +299,7 @@ impl TSIndex {
 
         let id_bytes = self.incr_id.load(Ordering::Relaxed).to_be_bytes();
         self.storage.set(AUTO_INCR_ID_KEY.as_bytes(), &id_bytes)?;
-        self.cache.write_cache.flush(&mut self.storage).await?;
-        self.storage.flush()?;
+        self.cache.write_cache.flush(&self.storage).await?;
 
         self.write_count.store(0, Ordering::Relaxed);
 
