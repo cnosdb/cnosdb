@@ -10,6 +10,7 @@ name = "cnosdb-meta"
 path = "src/bin/main.rs"
 
 [dependencies]
+regex = "1.10"
 config = { path = "../config" }
 error_code = { path = "../common/error_code" }
 limiter_bucket = { path = "../common/limiter_bucket" }

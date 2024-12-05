@@ -3472,6 +3472,7 @@ dependencies = [
  "protos",
  "psutil",
  "rand",
+ "regex",
  "replication",
  "reqwest",
  "serde",
