@@ -5,7 +5,7 @@ use datafusion::common::Column;
 use datafusion::config::ConfigOptions;
 use datafusion::error::Result;
 use datafusion::logical_expr::expr::{AggregateFunction, AggregateUDF};
-use datafusion::logical_expr::{aggregate_function, Aggregate, Distinct, LogicalPlan, Projection};
+use datafusion::logical_expr::{aggregate_function, Aggregate, LogicalPlan, Projection};
 use datafusion::optimizer::analyzer::AnalyzerRule;
 use datafusion::prelude::Expr;
 
@@ -46,12 +46,11 @@ fn analyze_internal(plan: LogicalPlan) -> Result<Transformed<LogicalPlan>> {
                             distinct: false,
                             filter: filter.clone(),
                             order_by: order_by.clone(),
+                            can_be_pushed_down: false,
                         })];
 
                         let new_aggr_plan = Arc::new(LogicalPlan::Aggregate(Aggregate::try_new(
-                            Arc::new(LogicalPlan::Distinct(Distinct {
-                                input: input.clone(),
-                            })),
+                            input.clone(),
                             group_expr.clone(),
                             new_aggr_expr,
                         )?));

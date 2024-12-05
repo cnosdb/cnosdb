@@ -109,6 +109,7 @@ impl OptimizerRule for PushDownAggregation {
                                         distinct,
                                         filter,
                                         order_by,
+                                        can_be_pushed_down,
                                     }) => {
                                         let new_agg_func = match fun {
                                             /* AggregateFunctionName::Max => {
@@ -145,6 +146,7 @@ impl OptimizerRule for PushDownAggregation {
                                                     distinct: *distinct,
                                                     filter: filter.clone(),
                                                     order_by: order_by.clone(),
+                                                    can_be_pushed_down: *can_be_pushed_down,
                                                 }
                                             },
                                             // not support other agg func

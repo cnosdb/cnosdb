@@ -385,6 +385,7 @@ impl TableProvider for ClusterTable {
                 distinct,
                 filter,
                 order_by,
+                can_be_pushed_down,
             }) = &aggr_expr[0]
             {
                 if matches!(fun, aggregate_function::AggregateFunction::Count)
@@ -392,6 +393,7 @@ impl TableProvider for ClusterTable {
                     && !*distinct
                     && filter.is_none()
                     && order_by.is_none()
+                    && *can_be_pushed_down
                 {
                     match &args[0] {
                         Expr::Column(expr) => {
