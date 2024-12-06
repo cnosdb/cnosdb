@@ -72,6 +72,10 @@ impl VnodeStorage {
         self.db.clone()
     }
 
+    pub fn id(&self) -> VnodeId {
+        self.id
+    }
+
     pub async fn apply(
         &self,
         ctx: &replication::ApplyContext,
