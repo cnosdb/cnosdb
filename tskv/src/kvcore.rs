@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+use cache::AsyncCache;
 use datafusion::arrow::record_batch::RecordBatch;
 use memory_pool::{MemoryPool, MemoryPoolRef};
 use meta::error::MetaError;
@@ -171,7 +172,7 @@ impl TsKv {
 
         let vnodes = self.vnodes.clone();
         self.runtime.spawn(async move {
-            let mut cold_check_interval = tokio::time::interval(Duration::from_secs(60));
+            let mut cold_check_interval = tokio::time::interval(compact_trigger_cold_duration);
             loop {
                 cold_check_interval.tick().await;
 
@@ -187,7 +188,7 @@ impl TsKv {
 
                             let vnode_opt = vnodes.read().await.get(&tf_id).cloned();
                             if let Some(vnode) = vnode_opt {
-                                if let Err(e) = vnode.flush(true, true, true).await {
+                                if let Err(e) = vnode.flush(true, true, false).await {
                                     trace::error!("flush code vnode {} faild: {:?}", tf_id, e)
                                 }
                             }
@@ -202,6 +203,7 @@ impl TsKv {
                         if let Err(e) = compact_task_sender.send(task).await {
                             warn!("Scheduler(vnode: {tf_id}): Failed to send compact task: {task}: {e}");
                         }
+                        version.tsm_reader_cache().clear().await
                     }
                 }
             }
