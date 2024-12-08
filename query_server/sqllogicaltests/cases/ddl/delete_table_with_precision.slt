@@ -1,0 +1,26 @@
+statement ok
+--#DATABASE=delete_table
+
+sleep 100ms
+statement ok
+DROP DATABASE IF EXISTS delete_table;
+
+statement ok
+CREATE DATABASE delete_table with precision 'ms';
+
+statement ok
+create table t1(v bigint);
+
+statement ok
+insert into t1(time, v) values ('2022-11-19 05:42:00',13), ('2022-10-19 05:42:00',19);
+
+statement ok
+insert into t1(time, v) values ('2022-10-19 05:42:00',21);
+
+statement ok
+delete from t1 where time = '2022-11-19 05:42:00';
+
+query
+select * from t1;
+----
+2022-10-19T05:42:00 21

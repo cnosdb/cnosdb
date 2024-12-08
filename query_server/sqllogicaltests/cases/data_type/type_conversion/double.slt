@@ -38,7 +38,7 @@ where fa = '12345678865';
 --TableScan: test_double_conv projection=[time, fa], full_filters=[CAST(test_double_conv.fa AS Utf8) = Utf8(\"12345678865\")]"
 "physical_plan"
 "ProjectionExec: expr=[time@0 as time]
---TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=Some(\"CAST(fa@1 AS Utf8) = 12345678865\"), split_num=2, projection=[time,fa]
+ --TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: \"fa\" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Utf8, value: Some(Utf8(\"12345678865\")), bound: Exactly }: Range { low: Marker { data_type: Utf8, value: Some(Utf8(\"12345678865\")), bound: Exactly }, high: Marker { data_type: Utf8, value: Some(Utf8(\"12345678865\")), bound: Exactly } }} })}) }, filter=Some(\"CAST(fa@1 AS Utf8) = 12345678865\"), split_num=2, projection=[time,fa]
 "
 
 
@@ -57,7 +57,7 @@ where fa <> '12345678865';
 --CoalesceBatchesExec: target_batch_size=8192
 ----FilterExec: CAST(fa@1 AS Utf8) != 12345678865
 ------RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=2
---------TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=Some(\"CAST(fa@1 AS Utf8) != 12345678865\"), split_num=2, projection=[time,fa]
+ --------TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: \"fa\" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Utf8, value: None, bound: Above }: Range { low: Marker { data_type: Utf8, value: None, bound: Above }, high: Marker { data_type: Utf8, value: Some(Utf8(\"12345678865\")), bound: Below } }, Marker { data_type: Utf8, value: Some(Utf8(\"12345678865\")), bound: Above }: Range { low: Marker { data_type: Utf8, value: Some(Utf8(\"12345678865\")), bound: Above }, high: Marker { data_type: Utf8, value: None, bound: Below } }} })}) }, filter=Some(\"CAST(fa@1 AS Utf8) != 12345678865\"), split_num=2, projection=[time,fa]
 "
 
 
@@ -76,7 +76,7 @@ where fa != '12345678865';
 --CoalesceBatchesExec: target_batch_size=8192
 ----FilterExec: CAST(fa@1 AS Utf8) != 12345678865
 ------RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=2
---------TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=Some(\"CAST(fa@1 AS Utf8) != 12345678865\"), split_num=2, projection=[time,fa]
+ --------TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: \"fa\" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Utf8, value: None, bound: Above }: Range { low: Marker { data_type: Utf8, value: None, bound: Above }, high: Marker { data_type: Utf8, value: Some(Utf8(\"12345678865\")), bound: Below } }, Marker { data_type: Utf8, value: Some(Utf8(\"12345678865\")), bound: Above }: Range { low: Marker { data_type: Utf8, value: Some(Utf8(\"12345678865\")), bound: Above }, high: Marker { data_type: Utf8, value: None, bound: Below } }} })}) }, filter=Some(\"CAST(fa@1 AS Utf8) != 12345678865\"), split_num=2, projection=[time,fa]
 "
 
 
@@ -91,7 +91,7 @@ where fa < '12345678865';
 --TableScan: test_double_conv projection=[time, fa], full_filters=[CAST(test_double_conv.fa AS Utf8) < Utf8(\"12345678865\")]"
 "physical_plan"
 "ProjectionExec: expr=[time@0 as time]
---TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=Some(\"CAST(fa@1 AS Utf8) < 12345678865\"), split_num=2, projection=[time,fa]
+--TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: \"fa\" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Utf8, value: None, bound: Above }: Range { low: Marker { data_type: Utf8, value: None, bound: Above }, high: Marker { data_type: Utf8, value: Some(Utf8(\"12345678865\")), bound: Below } }} })}) }, filter=Some(\"CAST(fa@1 AS Utf8) < 12345678865\"), split_num=2, projection=[time,fa]
 "
 
 
@@ -106,7 +106,7 @@ where fa <= '12345678865';
 --TableScan: test_double_conv projection=[time, fa], full_filters=[CAST(test_double_conv.fa AS Utf8) <= Utf8(\"12345678865\")]"
 "physical_plan"
 "ProjectionExec: expr=[time@0 as time]
---TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=Some(\"CAST(fa@1 AS Utf8) <= 12345678865\"), split_num=2, projection=[time,fa]
+--TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: \"fa\" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Utf8, value: None, bound: Above }: Range { low: Marker { data_type: Utf8, value: None, bound: Above }, high: Marker { data_type: Utf8, value: Some(Utf8(\"12345678865\")), bound: Exactly } }} })}) }, filter=Some(\"CAST(fa@1 AS Utf8) <= 12345678865\"), split_num=2, projection=[time,fa]
 "
 
 
@@ -121,7 +121,7 @@ where fa > '12345678865';
 --TableScan: test_double_conv projection=[time, fa], full_filters=[CAST(test_double_conv.fa AS Utf8) > Utf8(\"12345678865\")]"
 "physical_plan"
 "ProjectionExec: expr=[time@0 as time]
---TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=Some(\"CAST(fa@1 AS Utf8) > 12345678865\"), split_num=2, projection=[time,fa]
+--TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: \"fa\" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Utf8, value: Some(Utf8(\"12345678865\")), bound: Above }: Range { low: Marker { data_type: Utf8, value: Some(Utf8(\"12345678865\")), bound: Above }, high: Marker { data_type: Utf8, value: None, bound: Below } }} })}) }, filter=Some(\"CAST(fa@1 AS Utf8) > 12345678865\"), split_num=2, projection=[time,fa]
 "
 
 
@@ -136,7 +136,7 @@ where fa >= '12345678865';
 --TableScan: test_double_conv projection=[time, fa], full_filters=[CAST(test_double_conv.fa AS Utf8) >= Utf8(\"12345678865\")]"
 "physical_plan"
 "ProjectionExec: expr=[time@0 as time]
---TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=Some(\"CAST(fa@1 AS Utf8) >= 12345678865\"), split_num=2, projection=[time,fa]
+--TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: \"fa\" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Utf8, value: Some(Utf8(\"12345678865\")), bound: Exactly }: Range { low: Marker { data_type: Utf8, value: Some(Utf8(\"12345678865\")), bound: Exactly }, high: Marker { data_type: Utf8, value: None, bound: Below } }} })}) }, filter=Some(\"CAST(fa@1 AS Utf8) >= 12345678865\"), split_num=2, projection=[time,fa]
 "
 
 
@@ -151,7 +151,7 @@ where fa >= '12345678865';
 --TableScan: test_double_conv projection=[time, fa], full_filters=[CAST(test_double_conv.fa AS Utf8) >= Utf8(\"12345678865\")]"
 "physical_plan"
 "ProjectionExec: expr=[time@0 as time]
---TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=Some(\"CAST(fa@1 AS Utf8) >= 12345678865\"), split_num=2, projection=[time,fa]
+--TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: \"fa\" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Utf8, value: Some(Utf8(\"12345678865\")), bound: Exactly }: Range { low: Marker { data_type: Utf8, value: Some(Utf8(\"12345678865\")), bound: Exactly }, high: Marker { data_type: Utf8, value: None, bound: Below } }} })}) }, filter=Some(\"CAST(fa@1 AS Utf8) >= 12345678865\"), split_num=2, projection=[time,fa]
 "
 
 
@@ -167,7 +167,7 @@ where fa >= '1997-01-31';
 --TableScan: test_double_conv projection=[time, fa], full_filters=[CAST(test_double_conv.fa AS Utf8) >= Utf8(\"1997-01-31\")]"
 "physical_plan"
 "ProjectionExec: expr=[time@0 as time]
---TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=Some(\"CAST(fa@1 AS Utf8) >= 1997-01-31\"), split_num=2, projection=[time,fa]
+--TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: \"fa\" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Utf8, value: Some(Utf8(\"1997-01-31\")), bound: Exactly }: Range { low: Marker { data_type: Utf8, value: Some(Utf8(\"1997-01-31\")), bound: Exactly }, high: Marker { data_type: Utf8, value: None, bound: Below } }} })}) }, filter=Some(\"CAST(fa@1 AS Utf8) >= 1997-01-31\"), split_num=2, projection=[time,fa]
 "
 
 
@@ -182,7 +182,7 @@ where fa >= 'xxx';
 --TableScan: test_double_conv projection=[time, fa], full_filters=[CAST(test_double_conv.fa AS Utf8) >= Utf8(\"xxx\")]"
 "physical_plan"
 "ProjectionExec: expr=[time@0 as time]
---TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=Some(\"CAST(fa@1 AS Utf8) >= xxx\"), split_num=2, projection=[time,fa]
+--TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: \"fa\" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Utf8, value: Some(Utf8(\"xxx\")), bound: Exactly }: Range { low: Marker { data_type: Utf8, value: Some(Utf8(\"xxx\")), bound: Exactly }, high: Marker { data_type: Utf8, value: None, bound: Below } }} })}) }, filter=Some(\"CAST(fa@1 AS Utf8) >= xxx\"), split_num=2, projection=[time,fa]
 "
 
 #-- error end
@@ -200,7 +200,7 @@ where fa between '12345678865' and 12345678869;
 --TableScan: test_double_conv projection=[time, fa], full_filters=[CAST(test_double_conv.fa AS Utf8) >= Utf8(\"12345678865\"), CAST(test_double_conv.fa AS Utf8) <= Utf8(\"12345678869\")], partial_filters=[CAST(test_double_conv.fa AS Utf8) AS test_double_conv.fa >= Utf8(\"12345678865\"), CAST(test_double_conv.fa AS Utf8) AS test_double_conv.fa <= Utf8(\"12345678869\")]"
 "physical_plan"
 "ProjectionExec: expr=[time@0 as time]
---TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({}) }, filter=Some(\"CAST(fa@1 AS Utf8) >= 12345678865 AND CAST(fa@1 AS Utf8) <= 12345678869 AND CAST(fa@1 AS Utf8) >= 12345678865 AND CAST(fa@1 AS Utf8) <= 12345678869\"), split_num=2, projection=[time,fa]
+--TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: \"fa\" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Utf8, value: Some(Utf8(\"12345678865\")), bound: Exactly }: Range { low: Marker { data_type: Utf8, value: Some(Utf8(\"12345678865\")), bound: Exactly }, high: Marker { data_type: Utf8, value: Some(Utf8(\"12345678869\")), bound: Exactly } }} })}) }, filter=Some(\"CAST(fa@1 AS Utf8) >= 12345678865 AND CAST(fa@1 AS Utf8) <= 12345678869 AND CAST(fa@1 AS Utf8) >= 12345678865 AND CAST(fa@1 AS Utf8) <= 12345678869\"), split_num=2, projection=[time,fa]
 "
 
 
