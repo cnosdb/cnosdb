@@ -1,11 +1,10 @@
 use std::sync::Arc;
 
 use datafusion::common::tree_node::{Transformed, TreeNode};
-use datafusion::common::Column;
 use datafusion::config::ConfigOptions;
 use datafusion::error::Result;
-use datafusion::logical_expr::expr::{AggregateFunction, AggregateUDF};
-use datafusion::logical_expr::{aggregate_function, Aggregate, LogicalPlan, Projection};
+use datafusion::logical_expr::expr::AggregateFunction;
+use datafusion::logical_expr::{aggregate_function, Aggregate, LogicalPlan};
 use datafusion::optimizer::analyzer::AnalyzerRule;
 use datafusion::prelude::Expr;
 
@@ -23,58 +22,154 @@ impl AnalyzerRule for TransformExactCountToCountRule {
 }
 
 fn analyze_internal(plan: LogicalPlan) -> Result<Transformed<LogicalPlan>> {
-    if let LogicalPlan::Projection(Projection { expr, input, .. }) = &plan {
-        if let LogicalPlan::Aggregate(Aggregate {
-            input,
-            group_expr,
-            aggr_expr,
-            ..
-        }) = input.as_ref()
-        {
-            if aggr_expr.len() == 1 {
-                if let Expr::AggregateUDF(AggregateUDF {
-                    fun,
-                    args,
-                    filter,
-                    order_by,
-                }) = &aggr_expr[0]
-                {
-                    if fun.name == "exact_count" {
-                        let new_aggr_expr = vec![Expr::AggregateFunction(AggregateFunction {
-                            fun: aggregate_function::AggregateFunction::Count,
-                            args: args.clone(),
-                            distinct: false,
-                            filter: filter.clone(),
-                            order_by: order_by.clone(),
-                            can_be_pushed_down: false,
-                        })];
-
-                        let new_aggr_plan = Arc::new(LogicalPlan::Aggregate(Aggregate::try_new(
-                            input.clone(),
-                            group_expr.clone(),
-                            new_aggr_expr,
-                        )?));
-
-                        let mut new_proj_expr = expr.clone();
-                        for e in &mut new_proj_expr {
-                            if let Expr::Column(Column { name, .. }) = e {
-                                if let Some(new_name) =
-                                    name.replacen("exact_count", "COUNT", 1).into()
-                                {
-                                    *name = new_name;
-                                }
-                            }
-                        }
-                        let new_proj_plan = LogicalPlan::Projection(Projection::try_new(
-                            new_proj_expr,
-                            new_aggr_plan,
-                        )?);
-                        return Ok(Transformed::Yes(new_proj_plan));
-                    }
-                }
+    if let LogicalPlan::Projection(mut projection) = plan {
+        if let LogicalPlan::Aggregate(aggregate) = projection.input.as_ref() {
+            if transform_expressions(&mut projection.expr) {
+                // Create a new `Aggregate` with transformed UDFs
+                let new_aggregate = transform_aggregation(aggregate.clone())?;
+                projection.input = Arc::new(LogicalPlan::Aggregate(new_aggregate));
             }
+            return Ok(Transformed::Yes(LogicalPlan::Projection(projection)));
         }
+        return Ok(Transformed::No(LogicalPlan::Projection(projection)));
     }
 
     Ok(Transformed::No(plan))
+}
+
+/// Transform logical plan's expressions, return true if any transformation is done:
+/// - `exact_count(<expr>)` to  `COUNT(<expr>)`.
+fn transform_expressions(expressions: &mut [Expr]) -> bool {
+    let mut transformed = false;
+    for expr in expressions {
+        if let Expr::Column(c) = expr {
+            if let Some(suffix) = c.name.strip_prefix("exact_count") {
+                c.name = format!("COUNT{suffix}");
+                transformed = true;
+            }
+        }
+    }
+    transformed
+}
+
+/// Transform UDF definitions of the plan's `expressions`:
+/// - `AggregateUDF::exact_count(<expr>)` to `AggregateFunction::COUNT(<expr>)`
+fn transform_aggregation(aggregate: Aggregate) -> Result<Aggregate> {
+    let mut new_aggr_exprs = Vec::with_capacity(aggregate.aggr_expr.len());
+    for aggr_expr in aggregate.aggr_expr {
+        match aggr_expr {
+            Expr::AggregateUDF(udf) if udf.fun.name == "exact_count" => {
+                let new_function = AggregateFunction {
+                    fun: aggregate_function::AggregateFunction::Count,
+                    args: udf.args,
+                    distinct: false,
+                    filter: udf.filter,
+                    order_by: udf.order_by,
+                    can_be_pushed_down: false,
+                };
+                new_aggr_exprs.push(Expr::AggregateFunction(new_function));
+            }
+            _ => new_aggr_exprs.push(aggr_expr),
+        }
+    }
+
+    Aggregate::try_new(aggregate.input, aggregate.group_expr, new_aggr_exprs)
+}
+
+#[cfg(test)]
+mod test {
+    use std::sync::Arc;
+
+    use datafusion::datasource::MemTable;
+    use datafusion::prelude::*;
+    use models::arrow::{DataType, Field, Schema};
+
+    use crate::extension::analyse::transform_exact_count_to_count::{
+        analyze_internal, transform_expressions,
+    };
+    use crate::extension::expr::func_manager::DFSessionContextFuncAdapter;
+    use crate::extension::expr::load_all_functions;
+
+    #[test]
+    fn test_transform_expressions() {
+        {
+            let mut exprs = vec![col("a"), col("b")];
+
+            let result = transform_expressions(&mut exprs);
+            assert!(!result);
+            assert_eq!(exprs, vec![col("a"), col("b"),]);
+        }
+        {
+            let mut exprs = vec![
+                col("a"),
+                col("exact_count(b)"),
+                col("exact_count(c)"),
+                col("d"),
+            ];
+
+            let result = transform_expressions(&mut exprs);
+            assert!(result);
+            assert_eq!(
+                exprs,
+                vec![col("a"), col("COUNT(b)"), col("COUNT(c)"), col("d"),]
+            );
+        }
+    }
+
+    fn ctx() -> SessionContext {
+        let mut ctx = SessionContext::new();
+
+        let mem_table = MemTable::try_new(
+            Arc::new(Schema::new(vec![
+                Field::new("a", DataType::Int64, true),
+                Field::new("b", DataType::Boolean, true),
+                Field::new("c", DataType::Utf8, true),
+                Field::new("d", DataType::Float64, true),
+            ])),
+            vec![],
+        )
+        .unwrap();
+        ctx.register_table("t", Arc::new(mem_table)).unwrap();
+
+        let mut func_manager = DFSessionContextFuncAdapter::new(&mut ctx);
+        load_all_functions(&mut func_manager).expect("load_all_functions");
+
+        ctx
+    }
+
+    #[tokio::test]
+    async fn test_analyze_internal() {
+        {
+            let df = ctx()
+                .sql("SELECT exACT_CoUNt(a), b FROM t GROUP BY b")
+                .await
+                .unwrap();
+            let (plan_2, was_transformed) = analyze_internal(df.logical_plan().clone())
+                .unwrap()
+                .into_pair();
+            assert!(was_transformed);
+            assert_eq!(
+                format!("{plan_2:?}"),
+                "Projection: COUNT(t.a), t.b\
+                    \n  Aggregate: groupBy=[[t.b]], aggr=[[COUNT(t.a)]]\
+                    \n    TableScan: t"
+            );
+        }
+        {
+            let df = ctx()
+                .sql("SELECT count(a), b, exact_count(c), max(d) FROM t GROUP BY b")
+                .await
+                .unwrap();
+            let (plan_2, was_transformed) = analyze_internal(df.logical_plan().clone())
+                .unwrap()
+                .into_pair();
+            assert!(was_transformed);
+            assert_eq!(
+                format!("{plan_2:?}"),
+                "Projection: COUNT(t.a), t.b, COUNT(t.c), MAX(t.d)\
+                    \n  Aggregate: groupBy=[[t.b]], aggr=[[COUNT(t.a), COUNT(t.c), MAX(t.d)]]\
+                    \n    TableScan: t"
+            );
+        }
+    }
 }
