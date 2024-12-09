@@ -44,9 +44,9 @@ where
 mod test {
     use std::collections::HashMap;
 
+    use arrow_buffer::buffer::BooleanBuffer;
     use chrono::prelude::*;
     use flatbuffers::{self, WIPOffset};
-    use utils::bitset::BitSet;
 
     use crate::models::*;
 
@@ -67,8 +67,8 @@ mod test {
         start_timestamp: i64,
         num: usize,
     ) -> WIPOffset<Points<'a>> {
-        let nullbits = BitSet::with_size_all_set(num);
-        let fb_nullbits = fbb.create_vector(nullbits.bytes());
+        let nullbits = BooleanBuffer::new_set(num);
+        let fb_nullbits = fbb.create_vector(nullbits.values());
         let db = fbb.create_string(database);
         let table = fbb.create_string(table);
         let mut columns = vec![];
@@ -437,8 +437,8 @@ mod test {
         time: &[i64],
         num: usize,
     ) -> WIPOffset<Points<'a>> {
-        let nullbits = BitSet::with_size_all_set(num);
-        let fb_nullbits = fbb.create_vector(nullbits.bytes());
+        let nullbits = BooleanBuffer::new_set(num);
+        let fb_nullbits = fbb.create_vector(nullbits.values());
         let db = fbb.create_string(database);
         let table = fbb.create_string(table);
         let mut columns = vec![];

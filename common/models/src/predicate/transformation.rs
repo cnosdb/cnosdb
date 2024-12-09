@@ -49,6 +49,24 @@ impl NormalizedSimpleComparison {
                 op: Self::reverse_op(op),
                 value,
             }),
+            (Expr::Cast(expr), _, Expr::Literal(value)) => {
+                if let Expr::Column(column) = *expr.expr {
+                    Some(Self { column, op, value })
+                } else {
+                    None
+                }
+            }
+            (Expr::Literal(value), _, Expr::Cast(expr)) => {
+                if let Expr::Column(column) = *expr.expr {
+                    Some(Self {
+                        column,
+                        op: Self::reverse_op(op),
+                        value,
+                    })
+                } else {
+                    None
+                }
+            }
             (_, _, _) => None,
         }
         .and_then(|e| {
@@ -410,7 +428,7 @@ impl TreeNodeVisitor for DeleteSelectionExpressionToDomainsVisitor<'_> {
         // Expressions returning boolean need to be processed, If the expression is not supported, push ColumnDomains::all() onto the stack.
         // If the expression supports it, return Continue directly.
         match expr {
-            Expr::Column(_) | Expr::Literal(_) => Ok(VisitRecursion::Continue),
+            Expr::Column(_) | Expr::Literal(_) | Expr::Cast(_) => Ok(VisitRecursion::Continue),
             e @ Expr::BinaryExpr(BinaryExpr {
                 left: _,
                 op,
@@ -462,6 +480,18 @@ impl TreeNodeVisitor for DeleteSelectionExpressionToDomainsVisitor<'_> {
                                 self.ctx, left, op, right,
                             );
                         }
+                        (Expr::Literal(_), Expr::Cast(expr))
+                        | (Expr::Cast(expr), Expr::Literal(_)) => {
+                            if let Expr::Column(_) = *expr.expr {
+                                Self::construct_value_set_and_push_domain_stack(
+                                    self.ctx, left, op, right,
+                                );
+                            } else {
+                                return Err(DataFusionError::NotImplemented(format!(
+                                    "{left} {op} {right} in delete statement"
+                                )));
+                            }
+                        }
                         _ => {
                             return Err(DataFusionError::NotImplemented(format!(
                                 "{left} {op} {right} in delete statement"
@@ -479,7 +509,7 @@ impl TreeNodeVisitor for DeleteSelectionExpressionToDomainsVisitor<'_> {
                     }
                 }
             }
-            Expr::Column(_) | Expr::Literal(_) => {}
+            Expr::Column(_) | Expr::Literal(_) | Expr::Cast(_) => {}
             other => {
                 return Err(DataFusionError::NotImplemented(format!(
                     "{other} in delete statement"
