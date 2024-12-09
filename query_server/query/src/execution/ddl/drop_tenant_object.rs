@@ -61,6 +61,7 @@ impl DDLDefinitionTask for DropTenantObjectTask {
                     });
                 }
 
+                query_state_machine.clear_auth_cache();
                 Ok(Output::Nil(()))
             }
 

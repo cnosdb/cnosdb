@@ -62,7 +62,7 @@ impl DDLDefinitionTask for AlterUserTask {
             }
         }
 
-        query_state_machine.remove_user_from_cache(user_name);
+        query_state_machine.remove_user_from_cache_by_user_name(user_name);
         return Ok(Output::Nil(()));
     }
 }

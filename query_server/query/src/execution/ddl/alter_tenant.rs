@@ -76,6 +76,7 @@ impl DDLDefinitionTask for AlterTenantTask {
                 );
                 meta.reassign_member_role(*user_id, role.clone()).await?;
                 // .context(MetaSnafu)?;
+                query_state_machine.remove_user_from_cache_by_user_id(user_id)
             }
             AlterTenantAction::RemoveUser(user_id) => {
                 // 从租户中移除指定成员
@@ -89,6 +90,7 @@ impl DDLDefinitionTask for AlterTenantTask {
                 debug!("Remove user {} from tenant {}", user_id, tenant_name);
                 meta.remove_member(*user_id).await?;
                 // .context(MetaSnafu)?;
+                query_state_machine.remove_user_from_cache_by_user_id(user_id)
             }
             AlterTenantAction::SetOption(tenant_option) => {
                 query_state_machine

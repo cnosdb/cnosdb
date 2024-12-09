@@ -2,7 +2,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use models::auth::user::UserDesc;
+use models::auth::auth_cache::{AuthCache, AuthCacheKey};
+use models::auth::user::{User, UserDesc};
 use models::oid::{Identifier, Oid};
 use serde::{Deserialize, Serialize};
 use trace::SpanContext;
@@ -48,6 +49,7 @@ pub trait QueryDispatcher: Send + Sync {
         id: QueryId,
         query: Query,
         span: Option<&SpanContext>,
+        auth_cache: Arc<AuthCache<AuthCacheKey, User>>,
     ) -> Result<Arc<QueryStateMachine>>;
 
     fn running_query_infos(&self) -> Vec<QueryInfo>;

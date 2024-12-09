@@ -4,6 +4,31 @@ use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 
+use super::user::UserInfo;
+
+#[derive(Clone, Hash, Eq, PartialEq)]
+pub struct AuthCacheKey {
+    pub authorization: String,
+    pub tenant: String,
+}
+
+impl AuthCacheKey {
+    pub fn new(user_info: &UserInfo, tenant: impl Into<String>) -> Self {
+        Self {
+            authorization: user_info.to_authorization(),
+            tenant: tenant.into(),
+        }
+    }
+
+    pub fn authorization(&self) -> &str {
+        &self.authorization
+    }
+
+    pub fn tenant(&self) -> &str {
+        &self.tenant
+    }
+}
+
 #[derive(Clone)]
 struct CacheEntry<V> {
     value: V,
@@ -31,7 +56,8 @@ pub struct AuthCache<K, V> {
 
 impl<K, V> AuthCache<K, V>
 where
-    K: Eq + std::hash::Hash,
+    K: Eq + std::hash::Hash + Clone,
+    V: Clone,
 {
     pub fn new(capacity: usize, ttl: Option<Duration>) -> Self {
         let cache_cap = unsafe { NonZeroUsize::new_unchecked(capacity) };
@@ -60,18 +86,28 @@ where
         None
     }
 
-    pub fn remove<Q>(&self, key: &Q)
+    pub fn remove<Q>(&self, key: &Q) -> bool
     where
         K: std::borrow::Borrow<Q>,
         Q: std::hash::Hash + Eq + ?Sized,
     {
         let mut cache = self.cache.lock();
-        cache.pop(key);
+        cache.pop(key).is_some()
     }
 
     pub fn clear(&self) {
         let mut cache = self.cache.lock();
         cache.clear();
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (K, V)> {
+        let cache = self.cache.lock();
+        cache
+            .iter()
+            .filter(|(_, entry)| !entry.is_expired())
+            .map(|(k, entry)| (k.clone(), entry.value.clone()))
+            .collect::<Vec<_>>()
+            .into_iter()
     }
 }
 

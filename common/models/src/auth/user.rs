@@ -254,6 +254,16 @@ pub struct UserInfo {
     pub private_key: Option<String>,
 }
 
+impl UserInfo {
+    pub fn to_authorization(&self) -> String {
+        let auth = match &self.password {
+            password if password.is_empty() => format!("{}:", self.user),
+            password => format!("{}:{}", self.user, password),
+        };
+        format!("Basic {}", base64::encode(auth))
+    }
+}
+
 pub fn admin_user(desc: UserDesc) -> User {
     let privileges = UserRole::Dba.to_privileges();
     User::new(desc, privileges)
