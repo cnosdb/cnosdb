@@ -5,7 +5,7 @@ use coordinator::service::CoordinatorRef;
 use memory_pool::MemoryPoolRef;
 use meta::error::MetaError;
 use meta::model::MetaClientRef;
-use models::auth::auth_cache::AuthCache;
+use models::auth::auth_cache::{AuthCache, AuthCacheKey};
 use models::auth::user::{admin_user, User};
 use models::oid::Oid;
 use spi::query::ast::ExtStatement;
@@ -46,7 +46,7 @@ pub struct SimpleQueryDispatcher {
     func_manager: FuncMetaManagerRef,
     stream_provider_manager: StreamProviderManagerRef,
     trace_collector: Option<Arc<dyn TraceExporter>>,
-    auth_cache: Arc<AuthCache<String, User>>,
+    auth_cache: Arc<AuthCache<AuthCacheKey, User>>,
 }
 
 #[async_trait]
@@ -106,8 +106,14 @@ impl QueryDispatcher for SimpleQueryDispatcher {
     ) -> Result<Output> {
         let query_state_machine = {
             let _span_recorder = SpanRecorder::new(span_ctx.child_span("init session ctx"));
-            self.build_query_state_machine(tenant_id, query_id, query.clone(), span_ctx)
-                .await?
+            self.build_query_state_machine(
+                tenant_id,
+                query_id,
+                query.clone(),
+                span_ctx,
+                self.auth_cache.clone(),
+            )
+            .await?
         };
 
         let logical_plan = self.build_logical_plan(query_state_machine.clone()).await?;
@@ -171,6 +177,7 @@ impl QueryDispatcher for SimpleQueryDispatcher {
         query_id: QueryId,
         query: Query,
         span_ctx: Option<&SpanContext>,
+        auth_cache: Arc<AuthCache<AuthCacheKey, User>>,
     ) -> Result<Arc<QueryStateMachine>> {
         let session = self.session_factory.create_session_ctx(
             query_id.to_string(),
@@ -186,7 +193,7 @@ impl QueryDispatcher for SimpleQueryDispatcher {
             query,
             session,
             self.coord.clone(),
-            self.auth_cache.clone(),
+            auth_cache,
         ));
         Ok(query_state_machine)
     }
@@ -309,7 +316,7 @@ pub struct SimpleQueryDispatcherBuilder {
     func_manager: Option<FuncMetaManagerRef>,
     stream_provider_manager: Option<StreamProviderManagerRef>,
     trace_collector: Option<Arc<dyn TraceExporter>>,
-    auth_cache: Option<Arc<AuthCache<String, User>>>,
+    auth_cache: Option<Arc<AuthCache<AuthCacheKey, User>>>,
 }
 
 impl SimpleQueryDispatcherBuilder {
@@ -377,7 +384,7 @@ impl SimpleQueryDispatcherBuilder {
         self
     }
 
-    pub fn with_auth_cache(mut self, auth_cache: Arc<AuthCache<String, User>>) -> Self {
+    pub fn with_auth_cache(mut self, auth_cache: Arc<AuthCache<AuthCacheKey, User>>) -> Self {
         self.auth_cache = Some(auth_cache);
         self
     }

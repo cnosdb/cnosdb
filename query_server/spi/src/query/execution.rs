@@ -12,9 +12,10 @@ use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::physical_plan::SendableRecordBatchStream;
 use futures::{Stream, StreamExt, TryStreamExt};
 use meta::model::MetaRef;
-use models::auth::auth_cache::AuthCache;
+use models::auth::auth_cache::{AuthCache, AuthCacheKey};
 use models::auth::user::User;
-use trace::SpanContext;
+use models::oid::{Identifier, Oid};
+use trace::{debug, warn, SpanContext};
 
 use super::dispatcher::{QueryInfo, QueryStatus};
 use super::logical_planner::Plan;
@@ -191,7 +192,7 @@ pub struct QueryStateMachine {
     pub query: Query,
     pub meta: MetaRef,
     pub coord: CoordinatorRef,
-    pub auth_cache: Arc<AuthCache<String, User>>,
+    pub auth_cache: Arc<AuthCache<AuthCacheKey, User>>,
 
     state: AtomicPtr<QueryState>,
     start: Instant,
@@ -230,7 +231,7 @@ impl QueryStateMachine {
         query: Query,
         session: SessionCtx,
         coord: CoordinatorRef,
-        auth_cache: Arc<AuthCache<String, User>>,
+        auth_cache: Arc<AuthCache<AuthCacheKey, User>>,
     ) -> Self {
         let meta = coord.meta_manager();
 
@@ -314,10 +315,34 @@ impl QueryStateMachine {
         }
     }
 
-    pub fn remove_user_from_cache(&self, username: &str) {
-        self.auth_cache.remove(username);
+    pub fn remove_user_from_cache_by_user_name(&self, username: &str) {
+        let auths: Vec<AuthCacheKey> = self
+            .auth_cache
+            .iter()
+            .filter(|(_, user)| user.desc().name() == username)
+            .map(|(auth, _)| auth)
+            .collect();
+        for auth in auths {
+            match self.auth_cache.remove(&auth) {
+                true => debug!("Successfully removed auth cache for user {}", username),
+                false => warn!("Failed to remove auth cache for user {}", username),
+            }
+        }
     }
-
+    pub fn remove_user_from_cache_by_user_id(&self, user_id: &Oid) {
+        let auths: Vec<AuthCacheKey> = self
+            .auth_cache
+            .iter()
+            .filter(|(_, user)| user.desc().id() == user_id)
+            .map(|(auth, _)| auth)
+            .collect();
+        for auth in auths {
+            match self.auth_cache.remove(&auth) {
+                true => debug!("Successfully removed auth cache for user {}", user_id),
+                false => warn!("Failed to remove auth cache for user {}", user_id),
+            }
+        }
+    }
     pub fn clear_auth_cache(&self) {
         self.auth_cache.clear();
     }
