@@ -10,9 +10,6 @@ default-run = "cnosdb"
 name = "cnosdb"
 path = "src/main.rs"
 
-[[bin]]
-name = "cnosdb-imexport"
-path = "tools/cnosdb_imexport.rs"
 
 [dependencies]
 config = { path = "../config" }
