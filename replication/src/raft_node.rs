@@ -6,7 +6,7 @@ use openraft::storage::Adaptor;
 use openraft::{OptionalSend, RaftMetrics};
 use tracing::info;
 
-use crate::errors::{RaftInternalErrSnafu, ReplicationResult};
+use crate::errors::{RaftInternalErrSnafu, ReplicationError, ReplicationResult};
 use crate::network_client::NetworkConn;
 use crate::node_store::NodeStorage;
 use crate::{
@@ -111,6 +111,14 @@ impl RaftNode {
             .build())
         } else {
             Ok(())
+        }
+    }
+    pub async fn is_initialized(&self) -> ReplicationResult<bool> {
+        match self.raft.is_initialized().await {
+            Ok(flag) => Ok(flag),
+            Err(err) => Err(ReplicationError::RaftInternalErr {
+                msg: format!("Initialize raft group failed: {}", err),
+            }),
         }
     }
 

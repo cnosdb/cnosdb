@@ -37,6 +37,7 @@ impl HttpServer {
             .or(self.debug())
             .or(self.debug_pprof())
             .or(self.debug_backtrace())
+            .or(self.is_initialized())
     }
 
     fn with_raft_node(
@@ -307,6 +308,25 @@ impl HttpServer {
             let res: Result<String, warp::Rejection> = Ok(rsp);
             res
         })
+    }
+    fn is_initialized(
+        &self,
+    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+        warp::path!("is_initialized")
+            .and(warp::get())
+            .and(self.with_raft_node())
+            .and_then(|node: Arc<RaftNode>| async move {
+                match node.is_initialized().await {
+                    Ok(initialized) => {
+                        let response = format!("{{\"initialized\": {}}}", initialized);
+                        Ok::<_, warp::Rejection>(warp::reply::json(&response))
+                    }
+                    Err(err) => {
+                        eprintln!("Failed to check if raft is initialized: {}", err);
+                        Err(warp::reject::custom(err))
+                    }
+                }
+            })
     }
 
     pub async fn process_watch(
