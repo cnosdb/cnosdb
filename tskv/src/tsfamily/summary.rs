@@ -181,32 +181,36 @@ impl Summary {
             .new_version(new_version, request.mem_caches.as_ref());
         trace::info!("Applied new version for ts_family {}.", self.tsf_id);
 
-        Ok(())
-    }
-
-    pub async fn roll_summary_file(&mut self, request: &SummaryRequest) -> TskvResult<()> {
         if self.writer.file_size() < self.ctx.options.storage.max_summary_size {
             return Ok(());
         }
 
-        let file_path = &self.writer.path().clone();
-        let tmp_path = file_utils::make_summary_file_tmp(
+        let ve = request.ts_family.read().await.build_version_edit();
+        self.rewrite_summary_file(&ve).await?;
+
+        Ok(())
+    }
+
+    async fn rewrite_summary_file(&mut self, ve: &VersionEdit) -> TskvResult<()> {
+        let summary_file = &self.writer.path().clone();
+        let tmp_file = file_utils::make_summary_file_tmp(
             self.ctx
                 .options
                 .storage
-                .ts_family_dir(&request.version_edit.tsf_name, self.tsf_id),
+                .ts_family_dir(&ve.tsf_name, self.tsf_id),
         );
-        LocalFileSystem::remove_if_exists(&tmp_path)
+        LocalFileSystem::remove_if_exists(&tmp_file)
             .map_err(|e| TskvError::FileSystemError { source: e })?;
 
-        self.writer = Writer::open(&tmp_path, SUMMARY_BUFFER_SIZE).await?;
+        self.writer = Writer::open(&tmp_file, SUMMARY_BUFFER_SIZE).await?;
+        self.write_record(ve).await?;
 
-        self.apply_version_edit(request).await?;
+        trace::info!("Rename summary file {:?} -> {:?}", tmp_file, summary_file,);
+        std::fs::rename(tmp_file, summary_file).context(IOSnafu)?;
 
-        trace::info!("Remove summary file {:?} -> {:?}", tmp_path, file_path,);
-        std::fs::rename(tmp_path, file_path).context(IOSnafu)?;
-
-        self.writer = Writer::open(file_path, SUMMARY_BUFFER_SIZE).await.unwrap();
+        self.writer = Writer::open(summary_file, SUMMARY_BUFFER_SIZE)
+            .await
+            .unwrap();
 
         Ok(())
     }
@@ -508,7 +512,7 @@ mod test {
         let join_handle = tokio::spawn(async {
             let _ = tokio::task::spawn_blocking(|| {
                 test_summary_recover();
-                test_recover_summary_with_roll();
+                test_summary_write_recover();
             })
             .await;
         });
@@ -551,7 +555,7 @@ mod test {
         });
     }
 
-    fn test_recover_summary_with_roll() {
+    fn test_summary_write_recover() {
         println!("async run test_recover_summary_with_roll.");
         let base_dir = "/tmp/test/summary/test_recover_summary_with_roll";
         let _ = std::fs::remove_dir_all(base_dir);
@@ -599,7 +603,7 @@ mod test {
             };
 
             let summary_file = summary_file(&tskv, tenant, database, VNODE_ID);
-            let mut summary = Summary::new(VNODE_ID, tskv.get_ctx(), summary_file)
+            let mut summary = Summary::new(VNODE_ID, tskv.get_ctx(), &summary_file)
                 .await
                 .unwrap();
             summary.apply_version_edit(&request).await.unwrap();
@@ -621,6 +625,21 @@ mod test {
             assert!(!tsf_version.levels_info()[1].files[0].is_delta());
             assert_eq!(tsf_version.levels_info()[1].files[0].file_id(), 15);
             assert_eq!(tsf_version.levels_info()[1].files[0].size(), 100);
+
+            //---------------rewrite--------------
+            let ve = vnode.ts_family().read().await.build_version_edit();
+            summary.rewrite_summary_file(&ve).await.unwrap();
+
+            let summary = Summary::new(VNODE_ID, tskv.get_ctx(), &summary_file)
+                .await
+                .unwrap();
+            let recover_version = summary.recover(&db_schema).await.unwrap().unwrap();
+            assert_eq!(summary.next_file_id(), 16);
+            assert_eq!(recover_version.last_seq(), 100);
+            assert_eq!(recover_version.levels_info()[1].tsf_id, VNODE_ID);
+            assert!(!recover_version.levels_info()[1].files[0].is_delta());
+            assert_eq!(recover_version.levels_info()[1].files[0].file_id(), 15);
+            assert_eq!(recover_version.levels_info()[1].files[0].size(), 100);
         });
     }
 }

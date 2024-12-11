@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use snafu::ResultExt;
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::oneshot::Receiver as OneshotReceiver;
-use tokio::sync::{oneshot, Mutex, Notify, RwLock, RwLockWriteGuard, Semaphore};
+use tokio::sync::{oneshot, Mutex, RwLock, RwLockWriteGuard, Semaphore};
 use trace::{error, info};
 
 use crate::compaction::metrics::{CompactionType, VnodeCompactionMetrics};
@@ -285,52 +285,44 @@ impl<F: FnOnce()> Drop for DeferGuard<F> {
 pub struct FlushJob {
     ctx: Arc<TsKvContext>,
     summary: Arc<RwLock<Summary>>,
-
-    notify: Arc<Notify>,
     queue: Arc<RwLock<BTreeMap<u64, (FlushReq, SummaryTask)>>>,
 }
 
 impl FlushJob {
     pub fn new(ctx: Arc<TsKvContext>, summary: Arc<RwLock<Summary>>) -> Arc<Self> {
-        let job = Self {
+        Arc::new(Self {
             ctx,
             summary,
-            notify: Arc::new(Notify::new()),
             queue: Arc::new(RwLock::new(BTreeMap::new())),
-        };
-
-        let job = Arc::new(job);
-        job.ctx.runtime.spawn(Self::write_summary_job(job.clone()));
-
-        job
+        })
     }
 
-    async fn write_summary_job(job: Arc<FlushJob>) {
-        loop {
-            job.notify.notified().await;
-            let mut queue_w = job.queue.write().await;
-            while let Some((key, (flush_req, summary_task))) = queue_w.pop_first() {
-                if !flush_req.completion {
-                    queue_w.insert(key, (flush_req, summary_task));
-                    break;
-                }
+    async fn process_summary_tasks(job: Arc<FlushJob>) {
+        let mut queue = job.queue.write().await;
+        while let Some((key, (flush_req, summary_task))) = queue.pop_first() {
+            if !flush_req.completion {
+                queue.insert(key, (flush_req, summary_task));
+                break;
+            }
 
-                info!("Flush: completion request {} at {}", flush_req, key);
-                let result = job
-                    .summary
-                    .write()
-                    .await
-                    .apply_version_edit(&summary_task.request)
+            info!("Flush: completion request {} at {}", flush_req, key);
+            let result = job
+                .summary
+                .write()
+                .await
+                .apply_version_edit(&summary_task.request)
+                .await;
+            info!("Flush: request {} apply version {:?}", flush_req, result);
+            if let Err(err) = summary_task.call_back.send(result) {
+                info!("Flush: apply version send to callback failed: {:?}", err);
+            }
+
+            if flush_req.trigger_compact {
+                let _ = job
+                    .ctx
+                    .compact_task_sender
+                    .send(CompactTask::Delta(flush_req.tf_id))
                     .await;
-                info!("Flush: request {} apply version {:?}", flush_req, result);
-
-                if flush_req.trigger_compact {
-                    let _ = job
-                        .ctx
-                        .compact_task_sender
-                        .send(CompactTask::Delta(flush_req.tf_id))
-                        .await;
-                }
             }
         }
     }
@@ -354,7 +346,6 @@ impl FlushJob {
 
     async fn run(job: Arc<FlushJob>, request: &FlushReq) -> TskvResult<()> {
         info!("Flush: begin flush data {}", request);
-
         let instant = std::time::Instant::now();
 
         // flush index
@@ -370,22 +361,22 @@ impl FlushJob {
         let ts_family_w = request.ts_family.write().await;
         let mut mems = ts_family_w.im_cache().clone();
         mems.retain(|x| x.read().mark_flushing());
-        let mut receivers = vec![];
+        info!("Flush: flush data {} count: {}", request, mems.len());
         if mems.is_empty() {
-            info!("Flush: flush data {} memcache is empty", request);
             return Ok(());
         }
 
+        let mut receivers = vec![];
         for mem in mems.iter() {
             let flush_seq = mem.read().min_seq_no();
-            let (task_state_sender, task_state_receiver) = oneshot::channel();
-            receivers.push(task_state_receiver);
+            let (sender, receiver) = oneshot::channel();
+            receivers.push(receiver);
             let summary_task = SummaryTask::new(
                 request.ts_family.clone(),
                 VersionEdit::default(),
                 None,
                 Some(vec![mem.clone()]),
-                task_state_sender,
+                sender,
             );
 
             job.queue
@@ -428,47 +419,30 @@ impl FlushJob {
         mems: Vec<Arc<parking_lot::RwLock<MemCache>>>,
         receivers: Vec<OneshotReceiver<Result<(), crate::TskvError>>>,
     ) -> TskvResult<()> {
-        for mem in mems {
+        for mem in mems.iter() {
             let flush_seq = mem.read().min_seq_no();
-            match flush::flush_memtable(request, mem).await {
+            match flush::flush_memtable(request, mem.clone()).await {
                 Ok((ve, files_meta)) => {
                     if let Some(entry) = job.queue.write().await.get_mut(&flush_seq) {
                         entry.0.completion = true;
                         entry.1.request.version_edit = ve;
                         entry.1.request.file_metas = Some(files_meta);
-                        job.notify.notify_one();
                     }
+                    Self::process_summary_tasks(job.clone()).await;
                 }
 
                 Err(err) => {
-                    error!(
-                        "Flush: memcache failed for tsf_id: {}, because : {:?}",
-                        request.tf_id, err
-                    );
+                    error!("Flush: memcache failed {} {:?}", request, err);
                     return Err(err);
                 }
             };
         }
 
-        for task_state_receiver in receivers {
-            match task_state_receiver.await {
-                Ok(result) => {
-                    if let Err(err) = result {
-                        error!(
-                            "Flush: failed to apply summary task  for tsf_id: {}, because : {:?}",
-                            request.tf_id, err
-                        );
-
-                        return Err(err);
-                    }
-                }
-
-                Err(err) => {
-                    error!(
-                    "Flush: failed to receive summary task result for tsf_id: {}, because : {:?}",
-                    request.tf_id, err
-                );
-                }
+        for receiver in receivers {
+            let result = receiver.await;
+            info!("Flush: status: {:?} for request: {}", result, request);
+            if let Ok(result) = result {
+                result?;
             }
         }
 
