@@ -1,3 +1,6 @@
+statement ok
+alter database public set ttl 'INF';
+
 sleep 100ms
 # normal
 
