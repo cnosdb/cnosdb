@@ -28,6 +28,8 @@ rustyline = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "sync", "parking_lot", "tracing"] }
 walkdir = { workspace = true }
 futures-util = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 
 [features]
 default = []

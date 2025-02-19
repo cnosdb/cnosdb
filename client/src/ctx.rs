@@ -325,6 +325,17 @@ impl SessionContext {
         };
 
         let resp = builder.query(&param).body(sql).send().await?;
+        if resp.status().is_client_error() || resp.status().is_server_error() {
+            let error_body: serde_json::Value = resp.json().await?;
+            let error_code = error_body["error_code"]
+                .as_str()
+                .unwrap_or("Unknown error code");
+            let error_message = error_body["error_message"]
+                .as_str()
+                .unwrap_or("Unknown error message");
+            let error_msg = format!("error_code:{}\nerror_message:{}", error_code, error_message);
+            return Err(anyhow::Error::msg(error_msg));
+        }
         Ok(resp)
     }
 

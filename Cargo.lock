@@ -1233,6 +1233,8 @@ dependencies = [
  "reqwest",
  "rpassword",
  "rustyline",
+ "serde",
+ "serde_json",
  "tokio",
  "walkdir",
 ]
