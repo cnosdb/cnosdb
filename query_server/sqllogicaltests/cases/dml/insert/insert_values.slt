@@ -1,3 +1,6 @@
+statement ok
+alter database public set ttl 'INF';
+
 sleep 100ms
 # normal
 # public.test(time i64, ta utf8, tb utf8, fa , fb)
