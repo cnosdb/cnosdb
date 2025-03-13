@@ -1,5 +1,3 @@
-#![cfg(test)]
-
 use std::path::Path;
 
 use arrow_schema::TimeUnit;

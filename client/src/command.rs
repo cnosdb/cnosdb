@@ -47,10 +47,11 @@ impl Command {
         let now = Instant::now();
         match self {
             Self::Help => print_options.print_batches(&(all_commands_info()?), now),
-            Self::ConnectDatabase(database) => connect_database(database, ctx).await.map_err(|e| {
-                println!("Cannot connect to database {}.", database);
-                e
-            }),
+            Self::ConnectDatabase(database) => {
+                connect_database(database, ctx).await.inspect_err(|_e| {
+                    println!("Cannot connect to database {}.", database);
+                })
+            }
             Self::ListTables => {
                 let resp = ctx.sql("SHOW TABLES".to_string()).await?;
                 let results = SessionContext::parse_response(resp).await?;

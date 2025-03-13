@@ -116,7 +116,7 @@ impl LogicalOptimizer for DefaultLogicalOptimizer {
 
             self.analyzer
                 .analyze(&plan.df_plan, session)
-                .map(|p| {
+                .inspect(|p| {
                     span.ok("analyzer");
                     span.add_property(|| {
                         (
@@ -124,11 +124,9 @@ impl LogicalOptimizer for DefaultLogicalOptimizer {
                             p.display_indent_schema().to_string(),
                         )
                     });
-                    p
                 })
-                .map_err(|e| {
+                .inspect_err(|e| {
                     span.error(e.to_string());
-                    e
                 })?
         };
 
@@ -152,7 +150,7 @@ impl LogicalOptimizer for DefaultLogicalOptimizer {
                 .clone()
                 .with_optimizer_rules(rules)
                 .optimize(&analyzed_plan)
-                .map(|p| {
+                .inspect(|p| {
                     span.ok("optimize");
                     span.add_property(|| {
                         (
@@ -160,11 +158,9 @@ impl LogicalOptimizer for DefaultLogicalOptimizer {
                             p.display_indent_schema().to_string(),
                         )
                     });
-                    p
                 })
-                .map_err(|e| {
+                .inspect_err(|e| {
                     span.error(e.to_string());
-                    e
                 })?
         };
 

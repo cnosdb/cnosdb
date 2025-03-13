@@ -16,6 +16,7 @@ pub struct IndexEngine {
 }
 
 impl IndexEngine {
+    #[allow(clippy::suspicious_open_options)]
     pub fn new(path: impl AsRef<Path>) -> IndexResult<Self> {
         let path = path.as_ref();
         let _ = fs::create_dir_all(path);

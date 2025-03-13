@@ -283,9 +283,8 @@ pub async fn connect_database(database: &str, ctx: &mut SessionContext) -> Resul
     ctx.set_database(database);
     ctx.sql(format!("DESCRIBE DATABASE \"{}\"", database))
         .await
-        .map_err(|e| {
+        .inspect_err(|_e| {
             ctx.set_database(old_database.as_str());
-            e
         })
         .map(|_| ())
 }

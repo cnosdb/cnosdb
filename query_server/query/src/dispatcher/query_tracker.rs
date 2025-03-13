@@ -120,7 +120,7 @@ impl QueryTracker {
     }
 
     pub fn expire_query(&self, id: &QueryId) -> Option<Arc<dyn QueryExecution>> {
-        self.queries.write().remove(id).map(|query| {
+        self.queries.write().remove(id).inspect(|query| {
             if query.need_persist() {
                 let _ = self.query_persister.remove(id).map_err(|err| {
                     warn!("Remove query from persister failed: {:?}", err);
@@ -209,7 +209,6 @@ impl QueryTracker {
                         });
                 });
             }
-            query
         })
     }
 

@@ -201,7 +201,7 @@ pub struct DataNodeDefinition {
     /// Heartbeat interval of the Raft replication algorithm.
     pub heartbeat_interval: Duration,
 
-    ///
+    /// Use TLS or not.
     pub enable_tls: bool,
 }
 

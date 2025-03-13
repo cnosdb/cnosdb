@@ -96,7 +96,7 @@ fn compile_protobuf_models<P: AsRef<Path>, S: AsRef<str>>(
         }
         Err(version_err) => {
             // return Err(format!("Tool `protoc` {version_err}, please update it.").into());
-            println!("cargo:warning=Tool `protoc` {version_err}, please update it.");
+            println!("cargo:warning=Tool `protoc` {version_err}, skip compiling.");
             false
         }
     };
@@ -180,7 +180,8 @@ fn compile_flatbuffers_models<P: AsRef<Path>, S: AsRef<str>>(
             false
         }
         Err(version_err) => {
-            return Err(format!("Tool `{flatc_path}` {version_err}, please update it.").into());
+            println!("cargo:warning=Tool `{flatc_path}` {version_err}, skip compiling.");
+            false
         }
     };
 

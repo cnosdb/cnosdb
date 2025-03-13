@@ -62,6 +62,7 @@ mod test {
 
     use crate::file_system::file::asyncify;
 
+    #[allow(clippy::suspicious_open_options)]
     #[tokio::test]
     async fn test_mmap_raw() {
         let tempdir = tempfile::tempdir().unwrap();

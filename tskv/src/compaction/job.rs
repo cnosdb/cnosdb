@@ -30,10 +30,9 @@ impl CompactProcessor {
         let vnode_id = task.vnode_id();
         if !self.compact_tasks.contains(&task) {
             self.compact_tasks.push(task);
-            if self.vnode_compaction_limit.get(&vnode_id).is_none() {
-                self.vnode_compaction_limit
-                    .insert(vnode_id, Arc::new(Mutex::new(())));
-            }
+            self.vnode_compaction_limit
+                .entry(vnode_id)
+                .or_insert_with(|| Arc::new(Mutex::new(())));
         }
     }
 

@@ -283,9 +283,8 @@ impl VnodeStorage {
                     strict_write,
                 )
                 .await
-                .map_err(|err| {
+                .inspect_err(|err| {
                     span.error(err.to_string());
-                    err
                 })?
         };
         self.write_build_group_duration

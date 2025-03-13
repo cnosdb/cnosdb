@@ -605,8 +605,7 @@ fn test_balance() {
                             // Get id (vnode id).
                             let vnode_id = if let Some(vnode_id_i) = l[i..].find("\"id\"") {
                                 i += vnode_id_i + 5; // + len("id":)
-                                let vnode_id = if let Some(vnode_id_end_i) =
-                                    l[i..].find(|c| c == ',' || c == '}')
+                                let vnode_id = if let Some(vnode_id_end_i) = l[i..].find([',', '}'])
                                 {
                                     let vnode_id = l[i..i + vnode_id_end_i].parse::<u32>().unwrap();
                                     i += vnode_id_end_i;
@@ -622,7 +621,7 @@ fn test_balance() {
                             // Get node_id
                             if let Some(node_id_i) = l[i..].find("\"node_id\"") {
                                 i += node_id_i + 10; // + len("node_id":)
-                                if let Some(node_id_end_i) = l[i..].find(|c| c == ',' || c == '}') {
+                                if let Some(node_id_end_i) = l[i..].find([',', '}']) {
                                     let node_id = l[i..i + node_id_end_i].parse::<u64>().unwrap();
                                     vnode_node_ids.push((vnode_id, node_id));
                                 }

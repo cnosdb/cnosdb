@@ -215,7 +215,6 @@ incremental = true
 lto = false
 opt-level = 0
 overflow-checks = true
-panic = 'unwind'
 
 [profile.test-ci]
 debug-assertions = true
@@ -232,4 +231,3 @@ incremental = false
 lto = false
 opt-level = 3
 overflow-checks = false
-panic = 'unwind'

@@ -15,9 +15,6 @@ pub enum SqlError {
     #[snafu(display("Arrow error: {}", error_fmt(source)))]
     Arrow { source: ArrowError },
 
-    #[snafu(display("LineProtocol error: {}", error_fmt(source)))]
-    LineProtocol { source: TestError },
-
     #[snafu(display("Http error: {}", error_fmt(err)))]
     Http { err: String },
 

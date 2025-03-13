@@ -1,5 +1,4 @@
 use std::mem::size_of;
-use std::u64;
 
 use arrow_array::{
     Array, ArrayRef, BooleanArray, Float64Array, Int64Array, StringArray,

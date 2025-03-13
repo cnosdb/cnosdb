@@ -111,8 +111,7 @@ impl Chunk {
         self.time_range.merge(column_group.time_range());
         if self
             .column_groups
-            .get(&column_group.column_group_id())
-            .is_some()
+            .contains_key(&column_group.column_group_id())
         {
             return Err(TsmColumnGroupSnafu {
                 reason: format!(
