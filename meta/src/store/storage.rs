@@ -129,13 +129,18 @@ impl StateMachine {
     pub fn open(path: impl AsRef<Path>, size: usize) -> MetaResult<Self> {
         fs::create_dir_all(&path)?;
 
-        let env = heed::EnvOpenOptions::new()
-            .map_size(size)
-            .max_dbs(1)
-            .open(path)?;
+        let env = unsafe {
+            heed::EnvOpenOptions::new()
+                .map_size(size)
+                .max_dbs(1)
+                .open(path)
+        }?;
 
+        let mut w_txn = env.write_txn().context(HeedSnafu)?;
         let db: heed::Database<heed::types::Str, heed::types::Str> =
-            env.create_database(Some("data"))?;
+            env.create_database(&mut w_txn, Some("data"))?;
+        w_txn.commit()?;
+
         let storage = Self {
             env,
             db,
