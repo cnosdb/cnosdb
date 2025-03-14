@@ -31,8 +31,6 @@ serde_json = { workspace = true }
 serial_test = { workspace = true }
 snafu = { workspace = true }
 tokio = { workspace = true, features = ["macros", "net", "parking_lot", "rt-multi-thread", "signal", "sync", "time"] }
-tokio-stream = { workspace = true, features = ["net"] }
-tokio-util = { workspace = true }
 tonic = { workspace = true }
 tower = { workspace = true }
 tracing = { workspace = true }

@@ -23,32 +23,24 @@ version = { path = "../common/version" }
 
 async-backtrace = { workspace = true, optional = true }
 async-trait = { workspace = true }
-byteorder = { workspace = true }
 clap = { workspace = true }
 ctrlc = { workspace = true, features = ["termination"] }
-dashmap = { workspace = true }
 openraft = { workspace = true, features = ["serde"] }
 parking_lot = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-sled = { workspace = true }
 snafu = { workspace = true }
 sys-info = { workspace = true }
 sysinfo = { workspace = true, optional = true }
 tokio = { workspace = true }
-toml = { workspace = true }
 tonic = { workspace = true }
 tracing = { workspace = true }
-uuid = { workspace = true }
-walkdir = { workspace = true }
 
 futures = { workspace = true, features = ["alloc"] }
 heed = { workspace = true }
-heed-traits = { workspace = true }
 http = { workspace = true }
-http-body = { workspace = true }
 tower = { workspace = true }
 warp = { workspace = true }
 
