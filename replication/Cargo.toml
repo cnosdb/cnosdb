@@ -16,39 +16,29 @@ clap = { version = "4.1.11", features = ["derive", "env"] }
 openraft = { workspace = true, features = ["serde"] }
 tempfile = { version = "3.4.0" }
 
-async-backtrace = { workspace = true }
+async-backtrace = { workspace = true, optional = true }
 async-trait = { workspace = true }
 bincode = { workspace = true }
-chrono = { workspace = true }
-datafusion = { workspace = true }
-flatbuffers = { workspace = true }
 futures = { workspace = true, features = ["alloc"] }
 heed = { workspace = true }
-heed-traits = { workspace = true }
 http = { workspace = true }
 http-body = { workspace = true }
 maplit = { workspace = true }
-md-5 = { workspace = true }
-once_cell = { workspace = true }
 parking_lot = { workspace = true }
-prost = { workspace = true }
-protobuf = { workspace = true }
-rand = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 serial_test = { workspace = true }
 snafu = { workspace = true }
 tokio = { workspace = true, features = ["macros", "net", "parking_lot", "rt-multi-thread", "signal", "sync", "time"] }
-tokio-stream = { workspace = true, features = ["net"] }
-tokio-util = { workspace = true }
 tonic = { workspace = true }
 tower = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-walkdir = { workspace = true }
 warp = { workspace = true }
 
 [features]
+default = []
+backtrace = ["async-backtrace"]
 
 [package.metadata.docs.rs]
 all-features = true

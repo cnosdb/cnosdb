@@ -28,12 +28,19 @@ impl HeedApplyStorage {
     pub fn open(path: impl AsRef<Path>, size: usize) -> ReplicationResult<Self> {
         fs::create_dir_all(&path).context(IOErrSnafu)?;
 
-        let env = heed::EnvOpenOptions::new()
-            .map_size(size)
-            .max_dbs(1)
-            .open(path)
+        let env = unsafe {
+            heed::EnvOpenOptions::new()
+                .map_size(size)
+                .max_dbs(1)
+                .open(path)
+                .context(HeedSnafu)?
+        };
+        let mut txn = env.write_txn().context(HeedSnafu)?;
+        let db: Database<Str, Str> = env
+            .create_database(&mut txn, Some("data"))
             .context(HeedSnafu)?;
-        let db: Database<Str, Str> = env.create_database(Some("data")).context(HeedSnafu)?;
+        txn.commit().context(HeedSnafu)?;
+
         let storage = Self {
             env,
             db,
