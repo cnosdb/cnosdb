@@ -215,7 +215,7 @@ pub async fn run_query(
     let mut client = FlightSqlServiceClient::new(channel);
     client.set_header("TENANT", tenant);
     client.set_header("DB", db);
-    client.set_header("target_partitions", &target_partitions.to_string());
+    client.set_header("target_partitions", target_partitions.to_string());
 
     // 1. handshake, basic authentication
     let _ = client.handshake(username, password).await?;

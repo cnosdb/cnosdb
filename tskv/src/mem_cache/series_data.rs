@@ -350,6 +350,7 @@ mod test {
     #[derive(Debug, Clone)]
     pub struct Tuple {
         pub a: i32,
+        #[allow(dead_code)]
         pub b: i32,
     }
 

@@ -34,5 +34,4 @@ serde_json = { workspace = true }
 snafu = { workspace = true, features = ["backtraces"] }
 snap = { workspace = true }
 tempfile = { workspace = true }
-tonic = { workspace = true, features = ["tls", "transport"] }
 url = { workspace = true }

@@ -1,5 +1,6 @@
 use models::PhysicalDType;
 
+#[allow(unused)]
 pub trait NativeType: std::fmt::Debug + Send + Sync + 'static + Copy + Clone {
     type Bytes: AsRef<[u8]> + for<'a> TryFrom<&'a [u8], Error = std::array::TryFromSliceError>;
 

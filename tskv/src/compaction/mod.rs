@@ -299,6 +299,7 @@ pub mod test {
         }
 
         async fn make_tsm_files(&self, version: &Version) {
+            println!("Making TSM files in dir: {}", self.dir.display());
             let tsm_dir = version
                 .storage_opt()
                 .tsm_dir(self.tenant_database.as_str(), self.id);

@@ -143,9 +143,8 @@ impl<'a, S: ContextProviderExtension + Send + Sync> LogicalPlanner for SqlPlanne
             let span = session.get_child_span("statement to logical plan");
             self.statement_to_plan(statement, session, auth_enable)
                 .await
-                .map_err(|err| {
+                .inspect_err(|err| {
                     span.error(err.to_string());
-                    err
                 })?
         };
 

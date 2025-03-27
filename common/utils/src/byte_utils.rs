@@ -1,3 +1,5 @@
+#![allow(clippy::macro_metavars_in_unsafe)]
+
 #[macro_export]
 macro_rules! to_bytes {
     ($ty: expr) => {

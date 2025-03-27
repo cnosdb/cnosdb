@@ -351,7 +351,7 @@ pub fn build_string_column<'a>(
 
     let mut nullbits = BooleanBufferBuilder::new(array.len());
     let mut col_values = Vec::with_capacity(array.len());
-    array.iter().enumerate().for_each(|(_, value)| {
+    array.iter().for_each(|value| {
         if let Some(value) = value {
             nullbits.append(true);
             col_values.push(fbb.create_string(value));
@@ -397,7 +397,7 @@ pub fn build_timestamp_column<'a>(
                 })?;
             let mut nullbits = BooleanBufferBuilder::new(values.len());
             let mut col_values = Vec::with_capacity(values.len());
-            values.iter().enumerate().for_each(|(_, value)| {
+            values.iter().for_each(|value| {
                 if let Some(value) = value {
                     nullbits.append(true);
                     col_values.push(value);
@@ -417,7 +417,7 @@ pub fn build_timestamp_column<'a>(
                 })?;
             let mut nullbits = BooleanBufferBuilder::new(values.len());
             let mut col_values = Vec::with_capacity(values.len());
-            values.iter().enumerate().for_each(|(_, value)| {
+            values.iter().for_each(|value| {
                 if let Some(value) = value {
                     nullbits.append(true);
                     col_values.push(value);
@@ -437,7 +437,7 @@ pub fn build_timestamp_column<'a>(
                 })?;
             let mut nullbits = BooleanBufferBuilder::new(values.len());
             let mut col_values = Vec::with_capacity(values.len());
-            values.iter().enumerate().for_each(|(_, value)| {
+            values.iter().for_each(|value| {
                 if let Some(value) = value {
                     nullbits.append(true);
                     col_values.push(value);
@@ -477,7 +477,7 @@ pub fn build_i64_column<'a>(
         })?;
     let mut nullbits = BooleanBufferBuilder::new(values.len());
     let mut col_values = Vec::with_capacity(values.len());
-    values.iter().enumerate().for_each(|(_, value)| {
+    values.iter().for_each(|value| {
         if let Some(value) = value {
             nullbits.append(true);
             col_values.push(value);
@@ -514,7 +514,7 @@ pub fn build_f64_column<'a>(
         })?;
     let mut nullbits = BooleanBufferBuilder::new(values.len());
     let mut col_values = Vec::with_capacity(values.len());
-    values.iter().enumerate().for_each(|(_, value)| {
+    values.iter().for_each(|value| {
         if let Some(value) = value {
             nullbits.append(true);
             col_values.push(value);
@@ -551,7 +551,7 @@ pub fn build_u64_column<'a>(
         })?;
     let mut nullbits = BooleanBufferBuilder::new(values.len());
     let mut col_values = Vec::with_capacity(values.len());
-    values.iter().enumerate().for_each(|(_, value)| {
+    values.iter().for_each(|value| {
         if let Some(value) = value {
             nullbits.append(true);
             col_values.push(value);
@@ -588,7 +588,7 @@ pub fn build_bool_column<'a>(
         })?;
     let mut nullbits = BooleanBufferBuilder::new(values.len());
     let mut col_values = Vec::with_capacity(values.len());
-    values.iter().enumerate().for_each(|(_, value)| {
+    values.iter().for_each(|value| {
         if let Some(value) = value {
             nullbits.append(true);
             col_values.push(value);

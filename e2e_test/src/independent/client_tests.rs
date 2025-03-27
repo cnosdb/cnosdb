@@ -34,7 +34,14 @@ impl CnosdbCliDef {
         println!("- Building 'cnosdb-cli' at '{}'", workspace_dir.display());
         let mut command = Command::new("cargo");
         command.current_dir(&workspace_dir);
-        command.args(["build", "--package", "client", "--bin", "cnosdb-cli"]);
+        command.args([
+            "build",
+            "--release",
+            "--package",
+            "client",
+            "--bin",
+            "cnosdb-cli",
+        ]);
         if let Err(e) = execute_command(command) {
             panic!("Failed to build cnosdb-cli: {e}");
         }
@@ -48,7 +55,7 @@ impl CnosdbCliDef {
         let workspace_dir = get_workspace_dir();
         let exe_path = workspace_dir
             .join("target")
-            .join("debug")
+            .join("release")
             .join("cnosdb-cli");
         Command::new(&exe_path)
             .current_dir(workspace_dir)

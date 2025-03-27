@@ -1,5 +1,5 @@
+use std::cmp;
 use std::mem::size_of_val;
-use std::{cmp, usize};
 
 use arrow_buffer::{BooleanBuffer, Buffer};
 use flatbuffers::{ForwardsUOffset, Vector};

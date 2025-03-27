@@ -1221,9 +1221,8 @@ impl HttpService {
                                 error!("Failed to handle prom remote read request, err: {:?}", e);
                                 reject::custom(QuerySnafu.into_error(e))
                             })
-                            .map(|b| {
+                            .inspect(|b| {
                                 http_query_data_out.inc(b.len() as u64);
-                                b
                             })
                     };
 
@@ -2867,9 +2866,8 @@ async fn coord_write_log(
     coord
         .write_lines(tenant, db, Precision::NS, lines, span.context().as_ref())
         .await
-        .map_err(|e| {
+        .inspect_err(|e| {
             span.error(e.to_string());
-            e
         })
         .context(CoordinatorSnafu)?;
 
@@ -2914,9 +2912,8 @@ async fn sql_handle(
         let span = Span::from_context("execute", span_ctx);
         dbms.execute(query, span.context().as_ref())
             .await
-            .map_err(|err| {
+            .inspect_err(|err| {
                 span.error(err.to_string());
-                err
             })
             .context(QuerySnafu)?
     };
@@ -2941,9 +2938,8 @@ async fn sql_handle(
                     let span = Span::enter_with_parent("retry execute", &span);
                     dbms.execute(query, span.context().as_ref())
                         .await
-                        .map_err(|err| {
+                        .inspect_err(|err| {
                             span.error(err.to_string());
-                            err
                         })
                         .context(QuerySnafu)?
                 };

@@ -94,7 +94,7 @@ impl VersionSet {
 
     pub fn db_exists(&self, tenant: &str, database: &str) -> bool {
         let owner = make_owner(tenant, database);
-        self.dbs.get(&owner).is_some()
+        self.dbs.contains_key(&owner)
     }
 
     pub fn get_all_db(&self) -> &HashMap<String, Arc<RwLock<Database>>> {
