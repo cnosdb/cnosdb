@@ -1,5 +1,3 @@
-#![cfg(test)]
-
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -508,7 +506,7 @@ async fn test_compaction_3() {
 
     let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data, schema, 2).await;
     for f in files.iter().take(2 + 1).skip(1) {
-        let mut tsm_tombstone = TsmTombstone::open(&dir, f.file_id()).await.unwrap();
+        let tsm_tombstone = TsmTombstone::open(&dir, f.file_id()).await.unwrap();
         tsm_tombstone
             .add_range(&[(1, 1)], TimeRange::new(2, 6), None)
             .await
@@ -1267,7 +1265,7 @@ async fn test_big_compaction_2() {
                 .unwrap();
         }
         tsm_writer.finish().await.unwrap();
-        let mut tsm_tombstone = TsmTombstone::open(&dir, tsm_sequence).await.unwrap();
+        let tsm_tombstone = TsmTombstone::open(&dir, tsm_sequence).await.unwrap();
         tsm_tombstone
             .add_range(&[(1, 1)], TimeRange::new(0, 500), None)
             .await

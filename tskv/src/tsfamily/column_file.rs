@@ -6,7 +6,7 @@ use std::sync::{Arc, Weak};
 use cache::{AsyncCache, ShardedAsyncCache};
 use models::codec::Encoding;
 use models::predicate::domain::TimeRange;
-use models::{ColumnId, FieldId, SeriesId, SeriesKey};
+use models::{FieldId, SeriesId, SeriesKey};
 use snafu::ResultExt;
 use tokio::sync::{RwLock as AsyncRwLock, RwLockWriteGuard as AsyncRwLockWriteGuard};
 use trace::{debug, error, info};
@@ -19,7 +19,6 @@ use crate::file_system::FileSystem;
 use crate::tsm::reader::TsmReader;
 use crate::tsm::tombstone::tombstone_compact_tmp_path;
 use crate::tsm::writer::TsmWriter;
-use crate::tsm::TsmTombstone;
 use crate::{tsm, ColumnFileId, LevelId};
 
 #[derive(Debug)]
@@ -146,23 +145,6 @@ impl ColumnFile {
 
     pub fn contains_any_field_id(&self, _series_ids: &[FieldId]) -> bool {
         unimplemented!("contains_any_field_id")
-    }
-
-    pub async fn add_tombstone(
-        &self,
-        columns: &[(SeriesId, ColumnId)],
-        time_range: &TimeRange,
-    ) -> TskvResult<()> {
-        let dir = self.path.parent().expect("file has parent");
-        // TODO flock tombstone file.
-        let mut tombstone = TsmTombstone::open(dir, self.file_id).await?;
-        let bloom_filter = self.load_bloom_filter().await?;
-        tombstone
-            .add_range(columns, *time_range, Some(bloom_filter))
-            .await?;
-
-        tombstone.flush().await?;
-        Ok(())
     }
 
     pub async fn update_tag_value(

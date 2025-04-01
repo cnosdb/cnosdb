@@ -81,11 +81,13 @@ jobs:
             mv ./target/aarch64-unknown-linux-gnu/release/cnosdb-meta ./linux/arm64/cnosdb-meta
             mv ./target/x86_64-unknown-linux-gnu/release/cnosdb-meta ./linux/amd64/cnosdb-meta
           elif [[ "${{ matrix.version }}" = "memcheck" ]] && [[ "${{ matrix.image }}" = "cnosdb" ]]; then
-            RUSTFLAGS=-Zsanitizer=address cargo build --package main --package client --profile test-ci --target x86_64-unknown-linux-gnu
+            rustup toolchain install nightly-x86_64-unknown-linux-gnu
+            RUSTFLAGS=-Zsanitizer=address cargo +nightly build --package main --package client --profile test-ci --target x86_64-unknown-linux-gnu
             mv ./target/x86_64-unknown-linux-gnu/test-ci/cnosdb ./linux/amd64/cnosdb
             mv ./target/x86_64-unknown-linux-gnu/test-ci/cnosdb-cli ./linux/amd64/cnosdb-cli
           elif [[ "${{ matrix.version }}" = "memcheck" ]] && [[ "${{ matrix.image }}" = "cnosdb-meta" ]]; then
-            RUSTFLAGS=-Zsanitizer=address cargo build --package meta --profile test-ci --target x86_64-unknown-linux-gnu
+            rustup toolchain install nightly-x86_64-unknown-linux-gnu
+            RUSTFLAGS=-Zsanitizer=address cargo +nightly build --package meta --profile test-ci --target x86_64-unknown-linux-gnu
             mv ./target/x86_64-unknown-linux-gnu/test-ci/cnosdb-meta ./linux/amd64/cnosdb-meta
           fi
           make clean

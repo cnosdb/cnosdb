@@ -48,7 +48,7 @@ impl Optimizer for CascadeOptimizer {
             self.physical_planner
                 .create_physical_plan(&optimized_logical_plan, session)
                 .await
-                .map(|p| {
+                .inspect(|p| {
                     span.ok("complete physical plan creation");
                     span.add_property(|| {
                         (
@@ -56,11 +56,9 @@ impl Optimizer for CascadeOptimizer {
                             displayable(p.as_ref()).indent(false).to_string(),
                         )
                     });
-                    p
                 })
-                .map_err(|err| {
+                .inspect_err(|err| {
                     span.error(err.to_string());
-                    err
                 })?
         };
 
@@ -74,7 +72,7 @@ impl Optimizer for CascadeOptimizer {
 
             self.physical_optimizer
                 .optimize(physical_plan, session)
-                .map(|p| {
+                .inspect(|p| {
                     span.ok("complete physical plan optimization");
                     span.add_property(|| {
                         (
@@ -82,11 +80,9 @@ impl Optimizer for CascadeOptimizer {
                             displayable(p.as_ref()).indent(false).to_string(),
                         )
                     });
-                    p
                 })
-                .map_err(|err| {
+                .inspect_err(|err| {
                     span.error(err.to_string());
-                    err
                 })?
         };
 

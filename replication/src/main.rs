@@ -223,7 +223,7 @@ impl RaftNodeServer {
                         .read()
                         .await
                         .get(&req)
-                        .map_or_else(|err| Some(err.to_string()), |v| v)
+                        .unwrap_or_else(|err| Some(err.to_string()))
                         .unwrap_or_else(|| "not found value by key".to_string());
 
                     let res: Result<String, warp::Rejection> = Ok(rsp);
@@ -808,16 +808,6 @@ mod tests {
 
         let rt = create_runtime();
         let dir = format!("{}/test_write_snapshot_restart", crate::TEST_DATA_DIR);
-        let servers = start_servers(rt.clone(), &dir, 8000..=8000);
-
-        // start node-0 as cluster
-        let members = btreemap! {
-            servers[0].node.raft_id()=>raft_node_info(servers[0].node.raft_id()),
-        };
-        rt.block_on(servers[0].node.raft_init(members)).unwrap();
-        std::thread::sleep(Duration::from_secs(1));
-        let metrics = servers[0].node.raft_metrics();
-        assert_eq!(metrics.state, ServerState::Leader);
 
         #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
         struct RequestCommand {
@@ -828,22 +818,33 @@ mod tests {
             key: "test_key".to_string(),
             value: "test_val".to_string(),
         };
-
-        // write data 900 times
-        for i in 900..1000 {
-            command.value = format!("v_{}", i);
-            let data = serde_json::to_string(&command).unwrap();
-            rt.block_on(servers[0].node.raw_raft().client_write(data.into()))
-                .unwrap();
-        }
-
         {
-            let engine = rt.block_on(servers[0].server.engine.read());
-            assert_eq!(engine.get(&command.key).unwrap().unwrap(), "v_999");
+            let servers = start_servers(rt.clone(), &dir, 8000..=8000);
+
+            // start node-0 as cluster
+            let members = btreemap! {
+                servers[0].node.raft_id()=>raft_node_info(servers[0].node.raft_id()),
+            };
+            rt.block_on(servers[0].node.raft_init(members)).unwrap();
+            std::thread::sleep(Duration::from_secs(1));
+            let metrics = servers[0].node.raft_metrics();
+            assert_eq!(metrics.state, ServerState::Leader);
+
+            // write data 900 times
+            for i in 900..1000 {
+                command.value = format!("v_{}", i);
+                let data = serde_json::to_string(&command).unwrap();
+                rt.block_on(servers[0].node.raw_raft().client_write(data.into()))
+                    .unwrap();
+            }
+
+            {
+                let engine = rt.block_on(servers[0].server.engine.read());
+                assert_eq!(engine.get(&command.key).unwrap().unwrap(), "v_999");
+            }
+
+            servers[0].handler.abort();
         }
-
-        servers[0].handler.abort();
-
         println!("----------------------*********-------------------------");
         println!("----------------------*********-------------------------");
         println!("----------------------*********-------------------------");

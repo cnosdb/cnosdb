@@ -1,0 +1,34 @@
+name: Mirror and run GitLab CI
+
+on:
+  schedule:
+    - cron: "00 2 * * 1"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    if: github.repository_owner == 'cnosdb' && github.repository == 'cnosdb/cnosdb' && github.ref == 'refs/heads/main'
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+    - name: Mirrror + trigger CI
+      uses: lutengda/gitlab-mirror-and-ci-action@master
+      with:
+        args: "http://43.247.178.238:18280/root/cnosdb"
+      env:
+        FOLLOW_TAGS: "false"
+        FORCE_PUSH: "true"
+        LOCAL_GITHUB_REF: ${{ github.ref }}
+        GITLAB_HOSTNAME: "43.247.178.238:18280"
+        GITLAB_USERNAME: "root"
+        GITLAB_PASSWORD: ${{ secrets.GITLAB_PASSWORD }}
+        GITLAB_PROJECT_ID: "5"
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: send info to dingding
+      run: |
+        current_date=$(date +"%Y-%m-%d")
+        echo "current_date: $current_date"
+        commit_id="$(echo "${{ github.sha }}"|cut -c 1-8)"
+        echo "commit_id: $commit_id"
+        curl -X POST "https://oapi.dingtalk.com/robot/send?access_token=${{ secrets.DINGDING_TOKEN }}" -H "Content-Type: application/json" -d '{"msgtype":"text","text": {"content": "'${current_date}' 性能测试(visible after an hour😊)\nhttps://benchmark-result.cnosdb.com/benchmark-hits/hits_'${commit_id}'.html\nhttps://benchmark-result.cnosdb.com/benchmark-tsbs/tsbs_'${commit_id}'.html"}}'

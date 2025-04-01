@@ -1,45 +1,54 @@
 mod parse;
 
-use parse::{parse_error_code_enum, EnumInfo, FieldContainer};
+use parse::{ErrorCodeEnum, FieldContainer};
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::{quote, ToTokens};
 use syn::{Data, Fields, LitStr};
 
-type MultiSynResult<T> = std::result::Result<T, Vec<syn::Error>>;
+type MultiSynResult<T> = Result<T, Vec<syn::Error>>;
 
-const fn default_code() -> usize {
-    0
+const DEFAULT_CODE: u64 = 0;
+const DEFAULT_MODE_CODE: &str = "00";
+
+struct ErrorCodeImpl<'a> {
+    error_code_enum: &'a ErrorCodeEnum,
+    match_arms: Vec<ErrorCodeMatchArm<'a>>,
+    code_methods: Vec<GetErrorCodeMethod>,
 }
-const fn default_mode_code() -> &'static str {
-    "00"
-}
 
-struct ErrorCodeImpl<'a>(&'a EnumInfo);
-
-impl<'a> ToTokens for ErrorCodeImpl<'a> {
-    fn to_tokens(&self, tokens: &mut TokenStream) {
-        let enum_name = &self.0.name;
-        let mod_code = &self.0.mod_code;
-
-        let mut match_arms = Vec::with_capacity(self.0.variants.len());
-        let mut get_error_code_methods = Vec::with_capacity(self.0.variants.len());
-        for variant in self.0.variants.iter() {
-            let variant_name = &variant.name;
-            let arm = ErrorCodeMatchArm {
+impl<'a> ErrorCodeImpl<'a> {
+    pub fn new(error_code_enum: &'a ErrorCodeEnum) -> Self {
+        let mut match_arms = Vec::with_capacity(error_code_enum.variants.len());
+        let mut code_methods = Vec::with_capacity(error_code_enum.variants.len());
+        for variant in error_code_enum.variants.iter() {
+            let match_arm = ErrorCodeMatchArm {
+                enum_name: &error_code_enum.name,
                 field_container: variant,
-                mod_code,
-                pattern_ident: &quote! {#enum_name::#variant_name},
+                mod_code: &error_code_enum.mod_code,
             };
-            match_arms.push(quote! { #arm });
             if variant.code.is_some() {
                 // If variant has #[error_code(code = 0)]
-                let method =
-                    GetErrorCodeMethod::new(&variant_name.to_string(), arm.normalized_code());
-                get_error_code_methods.push(quote! { #method });
+                code_methods.push(GetErrorCodeMethod::new(
+                    &variant.name,
+                    match_arm.normalized_code(),
+                ));
             }
+            match_arms.push(match_arm);
         }
 
-        let gen = quote! {
+        Self {
+            error_code_enum,
+            match_arms,
+            code_methods,
+        }
+    }
+}
+
+impl ToTokens for ErrorCodeImpl<'_> {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let enum_name = &self.error_code_enum.name;
+        let match_arms = &self.match_arms;
+        tokens.extend(quote! {
             impl ErrorCode for #enum_name {
                 fn code(&self) -> &'static str {
                     match self {
@@ -50,24 +59,22 @@ impl<'a> ToTokens for ErrorCodeImpl<'a> {
                     self.to_string()
                 }
             }
-        };
-        tokens.extend(gen);
-
-        if !match_arms.is_empty() {
-            let gen = quote! {
+        });
+        if !self.code_methods.is_empty() {
+            let code_methods = &self.code_methods;
+            tokens.extend(quote! {
                 impl #enum_name {
-                    #(#get_error_code_methods)*
+                    #(#code_methods)*
                 }
-            };
-            tokens.extend(gen);
+            });
         }
     }
 }
 
 struct ErrorCodeMatchArm<'a> {
+    enum_name: &'a Ident,
     mod_code: &'a LitStr,
     field_container: &'a FieldContainer,
-    pattern_ident: &'a dyn ToTokens,
 }
 
 impl ErrorCodeMatchArm<'_> {
@@ -76,15 +83,12 @@ impl ErrorCodeMatchArm<'_> {
 
         match self.field_container.code.as_ref() {
             Some(c) => {
-                let code: u64 = c.code_num.base10_parse().unwrap();
-                assert!(code > 0 && code < 10_000);
-
                 let mut mod_code = self.mod_code.value();
-                write!(&mut mod_code, "{:04}", code).unwrap();
+                write!(&mut mod_code, "{:04}", c.code_num).unwrap();
                 mod_code
             }
             None => {
-                format!("{}{:04}", self.mod_code.value(), default_code())
+                format!("{}{DEFAULT_CODE:04}", self.mod_code.value())
             }
         }
     }
@@ -94,7 +98,10 @@ impl ToTokens for ErrorCodeMatchArm<'_> {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let code = LitStr::new(&self.normalized_code(), Span::call_site());
         let code = quote! {#code};
-        let pattern_ident = self.pattern_ident;
+
+        let enum_name = self.enum_name;
+        let variant_name = &self.field_container.name;
+        let pattern_ident = &quote! {#enum_name::#variant_name};
 
         let match_arm = match self.field_container.fields {
             Fields::Unit => {
@@ -117,14 +124,23 @@ impl ToTokens for ErrorCodeMatchArm<'_> {
     }
 }
 
+/// Generate method `fn code_{variant_name}() -> &'static str` like:
+///
+/// ```text
+/// impl ModError {
+///     pub const fn code_sub_mode_error_1() -> &'static str { "010001" }
+///     pub const fn code_sub_mode_error_2() -> &'static str { "010002" }
+/// }
+/// ```
 struct GetErrorCodeMethod {
     method_name: Ident,
     method_return: LitStr,
 }
 
 impl GetErrorCodeMethod {
-    fn new(variant_name: &str, code: String) -> GetErrorCodeMethod {
-        let normalized_name = format!("code_{}", camel_to_snake(variant_name));
+    fn new(variant_name: &Ident, code: String) -> GetErrorCodeMethod {
+        let variant_name = variant_name.to_string();
+        let normalized_name = format!("code_{}", camel_to_snake(&variant_name));
         GetErrorCodeMethod {
             method_name: Ident::new(&normalized_name, Span::mixed_site()),
             method_return: LitStr::new(&code, Span::mixed_site()),
@@ -155,10 +171,15 @@ fn impl_error_code_macro(ast: syn::DeriveInput) -> proc_macro::TokenStream {
     } = ast;
 
     let enum_info = match data {
-        Data::Enum(enum_) => parse_error_code_enum(enum_, ident, attrs).expect("parse error code"),
-        _ => panic!("only support enum"),
+        Data::Enum(enum_) => match ErrorCodeEnum::new(enum_, ident, attrs) {
+            Ok(err_code_enum) => err_code_enum,
+            Err(e) => {
+                panic!("error parsing tokens for derive macro ErrorCode: {e:?}");
+            }
+        },
+        _ => panic!("only enum types supported for derive macro ErrorCode"),
     };
-    let error_code_impl = ErrorCodeImpl(&enum_info);
+    let error_code_impl = ErrorCodeImpl::new(&enum_info);
 
     let gen = quote! {#error_code_impl};
     gen.into()

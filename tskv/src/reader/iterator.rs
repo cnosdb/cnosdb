@@ -874,9 +874,8 @@ pub async fn execute(
                 vnode_id,
             )
             .await
-            .map_err(|err| {
+            .inspect_err(|err| {
                 span.error(err.to_string());
-                err
             })?
     };
 
@@ -924,9 +923,8 @@ async fn build_stream(
                 query_option.split.tags_filter(),
             )
             .await
-            .map_err(|err| {
+            .inspect_err(|err| {
                 span.error(err.to_string());
-                err
             })?
     };
 

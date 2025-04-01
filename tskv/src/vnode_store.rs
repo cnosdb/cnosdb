@@ -75,6 +75,10 @@ impl VnodeStorage {
         self.db.clone()
     }
 
+    pub fn id(&self) -> VnodeId {
+        self.id
+    }
+
     pub async fn apply(
         &self,
         ctx: &replication::ApplyContext,
@@ -285,9 +289,8 @@ impl VnodeStorage {
                     strict_write,
                 )
                 .await
-                .map_err(|err| {
+                .inspect_err(|err| {
                     span.error(err.to_string());
-                    err
                 })?
         };
         self.write_build_group_duration

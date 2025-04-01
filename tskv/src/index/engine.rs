@@ -16,6 +16,7 @@ pub struct IndexEngine {
 }
 
 impl IndexEngine {
+    #[allow(clippy::suspicious_open_options)]
     pub fn new(path: impl AsRef<Path>) -> IndexResult<Self> {
         let path = path.as_ref();
         let _ = fs::create_dir_all(path);
@@ -35,6 +36,28 @@ impl IndexEngine {
             .map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?;
 
         Ok(Self { db, store })
+    }
+
+    #[allow(dead_code)]
+    pub fn copy_to_engine2(&self, engine2: &super::engine2::IndexEngine2) -> IndexResult<u64> {
+        let mut key_count: u64 = 0;
+        let iter = self.db.try_iter();
+        let mut writer = engine2.writer_txn()?;
+        for item in iter {
+            let item = item.map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?;
+            let key = item.0;
+            let val = self.load(&item.1)?;
+
+            key_count += 1;
+            engine2.txn_write(&key, &val, &mut writer)?;
+        }
+
+        writer
+            .commit()
+            .map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?;
+        engine2.flush()?;
+
+        Ok(key_count)
     }
 
     pub fn set(&mut self, key: &[u8], value: &[u8]) -> IndexResult<()> {

@@ -36,50 +36,51 @@ use crate::EnvKeys as _;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, EnvKeys)]
 pub struct Config {
-    ///
+    /// Global configs.
     #[serde(default = "Default::default")]
     pub global: GlobalConfig,
 
-    ///
+    /// Deployment configs.
     #[serde(default = "Default::default")]
     pub deployment: DeploymentConfig,
 
-    ///
+    /// Meta configs.
     #[serde(default = "Default::default")]
     pub meta: MetaConfig,
 
-    ///
+    /// Query configs.
     #[serde(default = "Default::default")]
     pub query: QueryConfig,
 
-    ///
+    /// Storage configs.
     #[serde(default = "Default::default")]
     pub storage: StorageConfig,
 
-    ///
+    /// WAL configs.
     #[serde(default = "Default::default")]
     pub wal: WalConfig,
 
-    ///
+    /// Cache configs.
     #[serde(default = "Default::default")]
     pub cache: CacheConfig,
 
-    ///
+    /// Logging configs.
     #[serde(default = "Default::default")]
     pub log: LogConfig,
 
-    ///
+    /// Security configs.
     #[serde(default = "Default::default")]
     pub security: SecurityConfig,
 
-    ///
+    /// Service configs.
     #[serde(default = "Default::default")]
     pub service: ServiceConfig,
 
-    ///
+    /// Cluster configs.
     #[serde(default = "Default::default")]
     pub cluster: ClusterConfig,
 
+    /// Tracing configs.
     #[serde(default = "Default::default")]
     pub trace: TraceConfig,
 }

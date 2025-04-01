@@ -78,13 +78,11 @@ impl RecordBatchSink for TskvRecordBatchSink {
                 span.context().as_ref(),
             )
             .await
-            .map(|write_bytes| {
+            .inspect(|_write_bytes| {
                 span.add_property(|| ("output_rows", rows_writed.to_string()));
-                write_bytes
             })
-            .map_err(|err| {
+            .inspect_err(|err| {
                 span.error(err.to_string());
-                err
             })
             .context(CoordinatorSnafu)?;
         self.coord

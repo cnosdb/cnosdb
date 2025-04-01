@@ -29,10 +29,9 @@ impl CompactProcessor {
         let vnode_id = task.vnode_id();
         if !self.compact_tasks.contains(&task) {
             self.compact_tasks.push(task);
-            if self.vnode_compaction_limit.get(&vnode_id).is_none() {
-                self.vnode_compaction_limit
-                    .insert(vnode_id, Arc::new(Mutex::new(())));
-            }
+            self.vnode_compaction_limit
+                .entry(vnode_id)
+                .or_insert_with(|| Arc::new(Mutex::new(())));
         }
     }
 
@@ -177,9 +176,7 @@ impl CompactJobInner {
                         break;
                     }
                 };
-                let vnode_ids_for_debug = vnode_ids.clone();
                 let now = Instant::now();
-                info!("Compacting on vnode(job start): {:?}", &vnode_ids_for_debug);
                 for (task, limit) in vnode_ids {
                     let vnode_id = task.vnode_id();
                     let vnode = version_set.read().await.get_vnode(vnode_id).cloned();
@@ -252,8 +249,7 @@ impl CompactJobInner {
                     }
                 }
                 info!(
-                    "Compacting on vnode(job start): {:?} costs {} sec",
-                    vnode_ids_for_debug,
+                    "Compacting on vnode(job start): costs {} sec",
                     now.elapsed().as_secs()
                 );
             }

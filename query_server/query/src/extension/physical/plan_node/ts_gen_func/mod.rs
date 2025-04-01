@@ -16,6 +16,7 @@ use crate::extension::expr::TSGenFunc;
 
 mod stream;
 
+#[allow(dead_code)]
 trait GenerateTimeSeries {
     fn generate_time_series(
         timestamps: &mut [i64],

@@ -131,8 +131,10 @@ select exact_count(pressure) from air;
 ----
 5
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Arrow: Invalid argument error: number of columns\(3\) must match number of fields\(2\) in schema", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": ".*", "content\-length": "0"\} \}, source: None \}
+query
 select exact_count(temperature),max(pressure) from air;
+----
+6 80.0
 
 statement ok
 drop table if exists air;

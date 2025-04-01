@@ -16,12 +16,14 @@ use super::FnUpdateMetaStoreConfig;
 use crate::cluster_def::MetaNodeDefinition;
 use crate::utils::{kill_child_process, Client, PROFILE};
 
+#[allow(unused)]
 pub struct CnosdbMetaTestHelper {
     pub runtime: Arc<Runtime>,
     pub workspace_dir: PathBuf,
     /// The meta test dir, usually /e2e_test/$mod/$test/meta
     pub test_dir: PathBuf,
     pub meta_node_definitions: Vec<MetaNodeDefinition>,
+    #[allow(dead_code)]
     pub meta_node_configs: Vec<MetaStoreConfig>,
     pub exe_path: PathBuf,
 
@@ -246,7 +248,7 @@ pub fn write_meta_node_config_files(
             }
             std::fs::write(&config_path, meta_config.to_string_pretty()).unwrap();
         } else {
-            meta_config = read_meta_store_config(Some(config_path));
+            meta_config = read_meta_store_config(Some(config_path)).unwrap();
         }
         meta_configs.push(meta_config);
     }

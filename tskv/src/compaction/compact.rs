@@ -31,8 +31,8 @@ use crate::ColumnFileId;
 
 /// Temporary compacting data block.
 /// - priority: When merging two (timestamp, value) pair with the same
-/// timestamp from two data blocks, pair from data block with lower
-/// priority will be discarded.
+///   timestamp from two data blocks, pair from data block with lower
+///   priority will be discarded.
 #[derive(Debug)]
 pub enum CompactingBlock {
     Decoded {

@@ -5,7 +5,7 @@ use protos::models_helper::parse_prost_bytes;
 use replication::errors::{ReplicationError, ReplicationResult};
 use replication::{EntriesMetrics, EntryStorage, RaftNodeId, RaftNodeInfo, TypeConfig};
 use snafu::IntoError;
-use trace::info;
+use trace::{error, info};
 
 use super::reader::WalRecordData;
 use crate::error::{DecodeSnafu, WalTruncatedSnafu};
@@ -449,8 +449,17 @@ impl RaftEntryStorageInner {
                 let wal_record = record_reader.next_wal_entry().await;
                 match wal_record {
                     Ok(Some(record)) => {
-                        self.recover_record(wal_id, record, apply_id, vnode_store)
-                            .await?;
+                        let res = self
+                            .recover_record(wal_id, record, apply_id, vnode_store)
+                            .await;
+                        if let Err(err) = res {
+                            error!(
+                                "recover wal {}, read entry failed: {}, vnode {} is broken, please remember to repair it",
+                                file_name, err, vnode_store.id()
+                            );
+                            error!("error msg: {:?}", err);
+                            return Ok(());
+                        }
                     }
 
                     // If the wal file is truncated, handle it.

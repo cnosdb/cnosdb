@@ -7,7 +7,7 @@ use maplit::{btreemap, hashmap};
 use models::{SeriesId, SeriesKey};
 
 use super::ts_index::{encode_inverted_index_key, encode_series_key};
-use super::IndexResult;
+use super::{IndexResult, IndexStorageSnafu};
 use crate::index::ts_index::encode_series_id_key;
 
 #[derive(Debug)]
@@ -273,13 +273,17 @@ impl IndexMemCache {
         bitmap
     }
 
-    pub async fn flush(&mut self, storage: &mut super::IndexEngine) -> IndexResult<()> {
+    pub async fn flush(&mut self, storage: &super::engine2::IndexEngine2) -> IndexResult<()> {
         // flush forward index
+        let mut writer = storage.writer_txn()?;
         for (id, key) in self.id_map.iter() {
             trace::debug!("--- Index flush new series id:{}, key: {}", id, key.key);
             let key_buf = encode_series_key(key.key.table(), key.key.tags());
-            storage.set(&key_buf, &id.to_be_bytes())?;
-            storage.set(&encode_series_id_key(*id), &key.key.encode())?;
+            // storage.set(&key_buf, &id.to_be_bytes())?;
+            // storage.set(&encode_series_id_key(*id), &key.key.encode())?;
+
+            storage.txn_write(&key_buf, &id.to_be_bytes(), &mut writer)?;
+            storage.txn_write(&encode_series_id_key(*id), &key.key.encode(), &mut writer)?;
         }
 
         // flush inverted index
@@ -287,10 +291,15 @@ impl IndexMemCache {
             for (tag_key, values) in tags {
                 for (tag_val, rb) in values {
                     let key = encode_inverted_index_key(tab, tag_key, tag_val);
-                    storage.merge_rb(&key, rb)?;
+                    //storage.merge_rb(&key, rb)?;
+                    storage.txn_merge_rb(&key, rb, &mut writer)?;
                 }
             }
         }
+        writer
+            .commit()
+            .map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?;
+        storage.flush()?;
 
         self.id_map.clear();
         self.key_map.clear();

@@ -19,18 +19,16 @@ utils = { path = "../common/utils" }
 
 arrow = { workspace = true, features = ["test_utils"] }
 arrow-array = { workspace = true }
+arrow-buffer = { workspace = true }
 arrow-schema = { workspace = true }
 async-backtrace = { workspace = true, optional = true }
 async-recursion = { workspace = true }
 async-trait = { workspace = true }
 bincode = { workspace = true }
-blake3 = { workspace = true }
 bytes = { workspace = true }
 bzip2 = { workspace = true }
 chrono = { workspace = true }
 crc32fast = { workspace = true }
-crossbeam-channel = { workspace = true }
-dashmap = { workspace = true }
 datafusion = { workspace = true }
 datafusion-proto = { workspace = true }
 dircpy = { workspace = true }
@@ -45,11 +43,9 @@ maplit = { workspace = true }
 md-5 = { workspace = true }
 memmap2 = { workspace = true }
 minivec = { workspace = true }
-mio = { workspace = true }
 num-traits = { workspace = true }
 num_cpus = { workspace = true }
 num_enum = { workspace = true }
-once_cell = { workspace = true }
 openraft = { workspace = true, features = ["serde"] }
 parking_lot = { workspace = true, features = ["nightly", "send_guard"] }
 pco = { workspace = true }
@@ -60,17 +56,15 @@ roaring = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 skiplist = { workspace = true }
-sled = { workspace = true }
 snafu = { workspace = true }
 snap = { workspace = true }
-stable-vec = { workspace = true }
-static_assertions = { workspace = true }
 sysinfo = { workspace = true, optional = false }
 tokio = { workspace = true, features = ["full", "tracing"] }
 tokio-util = { workspace = true }
 tonic = { workspace = true }
 walkdir = { workspace = true }
 zstd = { workspace = true }
+heed = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 rio = { version = "0.9.4", optional = true }

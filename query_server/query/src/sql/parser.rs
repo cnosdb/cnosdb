@@ -2151,9 +2151,8 @@ impl<'a> ExtParser<'a> {
             .peek_token()
             .to_string()
             .parse()
-            .map(|encoding| {
+            .inspect(|_encoding| {
                 self.parser.next_token();
-                encoding
             })
     }
 

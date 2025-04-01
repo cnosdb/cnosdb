@@ -325,6 +325,10 @@ impl SessionContext {
         };
 
         let resp = builder.query(&param).body(sql).send().await?;
+        if resp.status().is_client_error() || resp.status().is_server_error() {
+            let error_msg = format!("{}, details: {}", resp.status(), resp.text().await?);
+            return Err(anyhow::Error::msg(error_msg));
+        }
         Ok(resp)
     }
 

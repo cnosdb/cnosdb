@@ -20,6 +20,8 @@ pub struct TraceConfig {
     pub batch_report_max_spans: Option<usize>,
     #[serde(default = "TraceConfig::default_otlp_endpoint")]
     pub otlp_endpoint: Option<String>,
+    #[serde(default = "TraceConfig::default_trace_log_path")]
+    pub trace_log_path: Option<String>,
 }
 
 impl TraceConfig {
@@ -42,6 +44,10 @@ impl TraceConfig {
     fn default_otlp_endpoint() -> Option<String> {
         None
     }
+
+    fn default_trace_log_path() -> Option<String> {
+        None
+    }
 }
 
 impl Default for TraceConfig {
@@ -52,6 +58,7 @@ impl Default for TraceConfig {
             batch_report_interval: Self::default_batch_report_interval(),
             batch_report_max_spans: Self::default_batch_report_max_spans(),
             otlp_endpoint: Self::default_otlp_endpoint(),
+            trace_log_path: Self::default_trace_log_path(),
         }
     }
 }

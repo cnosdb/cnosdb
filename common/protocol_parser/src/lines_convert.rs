@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use datafusion::arrow::array::{
-    Array, ArrayRef, BooleanArray, Float64Array, Int64Array, StringArray,
+    Array, ArrayRef, BooleanArray, BooleanBufferBuilder, Float64Array, Int64Array, StringArray,
     TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray, UInt64Array,
 };
 use datafusion::arrow::datatypes::{SchemaRef, TimeUnit};
@@ -14,7 +14,6 @@ use protos::models::{
     Column as FbColumn, ColumnBuilder, ColumnType as FbColumnType, FieldType, PointsBuilder,
     TableBuilder, ValuesBuilder,
 };
-use utils::bitset::BitSet;
 
 use crate::{Error, FieldValue, Line, Result};
 
@@ -40,8 +39,8 @@ pub fn line_to_batches<'a>(lines: &'a [Line<'a>]) -> Result<HashMap<String, Muta
                     data[row_count] = tag_value.as_bytes();
                     col.column_data
                         .valid
-                        .append_unset(row_count - col.column_data.valid.len());
-                    col.column_data.valid.append_set(1);
+                        .append_n(row_count - col.column_data.valid.len(), false);
+                    col.column_data.valid.append(true);
                 }
                 _ => {
                     return Err(Error::Common {
@@ -64,8 +63,8 @@ pub fn line_to_batches<'a>(lines: &'a [Line<'a>]) -> Result<HashMap<String, Muta
                             data[row_count] = *value;
                             col.column_data
                                 .valid
-                                .append_unset(row_count - col.column_data.valid.len());
-                            col.column_data.valid.append_set(1);
+                                .append_n(row_count - col.column_data.valid.len(), false);
+                            col.column_data.valid.append(true);
                         }
                         _ => {
                             return Err(Error::Common {
@@ -86,8 +85,8 @@ pub fn line_to_batches<'a>(lines: &'a [Line<'a>]) -> Result<HashMap<String, Muta
                             data[row_count] = *value;
                             col.column_data
                                 .valid
-                                .append_unset(row_count - col.column_data.valid.len());
-                            col.column_data.valid.append_set(1);
+                                .append_n(row_count - col.column_data.valid.len(), false);
+                            col.column_data.valid.append(true);
                         }
                         _ => {
                             return Err(Error::Common {
@@ -108,8 +107,8 @@ pub fn line_to_batches<'a>(lines: &'a [Line<'a>]) -> Result<HashMap<String, Muta
                             data[row_count] = value;
                             col.column_data
                                 .valid
-                                .append_unset(row_count - col.column_data.valid.len());
-                            col.column_data.valid.append_set(1);
+                                .append_n(row_count - col.column_data.valid.len(), false);
+                            col.column_data.valid.append(true);
                         }
                         _ => {
                             return Err(Error::Common {
@@ -130,8 +129,8 @@ pub fn line_to_batches<'a>(lines: &'a [Line<'a>]) -> Result<HashMap<String, Muta
                             data[row_count] = *value;
                             col.column_data
                                 .valid
-                                .append_unset(row_count - col.column_data.valid.len());
-                            col.column_data.valid.append_set(1);
+                                .append_n(row_count - col.column_data.valid.len(), false);
+                            col.column_data.valid.append(true);
                         }
                         _ => {
                             return Err(Error::Common {
@@ -152,8 +151,8 @@ pub fn line_to_batches<'a>(lines: &'a [Line<'a>]) -> Result<HashMap<String, Muta
                             data[row_count] = *value;
                             col.column_data
                                 .valid
-                                .append_unset(row_count - col.column_data.valid.len());
-                            col.column_data.valid.append_set(1);
+                                .append_n(row_count - col.column_data.valid.len(), false);
+                            col.column_data.valid.append(true);
                         }
                         _ => {
                             return Err(Error::Common {
@@ -177,8 +176,8 @@ pub fn line_to_batches<'a>(lines: &'a [Line<'a>]) -> Result<HashMap<String, Muta
                 data[row_count] = time;
                 col.column_data
                     .valid
-                    .append_unset(row_count - col.column_data.valid.len());
-                col.column_data.valid.append_set(1);
+                    .append_n(row_count - col.column_data.valid.len(), false);
+                col.column_data.valid.append(true);
             }
             _ => {
                 return Err(Error::Common {
@@ -251,7 +250,7 @@ pub fn mutable_batches_to_point(db: &str, batches: HashMap<String, MutableBatch>
                 }
             };
             let column_name = fbb.create_string(field_name);
-            let nullbits = fbb.create_vector(column.column_data.valid.bytes());
+            let nullbits = fbb.create_vector(column.column_data.valid.as_slice());
             let mut column_builder = ColumnBuilder::new(fbb);
             column_builder.add_field_type(field_type);
             column_builder.add_column_type(fb_column_type);
@@ -350,18 +349,19 @@ pub fn build_string_column<'a>(
             content: format!("column {} is not string", col_name),
         })?;
 
-    let mut nullbits = BitSet::with_size(array.len());
+    let mut nullbits = BooleanBufferBuilder::new(array.len());
     let mut col_values = Vec::with_capacity(array.len());
-    array.iter().enumerate().for_each(|(idx, value)| {
+    array.iter().for_each(|value| {
         if let Some(value) = value {
-            nullbits.append_unset_and_set(idx);
+            nullbits.append(true);
             col_values.push(fbb.create_string(value));
         } else {
+            nullbits.append(false);
             col_values.push(fbb.create_string(""));
         }
     });
 
-    let nullbits = fbb.create_vector(nullbits.bytes());
+    let nullbits = fbb.create_vector(nullbits.finish().values());
     let values = fbb.create_vector(&col_values);
     let mut values_builder = ValuesBuilder::new(fbb);
     values_builder.add_string_value(values);
@@ -382,7 +382,7 @@ pub fn build_timestamp_column<'a>(
     fbb: &mut FlatBufferBuilder<'a>,
 ) -> Result<WIPOffset<FbColumn<'a>>> {
     let name = fbb.create_string(col_name);
-    let (nullbits, col_values) = match time_unit {
+    let (mut nullbits, col_values) = match time_unit {
         TimeUnit::Second => {
             return Err(Error::Common {
                 content: "time column not support second".to_string(),
@@ -395,13 +395,14 @@ pub fn build_timestamp_column<'a>(
                 .ok_or_else(|| Error::Common {
                     content: format!("column {} is not int64", col_name),
                 })?;
-            let mut nullbits = BitSet::with_size(values.len());
+            let mut nullbits = BooleanBufferBuilder::new(values.len());
             let mut col_values = Vec::with_capacity(values.len());
-            values.iter().enumerate().for_each(|(idx, value)| {
+            values.iter().for_each(|value| {
                 if let Some(value) = value {
-                    nullbits.append_unset_and_set(idx);
+                    nullbits.append(true);
                     col_values.push(value);
                 } else {
+                    nullbits.append(false);
                     col_values.push(0);
                 }
             });
@@ -414,13 +415,14 @@ pub fn build_timestamp_column<'a>(
                 .ok_or_else(|| Error::Common {
                     content: format!("column {} is not int64", col_name),
                 })?;
-            let mut nullbits = BitSet::with_size(values.len());
+            let mut nullbits = BooleanBufferBuilder::new(values.len());
             let mut col_values = Vec::with_capacity(values.len());
-            values.iter().enumerate().for_each(|(idx, value)| {
+            values.iter().for_each(|value| {
                 if let Some(value) = value {
-                    nullbits.append_unset_and_set(idx);
+                    nullbits.append(true);
                     col_values.push(value);
                 } else {
+                    nullbits.append(false);
                     col_values.push(0);
                 }
             });
@@ -433,20 +435,21 @@ pub fn build_timestamp_column<'a>(
                 .ok_or_else(|| Error::Common {
                     content: format!("column {} is not int64", col_name),
                 })?;
-            let mut nullbits = BitSet::with_size(values.len());
+            let mut nullbits = BooleanBufferBuilder::new(values.len());
             let mut col_values = Vec::with_capacity(values.len());
-            values.iter().enumerate().for_each(|(idx, value)| {
+            values.iter().for_each(|value| {
                 if let Some(value) = value {
-                    nullbits.append_unset_and_set(idx);
+                    nullbits.append(true);
                     col_values.push(value);
                 } else {
+                    nullbits.append(false);
                     col_values.push(0);
                 }
             });
             (nullbits, col_values)
         }
     };
-    let nullbits = fbb.create_vector(nullbits.bytes());
+    let nullbits = fbb.create_vector(nullbits.finish().values());
     let values = fbb.create_vector(&col_values);
     let mut values_builder = ValuesBuilder::new(fbb);
     values_builder.add_int_value(values);
@@ -472,17 +475,18 @@ pub fn build_i64_column<'a>(
         .ok_or_else(|| Error::Common {
             content: format!("column {} is not int64", col_name),
         })?;
-    let mut nullbits = BitSet::with_size(values.len());
+    let mut nullbits = BooleanBufferBuilder::new(values.len());
     let mut col_values = Vec::with_capacity(values.len());
-    values.iter().enumerate().for_each(|(idx, value)| {
+    values.iter().for_each(|value| {
         if let Some(value) = value {
-            nullbits.append_unset_and_set(idx);
+            nullbits.append(true);
             col_values.push(value);
         } else {
+            nullbits.append(false);
             col_values.push(0);
         }
     });
-    let nullbits = fbb.create_vector(nullbits.bytes());
+    let nullbits = fbb.create_vector(nullbits.finish().values());
     let values = fbb.create_vector(&col_values);
     let mut values_builder = ValuesBuilder::new(fbb);
     values_builder.add_int_value(values);
@@ -508,17 +512,18 @@ pub fn build_f64_column<'a>(
         .ok_or_else(|| Error::Common {
             content: format!("column {} is not float64", col_name),
         })?;
-    let mut nullbits = BitSet::with_size(values.len());
+    let mut nullbits = BooleanBufferBuilder::new(values.len());
     let mut col_values = Vec::with_capacity(values.len());
-    values.iter().enumerate().for_each(|(idx, value)| {
+    values.iter().for_each(|value| {
         if let Some(value) = value {
-            nullbits.append_unset_and_set(idx);
+            nullbits.append(true);
             col_values.push(value);
         } else {
+            nullbits.append(false);
             col_values.push(0.0);
         }
     });
-    let nullbits = fbb.create_vector(nullbits.bytes());
+    let nullbits = fbb.create_vector(nullbits.finish().values());
     let values = fbb.create_vector(&col_values);
     let mut values_builder = ValuesBuilder::new(fbb);
     values_builder.add_float_value(values);
@@ -544,17 +549,18 @@ pub fn build_u64_column<'a>(
         .ok_or_else(|| Error::Common {
             content: format!("column {} is not uint64", col_name),
         })?;
-    let mut nullbits = BitSet::with_size(values.len());
+    let mut nullbits = BooleanBufferBuilder::new(values.len());
     let mut col_values = Vec::with_capacity(values.len());
-    values.iter().enumerate().for_each(|(idx, value)| {
+    values.iter().for_each(|value| {
         if let Some(value) = value {
-            nullbits.append_unset_and_set(idx);
+            nullbits.append(true);
             col_values.push(value);
         } else {
+            nullbits.append(false);
             col_values.push(0);
         }
     });
-    let nullbits = fbb.create_vector(nullbits.bytes());
+    let nullbits = fbb.create_vector(nullbits.finish().values());
     let values = fbb.create_vector(&col_values);
     let mut values_builder = ValuesBuilder::new(fbb);
     values_builder.add_uint_value(values);
@@ -580,17 +586,18 @@ pub fn build_bool_column<'a>(
         .ok_or_else(|| Error::Common {
             content: format!("column {} is not bool", col_name),
         })?;
-    let mut nullbits = BitSet::with_size(values.len());
+    let mut nullbits = BooleanBufferBuilder::new(values.len());
     let mut col_values = Vec::with_capacity(values.len());
-    values.iter().enumerate().for_each(|(idx, value)| {
+    values.iter().for_each(|value| {
         if let Some(value) = value {
-            nullbits.append_unset_and_set(idx);
+            nullbits.append(true);
             col_values.push(value);
         } else {
+            nullbits.append(false);
             col_values.push(false);
         }
     });
-    let nullbits = fbb.create_vector(nullbits.bytes());
+    let nullbits = fbb.create_vector(nullbits.finish().values());
     let values = fbb.create_vector(&col_values);
     let mut values_builder = ValuesBuilder::new(fbb);
     values_builder.add_bool_value(values);

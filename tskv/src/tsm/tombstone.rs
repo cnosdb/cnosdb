@@ -214,7 +214,7 @@ impl TsmTombstone {
     }
 
     pub async fn add_range(
-        &mut self,
+        &self,
         columns: &[(SeriesId, ColumnId)],
         time_range: TimeRange,
         bloom_filter: Option<Arc<BloomFilter>>,
@@ -703,7 +703,7 @@ mod test {
         if !LocalFileSystem::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
         }
-        let mut tombstone = TsmTombstone::open(&dir, 1).await.unwrap();
+        let tombstone = TsmTombstone::open(&dir, 1).await.unwrap();
         tombstone
             .add_range(&[(0, 0)], TimeRange::new(0, 0), None)
             .await
@@ -730,7 +730,7 @@ mod test {
             std::fs::create_dir_all(&dir).unwrap();
         }
 
-        let mut tombstone = TsmTombstone::open(&dir, 1).await.unwrap();
+        let tombstone = TsmTombstone::open(&dir, 1).await.unwrap();
         // tsm_tombstone.load().unwrap();
         tombstone
             .add_range(&[(0, 1), (0, 2), (0, 3)], TimeRange::new(1, 100), None)
@@ -774,7 +774,7 @@ mod test {
             std::fs::create_dir_all(&dir).unwrap();
         }
 
-        let mut tombstone = TsmTombstone::open(&dir, 1).await.unwrap();
+        let tombstone = TsmTombstone::open(&dir, 1).await.unwrap();
         // tsm_tombstone.load().unwrap();
         for i in 0..10000 {
             tombstone
