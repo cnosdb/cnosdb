@@ -3,9 +3,8 @@ use std::ops::{BitAnd, BitOr, Bound, RangeBounds};
 use std::path::Path;
 
 use bytes::BufMut;
-use heed::flags::Flags;
 use heed::types::*;
-use heed::{Database, Env};
+use heed::{Database, Env, EnvFlags};
 use roaring::RoaringBitmap;
 use snafu::ResultExt;
 use trace::info;
@@ -14,7 +13,7 @@ use super::{IndexResult, IndexStorageSnafu, RoaringBitmapSnafu};
 
 pub struct IndexEngine2 {
     env: Env,
-    db: Database<OwnedSlice<u8>, OwnedSlice<u8>>,
+    db: Database<Bytes, Bytes>,
 }
 
 impl IndexEngine2 {
@@ -25,17 +24,24 @@ impl IndexEngine2 {
 
         let mut env_builder = heed::EnvOpenOptions::new();
         unsafe {
-            env_builder.flag(Flags::MdbNoSync);
+            env_builder.flags(EnvFlags::NO_SYNC);
         }
 
-        let env = env_builder
-            .map_size(1024 * 1024 * 1024 * 128)
-            .max_dbs(1)
-            .max_readers(1024)
-            .open(path)
+        let env = unsafe {
+            env_builder
+                .map_size(1024 * 1024 * 1024 * 128)
+                .max_dbs(1)
+                .max_readers(1024)
+                .open(path)
+                .map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?
+        };
+        let mut txn = env
+            .write_txn()
             .map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?;
-        let db: Database<OwnedSlice<u8>, OwnedSlice<u8>> = env
-            .create_database(Some("data"))
+        let db: Database<Bytes, Bytes> = env
+            .create_database(&mut txn, Some("data"))
+            .map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?;
+        txn.commit()
             .map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?;
 
         Ok(Self { env, db })
@@ -78,7 +84,7 @@ impl IndexEngine2 {
             .get(writer, key)
             .map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?
         {
-            let value = roaring::RoaringBitmap::deserialize_from(&*data)
+            let value = roaring::RoaringBitmap::deserialize_from(data)
                 .map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?;
 
             let value = value.bitor(rb);
@@ -115,7 +121,8 @@ impl IndexEngine2 {
             .get(&reader, key)
             .map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?
         {
-            Ok(Some(data))
+            // TODO(zipper): does this make it slow?
+            Ok(Some(data.to_vec()))
         } else {
             Ok(None)
         }
@@ -237,7 +244,7 @@ impl IndexEngine2 {
         let mut bitmap = roaring::RoaringBitmap::new();
         for val in iter {
             let val = val.map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?;
-            let rb = RoaringBitmap::deserialize_from(&*val.1).context(RoaringBitmapSnafu)?;
+            let rb = RoaringBitmap::deserialize_from(val.1).context(RoaringBitmapSnafu)?;
             bitmap = bitmap.bitor(rb);
         }
 
@@ -259,7 +266,7 @@ impl IndexEngine2 {
                 .map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?;
             for val in it {
                 let val = val.map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?;
-                let rb = RoaringBitmap::deserialize_from(&*val.1).context(RoaringBitmapSnafu)?;
+                let rb = RoaringBitmap::deserialize_from(val.1).context(RoaringBitmapSnafu)?;
                 bitmap = bitmap.bitor(rb);
             }
         } else {
