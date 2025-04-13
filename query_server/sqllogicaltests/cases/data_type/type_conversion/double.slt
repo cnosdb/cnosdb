@@ -27,7 +27,7 @@ test_double_conv,ta=a1,tb=b1 fa=1,fb=2 1667456411000000000
 
 # binary
 #-- utf8 to float64
-query 
+query TT
 explain
 select time
 from test_double_conv
@@ -38,11 +38,11 @@ where fa = '12345678865';
 --TableScan: test_double_conv projection=[time, fa], full_filters=[CAST(test_double_conv.fa AS Utf8) = Utf8(\"12345678865\")]"
 "physical_plan"
 "ProjectionExec: expr=[time@0 as time]
- --TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: \"fa\" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Utf8, value: Some(Utf8(\"12345678865\")), bound: Exactly }: Range { low: Marker { data_type: Utf8, value: Some(Utf8(\"12345678865\")), bound: Exactly }, high: Marker { data_type: Utf8, value: Some(Utf8(\"12345678865\")), bound: Exactly } }} })}) }, filter=Some(\"CAST(fa@1 AS Utf8) = 12345678865\"), split_num=2, projection=[time,fa]
+--TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: \"fa\" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Utf8, value: Some(Utf8(\"12345678865\")), bound: Exactly }: Range { low: Marker { data_type: Utf8, value: Some(Utf8(\"12345678865\")), bound: Exactly }, high: Marker { data_type: Utf8, value: Some(Utf8(\"12345678865\")), bound: Exactly } }} })}) }, filter=Some(\"CAST(fa@1 AS Utf8) = 12345678865\"), split_num=2, projection=[time,fa]
 "
 
 
-query 
+query TT
 explain
 select time
 from test_double_conv
@@ -57,11 +57,11 @@ where fa <> '12345678865';
 --CoalesceBatchesExec: target_batch_size=8192
 ----FilterExec: CAST(fa@1 AS Utf8) != 12345678865
 ------RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=2
- --------TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: \"fa\" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Utf8, value: None, bound: Above }: Range { low: Marker { data_type: Utf8, value: None, bound: Above }, high: Marker { data_type: Utf8, value: Some(Utf8(\"12345678865\")), bound: Below } }, Marker { data_type: Utf8, value: Some(Utf8(\"12345678865\")), bound: Above }: Range { low: Marker { data_type: Utf8, value: Some(Utf8(\"12345678865\")), bound: Above }, high: Marker { data_type: Utf8, value: None, bound: Below } }} })}) }, filter=Some(\"CAST(fa@1 AS Utf8) != 12345678865\"), split_num=2, projection=[time,fa]
+--------TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: \"fa\" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Utf8, value: None, bound: Above }: Range { low: Marker { data_type: Utf8, value: None, bound: Above }, high: Marker { data_type: Utf8, value: Some(Utf8(\"12345678865\")), bound: Below } }, Marker { data_type: Utf8, value: Some(Utf8(\"12345678865\")), bound: Above }: Range { low: Marker { data_type: Utf8, value: Some(Utf8(\"12345678865\")), bound: Above }, high: Marker { data_type: Utf8, value: None, bound: Below } }} })}) }, filter=Some(\"CAST(fa@1 AS Utf8) != 12345678865\"), split_num=2, projection=[time,fa]
 "
 
 
-query 
+query TT
 explain
 select time
 from test_double_conv
@@ -76,11 +76,11 @@ where fa != '12345678865';
 --CoalesceBatchesExec: target_batch_size=8192
 ----FilterExec: CAST(fa@1 AS Utf8) != 12345678865
 ------RepartitionExec: partitioning=RoundRobinBatch(8), input_partitions=2
- --------TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: \"fa\" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Utf8, value: None, bound: Above }: Range { low: Marker { data_type: Utf8, value: None, bound: Above }, high: Marker { data_type: Utf8, value: Some(Utf8(\"12345678865\")), bound: Below } }, Marker { data_type: Utf8, value: Some(Utf8(\"12345678865\")), bound: Above }: Range { low: Marker { data_type: Utf8, value: Some(Utf8(\"12345678865\")), bound: Above }, high: Marker { data_type: Utf8, value: None, bound: Below } }} })}) }, filter=Some(\"CAST(fa@1 AS Utf8) != 12345678865\"), split_num=2, projection=[time,fa]
+--------TskvExec: limit=None, predicate=ColumnDomains { column_to_domain: Some({Column { relation: None, name: \"fa\" }: Range(RangeValueSet { low_indexed_ranges: {Marker { data_type: Utf8, value: None, bound: Above }: Range { low: Marker { data_type: Utf8, value: None, bound: Above }, high: Marker { data_type: Utf8, value: Some(Utf8(\"12345678865\")), bound: Below } }, Marker { data_type: Utf8, value: Some(Utf8(\"12345678865\")), bound: Above }: Range { low: Marker { data_type: Utf8, value: Some(Utf8(\"12345678865\")), bound: Above }, high: Marker { data_type: Utf8, value: None, bound: Below } }} })}) }, filter=Some(\"CAST(fa@1 AS Utf8) != 12345678865\"), split_num=2, projection=[time,fa]
 "
 
 
-query 
+query TT
 explain
 select time
 from test_double_conv
@@ -95,7 +95,7 @@ where fa < '12345678865';
 "
 
 
-query 
+query TT
 explain
 select time
 from test_double_conv
@@ -110,7 +110,7 @@ where fa <= '12345678865';
 "
 
 
-query 
+query TT
 explain
 select time
 from test_double_conv
@@ -125,7 +125,7 @@ where fa > '12345678865';
 "
 
 
-query 
+query TT
 explain
 select time
 from test_double_conv
@@ -140,7 +140,7 @@ where fa >= '12345678865';
 "
 
 
-query 
+query TT
 explain
 select time
 from test_double_conv
@@ -156,7 +156,7 @@ where fa >= '12345678865';
 
 
 #-- error start
-query 
+query TT
 explain
 select time
 from test_double_conv
@@ -171,7 +171,7 @@ where fa >= '1997-01-31';
 "
 
 
-query 
+query TT
 explain
 select time
 from test_double_conv
@@ -189,7 +189,7 @@ where fa >= 'xxx';
 
 # between and
 #-- normal
-query 
+query TT
 explain
 select time
 from test_double_conv
@@ -204,7 +204,7 @@ where fa between '12345678865' and 12345678869;
 "
 
 
-query 
+query TT
 explain
 select time
 from test_double_conv
@@ -220,7 +220,7 @@ where fa between 12345678865 and 12345678869;
 
 
 #-- error start
-query 
+query TT
 explain
 select time
 from test_double_conv
@@ -230,7 +230,7 @@ where fa between 12345678865 and 'xxx';
 #-- error end
 
 # in list
-query 
+query TT
 explain
 select time
 from test_double_conv
@@ -250,7 +250,7 @@ where fa in (12345678865, '12345678869');
 
 
 #-- error start
-query 
+query TT
 explain
 select time
 from test_double_conv
@@ -271,7 +271,7 @@ where fa in (12345678865, 'xx');
 #-- error end
 
 # issue: https://github.com/apache/arrow-datafusion/issues/6001
-query 
+query TT
 explain select sum(case when fa < 50 then fa else 0 end)
     over (partition by ta) from test_double_conv;
 ----

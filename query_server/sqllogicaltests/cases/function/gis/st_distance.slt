@@ -23,46 +23,54 @@ select st_distance('POINT(0 0)', 'POINT(0 0)');
 0.0
 
 query 
-select st_distance('POINT(0 0)', 'LINESTRING (30 10, 10 30, 40 40)');
+select abs(st_distance('POINT(0 0)', 'LINESTRING (30 10, 10 30, 40 40)') -28.2842712474619)< 0.0000000000001 as deviation ;
 ----
-28.284271247461902
+true
+
 
 query 
-select st_distance('POINT(0 0)', 'POLYGON ((30 10, 40 40, 20 40, 10 20, 30 10))');
+select abs(st_distance('POINT(0 0)', 'POLYGON ((30 10, 40 40, 20 40, 10 20, 30 10))') -22.3606797749978) < 0.0000000000001 as deviation ;
 ----
-22.360679774997898
+true
+
 
 query 
-select st_distance('POINT(0 0)', 'POLYGON ((35 10, 45 45, 15 40, 10 20, 35 10),(20 30, 35 35, 30 20, 20 30))');
+select abs(st_distance('POINT(0 0)', 'POLYGON ((35 10, 45 45, 15 40, 10 20, 35 10),(20 30, 35 35, 30 20, 20 30))') -22.3606797749978) < 0.0000000000001 as deviation ;
 ----
-22.360679774997898
+true
+
 
 query 
-select st_distance('POINT(0 0)', 'MULTIPOINT ((10 40), (40 30), (20 20), (30 10))');
+select abs(st_distance('POINT(0 0)', 'MULTIPOINT ((10 40), (40 30), (20 20), (30 10))') -28.2842712474619) < 0.0000000000001 as deviation;
 ----
-28.284271247461902
+true
+
 
 query 
-select st_distance('POINT(0 0)', 'MULTIPOINT (10 40, 40 30, 20 20, 30 10)');
+select abs(st_distance('POINT(0 0)', 'MULTIPOINT (10 40, 40 30, 20 20, 30 10)') -28.2842712474619) < 0.0000000000001 as deviation ;
 ----
-28.284271247461902
+true
+
 
 query 
-select st_distance('POINT(0 0)', 'MULTILINESTRING ((10 10, 20 20, 10 40),(40 40, 30 30, 40 20, 30 10))');
+select abs(st_distance('POINT(0 0)', 'MULTILINESTRING ((10 10, 20 20, 10 40),(40 40, 30 30, 40 20, 30 10))') - 14.1421356237309) < 0.0000000000001 as deviation;
 ----
-14.142135623730951
+true
+
 
 query 
-select st_distance('POINT(0 0)', 'MULTIPOLYGON (((30 20, 45 40, 10 40, 30 20)),((15 5, 40 10, 10 20, 5 10, 15 5)))');
+select abs(st_distance('POINT(0 0)', 'MULTIPOLYGON (((30 20, 45 40, 10 40, 30 20)),((15 5, 40 10, 10 20, 5 10, 15 5)))') - 11.1803398874989) < 0.0000000000001 as deviation ;
 ----
-11.180339887498949
+true
+
 
 query 
-select st_distance('POINT(0 0)', 'MULTIPOLYGON (((40 40, 20 45, 45 30, 40 40)),((20 35, 10 30, 10 10, 30 5, 45 20, 20 35),(30 20, 20 15, 20 25, 30 20)))');
+select abs(st_distance('POINT(0 0)', 'MULTIPOLYGON (((40 40, 20 45, 45 30, 40 40)),((20 35, 10 30, 10 10, 30 5, 45 20, 20 35),(30 20, 20 15, 20 25, 30 20)))') -14.1421356237309) < 0.0000000000001 as deviation ;
 ----
-14.142135623730951
+true
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between POINT and GeometryCollection\(GeometryCollection\(\[Point\(Point\(Coord \{ x: 40\.0, y: 10\.0 \}\)\), LineString\(LineString\(\[Coord \{ x: 10\.0, y: 10\.0 \}, Coord \{ x: 20\.0, y: 20\.0 \}, Coord \{ x: 10\.0, y: 40\.0 \}\]\)\), Polygon\(Polygon \{ exterior: LineString\(\[Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 20\.0, y: 45\.0 \}, Coord \{ x: 45\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 40\.0 \}\]\), interiors: \[\] \}\)\]\)\) is not supported",.*
+
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between POINT and GEOMETRYCOLLECTION\(POINT\(40.0 10.0\),LINESTRING\(10.0 10.0,20.0 20.0,10.0 40.0\),POLYGON\(\(40.0 40.0,20.0 45.0,45.0 30.0,40.0 40.0\)\)\) is not supported",.*
 select st_distance('POINT(0 0)', 'GEOMETRYCOLLECTION (POINT (40 10),LINESTRING (10 10, 20 20, 10 40),POLYGON ((40 40, 20 45, 45 30, 40 40)))');
 
 
@@ -83,22 +91,22 @@ select st_distance('LINESTRING (30 10, 10 30, 40 40)', 'POLYGON ((35 10, 45 45, 
 ----
 0.0
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between LINESTRING and MultiPoint\(MultiPoint\(\[Point\(Coord \{ x: 10\.0, y: 40\.0 \}\), Point\(Coord \{ x: 40\.0, y: 30\.0 \}\), Point\(Coord \{ x: 20\.0, y: 20\.0 \}\), Point\(Coord \{ x: 30\.0, y: 10\.0 \}\)\]\)\) is not supported",.*
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between LINESTRING and MULTIPOINT\(10.0 40.0,40.0 30.0,20.0 20.0,30.0 10.0\) is not supported",.*
 select st_distance('LINESTRING (30 10, 10 30, 40 40)', 'MULTIPOINT ((10 40), (40 30), (20 20), (30 10))');
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between LINESTRING and MultiPoint\(MultiPoint\(\[Point\(Coord \{ x: 10\.0, y: 40\.0 \}\), Point\(Coord \{ x: 40\.0, y: 30\.0 \}\), Point\(Coord \{ x: 20\.0, y: 20\.0 \}\), Point\(Coord \{ x: 30\.0, y: 10\.0 \}\)\]\)\) is not supported",.*
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between LINESTRING and MULTIPOINT\(10.0 40.0,40.0 30.0,20.0 20.0,30.0 10.0\) is not supported",.*
 select st_distance('LINESTRING (30 10, 10 30, 40 40)', 'MULTIPOINT (10 40, 40 30, 20 20, 30 10)');
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between LINESTRING and MultiLineString\(MultiLineString\(\[LineString\(\[Coord \{ x: 10\.0, y: 10\.0 \}, Coord \{ x: 20\.0, y: 20\.0 \}, Coord \{ x: 10\.0, y: 40\.0 \}\]\), LineString\(\[Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 30\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 20\.0 \}, Coord \{ x: 30\.0, y: 10\.0 \}\]\)\]\)\) is not supported".*
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between LINESTRING and MULTILINESTRING\(\(10.0 10.0,20.0 20.0,10.0 40.0\),\(40.0 40.0,30.0 30.0,40.0 20.0,30.0 10.0\)\) is not supported".*
 select st_distance('LINESTRING (30 10, 10 30, 40 40)', 'MULTILINESTRING ((10 10, 20 20, 10 40),(40 40, 30 30, 40 20, 30 10))');
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between LINESTRING and MultiPolygon\(MultiPolygon\(\[Polygon \{ exterior: LineString\(\[Coord \{ x: 30\.0, y: 20\.0 \}, Coord \{ x: 45\.0, y: 40\.0 \}, Coord \{ x: 10\.0, y: 40\.0 \}, Coord \{ x: 30\.0, y: 20\.0 \}\]\), interiors: \[\] \}, Polygon \{ exterior: LineString\(\[Coord \{ x: 15\.0, y: 5\.0 \}, Coord \{ x: 40\.0, y: 10\.0 \}, Coord \{ x: 10\.0, y: 20\.0 \}, Coord \{ x: 5\.0, y: 10\.0 \}, Coord \{ x: 15\.0, y: 5\.0 \}\]\), interiors: \[\] \}\]\)\) is not supported",.*
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between LINESTRING and MULTIPOLYGON\(\(\(30.0 20.0,45.0 40.0,10.0 40.0,30.0 20.0\)\),\(\(15.0 5.0,40.0 10.0,10.0 20.0,5.0 10.0,15.0 5.0\)\)\) is not supported",.*
 select st_distance('LINESTRING (30 10, 10 30, 40 40)', 'MULTIPOLYGON (((30 20, 45 40, 10 40, 30 20)),((15 5, 40 10, 10 20, 5 10, 15 5)))');
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between LINESTRING and MultiPolygon\(MultiPolygon\(\[Polygon \{ exterior: LineString\(\[Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 20\.0, y: 45\.0 \}, Coord \{ x: 45\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 40\.0 \}\]\), interiors: \[\] \}, Polygon \{ exterior: LineString\(\[Coord \{ x: 20\.0, y: 35\.0 \}, Coord \{ x: 10\.0, y: 30\.0 \}, Coord \{ x: 10\.0, y: 10\.0 \}, Coord \{ x: 30\.0, y: 5\.0 \}, Coord \{ x: 45\.0, y: 20\.0 \}, Coord \{ x: 20\.0, y: 35\.0 \}\]\), interiors: \[LineString\(\[Coord \{ x: 30\.0, y: 20\.0 \}, Coord \{ x: 20\.0, y: 15\.0 \}, Coord \{ x: 20\.0, y: 25\.0 \}, Coord \{ x: 30\.0, y: 20\.0 \}\]\)\] \}\]\)\) is not supported".*
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between LINESTRING and MULTIPOLYGON\(\(\(40.0 40.0,20.0 45.0,45.0 30.0,40.0 40.0\)\),\(\(20.0 35.0,10.0 30.0,10.0 10.0,30.0 5.0,45.0 20.0,20.0 35.0\),\(30.0 20.0,20.0 15.0,20.0 25.0,30.0 20.0\)\)\) is not supported".*
 select st_distance('LINESTRING (30 10, 10 30, 40 40)', 'MULTIPOLYGON (((40 40, 20 45, 45 30, 40 40)),((20 35, 10 30, 10 10, 30 5, 45 20, 20 35),(30 20, 20 15, 20 25, 30 20)))');
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between LINESTRING and GeometryCollection\(GeometryCollection\(\[Point\(Point\(Coord \{ x: 40\.0, y: 10\.0 \}\)\), LineString\(LineString\(\[Coord \{ x: 10\.0, y: 10\.0 \}, Coord \{ x: 20\.0, y: 20\.0 \}, Coord \{ x: 10\.0, y: 40\.0 \}\]\)\), Polygon\(Polygon \{ exterior: LineString\(\[Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 20\.0, y: 45\.0 \}, Coord \{ x: 45\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 40\.0 \}\]\), interiors: \[\] \}\)\]\)\) is not supported",.*
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between LINESTRING and GEOMETRYCOLLECTION\(POINT\(40.0 10.0\),LINESTRING\(10.0 10.0,20.0 20.0,10.0 40.0\),POLYGON\(\(40.0 40.0,20.0 45.0,45.0 30.0,40.0 40.0\)\)\) is not supported",.*
 select st_distance('LINESTRING (30 10, 10 30, 40 40)', 'GEOMETRYCOLLECTION (POINT (40 10),LINESTRING (10 10, 20 20, 10 40),POLYGON ((40 40, 20 45, 45 30, 40 40)))');
 
 
@@ -114,81 +122,81 @@ select st_distance('POLYGON ((30 10, 40 40, 20 40, 10 20, 30 10))', 'POLYGON ((3
 ----
 0.0
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between POLYGON and MultiPoint\(MultiPoint\(\[Point\(Coord \{ x: 10\.0, y: 40\.0 \}\), Point\(Coord \{ x: 40\.0, y: 30\.0 \}\), Point\(Coord \{ x: 20\.0, y: 20\.0 \}\), Point\(Coord \{ x: 30\.0, y: 10\.0 \}\)\]\)\) is not supported",.*
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between POLYGON and MULTIPOINT\(10.0 40.0,40.0 30.0,20.0 20.0,30.0 10.0\) is not supported",.*
 select st_distance('POLYGON ((30 10, 40 40, 20 40, 10 20, 30 10))', 'MULTIPOINT ((10 40), (40 30), (20 20), (30 10))');
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between POLYGON and MultiPoint\(MultiPoint\(\[Point\(Coord \{ x: 10\.0, y: 40\.0 \}\), Point\(Coord \{ x: 40\.0, y: 30\.0 \}\), Point\(Coord \{ x: 20\.0, y: 20\.0 \}\), Point\(Coord \{ x: 30\.0, y: 10\.0 \}\)\]\)\) is not supported",.*
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between POLYGON and MULTIPOINT\(10.0 40.0,40.0 30.0,20.0 20.0,30.0 10.0\) is not supported",.*
 select st_distance('POLYGON ((30 10, 40 40, 20 40, 10 20, 30 10))', 'MULTIPOINT (10 40, 40 30, 20 20, 30 10)');
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between POLYGON and MultiLineString\(MultiLineString\(\[LineString\(\[Coord \{ x: 10\.0, y: 10\.0 \}, Coord \{ x: 20\.0, y: 20\.0 \}, Coord \{ x: 10\.0, y: 40\.0 \}\]\), LineString\(\[Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 30\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 20\.0 \}, Coord \{ x: 30\.0, y: 10\.0 \}\]\)\]\)\) is not supported".*
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between POLYGON and MULTILINESTRING\(\(10.0 10.0,20.0 20.0,10.0 40.0\),\(40.0 40.0,30.0 30.0,40.0 20.0,30.0 10.0\)\) is not supported".*
 select st_distance('POLYGON ((30 10, 40 40, 20 40, 10 20, 30 10))', 'MULTILINESTRING ((10 10, 20 20, 10 40),(40 40, 30 30, 40 20, 30 10))');
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between POLYGON and MultiPolygon\(MultiPolygon\(\[Polygon \{ exterior: LineString\(\[Coord \{ x: 30\.0, y: 20\.0 \}, Coord \{ x: 45\.0, y: 40\.0 \}, Coord \{ x: 10\.0, y: 40\.0 \}, Coord \{ x: 30\.0, y: 20\.0 \}\]\), interiors: \[\] \}, Polygon \{ exterior: LineString\(\[Coord \{ x: 15\.0, y: 5\.0 \}, Coord \{ x: 40\.0, y: 10\.0 \}, Coord \{ x: 10\.0, y: 20\.0 \}, Coord \{ x: 5\.0, y: 10\.0 \}, Coord \{ x: 15\.0, y: 5\.0 \}\]\), interiors: \[\] \}\]\)\) is not supported".*
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between POLYGON and MULTIPOLYGON\(\(\(30.0 20.0,45.0 40.0,10.0 40.0,30.0 20.0\)\),\(\(15.0 5.0,40.0 10.0,10.0 20.0,5.0 10.0,15.0 5.0\)\)\) is not supported".*
 select st_distance('POLYGON ((30 10, 40 40, 20 40, 10 20, 30 10))', 'MULTIPOLYGON (((30 20, 45 40, 10 40, 30 20)),((15 5, 40 10, 10 20, 5 10, 15 5)))');
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between POLYGON and MultiPolygon\(MultiPolygon\(\[Polygon \{ exterior: LineString\(\[Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 20\.0, y: 45\.0 \}, Coord \{ x: 45\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 40\.0 \}\]\), interiors: \[\] \}, Polygon \{ exterior: LineString\(\[Coord \{ x: 20\.0, y: 35\.0 \}, Coord \{ x: 10\.0, y: 30\.0 \}, Coord \{ x: 10\.0, y: 10\.0 \}, Coord \{ x: 30\.0, y: 5\.0 \}, Coord \{ x: 45\.0, y: 20\.0 \}, Coord \{ x: 20\.0, y: 35\.0 \}\]\), interiors: \[LineString\(\[Coord \{ x: 30\.0, y: 20\.0 \}, Coord \{ x: 20\.0, y: 15\.0 \}, Coord \{ x: 20\.0, y: 25\.0 \}, Coord \{ x: 30\.0, y: 20\.0 \}\]\)\] \}\]\)\) is not supported",.*
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between POLYGON and MULTIPOLYGON\(\(\(40.0 40.0,20.0 45.0,45.0 30.0,40.0 40.0\)\),\(\(20.0 35.0,10.0 30.0,10.0 10.0,30.0 5.0,45.0 20.0,20.0 35.0\),\(30.0 20.0,20.0 15.0,20.0 25.0,30.0 20.0\)\)\) is not supported",.*
 select st_distance('POLYGON ((30 10, 40 40, 20 40, 10 20, 30 10))', 'MULTIPOLYGON (((40 40, 20 45, 45 30, 40 40)),((20 35, 10 30, 10 10, 30 5, 45 20, 20 35),(30 20, 20 15, 20 25, 30 20)))');
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between POLYGON and GeometryCollection\(GeometryCollection\(\[Point\(Point\(Coord \{ x: 40\.0, y: 10\.0 \}\)\), LineString\(LineString\(\[Coord \{ x: 10\.0, y: 10\.0 \}, Coord \{ x: 20\.0, y: 20\.0 \}, Coord \{ x: 10\.0, y: 40\.0 \}\]\)\), Polygon\(Polygon \{ exterior: LineString\(\[Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 20\.0, y: 45\.0 \}, Coord \{ x: 45\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 40\.0 \}\]\), interiors: \[\] \}\)\]\)\) is not supported",.*
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between POLYGON and GEOMETRYCOLLECTION\(POINT\(40.0 10.0\),LINESTRING\(10.0 10.0,20.0 20.0,10.0 40.0\),POLYGON\(\(40.0 40.0,20.0 45.0,45.0 30.0,40.0 40.0\)\)\) is not supported",.*
 select st_distance('POLYGON ((30 10, 40 40, 20 40, 10 20, 30 10))', 'GEOMETRYCOLLECTION (POINT (40 10),LINESTRING (10 10, 20 20, 10 40),POLYGON ((40 40, 20 45, 45 30, 40 40)))');
 
 
 
 
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between MULTIPOINT and MultiPoint\(MultiPoint\(\[Point\(Coord \{ x: 10\.0, y: 40\.0 \}\), Point\(Coord \{ x: 40\.0, y: 30\.0 \}\), Point\(Coord \{ x: 20\.0, y: 20\.0 \}\), Point\(Coord \{ x: 30\.0, y: 10\.0 \}\)\]\)\) is not supported",.*
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between MULTIPOINT and MULTIPOINT\(10.0 40.0,40.0 30.0,20.0 20.0,30.0 10.0\) is not supported",.*
 select st_distance('MULTIPOINT ((10 40), (40 30), (20 20), (30 10))', 'MULTIPOINT ((10 40), (40 30), (20 20), (30 10))');
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between MULTIPOINT and MultiPoint\(MultiPoint\(\[Point\(Coord \{ x: 10\.0, y: 40\.0 \}\), Point\(Coord \{ x: 40\.0, y: 30\.0 \}\), Point\(Coord \{ x: 20\.0, y: 20\.0 \}\), Point\(Coord \{ x: 30\.0, y: 10\.0 \}\)\]\)\) is not supported",.*
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between MULTIPOINT and MULTIPOINT\(10.0 40.0,40.0 30.0,20.0 20.0,30.0 10.0\) is not supported",.*
 select st_distance('MULTIPOINT ((10 40), (40 30), (20 20), (30 10))', 'MULTIPOINT (10 40, 40 30, 20 20, 30 10)');
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between MULTIPOINT and MultiLineString\(MultiLineString\(\[LineString\(\[Coord \{ x: 10\.0, y: 10\.0 \}, Coord \{ x: 20\.0, y: 20\.0 \}, Coord \{ x: 10\.0, y: 40\.0 \}\]\), LineString\(\[Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 30\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 20\.0 \}, Coord \{ x: 30\.0, y: 10\.0 \}\]\)\]\)\) is not supported",.*
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between MULTIPOINT and MULTILINESTRING\(\(10.0 10.0,20.0 20.0,10.0 40.0\),\(40.0 40.0,30.0 30.0,40.0 20.0,30.0 10.0\)\) is not supported",.*
 select st_distance('MULTIPOINT ((10 40), (40 30), (20 20), (30 10))', 'MULTILINESTRING ((10 10, 20 20, 10 40),(40 40, 30 30, 40 20, 30 10))');
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between MULTIPOINT and MultiPolygon\(MultiPolygon\(\[Polygon \{ exterior: LineString\(\[Coord \{ x: 30\.0, y: 20\.0 \}, Coord \{ x: 45\.0, y: 40\.0 \}, Coord \{ x: 10\.0, y: 40\.0 \}, Coord \{ x: 30\.0, y: 20\.0 \}\]\), interiors: \[\] \}, Polygon \{ exterior: LineString\(\[Coord \{ x: 15\.0, y: 5\.0 \}, Coord \{ x: 40\.0, y: 10\.0 \}, Coord \{ x: 10\.0, y: 20\.0 \}, Coord \{ x: 5\.0, y: 10\.0 \}, Coord \{ x: 15\.0, y: 5\.0 \}\]\), interiors: \[\] \}\]\)\) is not supported",.*
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between MULTIPOINT and MULTIPOLYGON\(\(\(30.0 20.0,45.0 40.0,10.0 40.0,30.0 20.0\)\),\(\(15.0 5.0,40.0 10.0,10.0 20.0,5.0 10.0,15.0 5.0\)\)\) is not supported",.*
 select st_distance('MULTIPOINT ((10 40), (40 30), (20 20), (30 10))', 'MULTIPOLYGON (((30 20, 45 40, 10 40, 30 20)),((15 5, 40 10, 10 20, 5 10, 15 5)))');
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between MULTIPOINT and MultiPolygon\(MultiPolygon\(\[Polygon \{ exterior: LineString\(\[Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 20\.0, y: 45\.0 \}, Coord \{ x: 45\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 40\.0 \}\]\), interiors: \[\] \}, Polygon \{ exterior: LineString\(\[Coord \{ x: 20\.0, y: 35\.0 \}, Coord \{ x: 10\.0, y: 30\.0 \}, Coord \{ x: 10\.0, y: 10\.0 \}, Coord \{ x: 30\.0, y: 5\.0 \}, Coord \{ x: 45\.0, y: 20\.0 \}, Coord \{ x: 20\.0, y: 35\.0 \}\]\), interiors: \[LineString\(\[Coord \{ x: 30\.0, y: 20\.0 \}, Coord \{ x: 20\.0, y: 15\.0 \}, Coord \{ x: 20\.0, y: 25\.0 \}, Coord \{ x: 30\.0, y: 20\.0 \}\]\)\] \}\]\)\) is not supported",.*
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between MULTIPOINT and MULTIPOLYGON\(\(\(40.0 40.0,20.0 45.0,45.0 30.0,40.0 40.0\)\),\(\(20.0 35.0,10.0 30.0,10.0 10.0,30.0 5.0,45.0 20.0,20.0 35.0\),\(30.0 20.0,20.0 15.0,20.0 25.0,30.0 20.0\)\)\) is not supported",.*
 select st_distance('MULTIPOINT ((10 40), (40 30), (20 20), (30 10))', 'MULTIPOLYGON (((40 40, 20 45, 45 30, 40 40)),((20 35, 10 30, 10 10, 30 5, 45 20, 20 35),(30 20, 20 15, 20 25, 30 20)))');
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between MULTIPOINT and GeometryCollection\(GeometryCollection\(\[Point\(Point\(Coord \{ x: 40\.0, y: 10\.0 \}\)\), LineString\(LineString\(\[Coord \{ x: 10\.0, y: 10\.0 \}, Coord \{ x: 20\.0, y: 20\.0 \}, Coord \{ x: 10\.0, y: 40\.0 \}\]\)\), Polygon\(Polygon \{ exterior: LineString\(\[Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 20\.0, y: 45\.0 \}, Coord \{ x: 45\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 40\.0 \}\]\), interiors: \[\] \}\)\]\)\) is not supported",.*
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between MULTIPOINT and GEOMETRYCOLLECTION\(POINT\(40.0 10.0\),LINESTRING\(10.0 10.0,20.0 20.0,10.0 40.0\),POLYGON\(\(40.0 40.0,20.0 45.0,45.0 30.0,40.0 40.0\)\)\) is not supported",.*
 select st_distance('MULTIPOINT ((10 40), (40 30), (20 20), (30 10))', 'GEOMETRYCOLLECTION (POINT (40 10),LINESTRING (10 10, 20 20, 10 40),POLYGON ((40 40, 20 45, 45 30, 40 40)))');
 
 
 
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between MULTILINESTRING and MultiLineString\(MultiLineString\(\[LineString\(\[Coord \{ x: 10\.0, y: 10\.0 \}, Coord \{ x: 20\.0, y: 20\.0 \}, Coord \{ x: 10\.0, y: 40\.0 \}\]\), LineString\(\[Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 30\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 20\.0 \}, Coord \{ x: 30\.0, y: 10\.0 \}\]\)\]\)\) is not supported",.*
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between MULTILINESTRING and MULTILINESTRING\(\(10.0 10.0,20.0 20.0,10.0 40.0\),\(40.0 40.0,30.0 30.0,40.0 20.0,30.0 10.0\)\) is not supported",.*
 select st_distance('MULTILINESTRING ((10 10, 20 20, 10 40),(40 40, 30 30, 40 20, 30 10))', 'MULTILINESTRING ((10 10, 20 20, 10 40),(40 40, 30 30, 40 20, 30 10))');
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between MULTILINESTRING and MultiPolygon\(MultiPolygon\(\[Polygon \{ exterior: LineString\(\[Coord \{ x: 30\.0, y: 20\.0 \}, Coord \{ x: 45\.0, y: 40\.0 \}, Coord \{ x: 10\.0, y: 40\.0 \}, Coord \{ x: 30\.0, y: 20\.0 \}\]\), interiors: \[\] \}, Polygon \{ exterior: LineString\(\[Coord \{ x: 15\.0, y: 5\.0 \}, Coord \{ x: 40\.0, y: 10\.0 \}, Coord \{ x: 10\.0, y: 20\.0 \}, Coord \{ x: 5\.0, y: 10\.0 \}, Coord \{ x: 15\.0, y: 5\.0 \}\]\), interiors: \[\] \}\]\)\) is not supported",.*
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between MULTILINESTRING and MULTIPOLYGON\(\(\(30.0 20.0,45.0 40.0,10.0 40.0,30.0 20.0\)\),\(\(15.0 5.0,40.0 10.0,10.0 20.0,5.0 10.0,15.0 5.0\)\)\) is not supported",.*
 select st_distance('MULTILINESTRING ((10 10, 20 20, 10 40),(40 40, 30 30, 40 20, 30 10))', 'MULTIPOLYGON (((30 20, 45 40, 10 40, 30 20)),((15 5, 40 10, 10 20, 5 10, 15 5)))');
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between MULTILINESTRING and MultiPolygon\(MultiPolygon\(\[Polygon \{ exterior: LineString\(\[Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 20\.0, y: 45\.0 \}, Coord \{ x: 45\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 40\.0 \}\]\), interiors: \[\] \}, Polygon \{ exterior: LineString\(\[Coord \{ x: 20\.0, y: 35\.0 \}, Coord \{ x: 10\.0, y: 30\.0 \}, Coord \{ x: 10\.0, y: 10\.0 \}, Coord \{ x: 30\.0, y: 5\.0 \}, Coord \{ x: 45\.0, y: 20\.0 \}, Coord \{ x: 20\.0, y: 35\.0 \}\]\), interiors: \[LineString\(\[Coord \{ x: 30\.0, y: 20\.0 \}, Coord \{ x: 20\.0, y: 15\.0 \}, Coord \{ x: 20\.0, y: 25\.0 \}, Coord \{ x: 30\.0, y: 20\.0 \}\]\)\] \}\]\)\) is not supported",.*
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between MULTILINESTRING and MULTIPOLYGON\(\(\(40.0 40.0,20.0 45.0,45.0 30.0,40.0 40.0\)\),\(\(20.0 35.0,10.0 30.0,10.0 10.0,30.0 5.0,45.0 20.0,20.0 35.0\),\(30.0 20.0,20.0 15.0,20.0 25.0,30.0 20.0\)\)\) is not supported",.*
 select st_distance('MULTILINESTRING ((10 10, 20 20, 10 40),(40 40, 30 30, 40 20, 30 10))', 'MULTIPOLYGON (((40 40, 20 45, 45 30, 40 40)),((20 35, 10 30, 10 10, 30 5, 45 20, 20 35),(30 20, 20 15, 20 25, 30 20)))');
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between MULTILINESTRING and GeometryCollection\(GeometryCollection\(\[Point\(Point\(Coord \{ x: 40\.0, y: 10\.0 \}\)\), LineString\(LineString\(\[Coord \{ x: 10\.0, y: 10\.0 \}, Coord \{ x: 20\.0, y: 20\.0 \}, Coord \{ x: 10\.0, y: 40\.0 \}\]\)\), Polygon\(Polygon \{ exterior: LineString\(\[Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 20\.0, y: 45\.0 \}, Coord \{ x: 45\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 40\.0 \}\]\), interiors: \[\] \}\)\]\)\) is not supported",.*
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between MULTILINESTRING and GEOMETRYCOLLECTION\(POINT\(40.0 10.0\),LINESTRING\(10.0 10.0,20.0 20.0,10.0 40.0\),POLYGON\(\(40.0 40.0,20.0 45.0,45.0 30.0,40.0 40.0\)\)\) is not supported",.*
 select st_distance('MULTILINESTRING ((10 10, 20 20, 10 40),(40 40, 30 30, 40 20, 30 10))', 'GEOMETRYCOLLECTION (POINT (40 10),LINESTRING (10 10, 20 20, 10 40),POLYGON ((40 40, 20 45, 45 30, 40 40)))');
 
 
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between MULTIPOLYGON and MultiPolygon\(MultiPolygon\(\[Polygon \{ exterior: LineString\(\[Coord \{ x: 30\.0, y: 20\.0 \}, Coord \{ x: 45\.0, y: 40\.0 \}, Coord \{ x: 10\.0, y: 40\.0 \}, Coord \{ x: 30\.0, y: 20\.0 \}\]\), interiors: \[\] \}, Polygon \{ exterior: LineString\(\[Coord \{ x: 15\.0, y: 5\.0 \}, Coord \{ x: 40\.0, y: 10\.0 \}, Coord \{ x: 10\.0, y: 20\.0 \}, Coord \{ x: 5\.0, y: 10\.0 \}, Coord \{ x: 15\.0, y: 5\.0 \}\]\), interiors: \[\] \}\]\)\) is not supported",.*
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between MULTIPOLYGON and MULTIPOLYGON\(\(\(30.0 20.0,45.0 40.0,10.0 40.0,30.0 20.0\)\),\(\(15.0 5.0,40.0 10.0,10.0 20.0,5.0 10.0,15.0 5.0\)\)\) is not supported",.*
 select st_distance('MULTIPOLYGON (((30 20, 45 40, 10 40, 30 20)),((15 5, 40 10, 10 20, 5 10, 15 5)))', 'MULTIPOLYGON (((30 20, 45 40, 10 40, 30 20)),((15 5, 40 10, 10 20, 5 10, 15 5)))');
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between MULTIPOLYGON and MultiPolygon\(MultiPolygon\(\[Polygon \{ exterior: LineString\(\[Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 20\.0, y: 45\.0 \}, Coord \{ x: 45\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 40\.0 \}\]\), interiors: \[\] \}, Polygon \{ exterior: LineString\(\[Coord \{ x: 20\.0, y: 35\.0 \}, Coord \{ x: 10\.0, y: 30\.0 \}, Coord \{ x: 10\.0, y: 10\.0 \}, Coord \{ x: 30\.0, y: 5\.0 \}, Coord \{ x: 45\.0, y: 20\.0 \}, Coord \{ x: 20\.0, y: 35\.0 \}\]\), interiors: \[LineString\(\[Coord \{ x: 30\.0, y: 20\.0 \}, Coord \{ x: 20\.0, y: 15\.0 \}, Coord \{ x: 20\.0, y: 25\.0 \}, Coord \{ x: 30\.0, y: 20\.0 \}\]\)\] \}\]\)\) is not supported",.*
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between MULTIPOLYGON and MULTIPOLYGON\(\(\(40.0 40.0,20.0 45.0,45.0 30.0,40.0 40.0\)\),\(\(20.0 35.0,10.0 30.0,10.0 10.0,30.0 5.0,45.0 20.0,20.0 35.0\),\(30.0 20.0,20.0 15.0,20.0 25.0,30.0 20.0\)\)\) is not supported",.*
 select st_distance('MULTIPOLYGON (((30 20, 45 40, 10 40, 30 20)),((15 5, 40 10, 10 20, 5 10, 15 5)))', 'MULTIPOLYGON (((40 40, 20 45, 45 30, 40 40)),((20 35, 10 30, 10 10, 30 5, 45 20, 20 35),(30 20, 20 15, 20 25, 30 20)))');
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between MULTIPOLYGON and GeometryCollection\(GeometryCollection\(\[Point\(Point\(Coord \{ x: 40\.0, y: 10\.0 \}\)\), LineString\(LineString\(\[Coord \{ x: 10\.0, y: 10\.0 \}, Coord \{ x: 20\.0, y: 20\.0 \}, Coord \{ x: 10\.0, y: 40\.0 \}\]\)\), Polygon\(Polygon \{ exterior: LineString\(\[Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 20\.0, y: 45\.0 \}, Coord \{ x: 45\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 40\.0 \}\]\), interiors: \[\] \}\)\]\)\) is not supported",.*
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between MULTIPOLYGON and GEOMETRYCOLLECTION\(POINT\(40.0 10.0\),LINESTRING\(10.0 10.0,20.0 20.0,10.0 40.0\),POLYGON\(\(40.0 40.0,20.0 45.0,45.0 30.0,40.0 40.0\)\)\) is not supported",.*
 select st_distance('MULTIPOLYGON (((30 20, 45 40, 10 40, 30 20)),((15 5, 40 10, 10 20, 5 10, 15 5)))', 'GEOMETRYCOLLECTION (POINT (40 10),LINESTRING (10 10, 20 20, 10 40),POLYGON ((40 40, 20 45, 45 30, 40 40)))');
 
 
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between MULTIPOLYGON and MultiPolygon\(MultiPolygon\(\[Polygon \{ exterior: LineString\(\[Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 20\.0, y: 45\.0 \}, Coord \{ x: 45\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 40\.0 \}\]\), interiors: \[\] \}, Polygon \{ exterior: LineString\(\[Coord \{ x: 20\.0, y: 35\.0 \}, Coord \{ x: 10\.0, y: 30\.0 \}, Coord \{ x: 10\.0, y: 10\.0 \}, Coord \{ x: 30\.0, y: 5\.0 \}, Coord \{ x: 45\.0, y: 20\.0 \}, Coord \{ x: 20\.0, y: 35\.0 \}\]\), interiors: \[LineString\(\[Coord \{ x: 30\.0, y: 20\.0 \}, Coord \{ x: 20\.0, y: 15\.0 \}, Coord \{ x: 20\.0, y: 25\.0 \}, Coord \{ x: 30\.0, y: 20\.0 \}\]\)\] \}\]\)\) is not supported",.*
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between MULTIPOLYGON and MULTIPOLYGON\(\(\(40.0 40.0,20.0 45.0,45.0 30.0,40.0 40.0\)\),\(\(20.0 35.0,10.0 30.0,10.0 10.0,30.0 5.0,45.0 20.0,20.0 35.0\),\(30.0 20.0,20.0 15.0,20.0 25.0,30.0 20.0\)\)\) is not supported",.*
 select st_distance('MULTIPOLYGON (((40 40, 20 45, 45 30, 40 40)),((20 35, 10 30, 10 10, 30 5, 45 20, 20 35),(30 20, 20 15, 20 25, 30 20)))', 'MULTIPOLYGON (((40 40, 20 45, 45 30, 40 40)),((20 35, 10 30, 10 10, 30 5, 45 20, 20 35),(30 20, 20 15, 20 25, 30 20)))');
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between MULTIPOLYGON and GeometryCollection\(GeometryCollection\(\[Point\(Point\(Coord \{ x: 40\.0, y: 10\.0 \}\)\), LineString\(LineString\(\[Coord \{ x: 10\.0, y: 10\.0 \}, Coord \{ x: 20\.0, y: 20\.0 \}, Coord \{ x: 10\.0, y: 40\.0 \}\]\)\), Polygon\(Polygon \{ exterior: LineString\(\[Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 20\.0, y: 45\.0 \}, Coord \{ x: 45\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 40\.0 \}\]\), interiors: \[\] \}\)\]\)\) is not supported",.*
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between MULTIPOLYGON and GEOMETRYCOLLECTION\(POINT\(40.0 10.0\),LINESTRING\(10.0 10.0,20.0 20.0,10.0 40.0\),POLYGON\(\(40.0 40.0,20.0 45.0,45.0 30.0,40.0 40.0\)\)\) is not supported",.*
 select st_distance('MULTIPOLYGON (((40 40, 20 45, 45 30, 40 40)),((20 35, 10 30, 10 10, 30 5, 45 20, 20 35),(30 20, 20 15, 20 25, 30 20)))', 'GEOMETRYCOLLECTION (POINT (40 10),LINESTRING (10 10, 20 20, 10 40),POLYGON ((40 40, 20 45, 45 30, 40 40)))');
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between GeometryCollection\(GeometryCollection\(\[Point\(Point\(Coord \{ x: 40\.0, y: 10\.0 \}\)\), LineString\(LineString\(\[Coord \{ x: 10\.0, y: 10\.0 \}, Coord \{ x: 20\.0, y: 20\.0 \}, Coord \{ x: 10\.0, y: 40\.0 \}\]\)\), Polygon\(Polygon \{ exterior: LineString\(\[Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 20\.0, y: 45\.0 \}, Coord \{ x: 45\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 40\.0 \}\]\), interiors: \[\] \}\)\]\)\) and GeometryCollection\(GeometryCollection\(\[Point\(Point\(Coord \{ x: 40\.0, y: 10\.0 \}\)\), LineString\(LineString\(\[Coord \{ x: 10\.0, y: 10\.0 \}, Coord \{ x: 20\.0, y: 20\.0 \}, Coord \{ x: 10\.0, y: 40\.0 \}\]\)\), Polygon\(Polygon \{ exterior: LineString\(\[Coord \{ x: 40\.0, y: 40\.0 \}, Coord \{ x: 20\.0, y: 45\.0 \}, Coord \{ x: 45\.0, y: 30\.0 \}, Coord \{ x: 40\.0, y: 40\.0 \}\]\), interiors: \[\] \}\)\]\)\) is not supported",.*
+query error Arrow error: Io error: Status \{ code: Internal, message: "Execute logical plan: Datafusion: Optimizer rule 'simplify_expressions' failed\\ncaused by\\nExecution error: Calculating the distance between GEOMETRYCOLLECTION\(POINT\(40.0 10.0\),LINESTRING\(10.0 10.0,20.0 20.0,10.0 40.0\),POLYGON\(\(40.0 40.0,20.0 45.0,45.0 30.0,40.0 40.0\)\)\) and GEOMETRYCOLLECTION\(POINT\(40.0 10.0\),LINESTRING\(10.0 10.0,20.0 20.0,10.0 40.0\),POLYGON\(\(40.0 40.0,20.0 45.0,45.0 30.0,40.0 40.0\)\)\) is not supported",.*
 select st_distance('GEOMETRYCOLLECTION (POINT (40 10),LINESTRING (10 10, 20 20, 10 40),POLYGON ((40 40, 20 45, 45 30, 40 40)))', 'GEOMETRYCOLLECTION (POINT (40 10),LINESTRING (10 10, 20 20, 10 40),POLYGON ((40 40, 20 45, 45 30, 40 40)))');
 
 query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: The function \\"ST_Distance\\" expects 2 arguments, but 0 were provided",.*

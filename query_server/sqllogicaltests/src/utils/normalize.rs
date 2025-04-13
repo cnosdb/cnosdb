@@ -4,7 +4,7 @@ use arrow::error::ArrowError;
 use arrow::record_batch::RecordBatch;
 use arrow::util::display::{ArrayFormatter, FormatOptions};
 
-use crate::instance::CnosDBColumnType;
+use crate::instance::CnosdbColumnType;
 
 const NULL: &str = "NULL";
 
@@ -119,12 +119,12 @@ fn equivalent_names_and_types(schema: &SchemaRef, other: SchemaRef) -> bool {
 }
 
 /// Converts columns to a result as expected by sqllogicteset.
-pub fn convert_schema_to_types(columns: &Fields) -> Vec<CnosDBColumnType> {
+pub fn convert_schema_to_types(columns: &Fields) -> Vec<CnosdbColumnType> {
     columns
         .iter()
         .map(|f| f.data_type())
         .map(|data_type| match data_type {
-            DataType::Boolean => CnosDBColumnType::Boolean,
+            DataType::Boolean => CnosdbColumnType::Boolean,
             DataType::Int8
             | DataType::Int16
             | DataType::Int32
@@ -132,15 +132,15 @@ pub fn convert_schema_to_types(columns: &Fields) -> Vec<CnosDBColumnType> {
             | DataType::UInt8
             | DataType::UInt16
             | DataType::UInt32
-            | DataType::UInt64 => CnosDBColumnType::Integer,
+            | DataType::UInt64 => CnosdbColumnType::Integer,
             DataType::Float16
             | DataType::Float32
             | DataType::Float64
             | DataType::Decimal128(_, _)
-            | DataType::Decimal256(_, _) => CnosDBColumnType::Float,
-            DataType::Utf8 | DataType::LargeUtf8 => CnosDBColumnType::Text,
-            DataType::Timestamp(_, _) => CnosDBColumnType::Timestamp,
-            _ => CnosDBColumnType::Another,
+            | DataType::Decimal256(_, _) => CnosdbColumnType::Float,
+            DataType::Utf8 | DataType::LargeUtf8 => CnosdbColumnType::Text,
+            DataType::Timestamp(_, _) => CnosdbColumnType::Timestamp,
+            _ => CnosdbColumnType::Another,
         })
         .collect()
 }
