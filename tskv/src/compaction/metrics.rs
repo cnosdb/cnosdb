@@ -640,7 +640,7 @@ mod tests {
     use std::thread::sleep;
     use std::time::Duration;
 
-    use assert_float_eq::{afe_is_f64_near, afe_near_error_msg, assert_f64_near};
+    use assert_float_eq::assert_f64_near;
 
     use super::*;
 

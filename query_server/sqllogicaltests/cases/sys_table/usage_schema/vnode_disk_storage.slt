@@ -1,4 +1,18 @@
 statement ok
+create database test_vnode_disk_metric;
+
+statement ok
+--#DATABASE = test_vnode_disk_metric
+
+statement ok
+create table air(d1 double);
+
+statement ok
+insert into air(d1) values(1)
+
+sleep 10s
+
+statement ok
 --#DATABASE = usage_schema
 
 sleep 100ms
@@ -16,23 +30,6 @@ DESCRIBE TABLE vnode_disk_storage;
 "tenant" "STRING" "TAG" "DEFAULT"
 "vnode_id" "STRING" "TAG" "DEFAULT"
 "value" "BIGINT UNSIGNED" "FIELD" "DEFAULT"
-
-statement ok
-create database test_vnode_disk_metric;
-
-statement ok
---#DATABASE = test_vnode_disk_metric
-
-statement ok
-create table air(d1 double);
-
-statement ok
-insert into air(d1) values(1)
-
-sleep 10s
-
-statement ok
---#DATABASE = usage_schema;
 
 statement ok
 drop database test_vnode_disk_metric;

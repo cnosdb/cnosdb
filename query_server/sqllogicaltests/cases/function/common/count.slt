@@ -131,7 +131,7 @@ select exact_count(pressure) from air;
 ----
 5
 
-query
+query 
 select exact_count(temperature),max(pressure) from air;
 ----
 6 80.0

@@ -1,10 +1,10 @@
+use std::env::VarError;
 use std::error::Error;
 use std::path::{Path, PathBuf};
-use std::process::exit;
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 
-use crate::instance::{CreateOptions, SqlClientOptions};
+use crate::instance::CnosdbClient;
 
 mod db_request;
 mod error;
@@ -28,43 +28,19 @@ const CNOSDB_HTTP_PORT_DEFAULT: u16 = 8902;
 const CNOSDB_USERNAME_DEFAULT: &str = "root";
 const CNOSDB_PASSWORD_DEFAULT: &str = "";
 const CNOSDB_TENANT_DEFAULT: &str = "cnosdb";
-const CNOSDB_DB_DEFAULT: &str = "public";
+const CNOSDB_DATABASE_DEFAULT: &str = "public";
 const CNOSDB_TARGET_PARTITIONS_DEFAULT: usize = 8;
 
 #[tokio::main]
 pub async fn main() -> Result<(), Box<dyn Error>> {
     let options = Options::new();
+    let client_options = CnosdbClient::new(&options);
 
-    if options.mode != "singleton" && options.mode != "cluster" {
-        eprintln!("Unsupported mode: {}", options.mode);
-        exit(1);
-    }
+    println!("======= Options =======\n{options:?}");
+    println!("=== SqlCLientOptions ===\n{client_options:?}");
+    println!("========================");
 
-    let db_options = SqlClientOptions {
-        flight_host: options.flight_host.clone(),
-        flight_port: options.flight_port,
-        http_host: options.http_host.clone(),
-        http_port: options.http_port,
-        username: CNOSDB_USERNAME_DEFAULT.into(),
-        password: CNOSDB_PASSWORD_DEFAULT.into(),
-        tenant: CNOSDB_TENANT_DEFAULT.into(),
-        db: CNOSDB_DB_DEFAULT.into(),
-        pwd: options.pwd.clone(),
-        target_partitions: CNOSDB_TARGET_PARTITIONS_DEFAULT,
-        timeout: None,
-        precision: None,
-        chunked: None,
-    };
-
-    let create_options = CreateOptions {
-        shard_num: options.shard_count,
-        replication_num: options.replica_count,
-    };
-
-    println!("{options:?}");
-    println!("{db_options:?}");
-
-    for (path, relative_path) in read_test_files(&options) {
+    for (path, relative_path) in test_files(TEST_DIRECTORY, &options) {
         if !relative_path.to_string_lossy().ends_with("slt") {
             continue;
         }
@@ -77,22 +53,20 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
                 continue;
             }
         }
-        if options.complete_mode {
-            os::run_complete_file(
-                options.mode.clone(),
+        if options.cli.complete_cases {
+            os::update_test_file(
+                options.cli.cnosdb_deploy_mode.to_string(),
                 &path,
                 relative_path,
-                db_options.clone(),
-                create_options.clone(),
+                client_options.clone(),
             )
             .await?;
         } else {
             os::run_test_file(
-                options.mode.clone(),
+                options.cli.cnosdb_deploy_mode.to_string(),
                 &path,
                 relative_path,
-                db_options.clone(),
-                create_options.clone(),
+                client_options.clone(),
             )
             .await?;
         }
@@ -101,124 +75,295 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-pub(crate) fn read_test_files<'a>(
+pub struct TestFilesIterator<'a> {
+    base_path: PathBuf,
     options: &'a Options,
-) -> Box<dyn Iterator<Item = (PathBuf, PathBuf)> + 'a> {
-    Box::new(
-        read_dir_recursive(TEST_DIRECTORY)
-            .map(|path| {
-                (
-                    path.clone(),
-                    PathBuf::from(path.to_string_lossy().strip_prefix(TEST_DIRECTORY).unwrap()),
-                )
-            })
-            .filter(|(_, relative_path)| options.check_test_file(relative_path)),
-    )
+    inner: Box<dyn Iterator<Item = PathBuf>>,
 }
 
-pub(crate) fn read_dir_recursive<P: AsRef<Path>>(path: P) -> Box<dyn Iterator<Item = PathBuf>> {
-    Box::new(
-        std::fs::read_dir(path)
-            .expect("Readable directory")
-            .map(|path| path.expect("Readable entry").path())
-            .flat_map(|path| {
-                if path.is_dir() {
-                    read_dir_recursive(path)
-                } else {
-                    Box::new(std::iter::once(path))
+impl Iterator for TestFilesIterator<'_> {
+    type Item = (PathBuf, PathBuf);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(path) = self.inner.next() {
+            let relative_path = match path.strip_prefix(&self.base_path) {
+                Ok(rel_path) => rel_path.to_path_buf(),
+                Err(_) => {
+                    // If the path is not a valid relative path, skip it.
+                    return self.next();
                 }
-            }),
-    )
+            };
+            if self.options.check_test_file(&relative_path) {
+                Some((path, relative_path))
+            } else {
+                self.next()
+            }
+        } else {
+            None
+        }
+    }
+}
+
+pub fn test_files<P: AsRef<Path>>(path: P, options: &Options) -> TestFilesIterator<'_> {
+    let base_path = path.as_ref().to_path_buf();
+    TestFilesIterator {
+        base_path,
+        options,
+        inner: read_dir_recursive(path),
+    }
+}
+
+pub fn read_dir_recursive<P: AsRef<Path>>(path: P) -> Box<dyn Iterator<Item = PathBuf>> {
+    let path = path.as_ref();
+    let mut dir_entries: Vec<PathBuf> = match std::fs::read_dir(path) {
+        Ok(read_dir) => read_dir.into_iter().flatten().map(|e| e.path()).collect(),
+        Err(e) => panic!("Readable directory '{}' failed: {e}", path.display()),
+    };
+    // Sort paths by file_name asc, files first, then directories.
+    dir_entries.sort_by(|a, b| match (a.is_dir(), b.is_dir()) {
+        (true, true) => a.cmp(b),
+        (true, false) => std::cmp::Ordering::Greater,
+        (false, true) => std::cmp::Ordering::Less,
+        (false, false) => a.cmp(b),
+    });
+    Box::new(dir_entries.into_iter().flat_map(|path| {
+        if path.is_dir() {
+            read_dir_recursive(path)
+        } else {
+            Box::new(std::iter::once(path))
+        }
+    }))
+}
+
+fn get_env_var(key: &str) -> Option<String> {
+    match std::env::var(key) {
+        Ok(v) => Some(v),
+        Err(e) => match e {
+            VarError::NotPresent => None,
+            VarError::NotUnicode(os_str) => {
+                panic!(
+                    "Environment variable '{key}' is not unicode ('{}')",
+                    os_str.to_string_lossy()
+                );
+            }
+        },
+    }
+}
+
+fn get_env_var_or(key: &str, default_val: &str) -> String {
+    get_env_var(key).unwrap_or_else(|| default_val.to_string())
+}
+
+fn get_env_var_t_or<T>(key: &str, default_val: T) -> T
+where
+    T: Copy + std::fmt::Display + std::str::FromStr,
+    <T as std::str::FromStr>::Err: std::fmt::Display,
+{
+    match get_env_var(key) {
+        Some(v_str) => match v_str.parse::<T>() {
+            Ok(v) => v,
+            Err(e) => {
+                panic!("Environment variable '{key}'='{v_str}' is not a valid ({e})");
+            }
+        },
+        None => default_val,
+    }
+}
+
+#[derive(Debug, Clone, Parser)]
+struct CliOptions {
+    /// Filters of test files to run.
+    /// e.g. 'test_database.slt' '.*test_database.slt' '.*test_database.*'
+    #[arg()]
+    filters: Vec<String>,
+
+    /// Add external option when executing CREATE_DATABASE statement: shard <number>
+    #[arg(long = "shard", default_value = "1")]
+    create_database_with_shard: u32,
+
+    /// Add external option when executing CREATE_DATABASE statement: replica <number>
+    #[arg(long = "replica", default_value = "1")]
+    create_database_with_replica: u32,
+
+    /// Complete case files to fill out expected results with the output produced by database.
+    #[arg(long = "complete", default_value = "false")]
+    complete_cases: bool,
+
+    /// The mode of the cnosdb deployment: "singleton" or "cluster"
+    #[arg(short = 'M', long = "mode", default_value = "singleton")]
+    cnosdb_deploy_mode: CnosdbDeployMode,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+enum CnosdbDeployMode {
+    Singleton,
+    Cluster,
+}
+
+impl std::fmt::Display for CnosdbDeployMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CnosdbDeployMode::Singleton => write!(f, "singleton"),
+            CnosdbDeployMode::Cluster => write!(f, "cluster"),
+        }
+    }
 }
 
 /// Parsed command line options
-#[derive(Debug)]
-struct Options {
-    // regex like
-    /// arguments passed to the program which are treated as
-    /// cargo test filter (substring match on filenames)
-    filters: Vec<String>,
+#[derive(Debug, Clone)]
+pub struct Options {
+    cli: CliOptions,
 
-    /// Auto complete mode to fill out expected results
-    complete_mode: bool,
-
-    /// Number of shards
-    shard_count: u32,
-
-    /// Number of replication sets
-    replica_count: u32,
-
-    mode: String,
+    /// Rewritten regex filters.
+    filters_regex: Vec<regex::Regex>,
+    /// Rewritten filters that use 'String::contain()' to check.
+    filters_string: Vec<String>,
 
     flight_host: String,
     flight_port: u16,
     http_host: String,
     http_port: u16,
-    pwd: String,
-}
-
-#[derive(Debug, Parser)]
-struct CliOptions {
-    #[arg()]
-    filters: Vec<String>,
-
-    #[arg(long = "shard", default_value = "1")]
-    shard_count: u32,
-
-    #[arg(long = "replica", default_value = "1")]
-    replica_count: u32,
-
-    #[arg(long = "complete", default_value = "false")]
-    complete_mode: bool,
-
-    #[arg(short = 'M', long = "mode", default_value = "singleton")]
-    mode: String,
+    work_directory: PathBuf,
 }
 
 impl Options {
     fn new() -> Self {
-        let args = CliOptions::parse();
+        let cli_opts = CliOptions::parse();
 
-        let flight_host = std::env::var(CNOSDB_FLIGHT_HOST_ENV)
-            .unwrap_or_else(|_| CNOSDB_FLIGHT_HOST_DEFAULT.into());
-        let flight_port = std::env::var(CNOSDB_FLIGHT_PORT_ENV)
-            .map_or(CNOSDB_FLIGHT_PORT_DEFAULT, |e| {
-                e.parse::<u16>().expect("Parse CNOSDB_FLIGHT_PORT")
+        let mut filters_regex = Vec::new();
+        let mut filters_string = Vec::new();
+        for ex in cli_opts.filters.iter() {
+            match regex::Regex::new(ex) {
+                Ok(regex) => filters_regex.push(regex),
+                Err(_) => {
+                    filters_string.push(ex.clone());
+                }
+            };
+        }
+
+        let flight_host = get_env_var_or(CNOSDB_FLIGHT_HOST_ENV, CNOSDB_FLIGHT_HOST_DEFAULT);
+        let flight_port = get_env_var_t_or(CNOSDB_FLIGHT_PORT_ENV, CNOSDB_FLIGHT_PORT_DEFAULT);
+        let http_host = get_env_var_or(CNOSDB_HTTP_HOST_ENV, CNOSDB_HTTP_HOST_DEFAULT);
+        let http_port = get_env_var_t_or(CNOSDB_HTTP_PORT_ENV, CNOSDB_HTTP_PORT_DEFAULT);
+        let work_directory = get_env_var(CNOSDB_WORK_DIR_ENV)
+            .map(PathBuf::from)
+            .unwrap_or_else(|| match std::env::current_dir() {
+                Ok(path) => path,
+                Err(e) => {
+                    panic!("Failed to get current directory: {e}");
+                }
             });
 
-        let http_host =
-            std::env::var(CNOSDB_HTTP_HOST_ENV).unwrap_or_else(|_| CNOSDB_HTTP_HOST_DEFAULT.into());
-        let http_port = std::env::var(CNOSDB_HTTP_PORT_ENV).map_or(CNOSDB_HTTP_PORT_DEFAULT, |e| {
-            e.parse::<u16>().expect("Parse CNOSDB_HTTP_PORT")
-        });
-
-        let mut default_home = std::env::var("HOME").unwrap();
-        default_home.push_str("/cnosdb");
-        let pwd = std::env::var(CNOSDB_WORK_DIR_ENV).unwrap_or(default_home);
-        // treat args after the first as filters to run (substring matching)
-
         Self {
-            filters: args.filters,
-            complete_mode: args.complete_mode,
-            shard_count: args.shard_count,
-            replica_count: args.replica_count,
-            mode: args.mode,
+            cli: cli_opts,
+
+            filters_regex,
+            filters_string,
+
             flight_host,
             flight_port,
             http_host,
             http_port,
-            pwd,
+            work_directory,
         }
     }
 
     fn check_test_file(&self, relative_path: &Path) -> bool {
-        if self.filters.is_empty() {
+        if self.cli.filters.is_empty() {
             return true;
         }
 
-        // otherwise check if any filter matches
-        self.filters
+        let path = relative_path.to_string_lossy();
+        self.filters_regex
             .iter()
-            .any(|filter| relative_path.to_string_lossy().contains(filter))
+            .any(|ex| ex.is_match(path.as_ref()))
+            || self.filters_string.iter().any(|ex| path.contains(ex))
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::path::PathBuf;
+
+    use crate::{
+        read_dir_recursive, test_files, CliOptions, CnosdbDeployMode, Options,
+        CNOSDB_FLIGHT_HOST_DEFAULT, CNOSDB_FLIGHT_PORT_DEFAULT, CNOSDB_HTTP_HOST_DEFAULT,
+        CNOSDB_HTTP_PORT_DEFAULT,
+    };
+
+    #[test]
+    fn test_read_dir_recursive() {
+        let dir = PathBuf::from("/tmp/test/sqllogicaltests/test_read_dir_recursive");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let file_1 = dir.join("1.txt"); // 1.txt
+        let file_2 = dir.join("2.txt"); // 1.txt
+        let subdir_a = dir.join("a"); // a/
+        let file_a_1 = subdir_a.join("a_1.txt"); // a/a_1.txt
+        let file_a_2 = subdir_a.join("a_2.txt"); // a/a_2.txt
+        let subdir_a_a = subdir_a.join("a_a"); // a/a_a/
+        let file_a_a_1 = subdir_a_a.join("a_a_1.txt"); // a/a_a/a_a_1.txt
+        let subdir_b = dir.join("b"); // b/
+        let subdir_b_a = subdir_b.join("b_a"); // b/b_a/
+        let file_b_a_1 = subdir_b_a.join("b_a_1.txt"); // b/b_a/b_a_1.txt
+        let file_b_a_2 = subdir_b_a.join("b_a_2.txt"); // b/b_a/b_a_2.txt
+        let subdir_b_b = subdir_b.join("b_b"); // b/b_b/
+        let file_b_b_1 = subdir_b_b.join("b_b_1.txt"); // b/b_b/b_b_1.txt
+
+        std::fs::create_dir_all(&subdir_a).unwrap();
+        std::fs::create_dir_all(&subdir_a_a).unwrap();
+        std::fs::create_dir_all(&subdir_b).unwrap();
+        std::fs::create_dir_all(&subdir_b_a).unwrap();
+        std::fs::create_dir_all(&subdir_b_b).unwrap();
+        std::fs::write(&file_a_2, "a_2").unwrap();
+        std::fs::write(&file_a_1, "a_1").unwrap();
+        std::fs::write(&file_2, "2").unwrap();
+        std::fs::write(&file_1, "1").unwrap();
+        std::fs::write(&file_b_b_1, "b_b_1").unwrap();
+        std::fs::write(&file_b_a_2, "b_a_2").unwrap();
+        std::fs::write(&file_b_a_1, "b_a_1").unwrap();
+        std::fs::write(&file_a_a_1, "a_a_1").unwrap();
+
+        let mut iter = read_dir_recursive(&dir);
+        assert_eq!(iter.next(), Some(file_1.clone()));
+        assert_eq!(iter.next(), Some(file_2.clone()));
+        assert_eq!(iter.next(), Some(file_a_1.clone()));
+        assert_eq!(iter.next(), Some(file_a_2.clone()));
+        assert_eq!(iter.next(), Some(file_a_a_1.clone()));
+        assert_eq!(iter.next(), Some(file_b_a_1.clone()));
+        assert_eq!(iter.next(), Some(file_b_a_2.clone()));
+        assert_eq!(iter.next(), Some(file_b_b_1.clone()));
+        assert_eq!(iter.next(), None);
+
+        let options = Options {
+            cli: CliOptions {
+                filters: vec![],
+                create_database_with_shard: 1,
+                create_database_with_replica: 1,
+                complete_cases: false,
+                cnosdb_deploy_mode: CnosdbDeployMode::Singleton,
+            },
+            filters_regex: vec![],
+            filters_string: vec![],
+            flight_host: CNOSDB_FLIGHT_HOST_DEFAULT.to_string(),
+            flight_port: CNOSDB_FLIGHT_PORT_DEFAULT,
+            http_host: CNOSDB_HTTP_HOST_DEFAULT.to_string(),
+            http_port: CNOSDB_HTTP_PORT_DEFAULT,
+            work_directory: dir.clone(),
+        };
+        let mut iter = test_files(&dir, &options);
+        #[rustfmt::skip]
+        {
+            assert_eq!(iter.next(), Some((file_1.clone(), file_1.strip_prefix(&dir).unwrap().to_path_buf())));
+            assert_eq!(iter.next(), Some((file_2.clone(), file_2.strip_prefix(&dir).unwrap().to_path_buf())));
+            assert_eq!(iter.next(), Some((file_a_1.clone(), file_a_1.strip_prefix(&dir).unwrap().to_path_buf())));
+            assert_eq!(iter.next(), Some((file_a_2.clone(), file_a_2.strip_prefix(&dir).unwrap().to_path_buf())));
+            assert_eq!(iter.next(), Some((file_a_a_1.clone(), file_a_a_1.strip_prefix(&dir).unwrap().to_path_buf())));
+            assert_eq!(iter.next(), Some((file_b_a_1.clone(), file_b_a_1.strip_prefix(&dir).unwrap().to_path_buf())));
+            assert_eq!(iter.next(), Some((file_b_a_2.clone(), file_b_a_2.strip_prefix(&dir).unwrap().to_path_buf())));
+            assert_eq!(iter.next(), Some((file_b_b_1.clone(), file_b_b_1.strip_prefix(&dir).unwrap().to_path_buf())));
+            assert_eq!(iter.next(), None);
+        }; // this semicolon is required to use #[rustfmt::skip].
     }
 }
