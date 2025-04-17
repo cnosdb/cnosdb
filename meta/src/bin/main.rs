@@ -149,7 +149,7 @@ async fn main() {
                 let mut options = match config::meta::get_opt(Some(config_path)) {
                     Ok(opt) => opt,
                     Err(e) => {
-                        error!("Error loading config: {}", e);
+                        eprintln!("Error loading config: {}", e);
                         process::exit(1);
                     }
                 };
@@ -168,6 +168,7 @@ async fn main() {
                 signal::block_waiting_ctrl_c();
             } else {
                 eprintln!("Please provide a config file or use the 'config' command.");
+                process::exit(1);
             }
         }
     }

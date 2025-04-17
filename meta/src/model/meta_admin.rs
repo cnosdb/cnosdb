@@ -32,6 +32,7 @@ use crate::limiter::limiter_manager::{LimiterKey, LimiterManager};
 use crate::limiter::{LimiterConfig, LimiterType, RequestLimiter};
 use crate::store::command::{self, EntryLog};
 use crate::store::key_path;
+
 pub const USE_TENANT_ACTION_ADD: i32 = 1;
 pub const USE_TENANT_ACTION_DEL: i32 = 2;
 
@@ -129,7 +130,7 @@ impl AdminMeta {
             metrics_register,
         });
 
-        let base_ver = admin.sync_gobal_info().await.unwrap();
+        let base_ver = admin.sync_global_info().await.unwrap();
         admin.watch_version.store(base_ver, Ordering::Relaxed);
 
         tokio::spawn(AdminMeta::watch_task_manager(admin.clone(), receiver));
@@ -216,7 +217,7 @@ impl AdminMeta {
         Ok(id)
     }
 
-    pub async fn sync_gobal_info(&self) -> MetaResult<u64> {
+    pub async fn sync_global_info(&self) -> MetaResult<u64> {
         let req = command::ReadCommand::DataNodes(self.config.global.cluster_name.clone());
         let (resp, version) = self.client.read::<(Vec<NodeInfo>, u64)>(&req).await?;
         {
@@ -365,7 +366,7 @@ impl AdminMeta {
 
     pub async fn process_full_sync(&self) -> u64 {
         loop {
-            if let Ok(base_ver) = self.sync_gobal_info().await {
+            if let Ok(base_ver) = self.sync_global_info().await {
                 self.tenants.write().clear();
                 return base_ver;
             } else {
