@@ -82,21 +82,22 @@ kill() {
 }
 
 rpc() {
-  local uri=$1
+  local url="127.0.0.1:"$1
   local body="$2"
 
-  echo '---'" rpc(:$uri, $body)"
+  echo '---'" rpc($url, $body)"
 
   local response=$(
     if [ ".$body" = "." ]; then
-      curl --silent "127.0.0.1:$uri"
+      curl --silent $url
     else
-      curl --silent "127.0.0.1:$uri" -H "Content-Type: application/json" -d "$body"
+      curl --silent $url -H "Content-Type: application/json" -d "$body"
     fi
   )
 
   echo -n '--- '
   { echo $response | jq 2>/dev/null; } || { echo $response | cat; }
+  echo ''
 }
 
 #export RUST_LOG=debug
@@ -116,7 +117,7 @@ else
 fi
 
 echo "Server 1 started"
-sleep 3
+sleep 10
 
 echo "Initialize server 1 as a single-node cluster"
 rpc 8901/init '{}'
