@@ -17,7 +17,13 @@ runs:
       run: echo "CARGO_INCREMENTAL=0" >> $GITHUB_ENV
 
     - name: Run sccache-cache
-      uses: mozilla-actions/sccache-action@v0.0.3
+      uses: mozilla-actions/sccache-action@v0.0.9
+      with:
+        version: "v0.10.0" # Versions prior to sccache v0.10.0 probably will not work.
+
+    - name: Run sccache stat for check
+      shell: bash
+      run: ${SCCACHE_PATH} --show-stats
 
     - uses: rui314/setup-mold@v1
 
