@@ -14,7 +14,7 @@ use tskv::reader::table_scan::LocalTskvTableScanStream;
 use tskv::reader::QueryOption;
 use tskv::EngineRef;
 
-use crate::errors::{CommonSnafu, CoordinatorError, CoordinatorResult, ModelsSnafu, TskvSnafu};
+use crate::errors::{CommonSnafu, CoordinatorError, CoordinatorResult, ModelSnafu, TskvSnafu};
 use crate::reader::deserialize::TonicRecordBatchDecoder;
 use crate::reader::{VnodeOpenFuture, VnodeOpener};
 use crate::SendableCoordinatorRecordBatchStream;
@@ -86,7 +86,7 @@ impl VnodeOpener for TemporaryTableScanOpener {
                     let vnode_ids = vec![vnode_id];
                     let req = option
                         .to_query_record_batch_request(vnode_ids)
-                        .context(ModelsSnafu)?;
+                        .context(ModelSnafu)?;
                     tonic::Request::new(req)
                 };
 

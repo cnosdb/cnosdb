@@ -49,7 +49,7 @@ impl ToTokens for ErrorCodeImpl<'_> {
         let enum_name = &self.error_code_enum.name;
         let match_arms = &self.match_arms;
         tokens.extend(quote! {
-            impl ErrorCode for #enum_name {
+            impl derive_traits::ErrorCode for #enum_name {
                 fn code(&self) -> &'static str {
                     match self {
                         #(#match_arms),*

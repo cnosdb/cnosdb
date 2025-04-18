@@ -702,6 +702,7 @@ pub mod test {
 
     use arrow_array::builder::{BooleanBuilder, Float64Builder, Int64Builder, UInt64Builder};
     use arrow_array::{ArrayRef, Int64Array, RecordBatch, TimestampNanosecondArray};
+    use config::tskv::Config;
     use models::codec::Encoding;
     use models::predicate::domain::TimeRange;
     use models::schema::tskv_table_schema::TskvTableSchemaRef;
@@ -843,7 +844,7 @@ pub mod test {
     }
 
     pub fn create_options(base_dir: String, compact_trigger_file_num: u32) -> Arc<Options> {
-        let mut config = config::tskv::get_config_for_test();
+        let mut config = Config::for_test();
         config.storage.path = base_dir;
         config.storage.max_datablock_size = 1000;
         config.storage.compact_trigger_file_num = compact_trigger_file_num;

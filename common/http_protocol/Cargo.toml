@@ -6,7 +6,7 @@ edition.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-error_code = { path = "../error_code" }
+derive_traits = { path = "../derive_traits" }
 
 async-backtrace = { workspace = true, optional = true }
 brotli = { workspace = true }

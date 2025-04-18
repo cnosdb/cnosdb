@@ -16,6 +16,7 @@ spi = { path = "../spi" }
 trace = { path = "../../common/trace" }
 tskv = { path = "../../tskv" }
 utils = { path = "../../common/utils" }
+version = { path = "../../common/version" }
 
 async-backtrace = { workspace = true, optional = true }
 async-recursion = { workspace = true }

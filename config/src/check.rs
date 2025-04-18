@@ -3,10 +3,6 @@ use std::sync::Arc;
 
 use crate::tskv::Config;
 
-// const NONE: &str = "/033[m";
-// const RED: &str = "/033[0;32;31m";
-// const BLUE: &str = "/033[0;32;34m";
-
 fn write_error(f: &mut std::fmt::Formatter<'_>, message: &str) -> std::fmt::Result {
     write!(f, "    {}", message)
 }

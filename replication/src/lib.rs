@@ -32,7 +32,7 @@ pub struct RaftNodeInfo {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct ReplicationConfig {
     pub cluster_name: String,
-    pub lmdb_max_map_size: usize,
+    pub lmdb_max_map_size: u64,
     pub grpc_enable_gzip: bool,
     pub heartbeat_interval: u64,
     pub raft_logs_to_keep: u64,

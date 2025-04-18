@@ -1,17 +1,25 @@
-#! /bin/bash
+#!/bin/bash
+
 set -e
+
+## This script is at $PROJ_DIR/query_server/sqllogicaltests/script/start_and_test_all.sh
+PROJ_DIR=$(
+  cd $(dirname $0)
+  cd ../../..
+  pwd
+)
 
 # define environment
 export HTTP_HOST=${HTTP_HOST:-"127.0.0.1:8902"}
 export URL="http://${HTTP_HOST}/api/v1/ping"
-EXE_PATH="./target/test-ci/cnosdb"
-META_PATH="./target/test-ci/cnosdb-meta"
-CONF_DATA_1="./config/config_8902.toml"
-CONF_DATA_2="./config/config_8912.toml"
-CONF_DATA_3="./config/config_8922.toml"
-CONF_META_1="./meta/config/config_8901.toml"
-CONF_META_2="./meta/config/config_8911.toml"
-CONF_META_3="./meta/config/config_8921.toml"
+EXE_PATH="${PROJ_DIR}/target/test-ci/cnosdb"
+META_PATH="${PROJ_DIR}/target/test-ci/cnosdb-meta"
+CONF_DATA_1="${PROJ_DIR}/config/resource/config_8902.toml"
+CONF_DATA_2="${PROJ_DIR}/config/resource/config_8912.toml"
+CONF_DATA_3="${PROJ_DIR}/config/resource/config_8922.toml"
+CONF_META_1="${PROJ_DIR}/meta/config/config_8901.toml"
+CONF_META_2="${PROJ_DIR}/meta/config/config_8911.toml"
+CONF_META_3="${PROJ_DIR}/meta/config/config_8921.toml"
 DATA_PATH="/tmp/cnosdb"
 LOG_PATH=${DATA_PATH}/log
 DN_1_LOG_PATH=${LOG_PATH}/data_node_8902.log

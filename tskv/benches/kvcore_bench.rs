@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use config::tskv::Config;
 use criterion::{criterion_group, criterion_main, Criterion};
 use memory_pool::GreedyMemoryPool;
 use meta::model::meta_admin::AdminMeta;
@@ -13,7 +14,7 @@ use tskv::{Engine, TsKv};
 use utils::precision::Precision;
 
 async fn get_tskv() -> TsKv {
-    let mut global_config = config::tskv::get_config_for_test();
+    let mut global_config = Config::for_test();
     global_config.wal.path = "/tmp/test_bench/wal".to_string();
     let opt = tskv::kv_option::Options::from(&global_config);
 

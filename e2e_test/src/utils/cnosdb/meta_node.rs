@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use config::meta::{get_opt as read_meta_store_config, Opt as MetaStoreConfig};
+use config::meta::Opt as MetaStoreConfig;
 use meta::client::MetaHttpClient;
 use metrics::metric_register::MetricsRegister;
 use tokio::runtime::Runtime;
@@ -29,14 +29,15 @@ pub struct CnosdbMetaTestHelper {
 
     pub client: Arc<Client>,
     pub meta_client: Arc<MetaHttpClient>,
-    pub sub_processes: HashMap<String, Child>,
+    /// Maps from server node-id to the process.
+    pub sub_processes: HashMap<u8, Child>,
 }
 
 impl CnosdbMetaTestHelper {
     pub fn new(
         runtime: Arc<Runtime>,
         workspace_dir: impl AsRef<Path>,
-        test_base_dir: impl AsRef<Path>,
+        test_dir: impl AsRef<Path>,
         meta_node_definitions: Vec<MetaNodeDefinition>,
         meta_node_configs: Vec<MetaStoreConfig>,
     ) -> Self {
@@ -49,7 +50,7 @@ impl CnosdbMetaTestHelper {
         Self {
             runtime,
             workspace_dir: workspace_dir.clone(),
-            test_dir: test_base_dir.as_ref().to_path_buf(),
+            test_dir: test_dir.as_ref().join("meta"),
             meta_node_definitions,
             meta_node_configs,
             exe_path: workspace_dir
@@ -71,12 +72,9 @@ impl CnosdbMetaTestHelper {
             panic!("At least 1 meta configs are needed to run singleton");
         }
         let node_def = self.meta_node_definitions[0].clone();
-        println!(
-            "- Running cnosdb-meta with config '{}'",
-            &node_def.config_file_name
-        );
+        println!("- Running cnosdb-meta '{}'", &node_def.id);
         let proc = self.execute(&node_def);
-        self.sub_processes.insert(node_def.config_file_name, proc);
+        self.sub_processes.insert(node_def.id, proc);
 
         self.wait_startup(self.meta_node_definitions[0].host_port)
             .join()
@@ -109,11 +107,10 @@ impl CnosdbMetaTestHelper {
         for meta_node_def in self.meta_node_definitions.iter() {
             println!(
                 "- Running cnosdb-meta with config '{}', host '{}",
-                meta_node_def.config_file_name, meta_node_def.host_port
+                meta_node_def.id, meta_node_def.host_port
             );
             let proc = self.execute(meta_node_def);
-            self.sub_processes
-                .insert(meta_node_def.config_file_name.clone(), proc);
+            self.sub_processes.insert(meta_node_def.id, proc);
             wait_startup_threads.push(self.wait_startup(meta_node_def.host_port));
         }
         thread::sleep(Duration::from_secs(3));
@@ -193,11 +190,11 @@ impl CnosdbMetaTestHelper {
             .expect("failed to execute cnosdb-meta")
     }
 
-    pub fn stop_one_node(&mut self, config_file_name: &str, force: bool) {
+    pub fn stop_one_node(&mut self, id: u8, force: bool) {
         let proc = self
             .sub_processes
-            .remove(config_file_name)
-            .unwrap_or_else(|| panic!("No meta node created with {}", config_file_name));
+            .remove(&id)
+            .unwrap_or_else(|| panic!("No meta node created with id: {id}"));
         kill_child_process(proc, force);
     }
 }
@@ -213,42 +210,45 @@ impl Drop for CnosdbMetaTestHelper {
 
 /// Build meta store config with paths:
 ///
-/// - data_path: $test_dir/meta/$meta_dir_name/meta
+/// - data_path: $test_dir/meta/$id/meta
 /// - log.level: INFO
-/// - log.path: $test_dir/meta/$meta_dir_name/log
-pub fn build_meta_node_config(test_dir: impl AsRef<Path>, meta_dir_name: &str) -> MetaStoreConfig {
+/// - log.path: $test_dir/meta/$id/log
+pub fn build_meta_node_config(test_dir: impl AsRef<Path>, id: u8) -> MetaStoreConfig {
     let mut config = MetaStoreConfig::default();
     let test_dir = test_dir.as_ref().display();
-    config.global.data_path = format!("{test_dir}/meta/{meta_dir_name}/meta");
+    config.global.data_path = format!("{test_dir}/meta/{id}/meta");
     config.log.level = "INFO".to_string();
-    config.log.path = format!("{test_dir}/meta/{meta_dir_name}/log");
+    config.log.path = format!("{test_dir}/meta/{id}/log");
 
     config
 }
 
 /// Build meta store config with paths and write to test_dir.
-/// Will be write to $test_dir/meta/config/$config_file_name.
+/// Will be write to $test_dir/meta/$id/config.toml.
 pub fn write_meta_node_config_files(
     test_dir: impl AsRef<Path>,
     meta_node_definitions: &[MetaNodeDefinition],
     regenerate: bool,
     regenerate_update_config: &[Option<FnUpdateMetaStoreConfig>],
 ) -> Vec<MetaStoreConfig> {
-    let meta_config_dir = test_dir.as_ref().join("meta").join("config");
-    std::fs::create_dir_all(&meta_config_dir).unwrap();
     let mut meta_configs = Vec::with_capacity(meta_node_definitions.len());
+    let base_dir = test_dir.as_ref().join("meta");
     for (i, meta_node_def) in meta_node_definitions.iter().enumerate() {
-        let config_path = meta_config_dir.join(&meta_node_def.config_file_name);
+        let meta_config_path = meta_node_def.to_config_path(&base_dir);
+        let meta_dir = meta_config_path.parent().unwrap();
+        std::fs::create_dir_all(meta_dir).unwrap();
+
         let mut meta_config;
         if regenerate {
-            meta_config = build_meta_node_config(&test_dir, &meta_node_def.config_file_name);
+            // Generate config file.
+            meta_config = build_meta_node_config(&test_dir, meta_node_def.id);
             meta_node_def.update_config(&mut meta_config);
             if let Some(Some(f)) = regenerate_update_config.get(i) {
                 f(&mut meta_config);
             }
-            std::fs::write(&config_path, meta_config.to_string_pretty()).unwrap();
+            std::fs::write(&meta_config_path, meta_config.to_string_pretty()).unwrap();
         } else {
-            meta_config = read_meta_store_config(Some(config_path)).unwrap();
+            meta_config = MetaStoreConfig::new(Some(meta_config_path)).unwrap();
         }
         meta_configs.push(meta_config);
     }

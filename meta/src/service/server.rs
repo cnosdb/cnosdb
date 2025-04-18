@@ -38,7 +38,7 @@ pub async fn start_raft_node(opt: config::meta::Opt) -> MetaResult<()> {
     let http_addr =
         models::utils::build_address(&opt.global.raft_node_host, opt.global.listen_port);
 
-    let max_size = opt.cluster.lmdb_max_map_size;
+    let max_size = opt.cluster.lmdb_max_map_size as usize;
     let state = StateStorage::open(path.join(format!("{}_state", id)), max_size)?;
     let entry = HeedEntryStorage::open(path.join(format!("{}_entry", id)), max_size)?;
     let engine = StateMachine::open(path.join(format!("{}_data", id)), max_size)?;

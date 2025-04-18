@@ -11,7 +11,7 @@ path = "src/bin/main.rs"
 
 [dependencies]
 config = { path = "../config" }
-error_code = { path = "../common/error_code" }
+derive_traits = { path = "../common/derive_traits" }
 limiter_bucket = { path = "../common/limiter_bucket" }
 metrics = { path = "../common/metrics" }
 models = { path = "../common/models" }
@@ -19,6 +19,7 @@ protos = { path = "../common/protos" }
 replication = { path = "../replication" }
 trace = { path = "../common/trace" }
 utils = { path = "../common/utils" }
+version = { path = "../common/version" }
 
 async-backtrace = { workspace = true, optional = true }
 async-trait = { workspace = true }

@@ -10,8 +10,8 @@ name = "cnosdb-cli"
 path = "src/main.rs"
 
 [dependencies]
-config = { path = "../config" }
 http_protocol = { path = "../common/http_protocol", features = ["http_client"] }
+version = { path = "../common/version" }
 
 anyhow = { workspace = true }
 async-backtrace = { workspace = true, optional = true }

@@ -189,6 +189,7 @@ pub mod flush_tests {
     use arrow_array::{ArrayRef, Float64Array, RecordBatch, TimestampNanosecondArray};
     use arrow_schema::TimeUnit;
     use cache::ShardedAsyncCache;
+    use config::tskv::Config;
     use memory_pool::{GreedyMemoryPool, MemoryPool};
     use minivec::MiniVec;
     use models::codec::Encoding;
@@ -293,7 +294,7 @@ pub mod flush_tests {
         let dir = "/tmp/test/flush/1";
         let _ = std::fs::remove_dir_all(dir);
         std::fs::create_dir_all(dir).unwrap();
-        let mut global_config = config::tskv::get_config_for_test();
+        let mut global_config = Config::for_test();
         global_config.storage.path = dir.to_string();
         let opt = Arc::new(Options::from(&global_config));
 
@@ -440,7 +441,7 @@ pub mod flush_tests {
         let dir = "/tmp/test/flush2/1";
         let _ = std::fs::remove_dir_all(dir);
         std::fs::create_dir_all(dir).unwrap();
-        let mut global_config = config::tskv::get_config_for_test();
+        let mut global_config = Config::for_test();
         global_config.storage.path = dir.to_string();
         let opt = Arc::new(Options::from(&global_config));
 

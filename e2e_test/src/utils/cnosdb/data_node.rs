@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use config::tskv::{get_config as read_cnosdb_config, Config as CnosdbConfig};
+use config::tskv::Config as CnosdbConfig;
 
 use super::FnUpdateCnosdbConfig;
 use crate::cluster_def::{DataNodeDefinition, DeploymentMode};
@@ -22,8 +22,8 @@ pub struct CnosdbDataTestHelper {
     pub exe_path: PathBuf,
 
     pub data_node_clients: Vec<Arc<Client>>,
-    /// Maps from config file name to the (data_node_definitions index, (process, deployment mode)).
-    pub sub_processes: HashMap<String, (usize, (Child, DeploymentMode))>,
+    /// Maps from server node-id to the (data_node_definitions index, (process, deployment mode)).
+    pub sub_processes: HashMap<u8, (usize, (Child, DeploymentMode))>,
 }
 
 impl CnosdbDataTestHelper {
@@ -38,7 +38,7 @@ impl CnosdbDataTestHelper {
         for config in data_node_configs.iter() {
             if config.security.tls_config.is_some() {
                 // TODO(zipper): the client certificate should be customizable.
-                let ca_crt_path = workspace_dir.join("config").join("tls").join("ca.crt");
+                let ca_crt_path = workspace_dir.join("config/resource/tls/ca.crt");
                 let client: Arc<Client> = Arc::new(Client::with_auth_and_tls(
                     "root".to_string(),
                     Some(String::new()),
@@ -53,7 +53,7 @@ impl CnosdbDataTestHelper {
         }
         Self {
             workspace_dir: workspace_dir.clone(),
-            test_dir: test_dir.as_ref().to_path_buf(),
+            test_dir: test_dir.as_ref().join("data"),
             data_node_definitions,
             data_node_configs,
             exe_path: workspace_dir.join("target").join(PROFILE).join("cnosdb"),
@@ -76,10 +76,8 @@ impl CnosdbDataTestHelper {
             {
                 println!(" - cnosdb '{}' starting", &data_node_def.http_host_port);
                 let proc = self.execute(&data_node_def);
-                self.sub_processes.insert(
-                    data_node_def.config_file_name.clone(),
-                    (i, (proc, data_node_def.mode)),
-                );
+                self.sub_processes
+                    .insert(data_node_def.id, (i, (proc, data_node_def.mode)));
 
                 let jh = self.wait_startup(
                     data_node_def.http_host_port,
@@ -102,10 +100,8 @@ impl CnosdbDataTestHelper {
             {
                 println!(" - cnosdb '{}' starting", &data_node_def.http_host_port);
                 let proc = self.execute(&data_node_def);
-                self.sub_processes.insert(
-                    data_node_def.config_file_name.clone(),
-                    (i, (proc, data_node_def.mode)),
-                );
+                self.sub_processes
+                    .insert(data_node_def.id, (i, (proc, data_node_def.mode)));
 
                 let jh = self.wait_startup(
                     data_node_def.http_host_port,
@@ -160,15 +156,13 @@ impl CnosdbDataTestHelper {
     pub fn restart_one_node(&mut self, node_def: &DataNodeDefinition) {
         let (i, (proc, _)) = self
             .sub_processes
-            .remove(&node_def.config_file_name)
-            .unwrap_or_else(|| panic!("No data node created with {}", &node_def.config_file_name));
+            .remove(&node_def.id)
+            .unwrap_or_else(|| panic!("No data node created with id: {}", node_def.id));
         kill_child_process(proc, false);
 
         let new_proc = self.execute(node_def);
-        self.sub_processes.insert(
-            node_def.config_file_name.clone(),
-            (i, (new_proc, node_def.mode)),
-        );
+        self.sub_processes
+            .insert(node_def.id, (i, (new_proc, node_def.mode)));
 
         let jh = self.wait_startup(
             node_def.http_host_port,
@@ -178,11 +172,11 @@ impl CnosdbDataTestHelper {
         jh.join().unwrap();
     }
 
-    pub fn stop_one_node(&mut self, config_file_name: &str, force: bool) {
+    pub fn stop_one_node(&mut self, id: u8, force: bool) {
         let (_, (proc, _)) = self
             .sub_processes
-            .remove(config_file_name)
-            .unwrap_or_else(|| panic!("No data node created with {}", config_file_name));
+            .remove(&id)
+            .unwrap_or_else(|| panic!("No data node created with id: {id}"));
         kill_child_process(proc, force);
     }
 
@@ -201,10 +195,8 @@ impl CnosdbDataTestHelper {
             .stdout(Stdio::inherit())
             .spawn()
             .expect("failed to execute cnosdb");
-        self.sub_processes.insert(
-            node_def.config_file_name.to_string(),
-            (data_node_index, (new_proc, node_def.mode)),
-        );
+        self.sub_processes
+            .insert(node_def.id, (data_node_index, (new_proc, node_def.mode)));
         let jh = self.wait_startup(
             node_def.http_host_port,
             node_def.enable_tls,
@@ -248,16 +240,16 @@ impl Drop for CnosdbDataTestHelper {
 /// Build cnosdb config with paths:
 ///
 /// - deployment_mode: singleton
-/// - hh file: $test_dir/data/$data_dir_name/hh
+/// - hh file: $test_dir/data/$id/hh
 /// - log.level: INFO
-/// - log.path: $test_dir/data/$data_dir_name/log
-/// - storage.path: $test_dir/data/$data_dir_name/storage
-/// - wal.path: $test_dir/data/$data_dir_name/wal
-pub fn build_data_node_config(test_dir: impl AsRef<Path>, data_dir_name: &str) -> CnosdbConfig {
+/// - log.path: $test_dir/data/$id/log
+/// - storage.path: $test_dir/data/$id/storage
+/// - wal.path: $test_dir/data/$id/wal
+pub fn build_data_node_config(test_dir: impl AsRef<Path>, id: u8) -> CnosdbConfig {
     let mut config = CnosdbConfig::default();
     config.deployment.mode = "singleton".to_string();
     let test_dir = test_dir.as_ref().display();
-    let data_path = format!("{test_dir}/data/{data_dir_name}");
+    let data_path = format!("{test_dir}/data/{id}");
     config.log.level = "INFO".to_string();
     config.log.path = format!("{data_path}/log");
     config.storage.path = format!("{data_path}/storage");
@@ -271,28 +263,31 @@ pub fn build_data_node_config(test_dir: impl AsRef<Path>, data_dir_name: &str) -
 }
 
 /// Build cnosdb config with paths and write to test_dir.
-/// Will be write to $test_dir/data/config/$config_file_name.
+/// Will be write to $test_dir/data/$id/config.toml.
 pub fn write_data_node_config_files(
     test_dir: impl AsRef<Path>,
     data_node_definitions: &[DataNodeDefinition],
     regenerate: bool,
     regenerate_update_config: &[Option<FnUpdateCnosdbConfig>],
 ) -> Vec<CnosdbConfig> {
-    let cnosdb_config_dir = test_dir.as_ref().join("data").join("config");
-    std::fs::create_dir_all(&cnosdb_config_dir).unwrap();
     let mut data_configs = Vec::with_capacity(data_node_definitions.len());
+    let base_dir = test_dir.as_ref().join("data");
     for (i, data_node_def) in data_node_definitions.iter().enumerate() {
-        let config_path = cnosdb_config_dir.join(&data_node_def.config_file_name);
+        let cnosdb_config_path = data_node_def.to_config_path(&base_dir);
+        let cnosdb_dir = cnosdb_config_path.parent().unwrap();
+        std::fs::create_dir_all(cnosdb_dir).unwrap();
+
         let mut cnosdb_config;
         if regenerate {
-            cnosdb_config = build_data_node_config(&test_dir, &data_node_def.config_file_name);
+            // Generate config file.
+            cnosdb_config = build_data_node_config(&test_dir, data_node_def.id);
             data_node_def.update_config(&mut cnosdb_config);
             if let Some(Some(f)) = regenerate_update_config.get(i) {
                 f(&mut cnosdb_config);
             }
-            std::fs::write(&config_path, cnosdb_config.to_string_pretty()).unwrap();
+            std::fs::write(&cnosdb_config_path, cnosdb_config.to_string_pretty()).unwrap();
         } else {
-            cnosdb_config = read_cnosdb_config(&config_path).unwrap()
+            cnosdb_config = CnosdbConfig::new(Some(&cnosdb_config_path)).unwrap()
         }
 
         // If we do not make directory $storage.path, the data node seems to be sick by the meta node.

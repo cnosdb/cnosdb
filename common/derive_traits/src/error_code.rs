@@ -1,9 +1,4 @@
-#[cfg(test)]
-mod test;
-
 use std::fmt::{Debug, Display, Formatter};
-
-pub use macros::ErrorCoder;
 
 pub trait ErrorCode: std::error::Error {
     /// mod_code 2 , variant code 4, e.g. 010001
@@ -56,7 +51,7 @@ impl ErrorCode for UnknownCode {
         "0000000"
     }
     fn message(&self) -> String {
-        "unknow_error".to_string()
+        "unknown_error".to_string()
     }
 }
 

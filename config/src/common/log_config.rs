@@ -1,16 +1,16 @@
 use std::sync::Arc;
 
-use macros::EnvKeys;
+use derive_traits::Keys;
 use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, EnvKeys)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Keys)]
 pub struct TokioTrace {
     pub addr: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, EnvKeys)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Keys)]
 pub struct LogConfig {
     #[serde(default = "LogConfig::default_level")]
     pub level: String,
@@ -30,8 +30,7 @@ impl LogConfig {
     }
 
     fn default_path() -> String {
-        let path = std::path::Path::new("/tmp/cnosdb/cnosdb_data").join("logs");
-        path.to_string_lossy().to_string()
+        "/var/log/cnosdb".to_string()
     }
 
     fn default_max_file_count() -> Option<usize> {
@@ -54,7 +53,7 @@ impl Default for LogConfig {
             path: Self::default_path(),
             max_file_count: Self::default_max_file_count(),
             file_rotation: Self::default_file_rotation(),
-            tokio_trace: None,
+            tokio_trace: Self::default_tokio_trace(),
         }
     }
 }

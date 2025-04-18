@@ -33,11 +33,13 @@ const CNOSDB_TARGET_PARTITIONS_DEFAULT: usize = 8;
 
 #[tokio::main]
 pub async fn main() -> Result<(), Box<dyn Error>> {
-    let options = Options::new();
-    let client_options = CnosdbClient::new(&options);
+    let cli_opts = CliOptions::parse();
 
-    println!("======= Options =======\n{options:?}");
-    println!("=== SqlCLientOptions ===\n{client_options:?}");
+    let options = Options::from_cli_options(cli_opts);
+    let client = CnosdbClient::new(&options);
+
+    println!("======= Options ========\n{options:?}");
+    println!("======== Client ========\n{client:?}");
     println!("========================");
 
     for (path, relative_path) in test_files(TEST_DIRECTORY, &options) {
@@ -58,7 +60,7 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
                 options.cli.cnosdb_deploy_mode.to_string(),
                 &path,
                 relative_path,
-                client_options.clone(),
+                client.clone(),
             )
             .await?;
         } else {
@@ -66,7 +68,7 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
                 options.cli.cnosdb_deploy_mode.to_string(),
                 &path,
                 relative_path,
-                client_options.clone(),
+                client.clone(),
             )
             .await?;
         }
@@ -171,6 +173,7 @@ where
 }
 
 #[derive(Debug, Clone, Parser)]
+#[command(version = version::workspace_version(), )]
 struct CliOptions {
     /// Filters of test files to run.
     /// e.g. 'test_database.slt' '.*test_database.slt' '.*test_database.*'
@@ -227,9 +230,7 @@ pub struct Options {
 }
 
 impl Options {
-    fn new() -> Self {
-        let cli_opts = CliOptions::parse();
-
+    fn from_cli_options(cli_opts: CliOptions) -> Self {
         let mut filters_regex = Vec::new();
         let mut filters_string = Vec::new();
         for ex in cli_opts.filters.iter() {

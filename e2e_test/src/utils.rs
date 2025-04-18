@@ -1,4 +1,4 @@
-#![cfg(test)]
+#![allow(unused)]
 
 mod cnosdb;
 mod http_client;
@@ -28,7 +28,7 @@ use crate::{E2eError, E2eResult};
 
 pub const CRATE_DIR: &str = env!("CARGO_MANIFEST_DIR");
 #[cfg(feature = "debug_mode")]
-pub const PROFILE: &str = "debug_mode";
+pub const PROFILE: &str = "debug";
 #[cfg(not(feature = "debug_mode"))]
 pub const PROFILE: &str = "release";
 

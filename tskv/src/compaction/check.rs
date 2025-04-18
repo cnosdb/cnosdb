@@ -996,7 +996,7 @@ pub(crate) async fn vnode_checksum(_vnode: Arc<RwLock<TseriesFamily>>) -> TskvRe
 //             TableColumn::new(5, TIME_COL_NAME.to_string(), ColumnType::Time(TimeUnit::Nanosecond), Default::default()),
 //         ];
 //
-//         let mut config = config::get_config_for_test();
+//         let mut config = Config::for_test();
 //         config.storage.path = base_dir;
 //         config.wal.path = wal_dir;
 //         config.wal.sync = true;

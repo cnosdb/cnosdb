@@ -307,7 +307,7 @@ mod tests {
     use std::ops::DerefMut;
 
     use chrono::Utc;
-    use config::tskv::get_config_for_test;
+    use config::tskv::Config;
     use coordinator::service_mock::MockCoordinator;
     use datafusion::arrow::record_batch::RecordBatch;
     use datafusion::arrow::util::pretty::pretty_format_batches;
@@ -358,7 +358,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_simple_sql() {
-        let config = get_config_for_test();
+        let config = Config::for_test();
         let opt = Options::from(&config);
         let memory = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
         let db = make_cnosdbms(Arc::new(MockCoordinator::default()), opt, memory)
@@ -415,7 +415,7 @@ mod tests {
     #[ignore]
     async fn test_topk_sql() {
         // trace::init_default_global_tracing("/tmp", "test_rust.log", "debug");
-        let config = get_config_for_test();
+        let config = Config::for_test();
         let opt = Options::from(&config);
         let memory = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
         let db = make_cnosdbms(Arc::new(MockCoordinator::default()), opt, memory)
@@ -453,7 +453,7 @@ mod tests {
     #[ignore]
     async fn test_topk_desc_sql() {
         // trace::init_default_global_tracing("/tmp", "test_rust.log", "debug");
-        let config = get_config_for_test();
+        let config = Config::for_test();
         let opt = Options::from(&config);
         let memory = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
         let db = make_cnosdbms(Arc::new(MockCoordinator::default()), opt, memory)
@@ -490,7 +490,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_create_external_csv_table() {
-        let config = get_config_for_test();
+        let config = Config::for_test();
         let opt = Options::from(&config);
         let memory = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
         let db = make_cnosdbms(Arc::new(MockCoordinator::default()), opt, memory)
@@ -547,7 +547,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_create_external_parquet_table() {
-        let config = get_config_for_test();
+        let config = Config::for_test();
         let opt = Options::from(&config);
         let memory = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
         let db = make_cnosdbms(Arc::new(MockCoordinator::default()), opt, memory)
@@ -596,7 +596,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_create_external_json_table() {
-        let config = get_config_for_test();
+        let config = Config::for_test();
         let opt = Options::from(&config);
         let memory = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
         let db = make_cnosdbms(Arc::new(MockCoordinator::default()), opt, memory)

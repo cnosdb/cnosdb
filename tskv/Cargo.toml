@@ -6,8 +6,8 @@ edition.workspace = true
 [dependencies]
 cache = { path = "../common/cache" }
 config = { path = "../config" }
-error_code = { path = "../common/error_code" }
-http_protocol = { path = "../common/http_protocol" }
+derive_traits = { path = "../common/derive_traits" }
+http_protocol = { path = "../common/http_protocol", features = ["http_client"] }
 memory_pool = { path = "../common/memory_pool" }
 meta = { path = "../meta" }
 metrics = { path = "../common/metrics" }
@@ -79,6 +79,7 @@ backtrace = ["async-backtrace"]
 io_uring = ["rio"]
 
 [dev-dependencies]
+anyhow = { workspace = true }
 arrow = { workspace = true, features = ["test_utils"] }
 assert_float_eq = { workspace = true }
 criterion = { workspace = true, features = ["async_tokio"] }

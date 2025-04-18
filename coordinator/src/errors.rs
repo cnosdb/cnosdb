@@ -3,9 +3,9 @@ use std::io;
 
 use datafusion::arrow::error::ArrowError;
 use datafusion::error::DataFusionError;
+use derive_traits::{ErrorCode, ErrorCoder};
 use flatbuffers::InvalidFlatbuffer;
 use meta::error::MetaError;
-use models::error_code::{ErrorCode, ErrorCoder};
 use models::meta_data::{ReplicationSet, ReplicationSetId, VnodeId};
 use models::Timestamp;
 use protos::PointsError;
@@ -17,7 +17,7 @@ use utils::precision::Precision;
 #[snafu(visibility(pub))]
 #[error_code(mod_code = "05")]
 pub enum CoordinatorError {
-    TskvError {
+    Tskv {
         source: tskv::TskvError,
     },
 
@@ -25,7 +25,7 @@ pub enum CoordinatorError {
         source: MetaError,
     },
 
-    ReplicatError {
+    Replication {
         source: ReplicationError,
     },
 
@@ -39,7 +39,7 @@ pub enum CoordinatorError {
 
     #[snafu(display("Io error: {}", source))]
     #[error_code(code = 2)]
-    IOErrors {
+    Io {
         source: io::Error,
         location: Location,
         backtrace: Backtrace,
@@ -78,7 +78,7 @@ pub enum CoordinatorError {
 
     #[snafu(display("Error from models: {}", source))]
     #[error_code(code = 7)]
-    ModelsError {
+    Model {
         source: models::ModelError,
         location: Location,
         backtrace: Backtrace,
@@ -170,7 +170,7 @@ pub enum CoordinatorError {
 
     #[snafu(display("{}", source))]
     #[error_code(code = 21)]
-    FBPoints {
+    ProtoPoints {
         source: PointsError,
     },
 
@@ -309,7 +309,7 @@ impl From<ArrowError> for CoordinatorError {
                 }
             }
             ArrowError::ExternalError(e) if e.downcast_ref::<tskv::TskvError>().is_some() => {
-                CoordinatorError::TskvError {
+                CoordinatorError::Tskv {
                     source: *e.downcast::<tskv::TskvError>().unwrap(),
                 }
             }
@@ -343,8 +343,8 @@ impl CoordinatorError {
     pub fn error_code(&self) -> &dyn ErrorCode {
         match self {
             CoordinatorError::Meta { source } => source.error_code(),
-            CoordinatorError::TskvError { source } => source.error_code(),
-            CoordinatorError::ReplicatError { source } => source.error_code(),
+            CoordinatorError::Tskv { source } => source.error_code(),
+            CoordinatorError::Replication { source } => source.error_code(),
             _ => self,
         }
     }

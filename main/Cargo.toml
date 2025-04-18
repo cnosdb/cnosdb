@@ -10,10 +10,10 @@ default-run = "cnosdb"
 name = "cnosdb"
 path = "src/main.rs"
 
-
 [dependencies]
 config = { path = "../config" }
 coordinator = { path = "../coordinator" }
+derive_traits = { path = "../common/derive_traits" }
 http_protocol = { path = "../common/http_protocol" }
 memory_pool = { path = "../common/memory_pool" }
 meta = { path = "../meta" }
@@ -27,44 +27,30 @@ spi = { path = "../query_server/spi" }
 trace = { path = "../common/trace" }
 tskv = { path = "../tskv" }
 utils = { path = "../common/utils" }
+version = { path = "../common/version" }
 
 arrow-flight = { workspace = true, features = ["flight-sql-experimental"] }
 async-backtrace = { workspace = true, optional = true }
-async-stream = { workspace = true }
 async-trait = { workspace = true }
 backtrace = { workspace = true }
 base64 = { workspace = true }
-bincode = { workspace = true }
-byteorder = { workspace = true }
 bytes = { workspace = true }
-chrono = { workspace = true }
 clap = { workspace = true, features = ["derive", "env"] }
 ctrlc = { workspace = true, features = ["termination"] }
-dashmap = { workspace = true }
 datafusion = { workspace = true }
-datafusion-proto = { workspace = true }
-dateparser = { workspace = true }
-dirs = { workspace = true }
 flatbuffers = { workspace = true }
 futures = { workspace = true, default-features = false, features = ["alloc"] }
 lazy_static = { workspace = true }
 libc = { workspace = true }
-minitrace = { workspace = true, features = ["enable"] }
 moka = { workspace = true }
-num_cpus = { workspace = true }
-openraft = { workspace = true, features = ["serde"] }
 os_info = { workspace = true }
 parking_lot = { workspace = true }
 prost = { workspace = true }
-prost-types = { workspace = true }
-regex = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 simdutf8 = { workspace = true }
-sled = { workspace = true }
 snafu = { workspace = true }
-sys-info = { workspace = true }
 tokio = { workspace = true, features = ["macros", "net", "parking_lot", "rt-multi-thread", "signal", "sync", "time", "tracing"] }
 tokio-stream = { workspace = true, features = ["net"] }
 tonic = { workspace = true, features = ["transport", "tls"] }
@@ -77,10 +63,6 @@ tikv-jemallocator = { workspace = true }
 [features]
 default = []
 backtrace = ["async-backtrace"]
-
-[dev-dependencies]
-prost-types = { workspace = true }
-reqwest = { workspace = true }
 
 [[example]]
 name = "flight_sql_server"

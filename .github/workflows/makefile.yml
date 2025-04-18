@@ -48,8 +48,8 @@ jobs:
       - name: test
         run: make test
 
-  integration-test:
-    name: "Integration Test"
+  integration-test-1meta1data:
+    name: "Integration Test: 1meta-1data"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -57,17 +57,13 @@ jobs:
           submodules: true
       - name: Prepare Rust Builder
         uses: ./.github/actions/setup-builder
-      - name: start meta
-        shell: bash
-        run: |
-          bash ./meta/singleton.sh
       - name: Test
         shell: bash
         run: |
-          bash ./query_server/sqllogicaltests/script/start_and_test.sh --clean
+          bash ./query_server/sqllogicaltests/script/start_and_test.sh --1meta1data
 
   integration-test-singleton:
-    name: "Integration Test Singleton"
+    name: "Integration Test: singleton"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -78,10 +74,10 @@ jobs:
       - name: Test
         shell: bash
         run: |
-          bash ./query_server/sqllogicaltests/script/start_and_test.sh --singleton --clean
+          bash ./query_server/sqllogicaltests/script/start_and_test.sh --singleton
 
   integration-test-3meta:
-    name: "Integration Test 3meta"
+    name: "Integration Test: meta-cluster"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3

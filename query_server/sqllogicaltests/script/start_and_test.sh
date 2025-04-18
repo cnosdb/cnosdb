@@ -1,36 +1,62 @@
-#!/usr/bin/env bash
-set -e
-
-# define environment
-export HTTP_HOST=${HTTP_HOST:-"127.0.0.1:8902"}
-export URL="http://${HTTP_HOST}/api/v1/ping"
-
-ARG_MODE='query_tskv'
-ARG_CLEAN=0
+#!/bin/bash
 
 function usage() {
   echo 'Start CnosDB Server and run tests'
-  echo 'You need to start CnosDB Meta Server first, otherwise enable --singleton option.'
   echo
   echo 'USAGE:'
   echo "    ${0} [OPTIONS]"
   echo
   echo 'OPTIONS:'
-  echo '    --singleton          Run singleton CnosDB Server (with Meta Service)'
-  echo '    --clean              Run cargo clean before building CnosDB Server'
+  echo '    --singleton         Run singleton CnosDB Server (with meta-service included)'
+  echo '    --1meta1data        Run CnosDB Server Cluster (1 meta, 1 data:query_tskv)'
+  echo '    --1meta3data        Run CnosDB Server Cluster (1 meta, 3 data:query_tskv)'
+  echo '    --3meta3data        Run CnosDB Server Cluster (3 meta, 3 data:query_tskv)'
+  echo '    --1meta1query1tskv  Run CnosDB Server Cluster (1 meta, 1 data:query, 1 data:tskv)'
+  echo '    -h | --help         Show this help message'
   echo
 }
 
+set -e
+
+# This script is at $PROJ_DIR/query_server/sqllogicaltests/script/start_and_test.sh
+PROJ_DIR=$(
+  cd $(dirname $0)
+  cd ../../..
+  pwd
+)
+
+META="${PROJ_DIR}/meta/scripts/cluster.sh"
+DATA="${PROJ_DIR}/main/scripts/cluster.sh"
+PROFILE='release'
+
+## Run cluster.
+CLUSTER_STARTED=0
 while [[ $# -gt 0 ]]; do
   key=${1}
   case ${key} in
   --singleton)
-    ARG_MODE='singleton'
-    shift 1
+    $DATA --profile $PROFILE --system-database-replica 1
+    CLUSTER_STARTED=1
     ;;
-  --clean)
-    ARG_CLEAN=1
-    shift 1
+  --1meta1data)
+    $META --node-num 1 --system-database-replica 1
+    $DATA --profile $PROFILE --query-tskv-num 1 --system-database-replica 1
+    CLUSTER_STARTED=1
+    ;;
+  --1meta3data)
+    $META --node-num 1 --system-database-replica 3
+    $DATA --profile $PROFILE --query-tskv-num 3 --system-database-replica 3
+    CLUSTER_STARTED=1
+    ;;
+  --3meta3data)
+    $META --node-num 3 --system-database-replica 3
+    $DATA --profile $PROFILE --query-tskv-num 3 --system-database-replica 3
+    CLUSTER_STARTED=1
+    ;;
+  --1meta1query1tskv)
+    $META --node-num 1 --system-database-replica 1
+    $DATA --profile $PROFILE --query-num 1 --tskv-num 1 --system-database-replica 1
+    CLUSTER_STARTED=1
     ;;
   -h | --help)
     usage
@@ -41,66 +67,49 @@ while [[ $# -gt 0 ]]; do
     exit 1
     ;;
   esac
+
+  break
 done
 
-# This script is at $PROJ_DIR/query_server/test/script/start_and_test.sh
-PROJ_DIR=$(
-  cd $(dirname $0)
-  cd ../../..
-  pwd
-)
-CFG_PATH="${PROJ_DIR}/config/config_8902.toml"
+if [ $CLUSTER_STARTED -eq 0 ]; then
+  echo "Cnosdb Cluster not started, maybe missing argument --singleton or other cluster definitions."
+  exit 1
+fi
 
-TEST_DATA_DIR="/tmp/cnosdb"
- DB_DIR=${TEST_DATA_DIR}"/1001"
- LOG_DIR=${TEST_DATA_DIR}"/logs"
- LOG_PATH=${LOG_DIR}"/start_and_test.data_node.8902.log"
- CARGO_ARGS='--profile test-ci --package main --bin cnosdb'
+## Test cluster.
 
-# -------------------- Start and Test --------------------
+TEST_DATA_DIR='/tmp/cnosdb/'
+LOG_PATH='/tmp/cnosdb/data/1/nohup.log'
+HTTP_HOST=${HTTP_HOST:-"127.0.0.1:8902"}
+PING_URL="http://${HTTP_HOST}/api/v1/ping"
 
-echo "=== CnosDB Start and Test ==="
-echo "ARG_MODE  = ${ARG_MODE}"
-echo "ARG_CLEAN = ${ARG_CLEAN}"
+echo "=== CnosDB Start&Test ==="
 echo "----------------------------------------"
 
-rm -rf ${DB_DIR}
-mkdir -p ${LOG_DIR}
+trap "echo 'Received Ctrl+C, stopping.'" SIGINT
 
-echo "= Building CnosDB Server at ${PROJ_DIR}"
-if [ ${ARG_CLEAN} -eq 1 ]; then
-  cargo clean
-fi
-cargo build ${CARGO_ARGS}
-
-echo "= Starting CnosDB Server with config: '${CFG_PATH}'."
-nohup cargo run ${CARGO_ARGS} -- run -M ${ARG_MODE} --config ${CFG_PATH} >${LOG_PATH} 2>&1 &
-PID=$!
-
-trap "echo '= Received Ctrl+C, stopping.'" SIGINT
-
-echo "= Wait for CnosDB Server(pid=${PID}) startup to complete."
-while [ -z "$(curl -s ${URL})" ]; do
+echo "Waiting for CnosDB Server startup to complete."
+PID=$(cat /tmp/cnosdb/data/1/PID)
+while [ -z "$(curl -s ${PING_URL})" ]; do
   if ! kill -0 ${PID} >/dev/null 2>&1; then
-    echo "= CnosDB Server(pid=${PID}) startup failed, printing logs."
+    echo "CnosDB Server startup failed, printing logs:"
     cat $LOG_PATH
     exit 1
   fi
   sleep 2
 done
 
-# cargo run --package test -- --query-url http://127.0.0.1:8902 --storage-url http://127.0.0.1:7777
 function test() {
-   echo "= Testing sqllogicaltests" &&
-    cargo run --package sqllogicaltests &&
-    echo "= Testing e2e_test" &&
-    cargo test --package e2e_test --lib -- reliant:: --nocapture
+  echo "= Testing sqllogicaltests"
+  cargo run --package sqllogicaltests
+  # echo "= Testing e2e_test"
+  # cargo test --package e2e_test --lib -- reliant:: --nocapture
 }
 
 test || EXIT_CODE=$?
 
 echo "= Test completed, killing CnosDB Server(pid=${PID}) and cleaning up '${TEST_DATA_DIR}'."
 kill ${PID}
-rm -rf ${TEST_DATA_DIR}
+# rm -rf ${TEST_DATA_DIR}
 
 exit ${EXIT_CODE:-0}

@@ -1,5 +1,5 @@
 [package]
-name = "error_code"
+name = "derive_traits"
 version.workspace = true
 edition.workspace = true
 
@@ -7,7 +7,7 @@ edition.workspace = true
 
 [dependencies]
 async-backtrace = { workspace = true, optional = true }
-macros = { path = "../macros" }
+derive_macros = { path = "../derive_macros" }
 snafu = { workspace = true }
 
 [features]

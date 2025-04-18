@@ -1,5 +1,5 @@
 [package]
-name = "macros"
+name = "derive_macros"
 version.workspace = true
 edition.workspace = true
 

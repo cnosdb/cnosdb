@@ -22,8 +22,6 @@ test_*.log
 *.history
 
 # Generated files
-common/license/private.rsa
-common/license/public.rsa
 
 # Jupyter Notebook
 .ipynb_checkpoints

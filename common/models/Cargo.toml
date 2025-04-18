@@ -7,7 +7,6 @@ edition.workspace = true
 
 [dependencies]
 config = { path = "../../config" }
-error_code = { path = "../error_code" }
 protos = { path = "../protos" }
 trace = { path = "../trace" }
 utils = { path = "../utils" }

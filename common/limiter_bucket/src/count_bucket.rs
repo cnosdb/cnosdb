@@ -1,4 +1,4 @@
-use config::common::CountBucketConfing;
+use config::common::CountBucketConfig;
 use serde::{Deserialize, Serialize};
 
 #[derive(Default, Copy, Clone, Deserialize, Serialize, Debug)]
@@ -22,8 +22,8 @@ impl CountBucketBuilder {
     }
 }
 
-impl From<&CountBucketConfing> for CountBucket {
-    fn from(value: &CountBucketConfing) -> Self {
+impl From<&CountBucketConfig> for CountBucket {
+    fn from(value: &CountBucketConfig) -> Self {
         Self {
             count: value.initial,
             max_count: value.max,

@@ -27,7 +27,7 @@ pub struct RateBucketConfig {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
-pub struct CountBucketConfing {
+pub struct CountBucketConfig {
     pub max: Option<i64>,
     pub initial: i64,
 }
@@ -35,7 +35,7 @@ pub struct CountBucketConfing {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct Bucket {
     pub remote_bucket: RateBucketConfig,
-    pub local_bucket: CountBucketConfing,
+    pub local_bucket: CountBucketConfig,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]

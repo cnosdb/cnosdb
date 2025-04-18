@@ -10,7 +10,6 @@ use std::time::Duration;
 
 use clap::{command, Args, Parser, Subcommand, ValueEnum};
 use config::tskv::Config;
-use config::VERSION;
 use memory_pool::GreedyMemoryPool;
 use metrics::metric_register::MetricsRegister;
 use tokio::runtime::Runtime;
@@ -34,7 +33,7 @@ mod tcp;
 /// cli examples is here
 /// <https://github.com/clap-rs/clap/blob/v3.1.3/examples/git-derive.rs>
 #[derive(Debug, Parser)]
-#[command(name = "cnosdb", version = & VERSION[..])]
+#[command(name = "cnosdb", version = version::workspace_version())]
 #[command(about = "CnosDB command line tools")]
 #[command(long_about = r#"CnosDB and command line tools
 Examples:
@@ -247,7 +246,7 @@ fn handle_error<T, E: std::fmt::Debug>(result: Result<T, E>, context: &str) -> T
 fn parse_config(run_args: &RunArgs) -> config::tskv::Config {
     println!("-----------------------------------------------------------");
     println!("Using Config File: {}\n", run_args.config);
-    let mut config = config::tskv::get_config(&run_args.config).unwrap();
+    let mut config = config::tskv::Config::new(Some(&run_args.config)).unwrap();
     set_cli_args_to_config(run_args, &mut config);
     println!("Start with configuration: \n{}", config.to_string_pretty());
     println!("-----------------------------------------------------------");

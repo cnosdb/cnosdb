@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use datafusion::arrow::error::ArrowError;
 use datafusion::error::DataFusionError;
-use error_code::{ErrorCode, ErrorCoder};
+use derive_traits::{ErrorCode, ErrorCoder};
 use http_protocol::response::ErrorResponse;
 use meta::error::MetaError;
 use models::column_data::ColumnDataError;

@@ -276,11 +276,3 @@ fn encode_wal_raft_entry(entry: &wal_store::RaftEntry, encode: Encoding) -> Tskv
     let encoder = WalEntryCodec::new(encode);
     encoder.encode(&bytes)
 }
-
-#[cfg(test)]
-mod test {
-    #[test]
-    fn test_get_test_config() {
-        let _ = config::tskv::get_config_for_test();
-    }
-}

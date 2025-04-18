@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 config = { path = "../config" }
+derive_traits = { path = "../common/derive_traits" }
 memory_pool = { path = "../common/memory_pool" }
 meta = { path = "../meta" }
 metrics = { path = "../common/metrics" }

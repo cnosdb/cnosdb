@@ -308,8 +308,8 @@ impl Reply for HttpResponse {
 
 #[cfg(test)]
 mod tests {
+    use derive_traits::error_code::UnknownCode;
     use http_protocol::response::ErrorResponse;
-    use models::error_code::UnknownCode;
 
     use super::*;
 

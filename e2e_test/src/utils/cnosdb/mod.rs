@@ -92,7 +92,6 @@ pub fn run_cluster_with_customized_configs(
     regenerate_update_meta_config: &[Option<FnUpdateMetaStoreConfig>],
     regenerate_update_data_config: &[Option<FnUpdateCnosdbConfig>],
 ) -> (Option<CnosdbMetaTestHelper>, Option<CnosdbDataTestHelper>) {
-    let test_dir = test_dir.as_ref().to_path_buf();
     let workspace_dir = get_workspace_dir();
     if !cluster_def.meta_cluster_def.is_empty() {
         cargo_build_cnosdb_meta(&workspace_dir);
@@ -108,7 +107,6 @@ pub fn run_cluster_with_customized_configs(
 
     if !cluster_def.meta_cluster_def.is_empty() {
         // If need to run `cnosdb-meta`
-        let meta_test_dir = test_dir.join("meta");
         let configs = write_meta_node_config_files(
             &test_dir,
             &cluster_def.meta_cluster_def,
@@ -118,7 +116,7 @@ pub fn run_cluster_with_customized_configs(
         let mut meta = CnosdbMetaTestHelper::new(
             runtime,
             &workspace_dir,
-            meta_test_dir,
+            &test_dir,
             cluster_def.meta_cluster_def.clone(),
             configs,
         );
@@ -134,7 +132,6 @@ pub fn run_cluster_with_customized_configs(
 
     if !cluster_def.data_cluster_def.is_empty() {
         // If need to run `cnosdb run`
-        let data_test_dir = test_dir.join("data");
         let configs = write_data_node_config_files(
             &test_dir,
             &cluster_def.data_cluster_def,
@@ -143,7 +140,7 @@ pub fn run_cluster_with_customized_configs(
         );
         let mut data = CnosdbDataTestHelper::new(
             workspace_dir,
-            data_test_dir,
+            &test_dir,
             cluster_def.data_cluster_def.clone(),
             configs,
         );

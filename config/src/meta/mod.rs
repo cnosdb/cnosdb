@@ -3,23 +3,22 @@ mod global_config;
 mod heart_beat_config;
 mod sys_config;
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::path::Path;
 
+use derive_traits::{FieldKeys as _, Keys};
 use figment::providers::{Env, Format, Toml};
 use figment::value::Uncased;
-use figment::{Error, Figment};
+use figment::Figment;
 pub use heart_beat_config::*;
-use macros::EnvKeys;
 use serde::{Deserialize, Serialize};
 
 use crate::common::LogConfig;
 use crate::meta::cluster_config::MetaClusterConfig;
 use crate::meta::global_config::MetaGlobalConfig;
 use crate::meta::sys_config::SysConfig;
-use crate::EnvKeys as _;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, EnvKeys)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Keys)]
 #[serde(default = "Default::default")]
 #[derive(Default)]
 pub struct Opt {
@@ -36,44 +35,36 @@ pub struct Opt {
 }
 
 impl Opt {
+    pub fn new<P: AsRef<Path>>(path: Option<P>) -> Result<Self, figment::Error> {
+        let mut figment = Figment::new();
+        // Merge toml config file.
+        if let Some(path) = path {
+            figment = figment.merge(Toml::file(path.as_ref()));
+        }
+        // Merge environment variables with prefix `CNOSDB_META_`.// Map field-keys into env-keys.
+        let env_key_map = Self::env_keys();
+        figment = figment.merge(Env::prefixed("CNOSDB_META_").map(move |env| {
+            let env_str = env.to_string();
+            match env_key_map.get(&format!("CNOSDB_META_{}", env_str)) {
+                Some(key) => Uncased::from_owned(key.clone()),
+                None => Uncased::new(env_str.clone()),
+            }
+        }));
+
+        figment.extract()
+    }
+
     pub fn to_string_pretty(&self) -> String {
         toml::to_string_pretty(self).unwrap_or_else(|_| "Failed to stringify Config".to_string())
     }
-}
 
-pub fn get_opt(path: Option<impl AsRef<Path>>) -> Result<Opt, Error> {
-    let env_keys = Opt::env_keys();
-    let env_key_map = env_keys
-        .into_iter()
-        .map(|key| (format!("CNOSDB_META_{}", key.replace('.', "_")), key))
-        .collect::<HashMap<String, String>>();
-
-    // debug
-    // println!(
-    //     "-----------------------------------------meta:Environment Variable to Field Mapping:"
-    // );
-    // for (env_var, field_name) in &env_key_map {
-    //     let value = std::env::var(env_var).unwrap_or_else(|_| "Not Set".to_string());
-    //     println!(
-    //         "Environment Variable: {}, Field Name: {}, Value: {}",
-    //         env_var, field_name, value
-    //     );
-    // }
-
-    let mut figment = Figment::new();
-    if let Some(path) = path.as_ref() {
-        figment = figment.merge(Toml::file(path.as_ref()));
+    /// Map env-keys to field-keys.
+    pub fn env_keys() -> BTreeMap<String, String> {
+        Opt::field_keys()
+            .into_iter()
+            .map(|key| (format!("CNOSDB_META_{}", key.replace('.', "_")), key))
+            .collect()
     }
-
-    figment = figment.merge(Env::prefixed("CNOSDB_META_").map(move |env| {
-        let env_str = env.to_string();
-        match env_key_map.get(&format!("CNOSDB_META_{}", env_str)) {
-            Some(key) => Uncased::from_owned(key.clone()),
-            None => Uncased::new(env_str.clone()),
-        }
-    }));
-
-    figment.extract()
 }
 
 #[cfg(test)]
@@ -105,7 +96,7 @@ system_database_replica = 1
 
 [log]
 level = "warn"
-path = "/tmp/cnosdb/logs"
+path = "/tmp/cnosdb/meta/1/logs"
 
 
 [heartbeat]

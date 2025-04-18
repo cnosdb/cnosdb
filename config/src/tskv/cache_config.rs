@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
-use macros::EnvKeys;
+use derive_traits::Keys;
 use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
 use crate::codec::bytes_num;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, EnvKeys)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Keys)]
 pub struct CacheConfig {
     #[serde(with = "bytes_num", default = "CacheConfig::default_max_buffer_size")]
     pub max_buffer_size: u64,
