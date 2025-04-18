@@ -1226,7 +1226,6 @@ dependencies = [
  "base64 0.21.7",
  "bytes",
  "clap",
- "config",
  "datafusion",
  "dirs",
  "env_logger",
@@ -1237,6 +1236,7 @@ dependencies = [
  "rpassword",
  "rustyline",
  "tokio",
+ "version",
  "walkdir",
 ]
 
@@ -1271,15 +1271,15 @@ version = "2.4.3"
 dependencies = [
  "async-backtrace",
  "byte-unit",
+ "derive_traits",
  "figment",
  "humantime",
- "macros",
  "num_cpus",
- "once_cell",
  "serde",
  "sys-info",
  "toml",
  "utils",
+ "version",
 ]
 
 [[package]]
@@ -1380,6 +1380,7 @@ dependencies = [
  "config",
  "datafusion",
  "datafusion-proto",
+ "derive_traits",
  "flatbuffers 24.12.23",
  "futures",
  "lazy_static",
@@ -1865,18 +1866,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dateparser"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c2ef451feee09ae5ecd8a02e738bd9adee9266b8fa9b44e22d3ce968d8694238"
-dependencies = [
- "anyhow",
- "chrono",
- "lazy_static",
- "regex",
-]
-
-[[package]]
 name = "debugid"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1923,6 +1912,15 @@ checksum = "870368c3fb35b8031abb378861d4460f573b92238ec2152c927a21f77e3e0127"
 dependencies = [
  "derive_builder_core",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "derive_macros"
+version = "2.4.3"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.100",
 ]
 
 [[package]]
@@ -1976,6 +1974,15 @@ dependencies = [
  "quote",
  "syn 2.0.100",
  "unicode-xid",
+]
+
+[[package]]
+name = "derive_traits"
+version = "2.4.3"
+dependencies = [
+ "async-backtrace",
+ "derive_macros",
+ "snafu",
 ]
 
 [[package]]
@@ -2203,15 +2210,6 @@ name = "error-code"
 version = "3.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a5d9305ccc6942a704f4335694ecd3de2ea531b114ac2d51f5f843750787a92f"
-
-[[package]]
-name = "error_code"
-version = "2.4.3"
-dependencies = [
- "async-backtrace",
- "macros",
- "snafu",
-]
 
 [[package]]
 name = "escape8259"
@@ -2843,7 +2841,7 @@ dependencies = [
  "async-backtrace",
  "brotli 3.5.0",
  "bytes",
- "error_code",
+ "derive_traits",
  "flate2",
  "lz4_flex",
  "reqwest",
@@ -3589,37 +3587,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "macros"
-version = "2.4.3"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.100",
-]
-
-[[package]]
 name = "main"
 version = "2.4.3"
 dependencies = [
  "arrow-flight",
  "async-backtrace",
- "async-stream",
  "async-trait",
  "backtrace",
  "base64 0.21.7",
- "bincode",
- "byteorder",
  "bytes",
- "chrono",
  "clap",
  "config",
  "coordinator",
  "ctrlc",
- "dashmap",
  "datafusion",
- "datafusion-proto",
- "dateparser",
- "dirs",
+ "derive_traits",
  "flatbuffers 24.12.23",
  "futures",
  "http_protocol",
@@ -3628,29 +3610,22 @@ dependencies = [
  "memory_pool",
  "meta",
  "metrics",
- "minitrace",
  "models",
  "moka",
- "num_cpus",
- "openraft",
  "os_info",
  "parking_lot 0.12.3",
  "pprof",
  "prost 0.11.9",
- "prost-types 0.11.9",
  "protocol_parser",
  "protos",
  "query",
- "regex",
  "replication",
  "reqwest",
  "serde",
  "serde_json",
  "simdutf8",
- "sled",
  "snafu",
  "spi",
- "sys-info",
  "tikv-jemallocator",
  "tokio",
  "tokio-stream",
@@ -3658,6 +3633,7 @@ dependencies = [
  "trace",
  "tskv",
  "utils",
+ "version",
  "warp",
 ]
 
@@ -3738,7 +3714,7 @@ dependencies = [
  "config",
  "ctrlc",
  "dashmap",
- "error_code",
+ "derive_traits",
  "futures",
  "heed",
  "heed-traits",
@@ -3770,6 +3746,7 @@ dependencies = [
  "tracing",
  "utils",
  "uuid",
+ "version",
  "walkdir",
  "warp",
 ]
@@ -3905,7 +3882,6 @@ dependencies = [
  "datafusion",
  "datafusion-proto",
  "derive_builder",
- "error_code",
  "flatbuffers 24.12.23",
  "futures",
  "humantime",
@@ -5117,6 +5093,7 @@ dependencies = [
  "tskv",
  "url",
  "utils",
+ "version",
 ]
 
 [[package]]
@@ -5375,25 +5352,17 @@ dependencies = [
  "async-backtrace",
  "async-trait",
  "bincode",
- "chrono",
  "clap",
- "config",
- "datafusion",
- "flatbuffers 24.12.23",
+ "derive_traits",
  "futures",
  "heed",
- "heed-traits",
  "http 0.2.12",
  "http-body",
  "maplit",
- "md-5",
  "metrics",
  "models",
- "once_cell",
  "openraft",
  "parking_lot 0.12.3",
- "prost 0.11.9",
- "protobuf 3.7.2",
  "protos",
  "rand 0.8.5",
  "serde",
@@ -5410,7 +5379,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "utils",
- "walkdir",
  "warp",
 ]
 
@@ -6083,8 +6051,8 @@ dependencies = [
  "coordinator",
  "datafusion",
  "derive_builder",
+ "derive_traits",
  "duration-str",
- "error_code",
  "flatbuffers 24.12.23",
  "futures",
  "lazy_static",
@@ -6141,6 +6109,7 @@ dependencies = [
  "tonic 0.9.2",
  "trace",
  "url",
+ "version",
 ]
 
 [[package]]
@@ -6979,6 +6948,7 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 name = "tskv"
 version = "2.4.3"
 dependencies = [
+ "anyhow",
  "arrow",
  "arrow-array",
  "arrow-buffer",
@@ -6997,8 +6967,8 @@ dependencies = [
  "criterion",
  "datafusion",
  "datafusion-proto",
+ "derive_traits",
  "dircpy",
- "error_code",
  "flatbuffers 24.12.23",
  "flate2",
  "futures",
@@ -7245,6 +7215,13 @@ name = "vcpkg"
 version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
+
+[[package]]
+name = "version"
+version = "2.4.3"
+dependencies = [
+ "humantime",
+]
 
 [[package]]
 name = "version_check"

@@ -1,0 +1,11 @@
+[package]
+name = "version"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+
+[dependencies]
+
+[build-dependencies]
+humantime = { workspace = true }

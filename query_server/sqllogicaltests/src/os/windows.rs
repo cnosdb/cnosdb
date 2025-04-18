@@ -24,16 +24,12 @@ pub async fn update_test_file(
     engine_name: String,
     path: &Path,
     relative_path: PathBuf,
-    client_options: CnosdbClient,
+    client: CnosdbClient,
 ) -> Result<(), Box<dyn Error>> {
     info!("Running complete mode: {}", path.display());
 
     let mut runner = sqllogictest::Runner::new(|| async {
-        CnosdbTestEngine::new(
-            engine_name.clone(),
-            relative_path.clone(),
-            client_options.clone(),
-        )
+        CnosdbTestEngine::new(engine_name.clone(), relative_path.clone(), client.clone())
     });
     let col_separator = " ";
     let validator = default_validator;

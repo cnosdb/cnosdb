@@ -23,7 +23,7 @@ use tskv::kv_option::DATA_PATH;
 use tskv::vnode_store::VnodeStorage;
 use tskv::VnodeSnapshot;
 
-use crate::errors::{CommonSnafu, CoordinatorResult, IOErrorsSnafu, MetaSnafu};
+use crate::errors::{CommonSnafu, CoordinatorResult, IoSnafu, MetaSnafu};
 
 pub mod manager;
 
@@ -82,9 +82,7 @@ impl TskvEngineStorage {
             .download_snapshot_files(dir, snapshot, &mut client)
             .await
         {
-            tokio::fs::remove_dir_all(&dir)
-                .await
-                .context(IOErrorsSnafu)?;
+            tokio::fs::remove_dir_all(&dir).await.context(IoSnafu)?;
             return Err(err);
         }
 
@@ -138,9 +136,7 @@ impl TskvEngineStorage {
         client: &mut TskvServiceClient<Timeout<Channel>>,
     ) -> CoordinatorResult<()> {
         if let Some(dir) = filename.parent() {
-            tokio::fs::create_dir_all(dir)
-                .await
-                .context(IOErrorsSnafu)?;
+            tokio::fs::create_dir_all(dir).await.context(IoSnafu)?;
         }
 
         let mut file = tokio::fs::OpenOptions::new()
@@ -150,7 +146,7 @@ impl TskvEngineStorage {
             .write(true)
             .open(filename)
             .await
-            .context(IOErrorsSnafu)?;
+            .context(IoSnafu)?;
 
         let request = tonic::Request::new(DownloadFileRequest {
             filename: download.to_string(),
@@ -159,7 +155,7 @@ impl TskvEngineStorage {
         while let Some(received) = resp_stream.next().await {
             let received = received?;
             let data = crate::errors::decode_grpc_response(received)?;
-            file.write_all(&data).await.context(IOErrorsSnafu)?;
+            file.write_all(&data).await.context(IoSnafu)?;
         }
 
         Ok(())

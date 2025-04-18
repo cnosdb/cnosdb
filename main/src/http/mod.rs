@@ -1,8 +1,8 @@
 use coordinator::errors::CoordinatorError;
+use derive_traits::{ErrorCode, ErrorCoder};
 use http_protocol::response::ErrorResponse;
 use http_protocol::status_code::UNPROCESSABLE_ENTITY;
 use meta::error::MetaError;
-use models::error_code::{ErrorCode, ErrorCoder};
 use prost::DecodeError;
 use snafu::Snafu;
 use spi::QueryError;

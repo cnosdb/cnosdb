@@ -2,13 +2,13 @@ use std::net::ToSocketAddrs;
 use std::sync::Arc;
 use std::time::Duration;
 
-use macros::EnvKeys;
+use derive_traits::Keys;
 use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
 use crate::codec::{bytes_num, duration};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, EnvKeys)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Keys)]
 pub struct MetaConfig {
     #[serde(default = "MetaConfig::default_service_addr")]
     pub service_addr: Vec<String>,

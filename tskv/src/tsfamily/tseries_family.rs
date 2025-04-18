@@ -576,6 +576,7 @@ pub mod test_tseries_family {
     use std::sync::Arc;
 
     use cache::ShardedAsyncCache;
+    use config::tskv::Config;
     use models::predicate::domain::TimeRange;
     use models::Timestamp;
 
@@ -605,7 +606,7 @@ pub mod test_tseries_family {
         let dir = "/tmp/test/ts_family/1";
         let _ = std::fs::remove_dir_all(dir);
         std::fs::create_dir_all(dir).unwrap();
-        let mut global_config = config::tskv::get_config_for_test();
+        let mut global_config = Config::for_test();
         global_config.storage.path = dir.to_string();
         let opt = Arc::new(Options::from(&global_config));
 
@@ -704,7 +705,7 @@ pub mod test_tseries_family {
         let dir = "/tmp/test/ts_family/2";
         let _ = std::fs::remove_dir_all(dir);
         std::fs::create_dir_all(dir).unwrap();
-        let mut global_config = config::tskv::get_config_for_test();
+        let mut global_config = Config::for_test();
         global_config.storage.path = dir.to_string();
         let opt = Arc::new(Options::from(&global_config));
 

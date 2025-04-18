@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
-use macros::EnvKeys;
+use derive_traits::Keys;
 use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
 
-#[derive(Default, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, EnvKeys)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Keys)]
 pub struct SecurityConfig {
     pub tls_config: Option<TLSConfig>,
 }
@@ -28,7 +28,7 @@ impl CheckConfig for SecurityConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, EnvKeys)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Keys)]
 pub struct TLSConfig {
     #[serde(default = "TLSConfig::default_certificate")]
     pub certificate: String,

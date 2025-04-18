@@ -1,4 +1,3 @@
-#![cfg(test)]
 #![allow(unused)]
 
 use std::net::SocketAddrV4;
@@ -78,8 +77,6 @@ fn data_id_to_opentsdb_service_port(id: u8) -> u16 {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MetaNodeDefinition {
     pub id: u8,
-    /// The config file name, default is `config_{port}.toml`.
-    pub config_file_name: String,
     pub host_port: SocketAddrV4,
 }
 
@@ -91,7 +88,6 @@ impl MetaNodeDefinition {
         let meta_port = meta_id_to_port(id);
         Self {
             id,
-            config_file_name: format!("config_{meta_port}.toml"),
             host_port: SocketAddrV4::new(LOOPBACK_IP, meta_port),
         }
     }
@@ -104,12 +100,13 @@ impl MetaNodeDefinition {
         self.host_port = host_port;
     }
 
-    /// Returns $test_dir/meta/config/$config_file_name
+    /// Returns $base_dir/$id/config.toml.
+    /// Usually $test_dir/meta/$id/config.toml
     pub fn to_config_path(&self, base_dir: impl AsRef<Path>) -> PathBuf {
         base_dir
             .as_ref()
-            .join("config")
-            .join(&self.config_file_name)
+            .join(self.id.to_string())
+            .join("config.toml")
     }
 
     /// Update the given meta node config with self.
@@ -125,7 +122,6 @@ impl Default for MetaNodeDefinition {
     fn default() -> Self {
         Self {
             id: 1,
-            config_file_name: "config_8901.toml".to_string(),
             host_port: SocketAddrV4::new(LOOPBACK_IP, 8901),
         }
     }
@@ -133,11 +129,7 @@ impl Default for MetaNodeDefinition {
 
 impl std::fmt::Display for MetaNodeDefinition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "node_id: {}, config_file: '{}', host_port: '{}'",
-            self.id, self.config_file_name, self.host_port,
-        )
+        write!(f, "node_id: {}, host_port: '{}'", self.id, self.host_port)
     }
 }
 
@@ -181,8 +173,6 @@ impl std::fmt::Display for DeploymentMode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DataNodeDefinition {
     pub id: u8,
-    /// The config file name, default is `config_{port}.toml`.
-    pub config_file_name: String,
     pub mode: DeploymentMode,
 
     /// Meta services address.
@@ -227,7 +217,6 @@ impl DataNodeDefinition {
         };
         Self {
             id,
-            config_file_name: format!("config_{data_http_port}.toml"),
             mode,
             meta_host_ports,
             http_host_port: SocketAddrV4::new(LOOPBACK_IP, data_http_port),
@@ -265,12 +254,13 @@ impl DataNodeDefinition {
         }
     }
 
-    /// Returns $test_dir/data/config/$config_file_name
+    /// Returns $base_dir/$id/config.toml.
+    /// Usually:$test_dir/data/$id/config.toml
     pub fn to_config_path(&self, base_dir: impl AsRef<Path>) -> PathBuf {
         base_dir
             .as_ref()
-            .join("config")
-            .join(&self.config_file_name)
+            .join(self.id.to_string())
+            .join("config.toml")
     }
 
     /// Generate meta service address list, for `MetaConfig::service_addr`.
@@ -300,7 +290,6 @@ impl Default for DataNodeDefinition {
     fn default() -> Self {
         Self {
             id: 1,
-            config_file_name: "config_8902.toml".to_string(),
             mode: DeploymentMode::QueryTskv,
             meta_host_ports: vec![SocketAddrV4::new(LOOPBACK_IP, 8901)],
             http_host_port: SocketAddrV4::new(LOOPBACK_IP, 8902),
@@ -318,8 +307,8 @@ impl std::fmt::Display for DataNodeDefinition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "node_id: {}, config_file: '{}', mode: {}, meta_host_ports: [",
-            self.id, self.config_file_name, self.mode,
+            "node_id: {}, mode: {}, meta_host_ports: [",
+            self.id, self.mode,
         )?;
         for (i, host_port) in self.meta_host_ports.iter().enumerate() {
             write!(f, "'{host_port}'")?;
@@ -406,7 +395,6 @@ fn test_cnosdb_cluster_definition_factory() {
                 DataNodeDefinition::default(),
                 DataNodeDefinition {
                     id: 2,
-                    config_file_name: "config_8912.toml".to_string(),
                     mode: DeploymentMode::QueryTskv,
                     meta_host_ports: vec![SocketAddrV4::new(LOOPBACK_IP, 8901)],
                     http_host_port: SocketAddrV4::new(LOOPBACK_IP, 8912),

@@ -1,12 +1,12 @@
 use std::net::ToSocketAddrs;
 use std::sync::Arc;
 
-use macros::EnvKeys;
+use derive_traits::Keys;
 use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, EnvKeys)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Keys)]
 pub struct ServiceConfig {
     #[serde(default = "ServiceConfig::default_http_listen_port")]
     pub http_listen_port: Option<u16>,
@@ -26,11 +26,11 @@ pub struct ServiceConfig {
 
 impl ServiceConfig {
     fn default_http_listen_port() -> Option<u16> {
-        None
+        Some(8902)
     }
 
     fn default_grpc_listen_port() -> Option<u16> {
-        None
+        Some(8903)
     }
 
     fn default_grpc_enable_gzip() -> bool {

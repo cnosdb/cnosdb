@@ -14,7 +14,7 @@ pub type StepResult = E2eResult<Vec<String>>;
 pub type FnStepResult = Box<dyn for<'a> Fn(&'a mut CaseContext) -> CaseFlowControl>;
 /// Consumes context and returns a string.
 pub type FnString = Box<dyn for<'a> Fn(&'a CaseContext) -> String>;
-/// Consumes context and reutrns a vector of string.
+/// Consumes context and returns a vector of string.
 pub type FnStringVec = Box<dyn for<'a> Fn(&'a CaseContext) -> Vec<String>>;
 /// Consumes context and returns a `std::process::Command`.
 pub type FnCommand = Box<dyn for<'a> Fn(&'a CaseContext) -> Vec<Command>>;
@@ -22,7 +22,7 @@ pub type FnCommand = Box<dyn for<'a> Fn(&'a CaseContext) -> Vec<Command>>;
 pub type FnGeneric<T> = Box<dyn for<'a> Fn(&'a CaseContext) -> T>;
 /// Consumes context and returns nothing.
 pub type FnVoid = Box<dyn for<'a> Fn(&'a CaseContext)>;
-/// Consumes context and the response lines of a request (a vector of setring).
+/// Consumes context and the response lines of a request (a vector of strings).
 pub type FnAfterRequestSucceed = Box<dyn for<'a> Fn(&'a mut CaseContext, &Vec<String>)>;
 
 /// The time to wait before `Control::RestartDataNode` execution.
@@ -360,7 +360,7 @@ impl std::fmt::Display for RequestStep {
     }
 }
 
-/// Respresent a request to cnosdb.
+/// Represents a request to cnosdb.
 pub enum CnosdbRequest {
     /// Execute SQL and check the response text.
     Sql(Sql),
@@ -793,12 +793,12 @@ impl Control {
             }
             Control::StopDataNode(data_node_index) => {
                 let data_node_def = data.data_node_definitions[*data_node_index].clone();
-                data.stop_one_node(&data_node_def.config_file_name, false);
+                data.stop_one_node(data_node_def.id, false);
             }
             Control::StopMetaNode(meta_node_index) => {
                 let meta = context.meta_mut();
                 let meta_node_def = meta.meta_node_definitions[*meta_node_index].clone();
-                meta.stop_one_node(&meta_node_def.config_file_name, false);
+                meta.stop_one_node(meta_node_def.id, false);
             }
             Control::RestartCluster => {
                 context.run(false);

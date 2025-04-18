@@ -2,15 +2,22 @@
 name = "config"
 version.workspace = true
 edition.workspace = true
+default-run = "cnosdb-config"
+
+[lib]
+
+[[bin]]
+name = "cnosdb-config"
+path = "src/bin/cnosdb_config/main.rs"
 
 [dependencies]
-macros = { path = "../common/macros" }
+derive_traits = { path = "../common/derive_traits" }
 utils = { path = "../common/utils" }
+version = { path = "../common/version" }
 
 async-backtrace = { workspace = true, optional = true }
 figment = { workspace = true, features = ["toml", "env"] }
 num_cpus = { workspace = true }
-once_cell = { workspace = true }
 serde = { workspace = true }
 sys-info = { workspace = true }
 toml = { workspace = true }
@@ -18,5 +25,6 @@ byte-unit = { workspace = true }
 humantime = { workspace = true }
 
 [features]
-default = []
+default = ["testing"]
 backtrace = ["async-backtrace"]
+testing = []

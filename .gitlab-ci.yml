@@ -16,7 +16,7 @@ bench-job:
     - set -e
     - sudo rm -rf /home/gitlab-runner/cnosdb
 
-    # complie cnosdb
+    # compile cnosdb
     - echo "compile code"
     - source ~/.cargo/env
     - make build_release
@@ -25,8 +25,8 @@ bench-job:
     - sleep 10
     - ulimit -n 65535
     - ulimit -a
-    - echo "modify default config"
-    - sed -i "s/tmp/home\/gitlab-runner/g" config/config_8902.toml
+    - echo "generate config"
+    - bash ./config/scripts/generate_config.sh --type data --output ./config/config_8902.toml --base-dir /home/gitlab-runner --data-max-buffer-size 512MiB
     - echo "starting cnosdb"
     - nohup ./target/release/cnosdb run --config ./config/config_8902.toml -M singleton > ./target/cnosdb_output.log 2>&1 &
     - echo "cnosdb is running"

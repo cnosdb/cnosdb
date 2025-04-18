@@ -1,0 +1,93 @@
+[global]
+node_id = 3001
+host = "127.0.0.1"
+cluster_name = "cluster_xxx"
+store_metrics = true
+pre_create_bucket = false
+
+[deployment]
+mode = "query_tskv"
+# cpu = 8
+# memory = 16
+
+[meta]
+service_addr = ["127.0.0.1:8901"]
+report_time_interval = "30s"
+usage_schema_cache_size = "2 MiB"
+cluster_schema_cache_size = "2 MiB"
+system_database_replica = 3
+
+[query]
+max_server_connections = 10240
+query_sql_limit = "16 MiB"
+write_sql_limit = "160 MiB"
+auth_enabled = false
+read_timeout = "3s"
+write_timeout = "3s"
+stream_trigger_cpu = 1
+stream_executor_cpu = 2
+sql_record_timeout = "10s"
+
+[storage]
+path = "/tmp/cnosdb/3001/db"
+max_summary_size = "128 MiB"
+base_file_size = "16 MiB"
+flush_req_channel_cap = 16
+max_cached_readers = 32
+compact_trigger_file_num = 4
+compact_trigger_cold_duration = "1h"
+max_compact_size = "2 GiB"
+max_concurrent_compaction = 4
+collect_compaction_metrics = false
+strict_write = false
+reserve_space = "0 B"
+copyinto_trigger_flush_size = "128 MiB"
+max_datablock_size = "100 KiB"
+index_cache_capacity = 100000
+tsm_meta_compress = "null"
+
+[wal]
+path = "/tmp/cnosdb/3001/wal"
+max_file_size = "128 MiB"
+sync = false
+compress = "zstd"
+
+[cache]
+max_buffer_size = "512 MiB"
+partition = 16
+
+[log]
+level = "info"
+path = "/tmp/cnosdb/3001/log"
+# max_file_count = 10
+file_rotation = "daily"
+
+# [security]
+# [security.tls_config]
+# certificate = "./config/resource/tls/server.crt"
+# private_key = "./config/resource/tls/server.key"
+
+[service]
+http_listen_port = 8922
+grpc_listen_port = 8923
+grpc_enable_gzip = false
+flight_rpc_listen_port = 8924
+tcp_listen_port = 8925
+enable_report = true
+
+[cluster]
+raft_logs_to_keep = 5000
+snapshot_holding_time = "1h"
+trigger_snapshot_interval = "10m"
+lmdb_max_map_size = "1 GiB"
+heartbeat_interval = "300ms"
+send_append_entries_timeout = "5s"
+install_snapshot_timeout = "1h"
+
+# [trace]
+# auto_generate_span = true
+# max_spans_per_trace =
+# batch_report_interval = "500ms"
+# batch_report_max_spans
+# otlp_endpoint = 'http://localhost:4317'
+# trace_log_path =

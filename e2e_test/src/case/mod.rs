@@ -1,4 +1,3 @@
-#![cfg(test)]
 #![allow(unused)]
 
 mod executor;

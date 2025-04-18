@@ -14,7 +14,7 @@ CREATE DATABASE IF NOT EXISTS test1;
 query T rowsort
 DESCRIBE DATABASE test1;
 ----
-"INF" 1 "1year" 1 "NS" "512 MiB" 16 "128 MiB" false false 32
+"INF" 1 "1year" 1 "NS" "128 MiB" 16 "128 MiB" false false 32
 
 statement ok
 CREATE DATABASE IF NOT EXISTS describetest2;
@@ -23,7 +23,7 @@ CREATE DATABASE IF NOT EXISTS describetest2;
 query T rowsort
 DESCRIBE DATABASE describetest2;
 ----
-"INF" 1 "1year" 1 "NS" "512 MiB" 16 "128 MiB" false false 32
+"INF" 1 "1year" 1 "NS" "128 MiB" 16 "128 MiB" false false 32
 
 statement ok
 DROP DATABASE IF EXISTS describetest2;

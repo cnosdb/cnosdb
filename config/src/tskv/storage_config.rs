@@ -1,13 +1,13 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use macros::EnvKeys;
+use derive_traits::Keys;
 use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
 use crate::codec::{bytes_num, duration};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, EnvKeys)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Keys)]
 pub struct StorageConfig {
     #[serde(default = "StorageConfig::default_path")]
     pub path: String,
@@ -78,8 +78,7 @@ pub struct StorageConfig {
 
 impl StorageConfig {
     fn default_path() -> String {
-        let path = std::path::Path::new("/tmp/cnosdb/cnosdb_data").join("data");
-        path.to_string_lossy().to_string()
+        "/var/lib/cnosdb/data".to_string()
     }
 
     fn default_max_summary_size() -> u64 {

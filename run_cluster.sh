@@ -1,49 +1,68 @@
-#!/bin/sh
+#!/bin/bash
 
-kill() {
-    if [ "$(uname)" = "Darwin" ]; then
-        SERVICE='cnosdb'
-        if pgrep -xq -- "${SERVICE}"; then
-            pkill -f "${SERVICE}"
-        fi
-    else
-        set +e # killall will error if finds no process to kill
-        killall cnosdb
-        set -e
-    fi
+function usage() {
+  echo 'Start CnosDB Server Cluster'
+  echo
+  echo 'USAGE:'
+  echo "    ${0} [OPTIONS]"
+  echo
+  echo 'OPTIONS:'
+  echo '    -d | --detach    Run cluster in detached mode'
+  echo '    --one-meta       Start 1 meta server node'
+  echo '    --three-meta     Start 3 meta server nodes'
+  echo '    -h | --help      Show this help message'
+  echo
 }
 
-mkdir -p /tmp/cnosdb/logs
+set -e
 
-echo "*** run meta cluster ......"
-./meta/cluster.sh
+## This script is at $PROJ_DIR/run_cluster.sh
+PROJ_DIR=$(
+  cd $(dirname $0)
+  pwd
+)
 
-kill
-sleep 1
-rm -rf /tmp/cnosdb/1001
-rm -rf /tmp/cnosdb/2001
-rm -rf /tmp/cnosdb/meta/
-rm -rf ~/.cnosdb/query
+DATA_NODE_NUM=3
+META_NODE_NUM=3
+BASE_DIR='/tmp/cnosdb'
+DETACH=0
+while [[ $# -gt 0 ]]; do
+  case $1 in
+  -d | --detach)
+    DETACH=1
+    shift 1
+    ;;
+  --one-meta)
+    META_NODE_NUM=1
+    shift 1
+    ;;
+  --three-meta)
+    META_NODE_NUM=3
+    shift 1
+    ;;
+  -h | --help)
+    usage
+    exit 0
+    ;;
+  *)
+    echo "Unknown option $1"
+    exit 1
+    ;;
+  esac
+done
 
-echo "*** build cnosdb ......"
-cargo build --package main --bin cnosdb
+CLUSTER_DIR="${BASE_DIR}/data"
 
-echo "*** build cnosdb-cli ......"
-cargo build --package client --bin cnosdb-cli
+## Start cnosdb-meta server cluster.
+$PROJ_DIR/meta/scripts/cluster.sh --node-num $META_NODE_NUM --base-dir $BASE_DIR
 
-echo "*** start CnosDB server 8902......"
-nohup ./target/debug/cnosdb run --config ./config/config_8902.toml > /tmp/cnosdb/logs/data_node.1001.log 2>&1 &
+## Start cnosdb server cluster.
+$PROJ_DIR/main/scripts/cluster.sh --query-tskv-num 3 --base-dir $BASE_DIR
 
-sleep 1
+if [ $DETACH -eq 1 ]; then
+  exit 0
+fi
 
-echo "*** start CnosDB server 8912......"
-nohup ./target/debug/cnosdb run --config ./config/config_8912.toml > /tmp/cnosdb/logs/data_node.2001.log 2>&1 &
-
-sleep 1
-
-echo "*** start CnosDB server 8922......"
-nohup ./target/debug/cnosdb run --config ./config/config_8922.toml > /tmp/cnosdb/logs/data_node.3001.log 2>&1 &
-
-echo "\n*** CnosDB Data Server Cluster is running ......"
-
+echo "Press Ctrl+C to exit from this script ......"
+trap "echo 'Received Ctrl+C, stopping.'; exit" SIGINT
 sleep 1000000000

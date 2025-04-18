@@ -25,7 +25,7 @@ use tskv::{wal, EngineRef};
 use super::TskvEngineStorage;
 use crate::errors::{
     CommonSnafu, CoordinatorError, CoordinatorResult, LeaderIsWrongSnafu, MetaSnafu,
-    RaftNodeNotFoundSnafu, ReplicatSnafu, TskvSnafu,
+    RaftNodeNotFoundSnafu, ReplicationSnafu, TskvSnafu,
 };
 use crate::tskv_executor::{TskvAdminRequest, TskvLeaderExecutor};
 use crate::{get_replica_all_info, update_replication_set};
@@ -90,7 +90,7 @@ impl RaftNodesManager {
         let nodes_summary = manager
             .raft_state
             .all_nodes_summary()
-            .context(ReplicatSnafu)?;
+            .context(ReplicationSnafu)?;
         let mut nodes = manager.raft_nodes.write().await;
         let mut futures = Vec::with_capacity(nodes_summary.len());
         for summary in nodes_summary {
@@ -150,7 +150,7 @@ impl RaftNodesManager {
             .read()
             .await
             .get_node(replica.id)
-            .context(ReplicatSnafu)?
+            .context(ReplicationSnafu)?
         {
             return Ok(node);
         }
@@ -207,7 +207,7 @@ impl RaftNodesManager {
             .await
             .shutdown(group_id)
             .await
-            .context(ReplicatSnafu)?;
+            .context(ReplicationSnafu)?;
 
         Ok(())
     }
@@ -226,7 +226,7 @@ impl RaftNodesManager {
         }
 
         let mut nodes = self.raft_nodes.write().await;
-        if let Some(node) = nodes.get_node(replica.id).context(ReplicatSnafu)? {
+        if let Some(node) = nodes.get_node(replica.id).context(ReplicationSnafu)? {
             return Ok(node);
         }
 
@@ -261,7 +261,7 @@ impl RaftNodesManager {
         raft_node
             .raft_init(cluster_nodes)
             .await
-            .context(ReplicatSnafu)?;
+            .context(ReplicationSnafu)?;
         self.try_wait_leader_elected(raft_node.clone()).await;
 
         let register = self.register.clone();
@@ -349,7 +349,7 @@ impl RaftNodesManager {
         raft_node
             .raft_change_membership(members, true)
             .await
-            .context(ReplicatSnafu)?;
+            .context(ReplicationSnafu)?;
 
         for _ in 0..100 {
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
@@ -402,7 +402,7 @@ impl RaftNodesManager {
         raft_node
             .raft_change_membership(members, true)
             .await
-            .context(ReplicatSnafu)?;
+            .context(ReplicationSnafu)?;
 
         Ok(())
     }
@@ -424,7 +424,7 @@ impl RaftNodesManager {
         raft_node
             .raft_change_membership(members, false)
             .await
-            .context(ReplicatSnafu)?;
+            .context(ReplicationSnafu)?;
 
         for vnode in replica.vnodes.iter() {
             if vnode.node_id == self.node_id() {
@@ -440,7 +440,7 @@ impl RaftNodesManager {
             .await
             .shutdown(replica_id)
             .await
-            .context(ReplicatSnafu)?;
+            .context(ReplicationSnafu)?;
 
         update_replication_set(
             self.meta.clone(),
@@ -491,7 +491,7 @@ impl RaftNodesManager {
         raft_node
             .raft_add_learner(new_vnode_id.into(), raft_node_info)
             .await
-            .context(ReplicatSnafu)?;
+            .context(ReplicationSnafu)?;
 
         let mut members = BTreeSet::new();
         members.insert(new_vnode_id as RaftNodeId);
@@ -501,7 +501,7 @@ impl RaftNodesManager {
         raft_node
             .raft_change_membership(members, false)
             .await
-            .context(ReplicatSnafu)?;
+            .context(ReplicationSnafu)?;
 
         update_replication_set(
             self.meta.clone(),
@@ -539,7 +539,7 @@ impl RaftNodesManager {
             raft_node
                 .raft_change_membership(members, false)
                 .await
-                .context(ReplicatSnafu)?;
+                .context(ReplicationSnafu)?;
 
             if vnode.node_id == self.node_id() {
                 self.exec_drop_raft_node(tenant, db_name, vnode.id, replica.id)
@@ -593,13 +593,13 @@ impl RaftNodesManager {
             raft_logs,
         )
         .await
-        .context(ReplicatSnafu)?;
+        .context(ReplicationSnafu)?;
         let storage = Arc::new(storage);
 
         let repl_config = self.replication_config();
         let node = RaftNode::new(raft_id, info, storage, repl_config)
             .await
-            .context(ReplicatSnafu)?;
+            .context(ReplicationSnafu)?;
 
         let summary = RaftNodeSummary {
             raft_id,
@@ -610,7 +610,7 @@ impl RaftNodesManager {
 
         self.raft_state
             .set_node_summary(group_id, &summary)
-            .context(ReplicatSnafu)?;
+            .context(ReplicationSnafu)?;
 
         Ok(Arc::new(node))
     }
@@ -644,7 +644,7 @@ impl RaftNodesManager {
         let apply_id = self
             .raft_state
             .get_last_applied_log(group_id)
-            .context(ReplicatSnafu)?;
+            .context(ReplicationSnafu)?;
         info!(
             "open vnode({}-{}) last applied id: {:?}",
             group_id, vnode_id, apply_id
@@ -678,7 +678,7 @@ impl RaftNodesManager {
             snapshot_policy: SnapshotPolicy::Never,
             raft_logs_to_keep: self.config.cluster.raft_logs_to_keep,
             cluster_name: self.config.global.cluster_name.clone(),
-            lmdb_max_map_size: self.config.cluster.lmdb_max_map_size.try_into().unwrap(),
+            lmdb_max_map_size: self.config.cluster.lmdb_max_map_size,
             grpc_enable_gzip: self.config.service.grpc_enable_gzip,
             heartbeat_interval: self.config.cluster.heartbeat_interval.as_millis() as u64,
             send_append_entries_timeout: self.config.cluster.send_append_entries_timeout.as_millis()

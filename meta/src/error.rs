@@ -1,4 +1,4 @@
-use error_code::{ErrorCode, ErrorCoder};
+use derive_traits::{ErrorCode, ErrorCoder};
 use models::auth::privilege::TenantObjectPrivilege;
 use models::ModelError;
 use serde::{Deserialize, Serialize};

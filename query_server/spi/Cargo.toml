@@ -8,7 +8,7 @@ edition.workspace = true
 [dependencies]
 config = { path = "../../config" }
 coordinator = { path = "../../coordinator" }
-error_code = { path = "../../common/error_code" }
+derive_traits = { path = "../../common/derive_traits" }
 meta = { path = "../../meta" }
 models = { path = "../../common/models" }
 protocol_parser = { path = "../../common/protocol_parser" }

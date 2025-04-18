@@ -11,7 +11,7 @@ use tskv::reader::tag_scan::LocalTskvTagScanStream;
 use tskv::reader::QueryOption;
 use tskv::EngineRef;
 
-use crate::errors::{CommonSnafu, CoordinatorError, CoordinatorResult, ModelsSnafu, TskvSnafu};
+use crate::errors::{CommonSnafu, CoordinatorError, CoordinatorResult, ModelSnafu, TskvSnafu};
 use crate::reader::deserialize::TonicRecordBatchDecoder;
 use crate::reader::{VnodeOpenFuture, VnodeOpener};
 use crate::SendableCoordinatorRecordBatchStream;
@@ -77,7 +77,7 @@ impl VnodeOpener for TemporaryTagScanOpener {
                     let vnode_ids = vec![vnode_id];
                     let req = option
                         .to_query_record_batch_request(vnode_ids)
-                        .context(ModelsSnafu)?;
+                        .context(ModelSnafu)?;
                     tonic::Request::new(req)
                 };
 

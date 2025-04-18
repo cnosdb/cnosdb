@@ -27,7 +27,7 @@ fn run_case_with_tls(mut e2e_context: E2eContext, case: fn(_: PathBuf, _: &mut E
         test_dir.display(),
     );
 
-    let tls_dir = workspace_dir.join("config").join("tls");
+    let tls_dir = workspace_dir.join("config").join("resource").join("tls");
     let crt_path = tls_dir.join("server.crt");
     let key_path = tls_dir.join("server.key");
 
@@ -258,7 +258,11 @@ fn test_cli_connection() {
     run_case_with_tls(ctx, case);
 
     fn case(workspace_dir: PathBuf, executor: &mut E2eExecutor) {
-        let tls_path = workspace_dir.join("config").join("tls").join("ca.crt");
+        let tls_path = workspace_dir
+            .join("config")
+            .join("resource")
+            .join("tls")
+            .join("ca.crt");
         let port = executor.cluster_definition().data_cluster_def[0]
             .http_host_port
             .port();

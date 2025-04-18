@@ -4,7 +4,7 @@ mod tests {
     use std::sync::Arc;
     use std::time::{Duration, Instant};
 
-    use config::tskv::MetaConfig;
+    use config::tskv::{Config, MetaConfig};
     use memory_pool::GreedyMemoryPool;
     use meta::model::meta_admin::AdminMeta;
     use metrics::metric_register::MetricsRegister;
@@ -30,9 +30,9 @@ mod tests {
     /// If the given runtime is none, get_tskv will create a new runtime and
     /// put into the return value, or else the given runtime will be returned.
 
-    fn get_config(dir: impl AsRef<Path>) -> config::tskv::Config {
+    fn get_config(dir: impl AsRef<Path>) -> Config {
         let dir = dir.as_ref();
-        let mut global_config = config::tskv::get_config_for_test();
+        let mut global_config = Config::for_test();
         global_config.wal.path = dir.join("wal").to_str().unwrap().to_string();
         global_config.storage.path = dir.to_str().unwrap().to_string();
 
@@ -105,6 +105,7 @@ mod tests {
             }
         }
     }
+
     #[tokio::test]
     #[serial]
     async fn test_kvcore_single_meta_all() {

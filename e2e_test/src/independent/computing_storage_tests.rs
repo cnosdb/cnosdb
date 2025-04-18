@@ -7,7 +7,7 @@ use crate::{cluster_def, E2eError};
 //auto test about issue 669 799 842
 #[test]
 fn separated_start_test() {
-    let mut ctx = E2eContext::new("computing_stroage_tests", "separated_start_test");
+    let mut ctx = E2eContext::new("computing_storage_tests", "separated_start_test");
     let mut executor = ctx.build_executor(cluster_def::one_meta_two_data_separated());
     let http_addr_1 = executor.cluster_definition().data_cluster_def[0].http_host_port;
     let http_addr_2 = executor.cluster_definition().data_cluster_def[1].http_host_port;
@@ -74,7 +74,7 @@ fn separated_start_test() {
 //auto test about issue 923
 #[test]
 fn meta_primary_crash_test() {
-    let mut ctx = E2eContext::new("computing_stroage_tests", "meta_primary_crash_test");
+    let mut ctx = E2eContext::new("computing_storage_tests", "meta_primary_crash_test");
     let mut executor = ctx.build_executor(cluster_def::three_meta_two_data_bundled());
     let http_addr_2 = executor.cluster_definition().data_cluster_def[1].http_host_port;
 

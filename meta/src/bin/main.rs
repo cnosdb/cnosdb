@@ -3,7 +3,7 @@
 use std::process;
 
 use clap::{Parser, Subcommand};
-use config::VERSION;
+use config::meta::Opt;
 use meta::meta_cluster_command::add_node::add_node;
 use meta::meta_cluster_command::dump::dump;
 use meta::meta_cluster_command::dumpsql::dumpsql;
@@ -16,7 +16,7 @@ use trace::error;
 use trace::global_logging::init_global_logging;
 
 #[derive(Debug, Parser)]
-#[command(name = "cnosdb-meta", version = &VERSION[..])]
+#[command(name = "cnosdb-meta", version = version::workspace_version())]
 struct Cli {
     /// Subcommands
     #[command(subcommand)]
@@ -146,7 +146,7 @@ async fn main() {
         None => {
             // use --config to start cnosdb meta
             if let Some(config_path) = cli.config {
-                let mut options = match config::meta::get_opt(Some(config_path)) {
+                let mut options = match Opt::new(Some(config_path)) {
                     Ok(opt) => opt,
                     Err(e) => {
                         eprintln!("Error loading config: {}", e);

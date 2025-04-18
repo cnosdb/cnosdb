@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
-use macros::EnvKeys;
+use derive_traits::Keys;
 use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
 use crate::codec::bytes_num;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, EnvKeys)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Keys)]
 pub struct WalConfig {
     #[serde(default = "WalConfig::default_path")]
     pub path: String,
@@ -26,8 +26,7 @@ pub struct WalConfig {
 
 impl WalConfig {
     fn default_path() -> String {
-        let path = std::path::Path::new("/tmp/cnosdb/cnosdb_data").join("wal");
-        path.to_string_lossy().to_string()
+        "/var/lib/cnosdb/wal".to_string()
     }
 
     fn default_wal_req_channel_cap() -> usize {

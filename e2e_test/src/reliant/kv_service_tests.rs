@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::path::PathBuf;
+
 use protos::kv_service::tskv_service_client::TskvServiceClient;
 use protos::kv_service::*;
 use protos::models::*;
@@ -7,8 +9,15 @@ use protos::{self};
 use tonic::transport::{Certificate, Channel, ClientTlsConfig};
 use tonic::Request;
 
+use crate::utils::CRATE_DIR;
+
 async fn get_tls_config() -> ClientTlsConfig {
-    let pem = tokio::fs::read("../config/tls/ca.crt").await.unwrap();
+    let create_dir = PathBuf::from(CRATE_DIR);
+    let pem_path = create_dir
+        .parent()
+        .unwrap_or(&create_dir)
+        .join("config/resource/tls/ca.crt");
+    let pem = tokio::fs::read(pem_path).await.unwrap();
     let ca = Certificate::from_pem(pem);
     ClientTlsConfig::new()
         .ca_certificate(ca)

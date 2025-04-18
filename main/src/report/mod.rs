@@ -6,8 +6,8 @@ use serde::Serialize;
 use tokio::task::JoinHandle;
 use trace::debug;
 
+use crate::server;
 use crate::spi::service::Service;
-use crate::{server, VERSION};
 
 async fn get_country_code_and_regin_name() -> (String, String) {
     let client = reqwest::Client::new();
@@ -93,7 +93,7 @@ impl<'a> ReportMessage<'a> {
             start_time,
             os_type: &OS_TYPE,
             arch: std::env::consts::ARCH,
-            version: VERSION.as_ref(),
+            version: version::workspace_version(),
             country_code,
             regin_name,
         }

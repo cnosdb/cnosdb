@@ -10,17 +10,17 @@ mod storage_config;
 mod trace;
 mod wal_config;
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 pub use cache_config::*;
 pub use cluster_config::*;
 pub use deployment_config::*;
+use derive_traits::{FieldKeys as _, Keys};
 use figment::providers::{Env, Format, Toml};
 use figment::value::Uncased;
 use figment::Figment;
 pub use global_config::*;
-use macros::EnvKeys;
 pub use meta_config::*;
 pub use query_config::*;
 pub use security_config::*;
@@ -32,9 +32,8 @@ pub use wal_config::*;
 
 use crate::check::{CheckConfig, CheckConfigResult};
 use crate::common::LogConfig;
-use crate::EnvKeys as _;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default, EnvKeys)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, Keys)]
 pub struct Config {
     /// Global configs.
     #[serde(default = "Default::default")]
@@ -86,54 +85,46 @@ pub struct Config {
 }
 
 impl Config {
+    pub fn new<P: AsRef<Path>>(path: Option<P>) -> Result<Self, figment::Error> {
+        let mut figment = Figment::new();
+        // Merge toml config file.
+        if let Some(path) = path {
+            figment = figment.merge(Toml::file(path.as_ref()));
+        }
+        // Merge environment variables with prefix `CNOSDB_`.
+        let env_key_map = Self::env_keys();
+        figment = figment.merge(Env::prefixed("CNOSDB_").map(move |env| {
+            let env_str = env.to_string();
+            match env_key_map.get(&format!("CNOSDB_{}", env_str)) {
+                Some(key) => Uncased::from_owned(key.clone()),
+                None => Uncased::new(env_str.clone()),
+            }
+        }));
+        figment.extract()
+    }
+
     pub fn to_string_pretty(&self) -> String {
         toml::to_string_pretty(self).unwrap_or_else(|_| "Failed to stringify Config".to_string())
     }
-}
 
-pub fn get_config(path: impl AsRef<Path>) -> Result<Config, figment::Error> {
-    let env_keys = Config::env_keys();
-    let env_key_map = env_keys
-        .into_iter()
-        .map(|key| (format!("CNOSDB_{}", key.replace('.', "_")), key))
-        .collect::<HashMap<String, String>>();
+    /// Map env-keys to field-keys.
+    pub fn env_keys() -> BTreeMap<String, String> {
+        Config::field_keys()
+            .into_iter()
+            .map(|key| (format!("CNOSDB_{}", key.replace('.', "_")), key))
+            .collect()
+    }
 
-    // debug
-    // println!("Environment Variable to Field Mapping:");
-    // for (env_var, field_name) in &env_key_map {
-    //     let value = std::env::var(env_var).unwrap_or_else(|_| "Not Set".to_string());
-    //     println!(
-    //         "Environment Variable: {}, Field Name: {}, Value: {}",
-    //         env_var, field_name, value
-    //     );
-    // }
-
-    let figment =
-        Figment::new()
-            .merge(Toml::file(path.as_ref()))
-            .merge(Env::prefixed("CNOSDB_").map(move |env| {
-                let env_str = env.to_string();
-                match env_key_map.get(&format!("CNOSDB_{}", env_str)) {
-                    Some(key) => Uncased::from_owned(key.clone()),
-                    None => Uncased::new(env_str.clone()),
-                }
-            }));
-    let config: Config = figment.extract()?;
-    Ok(config)
-}
-
-pub fn get_config_for_test() -> Config {
-    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    path = path
-        .parent()
-        .unwrap()
-        .join("config")
-        .join("config_8902.toml");
-    get_config(path).unwrap()
+    #[cfg(feature = "testing")]
+    pub fn for_test() -> Config {
+        let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let config_path = crate_dir.join("resource").join("config_8902.toml");
+        Config::new(Some(config_path)).unwrap()
+    }
 }
 
 pub fn check_config(path: impl AsRef<Path>, show_warnings: bool) {
-    match get_config(path) {
+    match Config::new(Some(path)) {
         Ok(cfg) => {
             let mut check_results = CheckConfigResult::default();
 
@@ -185,9 +176,9 @@ pub fn check_config(path: impl AsRef<Path>, show_warnings: bool) {
 mod test {
     use std::io::Write;
 
-    use super::get_config_for_test;
-    use crate::tskv::{get_config, Config};
-    use crate::EnvKeys;
+    use derive_traits::FieldKeys as _;
+
+    use crate::tskv::Config;
 
     #[test]
     fn test_write_read() {
@@ -204,14 +195,15 @@ mod test {
             .open(cfg_path)
             .unwrap();
         let _ = cfg_file.write(cfg.to_string_pretty().as_bytes()).unwrap();
-        let cfg_2 = get_config(cfg_path).unwrap();
+        let cfg_2 = Config::new(Some(cfg_path)).unwrap();
 
         assert_eq!(cfg.to_string_pretty(), cfg_2.to_string_pretty());
     }
 
+    #[cfg(feature = "testing")]
     #[test]
     fn test_get_test_config() {
-        let _ = get_config_for_test();
+        let _ = Config::for_test();
     }
 
     #[test]
@@ -234,7 +226,7 @@ mod test {
 
     #[test]
     fn test_env_key() {
-        let keys = Config::env_keys();
+        let keys = Config::field_keys();
         dbg!(keys);
     }
 }

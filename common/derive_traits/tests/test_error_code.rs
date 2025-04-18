@@ -1,6 +1,5 @@
+use derive_traits::{ErrorCode, ErrorCoder};
 use snafu::Snafu;
-
-use crate::{ErrorCode, ErrorCoder};
 
 #[derive(ErrorCoder, Snafu, Debug)]
 #[error_code(mod_code = "00")]

@@ -12,6 +12,7 @@ use std::time::Instant;
 use config::tskv::TLSConfig;
 use coordinator::service::CoordinatorRef;
 use datafusion::arrow::array::{Array, StringArray};
+use derive_traits::error_code::UnknownCodeWithMessage;
 use futures::TryStreamExt;
 use http_protocol::encoding::Encoding;
 use http_protocol::header::{
@@ -29,7 +30,6 @@ use metrics::count::U64Counter;
 use metrics::metric_register::MetricsRegister;
 use metrics::prom_reporter::PromReporter;
 use models::auth::privilege::{DatabasePrivilege, Privilege, TenantObjectPrivilege};
-use models::error_code::UnknownCodeWithMessage;
 use models::oid::{Identifier, Oid};
 use models::schema::{DEFAULT_CATALOG, DEFAULT_DATABASE};
 use models::utils::now_timestamp_nanos;
@@ -76,9 +76,9 @@ use crate::opentelemetry::otlp_to_jaeger::{
     OPERATION_NAME_COL_NAME, PARENT_SPAN_ID_COL_NAME, SERVICE_NAME_COL_NAME, SPAN_ID_COL_NAME,
     SPAN_KIND_COL_NAME, STATUS_CODE_COL_NAME, TRACE_ID_COL_NAME, TRACE_STATE_COL_NAME,
 };
+use crate::server;
 use crate::server::ServiceHandle;
 use crate::spi::service::Service;
-use crate::{server, VERSION};
 
 pub enum ServerMode {
     Store,
@@ -309,7 +309,7 @@ impl HttpService {
             .map(|_, metrics: Arc<HttpMetrics>, addr: String| {
                 let start = Instant::now();
                 let mut resp = HashMap::new();
-                resp.insert("version", VERSION.as_str());
+                resp.insert("version", version::workspace_version());
                 resp.insert("status", "healthy");
                 let keys_values_size: usize = resp
                     .iter()

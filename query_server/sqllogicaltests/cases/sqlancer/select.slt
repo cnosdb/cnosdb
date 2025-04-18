@@ -1337,7 +1337,7 @@ SELECT ALL m2.f0, m2.f1, m2.t0 FROM m2;
 ----
 false "f1" "t0"
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: TskvError: Arrow: Cast error: Cannot cast string 'f1' to value of Int64 type", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: Tskv: Arrow: Cast error: Cannot cast string 'f1' to value of Int64 type", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
 SELECT ALL m2.f0, m2.f1, m2.t0 FROM m2 WHERE ((((((((m2.f1)||(1052801116)))||(((m2.f1)||(m2.f0)))))||(CAST(CAST(m2.f1 AS STRING) AS BIGINT))))LIKE(CAST((CAST(FALSE AS BOOLEAN)) IS UNKNOWN AS STRING)));
 
 query T rowsort
@@ -1406,7 +1406,7 @@ SELECT m2.f0 FROM m2 ORDER BY m2.t0 ASC;
 ----
 false
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: TskvError: Arrow: Cast error: Cannot cast value 'f1' to value of Boolean type", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: Tskv: Arrow: Cast error: Cannot cast value 'f1' to value of Boolean type", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
 SELECT m2.f0 FROM m2 WHERE (((CAST(CAST(m2.f1 AS STRING) AS BOOLEAN)) IS FALSE)AND((CAST(m2.f0 AS BOOLEAN)) IS UNKNOWN));
 
 # SELECT ALL m0.f0, m0.f1, m4.f0, m4.t1, m4.t2 FROM m0 LEFT OUTER JOIN m4 ON CAST(+ (((((m4.f0)%(m4.f0)))-(- (m4.f0)))) AS BOOLEAN);
@@ -2055,7 +2055,7 @@ SELECT ALL BOOL_AND((0.6217647053258654) IN (0.30980467236273324)) FROM m3;
 false
 
 # SELECT ALL m4.t0, m4.t2 FROM m4;
-query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: TskvError: Arrow: Cast error: Cannot cast value '11' to value of Boolean type", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: Tskv: Arrow: Cast error: Cannot cast value '11' to value of Boolean type", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
 SELECT ALL m4.t0, m4.t2 FROM m4 WHERE CAST(((CAST(CAST(TRUE AS BIGINT) AS STRING))||(((CAST(0.47117722516469007 AS STRING))>(CAST(m4.f0 AS STRING))))) AS BOOLEAN) UNION ALL SELECT m4.t0, m4.t2 FROM m4 WHERE NOT (CAST(((CAST(CAST(TRUE AS BIGINT) AS STRING))||(((CAST(0.47117722516469007 AS STRING))>(CAST(m4.f0 AS STRING))))) AS BOOLEAN)) UNION ALL SELECT ALL m4.t0, m4.t2 FROM m4 WHERE (CAST(((CAST(CAST(TRUE AS BIGINT) AS STRING))||(((CAST(0.47117722516469007 AS STRING))>(CAST(m4.f0 AS STRING))))) AS BOOLEAN)) IS NULL;
 
 # SELECT ALL m3.f1, m0.f1 FROM m3 LEFT OUTER JOIN m0 ON CAST(m0.t0 AS BOOLEAN);
@@ -3067,10 +3067,10 @@ SELECT m2.f1, m2.t0, m2.f0 FROM m2 WHERE ((CAST(((2147222458)%(-1798940471)) AS 
 query error Arrow error: Io error: Status \{ code: Internal, message: "Build logical plan: Datafusion: Error during planning: Projections require unique expression names but the expression \\"m0\.f1\\" at position 1 and \\"m0\.f1\\" at position 2 have the same name\. Consider aliasing \(\\"AS\\"\) one of them\.", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
 SELECT ALL m0.f0 FROM m0 ORDER BY m0.f1 ASC, m0.f1 ASC;
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: TskvError: Arrow: Cast error: Cannot cast value 'ࢀ\+h3356161281' to value of Boolean type", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: Tskv: Arrow: Cast error: Cannot cast value 'ࢀ\+h3356161281' to value of Boolean type", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
 SELECT ALL m0.f0 FROM m0 WHERE (CAST((((('ࢀ+h')||('335616128')))||((m0.t0) NOT IN ('', 'A6<k['''))) AS BOOLEAN)) IS TRUE;
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: TskvError: Arrow: Cast error: Cannot cast value 'ࢀ\+h3356161281' to value of Boolean type", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: Tskv: Arrow: Cast error: Cannot cast value 'ࢀ\+h3356161281' to value of Boolean type", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
 SELECT m0.f0 FROM m0 WHERE NOT ((CAST((((('ࢀ+h')||('335616128')))||((m0.t0) NOT IN ('', 'A6<k['''))) AS BOOLEAN)) IS TRUE);
 
 query T rowsort
@@ -3122,7 +3122,7 @@ SELECT ALL m2.f1 FROM m2;
 ----
 "f1"
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: TskvError: Arrow: Divide by zero error", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: Tskv: Arrow: Divide by zero error", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
 SELECT ALL m2.f1 FROM m2 WHERE (((- (817932306))%(CAST(m2.f0 AS BIGINT)))) NOT IN (694810662, -319337649, -1259189301);
 
 query T rowsort
@@ -3177,7 +3177,7 @@ SELECT ALL COUNT(+ (CAST(0.5249418544831504 AS BIGINT))) FROM m2;
 ----
 1
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: TskvError: Arrow: Cast error: Cannot cast string 'f10' to value of Int64 type", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: Tskv: Arrow: Cast error: Cannot cast string 'f10' to value of Int64 type", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
 SELECT SUM(agg0) FROM (SELECT ALL COUNT(+ (CAST(0.5249418544831504 AS BIGINT)))  as agg0 FROM m2 WHERE CAST(((CAST(((m2.f1)||(m2.f0)) AS BIGINT))*(((+ (-670907606))%(- (1202595187))))) AS BOOLEAN) UNION ALL SELECT ALL COUNT(+ (CAST(0.5249418544831504 AS BIGINT)))  as agg0 FROM m2 WHERE NOT (CAST(((CAST(((m2.f1)||(m2.f0)) AS BIGINT))*(((+ (-670907606))%(- (1202595187))))) AS BOOLEAN)) UNION ALL SELECT ALL COUNT(+ (CAST(0.5249418544831504 AS BIGINT)))  as agg0 FROM m2 WHERE (CAST(((CAST(((m2.f1)||(m2.f0)) AS BIGINT))*(((+ (-670907606))%(- (1202595187))))) AS BOOLEAN)) IS NULL) as asdf;
 
 # SELECT m3.f1, m4.t1, m4.t2, m3.f0, m3.t0, m4.f0, m0.f1, m0.t0, m3.t1, m4.t0, m0.f0 FROM m0, m4 RIGHT OUTER JOIN m3 ON (m0.f0) IS UNKNOWN;
@@ -3281,7 +3281,7 @@ SELECT ALL * FROM m3;
 query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Arrow: Divide by zero error", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
 SELECT * FROM m3 WHERE NOT (((((((((((((m3.f0)%(m3.f0)))<=(+ (m3.f0))))OR(CAST(NOT (m3.f1) AS BOOLEAN))))OR(NOT (m3.f1))))AND((((m3.t1)LIKE(m3.t1))) IS TRUE)))OR(NOT ((m3.f1) NOT IN (TRUE, TRUE)))));
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: TskvError: Arrow: Divide by zero error", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: Tskv: Arrow: Divide by zero error", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
 SELECT * FROM m3 WHERE NOT (NOT (((((((((((((m3.f0)%(m3.f0)))<=(+ (m3.f0))))OR(CAST(NOT (m3.f1) AS BOOLEAN))))OR(NOT (m3.f1))))AND((((m3.t1)LIKE(m3.t1))) IS TRUE)))OR(NOT ((m3.f1) NOT IN (TRUE, TRUE))))));
 
 query T rowsort
@@ -3538,7 +3538,7 @@ SELECT ALL m1.f0, m1.t0 FROM m1;
 "NULL" "NULL"
 "f0" "t0"
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: TskvError: Arrow: Cast error: Cannot cast string 'f0' to value of Int64 type", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: Tskv: Arrow: Cast error: Cannot cast string 'f0' to value of Int64 type", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
 SELECT m1.f0, m1.t0 FROM m1 WHERE (CAST(((CAST(-324786405 AS STRING))||(CAST(m1.f0 AS BIGINT))) AS BOOLEAN)) IS UNKNOWN UNION ALL SELECT m1.f0, m1.t0 FROM m1 WHERE NOT ((CAST(((CAST(-324786405 AS STRING))||(CAST(m1.f0 AS BIGINT))) AS BOOLEAN)) IS UNKNOWN) UNION ALL SELECT m1.f0, m1.t0 FROM m1 WHERE ((CAST(((CAST(-324786405 AS STRING))||(CAST(m1.f0 AS BIGINT))) AS BOOLEAN)) IS UNKNOWN) IS NULL;
 
 # SELECT ALL m4.t2, m3.t1, m2.f0, m4.t1, m1.f0, m3.f0 FROM m2, m1 RIGHT OUTER JOIN m3 ON (0.8819521718449512) IN (0.6798660489437052) LEFT OUTER JOIN m4 ON (0.0070604465630143) NOT IN (0.8303409423330035, 0.8276017401363478);
@@ -4075,7 +4075,7 @@ SELECT ALL * FROM m1 WHERE ((+ (543535954)) NOT IN (-1930876602)) IS NULL UNION 
 2207-04-18T13:56:55.539246350 "NULL" "NULL" false
 
 # SELECT ALL m2.t0 FROM m2;
-query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: TskvError: Arrow: Cast error: Cannot cast value 'f10' to value of Boolean type", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: Tskv: Arrow: Cast error: Cannot cast value 'f10' to value of Boolean type", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
 SELECT ALL m2.t0 FROM m2 WHERE NOT (NOT (CAST(((m2.f1)||(m2.f0)) AS BOOLEAN))) UNION ALL SELECT m2.t0 FROM m2 WHERE NOT (NOT (NOT (CAST(((m2.f1)||(m2.f0)) AS BOOLEAN)))) UNION ALL SELECT ALL m2.t0 FROM m2 WHERE (NOT (NOT (CAST(((m2.f1)||(m2.f0)) AS BOOLEAN)))) IS NULL;
 
 # SELECT m2.t0 FROM m1 FULL OUTER JOIN m2 ON CAST(0.9589519009206248 AS BOOLEAN);
@@ -4403,7 +4403,7 @@ SELECT ALL m2.f0 FROM m2 ORDER BY m2.f1 DESC;
 ----
 false
 
-query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: TskvError: Arrow: Cast error: Cannot cast value 'f118763465060' to value of Boolean type", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: Tskv: Arrow: Cast error: Cannot cast value 'f118763465060' to value of Boolean type", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
 SELECT ALL m2.f0 FROM m2 WHERE CAST(CAST(((((m2.f1)||(1876346506)))||(CAST(m2.f0 AS BIGINT))) AS STRING) AS BOOLEAN);
 
 # SELECT ALL m4.t2, m3.t0, m4.t1, m2.f0, m1.t0, m2.t0, m3.t1, m0.f0, m0.f1, m0.t0, m3.f1, m4.t0, m1.f1, m3.f0 FROM m4, m1, m0 RIGHT OUTER JOIN m2 ON m2.f0 RIGHT OUTER JOIN m3 ON (('{[]') IN ('L|', '棿S7tI', '	*')) IN (TRUE, FALSE);
@@ -4770,7 +4770,7 @@ SELECT m1.f0, m1.f1, m1.t0 FROM m1 WHERE (NOT (CAST(CAST(m1.f1 AS BIGINT) AS BOO
 "f0" false "t0"
 
 # SELECT m1.t0 FROM m1;
-query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: TskvError: Arrow: Cast error: Cannot cast value 'f0' to value of Boolean type", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
+query error Arrow error: Io error: Status \{ code: Internal, message: "Could not chunk result: Coordinator: Tskv: Arrow: Cast error: Cannot cast value 'f0' to value of Boolean type", metadata: MetadataMap \{ headers: \{"content\-type": "application/grpc", "date": "[^"]+", "content\-length": "0"\} \}, source: None \}
 SELECT ALL m1.t0 FROM m1 WHERE CAST(m1.f0 AS BOOLEAN) UNION ALL SELECT m1.t0 FROM m1 WHERE NOT (CAST(m1.f0 AS BOOLEAN)) UNION ALL SELECT ALL m1.t0 FROM m1 WHERE (CAST(m1.f0 AS BOOLEAN)) IS NULL;
 
 query T rowsort

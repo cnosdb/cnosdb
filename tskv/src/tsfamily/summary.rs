@@ -391,7 +391,7 @@ mod test {
     use std::path::PathBuf;
     use std::sync::Arc;
 
-    use config::tskv::MetaConfig;
+    use config::tskv::{Config, MetaConfig};
     use memory_pool::GreedyMemoryPool;
     use meta::model::meta_admin::AdminMeta;
     use metrics::metric_register::MetricsRegister;
@@ -433,7 +433,7 @@ mod test {
     }
 
     fn new_tskv(base_dir: String) -> TsKv {
-        let mut config = config::tskv::get_config_for_test();
+        let mut config = Config::for_test();
         config.storage.path = base_dir;
 
         let runtime = Arc::new(

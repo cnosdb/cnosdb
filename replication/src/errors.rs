@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use models::error_code::{ErrorCode, ErrorCoder};
+use derive_traits::{ErrorCode, ErrorCoder};
 use models::meta_data::ReplicationSetId;
 use protos::PointsError;
 use snafu::{Backtrace, Location, Snafu};
@@ -9,7 +9,7 @@ use snafu::{Backtrace, Location, Snafu};
 #[snafu(visibility(pub))]
 #[error_code(mod_code = "06")]
 pub enum ReplicationError {
-    #[snafu(display("stroage operation error: {}", msg))]
+    #[snafu(display("storage operation error: {}", msg))]
     #[error_code(code = 1)]
     StorageErr {
         msg: String,

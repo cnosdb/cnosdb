@@ -4,7 +4,7 @@ cluster_name = "cluster_xxx"
 raft_node_host = "127.0.0.1"
 listen_port = 8921
 grpc_enable_gzip = false
-data_path = "/tmp/cnosdb/meta"
+data_path = "/tmp/cnosdb/meta/3"
 
 [cluster]
 lmdb_max_map_size = 1024000000
@@ -20,7 +20,7 @@ system_database_replica = 1
 
 [log]
 level = "info"
-path = "/tmp/cnosdb/logs"
+path = "/tmp/cnosdb/meta/3/logs"
 
 [heartbeat]
 heartbeat_recheck_interval = 30
