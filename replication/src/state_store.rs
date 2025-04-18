@@ -2,9 +2,8 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
-use heed::flags::Flags;
 use heed::types::*;
-use heed::{Database, Env};
+use heed::{Database, Env, EnvFlags};
 use openraft::{LogId, StoredMembership, Vote};
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
@@ -69,7 +68,7 @@ pub struct RaftNodeSummary {
 }
 pub struct StateStorage {
     env: Env,
-    db: Database<Str, OwnedSlice<u8>>,
+    db: Database<Str, Bytes>,
 }
 
 impl StateStorage {
@@ -78,16 +77,22 @@ impl StateStorage {
 
         let mut env_builder = heed::EnvOpenOptions::new();
         unsafe {
-            env_builder.flag(Flags::MdbNoSync);
+            env_builder.flags(EnvFlags::NO_SYNC);
         }
 
-        let env = env_builder
-            .map_size(size)
-            .max_dbs(1)
-            .open(path)
+        let env = unsafe {
+            env_builder
+                .map_size(size)
+                .max_dbs(1)
+                .open(path)
+                .context(HeedSnafu)?
+        };
+        let mut txn = env.write_txn().context(HeedSnafu)?;
+        let db: Database<Str, Bytes> = env
+            .create_database(&mut txn, Some("data"))
             .context(HeedSnafu)?;
-        let db: Database<Str, OwnedSlice<u8>> =
-            env.create_database(Some("data")).context(HeedSnafu)?;
+        txn.commit().context(HeedSnafu)?;
+
         let storage = Self { env, db };
 
         Ok(storage)
@@ -110,7 +115,7 @@ impl StateStorage {
         for<'a> T: Deserialize<'a>,
     {
         if let Some(data) = self.db.get(reader, key).context(HeedSnafu)? {
-            let val = serde_json::from_slice(&data)
+            let val = serde_json::from_slice(data)
                 .map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())?;
 
             Ok(Some(val))
@@ -204,7 +209,7 @@ impl StateStorage {
             .prefix_iter(&reader, &Key::membership_list_prefix(group_id))
             .context(HeedSnafu)?;
         while let Some((key, data)) = iter.next().transpose().context(HeedSnafu)? {
-            let value = serde_json::from_slice(&data)
+            let value = serde_json::from_slice(data)
                 .map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())?;
             memberships.insert(key.to_string(), value);
         }
@@ -386,7 +391,7 @@ impl StateStorage {
             .context(HeedSnafu)?;
         for pair in iter {
             let (_, data) = pair.context(HeedSnafu)?;
-            let summary: RaftNodeSummary = serde_json::from_slice(&data)
+            let summary: RaftNodeSummary = serde_json::from_slice(data)
                 .map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())?;
             nodes_summary.push(summary);
         }
@@ -419,7 +424,7 @@ impl StateStorage {
         let iter = self.db.iter(&reader).unwrap();
         for pair in iter {
             let (key, val) = pair.unwrap();
-            println!("{}: {}", key, String::from_utf8_lossy(&val));
+            println!("{}: {}", key, String::from_utf8_lossy(val));
         }
     }
 }
@@ -429,6 +434,7 @@ mod test {
     use std::fs;
     use std::path::Path;
 
+    use heed::byteorder::BE;
     use heed::types::*;
     use heed::Database;
 
@@ -447,14 +453,16 @@ mod test {
     fn test_heed() {
         let path = "/tmp/cnosdb/test_heed";
         fs::create_dir_all(Path::new(&path)).unwrap();
-        let env = heed::EnvOpenOptions::new()
-            .map_size(1024 * 1024 * 1024)
-            .max_dbs(128)
-            .open(path)
-            .unwrap();
+        let env = unsafe {
+            heed::EnvOpenOptions::new()
+                .map_size(1024 * 1024 * 1024)
+                .max_dbs(128)
+                .open(path)
+                .unwrap()
+        };
 
-        let tdb: Database<OwnedType<u64>, Str> = env.create_database(Some("test")).unwrap();
         let mut writer = env.write_txn().unwrap();
+        let tdb: Database<U64<BE>, Str> = env.create_database(&mut writer, Some("test")).unwrap();
         tdb.put(&mut writer, &100, "v100").unwrap();
         tdb.put(&mut writer, &101, "v101").unwrap();
         tdb.put(&mut writer, &102, "v102").unwrap();
