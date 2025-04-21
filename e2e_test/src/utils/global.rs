@@ -1,7 +1,10 @@
+#![allow(unused)]
+
 use std::collections::{BTreeMap, HashSet};
 use std::io::{Error as IoError, ErrorKind as IoErrorKind, Result as IoResult};
 use std::net::{Ipv4Addr, SocketAddrV4, TcpListener};
 use std::ops::RangeInclusive;
+use std::path::PathBuf;
 use std::sync::{Arc, Once};
 
 use parking_lot::Mutex;
@@ -9,16 +12,22 @@ use tokio::runtime::Runtime;
 
 use crate::case::E2eExecutor;
 use crate::cluster_def::CnosdbClusterDefinition;
+use crate::utils::{cargo_build_cnosdb_data, cargo_build_cnosdb_meta, get_workspace_dir};
 
 pub const LOOPBACK_IP: Ipv4Addr = Ipv4Addr::new(127, 0, 0, 1);
 pub const WILDCARD_IP: Ipv4Addr = Ipv4Addr::new(0_u8, 0_u8, 0_u8, 0_u8);
 pub const MIN_PORT: u16 = 17000;
 pub const MAX_PORT: u16 = 18000;
 
+/// The base directory for e2e test.
+/// The test directory will be created under this directory: '{E2E_TEST_BASE_DIR}/{case_group}/{case_name}'.
+pub const E2E_TEST_BASE_DIR: &str = "/tmp/e2e_test/";
+
 /// Context for an e2e test case.
 pub struct E2eContext {
     case_group: Arc<String>,
     case_name: Arc<String>,
+    test_dir: Arc<PathBuf>,
     global_context: Arc<E2eGlobalContext>,
 }
 
@@ -29,6 +38,10 @@ impl E2eContext {
         static INIT_TEST: Once = Once::new();
         INIT_TEST.call_once(|| unsafe {
             GLOBAL_CONTEXT = Some(Arc::new(E2eGlobalContext::default()));
+
+            let workspace_dir = get_workspace_dir();
+            cargo_build_cnosdb_meta(&workspace_dir);
+            cargo_build_cnosdb_data(&workspace_dir);
         });
 
         let global_context = unsafe {
@@ -37,14 +50,32 @@ impl E2eContext {
                 .expect("initialized by INIT_TEST.call_once")
         };
 
+        let case_group = Arc::new(case_group.to_string());
+        let case_name = Arc::new(case_name.to_string());
+        let test_dir = Arc::new(
+            PathBuf::from(E2E_TEST_BASE_DIR)
+                .join(case_group.as_ref())
+                .join(case_name.as_ref()),
+        );
+
+        // Initialize the test directory, remove the old one if exists.
+        if test_dir.exists() {
+            println!("- Removing test directory: {}", test_dir.display());
+            let _ = std::fs::remove_dir_all(test_dir.as_ref());
+        }
+        println!("- Creating test directory: {}", test_dir.display());
+        std::fs::create_dir_all(test_dir.as_ref())
+            .map_err(|e| format!("Create test dir '{}' failed: {e}", test_dir.display()))
+            .unwrap();
+
         Self {
-            case_group: Arc::new(case_group.to_string()),
-            case_name: Arc::new(case_name.to_string()),
+            case_group,
+            case_name,
+            test_dir,
             global_context,
         }
     }
 
-    #[allow(unused)]
     pub fn next_wildcard_addr(&self) -> IoResult<SocketAddrV4> {
         self.global_context.port_picker.lock().next_wildcard_addr()
     }
@@ -87,6 +118,10 @@ impl E2eContext {
         self.case_name.clone()
     }
 
+    pub fn test_dir(&self) -> Arc<PathBuf> {
+        self.test_dir.clone()
+    }
+
     pub fn runtime(&self) -> Arc<Runtime> {
         self.global_context.runtime.clone()
     }
@@ -109,6 +144,7 @@ impl Default for E2eGlobalContext {
             .enable_all()
             .worker_threads(4)
             .build()
+            .map_err(|e| format!("Failed to build runtime: {e}"))
             .unwrap();
         Self {
             runtime: Arc::new(runtime),
@@ -135,7 +171,6 @@ impl Default for Ipv4PortPicker {
 }
 
 impl Ipv4PortPicker {
-    #[allow(unused)]
     pub fn with_range(range: RangeInclusive<u16>) -> Self {
         Self {
             range,

@@ -14,13 +14,25 @@ pub use meta_node::*;
 use tokio::runtime::Runtime;
 
 use crate::cluster_def::CnosdbClusterDefinition;
-use crate::utils::{execute_command, get_workspace_dir, kill_process};
+use crate::utils::{execute_command, get_workspace_dir, kill_process, PROFILE};
 
 pub type FnUpdateMetaStoreConfig = Box<dyn Fn(&mut MetaStoreConfig) + Send>;
 pub type FnUpdateCnosdbConfig = Box<dyn Fn(&mut CnosdbConfig) + Send>;
 
 pub fn cargo_build_cnosdb_meta(workspace_dir: impl AsRef<Path>) {
     let workspace_dir = workspace_dir.as_ref();
+
+    let meta_exe = workspace_dir
+        .join("target")
+        .join(PROFILE)
+        .join("cnosdb-meta");
+    if cfg!(feature = "skip_build") {
+        println!("- Skipped building 'meta'");
+        if meta_exe.exists() {
+            return;
+        }
+    }
+
     println!("- Building 'meta' at '{}'", workspace_dir.display());
     let mut cargo_build = Command::new("cargo");
 
@@ -35,6 +47,15 @@ pub fn cargo_build_cnosdb_meta(workspace_dir: impl AsRef<Path>) {
 
 pub fn cargo_build_cnosdb_data(workspace_dir: impl AsRef<Path>) {
     let workspace_dir = workspace_dir.as_ref();
+
+    let main_exe = workspace_dir.join("target").join(PROFILE).join("cnosdb");
+    if cfg!(feature = "skip_build") {
+        println!("- Skipped building 'main'");
+        if main_exe.exists() {
+            return;
+        }
+    }
+
     println!("Building 'main' at '{}'", workspace_dir.display());
     let mut cargo_build = Command::new("cargo");
 

@@ -29,7 +29,7 @@ MT_1_LOG_PATH=${LOG_PATH}/meta_node_8901.log
 MT_2_LOG_PATH=${LOG_PATH}/meta_node_8911.log
 MT_3_LOG_PATH=${LOG_PATH}/meta_node_8921.log
 
-function usage() {
+function usage {
   echo "Start CnosDB Server and run test, Including several common deployment methods"
   echo
   echo "USAGE:"

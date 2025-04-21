@@ -11,7 +11,7 @@
 ###       nohup.log
 ###       PID
 
-function usage() {
+function usage {
   echo 'Start CnosDB Server Cluster'
   echo
   echo 'If you want to run a single node, please do not set the number of nodes.'
@@ -111,7 +111,7 @@ echo "----------------------------------------"
 
 cargo build --profile $PROFILE --package main --bin cnosdb
 
-kill_cnosdb_processes() {
+ function kill_cnosdb_processes {
   if [ "$(uname)" = "Darwin" ]; then
     SERVICE='cnosdb'
     if pgrep -xq -- "${SERVICE}"; then
@@ -137,8 +137,10 @@ echo "Creating directories and generating configurations at: ${CLUSTER_DIR}"
 mkdir -p "${CLUSTER_DIR}"
 
 ## Generate config files.
-function generate_config() {
-  GEN_CONFIG="${PROJ_DIR}/config/scripts/generate_config.sh"
+
+GEN_CONFIG="${PROJ_DIR}/config/scripts/generate_config.sh"
+
+function generate_config {
   local id=$1
   local mode=$2
   mkdir -p "${CLUSTER_DIR}/$id"
@@ -174,8 +176,9 @@ fi
 
 ## Start cnosdb servers.
 
-function nohup_run_cnosdb() {
-  CNOSDB="${PROJ_DIR}/target/${PROFILE}/cnosdb"
+CNOSDB="${PROJ_DIR}/target/${PROFILE}/cnosdb"
+
+function nohup_run_cnosdb {
   local id=$1
   echo "Starting cnosdb server $id..."
   nohup $CNOSDB run --config "${CLUSTER_DIR}/${id}/config.toml" >"${CLUSTER_DIR}/${id}/nohup.log" 2>&1 &

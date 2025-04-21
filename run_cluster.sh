@@ -1,6 +1,6 @@
 #!/bin/bash
 
-function usage() {
+function usage {
   echo 'Start CnosDB Server Cluster'
   echo
   echo 'USAGE:'

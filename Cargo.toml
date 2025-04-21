@@ -39,7 +39,6 @@ arrow-schema = { version = "42.0.0", features = ["serde"] }
 assert_float_eq = "1.1.3"
 async-backtrace = "0.2.6"
 async-recursion = "1.0.5"
-async-stream = "0.3.5"
 async-trait = "0.1.77"
 atoi_simd = "0.15.5"
 backtrace = "0.3.69"
@@ -57,7 +56,6 @@ clap = { version = "4.4", features = ["default", "derive"] }
 console-subscriber = "0.2.0"
 crc32fast = "1.3.2"
 criterion = { version = "0.5.1" }
-crossbeam-channel = "0.5.11"
 ctrlc = "3.4"
 dashmap = "5.5.3"
 datafusion = { git = "https://github.com/cnosdb/arrow-datafusion.git", branch = "27.0.0" }
@@ -123,7 +121,6 @@ prost = "0.11.9"
 prost-build = "0.11.9"
 prost-types = "0.11.9"
 protobuf = "3.2"
-psutil = "3.3"
 quote = "1.0.36"
 radixdb = "0.2"
 rand = "0.8"

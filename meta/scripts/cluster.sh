@@ -11,7 +11,7 @@
 ###       nohup.log
 ###       PID
 
-function usage() {
+function usage {
   echo 'Start CnosDB Meta-Server Cluster'
   echo
   echo 'USAGE:'
@@ -91,8 +91,10 @@ echo "Creating directories and generating configurations at: ${CLUSTER_DIR}"
 mkdir -p "${CLUSTER_DIR}"
 
 ## Generate config files.
-function generate_config() {
-  GEN_CONFIG=${PROJ_DIR}/config/scripts/generate_config.sh
+
+GEN_CONFIG=${PROJ_DIR}/config/scripts/generate_config.sh
+
+function generate_config {
   local id=$1
   mkdir -p "${CLUSTER_DIR}/${id}"
   $GEN_CONFIG --type meta --id $id --output "${CLUSTER_DIR}/${id}/config.toml" \
@@ -105,8 +107,9 @@ done
 
 echo "Starting $NODE_NUM cnosdb-meta servers..."
 
-function nohup_run_cnosdb_meta() {
-  CNOSDB_META=${PROJ_DIR}/target/debug/cnosdb-meta
+CNOSDB_META=${PROJ_DIR}/target/debug/cnosdb-meta
+
+function nohup_run_cnosdb_meta {
   local id=$1
   echo "Starting cnosdb-meta server $id..."
   nohup $CNOSDB_META --config "${CLUSTER_DIR}/${id}/config.toml" >"${CLUSTER_DIR}/${id}/nohup.log" 2>&1 &
@@ -124,7 +127,7 @@ http_post 8901 /init '{}'
 echo "Server 1 joined the single-node cluster as leader"
 sleep 3
 
-function add_learner_node() {
+function add_learner_node {
   local id=$1
   local addr="127.0.0.1:$2"
   http_post 8901 /add-learner "[${id}, \"${addr}\"]"
