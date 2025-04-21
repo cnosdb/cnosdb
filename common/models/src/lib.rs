@@ -13,7 +13,6 @@ pub mod auth;
 pub mod codec;
 pub mod column_data;
 pub mod column_data_ref;
-pub mod consistency_level;
 pub mod datafusion;
 pub mod duration;
 pub mod errors;

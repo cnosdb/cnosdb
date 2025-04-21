@@ -7,7 +7,7 @@ edition.workspace = true
 
 [dependencies]
 config = { path = "../config" }
-http_protocol = { path = "../common/http_protocol", features = ["http_client"] }
+http_protocol = { path = "../common/http_protocol" }
 meta = { path = "../meta" }
 metrics = { path = "../common/metrics" }
 models = { path = "../common/models" }
@@ -19,7 +19,6 @@ arrow-schema = { workspace = true, optional = false }
 backtrace = { workspace = true }
 chrono = { workspace = true }
 datafusion = { workspace = true }
-diff = { workspace = true }
 flatbuffers = { workspace = true }
 futures = { workspace = true, default-features = false, features = ["alloc"] }
 parking_lot = { workspace = true }
@@ -27,16 +26,18 @@ prost = { workspace = true }
 rand = { workspace = true }
 regex = { workspace = true }
 reqwest = { workspace = true, features = ["rustls-tls", "json", "blocking"], default-features = false }
+serde = { workspace = true }
+serde_json = { workspace = true }
 serial_test = { workspace = true }
 sysinfo = { workspace = true, optional = false }
 tokio = { workspace = true, features = ["full"] }
-tokio-stream = { workspace = true }
 tonic = { workspace = true, features = ["tls", "transport"] }
 walkdir = { workspace = true }
 
 [features]
-default = []
-coordinator_e2e_test = []
-debug_mode = []                 # Run cnosdb and cnosdb-meta in debug mode, make the compilation faster.
-not_passed = []
-startup_in_serial = []          # Make sure data node register in meta server in the order they defined.
+default = ["startup_in_serial"]
+coordinator_e2e_test = [] # Coordinator test cases.
+not_passed = []           # Not passed test cases.
+startup_in_serial = []    # Make sure data node register in meta server in the order they defined.
+debug_mode = []           # Run cnosdb and cnosdb-meta in debug mode, make the compilation faster.
+skip_build = []           # Skip build cnosdb and cnosdb-meta before run test if they are already built.

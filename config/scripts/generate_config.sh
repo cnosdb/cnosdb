@@ -1,6 +1,6 @@
 #!/bin/bash
 
-function usage() {
+function usage {
   echo 'Generate CnosDB Server & Meta-Server Config'
   echo
   echo 'USAGE:'

@@ -7,7 +7,7 @@ mod http_client;
 pub mod global;
 
 use core::panic;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
 use std::thread;
@@ -80,6 +80,26 @@ macro_rules! check_response {
                 if r.status() != reqwest::StatusCode::OK {
                     match r.text() {
                         Ok(text) => panic!("serve responses error: '{text}'"),
+                        Err(e) => panic!("failed to fetch response: {e}"),
+                    };
+                }
+                r
+            }
+            Err(e) => {
+                panic!("failed to do request: {e}");
+            }
+        }
+    };
+    ($resp:expr, $status:expr) => {
+        match $resp {
+            Ok(r) => {
+                let r_status = r.status();
+                if r_status != $status {
+                    match r.text() {
+                        Ok(text) => panic!(
+                            "serve responses status {r_status} but expected {}: '{text}'",
+                            $status
+                        ),
                         Err(e) => panic!("failed to fetch response: {e}"),
                     };
                 }
@@ -321,6 +341,52 @@ pub async fn flight_fetch_result_and_print(
     batches
 }
 
+fn ls<P: AsRef<Path>>(path: P) -> std::io::Result<Vec<PathBuf>> {
+    let path = path.as_ref();
+    if !std::fs::metadata(path)?.is_dir() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("Path '{path:?}' is not a directory"),
+        ));
+    }
+    let mut entries = std::fs::read_dir(path)?
+        .map(|read_ret| read_ret.map(|e| e.path()))
+        .collect::<Result<Vec<_>, std::io::Error>>()?;
+    entries.sort();
+    Ok(entries)
+}
+
+fn ls_names_with_filter<P: AsRef<Path>>(
+    path: P,
+    filter: impl Fn(&Path) -> bool,
+) -> std::io::Result<Vec<String>> {
+    let entries = ls(path)?;
+    let mut entries = entries
+        .iter()
+        .filter(|p| filter(p))
+        .filter_map(|p| p.file_name())
+        .map(|file_name| file_name.to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+    Ok(entries)
+}
+
+pub fn ls_directories<P: AsRef<Path>>(path: P) -> std::io::Result<Vec<String>> {
+    ls_names_with_filter(path, Path::is_dir)
+}
+
+pub fn ls_files<P: AsRef<Path>>(path: P) -> std::io::Result<Vec<String>> {
+    ls_names_with_filter(path, Path::is_file)
+}
+
+/// Split CSV string into a vector of strings, handling double quotes and newlines.
+///
+/// ### Example
+/// ```ignore
+/// assert_eq!(
+///     vec!["a,b,c".to_string(), "d,e,f".to_string()],
+///     split_csv_into_vec("a,b,c\nd,e,f"),
+/// )
+/// ```
 fn split_csv_into_vec(csv: &str) -> Vec<String> {
     let mut results = Vec::new();
     let mut buf = String::new();
@@ -347,7 +413,80 @@ fn split_csv_into_vec(csv: &str) -> Vec<String> {
 }
 
 mod test {
-    use crate::utils::split_csv_into_vec;
+    use std::io::Write;
+    use std::net::{TcpListener, TcpStream};
+    use std::path::PathBuf;
+
+    use reqwest::blocking::Client;
+    use reqwest::Url;
+
+    use crate::utils::global::E2E_TEST_BASE_DIR;
+    use crate::utils::{ls, ls_directories, ls_files, ls_names_with_filter, split_csv_into_vec};
+
+    #[test]
+    #[should_panic]
+    fn test_check_response() {
+        let client = Client::new();
+
+        let url_404 = Url::parse("http://localhost:8080/404").unwrap();
+        let resp_404 = client.get(url_404).send();
+        check_response!(resp_404);
+    }
+
+    fn handle_simple_http_request(mut stream: TcpStream) -> std::io::Result<()> {
+        let response = b"HTTP/1.1 401 UNAUTHORIZED\r\nContent-Length: 2\r\n\r\nok";
+        stream.write_all(response)
+    }
+
+    fn start_simple_http_server(bind_port: u16) -> std::thread::JoinHandle<()> {
+        let bind_url = format!("0.0.0.0:{bind_port}");
+        let listener = match TcpListener::bind(&bind_url) {
+            Ok(l) => l,
+            Err(e) => {
+                panic!("Could not bind to {bind_url}: {e}")
+            }
+        };
+
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                match stream {
+                    Ok(stream) => {
+                        if let Err(e) = handle_simple_http_request(stream) {
+                            panic!("Failed to write response: {e}");
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to accept connection: {}", e);
+                    }
+                }
+            }
+        })
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_check_response_401() {
+        let client = Client::new();
+
+        let jh = start_simple_http_server(8080);
+
+        let url = Url::parse("http://localhost:8080").unwrap();
+        let resp = client.get(url).send();
+        check_response!(resp);
+        jh.join().unwrap();
+    }
+
+    #[test]
+    fn test_ls() {
+        let test_dir = PathBuf::from(E2E_TEST_BASE_DIR).join("test_ls");
+        std::fs::create_dir_all(test_dir.join("dir_1")).unwrap();
+        std::fs::write(test_dir.join("a.txt"), "hello").unwrap();
+
+        let entries = ls_directories(&test_dir).unwrap();
+        assert_eq!(entries, vec!["dir_1".to_string()]);
+        let entries = ls_files(test_dir).unwrap();
+        assert_eq!(entries, vec!["a.txt".to_string()]);
+    }
 
     #[test]
     fn test_split_csv_into_vec() {

@@ -29,7 +29,6 @@ ctrlc = { workspace = true, features = ["termination"] }
 dashmap = { workspace = true }
 openraft = { workspace = true, features = ["serde"] }
 parking_lot = { workspace = true }
-psutil = { workspace = true, optional = true }
 rand = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
@@ -59,7 +58,7 @@ pprof = { workspace = true, features = ["flamegraph", "protobuf-codec", "frame-p
 [features]
 default = []
 backtrace = ["async-backtrace"]
-meta_e2e_test = ["psutil", "sysinfo"]
+meta_e2e_test = ["sysinfo"]
 
 [dev-dependencies]
 maplit = "1.0.2"

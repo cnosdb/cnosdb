@@ -123,7 +123,7 @@ jobs:
           cargo build --profile test-ci --package main --bin cnosdb
           Copy-Item -Path .\target\test-ci\cnosdb.exe -Destination .\cnosdb.exe
           cargo clean
-          .\cnosdb.exe run --config config/config_8902.toml -M singleton &
+          .\cnosdb.exe run --config config/resource/config_8902.toml -M singleton &
           while ($true) {
             try {
               Invoke-WebRequest -Method GET -Uri http://127.0.0.1:8902/api/v1/ping

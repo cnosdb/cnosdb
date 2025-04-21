@@ -1,6 +1,6 @@
 #!/bin/bash
 
-function usage() {
+function usage {
   echo 'Start CnosDB Meta-Server Singleton'
   echo
   echo 'USAGE:'
