@@ -27,7 +27,7 @@ PROJ_DIR=$(
 
 META="${PROJ_DIR}/meta/scripts/cluster.sh"
 DATA="${PROJ_DIR}/main/scripts/cluster.sh"
-PROFILE='release'
+PROFILE='test-ci'
 
 ## Run cluster.
 CLUSTER_STARTED=0

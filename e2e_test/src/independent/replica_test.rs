@@ -10,8 +10,6 @@ use crate::utils::global::E2eContext;
 use crate::utils::Client;
 use crate::{check_response, cluster_def};
 
-// const SERVER_URL: &str = "http://127.0.0.1:8902/api/v1/sql?db=replica_test_db";
-
 fn replica_test(meta: Arc<TenantMeta>, server_url: &str) {
     let db_info = meta.get_db_info("replica_test_db").unwrap().unwrap();
     assert!(!db_info.buckets.is_empty());
