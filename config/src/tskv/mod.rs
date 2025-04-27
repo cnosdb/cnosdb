@@ -89,7 +89,14 @@ impl Config {
         let mut figment = Figment::new();
         // Merge toml config file.
         if let Some(path) = path {
-            figment = figment.merge(Toml::file(path.as_ref()));
+            let path = path.as_ref();
+            if !path.exists() {
+                return Err(figment::error::Kind::Message(format!(
+                    "Config file not found: {path:?}"
+                ))
+                .into());
+            }
+            figment = figment.merge(Toml::file(path));
         }
         // Merge environment variables with prefix `CNOSDB_`.
         let env_key_map = Self::env_keys();

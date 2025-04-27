@@ -237,12 +237,14 @@ fn main() -> Result<(), std::io::Error> {
     });
     Ok(())
 }
+
 fn handle_error<T, E: std::fmt::Debug>(result: Result<T, E>, context: &str) -> T {
     result.unwrap_or_else(|e| {
         error!("{}: {:?}", context, e);
         process::exit(1);
     })
 }
+
 fn parse_config(run_args: &RunArgs) -> config::tskv::Config {
     println!("-----------------------------------------------------------");
     println!("Using Config File: {}\n", run_args.config);
