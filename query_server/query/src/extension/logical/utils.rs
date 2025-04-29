@@ -1,4 +1,4 @@
-use datafusion::common::tree_node::{TreeNode, TreeNodeVisitor, VisitRecursion};
+use datafusion::common::tree_node::{TreeNode, TreeNodeRecursion, TreeNodeVisitor};
 use datafusion::common::Result;
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::{LogicalPlan, TableScan};
@@ -22,10 +22,10 @@ pub struct ExtractStreamProvider<'a> {
     stream_providers: &'a mut Vec<StreamProviderRef>,
 }
 
-impl<'a> TreeNodeVisitor for ExtractStreamProvider<'a> {
-    type N = LogicalPlan;
+impl<'a> TreeNodeVisitor<'a> for ExtractStreamProvider<'a> {
+    type Node = LogicalPlan;
 
-    fn pre_visit(&mut self, plan: &LogicalPlan) -> Result<VisitRecursion> {
+    fn f_down(&mut self, plan: &Self::Node) -> Result<TreeNodeRecursion> {
         if let LogicalPlan::TableScan(TableScan { source, .. }) = plan {
             if let TableHandle::StreamProvider(s) = source_downcast_adapter(source)
                 .map_err(|err| DataFusionError::External(Box::new(err)))?
@@ -35,6 +35,6 @@ impl<'a> TreeNodeVisitor for ExtractStreamProvider<'a> {
             }
         }
 
-        Ok(VisitRecursion::Continue)
+        Ok(TreeNodeRecursion::Continue)
     }
 }

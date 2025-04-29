@@ -5,10 +5,8 @@ use coordinator::service::CoordinatorRef;
 use coordinator::SendableCoordinatorRecordBatchStream;
 use datafusion::arrow::array::{Array, Float64Array, StringArray, TimestampNanosecondArray};
 use datafusion::arrow::record_batch::RecordBatch;
-use datafusion::execution::context::SessionState;
-use datafusion::execution::runtime_env::RuntimeEnv;
+use datafusion::execution::SessionStateBuilder;
 use datafusion::logical_expr::{col, lit};
-use datafusion::prelude::SessionConfig;
 use datafusion::scalar::ScalarValue;
 use datafusion::sql::sqlparser::parser::ParserError;
 use http_protocol::parameter::FindTracesParam;
@@ -260,14 +258,13 @@ impl OtlpToJaeger {
                 }
             };
 
-            let schema = tskv_table_schema.to_arrow_schema();
+            let schema = tskv_table_schema.build_arrow_schema();
             let table_layout = TableLayoutHandle {
                 table: tskv_table_schema.clone(),
                 predicate: Arc::new(
                     Predicate::push_down_filter(
                         filter_expr,
-                        &*tskv_table_schema.to_df_schema()?,
-                        &schema,
+                        &*tskv_table_schema.build_df_schema()?,
                         limit,
                     )
                     .context(ModelsSnafu)?,
@@ -275,13 +272,7 @@ impl OtlpToJaeger {
             };
             let split_manager = SplitManager::new(coord.clone());
             let splits = split_manager
-                .splits(
-                    &SessionState::with_config_rt(
-                        SessionConfig::default(),
-                        Arc::new(RuntimeEnv::default()),
-                    ),
-                    table_layout,
-                )
+                .splits(&SessionStateBuilder::new().build(), table_layout)
                 .await?;
 
             for split in splits {
@@ -291,7 +282,7 @@ impl OtlpToJaeger {
                     None,
                     schema.clone(),
                     tskv_table_schema.clone(),
-                    tskv_table_schema.meta(),
+                    tskv_table_schema.build_meta(),
                 );
                 iterators.push(
                     coord
@@ -531,7 +522,7 @@ impl OtlpToJaeger {
 
         let all_col_names = batch
             .schema()
-            .all_fields()
+            .flattened_fields()
             .iter()
             .map(|f| f.name().clone())
             .collect::<Vec<_>>();
@@ -589,13 +580,21 @@ impl OtlpToJaeger {
                     )))?
                     .value(row_i) as i64;
                 span.tags.push(KeyValue {
-                    key: col_name.split('/').last().unwrap_or(col_name).to_string(),
+                    key: col_name
+                        .split('/')
+                        .next_back()
+                        .unwrap_or(col_name)
+                        .to_string(),
                     value_type: Some(super::jaeger_model::ValueType::Int64),
                     value: serde_json::Value::Number(value.into()),
                 });
             } else if col_name.eq(TRACE_STATE_COL_NAME) {
                 span.tags.push(KeyValue {
-                    key: col_name.split('/').last().unwrap_or(col_name).to_string(),
+                    key: col_name
+                        .split('/')
+                        .next_back()
+                        .unwrap_or(col_name)
+                        .to_string(),
                     value_type: Some(super::jaeger_model::ValueType::String),
                     value: serde_json::Value::String(
                         batch

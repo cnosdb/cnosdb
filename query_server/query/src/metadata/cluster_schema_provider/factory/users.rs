@@ -3,12 +3,12 @@ use std::sync::Arc;
 
 use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::record_batch::RecordBatch;
+use datafusion::catalog::memory::MemorySourceConfig;
+use datafusion::catalog::Session;
 use datafusion::common::{DataFusionError, Result as DFResult};
 use datafusion::datasource::{TableProvider, TableType};
-use datafusion::execution::context::SessionState;
-use datafusion::logical_expr::logical_plan::AggWithGrouping;
+use datafusion::logical_expr::logical_plan::TableScanAggregate;
 use datafusion::logical_expr::Expr;
-use datafusion::physical_plan::memory::MemoryExec;
 use datafusion::physical_plan::ExecutionPlan;
 use meta::model::MetaRef;
 use models::auth::user::User;
@@ -30,6 +30,7 @@ impl ClusterSchemaTableFactory for ClusterSchemaUsersFactory {
     }
 }
 
+#[derive(Debug)]
 pub struct ClusterSchemaUsersTable {
     user: User,
     metadata: MetaRef,
@@ -57,10 +58,10 @@ impl TableProvider for ClusterSchemaUsersTable {
 
     async fn scan(
         &self,
-        _state: &SessionState,
+        _state: &dyn Session,
         projection: Option<&Vec<usize>>,
         _filters: &[Expr],
-        _agg_with_grouping: Option<&AggWithGrouping>,
+        _aggregate: Option<&TableScanAggregate>,
         _limit: Option<usize>,
     ) -> DFResult<Arc<dyn ExecutionPlan>> {
         let mut builder = ClusterSchemaUsersBuilder::default();
@@ -73,7 +74,7 @@ impl TableProvider for ClusterSchemaUsersTable {
                 })?;
             for user in users {
                 let mut options = user.options().clone();
-                options.hidden_password();
+                options.hash_password_hidden();
                 let options_str = serde_json::to_string(&options).map_err(|e| {
                     DataFusionError::Internal(format!("failed to serialize options: {}", e))
                 })?;
@@ -83,10 +84,9 @@ impl TableProvider for ClusterSchemaUsersTable {
         }
 
         let rb: RecordBatch = builder.try_into()?;
-        Ok(Arc::new(MemoryExec::try_new(
-            &[vec![rb]],
-            self.schema(),
-            projection.cloned(),
-        )?))
+
+        let mem_exec =
+            MemorySourceConfig::try_new_exec(&[vec![rb]], self.schema(), projection.cloned())?;
+        Ok(mem_exec)
     }
 }

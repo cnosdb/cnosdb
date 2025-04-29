@@ -101,7 +101,7 @@ impl Projection {
     fn from_schema(schema: &TskvTableSchema, time_column_id: ColumnId) -> Self {
         let column_ids = schema.columns().iter().map(|f| f.id).collect::<Vec<_>>();
 
-        let fields_with_time = if schema.column_index(TIME_FIELD_NAME).is_none() {
+        let fields_with_time = if schema.get_column_index_by_name(TIME_FIELD_NAME).is_none() {
             column_ids
                 .iter()
                 .cloned()
@@ -337,7 +337,7 @@ impl TimeRangeProvider for DataReference {
 #[derive(Debug)]
 pub struct ProjectSchemaDisplay<'a>(pub &'a SchemaRef);
 
-impl<'a> fmt::Display for ProjectSchemaDisplay<'a> {
+impl fmt::Display for ProjectSchemaDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let parts: Vec<_> = self
             .0

@@ -33,7 +33,7 @@ impl RowData {
         columns: &Vector<ForwardsUOffset<Column>>,
         row_idx: Vec<usize>,
     ) -> TskvResult<Vec<RowData>> {
-        let fields_id = schema.fields_id();
+        let fields_id = schema.field_ids_index();
         let mut res = Vec::with_capacity(row_idx.len());
         for row_count in row_idx.into_iter() {
             let mut fields = vec![None; fields_id.len()];
@@ -56,7 +56,7 @@ impl RowData {
                                 continue;
                             }
                             let val = column.int_values()?.get(row_count);
-                            match schema.column(column_name) {
+                            match schema.get_column_by_name(column_name) {
                                 None => {
                                     error!("column {} not found in schema", column_name);
                                 }
@@ -79,7 +79,7 @@ impl RowData {
                                 continue;
                             }
                             let val = column.float_values()?.get(row_count);
-                            match schema.column(column_name) {
+                            match schema.get_column_by_name(column_name) {
                                 None => {
                                     error!("column {} not found in schema", column_name);
                                 }
@@ -102,7 +102,7 @@ impl RowData {
                                 continue;
                             }
                             let val = column.uint_values()?.get(row_count);
-                            match schema.column(column_name) {
+                            match schema.get_column_by_name(column_name) {
                                 None => {
                                     error!("column {} not found in schema", column_name);
                                 }
@@ -125,7 +125,7 @@ impl RowData {
                                 continue;
                             }
                             let val = column.bool_values()?.get(row_count);
-                            match schema.column(column_name) {
+                            match schema.get_column_by_name(column_name) {
                                 None => {
                                     error!("column {} not found in schema", column_name);
                                 }
@@ -148,7 +148,7 @@ impl RowData {
                                 continue;
                             }
                             let val = column.string_values()?.get(row_count);
-                            match schema.column(column_name) {
+                            match schema.get_column_by_name(column_name) {
                                 None => {
                                     error!("column {} not found in schema", column_name);
                                 }
@@ -176,7 +176,7 @@ impl RowData {
 
             if let Some(time_column) = time_column {
                 let ts = time_column.int_values()?.get(row_count);
-                let to_precision = schema.time_column_precision();
+                let to_precision = schema.get_time_column_precision();
                 let ts =
                     timestamp_convert(from_precision, to_precision, ts).context(CommonSnafu {
                         reason: "timestamp overflow".to_string(),

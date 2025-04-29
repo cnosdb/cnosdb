@@ -261,7 +261,7 @@ pub struct StartVnodeCompactionGuard<'a> {
     inner: RwLockWriteGuard<'a, CompactJobInner>,
 }
 
-impl<'a> Drop for StartVnodeCompactionGuard<'a> {
+impl Drop for StartVnodeCompactionGuard<'_> {
     fn drop(&mut self) {
         info!("StopCompactionGuard(drop): start vnode compaction job");
         self.inner.start_vnode_compaction_job();

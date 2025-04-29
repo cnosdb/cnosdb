@@ -121,6 +121,8 @@ pub fn endpoint(
             ticket: any_tkt.encode_to_vec().into(),
         }),
         location,
+        expiration_time: None,
+        app_metadata: prost::bytes::Bytes::new(),
     })
 }
 

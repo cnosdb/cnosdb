@@ -10,10 +10,9 @@ use datafusion::config::ConfigOptions;
 use datafusion::datasource::TableProvider;
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::{AggregateUDF, ScalarUDF, TableSource, WindowUDF};
-use datafusion::physical_expr::var_provider::is_system_variables;
 use datafusion::sql::planner::ContextProvider;
 use datafusion::sql::TableReference;
-use datafusion::variable::{VarProvider, VarType};
+use datafusion::variable::{is_system_variables, VarProvider, VarType};
 pub use information_schema_provider::{
     COLUMNS_COLUMN_NAME, COLUMNS_COLUMN_TYPE, COLUMNS_COMPRESSION_CODEC, COLUMNS_DATABASE_NAME,
     COLUMNS_DATA_TYPE, COLUMNS_TABLE_NAME, DATABASES_DATABASE_NAME, DATABASES_MAX_CACHE_READERS,
@@ -63,10 +62,7 @@ pub trait ContextProviderExtension: ContextProvider {
     fn reset_access_databases(&self) -> DatabaseSet;
     fn get_db_precision(&self, name: &str) -> Result<Precision, MetaError>;
     fn get_db_info(&self, name: &str) -> Result<Option<DatabaseInfo>, MetaError>;
-    fn get_table_source(
-        &self,
-        name: TableReference,
-    ) -> datafusion::common::Result<Arc<TableSourceAdapter>>;
+    fn get_table_source_adapter(&self, name: TableReference) -> DFResult<Arc<TableSourceAdapter>>;
     fn database_table_exist(
         &self,
         _database: &str,
@@ -80,7 +76,7 @@ pub type TableHandleProviderRef = Arc<dyn TableHandleProvider + Send + Sync>;
 pub type VarProviderRef = Arc<dyn VarProvider + Send + Sync>;
 
 pub trait TableHandleProvider {
-    fn build_table_handle(&self, ddatabase_name: &str, table_name: &str) -> DFResult<TableHandle>;
+    fn build_table_handle(&self, database_name: &str, table_name: &str) -> DFResult<TableHandle>;
 }
 
 pub struct MetadataProvider {
@@ -128,7 +124,7 @@ impl MetadataProvider {
         tenant_name: &str,
         database_name: &str,
         table_name: &str,
-    ) -> datafusion::common::Result<Option<Arc<dyn TableProvider>>> {
+    ) -> DFResult<Option<Arc<dyn TableProvider>>> {
         // process INFORMATION_SCHEMA
         if database_name.eq_ignore_ascii_case(self.information_schema_provider.name()) {
             let mem_table = self
@@ -173,7 +169,7 @@ impl MetadataProvider {
         Ok(None)
     }
 
-    fn build_table_handle(&self, name: &ResolvedTable) -> datafusion::common::Result<TableHandle> {
+    fn build_table_handle(&self, name: &ResolvedTable) -> DFResult<TableHandle> {
         let tenant_name = name.tenant();
         let database_name = name.database();
         let table_name = name.table();
@@ -239,10 +235,10 @@ impl ContextProviderExtension for MetadataProvider {
         self.meta_client.get_db_info(name)
     }
 
-    fn get_table_source(
+    fn get_table_source_adapter(
         &self,
         table_ref: TableReference,
-    ) -> datafusion::common::Result<Arc<TableSourceAdapter>> {
+    ) -> DFResult<Arc<TableSourceAdapter>> {
         let name = table_ref
             .clone()
             .resolve_object(self.session.tenant(), self.session.default_database())?;
@@ -267,7 +263,7 @@ impl ContextProviderExtension for MetadataProvider {
         let table_handle = self.build_table_handle(&name)?;
 
         Ok(Arc::new(TableSourceAdapter::try_new(
-            table_ref.to_owned_reference(),
+            table_ref,
             database_name,
             table_name,
             table_handle,
@@ -306,11 +302,9 @@ impl ContextProviderExtension for MetadataProvider {
 }
 
 impl ContextProvider for MetadataProvider {
-    fn get_table_provider(
-        &self,
-        name: TableReference,
-    ) -> datafusion::error::Result<Arc<dyn TableSource>> {
-        Ok(self.get_table_source(name)?)
+    fn get_table_source(&self, name: TableReference) -> DFResult<Arc<dyn TableSource>> {
+        let table_source = self.get_table_source_adapter(name)?;
+        Ok(table_source)
     }
 
     fn get_function_meta(&self, name: &str) -> Option<Arc<ScalarUDF>> {
@@ -324,6 +318,10 @@ impl ContextProvider for MetadataProvider {
 
     fn get_aggregate_meta(&self, name: &str) -> Option<Arc<AggregateUDF>> {
         self.func_manager.udaf(name).ok()
+    }
+
+    fn get_window_meta(&self, name: &str) -> Option<Arc<WindowUDF>> {
+        self.func_manager.udwf(name).ok()
     }
 
     fn get_variable_type(&self, variable_names: &[String]) -> Option<DataType> {
@@ -349,8 +347,16 @@ impl ContextProvider for MetadataProvider {
         &self.config_options
     }
 
-    fn get_window_meta(&self, name: &str) -> Option<Arc<WindowUDF>> {
-        self.func_manager.udwf(name).ok()
+    fn udf_names(&self) -> Vec<String> {
+        vec![]
+    }
+
+    fn udaf_names(&self) -> Vec<String> {
+        vec![]
+    }
+
+    fn udwf_names(&self) -> Vec<String> {
+        vec![]
     }
 }
 

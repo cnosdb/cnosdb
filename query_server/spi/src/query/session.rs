@@ -7,7 +7,8 @@ use datafusion::common::extensions_options;
 use datafusion::config::ConfigExtension;
 use datafusion::execution::context::SessionState;
 use datafusion::execution::memory_pool::MemoryPool;
-use datafusion::execution::runtime_env::{RuntimeConfig, RuntimeEnv};
+use datafusion::execution::runtime_env::RuntimeEnvBuilder;
+use datafusion::execution::SessionStateBuilder;
 use datafusion::prelude::{SessionConfig, SessionContext};
 use datafusion::variable::VarType;
 use models::auth::user::User;
@@ -145,26 +146,30 @@ impl SessionCtxFactory {
         span_ctx: &Option<SpanContext>,
         coord: Arc<dyn Coordinator>,
     ) -> QueryResult<SessionContext> {
-        let mut config = context.session_config().to_df_config().clone();
+        let mut df_session_cfg = context.session_config().to_df_config().clone();
         if let Some(span_ctx) = span_ctx {
             // inject span context into datafusion session config, so that it can be used in execution
-            config = config.with_extension(Arc::new(*span_ctx))
+            df_session_cfg = df_session_cfg.with_extension(Arc::new(*span_ctx))
         }
         // inject cnosdb_config into datafusion session_config
-        config
+        df_session_cfg
             .options_mut()
             .extensions
             .insert(SqlExecInfo::default());
-        config = config.set_u64(
+        df_session_cfg = df_session_cfg.set_u64(
             "sql_exec_info.copyinto_trigger_flush_size",
             coord.get_config().storage.copyinto_trigger_flush_size,
         );
 
-        let rt_config = RuntimeConfig::new().with_memory_pool(memory_pool);
-        let rt = RuntimeEnv::new(rt_config)?;
-        let df_session_state =
-            SessionState::with_config_rt(config, Arc::new(rt)).with_session_id(session_id.into());
-        let df_session_ctx = SessionContext::with_state(df_session_state);
+        let rt = RuntimeEnvBuilder::new()
+            .with_memory_pool(memory_pool)
+            .build()?;
+        let df_session_state = SessionStateBuilder::new()
+            .with_runtime_env(Arc::new(rt))
+            .with_session_id(session_id.into())
+            .with_config(df_session_cfg)
+            .build();
+        let df_session_ctx = SessionContext::new_with_state(df_session_state);
         // register built-in system variables
         if let Some(p) = self.sys_var_provider.as_ref() {
             df_session_ctx.register_variable(VarType::System, p.clone());

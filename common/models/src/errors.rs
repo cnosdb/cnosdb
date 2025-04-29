@@ -13,6 +13,7 @@ pub type ModelResult<T, E = ModelError> = std::result::Result<T, E>;
 pub enum ModelError {
     Datafusion {
         source: DataFusionError,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -20,6 +21,7 @@ pub enum ModelError {
     #[snafu(display("Arrow error: {}", source))]
     Arrow {
         source: ArrowError,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -30,6 +32,7 @@ pub enum ModelError {
     #[snafu(display("Invalid tag: {}", err))]
     InvalidTag {
         err: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -37,6 +40,7 @@ pub enum ModelError {
     #[snafu(display("Invalid field: {}", err))]
     InvalidField {
         err: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -44,6 +48,7 @@ pub enum ModelError {
     #[snafu(display("Invalid flatbuffer message: {}", err))]
     InvalidFlatbufferMessage {
         err: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -51,6 +56,7 @@ pub enum ModelError {
     #[snafu(display("Invalid serde message: {}", source))]
     InvalidSerdeMessage {
         source: bincode::Error,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -58,6 +64,7 @@ pub enum ModelError {
     #[snafu(display("Invalid query expr message: {}", source))]
     InvalidQueryExprMsg {
         source: bincode::Error,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -69,6 +76,7 @@ pub enum ModelError {
     ))]
     Internal {
         err: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -76,6 +84,7 @@ pub enum ModelError {
     #[snafu(display("IO operator: {}", source))]
     IOErrors {
         source: io::Error,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -83,12 +92,14 @@ pub enum ModelError {
     #[snafu(display("Failed to convert vec to string, because: {}", msg))]
     EncodingError {
         msg: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
 
     #[snafu(display("RecordBatch is None"))]
     NoneRecordBatch {
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -96,6 +107,7 @@ pub enum ModelError {
     #[snafu(display("Dump Error: {}", msg))]
     DumpError {
         msg: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -103,6 +115,7 @@ pub enum ModelError {
     #[snafu(display("{msg}"))]
     Common {
         msg: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -128,7 +141,7 @@ impl From<DataFusionError> for ModelError {
                 }
             }
 
-            DataFusionError::ArrowError(e) => ArrowSnafu.into_error(e),
+            DataFusionError::ArrowError(e, _backtrace) => ArrowSnafu.into_error(e),
             v => DatafusionSnafu.into_error(v),
         }
     }

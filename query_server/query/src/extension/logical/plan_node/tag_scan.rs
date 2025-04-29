@@ -3,6 +3,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use datafusion::common::DFSchemaRef;
+use datafusion::error::{DataFusionError, Result as DFResult};
 use datafusion::logical_expr::{LogicalPlan, UserDefinedLogicalNodeCore};
 use datafusion::prelude::Expr;
 
@@ -22,6 +23,32 @@ pub struct TagScanPlanNode {
     pub filters: Vec<Expr>,
     /// Optional number of rows to read
     pub fetch: Option<usize>,
+}
+
+impl PartialOrd for TagScanPlanNode {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match self.table_name.partial_cmp(&other.table_name) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        match self.projection.partial_cmp(&other.projection) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        match self
+            .projected_schema
+            .fields()
+            .partial_cmp(other.projected_schema.fields())
+        {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        match self.filters.partial_cmp(&other.filters) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        self.fetch.partial_cmp(&other.fetch)
+    }
 }
 
 impl Debug for TagScanPlanNode {
@@ -55,6 +82,10 @@ impl PartialEq for TagScanPlanNode {
 impl Eq for TagScanPlanNode {}
 
 impl UserDefinedLogicalNodeCore for TagScanPlanNode {
+    fn name(&self) -> &str {
+        "TagScan"
+    }
+
     fn inputs(&self) -> Vec<&LogicalPlan> {
         vec![]
     }
@@ -76,13 +107,17 @@ impl UserDefinedLogicalNodeCore for TagScanPlanNode {
         )
     }
 
-    fn from_template(&self, exprs: &[Expr], inputs: &[LogicalPlan]) -> Self {
-        assert_eq!(inputs.len(), 0, "input size inconsistent");
-        assert_eq!(exprs.len(), 0, "expr size inconsistent");
-        self.clone()
-    }
-
-    fn name(&self) -> &str {
-        "TagScan"
+    fn with_exprs_and_inputs(&self, exprs: Vec<Expr>, inputs: Vec<LogicalPlan>) -> DFResult<Self> {
+        if !inputs.is_empty() {
+            return Err(DataFusionError::Plan(
+                "TagScanPlanNode does not support inputs".to_string(),
+            ));
+        }
+        if !exprs.is_empty() {
+            return Err(DataFusionError::Plan(
+                "TagScanPlanNode does not support expressions".to_string(),
+            ));
+        }
+        Ok(self.clone())
     }
 }

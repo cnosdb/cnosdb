@@ -18,5 +18,5 @@ pub const WINDOW_END: &str = "end";
 
 pub use time_window::{
     ceil_sliding_window, floor_sliding_window, signature as time_window_signature,
-    DEFAULT_TIME_WINDOW_START, TIME_WINDOW_UDF,
+    DEFAULT_TIME_WINDOW_START,
 };

@@ -1,17 +1,61 @@
-use serde::Deserialize;
-use spi::DFResult;
+use std::sync::Arc;
 
-use crate::extension::expr::ts_gen_func::utils::get_arg;
+use datafusion::error::{DataFusionError, Result as DFResult};
+use datafusion::logical_expr::{ColumnarValue, ScalarFunctionArgs, ScalarUDFImpl, Signature};
+use models::arrow::{DataType, Field};
+use serde::Deserialize;
+
+use crate::extension::expr::ts_gen_func::utils::{full_signatures, get_arg};
+
+#[derive(Debug)]
+pub struct ValueFillFunc {
+    signature: Signature,
+}
+
+impl Default for ValueFillFunc {
+    fn default() -> Self {
+        Self {
+            signature: full_signatures(),
+        }
+    }
+}
+
+impl ScalarUDFImpl for ValueFillFunc {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn name(&self) -> &str {
+        "value_fill"
+    }
+
+    fn signature(&self) -> &Signature {
+        &self.signature
+    }
+
+    fn return_type(&self, arg_types: &[DataType]) -> DFResult<DataType> {
+        Ok(DataType::List(Arc::new(Field::new_list_field(
+            arg_types[1].clone(),
+            true,
+        ))))
+    }
+
+    fn invoke_with_args(&self, _args: ScalarFunctionArgs) -> DFResult<ColumnarValue> {
+        Err(DataFusionError::Plan(format!(
+            "{} can only be used in the SELECT clause as the top-level expression",
+            self.name()
+        )))
+    }
+}
 
 pub fn compute(
     timestamps: &mut Vec<i64>,
-    fields: &mut [Vec<f64>],
+    fields: &mut [f64],
     arg_str: Option<&str>,
 ) -> DFResult<(Vec<i64>, Vec<f64>)> {
     let arg = get_arg(arg_str)?;
     let method = get_fill_method_from_arg(arg)?;
-    let field = std::mem::take(&mut fields[0]);
-    let mut fill = ValueFill::new(field, method)?;
+    let mut fill = ValueFill::new(fields.to_vec(), method)?;
     fill.fill()?;
     Ok((std::mem::take(timestamps), fill.into_filled_values()))
 }
@@ -31,7 +75,7 @@ enum FillMethod {
 }
 
 impl FillMethod {
-    pub fn from_str(method: &str) -> Option<Self> {
+    pub fn try_from_str(method: &str) -> Option<Self> {
         match method.to_ascii_lowercase().as_str() {
             "mean" => Some(Self::Mean),
             "previous" => Some(Self::Previous),
@@ -45,7 +89,7 @@ impl FillMethod {
 
 fn get_fill_method_from_arg(arg: Arg) -> DFResult<FillMethod> {
     Ok(match arg.method.as_deref() {
-        Some(s) => FillMethod::from_str(s).ok_or_else(|| {
+        Some(s) => FillMethod::try_from_str(s).ok_or_else(|| {
             datafusion::error::DataFusionError::Execution(format!("Invalid fill method: {}", s))
         })?,
         None => FillMethod::Linear,

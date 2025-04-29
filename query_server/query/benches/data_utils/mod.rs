@@ -13,7 +13,7 @@ use parking_lot::Mutex;
 use query::extension::expr::func_manager::DFSessionContextFuncAdapter;
 use query::extension::expr::load_all_functions;
 use rand::rngs::StdRng;
-use rand::seq::SliceRandom;
+use rand::seq::IndexedRandom as _;
 use rand::{Rng, SeedableRng};
 use tokio::runtime::Runtime;
 
@@ -81,10 +81,10 @@ fn create_data(size: usize, null_density: f64) -> Vec<Option<f64>> {
 
     (0..size)
         .map(|_| {
-            if rng.gen::<f64>() > null_density {
+            if rng.random::<f64>() > null_density {
                 None
             } else {
-                Some(rng.gen::<f64>())
+                Some(rng.random::<f64>())
             }
         })
         .collect()
@@ -96,10 +96,10 @@ fn create_integer_data(size: usize, value_density: f64) -> Vec<Option<u64>> {
 
     (0..size)
         .map(|_| {
-            if rng.gen::<f64>() > value_density {
+            if rng.random::<f64>() > value_density {
                 None
             } else {
-                Some(rng.gen::<u64>())
+                Some(rng.random::<u64>())
             }
         })
         .collect()
@@ -128,12 +128,12 @@ fn create_record_batch(
 
     // Integer values between [0, 9].
     let integer_values_narrow = (0..batch_size)
-        .map(|_| rng.gen_range(0_u64..10))
+        .map(|_| rng.random_range(0_u64..10))
         .collect::<Vec<_>>();
 
     // Integer values between [0, 9].
     let times = (0..batch_size)
-        .map(|_| rng.gen_range(0_i64..10))
+        .map(|_| rng.random_range(0_i64..10))
         .collect::<Vec<_>>();
 
     RecordBatch::try_new(

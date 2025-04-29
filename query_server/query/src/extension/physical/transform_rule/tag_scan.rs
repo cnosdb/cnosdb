@@ -35,7 +35,7 @@ impl ExtensionPlanner for TagScanPlanner {
             let tag_scan = source
                 .create_tag_scan_physical_plan(
                     session_state,
-                    projected_schema.as_ref().into(),
+                    Arc::new(projected_schema.as_arrow().clone()),
                     filters,
                     *fetch,
                 )

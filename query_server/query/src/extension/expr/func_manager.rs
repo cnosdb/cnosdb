@@ -20,31 +20,37 @@ impl<'a> DFSessionContextFuncAdapter<'a> {
 
 impl<'a> FunctionMetadataManager for DFSessionContextFuncAdapter<'a> {
     fn register_udf(&mut self, udf: ScalarUDF) -> QueryResult<()> {
-        if self.ctx.udf(udf.name.as_str()).is_err() {
-            self.ctx.register_udf(udf);
+        if self.ctx.udf(udf.name()).is_err() {
+            self.ctx.register_udf(Arc::new(udf))?;
 
             return Ok(());
         }
 
-        Err(QueryError::FunctionExists { name: udf.name })
+        Err(QueryError::FunctionExists {
+            name: udf.name().to_string(),
+        })
     }
 
     fn register_udaf(&mut self, udaf: AggregateUDF) -> QueryResult<()> {
-        if self.ctx.udaf(udaf.name.as_str()).is_err() {
-            self.ctx.register_udaf(udaf);
+        if self.ctx.udaf(udaf.name()).is_err() {
+            self.ctx.register_udaf(Arc::new(udaf))?;
             return Ok(());
         }
 
-        Err(QueryError::FunctionExists { name: udaf.name })
+        Err(QueryError::FunctionExists {
+            name: udaf.name().to_string(),
+        })
     }
 
     fn register_udwf(&mut self, udwf: datafusion::logical_expr::WindowUDF) -> QueryResult<()> {
-        if self.ctx.udwf(udwf.name.as_str()).is_err() {
-            self.ctx.register_udwf(udwf);
+        if self.ctx.udwf(udwf.name()).is_err() {
+            self.ctx.register_udwf(Arc::new(udwf))?;
             return Ok(());
         }
 
-        Err(QueryError::FunctionExists { name: udwf.name })
+        Err(QueryError::FunctionExists {
+            name: udwf.name().to_string(),
+        })
     }
 
     fn udf(&self, name: &str) -> QueryResult<Arc<ScalarUDF>> {

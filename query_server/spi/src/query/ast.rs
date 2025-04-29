@@ -2,8 +2,8 @@ use std::fmt;
 
 use datafusion::sql::parser::CreateExternalTable;
 use datafusion::sql::sqlparser::ast::{
-    AnalyzeFormat, DataType, Expr, Ident, ObjectName, Offset, OrderByExpr, SqlOption, Statement,
-    TableFactor, Value,
+    AnalyzeFormat, DataType, Expr, Ident, ObjectName, Offset, OrderByExpr,
+    SqlOption as SqlSqlOption, Statement, TableFactor, Value,
 };
 use datafusion::sql::sqlparser::parser::ParserError;
 use models::codec::Encoding;
@@ -67,14 +67,44 @@ pub enum ExtStatement {
 
     // replica cmd
     ShowReplicas,
-    ReplicaDestory(ReplicaDestory),
+    ReplicaDestroy(ReplicaDestroy),
     ReplicaAdd(ReplicaAdd),
     ReplicaRemove(ReplicaRemove),
     ReplicaPromote(ReplicaPromote),
 }
 
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
+pub struct SqlOption {
+    pub name: Ident,
+    pub value: Value,
+}
+
+impl From<SqlOption> for SqlSqlOption {
+    fn from(sql_opt: SqlOption) -> Self {
+        SqlSqlOption::KeyValue {
+            key: sql_opt.name,
+            value: Expr::Value(sql_opt.value.into()),
+        }
+    }
+}
+
+/// Readable file type
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ReplicaDestory {
+pub enum FileType {
+    /// Apache Arrow file
+    ARROW,
+    /// Apache Avro file
+    AVRO,
+    /// Apache Parquet file
+    PARQUET,
+    /// CSV file
+    CSV,
+    /// JSON file
+    JSON,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReplicaDestroy {
     pub replica_id: ReplicationSetId,
 }
 
@@ -356,7 +386,7 @@ impl ColumnOption {
         Self {
             name,
             is_tag: true,
-            data_type: DataType::String,
+            data_type: DataType::String(None),
             encoding: None,
         }
     }

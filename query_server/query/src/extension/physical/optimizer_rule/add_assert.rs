@@ -1,7 +1,7 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-use datafusion::common::tree_node::{Transformed, TreeNode};
+use datafusion::common::tree_node::{Transformed, TransformedResult, TreeNode};
 use datafusion::common::Result as DFResult;
 use datafusion::config::ConfigOptions;
 use datafusion::error::DataFusionError;
@@ -16,6 +16,7 @@ use crate::extension::physical::plan_node::assert::AssertExec;
 use crate::extension::physical::plan_node::table_writer::TableWriterExec;
 use crate::extension::utils::downcast_execution_plan;
 
+#[derive(Debug)]
 #[non_exhaustive]
 pub struct AddAssertExec {}
 
@@ -37,16 +38,17 @@ impl PhysicalOptimizerRule for AddAssertExec {
         plan: Arc<dyn ExecutionPlan>,
         _config: &ConfigOptions,
     ) -> DFResult<Arc<dyn ExecutionPlan>> {
-        plan.transform_down(&|plan| {
+        plan.transform_down(|plan| {
             if let Some(exec) = downcast_execution_plan::<TableWriterExec>(plan.as_ref()) {
                 if let Some(new_child) = add_table_write_asserter_if_necessary(exec)? {
                     let new_plan = plan.with_new_children(vec![new_child])?;
-                    return Ok(Transformed::Yes(new_plan));
+                    return Ok(Transformed::yes(new_plan));
                 }
             }
 
-            Ok(Transformed::No(plan))
+            Ok(Transformed::no(plan))
         })
+        .data()
     }
 
     fn name(&self) -> &str {

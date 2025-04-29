@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use datafusion::arrow::datatypes::Schema;
 use datafusion::common::DFSchema;
 use datafusion::error::{DataFusionError, Result};
 use datafusion::execution::context::SessionState;
@@ -39,7 +38,6 @@ impl ExtensionPlanner for UpdateTagValuePlanner {
                         let e = planner.create_physical_expr(
                             expr,
                             &DFSchema::empty(),
-                            &Schema::empty(),
                             session_state,
                         )?;
                         Ok((column.name.clone(), e))

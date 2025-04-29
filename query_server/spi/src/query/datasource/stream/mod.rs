@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::error::Result;
 use datafusion::execution::context::SessionState;
-use datafusion::logical_expr::logical_plan::AggWithGrouping;
+use datafusion::logical_expr::logical_plan::TableScanAggregate;
 use datafusion::logical_expr::{TableProviderAggregationPushDown, TableProviderFilterPushDown};
 use datafusion::physical_plan::ExecutionPlan;
 use datafusion::prelude::Expr;
@@ -93,7 +93,7 @@ pub trait StreamProvider {
         state: &SessionState,
         projection: Option<&Vec<usize>>,
         filters: &[Expr],
-        agg_with_grouping: Option<&AggWithGrouping>,
+        _aggregate: Option<&TableScanAggregate>,
         range: Option<&(Option<Self::Offset>, Self::Offset)>,
     ) -> Result<Arc<dyn ExecutionPlan>>;
 
@@ -104,7 +104,7 @@ pub trait StreamProvider {
     fn schema(&self) -> SchemaRef;
 
     /// Tests whether the table provider can make use of a filter expression
-    /// to optimise data retrieval.
+    /// to optimize data retrieval.
     fn supports_filter_pushdown(&self, _filter: &Expr) -> Result<TableProviderFilterPushDown> {
         Ok(TableProviderFilterPushDown::Unsupported)
     }

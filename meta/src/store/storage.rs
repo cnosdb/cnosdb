@@ -105,7 +105,7 @@ impl ApplyStorage for StateMachine {
         Ok(())
     }
 
-    async fn destory(&mut self) -> ReplicationResult<()> {
+    async fn destroy(&mut self) -> ReplicationResult<()> {
         Ok(())
     }
 
@@ -126,24 +126,27 @@ impl ApplyStorage for StateMachine {
 }
 
 impl StateMachine {
-    pub fn open(path: impl AsRef<Path>, size: usize) -> MetaResult<Self> {
+    pub fn open(path: impl AsRef<Path>, max_size: usize) -> MetaResult<Self> {
         fs::create_dir_all(&path)?;
 
-        let env = heed::EnvOpenOptions::new()
-            .map_size(size)
-            .max_dbs(1)
-            .open(path)?;
+        let env = unsafe {
+            heed::EnvOpenOptions::new()
+                .map_size(max_size)
+                .max_dbs(1)
+                .open(path)?
+        };
 
+        let mut wtxn = env.write_txn()?;
         let db: heed::Database<heed::types::Str, heed::types::Str> =
-            env.create_database(Some("data"))?;
-        let storage = Self {
+            env.create_database(&mut wtxn, Some("data"))?;
+        wtxn.commit()?;
+
+        Ok(Self {
             env,
             db,
             snapshot: None,
             watch: Arc::new(Watch::new()),
-        };
-
-        Ok(storage)
+        })
     }
 
     pub fn is_meta_init(&self) -> MetaResult<bool> {
@@ -544,14 +547,14 @@ impl StateMachine {
         let path = KeyPath::tenant(cluster, tenant_name);
         let res = self
             .get_struct::<Tenant>(&path)?
-            .filter(|t| !is_need_hidden || !t.options().get_tenant_is_hidden());
+            .filter(|t| !is_need_hidden || !t.options().tenant_is_hidden());
         Ok(res)
     }
 
     pub fn process_read_tenants(&self, cluster: &str) -> MetaResult<Vec<Tenant>> {
         let path = KeyPath::tenants(cluster);
         let mut tenants: Vec<Tenant> = self.children_data::<Tenant>(&path)?.into_values().collect();
-        tenants.retain(|tenant| !tenant.options().get_tenant_is_hidden());
+        tenants.retain(|tenant| !tenant.options().tenant_is_hidden());
 
         Ok(tenants)
     }
@@ -1136,7 +1139,7 @@ impl StateMachine {
                 (TableSchema::TsKvTableSchema(val), TableSchema::TsKvTableSchema(schema)) => {
                     if val.schema_version + 1 != schema.schema_version {
                         return Err(MetaError::UpdateTableConflict {
-                            name: schema.name.clone(),
+                            name: schema.name.to_string(),
                         });
                     }
                 }
@@ -1362,7 +1365,7 @@ impl StateMachine {
     ) -> MetaResult<Tenant> {
         let key = KeyPath::tenant(cluster, name);
         if let Some(tenant) = self.get_struct::<Tenant>(&key)? {
-            if !tenant.options().get_tenant_is_hidden() {
+            if !tenant.options().tenant_is_hidden() {
                 let new_tenant = Tenant::new(*tenant.id(), name.to_string(), options.to_owned());
                 self.insert(&key, &value_encode(&new_tenant)?)?;
 

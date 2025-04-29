@@ -57,7 +57,7 @@ impl<'a> LPReporter<'a> {
     }
 }
 
-impl<'a> Reporter for LPReporter<'a> {
+impl Reporter for LPReporter<'_> {
     fn start(
         &mut self,
         name: Cow<'static, str>,
@@ -152,7 +152,7 @@ mod test {
     #[derive(Debug)]
     struct LinePartialComparator<'a>(Line<'a>);
 
-    impl<'a> PartialEq for LinePartialComparator<'a> {
+    impl PartialEq for LinePartialComparator<'_> {
         fn eq(&self, other: &Self) -> bool {
             self.0.table == other.0.table
                 && self.0.tags == other.0.tags

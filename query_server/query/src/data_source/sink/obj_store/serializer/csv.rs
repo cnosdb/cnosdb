@@ -13,14 +13,14 @@ use crate::data_source::sink::RecordBatchSerializer;
 use crate::data_source::QueryResult;
 
 pub struct CsvRecordBatchSerializer {
-    with_header: bool,
+    has_header: bool,
     delimiter: u8,
 }
 
 impl CsvRecordBatchSerializer {
-    pub fn new(with_header: bool, delimiter: u8) -> Self {
+    pub fn new(has_header: bool, delimiter: u8) -> Self {
         Self {
-            with_header,
+            has_header,
             delimiter,
         }
     }
@@ -39,7 +39,7 @@ impl RecordBatchSerializer for CsvRecordBatchSerializer {
         let mut bytes = vec![];
         {
             let mut writer = WriterBuilder::new()
-                .has_headers(self.with_header)
+                .with_header(self.has_header)
                 .with_delimiter(self.delimiter)
                 .build(&mut bytes);
 
@@ -62,7 +62,7 @@ impl RecordBatchSerializer for CsvRecordBatchSerializer {
         let mut bytes = vec![];
         {
             let mut writer = WriterBuilder::new()
-                .has_headers(self.with_header)
+                .with_header(self.has_header)
                 .with_delimiter(self.delimiter)
                 .build(&mut bytes);
 

@@ -341,7 +341,7 @@ pub(crate) mod test {
         put_none: bool,
     ) {
         let mut rows = OrderedRowsData::new();
-        let mut size: usize = schema.size();
+        let mut size: usize = schema.count_schema_size();
         for ts in time_range.0..=time_range.1 {
             let mut fields = Vec::new();
             for _ in 0..schema.columns().len() {
@@ -378,7 +378,7 @@ pub(crate) mod test {
             let sdata_rlock = sdata.read();
             let schema_groups = sdata_rlock.flat_groups();
             for (sch, _, row) in schema_groups {
-                let fields = sch.fields();
+                let fields = sch.build_field_columns_vec();
                 for r in row.get_ref_rows().iter() {
                     for (i, f) in r.fields.iter().enumerate() {
                         if let Some(fv) = f {

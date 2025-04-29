@@ -2,8 +2,7 @@ use std::marker::PhantomData;
 use std::task::{ready, Context, Poll};
 
 use arrow_array::RecordBatch;
-use arrow_schema::ArrowError;
-use datafusion::physical_plan::sorts::cursor::FieldArray;
+use datafusion::physical_plan::sorts::cursor::CursorArray;
 use futures::stream::Fuse;
 use futures::StreamExt;
 use snafu::ResultExt;
@@ -53,13 +52,13 @@ impl FusedStreams {
     }
 }
 
-pub struct ColumnCursorStream<T: FieldArray> {
+pub struct ColumnCursorStream<T: CursorArray> {
     streams: FusedStreams,
     time_column_idx: Vec<usize>,
     phantom: PhantomData<fn(T) -> T>,
 }
 
-impl<T: FieldArray> std::fmt::Debug for ColumnCursorStream<T> {
+impl<T: CursorArray> std::fmt::Debug for ColumnCursorStream<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PrimitiveCursorStream")
             .field("num_streams", &self.streams)
@@ -67,24 +66,14 @@ impl<T: FieldArray> std::fmt::Debug for ColumnCursorStream<T> {
     }
 }
 
-impl<T: FieldArray> ColumnCursorStream<T> {
+impl<T: CursorArray> ColumnCursorStream<T> {
     pub fn new(
         streams: Vec<SendableSchemableTskvRecordBatchStream>,
         column_name: &str,
     ) -> TskvResult<Self> {
         let idxs = streams
             .iter()
-            .map(|a| {
-                a.schema()
-                    .column_with_name(column_name)
-                    .map(|f| f.0)
-                    .ok_or_else(|| {
-                        ArrowError::SchemaError(format!(
-                            "Unable to get field named \"{column_name}\"."
-                        ))
-                    })
-                    .context(ArrowSnafu)
-            })
+            .map(|a| a.schema().index_of(column_name).context(ArrowSnafu))
             .collect::<TskvResult<Vec<usize>>>()?;
 
         let streams = streams.into_iter().map(|s| s.fuse()).collect();
@@ -107,7 +96,7 @@ impl<T: FieldArray> ColumnCursorStream<T> {
     }
 }
 
-impl<T: FieldArray> PartitionedStream for ColumnCursorStream<T> {
+impl<T: CursorArray> PartitionedStream for ColumnCursorStream<T> {
     type Output = TskvResult<(ColumnCursor<T::Values>, RecordBatch)>;
 
     fn partitions(&self) -> usize {

@@ -1,321 +1,264 @@
-use std::convert::Infallible as StdInfallible;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use clap::Parser;
-use futures::future::TryFutureExt;
+use config::common::LogConfig;
 use metrics::metric_register::MetricsRegister;
 use openraft::SnapshotPolicy;
 use protos::raft_service::raft_service_server::RaftServiceServer;
 use replication::apply_store::HeedApplyStorage;
 use replication::entry_store::HeedEntryStorage;
-use replication::errors::{MsgInvalidSnafu, ReplicationResult};
+use replication::errors::ReplicationResult;
 use replication::metrics::ReplicationMetrics;
 use replication::multi_raft::MultiRaft;
 use replication::network_grpc::RaftCBServer;
-use replication::network_http::{EitherBody, RaftHttpAdmin, SyncSendError};
 use replication::node_store::NodeStorage;
 use replication::raft_node::RaftNode;
 use replication::state_store::StateStorage;
-use replication::{RaftNodeId, RaftNodeInfo, ReplicationConfig};
+use replication::{RaftNodeInfo, ReplicationConfig};
+use tokio::net::TcpListener;
 use tokio::sync::RwLock;
-use tower::Service;
-use trace::{debug, info};
-use tracing::error;
-use warp::{hyper, Filter};
+use trace::global_logging::init_global_logging;
 
-const TEST_DATA_DIR: &str = "/tmp/cnosdb/raft_test";
-#[derive(clap::Parser, Clone, Debug)]
-#[clap(author, version, about, long_about = None)]
-pub struct Opt {
-    #[clap(long)]
-    pub id_port: u64,
-}
+const TEST_DIR: &str = "/tmp/test/replication/raft";
+const TEST_HOST: &str = "127.0.0.1";
+const TEST_CLUSTER_NAME: &str = "raft_test";
+const TEST_GROUP_ID: u32 = 2222;
+const TEST_MAX_SIZE: u64 = 1024 * 1024 * 1024;
+const TEST_TENANT: &str = "test_t";
+const TEST_DATABASE: &str = "test_d";
 
-#[actix_web::main]
+#[tokio::main]
 async fn main() -> std::io::Result<()> {
-    tracing_subscriber::fmt()
-        .with_file(true)
-        .with_line_number(true)
-        .with_max_level(tracing::Level::DEBUG)
-        .init();
-
-    debug!("this is a debug log");
-
-    let options = Opt::parse();
-
-    info!("service start option: {:?}", options);
-
-    let data_dir = format!("{}/{}", TEST_DATA_DIR, options.id_port);
-    let server = create_raft_node(&data_dir, options.id_port).await.unwrap();
-    start_server(server).await.unwrap();
-
-    Ok(())
-}
-
-fn raft_node_info(id: RaftNodeId) -> RaftNodeInfo {
-    let http_addr = format!("127.0.0.1:{}", id);
-
-    RaftNodeInfo {
-        group_id: 2222,
-        address: http_addr.clone(),
-    }
-}
-
-async fn create_raft_node(dir: &str, id_port: RaftNodeId) -> ReplicationResult<RaftNodeServer> {
-    let info = raft_node_info(id_port);
-    let http_addr = info.address.clone();
-
-    let max_size = 1024 * 1024 * 1024;
-    let state = StateStorage::open(format!("{}/state", dir), max_size)?;
-    let entry = HeedEntryStorage::open(format!("{}/entry", dir), max_size)?;
-    let engine = HeedApplyStorage::open(format!("{}/engine", dir), max_size)?;
-
-    let state = Arc::new(state);
-    let entry = Arc::new(RwLock::new(entry));
-    let engine = Arc::new(RwLock::new(engine));
-
-    let storage = NodeStorage::open(id_port, info.clone(), state, engine.clone(), entry).await?;
-    let storage = Arc::new(storage);
-
-    let config = ReplicationConfig {
-        cluster_name: "raft_test".to_string(),
-        lmdb_max_map_size: 1024 * 1024 * 1024,
-        grpc_enable_gzip: false,
-        heartbeat_interval: 1000,
-        raft_logs_to_keep: 200,
-        send_append_entries_timeout: 3 * 1000,
-        install_snapshot_timeout: 300 * 1000,
-        //snapshot_policy: SnapshotPolicy::Never,
-        snapshot_policy: SnapshotPolicy::LogsSinceLast(200),
-    };
-    let node = RaftNode::new(id_port, info, storage, config).await.unwrap();
-
-    let node = Arc::new(node);
-    let raft_admin = RaftHttpAdmin::new(node.clone());
-    let node_server = RaftNodeServer {
-        node,
-        engine,
-        http_addr,
-        raft_admin: Arc::new(raft_admin),
-    };
-
-    Ok(node_server)
-}
-
-// **************************** http and grpc server ************************************** //
-async fn start_server(node_server: RaftNodeServer) -> ReplicationResult<()> {
-    let mut multi_raft = MultiRaft::new();
-
-    let register = Arc::new(MetricsRegister::new([("node_id", "8888")]));
-    let metrics = ReplicationMetrics::new(
-        register,
-        "test_t",
-        "test_d",
-        node_server.node.group_id(),
-        node_server.node.raft_id(),
+    let cli = Cli::parse();
+    init_global_logging(
+        &LogConfig {
+            level: "debug".to_string(),
+            path: cli.dir.join("log").to_string_lossy().to_string(),
+            ..Default::default()
+        },
+        "replication",
     );
-    multi_raft.add_node(node_server.node.clone(), metrics);
-    let nodes = Arc::new(RwLock::new(multi_raft));
+    trace::info!("Starting service with option: {:?}", cli);
 
-    let addr = node_server.http_addr.parse().unwrap();
-    hyper::Server::bind(&addr)
-        .serve(hyper::service::make_service_fn(move |_| {
-            let mut http_service = warp::service(node_server.routes());
-            let raft_service = RaftServiceServer::new(RaftCBServer::new(nodes.clone()));
-
-            let mut grpc_service = tonic::transport::Server::builder()
-                .add_service(raft_service)
-                .into_service();
-
-            futures::future::ok::<_, StdInfallible>(tower::service_fn(
-                move |req: hyper::Request<hyper::Body>| {
-                    if req.uri().path().starts_with("/raft_service.RaftService/") {
-                        futures::future::Either::Right(
-                            grpc_service
-                                .call(req)
-                                .map_ok(|res| res.map(EitherBody::Right))
-                                .map_err(SyncSendError::from),
-                        )
-                    } else {
-                        futures::future::Either::Left(
-                            http_service
-                                .call(req)
-                                .map_ok(|res| res.map(EitherBody::Left))
-                                .map_err(SyncSendError::from),
-                        )
-                    }
-                },
-            ))
-        }))
-        .await
-        .unwrap();
+    let server = cli.build_raft_node_server().await.unwrap();
+    server.start_server().await;
 
     Ok(())
+}
+
+#[derive(Debug, Parser)]
+#[command(name = "replication", version = version::workspace_version())]
+pub struct Cli {
+    #[arg(long)]
+    pub node_id: u64,
+    #[arg(short, long)]
+    pub port: u16,
+    #[arg(long, default_value = TEST_DIR)]
+    pub dir: PathBuf,
+}
+
+impl Cli {
+    async fn build_raft_node_server(&self) -> ReplicationResult<RaftNodeServer> {
+        let data_dir = self.dir.join(self.node_id.to_string());
+        let node_http_addr = format!("{TEST_HOST}:{}", self.port);
+
+        let raft_node = RaftNodeInfo {
+            group_id: TEST_GROUP_ID,
+            address: node_http_addr.clone(),
+        };
+
+        let state = StateStorage::open(data_dir.join("state"), TEST_MAX_SIZE as usize)?;
+        let state = Arc::new(state);
+
+        let entry = HeedEntryStorage::open(data_dir.join("entry"), TEST_MAX_SIZE as usize)?;
+        let entry = Arc::new(RwLock::new(entry));
+
+        let engine = HeedApplyStorage::open(data_dir.join("engine"), TEST_MAX_SIZE as usize)?;
+        let engine = Arc::new(RwLock::new(engine));
+
+        let node_store = NodeStorage::open(
+            self.node_id,
+            raft_node.clone(),
+            state,
+            engine.clone(),
+            entry,
+        )
+        .await?;
+        let node_store = Arc::new(node_store);
+
+        let config = ReplicationConfig {
+            cluster_name: TEST_CLUSTER_NAME.to_string(),
+            lmdb_max_map_size: TEST_MAX_SIZE,
+            grpc_enable_gzip: false,
+            heartbeat_interval: 1000,
+            raft_logs_to_keep: 200,
+            send_append_entries_timeout: 3 * 1000,
+            install_snapshot_timeout: 300 * 1000,
+            //snapshot_policy: SnapshotPolicy::Never,
+            snapshot_policy: SnapshotPolicy::LogsSinceLast(200),
+        };
+        let raft_node = RaftNode::new(self.node_id, raft_node, node_store, config).await?;
+        let raft_node = Arc::new(raft_node);
+        let node_server = RaftNodeServer {
+            listen_addr: node_http_addr.parse().unwrap(),
+            raft_node,
+            engine,
+        };
+
+        Ok(node_server)
+    }
 }
 
 #[derive(Clone)]
 struct RaftNodeServer {
-    http_addr: String,
-    node: Arc<RaftNode>,
+    listen_addr: SocketAddr,
+    raft_node: Arc<RaftNode>,
     engine: Arc<RwLock<HeedApplyStorage>>,
-    raft_admin: Arc<RaftHttpAdmin>,
 }
 
-//  let res: Result<String, warp::Rejection> = Ok(data);
-//  warp::reply::Response::new(hyper::Body::from(data))
 impl RaftNodeServer {
-    fn routes(
-        &self,
-    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-        self.raft_admin
-            .routes()
-            .or(self.read())
-            .or(self.write())
-            .or(self.trigger_snapshot())
-            .or(self.trigger_purge_logs())
-    }
+    async fn start_server(self) {
+        let listener = TcpListener::bind(&self.listen_addr).await.unwrap();
 
-    async fn _start(&self, addr: String) {
-        info!("http server start addr: {}", addr);
+        let metrics_register = Arc::new(MetricsRegister::new([(
+            "node_id",
+            self.raft_node.raft_id(),
+        )]));
+        let metrics = ReplicationMetrics::new(
+            metrics_register,
+            TEST_TENANT,
+            TEST_DATABASE,
+            self.raft_node.group_id(),
+            self.raft_node.raft_id(),
+        );
 
-        let addr: SocketAddr = addr.parse().unwrap();
-        warp::serve(self.routes()).run(addr).await;
-    }
+        let mut router = http_api::create_router(self.clone());
+        {
+            let mut multi_raft = MultiRaft::new();
+            multi_raft.add_node(self.raft_node.clone(), metrics);
+            let multi_raft = Arc::new(RwLock::new(multi_raft));
 
-    fn with_engine(
-        &self,
-    ) -> impl Filter<Extract = (Arc<RwLock<HeedApplyStorage>>,), Error = StdInfallible> + Clone
-    {
-        let engine = self.engine.clone();
+            let mut grpc_routes_builder = tonic::service::Routes::builder();
+            grpc_routes_builder.add_service(RaftServiceServer::new(RaftCBServer::new(multi_raft)));
+            let grpc_router = grpc_routes_builder.routes().into_axum_router();
+            router = router.merge(grpc_router);
+        };
 
-        warp::any().map(move || engine.clone())
-    }
-
-    fn with_raft_node(
-        &self,
-    ) -> impl Filter<Extract = (Arc<RaftNode>,), Error = StdInfallible> + Clone {
-        let node = self.node.clone();
-
-        warp::any().map(move || node.clone())
-    }
-
-    fn _handle_rejection(err: warp::Rejection) -> Result<impl warp::Reply, StdInfallible> {
-        let reason = format!("{:?}", err);
-
-        Ok(warp::Reply::into_response(reason))
-    }
-
-    fn read(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-        warp::path!("read")
-            .and(warp::body::bytes())
-            .and(self.with_engine())
-            .and_then(
-                |req: hyper::body::Bytes, engine: Arc<RwLock<HeedApplyStorage>>| async move {
-                    let req: String = serde_json::from_slice(&req)
-                        .map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())
-                        .map_err(|e| {
-                            error!("serde error: {:?}", e);
-                            warp::reject::custom(e)
-                        })?;
-
-                    let rsp = engine
-                        .read()
-                        .await
-                        .get(&req)
-                        .unwrap_or_else(|err| Some(err.to_string()))
-                        .unwrap_or_else(|| "not found value by key".to_string());
-
-                    let res: Result<String, warp::Rejection> = Ok(rsp);
-
-                    res
-                },
-            )
-    }
-
-    fn write(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-        warp::path!("write")
-            .and(warp::body::bytes())
-            .and(self.with_raft_node())
-            .and_then(|req: hyper::body::Bytes, node: Arc<RaftNode>| async move {
-                let rsp = node.raw_raft().client_write(req.to_vec()).await;
-                let data = serde_json::to_string(&rsp)
-                    .map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())
-                    .map_err(|e| {
-                        error!("serde error: {:?}", e);
-                        warp::reject::custom(e)
-                    })?;
-                let res: Result<String, warp::Rejection> = Ok(data);
-
-                res
-            })
-    }
-
-    fn trigger_purge_logs(
-        &self,
-    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-        warp::path!("trigger_purge_logs")
-            .and(warp::body::bytes())
-            .and(self.with_raft_node())
-            .and_then(|req: hyper::body::Bytes, node: Arc<RaftNode>| async move {
-                let idx_id: u64 = serde_json::from_slice(&req)
-                    .map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())
-                    .map_err(|e| {
-                        error!("serde error: {:?}", e);
-                        warp::reject::custom(e)
-                    })?;
-
-                let rsp = node
-                    .raw_raft()
-                    .trigger()
-                    .purge_log(idx_id)
-                    .await
-                    .map_or_else(|err| err.to_string(), |_| "Success".to_string());
-
-                info!("------ trigger_purge_logs: {} - {}", idx_id, rsp);
-                let res: Result<String, warp::Rejection> = Ok(rsp);
-                res
-            })
-    }
-
-    fn trigger_snapshot(
-        &self,
-    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-        warp::path!("trigger_snapshot")
-            .and(warp::body::bytes())
-            .and(self.with_raft_node())
-            .and_then(|_req: hyper::body::Bytes, node: Arc<RaftNode>| async move {
-                let rsp = node
-                    .raw_raft()
-                    .trigger()
-                    .snapshot()
-                    .await
-                    .map_or_else(|err| err.to_string(), |_| "Success".to_string());
-
-                info!("------ trigger_snapshot: {}", rsp);
-                let res: Result<String, warp::Rejection> = Ok(rsp);
-                res
-            })
+        axum::serve(listener, router).await.unwrap();
     }
 }
 
-//*****************************************************************************************//
-//********************************** Replication Tests ************************************//
-//*****************************************************************************************//
+mod http_api {
+    use axum::body::Bytes;
+    use axum::extract::State;
+    use axum::http::StatusCode;
+    use axum::{routing, Router};
+    use replication::errors::MsgInvalidSnafu;
+
+    use super::RaftNodeServer;
+
+    pub fn create_router(server: RaftNodeServer) -> Router {
+        Router::new()
+            .route("/read", routing::any(read))
+            .route("/write", routing::any(write))
+            .route("/trigger_purge_logs", routing::any(trigger_purge_logs))
+            .route("/trigger_snapshot", routing::any(trigger_snapshot))
+            .with_state(server)
+    }
+
+    async fn read(
+        State(RaftNodeServer { engine, .. }): State<RaftNodeServer>,
+        body: String,
+    ) -> (StatusCode, String) {
+        match engine.read().await.get(&body) {
+            Ok(Some(data)) => (StatusCode::OK, data),
+            // TODO(zipper): why return status 200 ?
+            Ok(None) => (StatusCode::OK, "not found value by key".to_string()),
+            Err(e) => (StatusCode::OK, e.to_string()),
+        }
+    }
+
+    async fn write(
+        State(RaftNodeServer { raft_node, .. }): State<RaftNodeServer>,
+        body: Bytes,
+    ) -> (StatusCode, String) {
+        let app_data = body.to_vec();
+        let ret = raft_node.raw_raft().client_write(app_data).await;
+        match serde_json::to_string(&ret) {
+            Ok(data) => (StatusCode::OK, data),
+            Err(e) => {
+                trace::error!("Failed to serialize response({ret:?}): {e}");
+                let err = MsgInvalidSnafu { msg: e.to_string() }.build();
+                // TODO(zipper): why return status 200 ?
+                (StatusCode::OK, format!("serde error: {err:?}"))
+            }
+        }
+    }
+
+    async fn trigger_purge_logs(
+        State(RaftNodeServer { raft_node, .. }): State<RaftNodeServer>,
+        body: Bytes,
+    ) -> (StatusCode, String) {
+        let body_str = match std::str::from_utf8(&body) {
+            Ok(s) => s,
+            Err(_e) => return (StatusCode::BAD_REQUEST, "Bad UTF-8".to_string()),
+        };
+        let upto_log_idx = match body_str.parse::<u64>() {
+            Ok(idx) => idx,
+            Err(_e) => {
+                return (StatusCode::BAD_REQUEST, "Invalid number".to_string());
+            }
+        };
+
+        let ret = raft_node.raw_raft().trigger().purge_log(upto_log_idx).await;
+        match ret {
+            Ok(_) => {
+                trace::info!("------ trigger_purge_logs: {upto_log_idx} - Success");
+                (StatusCode::OK, "Success".to_string())
+            }
+            Err(e) => {
+                // TODO(zipper): why return status 200 ?
+                trace::info!("------ trigger_purge_logs: {upto_log_idx} - {e}");
+                (StatusCode::OK, e.to_string())
+            }
+        }
+    }
+
+    async fn trigger_snapshot(
+        State(RaftNodeServer { raft_node, .. }): State<RaftNodeServer>,
+    ) -> (StatusCode, String) {
+        let ret = raft_node.raw_raft().trigger().snapshot().await;
+        match ret {
+            Ok(_) => {
+                trace::info!("------ trigger_snapshot: Success");
+                (StatusCode::OK, "Success".to_string())
+            }
+            Err(e) => {
+                // TODO(zipper): why return status 200 ?
+                trace::info!("------ trigger_snapshot: {e}");
+                (StatusCode::OK, e.to_string())
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 #[serial_test::serial]
 mod tests {
+    use std::path::Path;
     use std::sync::Arc;
     use std::time::Duration;
 
     use maplit::{btreemap, btreeset};
     use openraft::ServerState;
     use replication::raft_node::RaftNode;
-    use replication::RaftNodeId;
+    use replication::{RaftNodeId, RaftNodeInfo};
     use tokio::runtime::Runtime;
     use tokio::task::JoinHandle;
 
-    use crate::{create_raft_node, raft_node_info, start_server, RaftNodeServer};
+    use crate::{Cli, RaftNodeServer};
 
     struct TestReplicationServer {
         pub node: Arc<RaftNode>,
@@ -337,22 +280,25 @@ mod tests {
         Arc::new(runtime)
     }
 
-    fn start_servers(
+    fn start_servers<P: AsRef<Path>>(
         rt: Arc<Runtime>,
-        dir: &str,
+        dir: P,
         range: std::ops::RangeInclusive<RaftNodeId>,
     ) -> Vec<TestReplicationServer> {
         let mut servers = vec![];
+        let dir = dir.as_ref();
         for id in range {
-            let data_dir = format!("{}/{}", dir, id);
-            let server = rt.block_on(create_raft_node(&data_dir, id)).unwrap();
+            let cli = Cli {
+                node_id: id,
+                port: 10100 + id as u16,
+                dir: dir.join(id.to_string()),
+            };
+            let server = rt.block_on(cli.build_raft_node_server()).unwrap();
 
             let server_clone = server.clone();
-            let handler = rt.spawn(async move {
-                start_server(server_clone).await.unwrap();
-            });
+            let handler = rt.spawn(async move { server_clone.start_server().await });
 
-            let node = server.node.clone();
+            let node = server.raft_node.clone();
             servers.push(TestReplicationServer {
                 node,
                 server,
@@ -363,14 +309,21 @@ mod tests {
         servers
     }
 
+    fn raft_node_info(id: RaftNodeId) -> RaftNodeInfo {
+        RaftNodeInfo {
+            group_id: 2222,
+            address: format!("127.0.0.1:{}", 10100 + id),
+        }
+    }
+
     #[test]
     fn test_leader_down_and_select_new() {
         println!("----- begin test_leader_down_and_select_new -----");
-        let _ = std::fs::remove_dir_all(crate::TEST_DATA_DIR);
+        let _ = std::fs::remove_dir_all(crate::TEST_DIR);
 
         let rt = create_runtime();
-        let dir = format!("{}/test_leader_down_and_select_new", crate::TEST_DATA_DIR);
-        let servers = start_servers(rt.clone(), &dir, 8000..=8002);
+        let dir = format!("{}/test_leader_down_and_select_new", crate::TEST_DIR);
+        let servers = start_servers(rt.clone(), &dir, 0..=2);
 
         // init 3-nodes cluster
         let members = btreemap! {
@@ -397,17 +350,17 @@ mod tests {
         let leader_id = metrics.current_leader.unwrap_or_default();
         assert!(leader_id == 8001 || leader_id == 8002);
 
-        let _ = std::fs::remove_dir_all(crate::TEST_DATA_DIR);
+        let _ = std::fs::remove_dir_all(crate::TEST_DIR);
     }
 
     #[test]
     fn test_add_follower_node() {
         println!("----- begin test_add_follower_node -----");
-        let _ = std::fs::remove_dir_all(crate::TEST_DATA_DIR);
+        let _ = std::fs::remove_dir_all(crate::TEST_DIR);
 
         let rt = create_runtime();
-        let dir = format!("{}/test_add_follower_node", crate::TEST_DATA_DIR);
-        let servers = start_servers(rt.clone(), &dir, 8000..=8002);
+        let dir = format!("{}/test_add_follower_node", crate::TEST_DIR);
+        let servers = start_servers(rt.clone(), &dir, 0..=2);
 
         // start node-0 as cluster
         let members =
@@ -424,8 +377,8 @@ mod tests {
 
         // change node-1 as follower
         let members = btreeset! {
-            servers[0].server.node.raft_id(),
-            servers[1].server.node.raft_id()
+            servers[0].server.raft_node.raft_id(),
+            servers[1].server.raft_node.raft_id()
         };
         rt.block_on(servers[0].node.raft_change_membership(members, true))
             .unwrap();
@@ -441,17 +394,17 @@ mod tests {
         assert_eq!(metrics.state, ServerState::Follower);
         assert_eq!(metrics.current_leader.unwrap(), 8000);
 
-        let _ = std::fs::remove_dir_all(crate::TEST_DATA_DIR);
+        let _ = std::fs::remove_dir_all(crate::TEST_DIR);
     }
 
     #[test]
     fn test_remove_follower_node() {
         println!("----- begin test_remove_follower_node -----");
-        let _ = std::fs::remove_dir_all(crate::TEST_DATA_DIR);
+        let _ = std::fs::remove_dir_all(crate::TEST_DIR);
 
         let rt = create_runtime();
-        let dir = format!("{}/test_remove_follower_node", crate::TEST_DATA_DIR);
-        let servers = start_servers(rt.clone(), &dir, 8000..=8002);
+        let dir = format!("{}/test_remove_follower_node", crate::TEST_DIR);
+        let servers = start_servers(rt.clone(), &dir, 0..=2);
 
         // start 3-nodes as a cluster
         let members = btreemap! {
@@ -473,8 +426,8 @@ mod tests {
 
         // remove node-2 from the cluster
         let members = btreeset! {
-            servers[0].server.node.raft_id(),
-            servers[1].server.node.raft_id()
+            servers[0].server.raft_node.raft_id(),
+            servers[1].server.raft_node.raft_id()
         };
         rt.block_on(servers[0].node.raft_change_membership(members, false))
             .unwrap();
@@ -485,17 +438,17 @@ mod tests {
         assert_eq!(metrics.state, ServerState::Leader);
         assert_eq!(metrics.replication.unwrap().len(), 2);
 
-        let _ = std::fs::remove_dir_all(crate::TEST_DATA_DIR);
+        let _ = std::fs::remove_dir_all(crate::TEST_DIR);
     }
 
     #[test]
     fn test_2node_cluster_remove_follower_node() {
         println!("----- begin test_2node_cluster_remove_follower_node -----");
-        let _ = std::fs::remove_dir_all(crate::TEST_DATA_DIR);
+        let _ = std::fs::remove_dir_all(crate::TEST_DIR);
 
         let rt = create_runtime();
-        let dir = format!("{}/test_2node_cluster_remove", crate::TEST_DATA_DIR);
-        let servers = start_servers(rt.clone(), &dir, 8000..=8002);
+        let dir = format!("{}/test_2node_cluster_remove", crate::TEST_DIR);
+        let servers = start_servers(rt.clone(), &dir, 0..=2);
 
         // start 2-nodes as a cluster
         let members = btreemap! {
@@ -508,7 +461,7 @@ mod tests {
         assert_eq!(metrics.state, ServerState::Leader);
 
         // remove node-1 from the cluster
-        let members = btreeset! {servers[0].server.node.raft_id()};
+        let members = btreeset! {servers[0].server.raft_node.raft_id()};
         rt.block_on(servers[0].node.raft_change_membership(members, false))
             .unwrap();
 
@@ -525,17 +478,17 @@ mod tests {
         assert_eq!(metrics.state, ServerState::Leader);
         assert_eq!(metrics.replication.unwrap().len(), 1);
 
-        let _ = std::fs::remove_dir_all(crate::TEST_DATA_DIR);
+        let _ = std::fs::remove_dir_all(crate::TEST_DIR);
     }
 
     #[test]
     fn test_promote_follower_to_leader() {
         println!("----- begin test_promote_follower_to_leader -----");
-        let _ = std::fs::remove_dir_all(crate::TEST_DATA_DIR);
+        let _ = std::fs::remove_dir_all(crate::TEST_DIR);
 
         let rt = create_runtime();
-        let dir = format!("{}/test_promote_follower_to_leader", crate::TEST_DATA_DIR);
-        let servers = start_servers(rt.clone(), &dir, 8000..=8002);
+        let dir = format!("{}/test_promote_follower_to_leader", crate::TEST_DIR);
+        let servers = start_servers(rt.clone(), &dir, 0..=2);
 
         // start 3-nodes as a cluster
         let members = btreemap! {
@@ -549,7 +502,7 @@ mod tests {
         assert_eq!(metrics.state, ServerState::Leader);
 
         // change node-2 as leader, node-0 && node-1 as learner
-        let members = btreeset! {servers[2].server.node.raft_id()};
+        let members = btreeset! {servers[2].server.raft_node.raft_id()};
         rt.block_on(servers[0].node.raft_change_membership(members, true))
             .unwrap();
         std::thread::sleep(Duration::from_secs(1));
@@ -566,9 +519,9 @@ mod tests {
 
         //change node-0 && node-1 as follower
         let members = btreeset! {
-            servers[0].server.node.raft_id(),
-            servers[1].server.node.raft_id(),
-            servers[2].server.node.raft_id()
+            servers[0].server.raft_node.raft_id(),
+            servers[1].server.raft_node.raft_id(),
+            servers[2].server.raft_node.raft_id()
         };
         rt.block_on(servers[2].node.raft_change_membership(members, true))
             .unwrap();
@@ -584,17 +537,17 @@ mod tests {
         assert_eq!(metrics.state, ServerState::Leader);
         assert_eq!(metrics.current_leader.unwrap(), 8002);
 
-        let _ = std::fs::remove_dir_all(crate::TEST_DATA_DIR);
+        let _ = std::fs::remove_dir_all(crate::TEST_DIR);
     }
 
     #[test]
     fn test_write_snapshot_add_node() {
         println!("----- begin test_write_snapshot_add_node -----");
-        let _ = std::fs::remove_dir_all(crate::TEST_DATA_DIR);
+        let _ = std::fs::remove_dir_all(crate::TEST_DIR);
 
         let rt = create_runtime();
-        let dir = format!("{}/test_write_snapshot_add_node", crate::TEST_DATA_DIR);
-        let servers = start_servers(rt.clone(), &dir, 8000..=8002);
+        let dir = format!("{}/test_write_snapshot_add_node", crate::TEST_DIR);
+        let servers = start_servers(rt.clone(), &dir, 0..=2);
 
         // start node-0 as cluster
         let members = btreemap! {
@@ -630,8 +583,8 @@ mod tests {
         println!("---- add learner complete");
 
         let members = btreeset! {
-            servers[0].server.node.raft_id(),
-            servers[1].server.node.raft_id()
+            servers[0].server.raft_node.raft_id(),
+            servers[1].server.raft_node.raft_id()
         };
         rt.block_on(servers[0].node.raft_change_membership(members, true))
             .unwrap();
@@ -660,7 +613,7 @@ mod tests {
 
         // remove node-1 from cluster
         let members = btreeset! {
-            servers[0].server.node.raft_id(),
+            servers[0].server.raft_node.raft_id(),
         };
         rt.block_on(servers[0].node.raft_change_membership(members, false))
             .unwrap();
@@ -685,8 +638,8 @@ mod tests {
         rt.block_on(servers[0].node.raft_add_learner(id, raft_node_info(id)))
             .unwrap();
         let members = btreeset! {
-            servers[0].server.node.raft_id(),
-            servers[1].server.node.raft_id(),
+            servers[0].server.raft_node.raft_id(),
+            servers[1].server.raft_node.raft_id(),
         };
         rt.block_on(servers[0].node.raft_change_membership(members, true))
             .unwrap();
@@ -713,17 +666,17 @@ mod tests {
             assert_eq!(engine.get(&command.key).unwrap().unwrap(), "v_3999");
         }
 
-        let _ = std::fs::remove_dir_all(crate::TEST_DATA_DIR);
+        let _ = std::fs::remove_dir_all(crate::TEST_DIR);
     }
 
     #[test]
     fn test_write_snapshot_leader_down() {
         println!("----- begin test_write_snapshot -----");
-        let _ = std::fs::remove_dir_all(crate::TEST_DATA_DIR);
+        let _ = std::fs::remove_dir_all(crate::TEST_DIR);
 
         let rt = create_runtime();
-        let dir = format!("{}/test_write_snapshot", crate::TEST_DATA_DIR);
-        let servers = start_servers(rt.clone(), &dir, 8000..=8002);
+        let dir = format!("{}/test_write_snapshot", crate::TEST_DIR);
+        let servers = start_servers(rt.clone(), &dir, 0..=2);
 
         // start node-0 as cluster
         let members = btreemap! {
@@ -754,7 +707,7 @@ mod tests {
         }
 
         // remove node-0 from the cluster
-        let members = btreeset! {servers[1].server.node.raft_id()};
+        let members = btreeset! {servers[1].server.raft_node.raft_id()};
         rt.block_on(servers[0].node.raft_change_membership(members, false))
             .unwrap();
 
@@ -776,8 +729,8 @@ mod tests {
         println!("---- add learner complete");
 
         let members = btreeset! {
-            servers[1].server.node.raft_id(),
-            servers[2].server.node.raft_id()
+            servers[1].server.raft_node.raft_id(),
+            servers[2].server.raft_node.raft_id()
         };
         rt.block_on(servers[1].node.raft_change_membership(members, true))
             .unwrap();
@@ -798,16 +751,16 @@ mod tests {
             assert_eq!(engine.get(&command.key).unwrap().unwrap(), "v_1299");
         }
 
-        let _ = std::fs::remove_dir_all(crate::TEST_DATA_DIR);
+        let _ = std::fs::remove_dir_all(crate::TEST_DIR);
     }
 
     #[test]
     fn test_write_snapshot_restart() {
         println!("----- begin test_write_snapshot_restart -----");
-        let _ = std::fs::remove_dir_all(crate::TEST_DATA_DIR);
+        let _ = std::fs::remove_dir_all(crate::TEST_DIR);
 
         let rt = create_runtime();
-        let dir = format!("{}/test_write_snapshot_restart", crate::TEST_DATA_DIR);
+        let dir = format!("{}/test_write_snapshot_restart", crate::TEST_DIR);
 
         #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
         struct RequestCommand {
@@ -868,11 +821,11 @@ mod tests {
     #[test]
     fn continuous_operation_testing() {
         println!("----- begin continuous_operation_testing -----");
-        let _ = std::fs::remove_dir_all(crate::TEST_DATA_DIR);
+        let _ = std::fs::remove_dir_all(crate::TEST_DIR);
 
         let rt = create_runtime();
-        let dir = format!("{}/continuous_operation_testing", crate::TEST_DATA_DIR);
-        let servers = start_servers(rt.clone(), &dir, 8000..=8002);
+        let dir = format!("{}/continuous_operation_testing", crate::TEST_DIR);
+        let servers = start_servers(rt.clone(), &dir, 0..=2);
 
         // start node-0 as a cluster
         let members = btreemap! {
@@ -890,7 +843,7 @@ mod tests {
 
         // change node-1 as leader, node-0 as learner
         let members = btreeset! {
-            servers[1].server.node.raft_id(),
+            servers[1].server.raft_node.raft_id(),
         };
         rt.block_on(servers[0].node.raft_change_membership(members, true))
             .unwrap();
@@ -907,8 +860,8 @@ mod tests {
 
         // change node-0 as folower
         let members = btreeset! {
-            servers[0].server.node.raft_id(),
-            servers[1].server.node.raft_id(),
+            servers[0].server.raft_node.raft_id(),
+            servers[1].server.raft_node.raft_id(),
         };
         rt.block_on(servers[1].node.raft_change_membership(members, false))
             .unwrap();
@@ -916,7 +869,7 @@ mod tests {
 
         // remove node-0 from cluster
         let members = btreeset! {
-            servers[1].server.node.raft_id(),
+            servers[1].server.raft_node.raft_id(),
         };
         rt.block_on(servers[1].node.raft_change_membership(members, false))
             .unwrap();
@@ -934,6 +887,6 @@ mod tests {
         assert_eq!(metrics.current_leader.unwrap(), 8001);
         assert_eq!(metrics.replication.unwrap().len(), 1);
 
-        let _ = std::fs::remove_dir_all(crate::TEST_DATA_DIR);
+        let _ = std::fs::remove_dir_all(crate::TEST_DIR);
     }
 }

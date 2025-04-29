@@ -55,12 +55,14 @@ impl PushDownAggregateReader {
     ) -> i64 {
         let mut count: i64 = 0;
         series_data.read().groups.iter().for_each(|group| {
-            if let Some(index) = group.schema.column_index(col_name) {
+            if let Some(index) = group.schema.get_column_index_by_name(col_name) {
                 if index == 0 {
                     count += group.rows.get_ref_rows().len() as i64;
                 } else {
                     for row in group.rows.get_ref_rows() {
-                        if let Some(col_value) = row.fields.get(index - group.schema.tag_num() - 1)
+                        if let Some(col_value) = row
+                            .fields
+                            .get(index - group.schema.count_tag_columns_num() - 1)
                         {
                             if col_value.is_some() {
                                 count += 1;

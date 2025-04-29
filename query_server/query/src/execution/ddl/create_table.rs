@@ -62,9 +62,9 @@ fn build_schema(stmt: &CreateTable) -> TskvTableSchema {
     let CreateTable { schema, name, .. } = stmt;
 
     TskvTableSchema::new(
-        name.tenant().to_string(),
-        name.database().to_string(),
-        name.table().to_string(),
+        name.tenant_owned(),
+        name.database_owned(),
+        name.table_owned(),
         schema.to_owned(),
     )
 }

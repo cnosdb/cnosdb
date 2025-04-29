@@ -107,11 +107,5 @@ async fn show_replica(machine: QueryStateMachineRef) -> QueryResult<Output> {
 }
 
 fn timestamp_to_string(nanos: i64) -> String {
-    if let Some(datetime) = chrono::NaiveDateTime::from_timestamp_nanos(nanos) {
-        let utc_datetime = datetime.and_utc();
-
-        format!("{}", utc_datetime)
-    } else {
-        nanos.to_string()
-    }
+    chrono::DateTime::from_timestamp_nanos(nanos).to_string()
 }

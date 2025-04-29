@@ -26,7 +26,7 @@ impl<'a> PromReporter<'a> {
     }
 }
 
-impl<'a> Reporter for PromReporter<'a> {
+impl Reporter for PromReporter<'_> {
     fn start(
         &mut self,
         name: Cow<'static, str>,

@@ -507,17 +507,20 @@ impl TenantMeta {
             db.to_string(),
             table.to_string(),
         );
-        let rsp = self.client.read::<Option<TableSchema>>(&req).await?;
-        if let Some(TableSchema::TsKvTableSchema(val)) = rsp {
+        let table_schema_opt = self.client.read::<Option<TableSchema>>(&req).await?;
+        if let Some(TableSchema::TsKvTableSchema(val)) = table_schema_opt {
             let mut data_w = self.data.write();
-            let db = data_w
-                .dbs
-                .get_mut(&val.db)
-                .ok_or_else(|| MetaError::DatabaseNotFound {
-                    database: val.db.clone(),
-                })?;
-            db.tables
-                .insert(val.name.clone(), TableSchema::TsKvTableSchema(val.clone()));
+            let db_info =
+                data_w
+                    .dbs
+                    .get_mut(val.db.as_ref())
+                    .ok_or_else(|| MetaError::DatabaseNotFound {
+                        database: val.db.to_string(),
+                    })?;
+            db_info.tables.insert(
+                val.name.to_string(),
+                TableSchema::TsKvTableSchema(val.clone()),
+            );
             return Ok(Some(val));
         }
         Ok(None)

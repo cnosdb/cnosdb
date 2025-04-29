@@ -3,7 +3,7 @@ use std::fmt::{self, Debug};
 use std::sync::Arc;
 
 use datafusion::common::{DFSchema, DFSchemaRef};
-use datafusion::error::DataFusionError;
+use datafusion::error::{DataFusionError, Result as DFResult};
 use datafusion::logical_expr::{LogicalPlan, UserDefinedLogicalNodeCore};
 use datafusion::prelude::{Column, Expr};
 use models::schema::stream_table_schema::Watermark;
@@ -16,6 +16,20 @@ pub struct WatermarkNode {
     pub input: Arc<LogicalPlan>,
     /// The schema description of the output
     pub schema: DFSchemaRef,
+}
+
+impl PartialOrd for WatermarkNode {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match self.watermark.partial_cmp(&other.watermark) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        match self.input.partial_cmp(&other.input) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        self.schema.fields().partial_cmp(other.schema.fields())
+    }
 }
 
 impl WatermarkNode {
@@ -32,7 +46,7 @@ impl WatermarkNode {
             watermark.delay.as_millis().to_string(),
         );
 
-        let schema = Arc::new(DFSchema::new_with_metadata(
+        let schema = Arc::new(DFSchema::from_unqualified_fields(
             schema.fields().clone(),
             metadata,
         )?);
@@ -52,6 +66,10 @@ impl Debug for WatermarkNode {
 }
 
 impl UserDefinedLogicalNodeCore for WatermarkNode {
+    fn name(&self) -> &str {
+        "Watermark"
+    }
+
     fn inputs(&self) -> Vec<&LogicalPlan> {
         vec![self.input.as_ref()]
     }
@@ -73,21 +91,21 @@ impl UserDefinedLogicalNodeCore for WatermarkNode {
         )
     }
 
-    fn from_template(&self, _exprs: &[Expr], inputs: &[LogicalPlan]) -> Self {
-        assert_eq!(inputs.len(), 1, "input size inconsistent");
+    fn with_exprs_and_inputs(&self, _exprs: Vec<Expr>, inputs: Vec<LogicalPlan>) -> DFResult<Self> {
+        if inputs.len() != 1 {
+            return Err(DataFusionError::Plan(
+                "WatermarkNode should have exactly one input".to_string(),
+            ));
+        }
 
-        Self {
+        Ok(Self {
             watermark: self.watermark.clone(),
             input: Arc::new(inputs[0].clone()),
             schema: self.schema.clone(),
-        }
+        })
     }
 
     fn prevent_predicate_push_down_columns(&self) -> std::collections::HashSet<String> {
         HashSet::default()
-    }
-
-    fn name(&self) -> &str {
-        "Watermark"
     }
 }

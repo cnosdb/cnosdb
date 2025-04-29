@@ -158,8 +158,7 @@ pub struct CustomTenantRole<T> {
     id: T,
     name: String,
     system_role: Option<SystemTenantRole>,
-    // database_name -> privileges
-    // only add database privilege
+    /// Additional database privileges:  database_name -> DatabasePrivilege.
     additional_privileges: HashMap<String, DatabasePrivilege>,
 }
 
@@ -168,8 +167,6 @@ impl<T> CustomTenantRole<T> {
         id: T,
         name: String,
         system_role: Option<SystemTenantRole>,
-        // database_name -> privileges
-        // only add database privilege
         additional_privileges: HashMap<String, DatabasePrivilege>,
     ) -> Self {
         Self {

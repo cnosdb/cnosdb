@@ -2,9 +2,8 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
-use heed::flags::Flags;
-use heed::types::*;
-use heed::{Database, Env};
+use heed::types::{Bytes, Str};
+use heed::{Database, Env, EnvFlags};
 use openraft::{LogId, StoredMembership, Vote};
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
@@ -69,40 +68,37 @@ pub struct RaftNodeSummary {
 }
 pub struct StateStorage {
     env: Env,
-    db: Database<Str, OwnedSlice<u8>>,
+    db: Database<Str, Bytes>,
 }
 
 impl StateStorage {
-    pub fn open(path: impl AsRef<Path>, size: usize) -> ReplicationResult<Self> {
+    pub fn open(path: impl AsRef<Path>, max_size: usize) -> ReplicationResult<Self> {
         fs::create_dir_all(&path).context(IOErrSnafu)?;
 
-        let mut env_builder = heed::EnvOpenOptions::new();
-        unsafe {
-            env_builder.flag(Flags::MdbNoSync);
+        let env = unsafe {
+            heed::EnvOpenOptions::new()
+                .flags(EnvFlags::NO_SYNC)
+                .map_size(max_size)
+                .max_dbs(1)
+                .open(path)
         }
+        .context(HeedSnafu)?;
 
-        let env = env_builder
-            .map_size(size)
-            .max_dbs(1)
-            .open(path)
+        let mut wtxn = env.write_txn().context(HeedSnafu)?;
+        let db: Database<Str, Bytes> = env
+            .create_database(&mut wtxn, Some("data"))
             .context(HeedSnafu)?;
-        let db: Database<Str, OwnedSlice<u8>> =
-            env.create_database(Some("data")).context(HeedSnafu)?;
-        let storage = Self { env, db };
+        wtxn.commit().context(HeedSnafu)?;
 
-        Ok(storage)
+        Ok(Self { env, db })
     }
 
-    fn reader_txn(&self) -> ReplicationResult<heed::RoTxn> {
-        let reader = self.env.read_txn().context(HeedSnafu)?;
-
-        Ok(reader)
+    fn reader_txn(&self) -> ReplicationResult<heed::RoTxn<'_, heed::WithTls>> {
+        self.env.read_txn().context(HeedSnafu)
     }
 
     fn writer_txn(&self) -> ReplicationResult<heed::RwTxn> {
-        let writer = self.env.write_txn().context(HeedSnafu)?;
-
-        Ok(writer)
+        self.env.write_txn().context(HeedSnafu)
     }
 
     fn get<T>(&self, reader: &heed::RoTxn, key: &str) -> ReplicationResult<Option<T>>
@@ -110,7 +106,7 @@ impl StateStorage {
         for<'a> T: Deserialize<'a>,
     {
         if let Some(data) = self.db.get(reader, key).context(HeedSnafu)? {
-            let val = serde_json::from_slice(&data)
+            let val = serde_json::from_slice(data)
                 .map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())?;
 
             Ok(Some(val))
@@ -204,7 +200,7 @@ impl StateStorage {
             .prefix_iter(&reader, &Key::membership_list_prefix(group_id))
             .context(HeedSnafu)?;
         while let Some((key, data)) = iter.next().transpose().context(HeedSnafu)? {
-            let value = serde_json::from_slice(&data)
+            let value = serde_json::from_slice(data)
                 .map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())?;
             memberships.insert(key.to_string(), value);
         }
@@ -386,7 +382,7 @@ impl StateStorage {
             .context(HeedSnafu)?;
         for pair in iter {
             let (_, data) = pair.context(HeedSnafu)?;
-            let summary: RaftNodeSummary = serde_json::from_slice(&data)
+            let summary: RaftNodeSummary = serde_json::from_slice(data)
                 .map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())?;
             nodes_summary.push(summary);
         }
@@ -419,7 +415,7 @@ impl StateStorage {
         let iter = self.db.iter(&reader).unwrap();
         for pair in iter {
             let (key, val) = pair.unwrap();
-            println!("{}: {}", key, String::from_utf8_lossy(&val));
+            println!("{}: {}", key, String::from_utf8_lossy(val));
         }
     }
 }
@@ -427,9 +423,9 @@ impl StateStorage {
 #[cfg(test)]
 mod test {
     use std::fs;
-    use std::path::Path;
 
-    use heed::types::*;
+    use heed::byteorder::BE;
+    use heed::types::{Str, U64};
     use heed::Database;
 
     use super::StateStorage;
@@ -437,7 +433,9 @@ mod test {
     #[test]
     #[ignore]
     fn dump_raft_state() {
-        let path = "/tmp/cnosdb/2001/db/raft-state";
+        let path = "/tmp/test/replication/state_store/dump_raft_state";
+        let _ = fs::remove_dir_all(path);
+
         let state = StateStorage::open(path, 1024 * 1024 * 1024).unwrap();
         state.debug();
     }
@@ -445,29 +443,32 @@ mod test {
     #[test]
     #[ignore]
     fn test_heed() {
-        let path = "/tmp/cnosdb/test_heed";
-        fs::create_dir_all(Path::new(&path)).unwrap();
-        let env = heed::EnvOpenOptions::new()
-            .map_size(1024 * 1024 * 1024)
-            .max_dbs(128)
-            .open(path)
-            .unwrap();
+        let path = "/tmp/test/replication/state_store/test_heed";
+        let _ = fs::remove_dir_all(path);
 
-        let tdb: Database<OwnedType<u64>, Str> = env.create_database(Some("test")).unwrap();
-        let mut writer = env.write_txn().unwrap();
-        tdb.put(&mut writer, &100, "v100").unwrap();
-        tdb.put(&mut writer, &101, "v101").unwrap();
-        tdb.put(&mut writer, &102, "v102").unwrap();
-        tdb.put(&mut writer, &103, "v103").unwrap();
-        tdb.put(&mut writer, &104, "v104").unwrap();
-        writer.commit().unwrap();
+        let env = unsafe {
+            heed::EnvOpenOptions::new()
+                .map_size(1024 * 1024 * 1024)
+                .max_dbs(128)
+                .open(path)
+                .unwrap()
+        };
 
-        let mut writer = env.write_txn().unwrap();
-        tdb.delete_range(&mut writer, &(..80)).unwrap();
-        writer.commit().unwrap();
+        let mut wtxn = env.write_txn().unwrap();
+        let tdb: Database<U64<BE>, Str> = env.create_database(&mut wtxn, Some("test")).unwrap();
+        tdb.put(&mut wtxn, &100, "v100").unwrap();
+        tdb.put(&mut wtxn, &101, "v101").unwrap();
+        tdb.put(&mut wtxn, &102, "v102").unwrap();
+        tdb.put(&mut wtxn, &103, "v103").unwrap();
+        tdb.put(&mut wtxn, &104, "v104").unwrap();
+        wtxn.commit().unwrap();
 
-        let reader = env.read_txn().unwrap();
-        let iter = tdb.range(&reader, &(101..103)).unwrap();
+        let mut wtxn = env.write_txn().unwrap();
+        tdb.delete_range(&mut wtxn, &(..80)).unwrap();
+        wtxn.commit().unwrap();
+
+        let rtxn = env.read_txn().unwrap();
+        let iter = tdb.range(&rtxn, &(101..103)).unwrap();
         for pair in iter {
             let (index, data) = pair.unwrap();
             println!("--- {}, {}", index, data);

@@ -31,7 +31,7 @@ fn bench_with_source(c: &mut Criterion) {
     let len = 10;
     let mut numbers = Vec::with_capacity(len);
     for _ in 0..numbers.len() {
-        numbers.push(rand::random::<usize>() % 3);
+        numbers.push(rand::random_range(0..3));
     }
 
     let mut idx = 0_usize;
@@ -61,7 +61,7 @@ fn bench_with_external(c: &mut Criterion) {
     let len = 100;
     let mut numbers = Vec::with_capacity(len);
     for _ in 0..len {
-        numbers.push(rand::random::<usize>() % 3);
+        numbers.push(rand::random_range(0..3));
     }
     let base_err_message = "Failed to get file_metadata".to_string();
 

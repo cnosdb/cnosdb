@@ -4,9 +4,10 @@ use async_trait::async_trait;
 use datafusion::common::DFSchema;
 use datafusion::error::Result;
 use datafusion::execution::context::SessionState;
+use datafusion::logical_expr::expr::physical_name;
 use datafusion::logical_expr::{LogicalPlan, UserDefinedLogicalNode};
 use datafusion::physical_plan::{ExecutionPlan, PhysicalExpr};
-use datafusion::physical_planner::{physical_name, ExtensionPlanner, PhysicalPlanner};
+use datafusion::physical_planner::{ExtensionPlanner, PhysicalPlanner};
 use datafusion::prelude::Expr;
 use models::errors::tuple_err;
 
@@ -87,7 +88,7 @@ fn create_physical_expr_with_name(
             };
 
             tuple_err((
-                planner.create_physical_expr(e, input_schema, &input_exec.schema(), session_state),
+                planner.create_physical_expr(e, input_schema, session_state),
                 physical_name,
             ))
         })

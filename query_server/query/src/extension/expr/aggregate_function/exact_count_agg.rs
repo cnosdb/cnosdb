@@ -1,38 +1,55 @@
-use std::sync::Arc;
-
 use datafusion::arrow::datatypes::DataType;
-use datafusion::logical_expr::aggregate_function::{self, signature};
-use datafusion::logical_expr::{
-    AccumulatorFactoryFunction, AggregateUDF, ReturnTypeFunction, StateTypeFunction,
-};
-use datafusion::physical_plan::expressions::AvgAccumulator;
+use datafusion::error::Result as DFResult;
+use datafusion::functions_aggregate::average::AvgAccumulator;
+use datafusion::functions_aggregate::count::Count;
+use datafusion::logical_expr::function::{AccumulatorArgs, StateFieldsArgs};
+use datafusion::logical_expr::{Accumulator, AggregateUDF, AggregateUDFImpl, Signature};
+use models::arrow::Field;
 use spi::query::function::FunctionMetadataManager;
 use spi::QueryResult;
 
 use super::EXACT_COUNT_UDAF_NAME;
 
-pub fn register_udaf(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<AggregateUDF> {
-    let udf = new();
-    func_manager.register_udaf(udf.clone())?;
-    Ok(udf)
+pub fn register_udaf(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<()> {
+    func_manager.register_udaf(AggregateUDF::new_from_impl(ExactCountFunc::default()))?;
+    Ok(())
 }
 
-fn new() -> AggregateUDF {
-    let signature = signature(&aggregate_function::AggregateFunction::Count);
-    let return_type: ReturnTypeFunction = Arc::new(move |_| Ok(Arc::new(DataType::Int64)));
-    let accumulator: AccumulatorFactoryFunction = Arc::new(|_, _| {
-        Ok(Box::new(AvgAccumulator::try_new(
-            &DataType::Utf8,
-            &DataType::Int64,
-        )?))
-    });
-    let state_type: StateTypeFunction = Arc::new(move |_, _| Ok(Arc::new(vec![DataType::Int64])));
+#[derive(Debug)]
+pub struct ExactCountFunc {
+    signature: Signature,
+}
 
-    AggregateUDF::new(
-        EXACT_COUNT_UDAF_NAME,
-        &signature,
-        &return_type,
-        &accumulator,
-        &state_type,
-    )
+impl Default for ExactCountFunc {
+    fn default() -> Self {
+        Self {
+            signature: Count::new().signature().clone(),
+        }
+    }
+}
+
+impl AggregateUDFImpl for ExactCountFunc {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn name(&self) -> &str {
+        EXACT_COUNT_UDAF_NAME
+    }
+
+    fn signature(&self) -> &Signature {
+        &self.signature
+    }
+
+    fn return_type(&self, _: &[DataType]) -> DFResult<DataType> {
+        Ok(DataType::Int64)
+    }
+
+    fn accumulator(&self, _acc_args: AccumulatorArgs) -> DFResult<Box<dyn Accumulator>> {
+        Ok(Box::new(AvgAccumulator::default()))
+    }
+
+    fn state_fields(&self, args: StateFieldsArgs) -> DFResult<Vec<Field>> {
+        Ok(vec![Field::new(args.name, DataType::Int64, false)])
+    }
 }

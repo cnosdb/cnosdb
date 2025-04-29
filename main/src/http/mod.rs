@@ -1,12 +1,12 @@
 use coordinator::errors::CoordinatorError;
 use derive_traits::{ErrorCode, ErrorCoder};
 use http_protocol::response::ErrorResponse;
-use http_protocol::status_code::UNPROCESSABLE_ENTITY;
 use meta::error::MetaError;
 use prost::DecodeError;
 use snafu::Snafu;
 use spi::QueryError;
 use trace::http::http_ctx::ContextError;
+use warp::http::StatusCode;
 use warp::reject;
 use warp::reply::Response;
 
@@ -167,7 +167,7 @@ impl From<&Error> for Response {
             | Error::ParseLog { .. }
             | Error::ParseLogJson { .. }
             | Error::InvalidUTF8 { .. } => {
-                ResponseBuilder::new(UNPROCESSABLE_ENTITY).json(&error_resp)
+                ResponseBuilder::new(StatusCode::UNPROCESSABLE_ENTITY).json(&error_resp)
             }
             Error::InvalidHeader { .. }
             | Error::ParseAuth { .. }
@@ -189,7 +189,6 @@ impl From<Error> for Response {
 #[cfg(test)]
 mod tests {
     use http_protocol::header::APPLICATION_JSON;
-    use http_protocol::status_code::BAD_REQUEST;
     use spi::QueryError;
     use tskv::error::CommonSnafu;
     use warp::http::header::{HeaderValue, CONTENT_TYPE};
@@ -203,7 +202,7 @@ mod tests {
         };
         let resp: Response = Error::Query { source: q_err }.into();
 
-        assert_eq!(resp.status(), UNPROCESSABLE_ENTITY);
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
 
         let content_type = resp.headers().get(CONTENT_TYPE).unwrap();
 
@@ -217,7 +216,7 @@ mod tests {
         }
         .into();
 
-        assert_eq!(resp.status(), UNPROCESSABLE_ENTITY);
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
 
         let content_type = resp.headers().get(CONTENT_TYPE).unwrap();
 
@@ -234,7 +233,7 @@ mod tests {
         }
         .into();
 
-        assert_eq!(resp.status(), UNPROCESSABLE_ENTITY);
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
 
         let content_type = resp.headers().get(CONTENT_TYPE).unwrap();
 
@@ -248,7 +247,7 @@ mod tests {
         }
         .into();
 
-        assert_eq!(resp.status(), BAD_REQUEST);
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 
         let content_type = resp.headers().get(CONTENT_TYPE).unwrap();
 
@@ -262,7 +261,7 @@ mod tests {
         }
         .into();
 
-        assert_eq!(resp.status(), BAD_REQUEST);
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 
         let content_type = resp.headers().get(CONTENT_TYPE).unwrap();
 

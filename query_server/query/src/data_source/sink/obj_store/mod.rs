@@ -29,7 +29,7 @@ pub struct ObjectStoreSink {
 #[async_trait]
 impl RecordBatchSink for ObjectStoreSink {
     async fn append(&self, _: RecordBatch) -> QueryResult<SinkMetadata> {
-        Err(QueryError::Unimplement {
+        Err(QueryError::Unimplemented {
             msg: "ObjectStoreRecordBatchSink::append".to_string(),
         })
     }
@@ -126,8 +126,8 @@ struct BufferedWriter<'a> {
     max_file_size: usize,
 
     // statistics
-    rows_writed: usize,
-    bytes_writed: usize,
+    rows_wrote: usize,
+    bytes_wrote: usize,
 
     // flushed file seq num
     file_number: AtomicU64,
@@ -148,8 +148,8 @@ impl<'a> BufferedWriter<'a> {
             max_file_size: ctx.sql_exec_info().copyinto_trigger_flush_size as usize,
             buffer: Default::default(),
             buffered_size: Default::default(),
-            rows_writed: Default::default(),
-            bytes_writed: Default::default(),
+            rows_wrote: Default::default(),
+            bytes_wrote: Default::default(),
             file_number: Default::default(),
         }
     }
@@ -182,15 +182,15 @@ impl<'a> BufferedWriter<'a> {
             self.max_file_size
         );
 
-        let (rows_writed, data) = self
+        let (rows_wrote, data) = self
             .s
             .batches_to_bytes(self.ctx, self.schema.clone(), &self.buffer)
             .await?;
         self.buffer.clear();
         self.buffered_size = 0;
-        let bytes_writed = data.len();
+        let bytes_wrote = data.len();
 
-        if bytes_writed > 0 {
+        if bytes_wrote > 0 {
             let path = self.ctx.location().child(format!(
                 "queryId-{}-part-{}-{}-{}{}",
                 self.ctx.query_id(),
@@ -201,14 +201,14 @@ impl<'a> BufferedWriter<'a> {
             ));
 
             self.object_store
-                .put(&path, data)
+                .put(&path, data.into())
                 .await
                 .map_err(|e| ObjectStoreSnafu { msg: e.to_string() }.build())?;
 
-            debug!("Generated file: {}, size: {} bytes.", path, bytes_writed);
+            debug!("Generated file: {}, size: {} bytes.", path, bytes_wrote);
 
-            self.rows_writed += rows_writed;
-            self.bytes_writed += bytes_writed;
+            self.rows_wrote += rows_wrote;
+            self.bytes_wrote += bytes_wrote;
         }
 
         Ok(())
@@ -217,6 +217,6 @@ impl<'a> BufferedWriter<'a> {
     pub async fn close(mut self) -> QueryResult<SinkMetadata> {
         self.flush().await?;
 
-        Ok(SinkMetadata::new(self.rows_writed, self.bytes_writed))
+        Ok(SinkMetadata::new(self.rows_wrote, self.bytes_wrote))
     }
 }

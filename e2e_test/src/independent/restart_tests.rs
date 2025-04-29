@@ -1,8 +1,7 @@
 use std::fmt::Write;
 use std::time::Duration;
 
-use rand::distributions::Alphanumeric;
-use rand::Rng;
+use rand::Rng as _;
 use reqwest::StatusCode;
 
 use crate::case::step::{
@@ -769,10 +768,10 @@ fn case8_count_after_restart_cluster() {
                 let mut buffer = String::with_capacity(CACHE_SIZE);
                 let url = &format!("http://{host_port}/api/v1/write?db=db1");
                 for i in 0..30000 {
-                    let random_number = rand::thread_rng().gen_range(1000..10000);
-                    let four_digit_float: f64 = rand::thread_rng().gen_range(0.0..1.0) * 10000.0;
-                    let random_string: String = rand::thread_rng()
-                        .sample_iter(&Alphanumeric)
+                    let random_number = rand::rng().random_range(1000..10000);
+                    let four_digit_float: f64 = rand::rng().random_range(0.0..1.0) * 10000.0;
+                    let random_string: String = rand::rng()
+                        .sample_iter(&rand::distr::Alphanumeric)
                         .take(300)
                         .map(char::from)
                         .collect();

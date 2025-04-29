@@ -9,14 +9,8 @@ mod locf;
 mod state_at;
 mod utils;
 
-use std::sync::Arc;
-
-use datafusion::error::DataFusionError;
-use datafusion::logical_expr::ScalarFunctionImplementation;
 use spi::query::function::FunctionMetadataManager;
 use spi::QueryResult;
-
-use super::ts_gen_func::TSGenFunc;
 
 pub const TIME_WINDOW_GAPFILL: &str = "time_window_gapfill";
 pub const LOCF: &str = "locf";
@@ -35,16 +29,7 @@ pub fn register_udfs(func_manager: &mut dyn FunctionMetadataManager) -> QueryRes
     duration_in::register_udf(func_manager)?;
     state_at::register_udf(func_manager)?;
     gis::register_udfs(func_manager)?;
-    TSGenFunc::register_all_udf(func_manager)?;
     Ok(())
-}
-
-pub(crate) fn unimplemented_scalar_impl(name: &'static str) -> ScalarFunctionImplementation {
-    Arc::new(move |_| {
-        Err(DataFusionError::NotImplemented(format!(
-            "{name} is not yet implemented"
-        )))
-    })
 }
 
 #[cfg(test)]
@@ -64,7 +49,7 @@ mod tests {
 
         let expect_udf = expect_udf.unwrap();
 
-        let result_udf = func_manager.udf(&expect_udf.name);
+        let result_udf = func_manager.udf(expect_udf.name());
 
         assert!(result_udf.is_ok(), "not get result from func manager.");
 

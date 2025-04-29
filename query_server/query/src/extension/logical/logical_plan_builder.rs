@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
-use datafusion::common::{DFField, DFSchema, OwnedTableReference, Result as DFResult};
+use datafusion::common::{Column, DFSchema, Result as DFResult, TableReference};
 use datafusion::error::{DataFusionError, Result};
 use datafusion::logical_expr::{
     Extension, LogicalPlan, LogicalPlanBuilder, Projection, TableSource,
 };
 use datafusion::prelude::{cast, lit, Expr};
 use datafusion::scalar::ScalarValue;
+use models::arrow::Field;
 use models::schema::stream_table_schema::Watermark;
 use spi::query::datasource::stream::StreamProviderRef;
 use spi::query::logical_planner::{affected_row_expr, merge_affected_row_expr};
@@ -25,7 +26,7 @@ pub trait LogicalPlanBuilderExt: Sized {
     fn expand(self, projections: Vec<Vec<Expr>>) -> Result<Self>;
     fn watermark(self, watermark: Watermark) -> Result<Self>;
     fn stream_scan(
-        table_name: impl Into<OwnedTableReference>,
+        table_name: impl Into<TableReference>,
         table_source: StreamProviderRef,
     ) -> Result<Self>;
     fn write(
@@ -61,7 +62,7 @@ impl LogicalPlanBuilderExt for LogicalPlanBuilder {
 
     /// Convert a stream provider into a builder with a [`StreamScanPlanNode`]
     fn stream_scan(
-        table_name: impl Into<OwnedTableReference>,
+        table_name: impl Into<TableReference>,
         table_source: StreamProviderRef,
     ) -> Result<Self> {
         let table_name = table_name.into();
@@ -82,7 +83,7 @@ impl LogicalPlanBuilderExt for LogicalPlanBuilder {
             projected_schema: Arc::new(projected_schema),
             projection: None,
             filters: vec![],
-            agg_with_grouping: None,
+            aggregate: None,
         });
 
         Ok(Self::from(LogicalPlan::Extension(Extension { node })))
@@ -184,17 +185,18 @@ fn semantic_check(
 }
 
 /// Add a projection operation (if necessary)
+///
 /// 1. Iterate over all fields of the table
-///    1.1. Construct the col expression
-///    1.2. Check if the current field exists in columns
-///       1.2.1. does not exist: add cast(null as target_type) expression to save
-///       1.2.1. Exist: save if the type matches, add cast(expr as target_type) to save if it does not exist
+///    1. Construct the col expression
+///    2. Check if the current field exists in columns
+///       1. Does not exist: add cast(null as target_type) expression to save
+///       2. Exist: save if the type matches, add cast(expr as target_type) to save if it does not exist
 fn add_projection_between_source_and_insert_node_if_necessary(
     target_table: Arc<dyn TableSource>,
     source_plan: LogicalPlan,
     insert_columns: &[String],
 ) -> DFResult<LogicalPlan> {
-    let insert_col_name_with_source_field_tuples: Vec<(&String, &DFField)> = insert_columns
+    let insert_col_name_with_source_field_tuples: Vec<(&String, &Arc<Field>)> = insert_columns
         .iter()
         .zip(source_plan.schema().fields())
         .collect();
@@ -220,11 +222,11 @@ fn add_projection_between_source_and_insert_node_if_necessary(
                 // insert column exists in the target table
                 if source_field.data_type() == target_column_data_type {
                     // save if type matches col(source_field_name)
-                    Expr::Column(source_field.qualified_column())
+                    Expr::Column(Column::from_qualified_name(source_field.name()))
                 } else {
                     // Add cast(source_col as target_type) if it doesn't exist
                     cast(
-                        Expr::Column(source_field.qualified_column()),
+                        Expr::Column(Column::from_qualified_name(source_field.name())),
                         target_column_data_type.clone(),
                     )
                 }
@@ -255,7 +257,7 @@ fn table_write_plan_node(
         .schema()
         .fields()
         .iter()
-        .map(|f| Expr::Column(f.qualified_column()))
+        .map(|f| Expr::Column(Column::from_qualified_name(f.name())))
         .collect::<Vec<Expr>>();
     let affected_row_expr = affected_row_expr(input_exprs);
 

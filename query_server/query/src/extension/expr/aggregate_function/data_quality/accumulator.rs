@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
-use datafusion::arrow::array::Array;
-use datafusion::error::DataFusionError;
+use datafusion::arrow::array::{Array, ArrayRef};
+use datafusion::error::{DataFusionError, Result as DFResult};
 use datafusion::logical_expr::Accumulator;
 use datafusion::scalar::ScalarValue;
-use models::arrow::{DataType, Field};
+use models::arrow::DataType;
 use parking_lot::lock_api::MutexGuard;
 use parking_lot::{Mutex, RawMutex};
 use spi::QueryError;
@@ -48,10 +48,7 @@ impl DataQualityAccumulator {
 }
 
 impl Accumulator for DataQualityAccumulator {
-    fn update_batch(
-        &mut self,
-        values: &[datafusion::arrow::array::ArrayRef],
-    ) -> datafusion::error::Result<()> {
+    fn update_batch(&mut self, values: &[ArrayRef]) -> DFResult<()> {
         let times = values[0].as_ref();
         let values = values[1].as_ref();
 
@@ -71,7 +68,7 @@ impl Accumulator for DataQualityAccumulator {
         Ok(())
     }
 
-    fn evaluate(&self) -> datafusion::error::Result<datafusion::scalar::ScalarValue> {
+    fn evaluate(&mut self) -> DFResult<ScalarValue> {
         let mut series_guard = self.series_guard();
         series_guard
             .sort_unstable_by(|&a, &b| a.0.partial_cmp(&b.0).expect("NaN should not appear here"));
@@ -106,57 +103,49 @@ impl Accumulator for DataQualityAccumulator {
             + self.series_guard().capacity() * std::mem::size_of::<(f64, f64)>()
     }
 
-    fn state(&self) -> datafusion::error::Result<Vec<datafusion::scalar::ScalarValue>> {
+    fn state(&mut self) -> DFResult<Vec<ScalarValue>> {
         let series_guard = self.series_guard();
+        let mut left = Vec::with_capacity(series_guard.len());
+        let mut right = Vec::with_capacity(series_guard.len());
+        for x in series_guard.iter() {
+            left.push(ScalarValue::Float64(Some(x.0)));
+            right.push(ScalarValue::Float64(Some(x.1)));
+        }
+        drop(series_guard);
+
         Ok(vec![
-            ScalarValue::List(
-                Some(
-                    series_guard
-                        .iter()
-                        .map(|x| ScalarValue::Float64(Some(x.0)))
-                        .collect(),
-                ),
-                Arc::new(Field::new("item", DataType::Float64, true)),
-            ),
-            ScalarValue::List(
-                Some(
-                    series_guard
-                        .iter()
-                        .map(|x| ScalarValue::Float64(Some(x.1)))
-                        .collect(),
-                ),
-                Arc::new(Field::new("item", DataType::Float64, true)),
-            ),
+            ScalarValue::List(ScalarValue::new_list_nullable(&left, &DataType::Float64)),
+            ScalarValue::List(ScalarValue::new_list_nullable(&right, &DataType::Float64)),
         ])
     }
 
-    fn merge_batch(
-        &mut self,
-        states: &[datafusion::arrow::array::ArrayRef],
-    ) -> datafusion::error::Result<()> {
-        let time_lists: &Arc<dyn Array> = &states[0];
-        let value_lists: &Arc<dyn Array> = &states[1];
-        if time_lists.is_empty() {
+    fn merge_batch(&mut self, states: &[ArrayRef]) -> DFResult<()> {
+        if states[0].is_empty() {
             return Ok(());
         }
 
-        let time_lists = (0..time_lists.len())
-            .map(|index| ScalarValue::try_from_array(time_lists, index))
-            .collect::<datafusion::error::Result<Vec<_>>>()?;
-        let value_lists = (0..time_lists.len())
-            .map(|index| ScalarValue::try_from_array(value_lists, index))
-            .collect::<datafusion::error::Result<Vec<_>>>()?;
+        let (time_array, value_array) = (&states[0], &states[1]);
+        let time_lists = (0..time_array.len())
+            .map(|index| ScalarValue::try_from_array(time_array, index))
+            .collect::<DFResult<Vec<_>>>()?;
+        let value_lists = (0..time_array.len())
+            .map(|index| ScalarValue::try_from_array(value_array, index))
+            .collect::<DFResult<Vec<_>>>()?;
 
         let mut series_guard = self.series_guard();
 
         for (time_list, value_list) in time_lists.into_iter().zip(value_lists.into_iter()) {
             match (time_list, value_list) {
-                (ScalarValue::List(Some(times), _), ScalarValue::List(Some(values), _)) => {
-                    let mut series = times
-                        .iter()
-                        .map(scalar_to_f64)
-                        .zip(values.iter().map(scalar_to_f64))
-                        .collect();
+                (ScalarValue::List(time_list), ScalarValue::List(value_list)) => {
+                    let len = time_list.len().min(value_list.len());
+                    let mut series = Vec::with_capacity(len);
+                    for i in 0..len {
+                        let tv = ScalarValue::try_from_array(time_list.as_ref(), i)?;
+                        let t = scalar_to_f64(&tv);
+                        let vv = ScalarValue::try_from_array(value_list.as_ref(), i)?;
+                        let v = scalar_to_f64(&vv);
+                        series.push((t, v));
+                    }
                     series_guard.append(&mut series);
                 }
                 (other1, other2) => {

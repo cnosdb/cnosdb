@@ -1,26 +1,53 @@
 use std::sync::Arc;
 
-use datafusion::arrow::array::ArrayRef;
+use datafusion::arrow::array::StringArray;
 use datafusion::arrow::datatypes::DataType;
-use datafusion::error::DataFusionError;
+use datafusion::error::Result as DFResult;
 use datafusion::execution::context::SessionContext;
-use datafusion::logical_expr::{ReturnTypeFunction, ScalarUDF, Signature, Volatility};
-use datafusion::physical_plan::functions::make_scalar_function;
-use datafusion::scalar::ScalarValue;
+use datafusion::logical_expr::{
+    ColumnarValue, ScalarFunctionArgs, ScalarUDF, ScalarUDFImpl, Signature, Volatility,
+};
 use spi::service::protocol::Context;
 
 pub fn register_session_udf(df_session_ctx: &SessionContext, context: &Context) {
-    let username = context.user().desc().name().to_owned();
-    let current_user = move |_args: &[ArrayRef]| -> Result<ArrayRef, DataFusionError> {
-        let array = ScalarValue::Utf8(Some(username.clone())).to_array();
-        Ok(Arc::new(array))
-    };
-    let return_type_fn: ReturnTypeFunction = Arc::new(|_| Ok(Arc::new(DataType::Utf8)));
-    let udf = ScalarUDF::new(
-        "current_user",
-        &Signature::any(0, Volatility::Immutable),
-        &return_type_fn,
-        &make_scalar_function(current_user),
-    );
-    df_session_ctx.register_udf(udf);
+    df_session_ctx.register_udf(ScalarUDF::new_from_impl(CurrentUserFunc::new(
+        context.user().desc().name().to_string(),
+    )));
+}
+
+#[derive(Debug)]
+pub struct CurrentUserFunc {
+    signature: Signature,
+    current_user: ColumnarValue,
+}
+
+impl CurrentUserFunc {
+    pub fn new(current_user: String) -> Self {
+        Self {
+            signature: Signature::any(0, Volatility::Immutable),
+            current_user: ColumnarValue::Array(Arc::new(StringArray::from(vec![current_user]))),
+        }
+    }
+}
+
+impl ScalarUDFImpl for CurrentUserFunc {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn name(&self) -> &str {
+        "current_user"
+    }
+
+    fn signature(&self) -> &Signature {
+        &self.signature
+    }
+
+    fn return_type(&self, _arg_types: &[DataType]) -> DFResult<DataType> {
+        Ok(DataType::Utf8)
+    }
+
+    fn invoke_with_args(&self, _args: ScalarFunctionArgs) -> DFResult<ColumnarValue> {
+        Ok(self.current_user.clone())
+    }
 }

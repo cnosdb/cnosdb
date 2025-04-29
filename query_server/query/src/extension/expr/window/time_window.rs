@@ -1,16 +1,10 @@
-use std::sync::Arc;
-
 use chrono::Duration;
-use datafusion::arrow::array::ArrayRef;
 use datafusion::arrow::datatypes::{
     DataType, Field, Fields, IntervalDayTimeType, IntervalMonthDayNanoType, TimeUnit,
 };
 use datafusion::error::{DataFusionError, Result as DFResult};
 use datafusion::logical_expr::type_coercion::aggregates::TIMESTAMPS;
-use datafusion::logical_expr::{
-    ReturnTypeFunction, ScalarUDF, Signature, TypeSignature, Volatility,
-};
-use datafusion::physical_expr::functions::make_scalar_function;
+use datafusion::logical_expr::{ScalarUDF, ScalarUDFImpl, Signature, TypeSignature, Volatility};
 use datafusion::physical_plan::ColumnarValue;
 use datafusion::scalar::ScalarValue;
 use once_cell::sync::Lazy;
@@ -20,14 +14,58 @@ use spi::QueryResult;
 use super::{TIME_WINDOW, WINDOW_END, WINDOW_START};
 use crate::extension::expr::INTERVALS;
 
-pub static TIME_WINDOW_UDF: Lazy<Arc<ScalarUDF>> = Lazy::new(|| Arc::new(new()));
 pub static DEFAULT_TIME_WINDOW_START: Lazy<ScalarValue> =
     Lazy::new(|| ScalarValue::TimestampNanosecond(Some(0), Some("+00:00".into())));
 
-pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<ScalarUDF> {
-    let udf = new();
-    func_manager.register_udf(udf.clone())?;
-    Ok(udf)
+pub fn register_udf(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<()> {
+    func_manager.register_udf(ScalarUDF::new_from_impl(TimeWindowFunc::default()))?;
+    Ok(())
+}
+
+#[derive(Debug)]
+pub struct TimeWindowFunc {
+    signature: Signature,
+}
+
+impl Default for TimeWindowFunc {
+    fn default() -> Self {
+        Self {
+            signature: signature(),
+        }
+    }
+}
+
+impl ScalarUDFImpl for TimeWindowFunc {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn name(&self) -> &str {
+        TIME_WINDOW
+    }
+
+    fn signature(&self) -> &Signature {
+        &self.signature
+    }
+
+    fn return_type(&self, input_expr_types: &[DataType]) -> DFResult<DataType> {
+        let window = DataType::Struct(Fields::from(vec![
+            Field::new(WINDOW_START, input_expr_types[0].clone(), false),
+            Field::new(WINDOW_END, input_expr_types[0].clone(), false),
+        ]));
+
+        Ok(window)
+    }
+
+    fn invoke_with_args(
+        &self,
+        _args: datafusion::logical_expr::ScalarFunctionArgs,
+    ) -> DFResult<ColumnarValue> {
+        Err(DataFusionError::Execution(format!(
+            "{} has no specific implementation, should be converted to Expand operator.",
+            TIME_WINDOW
+        )))
+    }
 }
 
 /// export this function for gapfill
@@ -68,28 +106,6 @@ pub fn signature() -> Signature {
         .collect();
 
     Signature::one_of(type_signatures, Volatility::Immutable)
-}
-
-fn new() -> ScalarUDF {
-    let func = |_: &[ArrayRef]| {
-        Err(DataFusionError::Execution(format!(
-            "{} has no specific implementation, should be converted to Expand operator.",
-            TIME_WINDOW
-        )))
-    };
-    let func = make_scalar_function(func);
-
-    // Struct(_start, _end)
-    let return_type: ReturnTypeFunction = Arc::new(move |input_expr_types| {
-        let window = DataType::Struct(Fields::from(vec![
-            Field::new(WINDOW_START, input_expr_types[0].clone(), false),
-            Field::new(WINDOW_END, input_expr_types[0].clone(), false),
-        ]));
-
-        Ok(Arc::new(window))
-    });
-
-    ScalarUDF::new(TIME_WINDOW, &signature(), &return_type, &func)
 }
 
 /// Return the earliest window where timestamp_ns is located,
@@ -233,7 +249,7 @@ fn extract_interval_ns(interval: &ColumnarValue) -> DFResult<i64> {
         ColumnarValue::Scalar(v) => {
             return Err(DataFusionError::Execution(format!(
                 "Expect INTERVAL but got {}",
-                v.get_datatype()
+                v.data_type()
             )))
         }
         ColumnarValue::Array(_) => {
@@ -251,7 +267,7 @@ fn columnar_value_to_timestamp_ns(value: &ColumnarValue) -> DFResult<i64> {
         ColumnarValue::Scalar(ScalarValue::TimestampNanosecond(Some(v), _)) => Ok(*v),
         ColumnarValue::Scalar(v) => Err(DataFusionError::Execution(format!(
             "TIME_WINDOW expects start_time argument to be a TIMESTAMP but got {}",
-            v.get_datatype()
+            v.data_type()
         ))),
         ColumnarValue::Array(_) => Err(DataFusionError::NotImplemented(
             "TIME_WINDOW only supports literal values for the start_time argument, not arrays"
@@ -273,12 +289,10 @@ mod tests {
         slide_duration: i64,
         start_time: i64,
     ) -> (i64, i64) {
-        let window_duration: &ColumnarValue = &ColumnarValue::Scalar(
-            ScalarValue::IntervalMonthDayNano(Some(window_duration as i128)),
-        );
-        let slide_duration: &ColumnarValue = &ColumnarValue::Scalar(
-            ScalarValue::IntervalMonthDayNano(Some(slide_duration as i128)),
-        );
+        let window_duration: &ColumnarValue =
+            &ColumnarValue::Scalar(ScalarValue::DurationNanosecond(Some(window_duration)));
+        let slide_duration: &ColumnarValue =
+            &ColumnarValue::Scalar(ScalarValue::DurationNanosecond(Some(slide_duration)));
         let start_time: &ColumnarValue =
             &ColumnarValue::Scalar(ScalarValue::TimestampNanosecond(Some(start_time), None));
 
@@ -291,12 +305,10 @@ mod tests {
         slide_duration: i64,
         start_time: i64,
     ) -> (i64, i64) {
-        let window_duration: &ColumnarValue = &ColumnarValue::Scalar(
-            ScalarValue::IntervalMonthDayNano(Some(window_duration as i128)),
-        );
-        let slide_duration: &ColumnarValue = &ColumnarValue::Scalar(
-            ScalarValue::IntervalMonthDayNano(Some(slide_duration as i128)),
-        );
+        let window_duration: &ColumnarValue =
+            &ColumnarValue::Scalar(ScalarValue::DurationNanosecond(Some(window_duration)));
+        let slide_duration: &ColumnarValue =
+            &ColumnarValue::Scalar(ScalarValue::DurationNanosecond(Some(slide_duration)));
         let start_time: &ColumnarValue =
             &ColumnarValue::Scalar(ScalarValue::TimestampNanosecond(Some(start_time), None));
 

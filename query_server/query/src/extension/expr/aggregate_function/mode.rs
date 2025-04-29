@@ -1,14 +1,11 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use datafusion::arrow::array::{ArrayRef, UInt32Array};
-use datafusion::arrow::datatypes::{DataType, Field};
+use datafusion::arrow::datatypes::DataType;
 use datafusion::common::cast::as_list_array;
-use datafusion::common::{downcast_value, DataFusionError, Result as DFResult};
-use datafusion::logical_expr::{
-    AccumulatorFactoryFunction, AggregateUDF, ReturnTypeFunction, Signature, StateTypeFunction,
-    Volatility,
-};
+use datafusion::common::{downcast_value, Result as DFResult};
+use datafusion::logical_expr::function::AccumulatorArgs;
+use datafusion::logical_expr::{AggregateUDF, AggregateUDFImpl, Signature, Volatility};
 use datafusion::physical_plan::Accumulator;
 use datafusion::scalar::ScalarValue;
 use spi::query::function::FunctionMetadataManager;
@@ -22,27 +19,44 @@ pub fn register_udaf(func_manager: &mut dyn FunctionMetadataManager) -> QueryRes
     Ok(udf)
 }
 
+#[derive(Debug)]
+pub struct ModeFunc {
+    signature: Signature,
+}
+
+impl Default for ModeFunc {
+    fn default() -> Self {
+        Self {
+            signature: Signature::any(1, Volatility::Immutable),
+        }
+    }
+}
+
+impl AggregateUDFImpl for ModeFunc {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn name(&self) -> &str {
+        MODE_UDAF_NAME
+    }
+
+    fn signature(&self) -> &Signature {
+        &self.signature
+    }
+
+    fn return_type(&self, arg_types: &[DataType]) -> DFResult<DataType> {
+        Ok(arg_types[0].clone())
+    }
+
+    fn accumulator(&self, acc_args: AccumulatorArgs) -> DFResult<Box<dyn Accumulator>> {
+        let input = acc_args.exprs[0].data_type(acc_args.schema)?;
+        Ok(Box::new(ModeAccumulator::new(input)))
+    }
+}
+
 fn new() -> AggregateUDF {
-    let return_type_func: ReturnTypeFunction =
-        Arc::new(move |input| Ok(Arc::new(input[0].clone())));
-
-    let state_type_func: StateTypeFunction = Arc::new(move |input, _| {
-        let val_list_dt = DataType::List(Arc::new(Field::new("item", input[0].clone(), true)));
-        let count_list_dt = DataType::List(Arc::new(Field::new("item", DataType::UInt32, true)));
-
-        Ok(Arc::new(vec![val_list_dt, count_list_dt]))
-    });
-
-    let accumulator: AccumulatorFactoryFunction =
-        Arc::new(|input, _| Ok(Box::new(ModeAccumulator::new(input[0].clone()))));
-
-    AggregateUDF::new(
-        MODE_UDAF_NAME,
-        &Signature::any(1, Volatility::Immutable),
-        &return_type_func,
-        &accumulator,
-        &state_type_func,
-    )
+    AggregateUDF::new_from_impl(ModeFunc::default())
 }
 
 #[derive(Debug)]
@@ -77,12 +91,12 @@ impl Accumulator for ModeAccumulator {
 
         let records = values[0].as_ref();
 
-        let irer: Box<dyn Iterator<Item = usize>> = match records.nulls() {
+        let iter: Box<dyn Iterator<Item = usize>> = match records.nulls() {
             Some(null_buffer) => Box::new(null_buffer.valid_indices()),
             None => Box::new(0..records.len()),
         };
 
-        for i in irer {
+        for i in iter {
             let scalar = ScalarValue::try_from_array(records, i)?;
             self.map.entry(scalar).and_modify(|e| *e += 1).or_insert(1);
         }
@@ -90,7 +104,7 @@ impl Accumulator for ModeAccumulator {
         Ok(())
     }
 
-    fn evaluate(&self) -> DFResult<ScalarValue> {
+    fn evaluate(&mut self) -> DFResult<ScalarValue> {
         trace::trace!("evaluate: {:?}", &self.map);
 
         match self.map.iter().max_by_key(|(_, count)| **count) {
@@ -109,15 +123,15 @@ impl Accumulator for ModeAccumulator {
         std::mem::size_of_val(self) + map_size - std::mem::size_of_val(&self.map)
     }
 
-    fn state(&self) -> DFResult<Vec<ScalarValue>> {
+    fn state(&mut self) -> DFResult<Vec<ScalarValue>> {
         let (values, counts): (Vec<_>, Vec<_>) = self.map.clone().into_iter().unzip();
         let counts = counts
             .into_iter()
             .map(ScalarValue::from)
             .collect::<Vec<_>>();
 
-        let values = ScalarValue::new_list(Some(values), self.val_dt.clone());
-        let counts = ScalarValue::new_list(Some(counts), DataType::UInt32);
+        let values = ScalarValue::List(ScalarValue::new_list_nullable(&values, &self.val_dt));
+        let counts = ScalarValue::List(ScalarValue::new_list_nullable(&counts, &DataType::UInt32));
 
         Ok(vec![values, counts])
     }

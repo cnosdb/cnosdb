@@ -12,7 +12,7 @@ mod state_agg;
 
 use std::sync::Arc;
 
-use datafusion::arrow::array::ArrayRef;
+use datafusion::arrow::array::{Array, ArrayRef, AsArray as _, StructArray};
 use datafusion::arrow::datatypes::{DataType, Field, Fields};
 use datafusion::common::Result as DFResult;
 use datafusion::error::DataFusionError;
@@ -53,7 +53,7 @@ pub fn register_udafs(func_manager: &mut dyn FunctionMetadataManager) -> QueryRe
 }
 
 pub trait AggResult {
-    fn to_scalar(self) -> DFResult<ScalarValue>;
+    fn into_scalar(self) -> DFResult<ScalarValue>;
 }
 
 pub trait AggState: Sized {
@@ -86,63 +86,59 @@ impl TSPoint {
     }
 }
 
-impl AggResult for TSPoint {
-    fn to_scalar(self) -> DFResult<ScalarValue> {
-        let TSPoint { ts, val } = self;
-        let ts_data_type = ts.get_datatype();
-        let val_data_type = val.get_datatype();
-
-        Ok(ScalarValue::Struct(
-            Some(vec![ts, val]),
-            Fields::from([
-                Arc::new(Field::new("ts", ts_data_type, true)),
-                Arc::new(Field::new("val", val_data_type, true)),
-            ]),
-        ))
-    }
-}
-
 impl TSPoint {
-    pub fn try_from_scalar(scalar: ScalarValue) -> DFResult<Self> {
-        match scalar {
-            ScalarValue::Struct(None, fields) => {
-                debug_assert!(fields.len() == 2, "Expected 2 fields, got {:?}", fields);
+    pub fn try_into_array(self) -> DFResult<Arc<StructArray>> {
+        let TSPoint { ts, val } = self;
+        let ts_data_type = ts.data_type();
+        let val_data_type = val.data_type();
 
-                let time_data_type = fields[0].data_type();
-                let value_data_type = fields[1].data_type();
-                let ts = ScalarValue::try_from(time_data_type)?;
-                let val = ScalarValue::try_from(value_data_type)?;
+        Ok(Arc::new(StructArray::new(
+            Fields::from(vec![
+                Field::new("ts", ts_data_type, true),
+                Field::new("val", val_data_type, true),
+            ]),
+            vec![ts.to_array()?, val.to_array()?],
+            None,
+        )))
+    }
+
+    pub fn try_from_array(array: &ArrayRef) -> DFResult<Self> {
+        match array.as_struct_opt() {
+            Some(struct_array) => {
+                let columns = struct_array.columns();
+                debug_assert!(
+                    columns.len() == 2,
+                    "TSPoint: expect 2 columns, but got {columns:?}"
+                );
+
+                let ts = ScalarValue::try_from_array(&columns[0], 0)?;
+                let val = ScalarValue::try_from_array(&columns[1], 0)?;
                 Ok(Self { ts, val })
             }
-            ScalarValue::Struct(Some(vals), _) => {
-                let ts = vals[0].clone();
-                let val = vals[1].clone();
-                Ok(Self { ts, val })
-            }
-            _ => Err(DataFusionError::External(Box::new(QueryError::Internal {
-                reason: format!("Expected struct, got {:?}", scalar),
+            None => Err(DataFusionError::External(Box::new(QueryError::Internal {
+                reason: format!("TSPoint: expect Struct, but got {}", array.data_type()),
             }))),
         }
     }
 
     pub fn data_type(&self) -> DFResult<DataType> {
         Ok(DataType::Struct(Fields::from([
-            Arc::new(Field::new("ts", self.ts.get_datatype(), true)),
-            Arc::new(Field::new("val", self.val.get_datatype(), true)),
+            Arc::new(Field::new("ts", self.ts.data_type(), true)),
+            Arc::new(Field::new("val", self.val.data_type(), true)),
         ])))
     }
 }
 
 fn scalar_to_points(value: ScalarValue) -> DFResult<Vec<TSPoint>> {
     match value {
-        ScalarValue::List(Some(vals), _) => {
-            let points = vals
-                .into_iter()
-                .map(TSPoint::try_from_scalar)
+        ScalarValue::List(list_array) => {
+            let points = list_array
+                .iter()
+                .flatten()
+                .map(|a| TSPoint::try_from_array(&a))
                 .collect::<DFResult<Vec<_>>>()?;
             Ok(points)
         }
-        ScalarValue::List(None, _) => Ok(vec![]),
         _ => Err(DataFusionError::External(Box::new(QueryError::Internal {
             reason: format!("Expected list, got {:?}", value),
         }))),
@@ -164,7 +160,7 @@ mod tests {
 
         let expect_udaf = expect_udaf.unwrap();
 
-        let result_udaf = func_manager.udaf(&expect_udaf.name);
+        let result_udaf = func_manager.udaf(expect_udaf.name());
 
         assert!(result_udaf.is_ok(), "not get result from func manager.");
 

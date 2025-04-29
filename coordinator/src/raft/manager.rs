@@ -407,7 +407,7 @@ impl RaftNodesManager {
         Ok(())
     }
 
-    pub async fn destory_replica_group(
+    pub async fn destroy_replica_group(
         &self,
         tenant: &str,
         db_name: &str,

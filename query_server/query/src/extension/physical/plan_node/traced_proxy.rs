@@ -7,11 +7,11 @@ use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::error::Result;
 use datafusion::execution::context::TaskContext;
-use datafusion::physical_expr::{EquivalenceProperties, PhysicalSortExpr, PhysicalSortRequirement};
+use datafusion::physical_expr::LexRequirement;
 use datafusion::physical_plan::metrics::MetricsSet;
 use datafusion::physical_plan::{
-    DisplayFormatType, Distribution, ExecutionPlan, Metric, Partitioning, RecordBatchStream,
-    SendableRecordBatchStream, Statistics,
+    DisplayAs, DisplayFormatType, Distribution, ExecutionPlan, Metric, PlanProperties,
+    RecordBatchStream, SendableRecordBatchStream, Statistics,
 };
 use futures::{Stream, StreamExt};
 use trace::span_ext::SpanExt;
@@ -45,23 +45,23 @@ impl TracedProxyExec {
 }
 
 impl ExecutionPlan for TracedProxyExec {
+    fn name(&self) -> &str {
+        "TracedProxyExec"
+    }
+
     fn as_any(&self) -> &dyn Any {
         self
+    }
+
+    fn properties(&self) -> &PlanProperties {
+        self.inner.properties()
     }
 
     fn schema(&self) -> SchemaRef {
         self.inner.schema()
     }
 
-    fn output_partitioning(&self) -> Partitioning {
-        self.inner.output_partitioning()
-    }
-
-    fn output_ordering(&self) -> Option<&[PhysicalSortExpr]> {
-        self.inner.output_ordering()
-    }
-
-    fn children(&self) -> Vec<Arc<dyn ExecutionPlan>> {
+    fn children(&self) -> Vec<&Arc<dyn ExecutionPlan>> {
         self.inner.children()
     }
 
@@ -118,12 +118,7 @@ impl ExecutionPlan for TracedProxyExec {
         )))
     }
 
-    fn fmt_as(&self, t: DisplayFormatType, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "* ")?;
-        self.inner.fmt_as(t, f)
-    }
-
-    fn statistics(&self) -> Statistics {
+    fn statistics(&self) -> Result<Statistics> {
         self.inner.statistics()
     }
 
@@ -131,15 +126,11 @@ impl ExecutionPlan for TracedProxyExec {
         self.inner.metrics()
     }
 
-    fn unbounded_output(&self, children: &[bool]) -> Result<bool> {
-        self.inner.unbounded_output(children)
-    }
-
     fn required_input_distribution(&self) -> Vec<Distribution> {
         self.inner.required_input_distribution()
     }
 
-    fn required_input_ordering(&self) -> Vec<Option<Vec<PhysicalSortRequirement>>> {
+    fn required_input_ordering(&self) -> Vec<Option<LexRequirement>> {
         self.inner.required_input_ordering()
     }
 
@@ -147,12 +138,15 @@ impl ExecutionPlan for TracedProxyExec {
         self.inner.maintains_input_order()
     }
 
-    fn benefits_from_input_partitioning(&self) -> bool {
+    fn benefits_from_input_partitioning(&self) -> Vec<bool> {
         self.inner.benefits_from_input_partitioning()
     }
+}
 
-    fn equivalence_properties(&self) -> EquivalenceProperties {
-        self.inner.equivalence_properties()
+impl DisplayAs for TracedProxyExec {
+    fn fmt_as(&self, t: DisplayFormatType, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "* ")?;
+        self.inner.fmt_as(t, f)
     }
 }
 

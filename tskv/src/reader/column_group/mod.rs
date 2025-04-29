@@ -308,7 +308,7 @@ mod tests {
         let mut tsm_writer = TsmWriter::open(&path, 0, 0, false, Encoding::Snappy)
             .await
             .expect("tsm_writer");
-        let df_schema = schema.to_arrow_schema();
+        let df_schema = schema.build_arrow_schema();
         let data1 = RecordBatch::try_new(
             df_schema.clone(),
             vec![

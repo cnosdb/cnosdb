@@ -1,0 +1,120 @@
+// Copyright (c) 2019 The Jaeger Authors.
+// Copyright (c) 2018 Uber Technologies, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax="proto3";
+
+package jaeger.api_v2;
+
+// import "gogoproto/gogo.proto";
+import "google/api/annotations.proto";
+
+// option go_package = "api_v2";
+// option java_package = "io.jaegertracing.api_v2";
+
+// Enable gogoprotobuf extensions (https://github.com/gogo/protobuf/blob/master/extensions.md).
+// Enable custom Marshal method.
+// option (gogoproto.marshaler_all) = true;
+// Enable custom Unmarshal method.
+// option (gogoproto.unmarshaler_all) = true;
+// Enable custom Size method (Required by Marshal and Unmarshal).
+// option (gogoproto.sizer_all) = true;
+
+// See description of the SamplingStrategyResponse.strategyType field.
+enum SamplingStrategyType {
+  PROBABILISTIC = 0;
+  RATE_LIMITING = 1;
+};
+
+// ProbabilisticSamplingStrategy samples traces with a fixed probability.
+message ProbabilisticSamplingStrategy {
+  // samplingRate is the sampling probability in the range [0.0, 1.0].
+  double samplingRate = 1;
+}
+
+// RateLimitingSamplingStrategy samples a fixed number of traces per time interval.
+// The typical implementations use the leaky bucket algorithm.
+message RateLimitingSamplingStrategy {
+  // TODO this field type should be changed to double, to support rates like 1 per minute.
+  int32 maxTracesPerSecond = 1;
+}
+
+// OperationSamplingStrategy is a sampling strategy for a given operation
+// (aka endpoint, span name). Only probabilistic sampling is currently supported.
+message OperationSamplingStrategy {
+  string operation = 1;
+  ProbabilisticSamplingStrategy probabilisticSampling = 2;
+}
+
+// PerOperationSamplingStrategies is a combination of strategies for different endpoints
+// as well as some service-wide defaults. It is particularly useful for services whose
+// endpoints receive vastly different traffic, so that any single rate of sampling would
+// result in either too much data for some endpoints or almost no data for other endpoints.
+message PerOperationSamplingStrategies {
+  // defaultSamplingProbability is the sampling probability for spans that do not match
+  // any of the perOperationStrategies.
+  double defaultSamplingProbability = 1;
+
+  // defaultLowerBoundTracesPerSecond defines a lower-bound rate limit used to ensure that
+  // there is some minimal amount of traces sampled for an endpoint that might otherwise
+  // be never sampled via probabilistic strategies. The limit is local to a service instance,
+  // so if a service is deployed with many (N) instances, the effective minimum rate of sampling
+  // will be N times higher. This setting applies to ALL operations, whether or not they match
+  // one of the perOperationStrategies.
+  double defaultLowerBoundTracesPerSecond = 2;
+
+  // perOperationStrategies describes sampling strategiesf for individual operations within
+  // a given service.
+  repeated OperationSamplingStrategy perOperationStrategies = 3;
+
+  // defaultUpperBoundTracesPerSecond defines an upper bound rate limit.
+  // However, almost no Jaeger SDKs support this parameter.
+  double defaultUpperBoundTracesPerSecond = 4;
+}
+
+// SamplingStrategyResponse contains an overall sampling strategy for a given service.
+// This type should be treated as a union where only one of the strategy field is present.
+message SamplingStrategyResponse {
+  // Legacy field that was meant to indicate which one of the strategy fields
+  // below is present. This enum was not extended when per-operation strategy
+  // was introduced, because extending enum has backwards compatiblity issues.
+  // The recommended approach for consumers is to ignore this field and instead
+  // checks the other fields being not null (starting with operationSampling).
+  // For producers, it is recommended to set this field correctly for probabilistic
+  // and rate-limiting strategies, but if per-operation strategy is returned,
+  // the enum can be set to 0 (probabilistic).
+  SamplingStrategyType strategyType = 1;
+
+  ProbabilisticSamplingStrategy probabilisticSampling = 2;
+
+  RateLimitingSamplingStrategy rateLimitingSampling = 3;
+
+  PerOperationSamplingStrategies operationSampling = 4;
+}
+
+// SamplingStrategyParameters defines request parameters for remote sampler.
+message SamplingStrategyParameters {
+  // serviceName is a required argument.
+  string serviceName = 1;
+}
+
+// SamplingManager defines service for the remote sampler.
+service SamplingManager {
+  rpc GetSamplingStrategy(SamplingStrategyParameters) returns (SamplingStrategyResponse) {
+    option (google.api.http) = {
+            post: "/api/v2/samplingStrategy"
+            body: "*"
+        };
+  }
+}

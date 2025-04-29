@@ -20,19 +20,19 @@ pub struct SimpleFunctionMetadataManager {
 impl FunctionMetadataManager for SimpleFunctionMetadataManager {
     fn register_udf(&mut self, f: ScalarUDF) -> QueryResult<()> {
         self.scalar_functions
-            .insert(f.name.to_uppercase(), Arc::new(f));
+            .insert(f.name().to_uppercase(), Arc::new(f));
         Ok(())
     }
 
     fn register_udaf(&mut self, f: AggregateUDF) -> QueryResult<()> {
         self.aggregate_functions
-            .insert(f.name.to_uppercase(), Arc::new(f));
+            .insert(f.name().to_uppercase(), Arc::new(f));
         Ok(())
     }
 
     fn register_udwf(&mut self, f: WindowUDF) -> QueryResult<()> {
         self.window_functions
-            .insert(f.name.to_uppercase(), Arc::new(f));
+            .insert(f.name().to_uppercase(), Arc::new(f));
         Ok(())
     }
 

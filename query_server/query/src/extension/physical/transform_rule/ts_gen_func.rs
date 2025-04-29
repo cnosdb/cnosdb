@@ -9,14 +9,14 @@ use datafusion::physical_planner::{ExtensionPlanner, PhysicalPlanner};
 use models::arrow::Schema;
 use spi::DFResult;
 
-use crate::extension::logical::plan_node::ts_gen_func::TSGenFuncNode;
-use crate::extension::physical::plan_node::ts_gen_func::TSGenFuncExec;
+use crate::extension::logical::plan_node::ts_gen_func::TimeSeriesGenFuncNode;
+use crate::extension::physical::plan_node::ts_gen_func::TimeSeriesGenFuncExec;
 use crate::extension::utils::downcast_plan_node;
 
-pub struct TsGenFuncPlanner;
+pub struct TimeSeriesGenFuncPlanner;
 
 #[async_trait]
-impl ExtensionPlanner for TsGenFuncPlanner {
+impl ExtensionPlanner for TimeSeriesGenFuncPlanner {
     /// Create a physical plan for an extension node
     async fn plan_extension(
         &self,
@@ -26,11 +26,11 @@ impl ExtensionPlanner for TsGenFuncPlanner {
         physical_inputs: &[Arc<dyn ExecutionPlan>],
         session_state: &SessionState,
     ) -> DFResult<Option<Arc<dyn ExecutionPlan>>> {
-        Ok(match downcast_plan_node::<TSGenFuncNode>(node) {
+        Ok(match downcast_plan_node::<TimeSeriesGenFuncNode>(node) {
             Some(ts_gen_func) => {
                 if physical_inputs.len() != 1 || logical_inputs.len() != 1 {
                     return Err(datafusion::error::DataFusionError::Internal(format!(
-                        "TsGenFunc node must have exactly one input, got {}",
+                        "TimeSeriesGenFunc node must have exactly one input, got {}",
                         physical_inputs.len()
                     )));
                 }
@@ -51,35 +51,26 @@ impl ExtensionPlanner for TsGenFuncPlanner {
 
 fn plan_ts_gen_func(
     execution_props: &ExecutionProps,
-    ts_gen_func: &TSGenFuncNode,
+    ts_gen_func: &TimeSeriesGenFuncNode,
     logical_inputs: &LogicalPlan,
     physical_inputs: &Arc<dyn ExecutionPlan>,
-) -> DFResult<TSGenFuncExec> {
+) -> DFResult<TimeSeriesGenFuncExec> {
     let time_expr = create_physical_expr(
         &ts_gen_func.time_expr,
         logical_inputs.schema(),
-        &physical_inputs.schema(),
         execution_props,
     )?;
 
-    let field_exprs = ts_gen_func
-        .field_exprs
-        .iter()
-        .map(|expr| {
-            create_physical_expr(
-                expr,
-                logical_inputs.schema(),
-                &physical_inputs.schema(),
-                execution_props,
-            )
-        })
-        .collect::<DFResult<Vec<_>>>()?;
+    let field_expr = create_physical_expr(
+        &ts_gen_func.field_expr,
+        logical_inputs.schema(),
+        execution_props,
+    )?;
 
     let arg_expr = if let Some(expr) = &ts_gen_func.arg_expr {
         Some(create_physical_expr(
             expr,
             logical_inputs.schema(),
-            &physical_inputs.schema(),
             execution_props,
         )?)
     } else {
@@ -88,10 +79,10 @@ fn plan_ts_gen_func(
 
     let schema = Arc::new(Schema::from(ts_gen_func.schema().as_ref()));
 
-    Ok(TSGenFuncExec::new(
+    Ok(TimeSeriesGenFuncExec::new(
         Arc::clone(physical_inputs),
         time_expr,
-        field_exprs,
+        field_expr,
         arg_expr,
         ts_gen_func.symbol,
         schema,

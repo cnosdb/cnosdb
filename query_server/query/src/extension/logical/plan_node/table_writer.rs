@@ -3,7 +3,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use datafusion::common::{DFSchema, DFSchemaRef};
-use datafusion::error::DataFusionError;
+use datafusion::error::{DataFusionError, Result as DFResult};
 use datafusion::logical_expr::utils::exprlist_to_fields;
 use datafusion::logical_expr::{Extension, LogicalPlan, TableSource, UserDefinedLogicalNodeCore};
 use datafusion::prelude::Expr;
@@ -15,6 +15,24 @@ pub struct TableWriterPlanNode {
     pub input: Arc<LogicalPlan>,
     pub exprs: Vec<Expr>,
     pub schema: DFSchemaRef,
+}
+
+impl PartialOrd for TableWriterPlanNode {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match self.target_table_name.partial_cmp(&other.target_table_name) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        match self.input.partial_cmp(&other.input) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        match self.exprs.partial_cmp(&other.exprs) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        self.schema.fields().partial_cmp(other.schema.fields())
+    }
 }
 
 impl TableWriterPlanNode {
@@ -74,6 +92,10 @@ impl PartialEq for TableWriterPlanNode {
 impl Eq for TableWriterPlanNode {}
 
 impl UserDefinedLogicalNodeCore for TableWriterPlanNode {
+    fn name(&self) -> &str {
+        "TableWriter"
+    }
+
     fn inputs(&self) -> Vec<&LogicalPlan> {
         vec![&self.input]
     }
@@ -98,19 +120,19 @@ impl UserDefinedLogicalNodeCore for TableWriterPlanNode {
         Ok(())
     }
 
-    fn from_template(&self, exprs: &[Expr], inputs: &[LogicalPlan]) -> Self {
-        debug_assert_eq!(inputs.len(), 1, "input size inconsistent");
-        TableWriterPlanNode {
+    fn with_exprs_and_inputs(&self, exprs: Vec<Expr>, inputs: Vec<LogicalPlan>) -> DFResult<Self> {
+        if inputs.len() != 1 {
+            return Err(DataFusionError::Plan(
+                "TableWriterPlanNode: input size inconsistent".to_string(),
+            ));
+        }
+        Ok(TableWriterPlanNode {
             target_table_name: self.target_table_name.clone(),
             target_table: self.target_table.clone(),
             input: Arc::new(inputs[0].clone()),
-            exprs: exprs.to_vec(),
+            exprs,
             schema: self.schema.clone(),
-        }
-    }
-
-    fn name(&self) -> &str {
-        "TableWriter"
+        })
     }
 }
 

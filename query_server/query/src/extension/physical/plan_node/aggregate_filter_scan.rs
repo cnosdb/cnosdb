@@ -5,14 +5,16 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 use coordinator::service::CoordinatorRef;
-use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::error::{DataFusionError, Result};
 use datafusion::execution::context::TaskContext;
-use datafusion::physical_expr::PhysicalSortExpr;
+use datafusion::physical_expr::EquivalenceProperties;
+use datafusion::physical_plan::execution_plan::{Boundedness, EmissionType};
 use datafusion::physical_plan::metrics::{ExecutionPlanMetricsSet, MetricsSet};
 use datafusion::physical_plan::{
-    DisplayFormatType, ExecutionPlan, Partitioning, SendableRecordBatchStream, Statistics,
+    DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties,
+    SendableRecordBatchStream, Statistics,
 };
+use models::arrow::SchemaRef;
 use models::predicate::domain::{PredicateRef, PushedAggregateFunction};
 use models::predicate::PlacedSplit;
 use models::schema::tskv_table_schema::TskvTableSchemaRef;
@@ -26,11 +28,12 @@ use crate::extension::physical::plan_node::TableScanMetrics;
 #[derive(Clone)]
 pub struct AggregateFilterTskvExec {
     coord: CoordinatorRef,
-    schema: SchemaRef,
     table_schema: TskvTableSchemaRef,
+    schema: SchemaRef,
     pushed_aggs: Vec<PushedAggregateFunction>,
     filter: PredicateRef,
     splits: Vec<PlacedSplit>,
+    properties: PlanProperties,
     metrics: ExecutionPlanMetricsSet,
 }
 
@@ -43,36 +46,39 @@ impl AggregateFilterTskvExec {
         filter: PredicateRef,
         splits: Vec<PlacedSplit>,
     ) -> Self {
+        let partitioning = Partitioning::UnknownPartitioning(splits.len());
         Self {
             coord,
-            schema,
             table_schema,
+            schema: schema.clone(),
             pushed_aggs,
             filter,
             splits,
+            properties: PlanProperties::new(
+                EquivalenceProperties::new(schema),
+                partitioning,
+                EmissionType::Both,
+                Boundedness::Bounded,
+            ),
             metrics: ExecutionPlanMetricsSet::new(),
         }
     }
 }
 
 impl ExecutionPlan for AggregateFilterTskvExec {
+    fn name(&self) -> &str {
+        "AggregateFilterTskvExec"
+    }
+
     fn as_any(&self) -> &dyn Any {
         self
     }
 
-    fn schema(&self) -> SchemaRef {
-        self.schema.clone()
+    fn properties(&self) -> &PlanProperties {
+        &self.properties
     }
 
-    fn output_partitioning(&self) -> Partitioning {
-        Partitioning::UnknownPartitioning(self.splits.len())
-    }
-
-    fn output_ordering(&self) -> Option<&[PhysicalSortExpr]> {
-        None
-    }
-
-    fn children(&self) -> Vec<Arc<dyn ExecutionPlan>> {
+    fn children(&self) -> Vec<&Arc<dyn ExecutionPlan>> {
         vec![]
     }
 
@@ -112,7 +118,7 @@ impl ExecutionPlan for AggregateFilterTskvExec {
             Some(self.pushed_aggs.clone()),
             self.schema.clone(),
             self.table_schema.clone(),
-            self.table_schema.meta(),
+            self.table_schema.build_meta(),
         );
 
         let span_ctx = context.session_config().get_extension::<SpanContext>();
@@ -142,10 +148,12 @@ impl ExecutionPlan for AggregateFilterTskvExec {
         Some(self.metrics.clone_inner())
     }
 
-    fn statistics(&self) -> Statistics {
-        Statistics::default()
+    fn statistics(&self) -> Result<Statistics> {
+        Ok(Statistics::default())
     }
+}
 
+impl DisplayAs for AggregateFilterTskvExec {
     fn fmt_as(&self, _t: DisplayFormatType, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,

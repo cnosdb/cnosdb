@@ -3,7 +3,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use datafusion::common::{DFSchema, DFSchemaRef};
-use datafusion::error::DataFusionError;
+use datafusion::error::{DataFusionError, Result as DFResult};
 use datafusion::logical_expr::utils::exprlist_to_fields;
 use datafusion::logical_expr::{Extension, LogicalPlan, TableSource, UserDefinedLogicalNodeCore};
 use datafusion::prelude::{Column, Expr};
@@ -15,6 +15,28 @@ pub struct UpdateTagPlanNode {
     pub assigns: Vec<(Column, Expr)>,
     pub schema: DFSchemaRef,
     pub exprs: Vec<Expr>,
+}
+
+impl PartialOrd for UpdateTagPlanNode {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match self.table_name.partial_cmp(&other.table_name) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        match self.scan.partial_cmp(&other.scan) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        match self.assigns.partial_cmp(&other.assigns) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        match self.schema.fields().partial_cmp(other.schema.fields()) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        self.exprs.partial_cmp(&other.exprs)
+    }
 }
 
 impl UpdateTagPlanNode {
@@ -98,16 +120,20 @@ impl UserDefinedLogicalNodeCore for UpdateTagPlanNode {
         Ok(())
     }
 
-    fn from_template(&self, exprs: &[Expr], inputs: &[LogicalPlan]) -> Self {
-        debug_assert_eq!(inputs.len(), 1, "input size inconsistent");
-        UpdateTagPlanNode {
+    fn with_exprs_and_inputs(&self, exprs: Vec<Expr>, inputs: Vec<LogicalPlan>) -> DFResult<Self> {
+        if inputs.len() != 1 {
+            return Err(DataFusionError::Plan(
+                "UpdateTagPlanNode only supports one input".to_string(),
+            ));
+        }
+        Ok(UpdateTagPlanNode {
             table_name: self.table_name.clone(),
             table_source: self.table_source.clone(),
             scan: Arc::new(inputs[0].clone()),
             assigns: self.assigns.clone(),
-            exprs: exprs.to_vec(),
+            exprs,
             schema: self.schema.clone(),
-        }
+        })
     }
 }
 

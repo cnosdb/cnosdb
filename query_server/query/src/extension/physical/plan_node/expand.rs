@@ -7,17 +7,17 @@ use std::task::{Context, Poll};
 use datafusion::arrow::compute::concat_batches;
 use datafusion::arrow::datatypes::{Field, Schema, SchemaRef};
 use datafusion::arrow::record_batch::{RecordBatch, RecordBatchOptions};
+use datafusion::common::stats::Precision;
 use datafusion::error::Result;
 use datafusion::execution::context::TaskContext;
-use datafusion::physical_expr::equivalence::project_equivalence_properties;
-use datafusion::physical_expr::{
-    normalize_out_expr_with_columns_map, EquivalenceProperties, PhysicalSortExpr,
-};
+use datafusion::physical_expr::equivalence::ProjectionMapping;
+use datafusion::physical_plan::execution_plan::{Boundedness, EmissionType};
 use datafusion::physical_plan::expressions::Column;
 use datafusion::physical_plan::metrics::{BaselineMetrics, ExecutionPlanMetricsSet, MetricsSet};
 use datafusion::physical_plan::{
-    ColumnStatistics, DisplayFormatType, ExecutionPlan, Partitioning, PhysicalExpr,
-    RecordBatchStream, SendableRecordBatchStream, Statistics,
+    ColumnStatistics, DisplayAs, DisplayFormatType, ExecutionPlan, ExecutionPlanProperties,
+    Partitioning, PhysicalExpr, PlanProperties, RecordBatchStream, SendableRecordBatchStream,
+    Statistics,
 };
 use futures::{Stream, StreamExt};
 use trace::debug;
@@ -31,13 +31,10 @@ pub struct ExpandExec {
     schema: SchemaRef,
     /// The input plan
     input: Arc<dyn ExecutionPlan>,
-    /// The output ordering
-    output_ordering: Option<Vec<PhysicalSortExpr>>,
-    /// The alias map used to normalize out expressions like Partitioning and PhysicalSortExpr
-    /// The key is the column from the input schema and the values are the columns from the output schema
-    alias_map: HashMap<Column, Vec<Column>>,
     /// Execution metrics
     metrics: ExecutionPlanMetricsSet,
+    /// Plan properties
+    properties: PlanProperties,
 }
 
 impl ExpandExec {
@@ -71,45 +68,43 @@ impl ExpandExec {
             input_schema.metadata().clone(),
         ));
 
-        let mut alias_map: HashMap<Column, Vec<Column>> = HashMap::new();
+        let mut alias_exprs: Vec<(Arc<dyn PhysicalExpr>, String)> = Vec::new();
         for (expression, name) in expr.iter() {
             if let Some(column) = expression.as_any().downcast_ref::<Column>() {
                 let new_col_idx = schema.index_of(name)?;
                 // When the column name is the same, but index does not equal, treat it as Alias
                 if (column.name() != name) || (column.index() != new_col_idx) {
-                    let entry = alias_map.entry(column.clone()).or_default();
-                    entry.push(Column::new(name, new_col_idx));
+                    alias_exprs.push((expression.clone(), name.clone()));
                 }
             };
         }
+        let alias_map = ProjectionMapping::try_new(&alias_exprs, &schema)?;
 
         // Output Ordering need to respect the alias
-        let child_output_ordering = input.output_ordering();
-        let output_ordering = match child_output_ordering {
-            Some(sort_exprs) => {
-                let normalized_exprs = sort_exprs
+        let input_eq_properties = input.equivalence_properties();
+        let output_eq_properties = input_eq_properties.project(&alias_map, schema.clone());
+        let output_partitioning = match input.output_partitioning() {
+            Partitioning::Hash(exprs, part) => {
+                let normalized_exprs = exprs
                     .iter()
-                    .map(|sort_expr| {
-                        let expr =
-                            normalize_out_expr_with_columns_map(sort_expr.expr.clone(), &alias_map);
-                        PhysicalSortExpr {
-                            expr,
-                            options: sort_expr.options,
-                        }
-                    })
+                    .filter_map(|expr| input_eq_properties.project_expr(expr, &alias_map))
                     .collect::<Vec<_>>();
-                Some(normalized_exprs)
+                Partitioning::Hash(normalized_exprs, *part)
             }
-            None => None,
+            other => other.clone(),
         };
 
         Ok(Self {
             exprs,
-            schema,
+            schema: schema.clone(),
             input: input.clone(),
-            output_ordering,
-            alias_map,
             metrics: ExecutionPlanMetricsSet::new(),
+            properties: PlanProperties::new(
+                output_eq_properties,
+                output_partitioning,
+                EmissionType::Incremental,
+                Boundedness::Bounded,
+            ),
         })
     }
 
@@ -125,9 +120,17 @@ impl ExpandExec {
 }
 
 impl ExecutionPlan for ExpandExec {
+    fn name(&self) -> &str {
+        "ExpandExec"
+    }
+
     /// Return a reference to Any that can be used for downcasting
     fn as_any(&self) -> &dyn Any {
         self
+    }
+
+    fn properties(&self) -> &PlanProperties {
+        &self.properties
     }
 
     /// Get the schema for this execution plan
@@ -135,50 +138,13 @@ impl ExecutionPlan for ExpandExec {
         self.schema.clone()
     }
 
-    /// Specifies whether this plan generates an infinite stream of records.
-    /// If the plan does not support pipelining, but it its input(s) are
-    /// infinite, returns an error to indicate this.
-    fn unbounded_output(&self, children: &[bool]) -> Result<bool> {
-        Ok(children[0])
-    }
-
-    fn children(&self) -> Vec<Arc<dyn ExecutionPlan>> {
-        vec![self.input.clone()]
-    }
-
-    /// Get the output partitioning of this plan
-    fn output_partitioning(&self) -> Partitioning {
-        // Output partition need to respect the alias
-        let input_partition = self.input.output_partitioning();
-        match input_partition {
-            Partitioning::Hash(exprs, part) => {
-                let normalized_exprs = exprs
-                    .into_iter()
-                    .map(|expr| normalize_out_expr_with_columns_map(expr, &self.alias_map))
-                    .collect::<Vec<_>>();
-                Partitioning::Hash(normalized_exprs, part)
-            }
-            _ => input_partition,
-        }
-    }
-
-    fn output_ordering(&self) -> Option<&[PhysicalSortExpr]> {
-        self.output_ordering.as_deref()
+    fn children(&self) -> Vec<&Arc<dyn ExecutionPlan>> {
+        vec![&self.input]
     }
 
     fn maintains_input_order(&self) -> Vec<bool> {
         // tell optimizer this operator doesn't reorder its input
         vec![true]
-    }
-
-    fn equivalence_properties(&self) -> EquivalenceProperties {
-        let mut new_properties = EquivalenceProperties::new(self.schema());
-        project_equivalence_properties(
-            self.input.equivalence_properties(),
-            &self.alias_map,
-            &mut new_properties,
-        );
-        new_properties
     }
 
     fn with_new_children(
@@ -217,6 +183,20 @@ impl ExecutionPlan for ExpandExec {
         }))
     }
 
+    fn metrics(&self) -> Option<MetricsSet> {
+        Some(self.metrics.clone_inner())
+    }
+
+    fn statistics(&self) -> Result<Statistics> {
+        let stats = stats_projection(
+            self.input.statistics()?,
+            self.expr().iter().map(|(e, _)| Arc::clone(e)),
+        );
+        Ok(stats)
+    }
+}
+
+impl DisplayAs for ExpandExec {
     fn fmt_as(&self, t: DisplayFormatType, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match t {
             DisplayFormatType::Default | DisplayFormatType::Verbose => {
@@ -241,18 +221,11 @@ impl ExecutionPlan for ExpandExec {
 
                 write!(f, "ExpandExec: exprs=[[{}]]", proj_strs)
             }
+            DisplayFormatType::TreeRender => {
+                // TODO(zipper): implement this.
+                write!(f, "")
+            }
         }
-    }
-
-    fn metrics(&self) -> Option<MetricsSet> {
-        Some(self.metrics.clone_inner())
-    }
-
-    fn statistics(&self) -> Statistics {
-        stats_projection(
-            self.input.statistics(),
-            self.expr().iter().map(|(e, _)| Arc::clone(e)),
-        )
     }
 }
 
@@ -278,26 +251,23 @@ fn stats_projection(
     stats: Statistics,
     exprs: impl Iterator<Item = Arc<dyn PhysicalExpr>>,
 ) -> Statistics {
-    let column_statistics = stats.column_statistics.map(|input_col_stats| {
-        exprs
-            .map(|e| {
-                if let Some(col) = e.as_any().downcast_ref::<Column>() {
-                    input_col_stats[col.index()].clone()
-                } else {
-                    // TODO stats: estimate more statistics from expressions
-                    // (expressions should compute their statistics themselves)
-                    ColumnStatistics::default()
-                }
-            })
-            .collect()
-    });
+    let column_statistics = exprs
+        .map(|e| {
+            if let Some(col) = e.as_any().downcast_ref::<Column>() {
+                stats.column_statistics[col.index()].clone()
+            } else {
+                // TODO stats: estimate more statistics from expressions
+                // (expressions should compute their statistics themselves)
+                ColumnStatistics::default()
+            }
+        })
+        .collect();
 
     Statistics {
-        is_exact: stats.is_exact,
         num_rows: stats.num_rows,
         column_statistics,
         // TODO stats: knowing the type of the new columns we can guess the output size
-        total_byte_size: None,
+        total_byte_size: Precision::Absent,
     }
 }
 
@@ -309,11 +279,10 @@ impl ExpandStream {
     ) -> Result<RecordBatch> {
         // records time on drop
         let _timer = self.baseline_metrics.elapsed_compute().timer();
-        let arrays = expr
-            .iter()
-            .map(|expr| expr.evaluate(batch))
-            .map(|r| r.map(|v| v.into_array(batch.num_rows())))
-            .collect::<Result<Vec<_>>>()?;
+        let mut arrays = Vec::with_capacity(expr.len());
+        for r in expr.iter().map(|expr| expr.evaluate(batch)) {
+            arrays.push(r?.into_array(batch.num_rows())?);
+        }
 
         if arrays.is_empty() {
             let options = RecordBatchOptions::new().with_row_count(Some(batch.num_rows()));

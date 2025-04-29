@@ -1,7 +1,7 @@
 use std::collections::HashSet;
-use std::fmt::Display;
 
 use base64::prelude::{Engine, BASE64_STANDARD};
+use datafusion::sql::sqlparser::ast::escape_quoted_string;
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 
@@ -12,6 +12,8 @@ use super::role::{TenantRoleIdentifier, UserRole};
 use super::{rsa_utils, AuthError, AuthResult};
 use crate::auth::{bcrypt_hash, bcrypt_verify};
 use crate::oid::{Identifier, Oid};
+use crate::sql::write_sql_with_option_kv;
+use crate::ModelError;
 
 pub const ROOT: &str = "root";
 pub const ROOT_PWD: &str = "root";
@@ -156,15 +158,23 @@ impl UserOptions {
     pub fn hash_password(&self) -> Option<&str> {
         self.hash_password.as_deref()
     }
+
+    pub fn hash_password_hidden(&mut self) {
+        self.hash_password.replace("*****".to_string());
+    }
+
     pub fn must_change_password(&self) -> Option<bool> {
         self.must_change_password
     }
+
     pub fn rsa_public_key(&self) -> Option<&str> {
         self.rsa_public_key.as_deref()
     }
+
     pub fn comment(&self) -> Option<&str> {
         self.comment.as_deref()
     }
+
     pub fn granted_admin(&self) -> Option<bool> {
         self.granted_admin
     }
@@ -178,29 +188,80 @@ impl UserOptions {
             granted_admin: self.granted_admin.or(other.granted_admin),
         }
     }
-    pub fn hidden_password(&mut self) {
-        self.hash_password.replace("*****".to_string());
-    }
 
-    // when user change password, turn must_change_password to false
-    pub fn change_password(&mut self) {
+    /// Set `must_change_password` to false, called after user has changed their password.
+    pub fn set_changed_password(&mut self) {
         self.must_change_password = Some(false);
     }
-}
 
-impl UserOptionsBuilder {
-    pub fn password(
-        &mut self,
-        password: impl Into<String>,
-    ) -> Result<&mut Self, UserOptionsBuilderError> {
-        let hash_password = bcrypt_hash(&password.into())
-            .map_err(|e| UserOptionsBuilderError::from(e.to_string()))?;
-        self.hash_password(hash_password);
-        Ok(self)
+    fn is_empty(&self) -> bool {
+        self.hash_password.is_none()
+            && self.must_change_password.is_none()
+            && self.rsa_public_key.is_none()
+            && self.comment.is_none()
+            && self.granted_admin.is_none()
+    }
+
+    /// Write the options to a SQL string for DUMP action.
+    /// If the options are empty, nothing will be written.
+    ///
+    /// The format of the SQL string is:
+    /// ```SQL
+    /// [<space> with
+    ///   [hash_password='<STRING>']
+    ///   [, comment='<STRING>']
+    ///   [, must_change_password=<BOOLEAN>]
+    ///   [, rsa_public_key='<STRING>']
+    ///   [, granted_admin=<BOOLEAN>]
+    /// ]
+    /// ```
+    pub fn write_as_dump_sql(&self, buf: &mut String) -> Result<(), ModelError> {
+        if self.is_empty() {
+            return Ok(());
+        }
+
+        let mut did_write = false;
+        if let Some(ref hash_pwd) = self.hash_password {
+            write_sql_with_option_kv(
+                buf,
+                &mut did_write,
+                "hash_password",
+                escape_quoted_string(hash_pwd, '\''),
+            );
+        }
+        if let Some(ref comment) = self.comment {
+            write_sql_with_option_kv(
+                buf,
+                &mut did_write,
+                "comment",
+                escape_quoted_string(comment, '\''),
+            );
+        }
+        if let Some(must_change_password) = self.must_change_password {
+            write_sql_with_option_kv(
+                buf,
+                &mut did_write,
+                "must_change_password",
+                must_change_password,
+            );
+        }
+        if let Some(ref pub_key) = self.rsa_public_key {
+            write_sql_with_option_kv(
+                buf,
+                &mut did_write,
+                "rsa_public_key",
+                escape_quoted_string(pub_key, '\''),
+            );
+        }
+        if let Some(granted_admin) = self.granted_admin {
+            write_sql_with_option_kv(buf, &mut did_write, "granted_admin", granted_admin);
+        }
+
+        Ok(())
     }
 }
 
-impl Display for UserOptions {
+impl std::fmt::Display for UserOptions {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(ref e) = self.must_change_password {
             write!(f, "must_change_password={},", e)?;
@@ -215,6 +276,19 @@ impl Display for UserOptions {
         }
 
         Ok(())
+    }
+}
+
+impl UserOptionsBuilder {
+    /// Set `hash_password` from the raw password.
+    pub fn password(
+        &mut self,
+        password: impl Into<String>,
+    ) -> Result<&mut Self, UserOptionsBuilderError> {
+        let hash_password = bcrypt_hash(&password.into())
+            .map_err(|e| UserOptionsBuilderError::from(e.to_string()))?;
+        self.hash_password(hash_password);
+        Ok(self)
     }
 }
 
@@ -233,7 +307,7 @@ impl<'a> From<&'a UserOptions> for AuthType<'a> {
     }
 }
 
-impl<'a> AuthType<'a> {
+impl AuthType<'_> {
     pub fn access_check(&self, user_info: &UserInfo) -> AuthResult<()> {
         let user_name = user_info.user.as_str();
         let password = user_info.password.as_str();

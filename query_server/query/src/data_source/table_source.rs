@@ -1,11 +1,12 @@
 use std::any::Any;
+use std::borrow::Cow;
 use std::fmt::Display;
 use std::sync::Arc;
 use std::write;
 
 use async_trait::async_trait;
 use datafusion::arrow::datatypes::SchemaRef;
-use datafusion::common::{OwnedTableReference, Result as DFResult};
+use datafusion::common::{Result as DFResult, TableReference};
 use datafusion::datasource::listing::ListingTable;
 use datafusion::datasource::{provider_as_source, TableProvider};
 use datafusion::error::DataFusionError;
@@ -38,7 +39,7 @@ pub struct TableSourceAdapter {
 
 impl TableSourceAdapter {
     pub fn try_new(
-        table_ref: impl Into<OwnedTableReference>,
+        table_ref: impl Into<TableReference>,
         database_name: impl Into<String>,
         table_name: impl Into<String>,
         table_handle: impl Into<TableHandle>,
@@ -62,7 +63,7 @@ impl TableSourceAdapter {
             TableHandle::TableProvider(t) => {
                 let table_source = provider_as_source(t.clone());
                 if let Some(plan) = table_source.get_logical_plan() {
-                    LogicalPlanBuilder::from(plan.clone()).build()?
+                    LogicalPlanBuilder::from(plan.into_owned()).build()?
                 } else {
                     LogicalPlanBuilder::scan(table_ref, table_source, None)?.build()?
                 }
@@ -133,8 +134,8 @@ impl TableSource for TableSourceAdapter {
     }
 
     /// Called by [`InlineTableScan`]
-    fn get_logical_plan(&self) -> Option<&LogicalPlan> {
-        Some(&self.plan)
+    fn get_logical_plan(&self) -> Option<Cow<LogicalPlan>> {
+        Some(Cow::Borrowed(&self.plan))
     }
 }
 

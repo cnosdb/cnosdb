@@ -1,11 +1,13 @@
-use std::fmt::Display;
-
 use config::common::{RequestLimiterConfig, TenantLimiterConfig, TenantObjectLimiterConfig};
+use datafusion::sql::sqlparser::ast::escape_quoted_string;
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 use utils::duration::CnosDuration;
 
+use crate::errors::DumpSnafu;
 use crate::oid::{Identifier, Oid};
+use crate::sql::write_sql_with_option_kv;
+use crate::ModelError;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Tenant {
@@ -33,7 +35,7 @@ impl Tenant {
         &self.options
     }
 
-    pub fn to_own_options(self) -> TenantOptions {
+    pub fn into_options(self) -> TenantOptions {
         self.options
     }
 }
@@ -41,10 +43,28 @@ impl Tenant {
 #[derive(Debug, Default, Clone, Builder, Serialize, Deserialize)]
 #[builder(setter(into, strip_option), default)]
 pub struct TenantOptions {
+    /// Descriptive notes.
     pub comment: Option<String>,
+    /// Resource limits.
     pub limiter_config: Option<TenantLimiterConfig>,
+    /// Delete tenant delay time.
     pub drop_after: Option<CnosDuration>,
+    /// TODO(zipper)
     pub tenant_is_hidden: bool,
+}
+
+impl TenantOptionsBuilder {
+    pub fn unset_comment(&mut self) {
+        self.comment = None
+    }
+
+    pub fn unset_limiter_config(&mut self) {
+        self.limiter_config = None
+    }
+
+    pub fn unset_drop_after(&mut self) {
+        self.drop_after = None;
+    }
 }
 
 impl From<TenantOptions> for TenantOptionsBuilder {
@@ -56,42 +76,24 @@ impl From<TenantOptions> for TenantOptionsBuilder {
         if let Some(config) = value.limiter_config.clone() {
             builder.limiter_config(config);
         }
-        if let Some(drop_after) = value.get_drop_after() {
-            builder.drop_after(drop_after);
+        if let Some(duration) = value.drop_after() {
+            builder.drop_after(duration.clone());
         }
         builder.tenant_is_hidden(false);
         builder
     }
 }
 
-impl TenantOptionsBuilder {
-    pub fn unset_comment(&mut self) {
-        self.comment = None
-    }
-    pub fn unset_limiter_config(&mut self) {
-        self.limiter_config = None
-    }
-    pub fn unset_drop_after(&mut self) {
-        self.drop_after = None;
-    }
-}
-
 impl TenantOptions {
     pub fn object_config(&self) -> Option<&TenantObjectLimiterConfig> {
-        match self.limiter_config {
-            Some(ref limit_config) => limit_config.object_config.as_ref(),
-            None => None,
-        }
+        self.limiter_config.as_ref()?.object_config.as_ref()
     }
 
     pub fn request_config(&self) -> Option<&RequestLimiterConfig> {
-        match self.limiter_config {
-            Some(ref limit_config) => limit_config.request_config.as_ref(),
-            None => None,
-        }
+        self.limiter_config.as_ref()?.request_config.as_ref()
     }
 
-    pub fn get_tenant_is_hidden(&self) -> bool {
+    pub fn tenant_is_hidden(&self) -> bool {
         self.tenant_is_hidden
     }
 
@@ -99,12 +101,71 @@ impl TenantOptions {
         self.tenant_is_hidden = tenant_is_hidden;
     }
 
-    pub fn get_drop_after(&self) -> Option<CnosDuration> {
-        self.drop_after.clone()
+    pub fn drop_after(&self) -> Option<&CnosDuration> {
+        self.drop_after.as_ref()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.comment.is_none() && self.limiter_config.is_none() && self.drop_after.is_none()
+    }
+
+    /// Write the options to a SQL string for DUMP action.
+    /// If the options are empty, nothing will be written.
+    ///
+    /// The format of the SQL string is:
+    /// ```SQL
+    /// [<SPACE> with
+    ///   [comment='<STRING>']
+    ///   [, drop_after='<DURATION>']
+    ///   [, _limiter='<JSON_STRING>']
+    /// ]
+    /// ```
+    pub fn write_as_dump_sql(&self, buf: &mut String) -> Result<(), ModelError> {
+        if self.is_empty() {
+            return Ok(());
+        }
+
+        let mut did_write = false;
+        if let Some(ref comment) = self.comment {
+            write_sql_with_option_kv(
+                buf,
+                &mut did_write,
+                "comment",
+                escape_quoted_string(comment, '\''),
+            );
+        }
+        if let Some(ref dur) = self.drop_after {
+            write_sql_with_option_kv(
+                buf,
+                &mut did_write,
+                "drop_after",
+                escape_quoted_string(&dur.to_string(), '\''),
+            );
+        }
+        if let Some(ref cfg) = self.limiter_config {
+            match serde_json::to_string(cfg) {
+                Ok(cfg_json) => {
+                    write_sql_with_option_kv(
+                        buf,
+                        &mut did_write,
+                        "_limiter",
+                        escape_quoted_string(&cfg_json, '\''),
+                    );
+                }
+                Err(e) => {
+                    return DumpSnafu {
+                        msg: format!("Failed to serialize limiter config: {e}"),
+                    }
+                    .fail()
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 
-impl Display for TenantOptions {
+impl std::fmt::Display for TenantOptions {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(ref e) = self.comment {
             write!(f, "comment={},", e)?;

@@ -8,51 +8,50 @@ use spi::{DFResult, QueryResult};
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
+pub fn register_all_udf(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<()> {
+    func_manager.register_udf(ScalarUDF::new_from_impl(
+        timestamp_repair::TimestampRepairFunc::default(),
+    ))?;
+    func_manager.register_udf(ScalarUDF::new_from_impl(
+        value_fill::ValueFillFunc::default(),
+    ))?;
+    func_manager.register_udf(ScalarUDF::new_from_impl(
+        value_repair::ValueRepairFunc::default(),
+    ))
+}
+
 #[derive(Debug, EnumIter, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum TSGenFunc {
+pub enum TimeSeriesGenFunc {
     TimestampRepair,
     ValueFill,
     ValueRepair,
 }
 
-impl TSGenFunc {
+impl TimeSeriesGenFunc {
+    pub fn try_from_str(name: &str) -> Option<Self> {
+        TimeSeriesGenFunc::iter().find(|func| func.name() == name)
+    }
+
     pub const fn name(&self) -> &'static str {
         match self {
-            TSGenFunc::TimestampRepair => "timestamp_repair",
-            TSGenFunc::ValueFill => "value_fill",
-            TSGenFunc::ValueRepair => "value_repair",
+            TimeSeriesGenFunc::TimestampRepair => "timestamp_repair",
+            TimeSeriesGenFunc::ValueFill => "value_fill",
+            TimeSeriesGenFunc::ValueRepair => "value_repair",
         }
-    }
-
-    pub fn from_str_opt(name: &str) -> Option<Self> {
-        TSGenFunc::iter().find(|func| func.name() == name)
-    }
-
-    fn scalar_udf(&self) -> ScalarUDF {
-        match self {
-            TSGenFunc::TimestampRepair | TSGenFunc::ValueFill | TSGenFunc::ValueRepair => {
-                utils::common_udf(self.name())
-            }
-        }
-    }
-
-    pub fn register_all_udf(func_manager: &mut dyn FunctionMetadataManager) -> QueryResult<()> {
-        for func in TSGenFunc::iter() {
-            func_manager.register_udf(func.scalar_udf())?;
-        }
-        Ok(())
     }
 
     pub fn compute(
         &self,
         timestamps: &mut Vec<i64>,
-        fields: &mut [Vec<f64>],
+        fields: &mut [f64],
         arg_str: Option<&str>,
     ) -> DFResult<(Vec<i64>, Vec<f64>)> {
         match self {
-            TSGenFunc::TimestampRepair => timestamp_repair::compute(timestamps, fields, arg_str),
-            TSGenFunc::ValueFill => value_fill::compute(timestamps, fields, arg_str),
-            TSGenFunc::ValueRepair => value_repair::compute(timestamps, fields, arg_str),
+            TimeSeriesGenFunc::TimestampRepair => {
+                timestamp_repair::compute(timestamps, fields, arg_str)
+            }
+            TimeSeriesGenFunc::ValueFill => value_fill::compute(timestamps, fields, arg_str),
+            TimeSeriesGenFunc::ValueRepair => value_repair::compute(timestamps, fields, arg_str),
         }
     }
 }

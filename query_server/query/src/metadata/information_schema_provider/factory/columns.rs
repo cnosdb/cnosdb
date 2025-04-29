@@ -4,12 +4,12 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::record_batch::RecordBatch;
+use datafusion::catalog::memory::MemorySourceConfig;
+use datafusion::catalog::Session;
 use datafusion::common::{DataFusionError, Result as DFResult};
 use datafusion::datasource::{TableProvider, TableType};
-use datafusion::execution::context::SessionState;
-use datafusion::logical_expr::logical_plan::AggWithGrouping;
+use datafusion::logical_expr::logical_plan::TableScanAggregate;
 use datafusion::logical_expr::Expr;
-use datafusion::physical_plan::memory::MemoryExec;
 use datafusion::physical_plan::ExecutionPlan;
 use meta::model::MetaClientRef;
 use models::auth::user::User;
@@ -46,6 +46,7 @@ impl InformationSchemaTableFactory for ColumnsFactory {
     }
 }
 
+#[derive(Debug)]
 pub struct InformationColumnsTable {
     user: User,
     metadata: MetaClientRef,
@@ -73,10 +74,10 @@ impl TableProvider for InformationColumnsTable {
 
     async fn scan(
         &self,
-        _state: &SessionState,
+        _state: &dyn Session,
         projection: Option<&Vec<usize>>,
         _filters: &[Expr],
-        _agg_with_grouping: Option<&AggWithGrouping>,
+        _aggregate: Option<&TableScanAggregate>,
         _limit: Option<usize>,
     ) -> DFResult<Arc<dyn ExecutionPlan>> {
         let mut builder = InformationSchemaColumnsBuilder::default();
@@ -124,11 +125,9 @@ impl TableProvider for InformationColumnsTable {
         }
         let rb: RecordBatch = builder.try_into()?;
 
-        Ok(Arc::new(MemoryExec::try_new(
-            &[vec![rb]],
-            self.schema(),
-            projection.cloned(),
-        )?))
+        let mem_exec =
+            MemorySourceConfig::try_new_exec(&[vec![rb]], self.schema(), projection.cloned())?;
+        Ok(mem_exec)
     }
 }
 
@@ -160,7 +159,7 @@ fn append_external_table(
     table: Arc<ExternalTableSchema>,
     builder: &mut InformationSchemaColumnsBuilder,
 ) {
-    for (idx, col) in table.schema.all_fields().iter().enumerate() {
+    for (idx, col) in table.schema.flattened_fields().iter().enumerate() {
         builder.append_row(
             tenant_name,
             database_name,
@@ -183,7 +182,7 @@ fn append_stream_table(
     table: Arc<StreamTable>,
     builder: &mut InformationSchemaColumnsBuilder,
 ) {
-    for (idx, col) in table.schema().all_fields().iter().enumerate() {
+    for (idx, col) in table.schema().flattened_fields().iter().enumerate() {
         builder.append_row(
             tenant_name,
             database_name,

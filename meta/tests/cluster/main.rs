@@ -19,7 +19,7 @@ fn kill_cnosdb_meta_process(process_name: &str) {
     let system = System::new_all();
     for (pid, process) in system.processes() {
         if process.name() == process_name {
-            println!("killing {pid}: {}", process.name());
+            println!("killing {pid}: {}", process.name().to_string_lossy());
             let output = Command::new("kill")
                 .args(["-9", &(pid.to_string())])
                 .output()

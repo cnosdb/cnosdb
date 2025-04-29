@@ -447,7 +447,12 @@ impl Stream for SingleMessageStream {
                 self.schema.clone(),
                 vec![Arc::new(StringArray::from(vec![self.message.clone()])) as ArrayRef],
             )
-            .map_err(DataFusionError::ArrowError)?;
+            .map_err(|e| {
+                DataFusionError::ArrowError(
+                    e,
+                    Some("pull next RecordBatch from SingleMessageStream".to_string()),
+                )
+            })?;
             self.sent = true;
             Poll::Ready(Some(Ok(batch)))
         }

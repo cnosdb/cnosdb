@@ -1,17 +1,16 @@
 use std::cmp::Ordering;
-use std::sync::Arc;
 
 use datafusion::arrow::array::ArrayRef;
 use datafusion::arrow::compute::{sort_to_indices, SortOptions};
 use datafusion::arrow::datatypes::DataType;
 use datafusion::common::Result as DFResult;
 use datafusion::error::DataFusionError;
+use datafusion::logical_expr::function::AccumulatorArgs;
 use datafusion::logical_expr::type_coercion::aggregates::{
     DATES, NUMERICS, STRINGS, TIMES, TIMESTAMPS,
 };
 use datafusion::logical_expr::{
-    AccumulatorFactoryFunction, AggregateUDF, ReturnTypeFunction, Signature, StateTypeFunction,
-    TypeSignature, Volatility,
+    AggregateUDF, AggregateUDFImpl, Signature, TypeSignature, Volatility,
 };
 use datafusion::physical_plan::Accumulator;
 use datafusion::scalar::ScalarValue;
@@ -28,47 +27,66 @@ pub fn register_udaf(func_manager: &mut dyn FunctionMetadataManager) -> QueryRes
     Ok(udf)
 }
 
-fn new() -> AggregateUDF {
-    let return_type_func: ReturnTypeFunction =
-        Arc::new(move |input| Ok(Arc::new(input[1].clone())));
+#[derive(Debug)]
+pub struct LastFunc {
+    signature: Signature,
+}
 
-    let state_type_func: StateTypeFunction = Arc::new(move |input, _| Ok(Arc::new(input.to_vec())));
+impl Default for LastFunc {
+    fn default() -> Self {
+        // last(
+        //     time TIMESTAMP,
+        //     value ANY
+        //   )
+        let type_signatures = STRINGS
+            .iter()
+            .chain(NUMERICS.iter())
+            .chain(TIMESTAMPS.iter())
+            .chain(DATES.iter())
+            .chain(BINARYS.iter())
+            .chain(TIMES.iter())
+            .flat_map(|t| {
+                TIMESTAMPS
+                    .iter()
+                    .map(|s_t| TypeSignature::Exact(vec![s_t.clone(), t.clone()]))
+            })
+            .collect();
+        Self {
+            signature: Signature::one_of(type_signatures, Volatility::Immutable),
+        }
+    }
+}
 
-    let accumulator: AccumulatorFactoryFunction = Arc::new(|input, _| {
-        let time_data_type = input[0].clone();
-        let value_data_type = input[1].clone();
+impl AggregateUDFImpl for LastFunc {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn name(&self) -> &str {
+        LAST_UDAF_NAME
+    }
+
+    fn signature(&self) -> &Signature {
+        &self.signature
+    }
+
+    fn return_type(&self, arg_types: &[DataType]) -> DFResult<DataType> {
+        Ok(arg_types[1].clone())
+    }
+
+    fn accumulator(&self, acc_args: AccumulatorArgs) -> DFResult<Box<dyn Accumulator>> {
+        let time_data_type = acc_args.exprs[0].data_type(acc_args.schema)?;
+        let value_data_type = acc_args.exprs[1].data_type(acc_args.schema)?;
 
         Ok(Box::new(LastAccumulator::try_new(
             time_data_type,
             value_data_type,
         )?))
-    });
+    }
+}
 
-    // last(
-    //     time TIMESTAMP,
-    //     value ANY
-    //   )
-    let type_signatures = STRINGS
-        .iter()
-        .chain(NUMERICS.iter())
-        .chain(TIMESTAMPS.iter())
-        .chain(DATES.iter())
-        .chain(BINARYS.iter())
-        .chain(TIMES.iter())
-        .flat_map(|t| {
-            TIMESTAMPS
-                .iter()
-                .map(|s_t| TypeSignature::Exact(vec![s_t.clone(), t.clone()]))
-        })
-        .collect();
-
-    AggregateUDF::new(
-        LAST_UDAF_NAME,
-        &Signature::one_of(type_signatures, Volatility::Immutable),
-        &return_type_func,
-        &accumulator,
-        &state_type_func,
-    )
+fn new() -> AggregateUDF {
+    AggregateUDF::new_from_impl(LastFunc::default())
 }
 
 #[derive(Debug)]
@@ -147,7 +165,7 @@ impl Accumulator for LastAccumulator {
         Ok(())
     }
 
-    fn evaluate(&self) -> DFResult<ScalarValue> {
+    fn evaluate(&mut self) -> DFResult<ScalarValue> {
         Ok(self.last.val().clone())
     }
 
@@ -157,7 +175,7 @@ impl Accumulator for LastAccumulator {
             + self.last.ts().size()
     }
 
-    fn state(&self) -> DFResult<Vec<ScalarValue>> {
+    fn state(&mut self) -> DFResult<Vec<ScalarValue>> {
         Ok(vec![self.last.ts().clone(), self.last.val().clone()])
     }
 

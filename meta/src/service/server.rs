@@ -1,9 +1,7 @@
-use std::convert::Infallible as StdInfallible;
 use std::sync::Arc;
 use std::time::Duration;
 
 use config::meta::HeartBeatConfig;
-use futures::TryFutureExt;
 use metrics::metric_register::MetricsRegister;
 use models::meta_data::NodeMetrics;
 use models::node_info::NodeStatus;
@@ -15,15 +13,13 @@ use replication::entry_store::HeedEntryStorage;
 use replication::metrics::ReplicationMetrics;
 use replication::multi_raft::MultiRaft;
 use replication::network_grpc::RaftCBServer;
-use replication::network_http::{EitherBody, RaftHttpAdmin, SyncSendError};
 use replication::node_store::NodeStorage;
 use replication::raft_node::RaftNode;
 use replication::state_store::StateStorage;
 use replication::{RaftNodeInfo, ReplicationConfig};
+use tokio::net::TcpListener;
 use tokio::sync::RwLock;
-use tower::Service;
 use tracing::{info, warn};
-use warp::hyper;
 
 use super::init::MetaInit;
 use crate::error::{MetaError, MetaResult};
@@ -114,7 +110,7 @@ pub async fn start_raft_node(opt: config::meta::Opt) -> MetaResult<()> {
     ));
 
     let bind_addr = models::utils::build_address("0.0.0.0", opt.global.listen_port);
-    tokio::spawn(start_warp_grpc_server(bind_addr, node, engine));
+    tokio::spawn(start_server(bind_addr, node, engine));
 
     Ok(())
 }
@@ -167,64 +163,42 @@ async fn detect_node_heartbeat(
     }
 }
 
-// **************************** http and grpc server ************************************** //
-async fn start_warp_grpc_server(
+/// Serve HTTP and gRPC requests.
+async fn start_server(
     addr: String,
     node: RaftNode,
     storage: Arc<RwLock<StateMachine>>,
 ) -> MetaResult<()> {
-    let node = Arc::new(node);
-    let raft_admin = RaftHttpAdmin::new(node.clone());
-    let http_server = super::http::HttpServer {
-        node: node.clone(),
-        storage: storage.clone(),
-        raft_admin: Arc::new(raft_admin),
-    };
+    let listener = TcpListener::bind(&addr).await.unwrap();
 
-    let mut multi_raft = MultiRaft::new();
-
-    let register = Arc::new(MetricsRegister::new([("address", addr.clone())]));
+    let metrics_register = Arc::new(MetricsRegister::new([("address", addr.clone())]));
     let metrics = ReplicationMetrics::new(
-        register,
+        metrics_register,
         "cnosdb_meta",
         "cnosdb_meta",
         node.group_id(),
         node.raft_id(),
     );
-    multi_raft.add_node(node, metrics);
-    let nodes = Arc::new(RwLock::new(multi_raft));
 
-    let addr = addr.parse().unwrap();
-    hyper::Server::bind(&addr)
-        .http1_max_buf_size(100 * 1024 * 1024)
-        .serve(hyper::service::make_service_fn(move |_| {
-            let mut http_service = warp::service(http_server.routes());
-            let raft_service = RaftServiceServer::new(RaftCBServer::new(nodes.clone()));
+    let node = Arc::new(node);
+    let http_server = super::http::HttpServer {
+        node: node.clone(),
+        storage: storage.clone(),
+    };
 
-            let mut grpc_service = tonic::transport::Server::builder()
-                .add_service(raft_service)
-                .into_service();
+    let mut router = super::http::create_router(http_server.clone());
+    {
+        let mut multi_raft = MultiRaft::new();
+        multi_raft.add_node(node, metrics);
+        let multi_raft = Arc::new(RwLock::new(multi_raft));
 
-            futures::future::ok::<_, StdInfallible>(tower::service_fn(
-                move |req: hyper::Request<hyper::Body>| {
-                    if req.uri().path().starts_with("/raft_service.RaftService/") {
-                        futures::future::Either::Right(
-                            grpc_service
-                                .call(req)
-                                .map_ok(|res| res.map(EitherBody::Right))
-                                .map_err(SyncSendError::from),
-                        )
-                    } else {
-                        futures::future::Either::Left(
-                            http_service
-                                .call(req)
-                                .map_ok(|res| res.map(EitherBody::Left))
-                                .map_err(SyncSendError::from),
-                        )
-                    }
-                },
-            ))
-        }))
+        let mut grpc_routes_builder = tonic::service::Routes::builder();
+        grpc_routes_builder.add_service(RaftServiceServer::new(RaftCBServer::new(multi_raft)));
+        let grpc_router = grpc_routes_builder.routes().into_axum_router();
+        router = router.merge(grpc_router);
+    }
+
+    axum::serve(listener, router)
         .await
         .map_err(|err| MetaError::CommonError {
             msg: err.to_string(),

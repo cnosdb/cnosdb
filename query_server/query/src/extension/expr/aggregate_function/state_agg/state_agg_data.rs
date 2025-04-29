@@ -2,32 +2,37 @@ use std::collections::HashMap;
 use std::ops::Not;
 use std::sync::Arc;
 
-use datafusion::arrow::datatypes::{DataType, Field, Fields, IntervalUnit};
+use datafusion::arrow::array::{Array, AsArray as _, ListArray, StructArray};
+use datafusion::arrow::datatypes::{DataType, Field, Fields, IntervalMonthDayNano, IntervalUnit};
 use datafusion::common::ScalarValue;
 use datafusion::error::DataFusionError;
 use spi::{DFResult, QueryError};
 
-use crate::extension::expr::aggregate_function::state_agg::LIST_ELEMENT_NAME;
 use crate::extension::expr::aggregate_function::AggResult;
 
-/// Struct(
-///     "state_duration": List[
-///         Struct("state": duration),
-///         Struct("state": duration),
-///         ......
+/// ### ScalarValue
+///
+/// ```plaintext
+/// ScalarValue::Struct {
+///     "state_duration": ScalarValue::List [
+///         ScalarValue::Struct ("state", "duration") {
+///             state:    ArrayRef<self.state_data_type>,
+///             duration: ArrayRef<self.time_data_type.to_interval_type()>,
+///         }
 ///     ],
-///     "state_periods": List[
-///         Struct(
-///             "state": xxx,
-///             "periods": List[
-///                 Struct("start_time": time, "end_time": time),
-///                 Struct("start_time": time, "end_time": time),
-///                 ......
-///             ]
-///         ),
-///         ......
-///     ]
-/// )
+///     "state_periods": ScalarValue::List [
+///         ScalarValue::Struct ("state", "periods") {
+///             state:   ArrayRef<self.state_data_type>,
+///             periods: ScalarValue::List (DEFAULT) [
+///                 Struct ("start_time", "end_time") {
+///                     start_time: ArrayRef<self.time_data_type>,
+///                     end_time:   ArrayRef<self.time_data_type>,
+///                 }
+///             ],
+///         },
+///     ],
+/// }
+/// ```
 #[derive(Debug, Clone)]
 pub struct StateAggData {
     state_duration: DurationStates,
@@ -48,12 +53,12 @@ impl StateAggData {
     }
 
     pub(crate) fn handle_record(&mut self, state: ScalarValue, time: ScalarValue) -> DFResult<()> {
-        self.state_duration
-            .handle_record(state.clone(), time.clone())?;
-
         if !self.compact {
-            self.state_periods.handle_record(state, time)?;
+            self.state_periods
+                .handle_record(state.clone(), time.clone())?;
         }
+
+        self.state_duration.handle_record(state, time)?;
 
         Ok(())
     }
@@ -66,7 +71,7 @@ impl StateAggData {
     pub(crate) fn interval_datatype(&self) -> DFResult<DataType> {
         let a = self.state_duration.interval_data_type()?;
         if !self.compact {
-            let b = self.state_periods.interval_datatype()?;
+            let b = self.state_periods.interval_data_type()?;
             debug_assert_eq!(a, b);
         }
         Ok(a)
@@ -153,18 +158,17 @@ impl StateAggData {
 }
 
 impl AggResult for StateAggData {
-    fn to_scalar(self) -> DFResult<ScalarValue> {
-        let state_duration = self.state_duration.to_scalar()?;
-        let state_periods = self.state_periods.to_scalar()?;
-        let state_duration_datatype = state_duration.get_datatype();
-        let state_periods_datatype = state_periods.get_datatype();
-        Ok(ScalarValue::Struct(
-            Some(vec![state_duration, state_periods]),
-            Fields::from([
-                Arc::new(Field::new("state_duration", state_duration_datatype, true)),
-                Arc::new(Field::new("state_periods", state_periods_datatype, true)),
+    fn into_scalar(self) -> DFResult<ScalarValue> {
+        let state_duration = self.state_duration.into_scalar()?;
+        let state_periods = self.state_periods.into_scalar()?;
+        Ok(ScalarValue::Struct(Arc::new(StructArray::new(
+            Fields::from(vec![
+                Field::new("state_duration", state_duration.data_type(), true),
+                Field::new("state_periods", state_periods.data_type(), true),
             ]),
-        ))
+            vec![state_duration.to_array()?, state_periods.to_array()?],
+            None,
+        ))))
     }
 }
 
@@ -173,9 +177,13 @@ impl TryFrom<ScalarValue> for StateAggData {
 
     fn try_from(value: ScalarValue) -> Result<Self, Self::Error> {
         match value {
-            ScalarValue::Struct(Some(a), _) => {
-                let state_duration = DurationStates::try_from(a[0].clone())?;
-                let state_periods = StatePeriods::try_from(a[1].clone())?;
+            ScalarValue::Struct(state_agg_struct) => {
+                let columns = state_agg_struct.columns();
+                let state_duration = ScalarValue::try_from_array(&columns[0], 0)?;
+                let state_periods = ScalarValue::try_from_array(&columns[1], 0)?;
+
+                let state_duration = DurationStates::try_from(state_duration)?;
+                let state_periods = StatePeriods::try_from(state_periods)?;
 
                 let compact =
                     state_periods.states.is_empty() && state_duration.durations.is_empty().not();
@@ -187,31 +195,35 @@ impl TryFrom<ScalarValue> for StateAggData {
                 })
             }
             _ => Err(DataFusionError::External(Box::new(QueryError::Internal {
-                reason: format!("Expected struct, got {:?}", value),
+                reason: format!("Failed converting a ScalarValue into StateAggData, expected a Struct, but got: {value:?}"),
             }))),
         }
     }
 }
 
-/// List[
-///     Struct(
-///         "state": xxx,
-///         "periods": List[
-///             Struct("start_time": time, "end_time": time),
-///             Struct("start_time": time, "end_time": time),
-///             ......
-///         ]
-///     ),
-///     ......
+/// ### ScalarValue
+///
+/// ```plaintext
+/// ScalarValue::List [
+///     ScalarValue::Struct ("state", "periods") {
+///         state:   ArrayRef<self.state_data_type>, // array of size 1
+///         periods: ScalarValue::List (DEFAULT) [
+///             Struct ("start_time", "end_time") {
+///                 start_time: ArrayRef<self.time_data_type>, // array of size 1
+///                 end_time:   ArrayRef<self.time_data_type>, // array of size 1
+///             }
+///         ],
+///     }
 /// ]
+/// ```
 #[derive(Debug, Clone)]
 pub struct StatePeriods {
     time_data_type: DataType,
     state_data_type: DataType,
 
-    // time -> state
+    /// Optional `(time, state)` pair for the last record
     last: Option<(ScalarValue, ScalarValue)>,
-
+    /// Map `time` to `Vec<TimePeriod>`
     states: HashMap<ScalarValue, Vec<TimePeriod>>,
 }
 
@@ -245,16 +257,16 @@ impl StatePeriods {
         Ok(())
     }
 
-    fn interval_datatype(&self) -> DFResult<DataType> {
+    fn interval_data_type(&self) -> DFResult<DataType> {
         let a = ScalarValue::new_zero(&self.time_data_type)?;
-        Ok(a.sub(a.clone())?.get_datatype())
+        Ok(a.sub(a.clone())?.data_type())
     }
 
     fn finalize(&mut self) {}
 }
 
 impl AggResult for StatePeriods {
-    fn to_scalar(self) -> DFResult<ScalarValue> {
+    fn into_scalar(self) -> DFResult<ScalarValue> {
         let StatePeriods {
             time_data_type,
             state_data_type,
@@ -262,44 +274,36 @@ impl AggResult for StatePeriods {
             ..
         } = self;
 
-        let element_fields = Fields::from([
-            Arc::new(Field::new("start_time", time_data_type.clone(), true)),
-            Arc::new(Field::new("end_time", time_data_type, true)),
+        let periods_data_type = DataType::Struct(Fields::from(vec![
+            Field::new("start_time", time_data_type.clone(), true),
+            Field::new("end_time", time_data_type, true),
+        ]));
+        let state_with_periods_fields = Fields::from(vec![
+            Field::new("state", state_data_type, true),
+            Field::new(
+                "periods",
+                DataType::new_list(periods_data_type.clone(), true),
+                true,
+            ),
         ]);
 
-        let period_data_type = DataType::Struct(element_fields);
-
-        let period_list_data_type = DataType::List(Arc::new(Field::new(
-            LIST_ELEMENT_NAME,
-            period_data_type.clone(),
-            true,
-        )));
-
-        let state_period_data_type_fields = Fields::from([
-            Arc::new(Field::new("state", state_data_type, true)),
-            Arc::new(Field::new("periods", period_list_data_type, true)),
-        ]);
-        let state_period_data_type = DataType::Struct(state_period_data_type_fields.clone());
-
-        let mut states_with_periods = Vec::with_capacity(states.len());
+        let mut states_with_periods_list = Vec::with_capacity(states.len());
         for (state, periods) in states {
-            let df_periods = periods
-                .into_iter()
-                .map(|p| p.try_into())
-                .collect::<DFResult<Vec<_>>>()?;
-            let df_periods_list = ScalarValue::new_list(Some(df_periods), period_data_type.clone());
+            let state_array = state.to_array()?;
+            let periods_array =
+                TimePeriod::periods_try_into_list_array(periods, &periods_data_type)?;
 
-            let state_with_periods = ScalarValue::Struct(
-                Some(vec![state, df_periods_list]),
-                state_period_data_type_fields.clone(),
-            );
-
-            states_with_periods.push(state_with_periods);
+            states_with_periods_list.push(ScalarValue::Struct(Arc::new(StructArray::new(
+                state_with_periods_fields.clone(),
+                vec![state_array, periods_array],
+                None,
+            ))));
         }
 
-        let result_state = ScalarValue::new_list(Some(states_with_periods), state_period_data_type);
-
-        Ok(result_state)
+        Ok(ScalarValue::List(ScalarValue::new_list_nullable(
+            &states_with_periods_list,
+            &DataType::Struct(state_with_periods_fields),
+        )))
     }
 }
 
@@ -308,51 +312,57 @@ impl TryFrom<ScalarValue> for StatePeriods {
 
     fn try_from(value: ScalarValue) -> Result<Self, Self::Error> {
         match value {
-            ScalarValue::List(Some(list), _) => {
-                let mut states = HashMap::new();
-                for list_value in list {
-                    if let ScalarValue::Struct(Some(mut state_pair), _) = list_value {
-                        let list_time_period = state_pair.pop();
-                        let status = state_pair.pop();
-                        match (status, list_time_period) {
-                            (Some(s), Some(l)) => {
-                                let v = TimePeriod::periods_try_from_scalar_value(l)?;
-                                states.insert(s, v);
-                            }
-                            (_, _) => {
-                                return Err(DataFusionError::Execution(
-                                    "Failed TryFrom<ScalarValue> for StatePeriods".into(),
-                                ));
-                            }
+            ScalarValue::List(states_with_periods_list) => {
+                let mut state_periods_map = HashMap::new();
+                for sp_item in states_with_periods_list.iter().flatten() {
+                    if let Some(state_with_periods_struct) = sp_item.as_struct_opt() {
+                        let col_num = state_with_periods_struct.num_columns();
+                        if col_num < 2 {
+                            return Err(DataFusionError::External(Box::new(QueryError::Internal {
+                                reason: format!("Failed converting a ScalarValue into StatePeriods, expect at least 2 columns, but got {col_num}"),
+                            })));
                         }
+                        let state_array = state_with_periods_struct.column(col_num - 2);
+                        let periods_array = state_with_periods_struct.column(col_num - 1);
+                        for sp_i in 0..state_with_periods_struct.len() {
+                            let state_value = ScalarValue::try_from_array(state_array, sp_i)?;
+                            let periods_value = ScalarValue::try_from_array(periods_array, sp_i)?;
+                            let periods = TimePeriod::periods_try_from_scalar_value(periods_value)?;
+                            state_periods_map.insert(state_value, periods);
+                        }
+                    } else {
+                        return Err(DataFusionError::External(Box::new(QueryError::Internal {
+                            reason: format!("Failed converting a ScalarValue into StatePeriods, expect a Struct, but got: {sp_item:?}"),
+                        })));
                     }
                 }
                 let (state_data_type, time_data_type) =
-                    match states.iter().peekable().peekable().peek() {
-                        Some(states) => (states.0.get_datatype(), states.1[0].time_datatype()),
+                    match state_periods_map.iter().peekable().peekable().peek() {
+                        Some(states) => (states.0.data_type(), states.1[0].time_data_type()),
                         None => (DataType::Null, DataType::Null),
                     };
                 Ok(Self {
                     time_data_type,
                     state_data_type,
                     last: None,
-                    states,
+                    states: state_periods_map,
                 })
             }
-            ScalarValue::List(None, _) => Ok(Self {
-                time_data_type: DataType::Null,
-                state_data_type: DataType::Null,
-                last: None,
-                states: Default::default(),
-            }),
-            _ => Err(DataFusionError::Execution(format!(
-                "Failed TryFrom<ScalarValue> for StatePeriods, value: {}",
-                value
-            ))),
+            _ => Err(DataFusionError::External(Box::new(QueryError::Internal {
+                reason: format!("Failed converting a ScalarValue into StatePeriods, expect a List, but got {:?}", value.data_type()),
+            }))),
         }
     }
 }
 
+/// ### ScalarValue
+///
+/// ```plaintext
+/// ScalarValue::Struct ("start_time", "end_time") {
+///     start_time: ArrayRef<self.time_data_type>, // array of size 1
+///     end_time:   ArrayRef<self.time_data_type>, // array of size 1
+/// }
+/// ```
 #[derive(Debug, Clone)]
 pub struct TimePeriod {
     start_time: ScalarValue,
@@ -363,15 +373,15 @@ impl TryInto<ScalarValue> for TimePeriod {
     type Error = DataFusionError;
 
     fn try_into(self) -> Result<ScalarValue, Self::Error> {
-        let data_type = self.start_time.get_datatype();
-        let fields = vec![
-            Field::new("start_time", data_type.clone(), true),
-            Field::new("end_time", data_type, true),
-        ];
-        Ok(ScalarValue::Struct(
-            Some(vec![self.start_time, self.end_time]),
-            Fields::from(fields),
-        ))
+        let time_period = StructArray::new(
+            Fields::from(vec![
+                Field::new("start_time", self.start_time.data_type(), true),
+                Field::new("end_time", self.end_time.data_type(), true),
+            ]),
+            vec![self.start_time.to_array()?, self.end_time.to_array()?],
+            None,
+        );
+        Ok(ScalarValue::Struct(Arc::new(time_period)))
     }
 }
 
@@ -380,50 +390,97 @@ impl TryFrom<ScalarValue> for TimePeriod {
 
     fn try_from(value: ScalarValue) -> Result<Self, Self::Error> {
         match value {
-            ScalarValue::Struct(Some(mut v), _) => {
-                let end_time = v.pop();
-                let start_time = v.pop();
-                match (start_time, end_time) {
-                    (Some(s), Some(e)) => Ok(Self {
-                        start_time: s,
-                        end_time: e,
-                    }),
-                    _ => Err(DataFusionError::Execution(
-                        "TryFrom<ScalarValue> for TimePeriod failed".into(),
-                    )),
+            ScalarValue::Struct(time_period_struct) => {
+                let col_num = time_period_struct.num_columns();
+                if col_num < 2 {
+                    return Err(DataFusionError::External(Box::new(QueryError::Internal {
+                        reason: format!("Failed converting a ScalarValue into TimePeriod, expect at least 2 columns, but got {col_num}"),
+                    })));
                 }
+                let start_time_array = time_period_struct.column(col_num - 2);
+                let end_time_array = time_period_struct.column(col_num - 1);
+                let start_time = ScalarValue::try_from_array(start_time_array, 0)?;
+                let end_time = ScalarValue::try_from_array(end_time_array, 0)?;
+                Ok(Self {
+                    start_time,
+                    end_time,
+                })
             }
-            _ => Err(DataFusionError::Execution(format!(
-                "TryFrom<ScalarValue> for TimePeriod failed, value: {:#?}",
-                value
-            ))),
+            _ => Err(DataFusionError::External(Box::new(QueryError::Internal {
+                reason: format!("Failed converting a ScalarValue into TimePeriod, expect a Struct, but got: {value:#?}"),
+            }))),
         }
     }
 }
 
 impl TimePeriod {
-    pub fn time_datatype(&self) -> DataType {
-        self.start_time.get_datatype()
+    pub fn time_data_type(&self) -> DataType {
+        self.start_time.data_type()
     }
-    pub fn periods_try_from_scalar_value(value: ScalarValue) -> DFResult<Vec<Self>> {
-        match value {
-            ScalarValue::List(Some(list), _) => list
-                .into_iter()
-                .map(Self::try_from)
-                .collect::<DFResult<Vec<_>>>(),
-            _ => Err(DataFusionError::Execution(format!(
-                "TryFrom<ScalarValue> for Vec<TimePeriod> failed, value: {:#?}",
-                value
-            ))),
+
+    pub fn periods_try_into_list_array(
+        periods: Vec<Self>,
+        data_type: &DataType,
+    ) -> DFResult<Arc<ListArray>> {
+        let mut values: Vec<ScalarValue> = Vec::with_capacity(periods.len());
+        for period in periods {
+            values.push(period.try_into()?);
+        }
+        Ok(ScalarValue::new_list_nullable(&values, data_type))
+    }
+
+    pub fn periods_try_from_list_array(periods_list: Arc<ListArray>) -> DFResult<Vec<Self>> {
+        let mut periods = Vec::with_capacity(periods_list.len());
+
+        for periods_item in periods_list.iter().flatten() {
+            if let Some(periods_struct) = periods_item.as_struct_opt() {
+                let col_num = periods_struct.num_columns();
+                if col_num < 2 {
+                    return Err(DataFusionError::External(Box::new(QueryError::Internal {
+                        reason: format!("Failed converting a ScalarValue into TimePeriod, expect at least 2 columns, but got {col_num}"),
+                    })));
+                }
+                for i in 0..periods_struct.len() {
+                    let start_time =
+                        ScalarValue::try_from_array(periods_struct.column(col_num - 2), i)?;
+                    let end_time =
+                        ScalarValue::try_from_array(periods_struct.column(col_num - 1), i)?;
+                    periods.push(TimePeriod {
+                        start_time,
+                        end_time,
+                    });
+                }
+            } else {
+                return Err(DataFusionError::External(Box::new(QueryError::Internal {
+                    reason: format!("Failed converting a ScalarValue into Vec<TimePeriod>, expect a Struct, but got: {periods_item:?}"),
+                })));
+            }
+        }
+
+        Ok(periods)
+    }
+
+    pub fn periods_try_from_scalar_value(periods_value: ScalarValue) -> DFResult<Vec<Self>> {
+        if let ScalarValue::List(periods_list) = periods_value {
+            TimePeriod::periods_try_from_list_array(periods_list)
+        } else {
+            Err(DataFusionError::External(Box::new(QueryError::Internal {
+                reason: format!("Failed converting a ScalarValue into Vec<TimePeriod>, expect a List, but got: {periods_value:?}"),
+            })))
         }
     }
 }
 
-/// List[
-///     Struct("state": duration),
-///     Struct("state": duration),
-///     ......
+/// ### ScalarValue
+///
+/// ```plaintext
+/// ScalarValue::List [
+///     ScalarValue::Struct ("state", "duration") {
+///         state:    ArrayRef<self.state_data_type>, // array of size 1
+///         duration: ArrayRef<self.time_data_type.to_interval_type()>, // array of size 1
+///     }
 /// ]
+/// ```
 #[derive(Debug, Clone)]
 pub struct DurationStates {
     time_data_type: DataType,
@@ -447,26 +504,29 @@ impl TryInto<ScalarValue> for DurationStates {
 
         let mut values = Vec::with_capacity(durations.len());
 
-        let time = ScalarValue::new_zero(&time_data_type)?;
-        let interval_data_type = time.sub(time.clone())?.get_datatype();
+        let interval_data_type = {
+            let time = ScalarValue::new_zero(&time_data_type)?;
+            time.sub(time.clone())?.data_type()
+        };
 
-        let field = Fields::from(vec![
+        let fields = Fields::from(vec![
             Field::new("state", state_data_type, true),
             Field::new("duration", interval_data_type, true),
         ]);
 
-        let element_data_type = DataType::Struct(field.clone());
+        let element_data_type = DataType::Struct(fields.clone());
 
         for (state, duration) in durations {
-            values.push(ScalarValue::Struct(
-                Some(vec![state, duration]),
-                field.clone(),
-            ));
+            values.push(ScalarValue::Struct(Arc::new(StructArray::new(
+                fields.clone(),
+                vec![state.to_array()?, duration.to_array()?],
+                None,
+            ))));
         }
 
-        let result_state = ScalarValue::new_list(Some(values), element_data_type);
+        let result_state = ScalarValue::new_list_nullable(&values, &element_data_type);
 
-        Ok(result_state)
+        Ok(ScalarValue::List(result_state))
     }
 }
 
@@ -474,49 +534,62 @@ impl TryFrom<ScalarValue> for DurationStates {
     type Error = DataFusionError;
 
     fn try_from(value: ScalarValue) -> Result<Self, Self::Error> {
-        let error = || {
-            DataFusionError::Execution("TryFrom<ScalarValue> for DurationStates failed".to_string())
-        };
         match value {
-            ScalarValue::List(list, f) => {
-                let (state_data_type, time_data_type) = match f.data_type() {
-                    DataType::Struct(fs) => match (fs.first(), fs.get(1)) {
-                        (Some(a), Some(b)) => (a.data_type().clone(), b.data_type().clone()),
-                        (_, _) => return Err(error()),
-                    },
-                    _ => return Err(error()),
-                };
-                match list {
-                    None => Ok(Self::new(time_data_type, state_data_type)),
-                    Some(list) => {
-                        let mut durations = HashMap::new();
-                        for e in list {
-                            match e {
-                                ScalarValue::Struct(values, _) => {
-                                    if let Some(mut v) = values {
-                                        let duration = v.pop();
-                                        let state = v.pop();
-                                        match (state, duration) {
-                                            (Some(state), Some(duration)) => {
-                                                durations.insert(state, duration);
-                                            }
-                                            _ => return Err(error()),
-                                        }
-                                    }
-                                }
-                                _ => return Err(error()),
-                            }
+            ScalarValue::List(duration_states_list) => {
+                let (state_data_type, time_data_type) = match duration_states_list.value_type() {
+                    DataType::Struct(fields) => {
+                        if fields.len() < 2 {
+                            return Err(DataFusionError::External(Box::new(QueryError::Internal {
+                                reason: format!("Failed converting a ScalarValue into DurationStates, expect at least 2 columns, but got {}", fields.len()),
+                            })));
                         }
-                        Ok(Self {
-                            time_data_type,
-                            state_data_type,
-                            last_state: None,
-                            durations,
-                        })
+                        (
+                            unsafe { fields.get_unchecked(0) }.data_type().clone(),
+                            unsafe { fields.get_unchecked(1) }.data_type().clone(),
+                        )
+                    },
+                    other_type => return Err(DataFusionError::External(Box::new(QueryError::Internal {
+                        reason: format!("Failed converting a ScalarValue into DurationStates, expect a Struct, but got: {other_type}"),
+                    }))),
+                };
+
+                if duration_states_list.is_empty() {
+                    return Ok(Self::new(time_data_type, state_data_type));
+                }
+
+                let mut state_duration_map = HashMap::new();
+                for ds_item in duration_states_list.iter().flatten() {
+                    if let Some(duration_state_struct) = ds_item.as_struct_opt() {
+                        let col_num = duration_state_struct.num_columns();
+                        if col_num < 2 {
+                            return Err(DataFusionError::External(Box::new(QueryError::Internal {
+                                reason: format!("Failed converting a ScalarValue into DurationStates, expect at least 2 columns, but got {col_num}"),
+                            })));
+                        }
+                        let states_array = duration_state_struct.column(col_num - 1);
+                        let durations_array = duration_state_struct.column(col_num - 2);
+                        for ds_i in 0..duration_state_struct.len() {
+                            let state = ScalarValue::try_from_array(states_array, ds_i)?;
+                            let duration = ScalarValue::try_from_array(durations_array, ds_i)?;
+                            state_duration_map.insert(state, duration);
+                        }
+                    } else {
+                        return Err(DataFusionError::External(Box::new(QueryError::Internal {
+                            reason: format!("Failed converting a ScalarValue into DurationStates, expect a Struct, but got: {ds_item:?}"),
+                        })));
                     }
                 }
+
+                Ok(Self {
+                    time_data_type,
+                    state_data_type,
+                    last_state: None,
+                    durations: state_duration_map,
+                })
             }
-            _ => Err(error()),
+            _ => Err(DataFusionError::External(Box::new(QueryError::Internal {
+                reason: format!("Failed converting a ScalarValue into DurationStates, expect a List, but got: {value:?}"),
+            }))),
         }
     }
 }
@@ -559,25 +632,28 @@ impl DurationStates {
         if let Some((last_state, _)) = self.last_state.take() {
             self.durations
                 .entry(last_state)
-                .or_insert(ScalarValue::IntervalMonthDayNano(Some(0)));
+                .or_insert(ScalarValue::IntervalMonthDayNano(Some(
+                    IntervalMonthDayNano::ZERO,
+                )));
         }
     }
 
     fn interval_data_type(&self) -> DFResult<DataType> {
         let a = ScalarValue::new_zero(&self.time_data_type)?;
-        Ok(a.sub(a.clone())?.get_datatype())
+        Ok(a.sub(a.clone())?.data_type())
     }
 }
 
 impl AggResult for DurationStates {
-    fn to_scalar(self) -> DFResult<ScalarValue> {
+    fn into_scalar(self) -> DFResult<ScalarValue> {
         self.try_into()
     }
 }
 
 #[cfg(test)]
 mod test {
-    use datafusion::arrow::datatypes::{DataType, TimeUnit};
+    use datafusion::arrow::array::AsArray as _;
+    use datafusion::arrow::datatypes::{DataType, IntervalMonthDayNano, TimeUnit};
     use datafusion::scalar::ScalarValue;
 
     use super::{AggResult, DurationStates, StateAggData, StatePeriods};
@@ -616,15 +692,15 @@ mod test {
         vec![
             (
                 ScalarValue::Utf8(Some("111".to_string())),
-                ScalarValue::IntervalMonthDayNano(Some(1003)),
+                ScalarValue::IntervalMonthDayNano(Some(IntervalMonthDayNano::new(0, 0, 1003))),
             ),
             (
                 ScalarValue::Utf8(Some("222".to_string())),
-                ScalarValue::IntervalMonthDayNano(Some(97)),
+                ScalarValue::IntervalMonthDayNano(Some(IntervalMonthDayNano::new(0, 0, 97))),
             ),
             (
                 ScalarValue::Utf8(Some("333".to_string())),
-                ScalarValue::IntervalMonthDayNano(Some(800)),
+                ScalarValue::IntervalMonthDayNano(Some(IntervalMonthDayNano::new(0, 0, 8000))),
             ),
         ]
     }
@@ -680,16 +756,17 @@ mod test {
 
         duration_states.finalize();
 
-        let result = duration_states.to_scalar().unwrap();
+        let result = duration_states.into_scalar().unwrap();
 
-        if let ScalarValue::List(Some(values), _) = result {
-            for v in values {
-                if let ScalarValue::Struct(Some(state_and_duration), _) = v {
-                    let state = &state_and_duration[0];
-                    let duration = &state_and_duration[1];
+        if let ScalarValue::List(list_array) = result {
+            for list_item in list_array.iter().flatten() {
+                if let Some(struct_array) = list_item.as_struct_opt() {
+                    let state_and_duration = struct_array.columns();
+                    let state = ScalarValue::try_from_array(&state_and_duration[0], 0).unwrap();
+                    let duration = ScalarValue::try_from_array(&state_and_duration[1], 0).unwrap();
 
                     let exists = duration_tuple_list()
-                        .iter()
+                        .into_iter()
                         .any(|(l, r)| state == l && duration == r);
 
                     assert!(
@@ -721,24 +798,29 @@ mod test {
         }
         period_states.finalize();
 
-        let result = period_states.to_scalar().unwrap();
+        let result = period_states.into_scalar().unwrap();
 
-        if let ScalarValue::List(Some(values), _) = result {
-            for v in values {
-                if let ScalarValue::Struct(Some(period_states), _) = v {
-                    let state = &period_states[0];
-                    let periods = &period_states[1];
+        if let ScalarValue::List(list_array) = result {
+            for list_item in list_array.iter().flatten() {
+                if let Some(struct_array) = list_item.as_struct_opt() {
+                    let period_and_states = struct_array.columns();
+                    let state = ScalarValue::try_from_array(&period_and_states[0], 0).unwrap();
+                    let periods = ScalarValue::try_from_array(&period_and_states[1], 0).unwrap();
 
                     let mut period_tuple = vec![];
-                    if let ScalarValue::List(Some(periods), ..) = periods {
-                        for period in periods {
-                            if let ScalarValue::Struct(Some(period), _) = period {
-                                period_tuple.push((period[0].clone(), period[1].clone()))
+                    if let ScalarValue::List(periods_list) = periods {
+                        for period in periods_list.iter().flatten() {
+                            if let Some(struct_array) = period.as_struct_opt() {
+                                let period = struct_array.columns();
+                                period_tuple.push((
+                                    ScalarValue::try_from_array(&period[0], 0).unwrap(),
+                                    ScalarValue::try_from_array(&period[1], 0).unwrap(),
+                                ))
                             }
                         }
                     }
 
-                    let exists = period_tuple_list().iter().any(|(l, r)| {
+                    let exists = period_tuple_list().into_iter().any(|(l, r)| {
                         state == l && period_tuple.iter().zip(r.iter()).all(|(a, b)| a == b)
                     });
 
@@ -766,9 +848,9 @@ mod test {
         let value = DataType::Float64;
 
         let state_agg_serialize_deserialize = |mut state_agg: StateAggData| {
-            let v = state_agg.clone().to_scalar().unwrap();
+            let v = state_agg.clone().into_scalar().unwrap();
             let cp_state_agg: StateAggData = TryFrom::try_from(v.clone()).unwrap();
-            let cp_v = cp_state_agg.to_scalar().unwrap();
+            let cp_v = cp_state_agg.into_scalar().unwrap();
             assert_eq!(v.to_string(), cp_v.to_string());
 
             state_agg
@@ -784,9 +866,9 @@ mod test {
                 )
                 .unwrap();
 
-            let v = state_agg.to_scalar().unwrap();
+            let v = state_agg.into_scalar().unwrap();
             let cp_state_agg: StateAggData = TryFrom::try_from(v.clone()).unwrap();
-            let cp_v = cp_state_agg.to_scalar().unwrap();
+            let cp_v = cp_state_agg.into_scalar().unwrap();
             assert_eq!(v.to_string(), cp_v.to_string());
         };
 
@@ -809,7 +891,7 @@ mod test {
         }
         state_agg.finalize();
 
-        let a = state_agg.to_scalar().unwrap();
+        let a = state_agg.into_scalar().unwrap();
         let b: StateAggData = TryFrom::try_from(a).unwrap();
         assert!(b.compact);
 
@@ -823,7 +905,7 @@ mod test {
         }
         state_agg.finalize();
 
-        let a = state_agg.to_scalar().unwrap();
+        let a = state_agg.into_scalar().unwrap();
         let b: StateAggData = TryFrom::try_from(a).unwrap();
         assert!(!b.compact);
     }

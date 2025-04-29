@@ -1,11 +1,11 @@
-use datafusion::common::tree_node::{TreeNode, TreeNodeVisitor, VisitRecursion};
+use datafusion::common::tree_node::{TreeNode, TreeNodeRecursion, TreeNodeVisitor};
 use datafusion::common::Result as DFResult;
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::LogicalPlan;
 
 use super::AnalyzerRule;
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct UnsupportedOperationChecker {}
 
 impl AnalyzerRule for UnsupportedOperationChecker {
@@ -25,10 +25,10 @@ struct UnsupportedOperationVisitor {
     agg_count: usize,
 }
 
-impl TreeNodeVisitor for UnsupportedOperationVisitor {
-    type N = LogicalPlan;
+impl<'a> TreeNodeVisitor<'a> for UnsupportedOperationVisitor {
+    type Node = LogicalPlan;
 
-    fn pre_visit(&mut self, plan: &LogicalPlan) -> DFResult<VisitRecursion> {
+    fn f_down(&mut self, plan: &Self::Node) -> DFResult<TreeNodeRecursion> {
         match plan {
             LogicalPlan::Aggregate(_) => {
                 self.agg_count += 1;
@@ -41,11 +41,6 @@ impl TreeNodeVisitor for UnsupportedOperationVisitor {
             LogicalPlan::Join(_) => {
                 return Err(DataFusionError::Plan(
                     "Unsupported operation in streaming query: join".to_string(),
-                ));
-            }
-            LogicalPlan::CrossJoin(_) => {
-                return Err(DataFusionError::Plan(
-                    "Unsupported operation in streaming query: cross join".to_string(),
                 ));
             }
             LogicalPlan::Limit(_) => {
@@ -61,6 +56,6 @@ impl TreeNodeVisitor for UnsupportedOperationVisitor {
             _ => {}
         }
 
-        Ok(VisitRecursion::Continue)
+        Ok(TreeNodeRecursion::Continue)
     }
 }

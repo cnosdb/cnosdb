@@ -8,7 +8,7 @@ use datafusion::arrow::array::StringArray;
 use datafusion::arrow::datatypes::{DataType, Field, Schema};
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::common::Result as DFResult;
-use datafusion::physical_plan::displayable;
+use datafusion::physical_plan::{displayable, ExecutionPlanProperties as _};
 use datafusion::prelude::SessionConfig;
 use futures::TryStreamExt;
 use models::runtime::executor::{DedicatedExecutor, Job};

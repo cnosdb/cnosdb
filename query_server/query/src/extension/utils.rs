@@ -34,7 +34,7 @@ pub fn batch_filter(
         .evaluate(batch)
         .map(|v| v.into_array(batch.num_rows()))
         .and_then(|array| {
-            Ok(as_boolean_array(&array)?)
+            Ok(as_boolean_array(array?.as_ref())?)
                 // apply filter array to record batch
                 .and_then(|filter_array| Ok(filter_record_batch(batch, filter_array)?))
         })

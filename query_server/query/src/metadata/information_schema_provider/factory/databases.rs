@@ -4,11 +4,11 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::record_batch::RecordBatch;
+use datafusion::catalog::memory::MemorySourceConfig;
+use datafusion::catalog::Session;
 use datafusion::common::{DataFusionError, Result as DFResult};
 use datafusion::datasource::{TableProvider, TableType};
-use datafusion::execution::context::SessionState;
-use datafusion::logical_expr::logical_plan::AggWithGrouping;
-use datafusion::physical_plan::memory::MemoryExec;
+use datafusion::logical_expr::logical_plan::TableScanAggregate;
 use datafusion::physical_plan::ExecutionPlan;
 use datafusion::prelude::Expr;
 use meta::model::MetaClientRef;
@@ -42,6 +42,7 @@ impl InformationSchemaTableFactory for DatabasesFactory {
     }
 }
 
+#[derive(Debug)]
 pub struct InformationDatabasesTable {
     user: User,
     metadata: MetaClientRef,
@@ -69,10 +70,10 @@ impl TableProvider for InformationDatabasesTable {
 
     async fn scan(
         &self,
-        _state: &SessionState,
+        _state: &dyn Session,
         projection: Option<&Vec<usize>>,
         _filters: &[Expr],
-        _agg_with_grouping: Option<&AggWithGrouping>,
+        _aggregate: Option<&TableScanAggregate>,
         _limit: Option<usize>,
     ) -> DFResult<Arc<dyn ExecutionPlan>> {
         let mut builder = InformationSchemaDatabasesBuilder::default();
@@ -105,9 +106,9 @@ impl TableProvider for InformationDatabasesTable {
                 options.vnode_duration().to_string(),
                 options.replica(),
                 config.precision().to_string(),
-                CnosByteNumber::format_bytes(config.max_memcache_size()),
+                CnosByteNumber::format_bytes_num(config.max_memcache_size()),
                 config.memcache_partitions(),
-                CnosByteNumber::format_bytes(config.wal_max_file_size()),
+                CnosByteNumber::format_bytes_num(config.wal_max_file_size()),
                 config.wal_sync(),
                 config.strict_write(),
                 config.max_cache_readers(),
@@ -115,10 +116,8 @@ impl TableProvider for InformationDatabasesTable {
         }
         let rb: RecordBatch = builder.try_into()?;
 
-        Ok(Arc::new(MemoryExec::try_new(
-            &[vec![rb]],
-            self.schema(),
-            projection.cloned(),
-        )?))
+        let mem_exec =
+            MemorySourceConfig::try_new_exec(&[vec![rb]], self.schema(), projection.cloned())?;
+        Ok(mem_exec)
     }
 }

@@ -3,16 +3,19 @@ use std::sync::Arc;
 
 use datafusion::common::Statistics;
 use datafusion::execution::TaskContext;
-use datafusion::physical_expr::{PhysicalSortExpr, PhysicalSortRequirement};
+use datafusion::physical_expr::{
+    EquivalenceProperties, LexOrdering, LexRequirement, PhysicalSortExpr,
+};
+use datafusion::physical_plan::execution_plan::{Boundedness, EmissionType};
 use datafusion::physical_plan::{
-    DisplayFormatType, Distribution, ExecutionPlan, Partitioning, PhysicalExpr,
-    SendableRecordBatchStream,
+    DisplayAs, DisplayFormatType, Distribution, ExecutionPlan, Partitioning, PhysicalExpr,
+    PlanProperties, SendableRecordBatchStream,
 };
 use models::arrow::SchemaRef;
 use spi::DFResult;
 
-use self::stream::TSGenFuncStream;
-use crate::extension::expr::TSGenFunc;
+use self::stream::TimeSeriesGenFuncStream;
+use crate::extension::expr::TimeSeriesGenFunc;
 
 mod stream;
 
@@ -25,76 +28,81 @@ trait GenerateTimeSeries {
     ) -> DFResult<(Vec<i64>, Vec<f64>)>;
 }
 
-pub struct TSGenFuncExec {
+pub struct TimeSeriesGenFuncExec {
     input: Arc<dyn ExecutionPlan>,
     time_expr: Arc<dyn PhysicalExpr>,
-    field_exprs: Vec<Arc<dyn PhysicalExpr>>,
+    field_expr: Arc<dyn PhysicalExpr>,
     arg_expr: Option<Arc<dyn PhysicalExpr>>,
-    symbol: TSGenFunc,
+    symbol: TimeSeriesGenFunc,
     schema: SchemaRef,
+    properties: PlanProperties,
 }
 
-impl TSGenFuncExec {
+impl TimeSeriesGenFuncExec {
     pub fn new(
         input: Arc<dyn ExecutionPlan>,
         time_expr: Arc<dyn PhysicalExpr>,
-        field_exprs: Vec<Arc<dyn PhysicalExpr>>,
+        field_expr: Arc<dyn PhysicalExpr>,
         arg_expr: Option<Arc<dyn PhysicalExpr>>,
-        symbol: TSGenFunc,
+        symbol: TimeSeriesGenFunc,
         schema: SchemaRef,
     ) -> Self {
         Self {
             input,
             time_expr,
-            field_exprs,
+            field_expr,
             arg_expr,
             symbol,
-            schema,
+            schema: schema.clone(),
+            properties: PlanProperties::new(
+                EquivalenceProperties::new(schema),
+                Partitioning::UnknownPartitioning(1),
+                EmissionType::Both,
+                Boundedness::Bounded,
+            ),
         }
     }
 }
 
-impl Debug for TSGenFuncExec {
+impl Debug for TimeSeriesGenFuncExec {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "TSGenFuncExec",)
+        write!(f, "TimeSeriesGenFuncExec",)
     }
 }
 
-impl ExecutionPlan for TSGenFuncExec {
+impl ExecutionPlan for TimeSeriesGenFuncExec {
+    fn name(&self) -> &str {
+        "TimeSeriesGenFuncExec"
+    }
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
 
-    fn schema(&self) -> SchemaRef {
-        self.schema.clone()
-    }
-
-    fn output_partitioning(&self) -> Partitioning {
-        Partitioning::UnknownPartitioning(1)
+    fn properties(&self) -> &PlanProperties {
+        &self.properties
     }
 
     fn required_input_distribution(&self) -> Vec<Distribution> {
         vec![Distribution::SinglePartition]
     }
 
-    fn output_ordering(&self) -> Option<&[PhysicalSortExpr]> {
-        self.input.output_ordering()
-    }
-
-    fn required_input_ordering(&self) -> Vec<Option<Vec<PhysicalSortRequirement>>> {
+    fn required_input_ordering(&self) -> Vec<Option<LexRequirement>> {
         let sort_expr = PhysicalSortExpr {
             expr: self.time_expr.clone(),
             options: Default::default(),
         };
-        vec![Some(PhysicalSortRequirement::from_sort_exprs([&sort_expr]))]
+        vec![Some(LexRequirement::from_lex_ordering(LexOrdering::new(
+            vec![sort_expr],
+        )))]
     }
 
     fn maintains_input_order(&self) -> Vec<bool> {
         vec![true]
     }
 
-    fn children(&self) -> Vec<Arc<dyn ExecutionPlan>> {
-        vec![Arc::clone(&self.input)]
+    fn children(&self) -> Vec<&Arc<dyn ExecutionPlan>> {
+        vec![&self.input]
     }
 
     fn with_new_children(
@@ -104,10 +112,11 @@ impl ExecutionPlan for TSGenFuncExec {
         Ok(Arc::new(Self {
             input: children[0].clone(),
             time_expr: self.time_expr.clone(),
-            field_exprs: self.field_exprs.clone(),
+            field_expr: self.field_expr.clone(),
             arg_expr: self.arg_expr.clone(),
             symbol: self.symbol,
             schema: self.schema.clone(),
+            properties: self.properties.clone(),
         }))
     }
 
@@ -118,38 +127,36 @@ impl ExecutionPlan for TSGenFuncExec {
     ) -> DFResult<SendableRecordBatchStream> {
         if partition != 0 {
             return Err(datafusion::error::DataFusionError::Internal(format!(
-                "TSGenFuncExec invalid partition {partition}, there can be only one partition"
+                "TimeSeriesGenFuncExec invalid partition {partition}, there can be only one partition"
             )));
         }
 
         let input_stream = self.input.execute(partition, context)?;
 
-        Ok(Box::pin(TSGenFuncStream::new(
+        Ok(Box::pin(TimeSeriesGenFuncStream::new(
             input_stream,
             self.time_expr.clone(),
-            self.field_exprs.clone(),
+            self.field_expr.clone(),
             self.arg_expr.clone(),
             self.symbol,
             self.schema.clone(),
         )))
     }
 
+    fn statistics(&self) -> DFResult<Statistics> {
+        Ok(Statistics::default())
+    }
+}
+
+impl DisplayAs for TimeSeriesGenFuncExec {
     fn fmt_as(&self, _t: DisplayFormatType, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
-            "TSGenFuncExec: time_expr={}, field_exprs=[{}], arg_expr={:?}, func={}",
+            "TimeSeriesGenFuncExec: time_expr={}, field_expr={}, arg_expr={:?}, func={}",
             self.time_expr,
-            self.field_exprs
-                .iter()
-                .map(|expr| expr.to_string())
-                .collect::<Vec<_>>()
-                .join(","),
+            self.field_expr,
             self.arg_expr.as_ref().map(|expr| expr.to_string()),
             self.symbol.name(),
         )
-    }
-
-    fn statistics(&self) -> Statistics {
-        Statistics::default()
     }
 }

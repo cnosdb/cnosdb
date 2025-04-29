@@ -79,6 +79,7 @@ pub enum AuthError {
     ))]
     Internal {
         err: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },

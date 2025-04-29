@@ -25,7 +25,7 @@ pub fn filter_to_time_ranges(time_domain: &ColumnDomains<String>) -> Vec<TimeRan
             // Convert ScalarValue value to nanosecond timestamp
             let valid_and_generate_index_key = |v: &ScalarValue| {
                 // Time can only be of type Timestamp
-                assert!(matches!(v.get_datatype(), ArrowDataType::Timestamp(_, _)));
+                assert!(matches!(v.data_type(), ArrowDataType::Timestamp(_, _)));
                 unsafe { i64::try_from(v.clone()).unwrap_unchecked() }
             };
 

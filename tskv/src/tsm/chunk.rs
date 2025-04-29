@@ -16,7 +16,7 @@ use crate::tsm::ColumnGroupID;
 pub struct Chunk {
     time_range: TimeRange,
 
-    table_name: String,
+    table_name: Arc<str>,
     series_id: SeriesId,
     series_key: SeriesKey,
 
@@ -25,10 +25,14 @@ pub struct Chunk {
 }
 
 impl Chunk {
-    pub fn new(table_name: String, series_id: SeriesId, series_key: SeriesKey) -> Self {
+    pub fn new(
+        table_name: impl Into<Arc<str>>,
+        series_id: SeriesId,
+        series_key: SeriesKey,
+    ) -> Self {
         Self {
             time_range: TimeRange::none(),
-            table_name,
+            table_name: table_name.into(),
             series_id,
             series_key,
             next_column_group_id: 0,
@@ -79,6 +83,10 @@ impl Chunk {
 
     pub fn table_name(&self) -> &str {
         &self.table_name
+    }
+
+    pub fn table_name_owned(&self) -> Arc<str> {
+        self.table_name.clone()
     }
 
     pub fn series_id(&self) -> SeriesId {

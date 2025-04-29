@@ -4,10 +4,10 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use datafusion::arrow::record_batch::RecordBatch;
-use datafusion::physical_plan::common::AbortOnDropMany;
 use futures::{Stream, StreamExt};
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc;
+use tokio::task::JoinSet;
 
 pub type BoxStream<T> = Pin<Box<dyn Stream<Item = T> + Send>>;
 
@@ -15,7 +15,7 @@ pub struct ParallelMergeStream<E> {
     /// Stream entries
     receiver: mpsc::Receiver<Result<RecordBatch, E>>,
     #[allow(unused)]
-    drop_helper: AbortOnDropMany<()>,
+    drop_helper: JoinSet<()>,
 }
 
 impl<E> ParallelMergeStream<E>
@@ -26,7 +26,7 @@ where
         runtime: Option<Arc<Runtime>>,
         streams: Vec<BoxStream<Result<RecordBatch, E>>>,
     ) -> Self {
-        let mut join_handles = Vec::with_capacity(streams.len());
+        let mut join_set = JoinSet::new();
         let (sender, receiver) = mpsc::channel::<Result<RecordBatch, E>>(streams.len());
 
         for mut stream in streams {
@@ -42,18 +42,16 @@ where
                 }
             };
 
-            let join_handle = if let Some(rt) = &runtime {
-                rt.spawn(task)
+            if let Some(rt) = &runtime {
+                join_set.spawn_on(task, rt.handle());
             } else {
-                tokio::spawn(task)
-            };
-
-            join_handles.push(join_handle);
+                join_set.spawn(task);
+            }
         }
 
         Self {
             receiver,
-            drop_helper: AbortOnDropMany(join_handles),
+            drop_helper: join_set,
         }
     }
 }

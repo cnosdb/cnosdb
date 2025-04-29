@@ -7,12 +7,12 @@ use datafusion::arrow::compute::{self, take};
 use datafusion::arrow::datatypes::{DataType, Field, UInt32Type};
 use datafusion::common::cast::{as_list_array, as_primitive_array};
 use datafusion::common::{downcast_value, DataFusionError, Result as DFResult};
+use datafusion::logical_expr::function::AccumulatorArgs;
 use datafusion::logical_expr::type_coercion::aggregates::{
     DATES, NUMERICS, STRINGS, TIMES, TIMESTAMPS,
 };
 use datafusion::logical_expr::{
-    AccumulatorFactoryFunction, AggregateUDF, ReturnTypeFunction, Signature, StateTypeFunction,
-    TypeSignature, Volatility,
+    AggregateUDF, AggregateUDFImpl, Signature, TypeSignature, Volatility,
 };
 use datafusion::physical_plan::Accumulator;
 use datafusion::scalar::ScalarValue;
@@ -29,46 +29,65 @@ pub fn register_udaf(func_manager: &mut dyn FunctionMetadataManager) -> QueryRes
     Ok(udf)
 }
 
-fn new() -> AggregateUDF {
-    let return_type: ReturnTypeFunction = Arc::new(move |input| {
-        let date_type = DataType::List(Arc::new(Field::new("item", input[0].clone(), true)));
-        Ok(Arc::new(date_type))
-    });
+#[derive(Debug)]
+pub struct SampleFunc {
+    signature: Signature,
+}
 
-    let state_type: StateTypeFunction =
-        Arc::new(move |_, output| Ok(Arc::new(vec![output.clone(), DataType::UInt32])));
-
-    let accumulator: AccumulatorFactoryFunction = Arc::new(|_, output| match output {
-        DataType::List(f) => Ok(Box::new(SampleAccumulator::try_new(
-            output.clone(),
-            f.data_type().clone(),
-        )?)),
-        _ => {
-            panic!()
+impl Default for SampleFunc {
+    fn default() -> Self {
+        let type_signatures = STRINGS
+            .iter()
+            .chain(NUMERICS.iter())
+            .chain(TIMESTAMPS.iter())
+            .chain(DATES.iter())
+            .chain(BINARYS.iter())
+            .chain(TIMES.iter())
+            .flat_map(|t| {
+                INTEGERS
+                    .iter()
+                    .map(|s_t| TypeSignature::Exact(vec![t.clone(), s_t.clone()]))
+            })
+            .collect();
+        Self {
+            signature: Signature::one_of(type_signatures, Volatility::Volatile),
         }
-    });
+    }
+}
 
-    let type_signatures = STRINGS
-        .iter()
-        .chain(NUMERICS.iter())
-        .chain(TIMESTAMPS.iter())
-        .chain(DATES.iter())
-        .chain(BINARYS.iter())
-        .chain(TIMES.iter())
-        .flat_map(|t| {
-            INTEGERS
-                .iter()
-                .map(|s_t| TypeSignature::Exact(vec![t.clone(), s_t.clone()]))
-        })
-        .collect();
+impl AggregateUDFImpl for SampleFunc {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 
-    AggregateUDF::new(
-        SAMPLE_UDAF_NAME,
-        &Signature::one_of(type_signatures, Volatility::Volatile),
-        &return_type,
-        &accumulator,
-        &state_type,
-    )
+    fn name(&self) -> &str {
+        SAMPLE_UDAF_NAME
+    }
+
+    fn signature(&self) -> &Signature {
+        &self.signature
+    }
+
+    fn return_type(&self, arg_types: &[DataType]) -> DFResult<DataType> {
+        let date_type = DataType::List(Arc::new(Field::new("item", arg_types[0].clone(), true)));
+        Ok(date_type)
+    }
+
+    fn accumulator(&self, acc_args: AccumulatorArgs) -> DFResult<Box<dyn Accumulator>> {
+        match acc_args.return_type {
+            DataType::List(f) => Ok(Box::new(SampleAccumulator::try_new(
+                acc_args.return_type.clone(),
+                f.data_type().clone(),
+            )?)),
+            _ => {
+                panic!()
+            }
+        }
+    }
+}
+
+fn new() -> AggregateUDF {
+    AggregateUDF::new_from_impl(SampleFunc::default())
 }
 
 /// Intermediate state data + number of samples
@@ -84,14 +103,14 @@ struct SampleAccumulator {
 }
 
 impl Accumulator for SampleAccumulator {
-    fn state(&self) -> DFResult<Vec<ScalarValue>> {
+    fn state(&mut self) -> DFResult<Vec<ScalarValue>> {
         if self.states.is_empty() {
             return empty_intermediate_sample_state(&self.list_type);
         }
 
         let (scalars, sample_n) = self.sample_state()?;
 
-        let state = ScalarValue::new_list(Some(scalars), self.child_type.clone());
+        let state = ScalarValue::List(ScalarValue::new_list_nullable(&scalars, &self.child_type));
         let sample_n = ScalarValue::UInt32(Some(sample_n as u32));
 
         trace::trace!("SampleAccumulator state: {:?}", state);
@@ -134,7 +153,7 @@ impl Accumulator for SampleAccumulator {
         })
     }
 
-    fn evaluate(&self) -> DFResult<ScalarValue> {
+    fn evaluate(&mut self) -> DFResult<ScalarValue> {
         let result = self.state()?;
 
         trace::trace!("SampleAccumulator evaluate result: {:?}", result);
@@ -197,7 +216,7 @@ impl SampleAccumulator {
             }
             // Randomly sample a portion of data from each state
             let num = s.len();
-            let select_num = (num * sample_n + total_num - 1) / total_num;
+            let select_num = (num * sample_n).div_ceil(total_num);
             let indices = generate_unique_random_numbers(select_num as u32, 0, num as u32);
             for i in indices {
                 result.push(s[i as usize].clone());
@@ -252,12 +271,12 @@ impl SampleAccumulator {
 fn generate_unique_random_numbers(count: u32, min: u32, max: u32) -> Vec<u32> {
     let count = cmp::min(count, max - min);
 
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let mut unique_numbers = HashSet::with_capacity(count as usize);
     let mut result = Vec::new();
 
     while (unique_numbers.len() as u32) < count {
-        let random_number = rng.gen_range(min..max);
+        let random_number = rng.random_range(min..max);
         unique_numbers.insert(random_number);
     }
 

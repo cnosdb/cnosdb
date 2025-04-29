@@ -17,16 +17,16 @@ pub enum TableSchema {
 impl TableSchema {
     pub fn name(&self) -> &str {
         match self {
-            TableSchema::TsKvTableSchema(schema) => schema.name.as_str(),
-            TableSchema::ExternalTableSchema(schema) => schema.name.as_str(),
+            TableSchema::TsKvTableSchema(schema) => schema.name.as_ref(),
+            TableSchema::ExternalTableSchema(schema) => schema.name.as_ref(),
             TableSchema::StreamTableSchema(schema) => schema.name(),
         }
     }
 
     pub fn db(&self) -> &str {
         match self {
-            TableSchema::TsKvTableSchema(schema) => schema.db.as_str(),
-            TableSchema::ExternalTableSchema(schema) => schema.db.as_str(),
+            TableSchema::TsKvTableSchema(schema) => schema.db.as_ref(),
+            TableSchema::ExternalTableSchema(schema) => schema.db.as_ref(),
             TableSchema::StreamTableSchema(schema) => schema.db(),
         }
     }
@@ -42,7 +42,7 @@ impl TableSchema {
     pub fn to_arrow_schema(&self) -> SchemaRef {
         match self {
             Self::ExternalTableSchema(e) => Arc::new(e.schema.clone()),
-            Self::TsKvTableSchema(e) => e.to_arrow_schema(),
+            Self::TsKvTableSchema(e) => e.build_arrow_schema(),
             Self::StreamTableSchema(e) => e.schema(),
         }
     }

@@ -4,19 +4,23 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use config::common::TenantLimiterConfig;
-use datafusion::arrow::array::ArrayRef;
 use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
-use datafusion::datasource::file_format::file_type::{FileCompressionType, FileType};
+use datafusion::datasource::file_format::file_compression_type::FileCompressionType;
+use datafusion::error::Result as DFResult;
+use datafusion::functions_aggregate::sum::Sum;
+use datafusion::logical_expr::expr::ScalarFunction;
 use datafusion::logical_expr::type_coercion::aggregates::{
     DATES, NUMERICS, STRINGS, TIMES, TIMESTAMPS,
 };
 use datafusion::logical_expr::{
-    expr, expr_fn, CreateExternalTable, LogicalPlan as DFPlan, ReturnTypeFunction, ScalarUDF,
-    Signature, Volatility,
+    AggregateUDF, ColumnarValue, CreateExternalTable, LogicalPlan, ScalarFunctionArgs, ScalarUDF,
+    ScalarUDFImpl, Signature, Volatility,
 };
-use datafusion::physical_plan::functions::make_scalar_function;
 use datafusion::prelude::{col, Expr};
-use datafusion::sql::sqlparser::ast::{Ident, ObjectName, SqlOption, Value};
+use datafusion::sql::sqlparser::ast::{
+    Expr as SqlExpr, Ident, ObjectName, ObjectNamePart, SqlOption as SqlSqlOption,
+    Value as SqlValue, ValueWithSpan,
+};
 use datafusion::sql::sqlparser::parser::ParserError;
 use lazy_static::lazy_static;
 use models::auth::privilege::{DatabasePrivilege, GlobalPrivilege, Privilege};
@@ -34,7 +38,9 @@ use snafu::{IntoError, ResultExt};
 use tempfile::NamedTempFile;
 use utils::duration::CnosDuration;
 
-use super::ast::{parse_bool_value, parse_char_value, parse_string_value, ExtStatement};
+use super::ast::{
+    parse_bool_value, parse_char_value, parse_string_value, ExtStatement, FileType, SqlOption,
+};
 use super::datasource::azure::{AzblobStorageConfig, AzblobStorageConfigBuilder};
 use super::datasource::gcs::{
     GcsStorageConfig, ServiceAccountCredentials, ServiceAccountCredentialsBuilder,
@@ -51,24 +57,54 @@ pub const TENANT_OPTION_LIMITER: &str = "_limiter";
 pub const TENANT_OPTION_COMMENT: &str = "comment";
 pub const TENANT_OPTION_DROP_AFTER: &str = "drop_after";
 
+#[derive(Debug, Clone)]
+pub struct TableWriteFunc {
+    signature: Signature,
+}
+
+impl Default for TableWriteFunc {
+    fn default() -> Self {
+        Self {
+            signature: Signature::variadic(
+                STRINGS
+                    .iter()
+                    .chain(NUMERICS)
+                    .chain(TIMESTAMPS)
+                    .chain(DATES)
+                    .chain(TIMES)
+                    .cloned()
+                    .collect::<Vec<_>>(),
+                Volatility::Immutable,
+            ),
+        }
+    }
+}
+
+impl ScalarUDFImpl for TableWriteFunc {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn name(&self) -> &str {
+        "rows"
+    }
+
+    fn signature(&self) -> &Signature {
+        &self.signature
+    }
+
+    fn return_type(&self, _arg_types: &[DataType]) -> DFResult<DataType> {
+        Ok(DataType::UInt64)
+    }
+
+    fn invoke_with_args(&self, args: ScalarFunctionArgs) -> DFResult<ColumnarValue> {
+        Ok(args.args[0].clone())
+    }
+}
+
 lazy_static! {
-    static ref TABLE_WRITE_UDF: Arc<ScalarUDF> = Arc::new(ScalarUDF::new(
-        "rows",
-        &Signature::variadic(
-            STRINGS
-                .iter()
-                .chain(NUMERICS)
-                .chain(TIMESTAMPS)
-                .chain(DATES)
-                .chain(TIMES)
-                // .chain(iter::once(str_dict_data_type()))
-                .cloned()
-                .collect::<Vec<_>>(),
-            Volatility::Immutable
-        ),
-        &(Arc::new(move |_: &[DataType]| Ok(Arc::new(DataType::UInt64))) as ReturnTypeFunction),
-        &make_scalar_function(|args: &[ArrayRef]| Ok(Arc::clone(&args[0]))),
-    ));
+    static ref TABLE_WRITE_UDF: Arc<ScalarUDF> =
+        Arc::new(ScalarUDF::new_from_impl(TableWriteFunc::default()));
 }
 
 #[derive(Clone)]
@@ -92,7 +128,7 @@ pub enum Plan {
 impl Plan {
     pub fn schema(&self) -> SchemaRef {
         match self {
-            Self::Query(p) => SchemaRef::from(p.df_plan.schema().as_ref()),
+            Self::Query(p) => p.df_plan.schema().inner().clone(),
             Self::DDL(p) => p.schema(),
             Self::DML(p) => p.schema(),
             Self::SYSTEM(p) => p.schema(),
@@ -102,13 +138,16 @@ impl Plan {
 
 #[derive(Debug, Clone)]
 pub struct QueryPlan {
-    pub df_plan: DFPlan,
+    pub df_plan: LogicalPlan,
     pub is_tag_scan: bool,
 }
 
 impl QueryPlan {
     pub fn is_explain(&self) -> bool {
-        matches!(self.df_plan, DFPlan::Explain(_) | DFPlan::Analyze(_))
+        matches!(
+            self.df_plan,
+            LogicalPlan::Explain(_) | LogicalPlan::Analyze(_)
+        )
     }
 }
 
@@ -162,7 +201,7 @@ pub enum DDLPlan {
 
     ShowReplicas,
 
-    ReplicaDestory(ReplicaDestory),
+    ReplicaDestroy(ReplicaDestroy),
 
     ReplicaAdd(ReplicaAdd),
 
@@ -352,7 +391,7 @@ pub struct CreateTenant {
 }
 
 #[derive(Debug, Clone)]
-pub struct ReplicaDestory {
+pub struct ReplicaDestroy {
     pub replica_id: ReplicationSetId,
 }
 
@@ -379,7 +418,7 @@ pub fn unset_option_to_alter_tenant_action(
     ident: Ident,
 ) -> QueryResult<(AlterTenantAction, Privilege<Oid>)> {
     let tenant_id = *tenant.id();
-    let mut tenant_options_builder = TenantOptionsBuilder::from(tenant.to_own_options());
+    let mut tenant_options_builder = TenantOptionsBuilder::from(tenant.into_options());
 
     let privilege = match normalize_ident(&ident).as_str() {
         TENANT_OPTION_COMMENT => {
@@ -415,10 +454,10 @@ pub fn unset_option_to_alter_tenant_action(
 pub fn sql_option_to_alter_tenant_action(
     tenant: Tenant,
     option: SqlOption,
-) -> std::result::Result<(AlterTenantAction, Privilege<Oid>), QueryError> {
+) -> QueryResult<(AlterTenantAction, Privilege<Oid>)> {
     let SqlOption { name, value } = option;
     let tenant_id = *tenant.id();
-    let mut tenant_options_builder = TenantOptionsBuilder::from(tenant.to_own_options());
+    let mut tenant_options_builder = TenantOptionsBuilder::from(tenant.into_options());
 
     let privilege = match normalize_ident(&name).as_str() {
         TENANT_OPTION_COMMENT => {
@@ -505,7 +544,7 @@ pub struct CreateUser {
 
 pub fn sql_options_to_user_options(
     with_options: Vec<SqlOption>,
-) -> std::result::Result<(UserOptions, String), ParserError> {
+) -> Result<(UserOptions, String), ParserError> {
     let mut ret_str = String::new();
     let mut builder = UserOptionsBuilder::default();
 
@@ -645,13 +684,15 @@ pub trait LogicalPlanner {
 
 /// Additional output information
 pub fn affected_row_expr(args: Vec<Expr>) -> Expr {
-    let udf = expr::ScalarUDF::new(TABLE_WRITE_UDF.clone(), args);
+    let func = ScalarFunction::new_udf(TABLE_WRITE_UDF.clone(), args);
 
-    Expr::ScalarUDF(udf).alias(AFFECTED_ROWS.0)
+    Expr::ScalarFunction(func).alias(AFFECTED_ROWS.0)
 }
 
 pub fn merge_affected_row_expr() -> Expr {
-    expr_fn::sum(col(AFFECTED_ROWS.0)).alias(AFFECTED_ROWS.0)
+    AggregateUDF::new_from_impl(Sum::new())
+        .call(vec![col(AFFECTED_ROWS.0)])
+        .alias(AFFECTED_ROWS.0)
 }
 
 /// Normalize a SQL object name
@@ -659,6 +700,8 @@ pub fn normalize_sql_object_name_to_string(sql_object_name: &ObjectName) -> Stri
     sql_object_name
         .0
         .iter()
+        // TODO(zipper): ObjectNamePart::as_ident may return None in the future, add unit test for this function.
+        .filter_map(ObjectNamePart::as_ident)
         .map(normalize_ident)
         .collect::<Vec<String>>()
         .join(".")
@@ -684,10 +727,7 @@ pub struct CopyOptionsBuilder {
 impl CopyOptionsBuilder {
     // Convert sql options to supported parameters
     // perform value validation
-    pub fn apply_options(
-        mut self,
-        options: Vec<SqlOption>,
-    ) -> std::result::Result<Self, QueryError> {
+    pub fn apply_options(mut self, options: Vec<SqlOption>) -> QueryResult<Self> {
         for SqlOption { ref name, value } in options {
             match normalize_ident(name).as_str() {
                 "auto_infer_schema" => {
@@ -982,15 +1022,45 @@ fn write_tmp_service_account_file(
     Ok(())
 }
 
+/// Convert value to lowercase.
+pub fn sql_value_to_string(value: &SqlValue) -> String {
+    match value {
+        SqlValue::SingleQuotedString(s) | SqlValue::DoubleQuotedString(s) => s.clone(),
+        _ => value.to_string().to_ascii_lowercase(),
+    }
+}
+
+/// Convert value to lowercase.
+pub fn sql_value_into_string(value: SqlValue) -> String {
+    match value {
+        SqlValue::SingleQuotedString(s) | SqlValue::DoubleQuotedString(s) => s,
+        _ => value.to_string().to_ascii_lowercase(),
+    }
+}
+
+/// Convert SqlOption s to map, and convert value to lowercase
+pub fn sql_parser_sql_options_to_map(opts: &[SqlSqlOption]) -> HashMap<String, String> {
+    let mut map = HashMap::with_capacity(opts.len());
+    for opt in opts {
+        match opt {
+            SqlSqlOption::KeyValue { key, value } => {
+                let value_str = match value {
+                    SqlExpr::Value(ValueWithSpan { value, .. }) => sql_value_to_string(value),
+                    other => other.to_string().to_ascii_lowercase(),
+                };
+                map.insert(normalize_ident(key), value_str);
+            }
+            _ => continue,
+        }
+    }
+    map
+}
+
 /// Convert SqlOption s to map, and convert value to lowercase
 pub fn sql_options_to_map(opts: &[SqlOption]) -> HashMap<String, String> {
     let mut map = HashMap::with_capacity(opts.len());
     for SqlOption { name, value } in opts {
-        let value_str = match value {
-            Value::SingleQuotedString(s) | Value::DoubleQuotedString(s) => s.clone(),
-            _ => value.to_string().to_ascii_lowercase(),
-        };
-        map.insert(normalize_ident(name), value_str);
+        map.insert(normalize_ident(name), sql_value_to_string(value));
     }
     map
 }

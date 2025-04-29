@@ -1,7 +1,7 @@
 use core::fmt::Debug;
 use std::sync::Arc;
 
-use datafusion::common::tree_node::{Transformed, TreeNode};
+use datafusion::common::tree_node::{Transformed, TransformedResult, TreeNode};
 use datafusion::common::Result as DFResult;
 use datafusion::config::ConfigOptions;
 use datafusion::physical_optimizer::PhysicalOptimizerRule;
@@ -13,7 +13,7 @@ use crate::extension::physical::plan_node::state_save::StateSaveExec;
 use crate::extension::utils::downcast_execution_plan;
 use crate::stream::state_store::StateStoreFactory;
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct AddStateStore<T> {
     watermark_ns: i64,
     state_store_factory: Arc<T>,
@@ -39,7 +39,7 @@ where
         plan: Arc<dyn ExecutionPlan>,
         _config: &ConfigOptions,
     ) -> DFResult<Arc<dyn ExecutionPlan>> {
-        plan.transform_up(&|plan| {
+        plan.transform_up(|plan| {
             if let Some(aggregate_exec) = downcast_execution_plan::<AggregateExec>(plan.as_ref()) {
                 match aggregate_exec.mode() {
                     AggregateMode::Final | AggregateMode::FinalPartitioned => {
@@ -68,7 +68,6 @@ where
                             aggregate_exec.group_expr().clone(),
                             aggregate_exec.aggr_expr().to_vec(),
                             aggregate_exec.filter_expr().to_vec(),
-                            aggregate_exec.order_by_expr().to_vec(),
                             state_restore_exec.clone(),
                             state_restore_exec.schema(),
                         )?);
@@ -80,14 +79,15 @@ where
                         let new_agg_exec =
                             with_new_children_if_necessary(plan.clone(), vec![state_save_exec])?;
 
-                        return Ok(new_agg_exec);
+                        return Ok(Transformed::yes(new_agg_exec));
                     }
-                    _ => return Ok(Transformed::No(plan)),
+                    _ => return Ok(Transformed::no(plan)),
                 }
             }
 
-            Ok(Transformed::No(plan))
+            Ok(Transformed::no(plan))
         })
+        .data()
     }
 
     fn name(&self) -> &str {

@@ -60,8 +60,8 @@ impl MemCacheReader {
             // filter columns by projection
             let mut columns: Vec<TableColumn> = Vec::with_capacity(projection.len());
             for col_id in projection.iter() {
-                if let Some(col_name) = tskv_schema.column_name(*col_id) {
-                    if let Some(column) = tskv_schema.column(col_name) {
+                if let Some(col_name) = tskv_schema.get_column_name_by_id(*col_id) {
+                    if let Some(column) = tskv_schema.get_column_by_name(col_name) {
                         if !column.column_type.is_tag() {
                             columns.push(column.clone());
                         }

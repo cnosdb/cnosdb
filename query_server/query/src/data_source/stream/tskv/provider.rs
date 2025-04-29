@@ -7,7 +7,7 @@ use datafusion::common::Result as DFResult;
 use datafusion::datasource::TableProvider;
 use datafusion::error::DataFusionError;
 use datafusion::execution::context::SessionState;
-use datafusion::logical_expr::logical_plan::AggWithGrouping;
+use datafusion::logical_expr::logical_plan::TableScanAggregate;
 use datafusion::physical_plan::empty::EmptyExec;
 use datafusion::physical_plan::{project_schema, ExecutionPlan};
 use datafusion::prelude::{col, lit_timestamp_nano, Expr};
@@ -84,13 +84,13 @@ impl StreamProvider for TskvStreamProvider {
         state: &SessionState,
         projection: Option<&Vec<usize>>,
         filters: &[Expr],
-        agg_with_grouping: Option<&AggWithGrouping>,
+        aggregate: Option<&TableScanAggregate>,
         range: Option<&(Option<Self::Offset>, Self::Offset)>,
     ) -> DFResult<Arc<dyn ExecutionPlan>> {
-        if let Some(_agg_with_grouping) = agg_with_grouping {
+        if let Some(_aggregate) = aggregate {
             debug!("Create aggregate filter tskv scan.");
             return Err(DataFusionError::NotImplemented(
-                "TskvStreamProvider::create_reader_factory with agg_with_grouping".to_string(),
+                "TskvStreamProvider::create_reader_factory with aggregate".to_string(),
             ));
         }
 
@@ -106,17 +106,11 @@ impl StreamProvider for TskvStreamProvider {
             self.construct_filters(range, filters)
         } else {
             // offset range为None,直接返回空Scan
-            return Ok(Arc::new(EmptyExec::new(false, projected_schema)));
+            return Ok(Arc::new(EmptyExec::new(projected_schema)));
         };
 
         self.table
-            .scan(
-                state,
-                Some(&new_projection),
-                &filters,
-                agg_with_grouping,
-                None,
-            )
+            .scan(state, Some(&new_projection), &filters, aggregate, None)
             .await
     }
 

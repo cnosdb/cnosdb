@@ -665,7 +665,7 @@ mod test {
         let buf = b"hello world".to_byte_slice();
         let data_len = 1_u64;
         let valid = BooleanBufferBuilder::new(0);
-        let len_bitset = ((valid.len() + 7) / 8) as u32;
+        let len_bitset = valid.len().div_ceil(8) as u32;
 
         let mut hasher = crc32fast::Hasher::new();
         hasher.update(buf);

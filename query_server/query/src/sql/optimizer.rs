@@ -159,14 +159,17 @@ mod test {
     use datafusion::arrow::datatypes::TimeUnit;
     use datafusion::datasource::provider_as_source;
     use datafusion::error::Result;
-    use datafusion::execution::context::SessionState;
     use datafusion::execution::runtime_env::RuntimeEnv;
-    use datafusion::logical_expr::{LogicalPlan, LogicalPlanBuilder, UNNAMED_TABLE};
+    use datafusion::execution::SessionStateBuilder;
+    use datafusion::functions_aggregate::count::Count;
+    use datafusion::functions_aggregate::min_max::{Max, Min};
+    use datafusion::functions_aggregate::sum::Sum;
+    use datafusion::logical_expr::{AggregateUDF, LogicalPlan, LogicalPlanBuilder, UNNAMED_TABLE};
     use datafusion::optimizer::optimizer::Optimizer;
     use datafusion::optimizer::{OptimizerContext, OptimizerRule};
     use datafusion::physical_plan::displayable;
     use datafusion::physical_planner::{DefaultPhysicalPlanner, PhysicalPlanner};
-    use datafusion::prelude::{col, count, max, min, sum, Expr, SessionConfig};
+    use datafusion::prelude::{col, Expr, SessionConfig};
     use meta::model::meta_tenant::TenantMeta;
     use models::schema::tskv_table_schema::{ColumnType, TableColumn, TskvTableSchema};
     use models::ValueType;
@@ -176,7 +179,7 @@ mod test {
 
     fn observe(_plan: &LogicalPlan, _rule: &dyn OptimizerRule) {}
 
-    fn optimize_plan(plan: &LogicalPlan) -> Result<LogicalPlan> {
+    fn optimize_plan(plan: LogicalPlan) -> Result<LogicalPlan> {
         let opt = Optimizer::new();
         let config = OptimizerContext::new().with_skip_failing_rules(false);
 
@@ -199,7 +202,7 @@ mod test {
             "value".to_string(),
             ColumnType::Field(ValueType::Integer),
         ));
-        schema.db = dn_name.to_string();
+        schema.db = dn_name.into();
 
         let provider = Arc::new(ClusterTable::new(
             Arc::new(MockCoordinator::default()),
@@ -216,7 +219,7 @@ mod test {
         opt_logical_plan_str: &str,
         final_physical_plan_str: &str,
     ) -> Result<()> {
-        let opt_plan = optimize_plan(&plan)?;
+        let opt_plan = optimize_plan(plan)?;
         let result_str = format!("{opt_plan:?}");
 
         assert_eq!(opt_logical_plan_str, result_str);
@@ -225,10 +228,10 @@ mod test {
         let optimized_physical_plan = planner
             .create_physical_plan(
                 &opt_plan,
-                &SessionState::with_config_rt(
-                    SessionConfig::default().with_target_partitions(8),
-                    Arc::new(RuntimeEnv::default()),
-                ),
+                &SessionStateBuilder::new()
+                    .with_runtime_env(Arc::new(RuntimeEnv::default()))
+                    .with_config(SessionConfig::default().with_target_partitions(8))
+                    .build(),
             )
             .await?;
         let result_str = format!(
@@ -239,6 +242,22 @@ mod test {
         assert_eq!(final_physical_plan_str, result_str);
 
         Ok(())
+    }
+
+    fn count(column: Expr) -> Expr {
+        AggregateUDF::new_from_impl(Count::new()).call(vec![column])
+    }
+
+    fn sum(column: Expr) -> Expr {
+        AggregateUDF::new_from_impl(Sum::new()).call(vec![column])
+    }
+
+    fn min(column: Expr) -> Expr {
+        AggregateUDF::new_from_impl(Min::new()).call(vec![column])
+    }
+
+    fn max(column: Expr) -> Expr {
+        AggregateUDF::new_from_impl(Max::new()).call(vec![column])
     }
 
     #[tokio::test]

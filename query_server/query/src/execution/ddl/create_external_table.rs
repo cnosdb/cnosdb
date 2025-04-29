@@ -1,13 +1,7 @@
-use std::str::FromStr;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use datafusion::arrow::datatypes::SchemaRef;
-use datafusion::datasource::file_format::avro::AvroFormat;
-use datafusion::datasource::file_format::csv::CsvFormat;
-use datafusion::datasource::file_format::file_type::{FileCompressionType, FileType};
-use datafusion::datasource::file_format::json::JsonFormat;
-use datafusion::datasource::file_format::parquet::ParquetFormat;
 use datafusion::datasource::file_format::FileFormat;
 use datafusion::datasource::listing::{ListingOptions, ListingTableUrl};
 use datafusion::execution::context::SessionState;
@@ -87,10 +81,10 @@ async fn create_external_table(
 
     let client = query_state_machine
         .meta
-        .tenant_meta(schema.tenant.as_str())
+        .tenant_meta(schema.tenant.as_ref())
         .await
         .ok_or_else(|| MetaError::TenantNotFound {
-            tenant: schema.tenant.clone(),
+            tenant: schema.tenant.to_string(),
         })
         .context(MetaSnafu)?;
 
@@ -114,16 +108,14 @@ async fn build_table_schema(
     let schema = construct_listing_table_schema(stmt, state).await?;
 
     let schema = ExternalTableSchema {
-        tenant: tenant.to_string(),
-        db: db.to_string(),
-        name: stmt.name.table().to_string(),
-        location: stmt.location.clone(),
+        tenant: tenant.into(),
+        db: db.into(),
+        name: stmt.name.table().into(),
         file_type: stmt.file_type.clone(),
-        file_compression_type: stmt.file_compression_type.to_string(),
+        location: stmt.location.clone(),
+        options: stmt.options.clone(),
         target_partitions: state.config().target_partitions(),
         table_partition_cols: Default::default(),
-        has_header: stmt.has_header,
-        delimiter: stmt.delimiter as u8,
         schema: schema.deref().clone(),
     };
     Ok(schema)
@@ -147,7 +139,7 @@ async fn construct_listing_table_schema(
     };
 
     let table_path = ListingTableUrl::parse(location).context(DatafusionSnafu)?;
-    let options = build_external_table_config(stmt, state.config().target_partitions())?;
+    let options = build_external_table_config(stmt, state)?;
 
     Ok(match provided_schema {
         None => options
@@ -160,30 +152,26 @@ async fn construct_listing_table_schema(
 
 fn build_external_table_config(
     stmt: &CreateExternalTable,
-    target_partitions: usize,
+    state: &SessionState,
 ) -> QueryResult<ListingOptions> {
-    let file_compression_type = FileCompressionType::from(stmt.file_compression_type);
-    let file_type = FileType::from_str(stmt.file_type.as_str())?;
-    let file_format: Arc<dyn FileFormat> = match file_type {
-        FileType::CSV => Arc::new(
-            CsvFormat::default()
-                .with_has_header(stmt.has_header)
-                .with_delimiter(stmt.delimiter as u8)
-                .with_file_compression_type(file_compression_type),
-        ),
-        FileType::PARQUET => Arc::new(ParquetFormat::default()),
-        FileType::AVRO => Arc::new(AvroFormat),
-        FileType::JSON => {
-            Arc::new(JsonFormat::default().with_file_compression_type(file_compression_type))
+    let file_format: Arc<dyn FileFormat> = match stmt.file_type.as_str() {
+        "csv" | "parquet" | "avro" | "json" => {
+            let format_factory = state
+                .get_file_format_factory(stmt.file_type.as_str())
+                .ok_or_else(|| QueryError::Internal {
+                    reason: format!("File format '{}' not registered", &stmt.file_type),
+                })?;
+            format_factory.create(state, &stmt.options)?
         }
-        FileType::ARROW => {
+        other => {
             return Err(QueryError::NotImplemented {
-                err: "Build arrow external table config".to_string(),
+                err: format!("Build {other} external table config"),
             })
         }
     };
 
-    let options = ListingOptions::new(file_format).with_target_partitions(target_partitions);
+    let options =
+        ListingOptions::new(file_format).with_target_partitions(state.config().target_partitions());
 
     Ok(options)
 }

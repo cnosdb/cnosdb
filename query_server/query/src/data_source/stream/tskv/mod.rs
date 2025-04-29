@@ -39,7 +39,7 @@ mod tests {
     use meta::model::meta_tenant::TenantMeta;
     use meta::model::MetaClientRef;
     use models::schema::stream_table_schema::{StreamTable, Watermark};
-    use models::schema::tskv_table_schema::TskvTableSchema;
+    use models::schema::tskv_table_schema::{TableColumn, TskvTableSchema};
     use spi::query::datasource::stream::{StreamProviderManager, StreamProviderRef};
     use spi::QueryError;
 
@@ -131,10 +131,15 @@ mod tests {
     ) -> Result<StreamProviderRef, QueryError> {
         let watermark = table.watermark();
 
-        let table_schema = Arc::new(TskvTableSchema::new_test());
+        let table_schema = Arc::new(TskvTableSchema::new(
+            "cnosdb",
+            "public",
+            "test",
+            vec![TableColumn::new_time_column(0, TimeUnit::Second)],
+        ));
 
         let used_schema = if table.schema().fields().is_empty() {
-            table_schema.to_arrow_schema()
+            table_schema.build_arrow_schema()
         } else {
             table.schema()
         };

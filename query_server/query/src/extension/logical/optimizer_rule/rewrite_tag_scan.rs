@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use datafusion::common::tree_node::Transformed;
 use datafusion::datasource::source_as_provider;
 use datafusion::error::Result;
 use datafusion::logical_expr::{Extension, LogicalPlan, LogicalPlanBuilder, TableScan};
@@ -13,23 +14,24 @@ use crate::extension::logical::plan_node::tag_scan::TagScanPlanNode;
 ///
 /// Triggering conditions:
 /// 1. The projection contains only the tag column
+#[derive(Debug)]
 pub struct RewriteTagScan {}
 
 impl OptimizerRule for RewriteTagScan {
-    fn try_optimize(
+    fn rewrite(
         &self,
-        plan: &LogicalPlan,
+        plan: LogicalPlan,
         _optimizer_config: &dyn OptimizerConfig,
-    ) -> Result<Option<LogicalPlan>> {
+    ) -> Result<Transformed<LogicalPlan>> {
         if let LogicalPlan::TableScan(TableScan {
             table_name,
             source,
             projection,
             projected_schema,
             filters,
-            agg_with_grouping,
+            aggregate,
             fetch,
-        }) = plan
+        }) = &plan
         {
             if let Some(cluster_table) = source_as_provider(source)?
                 .as_any()
@@ -37,14 +39,14 @@ impl OptimizerRule for RewriteTagScan {
             {
                 let table_schema = cluster_table.table_schema();
                 // Only handle the table of ClusterTable
-                if let Some(e) = projection.as_ref() {
+                if let Some(e) = projection {
                     let mut contain_time = false;
                     let mut contain_tag = false;
                     let mut contain_field = false;
 
                     // Find non-tag columns from projection
                     e.iter()
-                        .flat_map(|i| table_schema.column_by_index(*i))
+                        .flat_map(|i| table_schema.get_column_by_index(*i))
                         .for_each(|c| {
                             if c.column_type.is_tag() {
                                 contain_tag = true;
@@ -55,8 +57,7 @@ impl OptimizerRule for RewriteTagScan {
                             }
                         });
 
-                    if contain_tag && !contain_field && !contain_time && agg_with_grouping.is_none()
-                    {
+                    if contain_tag && !contain_field && !contain_time && aggregate.is_none() {
                         // If it does not contain non-tag columns, convert TableScan to TagScan
                         let tag_plan = LogicalPlan::Extension(Extension {
                             node: Arc::new(TagScanPlanNode {
@@ -68,7 +69,7 @@ impl OptimizerRule for RewriteTagScan {
                                 fetch: *fetch,
                             }),
                         });
-                        return Ok(Some(
+                        return Ok(Transformed::yes(
                             LogicalPlanBuilder::from(tag_plan).distinct()?.build()?,
                         ));
                     }
@@ -76,7 +77,7 @@ impl OptimizerRule for RewriteTagScan {
             }
         }
 
-        Ok(None)
+        Ok(Transformed::no(plan))
     }
 
     fn name(&self) -> &str {

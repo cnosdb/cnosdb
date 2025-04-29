@@ -171,9 +171,16 @@ mod self_tests {
                     .output()
                     .expect("failed to execute kill");
                 if !output.status.success() {
-                    println!(" - failed killing process {} ('{}')", pid, process.name());
+                    println!(
+                        " - failed killing process {} ('{}')",
+                        pid,
+                        process.name().to_string_lossy()
+                    );
                 }
-                println!(" - killed process {pid} ('{}')", process.name());
+                println!(
+                    " - killed process {pid} ('{}')",
+                    process.name().to_string_lossy()
+                );
             }
         }
     }

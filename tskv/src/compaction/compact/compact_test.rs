@@ -113,7 +113,7 @@ async fn test_compaction_fast() {
     );
     let schema = Arc::new(schema);
     let data1 = RecordBatch::try_new(
-        schema.to_record_data_schema(),
+        schema.build_arrow_schema_without_tags(),
         vec![
             timestamp_column(vec![1, 2, 3]),
             i64_column(vec![1, 2, 3]),
@@ -124,7 +124,7 @@ async fn test_compaction_fast() {
     .unwrap();
 
     let data2 = RecordBatch::try_new(
-        schema.to_record_data_schema(),
+        schema.build_arrow_schema_without_tags(),
         vec![
             timestamp_column(vec![4, 5, 6]),
             i64_column(vec![4, 5, 6]),
@@ -135,7 +135,7 @@ async fn test_compaction_fast() {
     .unwrap();
 
     let data3 = RecordBatch::try_new(
-        schema.to_record_data_schema(),
+        schema.build_arrow_schema_without_tags(),
         vec![
             timestamp_column(vec![7, 8, 9]),
             i64_column(vec![7, 8, 9]),
@@ -146,7 +146,7 @@ async fn test_compaction_fast() {
     .unwrap();
 
     let expected_data = RecordBatch::try_new(
-        schema.to_record_data_schema(),
+        schema.build_arrow_schema_without_tags(),
         vec![
             timestamp_column(vec![1, 2, 3, 4, 5, 6, 7, 8, 9]),
             i64_column(vec![1, 2, 3, 4, 5, 6, 7, 8, 9]),
@@ -216,7 +216,7 @@ async fn test_compaction_1() {
     );
     let schema = Arc::new(schema);
     let data1 = RecordBatch::try_new(
-        schema.to_record_data_schema(),
+        schema.build_arrow_schema_without_tags(),
         vec![
             timestamp_column(vec![4, 5, 6]),
             i64_column(vec![114, 115, 116]),
@@ -227,7 +227,7 @@ async fn test_compaction_1() {
     .unwrap();
 
     let data2 = RecordBatch::try_new(
-        schema.to_record_data_schema(),
+        schema.build_arrow_schema_without_tags(),
         vec![
             timestamp_column(vec![1, 2, 3]),
             i64_column(vec![211, 212, 213]),
@@ -238,7 +238,7 @@ async fn test_compaction_1() {
     .unwrap();
 
     let data3 = RecordBatch::try_new(
-        schema.to_record_data_schema(),
+        schema.build_arrow_schema_without_tags(),
         vec![
             timestamp_column(vec![7, 8, 9]),
             i64_column(vec![317, 318, 319]),
@@ -249,7 +249,7 @@ async fn test_compaction_1() {
     .unwrap();
 
     let expected_data = RecordBatch::try_new(
-        schema.to_record_data_schema(),
+        schema.build_arrow_schema_without_tags(),
         vec![
             timestamp_column(vec![1, 2, 3, 4, 5, 6, 7, 8, 9]),
             i64_column(vec![211, 212, 213, 114, 115, 116, 317, 318, 319]),
@@ -326,7 +326,7 @@ async fn test_compaction_2() {
     );
     let schema = Arc::new(schema);
     let data1 = RecordBatch::try_new(
-        schema.to_record_data_schema(),
+        schema.build_arrow_schema_without_tags(),
         vec![
             timestamp_column(vec![1, 2, 3, 4]),
             i64_some_column(vec![Some(111), Some(112), Some(113), Some(114)]),
@@ -338,7 +338,7 @@ async fn test_compaction_2() {
     .unwrap();
 
     let data2 = RecordBatch::try_new(
-        schema.to_record_data_schema(),
+        schema.build_arrow_schema_without_tags(),
         vec![
             timestamp_column(vec![4, 5, 6, 7]),
             i64_some_column(vec![Some(214), Some(215), Some(216), None]),
@@ -350,7 +350,7 @@ async fn test_compaction_2() {
     .unwrap();
 
     let data3 = RecordBatch::try_new(
-        schema.to_record_data_schema(),
+        schema.build_arrow_schema_without_tags(),
         vec![
             timestamp_column(vec![7, 8, 9]),
             i64_column(vec![317, 318, 319]),
@@ -362,7 +362,7 @@ async fn test_compaction_2() {
     .unwrap();
 
     let expected_data = RecordBatch::try_new(
-        schema.to_record_data_schema(),
+        schema.build_arrow_schema_without_tags(),
         vec![
             timestamp_column(vec![1, 2, 3, 4, 5, 6, 7, 8, 9]),
             i64_column(vec![111, 112, 113, 214, 215, 216, 317, 318, 319]),
@@ -442,12 +442,12 @@ async fn test_compaction_3() {
     );
     let schema = Arc::new(schema);
     let data1 = RecordBatch::try_new(
-        schema.to_record_data_schema(),
+        schema.build_arrow_schema_without_tags(),
         vec![timestamp_column(vec![1]), i64_column(vec![111])],
     )
     .unwrap();
     let data2 = RecordBatch::try_new(
-        schema.to_record_data_schema(),
+        schema.build_arrow_schema_without_tags(),
         vec![
             timestamp_column(vec![2, 3, 4]),
             i64_column(vec![212, 213, 214]),
@@ -456,7 +456,7 @@ async fn test_compaction_3() {
     .unwrap();
 
     let data3 = RecordBatch::try_new(
-        schema.to_record_data_schema(),
+        schema.build_arrow_schema_without_tags(),
         vec![
             timestamp_column(vec![4, 5, 6]),
             i64_column(vec![314, 315, 316]),
@@ -465,13 +465,13 @@ async fn test_compaction_3() {
     .unwrap();
 
     let data4 = RecordBatch::try_new(
-        schema.to_record_data_schema(),
+        schema.build_arrow_schema_without_tags(),
         vec![timestamp_column(vec![8, 9]), i64_column(vec![418, 419])],
     )
     .unwrap();
 
     let expected_data = RecordBatch::try_new(
-        schema.to_record_data_schema(),
+        schema.build_arrow_schema_without_tags(),
         vec![
             timestamp_column(vec![1, 2, 3, 4, 5, 6, 8, 9]),
             i64_some_column(vec![
@@ -573,7 +573,7 @@ async fn test_big_compaction_1() {
             vec![
                 (
                     RecordBatch::try_new(
-                        schema1.to_record_data_schema(),
+                        schema1.build_arrow_schema_without_tags(),
                         vec![
                             generate_column_ts(1, 1000),
                             generate_column_u64(1000, vec![]),
@@ -586,7 +586,7 @@ async fn test_big_compaction_1() {
                 ),
                 (
                     RecordBatch::try_new(
-                        schema1.clone().to_record_data_schema(),
+                        schema1.clone().build_arrow_schema_without_tags(),
                         vec![
                             generate_column_ts(1001, 2000),
                             generate_column_u64(1000, vec![]),
@@ -599,7 +599,7 @@ async fn test_big_compaction_1() {
                 ),
                 (
                     RecordBatch::try_new(
-                        schema1.clone().to_record_data_schema(),
+                        schema1.clone().build_arrow_schema_without_tags(),
                         vec![
                             generate_column_ts(2001, 2500),
                             generate_column_u64(500, vec![]),
@@ -617,7 +617,7 @@ async fn test_big_compaction_1() {
             vec![
                 (
                     RecordBatch::try_new(
-                        schema2.clone().to_record_data_schema(),
+                        schema2.clone().build_arrow_schema_without_tags(),
                         vec![
                             generate_column_ts(1, 1000),
                             generate_column_u64(1000, vec![(0, 999)]),
@@ -631,7 +631,7 @@ async fn test_big_compaction_1() {
                 ),
                 (
                     RecordBatch::try_new(
-                        schema2.clone().to_record_data_schema(),
+                        schema2.clone().build_arrow_schema_without_tags(),
                         vec![
                             generate_column_ts(1001, 2000),
                             generate_column_u64(1000, vec![(0, 999)]),
@@ -645,7 +645,7 @@ async fn test_big_compaction_1() {
                 ),
                 (
                     RecordBatch::try_new(
-                        schema2.clone().to_record_data_schema(),
+                        schema2.clone().build_arrow_schema_without_tags(),
                         vec![
                             generate_column_ts(2001, 3000),
                             generate_column_u64(1000, vec![]),
@@ -659,7 +659,7 @@ async fn test_big_compaction_1() {
                 ),
                 (
                     RecordBatch::try_new(
-                        schema2.clone().to_record_data_schema(),
+                        schema2.clone().build_arrow_schema_without_tags(),
                         vec![
                             generate_column_ts(3001, 4000),
                             generate_column_u64(1000, vec![]),
@@ -673,7 +673,7 @@ async fn test_big_compaction_1() {
                 ),
                 (
                     RecordBatch::try_new(
-                        schema2.clone().to_record_data_schema(),
+                        schema2.clone().build_arrow_schema_without_tags(),
                         vec![
                             generate_column_ts(4001, 4500),
                             generate_column_u64(500, vec![]),
@@ -692,7 +692,7 @@ async fn test_big_compaction_1() {
             vec![
                 (
                     RecordBatch::try_new(
-                        schema2.clone().to_record_data_schema(),
+                        schema2.clone().build_arrow_schema_without_tags(),
                         vec![
                             generate_column_ts(1001, 2000),
                             generate_column_u64(1000, vec![(0, 999)]),
@@ -706,7 +706,7 @@ async fn test_big_compaction_1() {
                 ),
                 (
                     RecordBatch::try_new(
-                        schema2.clone().to_record_data_schema(),
+                        schema2.clone().build_arrow_schema_without_tags(),
                         vec![
                             generate_column_ts(2001, 3000),
                             generate_column_u64(1000, vec![(0, 999)]),
@@ -720,7 +720,7 @@ async fn test_big_compaction_1() {
                 ),
                 (
                     RecordBatch::try_new(
-                        schema2.clone().to_record_data_schema(),
+                        schema2.clone().build_arrow_schema_without_tags(),
                         vec![
                             generate_column_ts(3001, 4000),
                             generate_column_u64(1000, vec![(0, 999)]),
@@ -734,7 +734,7 @@ async fn test_big_compaction_1() {
                 ),
                 (
                     RecordBatch::try_new(
-                        schema2.clone().to_record_data_schema(),
+                        schema2.clone().build_arrow_schema_without_tags(),
                         vec![
                             generate_column_ts(4001, 5000),
                             generate_column_u64(1000, vec![]),
@@ -748,7 +748,7 @@ async fn test_big_compaction_1() {
                 ),
                 (
                     RecordBatch::try_new(
-                        schema2.clone().to_record_data_schema(),
+                        schema2.clone().build_arrow_schema_without_tags(),
                         vec![
                             generate_column_ts(5001, 6000),
                             generate_column_u64(1000, vec![]),
@@ -762,7 +762,7 @@ async fn test_big_compaction_1() {
                 ),
                 (
                     RecordBatch::try_new(
-                        schema2.clone().to_record_data_schema(),
+                        schema2.clone().build_arrow_schema_without_tags(),
                         vec![
                             generate_column_ts(6001, 6500),
                             generate_column_u64(500, vec![]),
@@ -779,7 +779,7 @@ async fn test_big_compaction_1() {
     ];
     let expected_data: Vec<RecordBatch> = vec![
         RecordBatch::try_new(
-            schema2.clone().to_record_data_schema(),
+            schema2.clone().build_arrow_schema_without_tags(),
             vec![
                 generate_column_ts(1, 1000),
                 generate_column_u64(1000, vec![]),
@@ -790,7 +790,7 @@ async fn test_big_compaction_1() {
         )
         .unwrap(),
         RecordBatch::try_new(
-            schema2.clone().to_record_data_schema(),
+            schema2.clone().build_arrow_schema_without_tags(),
             vec![
                 generate_column_ts(1001, 2000),
                 generate_column_u64(1000, vec![]),
@@ -801,7 +801,7 @@ async fn test_big_compaction_1() {
         )
         .unwrap(),
         RecordBatch::try_new(
-            schema2.clone().to_record_data_schema(),
+            schema2.clone().build_arrow_schema_without_tags(),
             vec![
                 generate_column_ts(2001, 3000),
                 generate_column_u64(1000, vec![]),
@@ -812,7 +812,7 @@ async fn test_big_compaction_1() {
         )
         .unwrap(),
         RecordBatch::try_new(
-            schema2.clone().to_record_data_schema(),
+            schema2.clone().build_arrow_schema_without_tags(),
             vec![
                 generate_column_ts(3001, 4000),
                 generate_column_u64(1000, vec![]),
@@ -823,7 +823,7 @@ async fn test_big_compaction_1() {
         )
         .unwrap(),
         RecordBatch::try_new(
-            schema2.clone().to_record_data_schema(),
+            schema2.clone().build_arrow_schema_without_tags(),
             vec![
                 generate_column_ts(4001, 5000),
                 generate_column_u64(1000, vec![]),
@@ -834,7 +834,7 @@ async fn test_big_compaction_1() {
         )
         .unwrap(),
         RecordBatch::try_new(
-            schema2.clone().to_record_data_schema(),
+            schema2.clone().build_arrow_schema_without_tags(),
             vec![
                 generate_column_ts(5001, 6000),
                 generate_column_u64(1000, vec![]),
@@ -845,7 +845,7 @@ async fn test_big_compaction_1() {
         )
         .unwrap(),
         RecordBatch::try_new(
-            schema2.clone().to_record_data_schema(),
+            schema2.clone().build_arrow_schema_without_tags(),
             vec![
                 generate_column_ts(6001, 6500),
                 generate_column_u64(500, vec![]),
@@ -958,7 +958,7 @@ async fn test_big_compaction_2() {
             vec![
                 (
                     RecordBatch::try_new(
-                        schema1.to_record_data_schema(),
+                        schema1.build_arrow_schema_without_tags(),
                         vec![
                             generate_column_ts(1, 1000),
                             generate_column_u64(1000, vec![]),
@@ -971,7 +971,7 @@ async fn test_big_compaction_2() {
                 ),
                 (
                     RecordBatch::try_new(
-                        schema1.clone().to_record_data_schema(),
+                        schema1.clone().build_arrow_schema_without_tags(),
                         vec![
                             generate_column_ts(1001, 2000),
                             generate_column_u64(1000, vec![]),
@@ -984,7 +984,7 @@ async fn test_big_compaction_2() {
                 ),
                 (
                     RecordBatch::try_new(
-                        schema1.clone().to_record_data_schema(),
+                        schema1.clone().build_arrow_schema_without_tags(),
                         vec![
                             generate_column_ts(2001, 2500),
                             generate_column_u64(500, vec![]),
@@ -1002,7 +1002,7 @@ async fn test_big_compaction_2() {
             vec![
                 (
                     RecordBatch::try_new(
-                        schema2.clone().to_record_data_schema(),
+                        schema2.clone().build_arrow_schema_without_tags(),
                         vec![
                             generate_column_ts(1, 1000),
                             generate_column_u64(1000, vec![(0, 999)]),
@@ -1016,7 +1016,7 @@ async fn test_big_compaction_2() {
                 ),
                 (
                     RecordBatch::try_new(
-                        schema2.clone().to_record_data_schema(),
+                        schema2.clone().build_arrow_schema_without_tags(),
                         vec![
                             generate_column_ts(1001, 2000),
                             generate_column_u64(1000, vec![(0, 999)]),
@@ -1030,7 +1030,7 @@ async fn test_big_compaction_2() {
                 ),
                 (
                     RecordBatch::try_new(
-                        schema2.clone().to_record_data_schema(),
+                        schema2.clone().build_arrow_schema_without_tags(),
                         vec![
                             generate_column_ts(2001, 3000),
                             generate_column_u64(1000, vec![]),
@@ -1044,7 +1044,7 @@ async fn test_big_compaction_2() {
                 ),
                 (
                     RecordBatch::try_new(
-                        schema2.clone().to_record_data_schema(),
+                        schema2.clone().build_arrow_schema_without_tags(),
                         vec![
                             generate_column_ts(3001, 4000),
                             generate_column_u64(1000, vec![]),
@@ -1058,7 +1058,7 @@ async fn test_big_compaction_2() {
                 ),
                 (
                     RecordBatch::try_new(
-                        schema2.clone().to_record_data_schema(),
+                        schema2.clone().build_arrow_schema_without_tags(),
                         vec![
                             generate_column_ts(4001, 4500),
                             generate_column_u64(500, vec![]),
@@ -1077,7 +1077,7 @@ async fn test_big_compaction_2() {
             vec![
                 (
                     RecordBatch::try_new(
-                        schema2.clone().to_record_data_schema(),
+                        schema2.clone().build_arrow_schema_without_tags(),
                         vec![
                             generate_column_ts(1001, 2000),
                             generate_column_u64(1000, vec![(0, 999)]),
@@ -1091,7 +1091,7 @@ async fn test_big_compaction_2() {
                 ),
                 (
                     RecordBatch::try_new(
-                        schema2.clone().to_record_data_schema(),
+                        schema2.clone().build_arrow_schema_without_tags(),
                         vec![
                             generate_column_ts(2001, 3000),
                             generate_column_u64(1000, vec![(0, 999)]),
@@ -1105,7 +1105,7 @@ async fn test_big_compaction_2() {
                 ),
                 (
                     RecordBatch::try_new(
-                        schema2.clone().to_record_data_schema(),
+                        schema2.clone().build_arrow_schema_without_tags(),
                         vec![
                             generate_column_ts(3001, 4000),
                             generate_column_u64(1000, vec![(0, 999)]),
@@ -1119,7 +1119,7 @@ async fn test_big_compaction_2() {
                 ),
                 (
                     RecordBatch::try_new(
-                        schema2.clone().to_record_data_schema(),
+                        schema2.clone().build_arrow_schema_without_tags(),
                         vec![
                             generate_column_ts(4001, 5000),
                             generate_column_u64(1000, vec![]),
@@ -1133,7 +1133,7 @@ async fn test_big_compaction_2() {
                 ),
                 (
                     RecordBatch::try_new(
-                        schema2.clone().to_record_data_schema(),
+                        schema2.clone().build_arrow_schema_without_tags(),
                         vec![
                             generate_column_ts(5001, 6000),
                             generate_column_u64(1000, vec![]),
@@ -1147,7 +1147,7 @@ async fn test_big_compaction_2() {
                 ),
                 (
                     RecordBatch::try_new(
-                        schema2.clone().to_record_data_schema(),
+                        schema2.clone().build_arrow_schema_without_tags(),
                         vec![
                             generate_column_ts(6001, 6500),
                             generate_column_u64(500, vec![]),
@@ -1164,7 +1164,7 @@ async fn test_big_compaction_2() {
     ];
     let expected_data: Vec<RecordBatch> = vec![
         RecordBatch::try_new(
-            schema2.clone().to_record_data_schema(),
+            schema2.clone().build_arrow_schema_without_tags(),
             vec![
                 generate_column_ts(1, 1000),
                 generate_column_u64(1000, vec![(0, 499)]),
@@ -1175,7 +1175,7 @@ async fn test_big_compaction_2() {
         )
         .unwrap(),
         RecordBatch::try_new(
-            schema2.clone().to_record_data_schema(),
+            schema2.clone().build_arrow_schema_without_tags(),
             vec![
                 generate_column_ts(1001, 2000),
                 generate_column_u64(1000, vec![]),
@@ -1186,7 +1186,7 @@ async fn test_big_compaction_2() {
         )
         .unwrap(),
         RecordBatch::try_new(
-            schema2.clone().to_record_data_schema(),
+            schema2.clone().build_arrow_schema_without_tags(),
             vec![
                 generate_column_ts(2001, 3000),
                 generate_column_u64(1000, vec![]),
@@ -1197,7 +1197,7 @@ async fn test_big_compaction_2() {
         )
         .unwrap(),
         RecordBatch::try_new(
-            schema2.clone().to_record_data_schema(),
+            schema2.clone().build_arrow_schema_without_tags(),
             vec![
                 generate_column_ts(3001, 4000),
                 generate_column_u64(1000, vec![]),
@@ -1208,7 +1208,7 @@ async fn test_big_compaction_2() {
         )
         .unwrap(),
         RecordBatch::try_new(
-            schema2.clone().to_record_data_schema(),
+            schema2.clone().build_arrow_schema_without_tags(),
             vec![
                 generate_column_ts(4001, 5000),
                 generate_column_u64(1000, vec![]),
@@ -1219,7 +1219,7 @@ async fn test_big_compaction_2() {
         )
         .unwrap(),
         RecordBatch::try_new(
-            schema2.clone().to_record_data_schema(),
+            schema2.clone().build_arrow_schema_without_tags(),
             vec![
                 generate_column_ts(5001, 6000),
                 generate_column_u64(1000, vec![]),
@@ -1230,7 +1230,7 @@ async fn test_big_compaction_2() {
         )
         .unwrap(),
         RecordBatch::try_new(
-            schema2.clone().to_record_data_schema(),
+            schema2.clone().build_arrow_schema_without_tags(),
             vec![
                 generate_column_ts(6001, 6500),
                 generate_column_u64(500, vec![]),

@@ -7,19 +7,20 @@ use std::task::{Context, Poll};
 
 use datafusion::arrow::datatypes::{DataType, Schema, SchemaRef};
 use datafusion::arrow::record_batch::RecordBatch;
-use datafusion::common::Result as DFResult;
+use datafusion::common::{DFSchema, Result as DFResult};
 use datafusion::error::DataFusionError;
-use datafusion::execution::context::TaskContext;
+use datafusion::execution::context::{ExecutionProps, TaskContext};
 use datafusion::logical_expr::Operator;
-use datafusion::physical_expr::PhysicalSortExpr;
-use datafusion::physical_plan::expressions::{binary, Column, GetIndexedFieldExpr, Literal};
+use datafusion::physical_expr::create_physical_expr;
+use datafusion::physical_plan::expressions::{binary, Column, Literal};
 use datafusion::physical_plan::metrics::{
     self, BaselineMetrics, ExecutionPlanMetricsSet, MetricBuilder,
 };
 use datafusion::physical_plan::{
-    DisplayFormatType, ExecutionPlan, Partitioning, PhysicalExpr, RecordBatchStream,
+    DisplayAs, DisplayFormatType, ExecutionPlan, PhysicalExpr, PlanProperties, RecordBatchStream,
     SendableRecordBatchStream, Statistics,
 };
+use datafusion::prelude::{col, get_field};
 use datafusion::scalar::ScalarValue;
 use futures::{Stream, StreamExt};
 use trace::debug;
@@ -77,24 +78,20 @@ where
     T: StateStoreFactory + Send + Sync + Debug + 'static,
     T::SS: Send + Sync + Debug,
 {
+    fn name(&self) -> &str {
+        "StateSaveExec"
+    }
+
     fn as_any(&self) -> &dyn Any {
         self
     }
 
-    fn schema(&self) -> SchemaRef {
-        self.input.schema()
+    fn properties(&self) -> &PlanProperties {
+        self.input.properties()
     }
 
-    fn output_partitioning(&self) -> Partitioning {
-        self.input.output_partitioning()
-    }
-
-    fn output_ordering(&self) -> Option<&[PhysicalSortExpr]> {
-        self.input.output_ordering()
-    }
-
-    fn children(&self) -> Vec<Arc<dyn ExecutionPlan>> {
-        vec![self.input.clone()]
+    fn children(&self) -> Vec<&Arc<dyn ExecutionPlan>> {
+        vec![&self.input]
     }
 
     fn with_new_children(
@@ -142,14 +139,20 @@ where
         }))
     }
 
-    fn statistics(&self) -> Statistics {
+    fn statistics(&self) -> DFResult<Statistics> {
         self.input.statistics()
     }
+}
 
+impl<T> DisplayAs for StateSaveExec<T> {
     fn fmt_as(&self, t: DisplayFormatType, f: &mut fmt::Formatter) -> fmt::Result {
         match t {
             DisplayFormatType::Default | DisplayFormatType::Verbose => {
                 write!(f, "StateSaveExec: watermark={}ns", self.watermark_ns)
+            }
+            DisplayFormatType::TreeRender => {
+                // TODO(zipper): implement this.
+                write!(f, "")
             }
         }
     }
@@ -192,7 +195,7 @@ where
                 Poll::Ready(value) => match value {
                     // 保留输入流中晚于waterMark的记录写入[StateStore]并输出
                     Some(Ok(batch)) => {
-                        let filtered_batch =
+                        let filtered_batch: RecordBatch =
                             if let Some(ref predicate) = self.watermark_predicate_for_data {
                                 let _timer = self.metrics.filter_late_data().timer();
                                 let filtered_batch = batch_filter(&batch, predicate)?;
@@ -321,6 +324,7 @@ fn create_watermark_predicate(
     watermark_ns: i64,
     x: Operator,
 ) -> DFResult<Option<Arc<dyn PhysicalExpr>>> {
+    let df_schema = DFSchema::try_from(schema.clone())?;
     schema
         .fields()
         .iter()
@@ -345,11 +349,12 @@ fn create_watermark_predicate(
                             ))
                             })?;
 
-                    let arg = Arc::new(Column::new(field.name(), idx));
-                    Arc::new(GetIndexedFieldExpr::new(
-                        arg,
+                    let get_field_expr = get_field(
+                        col(field.name()),
                         ScalarValue::Utf8(Some(field.name().clone())),
-                    ))
+                    );
+                    let props = ExecutionProps::new();
+                    create_physical_expr(&get_field_expr, &df_schema, &props)?
                 }
                 _ => Arc::new(Column::new(f.name(), idx)),
             };

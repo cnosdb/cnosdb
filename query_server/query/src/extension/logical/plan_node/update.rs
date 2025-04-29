@@ -2,14 +2,14 @@ use std::fmt::{self, Debug};
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
-use datafusion::common::{DFSchemaRef, OwnedTableReference, ToDFSchema};
+use datafusion::common::{DFSchemaRef, TableReference, ToDFSchema};
+use datafusion::error::{DataFusionError, Result as DFResult};
 use datafusion::logical_expr::{LogicalPlan, TableSource, UserDefinedLogicalNodeCore};
 use datafusion::prelude::{Column, Expr};
-use spi::DFResult;
 
 #[derive(Clone)]
 pub struct UpdateNode {
-    pub table_name: OwnedTableReference,
+    pub table_name: TableReference,
     // table for update
     pub table_source: Arc<dyn TableSource>,
     // set
@@ -18,6 +18,24 @@ pub struct UpdateNode {
     pub filter: Expr,
     // The schema description of the output
     pub schema: DFSchemaRef,
+}
+
+impl PartialOrd for UpdateNode {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match self.table_name.partial_cmp(&other.table_name) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        match self.assigns.partial_cmp(&other.assigns) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        match self.filter.partial_cmp(&other.filter) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        self.schema.fields().partial_cmp(other.schema.fields())
+    }
 }
 
 impl Hash for UpdateNode {
@@ -42,7 +60,7 @@ impl Eq for UpdateNode {}
 
 impl UpdateNode {
     pub fn try_new(
-        table_name: impl Into<OwnedTableReference>,
+        table_name: impl Into<TableReference>,
         table_source: Arc<dyn TableSource>,
         assigns: Vec<(Column, Expr)>,
         filter: Expr,
@@ -66,6 +84,10 @@ impl Debug for UpdateNode {
 }
 
 impl UserDefinedLogicalNodeCore for UpdateNode {
+    fn name(&self) -> &str {
+        "Update"
+    }
+
     fn inputs(&self) -> Vec<&LogicalPlan> {
         vec![]
     }
@@ -93,19 +115,19 @@ impl UserDefinedLogicalNodeCore for UpdateNode {
         )
     }
 
-    fn from_template(&self, _exprs: &[Expr], inputs: &[LogicalPlan]) -> Self {
-        assert_eq!(inputs.len(), 0, "input size inconsistent");
+    fn with_exprs_and_inputs(&self, _exprs: Vec<Expr>, inputs: Vec<LogicalPlan>) -> DFResult<Self> {
+        if !inputs.is_empty() {
+            return Err(DataFusionError::Plan(
+                "UpdateNode should have exactly one input".to_string(),
+            ));
+        }
 
-        Self {
+        Ok(Self {
             table_name: self.table_name.clone(),
             table_source: self.table_source.clone(),
             assigns: self.assigns.clone(),
             filter: self.filter.clone(),
             schema: self.schema.clone(),
-        }
-    }
-
-    fn name(&self) -> &str {
-        "Update"
+        })
     }
 }

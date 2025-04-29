@@ -44,7 +44,9 @@ impl E2eContext {
             cargo_build_cnosdb_data(&workspace_dir);
         });
 
+        #[allow(static_mut_refs)]
         let global_context = unsafe {
+            // SAFETY: The static variable is initialized by INIT_TEST.call_once.
             GLOBAL_CONTEXT
                 .clone()
                 .expect("initialized by INIT_TEST.call_once")

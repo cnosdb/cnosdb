@@ -25,11 +25,11 @@ tokio = { workspace = true, features = ["full", "tracing"] }
 pprof = { workspace = true, features = ["flamegraph", "protobuf-codec", "frame-pointer"] }
 
 [target.'cfg(not(windows))'.dependencies]
-tikv-jemalloc-ctl = { version = "0.5", features = ["use_std"] }
+tikv-jemalloc-ctl = { workspace = true, features = ["use_std"] }
 
 [target.'cfg(not(windows))'.dependencies.tikv-jemalloc-sys]
 features = ["stats", "profiling", "unprefixed_malloc_on_supported_platforms"]
-version = "0.5"
+workspace = true
 
 [features]
 default = []

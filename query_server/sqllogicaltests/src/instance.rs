@@ -6,9 +6,9 @@ use arrow::datatypes::Schema;
 use arrow::error::ArrowError;
 use arrow::record_batch::RecordBatch;
 use arrow_flight::sql::client::FlightSqlServiceClient;
-use arrow_flight::utils::flight_data_to_batches;
 use async_trait::async_trait;
 use futures::TryStreamExt;
+use nom::Parser;
 use regex::Regex;
 use reqwest::{Body, Client, Method, Request, Url};
 use sqllogictest::{ColumnType, DBOutput};
@@ -265,7 +265,7 @@ impl CnosdbClient {
         let channel = endpoint
             .connect()
             .await
-            .map_err(|e| ArrowError::IoError(format!("Cannot connect to endpoint: {e}")))?;
+            .map_err(|e| ArrowError::IpcError(format!("Cannot connect to endpoint: {e}")))?;
 
         let mut client = FlightSqlServiceClient::new(channel);
         client.set_header("TENANT", &self.tenant);
@@ -299,10 +299,10 @@ impl CnosdbClient {
         for ep in &flight_info.endpoint {
             if let Some(tkt) = &ep.ticket {
                 let stream = client.do_get(tkt.clone()).await?;
-                let flight_data = stream.try_collect::<Vec<_>>().await.map_err(|err| {
-                    ArrowError::IoError(format!("Cannot collect flight data: {:#?}", err))
+                let new_batches = stream.try_collect::<Vec<_>>().await.map_err(|err| {
+                    ArrowError::IpcError(format!("Cannot collect flight data: {:#?}", err))
                 })?;
-                batches.extend(flight_data_to_batches(&flight_data)?);
+                batches.extend(new_batches);
             };
         }
 
@@ -349,7 +349,7 @@ impl CnosdbClient {
 
     /// Parse the instruction line and set the corresponding field in the SqlClientOptions.
     pub fn apply_instruction(&mut self, line: &str) {
-        if let Ok((_, http_host)) = instruction_parse_str("HTTP_HOST")(line) {
+        if let Ok((_, http_host)) = instruction_parse_str("HTTP_HOST").parse(line) {
             if let Err(e) = self.http_url.set_host(Some(http_host)) {
                 panic!(
                     "Failed to set host '{http_host}' in http_url '{}': {e}",
@@ -358,7 +358,7 @@ impl CnosdbClient {
             }
         }
 
-        if let Ok((_, http_port)) = instruction_parse_to::<u16>("HTTP_PORT")(line) {
+        if let Ok((_, http_port)) = instruction_parse_to::<u16>("HTTP_PORT").parse(line) {
             if self.http_url.set_port(Some(http_port)).is_err() {
                 panic!(
                     "Failed to set port '{http_port}' in http_url '{}'",
@@ -367,7 +367,7 @@ impl CnosdbClient {
             }
         }
 
-        if let Ok((_, flight_host)) = instruction_parse_str("FLIGHT_HOST")(line) {
+        if let Ok((_, flight_host)) = instruction_parse_str("FLIGHT_HOST").parse(line) {
             let mut url = Url::parse(&self.flight_endpoint.uri().to_string())
                 .expect("flight_endpoint is url");
             if let Err(e) = url.set_host(Some(flight_host)) {
@@ -378,7 +378,7 @@ impl CnosdbClient {
             });
         }
 
-        if let Ok((_, flight_port)) = instruction_parse_to::<u16>("FLIGHT_PORT")(line) {
+        if let Ok((_, flight_port)) = instruction_parse_to::<u16>("FLIGHT_PORT").parse(line) {
             let mut url = Url::parse(&self.flight_endpoint.uri().to_string())
                 .expect("flight_endpoint is url");
             if url.set_port(Some(flight_port)).is_err() {
@@ -389,31 +389,31 @@ impl CnosdbClient {
             });
         }
 
-        if let Ok((_, tenant)) = instruction_parse_str("TENANT")(line) {
+        if let Ok((_, tenant)) = instruction_parse_str("TENANT").parse(line) {
             self.tenant = tenant.to_string();
         }
 
-        if let Ok((_, dbname)) = instruction_parse_identity("DATABASE")(line) {
+        if let Ok((_, dbname)) = instruction_parse_identity("DATABASE").parse(line) {
             self.database = dbname.to_string();
         }
 
-        if let Ok((_, user_name)) = instruction_parse_identity("USER_NAME")(line) {
+        if let Ok((_, user_name)) = instruction_parse_identity("USER_NAME").parse(line) {
             self.username = user_name.to_string();
         }
 
-        if let Ok((_, password)) = instruction_parse_str("PASSWORD")(line) {
+        if let Ok((_, password)) = instruction_parse_str("PASSWORD").parse(line) {
             self.password = password.to_string();
         }
 
-        if let Ok((_, dur)) = instruction_parse_str("TIMEOUT")(line) {
+        if let Ok((_, dur)) = instruction_parse_str("TIMEOUT").parse(line) {
             self.timeout = humantime::parse_duration(dur).ok()
         }
 
-        if let Ok((_, precision)) = instruction_parse_identity("PRECISION")(line) {
+        if let Ok((_, precision)) = instruction_parse_identity("PRECISION").parse(line) {
             self.precision = Some(precision.to_string())
         }
 
-        if let Ok((_, chunked)) = instruction_parse_to::<bool>("CHUNKED")(line) {
+        if let Ok((_, chunked)) = instruction_parse_to::<bool>("CHUNKED").parse(line) {
             self.chunked = Some(chunked)
         }
     }

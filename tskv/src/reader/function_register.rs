@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use datafusion::error::{DataFusionError, Result};
 use datafusion::execution::FunctionRegistry;
+use datafusion::logical_expr::planner::ExprPlanner;
 use datafusion::logical_expr::{AggregateUDF, ScalarUDF, WindowUDF};
 
 pub struct NoRegistry;
@@ -28,5 +29,9 @@ impl FunctionRegistry for NoRegistry {
         Err(DataFusionError::Plan(
             format!("No function registry provided to deserialize, so can not deserialize User Defined Window Function '{name}'"))
         )
+    }
+
+    fn expr_planners(&self) -> Vec<Arc<dyn ExprPlanner>> {
+        vec![]
     }
 }

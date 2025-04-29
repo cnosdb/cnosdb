@@ -1,19 +1,63 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
+use datafusion::error::{DataFusionError, Result as DFResult};
+use datafusion::logical_expr::{ColumnarValue, ScalarFunctionArgs, ScalarUDFImpl, Signature};
+use models::arrow::{DataType, Field};
 use serde::Deserialize;
-use spi::DFResult;
 
-use crate::extension::expr::ts_gen_func::utils::get_arg;
+use crate::extension::expr::ts_gen_func::utils::{full_signatures, get_arg};
+
+#[derive(Debug)]
+pub struct TimestampRepairFunc {
+    signature: Signature,
+}
+
+impl Default for TimestampRepairFunc {
+    fn default() -> Self {
+        Self {
+            signature: full_signatures(),
+        }
+    }
+}
+
+impl ScalarUDFImpl for TimestampRepairFunc {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn name(&self) -> &str {
+        "timestamp_repair"
+    }
+
+    fn signature(&self) -> &Signature {
+        &self.signature
+    }
+
+    fn return_type(&self, arg_types: &[DataType]) -> DFResult<DataType> {
+        Ok(DataType::List(Arc::new(Field::new_list_field(
+            arg_types[1].clone(),
+            true,
+        ))))
+    }
+
+    fn invoke_with_args(&self, _args: ScalarFunctionArgs) -> DFResult<ColumnarValue> {
+        Err(DataFusionError::Plan(format!(
+            "{} can only be used in the SELECT clause as the top-level expression",
+            self.name()
+        )))
+    }
+}
 
 pub fn compute(
     timestamps: &mut [i64],
-    fields: &mut [Vec<f64>],
+    fields: &mut [f64],
     arg_str: Option<&str>,
 ) -> DFResult<(Vec<i64>, Vec<f64>)> {
     let arg = get_arg(arg_str)?;
     let (interval_mode, start_mode) = get_interval_mode_and_start_mode_from_arg(&arg)?;
     let (timestamps_repaired, values_repaired) =
-        timestamps_repair(timestamps, &mut fields[0], interval_mode, start_mode);
+        timestamps_repair(timestamps, fields, interval_mode, start_mode);
     Ok((timestamps_repaired, values_repaired))
 }
 
@@ -33,7 +77,7 @@ enum IntervalMode {
 }
 
 impl IntervalMode {
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn try_from_str(s: &str) -> Option<Self> {
         match s.to_ascii_lowercase().as_str() {
             "mode" => Some(IntervalMode::Mode),
             "cluster" => Some(IntervalMode::Cluster),
@@ -75,7 +119,7 @@ fn get_interval_mode_and_start_mode_from_arg(arg: &Arg) -> DFResult<(IntervalMod
         }
         IntervalMode::Interval(i)
     } else if let Some(m) = &arg.method {
-        IntervalMode::from_str(m).ok_or_else(|| {
+        IntervalMode::try_from_str(m).ok_or_else(|| {
             datafusion::error::DataFusionError::Execution(format!("Invalid method: {}", m))
         })?
     } else {

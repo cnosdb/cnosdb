@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use datafusion::common::tree_node::{Transformed, TreeNode};
-use datafusion::common::Result as DFResult;
+use datafusion::common::tree_node::{Transformed, TransformedResult as _, TreeNode};
+use datafusion::common::{Column, Result as DFResult};
 use datafusion::config::ConfigOptions;
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::{Extension, LogicalPlan, LogicalPlanBuilder};
@@ -18,7 +18,7 @@ use crate::extension::logical::plan_node::update::UpdateNode;
 use crate::extension::logical::plan_node::update_tag::UpdateTagPlanNode;
 use crate::extension::utils::{downcast_plan_node, downcast_table_source};
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 #[non_exhaustive]
 pub struct TransformUpdateRule {}
 
@@ -30,7 +30,7 @@ impl TransformUpdateRule {
 
 impl AnalyzerRule for TransformUpdateRule {
     fn analyze(&self, plan: LogicalPlan, _config: &ConfigOptions) -> DFResult<LogicalPlan> {
-        plan.transform_up(&analyze_internal)
+        plan.transform_up(&analyze_internal).data()
     }
 
     fn name(&self) -> &str {
@@ -63,7 +63,7 @@ fn analyze_internal(plan: LogicalPlan) -> DFResult<Transformed<LogicalPlan>> {
                     let columns = assigns
                         .iter()
                         .map(|(col, _)| {
-                            schema.column(&col.name).ok_or_else(|| {
+                            schema.get_column_by_name(&col.name).ok_or_else(|| {
                                 DataFusionError::External(Box::new(QueryError::Internal {
                                     reason: format!("Column {} not found in table", col.name),
                                 }))
@@ -73,17 +73,17 @@ fn analyze_internal(plan: LogicalPlan) -> DFResult<Transformed<LogicalPlan>> {
 
                     let is_update_time = columns.iter().all(|c| c.column_type.is_time());
                     if is_update_time {
-                        return update_time().map(Transformed::Yes);
+                        return update_time().map(Transformed::yes);
                     }
 
                     let is_update_tag = columns.iter().all(|c| c.column_type.is_tag());
                     if is_update_tag {
-                        return update_tag(update_node, schema).map(Transformed::Yes);
+                        return update_tag(update_node, schema).map(Transformed::yes);
                     }
 
                     let is_update_field = columns.iter().all(|c| c.column_type.is_field());
                     if is_update_field {
-                        return update_field(update_node).map(Transformed::Yes);
+                        return update_field(update_node).map(Transformed::yes);
                     }
 
                     return Err(DataFusionError::External(Box::new(AnalyzerSnafu {
@@ -102,7 +102,7 @@ fn analyze_internal(plan: LogicalPlan) -> DFResult<Transformed<LogicalPlan>> {
         }
     }
 
-    Ok(Transformed::No(plan))
+    Ok(Transformed::no(plan))
 }
 
 /// 不支持update time
@@ -125,9 +125,9 @@ fn update_tag(update_node: &UpdateNode, schema: Arc<TskvTableSchema>) -> DFResul
     } = update_node;
 
     // where 条件中不能包含 field 列/time 列
-    let filter_using_columns = filter.to_columns()?;
+    let filter_using_columns = filter.column_refs();
     for col in filter_using_columns {
-        match schema.column(&col.name) {
+        match schema.get_column_by_name(&col.name) {
             Some(col) => {
                 if !col.column_type.is_tag() {
                     return Err(DataFusionError::External(Box::new(
@@ -168,7 +168,7 @@ fn update_tag(update_node: &UpdateNode, schema: Arc<TskvTableSchema>) -> DFResul
         .schema()
         .fields()
         .iter()
-        .map(|f| Expr::Column(f.qualified_column()))
+        .map(|f| Expr::Column(Column::from_qualified_name(f.name())))
         .collect::<Vec<Expr>>();
     let affected_row_expr = affected_row_expr(input_exprs);
 

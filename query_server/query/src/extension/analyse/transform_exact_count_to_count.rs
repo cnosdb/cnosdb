@@ -1,19 +1,21 @@
 use std::sync::Arc;
 
-use datafusion::common::tree_node::{Transformed, TreeNode};
+use datafusion::common::tree_node::{Transformed, TransformedResult as _, TreeNode};
 use datafusion::config::ConfigOptions;
 use datafusion::error::Result;
-use datafusion::logical_expr::expr::AggregateFunction;
-use datafusion::logical_expr::{aggregate_function, Aggregate, LogicalPlan};
+use datafusion::functions_aggregate::count::Count;
+use datafusion::logical_expr::expr::{AggregateFunction, AggregateFunctionParams};
+use datafusion::logical_expr::{Aggregate, AggregateUDF, LogicalPlan};
 use datafusion::optimizer::analyzer::AnalyzerRule;
 use datafusion::prelude::Expr;
 
 /// convert exact_count to count, but unsupported pushdown
+#[derive(Debug)]
 pub struct TransformExactCountToCountRule {}
 
 impl AnalyzerRule for TransformExactCountToCountRule {
     fn analyze(&self, plan: LogicalPlan, _config: &ConfigOptions) -> Result<LogicalPlan> {
-        plan.transform_up(&analyze_internal)
+        plan.transform_up(&analyze_internal).data()
     }
 
     fn name(&self) -> &str {
@@ -29,12 +31,12 @@ fn analyze_internal(plan: LogicalPlan) -> Result<Transformed<LogicalPlan>> {
                 let new_aggregate = transform_aggregation(aggregate.clone())?;
                 projection.input = Arc::new(LogicalPlan::Aggregate(new_aggregate));
             }
-            return Ok(Transformed::Yes(LogicalPlan::Projection(projection)));
+            return Ok(Transformed::yes(LogicalPlan::Projection(projection)));
         }
-        return Ok(Transformed::No(LogicalPlan::Projection(projection)));
+        return Ok(Transformed::no(LogicalPlan::Projection(projection)));
     }
 
-    Ok(Transformed::No(plan))
+    Ok(Transformed::no(plan))
 }
 
 /// Transform logical plan's expressions, return true if any transformation is done:
@@ -58,14 +60,17 @@ fn transform_aggregation(aggregate: Aggregate) -> Result<Aggregate> {
     let mut new_aggr_exprs = Vec::with_capacity(aggregate.aggr_expr.len());
     for aggr_expr in aggregate.aggr_expr {
         match aggr_expr {
-            Expr::AggregateUDF(udf) if udf.fun.name == "exact_count" => {
+            Expr::AggregateFunction(udaf) if udaf.func.name() == "exact_count" => {
                 let new_function = AggregateFunction {
-                    fun: aggregate_function::AggregateFunction::Count,
-                    args: udf.args,
-                    distinct: false,
-                    filter: udf.filter,
-                    order_by: udf.order_by,
-                    can_be_pushed_down: false,
+                    func: Arc::new(AggregateUDF::new_from_impl(Count::new())),
+                    params: AggregateFunctionParams {
+                        args: udaf.params.args,
+                        distinct: false,
+                        filter: udaf.params.filter,
+                        order_by: udaf.params.order_by,
+                        null_treatment: udaf.params.null_treatment,
+                        can_be_pushed_down: false,
+                    },
                 };
                 new_aggr_exprs.push(Expr::AggregateFunction(new_function));
             }
@@ -144,10 +149,8 @@ mod test {
                 .sql("SELECT exACT_CoUNt(a), b FROM t GROUP BY b")
                 .await
                 .unwrap();
-            let (plan_2, was_transformed) = analyze_internal(df.logical_plan().clone())
-                .unwrap()
-                .into_pair();
-            assert!(was_transformed);
+            let plan_2 = analyze_internal(df.logical_plan().clone()).unwrap();
+            assert!(plan_2.transformed);
             assert_eq!(
                 format!("{plan_2:?}"),
                 "Projection: COUNT(t.a), t.b\
@@ -160,10 +163,8 @@ mod test {
                 .sql("SELECT count(a), b, exact_count(c), max(d) FROM t GROUP BY b")
                 .await
                 .unwrap();
-            let (plan_2, was_transformed) = analyze_internal(df.logical_plan().clone())
-                .unwrap()
-                .into_pair();
-            assert!(was_transformed);
+            let plan_2 = analyze_internal(df.logical_plan().clone()).unwrap();
+            assert!(plan_2.transformed);
             assert_eq!(
                 format!("{plan_2:?}"),
                 "Projection: COUNT(t.a), t.b, COUNT(t.c), MAX(t.d)\

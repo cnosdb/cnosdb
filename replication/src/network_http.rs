@@ -1,131 +1,96 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::convert::Infallible;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use tracing::error;
-use warp::{hyper, Filter};
+use axum::extract::{Json, State};
+use axum::http::StatusCode;
+use axum::{routing, Router};
+use http_body::Frame;
 
-use crate::errors::MsgInvalidSnafu;
 use crate::raft_node::RaftNode;
 use crate::{RaftNodeId, RaftNodeInfo};
 
-pub struct RaftHttpAdmin {
-    node: Arc<RaftNode>,
+pub fn create_router(raft_node: Arc<RaftNode>) -> Router {
+    Router::new()
+        .route("/init", routing::any(init_raft))
+        .route("/add-learner", routing::any(add_learner))
+        .route("/change-membership", routing::any(change_membership))
+        .route("/metrics", routing::any(metrics))
+        .with_state(raft_node)
 }
 
-impl RaftHttpAdmin {
-    pub fn new(node: Arc<RaftNode>) -> Self {
-        Self { node }
-    }
-
-    pub fn routes(
-        &self,
-    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-        self.init_raft()
-            .or(self.add_learner())
-            .or(self.change_membership())
-            .or(self.metrics())
-    }
-
-    fn with_raft_node(
-        &self,
-    ) -> impl Filter<Extract = (Arc<RaftNode>,), Error = Infallible> + Clone {
-        let node = self.node.clone();
-
-        warp::any().map(move || node.clone())
-    }
-
-    fn init_raft(
-        &self,
-    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-        warp::path!("init")
-            .and(self.with_raft_node())
-            .and_then(|node: Arc<RaftNode>| async move {
-                let rsp = match node.raft_init(BTreeMap::new()).await {
-                    Ok(_) => Ok(()),
-                    Err(err) => Err(err.to_string()),
-                };
-
-                let data = serde_json::to_string(&rsp).unwrap_or_default();
-                let res: Result<String, warp::Rejection> = Ok(data);
-
-                res
-            })
-    }
-
-    fn add_learner(
-        &self,
-    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-        warp::path!("add-learner")
-            .and(warp::body::bytes())
-            .and(self.with_raft_node())
-            .and_then(|req: hyper::body::Bytes, node: Arc<RaftNode>| async move {
-                let req: (RaftNodeId, String) = serde_json::from_slice(&req)
-                    .map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())
-                    .map_err(|e| {
-                        error!("Add learner failed: {:?}", e);
-                        warp::reject::custom(e)
-                    })?;
-
-                let id = req.0;
-                let addr = req.1;
-                let info = RaftNodeInfo {
-                    group_id: 2222,
-                    address: addr,
-                };
-
-                let rsp = node.raw_raft().add_learner(id, info, true).await;
-                let data = serde_json::to_string(&rsp).unwrap_or_default();
-                let res: Result<String, warp::Rejection> = Ok(data);
-
-                res
-            })
-    }
-
-    fn change_membership(
-        &self,
-    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-        warp::path!("change-membership")
-            .and(warp::body::bytes())
-            .and(self.with_raft_node())
-            .and_then(|req: hyper::body::Bytes, node: Arc<RaftNode>| async move {
-                let req: BTreeSet<RaftNodeId> = serde_json::from_slice(&req)
-                    .map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())
-                    .map_err(|e| {
-                        error!("Change membership failed: {:?}", e);
-                        warp::reject::custom(e)
-                    })?;
-
-                let rsp = node.raw_raft().change_membership(req, false).await;
-                let data = serde_json::to_string(&rsp).unwrap_or_default();
-                let res: Result<String, warp::Rejection> = Ok(data);
-
-                res
-            })
-    }
-
-    fn metrics(
-        &self,
-    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-        warp::path!("metrics").and(self.with_raft_node()).and_then(
-            |node: Arc<RaftNode>| async move {
-                let status = node.raft_metrics();
-                let data = serde_json::to_string(&status).unwrap_or_default();
-                let res: Result<String, warp::Rejection> = Ok(data);
-
-                res
-            },
-        )
+async fn init_raft(State(raft_node): State<Arc<RaftNode>>) -> (StatusCode, String) {
+    let ret = match raft_node.raft_init(BTreeMap::new()).await {
+        Ok(_) => Ok(()),
+        Err(err) => Err(err.to_string()),
+    };
+    match serde_json::to_string(&ret) {
+        Ok(data) => (StatusCode::OK, data),
+        Err(e) => {
+            trace::error!("Failed to serialize response({ret:?}): {e}");
+            (StatusCode::INTERNAL_SERVER_ERROR, String::new())
+        }
     }
 }
 
-// ------------------------------------------------------------------------- //
+async fn add_learner(
+    State(raft_node): State<Arc<RaftNode>>,
+    Json((id, address)): Json<(RaftNodeId, String)>,
+) -> (StatusCode, String) {
+    let node = RaftNodeInfo {
+        group_id: 2222, // TODO(zipper): why 2222 ?
+        address,
+    };
+
+    let ret = raft_node.raw_raft().add_learner(id, node, true).await;
+    match serde_json::to_string(&ret) {
+        Ok(data) => (StatusCode::OK, data),
+        Err(e) => {
+            trace::error!("Failed to serialize response({ret:?}): {e}");
+            (StatusCode::INTERNAL_SERVER_ERROR, String::new())
+        }
+    }
+}
+
+async fn change_membership(
+    State(raft_node): State<Arc<RaftNode>>,
+    Json(members): Json<BTreeSet<RaftNodeId>>,
+) -> (StatusCode, String) {
+    let ret = raft_node.raw_raft().change_membership(members, false).await;
+    match serde_json::to_string(&ret) {
+        Ok(data) => (StatusCode::OK, data),
+        Err(e) => {
+            trace::error!("Failed to serialize response({ret:?}): {e}");
+            (StatusCode::INTERNAL_SERVER_ERROR, String::new())
+        }
+    }
+}
+
+async fn metrics(State(raft_node): State<Arc<RaftNode>>) -> (StatusCode, String) {
+    let raft_metrics = raft_node.raft_metrics();
+    match serde_json::to_string(&raft_metrics) {
+        Ok(data) => (StatusCode::OK, data),
+        Err(e) => {
+            trace::error!("Failed to serialize response({raft_metrics:?}): {e}");
+            (StatusCode::INTERNAL_SERVER_ERROR, String::new())
+        }
+    }
+}
+
 pub type SyncSendError = Box<dyn std::error::Error + Send + Sync + 'static>;
+
 pub enum EitherBody<A, B> {
     Left(A),
     Right(B),
+}
+
+impl<A, B> EitherBody<A, B> {
+    fn map_opt_ret<T, U: Into<SyncSendError>>(
+        err: Option<Result<T, U>>,
+    ) -> Option<Result<T, SyncSendError>> {
+        err.map(|e| e.map_err(Into::into))
+    }
 }
 
 impl<A, B> http_body::Body for EitherBody<A, B>
@@ -145,29 +110,13 @@ where
         }
     }
 
-    fn poll_data(
+    fn poll_frame(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
+    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         match self.get_mut() {
-            EitherBody::Left(b) => Pin::new(b).poll_data(cx).map(map_option_err),
-            EitherBody::Right(b) => Pin::new(b).poll_data(cx).map(map_option_err),
+            EitherBody::Left(b) => Pin::new(b).poll_frame(cx).map(Self::map_opt_ret),
+            EitherBody::Right(b) => Pin::new(b).poll_frame(cx).map(Self::map_opt_ret),
         }
     }
-
-    fn poll_trailers(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<Option<http::HeaderMap>, Self::Error>> {
-        match self.get_mut() {
-            EitherBody::Left(b) => Pin::new(b).poll_trailers(cx).map_err(Into::into),
-            EitherBody::Right(b) => Pin::new(b).poll_trailers(cx).map_err(Into::into),
-        }
-    }
-}
-
-fn map_option_err<T, U: Into<SyncSendError>>(
-    err: Option<Result<T, U>>,
-) -> Option<Result<T, SyncSendError>> {
-    err.map(|e| e.map_err(Into::into))
 }

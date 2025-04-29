@@ -9,11 +9,12 @@ use datafusion::arrow::datatypes::{SchemaRef, TimeUnit};
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::error::{DataFusionError, Result as DFResult};
 use datafusion::execution::context::TaskContext;
-use datafusion::physical_expr::PhysicalSortExpr;
+use datafusion::physical_expr::EquivalenceProperties;
+use datafusion::physical_plan::execution_plan::{Boundedness, EmissionType};
 use datafusion::physical_plan::metrics::{ExecutionPlanMetricsSet, MetricsSet};
 use datafusion::physical_plan::{
-    DisplayFormatType, ExecutionPlan, Partitioning, RecordBatchStream, SendableRecordBatchStream,
-    Statistics,
+    DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties, RecordBatchStream,
+    SendableRecordBatchStream, Statistics,
 };
 use futures::{Stream, StreamExt};
 use models::codec::Encoding;
@@ -41,6 +42,7 @@ pub struct TskvExec {
     filter: PredicateRef,
     coord: CoordinatorRef,
     splits: Vec<PlacedSplit>,
+    properties: PlanProperties,
 
     /// Execution metrics
     metrics: ExecutionPlanMetricsSet,
@@ -55,13 +57,19 @@ impl TskvExec {
         splits: Vec<PlacedSplit>,
     ) -> Self {
         let metrics = ExecutionPlanMetricsSet::new();
-
+        let partitioning = Partitioning::UnknownPartitioning(splits.len());
         Self {
             table_schema,
-            proj_schema,
+            proj_schema: proj_schema.clone(),
             filter,
             coord,
             splits,
+            properties: PlanProperties::new(
+                EquivalenceProperties::new(proj_schema),
+                partitioning,
+                EmissionType::Both,
+                Boundedness::Bounded,
+            ),
             metrics,
         }
     }
@@ -71,6 +79,10 @@ impl TskvExec {
 }
 
 impl ExecutionPlan for TskvExec {
+    fn name(&self) -> &str {
+        "TskvExec"
+    }
+
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -79,15 +91,11 @@ impl ExecutionPlan for TskvExec {
         self.proj_schema.clone()
     }
 
-    fn output_partitioning(&self) -> Partitioning {
-        Partitioning::UnknownPartitioning(self.splits.len())
+    fn properties(&self) -> &PlanProperties {
+        &self.properties
     }
 
-    fn output_ordering(&self) -> Option<&[PhysicalSortExpr]> {
-        None
-    }
-
-    fn children(&self) -> Vec<Arc<dyn ExecutionPlan>> {
+    fn children(&self) -> Vec<&Arc<dyn ExecutionPlan>> {
         vec![]
     }
 
@@ -101,6 +109,7 @@ impl ExecutionPlan for TskvExec {
             filter: self.filter.clone(),
             coord: self.coord.clone(),
             splits: self.splits.clone(),
+            properties: self.properties.clone(),
             metrics: self.metrics.clone(),
         }))
     }
@@ -147,6 +156,17 @@ impl ExecutionPlan for TskvExec {
         Ok(Box::pin(table_stream))
     }
 
+    fn statistics(&self) -> DFResult<Statistics> {
+        // TODO
+        Ok(Statistics::default())
+    }
+
+    fn metrics(&self) -> Option<MetricsSet> {
+        Some(self.metrics.clone_inner())
+    }
+}
+
+impl DisplayAs for TskvExec {
     fn fmt_as(&self, t: DisplayFormatType, f: &mut Formatter) -> std::fmt::Result {
         match t {
             DisplayFormatType::Default | DisplayFormatType::Verbose => {
@@ -165,16 +185,11 @@ impl ExecutionPlan for TskvExec {
                     fields.join(","),
                 )
             }
+            DisplayFormatType::TreeRender => {
+                // TODO(zipper): implement this.
+                write!(f, "")
+            }
         }
-    }
-
-    fn statistics(&self) -> Statistics {
-        // TODO
-        Statistics::default()
-    }
-
-    fn metrics(&self) -> Option<MetricsSet> {
-        Some(self.metrics.clone_inner())
     }
 }
 
@@ -233,7 +248,8 @@ impl TableScanStream {
         for item in proj_schema.fields().iter() {
             let field_name = item.name();
             if field_name == TIME_FIELD_NAME {
-                let (encoding, column_type) = match table_schema.column(TIME_FIELD_NAME) {
+                let (encoding, column_type) = match table_schema.get_column_by_name(TIME_FIELD_NAME)
+                {
                     None => (Encoding::Default, ColumnType::Time(TimeUnit::Nanosecond)),
                     Some(v) => (v.encoding, v.column_type.clone()),
                 };
@@ -246,7 +262,7 @@ impl TableScanStream {
                 continue;
             }
 
-            if let Some(v) = table_schema.column(field_name) {
+            if let Some(v) = table_schema.get_column_by_name(field_name) {
                 proj_fileds.push(v.clone());
             } else {
                 return Err(CommonSnafu {
@@ -274,7 +290,7 @@ impl TableScanStream {
             None,
             proj_schema.clone(),
             proj_table_schema.into(),
-            table_schema.meta(),
+            table_schema.build_meta(),
         );
 
         let span_ctx = span.context();

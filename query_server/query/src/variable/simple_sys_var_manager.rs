@@ -27,7 +27,7 @@ impl VarProvider for SimpleSystemVarManager {
     fn get_type(&self, var_names: &[String]) -> Option<DataType> {
         let name = normalize_var_name(&var_names[0]);
 
-        self.vars.get(&name).map(ScalarValue::get_datatype)
+        self.vars.get(&name).map(ScalarValue::data_type)
     }
 }
 

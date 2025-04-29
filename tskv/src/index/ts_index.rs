@@ -399,7 +399,7 @@ impl TSIndex {
         table_schema: &TskvTableSchema,
         tag_domains: &ColumnDomains<String>,
     ) -> Result<Vec<u32>, TskvError> {
-        let tab = table_schema.name.as_str();
+        let tab = table_schema.name.as_ref();
         if tag_domains.is_all() {
             // Match all records
             trace::debug!("pushed tags filter is All.");
@@ -414,7 +414,7 @@ impl TSIndex {
             let mut series_ids = vec![];
             for (k, v) in domains.iter() {
                 let id = table_schema
-                    .column(k)
+                    .get_column_by_name(k)
                     .context(ColumnNotFoundSnafu {
                         column: k.to_string(),
                     })?
@@ -574,7 +574,7 @@ pub fn filter_range_to_value_range(range: &Range) -> impl RangeBounds<Vec<u8>> {
 
 pub fn scalar_value_to_tag_value(v: &ScalarValue) -> Vec<u8> {
     // Tag can only be of string type
-    assert_eq!(DataType::Utf8, v.get_datatype());
+    assert_eq!(DataType::Utf8, v.data_type());
     unsafe { utf8_from(v).unwrap_unchecked().into() }
 }
 
@@ -651,10 +651,14 @@ fn encode_series_key_with_prefix(prefix: &str, tab: &str, tags: &[Tag]) -> Vec<u
 
 #[cfg(test)]
 mod test {
+    use std::collections::HashMap;
     use std::time::Duration;
 
     use datafusion::arrow::datatypes::{DataType, Field, Schema};
-    use models::schema::external_table_schema::ExternalTableSchema;
+    use models::schema::external_table_schema::{
+        ExternalTableSchema, EXTERNAL_TABLE_OPTION_COMPRESSION,
+        EXTERNAL_TABLE_OPTION_CSV_DELIMITER, EXTERNAL_TABLE_OPTION_CSV_HAS_HEADER,
+    };
     use models::{SeriesId, SeriesKey, Tag};
 
     use super::TSIndex;
@@ -850,16 +854,27 @@ mod test {
         ]);
 
         let schema = ExternalTableSchema {
-            tenant: "cnosdb".to_string(),
-            db: "hello".to_string(),
-            name: "world".to_string(),
-            file_compression_type: "test".to_string(),
+            tenant: "cnosdb".into(),
+            db: "hello".into(),
+            name: "world".into(),
             file_type: "1".to_string(),
             location: "2".to_string(),
+            options: HashMap::from([
+                (
+                    EXTERNAL_TABLE_OPTION_CSV_HAS_HEADER.to_string(),
+                    "true".to_string(),
+                ),
+                (
+                    EXTERNAL_TABLE_OPTION_CSV_DELIMITER.to_string(),
+                    "5".to_string(),
+                ),
+                (
+                    EXTERNAL_TABLE_OPTION_COMPRESSION.to_string(),
+                    "test".to_string(),
+                ),
+            ]),
             target_partitions: 3,
             table_partition_cols: vec![("4".to_string(), DataType::UInt8)],
-            has_header: true,
-            delimiter: 5,
             schema,
         };
 

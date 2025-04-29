@@ -48,12 +48,12 @@ pub struct TsmWriter {
     // todo: table object id bloom filter
     // table_bloom_filter: BloomFilter,
     writer: Box<FileStreamWriter>,
-    table_schemas: HashMap<String, TskvTableSchemaRef>,
+    table_schemas: HashMap<Arc<str>, TskvTableSchemaRef>,
 
     /// <table < series, Chunk>>
-    page_specs: BTreeMap<String, BTreeMap<SeriesId, Chunk>>,
+    page_specs: BTreeMap<Arc<str>, BTreeMap<SeriesId, Chunk>>,
     /// <table, ChunkGroup>
-    chunk_specs: BTreeMap<String, ChunkGroup>,
+    chunk_specs: BTreeMap<Arc<str>, ChunkGroup>,
     /// [ChunkGroupWriteSpec]
     chunk_group_specs: ChunkGroupMeta,
     footer: Footer,
@@ -491,7 +491,7 @@ impl TsmWriter {
         });
         for chunk in meta.chunk().values() {
             page_specs
-                .entry(chunk.table_name().to_string())
+                .entry(chunk.table_name_owned())
                 .or_insert_with(BTreeMap::new)
                 .insert(chunk.series_id(), chunk.as_ref().clone());
         }
@@ -582,7 +582,7 @@ pub mod test {
         );
         let schema = Arc::new(schema);
         let data1 = RecordBatch::try_new(
-            schema.to_record_data_schema(),
+            schema.build_arrow_schema_without_tags(),
             vec![
                 ts_column(vec![1, 2, 3]),
                 i64_column(vec![1, 2, 3]),
@@ -603,7 +603,7 @@ pub mod test {
         tsm_writer.finish().await.unwrap();
         let tsm_reader = TsmReader::open(tsm_writer.path).await.unwrap();
         let pages2 = tsm_reader.read_series_pages(1, 0).await.unwrap();
-        let data2 = decode_pages(pages2, schema.meta(), None).unwrap();
+        let data2 = decode_pages(pages2, schema.build_meta(), None).unwrap();
         assert_eq!(data1, data2);
     }
 
@@ -642,7 +642,7 @@ pub mod test {
         );
         let schema = Arc::new(schema);
         let data1 = RecordBatch::try_new(
-            schema.to_record_data_schema(),
+            schema.build_arrow_schema_without_tags(),
             vec![
                 ts_column(vec![1, 2, 3]),
                 i64_column(vec![1, 2, 3]),
@@ -663,7 +663,7 @@ pub mod test {
         tsm_writer.finish().await.unwrap();
         let tsm_reader = TsmReader::open(tsm_writer.path).await.unwrap();
         let pages2 = tsm_reader.read_series_pages(1, 0).await.unwrap();
-        let data2 = decode_pages(pages2, schema.meta(), None).unwrap();
+        let data2 = decode_pages(pages2, schema.build_meta(), None).unwrap();
         assert_eq!(data1, data2);
     }
 
@@ -702,7 +702,7 @@ pub mod test {
         );
         let schema = Arc::new(schema);
         let data1 = RecordBatch::try_new(
-            schema.to_record_data_schema(),
+            schema.build_arrow_schema_without_tags(),
             vec![
                 ts_column(vec![1, 2, 3]),
                 i64_column(vec![1, 2, 3]),

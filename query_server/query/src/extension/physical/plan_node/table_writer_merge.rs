@@ -6,11 +6,13 @@ use async_trait::async_trait;
 use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::error::Result;
 use datafusion::execution::context::TaskContext;
-use datafusion::physical_expr::PhysicalSortExpr;
-use datafusion::physical_plan::aggregates::{AggregateExec, AggregateMode, PhysicalGroupBy};
+use datafusion::physical_plan::aggregates::{
+    AggregateExec, AggregateMode, AggregateStream, PhysicalGroupBy,
+};
 use datafusion::physical_plan::metrics::MetricsSet;
+use datafusion::physical_plan::udaf::AggregateFunctionExpr;
 use datafusion::physical_plan::{
-    AggregateExpr, AggregateStream, DisplayFormatType, Distribution, ExecutionPlan, Partitioning,
+    DisplayAs, DisplayFormatType, Distribution, ExecutionPlan, PlanProperties,
     SendableRecordBatchStream, Statistics,
 };
 use trace::debug;
@@ -19,7 +21,7 @@ pub struct TableWriterMergeExec {
     // input: Arc<dyn ExecutionPlan>,
     // /// Execution metrics
     // metrics: ExecutionPlanMetricsSet,
-    aggr_expr: Vec<Arc<dyn AggregateExpr>>,
+    aggr_expr: Vec<Arc<AggregateFunctionExpr>>,
     // schema: SchemaRef,
     agg_exec: Arc<AggregateExec>,
 }
@@ -27,7 +29,7 @@ pub struct TableWriterMergeExec {
 impl TableWriterMergeExec {
     pub fn try_new(
         input: Arc<dyn ExecutionPlan>,
-        aggr_expr: Vec<Arc<dyn AggregateExpr>>,
+        aggr_expr: Vec<Arc<AggregateFunctionExpr>>,
     ) -> Result<Self> {
         let agg_exec = create_aggregate_exec(input, AggregateMode::Single, &aggr_expr)?;
 
@@ -46,6 +48,10 @@ impl Debug for TableWriterMergeExec {
 
 #[async_trait]
 impl ExecutionPlan for TableWriterMergeExec {
+    fn name(&self) -> &str {
+        "TableWriterMergeExec"
+    }
+
     /// Return a reference to Any that can be used for downcasting
     fn as_any(&self) -> &dyn Any {
         self
@@ -55,15 +61,11 @@ impl ExecutionPlan for TableWriterMergeExec {
         self.agg_exec.schema()
     }
 
-    fn output_partitioning(&self) -> Partitioning {
-        self.agg_exec.output_partitioning()
+    fn properties(&self) -> &PlanProperties {
+        self.agg_exec.properties()
     }
 
-    fn output_ordering(&self) -> Option<&[PhysicalSortExpr]> {
-        self.agg_exec.output_ordering()
-    }
-
-    fn benefits_from_input_partitioning(&self) -> bool {
+    fn benefits_from_input_partitioning(&self) -> Vec<bool> {
         self.agg_exec.benefits_from_input_partitioning()
     }
 
@@ -71,7 +73,7 @@ impl ExecutionPlan for TableWriterMergeExec {
         vec![Distribution::SinglePartition]
     }
 
-    fn children(&self) -> Vec<Arc<dyn ExecutionPlan>> {
+    fn children(&self) -> Vec<&Arc<dyn ExecutionPlan>> {
         self.agg_exec.children()
     }
 
@@ -101,6 +103,16 @@ impl ExecutionPlan for TableWriterMergeExec {
         )?))
     }
 
+    fn metrics(&self) -> Option<MetricsSet> {
+        self.agg_exec.metrics()
+    }
+
+    fn statistics(&self) -> Result<Statistics> {
+        self.agg_exec.statistics()
+    }
+}
+
+impl DisplayAs for TableWriterMergeExec {
     fn fmt_as(&self, t: DisplayFormatType, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match t {
             DisplayFormatType::Default | DisplayFormatType::Verbose => {
@@ -112,31 +124,25 @@ impl ExecutionPlan for TableWriterMergeExec {
                     .collect();
                 write!(f, "TableWriterMergeExec: expr=[{}]", exprs.join(","))
             }
+            DisplayFormatType::TreeRender => {
+                // TODO(zipper): implement this.
+                write!(f, "")
+            }
         }
-    }
-
-    fn metrics(&self) -> Option<MetricsSet> {
-        self.agg_exec.metrics()
-    }
-
-    fn statistics(&self) -> Statistics {
-        self.agg_exec.statistics()
     }
 }
 
 fn create_aggregate_exec(
     input: Arc<dyn ExecutionPlan>,
     mode: AggregateMode,
-    aggr_expr: &[Arc<dyn AggregateExpr>],
+    aggr_expr: &[Arc<AggregateFunctionExpr>],
 ) -> Result<AggregateExec> {
     let filter_expr = vec![None; aggr_expr.len()];
-    let order_by_expr = vec![None; aggr_expr.len()];
     AggregateExec::try_new(
         mode,
         PhysicalGroupBy::default(),
         aggr_expr.to_vec(),
         filter_expr,
-        order_by_expr,
         input.clone(),
         input.schema(),
     )

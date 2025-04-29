@@ -29,7 +29,6 @@ mod tests {
     ///
     /// If the given runtime is none, get_tskv will create a new runtime and
     /// put into the return value, or else the given runtime will be returned.
-
     fn get_config(dir: impl AsRef<Path>) -> Config {
         let dir = dir.as_ref();
         let mut global_config = Config::for_test();
@@ -91,14 +90,20 @@ mod tests {
     pub fn kill_process(process_name: &str) {
         println!("- Killing processes {process_name}...");
         let system = System::new_with_specifics(
-            RefreshKind::new().with_processes(ProcessRefreshKind::new()),
+            RefreshKind::nothing().with_processes(ProcessRefreshKind::everything()),
         );
         for (pid, process) in system.processes() {
             if process.name() == process_name {
                 match process.kill_with(sysinfo::Signal::Kill) {
-                    Some(true) => println!("- Killed process {pid} ('{}')", process.name()),
+                    Some(true) => println!(
+                        "- Killed process {pid} ('{}')",
+                        process.name().to_string_lossy()
+                    ),
                     Some(false) => {
-                        println!("- Failed killing process {pid} ('{}')", process.name())
+                        println!(
+                            "- Failed killing process {pid} ('{}')",
+                            process.name().to_string_lossy()
+                        )
                     }
                     None => println!("- Kill with signal 'Kill' isn't supported on this platform"),
                 }

@@ -6,7 +6,9 @@ use std::task::{Context, Poll};
 
 use arrow::datatypes::SchemaRef;
 use arrow_array::RecordBatch;
-use datafusion::common::tree_node::{TreeNode, TreeNodeRewriter, TreeNodeVisitor, VisitRecursion};
+use datafusion::common::tree_node::{
+    Transformed, TreeNode, TreeNodeRecursion, TreeNodeRewriter, TreeNodeVisitor,
+};
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::Operator;
 use datafusion::physical_plan::expressions::{BinaryExpr, Column, Literal};
@@ -207,13 +209,13 @@ pub fn reassign_predicate_columns(
     match pred.expr() {
         None => Ok(None),
         Some(expr) => {
-            let new_expr = expr.clone().rewrite(&mut rewriter)?;
-            let mut vistor = ColumnVistor {
+            let new_expr = expr.clone().rewrite(&mut rewriter)?.data;
+            let mut visitor = ColumnVisitor {
                 part_schema: file_schema,
                 has_col_not_in_file: false,
             };
-            new_expr.visit(&mut vistor)?;
-            if vistor.has_col_not_in_file {
+            new_expr.visit(&mut visitor)?;
+            if visitor.has_col_not_in_file {
                 return Ok(None);
             }
             Ok(Some(new_expr))
@@ -226,32 +228,29 @@ struct PredicateColumnsReassigner {
     full_schema: SchemaRef,
 }
 
-struct ColumnVistor {
+struct ColumnVisitor {
     part_schema: SchemaRef,
     has_col_not_in_file: bool,
 }
 
-impl TreeNodeVisitor for ColumnVistor {
-    type N = Arc<dyn PhysicalExpr>;
+impl TreeNodeVisitor<'_> for ColumnVisitor {
+    type Node = Arc<dyn PhysicalExpr>;
 
-    fn pre_visit(&mut self, node: &Self::N) -> datafusion::common::Result<VisitRecursion> {
+    fn f_down(&mut self, node: &Self::Node) -> datafusion::common::Result<TreeNodeRecursion> {
         if let Some(column) = node.as_any().downcast_ref::<Column>() {
             if self.part_schema.index_of(column.name()).is_err() {
                 self.has_col_not_in_file = true;
-                return Ok(VisitRecursion::Stop);
+                return Ok(TreeNodeRecursion::Stop);
             }
         }
-        Ok(VisitRecursion::Continue)
+        Ok(TreeNodeRecursion::Continue)
     }
 }
 
 impl TreeNodeRewriter for PredicateColumnsReassigner {
-    type N = Arc<dyn PhysicalExpr>;
+    type Node = Arc<dyn PhysicalExpr>;
 
-    fn mutate(
-        &mut self,
-        expr: Arc<dyn PhysicalExpr>,
-    ) -> TskvResult<Arc<dyn PhysicalExpr>, DataFusionError> {
+    fn f_up(&mut self, expr: Self::Node) -> TskvResult<Transformed<Self::Node>, DataFusionError> {
         if let Some(column) = expr.as_any().downcast_ref::<Column>() {
             // find the column index in file schema
             let index = match self.file_schema.index_of(column.name()) {
@@ -259,44 +258,57 @@ impl TreeNodeRewriter for PredicateColumnsReassigner {
                 Err(_) => {
                     // the column expr must be in the full schema
                     return match self.full_schema.field_with_name(column.name()) {
-                        Ok(_) => Ok(expr),
+                        Ok(_) => Ok(Transformed::no(expr)),
                         Err(e) => {
                             // If the column is not in the full schema, should throw the error
-                            Err(DataFusionError::ArrowError(e))
+                            Err(DataFusionError::ArrowError(
+                                e,
+                                Some(format!(
+                                    "rewrite plan node for Expr::Column({})",
+                                    column.name()
+                                )),
+                            ))
                         }
                     };
                 }
             };
-            return Ok(Arc::new(Column::new(column.name(), index)));
-        } else if let Some(b_expr) = expr.as_any().downcast_ref::<BinaryExpr>() {
-            let mut visitor = ColumnVistor {
+            return Ok(Transformed::yes(Arc::new(Column::new(
+                column.name(),
+                index,
+            ))));
+        } else if let Some(bin_expr) = expr.as_any().downcast_ref::<BinaryExpr>() {
+            let mut visitor = ColumnVisitor {
                 part_schema: self.file_schema.clone(),
                 has_col_not_in_file: false,
             };
-            b_expr.left().visit(&mut visitor)?;
+            bin_expr.left().visit(&mut visitor)?;
             let left = visitor.has_col_not_in_file;
 
             visitor.has_col_not_in_file = false;
-            b_expr.right().visit(&mut visitor)?;
+            bin_expr.right().visit(&mut visitor)?;
             let right = visitor.has_col_not_in_file;
 
-            if matches!(b_expr.op(), Operator::And) {
-                return match (left, right) {
-                    (false, false) => Ok(expr),
-                    (true, true) => Ok(Arc::new(Literal::new(ScalarValue::Boolean(Some(true))))),
-                    (true, _) => Ok(b_expr.right().clone()),
-                    (_, true) => Ok(b_expr.left().clone()),
+            if matches!(bin_expr.op(), Operator::And) {
+                let transformed: Transformed<Arc<dyn PhysicalExpr>> = match (left, right) {
+                    (false, false) => Transformed::no(expr),
+                    (true, true) => {
+                        Transformed::yes(Arc::new(Literal::new(ScalarValue::Boolean(Some(true)))))
+                    }
+                    (true, _) => Transformed::yes(bin_expr.right().clone()),
+                    (_, true) => Transformed::yes(bin_expr.left().clone()),
                 };
+                return Ok(transformed);
             }
-            if matches!(b_expr.op(), Operator::Or) {
-                return match (left, right) {
-                    (false, false) => Ok(expr),
-                    _ => Ok(Arc::new(Literal::new(ScalarValue::Boolean(Some(true))))),
+            if matches!(bin_expr.op(), Operator::Or) {
+                let transformed: Transformed<Arc<dyn PhysicalExpr>> = match (left, right) {
+                    (false, false) => Transformed::no(expr),
+                    _ => Transformed::yes(Arc::new(Literal::new(ScalarValue::Boolean(Some(true))))),
                 };
+                return Ok(transformed);
             }
         }
 
-        Ok(expr)
+        Ok(Transformed::no(expr))
     }
 }
 

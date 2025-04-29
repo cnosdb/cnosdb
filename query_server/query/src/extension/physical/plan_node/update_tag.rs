@@ -9,12 +9,12 @@ use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::error::{DataFusionError, Result};
 use datafusion::execution::context::TaskContext;
-use datafusion::physical_expr::{PhysicalExpr, PhysicalSortExpr};
+use datafusion::physical_expr::PhysicalExpr;
 use datafusion::physical_plan::memory::MemoryStream;
 use datafusion::physical_plan::metrics::{ExecutionPlanMetricsSet, MetricsSet};
 use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
 use datafusion::physical_plan::{
-    ColumnarValue, DisplayFormatType, Distribution, ExecutionPlan, Partitioning,
+    ColumnarValue, DisplayAs, DisplayFormatType, Distribution, ExecutionPlan, PlanProperties,
     SendableRecordBatchStream, Statistics,
 };
 use datafusion::scalar::ScalarValue;
@@ -68,6 +68,10 @@ impl Debug for UpdateTagExec {
 
 #[async_trait]
 impl ExecutionPlan for UpdateTagExec {
+    fn name(&self) -> &str {
+        "UpdateTagExec"
+    }
+
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -76,24 +80,20 @@ impl ExecutionPlan for UpdateTagExec {
         self.schema.clone()
     }
 
-    fn output_partitioning(&self) -> Partitioning {
-        self.scan.output_partitioning()
-    }
-
-    fn output_ordering(&self) -> Option<&[PhysicalSortExpr]> {
-        None
+    fn properties(&self) -> &PlanProperties {
+        self.scan.properties()
     }
 
     fn required_input_distribution(&self) -> Vec<Distribution> {
         vec![Distribution::SinglePartition]
     }
 
-    fn benefits_from_input_partitioning(&self) -> bool {
-        false
+    fn benefits_from_input_partitioning(&self) -> Vec<bool> {
+        vec![false]
     }
 
-    fn children(&self) -> Vec<Arc<dyn ExecutionPlan>> {
-        vec![self.scan.clone()]
+    fn children(&self) -> Vec<&Arc<dyn ExecutionPlan>> {
+        vec![&self.scan]
     }
 
     fn with_new_children(
@@ -134,6 +134,12 @@ impl ExecutionPlan for UpdateTagExec {
         Some(self.metrics.clone_inner())
     }
 
+    fn statistics(&self) -> Result<Statistics> {
+        self.scan.statistics()
+    }
+}
+
+impl DisplayAs for UpdateTagExec {
     fn fmt_as(&self, t: DisplayFormatType, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let assigns = self
             .assigns
@@ -165,11 +171,11 @@ impl ExecutionPlan for UpdateTagExec {
                     schemas.join(",")
                 )
             }
+            DisplayFormatType::TreeRender => {
+                // TODO(zipper): implement this.
+                write!(f, "")
+            }
         }
-    }
-
-    fn statistics(&self) -> Statistics {
-        self.scan.statistics()
     }
 }
 

@@ -6,16 +6,17 @@ edition.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+config = { path = "../../config" }
+
 async-backtrace = { workspace = true, optional = true }
 chrono = { workspace = true }
-config = { path = "../../config" }
 console-subscriber = { workspace = true }
 http = { workspace = true }
 itertools = { workspace = true }
 minitrace = { workspace = true }
 minitrace-opentelemetry = { workspace = true }
 opentelemetry = { workspace = true }
-opentelemetry-otlp = { workspace = true }
+opentelemetry-otlp = { workspace = true, features = ["grpc-tonic"] }
 opentelemetry_sdk = { workspace = true }
 rand = { workspace = true }
 snafu = { workspace = true }

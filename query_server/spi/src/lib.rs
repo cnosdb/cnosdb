@@ -52,13 +52,14 @@ pub enum QueryError {
     },
 
     #[error_code(code = 9999)]
-    Unimplement {
+    Unimplemented {
         msg: String,
     },
 
     #[error_code(code = 1)]
     Datafusion {
         source: DataFusionError,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -66,6 +67,7 @@ pub enum QueryError {
     #[error_code(code = 2)]
     Arrow {
         source: ArrowError,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -110,6 +112,7 @@ pub enum QueryError {
     #[error_code(code = 10)]
     Analyzer {
         err: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -148,7 +151,9 @@ pub enum QueryError {
     #[snafu(display("Invalid flatbuffers: {}", source))]
     #[error_code(code = 17)]
     InvalidFlatbuffer {
-        source: flatbuffers::InvalidFlatbuffer,
+        #[snafu(source(from(flatbuffers::InvalidFlatbuffer, Box::new)))]
+        source: Box<flatbuffers::InvalidFlatbuffer>,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -161,6 +166,7 @@ pub enum QueryError {
     #[error_code(code = 18)]
     CommonError {
         msg: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -169,6 +175,7 @@ pub enum QueryError {
     #[error_code(code = 19)]
     ToPointsFlatBuffer {
         err: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -178,6 +185,7 @@ pub enum QueryError {
     InvalidArrayType {
         expected: String,
         found: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -192,6 +200,7 @@ pub enum QueryError {
     #[error_code(code = 22)]
     PointErrorDataTypeNotSupport {
         type_: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -200,6 +209,7 @@ pub enum QueryError {
     #[error_code(code = 23)]
     PointErrorNotNullConstraint {
         col: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -213,6 +223,7 @@ pub enum QueryError {
     #[snafu(display("File has no footer"))]
     #[error_code(code = 25)]
     NoFooter {
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -221,6 +232,7 @@ pub enum QueryError {
     #[error_code(code = 26)]
     RecordFileIo {
         reason: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -363,6 +375,7 @@ pub enum QueryError {
     #[snafu(display("object store error: {}", msg))]
     ObjectStore {
         msg: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -371,6 +384,7 @@ pub enum QueryError {
     #[snafu(display("Failed to close parquet writer, error: {}", source))]
     CloseParquetWriter {
         source: ParquetError,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -379,6 +393,7 @@ pub enum QueryError {
     #[snafu(display("Failed to serialize data to parquet bytes, error: {}", source))]
     SerializeParquet {
         source: ParquetError,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -387,6 +402,7 @@ pub enum QueryError {
     #[snafu(display("Failed to build parquet writer, error: {}", source))]
     BuildParquetArrowWriter {
         source: ParquetError,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -395,6 +411,7 @@ pub enum QueryError {
     #[snafu(display("Failed to serialize data to csv bytes, error: {}", source))]
     SerializeCsv {
         source: ArrowError,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -403,6 +420,7 @@ pub enum QueryError {
     #[snafu(display("Failed to serialize data to json bytes, error: {}", source))]
     SerializeJson {
         source: ArrowError,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -411,6 +429,7 @@ pub enum QueryError {
     #[snafu(display("{}", source))]
     StdIoError {
         source: std::io::Error,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -419,6 +438,7 @@ pub enum QueryError {
     #[snafu(display("{}", source))]
     SerdeJsonError {
         source: serde_json::Error,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -427,6 +447,7 @@ pub enum QueryError {
     #[snafu(display("{}", source))]
     SnappyError {
         source: snap::Error,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -477,6 +498,7 @@ pub enum QueryError {
     #[error_code(code = 63)]
     TenantOptionsBuildFail {
         source: TenantOptionsBuilderError,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -529,6 +551,7 @@ pub enum QueryError {
     #[error_code(code = 70)]
     BincodeSerialize {
         source: GenericError,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -537,6 +560,7 @@ pub enum QueryError {
     #[error_code(code = 71)]
     PersistQuery {
         reason: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -623,7 +647,7 @@ impl From<DataFusionError> for QueryError {
                 ArrowSnafu.into_error(arrow_error)
             }
 
-            DataFusionError::ArrowError(e) => ArrowSnafu.into_error(e),
+            DataFusionError::ArrowError(e, _backtrace) => ArrowSnafu.into_error(e),
 
             v => DatafusionSnafu.into_error(v),
         }

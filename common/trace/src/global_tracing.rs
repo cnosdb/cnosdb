@@ -17,8 +17,10 @@ pub fn init_global_tracing(trace_config: &TraceConfig, service_name: String) {
         let reporter = FileReporter::new(path);
         minitrace::set_reporter(
             reporter,
+            #[allow(deprecated)]
             Config::default()
-                .batch_report_interval(trace_config.batch_report_interval)
+                .report_interval(trace_config.batch_report_interval)
+                // `batch_report_max_spans` was deprecated and this method is now a no-op.
                 .batch_report_max_spans(trace_config.batch_report_max_spans)
                 .max_spans_per_trace(trace_config.max_spans_per_trace),
         );
@@ -28,8 +30,10 @@ pub fn init_global_tracing(trace_config: &TraceConfig, service_name: String) {
         let reporter = opentelemetry_reporter(endpoint.to_owned(), service_name);
         minitrace::set_reporter(
             reporter,
+            #[allow(deprecated)]
             Config::default()
-                .batch_report_interval(trace_config.batch_report_interval)
+                .report_interval(trace_config.batch_report_interval)
+                // `batch_report_max_spans` was deprecated and this method is now a no-op.
                 .batch_report_max_spans(trace_config.batch_report_max_spans)
                 .max_spans_per_trace(trace_config.max_spans_per_trace),
         );
@@ -50,15 +54,12 @@ fn opentelemetry_reporter(endpoint: String, service_name: String) -> OpenTelemet
                 opentelemetry_otlp::OTEL_EXPORTER_OTLP_TIMEOUT_DEFAULT,
             ))
             .build_span_exporter()
-            .expect("initialize oltp exporter"),
+            .expect("initialize OTLP exporter"),
         SpanKind::Server,
         Cow::Owned(Resource::new([KeyValue::new("service.name", service_name)])),
-        InstrumentationLibrary::new(
-            "cnosdb",
-            Some(env!("CARGO_PKG_VERSION")),
-            None::<&'static str>,
-            None,
-        ),
+        InstrumentationLibrary::builder("cnosdb")
+            .with_version(env!("CARGO_PKG_VERSION"))
+            .build(),
     )
 }
 

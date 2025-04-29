@@ -1,11 +1,13 @@
 use std::fmt::{self, Debug};
 use std::sync::Arc;
 
-use datafusion::common::{DFField, DFSchema, DFSchemaRef};
-use datafusion::error::DataFusionError;
+use datafusion::common::{DFSchema, DFSchemaRef};
+use datafusion::error::{DataFusionError, Result as DFResult};
 use datafusion::logical_expr::utils::exprlist_to_fields;
 use datafusion::logical_expr::{LogicalPlan, UserDefinedLogicalNodeCore};
 use datafusion::prelude::Expr;
+use datafusion::sql::TableReference;
+use models::arrow::Field;
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct ExpandNode {
@@ -17,6 +19,24 @@ pub struct ExpandNode {
     pub schema: DFSchemaRef,
 }
 
+impl PartialOrd for ExpandNode {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match self.projections.partial_cmp(&other.projections) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        match self.input.partial_cmp(&other.input) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        match self.expressions.partial_cmp(&other.expressions) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        self.schema.fields().partial_cmp(other.schema.fields())
+    }
+}
+
 impl ExpandNode {
     /// Create a new ExpandNode
     pub fn try_new(
@@ -25,27 +45,27 @@ impl ExpandNode {
     ) -> Result<Self, DataFusionError> {
         // Check whether the output schemas of multiple projections are consistent,
         // and if they are inconsistent, an error will be reported
-        let mut fields: Option<Vec<DFField>> = None;
+        let mut qualified_fields: Option<Vec<(Option<TableReference>, Arc<Field>)>> = None;
 
-        for proj in &projections {
-            let proj_schema = exprlist_to_fields(proj, &input)?;
+        for proj_expr in &projections {
+            let proj_schema = exprlist_to_fields(proj_expr, &input)?;
 
-            if let Some(ref fields) = fields {
+            if let Some(ref fields) = qualified_fields {
                 if fields != &proj_schema {
                     return Err(DataFusionError::Internal(
                         format!("Expand's projections must have same output schema, but found: {fields:?} and {proj_schema:?}")));
                 }
             } else {
-                let _ = fields.insert(proj_schema);
+                let _ = qualified_fields.insert(proj_schema);
             }
         }
 
-        let fields = fields.ok_or_else(|| {
+        let qualified_fields = qualified_fields.ok_or_else(|| {
             DataFusionError::Internal("Projections of Expand not be empty".to_string())
         })?;
 
         let schema = Arc::new(DFSchema::new_with_metadata(
-            fields,
+            qualified_fields,
             input.schema().metadata().clone(),
         )?);
 
@@ -68,6 +88,10 @@ impl Debug for ExpandNode {
 }
 
 impl UserDefinedLogicalNodeCore for ExpandNode {
+    fn name(&self) -> &str {
+        "Expand"
+    }
+
     fn inputs(&self) -> Vec<&LogicalPlan> {
         vec![self.input.as_ref()]
     }
@@ -99,18 +123,18 @@ impl UserDefinedLogicalNodeCore for ExpandNode {
     }
 
     /// TODO [`PushDownProjection`] has no effect on this node
-    fn from_template(&self, _exprs: &[Expr], inputs: &[LogicalPlan]) -> Self {
-        assert_eq!(inputs.len(), 1, "input size inconsistent");
-        Self {
+    fn with_exprs_and_inputs(&self, _exprs: Vec<Expr>, inputs: Vec<LogicalPlan>) -> DFResult<Self> {
+        if inputs.len() != 1 {
+            return Err(DataFusionError::Plan(
+                "ExpandNode only support one input".to_string(),
+            ));
+        }
+        Ok(Self {
             projections: self.projections.clone(),
             input: Arc::new(inputs[0].clone()),
             expressions: self.expressions.clone(),
             schema: self.schema.clone(),
-        }
-    }
-
-    fn name(&self) -> &str {
-        "Expand"
+        })
     }
 }
 
@@ -191,7 +215,7 @@ mod tests {
             .collect::<Vec<_>>();
 
         // prevent window_duration + slide_duration from overflowing
-        let overlapping_windows = (window_duration + slide_duration - 1) / slide_duration;
+        let overlapping_windows = window_duration.div_ceil(slide_duration);
 
         let windows = (0..overlapping_windows).map(|i| {
             make_window(
@@ -224,10 +248,7 @@ mod tests {
         let end_field = expand_schema.field_with_unqualified_name("$end")?;
 
         let window_expr = Expr::ScalarVariable(
-            DataType::Struct(Fields::from(vec![
-                start_field.field().clone(),
-                end_field.field().clone(),
-            ])),
+            DataType::Struct(Fields::from(vec![start_field.clone(), end_field.clone()])),
             vec!["window".to_string()],
         );
 

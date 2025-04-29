@@ -1,4 +1,4 @@
-use datafusion::common::tree_node::{Transformed, TreeNode};
+use datafusion::common::tree_node::{Transformed, TransformedResult as _, TreeNode};
 use datafusion::common::Column;
 use datafusion::config::ConfigOptions;
 use datafusion::error::Result;
@@ -6,19 +6,20 @@ use datafusion::logical_expr::{Extension, Filter, LogicalPlan, Projection};
 use datafusion::optimizer::analyzer::AnalyzerRule;
 use datafusion::prelude::Expr;
 
-use crate::extension::expr::TSGenFunc;
-use crate::extension::logical::plan_node::ts_gen_func::TSGenFuncNode;
+use crate::extension::expr::TimeSeriesGenFunc;
+use crate::extension::logical::plan_node::ts_gen_func::TimeSeriesGenFuncNode;
 use crate::extension::utils::downcast_plan_node;
 
-pub struct AddTimeForTSGenFunc {}
+#[derive(Debug)]
+pub struct AddTimeForTimeSeriesGenFunc {}
 
-impl AnalyzerRule for AddTimeForTSGenFunc {
+impl AnalyzerRule for AddTimeForTimeSeriesGenFunc {
     fn analyze(&self, plan: LogicalPlan, _config: &ConfigOptions) -> Result<LogicalPlan> {
-        plan.transform_up(&analyze_internal)
+        plan.transform_up(&analyze_internal).data()
     }
 
     fn name(&self) -> &str {
-        "TransformTSGenFunc"
+        "AddTimeForTimeSeriesGenFunc"
     }
 }
 
@@ -31,17 +32,11 @@ fn analyze_internal(plan: LogicalPlan) -> Result<Transformed<LogicalPlan>> {
         }
 
         if let LogicalPlan::Extension(Extension { node }) = temp_input.as_ref() {
-            if let Some(tsgenfunc) = downcast_plan_node::<TSGenFuncNode>(node.as_ref()) {
-                if tsgenfunc.symbol == TSGenFunc::TimestampRepair {
+            if let Some(ts_gen_func) = downcast_plan_node::<TimeSeriesGenFuncNode>(node.as_ref()) {
+                if ts_gen_func.symbol == TimeSeriesGenFunc::TimestampRepair {
                     let mut new_expr = expr.clone();
-                    new_expr.insert(
-                        0,
-                        Expr::Column(Column {
-                            relation: None,
-                            name: "time".to_string(),
-                        }),
-                    );
-                    return Ok(Transformed::Yes(LogicalPlan::Projection(
+                    new_expr.insert(0, Expr::Column(Column::new_unqualified("time")));
+                    return Ok(Transformed::yes(LogicalPlan::Projection(
                         Projection::try_new(new_expr, input.clone())?,
                     )));
                 }
@@ -49,5 +44,5 @@ fn analyze_internal(plan: LogicalPlan) -> Result<Transformed<LogicalPlan>> {
         }
     }
 
-    Ok(Transformed::No(plan))
+    Ok(Transformed::no(plan))
 }

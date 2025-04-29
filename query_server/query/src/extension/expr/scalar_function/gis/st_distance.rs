@@ -4,8 +4,8 @@ use datafusion::common::Result as DFResult;
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::ScalarUDF;
 use geo::{
-    EuclideanDistance, Geometry, Line, LineString, MultiLineString, MultiPoint, MultiPolygon,
-    Point, Polygon, Triangle,
+    Distance as _, Euclidean, Geometry, Line, LineString, MultiLineString, MultiPoint,
+    MultiPolygon, Point, Polygon, Triangle,
 };
 use spi::query::function::FunctionMetadataManager;
 use spi::QueryResult;
@@ -41,13 +41,13 @@ fn distance(geo_l: &Geometry, geo_r: &Geometry) -> DFResult<f64> {
 
 fn point_distance(point: &Point, other: &Geometry) -> DFResult<f64> {
     let dist = match other {
-        Geometry::Point(rhs) => point.euclidean_distance(rhs),
-        Geometry::Line(rhs) => point.euclidean_distance(rhs),
-        Geometry::LineString(rhs) => point.euclidean_distance(rhs),
-        Geometry::Polygon(rhs) => point.euclidean_distance(rhs),
-        Geometry::MultiPoint(rhs) => point.euclidean_distance(rhs),
-        Geometry::MultiLineString(rhs) => point.euclidean_distance(rhs),
-        Geometry::MultiPolygon(rhs) => point.euclidean_distance(rhs),
+        Geometry::Point(rhs) => Euclidean.distance(point, rhs),
+        Geometry::Line(rhs) => Euclidean.distance(point, rhs),
+        Geometry::LineString(rhs) => Euclidean.distance(point, rhs),
+        Geometry::Polygon(rhs) => Euclidean.distance(point, rhs),
+        Geometry::MultiPoint(rhs) => Euclidean.distance(point, rhs),
+        Geometry::MultiLineString(rhs) => Euclidean.distance(point, rhs),
+        Geometry::MultiPolygon(rhs) => Euclidean.distance(point, rhs),
         Geometry::GeometryCollection(_) | Geometry::Rect(_) | Geometry::Triangle(_) => {
             return Err(DataFusionError::Execution(format!(
                 "Calculating the distance between POINT and {:?} is not supported",
@@ -61,11 +61,11 @@ fn point_distance(point: &Point, other: &Geometry) -> DFResult<f64> {
 
 fn line_distance(point: &Line, other: &Geometry) -> DFResult<f64> {
     let dist = match other {
-        Geometry::Point(rhs) => point.euclidean_distance(rhs),
-        Geometry::Line(rhs) => point.euclidean_distance(rhs),
-        Geometry::LineString(rhs) => point.euclidean_distance(rhs),
-        Geometry::Polygon(rhs) => point.euclidean_distance(rhs),
-        Geometry::MultiPolygon(rhs) => point.euclidean_distance(rhs),
+        Geometry::Point(rhs) => Euclidean.distance(point, rhs),
+        Geometry::Line(rhs) => Euclidean.distance(point, rhs),
+        Geometry::LineString(rhs) => Euclidean.distance(point, rhs),
+        Geometry::Polygon(rhs) => Euclidean.distance(point, rhs),
+        Geometry::MultiPolygon(rhs) => Euclidean.distance(point, rhs),
         Geometry::MultiPoint(_)
         | Geometry::MultiLineString(_)
         | Geometry::GeometryCollection(_)
@@ -83,10 +83,10 @@ fn line_distance(point: &Line, other: &Geometry) -> DFResult<f64> {
 
 fn line_string_distance(point: &LineString, other: &Geometry) -> DFResult<f64> {
     let dist = match other {
-        Geometry::Point(rhs) => point.euclidean_distance(rhs),
-        Geometry::Line(rhs) => point.euclidean_distance(rhs),
-        Geometry::LineString(rhs) => point.euclidean_distance(rhs),
-        Geometry::Polygon(rhs) => point.euclidean_distance(rhs),
+        Geometry::Point(rhs) => Euclidean.distance(point, rhs),
+        Geometry::Line(rhs) => Euclidean.distance(point, rhs),
+        Geometry::LineString(rhs) => Euclidean.distance(point, rhs),
+        Geometry::Polygon(rhs) => Euclidean.distance(point, rhs),
         Geometry::MultiPolygon(_)
         | Geometry::MultiPoint(_)
         | Geometry::MultiLineString(_)
@@ -105,10 +105,10 @@ fn line_string_distance(point: &LineString, other: &Geometry) -> DFResult<f64> {
 
 fn polygon_distance(point: &Polygon, other: &Geometry) -> DFResult<f64> {
     let dist = match other {
-        Geometry::Point(rhs) => point.euclidean_distance(rhs),
-        Geometry::Line(rhs) => point.euclidean_distance(rhs),
-        Geometry::LineString(rhs) => point.euclidean_distance(rhs),
-        Geometry::Polygon(rhs) => point.euclidean_distance(rhs),
+        Geometry::Point(rhs) => Euclidean.distance(point, rhs),
+        Geometry::Line(rhs) => Euclidean.distance(point, rhs),
+        Geometry::LineString(rhs) => Euclidean.distance(point, rhs),
+        Geometry::Polygon(rhs) => Euclidean.distance(point, rhs),
         Geometry::MultiPolygon(_)
         | Geometry::MultiPoint(_)
         | Geometry::MultiLineString(_)
@@ -127,8 +127,8 @@ fn polygon_distance(point: &Polygon, other: &Geometry) -> DFResult<f64> {
 
 fn multi_polygon_distance(point: &MultiPolygon, other: &Geometry) -> DFResult<f64> {
     let dist = match other {
-        Geometry::Point(rhs) => point.euclidean_distance(rhs),
-        Geometry::Line(rhs) => point.euclidean_distance(rhs),
+        Geometry::Point(rhs) => Euclidean.distance(point, rhs),
+        Geometry::Line(rhs) => Euclidean.distance(point, rhs),
         Geometry::LineString(_)
         | Geometry::Polygon(_)
         | Geometry::MultiPolygon(_)
@@ -149,7 +149,7 @@ fn multi_polygon_distance(point: &MultiPolygon, other: &Geometry) -> DFResult<f6
 
 fn multi_point_distance(point: &MultiPoint, other: &Geometry) -> DFResult<f64> {
     let dist = match other {
-        Geometry::Point(rhs) => point.euclidean_distance(rhs),
+        Geometry::Point(rhs) => Euclidean.distance(point, rhs),
         Geometry::Line(_)
         | Geometry::LineString(_)
         | Geometry::Polygon(_)
@@ -171,7 +171,7 @@ fn multi_point_distance(point: &MultiPoint, other: &Geometry) -> DFResult<f64> {
 
 fn multi_line_string_distance(point: &MultiLineString, other: &Geometry) -> DFResult<f64> {
     let dist = match other {
-        Geometry::Point(rhs) => point.euclidean_distance(rhs),
+        Geometry::Point(rhs) => Euclidean.distance(point, rhs),
         Geometry::Line(_)
         | Geometry::LineString(_)
         | Geometry::Polygon(_)
@@ -193,7 +193,7 @@ fn multi_line_string_distance(point: &MultiLineString, other: &Geometry) -> DFRe
 
 fn triangle_distance(point: &Triangle, other: &Geometry) -> DFResult<f64> {
     let dist = match other {
-        Geometry::Point(rhs) => point.euclidean_distance(rhs),
+        Geometry::Point(rhs) => Euclidean.distance(point, rhs),
         Geometry::Line(_)
         | Geometry::LineString(_)
         | Geometry::Polygon(_)

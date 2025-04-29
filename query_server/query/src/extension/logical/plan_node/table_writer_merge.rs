@@ -2,7 +2,7 @@ use std::fmt::{self, Debug};
 use std::sync::Arc;
 
 use datafusion::common::{DFSchema, DFSchemaRef};
-use datafusion::error::DataFusionError;
+use datafusion::error::{DataFusionError, Result as DFResult};
 use datafusion::logical_expr::utils::exprlist_to_fields;
 use datafusion::logical_expr::{Extension, LogicalPlan, UserDefinedLogicalNodeCore};
 use datafusion::prelude::Expr;
@@ -12,6 +12,20 @@ pub struct TableWriterMergePlanNode {
     pub input: Arc<LogicalPlan>,
     pub agg_expr: Vec<Expr>,
     pub schema: DFSchemaRef,
+}
+
+impl PartialOrd for TableWriterMergePlanNode {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match self.input.partial_cmp(&other.input) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        match self.agg_expr.partial_cmp(&other.agg_expr) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        self.schema.fields().partial_cmp(other.schema.fields())
+    }
 }
 
 impl TableWriterMergePlanNode {
@@ -36,6 +50,10 @@ impl Debug for TableWriterMergePlanNode {
 }
 
 impl UserDefinedLogicalNodeCore for TableWriterMergePlanNode {
+    fn name(&self) -> &str {
+        "TableWriterMerge"
+    }
+
     fn inputs(&self) -> Vec<&LogicalPlan> {
         vec![&self.input]
     }
@@ -55,17 +73,17 @@ impl UserDefinedLogicalNodeCore for TableWriterMergePlanNode {
         Ok(())
     }
 
-    fn from_template(&self, exprs: &[Expr], inputs: &[LogicalPlan]) -> Self {
-        debug_assert_eq!(inputs.len(), 1, "input size inconsistent");
-        TableWriterMergePlanNode {
-            input: Arc::new(inputs[0].clone()),
-            agg_expr: exprs.to_vec(),
-            schema: self.schema.clone(),
+    fn with_exprs_and_inputs(&self, exprs: Vec<Expr>, inputs: Vec<LogicalPlan>) -> DFResult<Self> {
+        if inputs.len() != 1 {
+            return Err(DataFusionError::Plan(
+                "TableWriterMergePlanNode should have exactly one input".to_string(),
+            ));
         }
-    }
-
-    fn name(&self) -> &str {
-        "TableWriterMerge"
+        Ok(TableWriterMergePlanNode {
+            input: Arc::new(inputs[0].clone()),
+            agg_expr: exprs,
+            schema: self.schema.clone(),
+        })
     }
 }
 

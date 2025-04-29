@@ -13,6 +13,7 @@ pub enum ColumnDataError {
     #[snafu(display("Unsupport data type: {}", dt))]
     UnsupportedDataType {
         dt: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -25,6 +26,7 @@ pub enum ColumnDataError {
     DataTypeMissMatch {
         column_type: PhysicalDType,
         field_val: Option<FieldVal>,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -32,6 +34,7 @@ pub enum ColumnDataError {
     #[snafu(display("MutableColumnError: {}", msg))]
     CommonError {
         msg: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -264,7 +267,7 @@ pub enum PrimaryColumnData {
 
 impl PrimaryColumnData {
     pub fn get(&self, index: usize) -> Option<FieldVal> {
-        return match self {
+        match self {
             PrimaryColumnData::F64(data, _, _) => data.get(index).map(|val| FieldVal::Float(*val)),
             PrimaryColumnData::I64(data, _, _) => {
                 data.get(index).map(|val| FieldVal::Integer(*val))
@@ -278,7 +281,7 @@ impl PrimaryColumnData {
             PrimaryColumnData::Bool(data, _, _) => {
                 data.get(index).map(|val| FieldVal::Boolean(*val))
             }
-        };
+        }
     }
 
     pub fn len(&self) -> usize {

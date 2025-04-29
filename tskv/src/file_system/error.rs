@@ -10,6 +10,7 @@ pub enum FileSystemError {
     #[snafu(display("File error: {:?}", source))]
     StdIOError {
         source: std::io::Error,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -18,6 +19,7 @@ pub enum FileSystemError {
     UnableToOpenFile {
         path: PathBuf,
         source: std::io::Error,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -26,6 +28,7 @@ pub enum FileSystemError {
     UnableToWriteBytes {
         path: PathBuf,
         source: std::io::Error,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -34,12 +37,14 @@ pub enum FileSystemError {
     UnableToSyncFile {
         path: PathBuf,
         source: std::io::Error,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
 
     #[snafu(display("async file system stopped"))]
     Cancel {
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },

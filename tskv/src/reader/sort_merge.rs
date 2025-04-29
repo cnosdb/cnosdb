@@ -5,7 +5,7 @@ use std::task::{Context, Poll};
 use arrow::datatypes::SchemaRef;
 use arrow_array::RecordBatch;
 use datafusion::physical_plan::metrics::{ExecutionPlanMetricsSet, MetricBuilder, Time};
-use datafusion::physical_plan::sorts::cursor::{Cursor, FieldArray, FieldValues};
+use datafusion::physical_plan::sorts::cursor::{CursorArray, CursorValues};
 use futures::{ready, Stream};
 use snafu::ResultExt;
 
@@ -58,50 +58,27 @@ pub fn sort_merge(
     })
 }
 
-/// A cursor over sorted, nullable [`FieldValues`]
+/// A cursor over sorted, nullable [`CursorValues`]
 ///
 /// Note: comparing cursors with different `SortOptions` will yield an arbitrary ordering
 #[derive(Debug)]
-pub struct ColumnCursor<T: FieldValues> {
+pub struct ColumnCursor<T: CursorValues> {
     values: T,
     // 标记来自record batch的哪一列
     column_index: usize,
     offset: usize,
 }
 
-impl<T: FieldValues> ColumnCursor<T> {
+impl<T: CursorValues> ColumnCursor<T> {
     /// Create a new [`ColumnCursor`] from the provided `values` sorted according to `options`
-    pub fn new<A: FieldArray<Values = T>>(array: &A, column_idx: usize) -> Self {
+    pub fn new<A: CursorArray<Values = T>>(array: &A, column_idx: usize) -> Self {
         Self {
             values: array.values(),
             column_index: column_idx,
             offset: 0,
         }
     }
-}
 
-impl<T: FieldValues> PartialEq for ColumnCursor<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.cmp(other).is_eq()
-    }
-}
-
-impl<T: FieldValues> Eq for ColumnCursor<T> {}
-impl<T: FieldValues> PartialOrd for ColumnCursor<T> {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl<T: FieldValues> Ord for ColumnCursor<T> {
-    fn cmp(&self, other: &Self) -> Ordering {
-        let s_v = self.values.value(self.offset);
-        let o_v = other.values.value(other.offset);
-        T::compare(s_v, o_v)
-    }
-}
-
-impl<T: FieldValues> Cursor for ColumnCursor<T> {
     fn is_finished(&self) -> bool {
         self.offset == self.values.len()
     }
@@ -110,6 +87,26 @@ impl<T: FieldValues> Cursor for ColumnCursor<T> {
         let t = self.offset;
         self.offset += 1;
         t
+    }
+}
+
+impl<T: CursorValues> PartialEq for ColumnCursor<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other).is_eq()
+    }
+}
+
+impl<T: CursorValues> Eq for ColumnCursor<T> {}
+
+impl<T: CursorValues> PartialOrd for ColumnCursor<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<T: CursorValues> Ord for ColumnCursor<T> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        T::compare(&self.values, self.offset, &other.values, other.offset)
     }
 }
 
@@ -150,7 +147,7 @@ impl SortMergeMetrics {
 }
 
 #[derive(Debug)]
-pub struct SortPreservingMergeStream<T: FieldArray> {
+pub struct SortPreservingMergeStream<T: CursorArray> {
     in_progress: BatchMergeBuilder<T>,
 
     streams: ColumnCursorStream<T>,
@@ -204,7 +201,7 @@ pub struct SortPreservingMergeStream<T: FieldArray> {
     metrics: SortMergeMetrics,
 }
 
-impl<T: FieldArray + Unpin> SortPreservingMergeStream<T> {
+impl<T: CursorArray + Unpin> SortPreservingMergeStream<T> {
     pub fn new(
         streams: ColumnCursorStream<T>,
         schema: SchemaRef,
@@ -392,9 +389,9 @@ impl<T: FieldArray + Unpin> SortPreservingMergeStream<T> {
         self.loser_tree_adjusted = true;
     }
 }
-impl<T: Unpin + FieldArray> Unpin for SortPreservingMergeStream<T> {}
+impl<T: Unpin + CursorArray> Unpin for SortPreservingMergeStream<T> {}
 
-impl<T: FieldArray + Unpin> Stream for SortPreservingMergeStream<T> {
+impl<T: CursorArray + Unpin> Stream for SortPreservingMergeStream<T> {
     type Item = TskvResult<RecordBatch>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
@@ -403,7 +400,7 @@ impl<T: FieldArray + Unpin> Stream for SortPreservingMergeStream<T> {
     }
 }
 
-impl<T: FieldArray + Unpin> SchemableTskvRecordBatchStream for SortPreservingMergeStream<T> {
+impl<T: CursorArray + Unpin> SchemableTskvRecordBatchStream for SortPreservingMergeStream<T> {
     fn schema(&self) -> SchemaRef {
         self.in_progress.schema().clone()
     }
@@ -416,14 +413,14 @@ mod test {
     use arrow_array::{Int64Array, RecordBatch};
     use arrow_schema::{DataType, Field, Fields, Schema, SchemaRef};
     use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
-    use datafusion::physical_plan::sorts::cursor::FieldArray;
+    use datafusion::physical_plan::sorts::cursor::CursorArray;
     use futures::StreamExt;
 
     use crate::reader::partitioned_stream::ColumnCursorStream;
     use crate::reader::sort_merge::SortPreservingMergeStream;
     use crate::reader::{SchemableMemoryBatchReaderStream, SendableSchemableTskvRecordBatchStream};
 
-    pub fn new_with_batches<T: FieldArray + Unpin>(
+    pub fn new_with_batches<T: CursorArray + Unpin>(
         schema: SchemaRef,
         batches: Vec<RecordBatch>,
         batch_size: usize,

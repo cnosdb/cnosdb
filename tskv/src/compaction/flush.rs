@@ -417,7 +417,7 @@ pub mod flush_tests {
         schema.schema_version = 1;
         let schema = Arc::new(schema);
         let data = RecordBatch::try_new(
-            schema.to_record_data_schema(),
+            schema.build_arrow_schema_without_tags(),
             vec![
                 ts_column(vec![1, 3, 6, 9]),
                 f64_column(vec![1.0, 3.0, 6.0, 9.0]),

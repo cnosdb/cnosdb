@@ -4,11 +4,11 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::record_batch::RecordBatch;
+use datafusion::catalog::memory::MemorySourceConfig;
+use datafusion::catalog::Session;
 use datafusion::common::{DataFusionError, Result as DFResult};
 use datafusion::datasource::{TableProvider, TableType};
-use datafusion::execution::context::SessionState;
-use datafusion::logical_expr::logical_plan::AggWithGrouping;
-use datafusion::physical_plan::memory::MemoryExec;
+use datafusion::logical_expr::logical_plan::TableScanAggregate;
 use datafusion::physical_plan::ExecutionPlan;
 use datafusion::prelude::Expr;
 use meta::model::MetaClientRef;
@@ -40,6 +40,7 @@ impl InformationSchemaTableFactory for TablesFactory {
     }
 }
 
+#[derive(Debug)]
 pub struct InformationTable {
     user: User,
     metadata: MetaClientRef,
@@ -68,10 +69,10 @@ impl TableProvider for InformationTable {
 
     async fn scan(
         &self,
-        _state: &SessionState,
+        _state: &dyn Session,
         projection: Option<&Vec<usize>>,
         _filters: &[Expr],
-        _agg_with_grouping: Option<&AggWithGrouping>,
+        _aggregate: Option<&TableScanAggregate>,
         _limit: Option<usize>,
     ) -> DFResult<Arc<dyn ExecutionPlan>> {
         let mut builder = InformationSchemaTablesBuilder::default();
@@ -115,10 +116,8 @@ impl TableProvider for InformationTable {
         }
         let rb: RecordBatch = builder.try_into()?;
 
-        Ok(Arc::new(MemoryExec::try_new(
-            &[vec![rb]],
-            self.schema(),
-            projection.cloned(),
-        )?))
+        let mem_exec =
+            MemorySourceConfig::try_new_exec(&[vec![rb]], self.schema(), projection.cloned())?;
+        Ok(mem_exec)
     }
 }

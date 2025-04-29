@@ -4,40 +4,43 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+config = { path = "../config" }
 derive_traits = { path = "../common/derive_traits" }
+metrics = { path = "../common/metrics" }
 models = { path = "../common/models" }
 protos = { path = "../common/protos" }
 trace = { path = "../common/trace" }
 utils = { path = "../common/utils" }
-metrics = { path = "../common/metrics" }
+version = { path = "../common/version" }
 
-actix-web = { workspace = true }
-clap = { version = "4.1.11", features = ["derive", "env"] }
-openraft = { workspace = true, features = ["serde"] }
-tempfile = { version = "3.4.0" }
+axum = { workspace = true }
+http = { workspace = true }
+http-body = { workspace = true }
+hyper = { workspace = true }
+hyper-util = { workspace = true }
+tonic = { workspace = true }
+tower = { workspace = true }
 
 async-backtrace = { workspace = true, optional = true }
 async-trait = { workspace = true }
 bincode = { workspace = true }
+clap = { workspace = true, features = ["derive", "env"] }
 futures = { workspace = true, features = ["alloc"] }
 heed = { workspace = true }
-http = { workspace = true }
-http-body = { workspace = true }
 maplit = { workspace = true }
+openraft = { workspace = true, features = ["serde"] }
 parking_lot = { workspace = true }
 rand = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 serial_test = { workspace = true }
 snafu = { workspace = true }
+tempfile = { workspace = true }
 tokio = { workspace = true, features = ["macros", "net", "parking_lot", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-stream = { workspace = true, features = ["net"] }
 tokio-util = { workspace = true }
-tonic = { workspace = true }
-tower = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-warp = { workspace = true }
 
 [features]
 default = []

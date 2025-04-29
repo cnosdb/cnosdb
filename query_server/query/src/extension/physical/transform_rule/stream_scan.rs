@@ -40,7 +40,7 @@ impl ExtensionPlanner for StreamScanPlanner {
             source,
             projection,
             filters,
-            agg_with_grouping,
+            aggregate,
             ..
         }) = downcast_plan_node(node)
         {
@@ -53,7 +53,7 @@ impl ExtensionPlanner for StreamScanPlanner {
                     session_state,
                     projection.as_ref(),
                     &unaliased,
-                    agg_with_grouping.as_ref(),
+                    aggregate.as_ref(),
                     range,
                 )
                 .await?;

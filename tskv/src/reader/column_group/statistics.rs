@@ -1,7 +1,9 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use arrow::datatypes::DataType;
-use arrow_array::ArrayRef;
+use arrow_array::{ArrayRef, BooleanArray};
+use datafusion::common::Column;
 use datafusion::physical_optimizer::pruning::PruningStatistics;
 use datafusion::scalar::ScalarValue;
 
@@ -10,7 +12,7 @@ use crate::tsm::page::PageStatistics;
 
 pub struct ColumnGroupsStatisticsWrapper<'a>(pub &'a [Arc<ColumnGroup>]);
 
-impl<'a> PruningStatistics for ColumnGroupsStatisticsWrapper<'a> {
+impl PruningStatistics for ColumnGroupsStatisticsWrapper<'_> {
     fn min_values(&self, column: &datafusion::prelude::Column) -> Option<ArrayRef> {
         let data_type = self.0.first().and_then(|cg| {
             cg.pages()
@@ -76,6 +78,14 @@ impl<'a> PruningStatistics for ColumnGroupsStatisticsWrapper<'a> {
     }
 
     fn null_counts(&self, _column: &datafusion::prelude::Column) -> Option<ArrayRef> {
+        None
+    }
+
+    fn row_counts(&self, _column: &Column) -> Option<ArrayRef> {
+        None
+    }
+
+    fn contained(&self, _column: &Column, _values: &HashSet<ScalarValue>) -> Option<BooleanArray> {
         None
     }
 }
