@@ -14,7 +14,10 @@
 syntax = "proto3";
 package prometheus;
 
+// option go_package = "prompb";
+
 import "types.proto";
+// import "gogoproto/gogo.proto";
 
 message WriteRequest {
   repeated prometheus.TimeSeries timeseries = 1;

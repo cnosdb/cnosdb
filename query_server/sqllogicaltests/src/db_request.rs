@@ -5,9 +5,10 @@ use nom::branch::alt;
 use nom::bytes::complete::{tag, tag_no_case};
 use nom::character::complete::{alpha1, alphanumeric1, none_of, space0};
 use nom::combinator::{map_parser, map_res, recognize};
+use nom::error::Error as NomError;
 use nom::multi::{many0_count, many1};
-use nom::sequence::{delimited, pair, tuple};
-use nom::IResult;
+use nom::sequence::{delimited, pair};
+use nom::Parser;
 
 use crate::error::SqlError;
 use crate::instance::{CnosdbClient, CnosdbColumnType};
@@ -48,9 +49,9 @@ pub enum RequestBody {
 /// - `"SELECT * FROM tbl_a"` returns error
 pub fn instruction_parse_str<'a>(
     instruction_name: &'a str,
-) -> impl FnMut(&'a str) -> IResult<&'a str, &'a str> {
+) -> impl Parser<&'a str, Output = &'a str, Error = nom::error::Error<&'a str>> {
     delimited(
-        tuple((
+        (
             tag("--"),
             space0,
             tag("#"),
@@ -58,7 +59,7 @@ pub fn instruction_parse_str<'a>(
             space0,
             tag("="),
             space0,
-        )),
+        ),
         recognize(many1(none_of(" \t\n\r"))),
         space0,
     )
@@ -67,7 +68,7 @@ pub fn instruction_parse_str<'a>(
 /// Parse an instruction with a identity value (`[a-zA-Z_][a-zA-Z0-9_]*`).
 pub fn instruction_parse_identity<'a>(
     instruction_name: &'a str,
-) -> impl FnMut(&'a str) -> IResult<&'a str, &'a str> {
+) -> impl Parser<&'a str, Output = &'a str, Error = NomError<&'a str>> {
     map_parser(
         instruction_parse_str(instruction_name),
         recognize(pair(
@@ -80,7 +81,7 @@ pub fn instruction_parse_identity<'a>(
 /// Parse an instruction with a value and convert it to a type.
 pub fn instruction_parse_to<'a, T: FromStr>(
     instruction_name: &'a str,
-) -> impl FnMut(&'a str) -> IResult<&'a str, T> {
+) -> impl Parser<&'a str, Output = T, Error = NomError<&'a str>> {
     map_res(instruction_parse_str(instruction_name), |s: &str| {
         s.parse::<T>()
     })
@@ -92,13 +93,13 @@ pub fn instruction_parse_to<'a, T: FromStr>(
 /// - `"-- #LP_BEGIN"` returns true
 /// - `"SELECT * FROM tbl_a"` returns false
 pub fn instruction_match(instruction_name: &str, input: &str) -> bool {
-    tuple((
+    let mut parser = (
         tag("--"),
-        space0::<&str, nom::error::Error<&str>>,
+        space0::<&str, NomError<&str>>,
         tag("#"),
         tag_no_case(instruction_name),
-    ))(input)
-    .is_ok()
+    );
+    parser.parse(input).is_ok()
 }
 
 impl CnosdbRequest {
@@ -243,6 +244,8 @@ fn parse_block(lines: &[&str], end: &str) -> Result<String, SqlError> {
 
 #[cfg(test)]
 mod test {
+    use nom::Parser as _;
+
     use super::{
         instruction_match, instruction_parse_identity, instruction_parse_str, instruction_parse_to,
         parse_block,
@@ -252,39 +255,48 @@ mod test {
     fn test_parsers() {
         {
             let mut parser = instruction_parse_str("HTTP_PORT");
-            assert_eq!(parser("-- #HTTP_PORT = 8086").unwrap().1, "8086");
-            assert_eq!(parser("--#HTTP_PORT = 8086").unwrap().1, "8086");
-            assert_eq!(parser("-- #HTTP_PORT = 8086 -- comment").unwrap().1, "8086");
-            assert!(parser("-- # HTTP_PORT = 8086").is_err());
-            assert!(parser("-- #HTTP_PORT").is_err());
-            assert!(parser("-- #HTTP_PORT = ").is_err());
-            assert!(parser("SELECT * FROM tbl_a").is_err());
-            assert!(parser("-- #").is_err());
-            assert!(parser("").is_err());
+            assert_eq!(parser.parse("-- #HTTP_PORT = 8086").unwrap().1, "8086");
+            assert_eq!(parser.parse("--#HTTP_PORT = 8086").unwrap().1, "8086");
+            assert_eq!(
+                parser.parse("-- #HTTP_PORT = 8086 -- comment").unwrap().1,
+                "8086"
+            );
+            assert!(parser.parse("-- # HTTP_PORT = 8086").is_err());
+            assert!(parser.parse("-- #HTTP_PORT").is_err());
+            assert!(parser.parse("-- #HTTP_PORT = ").is_err());
+            assert!(parser.parse("SELECT * FROM tbl_a").is_err());
+            assert!(parser.parse("-- #").is_err());
+            assert!(parser.parse("").is_err());
         }
         {
             let mut parser = instruction_parse_identity("DATABASE");
-            assert_eq!(parser("-- #DATABASE = dba").unwrap().1, "dba");
-            assert_eq!(parser("--#DATABASE = dba").unwrap().1, "dba");
-            assert_eq!(parser("-- #DATABASE = dba -- comment").unwrap().1, "dba");
-            assert!(parser("-- # DATABASE = dba").is_err());
-            assert!(parser("-- #DATABASE = 1a").is_err());
-            assert!(parser("-- #DATABASE = ").is_err());
-            assert!(parser("SELECT * FROM tbl_a").is_err());
-            assert!(parser("-- #").is_err());
-            assert!(parser("").is_err());
+            assert_eq!(parser.parse("-- #DATABASE = dba").unwrap().1, "dba");
+            assert_eq!(parser.parse("--#DATABASE = dba").unwrap().1, "dba");
+            assert_eq!(
+                parser.parse("-- #DATABASE = dba -- comment").unwrap().1,
+                "dba"
+            );
+            assert!(parser.parse("-- # DATABASE = dba").is_err());
+            assert!(parser.parse("-- #DATABASE = 1a").is_err());
+            assert!(parser.parse("-- #DATABASE = ").is_err());
+            assert!(parser.parse("SELECT * FROM tbl_a").is_err());
+            assert!(parser.parse("-- #").is_err());
+            assert!(parser.parse("").is_err());
         }
         {
             let mut parser = instruction_parse_to::<u16>("HTTP_PORT");
-            assert_eq!(parser("-- #HTTP_PORT = 8086").unwrap().1, 8086);
-            assert_eq!(parser("--#HTTP_PORT = 8086").unwrap().1, 8086);
-            assert_eq!(parser("-- #HTTP_PORT = 8086 -- comment").unwrap().1, 8086);
-            assert!(parser("-- # HTTP_PORT = 8086").is_err());
-            assert!(parser("-- #HTTP_PORT").is_err());
-            assert!(parser("-- #HTTP_PORT = ").is_err());
-            assert!(parser("SELECT * FROM tbl_a").is_err());
-            assert!(parser("-- #").is_err());
-            assert!(parser("").is_err());
+            assert_eq!(parser.parse("-- #HTTP_PORT = 8086").unwrap().1, 8086);
+            assert_eq!(parser.parse("--#HTTP_PORT = 8086").unwrap().1, 8086);
+            assert_eq!(
+                parser.parse("-- #HTTP_PORT = 8086 -- comment").unwrap().1,
+                8086
+            );
+            assert!(parser.parse("-- # HTTP_PORT = 8086").is_err());
+            assert!(parser.parse("-- #HTTP_PORT").is_err());
+            assert!(parser.parse("-- #HTTP_PORT = ").is_err());
+            assert!(parser.parse("SELECT * FROM tbl_a").is_err());
+            assert!(parser.parse("-- #").is_err());
+            assert!(parser.parse("").is_err());
         }
         {
             assert!(instruction_match("LP_BEGIN", "-- #LP_BEGIN"));

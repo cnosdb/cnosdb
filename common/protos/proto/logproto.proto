@@ -11,7 +11,7 @@ message PushRequest {
 }
 
 message Stream {
-  string labels = 1; 
+  string labels = 1;
   repeated Entry entries = 2;
   // hash contains the original hash of the stream.
   uint64 hash = 3;

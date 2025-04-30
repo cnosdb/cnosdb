@@ -1,3 +1,4 @@
+use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -5,8 +6,8 @@ use std::{cmp, env, fs};
 
 type AnyError = Box<dyn std::error::Error>;
 
-const VERSION_PROTOBUF: Version = Version(27, 0, 0); // 27.0
-const VERSION_FLATBUFFERS: Version = Version(24, 3, 25); // 24.3.25
+const VERSION_PROTOBUF: Version = Version(29, 0, 0); // 29.0.0
+const VERSION_FLATBUFFERS: Version = Version(25, 0, 00); // 25.0.0
 
 /// The folder where the build script should place its output.
 /// https://doc.rust-lang.org/cargo/reference/environment-variables.html
@@ -23,26 +24,18 @@ fn main() -> Result<(), AnyError> {
     println!("cargo:rerun-if-changed=proto");
     println!("cargo:rerun-if-changed=prompb");
 
-    let project_root_dir = env::current_dir()?;
-    let proto_dir = project_root_dir.join("proto");
-    let prompb_dir = project_root_dir.join("prompb");
-    let rust_dir = env::current_dir().unwrap().join("src");
+    let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let proto_dir = crate_dir.join("proto");
+    let prompb_dir = crate_dir.join("prompb");
+    let src_dir = crate_dir.join("src");
 
-    // src/generated/mod.rs
-    let generated_mod_rs_path = project_root_dir
-        .join("src")
-        .join("generated")
-        .join("mod.rs");
-    let mut generated_mod_rs = fs::File::create(generated_mod_rs_path)?;
-    writeln!(&mut generated_mod_rs, "#![allow(unused_imports)]")?;
-    writeln!(&mut generated_mod_rs, "#![allow(clippy::all)]")?;
-    generated_mod_rs.flush()?;
+    let mut generated_mod_rs = write_src_generated_mod(&crate_dir)?;
 
     // build proto/*.proto files to src/generated/protobuf_generated/
     compile_protobuf_models(
         &mut generated_mod_rs,
         &proto_dir,
-        &rust_dir.join("generated").join("protobuf_generated"),
+        &src_dir.join("generated").join("protobuf_generated"),
         vec![
             ("kv_service.proto", "kv_service"),
             ("raft_service.proto", "raft_service"),
@@ -69,14 +62,24 @@ fn main() -> Result<(), AnyError> {
         &mut generated_mod_rs,
         &flatc_path,
         &proto_dir,
-        &rust_dir.join("generated").join("flatbuffers_generated"),
+        &src_dir.join("generated").join("flatbuffers_generated"),
         vec!["models"],
     )?;
 
     // build prompb/*.proto files to src/prompb/
-    compile_prometheus_models(&prompb_dir, &rust_dir.join("prompb"))?;
+    compile_prometheus_models(&prompb_dir, &src_dir.join("prompb"))?;
 
     Ok(())
+}
+
+/// Generate src/generated/mod.rs
+fn write_src_generated_mod<P: AsRef<Path>>(crate_dir: P) -> Result<File, AnyError> {
+    let generated_mod_rs_path = crate_dir.as_ref().join("src/generated/mod.rs");
+    let mut generated_mod_rs = fs::File::create(generated_mod_rs_path)?;
+    writeln!(&mut generated_mod_rs, "#![allow(unused_imports)]")?;
+    writeln!(&mut generated_mod_rs, "#![allow(clippy::all)]")?;
+    generated_mod_rs.flush()?;
+    Ok(generated_mod_rs)
 }
 
 /// Compile *.proto files

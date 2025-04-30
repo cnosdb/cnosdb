@@ -33,7 +33,6 @@ rand = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-sled = { workspace = true }
 snafu = { workspace = true }
 sys-info = { workspace = true }
 sysinfo = { workspace = true, optional = true }
@@ -46,7 +45,6 @@ walkdir = { workspace = true }
 
 futures = { workspace = true, features = ["alloc"] }
 heed = { workspace = true }
-heed-traits = { workspace = true }
 http = { workspace = true }
 http-body = { workspace = true }
 tower = { workspace = true }

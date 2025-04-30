@@ -31,7 +31,7 @@ object_store = { workspace = true }
 rand = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-snafu = { workspace = true, features = ["backtraces"] }
+snafu = { workspace = true, features = ["backtrace"] }
 snap = { workspace = true }
 tempfile = { workspace = true }
 url = { workspace = true }

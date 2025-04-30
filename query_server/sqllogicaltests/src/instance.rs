@@ -265,7 +265,7 @@ impl CnosdbClient {
         let channel = endpoint
             .connect()
             .await
-            .map_err(|e| ArrowError::IoError(format!("Cannot connect to endpoint: {e}")))?;
+            .map_err(|e| ArrowError::IpcError(format!("Cannot connect to endpoint: {e}")))?;
 
         let mut client = FlightSqlServiceClient::new(channel);
         client.set_header("TENANT", &self.tenant);
@@ -300,7 +300,7 @@ impl CnosdbClient {
             if let Some(tkt) = &ep.ticket {
                 let stream = client.do_get(tkt.clone()).await?;
                 let flight_data = stream.try_collect::<Vec<_>>().await.map_err(|err| {
-                    ArrowError::IoError(format!("Cannot collect flight data: {:#?}", err))
+                    ArrowError::IpcError(format!("Cannot collect flight data: {:#?}", err))
                 })?;
                 batches.extend(flight_data_to_batches(&flight_data)?);
             };
