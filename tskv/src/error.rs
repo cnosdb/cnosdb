@@ -38,6 +38,7 @@ pub enum TskvError {
     #[error_code(code = 1)]
     InvalidFlatbuffer {
         source: flatbuffers::InvalidFlatbuffer,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -45,6 +46,7 @@ pub enum TskvError {
     #[snafu(display("Fields can't be empty"))]
     #[error_code(code = 2)]
     FieldsIsEmpty {
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -53,6 +55,7 @@ pub enum TskvError {
     #[error_code(code = 3)]
     CommonError {
         reason: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -66,6 +69,7 @@ pub enum TskvError {
     #[snafu(display("Memory Exhausted Retry Later"))]
     #[error_code(code = 5)]
     MemoryExhausted {
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -73,6 +77,7 @@ pub enum TskvError {
     #[error_code(code = 6)]
     Arrow {
         source: ArrowError,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -81,6 +86,7 @@ pub enum TskvError {
     #[error_code(code = 7)]
     ReadTsm {
         reason: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -89,6 +95,7 @@ pub enum TskvError {
     #[error_code(code = 8)]
     Network {
         source: Status,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -97,6 +104,7 @@ pub enum TskvError {
     #[error_code(code = 9)]
     ErrorResponse {
         error: ErrorResponse,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -105,6 +113,7 @@ pub enum TskvError {
     #[error_code(code = 10)]
     UnsupportedDataType {
         dt: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -113,6 +122,7 @@ pub enum TskvError {
     #[error_code(code = 11)]
     MismatchedSchema {
         msg: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -120,6 +130,7 @@ pub enum TskvError {
     #[error_code(code = 12)]
     DatafusionError {
         source: DataFusionError,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -128,6 +139,7 @@ pub enum TskvError {
     #[error_code(code = 13)]
     TsmColumnGroupError {
         reason: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -136,6 +148,7 @@ pub enum TskvError {
     #[error_code(code = 14)]
     TsmPageError {
         reason: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -144,6 +157,7 @@ pub enum TskvError {
     #[error_code(code = 15)]
     DataBlockError {
         reason: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -152,6 +166,7 @@ pub enum TskvError {
     #[error_code(code = 16)]
     TagError {
         reason: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -167,6 +182,7 @@ pub enum TskvError {
     #[error_code(code = 18)]
     IO {
         source: std::io::Error,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -176,6 +192,7 @@ pub enum TskvError {
     OpenFile {
         path: PathBuf,
         source: std::io::Error,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -185,6 +202,7 @@ pub enum TskvError {
     ReadFile {
         path: PathBuf,
         source: std::io::Error,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -194,6 +212,7 @@ pub enum TskvError {
     WriteFile {
         path: PathBuf,
         source: std::io::Error,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -202,6 +221,7 @@ pub enum TskvError {
     #[error_code(code = 22)]
     SyncFile {
         source: std::io::Error,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -211,6 +231,7 @@ pub enum TskvError {
     InvalidFileName {
         file_name: String,
         message: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -222,6 +243,7 @@ pub enum TskvError {
     #[snafu(display("Internal handled: WAL truncated"))]
     #[error_code(code = 24)]
     WalTruncated {
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -234,6 +256,7 @@ pub enum TskvError {
     #[error_code(code = 26)]
     RecordFileEncode {
         source: bincode::Error,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -242,6 +265,7 @@ pub enum TskvError {
     #[error_code(code = 27)]
     RecordFileDecode {
         source: bincode::Error,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -252,6 +276,7 @@ pub enum TskvError {
     RecordFileInvalidDataSize {
         pos: u64,
         len: u32,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -267,6 +292,7 @@ pub enum TskvError {
         crc: u32,
         crc_calculated: u32,
         record: Record,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -278,6 +304,7 @@ pub enum TskvError {
         crc: u32,
         crc_calculated: u32,
         page: Page,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -286,6 +313,7 @@ pub enum TskvError {
     #[error_code(code = 31)]
     Encode {
         source: Box<dyn std::error::Error + Send + Sync>,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -294,6 +322,7 @@ pub enum TskvError {
     #[error_code(code = 32)]
     Decode {
         source: Box<dyn std::error::Error + Send + Sync>,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -308,6 +337,7 @@ pub enum TskvError {
     #[error_code(code = 34)]
     InvalidParam {
         reason: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -327,6 +357,7 @@ pub enum TskvError {
     InvalidUtf8 {
         message: String,
         source: std::str::Utf8Error,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -335,6 +366,7 @@ pub enum TskvError {
     #[error_code(code = 38)]
     VnodeNotFound {
         vnode_id: VnodeId,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -343,6 +375,7 @@ pub enum TskvError {
     #[error_code(code = 39)]
     TableNotFound {
         table: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -351,6 +384,7 @@ pub enum TskvError {
     #[snafu(display("Column {} not found", column))]
     ColumnNotFound {
         column: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -359,6 +393,7 @@ pub enum TskvError {
     #[snafu(display("{}", message))]
     Tombstone {
         message: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -367,6 +402,7 @@ pub enum TskvError {
     #[snafu(display("{}", reason))]
     RecordFileIO {
         reason: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -374,6 +410,7 @@ pub enum TskvError {
     #[snafu(display("Table name can't be empty"))]
     #[error_code(code = 53)]
     InvalidPointTable {
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -382,6 +419,7 @@ pub enum TskvError {
     #[snafu(display("ColumnId {} not found", column))]
     ColumnIdNotFound {
         column: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -389,6 +427,7 @@ pub enum TskvError {
     #[error_code(code = 55)]
     #[snafu(display("Columns of FlatBufferTable is missing"))]
     FlatBufColumnsMiss {
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -398,6 +437,7 @@ pub enum TskvError {
     #[snafu(display("{}", source))]
     Serialize {
         source: Box<dyn std::error::Error + Send + Sync>,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -407,6 +447,7 @@ pub enum TskvError {
     #[snafu(display("{}", source))]
     Deserialize {
         source: Box<dyn std::error::Error + Send + Sync>,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -462,7 +503,7 @@ impl From<DataFusionError> for TskvError {
                 Self::from(datafusion_error)
             }
 
-            DataFusionError::ArrowError(e) => ArrowSnafu.into_error(e),
+            DataFusionError::ArrowError(e, _backtrace) => ArrowSnafu.into_error(e),
             v => DatafusionSnafu.into_error(v),
         }
     }

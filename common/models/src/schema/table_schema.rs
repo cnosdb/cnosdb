@@ -42,7 +42,7 @@ impl TableSchema {
     pub fn to_arrow_schema(&self) -> SchemaRef {
         match self {
             Self::ExternalTableSchema(e) => Arc::new(e.schema.clone()),
-            Self::TsKvTableSchema(e) => e.to_arrow_schema(),
+            Self::TsKvTableSchema(e) => e.build_arrow_schema(),
             Self::StreamTableSchema(e) => e.schema(),
         }
     }

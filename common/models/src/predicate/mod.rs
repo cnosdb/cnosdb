@@ -32,7 +32,7 @@ impl Split {
     ) -> ModelResult<Self> {
         let domains_filter = predicate
             .filter()
-            .translate_column(|c| table.column(&c.name).cloned());
+            .translate_column(|c| table.get_column_by_name(&c.name).cloned());
 
         let tags_filter = domains_filter.translate_column(|e| match e.column_type {
             ColumnType::Tag => Some(e.name.clone()),

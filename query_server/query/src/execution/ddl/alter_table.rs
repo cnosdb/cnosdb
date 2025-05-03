@@ -80,7 +80,7 @@ impl DDLDefinitionTask for AlterTableTask {
                         data_type: new_column.column_type.to_string(),
                     });
                 }
-                schema.change_column(column_name, new_column.clone());
+                schema.alter_column(column_name, new_column.clone());
                 schema.schema_version += 1;
 
                 Some((
@@ -98,14 +98,14 @@ impl DDLDefinitionTask for AlterTableTask {
             } => {
                 let alter_schema_func =
                     |schema: &mut TskvTableSchema, old_column_name: &str, new_name: &str| {
-                        if let Some(old_column) = schema.column(old_column_name) {
+                        if let Some(old_column) = schema.get_column_by_name(old_column_name) {
                             let new_column = TableColumn::new(
                                 old_column.id,
                                 new_name.to_string(),
                                 old_column.column_type.clone(),
                                 old_column.encoding,
                             );
-                            schema.change_column(old_column_name, new_column);
+                            schema.alter_column(old_column_name, new_column);
                             schema.schema_version += 1;
                         } else {
                             return Err(QueryError::ColumnNotFound {

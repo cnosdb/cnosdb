@@ -117,11 +117,12 @@ fn series_keys_to_record_batch(
         build_arrow_array_builders(&new_schema, series_keys.len()).context(ArrowSnafu)?;
     for key in series_keys {
         for (k, array_builder) in tag_key_array.iter().zip(&mut array_builders) {
-            let c = tskv_table_schema
-                .column(k.as_str())
-                .context(ColumnNotFoundSnafu {
-                    column: k.to_string(),
-                })?;
+            let c =
+                tskv_table_schema
+                    .get_column_by_name(k.as_str())
+                    .context(ColumnNotFoundSnafu {
+                        column: k.to_string(),
+                    })?;
 
             let tag_value = key
                 .tag_string_val(c.id.to_string().as_str())

@@ -239,7 +239,7 @@ impl TagScanStream {
     ) -> Result<Self, QueryError> {
         let mut proj_fileds = Vec::with_capacity(proj_schema.fields().len());
         for field_name in proj_schema.fields().iter().map(|f| f.name()) {
-            if let Some(v) = table_schema.column(field_name) {
+            if let Some(v) = table_schema.get_column_by_name(field_name) {
                 proj_fileds.push(v.clone());
             } else {
                 return Err(CommonSnafu {
@@ -264,7 +264,7 @@ impl TagScanStream {
             None,
             proj_schema.clone(),
             proj_table_schema.into(),
-            table_schema.meta(),
+            table_schema.build_meta(),
         );
 
         let span_ctx = span.context();

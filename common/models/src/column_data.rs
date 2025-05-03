@@ -13,6 +13,7 @@ pub enum ColumnDataError {
     #[snafu(display("Unsupport data type: {}", dt))]
     UnsupportedDataType {
         dt: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -25,6 +26,7 @@ pub enum ColumnDataError {
     DataTypeMissMatch {
         column_type: PhysicalDType,
         field_val: Option<FieldVal>,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -32,6 +34,7 @@ pub enum ColumnDataError {
     #[snafu(display("MutableColumnError: {}", msg))]
     CommonError {
         msg: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },

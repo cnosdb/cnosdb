@@ -569,7 +569,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         let table_ref = normalize_sql_object_name(table_name.clone())?;
         // only support delete from tskv table
         let schema = self.get_tskv_schema(table_ref)?;
-        let df_schema = schema.to_arrow_schema().to_dfschema()?;
+        let df_schema = schema.build_arrow_schema().to_dfschema()?;
 
         // WHERE <selection>
         let selection = match selections {
@@ -1107,7 +1107,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         };
 
         let time_unit = if let ColumnType::Time(ref unit) = table_schema
-            .column(TIME_FIELD_NAME)
+            .get_column_by_name(TIME_FIELD_NAME)
             .ok_or_else(|| {
                 CommonSnafu {
                     msg: "schema missing time column".to_string(),
@@ -1139,12 +1139,13 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             }
             ASTAlterTableAction::DropColumn { column_name } => {
                 let column_name = normalize_ident(column_name);
-                let table_column = table_schema.column(&column_name).ok_or_else(|| {
-                    QueryError::ColumnNotExists {
-                        column: column_name.to_string(),
-                        table: table_schema.name.to_string(),
-                    }
-                })?;
+                let table_column =
+                    table_schema
+                        .get_column_by_name(&column_name)
+                        .ok_or_else(|| QueryError::ColumnNotExists {
+                            column: column_name.to_string(),
+                            table: table_schema.name.to_string(),
+                        })?;
 
                 if table_column.column_type.is_tag() {
                     return Err(QueryError::DropTag {
@@ -1152,7 +1153,9 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
                     });
                 }
 
-                if table_column.column_type.is_field() && table_schema.field_num() == 1 {
+                if table_column.column_type.is_field()
+                    && table_schema.count_field_columns_num() == 1
+                {
                     return Err(QueryError::AtLeastOneField);
                 }
 
@@ -1168,12 +1171,12 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
                 encoding,
             } => {
                 let column_name = normalize_ident(column_name);
-                let column = table_schema.column(&column_name).ok_or_else(|| {
-                    QueryError::ColumnNotExists {
+                let column = table_schema
+                    .get_column_by_name(&column_name)
+                    .ok_or_else(|| QueryError::ColumnNotExists {
                         column: column_name.to_string(),
                         table: table_schema.name.to_string(),
-                    }
-                })?;
+                    })?;
                 if column.column_type.is_tag() {
                     return Err(QueryError::TagNotSupportCompression);
                 }
@@ -1196,13 +1199,13 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             } => {
                 let old_column_name = normalize_ident(old_column_name);
                 let new_column_name = normalize_ident(new_column_name);
-                let column = table_schema.column(&old_column_name).ok_or_else(|| {
-                    QueryError::ColumnNotExists {
+                let column = table_schema
+                    .get_column_by_name(&old_column_name)
+                    .ok_or_else(|| QueryError::ColumnNotExists {
                         column: old_column_name.clone(),
                         table: table_schema.name.to_string(),
-                    }
-                })?;
-                if table_schema.column(&new_column_name).is_some() {
+                    })?;
+                if table_schema.get_column_by_name(&new_column_name).is_some() {
                     return Err(QueryError::ColumnAlreadyExists {
                         column: new_column_name,
                         table: table_schema.name.to_string(),
@@ -1368,7 +1371,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         // get where has time column
         let where_contain_time = columns
             .iter()
-            .flat_map(|c: &Column| table_schema.column(&c.name))
+            .flat_map(|c: &Column| table_schema.get_column_by_name(&c.name))
             .any(|c: &TableColumn| c.column_type.is_time());
 
         // build projection
@@ -2754,7 +2757,7 @@ fn check_show_series_expr(
     table_schema: &TskvTableSchema,
 ) -> QueryResult<()> {
     for column in columns.iter() {
-        match table_schema.column(&column.name) {
+        match table_schema.get_column_by_name(&column.name) {
             Some(table_column) => {
                 if table_column.column_type.is_field() {
                     return Err(QueryError::ShowSeriesWhereContainsField {
@@ -3076,7 +3079,7 @@ fn valid_delete(schema: &TskvTableSchema, selection: &Option<Expr>) -> QueryResu
     if let Some(expr) = selection {
         let using_columns = expr.to_columns()?;
         for col_name in using_columns.iter() {
-            match schema.column(&col_name.name) {
+            match schema.get_column_by_name(&col_name.name) {
                 Some(col) => {
                     if col.column_type.is_field() {
                         return Err(QueryError::NotImplemented { err:

@@ -102,7 +102,7 @@ impl DBschemas {
         };
 
         for tag_name in &fb_schema.tag_names {
-            match schema.column(tag_name) {
+            match schema.get_column_by_name(tag_name) {
                 Some(column) => {
                     if !column.column_type.is_tag() {
                         return Err(ColumnTypeSnafu {
@@ -129,7 +129,7 @@ impl DBschemas {
             .iter()
             .zip(fb_schema.field_types.iter())
         {
-            match schema.column(field_name) {
+            match schema.get_column_by_name(field_name) {
                 Some(column) => {
                     let column_type = ColumnType::from_proto_field_type(*field_type);
                     if !column.column_type.matches_type(&column_type) {

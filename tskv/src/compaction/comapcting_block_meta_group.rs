@@ -5,7 +5,7 @@ use arrow_schema::SchemaRef;
 use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
 use futures::StreamExt;
 use models::predicate::domain::TimeRange;
-use models::schema::tskv_table_schema::{TableColumn, TskvTableSchema};
+use models::schema::tskv_table_schema::{get_schema_version, TableColumn, TskvTableSchema};
 use models::schema::TIME_FIELD_NAME;
 use models::SeriesId;
 use snafu::{OptionExt, ResultExt};
@@ -214,16 +214,13 @@ impl CompactingBlockMetaGroup {
             .iter()
             .map(|rb| {
                 let schema = rb.schema();
-                let schema_version =
-                    match TskvTableSchema::schema_version_from_arrow_array_schema(schema.clone())
-                        .context(ModelSnafu)
-                    {
-                        Ok(v) => v,
-                        Err(e) => {
-                            potential_error = Some(e);
-                            0
-                        }
-                    };
+                let schema_version = match get_schema_version(schema.clone()).context(ModelSnafu) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        potential_error = Some(e);
+                        0
+                    }
+                };
                 (schema_version, schema)
             })
             .collect::<Vec<(_, _)>>()

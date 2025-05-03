@@ -234,19 +234,19 @@ impl PromRemoteSqlServer {
         span: Span,
     ) -> QueryResult<Vec<TimeSeries>> {
         let table_schema = sql.table;
-        let tag_name_indices = table_schema.tag_indices();
+        let tag_name_indices = table_schema.build_tag_column_index_vec();
         let sample_value_idx = table_schema
-            .column_index(METRIC_SAMPLE_COLUMN_NAME)
+            .get_column_index_by_name(METRIC_SAMPLE_COLUMN_NAME)
             .ok_or_else(|| QueryError::ColumnNotExists {
                 table: table_schema.name.to_string(),
                 column: METRIC_SAMPLE_COLUMN_NAME.to_string(),
             })?;
-        let sample_time_idx = table_schema.column_index(TIME_FIELD_NAME).ok_or_else(|| {
-            QueryError::ColumnNotExists {
+        let sample_time_idx = table_schema
+            .get_column_index_by_name(TIME_FIELD_NAME)
+            .ok_or_else(|| QueryError::ColumnNotExists {
                 table: table_schema.name.to_string(),
                 column: TIME_FIELD_NAME.to_string(),
-            }
-        })?;
+            })?;
 
         let inner_query = Query::new(ctx.clone(), sql.sql);
         let result = db.execute(&inner_query, span.context().as_ref()).await?;

@@ -414,7 +414,7 @@ impl TSIndex {
             let mut series_ids = vec![];
             for (k, v) in domains.iter() {
                 let id = table_schema
-                    .column(k)
+                    .get_column_by_name(k)
                     .context(ColumnNotFoundSnafu {
                         column: k.to_string(),
                     })?

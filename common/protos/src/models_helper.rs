@@ -254,8 +254,8 @@ mod test {
             };
             time_values.push(timestamp);
 
-            let tav = area[rand::random::<usize>() % 3].clone();
-            let tbv = area[rand::random::<usize>() % 3].clone();
+            let tav = area[(rand::random::<u64>() % 3) as usize].clone();
+            let tbv = area[(rand::random::<u64>() % 3) as usize].clone();
             let entry = tags_values.entry("ta").or_insert(vec![]);
             entry.push("a".to_string() + &tav);
             let entry = tags_values.entry("tb").or_insert(vec![]);
@@ -318,8 +318,8 @@ mod test {
                 i64::MIN
             };
             time_values.push(timestamp);
-            let tav = area[rand::random::<usize>() % 3].clone();
-            let tbv = area[rand::random::<usize>() % 3].clone();
+            let tav = area[(rand::random::<u64>() % 3) as usize].clone();
+            let tbv = area[(rand::random::<u64>() % 3) as usize].clone();
             if rand::random::<i64>() % 2 == 0 {
                 let entry = tags_values.entry("ta").or_insert(vec![]);
                 entry.push("a".to_string() + &tav);

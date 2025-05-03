@@ -69,7 +69,7 @@ impl SchemaChecker<StreamTable> for TskvStreamProviderFactory {
 
         // Make sure that the columns specified in [`StreamTable`] must be included in the target table
         let mut duplicated_cols = HashSet::new();
-        let target_schema = target_table.to_arrow_schema();
+        let target_schema = target_table.build_arrow_schema();
         for f in table.schema().fields() {
             target_schema.field_with_name(f.name())?;
             // check same col name
@@ -118,7 +118,7 @@ impl StreamProviderFactory for TskvStreamProviderFactory {
             .context(MetaSnafu)?;
 
         let used_schema = if table.schema().fields().is_empty() {
-            table_schema.to_arrow_schema()
+            table_schema.build_arrow_schema()
         } else {
             table.schema()
         };

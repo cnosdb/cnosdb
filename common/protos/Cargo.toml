@@ -12,7 +12,7 @@ flatbuffers = { workspace = true }
 prost = { workspace = true }
 protobuf = { workspace = true }
 rand = { workspace = true }
-snafu = { workspace = true }
+snafu = { workspace = true, features = ["backtrace"] }
 tokio = { workspace = true }
 tonic = { workspace = true, features = ["transport", "tls"] }
 tower = { workspace = true }

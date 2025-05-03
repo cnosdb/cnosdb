@@ -63,7 +63,7 @@ fn analyze_internal(plan: LogicalPlan) -> DFResult<Transformed<LogicalPlan>> {
                     let columns = assigns
                         .iter()
                         .map(|(col, _)| {
-                            schema.column(&col.name).ok_or_else(|| {
+                            schema.get_column_by_name(&col.name).ok_or_else(|| {
                                 DataFusionError::External(Box::new(QueryError::Internal {
                                     reason: format!("Column {} not found in table", col.name),
                                 }))
@@ -127,7 +127,7 @@ fn update_tag(update_node: &UpdateNode, schema: Arc<TskvTableSchema>) -> DFResul
     // where 条件中不能包含 field 列/time 列
     let filter_using_columns = filter.to_columns()?;
     for col in filter_using_columns {
-        match schema.column(&col.name) {
+        match schema.get_column_by_name(&col.name) {
             Some(col) => {
                 if !col.column_type.is_tag() {
                     return Err(DataFusionError::External(Box::new(

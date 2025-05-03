@@ -59,11 +59,11 @@ impl SeriesData {
 
     pub fn drop_column(&mut self, column_id: ColumnId) {
         for item in self.groups.iter_mut() {
-            let name = match item.schema.column_name(column_id) {
+            let name = match item.schema.get_column_name_by_id(column_id) {
                 None => continue,
                 Some(name) => name.to_string(),
             };
-            let index = match item.schema.fields_id().get(&column_id) {
+            let index = match item.schema.field_ids_index().get(&column_id) {
                 None => continue,
                 Some(index) => *index,
             };
@@ -85,7 +85,7 @@ impl SeriesData {
     pub fn change_column(&mut self, column_name: &str, new_column: &TableColumn) {
         for item in self.groups.iter_mut() {
             let mut schema_t = item.schema.as_ref().clone();
-            schema_t.change_column(column_name, new_column.clone());
+            schema_t.alter_column(column_name, new_column.clone());
             schema_t.schema_version += 1;
             item.schema = Arc::new(schema_t)
         }
@@ -134,7 +134,7 @@ impl SeriesData {
                 continue;
             }
 
-            let field_index = latest_schema.fields_id();
+            let field_index = latest_schema.field_ids_index();
             let mut fields = vec![None; column_ids.len()];
 
             // 遍历所有的 column_ids，按照对应的索引更新字段
@@ -203,7 +203,13 @@ impl SeriesData {
     )> {
         self.groups
             .iter()
-            .map(|g| (g.schema.clone(), g.schema.fields_id().clone(), &g.rows))
+            .map(|g| {
+                (
+                    g.schema.clone(),
+                    g.schema.field_ids_index().clone(),
+                    &g.rows,
+                )
+            })
             .collect()
     }
     pub fn get_schema(&self) -> Option<Arc<TskvTableSchema>> {
@@ -221,9 +227,9 @@ impl SeriesData {
             None => return Ok(None),
         };
 
-        let mut time_array = MutableColumnRef::empty(latest_schema.time_column())?;
+        let mut time_array = MutableColumnRef::empty(latest_schema.get_time_column())?;
 
-        let fields_schema = latest_schema.fields_orderby_id();
+        let fields_schema = latest_schema.build_field_columns_vec_order_by_id();
         let mut fields_array = fields_schema
             .iter()
             .map(|col| MutableColumnRef::empty(col.clone()))
@@ -291,7 +297,7 @@ impl<'a> SeriesDedupMergeSortIterator<'a> {
             vec_pq.push((idx, data, iter));
         }
 
-        let align_fileds = align_schema.fields_orderby_id();
+        let align_fileds = align_schema.build_field_columns_vec_order_by_id();
         SeriesDedupMergeSortIterator {
             vec_pq,
             groups,

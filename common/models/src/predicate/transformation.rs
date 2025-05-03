@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::result;
 
 use datafusion::arrow::datatypes::DataType;
-use datafusion::common::tree_node::{TreeNode, TreeNodeVisitor, VisitRecursion};
+use datafusion::common::tree_node::{TreeNode, TreeNodeRecursion, TreeNodeVisitor};
 use datafusion::common::Result as DFResult;
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::{BinaryExpr, Operator};
@@ -35,6 +35,7 @@ impl NormalizedSimpleComparison {
             _ => op,
         }
     }
+
     /// Extract a normalized simple comparison between a Column and a ScalarValue if possible
     /// otherwise return None
     fn of(left: Expr, op: Operator, right: Expr) -> Option<NormalizedSimpleComparison> {
@@ -77,21 +78,28 @@ impl NormalizedSimpleComparison {
             Some(e)
         })
     }
+
     /// Determine if a data type is sortable
     fn is_orderable(&self) -> bool {
         match self.value {
             ScalarValue::Boolean(_)
             | ScalarValue::Null
-            | ScalarValue::List(_, _)
+            | ScalarValue::FixedSizeList(_)
+            | ScalarValue::List(_)
+            | ScalarValue::LargeList(_)
             | ScalarValue::IntervalYearMonth(_)
             | ScalarValue::IntervalDayTime(_)
             | ScalarValue::IntervalMonthDayNano(_)
-            | ScalarValue::Dictionary(_, _)
-            | ScalarValue::Struct(_, _) => false,
+            | ScalarValue::Struct(_)
+            | ScalarValue::Map(_)
+            | ScalarValue::Union(_, _, _)
+            | ScalarValue::Dictionary(_, _) => false,
 
-            ScalarValue::Float32(_)
+            ScalarValue::Float16(_)
+            | ScalarValue::Float32(_)
             | ScalarValue::Float64(_)
             | ScalarValue::Decimal128(_, _, _)
+            | ScalarValue::Decimal256(_, _, _)
             | ScalarValue::Int8(_)
             | ScalarValue::Int16(_)
             | ScalarValue::Int32(_)
@@ -101,10 +109,12 @@ impl NormalizedSimpleComparison {
             | ScalarValue::UInt32(_)
             | ScalarValue::UInt64(_)
             | ScalarValue::Utf8(_)
+            | ScalarValue::Utf8View(_)
             | ScalarValue::LargeUtf8(_)
             | ScalarValue::Binary(_)
-            | ScalarValue::LargeBinary(_)
+            | ScalarValue::BinaryView(_)
             | ScalarValue::FixedSizeBinary(_, _)
+            | ScalarValue::LargeBinary(_)
             | ScalarValue::Date32(_)
             | ScalarValue::Date64(_)
             | ScalarValue::Time32Second(_)
@@ -114,9 +124,14 @@ impl NormalizedSimpleComparison {
             | ScalarValue::TimestampSecond(_, _)
             | ScalarValue::TimestampMillisecond(_, _)
             | ScalarValue::TimestampMicrosecond(_, _)
-            | ScalarValue::TimestampNanosecond(_, _) => true,
+            | ScalarValue::TimestampNanosecond(_, _)
+            | ScalarValue::DurationSecond(_)
+            | ScalarValue::DurationMillisecond(_)
+            | ScalarValue::DurationMicrosecond(_)
+            | ScalarValue::DurationNanosecond(_) => true,
         }
     }
+
     // Determine if data types are comparable
     fn _is_comparable(&self) -> bool {
         true
@@ -159,10 +174,10 @@ fn get_range_fn(
     }
 }
 
-impl TreeNodeVisitor for RowExpressionToDomainsVisitor<'_> {
-    type N = Expr;
+impl<'a> TreeNodeVisitor<'a> for RowExpressionToDomainsVisitor<'a> {
+    type Node = Expr;
 
-    fn pre_visit(&mut self, expr: &Expr) -> Result<VisitRecursion> {
+    fn f_down(&mut self, expr: &Self::Node) -> Result<TreeNodeRecursion> {
         // Note: expressions that can be used as and/or child nodes need to be processed.
         // Expressions returning boolean need to be processed, If the expression is not supported, push ColumnDomains::all() onto the stack.
         // If the expression supports it, return Continue directly.
@@ -186,7 +201,7 @@ impl TreeNodeVisitor for RowExpressionToDomainsVisitor<'_> {
             // | Expr::Wildcard
             // | Expr::QualifiedWildcard { .. }
             // | Expr::GetIndexedField { .. } => {}
-            Expr::Column(_) | Expr::Literal(_) => Ok(VisitRecursion::Continue),
+            Expr::Column(_) | Expr::Literal(_) => Ok(TreeNodeRecursion::Continue),
             Expr::BinaryExpr(BinaryExpr {
                 left: _,
                 op,
@@ -202,20 +217,19 @@ impl TreeNodeVisitor for RowExpressionToDomainsVisitor<'_> {
                     | Operator::And
                     | Operator::Or => {
                         // support
-                        Ok(VisitRecursion::Continue)
+                        Ok(TreeNodeRecursion::Continue)
                     }
                     _ => {
                         // not support
                         self.ctx
                             .current_domain_stack
                             .push_back(ColumnDomains::all());
-                        Ok(VisitRecursion::Skip)
+                        Ok(TreeNodeRecursion::Jump)
                     }
                 }
             }
             // TODO Currently not supported, follow-up support needs to implement the corresponding expression in post_visit
             Expr::Like(_)
-            | Expr::ILike(_)
             | Expr::SimilarTo(_)
             | Expr::Not(_)
             | Expr::IsNotNull(_)
@@ -231,13 +245,13 @@ impl TreeNodeVisitor for RowExpressionToDomainsVisitor<'_> {
                 self.ctx
                     .current_domain_stack
                     .push_back(ColumnDomains::all());
-                Ok(VisitRecursion::Skip)
+                Ok(TreeNodeRecursion::Jump)
             }
-            _ => Ok(VisitRecursion::Skip),
+            _ => Ok(TreeNodeRecursion::Jump),
         }
     }
 
-    fn post_visit(&mut self, expr: &Expr) -> DFResult<VisitRecursion> {
+    fn f_up(&mut self, expr: &Self::Node) -> DFResult<TreeNodeRecursion> {
         match expr {
             Expr::BinaryExpr(BinaryExpr { left, op, right }) => {
                 match op {
@@ -281,7 +295,7 @@ impl TreeNodeVisitor for RowExpressionToDomainsVisitor<'_> {
             _ => {}
         }
 
-        Ok(VisitRecursion::Continue)
+        Ok(TreeNodeRecursion::Continue)
     }
 }
 
@@ -304,7 +318,7 @@ impl RowExpressionToDomainsVisitor<'_> {
         let op = &nsc.op;
         // Get the Vec<range> by op dataType and ScalarValue.
         // If op does not support it, it will return None, but it must be supported here (because op is obtained from nsc)
-        let val_set = get_range_fn(op, &value.get_datatype(), value)
+        let val_set = get_range_fn(op, &value.data_type(), value)
             // Construct ValueSet by Range
             .map(|r| Domain::of_ranges(&r).unwrap())
             // Normally this is not triggered (unless there is a bug), but returns ValueSet::All for safety
@@ -319,7 +333,7 @@ impl RowExpressionToDomainsVisitor<'_> {
         let col = &nsc.column;
         let value = &nsc.value;
         let is_eq_op = nsc.is_eq_op();
-        let val_set = Domain::of_values(&value.get_datatype(), is_eq_op, &[value]);
+        let val_set = Domain::of_values(&value.data_type(), is_eq_op, &[value]);
         ColumnDomains::of(col.to_owned(), &val_set)
     }
     /// Construct comparison operations as simple column-value comparison data structures nsc.
@@ -420,15 +434,15 @@ pub struct DeleteSelectionExpressionToDomainsVisitor<'a> {
     ctx: &'a mut DeleteSelectionExpressionToDomainsVisitorContext,
 }
 
-impl TreeNodeVisitor for DeleteSelectionExpressionToDomainsVisitor<'_> {
-    type N = Expr;
+impl<'a> TreeNodeVisitor<'a> for DeleteSelectionExpressionToDomainsVisitor<'a> {
+    type Node = Expr;
 
-    fn pre_visit(&mut self, expr: &Expr) -> Result<VisitRecursion> {
+    fn f_down(&mut self, expr: &Self::Node) -> Result<TreeNodeRecursion> {
         // Note: expressions that can be used as and/or child nodes need to be processed.
         // Expressions returning boolean need to be processed, If the expression is not supported, push ColumnDomains::all() onto the stack.
         // If the expression supports it, return Continue directly.
         match expr {
-            Expr::Column(_) | Expr::Literal(_) | Expr::Cast(_) => Ok(VisitRecursion::Continue),
+            Expr::Column(_) | Expr::Literal(_) | Expr::Cast(_) => Ok(TreeNodeRecursion::Continue),
             e @ Expr::BinaryExpr(BinaryExpr {
                 left: _,
                 op,
@@ -444,7 +458,7 @@ impl TreeNodeVisitor for DeleteSelectionExpressionToDomainsVisitor<'_> {
                     | Operator::GtEq
                     | Operator::And => {
                         // Supported
-                        Ok(VisitRecursion::Continue)
+                        Ok(TreeNodeRecursion::Continue)
                     }
                     other => Err(DataFusionError::NotImplemented(format!(
                         "operator {other} in delete statement"
@@ -462,7 +476,7 @@ impl TreeNodeVisitor for DeleteSelectionExpressionToDomainsVisitor<'_> {
         }
     }
 
-    fn post_visit(&mut self, expr: &Expr) -> DFResult<VisitRecursion> {
+    fn f_up(&mut self, expr: &Self::Node) -> DFResult<TreeNodeRecursion> {
         match expr {
             e @ Expr::BinaryExpr(BinaryExpr { left, op, right }) => {
                 trace::trace!("post visit binary expr: {e}");
@@ -517,7 +531,7 @@ impl TreeNodeVisitor for DeleteSelectionExpressionToDomainsVisitor<'_> {
             }
         }
 
-        Ok(VisitRecursion::Continue)
+        Ok(TreeNodeRecursion::Continue)
     }
 }
 
@@ -539,7 +553,7 @@ impl DeleteSelectionExpressionToDomainsVisitor<'_> {
         let op = &nsc.op;
         // Get the Vec<range> by op dataType and ScalarValue.
         // If op does not support it, it will return None, but it must be supported here (because op is obtained from nsc)
-        let val_set = get_range_fn(op, &value.get_datatype(), value)
+        let val_set = get_range_fn(op, &value.data_type(), value)
             // Construct ValueSet by Range
             .map(|r| Domain::of_ranges(&r).unwrap())
             // Normally this is not triggered (unless there is a bug), but returns ValueSet::All for safety
@@ -555,7 +569,7 @@ impl DeleteSelectionExpressionToDomainsVisitor<'_> {
         let col = &nsc.column;
         let value = &nsc.value;
         let is_eq_op = nsc.is_eq_op();
-        let val_set = Domain::of_values(&value.get_datatype(), is_eq_op, &[value]);
+        let val_set = Domain::of_values(&value.data_type(), is_eq_op, &[value]);
         ColumnDomains::of(col.name.to_owned(), &val_set)
     }
 
@@ -737,9 +751,13 @@ mod tests {
             .expect("invalid time")
             .add(Duration::milliseconds(1000_i64));
 
-        let epoch_h_expr = Expr::Literal(ScalarValue::Date64(Some(epoch_h.timestamp())));
-        let epoch_m_expr = Expr::Literal(ScalarValue::Date64(Some(epoch_m.timestamp_micros())));
-        let epoch_l_expr = Expr::Literal(ScalarValue::Date64(Some(epoch_l.timestamp_millis())));
+        let epoch_h_expr = Expr::Literal(ScalarValue::Date64(Some(epoch_h.and_utc().timestamp())));
+        let epoch_m_expr = Expr::Literal(ScalarValue::Date64(Some(
+            epoch_m.and_utc().timestamp_micros(),
+        )));
+        let epoch_l_expr = Expr::Literal(ScalarValue::Date64(Some(
+            epoch_l.and_utc().timestamp_millis(),
+        )));
 
         let filter_d1 = binary_expr(col("d1"), Operator::Lt, epoch_h_expr);
         let filter_d2 = binary_expr(col("d2"), Operator::Eq, epoch_m_expr);
@@ -753,15 +771,15 @@ mod tests {
         //   d3: (Date64(3662000), _)
         let d1 = Range::lt(
             &DataType::Date64,
-            &ScalarValue::Date64(Some(epoch_h.timestamp())),
+            &ScalarValue::Date64(Some(epoch_h.and_utc().timestamp())),
         );
         let d2 = Range::eq(
             &DataType::Date64,
-            &ScalarValue::Date64(Some(epoch_m.timestamp_micros())),
+            &ScalarValue::Date64(Some(epoch_m.and_utc().timestamp_micros())),
         );
         let d3 = Range::gt(
             &DataType::Date64,
-            &ScalarValue::Date64(Some(epoch_l.timestamp_millis())),
+            &ScalarValue::Date64(Some(epoch_l.and_utc().timestamp_millis())),
         );
 
         let d1_domain = Domain::of_ranges(&[d1]).unwrap();
@@ -787,6 +805,7 @@ mod tests {
             Box::new(col("s1")),
             Box::new(lit("%上证180")),
             None,
+            false,
         ));
         let filter2 = binary_expr(col("time"), Operator::GtEq, lit("2022-10-10 00:00:00"));
 
@@ -1326,8 +1345,16 @@ mod tests {
             .expect("invalid time")
             .add(Duration::milliseconds(1000_i64));
 
-        let filter_d2 = binary_expr(col("time"), Operator::Lt, lit(epoch_m.timestamp_micros()));
-        let filter_d3 = binary_expr(col("time"), Operator::GtEq, lit(epoch_l.timestamp_millis()));
+        let filter_d2 = binary_expr(
+            col("time"),
+            Operator::Lt,
+            lit(epoch_m.and_utc().timestamp_micros()),
+        );
+        let filter_d3 = binary_expr(
+            col("time"),
+            Operator::GtEq,
+            lit(epoch_l.and_utc().timestamp_millis()),
+        );
 
         let and_1 = and(and(host, port_low), port_high);
         let and_2 = and(filter_d2, filter_d3);
@@ -1412,8 +1439,16 @@ mod tests {
             .expect("invalid time")
             .add(Duration::milliseconds(1000_i64));
 
-        let filter_d2 = binary_expr(col("time"), Operator::Lt, lit(epoch_m.timestamp_micros()));
-        let filter_d3 = binary_expr(col("time"), Operator::GtEq, lit(epoch_l.timestamp_millis()));
+        let filter_d2 = binary_expr(
+            col("time"),
+            Operator::Lt,
+            lit(epoch_m.and_utc().timestamp_micros()),
+        );
+        let filter_d3 = binary_expr(
+            col("time"),
+            Operator::GtEq,
+            lit(epoch_l.and_utc().timestamp_millis()),
+        );
 
         let host_or = or(host_low, host_high);
         let time_and = and(filter_d2, filter_d3);

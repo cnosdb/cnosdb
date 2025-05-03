@@ -112,7 +112,7 @@ impl ExecutionPlan for AggregateFilterTskvExec {
             Some(self.pushed_aggs.clone()),
             self.schema.clone(),
             self.table_schema.clone(),
-            self.table_schema.meta(),
+            self.table_schema.build_meta(),
         );
 
         let span_ctx = context.session_config().get_extension::<SpanContext>();

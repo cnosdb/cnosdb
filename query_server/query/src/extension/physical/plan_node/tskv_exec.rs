@@ -233,7 +233,8 @@ impl TableScanStream {
         for item in proj_schema.fields().iter() {
             let field_name = item.name();
             if field_name == TIME_FIELD_NAME {
-                let (encoding, column_type) = match table_schema.column(TIME_FIELD_NAME) {
+                let (encoding, column_type) = match table_schema.get_column_by_name(TIME_FIELD_NAME)
+                {
                     None => (Encoding::Default, ColumnType::Time(TimeUnit::Nanosecond)),
                     Some(v) => (v.encoding, v.column_type.clone()),
                 };
@@ -246,7 +247,7 @@ impl TableScanStream {
                 continue;
             }
 
-            if let Some(v) = table_schema.column(field_name) {
+            if let Some(v) = table_schema.get_column_by_name(field_name) {
                 proj_fileds.push(v.clone());
             } else {
                 return Err(CommonSnafu {
@@ -274,7 +275,7 @@ impl TableScanStream {
             None,
             proj_schema.clone(),
             proj_table_schema.into(),
-            table_schema.meta(),
+            table_schema.build_meta(),
         );
 
         let span_ctx = span.context();

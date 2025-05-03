@@ -108,7 +108,7 @@ impl CompactingBlock {
                 record_batch,
                 table_schema,
                 ..
-            } => decode_pages(record_batch, table_schema.meta(), None),
+            } => decode_pages(record_batch, table_schema.build_meta(), None),
             CompactingBlock::Raw {
                 raw,
                 meta,

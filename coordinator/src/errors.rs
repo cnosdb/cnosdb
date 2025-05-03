@@ -33,6 +33,7 @@ pub enum CoordinatorError {
     #[error_code(code = 1)]
     MetaRequest {
         msg: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -41,6 +42,7 @@ pub enum CoordinatorError {
     #[error_code(code = 2)]
     Io {
         source: io::Error,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -48,6 +50,7 @@ pub enum CoordinatorError {
     #[snafu(display("Fails to serialize or deserialize: {source}"))]
     BincodeSerde {
         source: bincode::Error,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -56,6 +59,7 @@ pub enum CoordinatorError {
     #[error_code(code = 4)]
     ChannelSend {
         msg: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -64,6 +68,7 @@ pub enum CoordinatorError {
     #[error_code(code = 5)]
     ChannelRecv {
         msg: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -72,6 +77,7 @@ pub enum CoordinatorError {
     #[error_code(code = 6)]
     WriteVnode {
         msg: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -80,6 +86,7 @@ pub enum CoordinatorError {
     #[error_code(code = 7)]
     Model {
         source: models::ModelError,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -94,6 +101,7 @@ pub enum CoordinatorError {
     #[error_code(code = 10)]
     InvalidFlatbuffer {
         source: InvalidFlatbuffer,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -102,6 +110,7 @@ pub enum CoordinatorError {
     #[error_code(code = 11)]
     UnKnownCoordCmd {
         cmd: u32,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -109,6 +118,7 @@ pub enum CoordinatorError {
     #[snafu(display("Coordinator command parse failed"))]
     #[error_code(code = 12)]
     CoordCommandParseErr {
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -116,6 +126,7 @@ pub enum CoordinatorError {
     #[snafu(display("Unexpect response message"))]
     #[error_code(code = 13)]
     UnExpectResponse {
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -124,6 +135,7 @@ pub enum CoordinatorError {
     #[error_code(code = 14)]
     CommonError {
         msg: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -156,6 +168,7 @@ pub enum CoordinatorError {
     #[error_code(code = 19)]
     GRPCRequest {
         msg: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -164,6 +177,7 @@ pub enum CoordinatorError {
     #[error_code(code = 20)]
     Points {
         msg: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -192,6 +206,7 @@ pub enum CoordinatorError {
         from: Precision,
         to: Precision,
         ts: Timestamp,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -202,6 +217,7 @@ pub enum CoordinatorError {
         database: String,
         database_min_ts: Timestamp,
         point_ts: Timestamp,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -210,6 +226,7 @@ pub enum CoordinatorError {
     #[error_code(code = 26)]
     LeaderIsWrong {
         replica: ReplicationSet,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -218,6 +235,7 @@ pub enum CoordinatorError {
     #[error_code(code = 27)]
     RaftWriteError {
         msg: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -242,6 +260,7 @@ pub enum CoordinatorError {
     RaftNodeNotFound {
         vnode_id: VnodeId,
         replica_id: ReplicationSetId,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -250,6 +269,7 @@ pub enum CoordinatorError {
     #[snafu(display("Invalid configuration: {msg}"))]
     InvalidInitialConfig {
         msg: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -257,6 +277,7 @@ pub enum CoordinatorError {
     #[snafu(display("Table name can't be empty"))]
     #[error_code(code = 32)]
     InvalidPointTable {
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -264,6 +285,7 @@ pub enum CoordinatorError {
     #[snafu(display("Memory Exhausted Retry Later"))]
     #[error_code(code = 33)]
     MemoryExhausted {
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -271,6 +293,7 @@ pub enum CoordinatorError {
     #[snafu(display("Fields can't be empty"))]
     #[error_code(code = 34)]
     FieldsIsEmpty {
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -279,6 +302,7 @@ pub enum CoordinatorError {
     #[error_code(code = 35)]
     ArrowError {
         source: ArrowError,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -286,6 +310,7 @@ pub enum CoordinatorError {
     #[error_code(code = 36)]
     DataFusionError {
         source: DataFusionError,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },

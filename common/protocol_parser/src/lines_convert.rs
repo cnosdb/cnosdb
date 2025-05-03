@@ -290,9 +290,12 @@ pub fn arrow_array_to_points(
     let mut fb_columns = Vec::new();
     for (column, schema) in columns.iter().zip(schema.fields.iter()) {
         let col_name = schema.name().as_str();
-        let column_schema = table_schema.column(col_name).ok_or_else(|| Error::Common {
-            content: format!("column {} not found in table {}", col_name, table_name),
-        })?;
+        let column_schema =
+            table_schema
+                .get_column_by_name(col_name)
+                .ok_or_else(|| Error::Common {
+                    content: format!("column {} not found in table {}", col_name, table_name),
+                })?;
         let fb_column = match column_schema.column_type.to_physical_type() {
             PhysicalCType::Tag => {
                 build_string_column(column, col_name, FbColumnType::Tag, &mut fbb)?

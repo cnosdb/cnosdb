@@ -592,7 +592,7 @@ fn project_time_fields(
 ) -> SchemaResult<SchemaRef> {
     let mut fields = vec![];
     for field in schema.fields() {
-        if let Some(col) = table_schema.column(field.name()) {
+        if let Some(col) = table_schema.get_column_by_name(field.name()) {
             if !col.column_type.is_tag() {
                 fields.push(field.clone());
             }
@@ -930,7 +930,7 @@ async fn build_stream(
 
     // TODO 这里需要验证table schema是否正确
     let expr = query_option.split.filter();
-    let arrow_schema = query_option.table_schema.to_arrow_schema();
+    let arrow_schema = query_option.table_schema.build_arrow_schema();
     let physical_expr = if expr.expr_type.is_none() {
         None
     } else {

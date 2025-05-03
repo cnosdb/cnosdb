@@ -111,7 +111,7 @@ impl SeriesKey {
                 err: "missing column name".to_string(),
             })?;
             let id = table_schema
-                .column(tag_key)
+                .get_column_by_name(tag_key)
                 .context(InvalidTagSnafu {
                     err: format!("tag not found {}", tag_key),
                 })?

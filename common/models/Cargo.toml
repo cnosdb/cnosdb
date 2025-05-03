@@ -22,7 +22,7 @@ bincode = { workspace = true }
 byte-unit = { workspace = true }
 byteorder = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
-datafusion = { workspace = true }
+datafusion = { workspace = true, features = ["avro"]}
 datafusion-proto = { workspace = true }
 derive_builder = { workspace = true }
 flatbuffers = { workspace = true }

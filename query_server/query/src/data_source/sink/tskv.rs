@@ -112,7 +112,7 @@ impl TskvRecordBatchSinkProvider {
 
 impl RecordBatchSinkProvider for TskvRecordBatchSinkProvider {
     fn schema(&self) -> SchemaRef {
-        self.schema.to_arrow_schema()
+        self.schema.build_arrow_schema()
     }
 
     fn create_batch_sink(

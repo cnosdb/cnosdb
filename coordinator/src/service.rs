@@ -678,12 +678,13 @@ impl Coordinator for CoordService {
             let mut has_fileds = false;
             for (column, schema) in columns.iter().zip(schema.iter()) {
                 let name = schema.name().as_str();
-                let tskv_schema_column = table_schema.column(name).ok_or_else(|| {
-                    CommonSnafu {
-                        msg: format!("column {} not found in table {}", name, table_name),
-                    }
-                    .build()
-                })?;
+                let tskv_schema_column =
+                    table_schema.get_column_by_name(name).ok_or_else(|| {
+                        CommonSnafu {
+                            msg: format!("column {} not found in table {}", name, table_name),
+                        }
+                        .build()
+                    })?;
                 if name == TIME_FIELD_NAME {
                     let precsion_and_value =
                         get_precision_and_value_from_arrow_column(column, idx)?;
@@ -1061,7 +1062,7 @@ impl Coordinator for CoordService {
             let tag_name = unsafe { String::from_utf8_unchecked(key) };
 
             let id = table_schema
-                .column(&tag_name)
+                .get_column_by_name(&tag_name)
                 .context(ColumnNotFoundSnafu { name: tag_name })?
                 .id;
             new_tag.key = format!("{id}").into_bytes();
@@ -1077,12 +1078,13 @@ impl Coordinator for CoordService {
                 let mut tags = vec![];
                 for (column, schema) in columns.iter().zip(schema.iter()) {
                     let name = schema.name().as_str();
-                    let tskv_schema_column = table_schema.column(name).ok_or_else(|| {
-                        CommonSnafu {
-                            msg: format!("column {} not found in table {}", name, table_name),
-                        }
-                        .build()
-                    })?;
+                    let tskv_schema_column =
+                        table_schema.get_column_by_name(name).ok_or_else(|| {
+                            CommonSnafu {
+                                msg: format!("column {} not found in table {}", name, table_name),
+                            }
+                            .build()
+                        })?;
 
                     if matches!(tskv_schema_column.column_type, ColumnType::Tag) {
                         let value = column

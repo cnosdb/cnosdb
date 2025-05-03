@@ -386,7 +386,7 @@ impl VnodeStorage {
             })?;
 
         let column_id = schema
-            .column(column_name)
+            .get_column_by_name(column_name)
             .context(FieldNotFoundSnafu {
                 msg: format!("'{}'.'{}'.{}", db_name, table, column_name),
             })?
@@ -590,7 +590,7 @@ impl VnodeStorage {
                 database: db_name.to_string(),
                 table: table.to_string(),
             })?
-            .column_ids();
+            .build_column_ids_vec();
 
         let version = vnode.super_version();
 

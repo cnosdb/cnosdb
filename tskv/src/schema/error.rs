@@ -15,6 +15,7 @@ pub enum SchemaError {
     TableNotFound {
         database: String,
         table: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -29,6 +30,7 @@ pub enum SchemaError {
         column: String,
         found: ColumnType,
         expected: ColumnType,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -36,6 +38,7 @@ pub enum SchemaError {
     #[snafu(display("field {} not found", msg))]
     FieldNotFound {
         msg: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -43,6 +46,7 @@ pub enum SchemaError {
     #[snafu(display("column '{}' already exists", name))]
     ColumnAlreadyExists {
         name: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -50,6 +54,7 @@ pub enum SchemaError {
     #[snafu(display("database '{}' not found", database))]
     DatabaseNotFound {
         database: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -57,6 +62,7 @@ pub enum SchemaError {
     #[snafu(display("tenant '{}' not found from meta", tenant))]
     TenantNotFound {
         tenant: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -64,6 +70,7 @@ pub enum SchemaError {
     #[snafu(display("database '{}' already exists", database))]
     DatabaseAlreadyExists {
         database: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -71,6 +78,7 @@ pub enum SchemaError {
     #[snafu(display("column '{}' not found", column))]
     ColumnNotFound {
         column: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },

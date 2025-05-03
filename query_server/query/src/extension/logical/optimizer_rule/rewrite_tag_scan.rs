@@ -44,7 +44,7 @@ impl OptimizerRule for RewriteTagScan {
 
                     // Find non-tag columns from projection
                     e.iter()
-                        .flat_map(|i| table_schema.column_by_index(*i))
+                        .flat_map(|i| table_schema.get_column_by_index(*i))
                         .for_each(|c| {
                             if c.column_type.is_tag() {
                                 contain_tag = true;

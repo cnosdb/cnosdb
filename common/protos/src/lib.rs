@@ -29,54 +29,63 @@ pub enum PointsError {
     #[snafu(display("{}", msg))]
     Points {
         msg: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
 
     #[snafu(display("Flatbuffers 'Points' missing database name (db)"))]
     PointsMissingDatabaseName {
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
 
     #[snafu(display("Flatbuffers 'Points' missing tables data (tables)"))]
     PointsMissingTables {
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
 
     #[snafu(display("Flatbuffers 'Table' missing table name (tab)"))]
     TableMissingName {
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
 
     #[snafu(display("Flatbuffers 'Table' missing points data (points)"))]
     TableMissingColumns {
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
 
     #[snafu(display("Flatbuffers 'Point' missing tags data (tags)"))]
     PointMissingTags {
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
 
     #[snafu(display("Flatbuffers 'Column' missing values"))]
     ColumnMissingValues {
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
 
     #[snafu(display("Flatbuffers 'Column' missing names"))]
     ColumnMissingNames {
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
 
     #[snafu(display("Flatbuffers 'Column' missing nullbits"))]
     ColumnMissingNullbits {
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },

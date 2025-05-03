@@ -101,7 +101,7 @@ impl Projection {
     fn from_schema(schema: &TskvTableSchema, time_column_id: ColumnId) -> Self {
         let column_ids = schema.columns().iter().map(|f| f.id).collect::<Vec<_>>();
 
-        let fields_with_time = if schema.column_index(TIME_FIELD_NAME).is_none() {
+        let fields_with_time = if schema.get_column_index_by_name(TIME_FIELD_NAME).is_none() {
             column_ids
                 .iter()
                 .cloned()

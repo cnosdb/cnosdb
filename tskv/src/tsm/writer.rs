@@ -582,7 +582,7 @@ pub mod test {
         );
         let schema = Arc::new(schema);
         let data1 = RecordBatch::try_new(
-            schema.to_record_data_schema(),
+            schema.build_arrow_schema_without_tags(),
             vec![
                 ts_column(vec![1, 2, 3]),
                 i64_column(vec![1, 2, 3]),
@@ -603,7 +603,7 @@ pub mod test {
         tsm_writer.finish().await.unwrap();
         let tsm_reader = TsmReader::open(tsm_writer.path).await.unwrap();
         let pages2 = tsm_reader.read_series_pages(1, 0).await.unwrap();
-        let data2 = decode_pages(pages2, schema.meta(), None).unwrap();
+        let data2 = decode_pages(pages2, schema.build_meta(), None).unwrap();
         assert_eq!(data1, data2);
     }
 
@@ -642,7 +642,7 @@ pub mod test {
         );
         let schema = Arc::new(schema);
         let data1 = RecordBatch::try_new(
-            schema.to_record_data_schema(),
+            schema.build_arrow_schema_without_tags(),
             vec![
                 ts_column(vec![1, 2, 3]),
                 i64_column(vec![1, 2, 3]),
@@ -663,7 +663,7 @@ pub mod test {
         tsm_writer.finish().await.unwrap();
         let tsm_reader = TsmReader::open(tsm_writer.path).await.unwrap();
         let pages2 = tsm_reader.read_series_pages(1, 0).await.unwrap();
-        let data2 = decode_pages(pages2, schema.meta(), None).unwrap();
+        let data2 = decode_pages(pages2, schema.build_meta(), None).unwrap();
         assert_eq!(data1, data2);
     }
 
@@ -702,7 +702,7 @@ pub mod test {
         );
         let schema = Arc::new(schema);
         let data1 = RecordBatch::try_new(
-            schema.to_record_data_schema(),
+            schema.build_arrow_schema_without_tags(),
             vec![
                 ts_column(vec![1, 2, 3]),
                 i64_column(vec![1, 2, 3]),

@@ -10,9 +10,10 @@ use arrow_schema::FieldRef;
 use datafusion::arrow::datatypes::{
     DataType as ArrowDataType, Field as ArrowField, Schema, SchemaRef, TimeUnit,
 };
-use datafusion::common::{DFField, DFSchema, DFSchemaRef};
+use datafusion::common::{DFSchema, DFSchemaRef};
 use datafusion::error::DataFusionError;
 use datafusion::prelude::Column;
+use datafusion::sql::TableReference;
 use serde::de::{MapAccess, SeqAccess, Visitor};
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize, Serializer};
@@ -30,20 +31,36 @@ use crate::schema::{
 use crate::value_type::ValueType;
 use crate::{ColumnId, ModelError, ModelResult, PhysicalDType, SchemaVersion};
 
+pub fn get_schema_version(schema: SchemaRef) -> ModelResult<SchemaVersion> {
+    let schema_version = schema.metadata().get(SCHEMA_VERSION).ok_or_else(|| {
+        InternalSnafu {
+            err: format!("metadata '{SCHEMA_VERSION}' not found in schema: {schema:?}"),
+        }
+        .build()
+    })?;
+    schema_version.parse::<SchemaVersion>().map_err(|e| {
+        InternalSnafu {
+            err: format!("parse schema version error: {e}"),
+        }
+        .build()
+    })
+}
+
 pub type TskvTableSchemaRef = Arc<TskvTableSchema>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TskvTableSchema {
-    pub tenant: String,
-    pub db: String,
-    pub name: String,
+    pub tenant: Arc<str>,
+    pub db: Arc<str>,
+    pub name: Arc<str>,
     pub schema_version: SchemaVersion,
     next_column_id: ColumnId,
 
     columns: Vec<TableColumn>,
-    //ColumnName -> ColumnsIndex
-    columns_index: HashMap<String, usize>,
-    fields_ids: HashMap<ColumnId, usize>,
+    /// Column-name -> Column-index
+    column_names_index: HashMap<String, usize>,
+    /// Column-id -> Column-index
+    field_ids_index: HashMap<ColumnId, usize>,
 }
 
 impl Serialize for TskvTableSchema {
@@ -58,7 +75,7 @@ impl Serialize for TskvTableSchema {
         state.serialize_field("schema_version", &self.schema_version)?;
         state.serialize_field("next_column_id", &self.next_column_id)?;
         state.serialize_field("columns", &self.columns)?;
-        state.serialize_field("columns_index", &self.columns_index)?;
+        state.serialize_field("columns_index", &self.column_names_index)?;
         state.end()
     }
 }
@@ -101,16 +118,16 @@ impl<'de> Deserialize<'de> for TskvTableSchema {
                 let columns_index = seq
                     .next_element::<HashMap<String, usize>>()?
                     .ok_or_else(|| serde::de::Error::invalid_length(6, &self))?;
-                let fields_ids = TskvTableSchema::build_fields_ids(&columns);
+                let fields_ids = TskvTableSchema::build_field_ids_index(&columns);
                 Ok(TskvTableSchema {
-                    tenant,
-                    db,
-                    name,
+                    tenant: tenant.into(),
+                    db: db.into(),
+                    name: name.into(),
                     schema_version,
                     next_column_id,
                     columns,
-                    columns_index,
-                    fields_ids,
+                    column_names_index: columns_index,
+                    field_ids_index: fields_ids,
                 })
             }
 
@@ -193,21 +210,17 @@ impl<'de> Deserialize<'de> for TskvTableSchema {
                 let next_column_id = next_column_id
                     .ok_or_else(|| serde::de::Error::missing_field("next_column_id"))?;
                 let columns = columns.ok_or_else(|| serde::de::Error::missing_field("columns"))?;
-                let columns_index = columns
-                    .iter()
-                    .enumerate()
-                    .map(|(idx, e)| (e.name.clone(), idx))
-                    .collect();
-                let fields_ids = TskvTableSchema::build_fields_ids(&columns);
+                let column_names_index = TskvTableSchema::build_column_names_index(&columns);
+                let field_ids_index = TskvTableSchema::build_field_ids_index(&columns);
                 Ok(TskvTableSchema {
-                    tenant,
-                    db,
-                    name,
+                    tenant: tenant.into(),
+                    db: db.into(),
+                    name: name.into(),
                     schema_version,
                     next_column_id,
                     columns,
-                    columns_index,
-                    fields_ids,
+                    column_names_index,
+                    field_ids_index,
                 })
             }
         }
@@ -246,202 +259,191 @@ impl Ord for TskvTableSchema {
 impl Default for TskvTableSchema {
     fn default() -> Self {
         Self {
-            tenant: DEFAULT_CATALOG.to_string(),
-            db: DEFAULT_DATABASE.to_string(),
-            name: "template".to_string(),
+            tenant: DEFAULT_CATALOG.into(),
+            db: DEFAULT_DATABASE.into(),
+            name: "template".into(),
             schema_version: 0,
             next_column_id: 0,
             columns: Default::default(),
-            columns_index: Default::default(),
-            fields_ids: Default::default(),
+            column_names_index: Default::default(),
+            field_ids_index: Default::default(),
         }
     }
 }
 
 impl TskvTableSchema {
-    pub fn meta(&self) -> HashMap<String, String> {
+    pub fn new(
+        tenant: impl Into<Arc<str>>,
+        db: impl Into<Arc<str>>,
+        name: impl Into<Arc<str>>,
+        columns: Vec<TableColumn>,
+    ) -> Self {
+        let column_names_index = Self::build_column_names_index(&columns);
+        let field_ids_index = Self::build_field_ids_index(&columns);
+        Self {
+            tenant: tenant.into(),
+            db: db.into(),
+            name: name.into(),
+            schema_version: 0,
+            next_column_id: columns.len() as ColumnId,
+            columns,
+            column_names_index,
+            field_ids_index,
+        }
+    }
+
+    pub fn build_meta(&self) -> HashMap<String, String> {
         let mut meta = HashMap::new();
-        meta.insert(TENANT.to_string(), self.tenant.clone());
-        meta.insert(DATABASE_NAME.to_string(), self.db.clone());
-        meta.insert(TABLE_NAME.to_string(), self.name.clone());
+        meta.insert(TENANT.to_string(), self.tenant.to_string());
+        meta.insert(DATABASE_NAME.to_string(), self.db.to_string());
+        meta.insert(TABLE_NAME.to_string(), self.name.to_string());
         meta.insert(SCHEMA_VERSION.to_string(), self.schema_version.to_string());
         meta.insert(NEXT_COLUMN_ID.to_string(), self.next_column_id.to_string());
         meta
     }
 
-    pub fn to_record_data_schema(&self) -> SchemaRef {
+    fn build_column_names_index(columns: &[TableColumn]) -> HashMap<String, usize> {
+        columns
+            .iter()
+            .enumerate()
+            .map(|(idx, col)| (col.name.clone(), idx))
+            .collect()
+    }
+
+    fn build_field_ids_index(columns: &[TableColumn]) -> HashMap<ColumnId, usize> {
+        let mut field_ids: Vec<u32> = columns
+            .iter()
+            .filter(|c| c.column_type.is_field())
+            .map(|c| c.id)
+            .collect();
+        field_ids.sort();
+        let mut map = HashMap::new();
+        for (i, id) in field_ids.into_iter().enumerate() {
+            map.insert(id, i);
+        }
+        map
+    }
+
+    pub fn build_arrow_schema_without_tags(&self) -> SchemaRef {
         let fields: Vec<ArrowField> = self
             .columns
             .iter()
             .filter(|column| !column.column_type.is_tag())
             .map(|field| field.into())
             .collect();
-        Arc::new(Schema::new_with_metadata(fields, self.meta()))
+        Arc::new(Schema::new_with_metadata(fields, self.build_meta()))
     }
 
-    pub fn schema_version_from_arrow_array_schema(schema: SchemaRef) -> ModelResult<SchemaVersion> {
-        let schema_version =
-            SchemaVersion::from_str(schema.metadata().get(SCHEMA_VERSION).ok_or_else(|| {
-                InternalSnafu {
-                    err: format!("schema version not found in schema: {:?}", schema),
-                }
-                .build()
-            })?)
-            .map_err(|e| {
-                InternalSnafu {
-                    err: format!("parse schema version error: {}", e),
-                }
-                .build()
-            })?;
-        Ok(schema_version)
-    }
-
-    pub fn to_arrow_schema(&self) -> SchemaRef {
+    pub fn build_arrow_schema(&self) -> SchemaRef {
         let fields: Vec<ArrowField> = self.columns.iter().map(|field| field.into()).collect();
-        Arc::new(Schema::new_with_metadata(fields, self.meta()))
+        Arc::new(Schema::new_with_metadata(fields, self.build_meta()))
     }
 
-    pub fn to_df_schema(&self) -> Result<DFSchemaRef, DataFusionError> {
-        let fields: Vec<DFField> = self
+    pub fn build_df_schema(&self) -> Result<DFSchemaRef, DataFusionError> {
+        let table_reference =
+            TableReference::full(self.tenant.clone(), self.db.clone(), self.name.clone());
+        let fields: Vec<(Option<TableReference>, FieldRef)> = self
             .columns
             .iter()
-            .map(ArrowField::from)
-            .map(|f| DFField::from_qualified(self.name.as_str(), f))
+            .map(|f| (Some(table_reference.clone()), Arc::new(f.into())))
             .collect();
-        Ok(Arc::new(DFSchema::new_with_metadata(fields, self.meta())?))
+        Ok(Arc::new(DFSchema::new_with_metadata(
+            fields,
+            self.build_meta(),
+        )?))
     }
 
-    pub fn new(tenant: String, db: String, name: String, columns: Vec<TableColumn>) -> Self {
-        let columns_index = columns
-            .iter()
-            .enumerate()
-            .map(|(idx, e)| (e.name.clone(), idx))
-            .collect();
-
-        let fields_ids = Self::build_fields_ids(&columns);
-        Self {
-            tenant,
-            db,
-            name,
-            schema_version: 0,
-            next_column_id: columns.len() as ColumnId,
-            columns,
-            columns_index,
-            fields_ids,
-        }
-    }
-
-    pub fn build_fields_ids(columns: &[TableColumn]) -> HashMap<ColumnId, usize> {
-        let mut ans = vec![];
-        for i in columns.iter() {
-            if matches!(i.column_type, ColumnType::Field(_)) {
-                ans.push(i.id);
-            }
-        }
-        ans.sort();
-        let mut map = HashMap::new();
-        for (i, id) in ans.iter().enumerate() {
-            map.insert(*id, i);
-        }
-        map
-    }
-
-    /// only for mock!!!
-    pub fn new_test() -> Self {
-        TskvTableSchema::new(
-            "cnosdb".into(),
-            "public".into(),
-            "test".into(),
-            vec![TableColumn::new_time_column(0, TimeUnit::Second)],
-        )
-    }
-
-    /// add column
-    /// not add if exists
+    /// Add a column if not exists.
+    /// Field `column_names_index` and `field_ids_index` will be updated.
     pub fn add_column(&mut self, col: TableColumn) {
-        self.columns_index
-            .entry(col.name.clone())
-            .or_insert_with(|| {
-                self.columns.push(col);
-                self.columns.len() - 1
-            });
-        self.fields_ids = Self::build_fields_ids(&self.columns);
-        self.next_column_id += 1;
-    }
-
-    /// drop column if exists
-    pub fn drop_column(&mut self, col_name: &str) {
-        if let Some(id) = self.columns_index.get(col_name) {
-            self.columns.remove(*id);
+        if !self.column_names_index.contains_key(&col.name) {
+            self.column_names_index
+                .insert(col.name.clone(), self.columns.len());
+            self.columns.push(col);
+            self.field_ids_index = Self::build_field_ids_index(&self.columns);
+            self.next_column_id += 1;
         }
-        let columns_index = self
-            .columns
-            .iter()
-            .enumerate()
-            .map(|(idx, e)| (e.name.clone(), idx))
-            .collect();
-        self.fields_ids = Self::build_fields_ids(&self.columns);
-        self.columns_index = columns_index;
     }
 
-    pub fn change_column(&mut self, col_name: &str, new_column: TableColumn) {
-        let id = match self.columns_index.get(col_name) {
-            None => return,
-            Some(id) => *id,
-        };
-        self.columns_index.remove(col_name);
-        self.columns_index.insert(new_column.name.clone(), id);
-        self.columns[id] = new_column;
-        self.fields_ids = Self::build_fields_ids(&self.columns);
+    /// Drop a column if exists.
+    /// Field `column_names_index` and `field_ids_index` will be updated.
+    pub fn drop_column(&mut self, col_name: &str) {
+        if let Some(id) = self.column_names_index.get(col_name) {
+            self.columns.remove(*id);
+            self.column_names_index = Self::build_column_names_index(&self.columns);
+            self.field_ids_index = Self::build_field_ids_index(&self.columns);
+        }
     }
 
-    /// Get the metadata of the column according to the column name
-    pub fn column(&self, name: &str) -> Option<&TableColumn> {
-        self.columns_index
-            .get(name)
-            .map(|idx| unsafe { self.columns.get_unchecked(*idx) })
+    /// Change a column if exists.
+    /// Field `column_names_index` and `field_ids_index` will be updated.
+    pub fn alter_column(&mut self, col_name: &str, new_column: TableColumn) {
+        if let Some(id) = self.column_names_index.remove(col_name) {
+            self.column_names_index.insert(new_column.name.clone(), id);
+            self.columns[id] = new_column;
+            self.field_ids_index = Self::build_field_ids_index(&self.columns);
+        }
     }
 
-    pub fn column_id_column_map(&self) -> HashMap<ColumnId, &TableColumn> {
-        self.columns.iter().map(|c| (c.id, c)).collect()
+    /// Get the index of the column by the column name.
+    pub fn get_column_index_by_name(&self, col_name: &str) -> Option<usize> {
+        self.column_names_index.get(col_name).cloned()
     }
 
-    pub fn time_column_precision(&self) -> Precision {
+    /// Get `TableColumn` by the column name.
+    pub fn get_column_by_name(&self, col_name: &str) -> Option<&TableColumn> {
+        self.get_column_index_by_name(col_name)
+            .map(|idx| unsafe { self.columns.get_unchecked(idx) })
+    }
+
+    /// Get `TableColumn` by the column index.
+    pub fn get_column_by_index(&self, col_index: usize) -> Option<&TableColumn> {
+        self.columns.get(col_index)
+    }
+
+    /// Get `TableColumn` by the column id.
+    pub fn get_column_by_id(&self, col_id: ColumnId) -> Option<&TableColumn> {
+        self.columns.iter().find(|c| c.id == col_id)
+    }
+
+    /// Get the column name by the column id.
+    pub fn get_column_name_by_id(&self, col_id: ColumnId) -> Option<&str> {
+        self.get_column_by_id(col_id)
+            .map(|column| column.name.as_ref())
+    }
+
+    /// Find the last time column and return it.
+    pub fn get_time_column(&self) -> TableColumn {
+        // There will be one and only one time column
+        unsafe {
+            self.columns
+                .iter()
+                .find(|column| column.column_type.is_time())
+                .unwrap_unchecked()
+                .clone()
+        }
+    }
+
+    /// Find the first time column and return its precision.
+    /// If there is no time column or the time column is not defined a precision, return `Precision::NS`.
+    pub fn get_time_column_precision(&self) -> Precision {
         self.columns
             .iter()
             .find(|column| column.column_type.is_time())
-            .map(|column| column.column_type.precision().unwrap_or(Precision::NS))
+            .map(|column| column.column_type.precision())
+            .flatten()
             .unwrap_or(Precision::NS)
     }
 
-    /// Get the index of the column
-    pub fn column_index(&self, name: &str) -> Option<usize> {
-        self.columns_index.get(name).cloned()
+    pub fn contains_column(&self, column_name: &str) -> bool {
+        self.column_names_index.contains_key(column_name)
     }
 
-    pub fn column_name(&self, id: ColumnId) -> Option<&str> {
-        for column in self.columns.iter() {
-            if column.id == id {
-                return Some(&column.name);
-            }
-        }
-        None
-    }
-
-    /// Get the metadata of the column according to the column index
-    pub fn column_by_index(&self, idx: usize) -> Option<&TableColumn> {
-        self.columns.get(idx)
-    }
-
-    pub fn columns(&self) -> &[TableColumn] {
-        &self.columns
-    }
-
-    pub fn column_ids(&self) -> Vec<ColumnId> {
+    pub fn build_column_ids_vec(&self) -> Vec<ColumnId> {
         self.columns.iter().map(|c| c.id).collect()
     }
 
-    pub fn fields(&self) -> Vec<TableColumn> {
+    pub fn build_field_columns_vec(&self) -> Vec<TableColumn> {
         self.columns
             .iter()
             .filter(|column| column.column_type.is_field())
@@ -449,37 +451,13 @@ impl TskvTableSchema {
             .collect()
     }
 
-    /// Traverse and return the time column of the table
-    ///
-    /// Do not call frequently
-    pub fn time_column(&self) -> TableColumn {
-        // There is one and only one time column
-        unsafe {
-            self.columns
-                .iter()
-                .filter(|column| column.column_type.is_time())
-                .last()
-                .cloned()
-                .unwrap_unchecked()
-        }
+    pub fn build_field_columns_vec_order_by_id(&self) -> Vec<TableColumn> {
+        let mut columns: Vec<TableColumn> = self.build_field_columns_vec();
+        columns.sort_by_key(|k| k.id);
+        columns
     }
 
-    /// Number of columns of ColumnType is Field
-    pub fn field_num(&self) -> usize {
-        self.columns
-            .iter()
-            .filter(|column| column.column_type.is_field())
-            .count()
-    }
-
-    pub fn tag_num(&self) -> usize {
-        self.columns
-            .iter()
-            .filter(|column| column.column_type.is_tag())
-            .count()
-    }
-
-    pub fn tag_indices(&self) -> Vec<usize> {
+    pub fn build_tag_column_index_vec(&self) -> Vec<usize> {
         self.columns
             .iter()
             .enumerate()
@@ -488,29 +466,23 @@ impl TskvTableSchema {
             .collect()
     }
 
-    pub fn fields_orderby_id(&self) -> Vec<TableColumn> {
-        let mut columns: Vec<TableColumn> = self
-            .columns
+    /// Count the number of field columns.
+    pub fn count_field_columns_num(&self) -> usize {
+        self.columns
             .iter()
             .filter(|column| column.column_type.is_field())
-            .cloned()
-            .collect();
-
-        columns.sort_by_key(|k| k.id);
-
-        columns
+            .count()
     }
 
-    // return (table_field_id, index), index mean field location which column
-    pub fn fields_id(&self) -> &HashMap<ColumnId, usize> {
-        &self.fields_ids
+    /// Count the number of tag columns.
+    pub fn count_tag_columns_num(&self) -> usize {
+        self.columns
+            .iter()
+            .filter(|column| column.column_type.is_tag())
+            .count()
     }
 
-    pub fn next_column_id(&self) -> ColumnId {
-        self.next_column_id
-    }
-
-    pub fn size(&self) -> usize {
+    pub fn cuont_schema_size(&self) -> usize {
         let mut size = 0;
         for i in self.columns.iter() {
             size += size_of_val(i);
@@ -519,8 +491,17 @@ impl TskvTableSchema {
         size
     }
 
-    pub fn contains_column(&self, column_name: &str) -> bool {
-        self.columns_index.contains_key(column_name)
+    pub fn columns(&self) -> &[TableColumn] {
+        &self.columns
+    }
+
+    /// Returns a index with the field id maps to its index in the schema.
+    pub fn field_ids_index(&self) -> &HashMap<ColumnId, usize> {
+        &self.field_ids_index
+    }
+
+    pub fn next_column_id(&self) -> ColumnId {
+        self.next_column_id
     }
 }
 

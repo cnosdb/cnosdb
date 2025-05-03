@@ -94,7 +94,7 @@ where
             None
         } else {
             let shard_len = none_empty_shard.len();
-            let index = rand::thread_rng().next_u64() as usize % shard_len;
+            let index = rand::rng().next_u64() as usize % shard_len;
             self.shard.get(index)?.pop()
         }
     }

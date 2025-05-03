@@ -72,7 +72,7 @@ where
     }
 
     async fn pop(&self) -> Option<(Self::K, Self::V)> {
-        let index = rand::thread_rng().next_u64() as usize % self.shard.len();
+        let index = rand::rng().next_u64() as usize % self.shard.len();
         self.shard.get(index)?.lock().await.pop()
     }
 

@@ -75,13 +75,13 @@ impl WatermarkTracker {
                 PERSISTER_SQL_TABLE.to_string(),
                 table_columns,
             ));
-            let schema = tskv_table_schema.to_arrow_schema();
+            let schema = tskv_table_schema.build_arrow_schema();
             let table_layout = TableLayoutHandle {
                 table: tskv_table_schema.clone(),
                 predicate: Arc::new(
                     Predicate::push_down_filter(
                         None,
-                        &*tskv_table_schema.to_df_schema()?,
+                        &*tskv_table_schema.build_df_schema()?,
                         &schema,
                         None,
                     )
@@ -99,7 +99,7 @@ impl WatermarkTracker {
                     None,
                     schema.clone(),
                     tskv_table_schema.clone(),
-                    tskv_table_schema.meta(),
+                    tskv_table_schema.build_meta(),
                 );
                 let mut iter = coord
                     .table_scan(query_opt, session.get_span_ctx())

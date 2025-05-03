@@ -260,13 +260,13 @@ impl OtlpToJaeger {
                 }
             };
 
-            let schema = tskv_table_schema.to_arrow_schema();
+            let schema = tskv_table_schema.build_arrow_schema();
             let table_layout = TableLayoutHandle {
                 table: tskv_table_schema.clone(),
                 predicate: Arc::new(
                     Predicate::push_down_filter(
                         filter_expr,
-                        &*tskv_table_schema.to_df_schema()?,
+                        &*tskv_table_schema.build_df_schema()?,
                         &schema,
                         limit,
                     )
@@ -291,7 +291,7 @@ impl OtlpToJaeger {
                     None,
                     schema.clone(),
                     tskv_table_schema.clone(),
-                    tskv_table_schema.meta(),
+                    tskv_table_schema.build_meta(),
                 );
                 iterators.push(
                     coord

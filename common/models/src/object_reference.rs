@@ -1,19 +1,23 @@
 use std::fmt::Display;
+use std::sync::Arc;
 
 use datafusion::common::Result as DFResult;
 use datafusion::error::DataFusionError;
 use datafusion::sql::TableReference;
 
 pub trait Resolve {
-    fn resolve_object(self, default_catalog: &str, default_schema: &str)
-        -> DFResult<ResolvedTable>;
-}
-
-impl Resolve for TableReference<'_> {
     fn resolve_object(
         self,
-        default_catalog: &str,
-        default_schema: &str,
+        default_catalog: Arc<str>,
+        default_schema: Arc<str>,
+    ) -> DFResult<ResolvedTable>;
+}
+
+impl Resolve for TableReference {
+    fn resolve_object(
+        self,
+        default_catalog: Arc<str>,
+        default_schema: Arc<str>,
     ) -> DFResult<ResolvedTable> {
         let result = match self {
             Self::Full { .. } => {
@@ -24,14 +28,14 @@ impl Resolve for TableReference<'_> {
                 )));
             }
             Self::Partial { schema, table } => ResolvedTable {
-                tenant: default_catalog.into(),
-                database: schema.into(),
-                table: table.into(),
+                tenant: default_catalog,
+                database: schema,
+                table,
             },
             Self::Bare { table } => ResolvedTable {
-                tenant: default_catalog.into(),
-                database: default_schema.into(),
-                table: table.into(),
+                tenant: default_catalog,
+                database: default_schema,
+                table,
             },
         };
 
@@ -41,22 +45,22 @@ impl Resolve for TableReference<'_> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedTable {
-    tenant: String,
-    database: String,
-    table: String,
+    tenant: Arc<str>,
+    database: Arc<str>,
+    table: Arc<str>,
 }
 
 impl ResolvedTable {
     pub fn tenant(&self) -> &str {
-        &self.tenant
+        self.tenant.as_ref()
     }
 
     pub fn database(&self) -> &str {
-        &self.database
+        self.database.as_ref()
     }
 
     pub fn table(&self) -> &str {
-        &self.table
+        self.table.as_ref()
     }
 }
 

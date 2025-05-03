@@ -13,6 +13,8 @@ use datafusion::physical_expr::execution_props::ExecutionProps;
 use datafusion::physical_expr::{create_physical_expr, PhysicalExpr};
 use datafusion::prelude::Column;
 use datafusion::scalar::ScalarValue;
+use datafusion_proto::physical_plan::to_proto::serialize_physical_expr;
+use datafusion_proto::physical_plan::DefaultPhysicalExtensionCodec;
 use datafusion_proto::protobuf;
 use datafusion_proto::protobuf::PhysicalExprNode;
 use prost::Message;
@@ -1678,7 +1680,7 @@ impl ResolvedPredicate {
     ) -> ModelResult<Self> {
         let node = match physical_expr {
             None => PhysicalExprNode { expr_type: None },
-            Some(e) => PhysicalExprNode::try_from(e)?,
+            Some(e) => serialize_physical_expr(&e, &DefaultPhysicalExtensionCodec {})?,
         };
 
         Ok(Self {
@@ -1731,7 +1733,6 @@ impl Predicate {
     pub fn push_down_filter(
         filter: Option<Expr>,
         df_schema: &DFSchema,
-        arrow_schema: &Schema,
         limit: Option<usize>,
     ) -> crate::ModelResult<Predicate> {
         match filter {
@@ -1748,7 +1749,7 @@ impl Predicate {
                 }
 
                 let execution_props = ExecutionProps::new();
-                let expr = create_physical_expr(&expr, df_schema, arrow_schema, &execution_props)?;
+                let expr = create_physical_expr(&expr, df_schema, &execution_props)?;
                 Ok(Predicate {
                     pushed_down_domains: push_down_domains,
                     physical_expr: Some(expr),
@@ -1761,7 +1762,7 @@ impl Predicate {
     pub fn resolve(&self, table: &TskvTableSchemaRef) -> ModelResult<ResolvedPredicateRef> {
         let domains_filter = self
             .filter()
-            .translate_column(|c| table.column(&c.name).cloned());
+            .translate_column(|c| table.get_column_by_name(&c.name).cloned());
 
         let time_filter = domains_filter.translate_column(|e| match e.column_type {
             ColumnType::Time(_) => Some(e.name.clone()),
@@ -1846,7 +1847,6 @@ pub enum PushedAggregateFunction {
 mod tests {
     use datafusion::common::DFSchema;
     use datafusion::prelude::lit;
-    use datafusion_proto::protobuf::PhysicalExprNode;
 
     use super::*;
 
@@ -2171,11 +2171,10 @@ mod tests {
         let expr = create_physical_expr(
             &lit(true),
             &Arc::new(DFSchema::empty()),
-            &Arc::new(Schema::empty()),
             &ExecutionProps::new(),
         )
         .unwrap();
-        let expr = PhysicalExprNode::try_from(expr.clone()).unwrap();
+        let expr = serialize_physical_expr(&expr, &DefaultPhysicalExtensionCodec {}).unwrap();
         let wrap = PhysicalExprNodeWrap(expr);
         let data = bincode::serialize(&wrap).unwrap();
         let wrap1 = bincode::deserialize::<PhysicalExprNodeWrap>(&data).unwrap();

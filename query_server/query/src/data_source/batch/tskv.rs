@@ -143,7 +143,7 @@ impl ClusterTable {
 
         let time_col = unsafe {
             // use first column(time column)
-            Column::from_name(&self.schema.column_by_index(0).unwrap_unchecked().name)
+            Column::from_name(&self.schema.get_column_by_index(0).unwrap_unchecked().name)
         };
 
         let aggs = agg_expr
@@ -215,7 +215,7 @@ impl ClusterTable {
     ) -> Result<Arc<dyn ExecutionPlan>> {
         let filter = conjunction(filters.iter().cloned());
 
-        let df_schema = self.schema.to_df_schema()?;
+        let df_schema = self.schema.build_df_schema()?;
 
         let df_fields = projected_schema
             .fields()
@@ -279,7 +279,7 @@ impl ClusterTable {
     fn project_schema(&self, projection: Option<&Vec<usize>>) -> Result<SchemaRef> {
         valid_project(&self.schema, projection)
             .map_err(|err| DataFusionError::External(Box::new(err)))?;
-        project_schema(&self.schema.to_arrow_schema(), projection)
+        project_schema(&self.schema.build_arrow_schema(), projection)
     }
 }
 
@@ -290,7 +290,7 @@ impl TableProvider for ClusterTable {
     }
 
     fn schema(&self) -> SchemaRef {
-        self.schema.to_arrow_schema()
+        self.schema.build_arrow_schema()
     }
 
     fn table_type(&self) -> TableType {
@@ -309,8 +309,8 @@ impl TableProvider for ClusterTable {
         // The datasource should return *at least* this number of rows if available.
         limit: Option<usize>,
     ) -> Result<Arc<dyn ExecutionPlan>> {
-        let df_schema = self.schema.to_df_schema()?;
-        let arrow_schema = self.schema.to_arrow_schema();
+        let df_schema = self.schema.build_df_schema()?;
+        let arrow_schema = self.schema.build_arrow_schema();
         // projection schema
         let (df_schema, arrow_schema) = if let Some(p) = projection {
             let df_fields = p
@@ -397,7 +397,7 @@ impl TableProvider for ClusterTable {
                 {
                     match &args[0] {
                         Expr::Column(expr) => {
-                            if let Some(col) = self.schema.column(&expr.name) {
+                            if let Some(col) = self.schema.get_column_by_name(&expr.name) {
                                 if col.column_type.is_tag() {
                                     return Ok(TableProviderAggregationPushDown::Unsupported);
                                 } else {
@@ -427,7 +427,7 @@ impl TableProvider for ClusterTable {
         let mut contain_time = false;
 
         proj.iter()
-            .flat_map(|i| self.schema.column_by_index(*i))
+            .flat_map(|i| self.schema.get_column_by_index(*i))
             .for_each(|c| {
                 if c.column_type.is_time() {
                     contain_time = true;
@@ -435,7 +435,7 @@ impl TableProvider for ClusterTable {
             });
 
         if !is_tag_scan && !contain_time {
-            if let Some(idx) = self.schema.column_index(TIME_FIELD_NAME) {
+            if let Some(idx) = self.schema.get_column_index_by_name(TIME_FIELD_NAME) {
                 let new_proj = std::iter::once(idx)
                     .chain(proj.iter().cloned())
                     .collect::<Vec<_>>();
@@ -494,7 +494,7 @@ pub fn valid_project(
 
     if let Some(e) = projection {
         e.iter().for_each(|idx| {
-            if let Some(c) = schema.column_by_index(*idx) {
+            if let Some(c) = schema.get_column_by_index(*idx) {
                 if c.column_type.is_time() {
                     contains_time_column = true;
                 }

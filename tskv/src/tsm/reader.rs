@@ -327,7 +327,7 @@ impl TsmReader {
             })?;
         let record_batch = decode_pages(
             column_group,
-            schema.meta(),
+            schema.build_meta(),
             Some((self.tombstone.clone(), series_id)),
         )?;
         Ok(record_batch)
@@ -627,7 +627,7 @@ pub fn decode_pages_buf(
     table_schema: TskvTableSchemaRef,
 ) -> TskvResult<RecordBatch> {
     let pages = decode_buf_to_pages(chunk, column_group_id, pages_buf)?;
-    let data_block = decode_pages(pages, table_schema.meta(), None)?;
+    let data_block = decode_pages(pages, table_schema.build_meta(), None)?;
     Ok(data_block)
 }
 

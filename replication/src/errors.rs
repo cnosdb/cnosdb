@@ -13,6 +13,7 @@ pub enum ReplicationError {
     #[error_code(code = 1)]
     StorageErr {
         msg: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -21,6 +22,7 @@ pub enum ReplicationError {
     #[error_code(code = 2)]
     HeedError {
         source: heed::Error,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -29,6 +31,7 @@ pub enum ReplicationError {
     #[error_code(code = 3)]
     IOErr {
         source: std::io::Error,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -37,6 +40,7 @@ pub enum ReplicationError {
     #[error_code(code = 4)]
     GRPCRequest {
         msg: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -45,6 +49,7 @@ pub enum ReplicationError {
     #[error_code(code = 5)]
     MsgInvalid {
         msg: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -53,6 +58,7 @@ pub enum ReplicationError {
     #[error_code(code = 6)]
     ReplicationSetNotFound {
         id: u32,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -61,6 +67,7 @@ pub enum ReplicationError {
     #[error_code(code = 7)]
     NoValidReplica {
         id: u32,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -69,6 +76,7 @@ pub enum ReplicationError {
     #[error_code(code = 8)]
     GroupNotInit {
         id: u32,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -81,6 +89,7 @@ pub enum ReplicationError {
     #[error_code(code = 10)]
     ProcessTimeout {
         msg: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -93,6 +102,7 @@ pub enum ReplicationError {
     #[error_code(code = 12)]
     SnapshotErr {
         msg: String,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },
@@ -109,6 +119,7 @@ pub enum ReplicationError {
     #[error_code(code = 15)]
     EntryNotFound {
         index: u64,
+        #[snafu(implicit)]
         location: Location,
         backtrace: Backtrace,
     },

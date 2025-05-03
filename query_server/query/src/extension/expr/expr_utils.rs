@@ -74,7 +74,7 @@ pub fn is_column(expr: &Expr, schema: TskvTableSchemaRef) -> bool {
     };
 
     if let Some(col) = col {
-        return schema.column(&col.name).is_some();
+        return schema.get_column_by_name(&col.name).is_some();
     }
 
     false
