@@ -379,7 +379,7 @@ pub fn unset_option_to_alter_tenant_action(
     ident: Ident,
 ) -> QueryResult<(AlterTenantAction, Privilege<Oid>)> {
     let tenant_id = *tenant.id();
-    let mut tenant_options_builder = TenantOptionsBuilder::from(tenant.to_own_options());
+    let mut tenant_options_builder = TenantOptionsBuilder::from(tenant.into_options());
 
     let privilege = match normalize_ident(&ident).as_str() {
         TENANT_OPTION_COMMENT => {
@@ -418,7 +418,7 @@ pub fn sql_option_to_alter_tenant_action(
 ) -> std::result::Result<(AlterTenantAction, Privilege<Oid>), QueryError> {
     let SqlOption { name, value } = option;
     let tenant_id = *tenant.id();
-    let mut tenant_options_builder = TenantOptionsBuilder::from(tenant.to_own_options());
+    let mut tenant_options_builder = TenantOptionsBuilder::from(tenant.into_options());
 
     let privilege = match normalize_ident(&name).as_str() {
         TENANT_OPTION_COMMENT => {

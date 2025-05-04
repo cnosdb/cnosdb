@@ -14,9 +14,9 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct ExternalTableSchema {
-    pub tenant: String,
-    pub db: String,
-    pub name: String,
+    pub tenant: Arc<str>,
+    pub db: Arc<str>,
+    pub name: Arc<str>,
     pub file_compression_type: String,
     pub file_type: String,
     pub location: String,

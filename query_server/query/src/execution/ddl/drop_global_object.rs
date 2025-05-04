@@ -80,7 +80,7 @@ impl DDLDefinitionTask for DropGlobalObjectTask {
                             .context(MetaSnafu)?;
 
                         if after.is_none() {
-                            after = tenant_schema.options().get_drop_after();
+                            after = tenant_schema.options().drop_after();
                         }
 
                         // second, add drop task

@@ -1654,11 +1654,11 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
     }
 
     fn str_to_bytes(&self, text: &str) -> QueryResult<u64> {
-        CnosByteNumber::new(text)
+        CnosByteNumber::parse(text)
             .ok_or_else(|| QueryError::Parser {
                 source: ParserError::ParserError(format!("{} is not a valid byte number", text)),
             })
-            .map(|byte| byte.as_bytes())
+            .map(|byte| byte.as_bytes_num())
     }
 
     fn make_data_type(
@@ -1996,7 +1996,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
 
                 if must_change {
                     if *user_desc.id() == sql_user_id && sql_user_option.hash_password().is_some() {
-                        sql_user_option.change_password();
+                        sql_user_option.set_changed_password();
                     } else {
                         return Err(QueryError::InsufficientPrivileges {
                             privilege: "change password".to_string(),

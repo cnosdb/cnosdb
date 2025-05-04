@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
 use datafusion::arrow::datatypes::SchemaRef;
@@ -12,9 +13,9 @@ pub struct Watermark {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct StreamTable {
-    tenant: String,
-    db: String,
-    name: String,
+    tenant: Arc<str>,
+    db: Arc<str>,
+    name: Arc<str>,
     schema: SchemaRef,
     stream_type: String,
     watermark: Watermark,
@@ -23,9 +24,9 @@ pub struct StreamTable {
 
 impl StreamTable {
     pub fn new(
-        tenant: impl Into<String>,
-        db: impl Into<String>,
-        name: impl Into<String>,
+        tenant: impl Into<Arc<str>>,
+        db: impl Into<Arc<str>>,
+        name: impl Into<Arc<str>>,
         schema: SchemaRef,
         stream_type: impl Into<String>,
         watermark: Watermark,

@@ -286,7 +286,7 @@ pub fn arrow_array_to_points(
     len: usize,
 ) -> Result<Vec<u8>> {
     let mut fbb = FlatBufferBuilder::new();
-    let table_name = table_schema.name.as_str();
+    let table_name = table_schema.name.as_ref();
     let mut fb_columns = Vec::new();
     for (column, schema) in columns.iter().zip(schema.fields.iter()) {
         let col_name = schema.name().as_str();
@@ -328,7 +328,7 @@ pub fn arrow_array_to_points(
     table_builder.add_num_rows(len as u64);
     let table = table_builder.finish();
     let tables = fbb.create_vector(&[table]);
-    let db = fbb.create_string(table_schema.db.as_str());
+    let db = fbb.create_string(table_schema.db.as_ref());
     let mut point_builder = PointsBuilder::new(&mut fbb);
     point_builder.add_tables(tables);
     point_builder.add_db(db);

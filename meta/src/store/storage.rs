@@ -544,14 +544,14 @@ impl StateMachine {
         let path = KeyPath::tenant(cluster, tenant_name);
         let res = self
             .get_struct::<Tenant>(&path)?
-            .filter(|t| !is_need_hidden || !t.options().get_tenant_is_hidden());
+            .filter(|t| !is_need_hidden || !t.options().tenant_is_hidden());
         Ok(res)
     }
 
     pub fn process_read_tenants(&self, cluster: &str) -> MetaResult<Vec<Tenant>> {
         let path = KeyPath::tenants(cluster);
         let mut tenants: Vec<Tenant> = self.children_data::<Tenant>(&path)?.into_values().collect();
-        tenants.retain(|tenant| !tenant.options().get_tenant_is_hidden());
+        tenants.retain(|tenant| !tenant.options().tenant_is_hidden());
 
         Ok(tenants)
     }
@@ -1362,7 +1362,7 @@ impl StateMachine {
     ) -> MetaResult<Tenant> {
         let key = KeyPath::tenant(cluster, name);
         if let Some(tenant) = self.get_struct::<Tenant>(&key)? {
-            if !tenant.options().get_tenant_is_hidden() {
+            if !tenant.options().tenant_is_hidden() {
                 let new_tenant = Tenant::new(*tenant.id(), name.to_string(), options.to_owned());
                 self.insert(&key, &value_encode(&new_tenant)?)?;
 

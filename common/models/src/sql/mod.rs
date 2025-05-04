@@ -1,7 +1,8 @@
-use std::str::FromStr;
+use std::fmt::Write as _;
+use std::str::FromStr as _;
 
-use datafusion::datasource::file_format::file_type::{FileCompressionType, FileType};
-use utils::byte_nums::CnosByteNumber;
+use datafusion::datasource::file_format::file_compression_type::FileCompressionType;
+use datafusion::sql::sqlparser::ast::escape_double_quote_string;
 
 use crate::arrow::arrow_data_type_to_sql_data_type;
 use crate::auth::role::CustomTenantRole;
@@ -28,6 +29,86 @@ pub fn sql_option_to_sql_str(opts: Vec<Option<(&str, SqlParserValue)>>) -> Strin
         .join(", ")
 }
 
+/// Write SQL WITH option to the buffer.
+///
+/// The format of the SQL string is:
+/// ```SQL
+/// <,|[<SPACE> with]> <SPACE> <key>=<value>
+/// ```
+/// - If `did_write` is true, write ',' before the key-value pair.
+/// - If `did_write` is false, write " with" before the key-value pair.
+pub fn write_sql_with_option_kv<V: std::fmt::Display>(
+    buf: &mut String,
+    did_write: &mut bool,
+    key: &str,
+    value: V,
+) {
+    if *did_write {
+        buf.push(',');
+    } else {
+        buf.push_str(" with");
+        *did_write = true;
+    }
+    write!(buf, " {key}={value}").expect("write formatted data to string failed");
+}
+
+/// Write SQL WITH option to the buffer.
+///
+/// The format of the SQL string is:
+/// ```SQL
+/// [<SPACE> with] <SPACE> <key> ['] <value> [']
+/// ```
+/// - If `did_write` is false, write " with" before the key-value pair.
+pub fn write_sql_with_option<V: std::fmt::Display>(
+    buf: &mut String,
+    did_write: &mut bool,
+    write_value_with_single_quote: bool,
+    key: &str,
+    value: V,
+) {
+    if !*did_write {
+        buf.push_str(" with");
+        *did_write = true;
+    }
+    write!(buf, " {key} ").expect("write formatted data to string failed");
+    if write_value_with_single_quote {
+        buf.push('\'');
+    }
+    write!(buf, "{value}").expect("write formatted data to string failed");
+    if write_value_with_single_quote {
+        buf.push('\'');
+    }
+}
+
+/// Write SQL FORMAT option to the buffer.
+///
+/// The format of the SQL string is:
+/// ```SQL
+/// [,] <SPACE> <key> ['] <value> [']
+/// ```
+/// - If `did_write` is false, write " with" before the key-value pair.
+pub fn write_sql_format_option(
+    buf: &mut String,
+    did_write: &mut bool,
+    write_value_with_single_quote: bool,
+    key: impl std::fmt::Display,
+    value: impl std::fmt::Display,
+) {
+    if *did_write {
+        buf.push(',');
+    } else {
+        *did_write = true;
+    }
+    write!(buf, " '{key}' ").expect("write formatted data to string failed");
+    if write_value_with_single_quote {
+        buf.push('\'');
+    }
+    write!(buf, "{value}").expect("write formatted data to string failed");
+    if write_value_with_single_quote {
+        buf.push('\'');
+    }
+}
+
 pub trait ToDDLSql {
     fn to_ddl_sql(&self, if_not_exists: bool) -> Result<String>;
 }
@@ -35,153 +116,52 @@ pub trait ToDDLSql {
 // CREATE TENANT
 impl ToDDLSql for Tenant {
     fn to_ddl_sql(&self, if_not_exists: bool) -> Result<String> {
-        let mut res = String::new();
-        res.push_str("create tenant ");
+        let mut sql = String::from("create tenant");
         if if_not_exists {
-            res.push_str("if not exists ");
+            sql.push_str(" if not exists");
         }
-        res.push_str(format!("\"{}\" ", self.name()).as_str());
+        let _ = write!(&mut sql, " {}", escape_double_quote_string(self.name()));
+        // Write 'with <options>'.
+        self.options().write_as_dump_sql(&mut sql)?;
+        sql.push(';');
 
-        let option = self.options();
-        let mut sql_opts = Vec::new();
-        let comment = option
-            .comment
-            .as_ref()
-            .map(|a| ("comment", SqlParserValue::SingleQuotedString(a.to_string())));
-        let drop_after = option.get_drop_after().as_ref().map(|time| {
-            (
-                "drop_after",
-                SqlParserValue::SingleQuotedString(time.to_string()),
-            )
-        });
-        let limit = option
-            .limiter_config
-            .as_ref()
-            .map(|a| {
-                // Safety
-                serde_json::to_string(&a)
-                    .map_err(|e| {
-                        DumpSnafu {
-                            msg: format!("dump tenant limiter faile: {}", e),
-                        }
-                        .build()
-                    })
-                    .map(|config| ("_limiter", SqlParserValue::SingleQuotedString(config)))
-            })
-            .transpose()?;
-        sql_opts.push(comment);
-        sql_opts.push(drop_after);
-        sql_opts.push(limit);
-        let str = sql_option_to_sql_str(sql_opts);
-        if !str.is_empty() {
-            res.push_str("with ");
-            res.push_str(str.as_str())
-        }
-        res = res.trim().to_string() + ";";
-        Ok(res)
+        Ok(sql)
     }
 }
 
 // CREATE USER
 impl ToDDLSql for UserDesc {
     fn to_ddl_sql(&self, if_not_exists: bool) -> Result<String> {
-        let mut res = String::new();
-        res.push_str("create user ");
+        let mut sql = String::from("create user");
         if if_not_exists {
-            res.push_str("if not exists ")
+            sql.push_str(" if not exists")
         }
-        res.push_str(format!("\"{}\" ", self.name()).as_str());
+        let _ = write!(&mut sql, " {}", escape_double_quote_string(self.name()));
+        // Write 'with <options>'.
+        self.options().write_as_dump_sql(&mut sql)?;
+        sql.push(';');
 
-        let option = self.options();
-        let hash_password = option.hash_password().map(|p| {
-            (
-                "hash_password",
-                SqlParserValue::SingleQuotedString(p.to_string()),
-            )
-        });
-        let comment = option
-            .comment()
-            .map(|c| ("comment", SqlParserValue::SingleQuotedString(c.to_string())));
-        let must_change_password = option
-            .must_change_password()
-            .map(|v| ("must_change_password", SqlParserValue::Boolean(v)));
-        let rsa_public_key = option.rsa_public_key().map(|v| {
-            (
-                "rsa_public_key",
-                SqlParserValue::SingleQuotedString(v.to_string()),
-            )
-        });
-        let granted_admin = option
-            .granted_admin()
-            .map(|v| ("granted_admin", SqlParserValue::Boolean(v)));
-
-        let sql_opts = vec![
-            hash_password,
-            comment,
-            must_change_password,
-            rsa_public_key,
-            granted_admin,
-        ];
-        let opt_sql = sql_option_to_sql_str(sql_opts);
-        if !opt_sql.is_empty() {
-            res.push_str("with ");
-            res.push_str(opt_sql.as_str());
-        }
-        res.push(';');
-        Ok(res)
+        Ok(sql)
     }
 }
 
 // CREATE DATABASE
 impl ToDDLSql for DatabaseSchema {
     fn to_ddl_sql(&self, if_not_exists: bool) -> Result<String> {
-        let mut res = String::new();
-        res.push_str("create database ");
+        let mut sql = String::from("create database");
         if if_not_exists {
-            res.push_str("if not exists ");
+            sql.push_str(" if not exists");
         }
-        res.push_str(format!("\"{}\" ", self.database_name()).as_str());
-        res.push_str("with ");
-
-        res.push_str(
-            format!(
-                "precision {} ",
-                SqlParserValue::SingleQuotedString(self.config.precision().to_string())
-            )
-            .as_str(),
+        let _ = write!(
+            &mut sql,
+            " {}",
+            escape_double_quote_string(self.database_name())
         );
-        res.push_str(
-            format!(
-                "max_memcache_size '{}' ",
-                CnosByteNumber::format_bytes(self.config.max_memcache_size())
-            )
-            .as_str(),
-        );
-        res.push_str(
-            format!("memcache_partitions {} ", self.config.memcache_partitions()).as_str(),
-        );
-        res.push_str(
-            format!(
-                "wal_max_file_size '{}' ",
-                CnosByteNumber::format_bytes(self.config.wal_max_file_size())
-            )
-            .as_str(),
-        );
-        res.push_str(format!("wal_sync '{}' ", self.config.wal_sync()).as_str());
-        res.push_str(format!("strict_write '{}' ", self.config.strict_write()).as_str());
-        res.push_str(format!("max_cache_readers {} ", self.config.max_cache_readers()).as_str());
-        res.push_str(format!("ttl '{}' ", self.options.ttl()).as_str());
-        res.push_str(format!("shard {} ", self.options.shard_num()).as_str());
-        res.push_str(format!("replica {} ", self.options.replica()).as_str());
-        res.push_str(format!("vnode_duration '{}' ", self.options.vnode_duration()).as_str());
-
-        if res.trim().ends_with("with") {
-            res = res.trim().trim_end_matches("with").trim().to_string();
-        }
-        res = res.trim().to_string();
-
-        res.push(';');
-        Ok(res)
+        // Write 'with <options>'.
+        self.config.write_as_dump_sql(&mut sql)?;
+        self.options.write_as_dump_sql(&mut sql)?;
+        sql.push(';');
+        Ok(sql)
     }
 }
 
@@ -191,8 +171,8 @@ impl ToDDLSql for CustomTenantRole<Oid> {
         let sql = if if_not_exists {
             match self.inherit_role() {
                 Some(role) => format!(
-                    "create role if not exists \"{}\" inherit {};",
-                    self.name(),
+                    "create role if not exists {} inherit {};",
+                    escape_double_quote_string(self.name()),
                     role
                 ),
                 None => format!("create role if not exists \"{}\";", self.name()),
@@ -222,10 +202,10 @@ pub fn privilege_to_sql(role: &CustomTenantRole<Oid>) -> Vec<String> {
         .iter()
         .map(|(d, p)| {
             format!(
-                "grant {} on database \"{}\" to \"{}\";",
+                "grant {} on database {} to {};",
                 p.as_str(),
-                d,
-                role.name()
+                escape_double_quote_string(d),
+                escape_double_quote_string(role.name())
             )
         })
         .collect()
@@ -234,8 +214,10 @@ pub fn privilege_to_sql(role: &CustomTenantRole<Oid>) -> Vec<String> {
 // Add member
 pub fn add_member_to_sql(tenant_name: &str, user: &str, role: &str) -> String {
     format!(
-        "alter tenant \"{}\" add user \"{}\" as \"{}\";",
-        tenant_name, user, role
+        "alter tenant {} add user {} as {};",
+        escape_double_quote_string(tenant_name),
+        escape_double_quote_string(user),
+        escape_double_quote_string(role)
     )
 }
 
@@ -283,128 +265,143 @@ impl ToDDLSql for TableSchema {
 // CREATE TS TABLE
 impl ToDDLSql for TskvTableSchema {
     fn to_ddl_sql(&self, if_not_exists: bool) -> Result<String> {
-        let mut res = String::new();
-        res.push_str("create table ");
+        let mut sql = String::from("create table");
         if if_not_exists {
-            res.push_str("if not exists ");
+            sql.push_str(" if not exists");
         }
-        res.push_str(format!("\"{}\".\"{}\" ", &self.db, &self.name).as_str());
-        res.push('(');
-        self.columns()
-            .iter()
-            .filter(|c| c.column_type.is_field())
-            .for_each(|c| {
-                if let ColumnType::Field(v_t) = c.column_type {
-                    res.push_str(format!("\"{}\" {}", c.name, v_t.to_sql_type_str()).as_str())
-                }
+        let _ = write!(
+            &mut sql,
+            " {}.{} (",
+            escape_double_quote_string(self.db.as_ref()),
+            escape_double_quote_string(self.name.as_ref())
+        );
 
+        for c in self.columns() {
+            if let ColumnType::Field(v_t) = c.column_type {
+                let _ = write!(
+                    &mut sql,
+                    "{} {}",
+                    escape_double_quote_string(c.name.as_ref()),
+                    v_t.to_sql_type_str()
+                );
                 if c.encoding != Encoding::Default {
-                    res.push_str(format!(" CODEC({})", c.encoding.as_str()).as_str());
+                    let _ = write!(&mut sql, " CODEC({})", c.encoding.as_str());
                 }
-                res.push_str(", ");
-            });
+                sql.push_str(", ");
+            }
+        }
 
-        let tags = self
-            .columns()
-            .iter()
-            .filter(|c| c.column_type.is_tag())
-            .map(|c| format!("\"{}\"", c.name))
-            .collect::<Vec<_>>()
-            .join(", ");
-        res.push_str(format!("tags ({})", tags).as_str());
-        res.push_str(");");
-        Ok(res)
+        let mut did_write_tag = false;
+        for c in self.columns() {
+            if c.column_type == ColumnType::Tag {
+                if !did_write_tag {
+                    sql.push_str("tags (");
+                    did_write_tag = true;
+                }
+                let _ = write!(&mut sql, "{}", escape_double_quote_string(c.name.as_ref()));
+                sql.push_str(", ");
+            }
+        }
+        sql.truncate(sql.len() - 2); // remove last ", "
+        if did_write_tag {
+            sql.push(')');
+        }
+
+        sql.push_str(");");
+
+        Ok(sql)
     }
 }
 
 // CREATE EXTERNAL TABLE
 impl ToDDLSql for ExternalTableSchema {
     fn to_ddl_sql(&self, if_not_exists: bool) -> Result<String> {
-        let mut res = String::new();
-        res.push_str("create external table ");
+        let mut sql = String::from("create external table");
         if if_not_exists {
-            res.push_str("if not exists ")
+            sql.push_str(" if not exists")
         }
-        res.push_str(format!("\"{}\".\"{}\" ", self.db, self.name).as_str());
-        let file_type = FileType::from_str(&self.file_type)
-            .map_err(|e| DumpSnafu { msg: e.to_string() }.build())?;
-        if file_type.ne(&FileType::PARQUET) {
-            let columns = self
-                .schema
-                .fields
-                .iter()
-                .map(|f| {
-                    let data_type = arrow_data_type_to_sql_data_type(f.data_type())?;
-                    let res = format!("\"{}\" {}", f.name(), data_type,);
-                    Ok(res)
-                })
-                .collect::<Result<Vec<_>, crate::ModelError>>()?
-                .join(", ");
-            res.push('(');
-            res.push_str(columns.as_str());
-            res.push_str(") ");
-        }
+        let _ = write!(
+            &mut sql,
+            " {}.{}",
+            escape_double_quote_string(self.db.as_ref()),
+            escape_double_quote_string(self.name.as_ref())
+        );
 
-        res.push_str(format!("stored as {} ", self.file_type).as_str());
-        if file_type.eq(&FileType::CSV) {
-            if self.has_header {
-                res.push_str("with header row ");
+        let file_type = self.file_type.to_uppercase();
+        if !self.schema.fields.is_empty() && file_type != "PARQUET" {
+            // JSON or CSV types need to define table schema.
+            sql.push_str(" (");
+            for f in self.schema.fields.iter() {
+                let data_type = arrow_data_type_to_sql_data_type(f.data_type())?;
+                let _ = write!(
+                    &mut sql,
+                    "{} {data_type}, ",
+                    escape_double_quote_string(f.name())
+                );
             }
-            res.push_str(
-                format!(
-                    "delimiter {} ",
-                    SqlParserValue::SingleQuotedString((self.delimiter as char).to_string())
-                )
-                .as_str(),
-            )
+            sql.truncate(sql.len() - 2); // remove last ", "
+            sql.push_str(")");
         }
 
-        if matches!(file_type, FileType::CSV | FileType::JSON) {
+        sql.push_str(" stored as ");
+        sql.push_str(self.file_type.as_str());
+        sql.push_str(" options (");
+
+        let did_write = &mut false;
+        if file_type == "CSV" {
+            if self.has_header {
+                // CSV option : 'format.has_header' 'true'
+                write_sql_format_option(&mut sql, did_write, true, "format.has_header", true);
+            }
+            // CSV option : 'format.delimiter' ','
+            write_sql_format_option(
+                &mut sql,
+                did_write,
+                true,
+                "format.delimiter",
+                self.delimiter as char,
+            );
+        }
+
+        if file_type == "CSV" || file_type == "JSON" {
             let compression_type = FileCompressionType::from_str(&self.file_compression_type)
                 .map_err(|e| DumpSnafu { msg: e.to_string() }.build())?;
-
-            if compression_type.eq(&FileCompressionType::GZIP) {
-                res.push_str("compression type gzip")
-            } else if compression_type.eq(&FileCompressionType::XZ) {
-                res.push_str("compression type xz")
-            } else if compression_type.eq(&FileCompressionType::BZIP2) {
-                res.push_str("compression type bzip2")
-            } else if compression_type.eq(&FileCompressionType::ZSTD) {
-                res.push_str("compression type zstd")
+            // CSV|JSON option : 'format.compression' 'gzip'
+            if compression_type.is_compressed() {
+                write_sql_format_option(
+                    &mut sql,
+                    did_write,
+                    true,
+                    "format.compression",
+                    compression_type.get_variant(),
+                );
             }
         }
 
         let metadata = self.schema.metadata();
-
         if !metadata.is_empty() {
-            res.push_str("options ");
-            let options = self
-                .schema
-                .metadata()
-                .iter()
-                .map(|(k, v)| {
-                    format!(
-                        "{} {}",
-                        SqlParserValue::SingleQuotedString(k.to_owned()),
-                        SqlParserValue::SingleQuotedString(v.to_owned())
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
-            res.push('(');
-            res.push_str(options.as_str());
-            res.push(')');
+            for (k, v) in metadata.iter() {
+                // Other option : 'key' 'value'
+                write_sql_format_option(
+                    &mut sql,
+                    did_write,
+                    true,
+                    SqlParserValue::SingleQuotedString(k.clone()),
+                    SqlParserValue::SingleQuotedString(v.clone()),
+                );
+            }
         }
+        sql.push(')');
 
-        res.push_str(
+        sql.push_str(
             format!(
-                "location {};",
+                " location {};",
                 SqlParserValue::SingleQuotedString(self.location.to_string())
             )
             .as_str(),
         );
 
-        Ok(res)
+        Ok(sql)
     }
 }
 
@@ -621,9 +618,9 @@ remote_bucket = {max = 100, initial = 0, refill = 100, interval = 100}
     #[test]
     fn test_create_ts_table() {
         let schema = TskvTableSchema::new(
-            "test_tenant".to_string(),
-            "test".to_string(),
-            "test_table".to_string(),
+            "test_tenant",
+            "test",
+            "test_table",
             vec![
                 TableColumn::new_time_column(1, TimeUnit::Nanosecond),
                 TableColumn::new_tag_column(2, "tag_col_1".to_string()),
@@ -645,9 +642,9 @@ remote_bucket = {max = 100, initial = 0, refill = 100, interval = 100}
     #[test]
     fn test_create_ex_table() {
         let schema = ExternalTableSchema {
-            tenant: "".to_string(),
-            db: "test".to_string(),
-            name: "nation".to_string(),
+            tenant: "".into(),
+            db: "test".into(),
+            name: "nation".into(),
             file_compression_type: "".to_string(),
             file_type: "csv".to_string(),
             location: "query_server/sqllogicaltests/resource/tpch-csv/nation.csv".to_string(),

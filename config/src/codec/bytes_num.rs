@@ -12,7 +12,7 @@ pub fn serialize<S>(num: &u64, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
-    let s = CnosByteNumber::format_bytes(*num);
+    let s = CnosByteNumber::format_bytes_num(*num);
 
     serializer.serialize_str(&s)
 }
@@ -29,7 +29,7 @@ where
     D: Deserializer<'de>,
 {
     let s = String::deserialize(deserializer)?;
-    CnosByteNumber::parse_bytes(&s).map_err(serde::de::Error::custom)
+    CnosByteNumber::parse_bytes_num(&s).map_err(serde::de::Error::custom)
 }
 
 #[cfg(test)]
@@ -44,72 +44,90 @@ mod test {
     #[test]
     fn test_stringfy() {
         assert_eq!(
-            CnosByteNumber::format_bytes(1024 + 1).as_str(),
+            CnosByteNumber::format_bytes_num(1024 + 1).as_str(),
             "1.0009765625 KiB"
         );
-        assert_eq!(CnosByteNumber::format_bytes(1024).as_str(), "1 KiB");
-        assert_eq!(CnosByteNumber::format_bytes(1_000).as_str(), "1 KB");
-        assert_eq!(CnosByteNumber::format_bytes(102400).as_str(), "100 KiB");
+        assert_eq!(CnosByteNumber::format_bytes_num(1024).as_str(), "1 KiB");
+        assert_eq!(CnosByteNumber::format_bytes_num(1_000).as_str(), "1 KB");
+        assert_eq!(CnosByteNumber::format_bytes_num(102400).as_str(), "100 KiB");
         assert_eq!(
-            CnosByteNumber::format_bytes(100_000).as_str(),
+            CnosByteNumber::format_bytes_num(100_000).as_str(),
             "97.65625 KiB"
         );
         assert_eq!(
-            CnosByteNumber::format_bytes(1024 * (1024 + 1)).as_str(),
+            CnosByteNumber::format_bytes_num(1024 * (1024 + 1)).as_str(),
             "1.0009765625 MiB"
         );
         assert_eq!(
-            CnosByteNumber::format_bytes(4 * 1024 * 1024 + 1024).as_str(),
+            CnosByteNumber::format_bytes_num(4 * 1024 * 1024 + 1024).as_str(),
             "4.0009765625 MiB"
         );
-        assert_eq!(CnosByteNumber::format_bytes(1024 * 1024).as_str(), "1 MiB");
-        assert_eq!(CnosByteNumber::format_bytes(1_000_000).as_str(), "1 MB");
         assert_eq!(
-            CnosByteNumber::format_bytes(1024 * 1024 * (1024 + 1)).as_str(),
+            CnosByteNumber::format_bytes_num(1024 * 1024).as_str(),
+            "1 MiB"
+        );
+        assert_eq!(CnosByteNumber::format_bytes_num(1_000_000).as_str(), "1 MB");
+        assert_eq!(
+            CnosByteNumber::format_bytes_num(1024 * 1024 * (1024 + 1)).as_str(),
             "1.0009765625 GiB"
         );
         assert_eq!(
-            CnosByteNumber::format_bytes(4 * 1024 * 1024 * 1024 + 1024 * 1024).as_str(),
+            CnosByteNumber::format_bytes_num(4 * 1024 * 1024 * 1024 + 1024 * 1024).as_str(),
             "4.0009765625 GiB"
         );
         assert_eq!(
-            CnosByteNumber::format_bytes(1024 * 1024 * 1024).as_str(),
+            CnosByteNumber::format_bytes_num(1024 * 1024 * 1024).as_str(),
             "1 GiB"
         );
-        assert_eq!(CnosByteNumber::format_bytes(1_000_000_000).as_str(), "1 GB");
+        assert_eq!(
+            CnosByteNumber::format_bytes_num(1_000_000_000).as_str(),
+            "1 GB"
+        );
     }
 
     #[test]
     fn test_parse() {
-        assert_eq!(CnosByteNumber::parse_bytes("1024").unwrap(), 1024);
-        assert_eq!(CnosByteNumber::parse_bytes("1Kib").unwrap(), 1024);
-        assert_eq!(CnosByteNumber::parse_bytes("1k").unwrap(), 1000);
-        assert_eq!(CnosByteNumber::parse_bytes("1K").unwrap(), 1000);
-        assert_eq!(CnosByteNumber::parse_bytes("1kb").unwrap(), 1_000);
-        assert_eq!(CnosByteNumber::parse_bytes("1mib").unwrap(), 1024 * 1024);
-        assert_eq!(CnosByteNumber::parse_bytes("1Mib").unwrap(), 1024 * 1024);
-        assert_eq!(CnosByteNumber::parse_bytes("1m").unwrap(), 1000 * 1000);
-        assert_eq!(CnosByteNumber::parse_bytes("1M").unwrap(), 1000 * 1000);
-        assert_eq!(CnosByteNumber::parse_bytes("1mb").unwrap(), 1_000_000);
-        assert_eq!(CnosByteNumber::parse_bytes("1mB").unwrap(), 1_000_000);
+        assert_eq!(CnosByteNumber::parse_bytes_num("1024").unwrap(), 1024);
+        assert_eq!(CnosByteNumber::parse_bytes_num("1Kib").unwrap(), 1024);
+        assert_eq!(CnosByteNumber::parse_bytes_num("1k").unwrap(), 1000);
+        assert_eq!(CnosByteNumber::parse_bytes_num("1K").unwrap(), 1000);
+        assert_eq!(CnosByteNumber::parse_bytes_num("1kb").unwrap(), 1_000);
         assert_eq!(
-            CnosByteNumber::parse_bytes("1gib").unwrap(),
+            CnosByteNumber::parse_bytes_num("1mib").unwrap(),
+            1024 * 1024
+        );
+        assert_eq!(
+            CnosByteNumber::parse_bytes_num("1Mib").unwrap(),
+            1024 * 1024
+        );
+        assert_eq!(CnosByteNumber::parse_bytes_num("1m").unwrap(), 1000 * 1000);
+        assert_eq!(CnosByteNumber::parse_bytes_num("1M").unwrap(), 1000 * 1000);
+        assert_eq!(CnosByteNumber::parse_bytes_num("1mb").unwrap(), 1_000_000);
+        assert_eq!(CnosByteNumber::parse_bytes_num("1mB").unwrap(), 1_000_000);
+        assert_eq!(
+            CnosByteNumber::parse_bytes_num("1gib").unwrap(),
             1024 * 1024 * 1024
         );
         assert_eq!(
-            CnosByteNumber::parse_bytes("1Gib").unwrap(),
+            CnosByteNumber::parse_bytes_num("1Gib").unwrap(),
             1024 * 1024 * 1024
         );
         assert_eq!(
-            CnosByteNumber::parse_bytes("1g").unwrap(),
+            CnosByteNumber::parse_bytes_num("1g").unwrap(),
             1000 * 1000 * 1000
         );
         assert_eq!(
-            CnosByteNumber::parse_bytes("1G").unwrap(),
+            CnosByteNumber::parse_bytes_num("1G").unwrap(),
             1000 * 1000 * 1000
         );
-        assert_eq!(CnosByteNumber::parse_bytes("1gb").unwrap(), 1_000_000_000);
-        assert_eq!(CnosByteNumber::parse_bytes("1Gb").unwrap(), 1_000_000_000);
+        assert_eq!(
+            CnosByteNumber::parse_bytes_num("1gb").unwrap(),
+            1_000_000_000
+        );
+        assert_eq!(
+            CnosByteNumber::parse_bytes_num("1Gb").unwrap(),
+            1_000_000_000
+        );
     }
 
     #[derive(Serialize, Deserialize, Debug)]

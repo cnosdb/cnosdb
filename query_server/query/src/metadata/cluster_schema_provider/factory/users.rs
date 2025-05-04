@@ -73,7 +73,7 @@ impl TableProvider for ClusterSchemaUsersTable {
                 })?;
             for user in users {
                 let mut options = user.options().clone();
-                options.hidden_password();
+                options.hash_password_hidden();
                 let options_str = serde_json::to_string(&options).map_err(|e| {
                     DataFusionError::Internal(format!("failed to serialize options: {}", e))
                 })?;

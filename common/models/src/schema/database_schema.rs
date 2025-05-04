@@ -3,8 +3,12 @@ use std::time::Duration;
 
 use config::tskv::{Config, StorageConfig, WalConfig};
 use serde::{Deserialize, Serialize};
+use utils::byte_nums::CnosByteNumber;
 use utils::duration::{CnosDuration, YEAR_SECOND};
 use utils::precision::Precision;
+
+use crate::sql::write_sql_with_option;
+use crate::ModelError;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, Hash)]
 pub struct DatabaseSchema {
@@ -162,9 +166,13 @@ impl DatabaseOptionsBuilder {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DatabaseOptions {
+    ///
     ttl: CnosDuration,
+    ///
     shard_num: u64,
+    ///
     vnode_duration: CnosDuration,
+    ///
     replica: u64,
 }
 
@@ -174,6 +182,7 @@ impl DatabaseOptions {
     pub const DEFAULT_REPLICA: u64 = 1;
     pub const DEFAULT_VNODE_DURATION: CnosDuration =
         CnosDuration::new_with_duration(Duration::from_secs(YEAR_SECOND));
+
     pub fn new(
         ttl: CnosDuration,
         shard_num: u64,
@@ -233,6 +242,34 @@ impl DatabaseOptions {
         if let Some(replica) = builder.replica {
             self.replica = replica;
         }
+    }
+
+    /// Write the options to a SQL string for DUMP action.
+    /// If the options are empty, nothing will be written.
+    ///
+    /// The format of the SQL string is:
+    /// ```SQL
+    /// [<space> with
+    ///   [ttl '<DURATION>']
+    ///   [, shard '<NUMBER>']
+    ///   [, replica <NUMBER>]
+    ///   [, vnode_duration '<DURATION>']
+    /// ]
+    /// ```
+    pub fn write_as_dump_sql(&self, buf: &mut String) -> Result<(), ModelError> {
+        let mut did_write = true;
+        write_sql_with_option(buf, &mut did_write, true, "ttl", &self.ttl);
+        write_sql_with_option(buf, &mut did_write, false, "shard", self.shard_num);
+        write_sql_with_option(buf, &mut did_write, false, "replica", self.replica);
+        write_sql_with_option(
+            buf,
+            &mut did_write,
+            true,
+            "vnode_duration",
+            &self.vnode_duration,
+        );
+
+        Ok(())
     }
 }
 
@@ -347,12 +384,19 @@ impl DatabaseConfigBuilder {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DatabaseConfig {
+    ///
     precision: Precision,
+    ///
     max_memcache_size: u64,
+    ///
     memcache_partitions: u64,
+    ///
     wal_max_file_size: u64,
+    ///
     wal_sync: bool,
+    ///
     strict_write: bool,
+    ///
     max_cache_readers: u64,
 }
 
@@ -411,6 +455,58 @@ impl DatabaseConfig {
 
     pub fn set_max_memcache_size(&mut self, max_memcache_size: u64) {
         self.max_memcache_size = max_memcache_size;
+    }
+
+    /// Write the options to a SQL string for DUMP action.
+    /// If the options are empty, nothing will be written.
+    ///
+    /// The format of the SQL string is:
+    /// ```SQL
+    /// [<space> with
+    ///   [precision '<PRECISION>']
+    ///   [, max_memcache_size '<BYTES_NUMBER>']
+    ///   [, memcache_partitions <NUMBER>]
+    ///   [, wal_max_file_size '<BYTES_NUMBER>']
+    ///   [, wal_sync '<BOOLEAN>']
+    ///   [, strict_write '<BOOLEAN>']
+    ///   [, max_cache_readers <NUMBER>]
+    /// ]
+    /// ```
+    pub fn write_as_dump_sql(&self, buf: &mut String) -> Result<(), ModelError> {
+        let mut did_write = false;
+        write_sql_with_option(buf, &mut did_write, true, "precision", self.precision);
+        write_sql_with_option(
+            buf,
+            &mut did_write,
+            true,
+            "max_memcache_size",
+            &CnosByteNumber::format_bytes_num(self.max_memcache_size),
+        );
+        write_sql_with_option(
+            buf,
+            &mut did_write,
+            false,
+            "memcache_partitions",
+            self.memcache_partitions,
+        );
+        write_sql_with_option(
+            buf,
+            &mut did_write,
+            true,
+            "wal_max_file_size",
+            &CnosByteNumber::format_bytes_num(self.wal_max_file_size),
+        );
+        write_sql_with_option(buf, &mut did_write, true, "wal_sync", self.wal_sync);
+        write_sql_with_option(buf, &mut did_write, true, "strict_write", self.strict_write);
+        write_sql_with_option(
+            buf,
+            &mut did_write,
+            false,
+            "max_cache_readers",
+            self.max_cache_readers,
+        );
+
+        Ok(())
     }
 }
 

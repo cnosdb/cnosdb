@@ -269,7 +269,7 @@ impl Parser {
             let timestamp = if key_idx.0 == 0 {
                 self.default_time
             } else {
-                let (timestamp, _) = atoi_simd::parse_until_invalid(&data_bytes[key_idx.0..])
+                let (timestamp, _) = atoi_simd::parse_any(&data_bytes[key_idx.0..])
                     .map_err(|_| Error::Timestamp { pos: key_idx.0 })?;
                 timestamp
             };

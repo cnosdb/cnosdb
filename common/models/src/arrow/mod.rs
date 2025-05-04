@@ -32,6 +32,7 @@ pub fn arrow_data_type_to_sql_data_type(
         DataType::Binary => SQLDataType::Varbinary(None),
         DataType::FixedSizeBinary(a) => SQLDataType::Binary(Some(*a as u64)),
         DataType::LargeBinary => SQLDataType::Blob(None),
+        DataType::BinaryView => SQLDataType::Blob(None),
         DataType::Utf8 => SQLDataType::String(None),
         DataType::Decimal128(p, s) => {
             SQLDataType::Decimal(ExactNumberInfo::PrecisionAndScale(*p as u64, *s as u64))
