@@ -3,7 +3,7 @@ use std::fs;
 use std::path::Path;
 
 use async_trait::async_trait;
-use heed::types::*;
+use heed::types::Str;
 use heed::{Database, Env};
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
@@ -12,7 +12,7 @@ use crate::errors::{HeedSnafu, IOErrSnafu, MsgInvalidSnafu, ReplicationResult};
 use crate::{ApplyContext, ApplyStorage, EngineMetrics, Request, Response};
 
 const LAST_APPLIED_ID_KEY: &str = "last_applied_id";
-// --------------------------------------------------------------------------- //
+
 #[derive(Serialize, Deserialize)]
 pub struct HashMapSnapshotData {
     pub map: HashMap<String, String>,
@@ -28,19 +28,25 @@ impl HeedApplyStorage {
     pub fn open(path: impl AsRef<Path>, size: usize) -> ReplicationResult<Self> {
         fs::create_dir_all(&path).context(IOErrSnafu)?;
 
-        let env = heed::EnvOpenOptions::new()
-            .map_size(size)
-            .max_dbs(1)
-            .open(path)
+        let env = unsafe {
+            heed::EnvOpenOptions::new()
+                .map_size(size)
+                .max_dbs(1)
+                .open(path)
+        }
+        .context(HeedSnafu)?;
+
+        let mut wtxn = env.write_txn().context(HeedSnafu)?;
+        let db: Database<Str, Str> = env
+            .create_database(&mut wtxn, Some("data"))
             .context(HeedSnafu)?;
-        let db: Database<Str, Str> = env.create_database(Some("data")).context(HeedSnafu)?;
-        let storage = Self {
+        wtxn.commit().context(HeedSnafu)?;
+
+        Ok(Self {
             env,
             db,
             snapshot: None,
-        };
-
-        Ok(storage)
+        })
     }
 
     pub fn get(&self, key: &str) -> ReplicationResult<Option<String>> {

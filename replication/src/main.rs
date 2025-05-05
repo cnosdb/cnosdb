@@ -2,8 +2,10 @@ use std::convert::Infallible as StdInfallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use axum::{routing, Router};
 use clap::Parser;
 use futures::future::TryFutureExt;
+use hyper;
 use metrics::metric_register::MetricsRegister;
 use openraft::SnapshotPolicy;
 use protos::raft_service::raft_service_server::RaftServiceServer;
@@ -22,7 +24,6 @@ use tokio::sync::RwLock;
 use tower::Service;
 use trace::{debug, info};
 use tracing::error;
-use warp::{hyper, Filter};
 
 const TEST_DATA_DIR: &str = "/tmp/cnosdb/raft_test";
 #[derive(clap::Parser, Clone, Debug)]
@@ -32,7 +33,7 @@ pub struct Opt {
     pub id_port: u64,
 }
 
-#[actix_web::main]
+#[tokio::main]
 async fn main() -> std::io::Result<()> {
     tracing_subscriber::fmt()
         .with_file(true)
@@ -107,9 +108,9 @@ async fn create_raft_node(dir: &str, id_port: RaftNodeId) -> ReplicationResult<R
 async fn start_server(node_server: RaftNodeServer) -> ReplicationResult<()> {
     let mut multi_raft = MultiRaft::new();
 
-    let register = Arc::new(MetricsRegister::new([("node_id", "8888")]));
+    let metrics_register = Arc::new(MetricsRegister::new([("node_id", "8888")]));
     let metrics = ReplicationMetrics::new(
-        register,
+        metrics_register,
         "test_t",
         "test_d",
         node_server.node.group_id(),
@@ -119,6 +120,7 @@ async fn start_server(node_server: RaftNodeServer) -> ReplicationResult<()> {
     let nodes = Arc::new(RwLock::new(multi_raft));
 
     let addr = node_server.http_addr.parse().unwrap();
+
     hyper::Server::bind(&addr)
         .serve(hyper::service::make_service_fn(move |_| {
             let mut http_service = warp::service(node_server.routes());
@@ -154,148 +156,88 @@ async fn start_server(node_server: RaftNodeServer) -> ReplicationResult<()> {
     Ok(())
 }
 
-#[derive(Clone)]
-struct RaftNodeServer {
-    http_addr: String,
-    node: Arc<RaftNode>,
-    engine: Arc<RwLock<HeedApplyStorage>>,
-    raft_admin: Arc<RaftHttpAdmin>,
-}
+mod raft_node_server {
+    use std::sync::Arc;
 
-//  let res: Result<String, warp::Rejection> = Ok(data);
-//  warp::reply::Response::new(hyper::Body::from(data))
-impl RaftNodeServer {
-    fn routes(
-        &self,
-    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-        self.raft_admin
-            .routes()
-            .or(self.read())
-            .or(self.write())
-            .or(self.trigger_snapshot())
-            .or(self.trigger_purge_logs())
+    use axum::extract::{Request, State};
+    use axum::http::StatusCode;
+    use axum::{routing, Router};
+    use replication::apply_store::HeedApplyStorage;
+    use replication::errors::MsgInvalidSnafu;
+    use replication::raft_node::RaftNode;
+    use tokio::sync::RwLock;
+
+    type ServerState = (Arc<RaftNode>, Arc<RwLock<HeedApplyStorage>>);
+
+    pub fn create_router(raft_node: Arc<RaftNode>, store: Arc<RwLock<HeedApplyStorage>>) -> Router {
+        Router::new()
+            .route("/read", routing::any(read))
+            .route("/write", routing::any(write))
+            .route("/trigger_purge_logs", routing::any(trigger_purge_logs))
+            .route("/trigger_snapshot", routing::any(trigger_snapshot))
+            .with_state((raft_node, store))
     }
 
-    async fn _start(&self, addr: String) {
-        info!("http server start addr: {}", addr);
-
-        let addr: SocketAddr = addr.parse().unwrap();
-        warp::serve(self.routes()).run(addr).await;
+    async fn read(
+        State((raft_node, store)): State<ServerState>,
+        request: Request<String>,
+    ) -> (StatusCode, String) {
+        let req = request.body();
+        match store.read().await.get(&req) {
+            Ok(Some(data)) => (StatusCode::OK, data),
+            // TODO(zipper): why return status 200 ?
+            Ok(None) => (StatusCode::OK, "not found value by key".to_string()),
+            Err(e) => (StatusCode::OK, e.to_string()),
+        }
     }
 
-    fn with_engine(
-        &self,
-    ) -> impl Filter<Extract = (Arc<RwLock<HeedApplyStorage>>,), Error = StdInfallible> + Clone
-    {
-        let engine = self.engine.clone();
-
-        warp::any().map(move || engine.clone())
+    async fn write(
+        State((raft_node, _)): State<ServerState>,
+        Request(app_data): Request<Vec<u8>>,
+    ) -> (StatusCode, String) {
+        let ret = raft_node.raw_raft().client_write(app_data).await;
+        match serde_json::to_string(&ret) {
+            Ok(data) => (StatusCode::OK, data),
+            Err(e) => {
+                trace::error!("Failed to serialize response({ret:?}): {e}");
+                let err = MsgInvalidSnafu { msg: e.to_string() }.build();
+                // TODO(zipper): why return status 200 ?
+                (StatusCode::OK, format!("serde error: {err:?}"))
+            }
+        }
     }
 
-    fn with_raft_node(
-        &self,
-    ) -> impl Filter<Extract = (Arc<RaftNode>,), Error = StdInfallible> + Clone {
-        let node = self.node.clone();
-
-        warp::any().map(move || node.clone())
+    async fn trigger_purge_logs(
+        State((raft_node, _)): State<ServerState>,
+        Request(upto_log_idx): Request<u64>,
+    ) -> (StatusCode, String) {
+        let ret = raft_node.raw_raft().trigger().purge_log(upto_log_idx).await;
+        match ret {
+            Ok(_) => {
+                info!("------ trigger_purge_logs: {upto_log_idx} - Success");
+                (StatusCode::OK, "Success".to_string())
+            }
+            Err(e) => {
+                // TODO(zipper): why return status 200 ?
+                info!("------ trigger_purge_logs: {upto_log_idx} - {e}");
+                (StatusCode::OK, e.to_string())
+            }
+        }
     }
 
-    fn _handle_rejection(err: warp::Rejection) -> Result<impl warp::Reply, StdInfallible> {
-        let reason = format!("{:?}", err);
-
-        Ok(warp::Reply::into_response(reason))
-    }
-
-    fn read(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-        warp::path!("read")
-            .and(warp::body::bytes())
-            .and(self.with_engine())
-            .and_then(
-                |req: hyper::body::Bytes, engine: Arc<RwLock<HeedApplyStorage>>| async move {
-                    let req: String = serde_json::from_slice(&req)
-                        .map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())
-                        .map_err(|e| {
-                            error!("serde error: {:?}", e);
-                            warp::reject::custom(e)
-                        })?;
-
-                    let rsp = engine
-                        .read()
-                        .await
-                        .get(&req)
-                        .unwrap_or_else(|err| Some(err.to_string()))
-                        .unwrap_or_else(|| "not found value by key".to_string());
-
-                    let res: Result<String, warp::Rejection> = Ok(rsp);
-
-                    res
-                },
-            )
-    }
-
-    fn write(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-        warp::path!("write")
-            .and(warp::body::bytes())
-            .and(self.with_raft_node())
-            .and_then(|req: hyper::body::Bytes, node: Arc<RaftNode>| async move {
-                let rsp = node.raw_raft().client_write(req.to_vec()).await;
-                let data = serde_json::to_string(&rsp)
-                    .map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())
-                    .map_err(|e| {
-                        error!("serde error: {:?}", e);
-                        warp::reject::custom(e)
-                    })?;
-                let res: Result<String, warp::Rejection> = Ok(data);
-
-                res
-            })
-    }
-
-    fn trigger_purge_logs(
-        &self,
-    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-        warp::path!("trigger_purge_logs")
-            .and(warp::body::bytes())
-            .and(self.with_raft_node())
-            .and_then(|req: hyper::body::Bytes, node: Arc<RaftNode>| async move {
-                let idx_id: u64 = serde_json::from_slice(&req)
-                    .map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())
-                    .map_err(|e| {
-                        error!("serde error: {:?}", e);
-                        warp::reject::custom(e)
-                    })?;
-
-                let rsp = node
-                    .raw_raft()
-                    .trigger()
-                    .purge_log(idx_id)
-                    .await
-                    .map_or_else(|err| err.to_string(), |_| "Success".to_string());
-
-                info!("------ trigger_purge_logs: {} - {}", idx_id, rsp);
-                let res: Result<String, warp::Rejection> = Ok(rsp);
-                res
-            })
-    }
-
-    fn trigger_snapshot(
-        &self,
-    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-        warp::path!("trigger_snapshot")
-            .and(warp::body::bytes())
-            .and(self.with_raft_node())
-            .and_then(|_req: hyper::body::Bytes, node: Arc<RaftNode>| async move {
-                let rsp = node
-                    .raw_raft()
-                    .trigger()
-                    .snapshot()
-                    .await
-                    .map_or_else(|err| err.to_string(), |_| "Success".to_string());
-
-                info!("------ trigger_snapshot: {}", rsp);
-                let res: Result<String, warp::Rejection> = Ok(rsp);
-                res
-            })
+    async fn trigger_snapshot(State((raft_node, _)): State<ServerState>) -> (StatusCode, String) {
+        let ret: String = node.raw_raft().trigger().snapshot().await;
+        match ret {
+            Ok(_) => {
+                info!("------ trigger_snapshot: Success");
+                (StatusCode::OK, "Success".to_string())
+            }
+            Err(e) => {
+                // TODO(zipper): why return status 200 ?
+                info!("------ trigger_snapshot: {e}");
+                (StatusCode::OK, e.to_string())
+            }
+        }
     }
 }
 

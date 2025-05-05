@@ -2,8 +2,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
-use heed::byteorder::BigEndian;
-use heed::types::*;
+use heed::byteorder::BE;
+use heed::types::{Bytes, U64};
 use heed::{Database, Env};
 use openraft::Entry;
 use snafu::ResultExt;
@@ -11,12 +11,10 @@ use snafu::ResultExt;
 use crate::errors::{HeedSnafu, IOErrSnafu, MsgInvalidSnafu, ReplicationResult};
 use crate::{EntriesMetrics, EntryStorage, TypeConfig};
 
-// --------------------------------------------------------------------------- //
-type BEU64 = U64<BigEndian>;
 pub struct HeedEntryStorage {
     env: Env,
+    db: Database<U64<BE>, Bytes>,
     path: PathBuf,
-    db: Database<OwnedType<BEU64>, OwnedSlice<u8>>,
 }
 
 impl HeedEntryStorage {
@@ -24,16 +22,21 @@ impl HeedEntryStorage {
         fs::create_dir_all(&path).context(IOErrSnafu)?;
 
         let path = path.as_ref().to_path_buf();
-        let env = heed::EnvOpenOptions::new()
-            .map_size(size)
-            .max_dbs(1)
-            .open(path.clone())
-            .context(HeedSnafu)?;
-        let db: Database<OwnedType<BEU64>, OwnedSlice<u8>> =
-            env.create_database(Some("data")).context(HeedSnafu)?;
-        let storage = Self { env, db, path };
+        let env = unsafe {
+            heed::EnvOpenOptions::new()
+                .map_size(size)
+                .max_dbs(1)
+                .open(&path)
+        }
+        .context(HeedSnafu)?;
 
-        Ok(storage)
+        let mut wtxn = env.write_txn().context(HeedSnafu)?;
+        let db: Database<U64<BE>, Bytes> = env
+            .create_database(&mut wtxn, Some("data"))
+            .context(HeedSnafu)?;
+        wtxn.commit().context(HeedSnafu)?;
+
+        Ok(Self { env, db, path })
     }
 
     async fn first_entry(&mut self) -> ReplicationResult<Option<Entry<TypeConfig>>> {
@@ -61,9 +64,7 @@ impl EntryStorage for HeedEntryStorage {
 
             let data = bincode::serialize(entry)
                 .map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())?;
-            self.db
-                .put(&mut writer, &BEU64::new(index), &data)
-                .context(HeedSnafu)?;
+            self.db.put(&mut writer, &index, &data).context(HeedSnafu)?;
         }
         writer.commit().context(HeedSnafu)?;
 
@@ -83,11 +84,7 @@ impl EntryStorage for HeedEntryStorage {
 
     async fn entry(&mut self, index: u64) -> ReplicationResult<Option<Entry<TypeConfig>>> {
         let reader = self.env.read_txn().context(HeedSnafu)?;
-        if let Some(data) = self
-            .db
-            .get(&reader, &BEU64::new(index))
-            .context(HeedSnafu)?
-        {
+        if let Some(data) = self.db.get(&reader, &index).context(HeedSnafu)? {
             let entry = bincode::deserialize::<Entry<TypeConfig>>(&data)
                 .map_err(|e| MsgInvalidSnafu { msg: e.to_string() }.build())?;
             Ok(Some(entry))
@@ -100,7 +97,7 @@ impl EntryStorage for HeedEntryStorage {
         let mut ents = vec![];
 
         let reader = self.env.read_txn().context(HeedSnafu)?;
-        let range = BEU64::new(low)..BEU64::new(high);
+        let range = low..high;
         let iter = self.db.range(&reader, &range).context(HeedSnafu)?;
         for pair in iter {
             let (_, data) = pair.context(HeedSnafu)?;
@@ -115,7 +112,7 @@ impl EntryStorage for HeedEntryStorage {
 
     async fn del_after(&mut self, index: u64) -> ReplicationResult<()> {
         let mut writer = self.env.write_txn().context(HeedSnafu)?;
-        let range = BEU64::new(index)..;
+        let range = index..;
         self.db
             .delete_range(&mut writer, &range)
             .context(HeedSnafu)?;
@@ -126,7 +123,7 @@ impl EntryStorage for HeedEntryStorage {
 
     async fn del_before(&mut self, index: u64) -> ReplicationResult<()> {
         let mut writer = self.env.write_txn().context(HeedSnafu)?;
-        let range = ..BEU64::new(index);
+        let range = ..index;
         self.db
             .delete_range(&mut writer, &range)
             .context(HeedSnafu)?;
@@ -156,29 +153,35 @@ impl EntryStorage for HeedEntryStorage {
     }
 }
 
+#[cfg(test)]
 mod test {
+    use heed::byteorder::BE;
+    use heed::types::{Bytes, U64};
+
     #[test]
     #[ignore]
     fn test_heed_range() {
-        type BEU64 = heed::types::U64<heed::byteorder::BigEndian>;
+        let path = "/tmp/cnosdb/replication/entry_store/test_heed_range";
+        let _ = std::fs::remove_dir_all(path);
 
-        let path = "/tmp/cnosdb/8201-entry";
-        let env = heed::EnvOpenOptions::new()
-            .map_size(1024 * 1024 * 1024)
-            .max_dbs(128)
-            .open(path)
-            .unwrap();
-
-        let db: heed::Database<heed::types::OwnedType<BEU64>, heed::types::OwnedSlice<u8>> =
-            env.create_database(Some("entries")).unwrap();
+        let env = unsafe {
+            heed::EnvOpenOptions::new()
+                .map_size(1024 * 1024 * 1024)
+                .max_dbs(128)
+                .open(path)
+                .unwrap()
+        };
 
         let mut wtxn = env.write_txn().unwrap();
-        let range = ..BEU64::new(4);
+        let db: heed::Database<U64<BE>, Bytes> =
+            env.create_database(&mut wtxn, Some("entries")).unwrap();
+
+        let range = ..4;
         db.delete_range(&mut wtxn, &range).unwrap();
         wtxn.commit().unwrap();
 
         let reader = env.read_txn().unwrap();
-        let range = BEU64::new(0)..BEU64::new(1000000);
+        let range = 0..1000000;
         let iter = db.range(&reader, &range).unwrap();
         for pair in iter {
             let (index, _) = pair.unwrap();
