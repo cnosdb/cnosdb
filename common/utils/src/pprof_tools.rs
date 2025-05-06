@@ -4,17 +4,17 @@ use std::fs::File;
 use pprof::protos::Message;
 
 #[cfg(not(all(any(target_arch = "x86_64", target_arch = "aarch64"))))]
-pub async fn gernate_pprof() -> Result<String, String> {
+pub async fn generate_pprof() -> Result<String, String> {
     Err("not support".to_string())
 }
 
 #[cfg(not(all(any(target_arch = "x86_64", target_arch = "aarch64"))))]
-pub async fn gernate_jeprof() -> Result<String, String> {
+pub async fn generate_jeprof() -> Result<String, String> {
     Err("not support".to_string())
 }
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-pub async fn gernate_pprof() -> Result<String, String> {
+pub async fn generate_pprof() -> Result<String, String> {
     let guard = pprof::ProfilerGuardBuilder::default()
         .frequency(1000)
         .blocklist(&["libc", "libgcc", "pthread", "vdso"])
@@ -51,13 +51,13 @@ const OPT_PROF: &[u8] = b"opt.prof\0";
 const PROFILE_OUTPUT_FILE_STR: &str = "/tmp/mem_profile.out";
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-pub async fn gernate_jeprof() -> Result<String, String> {
+pub async fn generate_jeprof() -> Result<String, String> {
     let _ = tokio::fs::remove_file(PROFILE_OUTPUT_FILE_STR).await;
 
     dump_mem_profile()?;
 
     Ok(format!(
-        "gernate memory profile in: {}",
+        "generate memory profile in: {}",
         PROFILE_OUTPUT_FILE_STR
     ))
 }

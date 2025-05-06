@@ -21,12 +21,22 @@ trace = { path = "../common/trace" }
 utils = { path = "../common/utils" }
 version = { path = "../common/version" }
 
+axum = { workspace = true }
+http = { workspace = true }
+http-body = { workspace = true }
+hyper = { workspace = true }
+hyper-util = { workspace = true }
+tonic = { workspace = true }
+tower = { workspace = true }
+
 async-backtrace = { workspace = true, optional = true }
 async-trait = { workspace = true }
 byteorder = { workspace = true }
 clap = { workspace = true }
 ctrlc = { workspace = true, features = ["termination"] }
 dashmap = { workspace = true }
+futures = { workspace = true, features = ["alloc"] }
+heed = { workspace = true }
 openraft = { workspace = true, features = ["serde"] }
 parking_lot = { workspace = true }
 rand = { workspace = true }
@@ -38,25 +48,17 @@ sys-info = { workspace = true }
 sysinfo = { workspace = true, optional = true }
 tokio = { workspace = true }
 toml = { workspace = true }
-tonic = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true }
 walkdir = { workspace = true }
 
-futures = { workspace = true, features = ["alloc"] }
-heed = { workspace = true }
-http = { workspace = true }
-http-body = { workspace = true }
-tower = { workspace = true }
-warp = { workspace = true }
-
 [target.'cfg(unix)'.dependencies]
 pprof = { workspace = true, features = ["flamegraph", "protobuf-codec", "frame-pointer"] }
+
+[dev-dependencies]
+maplit = "1.0.2"
 
 [features]
 default = []
 backtrace = ["async-backtrace"]
 meta_e2e_test = ["sysinfo"]
-
-[dev-dependencies]
-maplit = "1.0.2"

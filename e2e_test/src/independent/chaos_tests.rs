@@ -27,7 +27,7 @@ fn restart_datanode(data_server: &mut CnosdbDataTestHelper) {
 
 fn move_vnode(meta: Arc<TenantMeta>, server_url: &str) {
     let db_info = meta.get_db_info("chaos_test_db").unwrap().unwrap();
-    let random = rand::thread_rng().gen_range(0..100);
+    let random = rand::rng().random_range(0..100);
     if db_info.buckets.is_empty() {
         return;
     }
@@ -45,8 +45,8 @@ fn move_vnode(meta: Arc<TenantMeta>, server_url: &str) {
 }
 
 fn alter_replica(server_url: &str) {
-    let mut rng = rand::thread_rng();
-    let target_replica = rng.gen_range(1..=2);
+    let mut rng = rand::rng();
+    let target_replica = rng.random_range(1..=2);
     let command = format!("alter database chaos_test_db set replica {target_replica}");
     println!("------- Alter Replica Command: {}", command);
     let client = Client::with_auth("root".to_string(), Some(String::new()));
@@ -54,8 +54,8 @@ fn alter_replica(server_url: &str) {
 }
 
 fn alter_shard(server_url: &str) {
-    let mut rng = rand::thread_rng();
-    let target_shard = rng.gen_range(1..=10);
+    let mut rng = rand::rng();
+    let target_shard = rng.random_range(1..=10);
     let command = format!("alter database chaos_test_db set shard {target_shard}");
     println!("------- Alter Shard Command: {}", command);
     let client = Client::with_auth("root".to_string(), Some(String::new()));
@@ -63,8 +63,8 @@ fn alter_shard(server_url: &str) {
 }
 
 fn alter_vnode_duration(server_url: &str) {
-    let mut rng = rand::thread_rng();
-    let duration = rng.gen_range(1..=365);
+    let mut rng = rand::rng();
+    let duration = rng.random_range(1..=365);
     let command = format!("alter database chaos_test_db set vnode_duration '{duration}d'");
     println!("------- Alter Vnode Duration Command: {}", command);
     let client = Client::with_auth("root".to_string(), Some(String::new()));
@@ -108,7 +108,7 @@ fn chaos_test_case_1() {
         while !*finish_flag_c.lock() {
             let mut count = write_count_c.lock();
             let tstamp = (1711333406_u64 + *count) * 1000000000;
-            let random = rand::thread_rng().gen_range(0..32);
+            let random = rand::rng().random_range(0..32);
             let body = format!("ma,ta=a_{} fa={} {}", random, count, tstamp);
 
             loop {
@@ -129,7 +129,7 @@ fn chaos_test_case_1() {
     let perform_actions = move || {
         while !*finish_flag_c.lock() {
             let operation_count = 5;
-            let random = rand::thread_rng().gen_range(0..100);
+            let random = rand::rng().random_range(0..100);
             if random % operation_count == 0 {
                 println!("---------------------------------- Restart node...");
                 let mut executor_cp = executor_c.lock();

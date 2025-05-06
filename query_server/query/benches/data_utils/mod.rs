@@ -128,12 +128,12 @@ fn create_record_batch(
 
     // Integer values between [0, 9].
     let integer_values_narrow = (0..batch_size)
-        .map(|_| rng.gen_range(0_u64..10))
+        .map(|_| rng.random_range(0_u64..10))
         .collect::<Vec<_>>();
 
     // Integer values between [0, 9].
     let times = (0..batch_size)
-        .map(|_| rng.gen_range(0_i64..10))
+        .map(|_| rng.random_range(0_i64..10))
         .collect::<Vec<_>>();
 
     RecordBatch::try_new(

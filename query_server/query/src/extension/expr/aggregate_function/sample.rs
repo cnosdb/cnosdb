@@ -252,12 +252,12 @@ impl SampleAccumulator {
 fn generate_unique_random_numbers(count: u32, min: u32, max: u32) -> Vec<u32> {
     let count = cmp::min(count, max - min);
 
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let mut unique_numbers = HashSet::with_capacity(count as usize);
     let mut result = Vec::new();
 
     while (unique_numbers.len() as u32) < count {
-        let random_number = rng.gen_range(min..max);
+        let random_number = rng.random_range(min..max);
         unique_numbers.insert(random_number);
     }
 

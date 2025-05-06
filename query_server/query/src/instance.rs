@@ -387,9 +387,9 @@ mod tests {
     }
 
     fn generate_data(n: usize) -> String {
-        // let mut random = rand::thread_rng();
+        // let mut random = rand::rng();
 
-        // random.gen_range();
+        // random.random_range();
         debug!("start generate data.");
         let rows: Vec<String> = (0..n)
             .map(|i| {

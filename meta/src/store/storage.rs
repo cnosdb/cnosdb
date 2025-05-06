@@ -129,21 +129,24 @@ impl StateMachine {
     pub fn open(path: impl AsRef<Path>, size: usize) -> MetaResult<Self> {
         fs::create_dir_all(&path)?;
 
-        let env = heed::EnvOpenOptions::new()
-            .map_size(size)
-            .max_dbs(1)
-            .open(path)?;
+        let env = unsafe {
+            heed::EnvOpenOptions::new()
+                .map_size(size)
+                .max_dbs(1)
+                .open(path)?
+        };
 
+        let mut wtxn = env.write_txn()?;
         let db: heed::Database<heed::types::Str, heed::types::Str> =
-            env.create_database(Some("data"))?;
-        let storage = Self {
+            env.create_database(&mut wtxn, Some("data"))?;
+        wtxn.commit()?;
+
+        Ok(Self {
             env,
             db,
             snapshot: None,
             watch: Arc::new(Watch::new()),
-        };
-
-        Ok(storage)
+        })
     }
 
     pub fn is_meta_init(&self) -> MetaResult<bool> {
@@ -1136,7 +1139,7 @@ impl StateMachine {
                 (TableSchema::TsKvTableSchema(val), TableSchema::TsKvTableSchema(schema)) => {
                     if val.schema_version + 1 != schema.schema_version {
                         return Err(MetaError::UpdateTableConflict {
-                            name: schema.name.clone(),
+                            name: schema.name.to_string(),
                         });
                     }
                 }

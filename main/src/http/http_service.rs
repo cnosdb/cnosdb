@@ -1049,7 +1049,7 @@ impl HttpService {
                 let start = Instant::now();
                 #[cfg(unix)]
                 {
-                    let res = utils::pprof_tools::gernate_pprof().await;
+                    let res = utils::pprof_tools::generate_pprof().await;
                     info!("debug pprof: {:?}", res);
                     let resp = match res {
                         Ok(v) => Ok(v),
@@ -1089,7 +1089,7 @@ impl HttpService {
                 let start = Instant::now();
                 #[cfg(unix)]
                 {
-                    let res = utils::pprof_tools::gernate_jeprof().await;
+                    let res = utils::pprof_tools::generate_jeprof().await;
                     info!("debug jeprof: {:?}", res);
                     let resp = match res {
                         Ok(v) => Ok(v),

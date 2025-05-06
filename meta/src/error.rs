@@ -228,8 +228,6 @@ impl From<models::ModelError> for MetaError {
     }
 }
 
-impl warp::reject::Reject for MetaError {}
-
 #[test]
 fn test_mod_code() {
     let e = MetaError::NotFoundDb { db: "".to_string() };

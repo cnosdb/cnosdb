@@ -1,4 +1,4 @@
-use datafusion::{arrow, assert_batches_eq};
+use datafusion::assert_batches_eq;
 
 use crate::utils::global::E2eContext;
 use crate::utils::{flight_authed_client, flight_fetch_result_and_print};

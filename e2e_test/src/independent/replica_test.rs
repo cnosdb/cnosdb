@@ -14,7 +14,7 @@ fn replica_test(meta: Arc<TenantMeta>, server_url: &str) {
     let db_info = meta.get_db_info("replica_test_db").unwrap().unwrap();
     assert!(!db_info.buckets.is_empty());
 
-    let random = rand::thread_rng().gen_range(0..100);
+    let random = rand::rng().random_range(0..100);
     let bucket = &db_info.buckets[random % db_info.buckets.len()];
     let group = &bucket.shard_group[random % bucket.shard_group.len()];
     let vnode = &group.vnodes[random % group.vnodes.len()];
@@ -237,7 +237,7 @@ fn replica_test_case() {
         let url = &format!("http://{host_port}/api/v1/write?db=replica_test_db");
         for count in 0..write_count {
             let tstamp = (1711333406_u64 + count) * 1000000000;
-            let random = rand::thread_rng().gen_range(0..32);
+            let random = rand::rng().random_range(0..32);
             let body = format!("ma,ta=a_{} fa={} {}", random, count, tstamp);
 
             check_response!(client.post(url, &body,));
@@ -288,7 +288,7 @@ fn replica_test_case_singleton() {
         let url = &format!("http://{host_port}/api/v1/write?db=replica_test_db");
         for count in 0..write_count {
             let tstamp = (1711333406_u64 + count) * 1000000000;
-            let random = rand::thread_rng().gen_range(0..32);
+            let random = rand::rng().random_range(0..32);
             let body = format!("ma,ta=a_{} fa={} {}", random, count, tstamp);
 
             check_response!(client.post(url, &body));
@@ -299,7 +299,7 @@ fn replica_test_case_singleton() {
     let db_info = meta_client.get_db_info("replica_test_db").unwrap().unwrap();
     assert!(!db_info.buckets.is_empty());
 
-    let random = rand::thread_rng().gen_range(0..100);
+    let random = rand::rng().random_range(0..100);
     let bucket = &db_info.buckets[random % db_info.buckets.len()];
     let group = &bucket.shard_group[random % bucket.shard_group.len()];
     let vnode = &group.vnodes[random % group.vnodes.len()];
@@ -474,7 +474,7 @@ fn replica_test_case_1query_1tskv() {
         let url = &format!("http://{host_port_1}/api/v1/write?db=replica_test_db");
         for count in 0..write_count {
             let tstamp = (1711333406_u64 + count) * 1000000000;
-            let random = rand::thread_rng().gen_range(0..32);
+            let random = rand::rng().random_range(0..32);
             let body = format!("ma,ta=a_{} fa={} {}", random, count, tstamp);
 
             check_response!(client.post(url, &body));
@@ -485,7 +485,7 @@ fn replica_test_case_1query_1tskv() {
     let db_info = meta_client.get_db_info("replica_test_db").unwrap().unwrap();
     assert!(!db_info.buckets.is_empty());
 
-    let random = rand::thread_rng().gen_range(0..100);
+    let random = rand::rng().random_range(0..100);
     let bucket = &db_info.buckets[random % db_info.buckets.len()];
     let group = &bucket.shard_group[random % bucket.shard_group.len()];
     let vnode = &group.vnodes[random % group.vnodes.len()];

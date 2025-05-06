@@ -301,7 +301,7 @@ mod test {
         let engine = IndexEngine2::new("/tmp/test/1").unwrap();
 
         for i in 10000001..60000001 {
-            let rand_num = rand::thread_rng().gen_range(5..100);
+            let rand_num = rand::rng().random_range(5..100);
             let value = "v_1234567890".repeat(rand_num);
             let key = format!("_key_{}", i);
             engine.set(key.as_bytes(), value.as_bytes()).unwrap();

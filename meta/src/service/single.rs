@@ -1,32 +1,31 @@
 use std::collections::HashSet;
-use std::convert::Infallible as StdInfallible;
-use std::net::SocketAddr;
-use std::ops::Deref;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
+use axum::body::Bytes;
 use config::tskv::MetaConfig;
 use models::schema::database_schema::{DatabaseConfig, DatabaseOptions};
 use models::schema::DEFAULT_DATABASE;
+use tokio::net::TcpListener;
 use tokio::sync::RwLock;
-use tracing::{debug, error, info};
-use warp::{hyper, Filter};
 
-use crate::error::{MetaError, MetaResult};
+use crate::error::MetaResult;
 use crate::service::init::MetaInit;
-use crate::store::command::*;
-use crate::store::dump::dump_impl;
 use crate::store::storage::StateMachine;
 
-pub async fn start_singe_meta_server(
-    path: String,
+pub async fn start_singe_meta_server<P: AsRef<Path>>(
+    dir: P,
     cluster_name: String,
     config: &MetaConfig,
     size: usize,
 ) {
-    info!("CnosDB meta config: {:?}", config);
-    let addr = config.service_addr[0].clone();
-    let db_path = format!("{}/meta/{}.data", path, 0);
+    trace::info!("CnosDB meta config: {:?}", config);
+
+    let listen_addr = &config.service_addr[0];
+    let listener = TcpListener::bind(listen_addr).await.unwrap();
+
+    let db_path = dir.as_ref().join("meta").join("0.data");
     let mut storage = StateMachine::open(db_path, size).unwrap();
 
     let mut usage_schema_config = DatabaseConfig::default();
@@ -60,261 +59,193 @@ pub async fn start_singe_meta_server(
     );
     meta_init.init_meta(&mut storage).await;
 
-    info!("single meta http server start addr: {}", addr);
-    let storage = Arc::new(RwLock::new(storage));
-    let server = SingleServer { addr, storage };
+    trace::info!("single meta http server start addr: {listen_addr}");
 
-    tokio::spawn(async move { server.start().await });
+    let server = SingleServer {
+        addr: listen_addr.to_string(),
+        storage: Arc::new(RwLock::new(storage)),
+    };
+    tokio::spawn(async move { axum::serve(listener, http_api::create_router(server)) });
 }
 
+#[derive(Clone)]
 pub struct SingleServer {
     pub addr: String,
     pub storage: Arc<RwLock<StateMachine>>,
 }
 
-impl SingleServer {
-    pub async fn start(&self) {
-        let addr: SocketAddr = self.addr.parse().unwrap();
-        warp::serve(self.routes()).run(addr).await;
-    }
+mod http_api {
+    use std::fmt::Write as _;
 
-    fn routes(
-        &self,
-    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-        self.read()
-            .or(self.write())
-            .or(self.watch())
-            .or(self.dump())
-            .or(self.dump_sql())
-            .or(self.restore())
-            .or(self.watch_meta_membership())
-            .or(self.debug())
-    }
+    use axum::body::Bytes;
+    use axum::extract::{Json, Path, State};
+    use axum::http::StatusCode;
+    use axum::{routing, Router};
 
-    fn with_addr(&self) -> impl Filter<Extract = (String,), Error = StdInfallible> + Clone {
-        let addr = self.addr.clone();
-        warp::any().map(move || addr.clone())
-    }
+    use super::{process_watch, SingleServer};
+    use crate::error::MetaError;
+    use crate::store::command::{ReadCommand, WriteCommand};
+    use crate::store::dump::dump_impl;
 
-    fn with_storage(
-        &self,
-    ) -> impl Filter<Extract = (Arc<RwLock<StateMachine>>,), Error = StdInfallible> + Clone {
-        let storage = self.storage.clone();
-        warp::any().map(move || storage.clone())
-    }
-
-    fn watch_meta_membership(
-        &self,
-    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-        warp::path!("watch_meta_membership")
-            .and(warp::body::bytes())
-            .and(self.with_addr())
-            .and_then(|_req: hyper::body::Bytes, addr: String| async move {
-                let nodes = vec![addr];
-                let data = crate::store::storage::response_encode(Ok(nodes));
-
-                let res: Result<String, warp::Rejection> = Ok(data);
-
-                res
-            })
-    }
-
-    fn read(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-        warp::path!("read")
-            .and(warp::body::bytes())
-            .and(self.with_storage())
-            .and_then(
-                |req: hyper::body::Bytes, storage: Arc<RwLock<StateMachine>>| async move {
-                    let req: ReadCommand = serde_json::from_slice(&req)
-                        .map_err(MetaError::from)
-                        .map_err(|e| {
-                            error!("read error: {:?}", e);
-                            warp::reject::custom(e)
-                        })?;
-
-                    let rsp = storage.read().await.process_read_command(&req);
-                    let res: Result<String, warp::Rejection> = Ok(rsp);
-                    res
-                },
+    pub fn create_router(server: SingleServer) -> Router {
+        Router::new()
+            .route("/read", routing::any(read))
+            .route("/write", routing::any(write))
+            .route("/watch", routing::any(watch))
+            .route(
+                "/watch_meta_membership",
+                routing::any(watch_meta_membership),
             )
+            .route("/dump", routing::any(dump))
+            .route("/dump/sql/ddl/{cluster}/{tenant}", routing::any(dump_sql))
+            .route("/restore", routing::any(restore))
+            .route("/debug", routing::any(debug))
+            .with_state(server)
     }
 
-    fn write(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-        warp::path!("write")
-            .and(warp::body::bytes())
-            .and(self.with_storage())
-            .and_then(
-                |req: hyper::body::Bytes, storage: Arc<RwLock<StateMachine>>| async move {
-                    let req: WriteCommand = serde_json::from_slice(&req)
-                        .map_err(MetaError::from)
-                        .map_err(|e| {
-                        error!("write error: {:?}", e);
-                        warp::reject::custom(e)
-                    })?;
-
-                    let rsp = storage.write().await.process_write_command(&req).await;
-                    let res: Result<String, warp::Rejection> = Ok(rsp);
-                    res
-                },
-            )
+    async fn read(
+        State(SingleServer { storage, .. }): State<SingleServer>,
+        Json(cmd): Json<ReadCommand>,
+    ) -> String {
+        storage.read().await.process_read_command(&cmd)
     }
 
-    fn watch(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-        warp::path!("watch")
-            .and(warp::body::bytes())
-            .and(self.with_storage())
-            .and_then(
-                |req: hyper::body::Bytes, storage: Arc<RwLock<StateMachine>>| async move {
-                    let data = Self::process_watch(req, storage).await.map_err(|e| {
-                        error!("watch error: {:?}", e);
-                        warp::reject::custom(e)
-                    })?;
-
-                    let res: Result<String, warp::Rejection> = Ok(data);
-                    res
-                },
-            )
+    async fn write(
+        State(SingleServer { storage, .. }): State<SingleServer>,
+        Json(cmd): Json<WriteCommand>,
+    ) -> String {
+        storage.write().await.process_write_command(&cmd).await
     }
 
-    fn dump(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-        warp::path!("dump").and(self.with_storage()).and_then(
-            |storage: Arc<RwLock<StateMachine>>| async move {
-                let data = storage
-                    .write()
-                    .await
-                    .backup()
-                    .map_err(MetaError::from)
-                    .map_err(|e| {
-                        error!("dump error: {:?}", e);
-                        warp::reject::custom(e)
-                    })?;
+    async fn watch(
+        State(SingleServer { storage, .. }): State<SingleServer>,
+        body: Bytes,
+    ) -> (StatusCode, String) {
+        match process_watch(body, storage).await {
+            Ok(data) => (StatusCode::OK, data),
+            Err(e) => {
+                trace::error!("watch error: {:?}", e);
+                (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+            }
+        }
+    }
 
-                let mut rsp = "".to_string();
+    async fn watch_meta_membership(
+        State(SingleServer { addr, .. }): State<SingleServer>,
+    ) -> String {
+        let nodes = vec![addr];
+        crate::store::storage::response_encode(Ok(nodes))
+    }
+
+    async fn dump(
+        State(SingleServer { storage, .. }): State<SingleServer>,
+    ) -> (StatusCode, String) {
+        match storage.write().await.backup().map_err(MetaError::from) {
+            Ok(data) => {
+                let mut buf = String::with_capacity(8 * data.map.len());
                 for (key, val) in data.map.iter() {
-                    rsp = rsp + &format!("{}: {}\n", key, val);
+                    write!(&mut buf, "{key}: {val}\n").unwrap();
                 }
+                (StatusCode::OK, buf)
+            }
+            Err(e) => {
+                trace::error!("dump error: {e:?}");
+                (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+            }
+        }
+    }
 
-                let res: Result<String, warp::Rejection> = Ok(rsp);
-                res
-            },
+    async fn dump_sql(
+        State(SingleServer { storage, .. }): State<SingleServer>,
+        Path(cluster): Path<String>,
+        Path(tenant): Path<Option<String>>,
+    ) -> (StatusCode, String) {
+        let storage = storage.read().await;
+        match dump_impl(&cluster, tenant.as_deref(), &storage).await {
+            Ok(data) => (StatusCode::OK, data),
+            Err(e) => {
+                trace::error!("dump sql error: {:?}", e);
+                (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+            }
+        }
+    }
+
+    async fn restore(
+        State(SingleServer { storage, .. }): State<SingleServer>,
+        body: String,
+    ) -> (StatusCode, String) {
+        trace::info!("restore data length:{}", body.len());
+
+        let mut count = 0;
+        let lines: Vec<&str> = body.split('\n').collect();
+        for line in lines {
+            let strs: Vec<&str> = line.splitn(2, ": ").collect();
+            if strs.len() != 2 {
+                continue;
+            }
+
+            let command = WriteCommand::Set {
+                key: strs[0].to_string(),
+                value: strs[1].to_string(),
+            };
+
+            let _ = storage.write().await.process_write_command(&command).await;
+
+            count += 1;
+        }
+
+        (
+            StatusCode::OK,
+            format!("Restore Data Success, Total: {count} "),
         )
     }
 
-    fn dump_sql(
-        &self,
-    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-        let opt = warp::path::param::<String>()
-            .map(Some)
-            .or_else(|_| async { Ok::<(Option<String>,), std::convert::Infallible>((None,)) });
-        let prefix = warp::path!("dump" / "sql" / "ddl" / String / ..);
-
-        let route = prefix.and(opt).and(warp::path::end());
-
-        route
-            .and(self.with_storage())
-            .and_then(
-                |cluster: String, tenant: Option<String>, storage: Arc<RwLock<StateMachine>>| async move {
-                    let machine = storage.read().await;
-                    let res = dump_impl(&cluster, tenant.as_deref(), machine.deref())
-                        .await
-                        .map_err(|e| {
-                            error!("dump sql error: {:?}", e);
-                            warp::reject::custom(e)
-                        })?;
-                    Ok::<String, warp::Rejection>(res)
-                },
-            )
-    }
-
-    fn restore(
-        &self,
-    ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-        warp::path!("restore")
-            .and(warp::body::bytes())
-            .and(self.with_storage())
-            .and_then(
-                |req: hyper::body::Bytes, storage: Arc<RwLock<StateMachine>>| async move {
-                    info!("restore data length:{}", req.len());
-
-                    let mut count = 0;
-                    let req = String::from_utf8_lossy(&req).to_string();
-                    let lines: Vec<&str> = req.split('\n').collect();
-                    for line in lines {
-                        let strs: Vec<&str> = line.splitn(2, ": ").collect();
-                        if strs.len() != 2 {
-                            continue;
-                        }
-
-                        let command = WriteCommand::Set {
-                            key: strs[0].to_string(),
-                            value: strs[1].to_string(),
-                        };
-
-                        let _ = storage.write().await.process_write_command(&command).await;
-
-                        count += 1;
-                    }
-
-                    let data = format!("Restore Data Success, Total: {} ", count);
-                    let res: Result<String, warp::Rejection> = Ok(data);
-
-                    res
-                },
-            )
-    }
-
-    fn debug(&self) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-        warp::path!("debug").and(self.with_storage()).and_then(
-            |storage: Arc<RwLock<StateMachine>>| async move {
-                let data = storage.write().await.debug_data().map_err(|e| {
-                    error!("debug error: {:?}", e);
-                    warp::reject::custom(e)
-                })?;
-
-                let res: Result<String, warp::Rejection> = Ok(data);
-                res
-            },
-        )
-    }
-
-    pub async fn process_watch(
-        req: hyper::body::Bytes,
-        storage: Arc<RwLock<StateMachine>>,
-    ) -> MetaResult<String> {
-        let req: (String, String, HashSet<String>, u64) = serde_json::from_slice(&req)?;
-        let (client, cluster, tenants, base_ver) = req;
-        debug!(
-            "watch all  args: client-id: {}, cluster: {}, tenants: {:?}, version: {}",
-            client, cluster, tenants, base_ver
-        );
-
-        let mut notify = {
-            let storage = storage.read().await;
-            let watch_data = storage.read_change_logs(&cluster, &tenants, base_ver);
-            if watch_data.need_return(base_ver) {
-                return Ok(crate::store::storage::response_encode(Ok(watch_data)));
+    async fn debug(
+        State(SingleServer { storage, .. }): State<SingleServer>,
+    ) -> (StatusCode, String) {
+        match storage.write().await.debug_data() {
+            Ok(data) => (StatusCode::OK, data),
+            Err(e) => {
+                trace::error!("debug error: {e:?}");
+                (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
             }
+        }
+    }
+}
 
-            storage.watch.subscribe()
-        };
+pub async fn process_watch(req: Bytes, storage: Arc<RwLock<StateMachine>>) -> MetaResult<String> {
+    let req: (String, String, HashSet<String>, u64) = serde_json::from_slice(&req)?;
+    let (client, cluster, tenants, base_ver) = req;
+    trace::debug!(
+        "watch all  args: client-id: {client}, cluster: {cluster}, tenants: {tenants:?}, version: {base_ver}",
+    );
 
-        let mut follow_ver = base_ver;
-        let now = std::time::Instant::now();
-        loop {
-            let _ = tokio::time::timeout(Duration::from_secs(20), notify.recv()).await;
+    let mut notify = {
+        let storage = storage.read().await;
+        let watch_data = storage.read_change_logs(&cluster, &tenants, base_ver);
+        if watch_data.need_return(base_ver) {
+            return Ok(crate::store::storage::response_encode(Ok(watch_data)));
+        }
 
-            let watch_data = storage
-                .read()
-                .await
-                .read_change_logs(&cluster, &tenants, follow_ver);
-            debug!("watch notify {} {}.{}", client, base_ver, follow_ver);
-            if watch_data.need_return(base_ver) || now.elapsed() > Duration::from_secs(30) {
-                return Ok(crate::store::storage::response_encode(Ok(watch_data)));
-            }
+        storage.watch.subscribe()
+    };
 
-            if follow_ver < watch_data.max_ver {
-                follow_ver = watch_data.max_ver;
-            }
+    let mut follow_ver = base_ver;
+    let now = std::time::Instant::now();
+    loop {
+        let _ = tokio::time::timeout(Duration::from_secs(20), notify.recv()).await;
+
+        let watch_data = storage
+            .read()
+            .await
+            .read_change_logs(&cluster, &tenants, follow_ver);
+        trace::debug!("watch notify {} {}.{}", client, base_ver, follow_ver);
+        if watch_data.need_return(base_ver) || now.elapsed() > Duration::from_secs(30) {
+            return Ok(crate::store::storage::response_encode(Ok(watch_data)));
+        }
+
+        if follow_ver < watch_data.max_ver {
+            follow_ver = watch_data.max_ver;
         }
     }
 }

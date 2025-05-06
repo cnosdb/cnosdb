@@ -7,7 +7,6 @@ use arrow_flight::sql::{
     CommandGetCrossReference, CommandGetDbSchemas, CommandGetExportedKeys, CommandGetImportedKeys,
     CommandGetPrimaryKeys, CommandGetTables, SqlInfo,
 };
-use arrow_flight::utils::flight_data_to_batches;
 use arrow_flight::FlightInfo;
 use datafusion::arrow::error::ArrowError;
 use datafusion::arrow::record_batch::RecordBatch;
@@ -20,7 +19,7 @@ use crate::assert_batches_one_of;
 
 async fn flight_channel(host: &str, port: u16) -> Result<Channel, ArrowError> {
     let endpoint = Endpoint::new(format!("http://{}:{}", host, port))
-        .map_err(|_| ArrowError::IoError("Cannot create endpoint".to_string()))?
+        .map_err(|e| ArrowError::IpcError(format!("Cannot create endpoint: {e}")))?
         .connect_timeout(Duration::from_secs(20))
         .timeout(Duration::from_secs(20))
         .tcp_nodelay(true) // Disable Nagle's Algorithm since we don't want packets to wait
@@ -32,7 +31,7 @@ async fn flight_channel(host: &str, port: u16) -> Result<Channel, ArrowError> {
     let channel = endpoint
         .connect()
         .await
-        .map_err(|e| ArrowError::IoError(format!("Cannot connect to endpoint: {e}")))?;
+        .map_err(|e| ArrowError::IpcError(format!("Cannot connect to endpoint: {e}")))?;
 
     Ok(channel)
 }
@@ -59,8 +58,8 @@ async fn fetch_result_and_print(
     for ep in &flight_info.endpoint {
         if let Some(tkt) = &ep.ticket {
             let stream = client.do_get(tkt.clone()).await.unwrap();
-            let flight_data = stream.try_collect::<Vec<_>>().await.unwrap();
-            batches.extend(flight_data_to_batches(&flight_data).unwrap());
+            let new_batches = stream.try_collect::<Vec<_>>().await.unwrap();
+            batches.extend(new_batches);
         };
     }
 
@@ -172,7 +171,7 @@ async fn test_sql_client_get_table_types() {
 }
 
 #[tokio::test]
-async fn test_sql_client_excute_data_type_between() {
+async fn test_sql_client_execute_data_type_between() {
     let mut client = authed_client().await;
 
     // clean env
