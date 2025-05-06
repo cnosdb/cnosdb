@@ -4,17 +4,20 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+config = { path = "../config" }
 derive_traits = { path = "../common/derive_traits" }
 metrics = { path = "../common/metrics" }
 models = { path = "../common/models" }
 protos = { path = "../common/protos" }
 trace = { path = "../common/trace" }
 utils = { path = "../common/utils" }
+version = { path = "../common/version" }
 
 axum = { workspace = true }
 http = { workspace = true }
 http-body = { workspace = true }
 hyper = { workspace = true }
+hyper-util = { workspace = true }
 tonic = { workspace = true }
 tower = { workspace = true }
 
