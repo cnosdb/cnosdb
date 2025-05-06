@@ -159,7 +159,8 @@ async fn start_server(node_server: RaftNodeServer) -> ReplicationResult<()> {
 mod raft_node_server {
     use std::sync::Arc;
 
-    use axum::extract::{Request, State};
+    use axum::body::Bytes;
+    use axum::extract::State;
     use axum::http::StatusCode;
     use axum::{routing, Router};
     use replication::apply_store::HeedApplyStorage;
@@ -180,10 +181,9 @@ mod raft_node_server {
 
     async fn read(
         State((raft_node, store)): State<ServerState>,
-        request: Request<String>,
+        body: String,
     ) -> (StatusCode, String) {
-        let req = request.body();
-        match store.read().await.get(&req) {
+        match store.read().await.get(&body) {
             Ok(Some(data)) => (StatusCode::OK, data),
             // TODO(zipper): why return status 200 ?
             Ok(None) => (StatusCode::OK, "not found value by key".to_string()),
@@ -191,10 +191,8 @@ mod raft_node_server {
         }
     }
 
-    async fn write(
-        State((raft_node, _)): State<ServerState>,
-        Request(app_data): Request<Vec<u8>>,
-    ) -> (StatusCode, String) {
+    async fn write(State((raft_node, _)): State<ServerState>, body: Bytes) -> (StatusCode, String) {
+        let app_data = body.to_vec();
         let ret = raft_node.raw_raft().client_write(app_data).await;
         match serde_json::to_string(&ret) {
             Ok(data) => (StatusCode::OK, data),
@@ -209,32 +207,43 @@ mod raft_node_server {
 
     async fn trigger_purge_logs(
         State((raft_node, _)): State<ServerState>,
-        Request(upto_log_idx): Request<u64>,
+        body: Bytes,
     ) -> (StatusCode, String) {
+        let body_str = match std::str::from_utf8(&body) {
+            Ok(s) => s,
+            Err(e) => return (StatusCode::BAD_REQUEST, "Bad UTF-8".to_string()),
+        };
+        let upto_log_idx = match body_str.parse::<u64>() {
+            Ok(idx) => idx,
+            Err(e) => {
+                return (StatusCode::BAD_REQUEST, "Invalid number".to_string());
+            }
+        };
+
         let ret = raft_node.raw_raft().trigger().purge_log(upto_log_idx).await;
         match ret {
             Ok(_) => {
-                info!("------ trigger_purge_logs: {upto_log_idx} - Success");
+                trace::info!("------ trigger_purge_logs: {upto_log_idx} - Success");
                 (StatusCode::OK, "Success".to_string())
             }
             Err(e) => {
                 // TODO(zipper): why return status 200 ?
-                info!("------ trigger_purge_logs: {upto_log_idx} - {e}");
+                trace::info!("------ trigger_purge_logs: {upto_log_idx} - {e}");
                 (StatusCode::OK, e.to_string())
             }
         }
     }
 
     async fn trigger_snapshot(State((raft_node, _)): State<ServerState>) -> (StatusCode, String) {
-        let ret: String = node.raw_raft().trigger().snapshot().await;
+        let ret = raft_node.raw_raft().trigger().snapshot().await;
         match ret {
             Ok(_) => {
-                info!("------ trigger_snapshot: Success");
+                trace::info!("------ trigger_snapshot: Success");
                 (StatusCode::OK, "Success".to_string())
             }
             Err(e) => {
                 // TODO(zipper): why return status 200 ?
-                info!("------ trigger_snapshot: {e}");
+                trace::info!("------ trigger_snapshot: {e}");
                 (StatusCode::OK, e.to_string())
             }
         }
