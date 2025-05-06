@@ -3,9 +3,8 @@ use std::ops::{BitAnd, BitOr, Bound, RangeBounds};
 use std::path::Path;
 
 use bytes::BufMut;
-use heed::flags::Flags;
-use heed::types::*;
-use heed::{Database, Env};
+use heed::types::Bytes;
+use heed::{Database, Env, EnvFlags};
 use roaring::RoaringBitmap;
 use snafu::ResultExt;
 use trace::info;
@@ -14,7 +13,7 @@ use super::{IndexResult, IndexStorageSnafu, RoaringBitmapSnafu};
 
 pub struct IndexEngine2 {
     env: Env,
-    db: Database<OwnedSlice<u8>, OwnedSlice<u8>>,
+    db: Database<Bytes, Bytes>,
 }
 
 impl IndexEngine2 {
@@ -23,19 +22,23 @@ impl IndexEngine2 {
         let _ = fs::create_dir_all(path);
         info!("Using index engine path : {:?}", path);
 
-        let mut env_builder = heed::EnvOpenOptions::new();
-        unsafe {
-            env_builder.flag(Flags::MdbNoSync);
+        let env = unsafe {
+            heed::EnvOpenOptions::new()
+                .flags(EnvFlags::NO_SYNC)
+                .map_size(1024 * 1024 * 1024 * 128)
+                .max_dbs(1)
+                .max_readers(1024)
+                .open(path)
         }
+        .map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?;
 
-        let env = env_builder
-            .map_size(1024 * 1024 * 1024 * 128)
-            .max_dbs(1)
-            .max_readers(1024)
-            .open(path)
+        let mut wtxn = env
+            .write_txn()
             .map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?;
-        let db: Database<OwnedSlice<u8>, OwnedSlice<u8>> = env
-            .create_database(Some("data"))
+        let db: Database<Bytes, Bytes> = env
+            .create_database(&mut wtxn, Some("data"))
+            .map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?;
+        wtxn.commit()
             .map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?;
 
         Ok(Self { env, db })

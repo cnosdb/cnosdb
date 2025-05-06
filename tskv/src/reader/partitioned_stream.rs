@@ -3,7 +3,6 @@ use std::task::{ready, Context, Poll};
 
 use arrow_array::RecordBatch;
 use arrow_schema::ArrowError;
-use datafusion::physical_plan::sorts::cursor::FieldArray;
 use futures::stream::Fuse;
 use futures::StreamExt;
 use snafu::ResultExt;

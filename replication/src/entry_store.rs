@@ -18,13 +18,13 @@ pub struct HeedEntryStorage {
 }
 
 impl HeedEntryStorage {
-    pub fn open(path: impl AsRef<Path>, size: usize) -> ReplicationResult<Self> {
+    pub fn open(path: impl AsRef<Path>, max_size: usize) -> ReplicationResult<Self> {
         fs::create_dir_all(&path).context(IOErrSnafu)?;
 
         let path = path.as_ref().to_path_buf();
         let env = unsafe {
             heed::EnvOpenOptions::new()
-                .map_size(size)
+                .map_size(max_size)
                 .max_dbs(1)
                 .open(&path)
         }

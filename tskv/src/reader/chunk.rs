@@ -53,10 +53,11 @@ mod tests {
     use std::sync::Arc;
 
     use arrow::datatypes::{DataType, Field, Schema, SchemaRef, TimeUnit};
-    use datafusion::logical_expr::{BuiltinScalarFunction, Operator};
+    use datafusion::common::DFSchema;
+    use datafusion::logical_expr::Operator;
+    use datafusion::physical_expr::create_physical_expr;
     use datafusion::physical_expr::execution_props::ExecutionProps;
     use datafusion::physical_plan::expressions::{lit, BinaryExpr, Column};
-    use datafusion::physical_plan::functions::create_physical_expr;
     use datafusion::scalar::ScalarValue;
     use models::schema::tskv_table_schema::{ColumnType, TableColumn};
     use models::ValueType;
@@ -170,8 +171,8 @@ mod tests {
         cgs
     }
 
-    fn schema() -> SchemaRef {
-        Arc::new(Schema::new(vec![
+    fn schema() -> DFSchema {
+        let arrow_schema = Arc::new(Schema::new(vec![
             Field::new(
                 "time",
                 DataType::Timestamp(TimeUnit::Millisecond, None),
@@ -179,7 +180,8 @@ mod tests {
             ),
             Field::new("tag1", DataType::Utf8, true),
             Field::new("field1", DataType::Int64, true),
-        ]))
+        ]));
+        DFSchema::try_from(arrow_schema)
     }
 
     #[test]
@@ -260,8 +262,7 @@ mod tests {
 
         let func_expr = create_physical_expr(
             &BuiltinScalarFunction::Abs,
-            &[Arc::new(Column::new("field1", 2))],
-            schema.as_ref(),
+            &schema,
             &ExecutionProps::default(),
         )
         .unwrap();

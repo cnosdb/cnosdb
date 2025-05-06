@@ -1,4 +1,4 @@
-use datafusion::common::tree_node::{TreeNode, TreeNodeVisitor, VisitRecursion};
+use datafusion::common::tree_node::{TreeNode, TreeNodeRecursion, TreeNodeVisitor};
 use datafusion::common::Result as DFResult;
 use datafusion::config::ConfigOptions;
 use datafusion::datasource::source_as_provider;
@@ -25,10 +25,10 @@ impl AnalyzerRule for InitialPlanChecker {
 #[derive(Default)]
 struct InitialPlanCheckerVisitor {}
 
-impl TreeNodeVisitor for InitialPlanCheckerVisitor {
-    type N = LogicalPlan;
+impl<'a> TreeNodeVisitor<'a> for InitialPlanCheckerVisitor {
+    type Node = LogicalPlan;
 
-    fn pre_visit(&mut self, plan: &LogicalPlan) -> DFResult<VisitRecursion> {
+    fn f_down(&mut self, plan: &Self::Node) -> DFResult<TreeNodeRecursion> {
         if let LogicalPlan::TableScan(TableScan { source, .. }) = plan {
             match source_as_provider(source) {
                 Ok(table) if table.get_logical_plan().is_some() => {
@@ -51,6 +51,6 @@ impl TreeNodeVisitor for InitialPlanCheckerVisitor {
             }
         }
 
-        Ok(VisitRecursion::Continue)
+        Ok(TreeNodeRecursion::Continue)
     }
 }

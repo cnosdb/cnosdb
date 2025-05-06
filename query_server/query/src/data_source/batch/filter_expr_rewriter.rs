@@ -1,4 +1,6 @@
-use datafusion::common::tree_node::{TreeNode, TreeNodeRewriter, TreeNodeVisitor, VisitRecursion};
+use datafusion::common::tree_node::{
+    Transformed, TreeNode, TreeNodeRecursion, TreeNodeRewriter, TreeNodeVisitor,
+};
 use datafusion::common::{DFSchemaRef, ScalarValue};
 use datafusion::error::{DataFusionError, Result};
 use datafusion::execution::context::ExecutionProps;
@@ -55,23 +57,23 @@ impl UDFVisitor {
     }
 }
 
-impl TreeNodeVisitor for UDFVisitor {
-    type N = Expr;
+impl<'a> TreeNodeVisitor<'a> for UDFVisitor {
+    type Node = Expr;
 
-    fn pre_visit(&mut self, node: &Self::N) -> Result<VisitRecursion> {
+    fn f_down(&mut self, node: &Self::Node) -> Result<TreeNodeRecursion> {
         if is_udf_function(node) {
             self.has_udf = true;
         }
-        Ok(VisitRecursion::Continue)
+        Ok(TreeNodeRecursion::Continue)
     }
 }
 
 pub struct FilterExprRewriter {}
 
 impl TreeNodeRewriter for FilterExprRewriter {
-    type N = Expr;
+    type Node = Expr;
 
-    fn mutate(&mut self, node: Self::N) -> Result<Self::N> {
+    fn f_up(&mut self, node: Self::Node) -> Result<Transformed<Self::Node>> {
         match &node {
             Expr::BinaryExpr(bin) => {
                 if matches!(bin.op, Operator::And | Operator::Or) {

@@ -72,13 +72,13 @@ pub struct StateStorage {
 }
 
 impl StateStorage {
-    pub fn open(path: impl AsRef<Path>, size: usize) -> ReplicationResult<Self> {
+    pub fn open(path: impl AsRef<Path>, max_size: usize) -> ReplicationResult<Self> {
         fs::create_dir_all(&path).context(IOErrSnafu)?;
 
         let env = unsafe {
             heed::EnvOpenOptions::new()
                 .flags(EnvFlags::NO_SYNC)
-                .map_size(size)
+                .map_size(max_size)
                 .max_dbs(1)
                 .open(path)
         }

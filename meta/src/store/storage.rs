@@ -126,12 +126,12 @@ impl ApplyStorage for StateMachine {
 }
 
 impl StateMachine {
-    pub fn open(path: impl AsRef<Path>, size: usize) -> MetaResult<Self> {
+    pub fn open(path: impl AsRef<Path>, max_size: usize) -> MetaResult<Self> {
         fs::create_dir_all(&path)?;
 
         let env = unsafe {
             heed::EnvOpenOptions::new()
-                .map_size(size)
+                .map_size(max_size)
                 .max_dbs(1)
                 .open(path)?
         };

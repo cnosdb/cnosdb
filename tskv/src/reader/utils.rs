@@ -6,7 +6,9 @@ use std::task::{Context, Poll};
 
 use arrow::datatypes::SchemaRef;
 use arrow_array::RecordBatch;
-use datafusion::common::tree_node::{TreeNode, TreeNodeRewriter, TreeNodeVisitor, VisitRecursion};
+use datafusion::common::tree_node::{
+    Transformed, TreeNode, TreeNodeRecursion, TreeNodeRewriter, TreeNodeVisitor,
+};
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::Operator;
 use datafusion::physical_plan::expressions::{BinaryExpr, Column, Literal};
@@ -208,7 +210,7 @@ pub fn reassign_predicate_columns(
         None => Ok(None),
         Some(expr) => {
             let new_expr = expr.clone().rewrite(&mut rewriter)?;
-            let mut vistor = ColumnVistor {
+            let mut vistor = ColumnVisitor {
                 part_schema: file_schema,
                 has_col_not_in_file: false,
             };
@@ -226,32 +228,29 @@ struct PredicateColumnsReassigner {
     full_schema: SchemaRef,
 }
 
-struct ColumnVistor {
+struct ColumnVisitor {
     part_schema: SchemaRef,
     has_col_not_in_file: bool,
 }
 
-impl TreeNodeVisitor for ColumnVistor {
-    type N = Arc<dyn PhysicalExpr>;
+impl<'a> TreeNodeVisitor<'a> for ColumnVisitor {
+    type Node = Arc<dyn PhysicalExpr>;
 
-    fn pre_visit(&mut self, node: &Self::N) -> datafusion::common::Result<VisitRecursion> {
+    fn f_down(&mut self, node: &Self::Node) -> datafusion::common::Result<TreeNodeRecursion> {
         if let Some(column) = node.as_any().downcast_ref::<Column>() {
             if self.part_schema.index_of(column.name()).is_err() {
                 self.has_col_not_in_file = true;
-                return Ok(VisitRecursion::Stop);
+                return Ok(TreeNodeRecursion::Stop);
             }
         }
-        Ok(VisitRecursion::Continue)
+        Ok(TreeNodeRecursion::Continue)
     }
 }
 
 impl TreeNodeRewriter for PredicateColumnsReassigner {
-    type N = Arc<dyn PhysicalExpr>;
+    type Node = Arc<dyn PhysicalExpr>;
 
-    fn mutate(
-        &mut self,
-        expr: Arc<dyn PhysicalExpr>,
-    ) -> TskvResult<Arc<dyn PhysicalExpr>, DataFusionError> {
+    fn f_up(&mut self, expr: Self::Node) -> TskvResult<Transformed<Self::Node>, DataFusionError> {
         if let Some(column) = expr.as_any().downcast_ref::<Column>() {
             // find the column index in file schema
             let index = match self.file_schema.index_of(column.name()) {
@@ -262,14 +261,14 @@ impl TreeNodeRewriter for PredicateColumnsReassigner {
                         Ok(_) => Ok(expr),
                         Err(e) => {
                             // If the column is not in the full schema, should throw the error
-                            Err(DataFusionError::ArrowError(e))
+                            Err(DataFusionError::ArrowError(e, None))
                         }
                     };
                 }
             };
             return Ok(Arc::new(Column::new(column.name(), index)));
         } else if let Some(b_expr) = expr.as_any().downcast_ref::<BinaryExpr>() {
-            let mut visitor = ColumnVistor {
+            let mut visitor = ColumnVisitor {
                 part_schema: self.file_schema.clone(),
                 has_col_not_in_file: false,
             };

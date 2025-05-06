@@ -1,4 +1,4 @@
-use datafusion::common::tree_node::{TreeNode, TreeNodeVisitor, VisitRecursion};
+use datafusion::common::tree_node::{TreeNode, TreeNodeRecursion, TreeNodeVisitor};
 use datafusion::common::Result as DFResult;
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::LogicalPlan;
@@ -25,10 +25,10 @@ struct UnsupportedOperationVisitor {
     agg_count: usize,
 }
 
-impl TreeNodeVisitor for UnsupportedOperationVisitor {
-    type N = LogicalPlan;
+impl<'a> TreeNodeVisitor<'a> for UnsupportedOperationVisitor {
+    type Node = LogicalPlan;
 
-    fn pre_visit(&mut self, plan: &LogicalPlan) -> DFResult<VisitRecursion> {
+    fn f_down(&mut self, plan: &Self::Node) -> DFResult<TreeNodeRecursion> {
         match plan {
             LogicalPlan::Aggregate(_) => {
                 self.agg_count += 1;

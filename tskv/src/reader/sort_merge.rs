@@ -5,7 +5,6 @@ use std::task::{Context, Poll};
 use arrow::datatypes::SchemaRef;
 use arrow_array::RecordBatch;
 use datafusion::physical_plan::metrics::{ExecutionPlanMetricsSet, MetricBuilder, Time};
-use datafusion::physical_plan::sorts::cursor::{Cursor, FieldArray, FieldValues};
 use futures::{ready, Stream};
 use snafu::ResultExt;
 
@@ -87,6 +86,7 @@ impl<T: FieldValues> PartialEq for ColumnCursor<T> {
 }
 
 impl<T: FieldValues> Eq for ColumnCursor<T> {}
+
 impl<T: FieldValues> PartialOrd for ColumnCursor<T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))

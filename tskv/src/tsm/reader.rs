@@ -21,7 +21,7 @@ use models::codec::Encoding;
 use models::predicate::domain::{TimeRange, TimeRanges};
 use models::schema::tskv_table_schema::{PhysicalCType, TskvTableSchemaRef};
 use models::{PhysicalDType, SeriesId, SeriesKey};
-use snafu::{location, Backtrace, GenerateImplicitData, Location, OptionExt, ResultExt};
+use snafu::{location, Backtrace, GenerateImplicitData, OptionExt, ResultExt};
 
 use crate::error::{ArrowSnafu, CommonSnafu, DecodeSnafu, ReadTsmSnafu, TskvResult, TsmPageSnafu};
 use crate::file_system::async_filesystem::{LocalFileSystem, LocalFileType};
