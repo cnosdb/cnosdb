@@ -54,6 +54,10 @@ impl PartialEq for StreamScanPlanNode {
 impl Eq for StreamScanPlanNode {}
 
 impl UserDefinedLogicalNodeCore for StreamScanPlanNode {
+    fn name(&self) -> &str {
+        "StreamScan"
+    }
+
     fn inputs(&self) -> Vec<&LogicalPlan> {
         vec![]
     }
@@ -79,7 +83,7 @@ impl UserDefinedLogicalNodeCore for StreamScanPlanNode {
         )
     }
 
-    fn from_template(&self, exprs: &[Expr], inputs: &[LogicalPlan]) -> Self {
+    fn with_exprs_and_inputs(&self, exprs: Vec<Expr>, inputs: Vec<LogicalPlan>) -> Self {
         assert_eq!(inputs.len(), 0, "input size inconsistent");
 
         if self.agg_with_grouping.is_some() {
@@ -90,7 +94,7 @@ impl UserDefinedLogicalNodeCore for StreamScanPlanNode {
                 source: self.source.clone(),
                 projection: self.projection.clone(),
                 projected_schema: self.projected_schema.clone(),
-                filters: exprs.to_vec(),
+                filters: exprs,
                 agg_with_grouping: self.agg_with_grouping.clone(),
             }
         }
@@ -105,9 +109,5 @@ impl UserDefinedLogicalNodeCore for StreamScanPlanNode {
             .map(|f| f.name())
             .cloned()
             .collect::<HashSet<_>>()
-    }
-
-    fn name(&self) -> &str {
-        "StreamScan"
     }
 }

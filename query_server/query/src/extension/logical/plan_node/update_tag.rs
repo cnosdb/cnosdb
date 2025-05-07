@@ -98,14 +98,14 @@ impl UserDefinedLogicalNodeCore for UpdateTagPlanNode {
         Ok(())
     }
 
-    fn from_template(&self, exprs: &[Expr], inputs: &[LogicalPlan]) -> Self {
+    fn with_exprs_and_inputs(&self, exprs: Vec<Expr>, inputs: Vec<LogicalPlan>) -> Self {
         debug_assert_eq!(inputs.len(), 1, "input size inconsistent");
         UpdateTagPlanNode {
             table_name: self.table_name.clone(),
             table_source: self.table_source.clone(),
             scan: Arc::new(inputs[0].clone()),
             assigns: self.assigns.clone(),
-            exprs: exprs.to_vec(),
+            exprs,
             schema: self.schema.clone(),
         }
     }

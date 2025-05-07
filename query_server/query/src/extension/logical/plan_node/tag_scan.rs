@@ -55,6 +55,10 @@ impl PartialEq for TagScanPlanNode {
 impl Eq for TagScanPlanNode {}
 
 impl UserDefinedLogicalNodeCore for TagScanPlanNode {
+    fn name(&self) -> &str {
+        "TagScan"
+    }
+
     fn inputs(&self) -> Vec<&LogicalPlan> {
         vec![]
     }
@@ -76,13 +80,9 @@ impl UserDefinedLogicalNodeCore for TagScanPlanNode {
         )
     }
 
-    fn from_template(&self, exprs: &[Expr], inputs: &[LogicalPlan]) -> Self {
+    fn with_exprs_and_inputs(&self, exprs: Vec<Expr>, inputs: Vec<LogicalPlan>) -> Self {
         assert_eq!(inputs.len(), 0, "input size inconsistent");
         assert_eq!(exprs.len(), 0, "expr size inconsistent");
         self.clone()
-    }
-
-    fn name(&self) -> &str {
-        "TagScan"
     }
 }

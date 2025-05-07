@@ -36,6 +36,10 @@ impl Debug for TableWriterMergePlanNode {
 }
 
 impl UserDefinedLogicalNodeCore for TableWriterMergePlanNode {
+    fn name(&self) -> &str {
+        "TableWriterMerge"
+    }
+
     fn inputs(&self) -> Vec<&LogicalPlan> {
         vec![&self.input]
     }
@@ -55,17 +59,13 @@ impl UserDefinedLogicalNodeCore for TableWriterMergePlanNode {
         Ok(())
     }
 
-    fn from_template(&self, exprs: &[Expr], inputs: &[LogicalPlan]) -> Self {
+    fn with_exprs_and_inputs(&self, exprs: Vec<Expr>, inputs: Vec<LogicalPlan>) -> Self {
         debug_assert_eq!(inputs.len(), 1, "input size inconsistent");
         TableWriterMergePlanNode {
             input: Arc::new(inputs[0].clone()),
-            agg_expr: exprs.to_vec(),
+            agg_expr: exprs,
             schema: self.schema.clone(),
         }
-    }
-
-    fn name(&self) -> &str {
-        "TableWriterMerge"
     }
 }
 

@@ -66,6 +66,10 @@ impl Debug for UpdateNode {
 }
 
 impl UserDefinedLogicalNodeCore for UpdateNode {
+    fn name(&self) -> &str {
+        "Update"
+    }
+
     fn inputs(&self) -> Vec<&LogicalPlan> {
         vec![]
     }
@@ -93,7 +97,7 @@ impl UserDefinedLogicalNodeCore for UpdateNode {
         )
     }
 
-    fn from_template(&self, _exprs: &[Expr], inputs: &[LogicalPlan]) -> Self {
+    fn with_exprs_and_inputs(&self, exprs: Vec<Expr>, inputs: Vec<LogicalPlan>) -> Self {
         assert_eq!(inputs.len(), 0, "input size inconsistent");
 
         Self {
@@ -103,9 +107,5 @@ impl UserDefinedLogicalNodeCore for UpdateNode {
             filter: self.filter.clone(),
             schema: self.schema.clone(),
         }
-    }
-
-    fn name(&self) -> &str {
-        "Update"
     }
 }

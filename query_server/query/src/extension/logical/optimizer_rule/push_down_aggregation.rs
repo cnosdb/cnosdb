@@ -15,15 +15,17 @@
 //! Push Down Aggregation optimizer rule ensures that aggregations are applied as early as possible in the plan
 
 use std::ops::Deref;
+use std::sync::Arc;
 
 // use std::sync::Arc;
 use datafusion::common::Column;
 use datafusion::error::{DataFusionError, Result};
-use datafusion::logical_expr::expr::AggregateFunction;
+use datafusion::functions_aggregate::sum::Sum;
+use datafusion::logical_expr::expr::{AggregateFunction, AggregateFunctionParams};
 use datafusion::logical_expr::utils::{exprlist_to_columns, grouping_set_to_exprlist};
 use datafusion::logical_expr::{
-    AggWithGrouping, Aggregate, AggregateFunction as AggregateFunctionName, LogicalPlan,
-    LogicalPlanBuilder, Projection, TableProviderAggregationPushDown, TableScan,
+    AggWithGrouping, Aggregate, AggregateFunction as AggregateFunctionName, AggregateUDF,
+    LogicalPlan, LogicalPlanBuilder, Projection, TableProviderAggregationPushDown, TableScan,
 };
 use datafusion::optimizer::{optimize_children, OptimizerConfig, OptimizerRule};
 use datafusion::prelude::Expr;
@@ -46,7 +48,7 @@ impl OptimizerRule for PushDownAggregation {
         "push_down_aggregation"
     }
 
-    fn try_optimize(
+    fn rewrite(
         &self,
         plan: &LogicalPlan,
         config: &dyn OptimizerConfig,
@@ -104,14 +106,16 @@ impl OptimizerRule for PushDownAggregation {
 
                                 let new_expr = match e {
                                     Expr::AggregateFunction(AggregateFunction {
-                                        fun,
-                                        args: _,
-                                        distinct,
-                                        filter,
-                                        order_by,
-                                        can_be_pushed_down,
+                                        func,
+                                        params: AggregateFunctionParams {
+                                            args,
+                                            distinct,
+                                            filter,
+                                            order_by,
+                                            null_treatment,
+                                        },
                                     }) => {
-                                        let new_agg_func = match fun {
+                                        let new_agg_func = match func.name() {
                                             /* AggregateFunctionName::Max => {
                                                 AggregateFunction {
                                                     fun: AggregateFunctionName::Max,
@@ -139,15 +143,16 @@ impl OptimizerRule for PushDownAggregation {
                                                     order_by: order_by.clone(),
                                                 }
                                             }, */
-                                            AggregateFunctionName::Count => {
-                                                AggregateFunction {
-                                                    fun: AggregateFunctionName::Sum,
-                                                    args: vec![Expr::Column(column)],
-                                                    distinct: *distinct,
-                                                    filter: filter.clone(),
-                                                    order_by: order_by.clone(),
-                                                    can_be_pushed_down: *can_be_pushed_down,
-                                                }
+                                            "count" => {
+                                                AggregateFunction::new_udf(Arc::new(AggregateUDF::new_from_impl(Sum::new())), vec![Expr::Column(column)], *distinct, filter.clone(), order_by.clone(), None)
+                                                // AggregateFunction {
+                                                //     fun: AggregateFunctionName::Sum,
+                                                //     args: vec![Expr::Column(column)],
+                                                //     distinct: *distinct,
+                                                //     filter: filter.clone(),
+                                                //     order_by: order_by.clone(),
+                                                //     can_be_pushed_down: *can_be_pushed_down,
+                                                // }
                                             },
                                             // not support other agg func
                                             _ => return Err(DataFusionError::Internal(format!("Unreachable, not support {fun:?} push down."))),
@@ -237,7 +242,18 @@ impl OptimizerRule for PushDownAggregation {
 
 fn determine_whether_support_push_down(aggr_expr: &[Expr]) -> bool {
     aggr_expr.iter().all(|e| match e {
-        Expr::AggregateFunction(AggregateFunction { fun, distinct, .. }) => {
+        Expr::AggregateFunction(AggregateFunction {
+            func,
+            params:
+                AggregateFunctionParams {
+                    args,
+                    distinct,
+                    filter,
+                    order_by,
+                    null_treatment,
+                },
+            ..
+        }) => {
             let support_agg_func = matches!(
                 fun,
                 /* AggregateFunctionName::Max

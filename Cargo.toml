@@ -35,12 +35,12 @@ version = "2.4.3"
 [workspace.dependencies]
 
 ## Data types
-dashmap = "6.1.0"    # Faster concurrent map
+dashmap = "6.1.0" # Faster concurrent map
 geo = "0.30.0"
 geozero = "0.14.0"
 lru = "0.14.0"
-minivec = "0.5.0"    # Single pointer sized Vec type
-roaring = "0.10"     # Compressed bitset
+minivec = "0.5.0" # Single pointer sized Vec type
+roaring = "0.10" # Compressed bitset
 skiplist = "0.5.1"
 stable-vec = "0.4.1"
 uuid = "1.16.0"
@@ -53,7 +53,7 @@ serde_urlencoded = "0.7"
 toml = "0.8"
 
 ## Databases
-heed = "0.22.0"   # Wrapper of LMDB
+heed = "0.22.0" # Wrapper of LMDB
 radixdb = "0.2.5"
 
 ## Codecs
@@ -63,20 +63,20 @@ blake3 = "1.8.2"
 brotli = "8.0.0"
 bzip2 = "0.5.2"
 crc32fast = "1.4.2"
-flate2 = "1.1.1"                                           # zlib, gzip, raw
-fnv = "1.0.7"                                              # Fowler-Noll-Vo hash
-integer-encoding = "4.0.2"                                 # varint, zigzag, fixedint
+flate2 = "1.1.1" # zlib, gzip, raw
+fnv = "1.0.7" # Fowler-Noll-Vo hash
+integer-encoding = "4.0.2" # varint, zigzag, fixedint
 lz4_flex = "0.11.3"
 md-5 = "0.10.6"
 openssl = { version = "0.10.66", features = ["vendored"] } # todo: remove this
 pco = "0.4.2"
 rsa = "0.9.8"
 siphasher = "1.0.1"
-snap = "1.1.1"                                             # snappy
-twox-hash = "2.1.0"                                        # XXHash & XXH3 algorithms
+snap = "1.1.1" # snappy
+twox-hash = "2.1.0" # XXHash & XXH3 algorithms
 zstd = "0.13.3"
 
-## HTTP & protocols
+## HTTP
 actix-web = "4.10"
 axum = { version = "0.7" }
 http = "1.3"
@@ -108,6 +108,11 @@ tokio-retry = "0.3"
 tokio-stream = "0.1"
 tokio-util = "0.7"
 
+## Macro
+proc-macro2 = "1.0"
+quote = "1.0"
+syn = "2.0"
+
 ## Logging & tracing
 backtrace = "0.3"
 console-subscriber = "0.4"
@@ -115,7 +120,7 @@ env_logger = "0.11"
 minitrace = "0.6"
 minitrace-opentelemetry = "0.6" # Opentelemetry reporter, needs opentelemetry=^0.23
 opentelemetry = "0.23"
-opentelemetry-otlp = "0.16"     # Opentelemetry collector, needs opentelemetry=^0.23
+opentelemetry-otlp = "0.16" # Opentelemetry collector, needs opentelemetry=^0.23
 opentelemetry_sdk = "0.23"
 tracing = "0.1"
 tracing-appender = "0.2"
@@ -127,13 +132,13 @@ clap = { version = "4.5", features = ["default", "derive"] }
 ctrlc = "3.4"
 dircpy = "0.3"
 dirs = "6.0"
-figment = "0.10"                                             # Configuration
-indicatif = "0.17"                                           # Progress bar
-memmap2 = "0.9.5"                                            # Memory-mapped file IO
+figment = "0.10" # Configuration
+indicatif = "0.17" # Progress bar
+memmap2 = "0.9.5" # Memory-mapped file IO
 mio = "1.0.3"
 num_cpus = "1.16"
 os_info = "3.10"
-rpassword = "7.4"                                            # Read password in console
+rpassword = "7.4" # Read password in console
 run_script = "0.11"
 rustyline = "15.0"
 sys-info = "0.9"
@@ -161,7 +166,7 @@ static_assertions = "1.1"
 
 ## Miscellany
 anyhow = "1.0"
-atoi_simd = "0.16"                                                                         # Bytes to integer
+atoi_simd = "0.16" # Bytes to integer
 byte-unit = "5.1"
 byteorder = "1.5"
 bytes = "1.10"
@@ -176,9 +181,9 @@ humantime = "2.2"
 itertools = "0.14"
 lazy_static = "1.5"
 libc = { version = "0.2.172", default-features = false }
-maplit = "1.0"                                                                             # Macros for maps / sets
-moka = { version = "0.12", features = ["sync"] }                                           # Cache
-nom = "8.0"                                                                                # Build parsers
+maplit = "1.0" # Macros for maps / sets
+moka = { version = "0.12", features = ["sync"] } # Cache
+nom = "8.0" # Build parsers
 num-traits = "0.2"
 num_enum = "0.7"
 object_store = { version = "0.12", features = ["aws", "gcp", "azure"] }
@@ -188,16 +193,13 @@ parking_lot = { version = "0.12" }
 paste = "1.0"
 pin-project = "1.1"
 pprof = { version = "0.14", features = ["flamegraph", "protobuf-codec", "frame-pointer"] }
-proc-macro2 = "1.0"
-quote = "1.0"
 rand = "0.9"
 ranges = "0.4"
 regex = "1.11"
 simdutf8 = "0.1"
 snafu = "0.8"
-strum = "0.27"                                                                             # Macros for enums and strings
+strum = "0.27" # Macros for enums and strings
 strum_macros = "0.27"
-syn = "2.0"
 tikv-jemalloc-ctl = "0.6"
 tikv-jemalloc-sys = "0.6"
 tikv-jemallocator = "0.6"

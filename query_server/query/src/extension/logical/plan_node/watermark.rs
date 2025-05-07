@@ -52,6 +52,10 @@ impl Debug for WatermarkNode {
 }
 
 impl UserDefinedLogicalNodeCore for WatermarkNode {
+    fn name(&self) -> &str {
+        "Watermark"
+    }
+
     fn inputs(&self) -> Vec<&LogicalPlan> {
         vec![self.input.as_ref()]
     }
@@ -73,7 +77,7 @@ impl UserDefinedLogicalNodeCore for WatermarkNode {
         )
     }
 
-    fn from_template(&self, _exprs: &[Expr], inputs: &[LogicalPlan]) -> Self {
+    fn with_exprs_and_inputs(&self, exprs: Vec<Expr>, inputs: Vec<LogicalPlan>) -> Self {
         assert_eq!(inputs.len(), 1, "input size inconsistent");
 
         Self {

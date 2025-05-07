@@ -399,7 +399,7 @@ impl TSIndex {
         table_schema: &TskvTableSchema,
         tag_domains: &ColumnDomains<String>,
     ) -> Result<Vec<u32>, TskvError> {
-        let tab = table_schema.name.as_str();
+        let tab = table_schema.name.as_ref();
         if tag_domains.is_all() {
             // Match all records
             trace::debug!("pushed tags filter is All.");
@@ -574,7 +574,7 @@ pub fn filter_range_to_value_range(range: &Range) -> impl RangeBounds<Vec<u8>> {
 
 pub fn scalar_value_to_tag_value(v: &ScalarValue) -> Vec<u8> {
     // Tag can only be of string type
-    assert_eq!(DataType::Utf8, v.get_datatype());
+    assert_eq!(DataType::Utf8, v.data_type());
     unsafe { utf8_from(v).unwrap_unchecked().into() }
 }
 
@@ -850,9 +850,9 @@ mod test {
         ]);
 
         let schema = ExternalTableSchema {
-            tenant: "cnosdb".to_string(),
-            db: "hello".to_string(),
-            name: "world".to_string(),
+            tenant: "cnosdb".into(),
+            db: "hello".into(),
+            name: "world".into(),
             file_compression_type: "test".to_string(),
             file_type: "1".to_string(),
             location: "2".to_string(),

@@ -54,9 +54,8 @@ impl UserDefinedLogicalNodeCore for TSGenFuncNode {
         )
     }
 
-    fn from_template(&self, exprs: &[Expr], inputs: &[LogicalPlan]) -> Self {
+    fn with_exprs_and_inputs(&self, mut exprs: Vec<Expr>, inputs: Vec<LogicalPlan>) -> Self {
         assert_eq!(inputs.len(), 1, "input size inconsistent");
-        let mut exprs = exprs.to_vec();
         let arg_expr =
             if exprs[exprs.len() - 1].get_type(inputs[0].schema()).unwrap() == DataType::Utf8 {
                 exprs.pop()

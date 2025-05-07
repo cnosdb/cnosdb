@@ -74,6 +74,10 @@ impl PartialEq for TableWriterPlanNode {
 impl Eq for TableWriterPlanNode {}
 
 impl UserDefinedLogicalNodeCore for TableWriterPlanNode {
+    fn name(&self) -> &str {
+        "TableWriter"
+    }
+
     fn inputs(&self) -> Vec<&LogicalPlan> {
         vec![&self.input]
     }
@@ -98,19 +102,15 @@ impl UserDefinedLogicalNodeCore for TableWriterPlanNode {
         Ok(())
     }
 
-    fn from_template(&self, exprs: &[Expr], inputs: &[LogicalPlan]) -> Self {
+    fn with_exprs_and_inputs(&self, exprs: Vec<Expr>, inputs: Vec<LogicalPlan>) -> Self {
         debug_assert_eq!(inputs.len(), 1, "input size inconsistent");
         TableWriterPlanNode {
             target_table_name: self.target_table_name.clone(),
             target_table: self.target_table.clone(),
             input: Arc::new(inputs[0].clone()),
-            exprs: exprs.to_vec(),
+            exprs,
             schema: self.schema.clone(),
         }
-    }
-
-    fn name(&self) -> &str {
-        "TableWriter"
     }
 }
 
