@@ -85,9 +85,9 @@ impl DBschemas {
             Some(schema) => Cow::Borrowed(schema.as_ref()),
             None => {
                 let mut schema = TskvTableSchema::new(
-                    self.tenant_name().into(),
-                    self.database_name().into(),
-                    fb_schema.table.to_string(),
+                    self.tenant_name(),
+                    self.database_name(),
+                    fb_schema.table,
                     vec![],
                 );
                 let db_schema = self.db_schema_by_meta().await?;

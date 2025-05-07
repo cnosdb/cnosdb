@@ -9,11 +9,12 @@ use datafusion::arrow::datatypes::{SchemaRef, TimeUnit};
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::error::{DataFusionError, Result as DFResult};
 use datafusion::execution::context::TaskContext;
-use datafusion::physical_expr::PhysicalSortExpr;
+use datafusion::physical_expr::{EquivalenceProperties, PhysicalSortExpr};
+use datafusion::physical_plan::execution_plan::{Boundedness, EmissionType};
 use datafusion::physical_plan::metrics::{ExecutionPlanMetricsSet, MetricsSet};
 use datafusion::physical_plan::{
-    DisplayFormatType, ExecutionPlan, Partitioning, RecordBatchStream, SendableRecordBatchStream,
-    Statistics,
+    DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties, RecordBatchStream,
+    SendableRecordBatchStream, Statistics,
 };
 use futures::{Stream, StreamExt};
 use models::codec::Encoding;
@@ -41,6 +42,7 @@ pub struct TskvExec {
     filter: PredicateRef,
     coord: CoordinatorRef,
     splits: Vec<PlacedSplit>,
+    properties: PlanProperties,
 
     /// Execution metrics
     metrics: ExecutionPlanMetricsSet,
@@ -55,13 +57,19 @@ impl TskvExec {
         splits: Vec<PlacedSplit>,
     ) -> Self {
         let metrics = ExecutionPlanMetricsSet::new();
-
+        let partitioning = Partitioning::UnknownPartitioning(splits.len());
         Self {
             table_schema,
-            proj_schema,
+            proj_schema: proj_schema.clone(),
             filter,
             coord,
             splits,
+            properties: PlanProperties::new(
+                EquivalenceProperties::new(proj_schema),
+                partitioning,
+                EmissionType::Both,
+                Boundedness::Bounded,
+            ),
             metrics,
         }
     }
@@ -71,6 +79,10 @@ impl TskvExec {
 }
 
 impl ExecutionPlan for TskvExec {
+    fn name(&self) -> &str {
+        "TskvExec"
+    }
+
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -79,12 +91,8 @@ impl ExecutionPlan for TskvExec {
         self.proj_schema.clone()
     }
 
-    fn output_partitioning(&self) -> Partitioning {
-        Partitioning::UnknownPartitioning(self.splits.len())
-    }
-
-    fn output_ordering(&self) -> Option<&[PhysicalSortExpr]> {
-        None
+    fn properties(&self) -> &PlanProperties {
+        &self.properties
     }
 
     fn children(&self) -> Vec<Arc<dyn ExecutionPlan>> {
@@ -101,6 +109,7 @@ impl ExecutionPlan for TskvExec {
             filter: self.filter.clone(),
             coord: self.coord.clone(),
             splits: self.splits.clone(),
+            properties: self.properties.clone(),
             metrics: self.metrics.clone(),
         }))
     }
@@ -147,6 +156,17 @@ impl ExecutionPlan for TskvExec {
         Ok(Box::pin(table_stream))
     }
 
+    fn statistics(&self) -> Statistics {
+        // TODO
+        Statistics::default()
+    }
+
+    fn metrics(&self) -> Option<MetricsSet> {
+        Some(self.metrics.clone_inner())
+    }
+}
+
+impl DisplayAs for TskvExec {
     fn fmt_as(&self, t: DisplayFormatType, f: &mut Formatter) -> std::fmt::Result {
         match t {
             DisplayFormatType::Default | DisplayFormatType::Verbose => {
@@ -165,16 +185,11 @@ impl ExecutionPlan for TskvExec {
                     fields.join(","),
                 )
             }
+            DisplayFormatType::TreeRender => {
+                // TODO(zipper): implement this.
+                write!(f, "")
+            }
         }
-    }
-
-    fn statistics(&self) -> Statistics {
-        // TODO
-        Statistics::default()
-    }
-
-    fn metrics(&self) -> Option<MetricsSet> {
-        Some(self.metrics.clone_inner())
     }
 }
 

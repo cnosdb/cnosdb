@@ -54,10 +54,12 @@ mod tests {
 
     use arrow::datatypes::{DataType, Field, Schema, SchemaRef, TimeUnit};
     use datafusion::common::DFSchema;
-    use datafusion::logical_expr::Operator;
+    use datafusion::functions::math::abs::AbsFunc;
+    use datafusion::logical_expr::{Operator, ScalarUDF};
     use datafusion::physical_expr::create_physical_expr;
     use datafusion::physical_expr::execution_props::ExecutionProps;
     use datafusion::physical_plan::expressions::{lit, BinaryExpr, Column};
+    use datafusion::prelude::col;
     use datafusion::scalar::ScalarValue;
     use models::schema::tskv_table_schema::{ColumnType, TableColumn};
     use models::ValueType;
@@ -171,7 +173,7 @@ mod tests {
         cgs
     }
 
-    fn schema() -> DFSchema {
+    fn schema() -> (SchemaRef, DFSchema) {
         let arrow_schema = Arc::new(Schema::new(vec![
             Field::new(
                 "time",
@@ -181,12 +183,13 @@ mod tests {
             Field::new("tag1", DataType::Utf8, true),
             Field::new("field1", DataType::Int64, true),
         ]));
-        DFSchema::try_from(arrow_schema)
+        let df_schema = DFSchema::try_from(arrow_schema.clone()).unwrap();
+        (arrow_schema, df_schema)
     }
 
     #[test]
     fn test_filter_time_column_groups_indices() {
-        let schema = schema();
+        let (schema, _) = schema();
         let data = data();
         let expr = Arc::new(BinaryExpr::new(
             Arc::new(Column::new("time", 0)),
@@ -204,7 +207,7 @@ mod tests {
 
     #[test]
     fn test_filter_tag_column_groups_indices() {
-        let schema = schema();
+        let (schema, _) = schema();
         let data = data();
         let expr = Arc::new(BinaryExpr::new(
             Arc::new(Column::new("tag1", 0)),
@@ -222,7 +225,7 @@ mod tests {
 
     #[test]
     fn test_filter_multi_column_groups_indices() {
-        let schema = schema();
+        let (schema, _) = schema();
         let data = data();
         let time_expr = Arc::new(BinaryExpr::new(
             Arc::new(Column::new("time", 0)),
@@ -257,12 +260,12 @@ mod tests {
 
     #[test]
     fn test_filter_field_column_groups_indices_with_func() {
-        let schema = schema();
+        let (schema, df_schema) = schema();
         let data = data();
 
         let func_expr = create_physical_expr(
-            &BuiltinScalarFunction::Abs,
-            &schema,
+            &ScalarUDF::new_from_impl(AbsFunc::new()).call(vec![col("field1")]),
+            &df_schema,
             &ExecutionProps::default(),
         )
         .unwrap();
@@ -278,16 +281,16 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(cgs, vec![true, true, true, true]);
+        assert_eq!(cgs, vec![true, true, true, true])
     }
 
     #[test]
     fn test_filter_not_exists_column_groups_indices() {
-        let schema = schema();
+        let (schema, _) = schema();
         let data = data();
 
         let expr = Arc::new(BinaryExpr::new(
-            Arc::new(Column::new("field_not_exsists", 0)),
+            Arc::new(Column::new("field_not_exists", 0)),
             Operator::Eq,
             lit(ScalarValue::Int64(Some(10))),
         ));

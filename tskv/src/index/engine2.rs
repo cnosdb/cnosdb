@@ -44,22 +44,16 @@ impl IndexEngine2 {
         Ok(Self { env, db })
     }
 
-    pub fn reader_txn(&self) -> IndexResult<heed::RoTxn> {
-        let reader = self
-            .env
+    pub fn reader_txn(&self) -> IndexResult<heed::RoTxn<'_, heed::WithTls>> {
+        self.env
             .read_txn()
-            .map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?;
-
-        Ok(reader)
+            .map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())
     }
 
     pub fn writer_txn(&self) -> IndexResult<heed::RwTxn> {
-        let writer = self
-            .env
+        self.env
             .write_txn()
-            .map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?;
-
-        Ok(writer)
+            .map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())
     }
 
     pub fn txn_write(&self, key: &[u8], value: &[u8], writer: &mut heed::RwTxn) -> IndexResult<()> {
@@ -118,7 +112,7 @@ impl IndexEngine2 {
             .get(&reader, key)
             .map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?
         {
-            Ok(Some(data))
+            Ok(Some(data.to_vec()))
         } else {
             Ok(None)
         }

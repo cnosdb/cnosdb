@@ -105,7 +105,7 @@ impl ChunkGroupWriteSpec {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ChunkGroupMeta {
     // table name -> chunk group meta
-    tables: BTreeMap<String, ChunkGroupWriteSpec>,
+    tables: BTreeMap<Arc<str>, ChunkGroupWriteSpec>,
 }
 
 impl Default for ChunkGroupMeta {
@@ -149,7 +149,7 @@ impl ChunkGroupMeta {
         time_range
     }
 
-    pub fn tables(&self) -> &BTreeMap<String, ChunkGroupWriteSpec> {
+    pub fn tables(&self) -> &BTreeMap<Arc<str>, ChunkGroupWriteSpec> {
         &self.tables
     }
 

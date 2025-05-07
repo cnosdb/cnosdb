@@ -55,12 +55,24 @@ impl ResolvedTable {
         self.tenant.as_ref()
     }
 
+    pub fn tenant_owned(&self) -> Arc<str> {
+        self.tenant.clone()
+    }
+
     pub fn database(&self) -> &str {
         self.database.as_ref()
     }
 
+    pub fn database_owned(&self) -> Arc<str> {
+        self.database.clone()
+    }
+
     pub fn table(&self) -> &str {
         self.table.as_ref()
+    }
+
+    pub fn table_owned(&self) -> Arc<str> {
+        self.table.clone()
     }
 }
 

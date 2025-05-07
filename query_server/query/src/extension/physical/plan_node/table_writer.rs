@@ -15,8 +15,8 @@ use datafusion::physical_plan::metrics::{
 };
 use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
 use datafusion::physical_plan::{
-    DisplayFormatType, Distribution, ExecutionPlan, Partitioning, SendableRecordBatchStream,
-    Statistics,
+    DisplayAs, DisplayFormatType, Distribution, ExecutionPlan, Partitioning, PlanProperties,
+    SendableRecordBatchStream, Statistics,
 };
 use futures::TryStreamExt;
 use spi::query::AFFECTED_ROWS;
@@ -69,21 +69,21 @@ impl Debug for TableWriterExec {
 
 #[async_trait]
 impl ExecutionPlan for TableWriterExec {
+    fn name(&self) -> &str {
+        "TableWriterExec"
+    }
+
     /// Return a reference to Any that can be used for downcasting
     fn as_any(&self) -> &dyn Any {
         self
     }
 
+    fn properties(&self) -> &PlanProperties {
+        &self.input.properties()
+    }
+
     fn schema(&self) -> SchemaRef {
         self.schema.clone()
-    }
-
-    fn output_partitioning(&self) -> Partitioning {
-        self.input.output_partitioning()
-    }
-
-    fn output_ordering(&self) -> Option<&[PhysicalSortExpr]> {
-        self.input.output_ordering()
     }
 
     fn benefits_from_input_partitioning(&self) -> bool {
@@ -142,6 +142,16 @@ impl ExecutionPlan for TableWriterExec {
         )))
     }
 
+    fn metrics(&self) -> Option<MetricsSet> {
+        Some(self.metrics.clone_inner())
+    }
+
+    fn statistics(&self) -> Statistics {
+        self.input.statistics()
+    }
+}
+
+impl DisplayAs for TableWriterExec {
     fn fmt_as(&self, t: DisplayFormatType, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match t {
             DisplayFormatType::Default => {
@@ -161,15 +171,11 @@ impl ExecutionPlan for TableWriterExec {
                     schemas.join(",")
                 )
             }
+            DisplayFormatType::TreeRender => {
+                // TODO(zipper): implement this.
+                write!(f, "")
+            }
         }
-    }
-
-    fn metrics(&self) -> Option<MetricsSet> {
-        Some(self.metrics.clone_inner())
-    }
-
-    fn statistics(&self) -> Statistics {
-        self.input.statistics()
     }
 }
 

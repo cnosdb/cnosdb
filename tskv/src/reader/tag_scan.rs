@@ -46,9 +46,9 @@ impl LocalTskvTagScanStream {
     pub fn new(vnode_id: VnodeId, option: QueryOption, kv: EngineRef, span: Span) -> Self {
         let futrue = async move {
             let (tenant, db, table) = (
-                option.table_schema.tenant.as_str(),
-                option.table_schema.db.as_str(),
-                option.table_schema.name.as_str(),
+                option.table_schema.tenant.as_ref(),
+                option.table_schema.db.as_ref(),
+                option.table_schema.name.as_ref(),
             );
 
             let series_ids = kv

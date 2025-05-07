@@ -267,7 +267,6 @@ impl OtlpToJaeger {
                     Predicate::push_down_filter(
                         filter_expr,
                         &*tskv_table_schema.build_df_schema()?,
-                        &schema,
                         limit,
                     )
                     .context(ModelsSnafu)?,

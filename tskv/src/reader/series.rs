@@ -71,7 +71,7 @@ impl BatchReader for SeriesReader {
                     .build()
                 })?;
 
-            let field = match self.query_schema.get_column_by_id(&column_id).cloned() {
+            let field = match self.query_schema.get_column_by_id(column_id).cloned() {
                 Some(column) => Arc::new(Field::from(column)),
                 None => {
                     continue;

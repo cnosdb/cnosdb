@@ -10,8 +10,8 @@ use datafusion::physical_expr::PhysicalSortExpr;
 use datafusion::physical_plan::aggregates::{AggregateExec, AggregateMode, PhysicalGroupBy};
 use datafusion::physical_plan::metrics::MetricsSet;
 use datafusion::physical_plan::{
-    AggregateExpr, AggregateStream, DisplayFormatType, Distribution, ExecutionPlan, Partitioning,
-    SendableRecordBatchStream, Statistics,
+    AggregateExpr, AggregateStream, DisplayAs, DisplayFormatType, Distribution, ExecutionPlan,
+    Partitioning, PlanProperties, SendableRecordBatchStream, Statistics,
 };
 use trace::debug;
 
@@ -46,6 +46,10 @@ impl Debug for TableWriterMergeExec {
 
 #[async_trait]
 impl ExecutionPlan for TableWriterMergeExec {
+    fn name(&self) -> &str {
+        "TableWriterMergeExec"
+    }
+
     /// Return a reference to Any that can be used for downcasting
     fn as_any(&self) -> &dyn Any {
         self
@@ -55,12 +59,8 @@ impl ExecutionPlan for TableWriterMergeExec {
         self.agg_exec.schema()
     }
 
-    fn output_partitioning(&self) -> Partitioning {
-        self.agg_exec.output_partitioning()
-    }
-
-    fn output_ordering(&self) -> Option<&[PhysicalSortExpr]> {
-        self.agg_exec.output_ordering()
+    fn properties(&self) -> &PlanProperties {
+        &self.agg_exec.properties
     }
 
     fn benefits_from_input_partitioning(&self) -> bool {
@@ -101,6 +101,16 @@ impl ExecutionPlan for TableWriterMergeExec {
         )?))
     }
 
+    fn metrics(&self) -> Option<MetricsSet> {
+        self.agg_exec.metrics()
+    }
+
+    fn statistics(&self) -> Statistics {
+        self.agg_exec.statistics()
+    }
+}
+
+impl DisplayAs for TableWriterMergeExec {
     fn fmt_as(&self, t: DisplayFormatType, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match t {
             DisplayFormatType::Default | DisplayFormatType::Verbose => {
@@ -112,15 +122,11 @@ impl ExecutionPlan for TableWriterMergeExec {
                     .collect();
                 write!(f, "TableWriterMergeExec: expr=[{}]", exprs.join(","))
             }
+            DisplayFormatType::TreeRender => {
+                // TODO(zipper): implement this.
+                write!(f, "")
+            }
         }
-    }
-
-    fn metrics(&self) -> Option<MetricsSet> {
-        self.agg_exec.metrics()
-    }
-
-    fn statistics(&self) -> Statistics {
-        self.agg_exec.statistics()
     }
 }
 
@@ -130,13 +136,11 @@ fn create_aggregate_exec(
     aggr_expr: &[Arc<dyn AggregateExpr>],
 ) -> Result<AggregateExec> {
     let filter_expr = vec![None; aggr_expr.len()];
-    let order_by_expr = vec![None; aggr_expr.len()];
     AggregateExec::try_new(
         mode,
         PhysicalGroupBy::default(),
         aggr_expr.to_vec(),
         filter_expr,
-        order_by_expr,
         input.clone(),
         input.schema(),
     )

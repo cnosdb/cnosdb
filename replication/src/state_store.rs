@@ -3,7 +3,7 @@ use std::fs;
 use std::path::Path;
 
 use heed::types::{Bytes, Str};
-use heed::{Database, Env, EnvFlags, WithTls};
+use heed::{Database, Env, EnvFlags};
 use openraft::{LogId, StoredMembership, Vote};
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
@@ -93,7 +93,7 @@ impl StateStorage {
         Ok(Self { env, db })
     }
 
-    fn reader_txn(&self) -> ReplicationResult<heed::RoTxn<'_, WithTls>> {
+    fn reader_txn(&self) -> ReplicationResult<heed::RoTxn<'_, heed::WithTls>> {
         self.env.read_txn().context(HeedSnafu)
     }
 

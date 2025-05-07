@@ -10,8 +10,8 @@ use datafusion::execution::context::TaskContext;
 use datafusion::physical_expr::{EquivalenceProperties, PhysicalSortExpr, PhysicalSortRequirement};
 use datafusion::physical_plan::metrics::MetricsSet;
 use datafusion::physical_plan::{
-    DisplayFormatType, Distribution, ExecutionPlan, Metric, Partitioning, RecordBatchStream,
-    SendableRecordBatchStream, Statistics,
+    DisplayAs, DisplayFormatType, Distribution, ExecutionPlan, Metric, Partitioning,
+    PlanProperties, RecordBatchStream, SendableRecordBatchStream, Statistics,
 };
 use futures::{Stream, StreamExt};
 use trace::span_ext::SpanExt;
@@ -45,20 +45,20 @@ impl TracedProxyExec {
 }
 
 impl ExecutionPlan for TracedProxyExec {
+    fn name(&self) -> &str {
+        "TracedProxyExec"
+    }
+
     fn as_any(&self) -> &dyn Any {
         self
     }
 
+    fn properties(&self) -> &PlanProperties {
+        &self.inner.properties()
+    }
+
     fn schema(&self) -> SchemaRef {
         self.inner.schema()
-    }
-
-    fn output_partitioning(&self) -> Partitioning {
-        self.inner.output_partitioning()
-    }
-
-    fn output_ordering(&self) -> Option<&[PhysicalSortExpr]> {
-        self.inner.output_ordering()
     }
 
     fn children(&self) -> Vec<Arc<dyn ExecutionPlan>> {
@@ -118,21 +118,12 @@ impl ExecutionPlan for TracedProxyExec {
         )))
     }
 
-    fn fmt_as(&self, t: DisplayFormatType, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "* ")?;
-        self.inner.fmt_as(t, f)
-    }
-
     fn statistics(&self) -> Statistics {
         self.inner.statistics()
     }
 
     fn metrics(&self) -> Option<MetricsSet> {
         self.inner.metrics()
-    }
-
-    fn unbounded_output(&self, children: &[bool]) -> Result<bool> {
-        self.inner.unbounded_output(children)
     }
 
     fn required_input_distribution(&self) -> Vec<Distribution> {
@@ -150,9 +141,12 @@ impl ExecutionPlan for TracedProxyExec {
     fn benefits_from_input_partitioning(&self) -> bool {
         self.inner.benefits_from_input_partitioning()
     }
+}
 
-    fn equivalence_properties(&self) -> EquivalenceProperties {
-        self.inner.equivalence_properties()
+impl DisplayAs for TracedProxyExec {
+    fn fmt_as(&self, t: DisplayFormatType, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "* ")?;
+        self.inner.fmt_as(t, f)
     }
 }
 

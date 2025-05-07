@@ -3,9 +3,10 @@ use std::sync::Arc;
 
 use datafusion::common::Statistics;
 use datafusion::execution::TaskContext;
-use datafusion::physical_expr::{PhysicalSortExpr, PhysicalSortRequirement};
+use datafusion::physical_expr::{EquivalenceProperties, PhysicalSortExpr, PhysicalSortRequirement};
+use datafusion::physical_plan::execution_plan::{Boundedness, EmissionType};
 use datafusion::physical_plan::{
-    DisplayFormatType, Distribution, ExecutionPlan, Partitioning, PhysicalExpr,
+    DisplayAs, DisplayFormatType, Distribution, ExecutionPlan, Partitioning, PhysicalExpr,
     SendableRecordBatchStream,
 };
 use models::arrow::SchemaRef;
@@ -32,6 +33,7 @@ pub struct TSGenFuncExec {
     arg_expr: Option<Arc<dyn PhysicalExpr>>,
     symbol: TSGenFunc,
     schema: SchemaRef,
+    properties: PlanProperties,
 }
 
 impl TSGenFuncExec {
@@ -49,7 +51,13 @@ impl TSGenFuncExec {
             field_exprs,
             arg_expr,
             symbol,
-            schema,
+            schema: schema.clone(),
+            properties: PlanProperties::new(
+                EquivalenceProperties::new(schema),
+                Partitioning::UnknownPartitioning(1),
+                EmissionType::Both,
+                Boundedness::Bounded,
+            ),
         }
     }
 }
@@ -61,24 +69,20 @@ impl Debug for TSGenFuncExec {
 }
 
 impl ExecutionPlan for TSGenFuncExec {
+    fn name(&self) -> &str {
+        "TSGenFuncExec"
+    }
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
 
-    fn schema(&self) -> SchemaRef {
-        self.schema.clone()
-    }
-
-    fn output_partitioning(&self) -> Partitioning {
-        Partitioning::UnknownPartitioning(1)
+    fn properties(&self) -> &PlanProperties {
+        &self.properties
     }
 
     fn required_input_distribution(&self) -> Vec<Distribution> {
         vec![Distribution::SinglePartition]
-    }
-
-    fn output_ordering(&self) -> Option<&[PhysicalSortExpr]> {
-        self.input.output_ordering()
     }
 
     fn required_input_ordering(&self) -> Vec<Option<Vec<PhysicalSortRequirement>>> {
@@ -108,6 +112,7 @@ impl ExecutionPlan for TSGenFuncExec {
             arg_expr: self.arg_expr.clone(),
             symbol: self.symbol,
             schema: self.schema.clone(),
+            properties: self.properties.clone(),
         }))
     }
 
@@ -134,6 +139,12 @@ impl ExecutionPlan for TSGenFuncExec {
         )))
     }
 
+    fn statistics(&self) -> Statistics {
+        Statistics::default()
+    }
+}
+
+impl DisplayAs for TSGenFuncExec {
     fn fmt_as(&self, _t: DisplayFormatType, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
@@ -147,9 +158,5 @@ impl ExecutionPlan for TSGenFuncExec {
             self.arg_expr.as_ref().map(|expr| expr.to_string()),
             self.symbol.name(),
         )
-    }
-
-    fn statistics(&self) -> Statistics {
-        Statistics::default()
     }
 }

@@ -11,11 +11,12 @@ use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::error::{DataFusionError, Result};
 use datafusion::execution::context::TaskContext;
-use datafusion::physical_expr::PhysicalSortExpr;
+use datafusion::physical_expr::{EquivalenceProperties, PhysicalSortExpr};
+use datafusion::physical_plan::execution_plan::{Boundedness, EmissionType};
 use datafusion::physical_plan::metrics::ExecutionPlanMetricsSet;
 use datafusion::physical_plan::{
-    DisplayFormatType, ExecutionPlan, Partitioning, RecordBatchStream, SendableRecordBatchStream,
-    Statistics,
+    DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties, RecordBatchStream,
+    SendableRecordBatchStream, Statistics,
 };
 use futures::{Stream, StreamExt};
 use models::predicate::domain::PredicateRef;
@@ -38,6 +39,7 @@ pub struct TagScanExec {
     predicate: PredicateRef,
     coord: CoordinatorRef,
     splits: Vec<PlacedSplit>,
+    properties: PlanProperties,
 
     /// Execution metrics
     metrics: ExecutionPlanMetricsSet,
@@ -52,12 +54,19 @@ impl TagScanExec {
         splits: Vec<PlacedSplit>,
     ) -> Self {
         let metrics = ExecutionPlanMetricsSet::new();
+        let partitioning = Partitioning::UnknownPartitioning(splits.len());
         Self {
             table_schema,
-            proj_schema,
+            proj_schema: proj_schema.clone(),
             predicate,
             coord,
             splits,
+            properties: PlanProperties::new(
+                EquivalenceProperties::new(proj_schema),
+                partitioning,
+                EmissionType::Both,
+                Boundedness::Bounded,
+            ),
             metrics,
         }
     }
@@ -68,20 +77,16 @@ impl TagScanExec {
 }
 
 impl ExecutionPlan for TagScanExec {
+    fn name(&self) -> &str {
+        "TagScanExec"
+    }
+
     fn as_any(&self) -> &dyn Any {
         self
     }
 
-    fn schema(&self) -> SchemaRef {
-        self.proj_schema.clone()
-    }
-
-    fn output_partitioning(&self) -> Partitioning {
-        Partitioning::UnknownPartitioning(self.splits.len())
-    }
-
-    fn output_ordering(&self) -> Option<&[PhysicalSortExpr]> {
-        None
+    fn properties(&self) -> &PlanProperties {
+        &self.properties
     }
 
     fn children(&self) -> Vec<Arc<dyn ExecutionPlan>> {
@@ -98,6 +103,7 @@ impl ExecutionPlan for TagScanExec {
             coord: self.coord.clone(),
             metrics: self.metrics.clone(),
             splits: self.splits.clone(),
+            properties: self.properties.clone(),
             predicate: self.predicate.clone(),
         }))
     }
@@ -140,6 +146,17 @@ impl ExecutionPlan for TagScanExec {
         Ok(Box::pin(tag_scan_stream))
     }
 
+    fn statistics(&self) -> Statistics {
+        // TODO
+        Statistics::default()
+    }
+
+    fn metrics(&self) -> Option<datafusion::physical_plan::metrics::MetricsSet> {
+        Some(self.metrics.clone_inner())
+    }
+}
+
+impl DisplayAs for TagScanExec {
     fn fmt_as(&self, t: DisplayFormatType, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match t {
             DisplayFormatType::Default | DisplayFormatType::Verbose => {
@@ -157,16 +174,11 @@ impl ExecutionPlan for TagScanExec {
                     fields.join(","),
                 )
             }
+            DisplayFormatType::TreeRender => {
+                // TODO(zipper): implement this.
+                write!(f, "")
+            }
         }
-    }
-
-    fn statistics(&self) -> Statistics {
-        // TODO
-        Statistics::default()
-    }
-
-    fn metrics(&self) -> Option<datafusion::physical_plan::metrics::MetricsSet> {
-        Some(self.metrics.clone_inner())
     }
 }
 
@@ -237,15 +249,14 @@ impl TagScanStream {
         metrics: TableScanMetrics,
         span: Span,
     ) -> Result<Self, QueryError> {
-        let mut proj_fileds = Vec::with_capacity(proj_schema.fields().len());
+        let mut proj_fields = Vec::with_capacity(proj_schema.fields().len());
         for field_name in proj_schema.fields().iter().map(|f| f.name()) {
             if let Some(v) = table_schema.get_column_by_name(field_name) {
-                proj_fileds.push(v.clone());
+                proj_fields.push(v.clone());
             } else {
                 return Err(CommonSnafu {
                     msg: format!(
-                        "tag scan stream build fail, because can't found field: {}",
-                        field_name
+                        "failed building tag scan stream: field not found: '{field_name}'"
                     ),
                 }
                 .build());
@@ -255,7 +266,7 @@ impl TagScanStream {
             table_schema.tenant.clone(),
             table_schema.db.clone(),
             table_schema.name.clone(),
-            proj_fileds,
+            proj_fields,
         );
 
         let option = QueryOption::new(

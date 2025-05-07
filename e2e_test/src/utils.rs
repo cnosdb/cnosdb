@@ -194,7 +194,7 @@ pub fn execute_command(command: Command) -> E2eResult<()> {
 pub fn kill_process(process_name: &str) {
     println!("- Killing processes {process_name}...");
     let system = System::new_with_specifics(
-        RefreshKind::nothing().with_processes(ProcessRefreshKind::nothing()),
+        RefreshKind::nothing().with_processes(ProcessRefreshKind::everything()),
     );
     for (pid, process) in system.processes() {
         if process.name() == process_name {

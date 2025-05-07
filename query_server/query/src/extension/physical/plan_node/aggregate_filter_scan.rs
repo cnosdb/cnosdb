@@ -8,10 +8,12 @@ use coordinator::service::CoordinatorRef;
 use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::error::{DataFusionError, Result};
 use datafusion::execution::context::TaskContext;
-use datafusion::physical_expr::PhysicalSortExpr;
+use datafusion::physical_expr::{EquivalenceProperties, PhysicalSortExpr};
+use datafusion::physical_plan::execution_plan::{Boundedness, EmissionType};
 use datafusion::physical_plan::metrics::{ExecutionPlanMetricsSet, MetricsSet};
 use datafusion::physical_plan::{
-    DisplayFormatType, ExecutionPlan, Partitioning, SendableRecordBatchStream, Statistics,
+    DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties,
+    SendableRecordBatchStream, Statistics,
 };
 use models::predicate::domain::{PredicateRef, PushedAggregateFunction};
 use models::predicate::PlacedSplit;
@@ -31,6 +33,7 @@ pub struct AggregateFilterTskvExec {
     pushed_aggs: Vec<PushedAggregateFunction>,
     filter: PredicateRef,
     splits: Vec<PlacedSplit>,
+    properties: PlanProperties,
     metrics: ExecutionPlanMetricsSet,
 }
 
@@ -43,6 +46,7 @@ impl AggregateFilterTskvExec {
         filter: PredicateRef,
         splits: Vec<PlacedSplit>,
     ) -> Self {
+        let partitioning = Partitioning::UnknownPartitioning(splits.len());
         Self {
             coord,
             schema,
@@ -50,12 +54,22 @@ impl AggregateFilterTskvExec {
             pushed_aggs,
             filter,
             splits,
+            properties: PlanProperties::new(
+                EquivalenceProperties::new(proj_schema),
+                partitioning,
+                EmissionType::Both,
+                Boundedness::Bounded,
+            ),
             metrics: ExecutionPlanMetricsSet::new(),
         }
     }
 }
 
 impl ExecutionPlan for AggregateFilterTskvExec {
+    fn name(&self) -> &str {
+        "AggregateFilterTskvExec"
+    }
+
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -64,12 +78,8 @@ impl ExecutionPlan for AggregateFilterTskvExec {
         self.schema.clone()
     }
 
-    fn output_partitioning(&self) -> Partitioning {
-        Partitioning::UnknownPartitioning(self.splits.len())
-    }
-
-    fn output_ordering(&self) -> Option<&[PhysicalSortExpr]> {
-        None
+    fn properties(&self) -> &PlanProperties {
+        &self.properties
     }
 
     fn children(&self) -> Vec<Arc<dyn ExecutionPlan>> {
@@ -145,7 +155,9 @@ impl ExecutionPlan for AggregateFilterTskvExec {
     fn statistics(&self) -> Statistics {
         Statistics::default()
     }
+}
 
+impl DisplayAs for AggregateFilterTskvExec {
     fn fmt_as(&self, _t: DisplayFormatType, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,

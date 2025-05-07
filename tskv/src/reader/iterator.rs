@@ -12,6 +12,7 @@ use datafusion::arrow::array::{
 use datafusion::arrow::datatypes::TimeUnit;
 use datafusion::physical_plan::metrics::{self, ExecutionPlanMetricsSet, MetricBuilder};
 use datafusion_proto::physical_plan::from_proto::parse_physical_expr;
+use datafusion_proto::physical_plan::DefaultPhysicalExtensionCodec;
 use models::meta_data::VnodeId;
 use models::predicate::domain::{self, PushedAggregateFunction, QueryArgs, QueryExpr, TimeRanges};
 use models::predicate::PlacedSplit;
@@ -934,7 +935,12 @@ async fn build_stream(
     let physical_expr = if expr.expr_type.is_none() {
         None
     } else {
-        Some(parse_physical_expr(expr, &NoRegistry, &arrow_schema)?)
+        Some(parse_physical_expr(
+            expr,
+            &NoRegistry,
+            &arrow_schema,
+            &DefaultPhysicalExtensionCodec {},
+        )?)
     };
 
     let predicate = PredicateRef::new(Predicate::new(

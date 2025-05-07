@@ -48,12 +48,12 @@ pub struct TsmWriter {
     // todo: table object id bloom filter
     // table_bloom_filter: BloomFilter,
     writer: Box<FileStreamWriter>,
-    table_schemas: HashMap<String, TskvTableSchemaRef>,
+    table_schemas: HashMap<Arc<str>, TskvTableSchemaRef>,
 
     /// <table < series, Chunk>>
-    page_specs: BTreeMap<String, BTreeMap<SeriesId, Chunk>>,
+    page_specs: BTreeMap<Arc<str>, BTreeMap<SeriesId, Chunk>>,
     /// <table, ChunkGroup>
-    chunk_specs: BTreeMap<String, ChunkGroup>,
+    chunk_specs: BTreeMap<Arc<str>, ChunkGroup>,
     /// [ChunkGroupWriteSpec]
     chunk_group_specs: ChunkGroupMeta,
     footer: Footer,
@@ -491,7 +491,7 @@ impl TsmWriter {
         });
         for chunk in meta.chunk().values() {
             page_specs
-                .entry(chunk.table_name().to_string())
+                .entry(chunk.table_name_owned())
                 .or_insert_with(BTreeMap::new)
                 .insert(chunk.series_id(), chunk.as_ref().clone());
         }

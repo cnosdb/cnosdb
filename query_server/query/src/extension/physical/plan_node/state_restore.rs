@@ -12,8 +12,8 @@ use datafusion::execution::context::TaskContext;
 use datafusion::physical_expr::PhysicalSortExpr;
 use datafusion::physical_plan::metrics::{BaselineMetrics, ExecutionPlanMetricsSet};
 use datafusion::physical_plan::{
-    DisplayFormatType, ExecutionPlan, Partitioning, RecordBatchStream, SendableRecordBatchStream,
-    Statistics,
+    DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties, RecordBatchStream,
+    SendableRecordBatchStream, Statistics,
 };
 use futures::{Stream, StreamExt};
 use trace::debug;
@@ -44,20 +44,16 @@ where
     T: StateStoreFactory + Send + Sync + Debug + 'static,
     T::SS: Send + Sync + Debug,
 {
+    fn name(&self) -> &str {
+        "StateRestoreExec"
+    }
+
     fn as_any(&self) -> &dyn Any {
         self
     }
 
-    fn schema(&self) -> SchemaRef {
-        self.input.schema()
-    }
-
-    fn output_partitioning(&self) -> Partitioning {
-        self.input.output_partitioning()
-    }
-
-    fn output_ordering(&self) -> Option<&[PhysicalSortExpr]> {
-        self.input.output_ordering()
+    fn properties(&self) -> &PlanProperties {
+        &self.input.properties
     }
 
     fn children(&self) -> Vec<Arc<dyn ExecutionPlan>> {
@@ -111,11 +107,17 @@ where
     fn statistics(&self) -> Statistics {
         self.input.statistics()
     }
+}
 
+impl<T> DisplayAs for StateRestoreExec<T> {
     fn fmt_as(&self, t: DisplayFormatType, f: &mut fmt::Formatter) -> fmt::Result {
         match t {
             DisplayFormatType::Default | DisplayFormatType::Verbose => {
                 write!(f, "StateRestoreExec",)
+            }
+            DisplayFormatType::TreeRender => {
+                // TODO(zipper): implement this.
+                write!(f, "")
             }
         }
     }

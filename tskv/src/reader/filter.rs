@@ -134,7 +134,8 @@ fn batch_filter(
     predicate
         .evaluate(batch)
         .map(|v| v.into_array(batch.num_rows()))
-        .and_then(|array| {
+        .and_then(|into_array_ret| {
+            let array = into_array_ret?;
             Ok(as_boolean_array(&array)?)
                 // apply filter array to record batch
                 .and_then(|filter_array| Ok(filter_record_batch(batch, filter_array)?))

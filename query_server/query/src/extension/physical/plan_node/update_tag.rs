@@ -14,8 +14,8 @@ use datafusion::physical_plan::memory::MemoryStream;
 use datafusion::physical_plan::metrics::{ExecutionPlanMetricsSet, MetricsSet};
 use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
 use datafusion::physical_plan::{
-    ColumnarValue, DisplayFormatType, Distribution, ExecutionPlan, Partitioning,
-    SendableRecordBatchStream, Statistics,
+    ColumnarValue, DisplayAs, DisplayFormatType, Distribution, ExecutionPlan, Partitioning,
+    PlanProperties, SendableRecordBatchStream, Statistics,
 };
 use datafusion::scalar::ScalarValue;
 use futures::{StreamExt, TryStreamExt};
@@ -68,6 +68,10 @@ impl Debug for UpdateTagExec {
 
 #[async_trait]
 impl ExecutionPlan for UpdateTagExec {
+    fn name(&self) -> &str {
+        "UpdateTagExec"
+    }
+
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -76,12 +80,8 @@ impl ExecutionPlan for UpdateTagExec {
         self.schema.clone()
     }
 
-    fn output_partitioning(&self) -> Partitioning {
-        self.scan.output_partitioning()
-    }
-
-    fn output_ordering(&self) -> Option<&[PhysicalSortExpr]> {
-        None
+    fn properties(&self) -> &PlanProperties {
+        &self.scan.properties
     }
 
     fn required_input_distribution(&self) -> Vec<Distribution> {
@@ -134,6 +134,12 @@ impl ExecutionPlan for UpdateTagExec {
         Some(self.metrics.clone_inner())
     }
 
+    fn statistics(&self) -> Statistics {
+        self.scan.statistics()
+    }
+}
+
+impl DisplayAs for UpdateTagExec {
     fn fmt_as(&self, t: DisplayFormatType, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let assigns = self
             .assigns
@@ -165,11 +171,11 @@ impl ExecutionPlan for UpdateTagExec {
                     schemas.join(",")
                 )
             }
+            DisplayFormatType::TreeRender => {
+                // TODO(zipper): implement this.
+                write!(f, "")
+            }
         }
-    }
-
-    fn statistics(&self) -> Statistics {
-        self.scan.statistics()
     }
 }
 

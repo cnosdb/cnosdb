@@ -15,8 +15,8 @@ use datafusion::execution::context::TaskContext;
 use datafusion::physical_expr::{EquivalenceProperties, PhysicalSortExpr};
 use datafusion::physical_plan::metrics::{BaselineMetrics, ExecutionPlanMetricsSet, MetricsSet};
 use datafusion::physical_plan::{
-    DisplayFormatType, ExecutionPlan, Partitioning, RecordBatchStream, SendableRecordBatchStream,
-    Statistics,
+    DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties, RecordBatchStream,
+    SendableRecordBatchStream, Statistics,
 };
 use futures::{Stream, StreamExt};
 use models::schema::stream_table_schema::Watermark;
@@ -80,6 +80,10 @@ impl WatermarkExec {
 }
 
 impl ExecutionPlan for WatermarkExec {
+    fn name(&self) -> &str {
+        "WatermarkExec"
+    }
+
     /// Return a reference to Any that can be used for downcasting
     fn as_any(&self) -> &dyn Any {
         self
@@ -90,33 +94,17 @@ impl ExecutionPlan for WatermarkExec {
         self.schema.clone()
     }
 
-    /// Specifies whether this plan generates an infinite stream of records.
-    /// If the plan does not support pipelining, but it its input(s) are
-    /// infinite, returns an error to indicate this.
-    fn unbounded_output(&self, children: &[bool]) -> DFResult<bool> {
-        Ok(children[0])
+    fn properties(&self) -> &PlanProperties {
+        &self.input.properties
     }
 
     fn children(&self) -> Vec<Arc<dyn ExecutionPlan>> {
         vec![self.input.clone()]
     }
 
-    /// Get the output partitioning of this plan
-    fn output_partitioning(&self) -> Partitioning {
-        self.input.output_partitioning()
-    }
-
-    fn output_ordering(&self) -> Option<&[PhysicalSortExpr]> {
-        self.input.output_ordering()
-    }
-
     fn maintains_input_order(&self) -> Vec<bool> {
         // tell optimizer this operator doesn't reorder its input
         vec![true]
-    }
-
-    fn equivalence_properties(&self) -> EquivalenceProperties {
-        self.input.equivalence_properties()
     }
 
     fn with_new_children(
@@ -159,6 +147,16 @@ impl ExecutionPlan for WatermarkExec {
         Ok(Box::pin(stream))
     }
 
+    fn metrics(&self) -> Option<MetricsSet> {
+        Some(self.metrics.clone_inner())
+    }
+
+    fn statistics(&self) -> Statistics {
+        self.input.statistics()
+    }
+}
+
+impl DisplayAs for WatermarkExec {
     fn fmt_as(&self, t: DisplayFormatType, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match t {
             DisplayFormatType::Default | DisplayFormatType::Verbose => {
@@ -169,15 +167,11 @@ impl ExecutionPlan for WatermarkExec {
                     self.watermark.delay.as_millis()
                 )
             }
+            DisplayFormatType::TreeRender => {
+                // TODO(zipper): implement this.
+                write!(f, "")
+            }
         }
-    }
-
-    fn metrics(&self) -> Option<MetricsSet> {
-        Some(self.metrics.clone_inner())
-    }
-
-    fn statistics(&self) -> Statistics {
-        self.input.statistics()
     }
 }
 

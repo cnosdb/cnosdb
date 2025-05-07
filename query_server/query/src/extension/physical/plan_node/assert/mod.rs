@@ -13,8 +13,8 @@ use datafusion::execution::context::TaskContext;
 use datafusion::physical_expr::{EquivalenceProperties, PhysicalSortExpr};
 use datafusion::physical_plan::metrics::{BaselineMetrics, ExecutionPlanMetricsSet, MetricsSet};
 use datafusion::physical_plan::{
-    DisplayFormatType, ExecutionPlan, Partitioning, RecordBatchStream, SendableRecordBatchStream,
-    Statistics,
+    DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, RecordBatchStream,
+    SendableRecordBatchStream, Statistics,
 };
 use futures::{Stream, StreamExt};
 use trace::debug;
@@ -47,6 +47,10 @@ impl AssertExec {
 }
 
 impl ExecutionPlan for AssertExec {
+    fn name(&self) -> &str {
+        "AssertExec"
+    }
+
     /// Return a reference to Any that can be used for downcasting
     fn as_any(&self) -> &dyn Any {
         self
@@ -57,33 +61,16 @@ impl ExecutionPlan for AssertExec {
         self.child.schema()
     }
 
-    /// Specifies whether this plan generates an infinite stream of records.
-    /// If the plan does not support pipelining, but it its input(s) are
-    /// infinite, returns an error to indicate this.
-    fn unbounded_output(&self, children: &[bool]) -> Result<bool> {
-        self.child.unbounded_output(children)
+    fn properties(&self) -> &PlanProperties {
+        &self.child.properties
     }
-
     fn children(&self) -> Vec<Arc<dyn ExecutionPlan>> {
         vec![self.child.clone()]
-    }
-
-    /// Get the output partitioning of this plan
-    fn output_partitioning(&self) -> Partitioning {
-        self.child.output_partitioning()
-    }
-
-    fn output_ordering(&self) -> Option<&[PhysicalSortExpr]> {
-        self.child.output_ordering()
     }
 
     fn maintains_input_order(&self) -> Vec<bool> {
         // tell optimizer this operator doesn't reorder its input
         vec![true]
-    }
-
-    fn equivalence_properties(&self) -> EquivalenceProperties {
-        self.child.equivalence_properties()
     }
 
     fn with_new_children(
@@ -115,10 +102,6 @@ impl ExecutionPlan for AssertExec {
         }))
     }
 
-    fn fmt_as(&self, _: DisplayFormatType, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "AssertExec: exprs=[{}]", self.assert_expr)
-    }
-
     fn metrics(&self) -> Option<MetricsSet> {
         Some(self.metrics.clone_inner())
     }
@@ -126,6 +109,12 @@ impl ExecutionPlan for AssertExec {
     fn statistics(&self) -> Statistics {
         // TODO stats: compute statistics from assert_expr
         Statistics::default()
+    }
+}
+
+impl DisplayAs for AssertExec {
+    fn fmt_as(&self, _: DisplayFormatType, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "AssertExec: exprs=[{}]", self.assert_expr)
     }
 }
 
